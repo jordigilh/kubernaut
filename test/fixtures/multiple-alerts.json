@@ -1,0 +1,83 @@
+{
+  "version": "4",
+  "groupKey": "{cluster=\"openshift-prod\"}",
+  "truncatedAlerts": 0,
+  "status": "firing",
+  "receiver": "slm-processor",
+  "groupLabels": {
+    "cluster": "openshift-prod"
+  },
+  "commonLabels": {
+    "cluster": "openshift-prod",
+    "namespace": "production",
+    "prometheus": "openshift-monitoring/k8s"
+  },
+  "commonAnnotations": {
+    "runbook_url": "https://runbooks.example.com"
+  },
+  "externalURL": "https://alertmanager.example.com",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighMemoryUsage",
+        "severity": "warning",
+        "namespace": "production",
+        "pod": "frontend-5d6b7c8d9f-123abc",
+        "deployment": "frontend",
+        "container": "nginx",
+        "cluster": "openshift-prod",
+        "prometheus": "openshift-monitoring/k8s"
+      },
+      "annotations": {
+        "description": "Pod frontend-5d6b7c8d9f-123abc is using 85% of memory limit",
+        "summary": "High memory usage in frontend pod"
+      },
+      "startsAt": "2024-08-25T13:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_memory_usage_bytes",
+      "fingerprint": "mem123abc"
+    },
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "CPUThrottlingHigh",
+        "severity": "info",
+        "namespace": "production",
+        "pod": "backend-api-7f8d9c6b5a-456def",
+        "deployment": "backend-api",
+        "container": "api",
+        "cluster": "openshift-prod",
+        "prometheus": "openshift-monitoring/k8s"
+      },
+      "annotations": {
+        "description": "Container api in pod backend-api-7f8d9c6b5a-456def is being throttled 25% of the time",
+        "summary": "Moderate CPU throttling in backend"
+      },
+      "startsAt": "2024-08-25T13:05:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_cpu_cfs_throttled_periods_total",
+      "fingerprint": "cpu456def"
+    },
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PodNotReady",
+        "severity": "critical",
+        "namespace": "production",
+        "pod": "database-backup-cronjob-789ghi",
+        "job": "database-backup-cronjob",
+        "cluster": "openshift-prod",
+        "prometheus": "openshift-monitoring/k8s"
+      },
+      "annotations": {
+        "description": "Pod database-backup-cronjob-789ghi has been in NotReady state for more than 5 minutes",
+        "summary": "Database backup pod not ready"
+      },
+      "startsAt": "2024-08-25T13:10:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=kube_pod_status_ready",
+      "fingerprint": "ready789ghi"
+    }
+  ]
+}

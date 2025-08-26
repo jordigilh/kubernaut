@@ -1,0 +1,7 @@
+vendor/
+prometheus-alerts-slm
+integration.test
+.DS_Store
+e2e.test
+webhookt.test
+test-slm

@@ -1,0 +1,42 @@
+{
+  "version": "4",
+  "groupKey": "test-group-key",
+  "status": "firing",
+  "receiver": "prometheus-alerts-slm",
+  "groupLabels": {
+    "alertname": "HighMemoryUsage"
+  },
+  "commonLabels": {
+    "alertname": "HighMemoryUsage",
+    "severity": "warning",
+    "namespace": "production"
+  },
+  "commonAnnotations": {
+    "description": "Pod app-xyz is using 95% memory",
+    "summary": "High memory usage detected"
+  },
+  "externalURL": "http://alertmanager.example.com:9093",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighMemoryUsage",
+        "severity": "warning",
+        "namespace": "production",
+        "pod": "app-xyz-abc123",
+        "deployment": "app-xyz",
+        "container": "app",
+        "node": "worker-1"
+      },
+      "annotations": {
+        "description": "Pod app-xyz-abc123 is using 95% memory (7.6Gi/8Gi)",
+        "summary": "High memory usage on pod app-xyz-abc123",
+        "runbook_url": "https://wiki.example.com/runbooks/memory"
+      },
+      "startsAt": "2024-01-15T10:30:00.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.example.com:9090/graph?g0.expr=...",
+      "fingerprint": "abc123def456"
+    }
+  ]
+}

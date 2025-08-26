@@ -1,0 +1,37 @@
+# Resource limits for production environment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-alerts-slm
+  namespace: prometheus-alerts-slm
+spec:
+  template:
+    spec:
+      containers:
+        - name: prometheus-alerts-slm
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: localai
+  namespace: prometheus-alerts-slm
+spec:
+  template:
+    spec:
+      containers:
+        - name: localai
+          resources:
+            requests:
+              memory: "6Gi"
+              cpu: "3"
+            limits:
+              memory: "12Gi"
+              cpu: "6"

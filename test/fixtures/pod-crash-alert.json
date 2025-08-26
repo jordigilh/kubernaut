@@ -1,0 +1,56 @@
+{
+  "version": "4",
+  "groupKey": "{alertname=\"PodCrashLooping\"}",
+  "truncatedAlerts": 0,
+  "status": "firing",
+  "receiver": "slm-processor",
+  "groupLabels": {
+    "alertname": "PodCrashLooping"
+  },
+  "commonLabels": {
+    "alertname": "PodCrashLooping",
+    "severity": "critical",
+    "namespace": "production",
+    "pod": "payment-service-7b9d5c4f6-qwerty",
+    "deployment": "payment-service",
+    "container": "payment-processor",
+    "cluster": "openshift-prod",
+    "prometheus": "openshift-monitoring/k8s"
+  },
+  "commonAnnotations": {
+    "description": "Pod payment-service-7b9d5c4f6-qwerty in namespace production has restarted 8 times in the last 5 minutes",
+    "summary": "Pod is crash looping",
+    "runbook_url": "https://runbooks.example.com/PodCrashLooping"
+  },
+  "externalURL": "https://alertmanager.example.com",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PodCrashLooping",
+        "severity": "critical",
+        "namespace": "production",
+        "pod": "payment-service-7b9d5c4f6-qwerty",
+        "deployment": "payment-service",
+        "container": "payment-processor",
+        "cluster": "openshift-prod",
+        "prometheus": "openshift-monitoring/k8s",
+        "job": "kubernetes-pods",
+        "reason": "CrashLoopBackOff",
+        "phase": "Running"
+      },
+      "annotations": {
+        "description": "Pod payment-service-7b9d5c4f6-qwerty in namespace production has restarted 8 times in the last 5 minutes",
+        "summary": "Pod is crash looping",
+        "runbook_url": "https://runbooks.example.com/PodCrashLooping",
+        "restart_count": "8",
+        "last_termination_reason": "OOMKilled",
+        "last_exit_code": "137"
+      },
+      "startsAt": "2024-08-25T11:45:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=kube_pod_container_status_restarts_total",
+      "fingerprint": "a1b2c3d4e5f6g7h8"
+    }
+  ]
+}
