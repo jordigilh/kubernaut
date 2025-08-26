@@ -238,7 +238,7 @@ This project includes comprehensive integration tests covering production edge c
 make validate-integration
 make test-integration
 
-# View test results with 40+ production scenarios
+# View test results with 60+ production scenarios
 # Expected: 92%+ pass rate with 88%+ average confidence
 ```
 
