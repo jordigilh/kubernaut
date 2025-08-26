@@ -1,0 +1,57 @@
+# OpenShift Route for external webhook access
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: prometheus-alerts-slm-webhook
+  namespace: prometheus-alerts-slm
+  labels:
+    app.kubernetes.io/name: prometheus-alerts-slm
+    app.kubernetes.io/component: webhook
+  annotations:
+    haproxy.router.openshift.io/timeout: "60s"
+    haproxy.router.openshift.io/balance: "roundrobin"
+spec:
+  host: alerts-slm.apps.cluster.example.com  # Update with your cluster domain
+  to:
+    kind: Service
+    name: prometheus-alerts-slm-webhook
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+
+---
+# Alternative: Kubernetes Ingress (if not using OpenShift)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus-alerts-slm-webhook
+  namespace: prometheus-alerts-slm
+  labels:
+    app.kubernetes.io/name: prometheus-alerts-slm
+    app.kubernetes.io/component: webhook
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  tls:
+    - hosts:
+        - alerts-slm.example.com
+      secretName: alerts-slm-tls
+  rules:
+    - host: alerts-slm.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-alerts-slm-service
+                port:
+                  number: 8080

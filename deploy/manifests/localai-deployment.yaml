@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: localai
+  namespace: prometheus-alerts-slm
+  labels:
+    app.kubernetes.io/name: localai
+    app.kubernetes.io/component: inference
+    app.kubernetes.io/part-of: prometheus-alerts-slm
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Ensure only one instance due to model loading
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: localai
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: localai
+        app.kubernetes.io/component: inference
+    spec:
+      containers:
+        - name: localai
+          image: quay.io/go-skynet/local-ai:latest
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: MODELS_PATH
+              value: "/models"
+            - name: DEBUG
+              value: "false"
+            - name: THREADS
+              value: "4"
+            - name: CONTEXT_SIZE
+              value: "4096"
+            - name: PRELOAD_MODELS
+              value: '[{"id": "granite-3.0-8b-instruct", "url": "huggingface://bartowski/granite-3.0-8b-instruct-GGUF/granite-3.0-8b-instruct-Q4_K_M.gguf"}]'
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: config
+              mountPath: /config
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2"
+            limits:
+              memory: "8Gi"
+              cpu: "4"
+          livenessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 20  # Allow up to 200 seconds for model loading
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: localai-models-pvc
+        - name: config
+          configMap:
+            name: localai-config
+      nodeSelector:
+        # Prefer nodes with more memory for model inference
+        node.kubernetes.io/instance-type: "memory-optimized"
+      tolerations:
+        # Allow scheduling on nodes with specific taints for ML workloads
+        - key: "workload"
+          operator: "Equal"
+          value: "ml"
+          effect: "NoSchedule"
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: localai
+                topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: localai-service
+  namespace: prometheus-alerts-slm
+  labels:
+    app.kubernetes.io/name: localai
+    app.kubernetes.io/component: inference
+spec:
+  selector:
+    app.kubernetes.io/name: localai
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: localai-models-pvc
+  namespace: prometheus-alerts-slm
+  labels:
+    app.kubernetes.io/name: localai
+    app.kubernetes.io/component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi  # Enough for multiple GGUF models
+  storageClassName: fast-ssd  # Use fast storage for model loading

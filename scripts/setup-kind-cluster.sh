@@ -1,0 +1,252 @@
+#!/bin/bash
+
+set -euo pipefail
+
+CLUSTER_NAME="prometheus-alerts-slm-test"
+KIND_CONFIG="test/kind/kind-config.yaml"
+REGISTRY_NAME="kind-registry"
+REGISTRY_PORT="5001"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+log() {
+    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] $1${NC}"
+}
+
+warn() {
+    echo -e "${YELLOW}[$(date +'%Y-%m-%d %H:%M:%S')] WARNING: $1${NC}"
+}
+
+error() {
+    echo -e "${RED}[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1${NC}"
+}
+
+# Check if podman is available
+check_podman() {
+    if ! command -v podman &> /dev/null; then
+        error "Podman is not installed or not in PATH"
+        exit 1
+    fi
+    
+    if ! podman system connection list --format=json | grep -q "Name"; then
+        error "No podman system connections found. Please set up podman."
+        exit 1
+    fi
+    
+    log "Podman is available and configured"
+}
+
+# Check if kind is available
+check_kind() {
+    if ! command -v kind &> /dev/null; then
+        error "KinD is not installed. Please install kind:"
+        echo "  go install sigs.k8s.io/kind@latest"
+        echo "  or visit: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
+        exit 1
+    fi
+    log "KinD is available"
+}
+
+# Setup local registry with podman
+setup_registry() {
+    log "Setting up local registry with podman..."
+    
+    # Check if registry is already running
+    if podman ps --format "{{.Names}}" | grep -q "^${REGISTRY_NAME}$"; then
+        log "Registry ${REGISTRY_NAME} is already running"
+        return 0
+    fi
+    
+    # Remove existing registry container if it exists
+    if podman ps -a --format "{{.Names}}" | grep -q "^${REGISTRY_NAME}$"; then
+        log "Removing existing registry container..."
+        podman rm -f "${REGISTRY_NAME}"
+    fi
+    
+    # Start registry
+    podman run -d \
+        --name "${REGISTRY_NAME}" \
+        --restart=always \
+        -p "127.0.0.1:${REGISTRY_PORT}:5000" \
+        docker.io/library/registry:2
+    
+    log "Local registry started on localhost:${REGISTRY_PORT}"
+}
+
+# Create kind cluster
+create_cluster() {
+    log "Creating KinD cluster: ${CLUSTER_NAME}"
+    
+    # Check if cluster already exists
+    if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+        warn "Cluster ${CLUSTER_NAME} already exists. Deleting first..."
+        kind delete cluster --name="${CLUSTER_NAME}"
+    fi
+    
+    # Ensure kind config exists
+    if [[ ! -f "${KIND_CONFIG}" ]]; then
+        error "KinD config file not found: ${KIND_CONFIG}"
+        exit 1
+    fi
+    
+    # Set podman as the provider for kind
+    export KIND_EXPERIMENTAL_PROVIDER=podman
+    
+    # Create cluster
+    kind create cluster \
+        --name="${CLUSTER_NAME}" \
+        --config="${KIND_CONFIG}" \
+        --wait=300s
+    
+    log "KinD cluster created successfully"
+}
+
+# Connect registry to kind network
+connect_registry() {
+    log "Connecting registry to kind network..."
+    
+    # Get the kind network name
+    local kind_network
+    kind_network=$(podman network ls --format "{{.Name}}" | grep kind || echo "kind")
+    
+    # Connect registry to kind network if not already connected
+    if ! podman inspect "${REGISTRY_NAME}" --format="{{.NetworkSettings.Networks}}" | grep -q "${kind_network}"; then
+        podman network connect "${kind_network}" "${REGISTRY_NAME}" || {
+            warn "Failed to connect registry to kind network, continuing anyway..."
+        }
+    fi
+    
+    log "Registry connected to kind network"
+}
+
+# Configure kubectl context
+configure_kubectl() {
+    log "Configuring kubectl context..."
+    
+    # Set kubectl context to the new cluster
+    kubectl cluster-info --context "kind-${CLUSTER_NAME}"
+    kubectl config use-context "kind-${CLUSTER_NAME}"
+    
+    # Wait for cluster to be ready
+    log "Waiting for cluster to be ready..."
+    kubectl wait --for=condition=Ready nodes --all --timeout=300s
+    
+    log "Cluster is ready!"
+}
+
+# Deploy monitoring stack
+deploy_monitoring_stack() {
+    log "Deploying Prometheus monitoring stack..."
+    
+    # Apply monitoring manifests
+    kubectl apply -f test/manifests/monitoring/namespace.yaml
+    kubectl apply -f test/manifests/monitoring/prometheus-rbac.yaml
+    kubectl apply -f test/manifests/monitoring/prometheus-config.yaml
+    kubectl apply -f test/manifests/monitoring/alert-rules.yaml
+    kubectl apply -f test/manifests/monitoring/prometheus-deployment.yaml
+    kubectl apply -f test/manifests/monitoring/alertmanager-config.yaml
+    kubectl apply -f test/manifests/monitoring/alertmanager-deployment.yaml
+    kubectl apply -f test/manifests/monitoring/kube-state-metrics.yaml
+    
+    log "Waiting for monitoring stack to be ready..."
+    
+    # Wait for Prometheus to be ready
+    kubectl wait --for=condition=Available deployment/prometheus -n monitoring --timeout=300s
+    log "Prometheus is ready"
+    
+    # Wait for AlertManager to be ready
+    kubectl wait --for=condition=Available deployment/alertmanager -n monitoring --timeout=300s
+    log "AlertManager is ready"
+    
+    # Wait for kube-state-metrics to be ready
+    kubectl wait --for=condition=Available deployment/kube-state-metrics -n monitoring --timeout=300s
+    log "Kube-state-metrics is ready"
+    
+    log "Monitoring stack deployed successfully"
+}
+
+# Deploy test prerequisites
+deploy_prerequisites() {
+    log "Deploying test prerequisites..."
+    
+    # Create test namespace
+    kubectl create namespace e2e-test --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Apply test manifests if they exist
+    if [[ -f "test/manifests/test-deployment.yaml" ]]; then
+        kubectl apply -f test/manifests/test-deployment.yaml -n e2e-test
+        log "Test deployment applied"
+    fi
+    
+    # Create RBAC for prometheus-alerts-slm
+    kubectl create serviceaccount prometheus-alerts-slm -n e2e-test --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Grant necessary permissions for testing
+    kubectl create clusterrolebinding prometheus-alerts-slm-admin \
+        --clusterrole=cluster-admin \
+        --serviceaccount=e2e-test:prometheus-alerts-slm \
+        --dry-run=client -o yaml | kubectl apply -f -
+    
+    log "Prerequisites deployed successfully"
+}
+
+# Main execution
+main() {
+    log "Setting up KinD cluster for e2e testing with Podman..."
+    
+    check_podman
+    check_kind
+    setup_registry
+    create_cluster
+    connect_registry
+    configure_kubectl
+    deploy_monitoring_stack
+    deploy_prerequisites
+    
+    log "KinD cluster setup complete!"
+    echo ""
+    log "Cluster info:"
+    kubectl cluster-info --context "kind-${CLUSTER_NAME}"
+    echo ""
+    log "Monitoring services:"
+    kubectl get pods,svc -n monitoring
+    echo ""
+    log "Test environment:"
+    kubectl get pods,svc -n e2e-test
+    echo ""
+    log "To use this cluster:"
+    echo "  export KUBECONFIG=\"\$(kind get kubeconfig --name=${CLUSTER_NAME})\""
+    echo "  kubectl config use-context kind-${CLUSTER_NAME}"
+    echo ""
+    log "To access services:"
+    echo "  kubectl port-forward svc/prometheus 9090:9090 -n monitoring"
+    echo "  kubectl port-forward svc/alertmanager 9093:9093 -n monitoring"
+    echo ""
+    log "To run e2e tests:"
+    echo "  make test-e2e-kind"
+    echo ""
+    log "To clean up:"
+    echo "  ./scripts/cleanup-kind-cluster.sh"
+}
+
+# Handle script arguments
+case "${1:-}" in
+    --help|-h)
+        echo "Usage: $0 [--help]"
+        echo ""
+        echo "Sets up a KinD cluster for e2e testing using Podman as the container runtime."
+        echo ""
+        echo "Prerequisites:"
+        echo "  - podman (configured and running)"
+        echo "  - kind (https://kind.sigs.k8s.io/)"
+        echo "  - kubectl"
+        exit 0
+        ;;
+    *)
+        main "$@"
+        ;;
+esac

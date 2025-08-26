@@ -1,0 +1,21 @@
+{
+  "version": "4",
+  "groupKey": "{alertname=\"TestAlert\"}",
+  "status": "firing",
+  "receiver": "slm-processor",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "TestAlert",
+        "severity": "info"
+        // Missing closing brace here
+      "annotations": {
+        "description": "This is an invalid payload"
+      },
+      "startsAt": "not-a-valid-timestamp"
+    }
+  ]
+  // Trailing comma error
+  ,
+}

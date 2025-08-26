@@ -1,0 +1,42 @@
+{
+  "version": "4",
+  "groupKey": "pod-crash-group",
+  "status": "firing",
+  "receiver": "prometheus-alerts-slm",
+  "groupLabels": {
+    "alertname": "PodCrashLooping"
+  },
+  "commonLabels": {
+    "alertname": "PodCrashLooping",
+    "severity": "critical",
+    "namespace": "production"
+  },
+  "commonAnnotations": {
+    "description": "Pod is crash looping",
+    "summary": "Pod restart count exceeds threshold"
+  },
+  "externalURL": "http://alertmanager.example.com:9093",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PodCrashLooping",
+        "severity": "critical",
+        "namespace": "production",
+        "pod": "api-server-789def",
+        "deployment": "api-server",
+        "container": "api",
+        "node": "worker-1"
+      },
+      "annotations": {
+        "description": "Pod api-server-789def has restarted 15 times in the last 10 minutes",
+        "summary": "Critical: Pod api-server-789def is crash looping",
+        "runbook_url": "https://wiki.example.com/runbooks/crashes"
+      },
+      "startsAt": "2024-01-15T14:15:00.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.example.com:9090/graph?g0.expr=pod_restart_count",
+      "fingerprint": "crash789def123"
+    }
+  ]
+}

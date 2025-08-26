@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+data:
+  test-rules.yml: |
+    groups:
+    - name: e2e-test-rules
+      interval: 5s
+      rules:
+      - alert: HighMemoryUsageE2E
+        expr: container_memory_usage_bytes{pod=~"test-app-e2e-.*"} / container_spec_memory_limit_bytes{pod=~"test-app-e2e-.*"} > 0.8
+        for: 10s
+        labels:
+          severity: warning
+          namespace: e2e-test
+          alertname: HighMemoryUsageE2E
+        annotations:
+          summary: "High memory usage detected in e2e test"
+          description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit"
+          runbook_url: "https://wiki.example.com/runbooks/memory"
+      
+      - alert: PodCrashLoopingE2E
+        expr: rate(kube_pod_container_status_restarts_total{namespace="e2e-test"}[5m]) > 0.1
+        for: 30s
+        labels:
+          severity: critical
+          namespace: e2e-test
+          alertname: PodCrashLoopingE2E
+        annotations:
+          summary: "Pod is crash looping in e2e test"
+          description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last 5 minutes"
+          last_termination_reason: "OOMKilled"
+      
+      - alert: DeploymentReplicasMismatchE2E
+        expr: kube_deployment_status_replicas{namespace="e2e-test"} != kube_deployment_spec_replicas{namespace="e2e-test"}
+        for: 60s
+        labels:
+          severity: warning
+          namespace: e2e-test
+          alertname: DeploymentReplicasMismatchE2E
+        annotations:
+          summary: "Deployment replicas mismatch in e2e test"
+          description: "Deployment {{ $labels.deployment }} has {{ $value }} ready replicas, expected {{ $labels.spec_replicas }}"
+      
+      - alert: TestAlertAlwaysFiring
+        expr: up{job="prometheus-alerts-slm"} >= 0
+        for: 1s
+        labels:
+          severity: info
+          namespace: e2e-test
+          alertname: TestAlertAlwaysFiring
+        annotations:
+          summary: "Test alert for e2e validation"
+          description: "This alert always fires to test the complete alert processing pipeline"
+          test_type: "synthetic"

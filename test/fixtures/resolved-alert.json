@@ -1,0 +1,55 @@
+{
+  "version": "4",
+  "groupKey": "{alertname=\"HighMemoryUsage\"}",
+  "truncatedAlerts": 0,
+  "status": "resolved",
+  "receiver": "slm-processor",
+  "groupLabels": {
+    "alertname": "HighMemoryUsage"
+  },
+  "commonLabels": {
+    "alertname": "HighMemoryUsage",
+    "severity": "warning",
+    "namespace": "production",
+    "pod": "webapp-deployment-5c7d8f9b4c-xyz123",
+    "deployment": "webapp-deployment",
+    "container": "webapp",
+    "cluster": "openshift-prod",
+    "prometheus": "openshift-monitoring/k8s"
+  },
+  "commonAnnotations": {
+    "description": "Pod webapp-deployment-5c7d8f9b4c-xyz123 memory usage is back to normal (65% of limit)",
+    "summary": "Memory usage normalized",
+    "runbook_url": "https://runbooks.example.com/HighMemoryUsage"
+  },
+  "externalURL": "https://alertmanager.example.com",
+  "alerts": [
+    {
+      "status": "resolved",
+      "labels": {
+        "alertname": "HighMemoryUsage",
+        "severity": "warning",
+        "namespace": "production",
+        "pod": "webapp-deployment-5c7d8f9b4c-xyz123",
+        "deployment": "webapp-deployment",
+        "container": "webapp",
+        "cluster": "openshift-prod",
+        "prometheus": "openshift-monitoring/k8s",
+        "job": "kubernetes-pods",
+        "instance": "10.129.2.45:8080"
+      },
+      "annotations": {
+        "description": "Pod webapp-deployment-5c7d8f9b4c-xyz123 memory usage is back to normal (65% of limit)",
+        "summary": "Memory usage normalized",
+        "runbook_url": "https://runbooks.example.com/HighMemoryUsage",
+        "memory_usage_bytes": "1395864371",
+        "memory_limit_bytes": "2147483648",
+        "memory_percentage": "65"
+      },
+      "startsAt": "2024-08-25T10:30:00Z",
+      "endsAt": "2024-08-25T14:00:00Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_memory_usage_bytes",
+      "fingerprint": "6f3d2e1a9b8c7d5e"
+    }
+  ]
+}

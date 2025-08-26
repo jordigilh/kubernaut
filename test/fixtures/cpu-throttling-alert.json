@@ -1,0 +1,56 @@
+{
+  "version": "4",
+  "groupKey": "{alertname=\"CPUThrottlingHigh\"}",
+  "truncatedAlerts": 0,
+  "status": "firing",
+  "receiver": "slm-processor",
+  "groupLabels": {
+    "alertname": "CPUThrottlingHigh"
+  },
+  "commonLabels": {
+    "alertname": "CPUThrottlingHigh",
+    "severity": "warning",
+    "namespace": "staging",
+    "pod": "api-gateway-6d4b79c5f9-abcdef",
+    "deployment": "api-gateway",
+    "container": "gateway",
+    "cluster": "openshift-staging",
+    "prometheus": "openshift-monitoring/k8s"
+  },
+  "commonAnnotations": {
+    "description": "Container gateway in pod api-gateway-6d4b79c5f9-abcdef is being throttled 45% of the time",
+    "summary": "High CPU throttling detected",
+    "runbook_url": "https://runbooks.example.com/CPUThrottlingHigh"
+  },
+  "externalURL": "https://alertmanager.example.com",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "CPUThrottlingHigh",
+        "severity": "warning",
+        "namespace": "staging",
+        "pod": "api-gateway-6d4b79c5f9-abcdef",
+        "deployment": "api-gateway",
+        "container": "gateway",
+        "cluster": "openshift-staging",
+        "prometheus": "openshift-monitoring/k8s",
+        "job": "kubernetes-pods",
+        "node": "worker-node-03.example.com"
+      },
+      "annotations": {
+        "description": "Container gateway in pod api-gateway-6d4b79c5f9-abcdef is being throttled 45% of the time",
+        "summary": "High CPU throttling detected",
+        "runbook_url": "https://runbooks.example.com/CPUThrottlingHigh",
+        "throttling_percentage": "45",
+        "cpu_limit": "500m",
+        "cpu_usage": "480m",
+        "recommended_limit": "750m"
+      },
+      "startsAt": "2024-08-25T12:15:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_cpu_cfs_throttled_periods_total",
+      "fingerprint": "i9j8k7l6m5n4o3p2"
+    }
+  ]
+}

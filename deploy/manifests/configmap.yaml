@@ -1,0 +1,93 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alerts-slm-config
+  namespace: prometheus-alerts-slm
+  labels:
+    app.kubernetes.io/name: prometheus-alerts-slm
+    app.kubernetes.io/component: config
+data:
+  app.yaml: |
+    app:
+      name: prometheus-alerts-slm
+      version: 1.0.0
+      
+    server:
+      webhook_port: "8080"
+      metrics_port: "9090"
+      health_port: "8081"
+      
+    logging:
+      level: info
+      format: json
+      
+    slm:
+      provider: localai
+      endpoint: http://localai-service:8080
+      model: granite-3.0-8b-instruct
+      timeout: 30s
+      retry_count: 3
+      temperature: 0.3
+      max_tokens: 500
+      
+    openshift:
+      namespace: default
+      service_account: prometheus-alerts-slm
+      
+    actions:
+      dry_run: false
+      max_concurrent: 5
+      cooldown_period: 5m
+      
+    webhook:
+      port: "8080"
+      path: "/alerts"
+      auth:
+        type: bearer
+        
+    filters:
+      - name: "critical-alerts"
+        conditions:
+          severity: ["critical", "warning"]
+      - name: "production-namespace"
+        conditions:
+          namespace: ["production", "staging", "default"]
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: localai-config
+  namespace: prometheus-alerts-slm
+  labels:
+    app.kubernetes.io/name: localai
+    app.kubernetes.io/component: config
+data:
+  granite-3.0-8b-instruct.yaml: |
+    name: granite-3.0-8b-instruct
+    backend: llama
+    parameters:
+      model: granite-3.0-8b-instruct.gguf
+      
+    # Model configuration
+    context_size: 4096
+    threads: 4
+    temperature: 0.3
+    top_k: 40
+    top_p: 0.9
+    
+    # Performance settings
+    batch: 512
+    gpu_layers: 0
+    
+    # Chat template for IBM Granite
+    template:
+      chat: |
+        <|system|>
+        You are a helpful AI assistant specialized in analyzing Kubernetes alerts and recommending automated remediation actions.
+        <|user|>
+        {{.Input}}
+        <|assistant|>
+        
+      completion: |
+        {{.Input}}
