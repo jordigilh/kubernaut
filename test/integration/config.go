@@ -8,25 +8,25 @@ import (
 
 // IntegrationConfig holds configuration for integration tests
 type IntegrationConfig struct {
-	OllamaEndpoint   string
-	OllamaModel      string
-	TestTimeout      time.Duration
-	MaxRetries       int
-	SkipSlowTests    bool
-	LogLevel         string
-	SkipIntegration  bool
+	OllamaEndpoint  string
+	OllamaModel     string
+	TestTimeout     time.Duration
+	MaxRetries      int
+	SkipSlowTests   bool
+	LogLevel        string
+	SkipIntegration bool
 }
 
 // LoadConfig loads integration test configuration from environment variables
 func LoadConfig() IntegrationConfig {
 	return IntegrationConfig{
-		OllamaEndpoint:   getEnvOrDefault("OLLAMA_ENDPOINT", "http://localhost:11434"),
-		OllamaModel:      getEnvOrDefault("OLLAMA_MODEL", "granite3.1-dense:8b"),
-		TestTimeout:      getDurationEnvOrDefault("TEST_TIMEOUT", 120*time.Second),
-		MaxRetries:       getIntEnvOrDefault("MAX_RETRIES", 3),
-		SkipSlowTests:    getBoolEnvOrDefault("SKIP_SLOW_TESTS", false),
-		LogLevel:         getEnvOrDefault("LOG_LEVEL", "debug"),
-		SkipIntegration:  getBoolEnvOrDefault("SKIP_INTEGRATION", false),
+		OllamaEndpoint:  getEnvOrDefault("OLLAMA_ENDPOINT", "http://localhost:11434"),
+		OllamaModel:     getEnvOrDefault("OLLAMA_MODEL", "granite3.1-dense:8b"),
+		TestTimeout:     getDurationEnvOrDefault("TEST_TIMEOUT", 120*time.Second),
+		MaxRetries:      getIntEnvOrDefault("MAX_RETRIES", 3),
+		SkipSlowTests:   getBoolEnvOrDefault("SKIP_SLOW_TESTS", false),
+		LogLevel:        getEnvOrDefault("LOG_LEVEL", "debug"),
+		SkipIntegration: getBoolEnvOrDefault("SKIP_INTEGRATION", false),
 	}
 }
 

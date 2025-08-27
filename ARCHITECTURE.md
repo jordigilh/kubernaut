@@ -509,18 +509,21 @@ github.com/onsi/gomega     // Assertion library
    - Individual component testing
    - Interface contract validation
    - Error condition handling
-   - Mock-free testing where possible
+   - Uses fake Kubernetes client API (`k8s.io/client-go/kubernetes/fake`)
+   - No mocking frameworks - pure fake implementations
 
 2. **Integration Tests** (`test/integration/`):
-   - SLM integration with Ollama/Granite
-   - Kubernetes API interactions
-   - Configuration loading
+   - Real SLM integration with Ollama/Granite models
+   - Fake Kubernetes API interactions using client-go fake
+   - Complete fake client implementation with advanced actions
+   - Configuration loading and validation
    - Build tag: `//go:build integration`
+   - Actions: rollback_deployment, expand_pvc, drain_node, quarantine_pod, collect_diagnostics
 
 3. **End-to-End Tests** (`test/e2e/`):
-   - Complete alert processing flow
-   - KinD cluster with monitoring stack
-   - Real Prometheus/AlertManager integration
+   - Complete alert processing flow (planned)
+   - KinD cluster with monitoring stack (planned)
+   - Real Prometheus/AlertManager integration (planned)
    - Build tag: `//go:build e2e`
 
 ### KinD Testing Infrastructure
@@ -546,14 +549,24 @@ make setup-kind
 ### Testing Commands
 
 ```bash
-# Unit tests
+# Unit tests (all packages)
 go test ./...
 
-# Integration tests
+# Integration tests with Ollama
 make test-integration
 
-# E2E tests with KinD
-make test-e2e-kind
+# Integration tests with fake client
+OLLAMA_ENDPOINT=http://localhost:11434 OLLAMA_MODEL=granite3.1-dense:8b \
+go test -v -tags=integration ./test/integration/...
+
+# Quick integration tests (skip slow scenarios)
+SKIP_SLOW_TESTS=true make test-integration
+
+# Validate integration test environment
+make validate-integration
+
+# E2E tests with KinD (planned)
+# make test-e2e-kind
 
 # Monitoring stack E2E
 make test-e2e-monitoring

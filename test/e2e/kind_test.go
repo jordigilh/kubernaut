@@ -11,8 +11,8 @@ import (
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/executor"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/mcp"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -180,7 +180,7 @@ func testExecutorIntegration(t *testing.T, logger *logrus.Logger) {
 	exec := executor.NewExecutor(mcpClient, executorConfig, logger)
 
 	// Create test action recommendation
-	actionRecommendation := &slm.ActionRecommendation{
+	actionRecommendation := &types.ActionRecommendation{
 		Action: "scale_deployment",
 		Parameters: map[string]interface{}{
 			"replicas": 3,
@@ -190,7 +190,7 @@ func testExecutorIntegration(t *testing.T, logger *logrus.Logger) {
 	}
 
 	// Create test alert
-	testAlert := slm.Alert{
+	testAlert := types.Alert{
 		Name:        "TestDeploymentScale",
 		Namespace:   testNamespace,
 		Resource:    testDeployment,

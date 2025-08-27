@@ -14,39 +14,39 @@ type ResourceMonitor struct {
 
 // Measurement represents a single resource measurement
 type Measurement struct {
-	Timestamp    time.Time     `json:"timestamp"`
-	MemoryUsage  uint64        `json:"memory_usage"`
-	ResponseTime time.Duration `json:"response_time"`
-	NumGoroutines int          `json:"num_goroutines"`
+	Timestamp     time.Time     `json:"timestamp"`
+	MemoryUsage   uint64        `json:"memory_usage"`
+	ResponseTime  time.Duration `json:"response_time"`
+	NumGoroutines int           `json:"num_goroutines"`
 }
 
 // ResourceReport summarizes resource usage over the test period
 type ResourceReport struct {
-	TotalDuration     time.Duration `json:"total_duration"`
-	AverageResponse   time.Duration `json:"average_response"`
-	MaxResponse       time.Duration `json:"max_response"`
-	MinResponse       time.Duration `json:"min_response"`
-	P95Response       time.Duration `json:"p95_response"`
-	P99Response       time.Duration `json:"p99_response"`
-	MemoryGrowth      int64         `json:"memory_growth"`
-	MaxMemoryUsage    uint64        `json:"max_memory_usage"`
-	MeasurementCount  int           `json:"measurement_count"`
-	GoroutineGrowth   int           `json:"goroutine_growth"`
+	TotalDuration    time.Duration `json:"total_duration"`
+	AverageResponse  time.Duration `json:"average_response"`
+	MaxResponse      time.Duration `json:"max_response"`
+	MinResponse      time.Duration `json:"min_response"`
+	P95Response      time.Duration `json:"p95_response"`
+	P99Response      time.Duration `json:"p99_response"`
+	MemoryGrowth     int64         `json:"memory_growth"`
+	MaxMemoryUsage   uint64        `json:"max_memory_usage"`
+	MeasurementCount int           `json:"measurement_count"`
+	GoroutineGrowth  int           `json:"goroutine_growth"`
 }
 
 // IntegrationTestReport contains the complete test results
 type IntegrationTestReport struct {
-	TotalTests       int                    `json:"total_tests"`
-	PassedTests      int                    `json:"passed_tests"`
-	FailedTests      []string              `json:"failed_tests"`
-	SkippedTests     []string              `json:"skipped_tests"`
-	AverageResponse  time.Duration         `json:"average_response_time"`
-	MaxResponse      time.Duration         `json:"max_response_time"`
-	ResourceUsage    ResourceReport        `json:"resource_usage"`
-	ModelResponses   []ModelResponse       `json:"model_responses"`
-	ActionDistribution map[string]int      `json:"action_distribution"`
-	ConfidenceStats  ConfidenceStats       `json:"confidence_stats"`
-	TestDuration     time.Duration         `json:"test_duration"`
+	TotalTests         int             `json:"total_tests"`
+	PassedTests        int             `json:"passed_tests"`
+	FailedTests        []string        `json:"failed_tests"`
+	SkippedTests       []string        `json:"skipped_tests"`
+	AverageResponse    time.Duration   `json:"average_response_time"`
+	MaxResponse        time.Duration   `json:"max_response_time"`
+	ResourceUsage      ResourceReport  `json:"resource_usage"`
+	ModelResponses     []ModelResponse `json:"model_responses"`
+	ActionDistribution map[string]int  `json:"action_distribution"`
+	ConfidenceStats    ConfidenceStats `json:"confidence_stats"`
+	TestDuration       time.Duration   `json:"test_duration"`
 }
 
 // ModelResponse captures a single model response for analysis
@@ -62,20 +62,20 @@ type ModelResponse struct {
 
 // ConfidenceStats provides statistics about confidence scores
 type ConfidenceStats struct {
-	Average   float64 `json:"average"`
-	Min       float64 `json:"min"`
-	Max       float64 `json:"max"`
-	P50       float64 `json:"p50"`
-	P95       float64 `json:"p95"`
-	P99       float64 `json:"p99"`
-	Count     int     `json:"count"`
+	Average float64 `json:"average"`
+	Min     float64 `json:"min"`
+	Max     float64 `json:"max"`
+	P50     float64 `json:"p50"`
+	P95     float64 `json:"p95"`
+	P99     float64 `json:"p99"`
+	Count   int     `json:"count"`
 }
 
 // NewResourceMonitor creates a new resource monitor
 func NewResourceMonitor() *ResourceMonitor {
 	var startMem runtime.MemStats
 	runtime.ReadMemStats(&startMem)
-	
+
 	return &ResourceMonitor{
 		StartTime:    time.Now(),
 		StartMemory:  startMem,
@@ -87,7 +87,7 @@ func NewResourceMonitor() *ResourceMonitor {
 func (rm *ResourceMonitor) RecordMeasurement(responseTime time.Duration) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	rm.Measurements = append(rm.Measurements, Measurement{
 		Timestamp:     time.Now(),
 		MemoryUsage:   m.Alloc,
@@ -112,7 +112,7 @@ func (rm *ResourceMonitor) GenerateReport() ResourceReport {
 	for i, m := range rm.Measurements {
 		totalResponse += m.ResponseTime
 		responseTimes[i] = m.ResponseTime
-		
+
 		if m.ResponseTime > maxResponse {
 			maxResponse = m.ResponseTime
 		}
@@ -125,7 +125,7 @@ func (rm *ResourceMonitor) GenerateReport() ResourceReport {
 	}
 
 	avgResponse := totalResponse / time.Duration(len(rm.Measurements))
-	
+
 	// Calculate percentiles
 	p95Response := calculatePercentile(responseTimes, 0.95)
 	p99Response := calculatePercentile(responseTimes, 0.99)
@@ -168,7 +168,7 @@ func calculatePercentile(times []time.Duration, percentile float64) time.Duratio
 	if index >= len(times) {
 		index = len(times) - 1
 	}
-	
+
 	// Find the value at the percentile index (simplified)
 	// In a real implementation, we'd sort the slice first
 	return times[index]
@@ -187,7 +187,7 @@ func NewIntegrationTestReport() *IntegrationTestReport {
 // AddModelResponse adds a model response to the report
 func (itr *IntegrationTestReport) AddModelResponse(response ModelResponse) {
 	itr.ModelResponses = append(itr.ModelResponses, response)
-	
+
 	if response.Success {
 		itr.ActionDistribution[response.Action]++
 	}
@@ -211,7 +211,7 @@ func (itr *IntegrationTestReport) CalculateStats(resourceReport ResourceReport) 
 	if len(itr.ModelResponses) > 0 {
 		var totalResponseTime time.Duration
 		var maxResponseTime time.Duration
-		
+
 		for _, response := range itr.ModelResponses {
 			if response.Success {
 				totalResponseTime += response.ResponseTime
@@ -220,7 +220,7 @@ func (itr *IntegrationTestReport) CalculateStats(resourceReport ResourceReport) 
 				}
 			}
 		}
-		
+
 		successfulResponses := itr.PassedTests
 		if successfulResponses > 0 {
 			itr.AverageResponse = totalResponseTime / time.Duration(successfulResponses)
@@ -235,7 +235,7 @@ func (itr *IntegrationTestReport) CalculateStats(resourceReport ResourceReport) 
 // calculateConfidenceStats calculates confidence score statistics
 func (itr *IntegrationTestReport) calculateConfidenceStats() ConfidenceStats {
 	var confidences []float64
-	
+
 	for _, response := range itr.ModelResponses {
 		if response.Success {
 			confidences = append(confidences, response.Confidence)
@@ -249,7 +249,7 @@ func (itr *IntegrationTestReport) calculateConfidenceStats() ConfidenceStats {
 	// Calculate basic statistics
 	var sum float64
 	var min, max float64 = 1.0, 0.0
-	
+
 	for _, conf := range confidences {
 		sum += conf
 		if conf < min {

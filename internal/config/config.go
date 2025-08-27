@@ -10,14 +10,14 @@ import (
 )
 
 type Config struct {
-	App       AppConfig       `yaml:"app"`
-	Server    ServerConfig    `yaml:"server"`
-	Logging   LoggingConfig   `yaml:"logging"`
-	SLM       SLMConfig       `yaml:"slm"`
-	OpenShift OpenShiftConfig `yaml:"openshift"`
-	Actions   ActionsConfig   `yaml:"actions"`
-	Webhook   WebhookConfig   `yaml:"webhook"`
-	Filters   []FilterConfig  `yaml:"filters"`
+	App        AppConfig        `yaml:"app"`
+	Server     ServerConfig     `yaml:"server"`
+	Logging    LoggingConfig    `yaml:"logging"`
+	SLM        SLMConfig        `yaml:"slm"`
+	Kubernetes KubernetesConfig `yaml:"kubernetes"`
+	Actions    ActionsConfig    `yaml:"actions"`
+	Webhook    WebhookConfig    `yaml:"webhook"`
+	Filters    []FilterConfig   `yaml:"filters"`
 }
 
 type AppConfig struct {
@@ -47,21 +47,21 @@ type SLMConfig struct {
 	MaxTokens   int           `yaml:"max_tokens"`  // Maximum tokens for response
 }
 
-type OpenShiftConfig struct {
-	Context       string `yaml:"context"`
-	Namespace     string `yaml:"namespace"`
+type KubernetesConfig struct {
+	Context        string `yaml:"context"`
+	Namespace      string `yaml:"namespace"`
 	ServiceAccount string `yaml:"service_account"`
 }
 
 type ActionsConfig struct {
-	DryRun          bool          `yaml:"dry_run"`
-	MaxConcurrent   int           `yaml:"max_concurrent"`
-	CooldownPeriod  time.Duration `yaml:"cooldown_period"`
+	DryRun         bool          `yaml:"dry_run"`
+	MaxConcurrent  int           `yaml:"max_concurrent"`
+	CooldownPeriod time.Duration `yaml:"cooldown_period"`
 }
 
 type WebhookConfig struct {
-	Port string          `yaml:"port"`
-	Path string          `yaml:"path"`
+	Port string            `yaml:"port"`
+	Path string            `yaml:"path"`
 	Auth WebhookAuthConfig `yaml:"auth"`
 }
 
@@ -71,7 +71,7 @@ type WebhookAuthConfig struct {
 }
 
 type FilterConfig struct {
-	Name       string            `yaml:"name"`
+	Name       string              `yaml:"name"`
 	Conditions map[string][]string `yaml:"conditions"`
 }
 
@@ -99,7 +99,7 @@ func Load(configFile string) (*Config, error) {
 			Temperature: 0.3,
 			MaxTokens:   500,
 		},
-		OpenShift: OpenShiftConfig{
+		Kubernetes: KubernetesConfig{
 			Namespace:      "default",
 			ServiceAccount: "prometheus-alerts-slm",
 		},
@@ -168,12 +168,12 @@ func loadFromEnv(config *Config) error {
 		}
 	}
 
-	// OpenShift Configuration
-	if context := os.Getenv("OPENSHIFT_CONTEXT"); context != "" {
-		config.OpenShift.Context = context
+	// Kubernetes Configuration
+	if context := os.Getenv("KUBE_CONTEXT"); context != "" {
+		config.Kubernetes.Context = context
 	}
-	if namespace := os.Getenv("OPENSHIFT_NAMESPACE"); namespace != "" {
-		config.OpenShift.Namespace = namespace
+	if namespace := os.Getenv("KUBE_NAMESPACE"); namespace != "" {
+		config.Kubernetes.Namespace = namespace
 	}
 
 	// Application Configuration
@@ -227,8 +227,8 @@ func validate(config *Config) error {
 		return fmt.Errorf("SLM max tokens must be greater than 0")
 	}
 
-	if config.OpenShift.Namespace == "" {
-		return fmt.Errorf("OpenShift namespace is required")
+	if config.Kubernetes.Namespace == "" {
+		return fmt.Errorf("Kubernetes namespace is required")
 	}
 
 	if config.Actions.MaxConcurrent <= 0 {

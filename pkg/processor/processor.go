@@ -8,13 +8,15 @@ import (
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/executor"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/metrics"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/sirupsen/logrus"
 )
 
 type Processor interface {
-	ProcessAlert(ctx context.Context, alert slm.Alert) error
-	ShouldProcess(alert slm.Alert) bool
+	ProcessAlert(ctx context.Context, alert types.Alert) error
+	ShouldProcess(alert types.Alert) bool
 }
 
 type processor struct {
@@ -33,7 +35,7 @@ func NewProcessor(slmClient slm.Client, executor executor.Executor, filters []co
 	}
 }
 
-func (p *processor) ProcessAlert(ctx context.Context, alert slm.Alert) error {
+func (p *processor) ProcessAlert(ctx context.Context, alert types.Alert) error {
 	p.log.WithFields(logrus.Fields{
 		"alert":     alert.Name,
 		"namespace": alert.Namespace,
@@ -47,6 +49,8 @@ func (p *processor) ProcessAlert(ctx context.Context, alert slm.Alert) error {
 			"alert":     alert.Name,
 			"namespace": alert.Namespace,
 		}).Info("Alert filtered out, skipping processing")
+		// Record filtered alert (we'll track which filter later)
+		metrics.RecordFilteredAlert("general")
 		return nil
 	}
 
@@ -60,7 +64,10 @@ func (p *processor) ProcessAlert(ctx context.Context, alert slm.Alert) error {
 	}
 
 	// Analyze the alert with SLM
+	timer := metrics.NewTimer()
 	recommendation, err := p.slmClient.AnalyzeAlert(ctx, alert)
+	timer.RecordSLMAnalysis()
+
 	if err != nil {
 		return fmt.Errorf("failed to analyze alert with SLM: %w", err)
 	}
@@ -85,7 +92,7 @@ func (p *processor) ProcessAlert(ctx context.Context, alert slm.Alert) error {
 	return nil
 }
 
-func (p *processor) ShouldProcess(alert slm.Alert) bool {
+func (p *processor) ShouldProcess(alert types.Alert) bool {
 	// If no filters are configured, process all alerts
 	if len(p.filters) == 0 {
 		return true
@@ -105,7 +112,7 @@ func (p *processor) ShouldProcess(alert slm.Alert) bool {
 	return false
 }
 
-func (p *processor) matchesFilter(alert slm.Alert, filter config.FilterConfig) bool {
+func (p *processor) matchesFilter(alert types.Alert, filter config.FilterConfig) bool {
 	for condition, values := range filter.Conditions {
 		alertValue := p.getAlertValue(alert, condition)
 		if alertValue == "" {
@@ -120,7 +127,7 @@ func (p *processor) matchesFilter(alert slm.Alert, filter config.FilterConfig) b
 	return true
 }
 
-func (p *processor) getAlertValue(alert slm.Alert, condition string) string {
+func (p *processor) getAlertValue(alert types.Alert, condition string) string {
 	switch strings.ToLower(condition) {
 	case "severity":
 		return alert.Severity
@@ -189,38 +196,10 @@ func (p *processor) matchesPattern(value, pattern string) bool {
 	return false
 }
 
-// FilterAlert applies basic filtering logic to determine if an alert should be processed
-type FilterAlert struct {
-	Name        string            `json:"name"`
-	Status      string            `json:"status"`
-	Severity    string            `json:"severity"`
-	Description string            `json:"description"`
-	Namespace   string            `json:"namespace"`
-	Resource    string            `json:"resource"`
-	Labels      map[string]string `json:"labels"`
-	Annotations map[string]string `json:"annotations"`
-	StartsAt    time.Time         `json:"starts_at"`
-	EndsAt      *time.Time        `json:"ends_at,omitempty"`
-}
-
-// ConvertToSLMAlert converts a FilterAlert to an SLM Alert
-func ConvertToSLMAlert(filterAlert FilterAlert) slm.Alert {
-	return slm.Alert{
-		Name:        filterAlert.Name,
-		Status:      filterAlert.Status,
-		Severity:    filterAlert.Severity,
-		Description: filterAlert.Description,
-		Namespace:   filterAlert.Namespace,
-		Resource:    filterAlert.Resource,
-		Labels:      filterAlert.Labels,
-		Annotations: filterAlert.Annotations,
-		StartsAt:    filterAlert.StartsAt,
-		EndsAt:      filterAlert.EndsAt,
-	}
-}
+// FilterAlert is now deprecated - use types.Alert directly
 
 // ProcessAlerts processes multiple alerts in batch
-func (p *processor) ProcessAlerts(ctx context.Context, alerts []slm.Alert) []error {
+func (p *processor) ProcessAlerts(ctx context.Context, alerts []types.Alert) []error {
 	var errors []error
 
 	for _, alert := range alerts {
@@ -238,11 +217,11 @@ func (p *processor) ProcessAlerts(ctx context.Context, alerts []slm.Alert) []err
 
 // GetProcessingStats returns statistics about alert processing
 type ProcessingStats struct {
-	TotalProcessed int               `json:"total_processed"`
-	TotalFiltered  int               `json:"total_filtered"`
-	ActionCounts   map[string]int    `json:"action_counts"`
-	ErrorCount     int               `json:"error_count"`
-	LastProcessed  *time.Time        `json:"last_processed,omitempty"`
+	TotalProcessed int            `json:"total_processed"`
+	TotalFiltered  int            `json:"total_filtered"`
+	ActionCounts   map[string]int `json:"action_counts"`
+	ErrorCount     int            `json:"error_count"`
+	LastProcessed  *time.Time     `json:"last_processed,omitempty"`
 }
 
 // This would typically be implemented with metrics collection
