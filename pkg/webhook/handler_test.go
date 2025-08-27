@@ -16,19 +16,19 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/webhook"
 )
 
 // MockProcessor implements the processor.Processor interface for testing
 type MockProcessor struct {
-	ProcessAlertFunc   func(ctx context.Context, alert slm.Alert) error
-	ShouldProcessFunc  func(alert slm.Alert) bool
-	processedAlerts    []slm.Alert
+	ProcessAlertFunc   func(ctx context.Context, alert types.Alert) error
+	ShouldProcessFunc  func(alert types.Alert) bool
+	processedAlerts    []types.Alert
 	shouldProcessCalls int
 }
 
-func (m *MockProcessor) ProcessAlert(ctx context.Context, alert slm.Alert) error {
+func (m *MockProcessor) ProcessAlert(ctx context.Context, alert types.Alert) error {
 	m.processedAlerts = append(m.processedAlerts, alert)
 	if m.ProcessAlertFunc != nil {
 		return m.ProcessAlertFunc(ctx, alert)
@@ -36,7 +36,7 @@ func (m *MockProcessor) ProcessAlert(ctx context.Context, alert slm.Alert) error
 	return nil
 }
 
-func (m *MockProcessor) ShouldProcess(alert slm.Alert) bool {
+func (m *MockProcessor) ShouldProcess(alert types.Alert) bool {
 	m.shouldProcessCalls++
 	if m.ShouldProcessFunc != nil {
 		return m.ShouldProcessFunc(alert)
@@ -44,7 +44,7 @@ func (m *MockProcessor) ShouldProcess(alert slm.Alert) bool {
 	return true
 }
 
-func (m *MockProcessor) GetProcessedAlerts() []slm.Alert {
+func (m *MockProcessor) GetProcessedAlerts() []types.Alert {
 	return m.processedAlerts
 }
 
@@ -67,7 +67,7 @@ var _ = Describe("Webhook Handler", func() {
 		logger.SetOutput(GinkgoWriter)
 
 		mockProcessor = &MockProcessor{
-			processedAlerts: []slm.Alert{},
+			processedAlerts: []types.Alert{},
 		}
 
 		webhookConfig = config.WebhookConfig{
@@ -434,7 +434,7 @@ var _ = Describe("Webhook Handler", func() {
 	Describe("Error Handling", func() {
 		It("should continue processing other alerts if one fails", func() {
 			callCount := 0
-			mockProcessor.ProcessAlertFunc = func(ctx context.Context, alert slm.Alert) error {
+			mockProcessor.ProcessAlertFunc = func(ctx context.Context, alert types.Alert) error {
 				callCount++
 				if callCount == 2 {
 					return io.ErrUnexpectedEOF // Simulate error on second alert
@@ -453,7 +453,7 @@ var _ = Describe("Webhook Handler", func() {
 		})
 
 		It("should handle processor panic gracefully", func() {
-			mockProcessor.ProcessAlertFunc = func(ctx context.Context, alert slm.Alert) error {
+			mockProcessor.ProcessAlertFunc = func(ctx context.Context, alert types.Alert) error {
 				panic("simulated panic")
 			}
 
@@ -471,7 +471,7 @@ var _ = Describe("Webhook Handler", func() {
 		})
 
 		It("should handle context cancellation", func() {
-			mockProcessor.ProcessAlertFunc = func(ctx context.Context, alert slm.Alert) error {
+			mockProcessor.ProcessAlertFunc = func(ctx context.Context, alert types.Alert) error {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()

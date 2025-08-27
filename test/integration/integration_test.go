@@ -12,6 +12,7 @@ import (
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -48,7 +49,7 @@ func TestSLMIntegration(t *testing.T) {
 	}
 
 	// Create test alert
-	testAlert := slm.Alert{
+	testAlert := types.Alert{
 		Name:        "HighMemoryUsage",
 		Status:      "firing",
 		Severity:    "warning",
@@ -100,7 +101,7 @@ func TestSLMIntegration(t *testing.T) {
 		t.Errorf("Invalid confidence: %f, expected between 0.0 and 1.0", recommendation.Confidence)
 	}
 
-	t.Logf("Integration test successful - Action: %s, Confidence: %.2f", 
+	t.Logf("Integration test successful - Action: %s, Confidence: %.2f",
 		recommendation.Action, recommendation.Confidence)
 }
 
@@ -112,7 +113,7 @@ func TestKubernetesIntegration(t *testing.T) {
 
 	// This test would require actual cluster access
 	// For now, we'll create a basic test that validates the manifests
-	
+
 	// Check if test deployment manifest exists
 	manifestPath := filepath.Join("..", "manifests", "test-deployment.yaml")
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
@@ -134,6 +135,6 @@ func TestEndToEndFlow(t *testing.T) {
 	// 3. Analyze with SLM
 	// 4. Execute action via executor
 	// 5. Verify result
-	
+
 	t.Log("End-to-end test placeholder - would test complete alert processing flow")
 }

@@ -30,6 +30,16 @@ deps: ## Download dependencies
 	go mod download
 	go mod tidy
 
+.PHONY: envsetup
+envsetup: ## Install environment setup dependencies for testing
+	@echo "Installing envsetup dependencies..."
+	go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.20
+	go install github.com/onsi/ginkgo/v2/ginkgo@latest
+	@echo "Setting up local envtest binaries..."
+	mkdir -p bin
+	$(eval ENVTEST_PATH := $(shell setup-envtest use --bin-dir ./bin -p path))
+	@echo "Kubernetes test binaries installed to: $(ENVTEST_PATH)"
+
 .PHONY: build
 build: ## Build the application
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/$(APP_NAME)
@@ -67,6 +77,11 @@ fmt: ## Format code
 
 .PHONY: clean
 clean: ## Clean build artifacts
+	rm -rf bin/prometheus-alerts-slm bin/test-slm
+	rm -f coverage.out coverage.html
+
+.PHONY: clean-all
+clean-all: ## Clean all build artifacts including test binaries
 	rm -rf bin/
 	rm -f coverage.out coverage.html
 
@@ -150,9 +165,11 @@ ollama-test: ## Test Ollama connection and model
 
 ##@ Testing
 .PHONY: test-integration
-test-integration: ## Run integration tests with local Ollama
-	@echo "Running integration tests with local Ollama..."
-	OLLAMA_ENDPOINT=http://localhost:11434 OLLAMA_MODEL=granite3.1-dense:8b go test -v -tags=integration ./test/integration/... -timeout=30m
+test-integration: envsetup ## Run integration tests with fake Kubernetes and local Ollama
+	@echo "Running integration tests with fake Kubernetes and local Ollama..."
+	@echo "Using local envtest binaries..."
+	$(eval KUBEBUILDER_ASSETS := $(shell setup-envtest use --bin-dir ./bin -p path))
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) OLLAMA_ENDPOINT=http://localhost:11434 OLLAMA_MODEL=granite3.1-dense:8b go test -v -tags=integration ./test/integration/... -timeout=30m
 
 .PHONY: test-integration-local
 test-integration-local: ## Run integration tests with Docker Compose
@@ -166,9 +183,11 @@ validate-integration: ## Validate prerequisites for integration testing
 	./scripts/validate-integration.sh
 
 .PHONY: test-integration-quick
-test-integration-quick: ## Run integration tests (skip slow tests)
+test-integration-quick: envsetup ## Run integration tests (skip slow tests)
 	@echo "Running quick integration tests..."
-	SKIP_SLOW_TESTS=true OLLAMA_ENDPOINT=http://localhost:11434 OLLAMA_MODEL=granite3.1-dense:8b go test -v -tags=integration ./test/integration/... -timeout=15m
+	@echo "Using local envtest binaries..."
+	$(eval KUBEBUILDER_ASSETS := $(shell setup-envtest use --bin-dir ./bin -p path))
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) SKIP_SLOW_TESTS=true OLLAMA_ENDPOINT=http://localhost:11434 OLLAMA_MODEL=granite3.1-dense:8b go test -v -tags=integration ./test/integration/... -timeout=15m
 
 .PHONY: test-e2e
 test-e2e: ## Run e2e tests with local setup

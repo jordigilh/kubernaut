@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/metrics"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/processor"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -27,20 +28,20 @@ type handler struct {
 
 // AlertManagerWebhook represents the AlertManager webhook payload structure
 type AlertManagerWebhook struct {
-	Version           string            `json:"version"`
-	GroupKey          string            `json:"groupKey"`
-	TruncatedAlerts   int               `json:"truncatedAlerts"`
-	Status            string            `json:"status"`
-	Receiver          string            `json:"receiver"`
-	GroupLabels       map[string]string `json:"groupLabels"`
-	CommonLabels      map[string]string `json:"commonLabels"`
-	CommonAnnotations map[string]string `json:"commonAnnotations"`
-	ExternalURL       string            `json:"externalURL"`
-	Alerts            []Alert           `json:"alerts"`
+	Version           string              `json:"version"`
+	GroupKey          string              `json:"groupKey"`
+	TruncatedAlerts   int                 `json:"truncatedAlerts"`
+	Status            string              `json:"status"`
+	Receiver          string              `json:"receiver"`
+	GroupLabels       map[string]string   `json:"groupLabels"`
+	CommonLabels      map[string]string   `json:"commonLabels"`
+	CommonAnnotations map[string]string   `json:"commonAnnotations"`
+	ExternalURL       string              `json:"externalURL"`
+	Alerts            []AlertManagerAlert `json:"alerts"`
 }
 
-// Alert represents a single alert from AlertManager
-type Alert struct {
+// AlertManagerAlert represents a single alert from AlertManager
+type AlertManagerAlert struct {
 	Status       string            `json:"status"`
 	Labels       map[string]string `json:"labels"`
 	Annotations  map[string]string `json:"annotations"`
@@ -67,7 +68,7 @@ func NewHandler(processor processor.Processor, cfg config.WebhookConfig, log *lo
 
 func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	
+
 	h.log.WithFields(logrus.Fields{
 		"method":     r.Method,
 		"url":        r.URL.Path,
@@ -78,6 +79,7 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 	// Validate HTTP method
 	if r.Method != http.MethodPost {
 		h.sendError(w, http.StatusMethodNotAllowed, "Only POST method is allowed")
+		metrics.RecordWebhookRequest("error")
 		return
 	}
 
@@ -85,6 +87,7 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "application/json") {
 		h.sendError(w, http.StatusBadRequest, "Content-Type must be application/json")
+		metrics.RecordWebhookRequest("error")
 		return
 	}
 
@@ -92,6 +95,7 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 	if err := h.authenticate(r); err != nil {
 		h.log.WithError(err).Warn("Authentication failed")
 		h.sendError(w, http.StatusUnauthorized, "Authentication failed")
+		metrics.RecordWebhookRequest("error")
 		return
 	}
 
@@ -100,6 +104,7 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.log.WithError(err).Error("Failed to read request body")
 		h.sendError(w, http.StatusBadRequest, "Failed to read request body")
+		metrics.RecordWebhookRequest("error")
 		return
 	}
 	defer r.Body.Close()
@@ -108,6 +113,7 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(body, &webhook); err != nil {
 		h.log.WithError(err).Error("Failed to parse webhook payload")
 		h.sendError(w, http.StatusBadRequest, "Invalid JSON payload")
+		metrics.RecordWebhookRequest("error")
 		return
 	}
 
@@ -124,6 +130,7 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 	if err := h.processWebhookAlerts(ctx, &webhook); err != nil {
 		h.log.WithError(err).Error("Failed to process alerts")
 		h.sendError(w, http.StatusInternalServerError, "Failed to process alerts")
+		metrics.RecordWebhookRequest("error")
 		return
 	}
 
@@ -134,6 +141,9 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sendResponse(w, http.StatusOK, response)
+
+	// Record successful webhook request
+	metrics.RecordWebhookRequest("success")
 
 	h.log.WithFields(logrus.Fields{
 		"num_alerts": len(webhook.Alerts),
@@ -173,13 +183,16 @@ func (h *handler) authenticate(r *http.Request) error {
 func (h *handler) processWebhookAlerts(ctx context.Context, webhook *AlertManagerWebhook) error {
 	for i, alert := range webhook.Alerts {
 		slmAlert := h.convertToSLMAlert(alert, webhook)
-		
+
 		h.log.WithFields(logrus.Fields{
 			"alert_index": i,
 			"alert_name":  slmAlert.Name,
 			"status":      slmAlert.Status,
 			"severity":    slmAlert.Severity,
 		}).Debug("Processing alert")
+
+		// Record alert processing
+		metrics.RecordAlert()
 
 		if err := h.processor.ProcessAlert(ctx, slmAlert); err != nil {
 			h.log.WithFields(logrus.Fields{
@@ -194,7 +207,7 @@ func (h *handler) processWebhookAlerts(ctx context.Context, webhook *AlertManage
 	return nil
 }
 
-func (h *handler) convertToSLMAlert(alert Alert, webhook *AlertManagerWebhook) slm.Alert {
+func (h *handler) convertToSLMAlert(alert AlertManagerAlert, webhook *AlertManagerWebhook) types.Alert {
 	// Extract alert name
 	alertName := alert.Labels["alertname"]
 	if alertName == "" {
@@ -235,7 +248,7 @@ func (h *handler) convertToSLMAlert(alert Alert, webhook *AlertManagerWebhook) s
 		description = fmt.Sprintf("Alert %s is %s", alertName, alert.Status)
 	}
 
-	return slm.Alert{
+	return types.Alert{
 		Name:        alertName,
 		Status:      alert.Status,
 		Severity:    severity,

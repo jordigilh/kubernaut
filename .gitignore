@@ -5,3 +5,5 @@ integration.test
 e2e.test
 webhookt.test
 test-slm
+*coverage.out
+bin/
