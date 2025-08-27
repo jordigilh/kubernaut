@@ -299,6 +299,166 @@ type RateLimiter struct {
 
 ---
 
+### 2.3 Chaos Engineering & E2E Testing ⭐ **PRODUCTION VALIDATION**
+**Status**: 🔄 Pending  
+**Duration**: 3-4 weeks  
+**Owner**: TBD
+
+**Objective**: Validate AI remediation system under real failure conditions using chaos engineering
+
+#### Chaos Testing with Litmus Framework
+**Revolutionary Approach**: Test AI decision-making under actual cluster failures, not just simulated alerts
+
+#### Core Chaos Scenarios:
+```yaml
+# Litmus ChaosEngine configurations for AI testing
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: ai-remediation-chaos-suite
+spec:
+  experiments:
+  - name: pod-memory-hog
+    spec:
+      components:
+        statusCheckTimeouts:
+          delay: 2
+          timeout: 180
+        probe:
+        - name: "ai-response-validation"
+          type: "httpProbe"
+          mode: "Continuous"
+          httpProbe/inputs:
+            url: "http://prometheus-alerts-slm:8080/health"
+            expectedResponseCodes: ["200"]
+```
+
+#### Chaos Testing Categories:
+
+##### 1. **Resource Exhaustion Chaos**
+- **Memory pressure chaos**: Trigger OOMKilled scenarios and validate AI scaling decisions
+- **CPU saturation chaos**: High CPU load with concurrent AI processing
+- **Disk space exhaustion**: Storage pressure during model inference
+- **Network bandwidth saturation**: High network load affecting model response times
+
+##### 2. **Infrastructure Failure Chaos**
+- **Node failure chaos**: Worker node termination during AI remediation
+- **Pod deletion chaos**: Critical pod termination and AI recovery validation
+- **Network partition chaos**: Split-brain scenarios and AI decision consistency
+- **DNS chaos**: Service discovery failures affecting model connectivity
+
+##### 3. **Application-Level Chaos**
+- **Container kill chaos**: Random container termination
+- **Service mesh chaos**: Istio/Linkerd failure injection
+- **Database chaos**: Persistent storage failures
+- **Load balancer chaos**: Ingress controller failures
+
+##### 4. **AI-Specific Chaos Scenarios**
+- **Model server chaos**: Ollama service disruption during inference
+- **Concurrent request chaos**: Overwhelming the AI with simultaneous alerts
+- **Prompt injection chaos**: Malformed alert data handling
+- **Context window overflow**: Large cluster state responses
+
+#### Implementation Framework:
+```go
+// Chaos testing integration with our test suite
+type ChaosTestSuite struct {
+    suite.Suite
+    litmusClient   litmuschaos.Interface
+    chaosResults   []ChaosExperimentResult
+    aiMetrics      []AIPerformanceMetric
+}
+
+// Chaos experiment validation
+type ChaosExperimentResult struct {
+    ExperimentName    string        `json:"experiment_name"`
+    ChaosType        string        `json:"chaos_type"`
+    Duration         time.Duration `json:"duration"`
+    AIResponseTime   time.Duration `json:"ai_response_time"`
+    ActionTaken      string        `json:"action_taken"`
+    ActionSuccess    bool          `json:"action_success"`
+    RecoveryTime     time.Duration `json:"recovery_time"`
+    SystemStability  float64       `json:"system_stability"`
+}
+```
+
+#### E2E Testing Scenarios:
+```yaml
+# End-to-end chaos validation pipeline
+test_scenarios:
+  - name: "memory_pressure_e2e"
+    chaos: "pod-memory-hog"
+    expected_alert: "HighMemoryUsage"
+    expected_actions: ["increase_resources", "scale_deployment"]
+    validation: 
+      - action_execution_time: "<30s"
+      - problem_resolution: "95%"
+      - no_oscillation: true
+      
+  - name: "node_failure_e2e"
+    chaos: "node-cpu-hog"
+    expected_alert: "NodeNotReady"
+    expected_actions: ["drain_node", "cordon_node"]
+    validation:
+      - workload_migration: "successful"
+      - zero_downtime: true
+      - cluster_stability: ">90%"
+```
+
+#### Implementation Tasks:
+- [ ] **Litmus ChaosEngine setup** in test environment
+- [ ] **AI-specific chaos experiments** design and implementation
+- [ ] **E2E test pipeline** integration with chaos scenarios
+- [ ] **Performance validation** under chaos conditions
+- [ ] **Resilience metrics** collection and analysis
+
+#### Advanced Chaos Testing:
+- [ ] **Multi-failure scenarios** (cascading failures)
+- [ ] **Time-based chaos** (prolonged degradation)
+- [ ] **Resource constraint chaos** (limited cluster resources)
+- [ ] **Security breach simulation** (compromised nodes/pods)
+- [ ] **Version upgrade chaos** (rolling updates during incidents)
+
+#### Chaos Testing Infrastructure:
+```yaml
+# Dedicated chaos testing namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chaos-testing
+  labels:
+    chaos.alpha.kubernetes.io/experiment: "true"
+---
+# Chaos RBAC for AI system testing
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chaos-ai-testing
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "services"]
+  verbs: ["get", "list", "delete", "create"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "patch", "update"]
+```
+
+#### Success Criteria:
+- [ ] **AI maintains 95% accuracy** under chaos conditions
+- [ ] **Response time degradation <50%** during failures
+- [ ] **Zero infinite loops** during chaos scenarios
+- [ ] **Cluster recovery <5 minutes** after chaos ends
+- [ ] **No false positives** from chaos-induced alerts
+
+#### Deliverables:
+- [ ] **Litmus chaos framework** integration
+- [ ] **AI-specific chaos experiments** library
+- [ ] **E2E validation pipeline** with automated chaos testing
+- [ ] **Resilience metrics** dashboard and reporting
+- [ ] **Chaos runbooks** for production incident simulation
+
+---
+
 ### 2.4 Action History & Loop Prevention ⭐ **CRITICAL PRODUCTION FEATURE**
 **Status**: 🔄 Pending  
 **Duration**: 4-5 weeks  
@@ -737,11 +897,11 @@ CloudProviders: ["AWS Cost Explorer", "GCP Billing API", "Azure Cost Management"
 | Phase | Duration | Focus | Key Deliverables |
 |-------|----------|-------|------------------|
 | **Phase 1** | 13-17 weeks | Model Selection & MCP Innovation | Optimal model choice, MCP-enhanced intelligence, scaling architecture |
-| **Phase 2** | 11-15 weeks | Safety & Reliability | Production-ready deployment, safety mechanisms, **action history intelligence** |
+| **Phase 2** | 14-19 weeks | Safety & Reliability | Production-ready deployment, safety mechanisms, **chaos testing**, **action history intelligence** |
 | **Phase 3** | 9-12 weeks | Enhanced Capabilities | Additional actions, intelligent routing |
 | **Phase 4** | 20-28 weeks | Enterprise Features | High-risk actions, governance, AI/ML pipeline, **cost intelligence** |
 
-**Total Estimated Timeline**: 53-72 weeks for complete implementation
+**Total Estimated Timeline**: 56-76 weeks for complete implementation
 
 ### **Phase 1 Breakdown** (Enhanced with MCP Innovation):
 - **Weeks 1-3**: Extended model comparison (6 additional 2B models)
