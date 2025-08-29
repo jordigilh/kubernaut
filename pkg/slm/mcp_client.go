@@ -14,32 +14,32 @@ import (
 
 // MCPContext contains contextual information from MCP queries
 type MCPContext struct {
-	ActionHistory        []ActionSummary      `json:"action_history"`
-	OscillationAnalysis  *OscillationSummary  `json:"oscillation_analysis,omitempty"`
+	ActionHistory        []ActionSummary       `json:"action_history"`
+	OscillationAnalysis  *OscillationSummary   `json:"oscillation_analysis,omitempty"`
 	EffectivenessMetrics *EffectivenessMetrics `json:"effectiveness_metrics,omitempty"`
-	SafetyAssessment     *SafetyAssessment    `json:"safety_assessment,omitempty"`
-	ClusterState         *ClusterState        `json:"cluster_state,omitempty"`
+	SafetyAssessment     *SafetyAssessment     `json:"safety_assessment,omitempty"`
+	ClusterState         *ClusterState         `json:"cluster_state,omitempty"`
 }
 
 // ActionSummary provides a summary of previous actions
 type ActionSummary struct {
-	ActionType       string    `json:"action_type"`
-	Timestamp        time.Time `json:"timestamp"`
-	Confidence       float64   `json:"confidence"`
-	ExecutionStatus  string    `json:"execution_status"`
-	Effectiveness    *float64  `json:"effectiveness,omitempty"`
-	AlertName        string    `json:"alert_name"`
-	AlertSeverity    string    `json:"alert_severity"`
+	ActionType      string    `json:"action_type"`
+	Timestamp       time.Time `json:"timestamp"`
+	Confidence      float64   `json:"confidence"`
+	ExecutionStatus string    `json:"execution_status"`
+	Effectiveness   *float64  `json:"effectiveness,omitempty"`
+	AlertName       string    `json:"alert_name"`
+	AlertSeverity   string    `json:"alert_severity"`
 }
 
 // OscillationSummary provides oscillation analysis results
 type OscillationSummary struct {
-	Severity            string `json:"severity"`
-	Confidence          float64 `json:"confidence"`
-	ScaleChanges        int    `json:"scale_changes,omitempty"`
-	ThrashingDetected   bool   `json:"thrashing_detected"`
+	Severity            string     `json:"severity"`
+	Confidence          float64    `json:"confidence"`
+	ScaleChanges        int        `json:"scale_changes,omitempty"`
+	ThrashingDetected   bool       `json:"thrashing_detected"`
 	LastOscillationTime *time.Time `json:"last_oscillation_time,omitempty"`
-	RiskLevel           string `json:"risk_level"`
+	RiskLevel           string     `json:"risk_level"`
 }
 
 // EffectivenessMetrics provides action effectiveness data
@@ -53,11 +53,11 @@ type EffectivenessMetrics struct {
 
 // SafetyAssessment provides safety analysis for proposed actions
 type SafetyAssessment struct {
-	IsSafe              bool     `json:"is_safe"`
-	RiskFactors         []string `json:"risk_factors,omitempty"`
-	RecommendedAction   string   `json:"recommended_action,omitempty"`
-	ConfidenceLevel     float64  `json:"confidence_level"`
-	AlternativeActions  []string `json:"alternative_actions,omitempty"`
+	IsSafe             bool     `json:"is_safe"`
+	RiskFactors        []string `json:"risk_factors,omitempty"`
+	RecommendedAction  string   `json:"recommended_action,omitempty"`
+	ConfidenceLevel    float64  `json:"confidence_level"`
+	AlternativeActions []string `json:"alternative_actions,omitempty"`
 }
 
 // ClusterState provides current Kubernetes cluster information
@@ -78,10 +78,10 @@ type ResourceMetrics struct {
 
 // PodStatusInfo provides pod status information
 type PodStatusInfo struct {
-	Running    int `json:"running"`
-	Pending    int `json:"pending"`
-	Failed     int `json:"failed"`
-	Succeeded  int `json:"succeeded"`
+	Running   int `json:"running"`
+	Pending   int `json:"pending"`
+	Failed    int `json:"failed"`
+	Succeeded int `json:"succeeded"`
 }
 
 // EventSummary provides recent Kubernetes events
@@ -106,20 +106,42 @@ type MCPClient interface {
 	CheckActionSafety(ctx context.Context, alert types.Alert, proposedAction string) (*SafetyAssessment, error)
 }
 
-// mcpClient implements the MCPClient interface
-type mcpClient struct {
-	config            MCPClientConfig
-	actionHistoryServer *mcp.ActionHistoryMCPServer
-	logger            *logrus.Logger
+// K8sMCPServer interface for external Kubernetes MCP server
+type K8sMCPServer interface {
+	HandleToolCall(ctx context.Context, request mcp.MCPToolRequest) (mcp.MCPToolResponse, error)
 }
 
-// NewMCPClient creates a new MCP client
+// mcpClient implements the MCPClient interface
+type mcpClient struct {
+	config              MCPClientConfig
+	actionHistoryServer *mcp.ActionHistoryMCPServer
+	k8sServer           K8sMCPServer
+	logger              *logrus.Logger
+}
+
+// NewMCPClient creates a new MCP client with action history server
 func NewMCPClient(config MCPClientConfig, actionHistoryServer *mcp.ActionHistoryMCPServer, logger *logrus.Logger) MCPClient {
 	return &mcpClient{
 		config:              config,
 		actionHistoryServer: actionHistoryServer,
+		k8sServer:           nil, // Will be set later if needed
 		logger:              logger,
 	}
+}
+
+// NewMCPClientWithK8sServer creates a new MCP client with both action history and K8s servers
+func NewMCPClientWithK8sServer(config MCPClientConfig, actionHistoryServer *mcp.ActionHistoryMCPServer, k8sServer K8sMCPServer, logger *logrus.Logger) MCPClient {
+	return &mcpClient{
+		config:              config,
+		actionHistoryServer: actionHistoryServer,
+		k8sServer:           k8sServer,
+		logger:              logger,
+	}
+}
+
+// SetK8sServer sets the Kubernetes MCP server after client creation
+func (c *mcpClient) SetK8sServer(k8sServer K8sMCPServer) {
+	c.k8sServer = k8sServer
 }
 
 // GetActionContext retrieves contextual information from MCP servers
@@ -291,7 +313,7 @@ func (c *mcpClient) getOscillationAnalysis(ctx context.Context, resourceRef acti
 			return nil, fmt.Errorf("failed to parse oscillation analysis response: %w", err)
 		}
 
-		c.logger.Debugf("MCP oscillation analysis: severity=%s, confidence=%.3f", 
+		c.logger.Debugf("MCP oscillation analysis: severity=%s, confidence=%.3f",
 			oscillationResponse.OverallSeverity, oscillationResponse.Confidence)
 
 		// Convert structured response to summary
@@ -349,11 +371,11 @@ func (c *mcpClient) unmarshalMCPData(data interface{}, target interface{}) error
 	if err != nil {
 		return fmt.Errorf("failed to marshal MCP data: %w", err)
 	}
-	
+
 	if err := json.Unmarshal(jsonBytes, target); err != nil {
 		return fmt.Errorf("failed to unmarshal MCP data: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -396,7 +418,7 @@ func (c *mcpClient) getEffectivenessMetrics(ctx context.Context, resourceRef act
 			return nil, fmt.Errorf("failed to parse effectiveness metrics response: %w", err)
 		}
 
-		c.logger.Debugf("MCP effectiveness metrics: %d total actions, %d action types", 
+		c.logger.Debugf("MCP effectiveness metrics: %d total actions, %d action types",
 			effectivenessResponse.TotalActions, len(effectivenessResponse.ActionEffectiveness))
 
 		metrics.TotalAttempts = effectivenessResponse.TotalActions
@@ -444,9 +466,207 @@ func (c *mcpClient) getEffectivenessMetrics(ctx context.Context, resourceRef act
 	return metrics, nil
 }
 
-// getClusterState retrieves current cluster state (would require K8s MCP server)
+// getClusterState retrieves current cluster state from K8s MCP server
 func (c *mcpClient) getClusterState(ctx context.Context, resourceRef actionhistory.ResourceReference) (*ClusterState, error) {
-	// This would query a Kubernetes MCP server when implemented
-	// For now, return nil to indicate not available
-	return nil, fmt.Errorf("kubernetes MCP server not implemented")
+	if c.k8sServer == nil {
+		return nil, fmt.Errorf("kubernetes MCP server not configured")
+	}
+
+	clusterState := &ClusterState{}
+
+	// Get node capacity information
+	nodeCapacityRequest := mcp.MCPToolRequest{
+		Method: "tools/call",
+		Params: mcp.MCPToolParams{
+			Name: "check_node_capacity",
+			Arguments: map[string]interface{}{
+				"resource_type": "",
+			},
+		},
+	}
+
+	nodeResponse, err := c.k8sServer.HandleToolCall(ctx, nodeCapacityRequest)
+	if err != nil {
+		c.logger.WithError(err).Warn("Failed to get node capacity from K8s MCP server")
+	} else if len(nodeResponse.Content) > 0 && nodeResponse.Content[0].Type == "application/json" {
+		// Parse node capacity data
+		if nodeData, ok := nodeResponse.Content[0].Data.(map[string]interface{}); ok {
+			if clusterCapacity, ok := nodeData["cluster_capacity"].(map[string]interface{}); ok {
+				clusterState.NodeCapacity = &ResourceMetrics{
+					CPUUsage:       parseFloat64(clusterCapacity, "used_cpu_percentage", 0.0),
+					MemoryUsage:    parseFloat64(clusterCapacity, "used_memory_percentage", 0.0),
+					StorageUsage:   parseFloat64(clusterCapacity, "used_storage_percentage", 0.0),
+					AvailableNodes: parseInt(clusterCapacity, "ready_nodes", 0),
+				}
+			}
+		}
+	}
+
+	// Get pod status information
+	podStatusRequest := mcp.MCPToolRequest{
+		Method: "tools/call",
+		Params: mcp.MCPToolParams{
+			Name: "get_namespace_resources",
+			Arguments: map[string]interface{}{
+				"namespace": resourceRef.Namespace,
+			},
+		},
+	}
+
+	podResponse, err := c.k8sServer.HandleToolCall(ctx, podStatusRequest)
+	if err != nil {
+		c.logger.WithError(err).Warn("Failed to get pod status from K8s MCP server")
+	} else if len(podResponse.Content) > 0 && podResponse.Content[0].Type == "application/json" {
+		// Parse pod status data
+		if podData, ok := podResponse.Content[0].Data.(map[string]interface{}); ok {
+			if resources, ok := podData["resources"].(map[string]interface{}); ok {
+				if pods, ok := resources["pods"].(map[string]interface{}); ok {
+					clusterState.PodStatus = &PodStatusInfo{
+						Running:   parseInt(pods, "running", 0),
+						Pending:   parseInt(pods, "pending", 0),
+						Failed:    parseInt(pods, "failed", 0),
+						Succeeded: parseInt(pods, "succeeded", 0),
+					}
+				}
+			}
+		}
+	}
+
+	// Get recent events
+	eventsRequest := mcp.MCPToolRequest{
+		Method: "tools/call",
+		Params: mcp.MCPToolParams{
+			Name: "get_recent_events",
+			Arguments: map[string]interface{}{
+				"namespace": resourceRef.Namespace,
+			},
+		},
+	}
+
+	eventsResponse, err := c.k8sServer.HandleToolCall(ctx, eventsRequest)
+	if err != nil {
+		c.logger.WithError(err).Warn("Failed to get recent events from K8s MCP server")
+	} else if len(eventsResponse.Content) > 0 && eventsResponse.Content[0].Type == "application/json" {
+		// Parse events data
+		if eventData, ok := eventsResponse.Content[0].Data.(map[string]interface{}); ok {
+			if events, ok := eventData["events"].([]interface{}); ok {
+				var eventSummaries []EventSummary
+				for _, event := range events {
+					if eventMap, ok := event.(map[string]interface{}); ok {
+						eventSummary := EventSummary{
+							Type:    parseString(eventMap, "type"),
+							Reason:  parseString(eventMap, "reason"),
+							Message: parseString(eventMap, "message"),
+						}
+						// Parse timestamp
+						if timestampStr := parseString(eventMap, "timestamp"); timestampStr != "" {
+							if timestamp, err := time.Parse(time.RFC3339, timestampStr); err == nil {
+								eventSummary.Timestamp = timestamp
+							}
+						}
+						eventSummaries = append(eventSummaries, eventSummary)
+					}
+				}
+				clusterState.RecentEvents = eventSummaries
+			}
+		}
+	}
+
+	// Check resource quotas for constraints
+	quotaRequest := mcp.MCPToolRequest{
+		Method: "tools/call",
+		Params: mcp.MCPToolParams{
+			Name: "check_resource_quotas",
+			Arguments: map[string]interface{}{
+				"namespace": resourceRef.Namespace,
+			},
+		},
+	}
+
+	quotaResponse, err := c.k8sServer.HandleToolCall(ctx, quotaRequest)
+	if err != nil {
+		c.logger.WithError(err).Warn("Failed to get resource quotas from K8s MCP server")
+	} else if len(quotaResponse.Content) > 0 && quotaResponse.Content[0].Type == "application/json" {
+		// Parse quota data and identify constraints
+		if quotaData, ok := quotaResponse.Content[0].Data.(map[string]interface{}); ok {
+			var constraints []string
+			if quotas, ok := quotaData["quotas"].([]interface{}); ok {
+				for _, quota := range quotas {
+					if quotaMap, ok := quota.(map[string]interface{}); ok {
+						if utilization, ok := quotaMap["utilization"].(map[string]interface{}); ok {
+							// Check for high utilization
+							if cpuUtil := parseString(utilization, "cpu_requests"); cpuUtil != "" {
+								if utilFloat := parseUtilizationPercentage(cpuUtil); utilFloat > 80.0 {
+									constraints = append(constraints, fmt.Sprintf("High CPU utilization: %s", cpuUtil))
+								}
+							}
+							if memUtil := parseString(utilization, "memory_requests"); memUtil != "" {
+								if utilFloat := parseUtilizationPercentage(memUtil); utilFloat > 80.0 {
+									constraints = append(constraints, fmt.Sprintf("High memory utilization: %s", memUtil))
+								}
+							}
+						}
+					}
+				}
+			}
+			clusterState.ResourceConstraints = constraints
+		}
+	}
+
+	return clusterState, nil
+}
+
+// Helper functions for parsing data from MCP responses
+func parseFloat64(data map[string]interface{}, key string, defaultValue float64) float64 {
+	if val, ok := data[key]; ok {
+		switch v := val.(type) {
+		case float64:
+			return v
+		case float32:
+			return float64(v)
+		case int:
+			return float64(v)
+		case string:
+			// Try to parse percentage strings
+			if len(v) > 1 && v[len(v)-1] == '%' {
+				if f, err := fmt.Sscanf(v, "%f%%", &defaultValue); f == 1 && err == nil {
+					return defaultValue
+				}
+			}
+		}
+	}
+	return defaultValue
+}
+
+func parseInt(data map[string]interface{}, key string, defaultValue int) int {
+	if val, ok := data[key]; ok {
+		switch v := val.(type) {
+		case int:
+			return v
+		case float64:
+			return int(v)
+		case float32:
+			return int(v)
+		}
+	}
+	return defaultValue
+}
+
+func parseString(data map[string]interface{}, key string) string {
+	if val, ok := data[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+func parseUtilizationPercentage(utilStr string) float64 {
+	if len(utilStr) > 1 && utilStr[len(utilStr)-1] == '%' {
+		var percent float64
+		if n, err := fmt.Sscanf(utilStr, "%f%%", &percent); n == 1 && err == nil {
+			return percent
+		}
+	}
+	return 0.0
 }

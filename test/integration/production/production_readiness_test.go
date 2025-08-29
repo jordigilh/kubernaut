@@ -14,7 +14,7 @@ import (
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
+
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
@@ -23,8 +23,7 @@ import (
 var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		dbUtils    *shared.DatabaseTestUtils
-		mcpServer  *mcp.ActionHistoryMCPServer
+		testUtils  *shared.IntegrationTestUtils
 		repository actionhistory.Repository
 		testConfig shared.IntegrationConfig
 	)
@@ -40,25 +39,24 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 
 		// Setup database
 		var err error
-		dbUtils, err = shared.NewDatabaseTestUtils(logger)
+		testUtils, err = shared.NewIntegrationTestUtils(logger)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Initialize fresh database
-		Expect(dbUtils.InitializeFreshDatabase()).To(Succeed())
+		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
 
-		repository = dbUtils.Repository
-		mcpServer = dbUtils.MCPServer
+		repository = testUtils.Repository
 	})
 
 	AfterAll(func() {
-		if dbUtils != nil {
-			dbUtils.Close()
+		if testUtils != nil {
+			testUtils.Close()
 		}
 	})
 
 	BeforeEach(func() {
 		// Clean database before each test
-		Expect(dbUtils.CleanDatabase()).To(Succeed())
+		Expect(testUtils.CleanDatabase()).To(Succeed())
 	})
 
 	Context("Critical Decision Making Validation", func() {
@@ -74,11 +72,8 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 				MaxContextSize: contextSize,
 			}
 
-			mcpClientConfig := slm.MCPClientConfig{
-				Timeout:    testConfig.TestTimeout,
-				MaxRetries: 1,
-			}
-			mcpClient := slm.NewMCPClient(mcpClientConfig, mcpServer, logger)
+			// Use simplified MCP client creation with real K8s MCP server
+			mcpClient := testUtils.CreateMCPClient(testConfig)
 
 			slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
 			Expect(err).ToNot(HaveOccurred())
@@ -296,11 +291,8 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 			MaxContextSize: contextSize,
 		}
 
-		mcpClientConfig := slm.MCPClientConfig{
-			Timeout:    testConfig.TestTimeout,
-			MaxRetries: 1,
-		}
-		mcpClient := slm.NewMCPClient(mcpClientConfig, mcpServer, logger)
+		// Use simplified MCP client creation with real K8s MCP server
+		mcpClient := testUtils.CreateMCPClient(testConfig)
 
 		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
 		Expect(err).ToNot(HaveOccurred())
