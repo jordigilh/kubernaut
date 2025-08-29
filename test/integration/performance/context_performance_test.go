@@ -17,19 +17,20 @@ import (
 	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
 )
 
 var _ = Describe("Context Size Performance Tests", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		dbUtils    *DatabaseTestUtils
+		dbUtils    *shared.DatabaseTestUtils
 		mcpServer  *mcp.ActionHistoryMCPServer
 		repository actionhistory.Repository
-		testConfig IntegrationConfig
+		testConfig shared.IntegrationConfig
 	)
 
 	BeforeAll(func() {
-		testConfig = LoadConfig()
+		testConfig = shared.LoadConfig()
 		if testConfig.SkipIntegration {
 			Skip("Integration tests disabled")
 		}
@@ -39,7 +40,7 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 
 		// Setup database
 		var err error
-		dbUtils, err = NewDatabaseTestUtils(logger)
+		dbUtils, err = shared.NewDatabaseTestUtils(logger)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Initialize fresh database
@@ -129,7 +130,7 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 					},
 					ModelUsed:           testConfig.OllamaModel,
 					Confidence:          0.8 + float64(i)*0.02, // Varying confidence
-					Reasoning:           stringPtr("Historical test action"),
+					Reasoning:           shared.StringPtr("Historical test action"),
 					ActionType:          action.actionType,
 					Parameters:          map[string]interface{}{"replicas": 3 + i, "test": true},
 					ResourceStateBefore: map[string]interface{}{"status": "before"},
