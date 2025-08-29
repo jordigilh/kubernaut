@@ -15,6 +15,8 @@ type IntegrationConfig struct {
 	SkipSlowTests   bool
 	LogLevel        string
 	SkipIntegration bool
+	// External MCP server configuration
+	ExternalMCPServerEndpoint string
 }
 
 // LoadConfig loads integration test configuration from environment variables
@@ -27,6 +29,8 @@ func LoadConfig() IntegrationConfig {
 		SkipSlowTests:   getBoolEnvOrDefault("SKIP_SLOW_TESTS", false),
 		LogLevel:        GetEnvOrDefault("LOG_LEVEL", "debug"),
 		SkipIntegration: getBoolEnvOrDefault("SKIP_INTEGRATION", false),
+		// External MCP server configuration
+		ExternalMCPServerEndpoint: GetEnvOrDefault("EXTERNAL_MCP_ENDPOINT", "http://localhost:8080"),
 	}
 }
 

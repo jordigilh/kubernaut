@@ -14,7 +14,7 @@ import (
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
+
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
@@ -23,8 +23,7 @@ import (
 var _ = Describe("Context Size Performance Tests", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		dbUtils    *shared.DatabaseTestUtils
-		mcpServer  *mcp.ActionHistoryMCPServer
+		testUtils  *shared.IntegrationTestUtils
 		repository actionhistory.Repository
 		testConfig shared.IntegrationConfig
 	)
@@ -40,25 +39,24 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 
 		// Setup database
 		var err error
-		dbUtils, err = shared.NewDatabaseTestUtils(logger)
+		testUtils, err = shared.NewIntegrationTestUtils(logger)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Initialize fresh database
-		Expect(dbUtils.InitializeFreshDatabase()).To(Succeed())
+		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
 
-		repository = dbUtils.Repository
-		mcpServer = dbUtils.MCPServer
+		repository = testUtils.Repository
 	})
 
 	AfterAll(func() {
-		if dbUtils != nil {
-			dbUtils.Close()
+		if testUtils != nil {
+			testUtils.Close()
 		}
 	})
 
 	BeforeEach(func() {
 		// Clean database before each test
-		Expect(dbUtils.CleanDatabase()).To(Succeed())
+		Expect(testUtils.CleanDatabase()).To(Succeed())
 	})
 
 	Context("Performance Comparison with Different Context Sizes", func() {
@@ -130,7 +128,7 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 					},
 					ModelUsed:           testConfig.OllamaModel,
 					Confidence:          0.8 + float64(i)*0.02, // Varying confidence
-					Reasoning:           stringPtr("Historical test action"),
+					Reasoning:           shared.StringPtr("Historical test action"),
 					ActionType:          action.actionType,
 					Parameters:          map[string]interface{}{"replicas": 3 + i, "test": true},
 					ResourceStateBefore: map[string]interface{}{"status": "before"},
@@ -168,12 +166,8 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 				MaxContextSize: contextSize,
 			}
 
-			// Create MCP client
-			mcpClientConfig := slm.MCPClientConfig{
-				Timeout:    testConfig.TestTimeout,
-				MaxRetries: 1,
-			}
-			mcpClient := slm.NewMCPClient(mcpClientConfig, mcpServer, logger)
+			// Use simplified MCP client creation with real K8s MCP server
+			mcpClient := testUtils.CreateMCPClient(testConfig)
 
 			// Create SLM client with MCP context
 			slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)

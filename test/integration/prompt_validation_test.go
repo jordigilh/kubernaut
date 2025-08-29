@@ -15,7 +15,7 @@ import (
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
+
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
@@ -24,8 +24,7 @@ import (
 var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		dbUtils    *shared.DatabaseTestUtils
-		mcpServer  *mcp.ActionHistoryMCPServer
+		testUtils  *shared.IntegrationTestUtils
 		repository actionhistory.Repository
 		testConfig shared.IntegrationConfig
 	)
@@ -40,22 +39,21 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 		logger.SetLevel(logrus.InfoLevel)
 
 		var err error
-		dbUtils, err = shared.NewDatabaseTestUtils(logger)
+		testUtils, err = shared.NewIntegrationTestUtils(logger)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(dbUtils.InitializeFreshDatabase()).To(Succeed())
-		repository = dbUtils.Repository
-		mcpServer = dbUtils.MCPServer
+		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
+		repository = testUtils.Repository
 	})
 
 	AfterAll(func() {
-		if dbUtils != nil {
-			dbUtils.Close()
+		if testUtils != nil {
+			testUtils.Close()
 		}
 	})
 
 	BeforeEach(func() {
-		Expect(dbUtils.CleanDatabase()).To(Succeed())
+		Expect(testUtils.CleanDatabase()).To(Succeed())
 	})
 
 	createSLMClient := func() slm.Client {
@@ -70,11 +68,8 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 			MaxContextSize: 0, // Use adaptive context sizing based on complexity
 		}
 
-		mcpClientConfig := slm.MCPClientConfig{
-			Timeout:    testConfig.TestTimeout,
-			MaxRetries: 1,
-		}
-		mcpClient := slm.NewMCPClient(mcpClientConfig, mcpServer, logger)
+		// Use simplified MCP client creation with real K8s MCP server
+		mcpClient := testUtils.CreateMCPClient(testConfig)
 
 		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
 		Expect(err).ToNot(HaveOccurred())
@@ -115,7 +110,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 						},
 						ModelUsed:           testConfig.OllamaModel,
 						Confidence:          0.8,
-						Reasoning:           stringPtr("Test failure pattern"),
+						Reasoning:           shared.StringPtr("Test failure pattern"),
 						ActionType:          pattern.actionType,
 						Parameters:          map[string]interface{}{"test": true},
 						ResourceStateBefore: map[string]interface{}{"status": "degraded"},
@@ -168,7 +163,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 			}))
 
 			// Should show awareness of the problematic pattern in reasoning
-			Expect(strings.ToLower(getReasoningSummary(recommendation.Reasoning))).To(SatisfyAny(
+			Expect(strings.ToLower(shared.GetReasoningSummary(recommendation.Reasoning))).To(SatisfyAny(
 				ContainSubstring("multiple"),
 				ContainSubstring("failed"),
 				ContainSubstring("pattern"),
@@ -205,7 +200,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 					},
 					ModelUsed:           testConfig.OllamaModel,
 					Confidence:          0.85 + float64(i)*0.01,
-					Reasoning:           stringPtr("Test success pattern"),
+					Reasoning:           shared.StringPtr("Test success pattern"),
 					ActionType:          "scale_deployment",
 					Parameters:          map[string]interface{}{"replicas": 3 + i},
 					ResourceStateBefore: map[string]interface{}{"replicas": 2},
@@ -249,7 +244,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 			Expect(recommendation.Confidence).To(BeNumerically(">=", 0.8))
 
 			// Reasoning should reference historical success
-			Expect(strings.ToLower(getReasoningSummary(recommendation.Reasoning))).To(SatisfyAny(
+			Expect(strings.ToLower(shared.GetReasoningSummary(recommendation.Reasoning))).To(SatisfyAny(
 				ContainSubstring("historical"),
 				ContainSubstring("effective"),
 				ContainSubstring("successful"),
@@ -383,7 +378,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 					},
 					ModelUsed:           testConfig.OllamaModel,
 					Confidence:          0.7,
-					Reasoning:           stringPtr("Test oscillation pattern"),
+					Reasoning:           shared.StringPtr("Test oscillation pattern"),
 					ActionType:          action.actionType,
 					Parameters:          action.params,
 					ResourceStateBefore: map[string]interface{}{"status": "fluctuating"},
@@ -433,7 +428,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 			Expect(recommendation.Action).ToNot(Equal("scale_deployment"))
 
 			// Should show awareness of oscillation risk
-			Expect(strings.ToLower(getReasoningSummary(recommendation.Reasoning))).To(SatisfyAny(
+			Expect(strings.ToLower(shared.GetReasoningSummary(recommendation.Reasoning))).To(SatisfyAny(
 				ContainSubstring("oscillat"),
 				ContainSubstring("pattern"),
 				ContainSubstring("instab"),

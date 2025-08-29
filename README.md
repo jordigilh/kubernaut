@@ -10,12 +10,14 @@ This production-ready system bridges the gap between monitoring and automated re
 
 - 🧠 **AI-Powered Analysis** - Uses IBM Granite models via Ollama for intelligent alert interpretation
 - 🔄 **Automated Remediation** - Executes 25+ different Kubernetes actions based on SLM recommendations
-- 📊 **Oscillation Prevention** - Advanced detection of action loops, thrashing, and cascading failures
+- 📊 **Oscillation Prevention** - Detection of action loops, thrashing, and cascading failures
 - 🔗 **Production Integration** - AlertManager webhook integration with proper RBAC and security
-- 📈 **Observability** - Comprehensive metrics, logging, and action history tracking
+- 📈 **Observability** - Metrics, logging, and action history tracking
 - 🗄️ **Persistent Storage** - PostgreSQL-based action history and oscillation detection
 - 🔔 **Notification System** - Pluggable notification architecture (stdout, Slack, email, etc.)
 - 🛡️ **Safety Features** - Dry-run mode, cooldown periods, and confidence thresholds
+- ⚡ **Effectiveness Assessment** - Automated evaluation of action outcomes and continuous learning
+- 🔄 **Hybrid MCP Interface** - Structured JSON + human-readable responses for LLM processing
 
 ## Architecture
 
@@ -33,6 +35,20 @@ This production-ready system bridges the gap between monitoring and automated re
 │  Notifications  │◀───│  Action History │◀───│   PostgreSQL     │
 │     System      │    │   & Metrics     │    │   Database       │
 └─────────────────┘    └─────────────────┘    └──────────────────┘
+                                │                        │
+┌─────────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│ Effectiveness   │◀───│ Hybrid MCP      │◀───│ Structured JSON  │
+│  Assessment     │    │ Action History  │    │ + Human Text     │
+│    Service      │    │    Server       │    │   Responses      │
+└─────────────────┘    └─────────────────┘    └──────────────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │ External K8s    │
+                       │ MCP Server      │
+                       │ (containers/    │
+                       │ k8s-mcp-server) │
+                       └─────────────────┘
 ```
 
 ## Quick Start
@@ -68,7 +84,7 @@ make build
 # Test SLM integration
 ./bin/test-slm
 
-# Run comprehensive integration tests
+# Run integration tests
 make test-integration
 ```
 
@@ -103,7 +119,7 @@ The system supports 25+ Kubernetes actions across multiple categories:
 - `collect_diagnostics` - Gather diagnostic information
 - `notify_only` - Alert-only mode
 
-### Advanced Actions (16)
+### Extended Actions (16)
 - **Storage & Persistence**: `cleanup_storage`, `backup_data`, `compact_storage`
 - **Application Lifecycle**: `cordon_node`, `update_hpa`, `restart_daemonset`
 - **Security & Compliance**: `rotate_secrets`, `audit_logs`
@@ -114,11 +130,11 @@ The system supports 25+ Kubernetes actions across multiple categories:
 
 See [docs/FUTURE_ACTIONS.md](docs/FUTURE_ACTIONS.md) for detailed action descriptions.
 
-## Advanced Features
+## Additional Features
 
 ### Oscillation Detection
 
-The system includes sophisticated oscillation detection to prevent:
+The system includes oscillation detection to prevent:
 - **Scale Oscillation** - Repeated up/down scaling
 - **Resource Thrashing** - Switching between scale and resource adjustments
 - **Ineffective Loops** - Repeated actions with low effectiveness
@@ -132,13 +148,33 @@ Pluggable notification architecture supporting:
 - Email notifications
 - Custom webhook notifications
 
-### Action History
+### Action History & Effectiveness Assessment
 
-Comprehensive tracking of all actions with:
-- PostgreSQL storage with stored procedures
-- Effectiveness scoring and learning
-- Correlation analysis
-- Performance metrics
+Tracking of all actions with automated learning capabilities:
+- PostgreSQL storage with stored procedures for action tracking
+- **Effectiveness Assessment Service** - Automated evaluation of action outcomes
+- **Continuous Learning Loop** - Models learn from action success/failure patterns
+- **Predictive Action Success** - Estimates success probability before execution
+- Correlation analysis and pattern recognition
+- Performance metrics and trend analysis
+
+### Hybrid MCP Action History Interface
+
+Model Context Protocol integration providing dual response formats:
+- **Structured JSON Data** - Machine-readable format for LLM analysis
+- **Human-Readable Text** - Natural language summaries for user display
+- **Dual Format Processing** - Enables threshold-based decisions and numeric comparisons
+- **Pattern Analysis** - Oscillation detection with structured metrics
+- **Programmatic Integration** - Type-safe data structures for automated processing
+
+### External MCP Server Integration
+
+Leverages existing production-ready Kubernetes MCP server:
+- **containers/kubernetes-mcp-server** - Production-ready cluster state access
+- **Multi-Server Architecture** - Custom action history + external cluster queries
+- **OpenShift Compatibility** - Verified support for target platform
+- **Development Time Savings** - 4-5 weeks saved by using existing implementation
+- **Community Maintenance** - External server maintained by containers organization
 
 ## Configuration
 
@@ -164,7 +200,7 @@ export WEBHOOK_PORT="8080"
 export METRICS_PORT="9090"
 ```
 
-### Advanced Configuration
+### Configuration Files
 
 Create `config/app.yaml`:
 
@@ -211,7 +247,7 @@ notifications:
 - [Action History Analysis](docs/ACTION_HISTORY_ANALYSIS.md) - Historical pattern detection
 
 ### Model Evaluations
-- [Model Performance Summary](docs/MODEL_EVALUATION_SUMMARY.md) - Comprehensive model comparison results
+- [Model Performance Summary](docs/MODEL_EVALUATION_SUMMARY.md) - Model comparison results
 - [Development Summary](docs/poc-development-summary.md) - Complete development chronology
 
 ## Testing
@@ -256,7 +292,7 @@ See [Testing Status](docs/testing-status.md) for detailed coverage analysis and 
 OLLAMA_MODEL=granite3.1-dense:8b make test-integration
 OLLAMA_MODEL=granite3.1-dense:2b make test-integration
 
-# Run comprehensive model performance tests
+# Run model performance tests
 OLLAMA_MODEL=granite3.1-dense:8b go test -tags=integration ./test/integration/... -ginkgo.focus="Model Performance"
 ```
 
@@ -311,7 +347,7 @@ make k8s-logs       # View logs
 - Audit logging for all actions
 - Configurable action restrictions
 
-### Best Practices
+### Recommended Practices
 - Run in dry-run mode initially
 - Use least-privilege RBAC
 - Enable action history logging
@@ -334,4 +370,4 @@ Apache 2.0
 
 ---
 
-**Note**: This project demonstrates production-ready AI-driven Kubernetes automation. It was developed with architectural guidance and comprehensive testing to ensure reliability in production environments.
+**Note**: This project demonstrates production-ready AI-driven Kubernetes automation. It was developed with architectural guidance and testing to ensure reliability in production environments.

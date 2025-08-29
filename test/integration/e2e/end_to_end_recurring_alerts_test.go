@@ -19,7 +19,6 @@ import (
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/metrics"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
@@ -38,8 +37,7 @@ func ConvertAlertToResourceRef(alert types.Alert) actionhistory.ResourceReferenc
 var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		dbUtils    *shared.DatabaseTestUtils
-		mcpServer  *mcp.ActionHistoryMCPServer
+		testUtils  *shared.IntegrationTestUtils
 		testConfig shared.IntegrationConfig
 	)
 
@@ -53,21 +51,20 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 		logger.SetLevel(logrus.InfoLevel)
 
 		var err error
-		dbUtils, err = shared.NewDatabaseTestUtils(logger)
+		testUtils, err = shared.NewIntegrationTestUtils(logger)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(dbUtils.InitializeFreshDatabase()).To(Succeed())
-		mcpServer = dbUtils.MCPServer
+		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
 	})
 
 	AfterAll(func() {
-		if dbUtils != nil {
-			dbUtils.Close()
+		if testUtils != nil {
+			testUtils.Close()
 		}
 	})
 
 	BeforeEach(func() {
-		Expect(dbUtils.CleanDatabase()).To(Succeed())
+		Expect(testUtils.CleanDatabase()).To(Succeed())
 	})
 
 	createSLMClient := func() slm.Client {
@@ -82,11 +79,8 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			MaxContextSize: 2000,
 		}
 
-		mcpClientConfig := slm.MCPClientConfig{
-			Timeout:    testConfig.TestTimeout,
-			MaxRetries: 1,
-		}
-		mcpClient := slm.NewMCPClient(mcpClientConfig, mcpServer, logger)
+		// Use simplified MCP client creation with real K8s MCP server
+		mcpClient := testUtils.CreateMCPClient(testConfig)
 
 		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
 		Expect(err).ToNot(HaveOccurred())
@@ -135,10 +129,10 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			// Create history of failed scale_deployment attempts
 			ctx := context.Background()
-			resourceID, err := dbUtils.Repository.EnsureResourceReference(ctx, resourceRef)
+			resourceID, err := testUtils.Repository.EnsureResourceReference(ctx, resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = dbUtils.Repository.EnsureActionHistory(ctx, resourceID)
+			_, err = testUtils.Repository.EnsureActionHistory(ctx, resourceID)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Simulate previous scale_deployment that failed (wrong action for OOM)
@@ -163,7 +157,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				},
 			}
 
-			trace, err := dbUtils.Repository.StoreAction(ctx, failedAction)
+			trace, err := testUtils.Repository.StoreAction(ctx, failedAction)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Mark as failed with low effectiveness
@@ -212,7 +206,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating history of ineffective security responses")
 			resourceRef := ConvertAlertToResourceRef(securityAlert)
-			_, err := dbUtils.CreateIneffectiveSecurityHistory(resourceRef)
+			_, err := testUtils.CreateIneffectiveSecurityHistory(resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Analyzing security alert with poor containment history")
@@ -257,7 +251,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating oscillation pattern in database")
 			resourceRef := ConvertAlertToResourceRef(memoryAlert)
-			err := dbUtils.CreateOscillationPattern(resourceRef)
+			err := testUtils.CreateOscillationPattern(resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Analyzing alert with oscillation risk")
@@ -307,12 +301,12 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			resourceRef := ConvertAlertToResourceRef(storageAlert)
 
 			// Create low effectiveness history for expand_pvc
-			_, err := dbUtils.CreateLowEffectivenessHistory(resourceRef, "expand_pvc", 0.3)
+			_, err := testUtils.CreateLowEffectivenessHistory(resourceRef, "expand_pvc", 0.3)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create successful history for cleanup_storage
 			ctx := context.Background()
-			_, err = dbUtils.Repository.EnsureResourceReference(ctx, resourceRef)
+			_, err = testUtils.Repository.EnsureResourceReference(ctx, resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			reasoning := "Successful storage cleanup"
@@ -336,7 +330,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				},
 			}
 
-			trace, err := dbUtils.Repository.StoreAction(ctx, successfulAction)
+			trace, err := testUtils.Repository.StoreAction(ctx, successfulAction)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Mark as successful with high effectiveness
@@ -383,7 +377,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating cascading failure pattern")
 			resourceRef := ConvertAlertToResourceRef(networkAlert)
-			_, err := dbUtils.CreateCascadingFailureHistory(resourceRef)
+			_, err := testUtils.CreateCascadingFailureHistory(resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Analyzing network alert with cascading failure risk")
@@ -419,10 +413,10 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating progressive memory alerts with restart attempts")
 			ctx := context.Background()
-			resourceID, err := dbUtils.Repository.EnsureResourceReference(ctx, resourceRef)
+			resourceID, err := testUtils.Repository.EnsureResourceReference(ctx, resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = dbUtils.Repository.EnsureActionHistory(ctx, resourceID)
+			_, err = testUtils.Repository.EnsureActionHistory(ctx, resourceID)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Simulate memory leak pattern: gradual memory increase, restart, temporary fix, repeat
@@ -466,7 +460,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 					},
 				}
 
-				trace, err := dbUtils.Repository.StoreAction(ctx, action)
+				trace, err := testUtils.Repository.StoreAction(ctx, action)
 				Expect(err).ToNot(HaveOccurred())
 
 				trace.ExecutionStatus = "completed"
@@ -534,7 +528,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating failed restart history for the deployment")
 			resourceRef := ConvertAlertToResourceRef(deploymentAlert)
-			_, err := dbUtils.CreateFailedRestartHistory(resourceRef, 3)
+			_, err := testUtils.CreateFailedRestartHistory(resourceRef, 3)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Analyzing deployment alert with pod failure context")
@@ -612,15 +606,15 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			}
 
 			By("Creating extensive action history for large context")
-			_, err := dbUtils.CreateTestActionHistory(resourceRef, 25) // Large history
+			_, err := testUtils.CreateTestActionHistory(resourceRef, 25) // Large history
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Creating oscillation patterns")
-			err = dbUtils.CreateOscillationPattern(resourceRef)
+			err = testUtils.CreateOscillationPattern(resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Creating failed action patterns")
-			_, err = dbUtils.CreateFailedRestartHistory(resourceRef, 5)
+			_, err = testUtils.CreateFailedRestartHistory(resourceRef, 5)
 			Expect(err).ToNot(HaveOccurred())
 
 			largeContextAlert := types.Alert{

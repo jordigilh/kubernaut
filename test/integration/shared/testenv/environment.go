@@ -22,6 +22,47 @@ type TestEnvironment struct {
 	CancelFunc  context.CancelFunc
 }
 
+// GetKubeconfigForContainer returns the kubeconfig content as a string for container use
+func (te *TestEnvironment) GetKubeconfigForContainer() (string, error) {
+	if te.Config == nil {
+		return "", fmt.Errorf("test environment config not available")
+	}
+
+	// Use certificate-based authentication when available (more appropriate for envtest)
+	var userConfig string
+	if te.Config.BearerToken != "" {
+		userConfig = fmt.Sprintf("    token: %s", te.Config.BearerToken)
+	} else if len(te.Config.CertData) > 0 && len(te.Config.KeyData) > 0 {
+		// Use client certificate authentication
+		userConfig = fmt.Sprintf(`    client-certificate-data: %s
+    client-key-data: %s`,
+			string(te.Config.CertData), string(te.Config.KeyData))
+	} else {
+		return "", fmt.Errorf("no authentication method available (no bearer token or client certificates)")
+	}
+
+	kubeconfigContent := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: %s
+    insecure-skip-tls-verify: true
+  name: test-cluster
+contexts:
+- context:
+    cluster: test-cluster
+    user: test-user
+  name: test-context
+current-context: test-context
+users:
+- name: test-user
+  user:
+%s
+`, te.Config.Host, userConfig)
+
+	return kubeconfigContent, nil
+}
+
 // SetupTestEnvironment initializes a test Kubernetes environment
 func SetupTestEnvironment() (*TestEnvironment, error) {
 	// Get KUBEBUILDER_ASSETS from environment (set by Makefile)

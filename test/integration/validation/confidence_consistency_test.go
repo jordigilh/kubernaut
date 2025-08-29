@@ -13,7 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
+
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
@@ -22,8 +22,7 @@ import (
 var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		dbUtils    *shared.DatabaseTestUtils
-		mcpServer  *mcp.ActionHistoryMCPServer
+		testUtils  *shared.IntegrationTestUtils
 		testConfig shared.IntegrationConfig
 	)
 
@@ -37,21 +36,20 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 		logger.SetLevel(logrus.InfoLevel)
 
 		var err error
-		dbUtils, err = shared.NewDatabaseTestUtils(logger)
+		testUtils, err = shared.NewIntegrationTestUtils(logger)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(dbUtils.InitializeFreshDatabase()).To(Succeed())
-		mcpServer = dbUtils.MCPServer
+		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
 	})
 
 	AfterAll(func() {
-		if dbUtils != nil {
-			dbUtils.Close()
+		if testUtils != nil {
+			testUtils.Close()
 		}
 	})
 
 	BeforeEach(func() {
-		Expect(dbUtils.CleanDatabase()).To(Succeed())
+		Expect(testUtils.CleanDatabase()).To(Succeed())
 	})
 
 	createSLMClient := func() slm.Client {
@@ -66,11 +64,8 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 			MaxContextSize: 2000,
 		}
 
-		mcpClientConfig := slm.MCPClientConfig{
-			Timeout:    testConfig.TestTimeout,
-			MaxRetries: 1,
-		}
-		mcpClient := slm.NewMCPClient(mcpClientConfig, mcpServer, logger)
+		// Use simplified MCP client creation with real K8s MCP server
+		mcpClient := testUtils.CreateMCPClient(testConfig)
 
 		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
 		Expect(err).ToNot(HaveOccurred())
@@ -477,11 +472,8 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 				MaxContextSize: 2000,
 			}
 
-			mcpClientConfig := slm.MCPClientConfig{
-				Timeout:    testConfig.TestTimeout,
-				MaxRetries: 1,
-			}
-			mcpClient := slm.NewMCPClient(mcpClientConfig, mcpServer, logger)
+			// Use simplified MCP client creation with real K8s MCP server
+			mcpClient := testUtils.CreateMCPClient(testConfig)
 
 			client, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
 			Expect(err).ToNot(HaveOccurred())

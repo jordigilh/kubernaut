@@ -27,7 +27,7 @@ Automate Kubernetes/OpenShift cluster remediation by leveraging AI-powered analy
 - 🧠 **AI-Powered Analysis** - Uses IBM Granite 3.1 Dense 8B model for intelligent alert analysis
 - ⚡ **Automated Actions** - Executes scaling, restart, and resource adjustment operations
 - 🚀 **Production Ready** - No mock dependencies, full LocalAI/Ollama integration
-- 📊 **Observability** - Comprehensive logging and Prometheus metrics
+- 📊 **Observability** - Logging and Prometheus metrics
 - 🔒 **Security** - RBAC integration and secure webhook authentication
 
 ### High-Level Architecture
@@ -47,15 +47,28 @@ Automate Kubernetes/OpenShift cluster remediation by leveraging AI-powered analy
 │ - Scaling       │    │ - Granite Model  │    │ - Filtering       │
 │ - Restarts      │    │ - Ollama API     │    │ - Conversion      │
 │ - Resources     │    │ - Prompt Engine  │    │ - Validation      │
+│ - Effectiveness │    │ - MCP Interface  │    │ - History Context │
 └─────────────────┘    └──────────────────┘    └───────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Kubernetes API  │
-│                 │
-│ - Deployments   │
-│ - Pods          │
-│ - Resources     │
+         │                       │                       │
+         ▼                       ▼                       ▼
+┌─────────────────┐    ┌──────────────────┐    ┌───────────────────┐
+│ External K8s    │    │ Hybrid MCP       │    │ Effectiveness     │
+│ MCP Server      │    │ Action History   │    │ Assessment        │
+│                 │    │                  │    │                   │
+│ - Pod Status    │    │ - JSON + Text    │    │ - Outcome Eval    │
+│ - Node Capacity │    │ - Structured     │    │ - Learning Loop   │
+│ - Resource Data │    │ - Pattern Data   │    │ - Success Predict │
+│ (containers/    │    │ (Our Custom)     │    │                   │
+│ k8s-mcp-server) │    └──────────────────┘    └───────────────────┘
+└─────────────────┘             │                       │
+         │                      ▼                       ▼
+         ▼              ┌──────────────────┐    ┌──────────────────┐
+┌─────────────────┐     │   PostgreSQL     │    │ Kubernetes API   │
+│ Kubernetes API  │     │                  │    │                  │
+│                 │     │ - Action History │    │ - Deployments    │
+│ - Deployments   │     │ - Pattern Store  │    │ - Pods           │
+│ - Pods          │     │ - Effectiveness  │    │ - Resources      │
+│ - Resources     │     └──────────────────┘    └──────────────────┘
 └─────────────────┘
 ```
 
@@ -65,7 +78,7 @@ Automate Kubernetes/OpenShift cluster remediation by leveraging AI-powered analy
 
 1. **Separation of Concerns**: Each component has a single, well-defined responsibility
 2. **Interface-Driven**: Components communicate through well-defined interfaces
-3. **Observability**: Comprehensive logging and metrics at every layer
+3. **Observability**: Logging and metrics at every layer
 4. **Security First**: Authentication, authorization, and audit logging
 5. **Fail-Safe**: Graceful error handling and dry-run capabilities
 6. **Extensibility**: Plugin architecture for new action types and SLM providers
@@ -145,10 +158,10 @@ func (p *processor) ProcessAlert(ctx context.Context, alert Alert) error {
     if !p.shouldProcess(alert) {
         return nil
     }
-    
+
     // 2. Convert to internal format
     slmAlert := p.convertAlert(alert)
-    
+
     // 3. Send for SLM analysis
     return p.slmClient.AnalyzeAlert(ctx, slmAlert)
 }
@@ -307,6 +320,144 @@ type Config struct {
 - `DRY_RUN` → `actions.dry_run`
 - `WEBHOOK_PORT` → `webhook.port`
 
+### 7. Effectiveness Assessment Service (`pkg/effectiveness`)
+
+**Purpose**: Automated evaluation of action outcomes and continuous learning system
+
+**Key Components**:
+- `EffectivenessAssessor` interface - Action outcome evaluation contract
+- `AssessmentService` - Automated effectiveness scoring and analysis
+- `LearningEngine` - Pattern recognition and success prediction
+
+**Core Assessment Logic**:
+```go
+type EffectivenessAssessor interface {
+    AssessAction(ctx context.Context, trace *actionhistory.ResourceActionTrace) (*EffectivenessResult, error)
+    PredictSuccess(ctx context.Context, action *types.ActionRecommendation, resource actionhistory.ResourceReference) (float64, error)
+    AnalyzePatterns(ctx context.Context, traces []actionhistory.ResourceActionTrace) (*PatternAnalysis, error)
+}
+
+type EffectivenessResult struct {
+    Score         float64                `json:"score"`          // 0.0-1.0 effectiveness
+    Confidence    float64                `json:"confidence"`     // Assessment confidence
+    Factors       map[string]float64     `json:"factors"`        // Contributing factors
+    Reasoning     string                 `json:"reasoning"`      // AI-generated explanation
+    Improvements  []string               `json:"improvements"`   // Suggested optimizations
+}
+```
+
+**Assessment Criteria**:
+- **Problem Resolution** - Did the action solve the original alert?
+- **Side Effects** - Were new problems introduced?
+- **Resource Efficiency** - Cost/performance impact analysis
+- **Time to Resolution** - Speed of problem resolution
+- **Stability Impact** - Effect on system stability
+
+### 8. Hybrid MCP Action History Server (`internal/mcp`)
+
+**Purpose**: Model Context Protocol server providing both structured data and human-readable responses
+
+**Implementation**: Dual response format for LLM processing
+```go
+type MCPToolResponse struct {
+    Content []MCPContent `json:"content"`
+}
+
+type MCPContent struct {
+    Type string      `json:"type"`  // "application/json" or "text"
+    Text string      `json:"text,omitempty"`  // Human-readable format
+    Data interface{} `json:"data,omitempty"`  // Structured JSON format
+}
+```
+
+**Structured Response Types**:
+```go
+// Action History with rich metadata
+type ActionHistoryResponse struct {
+    ResourceInfo  ResourceInfo    `json:"resource_info"`
+    TotalActions  int             `json:"total_actions"`
+    Actions       []ActionSummary `json:"actions"`
+}
+
+// Oscillation Analysis with numerical precision
+type OscillationAnalysisResponse struct {
+    ResourceInfo      ResourceInfo                `json:"resource_info"`
+    OverallSeverity   string                      `json:"overall_severity"`
+    Confidence        float64                     `json:"confidence"`
+    ScaleOscillation  *ScaleOscillationPattern    `json:"scale_oscillation,omitempty"`
+    SafetyReasoning   string                      `json:"safety_reasoning"`
+}
+
+// Safety Check with boolean decision data
+type SafetyCheckResponse struct {
+    ResourceInfo      ResourceInfo `json:"resource_info"`
+    ActionType        string       `json:"action_type"`
+    IsSafe            bool         `json:"is_safe"`
+    OverallSeverity   string       `json:"overall_severity"`
+    Confidence        float64      `json:"confidence"`
+    RecommendedAction string       `json:"recommended_action"`
+    SafetyReasoning   string       `json:"safety_reasoning"`
+}
+```
+
+**Benefits for LLM Processing**:
+- **Precise Numeric Comparisons** - `confidence >= 0.8` checks
+- **Boolean Decision Making** - `is_safe` flag for clear decisions
+- **Array Iteration** - Structured loops through pattern data
+- **Nested Property Access** - `scale_oscillation.direction_changes`
+- **Human Explanation** - Natural language for user communication
+
+### 9. External Kubernetes MCP Server Integration
+
+**Purpose**: Leverage existing production-ready Kubernetes MCP server for real-time cluster state queries
+
+**Implementation**: **containers/kubernetes-mcp-server** (External Service)
+```yaml
+# Deployment Integration
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: prometheus-alerts-slm
+    image: prometheus-alerts-slm:latest
+  - name: k8s-mcp-server
+    image: ghcr.io/containers/kubernetes-mcp-server:latest
+  - name: action-history-mcp
+    image: prometheus-alerts-slm-mcp:latest
+```
+
+**Key Integration Points**:
+- **Multi-Server MCP Client**: Extended to connect to multiple MCP servers
+- **External Communication**: HTTP/gRPC connections to external MCP server
+- **Tool Discovery**: Dynamic discovery of available tools from external server
+- **Error Handling**: Graceful fallback when external server unavailable
+
+**Available Capabilities** (from containers/kubernetes-mcp-server):
+```go
+type ExternalMCPCapabilities struct {
+    PodOperations       []string  // get, list, describe, logs
+    NodeOperations      []string  // get, list, describe
+    DeploymentOps       []string  // get, list, scale, rollback
+    ServiceOperations   []string  // get, list, endpoints
+    ConfigMapOps        []string  // get, list, data access
+    SecretOperations    []string  // get, list (secure access)
+    EventQueries        []string  // recent events, filtering
+    ResourceQuotaOps    []string  // usage, limits, availability
+    HPAOperations       []string  // current metrics, scaling status
+    NamespaceOps        []string  // list, resource usage
+    HelmOperations      []string  // chart status, releases
+    OpenShiftSupport    bool      // native OpenShift compatibility
+}
+```
+
+**Benefits of External Server Approach**:
+- **Development Time Savings**: 4-5 weeks of implementation time saved
+- **Production Readiness**: Battle-tested, community-maintained implementation
+- **Security Hardening**: Pre-implemented RBAC and security controls
+- **OpenShift Compatibility**: Verified compatibility with our target platform
+- **Feature Completeness**: More tools than originally planned
+- **Maintenance**: Community support and regular updates
+
 ## Data Flow
 
 ### Alert Processing Flow
@@ -463,7 +614,7 @@ github.com/onsi/gomega     // Assertion library
    - Network policies for isolation
 
 3. **Audit & Compliance**:
-   - Comprehensive audit logging
+   - Audit logging
    - Action tracking and attribution
    - Retention policy compliance
 
@@ -539,7 +690,7 @@ make setup-kind
 
 **Monitoring Stack** (In Development):
 - Prometheus server deployment
-- AlertManager configuration  
+- AlertManager configuration
 - Kube-state-metrics integration
 - Test alert rules and synthetic alerts
 
@@ -572,7 +723,7 @@ make test-database-integration
 # E2E tests with KinD (in development)
 # make test-e2e-kind
 
-# Monitoring stack E2E (in development)  
+# Monitoring stack E2E (in development)
 # make test-e2e-monitoring
 
 # Coverage report with Ginkgo
@@ -581,7 +732,7 @@ make test-coverage
 
 ## Deployment Options
 
-### 1. Kubernetes Native
+### 1. Kubernetes Native with External MCP Server
 
 ```yaml
 # deploy/manifests/deployment.yaml
@@ -605,6 +756,27 @@ spec:
           value: "localai"
         - name: SLM_ENDPOINT
           value: "http://ollama-service:11434"
+        - name: MCP_K8S_SERVER
+          value: "http://localhost:8080"
+      - name: k8s-mcp-server
+        image: ghcr.io/containers/kubernetes-mcp-server:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MCP_PORT
+          value: "8080"
+        - name: KUBECONFIG
+          value: "/var/run/secrets/kubernetes.io/serviceaccount"
+      - name: action-history-mcp
+        image: quay.io/jordigilh/prometheus-alerts-slm-mcp:latest
+        ports:
+        - containerPort: 8081
+        env:
+        - name: DATABASE_HOST
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: host
 ```
 
 ### 2. OpenShift Deployment
@@ -722,7 +894,7 @@ k8s_actions_total{type, result}
    - Model A/B testing capabilities
    - Response quality metrics
 
-2. **Advanced Actions**:
+2. **Extended Actions**:
    - Custom script execution
    - Multi-step workflows
    - Rollback capabilities
@@ -746,7 +918,7 @@ k8s_actions_total{type, result}
 
 3. **Enterprise Features**:
    - Multi-tenancy support
-   - Advanced RBAC
+   - Enhanced RBAC
    - Compliance reporting
 
 ### Long Term (12+ months)
@@ -761,16 +933,28 @@ k8s_actions_total{type, result}
    - CI/CD integration
    - Policy-as-code
 
-3. **Advanced Analytics**:
+3. **Extended Analytics**:
    - Alert pattern analysis
    - Cost optimization
    - Performance insights
 
 ## Conclusion
 
-The Prometheus Alerts SLM proof-of-concept demonstrates the potential for AI-powered automated operations in Kubernetes environments. By combining proven monitoring tools (Prometheus/AlertManager) with cutting-edge language models (IBM Granite), the system provides intelligent, context-aware remediation capabilities.
+The Prometheus Alerts SLM proof-of-concept demonstrates the potential for AI-powered automated operations in Kubernetes environments. By combining proven monitoring tools (Prometheus/AlertManager) with language models (IBM Granite), the system provides intelligent, context-aware remediation capabilities.
 
-The architecture emphasizes modularity, security, and observability while maintaining the flexibility to evolve with advancing AI capabilities. The comprehensive testing infrastructure ensures reliability and enables confident deployment in production environments.
+The architecture emphasizes modularity, security, and observability while maintaining the flexibility to evolve with advancing AI capabilities. The testing infrastructure ensures reliability and enables confident deployment in production environments.
+
+### Integration with External MCP Servers
+
+A key architectural decision was to leverage the existing **containers/kubernetes-mcp-server** instead of implementing a custom Kubernetes MCP server. This approach provides:
+
+- **Accelerated Development**: 4-5 weeks of development time saved
+- **Production Readiness**: Mature, community-maintained implementation
+- **OpenShift Compatibility**: Verified support for our target platform
+- **Enhanced Security**: Pre-implemented RBAC and security controls
+- **Extended Capabilities**: More functionality than originally planned
+
+The hybrid approach of using both custom MCP servers (for action history and effectiveness assessment) and external MCP servers (for cluster state queries) demonstrates how modular architecture enables leveraging existing solutions while maintaining innovation in core differentiating features.
 
 This foundation provides a solid platform for exploring the future of AI-powered infrastructure operations, with clear paths for enhancement and integration into existing operational workflows.
 
