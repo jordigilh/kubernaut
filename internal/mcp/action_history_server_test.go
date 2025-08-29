@@ -8,9 +8,9 @@ import (
 	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/errors"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/oscillation"
-	"github.com/sirupsen/logrus"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
 )
 
 // MockRepository for testing
@@ -75,6 +75,14 @@ func (m *MockRepository) GetActionHistorySummaries(ctx context.Context, since ti
 	return nil, m.err
 }
 
+func (m *MockRepository) GetPendingEffectivenessAssessments(ctx context.Context) ([]*actionhistory.ResourceActionTrace, error) {
+	var traces []*actionhistory.ResourceActionTrace
+	for i := range m.traces {
+		traces = append(traces, &m.traces[i])
+	}
+	return traces, m.err
+}
+
 // MockDetector for testing
 type MockDetector struct {
 	result *oscillation.OscillationAnalysisResult
@@ -87,11 +95,11 @@ func (m *MockDetector) AnalyzeResource(ctx context.Context, resourceRef actionhi
 
 var _ = Describe("ActionHistoryMCPServer", func() {
 	var (
-		server         *ActionHistoryMCPServer
-		mockRepo       *MockRepository
-		mockDetector   *MockDetector
-		logger         *logrus.Logger
-		ctx            context.Context
+		server       *ActionHistoryMCPServer
+		mockRepo     *MockRepository
+		mockDetector *MockDetector
+		logger       *logrus.Logger
+		ctx          context.Context
 	)
 
 	BeforeEach(func() {
@@ -109,15 +117,15 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 			Expect(server.repository).To(Equal(mockRepo))
 			Expect(server.detector).To(Equal(mockDetector))
 			Expect(server.logger).To(Equal(logger))
-			
+
 			capabilities := server.GetCapabilities()
 			Expect(capabilities.Tools).To(HaveLen(4))
-			
+
 			toolNames := make([]string, len(capabilities.Tools))
 			for i, tool := range capabilities.Tools {
 				toolNames[i] = tool.Name
 			}
-			
+
 			Expect(toolNames).To(ContainElement("get_action_history"))
 			Expect(toolNames).To(ContainElement("analyze_oscillation_patterns"))
 			Expect(toolNames).To(ContainElement("get_action_effectiveness"))
@@ -133,7 +141,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 						Name: "unknown_tool",
 					},
 				}
-				
+
 				_, err := server.HandleToolCall(ctx, request)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unknown tool"))
@@ -148,7 +156,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind": "Deployment",
 					"name": "webapp",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())
@@ -160,7 +168,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"namespace": "production",
 					"name":      "webapp",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())
@@ -172,7 +180,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"namespace": "production",
 					"kind":      "Deployment",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())
@@ -187,7 +195,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "webapp",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())
@@ -199,7 +207,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "deployment", // Should start with uppercase
 					"name":      "webapp",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())
@@ -210,9 +218,9 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 			BeforeEach(func() {
 				mockRepo.traces = []actionhistory.ResourceActionTrace{
 					{
-						ActionID:      "test-action-1",
-						ActionType:    "scale_deployment",
-						ModelUsed:     "test-model",
+						ActionID:        "test-action-1",
+						ActionType:      "scale_deployment",
+						ModelUsed:       "test-model",
 						ModelConfidence: 0.95,
 						ExecutionStatus: "completed",
 					},
@@ -225,14 +233,47 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "webapp",
 				}
-				
+
 				response, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(response.Content).To(HaveLen(1))
-				Expect(response.Content[0].Type).To(Equal("text"))
-				Expect(response.Content[0].Text).To(ContainSubstring("Action History for Deployment/webapp"))
-				Expect(response.Content[0].Text).To(ContainSubstring("Total actions found: 1"))
-				Expect(response.Content[0].Text).To(ContainSubstring("test-action-1"))
+				Expect(response.Content).To(HaveLen(2))
+
+				// Check structured JSON response
+				Expect(response.Content[0].Type).To(Equal("application/json"))
+				Expect(response.Content[0].Data).ToNot(BeNil())
+
+				// Check text response
+				Expect(response.Content[1].Type).To(Equal("text"))
+				Expect(response.Content[1].Text).To(ContainSubstring("Action History for Deployment/webapp"))
+				Expect(response.Content[1].Text).To(ContainSubstring("Total actions found: 1"))
+				Expect(response.Content[1].Text).To(ContainSubstring("test-action-1"))
+			})
+
+			It("should return structured JSON data for programmatic analysis", func() {
+				args := map[string]interface{}{
+					"namespace": "production",
+					"kind":      "Deployment",
+					"name":      "webapp",
+				}
+
+				response, err := server.handleGetActionHistory(ctx, args)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(response.Content).To(HaveLen(2))
+
+				// Validate structured JSON response can be cast to expected type
+				jsonData := response.Content[0].Data
+				Expect(jsonData).To(BeAssignableToTypeOf(ActionHistoryResponse{}))
+
+				// Verify the structured data contains expected fields
+				structuredData, ok := jsonData.(ActionHistoryResponse)
+				Expect(ok).To(BeTrue())
+				Expect(structuredData.ResourceInfo.Namespace).To(Equal("production"))
+				Expect(structuredData.ResourceInfo.Kind).To(Equal("Deployment"))
+				Expect(structuredData.ResourceInfo.Name).To(Equal("webapp"))
+				Expect(structuredData.TotalActions).To(Equal(1))
+				Expect(structuredData.Actions).To(HaveLen(1))
+				Expect(structuredData.Actions[0].ID).To(Equal("test-action-1"))
+				Expect(structuredData.Actions[0].ActionType).To(Equal("scale_deployment"))
 			})
 
 			It("should handle optional limit parameter", func() {
@@ -242,7 +283,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"name":      "webapp",
 					"limit":     "10",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -250,11 +291,11 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 			It("should handle optional timeRange parameter", func() {
 				args := map[string]interface{}{
 					"namespace": "production",
-					"kind":      "Deployment", 
+					"kind":      "Deployment",
 					"name":      "webapp",
 					"timeRange": "24h",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -271,7 +312,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "webapp",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get action traces"))
@@ -287,7 +328,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					RecommendedAction: actionhistory.PreventionCoolingPeriod,
 					Confidence:        0.85,
 					ScaleOscillation: &oscillation.ScaleOscillationResult{
-						DirectionChanges:  3,
+						DirectionChanges: 3,
 						Severity:         actionhistory.SeverityMedium,
 						AvgEffectiveness: 0.6,
 						DurationMinutes:  45.0,
@@ -301,14 +342,46 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "webapp",
 				}
-				
+
 				response, err := server.handleAnalyzeOscillationPatterns(ctx, args)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(response.Content).To(HaveLen(1))
-				Expect(response.Content[0].Text).To(ContainSubstring("Oscillation Analysis"))
-				Expect(response.Content[0].Text).To(ContainSubstring("Overall Severity: medium"))
-				Expect(response.Content[0].Text).To(ContainSubstring("Scale Oscillation Detected"))
-				Expect(response.Content[0].Text).To(ContainSubstring("Direction Changes: 3"))
+				Expect(response.Content).To(HaveLen(2))
+
+				// Check structured JSON response
+				Expect(response.Content[0].Type).To(Equal("application/json"))
+				Expect(response.Content[0].Data).ToNot(BeNil())
+
+				// Check text response
+				Expect(response.Content[1].Type).To(Equal("text"))
+				Expect(response.Content[1].Text).To(ContainSubstring("Oscillation Analysis"))
+				Expect(response.Content[1].Text).To(ContainSubstring("Overall Severity: medium"))
+				Expect(response.Content[1].Text).To(ContainSubstring("Scale Oscillation Detected"))
+				Expect(response.Content[1].Text).To(ContainSubstring("Direction Changes: 3"))
+			})
+
+			It("should return structured oscillation analysis data", func() {
+				args := map[string]interface{}{
+					"namespace": "production",
+					"kind":      "Deployment",
+					"name":      "webapp",
+				}
+
+				response, err := server.handleAnalyzeOscillationPatterns(ctx, args)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(response.Content).To(HaveLen(2))
+
+				// Validate structured JSON response
+				jsonData := response.Content[0].Data
+				Expect(jsonData).To(BeAssignableToTypeOf(OscillationAnalysisResponse{}))
+
+				structuredData, ok := jsonData.(OscillationAnalysisResponse)
+				Expect(ok).To(BeTrue())
+				Expect(structuredData.ResourceInfo.Namespace).To(Equal("production"))
+				Expect(structuredData.OverallSeverity).To(Equal("medium"))
+				Expect(structuredData.Confidence).To(Equal(0.85))
+				Expect(structuredData.ScaleOscillation).NotTo(BeNil())
+				Expect(structuredData.ScaleOscillation.DirectionChanges).To(Equal(3))
+				Expect(structuredData.ScaleOscillation.Severity).To(Equal("medium"))
 			})
 
 			It("should handle optional windowMinutes parameter", func() {
@@ -318,7 +391,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"name":          "webapp",
 					"windowMinutes": "60",
 				}
-				
+
 				_, err := server.handleAnalyzeOscillationPatterns(ctx, args)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -339,10 +412,11 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "webapp",
 				}
-				
+
 				response, err := server.handleAnalyzeOscillationPatterns(ctx, args)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(response.Content[0].Text).To(ContainSubstring("No concerning oscillation patterns detected"))
+				Expect(response.Content).To(HaveLen(2))
+				Expect(response.Content[1].Text).To(ContainSubstring("No concerning oscillation patterns detected"))
 			})
 		})
 	})
@@ -364,11 +438,19 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"name":       "webapp",
 					"actionType": "scale_deployment",
 				}
-				
+
 				response, err := server.handleCheckActionSafety(ctx, args)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(response.Content[0].Text).To(ContainSubstring("✅ SAFE"))
-				Expect(response.Content[0].Text).To(ContainSubstring("No concerning oscillation patterns detected"))
+				Expect(response.Content).To(HaveLen(2))
+
+				// Check structured JSON response
+				Expect(response.Content[0].Type).To(Equal("application/json"))
+				Expect(response.Content[0].Data).ToNot(BeNil())
+
+				// Check text response
+				Expect(response.Content[1].Type).To(Equal("text"))
+				Expect(response.Content[1].Text).To(ContainSubstring("✅ SAFE"))
+				Expect(response.Content[1].Text).To(ContainSubstring("No concerning oscillation patterns detected"))
 			})
 		})
 
@@ -388,12 +470,20 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"name":       "webapp",
 					"actionType": "scale_deployment",
 				}
-				
+
 				response, err := server.handleCheckActionSafety(ctx, args)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(response.Content[0].Text).To(ContainSubstring("⚠️  WARNING"))
-				Expect(response.Content[0].Text).To(ContainSubstring("HIGH severity"))
-				Expect(response.Content[0].Text).To(ContainSubstring("🚫 RECOMMENDATION: Block this action"))
+				Expect(response.Content).To(HaveLen(2))
+
+				// Check structured JSON response
+				Expect(response.Content[0].Type).To(Equal("application/json"))
+				Expect(response.Content[0].Data).ToNot(BeNil())
+
+				// Check text response
+				Expect(response.Content[1].Type).To(Equal("text"))
+				Expect(response.Content[1].Text).To(ContainSubstring("⚠️  WARNING"))
+				Expect(response.Content[1].Text).To(ContainSubstring("HIGH severity"))
+				Expect(response.Content[1].Text).To(ContainSubstring("🚫 RECOMMENDATION: Block this action"))
 			})
 		})
 
@@ -404,7 +494,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "webapp",
 				}
-				
+
 				_, err := server.handleCheckActionSafety(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())
@@ -421,7 +511,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "webapp",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())
@@ -433,7 +523,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "<script>alert('xss')</script>",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())
@@ -447,7 +537,7 @@ var _ = Describe("ActionHistoryMCPServer", func() {
 					"kind":      "Deployment",
 					"name":      "webapp",
 				}
-				
+
 				_, err := server.handleGetActionHistory(ctx, args)
 				Expect(err).To(HaveOccurred())
 				Expect(errors.IsType(err, errors.ErrorTypeValidation)).To(BeTrue())

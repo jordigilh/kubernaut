@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/executor"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
@@ -23,6 +24,69 @@ import (
 	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
 	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared/testenv"
 )
+
+// SimpleMockRepository for integration testing
+type SimpleMockRepository struct{}
+
+func (m *SimpleMockRepository) EnsureResourceReference(ctx context.Context, ref actionhistory.ResourceReference) (int64, error) {
+	return 1, nil
+}
+
+func (m *SimpleMockRepository) GetResourceReference(ctx context.Context, namespace, kind, name string) (*actionhistory.ResourceReference, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) EnsureActionHistory(ctx context.Context, resourceID int64) (*actionhistory.ActionHistory, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionHistory(ctx context.Context, resourceID int64) (*actionhistory.ActionHistory, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) UpdateActionHistory(ctx context.Context, history *actionhistory.ActionHistory) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) StoreAction(ctx context.Context, action *actionhistory.ActionRecord) (*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionTraces(ctx context.Context, query actionhistory.ActionQuery) ([]actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionTrace(ctx context.Context, actionID string) (*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) UpdateActionTrace(ctx context.Context, trace *actionhistory.ResourceActionTrace) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetPendingEffectivenessAssessments(ctx context.Context) ([]*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetOscillationPatterns(ctx context.Context, patternType string) ([]actionhistory.OscillationPattern, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) StoreOscillationDetection(ctx context.Context, detection *actionhistory.OscillationDetection) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetOscillationDetections(ctx context.Context, resourceID int64, resolved *bool) ([]actionhistory.OscillationDetection, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) ApplyRetention(ctx context.Context, actionHistoryID int64) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetActionHistorySummaries(ctx context.Context, since time.Duration) ([]actionhistory.ActionHistorySummary, error) {
+	return nil, nil
+}
 
 var _ = Describe("SLM Integration", func() {
 	It("should successfully analyze alerts with SLM", func() {
@@ -271,11 +335,12 @@ var _ = Describe("End-to-End Flow", func() {
 
 		// Create executor with K8s client
 		k8sClient := testEnv.CreateK8sClient(logger)
+		mockRepo := &SimpleMockRepository{}
 		exec = executor.NewExecutor(k8sClient, config.ActionsConfig{
 			DryRun:         false,
 			MaxConcurrent:  5,
 			CooldownPeriod: 30 * time.Second,
-		}, logger)
+		}, mockRepo, logger)
 	})
 
 	AfterEach(func() {
@@ -380,7 +445,7 @@ var _ = Describe("End-to-End Flow", func() {
 		actionCtx, actionCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer actionCancel()
 
-		err = exec.Execute(actionCtx, recommendation, testAlert)
+		err = exec.Execute(actionCtx, recommendation, testAlert, nil)
 		Expect(err).ToNot(HaveOccurred())
 
 		// 5. Verify the action was executed in K8s

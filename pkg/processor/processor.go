@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/executor"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/metrics"
@@ -20,18 +22,20 @@ type Processor interface {
 }
 
 type processor struct {
-	slmClient slm.Client
-	executor  executor.Executor
-	filters   []config.FilterConfig
-	log       *logrus.Logger
+	slmClient         slm.Client
+	executor          executor.Executor
+	filters           []config.FilterConfig
+	actionHistoryRepo actionhistory.Repository
+	log               *logrus.Logger
 }
 
-func NewProcessor(slmClient slm.Client, executor executor.Executor, filters []config.FilterConfig, log *logrus.Logger) Processor {
+func NewProcessor(slmClient slm.Client, executor executor.Executor, filters []config.FilterConfig, actionHistoryRepo actionhistory.Repository, log *logrus.Logger) Processor {
 	return &processor{
-		slmClient: slmClient,
-		executor:  executor,
-		filters:   filters,
-		log:       log,
+		slmClient:         slmClient,
+		executor:          executor,
+		filters:           filters,
+		actionHistoryRepo: actionHistoryRepo,
+		log:               log,
 	}
 }
 
@@ -79,8 +83,23 @@ func (p *processor) ProcessAlert(ctx context.Context, alert types.Alert) error {
 		"reasoning":  recommendation.Reasoning,
 	}).Info("SLM recommendation received")
 
+	// Store action record in database (if enabled)
+	var actionTrace *actionhistory.ResourceActionTrace
+	if p.actionHistoryRepo != nil {
+		actionRecord := p.createActionRecord(alert, recommendation)
+		actionTrace, err = p.actionHistoryRepo.StoreAction(ctx, actionRecord)
+		if err != nil {
+			p.log.WithError(err).Warn("Failed to store action record")
+		} else {
+			p.log.WithFields(logrus.Fields{
+				"action_id": actionTrace.ActionID,
+				"trace_id":  actionTrace.ID,
+			}).Debug("Stored action record")
+		}
+	}
+
 	// Execute the recommended action
-	if err := p.executor.Execute(ctx, recommendation, alert); err != nil {
+	if err := p.executor.Execute(ctx, recommendation, alert, actionTrace); err != nil {
 		return fmt.Errorf("failed to execute action: %w", err)
 	}
 
@@ -194,6 +213,49 @@ func (p *processor) matchesPattern(value, pattern string) bool {
 	}
 
 	return false
+}
+
+// createActionRecord creates an action record from alert and recommendation
+func (p *processor) createActionRecord(alert types.Alert, recommendation *types.ActionRecommendation) *actionhistory.ActionRecord {
+	// Generate action ID if not present in recommendation
+	actionID := uuid.New().String()
+
+	// Extract reasoning text
+	var reasoning *string
+	if recommendation.Reasoning != nil && recommendation.Reasoning.Summary != "" {
+		reasoning = &recommendation.Reasoning.Summary
+	}
+
+	// Convert parameters to interface map
+	parameters := make(map[string]interface{})
+	if recommendation.Parameters != nil {
+		for k, v := range recommendation.Parameters {
+			parameters[k] = v
+		}
+	}
+
+	return &actionhistory.ActionRecord{
+		ResourceReference: actionhistory.ResourceReference{
+			Namespace: alert.Namespace,
+			Kind:      "Deployment", // Default, could be derived from alert labels
+			Name:      alert.Resource,
+		},
+		ActionID:  actionID,
+		Timestamp: time.Now(),
+		Alert: actionhistory.AlertContext{
+			Name:        alert.Name,
+			Severity:    alert.Severity,
+			Labels:      alert.Labels,
+			Annotations: alert.Annotations,
+			FiringTime:  alert.StartsAt,
+		},
+		ModelUsed:           "unknown", // Would need to track model from SLM client
+		Confidence:          recommendation.Confidence,
+		Reasoning:           reasoning,
+		ActionType:          recommendation.Action,
+		Parameters:          parameters,
+		ResourceStateBefore: make(map[string]interface{}), // Would need to collect from K8s
+	}
 }
 
 // FilterAlert is now deprecated - use types.Alert directly
