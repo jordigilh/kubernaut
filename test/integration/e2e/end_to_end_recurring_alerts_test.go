@@ -23,18 +23,28 @@ import (
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/metrics"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
 )
+
+// ConvertAlertToResourceRef converts a types.Alert to actionhistory.ResourceReference
+func ConvertAlertToResourceRef(alert types.Alert) actionhistory.ResourceReference {
+	return actionhistory.ResourceReference{
+		Namespace: alert.Namespace,
+		Kind:      "Deployment", // Default to Deployment for test scenarios
+		Name:      alert.Resource,
+	}
+}
 
 var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		dbUtils    *DatabaseTestUtils
+		dbUtils    *shared.DatabaseTestUtils
 		mcpServer  *mcp.ActionHistoryMCPServer
-		testConfig IntegrationConfig
+		testConfig shared.IntegrationConfig
 	)
 
 	BeforeAll(func() {
-		testConfig = LoadConfig()
+		testConfig = shared.LoadConfig()
 		if testConfig.SkipIntegration {
 			Skip("Integration tests disabled")
 		}
@@ -43,7 +53,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 		logger.SetLevel(logrus.InfoLevel)
 
 		var err error
-		dbUtils, err = NewDatabaseTestUtils(logger)
+		dbUtils, err = shared.NewDatabaseTestUtils(logger)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(dbUtils.InitializeFreshDatabase()).To(Succeed())
@@ -95,9 +105,9 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "memory-intensive-app",
 				Labels: map[string]string{
-					"alertname":         "PodOOMKilled",
+					"alertname":          "PodOOMKilled",
 					"termination_reason": "OOMKilled",
-					"memory_usage":      "95%",
+					"memory_usage":       "95%",
 				},
 				Annotations: map[string]string{
 					"description": "Pod exceeded memory limit and was killed",
@@ -122,12 +132,12 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Simulating failed scaling attempt history")
 			resourceRef := ConvertAlertToResourceRef(oomAlert)
-			
+
 			// Create history of failed scale_deployment attempts
 			ctx := context.Background()
 			resourceID, err := dbUtils.Repository.EnsureResourceReference(ctx, resourceRef)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			_, err = dbUtils.Repository.EnsureActionHistory(ctx, resourceID)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -135,8 +145,8 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			reasoning := "Attempted scaling for OOM issue"
 			failedAction := &actionhistory.ActionRecord{
 				ResourceReference: resourceRef,
-				ActionID:         "failed-scale-oom-1",
-				Timestamp:        time.Now().Add(-30 * time.Minute),
+				ActionID:          "failed-scale-oom-1",
+				Timestamp:         time.Now().Add(-30 * time.Minute),
 				Alert: actionhistory.AlertContext{
 					Name:        oomAlert.Name,
 					Severity:    oomAlert.Severity,
@@ -235,9 +245,9 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "api-service",
 				Labels: map[string]string{
-					"alertname":     "HighMemoryUsage",
-					"memory_usage":  "87%",
-					"pod_count":     "3",
+					"alertname":    "HighMemoryUsage",
+					"memory_usage": "87%",
+					"pod_count":    "3",
 				},
 				Annotations: map[string]string{
 					"description": "Memory usage trending upward",
@@ -283,9 +293,9 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "database",
 				Labels: map[string]string{
-					"alertname":    "DiskSpaceHigh",
-					"disk_usage":   "92%",
-					"mount_point":  "/data",
+					"alertname":   "DiskSpaceHigh",
+					"disk_usage":  "92%",
+					"mount_point": "/data",
 				},
 				Annotations: map[string]string{
 					"description": "Database disk space critical",
@@ -295,7 +305,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating mixed effectiveness history")
 			resourceRef := ConvertAlertToResourceRef(storageAlert)
-			
+
 			// Create low effectiveness history for expand_pvc
 			_, err := dbUtils.CreateLowEffectivenessHistory(resourceRef, "expand_pvc", 0.3)
 			Expect(err).ToNot(HaveOccurred())
@@ -308,8 +318,8 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			reasoning := "Successful storage cleanup"
 			successfulAction := &actionhistory.ActionRecord{
 				ResourceReference: resourceRef,
-				ActionID:         "successful-cleanup-1",
-				Timestamp:        time.Now().Add(-2 * time.Hour),
+				ActionID:          "successful-cleanup-1",
+				Timestamp:         time.Now().Add(-2 * time.Hour),
 				Alert: actionhistory.AlertContext{
 					Name:        storageAlert.Name,
 					Severity:    storageAlert.Severity,
@@ -361,9 +371,9 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "frontend-app",
 				Labels: map[string]string{
-					"alertname":     "NetworkConnectivityIssue",
-					"connectivity":  "external",
-					"error_rate":    "15%",
+					"alertname":    "NetworkConnectivityIssue",
+					"connectivity": "external",
+					"error_rate":   "15%",
 				},
 				Annotations: map[string]string{
 					"description": "High rate of connection timeouts",
@@ -411,17 +421,17 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			ctx := context.Background()
 			resourceID, err := dbUtils.Repository.EnsureResourceReference(ctx, resourceRef)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			_, err = dbUtils.Repository.EnsureActionHistory(ctx, resourceID)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Simulate memory leak pattern: gradual memory increase, restart, temporary fix, repeat
 			memoryProgression := []struct {
-				alertName   string
-				usage       string
-				action      string
+				alertName     string
+				usage         string
+				action        string
 				effectiveness float64
-				hours       int
+				hours         int
 			}{
 				{"MemoryUsageHigh", "70%", "increase_resources", 0.8, -24},
 				{"MemoryUsageHigh", "85%", "restart_pod", 0.6, -18},
@@ -433,14 +443,14 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				reasoning := fmt.Sprintf("Memory leak pattern stage %d", i+1)
 				action := &actionhistory.ActionRecord{
 					ResourceReference: resourceRef,
-					ActionID:         fmt.Sprintf("memory-leak-stage-%d", i),
-					Timestamp:        time.Now().Add(time.Duration(stage.hours) * time.Hour),
+					ActionID:          fmt.Sprintf("memory-leak-stage-%d", i),
+					Timestamp:         time.Now().Add(time.Duration(stage.hours) * time.Hour),
 					Alert: actionhistory.AlertContext{
 						Name:     stage.alertName,
 						Severity: "warning",
 						Labels: map[string]string{
-							"alertname":     stage.alertName,
-							"memory_usage":  stage.usage,
+							"alertname":    stage.alertName,
+							"memory_usage": stage.usage,
 						},
 						Annotations: map[string]string{
 							"description": fmt.Sprintf("Memory usage at %s", stage.usage),
@@ -466,15 +476,15 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("Current severe memory alert")
 			currentAlert := types.Alert{
 				Name:        "MemoryUsageCritical",
-				Status:      "firing", 
+				Status:      "firing",
 				Severity:    "critical",
 				Description: "Memory usage at 95% - approaching OOM",
 				Namespace:   "production",
 				Resource:    "leaky-app",
 				Labels: map[string]string{
-					"alertname":     "MemoryUsageCritical",
-					"memory_usage":  "95%",
-					"trend":         "increasing",
+					"alertname":    "MemoryUsageCritical",
+					"memory_usage": "95%",
+					"trend":        "increasing",
 				},
 				Annotations: map[string]string{
 					"description": "Critical memory usage - leak suspected",
@@ -507,13 +517,13 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			deploymentAlert := types.Alert{
 				Name:        "DeploymentReplicasMismatch",
 				Status:      "firing",
-				Severity:    "warning", 
+				Severity:    "warning",
 				Description: "Deployment has 2/5 replicas ready",
 				Namespace:   "production",
 				Resource:    "web-frontend",
 				Labels: map[string]string{
-					"alertname":       "DeploymentReplicasMismatch",
-					"ready_replicas":  "2",
+					"alertname":        "DeploymentReplicasMismatch",
+					"ready_replicas":   "2",
 					"desired_replicas": "5",
 				},
 				Annotations: map[string]string{
@@ -557,12 +567,12 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				Status:      "firing",
 				Severity:    "warning",
 				Description: "CPU usage sustained above 80%",
-				Namespace:   "production", 
+				Namespace:   "production",
 				Resource:    "payment-service",
 				Labels: map[string]string{
-					"alertname":  "HighCPUUsage",
-					"cpu_usage":  "85%",
-					"service":    "payment",
+					"alertname": "HighCPUUsage",
+					"cpu_usage": "85%",
+					"service":   "payment",
 				},
 				Annotations: map[string]string{
 					"description": "Business hours CPU pressure",
@@ -597,7 +607,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			// Create large context scenario
 			resourceRef := actionhistory.ResourceReference{
 				Namespace: "production",
-				Kind:      "Deployment", 
+				Kind:      "Deployment",
 				Name:      "large-context-app",
 			}
 
@@ -621,28 +631,28 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "large-context-app",
 				Labels: map[string]string{
-					"alertname":         "ComplexSystemAlert",
-					"memory_usage":      "92%",
-					"cpu_usage":         "87%",
-					"disk_usage":        "78%",
-					"network_errors":    "12%",
-					"response_time":     "5.2s",
-					"error_rate":        "8.3%",
+					"alertname":          "ComplexSystemAlert",
+					"memory_usage":       "92%",
+					"cpu_usage":          "87%",
+					"disk_usage":         "78%",
+					"network_errors":     "12%",
+					"response_time":      "5.2s",
+					"error_rate":         "8.3%",
 					"active_connections": "1547",
-					"queue_length":      "234",
-					"service_type":      "mission_critical",
-					"environment":       "production",
-					"cluster":           "us-east-1",
-					"region":            "north_america",
+					"queue_length":       "234",
+					"service_type":       "mission_critical",
+					"environment":        "production",
+					"cluster":            "us-east-1",
+					"region":             "north_america",
 				},
 				Annotations: map[string]string{
-					"description":         "Multi-dimensional performance degradation detected across memory, CPU, disk, and network subsystems",
-					"runbook":            "https://runbooks.company.com/complex-system-troubleshooting",
-					"escalation_policy":  "immediate",
-					"business_impact":    "high",
-					"affected_users":     "all_customers",
-					"related_services":   "auth-service,payment-service,notification-service",
-					"correlation_id":     "alert-correlation-12345",
+					"description":       "Multi-dimensional performance degradation detected across memory, CPU, disk, and network subsystems",
+					"runbook":           "https://runbooks.company.com/complex-system-troubleshooting",
+					"escalation_policy": "immediate",
+					"business_impact":   "high",
+					"affected_users":    "all_customers",
+					"related_services":  "auth-service,payment-service,notification-service",
+					"correlation_id":    "alert-correlation-12345",
 				},
 			}
 
@@ -653,15 +663,15 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(recommendation).ToNot(BeNil())
-			
+
 			// Should complete within reasonable time even with large context
 			Expect(analysisTime).To(BeNumerically("<", 60*time.Second))
 
 			logger.WithFields(logrus.Fields{
-				"action":         recommendation.Action,
-				"confidence":     recommendation.Confidence,
-				"analysis_time":  analysisTime,
-				"reasoning":      recommendation.Reasoning,
+				"action":        recommendation.Action,
+				"confidence":    recommendation.Confidence,
+				"analysis_time": analysisTime,
+				"reasoning":     recommendation.Reasoning,
 			}).Info("Large context analysis completed")
 
 			// Should handle large context gracefully and still make reasonable decisions
@@ -678,23 +688,23 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			// Create test scenario with varying context sizes
 			alerts := []struct {
-				name          string
-				description   string
-				expectedSize  string // rough size category for validation
+				name         string
+				description  string
+				expectedSize string // rough size category for validation
 			}{
 				{
-					name:        "SmallContextAlert",
-					description: "Small context test",
+					name:         "SmallContextAlert",
+					description:  "Small context test",
 					expectedSize: "small",
 				},
 				{
-					name:        "MediumContextAlert", 
-					description: "Medium context test with more detailed description and additional metadata for context size testing",
+					name:         "MediumContextAlert",
+					description:  "Medium context test with more detailed description and additional metadata for context size testing",
 					expectedSize: "medium",
 				},
 				{
-					name:        "LargeContextAlert",
-					description: "Large context test with extensive description, multiple labels, annotations, and detailed metadata that should result in a significantly larger context size when combined with historical data and MCP context information for comprehensive testing of context size metrics collection and validation",
+					name:         "LargeContextAlert",
+					description:  "Large context test with extensive description, multiple labels, annotations, and detailed metadata that should result in a significantly larger context size when combined with historical data and MCP context information for comprehensive testing of context size metrics collection and validation",
 					expectedSize: "large",
 				},
 			}
@@ -709,13 +719,13 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 					Namespace:   "production",
 					Resource:    "context-monitoring-app",
 					Labels: map[string]string{
-						"alertname":    alertSpec.name,
+						"alertname":     alertSpec.name,
 						"size_category": alertSpec.expectedSize,
 						"test_metadata": "context_size_validation",
 					},
 					Annotations: map[string]string{
-						"description": alertSpec.description,
-						"test_purpose": "context_size_metrics_validation",
+						"description":   alertSpec.description,
+						"test_purpose":  "context_size_metrics_validation",
 						"size_category": alertSpec.expectedSize,
 					},
 				}
@@ -737,7 +747,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			// Validate that context size metrics were recorded
 			Expect(metricsData).To(ContainSubstring("slm_context_size_bytes"))
 			Expect(metricsData).To(ContainSubstring("slm_context_size_tokens"))
-			
+
 			// Validate that multiple measurements were taken (one for each alert)
 			contextBytesLines := extractMetricLines(metricsData, "slm_context_size_bytes")
 			Expect(len(contextBytesLines)).To(BeNumerically(">=", 3), "Should have at least 3 context size measurements")
@@ -769,13 +779,13 @@ var testMetricsServer *metrics.Server
 func startTestMetricsServer() *metrics.Server {
 	logger := logrus.New()
 	logger.SetLevel(logrus.WarnLevel) // Reduce noise in test output
-	
+
 	testMetricsServer = metrics.NewServer("9999", logger)
 	testMetricsServer.StartAsync()
-	
+
 	// Wait for server to start
 	time.Sleep(500 * time.Millisecond)
-	
+
 	return testMetricsServer
 }
 
@@ -793,39 +803,39 @@ func fetchMetricsFromServer(url string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("metrics server returned status %d", resp.StatusCode)
 	}
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return string(body), nil
 }
 
 func extractMetricLines(metricsData, metricName string) []string {
 	lines := strings.Split(metricsData, "\n")
 	var metricLines []string
-	
+
 	for _, line := range lines {
 		if strings.Contains(line, metricName) && !strings.HasPrefix(line, "#") {
 			metricLines = append(metricLines, line)
 		}
 	}
-	
+
 	return metricLines
 }
 
 func parseHistogramValues(metricLines []string) []float64 {
 	var values []float64
-	
+
 	// Parse histogram bucket values from Prometheus metrics format
 	// Example: slm_context_size_bytes_bucket{provider="localai",le="16000"} 2
 	bucketRegex := regexp.MustCompile(`slm_context_size_bytes_bucket\{[^}]*le="([^"]+)"[^}]*\}\s+(\d+)`)
-	
+
 	for _, line := range metricLines {
 		matches := bucketRegex.FindStringSubmatch(line)
 		if len(matches) == 3 {
@@ -837,14 +847,14 @@ func parseHistogramValues(metricLines []string) []float64 {
 			if err != nil {
 				continue
 			}
-			
+
 			// If count > 0, we have observations in this bucket
 			if count > 0 {
 				values = append(values, bucketSize)
 			}
 		}
 	}
-	
+
 	return values
 }
 

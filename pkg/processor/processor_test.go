@@ -3,7 +3,9 @@ package processor
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/executor"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
@@ -11,6 +13,69 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 )
+
+// SimpleMockRepository for testing
+type SimpleMockRepository struct{}
+
+func (m *SimpleMockRepository) EnsureResourceReference(ctx context.Context, ref actionhistory.ResourceReference) (int64, error) {
+	return 1, nil
+}
+
+func (m *SimpleMockRepository) GetResourceReference(ctx context.Context, namespace, kind, name string) (*actionhistory.ResourceReference, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) EnsureActionHistory(ctx context.Context, resourceID int64) (*actionhistory.ActionHistory, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionHistory(ctx context.Context, resourceID int64) (*actionhistory.ActionHistory, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) UpdateActionHistory(ctx context.Context, history *actionhistory.ActionHistory) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) StoreAction(ctx context.Context, action *actionhistory.ActionRecord) (*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionTraces(ctx context.Context, query actionhistory.ActionQuery) ([]actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionTrace(ctx context.Context, actionID string) (*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) UpdateActionTrace(ctx context.Context, trace *actionhistory.ResourceActionTrace) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetPendingEffectivenessAssessments(ctx context.Context) ([]*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetOscillationPatterns(ctx context.Context, patternType string) ([]actionhistory.OscillationPattern, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) StoreOscillationDetection(ctx context.Context, detection *actionhistory.OscillationDetection) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetOscillationDetections(ctx context.Context, resourceID int64, resolved *bool) ([]actionhistory.OscillationDetection, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) ApplyRetention(ctx context.Context, actionHistoryID int64) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetActionHistorySummaries(ctx context.Context, since time.Duration) ([]actionhistory.ActionHistorySummary, error) {
+	return nil, nil
+}
 
 // FakeSLMClient implements the slm.Client interface for testing
 type FakeSLMClient struct {
@@ -69,7 +134,7 @@ func NewFakeExecutor(healthy bool) *FakeExecutor {
 	}
 }
 
-func (f *FakeExecutor) Execute(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+func (f *FakeExecutor) Execute(ctx context.Context, action *types.ActionRecommendation, alert types.Alert, actionTrace *actionhistory.ResourceActionTrace) error {
 	f.callCount++
 	return f.err
 }
@@ -95,6 +160,7 @@ var _ = Describe("Processor", func() {
 		logger    *logrus.Logger
 		slmClient *FakeSLMClient
 		executor  *FakeExecutor
+		mockRepo  *SimpleMockRepository
 		processor Processor
 	)
 
@@ -103,12 +169,13 @@ var _ = Describe("Processor", func() {
 		logger.SetLevel(logrus.FatalLevel)
 		slmClient = NewFakeSLMClient(true)
 		executor = NewFakeExecutor(true)
-		processor = NewProcessor(slmClient, executor, []config.FilterConfig{}, logger)
+		mockRepo = &SimpleMockRepository{}
+		processor = NewProcessor(slmClient, executor, []config.FilterConfig{}, mockRepo, logger)
 	})
 
 	Describe("NewProcessor", func() {
 		It("should create a new processor", func() {
-			processor := NewProcessor(slmClient, executor, []config.FilterConfig{}, logger)
+			processor := NewProcessor(slmClient, executor, []config.FilterConfig{}, mockRepo, logger)
 			Expect(processor).ToNot(BeNil())
 		})
 	})
@@ -201,7 +268,7 @@ var _ = Describe("Processor", func() {
 						},
 					},
 				}
-				processor = NewProcessor(slmClient, executor, filters, logger)
+				processor = NewProcessor(slmClient, executor, filters, mockRepo, logger)
 				alert.Namespace = "development" // Doesn't match filter
 			})
 
@@ -243,7 +310,7 @@ var _ = Describe("Processor", func() {
 						},
 					},
 				}
-				processor = NewProcessor(slmClient, executor, filters, logger)
+				processor = NewProcessor(slmClient, executor, filters, mockRepo, logger)
 			})
 
 			DescribeTable("filter matching scenarios",

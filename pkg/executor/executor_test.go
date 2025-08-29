@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	. "github.com/onsi/ginkgo/v2"
@@ -17,6 +18,69 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+// SimpleMockRepository for testing
+type SimpleMockRepository struct{}
+
+func (m *SimpleMockRepository) EnsureResourceReference(ctx context.Context, ref actionhistory.ResourceReference) (int64, error) {
+	return 1, nil
+}
+
+func (m *SimpleMockRepository) GetResourceReference(ctx context.Context, namespace, kind, name string) (*actionhistory.ResourceReference, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) EnsureActionHistory(ctx context.Context, resourceID int64) (*actionhistory.ActionHistory, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionHistory(ctx context.Context, resourceID int64) (*actionhistory.ActionHistory, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) UpdateActionHistory(ctx context.Context, history *actionhistory.ActionHistory) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) StoreAction(ctx context.Context, action *actionhistory.ActionRecord) (*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionTraces(ctx context.Context, query actionhistory.ActionQuery) ([]actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetActionTrace(ctx context.Context, actionID string) (*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) UpdateActionTrace(ctx context.Context, trace *actionhistory.ResourceActionTrace) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetPendingEffectivenessAssessments(ctx context.Context) ([]*actionhistory.ResourceActionTrace, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) GetOscillationPatterns(ctx context.Context, patternType string) ([]actionhistory.OscillationPattern, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) StoreOscillationDetection(ctx context.Context, detection *actionhistory.OscillationDetection) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetOscillationDetections(ctx context.Context, resourceID int64, resolved *bool) ([]actionhistory.OscillationDetection, error) {
+	return nil, nil
+}
+
+func (m *SimpleMockRepository) ApplyRetention(ctx context.Context, actionHistoryID int64) error {
+	return nil
+}
+
+func (m *SimpleMockRepository) GetActionHistorySummaries(ctx context.Context, since time.Duration) ([]actionhistory.ActionHistorySummary, error) {
+	return nil, nil
+}
+
 // FakeK8sClient implements our k8s.Client interface using the Kubernetes fake client
 type FakeK8sClient struct {
 	clientset *fake.Clientset
@@ -26,7 +90,7 @@ type FakeK8sClient struct {
 func NewFakeK8sClient(objects ...runtime.Object) *FakeK8sClient {
 	logger := logrus.New()
 	logger.SetLevel(logrus.FatalLevel)
-	
+
 	return &FakeK8sClient{
 		clientset: fake.NewSimpleClientset(objects...),
 		log:       logger,
@@ -67,12 +131,12 @@ func (f *FakeK8sClient) UpdatePodResources(ctx context.Context, namespace, name 
 	if err != nil {
 		return err
 	}
-	
+
 	if len(pod.Spec.Containers) > 0 {
 		pod.Spec.Containers[0].Resources = resources
 		_, err = f.clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
 	}
-	
+
 	return err
 }
 
@@ -262,12 +326,11 @@ func createTestPod(namespace, name string) *corev1.Pod {
 	}
 }
 
-
-
 var _ = Describe("Executor", func() {
 	var (
 		logger     *logrus.Logger
 		fakeClient *FakeK8sClient
+		mockRepo   *SimpleMockRepository
 		executor   Executor
 		ctx        context.Context
 	)
@@ -275,6 +338,7 @@ var _ = Describe("Executor", func() {
 	BeforeEach(func() {
 		logger = logrus.New()
 		logger.SetLevel(logrus.FatalLevel)
+		mockRepo = &SimpleMockRepository{}
 		ctx = context.Background()
 	})
 
@@ -287,7 +351,7 @@ var _ = Describe("Executor", func() {
 				CooldownPeriod: 5 * time.Minute,
 			}
 
-			executor := NewExecutor(fakeClient, cfg, logger)
+			executor := NewExecutor(fakeClient, cfg, mockRepo, logger)
 			Expect(executor).ToNot(BeNil())
 		})
 	})
@@ -299,7 +363,7 @@ var _ = Describe("Executor", func() {
 				MaxConcurrent: 1,
 			}
 
-			executor := NewExecutor(fakeClient, cfg, logger)
+			executor := NewExecutor(fakeClient, cfg, mockRepo, logger)
 			Expect(executor.IsHealthy()).To(BeTrue())
 		})
 	})
@@ -310,7 +374,7 @@ var _ = Describe("Executor", func() {
 				DryRun:        false,
 				MaxConcurrent: 1,
 			}
-			executor = NewExecutor(fakeClient, cfg, logger)
+			executor = NewExecutor(fakeClient, cfg, mockRepo, logger)
 		})
 
 		Context("scale_deployment action", func() {
@@ -320,7 +384,7 @@ var _ = Describe("Executor", func() {
 				executor = NewExecutor(fakeClient, config.ActionsConfig{
 					DryRun:        false,
 					MaxConcurrent: 1,
-				}, logger)
+				}, mockRepo, logger)
 
 				alert := types.Alert{
 					Name:      "HighCPUUsage",
@@ -337,7 +401,7 @@ var _ = Describe("Executor", func() {
 					},
 				}
 
-				err := executor.Execute(ctx, action, alert)
+				err := executor.Execute(ctx, action, alert, nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify scaling worked
@@ -354,7 +418,7 @@ var _ = Describe("Executor", func() {
 				executor = NewExecutor(fakeClient, config.ActionsConfig{
 					DryRun:        false,
 					MaxConcurrent: 1,
-				}, logger)
+				}, mockRepo, logger)
 
 				alert := types.Alert{
 					Name:      "PodCrashLoop",
@@ -368,7 +432,7 @@ var _ = Describe("Executor", func() {
 					Action: "restart_pod",
 				}
 
-				err := executor.Execute(ctx, action, alert)
+				err := executor.Execute(ctx, action, alert, nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify pod was deleted
@@ -384,7 +448,7 @@ var _ = Describe("Executor", func() {
 				executor = NewExecutor(fakeClient, config.ActionsConfig{
 					DryRun:        false,
 					MaxConcurrent: 1,
-				}, logger)
+				}, mockRepo, logger)
 
 				alert := types.Alert{
 					Name:      "HighMemoryUsage",
@@ -404,7 +468,7 @@ var _ = Describe("Executor", func() {
 					},
 				}
 
-				err := executor.Execute(ctx, action, alert)
+				err := executor.Execute(ctx, action, alert, nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify resources were updated
@@ -421,7 +485,7 @@ var _ = Describe("Executor", func() {
 				fakeClient = NewFakeK8sClient()
 				executor = NewExecutor(fakeClient, config.ActionsConfig{
 					MaxConcurrent: 1,
-				}, logger)
+				}, mockRepo, logger)
 
 				alert := types.Alert{
 					Name:      "CriticalAlert",
@@ -436,7 +500,7 @@ var _ = Describe("Executor", func() {
 					},
 				}
 
-				err := executor.Execute(ctx, action, alert)
+				err := executor.Execute(ctx, action, alert, nil)
 				Expect(err).ToNot(HaveOccurred())
 			})
 		})
@@ -446,7 +510,7 @@ var _ = Describe("Executor", func() {
 				fakeClient = NewFakeK8sClient()
 				executor = NewExecutor(fakeClient, config.ActionsConfig{
 					MaxConcurrent: 1,
-				}, logger)
+				}, mockRepo, logger)
 
 				action := &types.ActionRecommendation{
 					Action: "unknown_action",
@@ -457,7 +521,7 @@ var _ = Describe("Executor", func() {
 					Namespace: "test",
 				}
 
-				err := executor.Execute(ctx, action, alert)
+				err := executor.Execute(ctx, action, alert, nil)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unknown action: unknown_action"))
 			})
@@ -469,7 +533,7 @@ var _ = Describe("Executor", func() {
 				executor = NewExecutor(fakeClient, config.ActionsConfig{
 					DryRun:        true,
 					MaxConcurrent: 1,
-				}, logger)
+				}, mockRepo, logger)
 
 				alert := types.Alert{
 					Name:      "TestAlert",
@@ -484,7 +548,7 @@ var _ = Describe("Executor", func() {
 					},
 				}
 
-				err := executor.Execute(ctx, action, alert)
+				err := executor.Execute(ctx, action, alert, nil)
 				Expect(err).ToNot(HaveOccurred()) // Dry run should always succeed without K8s calls
 			})
 		})
@@ -496,7 +560,7 @@ var _ = Describe("Executor", func() {
 				executor = NewExecutor(fakeClient, config.ActionsConfig{
 					DryRun:        false,
 					MaxConcurrent: 1,
-				}, logger)
+				}, mockRepo, logger)
 			})
 
 			DescribeTable("different parameter types",
@@ -514,7 +578,7 @@ var _ = Describe("Executor", func() {
 						Parameters: params,
 					}
 
-					err := executor.Execute(ctx, action, alert)
+					err := executor.Execute(ctx, action, alert, nil)
 					if expectErr {
 						Expect(err).To(HaveOccurred())
 					} else {
@@ -536,7 +600,7 @@ var _ = Describe("Executor", func() {
 					executor = NewExecutor(fakeClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
-					}, logger)
+					}, mockRepo, logger)
 
 					alert := types.Alert{
 						Name:      "DeploymentFailure",
@@ -553,7 +617,7 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert)
+					err := executor.Execute(ctx, action, alert, nil)
 					Expect(err).ToNot(HaveOccurred())
 
 					// Verify deployment still exists (rollback is simulated)
@@ -566,7 +630,7 @@ var _ = Describe("Executor", func() {
 					executor = NewExecutor(fakeClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
-					}, logger)
+					}, mockRepo, logger)
 
 					alert := types.Alert{
 						Name:      "DeploymentFailure",
@@ -583,7 +647,7 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert)
+					err := executor.Execute(ctx, action, alert, nil)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("not found"))
 				})
@@ -595,7 +659,7 @@ var _ = Describe("Executor", func() {
 					executor = NewExecutor(fakeClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
-					}, logger)
+					}, mockRepo, logger)
 
 					alert := types.Alert{
 						Name:      "PVCNearFull",
@@ -610,7 +674,7 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert)
+					err := executor.Execute(ctx, action, alert, nil)
 					Expect(err).ToNot(HaveOccurred())
 				})
 			})
@@ -621,7 +685,7 @@ var _ = Describe("Executor", func() {
 					executor = NewExecutor(fakeClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
-					}, logger)
+					}, mockRepo, logger)
 
 					alert := types.Alert{
 						Name:     "NodeMaintenanceRequired",
@@ -638,7 +702,7 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert)
+					err := executor.Execute(ctx, action, alert, nil)
 					Expect(err).ToNot(HaveOccurred())
 				})
 			})
@@ -650,7 +714,7 @@ var _ = Describe("Executor", func() {
 					executor = NewExecutor(fakeClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
-					}, logger)
+					}, mockRepo, logger)
 
 					alert := types.Alert{
 						Name:      "SecurityThreatDetected",
@@ -665,7 +729,7 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert)
+					err := executor.Execute(ctx, action, alert, nil)
 					Expect(err).ToNot(HaveOccurred())
 
 					// Verify pod still exists (quarantine is simulated)
@@ -678,7 +742,7 @@ var _ = Describe("Executor", func() {
 					executor = NewExecutor(fakeClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
-					}, logger)
+					}, mockRepo, logger)
 
 					alert := types.Alert{
 						Name:      "SecurityThreatDetected",
@@ -693,7 +757,7 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert)
+					err := executor.Execute(ctx, action, alert, nil)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("not found"))
 				})
@@ -705,7 +769,7 @@ var _ = Describe("Executor", func() {
 					executor = NewExecutor(fakeClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
-					}, logger)
+					}, mockRepo, logger)
 
 					alert := types.Alert{
 						Name:      "ComplexServiceFailure",
@@ -721,7 +785,7 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert)
+					err := executor.Execute(ctx, action, alert, nil)
 					Expect(err).ToNot(HaveOccurred())
 				})
 			})
@@ -734,7 +798,7 @@ var _ = Describe("Executor", func() {
 			executor := NewExecutor(fakeClient, config.ActionsConfig{
 				DryRun:        false,
 				MaxConcurrent: 1,
-			}, logger)
+			}, mockRepo, logger)
 
 			registry := executor.GetActionRegistry()
 			Expect(registry).ToNot(BeNil())
@@ -782,7 +846,7 @@ var _ = Describe("Executor", func() {
 			executor := NewExecutor(fakeClient, config.ActionsConfig{
 				DryRun:        false,
 				MaxConcurrent: 1,
-			}, logger)
+			}, mockRepo, logger)
 
 			registry := executor.GetActionRegistry()
 
@@ -809,7 +873,7 @@ var _ = Describe("Executor", func() {
 				},
 			}
 
-			err = executor.Execute(ctx, action, alert)
+			err = executor.Execute(ctx, action, alert, nil)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(customActionExecuted).To(BeTrue())
 		})

@@ -17,6 +17,7 @@ type Config struct {
 	Kubernetes KubernetesConfig `yaml:"kubernetes"`
 	Actions    ActionsConfig    `yaml:"actions"`
 	Webhook    WebhookConfig    `yaml:"webhook"`
+	Database   DatabaseConfig   `yaml:"database"`
 	Filters    []FilterConfig   `yaml:"filters"`
 }
 
@@ -42,9 +43,9 @@ type SLMConfig struct {
 	APIKey         string        `yaml:"api_key"`
 	Timeout        time.Duration `yaml:"timeout"`
 	RetryCount     int           `yaml:"retry_count"`
-	Provider       string        `yaml:"provider"`        // Only "localai" supported
-	Temperature    float32       `yaml:"temperature"`     // Model temperature (0.0-1.0)
-	MaxTokens      int           `yaml:"max_tokens"`      // Maximum tokens for response
+	Provider       string        `yaml:"provider"`         // Only "localai" supported
+	Temperature    float32       `yaml:"temperature"`      // Model temperature (0.0-1.0)
+	MaxTokens      int           `yaml:"max_tokens"`       // Maximum tokens for response
 	MaxContextSize int           `yaml:"max_context_size"` // Maximum context size in tokens (0 = unlimited)
 }
 
@@ -69,6 +70,19 @@ type WebhookConfig struct {
 type WebhookAuthConfig struct {
 	Type  string `yaml:"type"`
 	Token string `yaml:"token"`
+}
+
+type DatabaseConfig struct {
+	Enabled                bool   `yaml:"enabled"`
+	Host                   string `yaml:"host"`
+	Port                   string `yaml:"port"`
+	Database               string `yaml:"database"`
+	Username               string `yaml:"username"`
+	Password               string `yaml:"password"`
+	SSLMode                string `yaml:"ssl_mode"`
+	MaxOpenConns           int    `yaml:"max_open_conns"`
+	MaxIdleConns           int    `yaml:"max_idle_conns"`
+	ConnMaxLifetimeMinutes int    `yaml:"conn_max_lifetime_minutes"`
 }
 
 type FilterConfig struct {
@@ -116,6 +130,18 @@ func Load(configFile string) (*Config, error) {
 			Auth: WebhookAuthConfig{
 				Type: "bearer",
 			},
+		},
+		Database: DatabaseConfig{
+			Enabled:                false, // Disabled by default
+			Host:                   "localhost",
+			Port:                   "5432",
+			Database:               "action_history",
+			Username:               "slm_user",
+			Password:               "slm_password",
+			SSLMode:                "disable",
+			MaxOpenConns:           10,
+			MaxIdleConns:           5,
+			ConnMaxLifetimeMinutes: 5,
 		},
 	}
 

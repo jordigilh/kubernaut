@@ -18,6 +18,7 @@ import (
 	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
 )
 
 func TestCorrelatedAlertsIntegration(t *testing.T) {
@@ -28,14 +29,14 @@ func TestCorrelatedAlertsIntegration(t *testing.T) {
 var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		dbUtils    *DatabaseTestUtils
+		dbUtils    *shared.DatabaseTestUtils
 		mcpServer  *mcp.ActionHistoryMCPServer
 		repository actionhistory.Repository
-		testConfig IntegrationConfig
+		testConfig shared.IntegrationConfig
 	)
 
 	BeforeAll(func() {
-		testConfig = LoadConfig()
+		testConfig = shared.LoadConfig()
 		if testConfig.SkipIntegration {
 			Skip("Integration tests disabled")
 		}
@@ -44,7 +45,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 		logger.SetLevel(logrus.InfoLevel)
 
 		var err error
-		dbUtils, err = NewDatabaseTestUtils(logger)
+		dbUtils, err = shared.NewDatabaseTestUtils(logger)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(dbUtils.InitializeFreshDatabase()).To(Succeed())
@@ -101,18 +102,18 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Annotations: map[string]string{"simulation": "true"},
 				FiringTime:  timestamp,
 			},
-			ModelUsed:    testConfig.OllamaModel,
-			Confidence:   0.8,
-			Reasoning:    func(s string) *string { return &s }("Simulated alert history"),
-			ActionType:   action,
-			Parameters:   map[string]interface{}{"simulated": true},
+			ModelUsed:           testConfig.OllamaModel,
+			Confidence:          0.8,
+			Reasoning:           func(s string) *string { return &s }("Simulated alert history"),
+			ActionType:          action,
+			Parameters:          map[string]interface{}{"simulated": true},
 			ResourceStateBefore: map[string]interface{}{"status": "before"},
 			ResourceStateAfter:  map[string]interface{}{"status": "after"},
 		}
 
 		trace, err := repository.StoreAction(context.Background(), actionRecord)
 		Expect(err).ToNot(HaveOccurred())
-		
+
 		trace.EffectivenessScore = &effectiveness
 		trace.ExecutionStatus = "completed"
 		err = repository.UpdateActionTrace(context.Background(), trace)
@@ -158,11 +159,11 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "",
 				Resource:    "worker-node-01",
 				Labels: map[string]string{
-					"alertname":           "NodeNetworkIssue",
-					"node":                "worker-node-01",
-					"kubelet_status":      "down",
-					"network_reachable":   "false",
-					"last_heartbeat":      "5m",
+					"alertname":         "NodeNetworkIssue",
+					"node":              "worker-node-01",
+					"kubelet_status":    "down",
+					"network_reachable": "false",
+					"last_heartbeat":    "5m",
 				},
 				Annotations: map[string]string{
 					"description":     "Kubelet heartbeat failing, network connectivity issues detected",
@@ -198,11 +199,11 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			}
 
 			logger.WithFields(logrus.Fields{
-				"scenario":             "node_network_pod_crash",
-				"pod_action":           podRecommendation.Action,
-				"pod_confidence":       podRecommendation.Confidence,
-				"node_action":          nodeRecommendation.Action,
-				"node_confidence":      nodeRecommendation.Confidence,
+				"scenario":        "node_network_pod_crash",
+				"pod_action":      podRecommendation.Action,
+				"pod_confidence":  podRecommendation.Confidence,
+				"node_action":     nodeRecommendation.Action,
+				"node_confidence": nodeRecommendation.Confidence,
 			}).Info("Infrastructure correlation test completed")
 		})
 
@@ -210,7 +211,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			client := createSLMClient()
 
 			// Scenario: Storage full -> Database pod issues -> Application failures
-			
+
 			// Root cause: Storage space exhaustion
 			storageAlert := types.Alert{
 				Name:        "PVCNearFull",
@@ -226,8 +227,8 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 					"mount_path": "/var/lib/postgresql/data",
 				},
 				Annotations: map[string]string{
-					"description": "PostgreSQL data volume is critically full",
-					"growth_rate": "5%_per_hour",
+					"description":  "PostgreSQL data volume is critically full",
+					"growth_rate":  "5%_per_hour",
 					"time_to_full": "24m",
 				},
 			}
@@ -240,15 +241,15 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			dbConnectionAlert := types.Alert{
 				Name:        "DatabaseConnectionFailure",
 				Status:      "firing",
-				Severity:    "critical", 
+				Severity:    "critical",
 				Description: "Applications unable to connect to PostgreSQL database",
 				Namespace:   "database",
 				Resource:    "postgres-primary",
 				Labels: map[string]string{
-					"alertname":    "DatabaseConnectionFailure",
-					"service":      "postgres-primary",
-					"error_type":   "connection_refused",
-					"storage_pvc":  "postgres-storage-pvc",
+					"alertname":   "DatabaseConnectionFailure",
+					"service":     "postgres-primary",
+					"error_type":  "connection_refused",
+					"storage_pvc": "postgres-storage-pvc",
 				},
 				Annotations: map[string]string{
 					"description": "Database refusing connections, logs indicate disk full errors",
@@ -270,15 +271,15 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "user-service",
 				Labels: map[string]string{
-					"alertname":     "ServiceDegraded",
-					"service":       "user-service",
-					"error_rate":    "85%",
-					"dependency":    "postgres-primary",
+					"alertname":  "ServiceDegraded",
+					"service":    "user-service",
+					"error_rate": "85%",
+					"dependency": "postgres-primary",
 				},
 				Annotations: map[string]string{
-					"description":   "Service errors caused by database connectivity failures",
+					"description":    "Service errors caused by database connectivity failures",
 					"upstream_error": "database_unavailable",
-					"impact":        "user_facing",
+					"impact":         "user_facing",
 				},
 			}
 
@@ -308,13 +309,13 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			}), "App issues caused by storage should focus on root cause")
 
 			logger.WithFields(logrus.Fields{
-				"scenario":              "storage_cascade_failure",
-				"storage_action":        storageRecommendation.Action,
-				"db_action":             dbRecommendation.Action,
-				"app_action":            appRecommendation.Action,
-				"storage_confidence":    storageRecommendation.Confidence,
-				"db_confidence":         dbRecommendation.Confidence,
-				"app_confidence":        appRecommendation.Confidence,
+				"scenario":           "storage_cascade_failure",
+				"storage_action":     storageRecommendation.Action,
+				"db_action":          dbRecommendation.Action,
+				"app_action":         appRecommendation.Action,
+				"storage_confidence": storageRecommendation.Confidence,
+				"db_confidence":      dbRecommendation.Confidence,
+				"app_confidence":     appRecommendation.Confidence,
 			}).Info("Storage cascading failure test completed")
 		})
 	})
@@ -324,7 +325,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			client := createSLMClient()
 
 			// Scenario: Memory leak in application causing multiple symptoms
-			
+
 			// Early symptom: High memory usage
 			memoryAlert := types.Alert{
 				Name:        "HighMemoryUsage",
@@ -334,15 +335,15 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "api-service",
 				Labels: map[string]string{
-					"alertname":     "HighMemoryUsage",
-					"deployment":    "api-service",
-					"memory_usage":  "85%",
-					"trend":         "increasing",
+					"alertname":    "HighMemoryUsage",
+					"deployment":   "api-service",
+					"memory_usage": "85%",
+					"trend":        "increasing",
 				},
 				Annotations: map[string]string{
-					"description":   "Memory usage has increased 40% in last hour",
-					"pattern":       "continuous_growth",
-					"baseline":      "45%",
+					"description": "Memory usage has increased 40% in last hour",
+					"pattern":     "continuous_growth",
+					"baseline":    "45%",
 				},
 			}
 
@@ -359,15 +360,15 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "api-service",
 				Labels: map[string]string{
-					"alertname":     "ContainerOOMKilled",
-					"deployment":    "api-service",
-					"container":     "api-service-container",
-					"oom_count":     "3",
+					"alertname":  "ContainerOOMKilled",
+					"deployment": "api-service",
+					"container":  "api-service-container",
+					"oom_count":  "3",
 				},
 				Annotations: map[string]string{
-					"description":   "Container has been OOM killed 3 times in 10 minutes",
-					"memory_limit":  "2Gi",
-					"last_memory":   "2.1Gi",
+					"description":  "Container has been OOM killed 3 times in 10 minutes",
+					"memory_limit": "2Gi",
+					"last_memory":  "2.1Gi",
 				},
 			}
 
@@ -384,13 +385,13 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "api-service",
 				Labels: map[string]string{
-					"alertname":      "HighResponseTime",
-					"service":        "api-service",
-					"p95_latency":    "2500ms",
-					"baseline_p95":   "150ms",
+					"alertname":    "HighResponseTime",
+					"service":      "api-service",
+					"p95_latency":  "2500ms",
+					"baseline_p95": "150ms",
 				},
 				Annotations: map[string]string{
-					"description":    "Response time degraded likely due to memory pressure",
+					"description":       "Response time degraded likely due to memory pressure",
 					"concurrent_alerts": "HighMemoryUsage,ContainerOOMKilled",
 				},
 			}
@@ -403,7 +404,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			// Early memory alert might trigger scaling or resource increase
 			Expect(memoryRecommendation.Action).To(BeElementOf([]string{
 				"increase_resources",
-				"scale_deployment", 
+				"scale_deployment",
 				"restart_pod",
 				"notify_only",
 			}), "High memory might trigger various resource actions")
@@ -433,13 +434,13 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				"At least one alert should suggest increasing resources for memory leak")
 
 			logger.WithFields(logrus.Fields{
-				"scenario":                  "memory_leak_correlation",
-				"memory_action":             memoryRecommendation.Action,
-				"oom_action":                oomRecommendation.Action,
-				"performance_action":        performanceRecommendation.Action,
-				"memory_confidence":         memoryRecommendation.Confidence,
-				"oom_confidence":            oomRecommendation.Confidence,
-				"performance_confidence":    performanceRecommendation.Confidence,
+				"scenario":               "memory_leak_correlation",
+				"memory_action":          memoryRecommendation.Action,
+				"oom_action":             oomRecommendation.Action,
+				"performance_action":     performanceRecommendation.Action,
+				"memory_confidence":      memoryRecommendation.Confidence,
+				"oom_confidence":         oomRecommendation.Confidence,
+				"performance_confidence": performanceRecommendation.Confidence,
 			}).Info("Memory leak correlation test completed")
 		})
 
@@ -447,13 +448,13 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			client := createSLMClient()
 
 			// Simulate previous successful rollbacks for this service
-			simulateAlertHistory("DeploymentFailure", "frontend-service", "rollback_deployment", 
+			simulateAlertHistory("DeploymentFailure", "frontend-service", "rollback_deployment",
 				time.Now().Add(-2*time.Hour), 0.9)
-			simulateAlertHistory("DeploymentFailure", "frontend-service", "rollback_deployment", 
+			simulateAlertHistory("DeploymentFailure", "frontend-service", "rollback_deployment",
 				time.Now().Add(-6*time.Hour), 0.85)
 
 			// Scenario: Bad deployment causing multiple cascading issues
-			
+
 			// Root cause: Deployment failure
 			deploymentAlert := types.Alert{
 				Name:        "DeploymentFailure",
@@ -463,17 +464,17 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "frontend-service",
 				Labels: map[string]string{
-					"alertname":       "DeploymentFailure",
-					"deployment":      "frontend-service",
-					"ready_replicas":  "0",
-					"desired_replicas": "5",
-					"revision":        "47",
+					"alertname":         "DeploymentFailure",
+					"deployment":        "frontend-service",
+					"ready_replicas":    "0",
+					"desired_replicas":  "5",
+					"revision":          "47",
 					"previous_revision": "46",
 				},
 				Annotations: map[string]string{
-					"description":     "New deployment revision 47 failing to start",
-					"image_tag":       "v2.1.3",
-					"previous_tag":    "v2.1.2",
+					"description":  "New deployment revision 47 failing to start",
+					"image_tag":    "v2.1.3",
+					"previous_tag": "v2.1.2",
 				},
 			}
 
@@ -483,21 +484,21 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 
 			// Symptom 1: Service unavailable
 			serviceAlert := types.Alert{
-				Name:        "ServiceUnavailable", 
+				Name:        "ServiceUnavailable",
 				Status:      "firing",
 				Severity:    "critical",
 				Description: "Frontend service returning 503 errors",
 				Namespace:   "production",
 				Resource:    "frontend-service",
 				Labels: map[string]string{
-					"alertname":    "ServiceUnavailable",
-					"service":      "frontend-service",
-					"status_code":  "503",
-					"error_rate":   "100%",
-					"deployment":   "frontend-service",
+					"alertname":   "ServiceUnavailable",
+					"service":     "frontend-service",
+					"status_code": "503",
+					"error_rate":  "100%",
+					"deployment":  "frontend-service",
 				},
 				Annotations: map[string]string{
-					"description":  "Service unavailable due to deployment failure",
+					"description":   "Service unavailable due to deployment failure",
 					"related_alert": "DeploymentFailure",
 				},
 			}
@@ -509,19 +510,19 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			// Symptom 2: Load balancer errors
 			lbAlert := types.Alert{
 				Name:        "LoadBalancerNoBackends",
-				Status:      "firing", 
+				Status:      "firing",
 				Severity:    "critical",
 				Description: "Load balancer has no healthy backends for frontend service",
 				Namespace:   "production",
 				Resource:    "frontend-lb",
 				Labels: map[string]string{
-					"alertname":       "LoadBalancerNoBackends",
-					"service":         "frontend-service",
+					"alertname":        "LoadBalancerNoBackends",
+					"service":          "frontend-service",
 					"healthy_backends": "0",
 					"total_backends":   "5",
 				},
 				Annotations: map[string]string{
-					"description":     "No healthy backends due to deployment failure",
+					"description":      "No healthy backends due to deployment failure",
 					"upstream_service": "frontend-service",
 				},
 			}
@@ -538,7 +539,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				"collect_diagnostics",
 			}), "Deployment failure should consider rollback given successful history")
 
-			// Service and LB alerts should either rollback or escalate 
+			// Service and LB alerts should either rollback or escalate
 			// (they shouldn't try to restart/scale when deployment is the issue)
 			Expect(serviceRecommendation.Action).To(BeElementOf([]string{
 				"rollback_deployment",
@@ -547,7 +548,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			}), "Service unavailable due to deployment should address deployment")
 
 			Expect(lbRecommendation.Action).To(BeElementOf([]string{
-				"rollback_deployment", 
+				"rollback_deployment",
 				"notify_only",
 				"collect_diagnostics",
 			}), "LB no backends due to deployment should address deployment")
@@ -559,13 +560,13 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			}), "Should not scale/restart when deployment is broken")
 
 			logger.WithFields(logrus.Fields{
-				"scenario":                "deployment_cascade_failure",
-				"deployment_action":       deploymentRecommendation.Action,
-				"service_action":          serviceRecommendation.Action,
-				"lb_action":               lbRecommendation.Action,
-				"deployment_confidence":   deploymentRecommendation.Confidence,
-				"service_confidence":      serviceRecommendation.Confidence,
-				"lb_confidence":           lbRecommendation.Confidence,
+				"scenario":              "deployment_cascade_failure",
+				"deployment_action":     deploymentRecommendation.Action,
+				"service_action":        serviceRecommendation.Action,
+				"lb_action":             lbRecommendation.Action,
+				"deployment_confidence": deploymentRecommendation.Confidence,
+				"service_confidence":    serviceRecommendation.Confidence,
+				"lb_confidence":         lbRecommendation.Confidence,
 			}).Info("Deployment cascading failure test completed")
 		})
 	})
@@ -575,7 +576,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			client := createSLMClient()
 
 			// Scenario: Database in 'database' namespace affecting apps in multiple namespaces
-			
+
 			// Root cause: Database performance degradation
 			dbAlert := types.Alert{
 				Name:        "DatabaseSlowQueries",
@@ -606,19 +607,19 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Name:        "HighResponseTime",
 				Status:      "firing",
 				Severity:    "warning",
-				Description: "User service API response time elevated", 
+				Description: "User service API response time elevated",
 				Namespace:   "production",
 				Resource:    "user-service",
 				Labels: map[string]string{
-					"alertname":       "HighResponseTime",
-					"service":         "user-service",
-					"response_time":   "2800ms",
-					"baseline":        "200ms",
-					"database_dep":    "postgres-primary",
+					"alertname":     "HighResponseTime",
+					"service":       "user-service",
+					"response_time": "2800ms",
+					"baseline":      "200ms",
+					"database_dep":  "postgres-primary",
 				},
 				Annotations: map[string]string{
-					"description":     "Response time degraded, correlates with database issues",
-					"db_connection":   "postgres-primary.database.svc.cluster.local",
+					"description":   "Response time degraded, correlates with database issues",
+					"db_connection": "postgres-primary.database.svc.cluster.local",
 				},
 			}
 
@@ -626,7 +627,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(userServiceRecommendation).ToNot(BeNil())
 
-			// Symptom 2: Order service issues in ecommerce namespace  
+			// Symptom 2: Order service issues in ecommerce namespace
 			orderServiceAlert := types.Alert{
 				Name:        "ServiceTimeout",
 				Status:      "firing",
@@ -635,10 +636,10 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "ecommerce",
 				Resource:    "order-service",
 				Labels: map[string]string{
-					"alertname":       "ServiceTimeout",
-					"service":         "order-service", 
-					"timeout_rate":    "45%",
-					"database_dep":    "postgres-primary",
+					"alertname":    "ServiceTimeout",
+					"service":      "order-service",
+					"timeout_rate": "45%",
+					"database_dep": "postgres-primary",
 				},
 				Annotations: map[string]string{
 					"description":     "Service timeouts likely due to database performance",
@@ -665,14 +666,14 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			Expect(userServiceRecommendation.Action).To(BeElementOf([]string{
 				"notify_only",
 				"collect_diagnostics",
-				"restart_pod",      // Might help if they're holding stale connections
-				"increase_resources", // If they understand DB is the bottleneck  
+				"restart_pod",        // Might help if they're holding stale connections
+				"increase_resources", // If they understand DB is the bottleneck
 			}), "User service affected by DB should avoid irrelevant scaling")
 
 			Expect(orderServiceRecommendation.Action).To(BeElementOf([]string{
 				"notify_only",
-				"collect_diagnostics", 
-				"restart_pod",      // Might help with connection pooling
+				"collect_diagnostics",
+				"restart_pod",        // Might help with connection pooling
 				"increase_resources", // If they understand DB is bottleneck
 			}), "Order service affected by DB should avoid irrelevant actions")
 
@@ -682,13 +683,13 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				"At least one alert should escalate for cross-namespace correlation analysis")
 
 			logger.WithFields(logrus.Fields{
-				"scenario":                     "cross_namespace_db_correlation",
-				"db_action":                    dbRecommendation.Action,
-				"user_service_action":          userServiceRecommendation.Action,
-				"order_service_action":         orderServiceRecommendation.Action,
-				"db_confidence":                dbRecommendation.Confidence,
-				"user_service_confidence":      userServiceRecommendation.Confidence,
-				"order_service_confidence":     orderServiceRecommendation.Confidence,
+				"scenario":                 "cross_namespace_db_correlation",
+				"db_action":                dbRecommendation.Action,
+				"user_service_action":      userServiceRecommendation.Action,
+				"order_service_action":     orderServiceRecommendation.Action,
+				"db_confidence":            dbRecommendation.Confidence,
+				"user_service_confidence":  userServiceRecommendation.Confidence,
+				"order_service_confidence": orderServiceRecommendation.Confidence,
 			}).Info("Cross-namespace correlation test completed")
 		})
 	})
@@ -698,7 +699,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			client := createSLMClient()
 
 			// Scenario: Network partition causing sequential failures
-			
+
 			// T+0: Network connectivity alert
 			networkAlert := types.Alert{
 				Name:        "NetworkConnectivityIssue",
@@ -708,13 +709,13 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "",
 				Resource:    "cluster-network",
 				Labels: map[string]string{
-					"alertname":        "NetworkConnectivityIssue",
-					"affected_nodes":   "worker-node-01,worker-node-02",
-					"partition_type":   "inter_node",
+					"alertname":      "NetworkConnectivityIssue",
+					"affected_nodes": "worker-node-01,worker-node-02",
+					"partition_type": "inter_node",
 				},
 				Annotations: map[string]string{
-					"description":      "Network partition affecting inter-node communication",
-					"detection_time":   time.Now().Format(time.RFC3339),
+					"description":       "Network partition affecting inter-node communication",
+					"detection_time":    time.Now().Format(time.RFC3339),
 					"affected_services": "etcd,kubelet,kube-proxy",
 				},
 			}
@@ -738,9 +739,9 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 					"scheduling_reason": "NodeNetworkUnavailable",
 				},
 				Annotations: map[string]string{
-					"description":       "Pod scheduling failing due to network partition",
-					"related_incident":  "NetworkConnectivityIssue",
-					"time_offset":       "30s",
+					"description":      "Pod scheduling failing due to network partition",
+					"related_incident": "NetworkConnectivityIssue",
+					"time_offset":      "30s",
 				},
 			}
 
@@ -757,14 +758,14 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Namespace:   "production",
 				Resource:    "service-mesh",
 				Labels: map[string]string{
-					"alertname":           "ServiceDiscoveryFailure",
-					"affected_services":   "api-service,web-service",
-					"discovery_failures":  "100%",
+					"alertname":          "ServiceDiscoveryFailure",
+					"affected_services":  "api-service,web-service",
+					"discovery_failures": "100%",
 				},
 				Annotations: map[string]string{
-					"description":         "Service mesh unable to maintain service registry",
-					"root_cause":          "network_partition",
-					"time_offset":         "60s",
+					"description": "Service mesh unable to maintain service registry",
+					"root_cause":  "network_partition",
+					"time_offset": "60s",
 				},
 			}
 
@@ -787,7 +788,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			}), "Scheduling failures due to network should escalate, not scale")
 
 			Expect(serviceDiscoveryRecommendation.Action).To(BeElementOf([]string{
-				"notify_only", 
+				"notify_only",
 				"collect_diagnostics",
 			}), "Service discovery failures due to network should escalate")
 
@@ -804,13 +805,13 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			}
 
 			logger.WithFields(logrus.Fields{
-				"scenario":                        "temporal_network_correlation",
-				"network_action":                  networkRecommendation.Action,
-				"scheduling_action":               schedulingRecommendation.Action,
-				"service_discovery_action":        serviceDiscoveryRecommendation.Action,
-				"network_confidence":              networkRecommendation.Confidence,
-				"scheduling_confidence":           schedulingRecommendation.Confidence,
-				"service_discovery_confidence":    serviceDiscoveryRecommendation.Confidence,
+				"scenario":                     "temporal_network_correlation",
+				"network_action":               networkRecommendation.Action,
+				"scheduling_action":            schedulingRecommendation.Action,
+				"service_discovery_action":     serviceDiscoveryRecommendation.Action,
+				"network_confidence":           networkRecommendation.Confidence,
+				"scheduling_confidence":        schedulingRecommendation.Confidence,
+				"service_discovery_confidence": serviceDiscoveryRecommendation.Confidence,
 			}).Info("Temporal correlation test completed")
 		})
 	})

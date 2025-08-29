@@ -23,10 +23,10 @@ type OscillationDetector interface {
 
 // ActionHistoryMCPServer provides MCP tools for action history analysis
 type ActionHistoryMCPServer struct {
-	repository    actionhistory.Repository
-	detector      OscillationDetector
-	capabilities  MCPCapabilities
-	logger        *logrus.Logger
+	repository   actionhistory.Repository
+	detector     OscillationDetector
+	capabilities MCPCapabilities
+	logger       *logrus.Logger
 }
 
 // MCPCapabilities defines the capabilities exposed by this MCP server
@@ -36,9 +36,9 @@ type MCPCapabilities struct {
 
 // MCPTool represents a tool available through MCP
 type MCPTool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema MCPInputSchema  `json:"inputSchema"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	InputSchema MCPInputSchema `json:"inputSchema"`
 }
 
 // MCPInputSchema defines the schema for tool inputs
@@ -57,8 +57,8 @@ type MCPProperty struct {
 
 // MCPToolRequest represents an incoming tool request
 type MCPToolRequest struct {
-	Method string          `json:"method"`
-	Params MCPToolParams   `json:"params"`
+	Method string        `json:"method"`
+	Params MCPToolParams `json:"params"`
 }
 
 // MCPToolParams contains the parameters for a tool call
@@ -83,9 +83,9 @@ type MCPContent struct {
 
 // ActionHistoryResponse represents structured action history data
 type ActionHistoryResponse struct {
-	ResourceInfo  ResourceInfo    `json:"resource_info"`
-	TotalActions  int             `json:"total_actions"`
-	Actions       []ActionSummary `json:"actions"`
+	ResourceInfo ResourceInfo    `json:"resource_info"`
+	TotalActions int             `json:"total_actions"`
+	Actions      []ActionSummary `json:"actions"`
 }
 
 // ResourceInfo provides resource identification
@@ -97,39 +97,39 @@ type ResourceInfo struct {
 
 // ActionSummary provides structured action data
 type ActionSummary struct {
-	ID               string                 `json:"id"`
-	Timestamp        time.Time              `json:"timestamp"`
-	ActionType       string                 `json:"action_type"`
-	ModelUsed        string                 `json:"model_used"`
-	Confidence       float64                `json:"confidence"`
-	ExecutionStatus  string                 `json:"execution_status"`
-	Effectiveness    *float64               `json:"effectiveness,omitempty"`
-	Reasoning        string                 `json:"reasoning,omitempty"`
-	AlertName        string                 `json:"alert_name,omitempty"`
-	AlertSeverity    string                 `json:"alert_severity,omitempty"`
-	Parameters       map[string]interface{} `json:"parameters,omitempty"`
+	ID              string                 `json:"id"`
+	Timestamp       time.Time              `json:"timestamp"`
+	ActionType      string                 `json:"action_type"`
+	ModelUsed       string                 `json:"model_used"`
+	Confidence      float64                `json:"confidence"`
+	ExecutionStatus string                 `json:"execution_status"`
+	Effectiveness   *float64               `json:"effectiveness,omitempty"`
+	Reasoning       string                 `json:"reasoning,omitempty"`
+	AlertName       string                 `json:"alert_name,omitempty"`
+	AlertSeverity   string                 `json:"alert_severity,omitempty"`
+	Parameters      map[string]interface{} `json:"parameters,omitempty"`
 }
 
 // OscillationAnalysisResponse represents structured oscillation analysis
 type OscillationAnalysisResponse struct {
-	ResourceInfo      ResourceInfo                `json:"resource_info"`
-	AnalysisWindow    int                         `json:"analysis_window_minutes"`
-	OverallSeverity   string                      `json:"overall_severity"`
-	Confidence        float64                     `json:"confidence"`
-	RecommendedAction string                      `json:"recommended_action"`
-	ScaleOscillation  *ScaleOscillationPattern    `json:"scale_oscillation,omitempty"`
-	ResourceThrashing *ResourceThrashingPattern   `json:"resource_thrashing,omitempty"`
-	IneffectiveLoops  []IneffectiveLoopPattern    `json:"ineffective_loops,omitempty"`
-	CascadingFailures []CascadingFailurePattern   `json:"cascading_failures,omitempty"`
-	SafetyReasoning   string                      `json:"safety_reasoning"`
+	ResourceInfo      ResourceInfo              `json:"resource_info"`
+	AnalysisWindow    int                       `json:"analysis_window_minutes"`
+	OverallSeverity   string                    `json:"overall_severity"`
+	Confidence        float64                   `json:"confidence"`
+	RecommendedAction string                    `json:"recommended_action"`
+	ScaleOscillation  *ScaleOscillationPattern  `json:"scale_oscillation,omitempty"`
+	ResourceThrashing *ResourceThrashingPattern `json:"resource_thrashing,omitempty"`
+	IneffectiveLoops  []IneffectiveLoopPattern  `json:"ineffective_loops,omitempty"`
+	CascadingFailures []CascadingFailurePattern `json:"cascading_failures,omitempty"`
+	SafetyReasoning   string                    `json:"safety_reasoning"`
 }
 
 // Pattern types for structured oscillation data
 type ScaleOscillationPattern struct {
-	DirectionChanges  int     `json:"direction_changes"`
-	Severity          string  `json:"severity"`
-	AvgEffectiveness  float64 `json:"avg_effectiveness"`
-	DurationMinutes   float64 `json:"duration_minutes"`
+	DirectionChanges int     `json:"direction_changes"`
+	Severity         string  `json:"severity"`
+	AvgEffectiveness float64 `json:"avg_effectiveness"`
+	DurationMinutes  float64 `json:"duration_minutes"`
 }
 
 type ResourceThrashingPattern struct {
@@ -148,24 +148,24 @@ type IneffectiveLoopPattern struct {
 }
 
 type CascadingFailurePattern struct {
-	ActionType      string  `json:"action_type"`
-	Severity        string  `json:"severity"`
-	AvgNewAlerts    float64 `json:"avg_new_alerts"`
-	RecurrenceRate  float64 `json:"recurrence_rate"`
+	ActionType     string  `json:"action_type"`
+	Severity       string  `json:"severity"`
+	AvgNewAlerts   float64 `json:"avg_new_alerts"`
+	RecurrenceRate float64 `json:"recurrence_rate"`
 }
 
 // EffectivenessMetricsResponse represents structured effectiveness data
 type EffectivenessMetricsResponse struct {
-	ResourceInfo       ResourceInfo                    `json:"resource_info"`
-	AnalysisPeriod     TimeRange                       `json:"analysis_period"`
-	TotalActions       int                             `json:"total_actions"`
+	ResourceInfo        ResourceInfo                   `json:"resource_info"`
+	AnalysisPeriod      TimeRange                      `json:"analysis_period"`
+	TotalActions        int                            `json:"total_actions"`
 	ActionEffectiveness map[string]ActionEffectiveness `json:"action_effectiveness"`
 }
 
 // ActionEffectiveness provides metrics for a specific action type
 type ActionEffectiveness struct {
-	ActionType      string  `json:"action_type"`
-	SampleSize      int     `json:"sample_size"`
+	ActionType       string  `json:"action_type"`
+	SampleSize       int     `json:"sample_size"`
 	AvgEffectiveness float64 `json:"avg_effectiveness"`
 	MinEffectiveness float64 `json:"min_effectiveness"`
 	MaxEffectiveness float64 `json:"max_effectiveness"`
@@ -177,6 +177,17 @@ type TimeRange struct {
 	End   time.Time `json:"end"`
 }
 
+// SafetyCheckResponse represents structured safety check data
+type SafetyCheckResponse struct {
+	ResourceInfo      ResourceInfo `json:"resource_info"`
+	ActionType        string       `json:"action_type"`
+	IsSafe            bool         `json:"is_safe"`
+	OverallSeverity   string       `json:"overall_severity"`
+	Confidence        float64      `json:"confidence"`
+	RecommendedAction string       `json:"recommended_action"`
+	SafetyReasoning   string       `json:"safety_reasoning"`
+}
+
 // NewActionHistoryMCPServer creates a new MCP server for action history
 func NewActionHistoryMCPServer(repository actionhistory.Repository, detector OscillationDetector, logger *logrus.Logger) *ActionHistoryMCPServer {
 	server := &ActionHistoryMCPServer{
@@ -184,7 +195,7 @@ func NewActionHistoryMCPServer(repository actionhistory.Repository, detector Osc
 		detector:   detector,
 		logger:     logger,
 	}
-	
+
 	server.capabilities = MCPCapabilities{
 		Tools: []MCPTool{
 			{
@@ -305,7 +316,7 @@ func NewActionHistoryMCPServer(repository actionhistory.Repository, detector Osc
 			},
 		},
 	}
-	
+
 	return server
 }
 
@@ -336,29 +347,29 @@ func (s *ActionHistoryMCPServer) handleGetActionHistory(ctx context.Context, arg
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("namespace is required")
 	}
-	
+
 	kind, ok := args["kind"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("kind is required")
 	}
-	
+
 	name, ok := args["name"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("name is required")
 	}
-	
+
 	// Validate resource reference
 	resourceRef := actionhistory.ResourceReference{
 		Namespace: namespace,
 		Kind:      kind,
 		Name:      name,
 	}
-	
+
 	if err := validation.ValidateResourceReference(resourceRef); err != nil {
 		s.logger.WithFields(errors.LogFields(err)).Warn("Invalid resource reference in MCP request")
 		return MCPToolResponse{}, errors.Wrap(err, errors.ErrorTypeValidation, "invalid resource reference")
 	}
-	
+
 	// Parse optional parameters
 	limit := 50
 	if limitStr, ok := args["limit"].(string); ok {
@@ -366,7 +377,7 @@ func (s *ActionHistoryMCPServer) handleGetActionHistory(ctx context.Context, arg
 			limit = parsedLimit
 		}
 	}
-	
+
 	// Parse time range
 	var timeRange actionhistory.TimeRange
 	if timeRangeStr, ok := args["timeRange"].(string); ok {
@@ -376,7 +387,7 @@ func (s *ActionHistoryMCPServer) handleGetActionHistory(ctx context.Context, arg
 			timeRange.End = time.Now()
 		}
 	}
-	
+
 	query := actionhistory.ActionQuery{
 		Namespace:    namespace,
 		ResourceKind: kind,
@@ -384,12 +395,12 @@ func (s *ActionHistoryMCPServer) handleGetActionHistory(ctx context.Context, arg
 		TimeRange:    timeRange,
 		Limit:        limit,
 	}
-	
+
 	traces, err := s.repository.GetActionTraces(ctx, query)
 	if err != nil {
 		return MCPToolResponse{}, fmt.Errorf("failed to get action traces: %w", err)
 	}
-	
+
 	// Convert traces to structured response format
 	actions := make([]ActionSummary, len(traces))
 	for i, trace := range traces {
@@ -404,25 +415,25 @@ func (s *ActionHistoryMCPServer) handleGetActionHistory(ctx context.Context, arg
 			AlertName:       trace.AlertName,
 			AlertSeverity:   trace.AlertSeverity,
 		}
-		
+
 		if trace.ModelReasoning != nil {
 			actionSummary.Reasoning = *trace.ModelReasoning
 		}
-		
+
 		// Convert JSONB parameters to map
 		if trace.ActionParameters != nil {
 			actionSummary.Parameters = trace.ActionParameters
 		}
-		
+
 		actions[i] = actionSummary
 	}
-	
+
 	// Format as human-readable text for MCP
 	var text strings.Builder
 	text.WriteString(fmt.Sprintf("Action History for %s/%s\n", kind, name))
 	text.WriteString(fmt.Sprintf("Namespace: %s\n", namespace))
 	text.WriteString(fmt.Sprintf("Total actions found: %d\n\n", len(traces)))
-	
+
 	if len(traces) == 0 {
 		text.WriteString("No action history found for this resource.\n")
 	} else {
@@ -441,9 +452,24 @@ func (s *ActionHistoryMCPServer) handleGetActionHistory(ctx context.Context, arg
 			text.WriteString("\n")
 		}
 	}
-	
+
+	// Create structured response
+	structuredResponse := ActionHistoryResponse{
+		ResourceInfo: ResourceInfo{
+			Namespace: namespace,
+			Kind:      kind,
+			Name:      name,
+		},
+		TotalActions: len(traces),
+		Actions:      actions,
+	}
+
 	return MCPToolResponse{
 		Content: []MCPContent{
+			{
+				Type: "application/json",
+				Data: structuredResponse,
+			},
 			{
 				Type: "text",
 				Text: text.String(),
@@ -457,35 +483,35 @@ func (s *ActionHistoryMCPServer) handleAnalyzeOscillationPatterns(ctx context.Co
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("namespace is required")
 	}
-	
+
 	kind, ok := args["kind"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("kind is required")
 	}
-	
+
 	name, ok := args["name"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("name is required")
 	}
-	
+
 	windowMinutes := 120
 	if windowStr, ok := args["windowMinutes"].(string); ok {
 		if parsedWindow, err := strconv.Atoi(windowStr); err == nil {
 			windowMinutes = parsedWindow
 		}
 	}
-	
+
 	resourceRef := actionhistory.ResourceReference{
 		Namespace: namespace,
 		Kind:      kind,
 		Name:      name,
 	}
-	
+
 	analysis, err := s.detector.AnalyzeResource(ctx, resourceRef, windowMinutes)
 	if err != nil {
 		return MCPToolResponse{}, fmt.Errorf("failed to analyze oscillation patterns: %w", err)
 	}
-	
+
 	// Convert to structured response format
 	response := OscillationAnalysisResponse{
 		ResourceInfo: ResourceInfo{
@@ -498,7 +524,7 @@ func (s *ActionHistoryMCPServer) handleAnalyzeOscillationPatterns(ctx context.Co
 		Confidence:        analysis.Confidence,
 		RecommendedAction: string(analysis.RecommendedAction),
 	}
-	
+
 	// Convert pattern data
 	if analysis.ScaleOscillation != nil {
 		response.ScaleOscillation = &ScaleOscillationPattern{
@@ -508,7 +534,7 @@ func (s *ActionHistoryMCPServer) handleAnalyzeOscillationPatterns(ctx context.Co
 			DurationMinutes:  analysis.ScaleOscillation.DurationMinutes,
 		}
 	}
-	
+
 	if analysis.ResourceThrashing != nil {
 		response.ResourceThrashing = &ResourceThrashingPattern{
 			ThrashingTransitions: analysis.ResourceThrashing.ThrashingTransitions,
@@ -517,7 +543,7 @@ func (s *ActionHistoryMCPServer) handleAnalyzeOscillationPatterns(ctx context.Co
 			AvgTimeGapMinutes:    analysis.ResourceThrashing.AvgTimeGapMinutes,
 		}
 	}
-	
+
 	// Convert ineffective loops
 	for _, loop := range analysis.IneffectiveLoops {
 		response.IneffectiveLoops = append(response.IneffectiveLoops, IneffectiveLoopPattern{
@@ -528,7 +554,7 @@ func (s *ActionHistoryMCPServer) handleAnalyzeOscillationPatterns(ctx context.Co
 			SpanMinutes:      loop.SpanMinutes,
 		})
 	}
-	
+
 	// Convert cascading failures
 	for _, cascade := range analysis.CascadingFailures {
 		response.CascadingFailures = append(response.CascadingFailures, CascadingFailurePattern{
@@ -538,7 +564,7 @@ func (s *ActionHistoryMCPServer) handleAnalyzeOscillationPatterns(ctx context.Co
 			RecurrenceRate: cascade.RecurrenceRate,
 		})
 	}
-	
+
 	// Format as human-readable text for MCP
 	var text strings.Builder
 	text.WriteString(fmt.Sprintf("Oscillation Analysis for %s/%s\n", kind, name))
@@ -547,40 +573,44 @@ func (s *ActionHistoryMCPServer) handleAnalyzeOscillationPatterns(ctx context.Co
 	text.WriteString(fmt.Sprintf("Overall Severity: %s\n", analysis.OverallSeverity))
 	text.WriteString(fmt.Sprintf("Confidence: %.2f\n", analysis.Confidence))
 	text.WriteString(fmt.Sprintf("Recommended Action: %s\n\n", analysis.RecommendedAction))
-	
+
 	// Add detailed analysis
 	if analysis.OverallSeverity != actionhistory.SeverityNone {
 		text.WriteString("Detected Issues:\n")
-		
+
 		if analysis.ScaleOscillation != nil {
 			text.WriteString("• Scale Oscillation Detected\n")
 			text.WriteString(fmt.Sprintf("  Direction Changes: %d\n", analysis.ScaleOscillation.DirectionChanges))
 			text.WriteString(fmt.Sprintf("  Severity: %s\n", analysis.ScaleOscillation.Severity))
 		}
-		
+
 		if analysis.ResourceThrashing != nil {
-			text.WriteString(fmt.Sprintf("• Resource Thrashing: %d transitions (Severity: %s)\n", 
+			text.WriteString(fmt.Sprintf("• Resource Thrashing: %d transitions (Severity: %s)\n",
 				analysis.ResourceThrashing.ThrashingTransitions, analysis.ResourceThrashing.Severity))
 		}
-		
+
 		for _, loop := range analysis.IneffectiveLoops {
-			text.WriteString(fmt.Sprintf("• Ineffective Loop: %s repeated %d times (Severity: %s)\n", 
+			text.WriteString(fmt.Sprintf("• Ineffective Loop: %s repeated %d times (Severity: %s)\n",
 				loop.ActionType, loop.RepetitionCount, loop.Severity))
 		}
-		
+
 		for _, cascade := range analysis.CascadingFailures {
-			text.WriteString(fmt.Sprintf("• Cascading Failure: %s causing avg %.1f new alerts (Severity: %s)\n", 
+			text.WriteString(fmt.Sprintf("• Cascading Failure: %s causing avg %.1f new alerts (Severity: %s)\n",
 				cascade.ActionType, cascade.AvgNewAlerts, cascade.Severity))
 		}
-		
+
 		text.WriteString("\nSafety Reasoning:\n")
 		text.WriteString(oscillation.GenerateSafetyReasoning(analysis))
 	} else {
 		text.WriteString("No concerning oscillation patterns detected. Actions appear safe to proceed.")
 	}
-	
+
 	return MCPToolResponse{
 		Content: []MCPContent{
+			{
+				Type: "application/json",
+				Data: response,
+			},
 			{
 				Type: "text",
 				Text: text.String(),
@@ -594,19 +624,19 @@ func (s *ActionHistoryMCPServer) handleGetActionEffectiveness(ctx context.Contex
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("namespace is required")
 	}
-	
+
 	kind, ok := args["kind"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("kind is required")
 	}
-	
+
 	name, ok := args["name"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("name is required")
 	}
-	
+
 	actionType, _ := args["actionType"].(string)
-	
+
 	// Parse time range
 	var timeRange actionhistory.TimeRange
 	if timeRangeStr, ok := args["timeRange"].(string); ok {
@@ -620,7 +650,7 @@ func (s *ActionHistoryMCPServer) handleGetActionEffectiveness(ctx context.Contex
 		timeRange.Start = time.Now().Add(-7 * 24 * time.Hour)
 		timeRange.End = time.Now()
 	}
-	
+
 	query := actionhistory.ActionQuery{
 		Namespace:    namespace,
 		ResourceKind: kind,
@@ -629,12 +659,12 @@ func (s *ActionHistoryMCPServer) handleGetActionEffectiveness(ctx context.Contex
 		TimeRange:    timeRange,
 		Limit:        1000, // Get all actions in the time range
 	}
-	
+
 	traces, err := s.repository.GetActionTraces(ctx, query)
 	if err != nil {
 		return MCPToolResponse{}, fmt.Errorf("failed to get action traces: %w", err)
 	}
-	
+
 	// Calculate effectiveness metrics by action type
 	effectivenessMap := make(map[string][]float64)
 	for _, trace := range traces {
@@ -642,7 +672,7 @@ func (s *ActionHistoryMCPServer) handleGetActionEffectiveness(ctx context.Contex
 			effectivenessMap[trace.ActionType] = append(effectivenessMap[trace.ActionType], *trace.EffectivenessScore)
 		}
 	}
-	
+
 	// Convert to structured response format
 	actionEffectiveness := make(map[string]ActionEffectiveness)
 	for actionType, scores := range effectivenessMap {
@@ -656,7 +686,7 @@ func (s *ActionHistoryMCPServer) handleGetActionEffectiveness(ctx context.Contex
 			}
 		}
 	}
-	
+
 	response := EffectivenessMetricsResponse{
 		ResourceInfo: ResourceInfo{
 			Namespace: namespace,
@@ -670,7 +700,7 @@ func (s *ActionHistoryMCPServer) handleGetActionEffectiveness(ctx context.Contex
 		TotalActions:        len(traces),
 		ActionEffectiveness: actionEffectiveness,
 	}
-	
+
 	return MCPToolResponse{
 		Content: []MCPContent{
 			{
@@ -686,36 +716,36 @@ func (s *ActionHistoryMCPServer) handleCheckActionSafety(ctx context.Context, ar
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("namespace is required")
 	}
-	
+
 	kind, ok := args["kind"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("kind is required")
 	}
-	
+
 	name, ok := args["name"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("name is required")
 	}
-	
+
 	actionType, ok := args["actionType"].(string)
 	if !ok {
 		return MCPToolResponse{}, errors.NewValidationError("actionType is required")
 	}
-	
+
 	resourceRef := actionhistory.ResourceReference{
 		Namespace: namespace,
 		Kind:      kind,
 		Name:      name,
 	}
-	
+
 	// Analyze oscillation patterns to determine safety
 	analysis, err := s.detector.AnalyzeResource(ctx, resourceRef, 120) // 2-hour window
 	if err != nil {
 		return MCPToolResponse{}, fmt.Errorf("failed to analyze safety: %w", err)
 	}
-	
+
 	content := fmt.Sprintf("Action Safety Check for %s on %s/%s in namespace %s:\n\n", actionType, kind, name, namespace)
-	
+
 	if analysis.OverallSeverity == actionhistory.SeverityNone {
 		content += "✅ SAFE: No concerning oscillation patterns detected.\n"
 		content += "The proposed action appears safe to execute.\n\n"
@@ -723,14 +753,14 @@ func (s *ActionHistoryMCPServer) handleCheckActionSafety(ctx context.Context, ar
 	} else {
 		content += fmt.Sprintf("⚠️  WARNING: %s severity oscillation patterns detected.\n", strings.ToUpper(string(analysis.OverallSeverity)))
 		content += fmt.Sprintf("Recommended action: %s\n\n", analysis.RecommendedAction)
-		
+
 		// Add specific safety concerns
 		content += "Safety Concerns:\n"
 		content += oscillation.GenerateSafetyReasoning(analysis)
 		content += "\n\n"
-		
+
 		content += fmt.Sprintf("Confidence: %.3f\n", analysis.Confidence)
-		
+
 		switch analysis.RecommendedAction {
 		case actionhistory.PreventionBlock:
 			content += "\n🚫 RECOMMENDATION: Block this action temporarily to prevent further oscillation."
@@ -742,9 +772,28 @@ func (s *ActionHistoryMCPServer) handleCheckActionSafety(ctx context.Context, ar
 			content += "\n🔄 RECOMMENDATION: Consider alternative actions to achieve the desired outcome."
 		}
 	}
-	
+
+	// Create structured response
+	safetyResponse := SafetyCheckResponse{
+		ResourceInfo: ResourceInfo{
+			Namespace: namespace,
+			Kind:      kind,
+			Name:      name,
+		},
+		ActionType:        actionType,
+		IsSafe:            analysis.OverallSeverity == actionhistory.SeverityNone,
+		OverallSeverity:   string(analysis.OverallSeverity),
+		Confidence:        analysis.Confidence,
+		RecommendedAction: string(analysis.RecommendedAction),
+		SafetyReasoning:   oscillation.GenerateSafetyReasoning(analysis),
+	}
+
 	return MCPToolResponse{
 		Content: []MCPContent{
+			{
+				Type: "application/json",
+				Data: safetyResponse,
+			},
 			{
 				Type: "text",
 				Text: content,
@@ -821,16 +870,16 @@ func maxFloat64(scores []float64) float64 {
 // StartMCPServer starts the MCP server
 func (s *ActionHistoryMCPServer) StartMCPServer(ctx context.Context) error {
 	log.Printf("Starting Action History MCP Server with %d tools", len(s.capabilities.Tools))
-	
+
 	// In a real implementation, this would set up the MCP transport layer
 	// For now, we'll just log the available capabilities
 	capabilitiesJSON, err := json.MarshalIndent(s.capabilities, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal capabilities: %w", err)
 	}
-	
+
 	log.Printf("MCP Server Capabilities:\n%s", string(capabilitiesJSON))
-	
+
 	// Block until context is cancelled
 	<-ctx.Done()
 	return ctx.Err()
