@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
+	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/oscillation"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/k8s"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared/testenv"
@@ -28,14 +30,12 @@ import (
 
 // IntegrationTestUtils provides utilities for integration testing with real components
 type IntegrationTestUtils struct {
-	ConnectionString     string
-	DB                   *sql.DB
-	Repository           actionhistory.Repository
-	DetectionEngine      *oscillation.OscillationDetectionEngine
-	MCPServer            *mcp.ActionHistoryMCPServer
-	K8sTestEnvironment   *testenv.TestEnvironment // Real test K8s cluster
-	K8sMCPServerEndpoint string                   // Real K8s MCP server endpoint
-	K8sMCPContainerID    string                   // Podman container ID for K8s MCP server
+	ConnectionString   string
+	DB                 *sql.DB
+	Repository         actionhistory.Repository
+	DetectionEngine    *oscillation.OscillationDetectionEngine
+	MCPServer          *mcp.ActionHistoryMCPServer
+	K8sTestEnvironment *testenv.TestEnvironment // Real test K8s cluster
 
 	Logger *logrus.Logger
 }
@@ -165,50 +165,22 @@ func NewIntegrationTestUtils(logger *logrus.Logger) (*IntegrationTestUtils, erro
 	// Create action history MCP server
 	mcpServer := mcp.NewActionHistoryMCPServer(repository, detectionEngine, logger)
 
-	// Set up real K8s test environment with API server for MCP server authentication
+	// Set up K8s test environment for direct client usage
 	k8sTestEnv, err := testenv.SetupTestEnvironment()
 	if err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to setup test K8s environment: %w", err)
 	}
 
-	// No file creation needed - we'll use environment variables
-
-	// Start real K8s MCP server with Podman
-	// Integration test setup automatically manages:
-	// 1. Fake K8s cluster (created above)
-	// 2. Real containers/kubernetes-mcp-server pointing to fake cluster (started below)
-	// 3. Real Action History MCP server (created above)
-	// 4. Application under test connecting to both real MCP servers
-	k8sMCPEndpoint := GetEnvOrDefault("K8S_MCP_SERVER_ENDPOINT", "http://localhost:8081")
-
-	// Start K8s MCP server container with Podman and kubeconfig content
-	containerID, err := startK8sMCPServerContainerWithContent(k8sTestEnv, logger)
-	if err != nil {
-		db.Close()
-		k8sTestEnv.Cleanup()
-		return nil, fmt.Errorf("failed to start K8s MCP server container: %w", err)
-	}
-
-	// Wait for K8s MCP server to be ready
-	if err := waitForK8sMCPServerReady(k8sMCPEndpoint, 30*time.Second, logger); err != nil {
-		stopK8sMCPServerContainer(containerID, logger)
-		db.Close()
-		k8sTestEnv.Cleanup()
-		return nil, fmt.Errorf("K8s MCP server not ready: %w", err)
-	}
-
-	logger.Infof("Integration test setup complete: K8s MCP server running at %s (container: %s)", k8sMCPEndpoint, containerID)
+	logger.Info("Integration test setup complete: using direct K8s client for MCP bridge")
 
 	return &IntegrationTestUtils{
-		ConnectionString:     connectionString,
-		DB:                   db,
-		Repository:           repository,
-		DetectionEngine:      detectionEngine,
-		MCPServer:            mcpServer,
-		K8sTestEnvironment:   k8sTestEnv,
-		K8sMCPServerEndpoint: k8sMCPEndpoint,
-		K8sMCPContainerID:    containerID,
+		ConnectionString:   connectionString,
+		DB:                 db,
+		Repository:         repository,
+		DetectionEngine:    detectionEngine,
+		MCPServer:          mcpServer,
+		K8sTestEnvironment: k8sTestEnv,
 
 		Logger: logger,
 	}, nil
@@ -217,14 +189,6 @@ func NewIntegrationTestUtils(logger *logrus.Logger) (*IntegrationTestUtils, erro
 // Close closes database connections and cleans up test environment
 func (d *IntegrationTestUtils) Close() error {
 	var errs []error
-
-	// Stop K8s MCP server container
-	if d.K8sMCPContainerID != "" {
-		d.Logger.Infof("Stopping K8s MCP server container: %s", d.K8sMCPContainerID)
-		if err := stopK8sMCPServerContainer(d.K8sMCPContainerID, d.Logger); err != nil {
-			errs = append(errs, fmt.Errorf("failed to stop K8s MCP server container: %w", err))
-		}
-	}
 
 	// Close database connection
 	if d.DB != nil {
@@ -913,17 +877,15 @@ func (d *DatabaseTestUtils) CreateLowEffectivenessHistory(resourceRef actionhist
 // CreateMCPClient creates a properly configured MCP client for integration testing with real K8s MCP server
 func (utils *IntegrationTestUtils) CreateMCPClient(config IntegrationConfig) slm.MCPClient {
 	mcpClientConfig := slm.MCPClientConfig{
-		ActionHistoryServerEndpoint: "http://localhost:8081",    // Internal server
-		KubernetesServerEndpoint:    utils.K8sMCPServerEndpoint, // Real K8s MCP server
+		ActionHistoryServerEndpoint: "http://localhost:8081", // Internal server
+		KubernetesServerEndpoint:    "",                      // No longer used - direct client access
 		Timeout:                     config.TestTimeout,
 		MaxRetries:                  config.MaxRetries,
 	}
 
-	// Integration tests always use real K8s MCP server (started automatically)
-	k8sHTTPClient := NewHTTPK8sMCPClient(utils.K8sMCPServerEndpoint, utils.Logger)
-
-	utils.Logger.Infof("Creating MCP client with real K8s MCP server at %s", utils.K8sMCPServerEndpoint)
-	return slm.NewMCPClientWithK8sServer(mcpClientConfig, utils.MCPServer, k8sHTTPClient, utils.Logger)
+	// Integration tests use direct K8s client (no external MCP server needed)
+	utils.Logger.Info("Creating MCP client with action history server only")
+	return slm.NewMCPClient(mcpClientConfig, utils.MCPServer, utils.Logger)
 }
 
 // CreateSLMClient creates a properly configured SLM client with MCP integration for testing
@@ -970,6 +932,43 @@ func (utils *IntegrationTestUtils) CreateSLMClient(testConfig IntegrationConfig,
 	_ = mcpClient      // Use variable to avoid unused warning
 
 	return nil, fmt.Errorf("SLM client creation not fully implemented in test utils")
+}
+
+// CreateDynamicSLMClient creates a properly configured SLM client with dynamic MCP bridge for testing
+func (utils *IntegrationTestUtils) CreateDynamicSLMClient(testConfig IntegrationConfig) (slm.Client, error) {
+	// Create SLM configuration
+	slmConfig := config.SLMConfig{
+		Provider:       "localai",
+		Endpoint:       testConfig.OllamaEndpoint,
+		Model:          testConfig.OllamaModel,
+		Temperature:    0.3,
+		MaxTokens:      500,
+		Timeout:        testConfig.TestTimeout,
+		RetryCount:     1,
+		MaxContextSize: 4000,
+	}
+
+	// Create Kubernetes client using the test environment
+	k8sConfig := config.KubernetesConfig{
+		Context:   "", // Use test environment
+		Namespace: "default",
+	}
+
+	// Use the unified client with the test environment's clientset
+	k8sClient := k8s.NewUnifiedClient(utils.K8sTestEnvironment.Client, k8sConfig, utils.Logger)
+
+	utils.Logger.WithFields(logrus.Fields{
+		"k8s_client_configured": k8sClient != nil,
+		"slm_endpoint":          slmConfig.Endpoint,
+		"model":                 slmConfig.Model,
+	}).Info("Creating SLM client with LocalAI and Dynamic MCP Bridge")
+
+	client, err := slm.NewClientWithDynamicMCP(slmConfig, utils.MCPServer, k8sClient, utils.Logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dynamic SLM client: %w", err)
+	}
+
+	return client, nil
 }
 
 // CreateCascadingFailureHistory creates a history showing patterns that led to cascading failures

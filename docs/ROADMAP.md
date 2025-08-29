@@ -1,8 +1,8 @@
 # Prometheus Alerts SLM - Production Roadmap
 
-**Vision**: Production-ready AI-powered Kubernetes remediation system with optimal performance, accuracy, and scalability  
-**Current Status**: Functional PoC with Granite model analysis complete and modernized Ginkgo/Gomega testing framework  
-**Testing Framework**: ✅ **Complete** - All tests migrated from testify to Ginkgo/Gomega with modular organization  
+**Vision**: Production-ready AI-powered Kubernetes remediation system with optimal performance, accuracy, and scalability
+**Current Status**: Functional PoC with Granite model analysis complete and modernized Ginkgo/Gomega testing framework
+**Testing Framework**: ✅ **Complete** - All tests migrated from testify to Ginkgo/Gomega with modular organization
 **Tracking**: Each item will be worked on sequentially with completion tracking
 
 ## 🎯 **Roadmap Objectives**
@@ -18,8 +18,8 @@
 ## 📋 **Phase 1: Model Selection & Performance Analysis** (Priority: Critical)
 
 ### 1.1 Extended Model Comparison Study
-**Status**: 🔄 Pending  
-**Duration**: 2-3 weeks  
+**Status**: 🔄 Pending
+**Duration**: 2-3 weeks
 **Owner**: TBD
 
 **Objective**: Compare Granite models against other open source 2B models to find optimal accuracy/speed balance
@@ -59,8 +59,8 @@ OLLAMA_MODEL={model} go test -v -tags=integration ./test/integration/...
 ---
 
 ### 1.2 Concurrent Load Testing & Stress Analysis
-**Status**: 🔄 Pending  
-**Duration**: 2-3 weeks  
+**Status**: 🔄 Pending
+**Duration**: 2-3 weeks
 **Owner**: TBD
 
 **Objective**: Understand system behavior under concurrent load and identify scaling limitations
@@ -110,8 +110,8 @@ var scenarios = []LoadTestScenario{
 ---
 
 ### 1.3 Multi-Instance Scaling Architecture Design
-**Status**: 🔄 Pending  
-**Duration**: 2-3 weeks  
+**Status**: 🔄 Pending
+**Duration**: 2-3 weeks
 **Owner**: TBD
 
 **Objective**: Design and implement multi-instance model serving with intelligent routing
@@ -168,8 +168,8 @@ type ModelRouter struct {
 ---
 
 ### 1.4 Kubernetes MCP Server Development ⭐ **INNOVATION**
-**Status**: 🔄 Pending  
-**Duration**: 4-5 weeks  
+**Status**: 🔄 Pending
+**Duration**: 4-5 weeks
 **Owner**: TBD
 
 **Objective**: Enable models to directly query Kubernetes cluster state for context-aware decisions
@@ -209,8 +209,8 @@ type KubernetesMCPServer struct {
 ---
 
 ### 1.5 MCP-Enhanced Model Comparison ⭐ **CRITICAL INNOVATION**
-**Status**: 🔄 Pending  
-**Duration**: 3-4 weeks  
+**Status**: 🔄 Pending
+**Duration**: 3-4 weeks
 **Owner**: TBD
 
 **Objective**: Evaluate all models with real-time cluster context capabilities
@@ -235,7 +235,7 @@ done
 
 #### Model Capability Assessment:
 - **Granite Dense 8B**: ✅ Expected excellent MCP capability
-- **Granite Dense 2B**: ⚠️ Promising, needs validation  
+- **Granite Dense 2B**: ⚠️ Promising, needs validation
 - **Other 2B Models**: 🔄 Unknown MCP capability - critical to test
 - **Smaller Models**: ❌ Likely insufficient for complex tool usage
 
@@ -258,8 +258,8 @@ done
 ## 🚨 **Phase 2: Production Safety & Reliability** (Priority: Critical)
 
 ### 2.1 Safety Mechanisms Implementation
-**Status**: 🔄 Pending  
-**Duration**: 3-4 weeks  
+**Status**: 🔄 Pending
+**Duration**: 3-4 weeks
 **Owner**: TBD
 
 **Objective**: Implement critical safety mechanisms to prevent production failures
@@ -301,8 +301,8 @@ type RateLimiter struct {
 ---
 
 ### 2.3 Chaos Engineering & E2E Testing ⭐ **PRODUCTION VALIDATION**
-**Status**: 🔄 Pending  
-**Duration**: 3-4 weeks  
+**Status**: 🔄 Pending
+**Duration**: 3-4 weeks
 **Owner**: TBD
 
 **Objective**: Validate AI remediation system under real failure conditions using chaos engineering
@@ -369,7 +369,7 @@ var _ = Describe("Chaos Engineering Tests", func() {
         chaosResults   []ChaosExperimentResult
         aiMetrics      []AIPerformanceMetric
     )
-    
+
     BeforeEach(func() {
         // Setup chaos testing environment
     })
@@ -396,11 +396,11 @@ test_scenarios:
     chaos: "pod-memory-hog"
     expected_alert: "HighMemoryUsage"
     expected_actions: ["increase_resources", "scale_deployment"]
-    validation: 
+    validation:
       - action_execution_time: "<30s"
       - problem_resolution: "95%"
       - no_oscillation: true
-      
+
   - name: "node_failure_e2e"
     chaos: "node-cpu-hog"
     expected_alert: "NodeNotReady"
@@ -465,68 +465,259 @@ rules:
 
 ---
 
-### 2.4 Action History & Loop Prevention ⭐ **CRITICAL PRODUCTION FEATURE**
-**Status**: 🔄 Pending  
-**Duration**: 4-5 weeks  
+### 2.4 Hybrid Vector Database & Action History ⭐ **CRITICAL PRODUCTION FEATURE**
+**Status**: 🔄 Pending
+**Duration**: 6-8 weeks
 **Priority**: Critical (Required for Production)
 
-**Objective**: Implement action history system to prevent infinite oscillation loops and enable AI learning
+**Objective**: Implement hybrid storage system combining PostgreSQL for ACID operations with vector database for intelligent pattern recognition and AI-enhanced action history
 
 #### Revolutionary Capability:
-Enable AI models to remember past decisions and avoid problematic patterns like:
-- Scale oscillation loops (scale up → scale down → scale up)
-- Ineffective action repetition with low success rates
-- Resource thrashing from rapid configuration changes
-- Root cause masking through symptomatic fixes
+Transform action history from simple record-keeping to intelligent pattern recognition system:
+- Scale oscillation loops prevention through semantic similarity
+- Cross-resource learning and pattern transfer
+- Natural language queries for historical actions
+- AI-powered effectiveness prediction and root cause analysis
 
-#### Action History MCP Server Architecture:
+#### Hybrid Architecture Design:
 ```go
-// Action History Management
-type ActionHistoryMCPServer struct {
-    historyStore    ActionHistoryStore
-    patternDetector OscillationDetector
-    client         kubernetes.Interface
-    rateLimit      rate.Limiter
-    retention      RetentionPolicy
+// Hybrid Action History System
+type HybridActionHistorySystem struct {
+    // Relational DB for transactional operations
+    postgres *PostgreSQLRepository
+
+    // Vector DB for semantic operations
+    vectorDB *VectorRepository
+
+    // Background sync process
+    vectorSync *VectorSyncService
+
+    // Intelligent query routing
+    queryRouter *QueryRouter
 }
 
-// Persistent action tracking per K8s resource
-type ActionHistory struct {
-    ResourceKey     string                 // namespace/kind/name
-    Actions         []HistoricalAction     // Chronological action list
-    Patterns        []DetectedPattern      // Identified oscillations
-    LastAnalyzed    time.Time             // Pattern analysis timestamp
-    RootCauses      []string              // Identified underlying issues
-    EffectiveActions []string             // Actions that actually worked
+// Enhanced action storage with semantic capabilities
+func (h *HybridActionHistorySystem) StoreAction(ctx context.Context, action *ActionRecord) error {
+    // 1. Store in PostgreSQL for ACID guarantees
+    trace, err := h.postgres.StoreAction(ctx, action)
+    if err != nil {
+        return err
+    }
+
+    // 2. Async: Generate embeddings and store in vector DB
+    h.vectorSync.EnqueueEmbedding(trace)
+
+    return nil
+}
+
+// Semantic similarity search for intelligent recommendations
+func (h *HybridActionHistorySystem) FindSimilarActions(ctx context.Context, alert types.Alert) ([]SimilarAction, error) {
+    // Use vector DB for semantic similarity
+    alertEmbedding := h.generateAlertEmbedding(alert)
+    candidates := h.vectorDB.SearchSimilar(alertEmbedding, 0.85, 100)
+
+    // Enrich with relational data
+    var results []SimilarAction
+    for _, candidate := range candidates {
+        trace, err := h.postgres.GetActionTrace(ctx, candidate.ActionID)
+        if err != nil {
+            continue
+        }
+        results = append(results, SimilarAction{
+            Trace: trace,
+            Similarity: candidate.Score,
+        })
+    }
+
+    return results, nil
 }
 ```
 
-#### Implementation Tasks:
-- [ ] **Action History MCP Server** with pattern detection algorithms
-- [ ] **Kubernetes CRD storage** for persistent action tracking  
-- [ ] **Oscillation detection** algorithms (scale, resource, ineffective patterns)
-- [ ] **Model integration** with history-aware prompting
-- [ ] **Automatic outcome tracking** and effectiveness scoring
+#### Implementation Tasks - Phase 1: Core Hybrid Infrastructure (Weeks 1-3)
+- [ ] **Vector database selection and setup** (Pinecone, Weaviate, or Qdrant)
+- [ ] **Embedding service implementation** with action context vectorization
+- [ ] **Background sync service** for PostgreSQL ↔ Vector DB synchronization
+- [ ] **Query routing engine** with intelligent storage selection
+- [ ] **Fallback mechanisms** ensuring PostgreSQL as reliable source of truth
+
+#### Implementation Tasks - Phase 2: Intelligence Features (Weeks 4-6)
+- [ ] **Semantic action search** with natural language capabilities
+- [ ] **Pattern clustering and visualization** for oscillation detection
+- [ ] **Cross-resource learning** algorithms for pattern transfer
+- [ ] **Effectiveness prediction** based on historical similarity
+- [ ] **Context-aware recommendations** using vector similarity
+
+#### Implementation Tasks - Phase 3: Production Optimization (Weeks 7-8)
+- [ ] **Performance optimization** with caching and request batching
+- [ ] **Security controls** with namespace isolation and data filtering
+- [ ] **Monitoring and alerting** for hybrid system health
+- [ ] **Production deployment** and validation testing
 
 #### Advanced Intelligence Features:
-- [ ] **Success pattern recognition** from historical data
-- [ ] **Predictive action success** probability calculations
-- [ ] **Alternative strategy suggestions** when patterns detected
-- [ ] **Root cause identification** from repetitive failures
-- [ ] **Learning from cross-resource** patterns
+- [ ] **Semantic oscillation detection** using embedding similarity patterns
+- [ ] **Natural language action queries** ("find actions that resolved memory issues")
+- [ ] **Cross-namespace pattern learning** with security isolation
+- [ ] **Predictive effectiveness scoring** based on context similarity
+- [ ] **Automated root cause clustering** using vector analysis
+
+#### Technology Stack Decisions:
+```yaml
+vector_database:
+  recommended: "Weaviate (open source with K8s integration)"
+  alternatives: ["Pinecone (managed SaaS)", "Qdrant (high performance)"]
+
+embedding_model:
+  primary: "Sentence Transformers (local deployment)"
+  fallback: "OpenAI text-embedding-ada-002 (API)"
+  strategy: "Hybrid approach for cost optimization"
+
+storage_strategy:
+  transactional_operations: "PostgreSQL (ACID guarantees)"
+  semantic_operations: "Vector DB (similarity search)"
+  query_routing: "Intelligent based on query type"
+```
 
 #### Deliverables:
-- [ ] **Action History MCP server** with comprehensive pattern detection
-- [ ] **Persistent storage system** tied to Kubernetes resource lifecycle
-- [ ] **Oscillation prevention** algorithms for all action types
-- [ ] **Model enhancement** with historical intelligence
-- [ ] **Effectiveness tracking** and continuous learning system
+- [ ] **Hybrid storage architecture** with PostgreSQL + Vector DB integration
+- [ ] **Semantic action search** with natural language capabilities
+- [ ] **Intelligent oscillation prevention** using embedding similarity
+- [ ] **Cross-resource learning** system for pattern transfer
+- [ ] **Production-ready deployment** with monitoring and alerting
+- [ ] **Comprehensive documentation** including VECTOR_DATABASE_ANALYSIS.md
+
+---
+
+### 2.5 RAG-Enhanced Decision Engine ⭐ **AI INTELLIGENCE BREAKTHROUGH**
+**Status**: 🔄 Pending
+**Duration**: 4-6 weeks
+**Priority**: High (AI Enhancement)
+**Dependencies**: Hybrid Vector Database Implementation (2.4)
+
+**Objective**: Implement Retrieval-Augmented Generation (RAG) to enable historically-informed AI decision making with evidence-based reasoning
+
+#### Revolutionary Capability:
+Transform AI decision-making from static alert analysis to dynamic, context-aware intelligence:
+- Historical pattern awareness in real-time decisions
+- Evidence-based reasoning with specific past examples
+- Cross-resource learning and effectiveness prediction
+- Natural language explanations grounded in actual data
+
+#### RAG-Enhanced Decision Flow:
+```go
+// RAG-Enhanced Decision Engine
+type RAGEnhancedDecisionEngine struct {
+    vectorDB        *VectorRepository
+    contextBuilder  *ContextBuilder
+    promptGenerator *RAGPromptGenerator
+    llmClient       LocalAIClientInterface
+    qualityFilter   *ContextQualityFilter
+
+    // Configuration
+    maxRetrievals      int
+    similarityThreshold float64
+    contextWindowSize   int
+}
+
+// Enhanced decision making with historical context
+func (r *RAGEnhancedDecisionEngine) AnalyzeAlert(ctx context.Context, alert types.Alert) (*types.ActionRecommendation, error) {
+    // 1. Retrieve relevant historical actions
+    relevantActions, err := r.retrieveRelevantActions(ctx, alert)
+    if err != nil {
+        // Fallback to static analysis
+        return r.fallbackToStaticAnalysis(ctx, alert)
+    }
+
+    // 2. Build enhanced context with quality filtering
+    enhancedContext := r.contextBuilder.BuildContext(alert, relevantActions)
+
+    // 3. Generate RAG-enhanced prompt with evidence
+    prompt := r.promptGenerator.GenerateRAGPrompt(alert, enhancedContext)
+
+    // 4. Get AI decision with historical context
+    return r.llmClient.ChatCompletion(ctx, prompt)
+}
+
+// Evidence-based recommendation with historical backing
+type EvidenceBasedRecommendation struct {
+    Action          string                 `json:"action"`
+    Confidence      float64               `json:"confidence"`
+    HistoricalBasis []HistoricalEvidence  `json:"historical_basis"`
+    Reasoning       string                `json:"reasoning"`
+    Alternatives    []AlternativeAction   `json:"alternatives"`
+}
+```
+
+#### Implementation Tasks - Phase 1: Simple RAG (Weeks 1-2)
+- [ ] **Basic retrieval implementation** with vector similarity search
+- [ ] **Context formatting** for historical action integration
+- [ ] **Enhanced prompt generation** with retrieved examples
+- [ ] **Fallback mechanisms** for retrieval failures
+- [ ] **Performance baseline** establishment and monitoring
+
+#### Implementation Tasks - Phase 2: Quality-Aware RAG (Weeks 3-4)
+- [ ] **Context quality assessment** with relevance scoring
+- [ ] **Multi-criteria filtering** (recency, effectiveness, similarity)
+- [ ] **Intelligent fallback chain** (full RAG → simple RAG → static)
+- [ ] **Security controls** with namespace isolation
+- [ ] **Performance optimization** with caching strategies
+
+#### Implementation Tasks - Phase 3: Intelligent RAG (Weeks 5-6)
+- [ ] **Advanced context synthesis** with summarization
+- [ ] **Adaptive prompting** based on context quality
+- [ ] **Continuous learning** feedback loops
+- [ ] **Cross-resource pattern integration**
+- [ ] **Production deployment** with comprehensive monitoring
+
+#### RAG Enhancement Features:
+- [ ] **Evidence-based reasoning** with specific historical examples
+- [ ] **Oscillation prevention** through pattern awareness
+- [ ] **Effectiveness prediction** based on similar past actions
+- [ ] **Cross-resource learning** for pattern transfer
+- [ ] **Natural language explanations** grounded in data
+
+#### Expected Performance Impact:
+```yaml
+decision_quality_improvements:
+  simple_rag: "+2.4% accuracy (96.8% total)"
+  quality_aware_rag: "+3.5% accuracy (97.9% total)"
+  intelligent_rag: "+4.1% accuracy (98.5% total)"
+
+operational_benefits:
+  oscillation_reduction: "35-65% fewer action loops"
+  pattern_discovery: "Cross-resource learning enabled"
+  context_awareness: "Historical evidence in all decisions"
+  reasoning_quality: "Evidence-based explanations"
+
+performance_considerations:
+  latency_impact: "+850ms total (44% increase)"
+  mitigation: "Aggressive caching and async processing"
+  fallback_performance: "No impact when RAG unavailable"
+```
+
+#### Quality Assurance & Risk Mitigation:
+- [ ] **Context quality filtering** to prevent irrelevant retrievals
+- [ ] **Bias detection** to avoid amplifying historical mistakes
+- [ ] **Performance monitoring** with latency and quality metrics
+- [ ] **Security isolation** preventing cross-tenant data leakage
+- [ ] **Comprehensive fallback strategy** ensuring system reliability
+
+#### Integration Points:
+- **MCP Bridge Enhancement**: RAG context integrated into tool conversations
+- **Vector Database Dependency**: Requires hybrid storage from item 2.4
+- **Model Selection Impact**: RAG may favor models with better context handling
+
+#### Deliverables:
+- [ ] **RAG-enhanced decision engine** with phased implementation
+- [ ] **Evidence-based recommendation system** with historical backing
+- [ ] **Context quality assessment** framework
+- [ ] **Performance optimization** with caching and fallbacks
+- [ ] **Comprehensive documentation** including RAG_ENHANCEMENT_ANALYSIS.md
 
 ---
 
 ### 2.2 Enhanced Observability & Audit Trail
-**Status**: 🔄 Pending  
-**Duration**: 2-3 weeks  
+**Status**: 🔄 Pending
+**Duration**: 2-3 weeks
 **Owner**: TBD
 
 **Objective**: Implement comprehensive monitoring and audit capabilities
@@ -563,17 +754,17 @@ panels:
     type: "histogram"
     metrics: ["ai_model_response_time_seconds"]
     breakdowns: ["model_name", "action_type", "alert_severity"]
-    
+
   - name: "Action Success Rates"
     type: "stat_panel"
     metrics: ["ai_action_success_rate"]
     thresholds: [0.95, 0.90, 0.80]  # Green/Yellow/Red
-    
+
   - name: "Multi-Modal Routing Distribution"
     type: "pie_chart"
     metrics: ["ai_routing_decisions_total"]
     breakdowns: ["route_tier", "model_selected"]
-    
+
   - name: "Circuit Breaker Status"
     type: "state_timeline"
     metrics: ["ai_circuit_breaker_state"]
@@ -588,16 +779,16 @@ panels:
     type: "time_series"
     metrics: ["ai_model_accuracy_rate"]
     breakdowns: ["model_name", "scenario_type"]
-    
+
   - name: "Confidence Score Distribution"
     type: "histogram"
     metrics: ["ai_confidence_score"]
     breakdowns: ["model_name", "action_taken"]
-    
+
   - name: "Token Usage Efficiency"
     type: "graph"
     metrics: ["ai_tokens_per_request", "ai_tokens_per_second"]
-    
+
   - name: "Model Resource Utilization"
     type: "graph"
     metrics: ["ai_model_memory_usage", "ai_model_cpu_usage"]
@@ -611,16 +802,16 @@ panels:
     type: "logs"
     metrics: ["ai_oscillation_detected_total"]
     breakdowns: ["pattern_type", "resource_type"]
-    
+
   - name: "Action Effectiveness Scores"
     type: "heatmap"
     metrics: ["ai_action_effectiveness_score"]
     breakdowns: ["action_type", "resource_type"]
-    
+
   - name: "Loop Prevention Interventions"
     type: "stat"
     metrics: ["ai_loop_prevention_total"]
-    
+
   - name: "Historical Pattern Analysis"
     type: "table"
     metrics: ["ai_pattern_frequency", "ai_pattern_success_rate"]
@@ -634,15 +825,15 @@ panels:
     type: "stat"
     metrics: ["ai_incident_resolution_time"]
     comparison: "manual_resolution_baseline"
-    
+
   - name: "Resource Impact Tracking"
     type: "graph"
     metrics: ["ai_resources_affected_total", "ai_cost_impact_dollars"]
-    
+
   - name: "Alert Volume Reduction"
     type: "stat"
     metrics: ["ai_alerts_automated_total", "ai_manual_intervention_reduction"]
-    
+
   - name: "System Availability Impact"
     type: "graph"
     metrics: ["ai_uptime_improvement", "ai_mttr_reduction"]
@@ -655,12 +846,12 @@ panels:
   - name: "CVE-Informed Decisions"
     type: "stat"
     metrics: ["ai_cve_aware_decisions_total"]
-    
+
   - name: "Security Risk Assessments"
-    type: "heatmap"  
+    type: "heatmap"
     metrics: ["ai_security_risk_score"]
     breakdowns: ["action_type", "cve_severity"]
-    
+
   - name: "Compliance Validation Results"
     type: "stat"
     metrics: ["ai_compliance_checks_total", "ai_compliance_violations"]
@@ -689,11 +880,11 @@ type GrafanaDashboardProvisioning struct {
 func DeployAIDashboards(grafanaClient GrafanaClient) error {
     dashboards := []string{
         "ai-operations-overview.json",
-        "model-performance-analytics.json", 
+        "model-performance-analytics.json",
         "action-history-intelligence.json",
         "business-impact-summary.json",
     }
-    
+
     for _, dashboard := range dashboards {
         if err := grafanaClient.CreateOrUpdateDashboard(dashboard); err != nil {
             return fmt.Errorf("failed to deploy dashboard %s: %w", dashboard, err)
@@ -722,8 +913,8 @@ func DeployAIDashboards(grafanaClient GrafanaClient) error {
 ---
 
 ### 2.3 Containerization & Deployment
-**Status**: 🔄 Pending  
-**Duration**: 2-3 weeks  
+**Status**: 🔄 Pending
+**Duration**: 2-3 weeks
 **Owner**: TBD
 
 **Objective**: Create production-ready container images with embedded models
@@ -767,8 +958,8 @@ CMD ["/start.sh"]
 ## 🔧 **Phase 3: Enhanced Actions & Capabilities** (Priority: High)
 
 ### 3.1 Future Actions Implementation (from FUTURE_ACTIONS.md)
-**Status**: 🔄 Pending  
-**Duration**: 6-8 weeks  
+**Status**: 🔄 Pending
+**Duration**: 6-8 weeks
 **Owner**: TBD
 
 **Objective**: Implement additional actions for comprehensive operational coverage
@@ -801,8 +992,8 @@ CMD ["/start.sh"]
 ---
 
 ### 3.2 Intelligent Model Routing Implementation
-**Status**: 🔄 Pending  
-**Duration**: 3-4 weeks  
+**Status**: 🔄 Pending
+**Duration**: 3-4 weeks
 **Owner**: TBD
 
 **Objective**: Implement sophisticated routing between different models based on scenario requirements
@@ -823,7 +1014,7 @@ type RouterStrategy interface {
 
 // Strategies to implement:
 // - PerformanceOptimized: Always fastest model
-// - AccuracyOptimized: Always most accurate model  
+// - AccuracyOptimized: Always most accurate model
 // - BalancedStrategy: Best accuracy/speed tradeoff
 // - ScenarioBasedStrategy: Route based on alert type
 // - LoadAwareStrategy: Consider current instance load
@@ -848,8 +1039,8 @@ type RouterStrategy interface {
 ## 🚀 **Phase 4: Advanced Enterprise Features** (Priority: Medium)
 
 ### 4.1 High-Risk Actions Implementation
-**Status**: 🔄 Pending  
-**Duration**: 4-6 weeks  
+**Status**: 🔄 Pending
+**Duration**: 4-6 weeks
 **Owner**: TBD
 
 **Objective**: Implement complex, high-risk actions for specialized scenarios
@@ -874,8 +1065,8 @@ type RouterStrategy interface {
 ---
 
 ### 4.2 AI/ML Enhancement Pipeline
-**Status**: 🔄 Pending  
-**Duration**: 6-8 weeks  
+**Status**: 🔄 Pending
+**Duration**: 6-8 weeks
 **Owner**: TBD
 
 **Objective**: Implement learning and adaptation capabilities
@@ -897,8 +1088,8 @@ type RouterStrategy interface {
 ---
 
 ### 4.3 Enterprise Integration & Governance
-**Status**: 🔄 Pending  
-**Duration**: 4-6 weeks  
+**Status**: 🔄 Pending
+**Duration**: 4-6 weeks
 **Owner**: TBD
 
 **Objective**: Add enterprise-grade features for governance and integration
@@ -925,8 +1116,8 @@ type RouterStrategy interface {
 ---
 
 ### 4.4 Cost Management MCP Server ⭐ **REVOLUTIONARY ENTERPRISE FEATURE**
-**Status**: 🔄 Pending  
-**Duration**: 6-8 weeks  
+**Status**: 🔄 Pending
+**Duration**: 6-8 weeks
 **Owner**: TBD
 
 **Objective**: Enable AI models to make financially intelligent infrastructure decisions
@@ -998,9 +1189,9 @@ CloudProviders: ["AWS Cost Explorer", "GCP Billing API", "Azure Cost Management"
 ---
 
 ### 4.5 Security Intelligence MCP Server ⭐ **SECURITY-FOCUSED ENTERPRISE FEATURE**
-**Status**: 🔄 Pending  
-**Priority**: Medium (Enterprise Security Enhancement)  
-**Duration**: 5-7 weeks  
+**Status**: 🔄 Pending
+**Priority**: Medium (Enterprise Security Enhancement)
+**Duration**: 5-7 weeks
 **Owner**: TBD
 
 **Objective**: Provide AI models with real-time security intelligence for enhanced threat-aware decision making
@@ -1014,7 +1205,7 @@ CloudProviders: ["AWS Cost Explorer", "GCP Billing API", "Azure Cost Management"
 // Security MCP Server providing vulnerability intelligence
 type SecurityMCPServer struct {
     cveDatabase      CVEClient        // NIST NVD, CVE API integration
-    vulnerabilityDB  VulnerabilityDB  // Trivy, Grype, Snyk integration  
+    vulnerabilityDB  VulnerabilityDB  // Trivy, Grype, Snyk integration
     imageScanner     ImageScanner     // Container image vulnerability scanning
     networkPolicy    NetworkAnalyzer  // Ingress/egress security analysis
     complianceRules  ComplianceEngine // Security compliance validation
@@ -1043,7 +1234,7 @@ action: "rollback_deployment"
 reasoning: "Rollback to previous revision"
 
 # Security-enhanced approach:
-alert: "DeploymentFailure" 
+alert: "DeploymentFailure"
 security_context:
   current_image: "app:v2.1.0"
   previous_image: "app:v2.0.5"
@@ -1059,7 +1250,7 @@ reasoning: "Rollback justified - previous image has lower security risk (1 MEDIU
 # Enhanced network troubleshooting:
 alert: "NetworkConnectivityIssue"
 security_context:
-  network_policies: 
+  network_policies:
     - name: "deny-all-egress"
       status: "active"
       impact: "blocks external connectivity"
@@ -1073,7 +1264,7 @@ reasoning: "Network policy 'deny-all-egress' blocking legitimate traffic - propo
 ##### 3. **Pod Security with CVE Mitigation**
 ```yaml
 # Security-aware pod management:
-alert: "PodSecurityViolation"  
+alert: "PodSecurityViolation"
 security_context:
   image_scan_results:
     vulnerabilities: ["CVE-2024-0001 (CRITICAL) - RCE in base image"]
@@ -1102,7 +1293,7 @@ type SecurityDataSources struct {
 type NetworkSecurityAnalyzer struct {
     PolicyEngine   NetworkPolicyEngine
     IngressRules   IngressAnalyzer
-    EgressRules    EgressAnalyzer  
+    EgressRules    EgressAnalyzer
     ComplianceDB   ComplianceDatabase
 }
 ```
@@ -1134,13 +1325,13 @@ type SecurityRiskAssessment struct {
 func (s *SecurityMCPServer) AssessActionSecurity(action Action, context AlertContext) SecurityRiskAssessment {
     // Analyze CVE implications
     cveRisk := s.assessCVERisk(action.TargetImage)
-    
+
     // Validate network security impact
     networkRisk := s.assessNetworkImpact(action.NetworkChanges)
-    
+
     // Check compliance implications
     complianceRisk := s.assessComplianceImpact(action.PolicyChanges)
-    
+
     return SecurityRiskAssessment{
         Action: action.Type,
         SecurityRisk: calculateOverallRisk(cveRisk, networkRisk, complianceRisk),
@@ -1237,6 +1428,14 @@ func (s *SecurityMCPServer) AssessActionSecurity(action Action, context AlertCon
 - **On-Call Reduction**: 60% reduction in after-hours engineer pages
 - **Compliance**: 100% audit trail coverage for all actions
 
+### Enhanced Intelligence Value (Vector DB + RAG)
+- **Decision Quality**: 2-4% accuracy improvement (96.8% → 98.5%)
+- **Oscillation Prevention**: 35-65% reduction in action loops
+- **Pattern Discovery**: Cross-resource learning and trend identification
+- **Historical Intelligence**: Evidence-based reasoning with past examples
+- **Faster Resolution**: Proven solutions identified 40% faster
+- **Continuous Learning**: System improves with every action taken
+
 ### Financial Intelligence (Enterprise Cost Management)
 - **Cloud Cost Reduction**: 20-40% reduction in infrastructure spend through AI optimization
 - **Budget Compliance**: 100% adherence to allocated budgets (zero overages)
@@ -1278,14 +1477,28 @@ func (s *SecurityMCPServer) AssessActionSecurity(action Action, context AlertCon
 | **Phase 3** | 9-12 weeks | Enhanced Capabilities | Additional actions, intelligent routing |
 | **Phase 4** | 20-28 weeks | Enterprise Features | High-risk actions, governance, AI/ML pipeline, **cost intelligence** |
 
-**Total Estimated Timeline**: 56-76 weeks for complete implementation
+**Total Estimated Timeline**: 62-84 weeks for complete implementation (Updated with Vector DB + RAG enhancements)
 
 ### **Phase 1 Breakdown** (Enhanced with MCP Innovation):
 - **Weeks 1-3**: Extended model comparison (6 additional 2B models)
-- **Weeks 4-6**: Concurrent load testing & stress analysis  
+- **Weeks 4-6**: Concurrent load testing & stress analysis
 - **Weeks 7-9**: Multi-instance scaling architecture design
 - **Weeks 10-14**: 🚀 **Kubernetes MCP Server development** (INNOVATION)
 - **Weeks 15-17**: 🚀 **MCP-enhanced model comparison** (GAME CHANGER)
+
+### **Phase 2 Breakdown** (Enhanced with Vector DB + RAG Intelligence):
+- **Weeks 1-4**: Safety mechanisms implementation (circuit breakers, rate limiting)
+- **Weeks 5-8**: Enhanced observability & audit trail with Grafana dashboards
+- **Weeks 9-12**: Chaos engineering & E2E testing with Litmus framework
+- **Weeks 13-20**: 🚀 **Hybrid Vector Database & Action History** (INTELLIGENCE BREAKTHROUGH)
+  - PostgreSQL + Vector DB hybrid architecture
+  - Semantic action search and pattern recognition
+  - Cross-resource learning capabilities
+- **Weeks 21-26**: 🚀 **RAG-Enhanced Decision Engine** (AI ENHANCEMENT)
+  - Historical context retrieval and integration
+  - Evidence-based reasoning with past examples
+  - Quality-aware context filtering and fallbacks
+- **Weeks 27**: Integration testing and production deployment validation
 
 ---
 
@@ -1302,4 +1515,44 @@ This roadmap will be updated as each item is completed. Status indicators:
 
 ---
 
-*This roadmap provides a comprehensive path from the current PoC to a production-ready, enterprise-grade AI-powered Kubernetes remediation system. Each phase builds upon the previous work while maintaining focus on performance, safety, and operational excellence.*
+## 📚 **Related Documentation & Analysis**
+
+This roadmap integrates with comprehensive technical analysis documents:
+
+### **Intelligence & Storage Architecture**
+- **[VECTOR_DATABASE_ANALYSIS.md](./VECTOR_DATABASE_ANALYSIS.md)**: Complete analysis of vector vs relational database trade-offs for action history storage, with hybrid architecture recommendation
+- **[RAG_ENHANCEMENT_ANALYSIS.md](./RAG_ENHANCEMENT_ANALYSIS.md)**: Detailed evaluation of Retrieval-Augmented Generation implementation for historically-informed AI decisions
+
+### **Existing Architecture & Design**
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)**: Overall system architecture and component design
+- **[DATABASE_ACTION_HISTORY_DESIGN.md](./DATABASE_ACTION_HISTORY_DESIGN.md)**: Current PostgreSQL action history implementation
+- **[MCP_ANALYSIS.md](./MCP_ANALYSIS.md)**: Multi-Context Provider integration analysis
+
+### **Roadmap Integration Points**
+```yaml
+phase_2_enhancements:
+  item_2_4: "Hybrid Vector Database & Action History"
+    analysis_doc: "VECTOR_DATABASE_ANALYSIS.md"
+    implementation: "PostgreSQL + Vector DB hybrid approach"
+    intelligence_gains: "Semantic search, pattern recognition, cross-resource learning"
+
+  item_2_5: "RAG-Enhanced Decision Engine"
+    analysis_doc: "RAG_ENHANCEMENT_ANALYSIS.md"
+    implementation: "Retrieval-Augmented Generation with quality controls"
+    intelligence_gains: "Evidence-based reasoning, historical context awareness"
+
+dependencies:
+  vector_database: "Required for RAG implementation"
+  action_history: "Enhanced by both vector DB and RAG capabilities"
+  mcp_bridge: "Integrates with RAG for dynamic context retrieval"
+```
+
+### **Expected Intelligence Evolution**
+- **Current State**: Static alert analysis with 94.4% accuracy
+- **Post Vector DB**: Semantic pattern recognition and cross-resource learning
+- **Post RAG**: Evidence-based decisions with 98.5% accuracy and historical awareness
+- **Combined Impact**: Intelligent, historically-informed AI system with oscillation prevention
+
+---
+
+*This roadmap provides a comprehensive path from the current PoC to a production-ready, enterprise-grade AI-powered Kubernetes remediation system. The integration of vector databases and RAG represents a significant evolution toward intelligent, historically-aware decision-making capabilities.*

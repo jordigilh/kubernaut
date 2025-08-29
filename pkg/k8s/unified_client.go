@@ -30,6 +30,15 @@ type BasicClient interface {
 	GetDeployment(ctx context.Context, namespace, name string) (*appsv1.Deployment, error)
 	ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) error
 
+	// Node operations
+	ListNodes(ctx context.Context) (*corev1.NodeList, error)
+
+	// Event operations
+	GetEvents(ctx context.Context, namespace string) (*corev1.EventList, error)
+
+	// Resource quota operations
+	GetResourceQuotas(ctx context.Context, namespace string) (*corev1.ResourceQuotaList, error)
+
 	// Resource management
 	UpdatePodResources(ctx context.Context, namespace, name string, resources corev1.ResourceRequirements) error
 
@@ -321,7 +330,6 @@ func (c *unifiedClient) IsHealthy() bool {
 	return err == nil
 }
 
-
 // AdvancedClient interface implementation
 
 func (c *unifiedClient) RollbackDeployment(ctx context.Context, namespace, name string) error {
@@ -524,7 +532,6 @@ func (c *unifiedClient) DrainNode(ctx context.Context, nodeName string) error {
 	return nil
 }
 
-
 // shouldSkipPodEviction determines if a pod should be skipped during node drain
 func (c *unifiedClient) shouldSkipPodEviction(pod corev1.Pod, nodeName string) bool {
 	// Skip if pod is already terminating
@@ -712,8 +719,6 @@ func (c *unifiedClient) QuarantinePod(ctx context.Context, namespace, name strin
 
 	return nil
 }
-
-
 
 func (c *unifiedClient) CollectDiagnostics(ctx context.Context, namespace, resource string) (map[string]interface{}, error) {
 	if namespace == "" {
@@ -922,7 +927,6 @@ func (c *unifiedClient) CordonNode(ctx context.Context, nodeName string) error {
 		"node": nodeName,
 	}).Info("Cordoning node")
 
-
 	node, err := c.clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to get node %s: %w", nodeName, err)
@@ -956,7 +960,6 @@ func (c *unifiedClient) UpdateHPA(ctx context.Context, namespace, name string, m
 		"min_replicas": minReplicas,
 		"max_replicas": maxReplicas,
 	}).Info("Updating HPA")
-
 
 	hpa, err := c.clientset.AutoscalingV1().HorizontalPodAutoscalers(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -993,7 +996,6 @@ func (c *unifiedClient) RestartDaemonSet(ctx context.Context, namespace, name st
 		"namespace": namespace,
 		"daemonset": name,
 	}).Info("Restarting DaemonSet")
-
 
 	daemonSet, err := c.clientset.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -1034,7 +1036,6 @@ func (c *unifiedClient) RotateSecrets(ctx context.Context, namespace, secretName
 		"namespace": namespace,
 		"secret":    secretName,
 	}).Info("Rotating secrets")
-
 
 	secret, err := c.clientset.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
@@ -1230,7 +1231,6 @@ func (c *unifiedClient) ScaleStatefulSet(ctx context.Context, namespace, name st
 		"replicas":    replicas,
 	}).Info("Scaling StatefulSet")
 
-
 	statefulSet, err := c.clientset.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to get StatefulSet %s/%s: %w", namespace, name, err)
@@ -1274,4 +1274,55 @@ func (c *unifiedClient) MigrateWorkload(ctx context.Context, namespace, workload
 	// Workload migration implementation
 	c.log.WithFields(logrus.Fields{"workload": workloadName, "target_node": targetNode}).Info("Workload migrated")
 	return nil
+}
+
+// Additional methods for MCP bridge support
+
+func (c *unifiedClient) ListNodes(ctx context.Context) (*corev1.NodeList, error) {
+	metrics.RecordK8sAPICall("list")
+	nodes, err := c.clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list nodes: %w", err)
+	}
+
+	c.log.WithField("node_count", len(nodes.Items)).Debug("Retrieved nodes")
+	return nodes, nil
+}
+
+func (c *unifiedClient) GetEvents(ctx context.Context, namespace string) (*corev1.EventList, error) {
+	if namespace == "" {
+		return nil, fmt.Errorf("namespace is required for GetEvents operation")
+	}
+
+	metrics.RecordK8sAPICall("list")
+	events, err := c.clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get events for namespace %s: %w", namespace, err)
+	}
+
+	c.log.WithFields(logrus.Fields{
+		"namespace":   namespace,
+		"event_count": len(events.Items),
+	}).Debug("Retrieved events")
+
+	return events, nil
+}
+
+func (c *unifiedClient) GetResourceQuotas(ctx context.Context, namespace string) (*corev1.ResourceQuotaList, error) {
+	if namespace == "" {
+		return nil, fmt.Errorf("namespace is required for GetResourceQuotas operation")
+	}
+
+	metrics.RecordK8sAPICall("list")
+	quotas, err := c.clientset.CoreV1().ResourceQuotas(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get resource quotas for namespace %s: %w", namespace, err)
+	}
+
+	c.log.WithFields(logrus.Fields{
+		"namespace":   namespace,
+		"quota_count": len(quotas.Items),
+	}).Debug("Retrieved resource quotas")
+
+	return quotas, nil
 }
