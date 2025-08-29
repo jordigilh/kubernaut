@@ -435,9 +435,476 @@ func (e *executor) registerBuiltinActions() {
 	e.registry.Register("drain_node", e.executeDrainNode)
 	e.registry.Register("quarantine_pod", e.executeQuarantinePod)
 	e.registry.Register("collect_diagnostics", e.executeCollectDiagnostics)
+	
+	// Register storage & persistence actions
+	e.registry.Register("cleanup_storage", e.executeCleanupStorage)
+	e.registry.Register("backup_data", e.executeBackupData)
+	e.registry.Register("compact_storage", e.executeCompactStorage)
+	
+	// Register application lifecycle actions
+	e.registry.Register("cordon_node", e.executeCordonNode)
+	e.registry.Register("update_hpa", e.executeUpdateHPA)
+	e.registry.Register("restart_daemonset", e.executeRestartDaemonSet)
+	
+	// Register security & compliance actions
+	e.registry.Register("rotate_secrets", e.executeRotateSecrets)
+	e.registry.Register("audit_logs", e.executeAuditLogs)
+	
+	// Register network & connectivity actions
+	e.registry.Register("update_network_policy", e.executeUpdateNetworkPolicy)
+	e.registry.Register("restart_network", e.executeRestartNetwork)
+	e.registry.Register("reset_service_mesh", e.executeResetServiceMesh)
+	
+	// Register database & stateful actions
+	e.registry.Register("failover_database", e.executeFailoverDatabase)
+	e.registry.Register("repair_database", e.executeRepairDatabase)
+	e.registry.Register("scale_statefulset", e.executeScaleStatefulSet)
+	
+	// Register monitoring & observability actions
+	e.registry.Register("enable_debug_mode", e.executeEnableDebugMode)
+	e.registry.Register("create_heap_dump", e.executeCreateHeapDump)
+	
+	// Register resource management actions
+	e.registry.Register("optimize_resources", e.executeOptimizeResources)
+	e.registry.Register("migrate_workload", e.executeMigrateWorkload)
 }
 
 // GetActionRegistry returns the action registry for external use (e.g., adding custom actions)
 func (e *executor) GetActionRegistry() *ActionRegistry {
 	return e.registry
+}
+
+// Storage & Persistence Actions
+
+func (e *executor) executeCleanupStorage(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	path := "/var/log"
+	if pathParam, ok := action.Parameters["path"].(string); ok {
+		path = pathParam
+	}
+	
+	podName := e.getPodName(alert)
+	if podName == "" {
+		return fmt.Errorf("cannot determine pod name from alert")
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"pod":       podName,
+			"namespace": alert.Namespace,
+			"path":      path,
+		}).Info("DRY RUN: Would cleanup storage")
+		return nil
+	}
+	
+	return e.k8sClient.CleanupStorage(ctx, alert.Namespace, podName, path)
+}
+
+func (e *executor) executeBackupData(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	resource := alert.Resource
+	if resource == "" {
+		return fmt.Errorf("cannot determine resource name from alert")
+	}
+	
+	backupName := fmt.Sprintf("%s-emergency-backup-%d", resource, time.Now().Unix())
+	if name, ok := action.Parameters["backup_name"].(string); ok {
+		backupName = name
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"resource":    resource,
+			"namespace":   alert.Namespace,
+			"backup_name": backupName,
+		}).Info("DRY RUN: Would backup data")
+		return nil
+	}
+	
+	return e.k8sClient.BackupData(ctx, alert.Namespace, resource, backupName)
+}
+
+func (e *executor) executeCompactStorage(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	resource := alert.Resource
+	if resource == "" {
+		return fmt.Errorf("cannot determine resource name from alert")
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"resource":  resource,
+			"namespace": alert.Namespace,
+		}).Info("DRY RUN: Would compact storage")
+		return nil
+	}
+	
+	return e.k8sClient.CompactStorage(ctx, alert.Namespace, resource)
+}
+
+// Application Lifecycle Actions
+
+func (e *executor) executeCordonNode(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	nodeName := alert.Resource
+	if nodeName == "" {
+		if node, ok := alert.Labels["node"]; ok {
+			nodeName = node
+		} else {
+			return fmt.Errorf("cannot determine node name from alert")
+		}
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"node": nodeName,
+		}).Info("DRY RUN: Would cordon node")
+		return nil
+	}
+	
+	return e.k8sClient.CordonNode(ctx, nodeName)
+}
+
+func (e *executor) executeUpdateHPA(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	hpaName := alert.Resource
+	if hpaName == "" {
+		if hpa, ok := alert.Labels["hpa"]; ok {
+			hpaName = hpa
+		} else {
+			return fmt.Errorf("cannot determine HPA name from alert")
+		}
+	}
+	
+	minReplicas := int32(1)
+	maxReplicas := int32(10)
+	
+	if min, ok := action.Parameters["min_replicas"].(float64); ok {
+		minReplicas = int32(min)
+	}
+	if max, ok := action.Parameters["max_replicas"].(float64); ok {
+		maxReplicas = int32(max)
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"hpa":          hpaName,
+			"namespace":    alert.Namespace,
+			"min_replicas": minReplicas,
+			"max_replicas": maxReplicas,
+		}).Info("DRY RUN: Would update HPA")
+		return nil
+	}
+	
+	return e.k8sClient.UpdateHPA(ctx, alert.Namespace, hpaName, minReplicas, maxReplicas)
+}
+
+func (e *executor) executeRestartDaemonSet(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	daemonSetName := alert.Resource
+	if daemonSetName == "" {
+		if ds, ok := alert.Labels["daemonset"]; ok {
+			daemonSetName = ds
+		} else {
+			return fmt.Errorf("cannot determine DaemonSet name from alert")
+		}
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"daemonset": daemonSetName,
+			"namespace": alert.Namespace,
+		}).Info("DRY RUN: Would restart DaemonSet")
+		return nil
+	}
+	
+	return e.k8sClient.RestartDaemonSet(ctx, alert.Namespace, daemonSetName)
+}
+
+// Security & Compliance Actions
+
+func (e *executor) executeRotateSecrets(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	secretName := alert.Resource
+	if secretName == "" {
+		if secret, ok := alert.Labels["secret"]; ok {
+			secretName = secret
+		} else {
+			return fmt.Errorf("cannot determine secret name from alert")
+		}
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"secret":    secretName,
+			"namespace": alert.Namespace,
+		}).Info("DRY RUN: Would rotate secrets")
+		return nil
+	}
+	
+	return e.k8sClient.RotateSecrets(ctx, alert.Namespace, secretName)
+}
+
+func (e *executor) executeAuditLogs(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	resource := alert.Resource
+	if resource == "" {
+		return fmt.Errorf("cannot determine resource name from alert")
+	}
+	
+	auditScope := "security"
+	if scope, ok := action.Parameters["scope"].(string); ok {
+		auditScope = scope
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"resource":    resource,
+			"namespace":   alert.Namespace,
+			"audit_scope": auditScope,
+		}).Info("DRY RUN: Would audit logs")
+		return nil
+	}
+	
+	return e.k8sClient.AuditLogs(ctx, alert.Namespace, resource, auditScope)
+}
+
+// Network & Connectivity Actions
+
+func (e *executor) executeUpdateNetworkPolicy(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	policyName := alert.Resource
+	if policyName == "" {
+		if policy, ok := alert.Labels["network_policy"]; ok {
+			policyName = policy
+		} else {
+			return fmt.Errorf("cannot determine network policy name from alert")
+		}
+	}
+	
+	action_type := "allow_egress"
+	if actionType, ok := action.Parameters["action_type"].(string); ok {
+		action_type = actionType
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"policy":      policyName,
+			"namespace":   alert.Namespace,
+			"action_type": action_type,
+		}).Info("DRY RUN: Would update network policy")
+		return nil
+	}
+	
+	return e.k8sClient.UpdateNetworkPolicy(ctx, alert.Namespace, policyName, action_type)
+}
+
+func (e *executor) executeRestartNetwork(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	component := "cni"
+	if comp, ok := action.Parameters["component"].(string); ok {
+		component = comp
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"component": component,
+			"namespace": alert.Namespace,
+		}).Info("DRY RUN: Would restart network component")
+		return nil
+	}
+	
+	return e.k8sClient.RestartNetwork(ctx, component)
+}
+
+func (e *executor) executeResetServiceMesh(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	meshType := "istio"
+	if mesh, ok := action.Parameters["mesh_type"].(string); ok {
+		meshType = mesh
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"mesh_type": meshType,
+			"namespace": alert.Namespace,
+		}).Info("DRY RUN: Would reset service mesh")
+		return nil
+	}
+	
+	return e.k8sClient.ResetServiceMesh(ctx, meshType)
+}
+
+// Database & Stateful Actions
+
+func (e *executor) executeFailoverDatabase(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	databaseName := alert.Resource
+	if databaseName == "" {
+		if db, ok := alert.Labels["database"]; ok {
+			databaseName = db
+		} else {
+			return fmt.Errorf("cannot determine database name from alert")
+		}
+	}
+	
+	replicaName := databaseName + "-replica"
+	if replica, ok := action.Parameters["replica_name"].(string); ok {
+		replicaName = replica
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"database":     databaseName,
+			"replica":      replicaName,
+			"namespace":    alert.Namespace,
+		}).Info("DRY RUN: Would failover database")
+		return nil
+	}
+	
+	return e.k8sClient.FailoverDatabase(ctx, alert.Namespace, databaseName, replicaName)
+}
+
+func (e *executor) executeRepairDatabase(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	databaseName := alert.Resource
+	if databaseName == "" {
+		if db, ok := alert.Labels["database"]; ok {
+			databaseName = db
+		} else {
+			return fmt.Errorf("cannot determine database name from alert")
+		}
+	}
+	
+	repairType := "consistency_check"
+	if repair, ok := action.Parameters["repair_type"].(string); ok {
+		repairType = repair
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"database":    databaseName,
+			"namespace":   alert.Namespace,
+			"repair_type": repairType,
+		}).Info("DRY RUN: Would repair database")
+		return nil
+	}
+	
+	return e.k8sClient.RepairDatabase(ctx, alert.Namespace, databaseName, repairType)
+}
+
+func (e *executor) executeScaleStatefulSet(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	statefulSetName := alert.Resource
+	if statefulSetName == "" {
+		if sts, ok := alert.Labels["statefulset"]; ok {
+			statefulSetName = sts
+		} else {
+			return fmt.Errorf("cannot determine StatefulSet name from alert")
+		}
+	}
+	
+	replicas, err := e.getReplicasFromParameters(action.Parameters)
+	if err != nil {
+		return fmt.Errorf("failed to get replicas from parameters: %w", err)
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"statefulset": statefulSetName,
+			"namespace":   alert.Namespace,
+			"replicas":    replicas,
+		}).Info("DRY RUN: Would scale StatefulSet")
+		return nil
+	}
+	
+	return e.k8sClient.ScaleStatefulSet(ctx, alert.Namespace, statefulSetName, int32(replicas))
+}
+
+// Monitoring & Observability Actions
+
+func (e *executor) executeEnableDebugMode(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	resource := alert.Resource
+	if resource == "" {
+		return fmt.Errorf("cannot determine resource name from alert")
+	}
+	
+	logLevel := "debug"
+	if level, ok := action.Parameters["log_level"].(string); ok {
+		logLevel = level
+	}
+	
+	duration := "30m"
+	if dur, ok := action.Parameters["duration"].(string); ok {
+		duration = dur
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"resource":   resource,
+			"namespace":  alert.Namespace,
+			"log_level":  logLevel,
+			"duration":   duration,
+		}).Info("DRY RUN: Would enable debug mode")
+		return nil
+	}
+	
+	return e.k8sClient.EnableDebugMode(ctx, alert.Namespace, resource, logLevel, duration)
+}
+
+func (e *executor) executeCreateHeapDump(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	podName := e.getPodName(alert)
+	if podName == "" {
+		return fmt.Errorf("cannot determine pod name from alert")
+	}
+	
+	dumpPath := "/tmp/heap-dump.hprof"
+	if path, ok := action.Parameters["dump_path"].(string); ok {
+		dumpPath = path
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"pod":       podName,
+			"namespace": alert.Namespace,
+			"dump_path": dumpPath,
+		}).Info("DRY RUN: Would create heap dump")
+		return nil
+	}
+	
+	return e.k8sClient.CreateHeapDump(ctx, alert.Namespace, podName, dumpPath)
+}
+
+// Resource Management Actions
+
+func (e *executor) executeOptimizeResources(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	resource := alert.Resource
+	if resource == "" {
+		return fmt.Errorf("cannot determine resource name from alert")
+	}
+	
+	optimizationType := "cpu_memory"
+	if opt, ok := action.Parameters["optimization_type"].(string); ok {
+		optimizationType = opt
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"resource":           resource,
+			"namespace":          alert.Namespace,
+			"optimization_type":  optimizationType,
+		}).Info("DRY RUN: Would optimize resources")
+		return nil
+	}
+	
+	return e.k8sClient.OptimizeResources(ctx, alert.Namespace, resource, optimizationType)
+}
+
+func (e *executor) executeMigrateWorkload(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	workloadName := alert.Resource
+	if workloadName == "" {
+		return fmt.Errorf("cannot determine workload name from alert")
+	}
+	
+	targetNode := ""
+	if node, ok := action.Parameters["target_node"].(string); ok {
+		targetNode = node
+	}
+	
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"workload":    workloadName,
+			"namespace":   alert.Namespace,
+			"target_node": targetNode,
+		}).Info("DRY RUN: Would migrate workload")
+		return nil
+	}
+	
+	return e.k8sClient.MigrateWorkload(ctx, alert.Namespace, workloadName, targetNode)
 }

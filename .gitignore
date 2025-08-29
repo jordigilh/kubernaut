@@ -7,3 +7,4 @@ webhookt.test
 test-slm
 *coverage.out
 bin/
+mcp-server

@@ -1,0 +1,328 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/sirupsen/logrus"
+)
+
+type ContextTest struct {
+	Model        string
+	ContextSize  int
+	Description  string
+}
+
+type TestResult struct {
+	Model           string
+	ContextSize     int
+	ResponseTime    time.Duration
+	Success         bool
+	Action          string
+	Confidence      float64
+	Error           error
+	ResponseLength  int
+}
+
+func main() {
+	// Create logger
+	logger := logrus.New()
+	logger.SetLevel(logrus.WarnLevel) // Reduce log noise for performance testing
+
+	// Test configurations
+	models := []string{
+		"granite3.3:2b",
+		"granite3.1-dense:2b",
+	}
+
+	contextSizes := []int{16000, 8000, 4000}
+
+	fmt.Println("=== Granite Model Context Performance Testing ===")
+	fmt.Println("Testing models with different context token limits")
+	fmt.Println()
+
+	var allResults []TestResult
+
+	for _, model := range models {
+		for _, contextSize := range contextSizes {
+			fmt.Printf("Testing %s with %dk context tokens...\n", model, contextSize/1000)
+			
+			result := testModelWithContext(model, contextSize, logger)
+			allResults = append(allResults, result)
+			
+			// Print immediate result
+			if result.Success {
+				fmt.Printf("✅ Success: %s (%.2fs, confidence: %.2f)\n", 
+					result.Action, result.ResponseTime.Seconds(), result.Confidence)
+			} else {
+				fmt.Printf("❌ Failed: %v (%.2fs)\n", 
+					result.Error, result.ResponseTime.Seconds())
+			}
+			fmt.Println()
+			
+			// Small delay between tests
+			time.Sleep(2 * time.Second)
+		}
+	}
+
+	// Print summary
+	printSummary(allResults)
+}
+
+func testModelWithContext(model string, contextSize int, logger *logrus.Logger) TestResult {
+	start := time.Now()
+	
+	cfg := config.SLMConfig{
+		Provider:    "localai",
+		Endpoint:    "http://localhost:11434",
+		Model:       model,
+		Temperature: 0.3,
+		MaxTokens:   contextSize,
+		Timeout:     60 * time.Second,
+		RetryCount:  1,
+	}
+
+	// Create SLM client
+	client, err := slm.NewClient(cfg, logger)
+	if err != nil {
+		return TestResult{
+			Model:        model,
+			ContextSize:  contextSize,
+			ResponseTime: time.Since(start),
+			Success:      false,
+			Error:        fmt.Errorf("failed to create client: %w", err),
+		}
+	}
+
+	// Test health first
+	if !client.IsHealthy() {
+		return TestResult{
+			Model:        model,
+			ContextSize:  contextSize,
+			ResponseTime: time.Since(start),
+			Success:      false,
+			Error:        fmt.Errorf("client not healthy"),
+		}
+	}
+
+	// Create a complex test alert that uses significant context
+	alert := types.Alert{
+		Name:        "ComplexMemoryAndCPUPressure",
+		Status:      "firing",
+		Severity:    "critical",
+		Description: generateComplexDescription(contextSize),
+		Namespace:   "production",
+		Resource:    "web-server-deployment",
+		Labels: map[string]string{
+			"alertname":     "ComplexMemoryAndCPUPressure",
+			"severity":      "critical",
+			"cluster":       "production-us-east-1",
+			"datacenter":    "us-east-1a",
+			"application":   "web-server",
+			"team":          "platform",
+			"service":       "user-facing",
+			"tier":          "critical",
+			"environment":   "production",
+			"region":        "us-east-1",
+		},
+		Annotations: map[string]string{
+			"summary":     "High memory and CPU pressure detected on critical web server deployment",
+			"description": "Memory usage at 95% and CPU usage at 90% for the past 10 minutes",
+			"runbook":     "https://runbook.company.com/high-resource-usage",
+			"dashboard":   "https://grafana.company.com/d/xyz/web-server",
+		},
+		StartsAt: time.Now().Add(-15 * time.Minute),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	// Analyze the alert
+	recommendation, err := client.AnalyzeAlert(ctx, alert)
+	responseTime := time.Since(start)
+
+	if err != nil {
+		return TestResult{
+			Model:        model,
+			ContextSize:  contextSize,
+			ResponseTime: responseTime,
+			Success:      false,
+			Error:        err,
+		}
+	}
+
+	return TestResult{
+		Model:          model,
+		ContextSize:    contextSize,
+		ResponseTime:   responseTime,
+		Success:        true,
+		Action:         recommendation.Action,
+		Confidence:     recommendation.Confidence,
+		ResponseLength: len(getReasoningSummary(recommendation)),
+	}
+}
+
+// getReasoningSummary safely extracts the reasoning summary from a recommendation
+func getReasoningSummary(recommendation *types.ActionRecommendation) string {
+	if recommendation.Reasoning == nil {
+		return "No reasoning provided"
+	}
+	if recommendation.Reasoning.Summary != "" {
+		return recommendation.Reasoning.Summary
+	}
+	return "No summary available"
+}
+
+func generateComplexDescription(contextSize int) string {
+	baseDescription := `The production web-server deployment is experiencing severe resource pressure with both memory and CPU utilization reaching critical levels. 
+
+Current Resource Metrics:
+- Memory Usage: 95.4% (7.6GB / 8GB allocated)
+- CPU Usage: 89.7% (3.6 cores / 4 cores allocated) 
+- Memory Growth Rate: +2.3% per minute over last 10 minutes
+- CPU Spikes: 12 instances above 95% in last 15 minutes
+
+Historical Context:
+- Normal memory baseline: 45-60%
+- Normal CPU baseline: 30-50%
+- Last incident: 3 weeks ago, resolved by scaling
+- Previous scaling events: 5 in last month
+
+Pod Status Analysis:
+- 8 pods currently running
+- 3 pods showing memory pressure warnings
+- 2 pods restarted in last hour due to OOMKilled
+- 1 pod stuck in pending state
+- Average pod age: 2.3 days
+
+Traffic Patterns:
+- Request rate: 450 req/sec (normal: 280 req/sec)
+- Error rate: 2.1% (normal: 0.3%)
+- Latency P95: 890ms (normal: 340ms)
+- Active connections: 1240 (normal: 680)
+
+Dependencies:
+- Database connection pool: 85% utilized
+- Redis cache hit rate: 76% (normal: 92%)
+- External API calls: 15% slower than baseline
+- File system I/O: High wait times observed
+
+Recent Changes:
+- Code deployment 4 hours ago (v2.1.3)
+- Configuration update 6 hours ago
+- Database schema migration 2 days ago
+- New feature flag enabled for 30% traffic
+
+Environment Details:
+- Kubernetes cluster: production-us-east-1
+- Node capacity: 16 cores, 32GB RAM per node
+- Cluster autoscaler: enabled (min: 5, max: 20 nodes)
+- HPA configured: min 5, max 15 replicas
+- Resource requests: 1 core, 2GB per pod
+- Resource limits: 2 cores, 4GB per pod
+
+Recommended Investigation:
+1. Check for memory leaks in recent deployment
+2. Analyze database query performance
+3. Review cache efficiency and hit rates
+4. Monitor for traffic spikes or DDoS patterns
+5. Validate resource allocation adequacy`
+
+	// Pad the description to reach approximately the desired context size
+	targetLength := contextSize * 3 // Rough approximation: 3 chars per token
+	if len(baseDescription) < targetLength {
+		// Add repeated context to simulate larger alert data
+		padding := strings.Repeat(`
+
+Additional Monitoring Data:
+- Metric timestamp: ` + time.Now().Format(time.RFC3339) + `
+- Alert evaluation frequency: every 30 seconds
+- Data retention: 30 days
+- Collection interval: 15 seconds
+- Scrape timeout: 10 seconds
+- Query timeout: 30 seconds
+- Alert resolution: manual intervention required
+- Escalation policy: immediate page to on-call engineer
+- Business impact: high - customer facing service degradation
+- SLA impact: approaching breach threshold (99.9% availability)
+- Revenue impact: estimated $1,200 per minute of downtime`, 
+			(targetLength-len(baseDescription))/500)
+		
+		baseDescription += padding
+	}
+
+	return baseDescription
+}
+
+func printSummary(results []TestResult) {
+	fmt.Println("=== Performance Test Summary ===")
+	fmt.Println()
+	
+	// Group by model
+	modelResults := make(map[string][]TestResult)
+	for _, result := range results {
+		modelResults[result.Model] = append(modelResults[result.Model], result)
+	}
+
+	for model, results := range modelResults {
+		fmt.Printf("Model: %s\n", model)
+		fmt.Println(strings.Repeat("-", 50))
+		
+		totalSuccess := 0
+		var totalTime time.Duration
+		var avgConfidence float64
+		
+		for _, result := range results {
+			status := "❌ FAIL"
+			confidence := "N/A"
+			action := "N/A"
+			
+			if result.Success {
+				status = "✅ PASS"
+				confidence = fmt.Sprintf("%.2f", result.Confidence)
+				action = result.Action
+				totalSuccess++
+				avgConfidence += result.Confidence
+			}
+			
+			totalTime += result.ResponseTime
+			
+			fmt.Printf("  %dk tokens: %s | %6.2fs | conf: %s | action: %s\n",
+				result.ContextSize/1000,
+				status,
+				result.ResponseTime.Seconds(),
+				confidence,
+				action)
+		}
+		
+		if totalSuccess > 0 {
+			avgConfidence /= float64(totalSuccess)
+		}
+		
+		fmt.Printf("\n  Summary:\n")
+		fmt.Printf("    Success Rate: %d/%d (%.1f%%)\n", 
+			totalSuccess, len(results), float64(totalSuccess)/float64(len(results))*100)
+		fmt.Printf("    Avg Response Time: %.2fs\n", totalTime.Seconds()/float64(len(results)))
+		if totalSuccess > 0 {
+			fmt.Printf("    Avg Confidence: %.2f\n", avgConfidence)
+		}
+		fmt.Println()
+	}
+	
+	// Overall summary
+	totalTests := len(results)
+	totalSuccess := 0
+	for _, result := range results {
+		if result.Success {
+			totalSuccess++
+		}
+	}
+	
+	fmt.Printf("Overall Success Rate: %d/%d (%.1f%%)\n", 
+		totalSuccess, totalTests, float64(totalSuccess)/float64(totalTests)*100)
+}
