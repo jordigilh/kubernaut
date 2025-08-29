@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
+
+	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/k8s"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/metrics"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
 	"github.com/sirupsen/logrus"
@@ -387,7 +390,8 @@ type client struct {
 	config     config.SLMConfig
 	httpClient *http.Client
 	log        *logrus.Logger
-	mcpClient  MCPClient // Optional MCP client for contextual analysis
+	mcpClient  MCPClient  // Optional MCP client for contextual analysis
+	mcpBridge  *MCPBridge // Optional MCP bridge for dynamic tool calling
 }
 
 // LocalAI Chat Completion API structures
@@ -472,8 +476,46 @@ func NewClientWithMCP(cfg config.SLMConfig, mcpClient MCPClient, log *logrus.Log
 	return c, nil
 }
 
+// NewClientWithDynamicMCP creates a new SLM client with dynamic MCP bridge capabilities
+func NewClientWithDynamicMCP(cfg config.SLMConfig, actionHistoryServer *mcp.ActionHistoryMCPServer, k8sClient k8s.Client, log *logrus.Logger) (Client, error) {
+	if cfg.Provider != "localai" {
+		return nil, fmt.Errorf("only LocalAI provider supported, got: %s", cfg.Provider)
+	}
+
+	c := &client{
+		config: cfg,
+		httpClient: &http.Client{
+			Timeout: cfg.Timeout,
+		},
+		log: log,
+	}
+
+	// Create MCP bridge with the client as LocalAI interface
+	c.mcpBridge = NewMCPBridge(c, actionHistoryServer, k8sClient, log)
+
+	log.WithFields(logrus.Fields{
+		"provider":            "LocalAI",
+		"endpoint":            cfg.Endpoint,
+		"model":               cfg.Model,
+		"dynamic_mcp_enabled": true,
+	}).Info("SLM client initialized with LocalAI and Dynamic MCP Bridge")
+
+	return c, nil
+}
+
 func (c *client) AnalyzeAlert(ctx context.Context, alert types.Alert) (*types.ActionRecommendation, error) {
-	// Get contextual information from MCP if available
+	// If dynamic MCP bridge is available, use it for interactive tool calling
+	if c.mcpBridge != nil {
+		c.log.WithFields(logrus.Fields{
+			"alert":     alert.Name,
+			"namespace": alert.Namespace,
+			"severity":  alert.Severity,
+		}).Debug("Using dynamic MCP bridge for analysis")
+
+		return c.mcpBridge.AnalyzeAlertWithDynamicMCP(ctx, alert)
+	}
+
+	// Fallback to static MCP context approach
 	var mcpContext *MCPContext
 	var err error
 	if c.mcpClient != nil {
@@ -1013,7 +1055,6 @@ func (c *client) determineOptimalContextSize(prompt string, mcpContext *MCPConte
 	if mcpContext == nil {
 		// Still need to apply caps even for simple scenarios
 		targetSize := baseSize
-
 		// Apply absolute caps
 		if targetSize > 16000 {
 			targetSize = 16000 // Maximum for very complex scenarios (absolute limit)
@@ -1073,4 +1114,75 @@ func (c *client) determineOptimalContextSize(prompt string, mcpContext *MCPConte
 	}
 
 	return targetSize
+}
+
+// ChatCompletion implements LocalAIClientInterface for MCP Bridge
+func (c *client) ChatCompletion(ctx context.Context, prompt string) (string, error) {
+	reqBody := LocalAIRequest{
+		Model: c.config.Model,
+		Messages: []Message{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+		Temperature: c.config.Temperature,
+		MaxTokens:   c.config.MaxTokens,
+		Stream:      false,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal LocalAI request: %w", err)
+	}
+
+	// LocalAI chat completions endpoint
+	endpoint := fmt.Sprintf("%s/v1/chat/completions", strings.TrimSuffix(c.config.Endpoint, "/"))
+
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create LocalAI request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	// LocalAI typically doesn't require authentication, but add if configured
+	if c.config.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
+	}
+
+	c.log.WithFields(logrus.Fields{
+		"endpoint": endpoint,
+		"model":    c.config.Model,
+	}).Debug("Making LocalAI chat completion request")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to make LocalAI request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("LocalAI API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var localAIResp LocalAIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&localAIResp); err != nil {
+		return "", fmt.Errorf("failed to decode LocalAI response: %w", err)
+	}
+
+	if len(localAIResp.Choices) == 0 {
+		return "", fmt.Errorf("no choices in LocalAI response")
+	}
+
+	// Log usage statistics if available
+	if localAIResp.Usage.TotalTokens > 0 {
+		c.log.WithFields(logrus.Fields{
+			"prompt_tokens":     localAIResp.Usage.PromptTokens,
+			"completion_tokens": localAIResp.Usage.CompletionTokens,
+			"total_tokens":      localAIResp.Usage.TotalTokens,
+		}).Debug("LocalAI token usage")
+	}
+
+	return localAIResp.Choices[0].Message.Content, nil
 }

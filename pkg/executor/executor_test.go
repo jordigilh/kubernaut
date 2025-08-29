@@ -6,7 +6,9 @@ import (
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
+	"github.com/jordigilh/prometheus-alerts-slm/pkg/k8s"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared/testenv"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
@@ -14,8 +16,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/fake"
 )
 
 // SimpleMockRepository for testing
@@ -81,174 +81,7 @@ func (m *SimpleMockRepository) GetActionHistorySummaries(ctx context.Context, si
 	return nil, nil
 }
 
-// FakeK8sClient implements our k8s.Client interface using the Kubernetes fake client
-type FakeK8sClient struct {
-	clientset *fake.Clientset
-	log       *logrus.Logger
-}
-
-func NewFakeK8sClient(objects ...runtime.Object) *FakeK8sClient {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	return &FakeK8sClient{
-		clientset: fake.NewSimpleClientset(objects...),
-		log:       logger,
-	}
-}
-
-// BasicClient methods
-func (f *FakeK8sClient) GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error) {
-	return f.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
-}
-
-func (f *FakeK8sClient) DeletePod(ctx context.Context, namespace, name string) error {
-	return f.clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
-}
-
-func (f *FakeK8sClient) ListPodsWithLabel(ctx context.Context, namespace, labelSelector string) (*corev1.PodList, error) {
-	return f.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: labelSelector,
-	})
-}
-
-func (f *FakeK8sClient) GetDeployment(ctx context.Context, namespace, name string) (*appsv1.Deployment, error) {
-	return f.clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
-}
-
-func (f *FakeK8sClient) ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) error {
-	deployment, err := f.GetDeployment(ctx, namespace, name)
-	if err != nil {
-		return err
-	}
-	deployment.Spec.Replicas = &replicas
-	_, err = f.clientset.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{})
-	return err
-}
-
-func (f *FakeK8sClient) UpdatePodResources(ctx context.Context, namespace, name string, resources corev1.ResourceRequirements) error {
-	pod, err := f.GetPod(ctx, namespace, name)
-	if err != nil {
-		return err
-	}
-
-	if len(pod.Spec.Containers) > 0 {
-		pod.Spec.Containers[0].Resources = resources
-		_, err = f.clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
-	}
-
-	return err
-}
-
-func (f *FakeK8sClient) IsHealthy() bool {
-	return true
-}
-
-// AdvancedClient methods
-func (f *FakeK8sClient) RollbackDeployment(ctx context.Context, namespace, name string) error {
-	_, err := f.GetDeployment(ctx, namespace, name)
-	return err
-}
-
-func (f *FakeK8sClient) ExpandPVC(ctx context.Context, namespace, name, newSize string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) DrainNode(ctx context.Context, nodeName string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) QuarantinePod(ctx context.Context, namespace, name string) error {
-	_, err := f.GetPod(ctx, namespace, name)
-	return err
-}
-
-func (f *FakeK8sClient) CollectDiagnostics(ctx context.Context, namespace, resource string) (map[string]interface{}, error) {
-	return map[string]interface{}{
-		"status": "collected",
-		"logs":   []string{"log line 1", "log line 2"},
-		"events": []string{"event 1", "event 2"},
-	}, nil
-}
-
-func (f *FakeK8sClient) AuditLogs(ctx context.Context, namespace, resource, scope string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) BackupData(ctx context.Context, namespace, resource, backupName string) error {
-	return nil
-}
-
-// Storage & Persistence actions
-func (f *FakeK8sClient) CleanupStorage(ctx context.Context, namespace, podName, path string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) CompactStorage(ctx context.Context, namespace, resource string) error {
-	return nil
-}
-
-// Application Lifecycle actions
-func (f *FakeK8sClient) CordonNode(ctx context.Context, nodeName string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) UpdateHPA(ctx context.Context, namespace, name string, minReplicas, maxReplicas int32) error {
-	return nil
-}
-
-func (f *FakeK8sClient) RestartDaemonSet(ctx context.Context, namespace, name string) error {
-	return nil
-}
-
-// Security & Compliance actions
-func (f *FakeK8sClient) RotateSecrets(ctx context.Context, namespace, secretName string) error {
-	return nil
-}
-
-// Network & Connectivity actions
-func (f *FakeK8sClient) UpdateNetworkPolicy(ctx context.Context, namespace, policyName, actionType string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) RestartNetwork(ctx context.Context, component string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) ResetServiceMesh(ctx context.Context, meshType string) error {
-	return nil
-}
-
-// Database & Stateful actions
-func (f *FakeK8sClient) FailoverDatabase(ctx context.Context, namespace, databaseName, replicaName string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) RepairDatabase(ctx context.Context, namespace, databaseName, repairType string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) ScaleStatefulSet(ctx context.Context, namespace, name string, replicas int32) error {
-	return nil
-}
-
-// Monitoring & Observability actions
-func (f *FakeK8sClient) EnableDebugMode(ctx context.Context, namespace, resource, logLevel, duration string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) CreateHeapDump(ctx context.Context, namespace, podName, dumpPath string) error {
-	return nil
-}
-
-// Resource Management actions
-func (f *FakeK8sClient) OptimizeResources(ctx context.Context, namespace, resource, optimizationType string) error {
-	return nil
-}
-
-func (f *FakeK8sClient) MigrateWorkload(ctx context.Context, namespace, workloadName, targetNode string) error {
-	return nil
-}
+// FakeK8sClient implementation removed - using real fake client from testenv
 
 // Helper functions for creating test resources
 func createTestDeployment(namespace, name string, replicas int32) *appsv1.Deployment {
@@ -328,11 +161,13 @@ func createTestPod(namespace, name string) *corev1.Pod {
 
 var _ = Describe("Executor", func() {
 	var (
-		logger     *logrus.Logger
-		fakeClient *FakeK8sClient
-		mockRepo   *SimpleMockRepository
-		executor   Executor
-		ctx        context.Context
+		logger    *logrus.Logger
+		k8sClient k8s.Client
+		testEnv   *testenv.TestEnvironment
+		mockRepo  *SimpleMockRepository
+		executor  Executor
+		ctx       context.Context
+		err       error
 	)
 
 	BeforeEach(func() {
@@ -340,30 +175,43 @@ var _ = Describe("Executor", func() {
 		logger.SetLevel(logrus.FatalLevel)
 		mockRepo = &SimpleMockRepository{}
 		ctx = context.Background()
+
+		// Setup fake K8s environment
+		var err error
+		testEnv, err = testenv.SetupFakeEnvironment()
+		Expect(err).NotTo(HaveOccurred())
+
+		k8sClient = testEnv.CreateK8sClient(logger)
+	})
+
+	AfterEach(func() {
+		if testEnv != nil {
+			err := testEnv.Cleanup()
+			Expect(err).NotTo(HaveOccurred())
+		}
 	})
 
 	Describe("NewExecutor", func() {
 		It("should create a new executor", func() {
-			fakeClient = NewFakeK8sClient()
 			cfg := config.ActionsConfig{
 				DryRun:         false,
 				MaxConcurrent:  5,
 				CooldownPeriod: 5 * time.Minute,
 			}
 
-			executor := NewExecutor(fakeClient, cfg, mockRepo, logger)
+			executor := NewExecutor(k8sClient, cfg, mockRepo, logger)
 			Expect(executor).ToNot(BeNil())
 		})
 	})
 
 	Describe("IsHealthy", func() {
 		It("should return true when healthy", func() {
-			fakeClient = NewFakeK8sClient()
+			// Using real K8s client from testEnv
 			cfg := config.ActionsConfig{
 				MaxConcurrent: 1,
 			}
 
-			executor := NewExecutor(fakeClient, cfg, mockRepo, logger)
+			executor := NewExecutor(k8sClient, cfg, mockRepo, logger)
 			Expect(executor.IsHealthy()).To(BeTrue())
 		})
 	})
@@ -374,14 +222,17 @@ var _ = Describe("Executor", func() {
 				DryRun:        false,
 				MaxConcurrent: 1,
 			}
-			executor = NewExecutor(fakeClient, cfg, mockRepo, logger)
+			executor = NewExecutor(k8sClient, cfg, mockRepo, logger)
 		})
 
 		Context("scale_deployment action", func() {
 			It("should scale deployment successfully", func() {
 				deployment := createTestDeployment("test-namespace", "my-app", 3)
-				fakeClient = NewFakeK8sClient(deployment)
-				executor = NewExecutor(fakeClient, config.ActionsConfig{
+				// Create deployment in fake cluster
+				_, err = testEnv.Client.AppsV1().Deployments("test-namespace").Create(testEnv.Context, deployment, metav1.CreateOptions{})
+				Expect(err).NotTo(HaveOccurred())
+
+				executor = NewExecutor(k8sClient, config.ActionsConfig{
 					DryRun:        false,
 					MaxConcurrent: 1,
 				}, mockRepo, logger)
@@ -401,11 +252,11 @@ var _ = Describe("Executor", func() {
 					},
 				}
 
-				err := executor.Execute(ctx, action, alert, nil)
+				err = executor.Execute(ctx, action, alert, nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify scaling worked
-				updatedDeployment, err := fakeClient.GetDeployment(ctx, "test-namespace", "my-app")
+				updatedDeployment, err := k8sClient.GetDeployment(ctx, "test-namespace", "my-app")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(*updatedDeployment.Spec.Replicas).To(Equal(int32(5)))
 			})
@@ -414,8 +265,11 @@ var _ = Describe("Executor", func() {
 		Context("restart_pod action", func() {
 			It("should restart pod successfully", func() {
 				pod := createTestPod("test-namespace", "my-app-pod")
-				fakeClient = NewFakeK8sClient(pod)
-				executor = NewExecutor(fakeClient, config.ActionsConfig{
+				// Create pod in fake cluster
+				_, err = testEnv.Client.CoreV1().Pods("test-namespace").Create(testEnv.Context, pod, metav1.CreateOptions{})
+				Expect(err).NotTo(HaveOccurred())
+
+				executor = NewExecutor(k8sClient, config.ActionsConfig{
 					DryRun:        false,
 					MaxConcurrent: 1,
 				}, mockRepo, logger)
@@ -432,11 +286,11 @@ var _ = Describe("Executor", func() {
 					Action: "restart_pod",
 				}
 
-				err := executor.Execute(ctx, action, alert, nil)
+				err = executor.Execute(ctx, action, alert, nil)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify pod was deleted
-				_, err = fakeClient.GetPod(ctx, "test-namespace", "my-app-pod")
+				_, err = k8sClient.GetPod(ctx, "test-namespace", "my-app-pod")
 				Expect(err).To(HaveOccurred()) // Pod should be deleted (not found)
 			})
 		})
@@ -444,8 +298,10 @@ var _ = Describe("Executor", func() {
 		Context("increase_resources action", func() {
 			It("should increase resources successfully", func() {
 				pod := createTestPod("test-namespace", "my-app-pod")
-				fakeClient = NewFakeK8sClient(pod)
-				executor = NewExecutor(fakeClient, config.ActionsConfig{
+				// Create pod in fake cluster
+				_, err = testEnv.Client.CoreV1().Pods("test-namespace").Create(testEnv.Context, pod, metav1.CreateOptions{})
+				Expect(err).NotTo(HaveOccurred())
+				executor = NewExecutor(k8sClient, config.ActionsConfig{
 					DryRun:        false,
 					MaxConcurrent: 1,
 				}, mockRepo, logger)
@@ -472,7 +328,7 @@ var _ = Describe("Executor", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify resources were updated
-				updatedPod, err := fakeClient.GetPod(ctx, "test-namespace", "my-app-pod")
+				updatedPod, err := k8sClient.GetPod(ctx, "test-namespace", "my-app-pod")
 				Expect(err).ToNot(HaveOccurred())
 				// Kubernetes normalizes "1000m" to "1" (1 CPU core)
 				Expect(updatedPod.Spec.Containers[0].Resources.Limits.Cpu().String()).To(Equal("1"))
@@ -482,8 +338,8 @@ var _ = Describe("Executor", func() {
 
 		Context("notify_only action", func() {
 			It("should execute notify_only successfully", func() {
-				fakeClient = NewFakeK8sClient()
-				executor = NewExecutor(fakeClient, config.ActionsConfig{
+				// Using real K8s client from testEnv
+				executor = NewExecutor(k8sClient, config.ActionsConfig{
 					MaxConcurrent: 1,
 				}, mockRepo, logger)
 
@@ -507,8 +363,8 @@ var _ = Describe("Executor", func() {
 
 		Context("unknown action", func() {
 			It("should return an error for unknown action", func() {
-				fakeClient = NewFakeK8sClient()
-				executor = NewExecutor(fakeClient, config.ActionsConfig{
+				// Using real K8s client from testEnv
+				executor = NewExecutor(k8sClient, config.ActionsConfig{
 					MaxConcurrent: 1,
 				}, mockRepo, logger)
 
@@ -529,8 +385,8 @@ var _ = Describe("Executor", func() {
 
 		Context("dry run mode", func() {
 			It("should execute actions without making K8s calls", func() {
-				fakeClient = NewFakeK8sClient()
-				executor = NewExecutor(fakeClient, config.ActionsConfig{
+				// Using real K8s client from testEnv
+				executor = NewExecutor(k8sClient, config.ActionsConfig{
 					DryRun:        true,
 					MaxConcurrent: 1,
 				}, mockRepo, logger)
@@ -556,8 +412,10 @@ var _ = Describe("Executor", func() {
 		Context("parameter handling", func() {
 			BeforeEach(func() {
 				deployment := createTestDeployment("test-namespace", "my-app", 3)
-				fakeClient = NewFakeK8sClient(deployment)
-				executor = NewExecutor(fakeClient, config.ActionsConfig{
+				// Create deployment in fake cluster
+				_, err = testEnv.Client.AppsV1().Deployments("test-namespace").Create(testEnv.Context, deployment, metav1.CreateOptions{})
+				Expect(err).NotTo(HaveOccurred())
+				executor = NewExecutor(k8sClient, config.ActionsConfig{
 					DryRun:        false,
 					MaxConcurrent: 1,
 				}, mockRepo, logger)
@@ -596,8 +454,10 @@ var _ = Describe("Executor", func() {
 			Context("rollback_deployment", func() {
 				It("should rollback deployment successfully", func() {
 					deployment := createTestDeployment("test-namespace", "my-app", 3)
-					fakeClient = NewFakeK8sClient(deployment)
-					executor = NewExecutor(fakeClient, config.ActionsConfig{
+					// Create deployment in fake cluster
+					_, err = testEnv.Client.AppsV1().Deployments("test-namespace").Create(testEnv.Context, deployment, metav1.CreateOptions{})
+					Expect(err).NotTo(HaveOccurred())
+					executor = NewExecutor(k8sClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
 					}, mockRepo, logger)
@@ -617,17 +477,17 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert, nil)
+					err = executor.Execute(ctx, action, alert, nil)
 					Expect(err).ToNot(HaveOccurred())
 
 					// Verify deployment still exists (rollback is simulated)
-					_, err = fakeClient.GetDeployment(ctx, "test-namespace", "my-app")
+					_, err = k8sClient.GetDeployment(ctx, "test-namespace", "my-app")
 					Expect(err).ToNot(HaveOccurred())
 				})
 
 				It("should return error for non-existent deployment", func() {
-					fakeClient = NewFakeK8sClient() // No deployment created
-					executor = NewExecutor(fakeClient, config.ActionsConfig{
+					// Using real K8s client from testEnv // No deployment created
+					executor = NewExecutor(k8sClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
 					}, mockRepo, logger)
@@ -655,8 +515,8 @@ var _ = Describe("Executor", func() {
 
 			Context("expand_pvc", func() {
 				It("should expand PVC successfully", func() {
-					fakeClient = NewFakeK8sClient()
-					executor = NewExecutor(fakeClient, config.ActionsConfig{
+					// Using real K8s client from testEnv
+					executor = NewExecutor(k8sClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
 					}, mockRepo, logger)
@@ -681,8 +541,8 @@ var _ = Describe("Executor", func() {
 
 			Context("drain_node", func() {
 				It("should drain node successfully", func() {
-					fakeClient = NewFakeK8sClient()
-					executor = NewExecutor(fakeClient, config.ActionsConfig{
+					// Using real K8s client from testEnv
+					executor = NewExecutor(k8sClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
 					}, mockRepo, logger)
@@ -710,8 +570,10 @@ var _ = Describe("Executor", func() {
 			Context("quarantine_pod", func() {
 				It("should quarantine pod successfully", func() {
 					pod := createTestPod("test-namespace", "suspicious-pod")
-					fakeClient = NewFakeK8sClient(pod)
-					executor = NewExecutor(fakeClient, config.ActionsConfig{
+					// Create pod in fake cluster
+					_, err = testEnv.Client.CoreV1().Pods("test-namespace").Create(testEnv.Context, pod, metav1.CreateOptions{})
+					Expect(err).NotTo(HaveOccurred())
+					executor = NewExecutor(k8sClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
 					}, mockRepo, logger)
@@ -729,17 +591,17 @@ var _ = Describe("Executor", func() {
 						},
 					}
 
-					err := executor.Execute(ctx, action, alert, nil)
+					err = executor.Execute(ctx, action, alert, nil)
 					Expect(err).ToNot(HaveOccurred())
 
 					// Verify pod still exists (quarantine is simulated)
-					_, err = fakeClient.GetPod(ctx, "test-namespace", "suspicious-pod")
+					_, err = k8sClient.GetPod(ctx, "test-namespace", "suspicious-pod")
 					Expect(err).ToNot(HaveOccurred())
 				})
 
 				It("should return error for non-existent pod", func() {
-					fakeClient = NewFakeK8sClient() // No pod created
-					executor = NewExecutor(fakeClient, config.ActionsConfig{
+					// Using real K8s client from testEnv // No pod created
+					executor = NewExecutor(k8sClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
 					}, mockRepo, logger)
@@ -765,8 +627,8 @@ var _ = Describe("Executor", func() {
 
 			Context("collect_diagnostics", func() {
 				It("should collect diagnostics successfully", func() {
-					fakeClient = NewFakeK8sClient()
-					executor = NewExecutor(fakeClient, config.ActionsConfig{
+					// Using real K8s client from testEnv
+					executor = NewExecutor(k8sClient, config.ActionsConfig{
 						DryRun:        false,
 						MaxConcurrent: 1,
 					}, mockRepo, logger)
@@ -794,8 +656,8 @@ var _ = Describe("Executor", func() {
 
 	Describe("ActionRegistry Integration", func() {
 		It("should have all built-in actions registered", func() {
-			fakeClient = NewFakeK8sClient()
-			executor := NewExecutor(fakeClient, config.ActionsConfig{
+			// Using real K8s client from testEnv
+			executor := NewExecutor(k8sClient, config.ActionsConfig{
 				DryRun:        false,
 				MaxConcurrent: 1,
 			}, mockRepo, logger)
@@ -842,8 +704,8 @@ var _ = Describe("Executor", func() {
 		})
 
 		It("should allow registering custom actions", func() {
-			fakeClient = NewFakeK8sClient()
-			executor := NewExecutor(fakeClient, config.ActionsConfig{
+			// Using real K8s client from testEnv
+			executor := NewExecutor(k8sClient, config.ActionsConfig{
 				DryRun:        false,
 				MaxConcurrent: 1,
 			}, mockRepo, logger)
