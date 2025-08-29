@@ -18,12 +18,6 @@ type Client interface {
 	AdvancedClient
 }
 
-// client implements the full Client interface using composition
-type client struct {
-	*basicClient
-	*advancedClient
-}
-
 func NewClient(cfg config.KubernetesConfig, log *logrus.Logger) (Client, error) {
 	var k8sConfig *rest.Config
 	var err error
@@ -56,36 +50,12 @@ func NewClient(cfg config.KubernetesConfig, log *logrus.Logger) (Client, error) 
 		return nil, fmt.Errorf("failed to create Kubernetes clientset: %w", err)
 	}
 
-	// Set default namespace if not specified
-	namespace := cfg.Namespace
-	if namespace == "" {
-		namespace = "default"
-	}
-
-	// Create the basic client
-	basic := &basicClient{
-		clientset: clientset,
-		namespace: namespace,
-		log:       log,
-	}
-
-	// Create the advanced client (which embeds the basic client)
-	advanced := &advancedClient{
-		basicClient: basic,
-	}
-
 	log.WithFields(logrus.Fields{
-		"namespace": namespace,
+		"namespace": cfg.Namespace,
 		"context":   cfg.Context,
 	}).Info("Kubernetes client initialized")
 
-	return &client{
-		basicClient:    basic,
-		advancedClient: advanced,
-	}, nil
+	// Use unified client implementation
+	client := NewUnifiedClient(clientset, cfg, log)
+	return client, nil
 }
-
-// Verify that client implements both interfaces
-var _ BasicClient = (*client)(nil)
-var _ AdvancedClient = (*client)(nil)
-var _ Client = (*client)(nil)

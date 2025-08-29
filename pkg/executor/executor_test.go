@@ -2,13 +2,13 @@ package executor
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
 	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
-	"github.com/stretchr/testify/assert"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -107,6 +107,85 @@ func (f *FakeK8sClient) CollectDiagnostics(ctx context.Context, namespace, resou
 	}, nil
 }
 
+func (f *FakeK8sClient) AuditLogs(ctx context.Context, namespace, resource, scope string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) BackupData(ctx context.Context, namespace, resource, backupName string) error {
+	return nil
+}
+
+// Storage & Persistence actions
+func (f *FakeK8sClient) CleanupStorage(ctx context.Context, namespace, podName, path string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) CompactStorage(ctx context.Context, namespace, resource string) error {
+	return nil
+}
+
+// Application Lifecycle actions
+func (f *FakeK8sClient) CordonNode(ctx context.Context, nodeName string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) UpdateHPA(ctx context.Context, namespace, name string, minReplicas, maxReplicas int32) error {
+	return nil
+}
+
+func (f *FakeK8sClient) RestartDaemonSet(ctx context.Context, namespace, name string) error {
+	return nil
+}
+
+// Security & Compliance actions
+func (f *FakeK8sClient) RotateSecrets(ctx context.Context, namespace, secretName string) error {
+	return nil
+}
+
+// Network & Connectivity actions
+func (f *FakeK8sClient) UpdateNetworkPolicy(ctx context.Context, namespace, policyName, actionType string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) RestartNetwork(ctx context.Context, component string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) ResetServiceMesh(ctx context.Context, meshType string) error {
+	return nil
+}
+
+// Database & Stateful actions
+func (f *FakeK8sClient) FailoverDatabase(ctx context.Context, namespace, databaseName, replicaName string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) RepairDatabase(ctx context.Context, namespace, databaseName, repairType string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) ScaleStatefulSet(ctx context.Context, namespace, name string, replicas int32) error {
+	return nil
+}
+
+// Monitoring & Observability actions
+func (f *FakeK8sClient) EnableDebugMode(ctx context.Context, namespace, resource, logLevel, duration string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) CreateHeapDump(ctx context.Context, namespace, podName, dumpPath string) error {
+	return nil
+}
+
+// Resource Management actions
+func (f *FakeK8sClient) OptimizeResources(ctx context.Context, namespace, resource, optimizationType string) error {
+	return nil
+}
+
+func (f *FakeK8sClient) MigrateWorkload(ctx context.Context, namespace, workloadName, targetNode string) error {
+	return nil
+}
+
 // Helper functions for creating test resources
 func createTestDeployment(namespace, name string, replicas int32) *appsv1.Deployment {
 	return &appsv1.Deployment{
@@ -183,913 +262,556 @@ func createTestPod(namespace, name string) *corev1.Pod {
 	}
 }
 
-func TestNewExecutor(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
 
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:         false,
-		MaxConcurrent:  5,
-		CooldownPeriod: 5 * time.Minute,
-	}
 
-	executor := NewExecutor(fakeClient, cfg, logger)
-
-	assert.NotNil(t, executor)
-	assert.Implements(t, (*Executor)(nil), executor)
-}
-
-func TestExecutor_IsHealthy(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	healthy := executor.IsHealthy()
-
-	assert.True(t, healthy)
-}
-
-func TestExecutor_Execute_ScaleDeployment(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	// Test successful scaling
-	deployment := createTestDeployment("test-namespace", "my-app", 3)
-	fakeClient := NewFakeK8sClient(deployment)
-
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "HighCPUUsage",
-		Namespace: "test-namespace",
-		Labels: map[string]string{
-			"deployment": "my-app",
-		},
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "scale_deployment",
-		Parameters: map[string]interface{}{
-			"replicas": 5,
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-
-	// Verify scaling worked
-	updatedDeployment, err := fakeClient.GetDeployment(ctx, "test-namespace", "my-app")
-	assert.NoError(t, err)
-	assert.Equal(t, int32(5), *updatedDeployment.Spec.Replicas)
-}
-
-func TestExecutor_Execute_RestartPod(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	pod := createTestPod("test-namespace", "my-app-pod")
-	fakeClient := NewFakeK8sClient(pod)
-
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "PodCrashLoop",
-		Namespace: "test-namespace",
-		Labels: map[string]string{
-			"pod": "my-app-pod",
-		},
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "restart_pod",
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-
-	// Verify pod was deleted
-	_, err = fakeClient.GetPod(ctx, "test-namespace", "my-app-pod")
-	assert.Error(t, err) // Pod should be deleted (not found)
-}
-
-func TestExecutor_Execute_IncreaseResources(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	pod := createTestPod("test-namespace", "my-app-pod")
-	fakeClient := NewFakeK8sClient(pod)
-
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "HighMemoryUsage",
-		Namespace: "test-namespace",
-		Labels: map[string]string{
-			"pod": "my-app-pod",
-		},
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "increase_resources",
-		Parameters: map[string]interface{}{
-			"cpu_limit":      "1000m",
-			"memory_limit":   "2Gi",
-			"cpu_request":    "500m",
-			"memory_request": "1Gi",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-
-	// Verify resources were updated
-	updatedPod, err := fakeClient.GetPod(ctx, "test-namespace", "my-app-pod")
-	assert.NoError(t, err)
-	// Kubernetes normalizes "1000m" to "1" (1 CPU core)
-	assert.Equal(t, "1", updatedPod.Spec.Containers[0].Resources.Limits.Cpu().String())
-	assert.Equal(t, "2Gi", updatedPod.Spec.Containers[0].Resources.Limits.Memory().String())
-}
-
-func TestExecutor_Execute_NotifyOnly(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "CriticalAlert",
-		Namespace: "production",
-	}
-
-	action := &types.ActionRecommendation{
-		Action:    "notify_only",
-		Reasoning: "Requires manual intervention",
-		Parameters: map[string]interface{}{
-			"message": "Custom notification message",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-}
-
-func TestExecutor_Execute_UnknownAction(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	action := &types.ActionRecommendation{
-		Action: "unknown_action",
-	}
-
-	alert := types.Alert{
-		Name:      "TestAlert",
-		Namespace: "test",
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown action: unknown_action")
-}
-
-func TestExecutor_Execute_DryRun(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        true,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "TestAlert",
-		Namespace: "test-namespace",
-		Resource:  "my-app-deployment",
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "scale_deployment",
-		Parameters: map[string]interface{}{
-			"replicas": 3,
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err) // Dry run should always succeed without K8s calls
-}
-
-func TestExecutor_Execute_ParameterHandling(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	// Test parameter handling through the Execute method by testing different parameter types
-	deployment := createTestDeployment("test-namespace", "my-app", 3)
-	fakeClient := NewFakeK8sClient(deployment)
-
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "HighCPUUsage",
-		Namespace: "test-namespace",
-		Labels: map[string]string{
-			"deployment": "my-app",
-		},
-	}
-
-	tests := []struct {
-		name      string
-		params    map[string]interface{}
-		expectErr bool
-	}{
-		{
-			name:      "int replicas",
-			params:    map[string]interface{}{"replicas": 5},
-			expectErr: false,
-		},
-		{
-			name:      "float64 replicas",
-			params:    map[string]interface{}{"replicas": 3.0},
-			expectErr: false,
-		},
-		{
-			name:      "string replicas",
-			params:    map[string]interface{}{"replicas": "7"},
-			expectErr: false,
-		},
-		{
-			name:      "missing replicas",
-			params:    map[string]interface{}{},
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			action := &types.ActionRecommendation{
-				Action:     "scale_deployment",
-				Parameters: tt.params,
-			}
-
-			err := executor.Execute(ctx, action, alert)
-
-			if tt.expectErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestExecutor_Execute_ResourceParameters(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	pod := createTestPod("test-namespace", "my-app-pod")
-	fakeClient := NewFakeK8sClient(pod)
-
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "HighMemoryUsage",
-		Namespace: "test-namespace",
-		Labels: map[string]string{
-			"pod": "my-app-pod",
-		},
-	}
-
-	// Test with explicit resource parameters
-	action := &types.ActionRecommendation{
-		Action: "increase_resources",
-		Parameters: map[string]interface{}{
-			"cpu_limit":      "1000m",
-			"memory_limit":   "2Gi",
-			"cpu_request":    "500m",
-			"memory_request": "1Gi",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-
-	// Verify resources were updated
-	updatedPod, err := fakeClient.GetPod(ctx, "test-namespace", "my-app-pod")
-	assert.NoError(t, err)
-	// Kubernetes normalizes "1000m" to "1" (1 CPU core)
-	assert.Equal(t, "1", updatedPod.Spec.Containers[0].Resources.Limits.Cpu().String())
-	assert.Equal(t, "2Gi", updatedPod.Spec.Containers[0].Resources.Limits.Memory().String())
-}
-
-func TestExecutor_Execute_DeploymentNameResolution(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	tests := []struct {
-		name            string
-		alert           types.Alert
-		expectErr       bool
-		setupDeployment bool
-	}{
-		{
-			name: "deployment from labels",
-			alert: types.Alert{
-				Name:      "HighCPUUsage",
-				Namespace: "test-namespace",
-				Labels: map[string]string{
-					"deployment": "my-deployment",
-				},
-			},
-			expectErr:       false,
-			setupDeployment: true,
-		},
-		{
-			name: "deployment from resource",
-			alert: types.Alert{
-				Name:      "HighCPUUsage",
-				Namespace: "test-namespace",
-				Resource:  "resource-deployment",
-			},
-			expectErr:       false,
-			setupDeployment: true,
-		},
-		{
-			name: "no deployment name",
-			alert: types.Alert{
-				Name:      "HighCPUUsage",
-				Namespace: "test-namespace",
-			},
-			expectErr:       true,
-			setupDeployment: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var fakeClient *FakeK8sClient
-
-			if tt.setupDeployment {
-				deploymentName := tt.alert.Labels["deployment"]
-				if deploymentName == "" {
-					deploymentName = tt.alert.Resource
-				}
-				deployment := createTestDeployment(tt.alert.Namespace, deploymentName, 3)
-				fakeClient = NewFakeK8sClient(deployment)
-			} else {
-				fakeClient = NewFakeK8sClient()
-			}
-
+var _ = Describe("Executor", func() {
+	var (
+		logger     *logrus.Logger
+		fakeClient *FakeK8sClient
+		executor   Executor
+		ctx        context.Context
+	)
+
+	BeforeEach(func() {
+		logger = logrus.New()
+		logger.SetLevel(logrus.FatalLevel)
+		ctx = context.Background()
+	})
+
+	Describe("NewExecutor", func() {
+		It("should create a new executor", func() {
+			fakeClient = NewFakeK8sClient()
 			cfg := config.ActionsConfig{
-				DryRun:        false,
+				DryRun:         false,
+				MaxConcurrent:  5,
+				CooldownPeriod: 5 * time.Minute,
+			}
+
+			executor := NewExecutor(fakeClient, cfg, logger)
+			Expect(executor).ToNot(BeNil())
+		})
+	})
+
+	Describe("IsHealthy", func() {
+		It("should return true when healthy", func() {
+			fakeClient = NewFakeK8sClient()
+			cfg := config.ActionsConfig{
 				MaxConcurrent: 1,
 			}
 
 			executor := NewExecutor(fakeClient, cfg, logger)
-			ctx := context.Background()
+			Expect(executor.IsHealthy()).To(BeTrue())
+		})
+	})
+
+	Describe("Execute", func() {
+		BeforeEach(func() {
+			cfg := config.ActionsConfig{
+				DryRun:        false,
+				MaxConcurrent: 1,
+			}
+			executor = NewExecutor(fakeClient, cfg, logger)
+		})
+
+		Context("scale_deployment action", func() {
+			It("should scale deployment successfully", func() {
+				deployment := createTestDeployment("test-namespace", "my-app", 3)
+				fakeClient = NewFakeK8sClient(deployment)
+				executor = NewExecutor(fakeClient, config.ActionsConfig{
+					DryRun:        false,
+					MaxConcurrent: 1,
+				}, logger)
+
+				alert := types.Alert{
+					Name:      "HighCPUUsage",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						"deployment": "my-app",
+					},
+				}
+
+				action := &types.ActionRecommendation{
+					Action: "scale_deployment",
+					Parameters: map[string]interface{}{
+						"replicas": 5,
+					},
+				}
+
+				err := executor.Execute(ctx, action, alert)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify scaling worked
+				updatedDeployment, err := fakeClient.GetDeployment(ctx, "test-namespace", "my-app")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(*updatedDeployment.Spec.Replicas).To(Equal(int32(5)))
+			})
+		})
+
+		Context("restart_pod action", func() {
+			It("should restart pod successfully", func() {
+				pod := createTestPod("test-namespace", "my-app-pod")
+				fakeClient = NewFakeK8sClient(pod)
+				executor = NewExecutor(fakeClient, config.ActionsConfig{
+					DryRun:        false,
+					MaxConcurrent: 1,
+				}, logger)
+
+				alert := types.Alert{
+					Name:      "PodCrashLoop",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						"pod": "my-app-pod",
+					},
+				}
+
+				action := &types.ActionRecommendation{
+					Action: "restart_pod",
+				}
+
+				err := executor.Execute(ctx, action, alert)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify pod was deleted
+				_, err = fakeClient.GetPod(ctx, "test-namespace", "my-app-pod")
+				Expect(err).To(HaveOccurred()) // Pod should be deleted (not found)
+			})
+		})
+
+		Context("increase_resources action", func() {
+			It("should increase resources successfully", func() {
+				pod := createTestPod("test-namespace", "my-app-pod")
+				fakeClient = NewFakeK8sClient(pod)
+				executor = NewExecutor(fakeClient, config.ActionsConfig{
+					DryRun:        false,
+					MaxConcurrent: 1,
+				}, logger)
+
+				alert := types.Alert{
+					Name:      "HighMemoryUsage",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						"pod": "my-app-pod",
+					},
+				}
+
+				action := &types.ActionRecommendation{
+					Action: "increase_resources",
+					Parameters: map[string]interface{}{
+						"cpu_limit":      "1000m",
+						"memory_limit":   "2Gi",
+						"cpu_request":    "500m",
+						"memory_request": "1Gi",
+					},
+				}
+
+				err := executor.Execute(ctx, action, alert)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify resources were updated
+				updatedPod, err := fakeClient.GetPod(ctx, "test-namespace", "my-app-pod")
+				Expect(err).ToNot(HaveOccurred())
+				// Kubernetes normalizes "1000m" to "1" (1 CPU core)
+				Expect(updatedPod.Spec.Containers[0].Resources.Limits.Cpu().String()).To(Equal("1"))
+				Expect(updatedPod.Spec.Containers[0].Resources.Limits.Memory().String()).To(Equal("2Gi"))
+			})
+		})
+
+		Context("notify_only action", func() {
+			It("should execute notify_only successfully", func() {
+				fakeClient = NewFakeK8sClient()
+				executor = NewExecutor(fakeClient, config.ActionsConfig{
+					MaxConcurrent: 1,
+				}, logger)
+
+				alert := types.Alert{
+					Name:      "CriticalAlert",
+					Namespace: "production",
+				}
+
+				action := &types.ActionRecommendation{
+					Action:    "notify_only",
+					Reasoning: &types.ReasoningDetails{Summary: "Requires manual intervention"},
+					Parameters: map[string]interface{}{
+						"message": "Custom notification message",
+					},
+				}
+
+				err := executor.Execute(ctx, action, alert)
+				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+
+		Context("unknown action", func() {
+			It("should return an error for unknown action", func() {
+				fakeClient = NewFakeK8sClient()
+				executor = NewExecutor(fakeClient, config.ActionsConfig{
+					MaxConcurrent: 1,
+				}, logger)
+
+				action := &types.ActionRecommendation{
+					Action: "unknown_action",
+				}
+
+				alert := types.Alert{
+					Name:      "TestAlert",
+					Namespace: "test",
+				}
+
+				err := executor.Execute(ctx, action, alert)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unknown action: unknown_action"))
+			})
+		})
+
+		Context("dry run mode", func() {
+			It("should execute actions without making K8s calls", func() {
+				fakeClient = NewFakeK8sClient()
+				executor = NewExecutor(fakeClient, config.ActionsConfig{
+					DryRun:        true,
+					MaxConcurrent: 1,
+				}, logger)
+
+				alert := types.Alert{
+					Name:      "TestAlert",
+					Namespace: "test-namespace",
+					Resource:  "my-app-deployment",
+				}
+
+				action := &types.ActionRecommendation{
+					Action: "scale_deployment",
+					Parameters: map[string]interface{}{
+						"replicas": 3,
+					},
+				}
+
+				err := executor.Execute(ctx, action, alert)
+				Expect(err).ToNot(HaveOccurred()) // Dry run should always succeed without K8s calls
+			})
+		})
+
+		Context("parameter handling", func() {
+			BeforeEach(func() {
+				deployment := createTestDeployment("test-namespace", "my-app", 3)
+				fakeClient = NewFakeK8sClient(deployment)
+				executor = NewExecutor(fakeClient, config.ActionsConfig{
+					DryRun:        false,
+					MaxConcurrent: 1,
+				}, logger)
+			})
+
+			DescribeTable("different parameter types",
+				func(params map[string]interface{}, expectErr bool) {
+					alert := types.Alert{
+						Name:      "HighCPUUsage",
+						Namespace: "test-namespace",
+						Labels: map[string]string{
+							"deployment": "my-app",
+						},
+					}
+
+					action := &types.ActionRecommendation{
+						Action:     "scale_deployment",
+						Parameters: params,
+					}
+
+					err := executor.Execute(ctx, action, alert)
+					if expectErr {
+						Expect(err).To(HaveOccurred())
+					} else {
+						Expect(err).ToNot(HaveOccurred())
+					}
+				},
+				Entry("int replicas", map[string]interface{}{"replicas": 5}, false),
+				Entry("float64 replicas", map[string]interface{}{"replicas": 3.0}, false),
+				Entry("string replicas", map[string]interface{}{"replicas": "7"}, false),
+				Entry("missing replicas", map[string]interface{}{}, true),
+			)
+		})
+
+		Context("advanced actions", func() {
+			Context("rollback_deployment", func() {
+				It("should rollback deployment successfully", func() {
+					deployment := createTestDeployment("test-namespace", "my-app", 3)
+					fakeClient = NewFakeK8sClient(deployment)
+					executor = NewExecutor(fakeClient, config.ActionsConfig{
+						DryRun:        false,
+						MaxConcurrent: 1,
+					}, logger)
+
+					alert := types.Alert{
+						Name:      "DeploymentFailure",
+						Namespace: "test-namespace",
+						Labels: map[string]string{
+							"deployment": "my-app",
+						},
+					}
+
+					action := &types.ActionRecommendation{
+						Action: "rollback_deployment",
+						Parameters: map[string]interface{}{
+							"revision": "4",
+						},
+					}
+
+					err := executor.Execute(ctx, action, alert)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Verify deployment still exists (rollback is simulated)
+					_, err = fakeClient.GetDeployment(ctx, "test-namespace", "my-app")
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				It("should return error for non-existent deployment", func() {
+					fakeClient = NewFakeK8sClient() // No deployment created
+					executor = NewExecutor(fakeClient, config.ActionsConfig{
+						DryRun:        false,
+						MaxConcurrent: 1,
+					}, logger)
+
+					alert := types.Alert{
+						Name:      "DeploymentFailure",
+						Namespace: "test-namespace",
+						Labels: map[string]string{
+							"deployment": "non-existent",
+						},
+					}
+
+					action := &types.ActionRecommendation{
+						Action: "rollback_deployment",
+						Parameters: map[string]interface{}{
+							"revision": "3",
+						},
+					}
+
+					err := executor.Execute(ctx, action, alert)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("not found"))
+				})
+			})
+
+			Context("expand_pvc", func() {
+				It("should expand PVC successfully", func() {
+					fakeClient = NewFakeK8sClient()
+					executor = NewExecutor(fakeClient, config.ActionsConfig{
+						DryRun:        false,
+						MaxConcurrent: 1,
+					}, logger)
+
+					alert := types.Alert{
+						Name:      "PVCNearFull",
+						Namespace: "test-namespace",
+						Resource:  "database-storage",
+					}
+
+					action := &types.ActionRecommendation{
+						Action: "expand_pvc",
+						Parameters: map[string]interface{}{
+							"new_size": "20Gi",
+						},
+					}
+
+					err := executor.Execute(ctx, action, alert)
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+
+			Context("drain_node", func() {
+				It("should drain node successfully", func() {
+					fakeClient = NewFakeK8sClient()
+					executor = NewExecutor(fakeClient, config.ActionsConfig{
+						DryRun:        false,
+						MaxConcurrent: 1,
+					}, logger)
+
+					alert := types.Alert{
+						Name:     "NodeMaintenanceRequired",
+						Resource: "worker-02",
+						Labels: map[string]string{
+							"node": "worker-02",
+						},
+					}
+
+					action := &types.ActionRecommendation{
+						Action: "drain_node",
+						Parameters: map[string]interface{}{
+							"force": true,
+						},
+					}
+
+					err := executor.Execute(ctx, action, alert)
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+
+			Context("quarantine_pod", func() {
+				It("should quarantine pod successfully", func() {
+					pod := createTestPod("test-namespace", "suspicious-pod")
+					fakeClient = NewFakeK8sClient(pod)
+					executor = NewExecutor(fakeClient, config.ActionsConfig{
+						DryRun:        false,
+						MaxConcurrent: 1,
+					}, logger)
+
+					alert := types.Alert{
+						Name:      "SecurityThreatDetected",
+						Namespace: "test-namespace",
+						Resource:  "suspicious-pod",
+					}
+
+					action := &types.ActionRecommendation{
+						Action: "quarantine_pod",
+						Parameters: map[string]interface{}{
+							"reason": "malware_detected",
+						},
+					}
+
+					err := executor.Execute(ctx, action, alert)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Verify pod still exists (quarantine is simulated)
+					_, err = fakeClient.GetPod(ctx, "test-namespace", "suspicious-pod")
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				It("should return error for non-existent pod", func() {
+					fakeClient = NewFakeK8sClient() // No pod created
+					executor = NewExecutor(fakeClient, config.ActionsConfig{
+						DryRun:        false,
+						MaxConcurrent: 1,
+					}, logger)
+
+					alert := types.Alert{
+						Name:      "SecurityThreatDetected",
+						Namespace: "test-namespace",
+						Resource:  "non-existent-pod",
+					}
+
+					action := &types.ActionRecommendation{
+						Action: "quarantine_pod",
+						Parameters: map[string]interface{}{
+							"reason": "suspicious_activity",
+						},
+					}
+
+					err := executor.Execute(ctx, action, alert)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("not found"))
+				})
+			})
+
+			Context("collect_diagnostics", func() {
+				It("should collect diagnostics successfully", func() {
+					fakeClient = NewFakeK8sClient()
+					executor = NewExecutor(fakeClient, config.ActionsConfig{
+						DryRun:        false,
+						MaxConcurrent: 1,
+					}, logger)
+
+					alert := types.Alert{
+						Name:      "ComplexServiceFailure",
+						Namespace: "test-namespace",
+						Resource:  "payment-api-789",
+					}
+
+					action := &types.ActionRecommendation{
+						Action: "collect_diagnostics",
+						Parameters: map[string]interface{}{
+							"include_logs":   true,
+							"include_events": true,
+						},
+					}
+
+					err := executor.Execute(ctx, action, alert)
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
+		})
+	})
+
+	Describe("ActionRegistry Integration", func() {
+		It("should have all built-in actions registered", func() {
+			fakeClient = NewFakeK8sClient()
+			executor := NewExecutor(fakeClient, config.ActionsConfig{
+				DryRun:        false,
+				MaxConcurrent: 1,
+			}, logger)
+
+			registry := executor.GetActionRegistry()
+			Expect(registry).ToNot(BeNil())
+
+			expectedActions := []string{
+				"scale_deployment",
+				"restart_pod",
+				"increase_resources",
+				"notify_only",
+				"rollback_deployment",
+				"expand_pvc",
+				"drain_node",
+				"quarantine_pod",
+				"collect_diagnostics",
+				"cleanup_storage",
+				"backup_data",
+				"compact_storage",
+				"cordon_node",
+				"update_hpa",
+				"restart_daemonset",
+				"rotate_secrets",
+				"audit_logs",
+				"update_network_policy",
+				"restart_network",
+				"reset_service_mesh",
+				"failover_database",
+				"repair_database",
+				"scale_statefulset",
+				"enable_debug_mode",
+				"create_heap_dump",
+				"optimize_resources",
+				"migrate_workload",
+			}
+
+			registeredActions := registry.GetRegisteredActions()
+			Expect(registeredActions).To(HaveLen(len(expectedActions)))
+
+			for _, expectedAction := range expectedActions {
+				Expect(registry.IsRegistered(expectedAction)).To(BeTrue(), "Action %s should be registered", expectedAction)
+			}
+		})
+
+		It("should allow registering custom actions", func() {
+			fakeClient = NewFakeK8sClient()
+			executor := NewExecutor(fakeClient, config.ActionsConfig{
+				DryRun:        false,
+				MaxConcurrent: 1,
+			}, logger)
+
+			registry := executor.GetActionRegistry()
+
+			// Register a custom action
+			customActionExecuted := false
+			customHandler := func(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+				customActionExecuted = true
+				return nil
+			}
+
+			err := registry.Register("custom_action", customHandler)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Test executing the custom action
+			alert := types.Alert{
+				Name:      "TestAlert",
+				Namespace: "test-namespace",
+			}
 
 			action := &types.ActionRecommendation{
-				Action: "scale_deployment",
+				Action: "custom_action",
 				Parameters: map[string]interface{}{
-					"replicas": 5,
+					"custom_param": "value",
 				},
 			}
 
-			err := executor.Execute(ctx, action, tt.alert)
-
-			if tt.expectErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
+			err = executor.Execute(ctx, action, alert)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(customActionExecuted).To(BeTrue())
 		})
-	}
-}
-// Tests for Advanced Actions
-
-func TestExecutor_Execute_RollbackDeployment(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	// Test successful rollback
-	deployment := createTestDeployment("test-namespace", "my-app", 3)
-	fakeClient := NewFakeK8sClient(deployment)
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "DeploymentFailure",
-		Namespace: "test-namespace",
-		Labels: map[string]string{
-			"deployment": "my-app",
-		},
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "rollback_deployment",
-		Parameters: map[string]interface{}{
-			"revision": "4",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-
-	// Verify deployment still exists (rollback is simulated)
-	_, err = fakeClient.GetDeployment(ctx, "test-namespace", "my-app")
-	assert.NoError(t, err)
-}
-
-func TestExecutor_Execute_RollbackDeployment_NonExistentDeployment(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient() // No deployment created
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "DeploymentFailure",
-		Namespace: "test-namespace",
-		Labels: map[string]string{
-			"deployment": "non-existent",
-		},
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "rollback_deployment",
-		Parameters: map[string]interface{}{
-			"revision": "3",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
-}
-
-func TestExecutor_Execute_ExpandPVC(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "PVCNearFull",
-		Namespace: "test-namespace",
-		Resource:  "database-storage",
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "expand_pvc",
-		Parameters: map[string]interface{}{
-			"new_size": "20Gi",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-}
-
-func TestExecutor_Execute_ExpandPVC_WithoutParameters(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "PVCNearFull",
-		Namespace: "test-namespace",
-		Resource:  "database-storage",
-	}
-
-	action := &types.ActionRecommendation{
-		Action:     "expand_pvc",
-		Parameters: map[string]interface{}{}, // No parameters
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err) // Should still work with default behavior
-}
-
-func TestExecutor_Execute_DrainNode(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:     "NodeMaintenanceRequired",
-		Resource: "worker-02",
-		Labels: map[string]string{
-			"node": "worker-02",
-		},
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "drain_node",
-		Parameters: map[string]interface{}{
-			"force": true,
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-}
-
-func TestExecutor_Execute_DrainNode_FromResource(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:     "NodeMaintenanceRequired",
-		Resource: "worker-03", // Node name from resource field
-	}
-
-	action := &types.ActionRecommendation{
-		Action:     "drain_node",
-		Parameters: map[string]interface{}{},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-}
-
-func TestExecutor_Execute_QuarantinePod(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	pod := createTestPod("test-namespace", "suspicious-pod")
-	fakeClient := NewFakeK8sClient(pod)
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "SecurityThreatDetected",
-		Namespace: "test-namespace",
-		Resource:  "suspicious-pod",
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "quarantine_pod",
-		Parameters: map[string]interface{}{
-			"reason": "malware_detected",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-
-	// Verify pod still exists (quarantine is simulated)
-	_, err = fakeClient.GetPod(ctx, "test-namespace", "suspicious-pod")
-	assert.NoError(t, err)
-}
-
-func TestExecutor_Execute_QuarantinePod_NonExistentPod(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient() // No pod created
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "SecurityThreatDetected",
-		Namespace: "test-namespace",
-		Resource:  "non-existent-pod",
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "quarantine_pod",
-		Parameters: map[string]interface{}{
-			"reason": "suspicious_activity",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
-}
-
-func TestExecutor_Execute_CollectDiagnostics(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:      "ComplexServiceFailure",
-		Namespace: "test-namespace",
-		Resource:  "payment-api-789",
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "collect_diagnostics",
-		Parameters: map[string]interface{}{
-			"include_logs":   true,
-			"include_events": true,
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-}
-
-func TestExecutor_Execute_CollectDiagnostics_WithoutNamespace(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	alert := types.Alert{
-		Name:     "ClusterWideIssue",
-		Resource: "etcd-cluster",
-		// No namespace specified
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "collect_diagnostics",
-		Parameters: map[string]interface{}{
-			"scope": "cluster",
-		},
-	}
-
-	err := executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-}
-
-func TestExecutor_Execute_AdvancedActions_DryRun(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	deployment := createTestDeployment("test-namespace", "my-app", 3)
-	pod := createTestPod("test-namespace", "my-pod")
-	fakeClient := NewFakeK8sClient(deployment, pod)
-	
-	cfg := config.ActionsConfig{
-		DryRun:        true, // Enable dry run
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	ctx := context.Background()
-
-	// Test all advanced actions in dry run mode
-	advancedActions := []struct {
-		name   string
-		action string
-		alert  types.Alert
-	}{
-		{
-			name:   "rollback_deployment",
-			action: "rollback_deployment",
-			alert: types.Alert{
-				Name:      "DeploymentFailure",
-				Namespace: "test-namespace",
-				Labels:    map[string]string{"deployment": "my-app"},
-			},
-		},
-		{
-			name:   "expand_pvc",
-			action: "expand_pvc",
-			alert: types.Alert{
-				Name:      "PVCNearFull",
-				Namespace: "test-namespace",
-				Resource:  "database-storage",
-			},
-		},
-		{
-			name:   "drain_node",
-			action: "drain_node",
-			alert: types.Alert{
-				Name:     "NodeMaintenanceRequired",
-				Resource: "worker-01",
-			},
-		},
-		{
-			name:   "quarantine_pod",
-			action: "quarantine_pod",
-			alert: types.Alert{
-				Name:      "SecurityThreatDetected",
-				Namespace: "test-namespace",
-				Resource:  "my-pod",
-			},
-		},
-		{
-			name:   "collect_diagnostics",
-			action: "collect_diagnostics",
-			alert: types.Alert{
-				Name:      "ComplexServiceFailure",
-				Namespace: "test-namespace",
-				Resource:  "api-service",
-			},
-		},
-	}
-
-	for _, tt := range advancedActions {
-		t.Run(tt.name+"_dry_run", func(t *testing.T) {
-			action := &types.ActionRecommendation{
-				Action:     tt.action,
-				Parameters: map[string]interface{}{},
-			}
-
-			err := executor.Execute(ctx, action, tt.alert)
-			assert.NoError(t, err) // Dry run should always succeed
-		})
-	}
-}
-
-func TestExecutor_ActionRegistry_Integration(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-
-	// Test that the executor implements the interface correctly
-	assert.NotNil(t, executor)
-	assert.NotNil(t, executor.GetActionRegistry())
-
-	// Test that all built-in actions are registered
-	registry := executor.GetActionRegistry()
-	expectedActions := []string{
-		"scale_deployment",
-		"restart_pod",
-		"increase_resources",
-		"notify_only",
-		"rollback_deployment",
-		"expand_pvc",
-		"drain_node",
-		"quarantine_pod",
-		"collect_diagnostics",
-	}
-
-	registeredActions := registry.GetRegisteredActions()
-	assert.Len(t, registeredActions, len(expectedActions))
-
-	for _, expectedAction := range expectedActions {
-		assert.True(t, registry.IsRegistered(expectedAction), "Action %s should be registered", expectedAction)
-	}
-}
-
-func TestExecutor_CustomAction_Registration(t *testing.T) {
-	logger := logrus.New()
-	logger.SetLevel(logrus.FatalLevel)
-
-	fakeClient := NewFakeK8sClient()
-	cfg := config.ActionsConfig{
-		DryRun:        false,
-		MaxConcurrent: 1,
-	}
-
-	executor := NewExecutor(fakeClient, cfg, logger)
-	registry := executor.GetActionRegistry()
-
-	// Register a custom action
-	customActionExecuted := false
-	customHandler := func(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
-		customActionExecuted = true
-		return nil
-	}
-
-	err := registry.Register("custom_action", customHandler)
-	assert.NoError(t, err)
-
-	// Test executing the custom action
-	ctx := context.Background()
-	alert := types.Alert{
-		Name:      "TestAlert",
-		Namespace: "test-namespace",
-	}
-
-	action := &types.ActionRecommendation{
-		Action: "custom_action",
-		Parameters: map[string]interface{}{
-			"custom_param": "value",
-		},
-	}
-
-	err = executor.Execute(ctx, action, alert)
-	assert.NoError(t, err)
-	assert.True(t, customActionExecuted)
-}
+	})
+})

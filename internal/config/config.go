@@ -37,14 +37,15 @@ type LoggingConfig struct {
 }
 
 type SLMConfig struct {
-	Endpoint    string        `yaml:"endpoint"`
-	Model       string        `yaml:"model"`
-	APIKey      string        `yaml:"api_key"`
-	Timeout     time.Duration `yaml:"timeout"`
-	RetryCount  int           `yaml:"retry_count"`
-	Provider    string        `yaml:"provider"`    // Only "localai" supported
-	Temperature float32       `yaml:"temperature"` // Model temperature (0.0-1.0)
-	MaxTokens   int           `yaml:"max_tokens"`  // Maximum tokens for response
+	Endpoint       string        `yaml:"endpoint"`
+	Model          string        `yaml:"model"`
+	APIKey         string        `yaml:"api_key"`
+	Timeout        time.Duration `yaml:"timeout"`
+	RetryCount     int           `yaml:"retry_count"`
+	Provider       string        `yaml:"provider"`        // Only "localai" supported
+	Temperature    float32       `yaml:"temperature"`     // Model temperature (0.0-1.0)
+	MaxTokens      int           `yaml:"max_tokens"`      // Maximum tokens for response
+	MaxContextSize int           `yaml:"max_context_size"` // Maximum context size in tokens (0 = unlimited)
 }
 
 type KubernetesConfig struct {
@@ -91,13 +92,14 @@ func Load(configFile string) (*Config, error) {
 			Format: "json",
 		},
 		SLM: SLMConfig{
-			Model:       "granite3.1-dense:8b",
-			Provider:    "localai",
-			Endpoint:    "http://localhost:11434",
-			Timeout:     30 * time.Second,
-			RetryCount:  3,
-			Temperature: 0.3,
-			MaxTokens:   500,
+			Model:          "granite3.1-dense:8b",
+			Provider:       "localai",
+			Endpoint:       "http://localhost:11434",
+			Timeout:        30 * time.Second,
+			RetryCount:     3,
+			Temperature:    0.3,
+			MaxTokens:      500,
+			MaxContextSize: 2000, // Optimal context size for decision quality
 		},
 		Kubernetes: KubernetesConfig{
 			Namespace:      "default",
@@ -165,6 +167,11 @@ func loadFromEnv(config *Config) error {
 	if maxTokens := os.Getenv("SLM_MAX_TOKENS"); maxTokens != "" {
 		if val, err := strconv.Atoi(maxTokens); err == nil {
 			config.SLM.MaxTokens = val
+		}
+	}
+	if maxContextSize := os.Getenv("SLM_MAX_CONTEXT_SIZE"); maxContextSize != "" {
+		if val, err := strconv.Atoi(maxContextSize); err == nil {
+			config.SLM.MaxContextSize = val
 		}
 	}
 

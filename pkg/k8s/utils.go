@@ -13,11 +13,6 @@ type ResourceRequirements struct {
 	MemoryRequest string
 }
 
-// parseQuantity parses a resource quantity string
-func parseQuantity(size string) (resource.Quantity, error) {
-	return resource.ParseQuantity(size)
-}
-
 // ToK8sResourceRequirements converts custom ResourceRequirements to corev1.ResourceRequirements
 func (r ResourceRequirements) ToK8sResourceRequirements() (corev1.ResourceRequirements, error) {
 	result := corev1.ResourceRequirements{

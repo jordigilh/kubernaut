@@ -34,6 +34,20 @@ var (
 		Help:    "Time taken for SLM to analyze alerts and generate recommendations",
 		Buckets: prometheus.DefBuckets,
 	})
+
+	// SLMContextSizeBytes tracks the context size sent to SLM in bytes
+	SLMContextSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "slm_context_size_bytes",
+		Help:    "Size of context sent to SLM in bytes (tracks min, avg, max)",
+		Buckets: []float64{1000, 2000, 4000, 8000, 16000, 32000, 65000, 128000, 256000},
+	}, []string{"provider"})
+
+	// SLMContextSizeTokens tracks the estimated context size in tokens
+	SLMContextSizeTokens = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "slm_context_size_tokens",
+		Help:    "Estimated size of context sent to SLM in tokens (4 chars per token)",
+		Buckets: []float64{1000, 2000, 4000, 8000, 16000, 32000, 65000},
+	}, []string{"provider"})
 )
 
 // Additional Valuable Metrics
@@ -103,6 +117,14 @@ func RecordAction(action string, duration time.Duration) {
 // RecordSLMAnalysis records SLM analysis timing
 func RecordSLMAnalysis(duration time.Duration) {
 	SLMAnalysisDuration.Observe(duration.Seconds())
+}
+
+// RecordSLMContextSize records the context size sent to SLM
+func RecordSLMContextSize(provider string, contextBytes int) {
+	SLMContextSizeBytes.WithLabelValues(provider).Observe(float64(contextBytes))
+	// Estimate tokens (roughly 4 characters per token)
+	estimatedTokens := contextBytes / 4
+	SLMContextSizeTokens.WithLabelValues(provider).Observe(float64(estimatedTokens))
 }
 
 // RecordFilteredAlert records a filtered alert
