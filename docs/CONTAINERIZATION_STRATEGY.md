@@ -1,10 +1,10 @@
 # Containerization Strategy - Prometheus Alerts SLM
 
-**Goal**: Deploy the complete prometheus-alerts-slm system in containers with integrated LLM models  
-**Current State**: Application has Dockerfiles but relies on external Ollama service  
+**Goal**: Deploy the complete prometheus-alerts-slm system in containers with integrated LLM models
+**Current State**: Application has Dockerfiles but relies on external Ollama service
 **Target**: Self-contained deployment with embedded model serving
 
-## Current Architecture Issues 🚨
+## Current Architecture Issues
 
 ### What We Have Now
 ```yaml
@@ -22,13 +22,13 @@ ollama-service:  # Separate service required
 ```
 
 ### Problems with Current Approach
-- ❌ **External dependency** on separate Ollama service
-- ❌ **Model download at runtime** (slow startup, internet dependency)
-- ❌ **Complex deployment** requiring multiple containers
-- ❌ **Version skew risk** between app and model service
-- ❌ **Resource management complexity** (separate resource allocation)
+- **External dependency** on separate Ollama service
+- **Model download at runtime** (slow startup, internet dependency)
+- **Complex deployment** requiring multiple containers
+- **Version skew risk** between app and model service
+- **Resource management complexity** (separate resource allocation)
 
-## Recommended Containerization Approaches 🎯
+## Containerization Approaches
 
 ### Approach 1: Self-Contained Container (Recommended for Production)
 
@@ -36,7 +36,7 @@ ollama-service:  # Separate service required
 ```
 prometheus-alerts-slm:all-in-one
 ├── Application binary
-├── Embedded Ollama server  
+├── Embedded Ollama server
 ├── Pre-loaded Granite model
 └── Unified configuration
 ```
@@ -98,14 +98,14 @@ export OLLAMA_MODEL="granite3.1-dense:2b"
 exec prometheus-alerts-slm
 ```
 
-#### Benefits ✅
+#### Benefits
 - **Self-contained**: No external dependencies
 - **Fast startup**: Model pre-loaded
 - **Simplified deployment**: Single container
 - **Version consistency**: App and model bundled together
 - **Resource efficiency**: Shared GPU/CPU resources
 
-#### Drawbacks ⚠️
+#### Drawbacks
 - **Large image size**: ~3-4GB (model + runtime)
 - **Build complexity**: Multi-stage with model download
 - **Update overhead**: Full rebuild for model updates
@@ -135,7 +135,7 @@ spec:
         volumeMounts:
         - name: model-storage
           mountPath: /shared/models
-      
+
       containers:
       - name: ollama
         image: ollama/ollama:latest
@@ -144,29 +144,29 @@ spec:
           mountPath: /root/.ollama
         ports:
         - containerPort: 11434
-      
+
       - name: app
         image: prometheus-alerts-slm:latest
         env:
         - name: OLLAMA_ENDPOINT
           value: "http://localhost:11434"
-        - name: OLLAMA_MODEL  
+        - name: OLLAMA_MODEL
           value: "granite3.1-dense:2b"
         ports:
         - containerPort: 8080
-      
+
       volumes:
       - name: model-storage
         emptyDir: {}
 ```
 
-#### Benefits ✅
+#### Benefits
 - **Smaller app image**: App and model separate
 - **Flexible model updates**: Init container can download different models
 - **Resource separation**: Distinct resource allocation
 - **Easier debugging**: Separate service logs
 
-#### Drawbacks ⚠️
+#### Drawbacks
 - **Complex deployment**: Multiple containers to coordinate
 - **Slower startup**: Model download on first run
 - **Volume management**: Shared storage complexity
@@ -190,7 +190,7 @@ spec:
           value: "http://localhost:11434"
         ports:
         - containerPort: 8080
-      
+
       - name: model-server
         image: prometheus-alerts-slm-models:granite-2b
         ports:
@@ -204,18 +204,18 @@ spec:
             cpu: "4"
 ```
 
-#### Benefits ✅
+#### Benefits
 - **Model specialization**: Different model images for different use cases
 - **Independent scaling**: Scale model server separately
 - **Resource optimization**: Fine-tuned resource allocation
 - **Multiple models**: Support for model routing/fallback
 
-#### Drawbacks ⚠️
+#### Drawbacks
 - **Deployment complexity**: Separate lifecycle management
 - **Network overhead**: Inter-container communication
 - **Resource coordination**: Complex resource management
 
-## Recommended Implementation Plan 🚀
+## Implementation Plan
 
 ### Phase 1: Self-Contained Production Image
 
@@ -300,7 +300,7 @@ docker build -t prometheus-alerts-slm:moe-1b \
   --build-arg MEMORY_LIMIT=2Gi .
 ```
 
-## Deployment Configurations 📋
+## Deployment Configurations
 
 ### Kubernetes Deployment (Recommended)
 
@@ -372,7 +372,6 @@ spec:
 ```
 
 ### Docker Compose (Development)
-
 ```yaml
 version: '3.8'
 services:
@@ -404,7 +403,7 @@ services:
               capabilities: [gpu]
 ```
 
-## Build & CI/CD Pipeline 🔄
+## Build & CI/CD Pipeline
 
 ### Multi-Stage Build Pipeline
 
@@ -423,13 +422,13 @@ jobs:
     strategy:
       matrix:
         model: [dense-8b, dense-2b, moe-1b]
-        
+
     steps:
     - uses: actions/checkout@v3
-    
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
-      
+
     - name: Build and push
       uses: docker/build-push-action@v4
       with:
@@ -445,7 +444,7 @@ jobs:
         cache-to: type=gha,mode=max
 ```
 
-## Resource Planning & Optimization 📊
+## Resource Planning & Optimization
 
 ### Model-Specific Resource Requirements
 
@@ -463,7 +462,7 @@ jobs:
 4. **Enable horizontal pod autoscaling** based on alert volume
 5. **Implement node affinity** for GPU-optimized instances
 
-## Security Considerations 🔒
+## Security Considerations
 
 ### Image Security
 ```dockerfile
@@ -492,7 +491,7 @@ WORKDIR /app
 - **Resource limits** to prevent DoS attacks
 - **Regular image scanning** for vulnerabilities
 
-## Monitoring & Observability 📈
+## Monitoring & Observability
 
 ### Container-Specific Metrics
 ```go
@@ -503,10 +502,10 @@ var (
             Name: "model_load_duration_seconds",
             Help: "Time taken to load the model at startup",
         }, []string{"model"})
-        
+
     containerMemoryUsage = prometheus.NewGaugeVec(
         prometheus.GaugeOpts{
-            Name: "container_memory_usage_bytes", 
+            Name: "container_memory_usage_bytes",
             Help: "Container memory usage",
         }, []string{"container"})
 )
@@ -527,13 +526,13 @@ func (h *HealthHandler) ContainerHealth(w http.ResponseWriter, r *http.Request) 
         OllamaReady: h.checkOllamaHealth(),
         Timestamp:   time.Now(),
     }
-    
+
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(health)
 }
 ```
 
-## Conclusion & Next Steps 🎯
+## Conclusion & Next Steps
 
 ### **Recommended Approach: Self-Contained Production Container**
 

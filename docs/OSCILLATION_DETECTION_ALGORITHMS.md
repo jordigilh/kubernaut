@@ -1,15 +1,15 @@
 # Oscillation Detection Algorithms
 
-**Objective**: Implement intelligent oscillation detection to prevent infinite loops and action thrashing  
-**Backend**: PostgreSQL database with optimized SQL queries for pattern detection  
+**Objective**: Implement oscillation detection to prevent infinite loops and action thrashing
+**Backend**: PostgreSQL database with optimized SQL queries for pattern detection
 **Target**: Real-time detection and prevention of problematic action sequences
 
-## 🎯 **Algorithm Overview**
+## Algorithm Overview
 
 ### **Core Oscillation Patterns Detected**
 
 1. **Scale Oscillation**: Rapid scaling up/down cycles (scale_deployment)
-2. **Resource Thrashing**: Constant resource adjustments (increase_resources ↔ scale_deployment)  
+2. **Resource Thrashing**: Constant resource adjustments (increase_resources ↔ scale_deployment)
 3. **Ineffective Loops**: Repeated failed actions with low effectiveness scores
 4. **Cascading Failures**: Action sequences that trigger more problems than they solve
 5. **Restart Loops**: Continuous pod/service restart cycles
@@ -31,17 +31,17 @@ Detect when scaling actions alternate direction within a short time window
 ```sql
 -- Scale Oscillation Detection Query
 WITH scale_actions AS (
-    SELECT 
+    SELECT
         rat.id,
         rat.action_timestamp,
         rat.action_parameters->>'replicas' as replica_count,
         LAG(rat.action_parameters->>'replicas') OVER (
-            PARTITION BY ah.resource_id 
+            PARTITION BY ah.resource_id
             ORDER BY rat.action_timestamp
         ) as prev_replica_count,
         LAG(rat.action_timestamp) OVER (
-            PARTITION BY ah.resource_id 
-            ORDER BY rat.action_timestamp  
+            PARTITION BY ah.resource_id
+            ORDER BY rat.action_timestamp
         ) as prev_timestamp,
         rat.effectiveness_score
     FROM resource_action_traces rat
@@ -52,19 +52,19 @@ WITH scale_actions AS (
     AND rat.action_timestamp > NOW() - INTERVAL '$4 minutes'
 ),
 direction_changes AS (
-    SELECT 
+    SELECT
         id,
         action_timestamp,
         replica_count::int,
         prev_replica_count::int,
         prev_timestamp,
         effectiveness_score,
-        CASE 
+        CASE
             WHEN replica_count::int > prev_replica_count::int THEN 'up'
             WHEN replica_count::int < prev_replica_count::int THEN 'down'
             ELSE 'none'
         END as direction,
-        LAG(CASE 
+        LAG(CASE
             WHEN replica_count::int > prev_replica_count::int THEN 'up'
             WHEN replica_count::int < prev_replica_count::int THEN 'down'
             ELSE 'none'
@@ -73,25 +73,25 @@ direction_changes AS (
     WHERE prev_replica_count IS NOT NULL
 ),
 oscillation_sequences AS (
-    SELECT 
+    SELECT
         COUNT(*) as direction_changes,
         MIN(action_timestamp) as first_change,
         MAX(action_timestamp) as last_change,
         AVG(effectiveness_score) as avg_effectiveness,
         EXTRACT(EPOCH FROM (MAX(action_timestamp) - MIN(action_timestamp)))/60 as duration_minutes
     FROM direction_changes
-    WHERE direction != prev_direction 
-    AND direction != 'none' 
+    WHERE direction != prev_direction
+    AND direction != 'none'
     AND prev_direction != 'none'
     AND action_timestamp - prev_timestamp < INTERVAL '30 minutes'
 )
-SELECT 
+SELECT
     direction_changes,
     first_change,
     last_change,
     avg_effectiveness,
     duration_minutes,
-    CASE 
+    CASE
         WHEN direction_changes >= 4 AND duration_minutes <= 60 AND avg_effectiveness < 0.5 THEN 'critical'
         WHEN direction_changes >= 3 AND duration_minutes <= 120 AND avg_effectiveness < 0.7 THEN 'high'
         WHEN direction_changes >= 2 AND duration_minutes <= 180 THEN 'medium'
@@ -130,17 +130,17 @@ type ScaleActionDetail struct {
 func (d *ScaleOscillationDetector) DetectScaleOscillation(ctx context.Context, resourceRef ResourceReference, windowMinutes int) (*ScaleOscillationResult, error) {
     query := `
         WITH scale_actions AS (
-            SELECT 
+            SELECT
                 rat.id,
                 rat.action_timestamp,
                 rat.action_parameters->>'replicas' as replica_count,
                 LAG(rat.action_parameters->>'replicas') OVER (
-                    PARTITION BY ah.resource_id 
+                    PARTITION BY ah.resource_id
                     ORDER BY rat.action_timestamp
                 ) as prev_replica_count,
                 LAG(rat.action_timestamp) OVER (
-                    PARTITION BY ah.resource_id 
-                    ORDER BY rat.action_timestamp  
+                    PARTITION BY ah.resource_id
+                    ORDER BY rat.action_timestamp
                 ) as prev_timestamp,
                 COALESCE(rat.effectiveness_score, 0.0) as effectiveness_score
             FROM resource_action_traces rat
@@ -151,19 +151,19 @@ func (d *ScaleOscillationDetector) DetectScaleOscillation(ctx context.Context, r
             AND rat.action_timestamp > NOW() - INTERVAL '%d minutes'
         ),
         direction_changes AS (
-            SELECT 
+            SELECT
                 id,
                 action_timestamp,
                 replica_count::int,
                 prev_replica_count::int,
                 prev_timestamp,
                 effectiveness_score,
-                CASE 
+                CASE
                     WHEN replica_count::int > prev_replica_count::int THEN 'up'
                     WHEN replica_count::int < prev_replica_count::int THEN 'down'
                     ELSE 'none'
                 END as direction,
-                LAG(CASE 
+                LAG(CASE
                     WHEN replica_count::int > prev_replica_count::int THEN 'up'
                     WHEN replica_count::int < prev_replica_count::int THEN 'down'
                     ELSE 'none'
@@ -172,7 +172,7 @@ func (d *ScaleOscillationDetector) DetectScaleOscillation(ctx context.Context, r
             WHERE prev_replica_count IS NOT NULL
         ),
         oscillation_analysis AS (
-            SELECT 
+            SELECT
                 COUNT(*) FILTER (WHERE direction != prev_direction AND direction != 'none' AND prev_direction != 'none') as direction_changes,
                 MIN(action_timestamp) as first_change,
                 MAX(action_timestamp) as last_change,
@@ -188,14 +188,14 @@ func (d *ScaleOscillationDetector) DetectScaleOscillation(ctx context.Context, r
                 ) as action_sequence
             FROM direction_changes
         )
-        SELECT 
+        SELECT
             direction_changes,
             first_change,
             last_change,
             avg_effectiveness,
             duration_minutes,
             action_sequence,
-            CASE 
+            CASE
                 WHEN direction_changes >= 4 AND duration_minutes <= 60 AND avg_effectiveness < 0.5 THEN 'critical'
                 WHEN direction_changes >= 3 AND duration_minutes <= 120 AND avg_effectiveness < 0.7 THEN 'high'
                 WHEN direction_changes >= 2 AND duration_minutes <= 180 THEN 'medium'
@@ -203,14 +203,14 @@ func (d *ScaleOscillationDetector) DetectScaleOscillation(ctx context.Context, r
             END as severity
         FROM oscillation_analysis
         WHERE direction_changes >= 2`
-    
+
     formattedQuery := fmt.Sprintf(query, windowMinutes)
-    
+
     var result ScaleOscillationResult
     var actionSequenceJSON []byte
     var severityStr string
-    
-    err := d.db.QueryRowContext(ctx, formattedQuery, 
+
+    err := d.db.QueryRowContext(ctx, formattedQuery,
         resourceRef.Namespace, resourceRef.Kind, resourceRef.Name).Scan(
         &result.DirectionChanges,
         &result.FirstChange,
@@ -220,28 +220,28 @@ func (d *ScaleOscillationDetector) DetectScaleOscillation(ctx context.Context, r
         &actionSequenceJSON,
         &severityStr,
     )
-    
+
     if err != nil {
         if err == sql.ErrNoRows {
             return nil, nil // No oscillation detected
         }
         return nil, fmt.Errorf("failed to detect scale oscillation: %w", err)
     }
-    
+
     // Parse action sequence JSON
     if err := json.Unmarshal(actionSequenceJSON, &result.ActionSequence); err != nil {
         return nil, fmt.Errorf("failed to parse action sequence: %w", err)
     }
-    
+
     result.Severity = OscillationSeverity(severityStr)
-    
+
     d.logger.WithFields(logrus.Fields{
         "resource":          resourceRef,
         "direction_changes": result.DirectionChanges,
         "severity":         result.Severity,
         "duration_minutes": result.DurationMinutes,
     }).Info("Scale oscillation detected")
-    
+
     return &result, nil
 }
 ```
@@ -254,18 +254,18 @@ Detect alternating resource adjustments and scaling decisions
 ```sql
 -- Resource Thrashing Detection Query
 WITH resource_actions AS (
-    SELECT 
+    SELECT
         rat.id,
         rat.action_timestamp,
         rat.action_type,
         rat.action_parameters,
         rat.effectiveness_score,
         LAG(rat.action_type) OVER (
-            PARTITION BY ah.resource_id 
+            PARTITION BY ah.resource_id
             ORDER BY rat.action_timestamp
         ) as prev_action_type,
         LAG(rat.action_timestamp) OVER (
-            PARTITION BY ah.resource_id 
+            PARTITION BY ah.resource_id
             ORDER BY rat.action_timestamp
         ) as prev_timestamp
     FROM resource_action_traces rat
@@ -276,13 +276,13 @@ WITH resource_actions AS (
     AND rat.action_timestamp > NOW() - INTERVAL '$4 minutes'
 ),
 thrashing_patterns AS (
-    SELECT 
+    SELECT
         action_timestamp,
         action_type,
         prev_action_type,
         effectiveness_score,
         EXTRACT(EPOCH FROM (action_timestamp - prev_timestamp))/60 as time_gap_minutes,
-        CASE 
+        CASE
             WHEN (action_type = 'increase_resources' AND prev_action_type = 'scale_deployment') OR
                  (action_type = 'scale_deployment' AND prev_action_type = 'increase_resources')
             THEN 1 ELSE 0
@@ -292,7 +292,7 @@ thrashing_patterns AS (
     AND action_timestamp - prev_timestamp < INTERVAL '45 minutes'
 ),
 thrashing_analysis AS (
-    SELECT 
+    SELECT
         COUNT(*) FILTER (WHERE is_thrashing_transition = 1) as thrashing_transitions,
         COUNT(*) as total_actions,
         MIN(action_timestamp) as first_action,
@@ -301,14 +301,14 @@ thrashing_analysis AS (
         AVG(time_gap_minutes) as avg_time_gap_minutes
     FROM thrashing_patterns
 )
-SELECT 
+SELECT
     thrashing_transitions,
     total_actions,
     first_action,
     last_action,
     avg_effectiveness,
     avg_time_gap_minutes,
-    CASE 
+    CASE
         WHEN thrashing_transitions >= 3 AND avg_effectiveness < 0.6 THEN 'critical'
         WHEN thrashing_transitions >= 2 AND avg_effectiveness < 0.7 THEN 'high'
         WHEN thrashing_transitions >= 1 AND avg_time_gap_minutes < 15 THEN 'medium'
@@ -350,17 +350,17 @@ func (d *ResourceThrashingDetector) DetectResourceThrashing(ctx context.Context,
     // First get the summary analysis
     summaryQuery := fmt.Sprintf(`
         WITH resource_actions AS (
-            SELECT 
+            SELECT
                 rat.action_timestamp,
                 rat.action_type,
                 rat.action_parameters,
                 rat.effectiveness_score,
                 LAG(rat.action_type) OVER (
-                    PARTITION BY ah.resource_id 
+                    PARTITION BY ah.resource_id
                     ORDER BY rat.action_timestamp
                 ) as prev_action_type,
                 LAG(rat.action_timestamp) OVER (
-                    PARTITION BY ah.resource_id 
+                    PARTITION BY ah.resource_id
                     ORDER BY rat.action_timestamp
                 ) as prev_timestamp
             FROM resource_action_traces rat
@@ -371,13 +371,13 @@ func (d *ResourceThrashingDetector) DetectResourceThrashing(ctx context.Context,
             AND rat.action_timestamp > NOW() - INTERVAL '%d minutes'
         ),
         thrashing_patterns AS (
-            SELECT 
+            SELECT
                 action_timestamp,
                 action_type,
                 prev_action_type,
                 COALESCE(effectiveness_score, 0.0) as effectiveness_score,
                 EXTRACT(EPOCH FROM (action_timestamp - prev_timestamp))/60 as time_gap_minutes,
-                CASE 
+                CASE
                     WHEN (action_type = 'increase_resources' AND prev_action_type = 'scale_deployment') OR
                          (action_type = 'scale_deployment' AND prev_action_type = 'increase_resources')
                     THEN 1 ELSE 0
@@ -387,7 +387,7 @@ func (d *ResourceThrashingDetector) DetectResourceThrashing(ctx context.Context,
             AND action_timestamp - prev_timestamp < INTERVAL '45 minutes'
         ),
         thrashing_analysis AS (
-            SELECT 
+            SELECT
                 COUNT(*) FILTER (WHERE is_thrashing_transition = 1) as thrashing_transitions,
                 COUNT(*) as total_actions,
                 MIN(action_timestamp) as first_action,
@@ -396,14 +396,14 @@ func (d *ResourceThrashingDetector) DetectResourceThrashing(ctx context.Context,
                 AVG(time_gap_minutes) as avg_time_gap_minutes
             FROM thrashing_patterns
         )
-        SELECT 
+        SELECT
             thrashing_transitions,
             total_actions,
             first_action,
             last_action,
             avg_effectiveness,
             avg_time_gap_minutes,
-            CASE 
+            CASE
                 WHEN thrashing_transitions >= 3 AND avg_effectiveness < 0.6 THEN 'critical'
                 WHEN thrashing_transitions >= 2 AND avg_effectiveness < 0.7 THEN 'high'
                 WHEN thrashing_transitions >= 1 AND avg_time_gap_minutes < 15 THEN 'medium'
@@ -411,10 +411,10 @@ func (d *ResourceThrashingDetector) DetectResourceThrashing(ctx context.Context,
             END as severity
         FROM thrashing_analysis
         WHERE thrashing_transitions >= 1`, windowMinutes)
-    
+
     var result ResourceThrashingResult
     var severityStr string
-    
+
     err := d.db.QueryRowContext(ctx, summaryQuery,
         resourceRef.Namespace, resourceRef.Kind, resourceRef.Name).Scan(
         &result.ThrashingTransitions,
@@ -425,16 +425,16 @@ func (d *ResourceThrashingDetector) DetectResourceThrashing(ctx context.Context,
         &result.AvgTimeGapMinutes,
         &severityStr,
     )
-    
+
     if err != nil {
         if err == sql.ErrNoRows {
             return nil, nil // No thrashing detected
         }
         return nil, fmt.Errorf("failed to detect resource thrashing: %w", err)
     }
-    
+
     result.Severity = OscillationSeverity(severityStr)
-    
+
     // Get detailed action pattern if thrashing detected
     if result.ThrashingTransitions > 0 {
         patterns, err := d.getDetailedActionPattern(ctx, resourceRef, windowMinutes)
@@ -444,20 +444,20 @@ func (d *ResourceThrashingDetector) DetectResourceThrashing(ctx context.Context,
             result.ActionPattern = patterns
         }
     }
-    
+
     d.logger.WithFields(logrus.Fields{
         "resource":             resourceRef,
         "thrashing_transitions": result.ThrashingTransitions,
         "severity":            result.Severity,
         "avg_effectiveness":   result.AvgEffectiveness,
     }).Info("Resource thrashing detected")
-    
+
     return &result, nil
 }
 
 func (d *ResourceThrashingDetector) getDetailedActionPattern(ctx context.Context, resourceRef ResourceReference, windowMinutes int) ([]ResourceActionDetail, error) {
     detailQuery := fmt.Sprintf(`
-        SELECT 
+        SELECT
             rat.action_timestamp,
             rat.action_type,
             rat.action_parameters,
@@ -470,19 +470,19 @@ func (d *ResourceThrashingDetector) getDetailedActionPattern(ctx context.Context
         AND rr.namespace = $1 AND rr.kind = $2 AND rr.name = $3
         AND rat.action_timestamp > NOW() - INTERVAL '%d minutes'
         ORDER BY rat.action_timestamp`, windowMinutes)
-    
+
     rows, err := d.db.QueryContext(ctx, detailQuery,
         resourceRef.Namespace, resourceRef.Kind, resourceRef.Name)
     if err != nil {
         return nil, fmt.Errorf("failed to query detailed action pattern: %w", err)
     }
     defer rows.Close()
-    
+
     var patterns []ResourceActionDetail
     for rows.Next() {
         var detail ResourceActionDetail
         var parametersJSON []byte
-        
+
         err := rows.Scan(
             &detail.Timestamp,
             &detail.ActionType,
@@ -493,15 +493,15 @@ func (d *ResourceThrashingDetector) getDetailedActionPattern(ctx context.Context
         if err != nil {
             return nil, fmt.Errorf("failed to scan action detail: %w", err)
         }
-        
+
         if err := json.Unmarshal(parametersJSON, &detail.Parameters); err != nil {
             d.logger.WithError(err).Warn("Failed to unmarshal action parameters")
             detail.Parameters = make(map[string]interface{})
         }
-        
+
         patterns = append(patterns, detail)
     }
-    
+
     return patterns, nil
 }
 ```
@@ -514,7 +514,7 @@ Detect repeated actions with consistently low effectiveness scores
 ```sql
 -- Ineffective Loop Detection Query
 WITH repeated_actions AS (
-    SELECT 
+    SELECT
         rat.action_type,
         COUNT(*) as repetition_count,
         AVG(rat.effectiveness_score) as avg_effectiveness,
@@ -533,7 +533,7 @@ WITH repeated_actions AS (
     GROUP BY rat.action_type
 ),
 ineffective_patterns AS (
-    SELECT 
+    SELECT
         action_type,
         repetition_count,
         avg_effectiveness,
@@ -543,7 +543,7 @@ ineffective_patterns AS (
         span_minutes,
         effectiveness_scores,
         timestamps,
-        CASE 
+        CASE
             WHEN repetition_count >= 5 AND avg_effectiveness < 0.3 THEN 'critical'
             WHEN repetition_count >= 4 AND avg_effectiveness < 0.5 THEN 'high'
             WHEN repetition_count >= 3 AND avg_effectiveness < 0.6 THEN 'medium'
@@ -551,16 +551,16 @@ ineffective_patterns AS (
             ELSE 'none'
         END as severity,
         -- Calculate trend (are things getting worse?)
-        CASE 
+        CASE
             WHEN repetition_count >= 3 THEN
-                (effectiveness_scores[array_length(effectiveness_scores, 1)] - effectiveness_scores[1]) / 
+                (effectiveness_scores[array_length(effectiveness_scores, 1)] - effectiveness_scores[1]) /
                 GREATEST(effectiveness_scores[1], 0.1)
             ELSE 0
         END as effectiveness_trend
     FROM repeated_actions
     WHERE repetition_count >= 2
 )
-SELECT 
+SELECT
     action_type,
     repetition_count,
     avg_effectiveness,
@@ -574,12 +574,12 @@ SELECT
     timestamps
 FROM ineffective_patterns
 WHERE severity != 'none'
-ORDER BY 
-    CASE severity 
-        WHEN 'critical' THEN 1 
-        WHEN 'high' THEN 2 
-        WHEN 'medium' THEN 3 
-        ELSE 4 
+ORDER BY
+    CASE severity
+        WHEN 'critical' THEN 1
+        WHEN 'high' THEN 2
+        WHEN 'medium' THEN 3
+        ELSE 4
     END,
     avg_effectiveness ASC;
 ```
@@ -610,7 +610,7 @@ type IneffectiveLoopResult struct {
 func (d *IneffectiveLoopDetector) DetectIneffectiveLoops(ctx context.Context, resourceRef ResourceReference, windowMinutes int) ([]IneffectiveLoopResult, error) {
     query := fmt.Sprintf(`
         WITH repeated_actions AS (
-            SELECT 
+            SELECT
                 rat.action_type,
                 COUNT(*) as repetition_count,
                 AVG(COALESCE(rat.effectiveness_score, 0.0)) as avg_effectiveness,
@@ -628,7 +628,7 @@ func (d *IneffectiveLoopDetector) DetectIneffectiveLoops(ctx context.Context, re
             GROUP BY rat.action_type
         ),
         ineffective_patterns AS (
-            SELECT 
+            SELECT
                 action_type,
                 repetition_count,
                 avg_effectiveness,
@@ -638,23 +638,23 @@ func (d *IneffectiveLoopDetector) DetectIneffectiveLoops(ctx context.Context, re
                 span_minutes,
                 effectiveness_scores,
                 timestamps,
-                CASE 
+                CASE
                     WHEN repetition_count >= 5 AND avg_effectiveness < 0.3 THEN 'critical'
                     WHEN repetition_count >= 4 AND avg_effectiveness < 0.5 THEN 'high'
                     WHEN repetition_count >= 3 AND avg_effectiveness < 0.6 THEN 'medium'
                     WHEN repetition_count >= 2 AND avg_effectiveness < 0.4 THEN 'low'
                     ELSE 'none'
                 END as severity,
-                CASE 
+                CASE
                     WHEN repetition_count >= 3 THEN
-                        (effectiveness_scores[array_length(effectiveness_scores, 1)] - effectiveness_scores[1]) / 
+                        (effectiveness_scores[array_length(effectiveness_scores, 1)] - effectiveness_scores[1]) /
                         GREATEST(effectiveness_scores[1], 0.1)
                     ELSE 0
                 END as effectiveness_trend
             FROM repeated_actions
             WHERE repetition_count >= 2
         )
-        SELECT 
+        SELECT
             action_type,
             repetition_count,
             avg_effectiveness,
@@ -668,29 +668,29 @@ func (d *IneffectiveLoopDetector) DetectIneffectiveLoops(ctx context.Context, re
             timestamps
         FROM ineffective_patterns
         WHERE severity != 'none'
-        ORDER BY 
-            CASE severity 
-                WHEN 'critical' THEN 1 
-                WHEN 'high' THEN 2 
-                WHEN 'medium' THEN 3 
-                ELSE 4 
+        ORDER BY
+            CASE severity
+                WHEN 'critical' THEN 1
+                WHEN 'high' THEN 2
+                WHEN 'medium' THEN 3
+                ELSE 4
             END,
             avg_effectiveness ASC`, windowMinutes)
-    
+
     rows, err := d.db.QueryContext(ctx, query,
         resourceRef.Namespace, resourceRef.Kind, resourceRef.Name)
     if err != nil {
         return nil, fmt.Errorf("failed to detect ineffective loops: %w", err)
     }
     defer rows.Close()
-    
+
     var results []IneffectiveLoopResult
     for rows.Next() {
         var result IneffectiveLoopResult
         var severityStr string
         var effectivenessScoresArray pq.Float64Array
         var timestampsArray pq.StringArray
-        
+
         err := rows.Scan(
             &result.ActionType,
             &result.RepetitionCount,
@@ -707,10 +707,10 @@ func (d *IneffectiveLoopDetector) DetectIneffectiveLoops(ctx context.Context, re
         if err != nil {
             return nil, fmt.Errorf("failed to scan ineffective loop result: %w", err)
         }
-        
+
         result.Severity = OscillationSeverity(severityStr)
         result.EffectivenessScores = []float64(effectivenessScoresArray)
-        
+
         // Parse timestamps
         result.Timestamps = make([]time.Time, len(timestampsArray))
         for i, timestampStr := range timestampsArray {
@@ -718,9 +718,9 @@ func (d *IneffectiveLoopDetector) DetectIneffectiveLoops(ctx context.Context, re
                 result.Timestamps[i] = timestamp
             }
         }
-        
+
         results = append(results, result)
-        
+
         d.logger.WithFields(logrus.Fields{
             "resource":          resourceRef,
             "action_type":       result.ActionType,
@@ -729,7 +729,7 @@ func (d *IneffectiveLoopDetector) DetectIneffectiveLoops(ctx context.Context, re
             "severity":          result.Severity,
         }).Warn("Ineffective loop detected")
     }
-    
+
     return results, nil
 }
 ```
@@ -742,7 +742,7 @@ Detect when actions trigger more alerts than they resolve
 ```sql
 -- Cascading Failure Detection Query
 WITH action_outcomes AS (
-    SELECT 
+    SELECT
         rat.id,
         rat.action_timestamp,
         rat.action_type,
@@ -774,7 +774,7 @@ WITH action_outcomes AS (
     AND rat.action_timestamp > NOW() - INTERVAL '$4 minutes'
 ),
 cascading_analysis AS (
-    SELECT 
+    SELECT
         action_type,
         COUNT(*) as total_actions,
         AVG(new_alerts_triggered) as avg_new_alerts,
@@ -785,7 +785,7 @@ cascading_analysis AS (
     FROM action_outcomes
     GROUP BY action_type
 )
-SELECT 
+SELECT
     action_type,
     total_actions,
     avg_new_alerts,
@@ -793,7 +793,7 @@ SELECT
     avg_effectiveness,
     actions_causing_cascades,
     max_alerts_triggered,
-    CASE 
+    CASE
         WHEN avg_new_alerts > 2.0 AND recurrence_rate > 0.5 THEN 'critical'
         WHEN avg_new_alerts > 1.5 OR recurrence_rate > 0.7 THEN 'high'
         WHEN avg_new_alerts > 1.0 OR recurrence_rate > 0.4 THEN 'medium'
@@ -828,7 +828,7 @@ type CascadingFailureResult struct {
 func (d *CascadingFailureDetector) DetectCascadingFailures(ctx context.Context, resourceRef ResourceReference, windowMinutes int) ([]CascadingFailureResult, error) {
     query := fmt.Sprintf(`
         WITH action_outcomes AS (
-            SELECT 
+            SELECT
                 rat.id,
                 rat.action_timestamp,
                 rat.action_type,
@@ -858,7 +858,7 @@ func (d *CascadingFailureDetector) DetectCascadingFailures(ctx context.Context, 
             AND rat.action_timestamp > NOW() - INTERVAL '%d minutes'
         ),
         cascading_analysis AS (
-            SELECT 
+            SELECT
                 action_type,
                 COUNT(*) as total_actions,
                 AVG(new_alerts_triggered::float) as avg_new_alerts,
@@ -869,7 +869,7 @@ func (d *CascadingFailureDetector) DetectCascadingFailures(ctx context.Context, 
             FROM action_outcomes
             GROUP BY action_type
         )
-        SELECT 
+        SELECT
             action_type,
             total_actions,
             avg_new_alerts,
@@ -877,7 +877,7 @@ func (d *CascadingFailureDetector) DetectCascadingFailures(ctx context.Context, 
             avg_effectiveness,
             actions_causing_cascades,
             max_alerts_triggered,
-            CASE 
+            CASE
                 WHEN avg_new_alerts > 2.0 AND recurrence_rate > 0.5 THEN 'critical'
                 WHEN avg_new_alerts > 1.5 OR recurrence_rate > 0.7 THEN 'high'
                 WHEN avg_new_alerts > 1.0 OR recurrence_rate > 0.4 THEN 'medium'
@@ -887,19 +887,19 @@ func (d *CascadingFailureDetector) DetectCascadingFailures(ctx context.Context, 
         FROM cascading_analysis
         WHERE actions_causing_cascades > 0
         ORDER BY avg_new_alerts DESC, recurrence_rate DESC`, windowMinutes)
-    
+
     rows, err := d.db.QueryContext(ctx, query,
         resourceRef.Namespace, resourceRef.Kind, resourceRef.Name)
     if err != nil {
         return nil, fmt.Errorf("failed to detect cascading failures: %w", err)
     }
     defer rows.Close()
-    
+
     var results []CascadingFailureResult
     for rows.Next() {
         var result CascadingFailureResult
         var severityStr string
-        
+
         err := rows.Scan(
             &result.ActionType,
             &result.TotalActions,
@@ -913,10 +913,10 @@ func (d *CascadingFailureDetector) DetectCascadingFailures(ctx context.Context, 
         if err != nil {
             return nil, fmt.Errorf("failed to scan cascading failure result: %w", err)
         }
-        
+
         result.Severity = OscillationSeverity(severityStr)
         results = append(results, result)
-        
+
         d.logger.WithFields(logrus.Fields{
             "resource":                 resourceRef,
             "action_type":              result.ActionType,
@@ -926,12 +926,12 @@ func (d *CascadingFailureDetector) DetectCascadingFailures(ctx context.Context, 
             "severity":                result.Severity,
         }).Warn("Cascading failure pattern detected")
     }
-    
+
     return results, nil
 }
 ```
 
-## 🎯 **Unified Oscillation Detection Engine**
+## Unified Oscillation Detection Engine
 
 ### **Main Detection Coordinator**
 
@@ -950,18 +950,18 @@ type OscillationAnalysisResult struct {
     ResourceReference  ResourceReference                `json:"resource_reference"`
     AnalysisTimestamp time.Time                        `json:"analysis_timestamp"`
     WindowMinutes     int                              `json:"window_minutes"`
-    
+
     // Detection results
     ScaleOscillation   *ScaleOscillationResult         `json:"scale_oscillation,omitempty"`
     ResourceThrashing  *ResourceThrashingResult        `json:"resource_thrashing,omitempty"`
     IneffectiveLoops   []IneffectiveLoopResult         `json:"ineffective_loops,omitempty"`
     CascadingFailures  []CascadingFailureResult        `json:"cascading_failures,omitempty"`
-    
+
     // Overall assessment
     OverallSeverity    OscillationSeverity             `json:"overall_severity"`
     RecommendedAction  PreventionAction                `json:"recommended_action"`
     Confidence        float64                          `json:"confidence"`
-    
+
     // Prevention history
     PreviousPrevention *PreventionRecord               `json:"previous_prevention,omitempty"`
 }
@@ -1002,12 +1002,12 @@ func (e *OscillationDetectionEngine) AnalyzeResource(ctx context.Context, resour
         WindowMinutes:     windowMinutes,
         OverallSeverity:   "none",
     }
-    
+
     // Run all detectors in parallel
     var wg sync.WaitGroup
     var mu sync.Mutex
     var detectionErrors []error
-    
+
     // Scale oscillation detection
     wg.Add(1)
     go func() {
@@ -1022,7 +1022,7 @@ func (e *OscillationDetectionEngine) AnalyzeResource(ctx context.Context, resour
             result.OverallSeverity = maxSeverity(result.OverallSeverity, scaleResult.Severity)
         }
     }()
-    
+
     // Resource thrashing detection
     wg.Add(1)
     go func() {
@@ -1037,7 +1037,7 @@ func (e *OscillationDetectionEngine) AnalyzeResource(ctx context.Context, resour
             result.OverallSeverity = maxSeverity(result.OverallSeverity, thrashingResult.Severity)
         }
     }()
-    
+
     // Ineffective loop detection
     wg.Add(1)
     go func() {
@@ -1054,7 +1054,7 @@ func (e *OscillationDetectionEngine) AnalyzeResource(ctx context.Context, resour
             }
         }
     }()
-    
+
     // Cascading failure detection
     wg.Add(1)
     go func() {
@@ -1071,18 +1071,18 @@ func (e *OscillationDetectionEngine) AnalyzeResource(ctx context.Context, resour
             }
         }
     }()
-    
+
     wg.Wait()
-    
+
     // Handle detection errors
     if len(detectionErrors) > 0 {
         e.logger.WithField("errors", detectionErrors).Error("Some oscillation detectors failed")
         // Continue with partial results
     }
-    
+
     // Determine recommended prevention action
     result.RecommendedAction, result.Confidence = e.determinePreventionAction(result)
-    
+
     // Check for previous prevention attempts
     prevPrevention, err := e.getPreviousPrevention(ctx, resourceRef)
     if err != nil {
@@ -1090,12 +1090,12 @@ func (e *OscillationDetectionEngine) AnalyzeResource(ctx context.Context, resour
     } else {
         result.PreviousPrevention = prevPrevention
     }
-    
+
     // Store detection result in database
     if err := e.storeDetectionResult(ctx, result); err != nil {
         e.logger.WithError(err).Error("Failed to store detection result")
     }
-    
+
     return result, nil
 }
 
@@ -1103,35 +1103,35 @@ func (e *OscillationDetectionEngine) determinePreventionAction(result *Oscillati
     // Calculate confidence based on multiple indicators
     confidence := 0.0
     detectionCount := 0
-    
+
     if result.ScaleOscillation != nil {
         detectionCount++
         confidence += float64(severityToScore(result.ScaleOscillation.Severity))
     }
-    
+
     if result.ResourceThrashing != nil {
         detectionCount++
         confidence += float64(severityToScore(result.ResourceThrashing.Severity))
     }
-    
+
     if len(result.IneffectiveLoops) > 0 {
         detectionCount++
         for _, loop := range result.IneffectiveLoops {
             confidence += float64(severityToScore(loop.Severity))
         }
     }
-    
+
     if len(result.CascadingFailures) > 0 {
         detectionCount++
         for _, cascade := range result.CascadingFailures {
             confidence += float64(severityToScore(cascade.Severity))
         }
     }
-    
+
     if detectionCount > 0 {
         confidence = confidence / float64(detectionCount) / 4.0 // Normalize to 0-1
     }
-    
+
     // Determine action based on severity and confidence
     switch result.OverallSeverity {
     case "critical":
@@ -1139,19 +1139,19 @@ func (e *OscillationDetectionEngine) determinePreventionAction(result *Oscillati
             return PreventionBlock, confidence
         }
         return PreventionEscalate, confidence
-        
+
     case "high":
         if confidence > 0.7 {
             return PreventionCoolingPeriod, confidence
         }
         return PreventionAlternative, confidence
-        
+
     case "medium":
         return PreventionAlternative, confidence
-        
+
     case "low":
         return PreventionNone, confidence
-        
+
     default:
         return PreventionNone, 0.0
     }
@@ -1170,7 +1170,7 @@ func severityToScore(severity OscillationSeverity) int {
 func maxSeverity(current, new OscillationSeverity) OscillationSeverity {
     currentScore := severityToScore(current)
     newScore := severityToScore(new)
-    
+
     if newScore > currentScore {
         return new
     }
@@ -1181,25 +1181,25 @@ func (e *OscillationDetectionEngine) storeDetectionResult(ctx context.Context, r
     // Store oscillation detection in database for audit trail and learning
     query := `
         INSERT INTO oscillation_detections (
-            pattern_id, resource_id, detected_at, confidence, action_count, 
-            time_span_minutes, pattern_evidence, prevention_applied, 
+            pattern_id, resource_id, detected_at, confidence, action_count,
+            time_span_minutes, pattern_evidence, prevention_applied,
             prevention_action, prevention_details
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
         )`
-    
+
     // Get resource ID
     resourceID, err := e.getResourceID(ctx, result.ResourceReference)
     if err != nil {
         return fmt.Errorf("failed to get resource ID: %w", err)
     }
-    
+
     // Convert result to JSON for evidence storage
     evidenceJSON, err := json.Marshal(result)
     if err != nil {
         return fmt.Errorf("failed to marshal evidence: %w", err)
     }
-    
+
     actionCount := 0
     if result.ScaleOscillation != nil {
         actionCount += result.ScaleOscillation.DirectionChanges
@@ -1207,7 +1207,7 @@ func (e *OscillationDetectionEngine) storeDetectionResult(ctx context.Context, r
     if result.ResourceThrashing != nil {
         actionCount += result.ResourceThrashing.ThrashingTransitions
     }
-    
+
     _, err = e.db.ExecContext(ctx, query,
         1, // Default pattern ID - in production, this would be dynamic
         resourceID,
@@ -1220,24 +1220,24 @@ func (e *OscillationDetectionEngine) storeDetectionResult(ctx context.Context, r
         string(result.RecommendedAction),
         nil, // prevention_details - would be populated when action is taken
     )
-    
+
     return err
 }
 
 func (e *OscillationDetectionEngine) getResourceID(ctx context.Context, resourceRef ResourceReference) (int64, error) {
     var resourceID int64
     query := `
-        SELECT id FROM resource_references 
+        SELECT id FROM resource_references
         WHERE namespace = $1 AND kind = $2 AND name = $3
         LIMIT 1`
-    
+
     err := e.db.QueryRowContext(ctx, query,
         resourceRef.Namespace, resourceRef.Kind, resourceRef.Name).Scan(&resourceID)
-    
+
     if err == sql.ErrNoRows {
         return 0, fmt.Errorf("resource not found: %+v", resourceRef)
     }
-    
+
     return resourceID, err
 }
 
@@ -1250,33 +1250,33 @@ func (e *OscillationDetectionEngine) getPreviousPrevention(ctx context.Context, 
         AND od.prevention_applied = true
         ORDER BY od.detected_at DESC
         LIMIT 1`
-    
+
     var record PreventionRecord
     var actionStr string
-    
+
     err := e.db.QueryRowContext(ctx, query,
         resourceRef.Namespace, resourceRef.Kind, resourceRef.Name).Scan(
         &record.Timestamp,
         &actionStr,
         &record.Successful,
     )
-    
+
     if err == sql.ErrNoRows {
         return nil, nil // No previous prevention
     }
-    
+
     if err != nil {
         return nil, fmt.Errorf("failed to query previous prevention: %w", err)
     }
-    
+
     record.Action = PreventionAction(actionStr)
     record.EffectiveTime = time.Since(record.Timestamp)
-    
+
     return &record, nil
 }
 ```
 
-## 🛡️ **Prevention Integration**
+## Prevention Integration
 
 ### **MCP Tool for AI Models**
 
@@ -1284,25 +1284,25 @@ func (e *OscillationDetectionEngine) getPreviousPrevention(ctx context.Context, 
 // MCP tool for oscillation checking
 func (server *ActionHistoryMCPServer) ValidateActionSafety(params map[string]interface{}) (interface{}, error) {
     namespace := params["namespace"].(string)
-    resourceName := params["resource_name"].(string) 
+    resourceName := params["resource_name"].(string)
     proposedAction := params["proposed_action"].(string)
     resourceKind := params["resource_kind"].(string)
-    
+
     resourceRef := ResourceReference{
         Namespace: namespace,
         Kind:      resourceKind,
         Name:      resourceName,
     }
-    
+
     // Run oscillation analysis
     analysis, err := server.oscillationEngine.AnalyzeResource(context.Background(), resourceRef, 120) // 2 hour window
     if err != nil {
         return nil, fmt.Errorf("failed to analyze oscillation patterns: %w", err)
     }
-    
+
     // Determine safety
     isSafe := analysis.OverallSeverity == "none" || analysis.OverallSeverity == "low"
-    
+
     response := map[string]interface{}{
         "is_safe": isSafe,
         "severity": string(analysis.OverallSeverity),
@@ -1316,7 +1316,7 @@ func (server *ActionHistoryMCPServer) ValidateActionSafety(params map[string]int
         },
         "reasoning": generateSafetyReasoning(analysis),
     }
-    
+
     if analysis.PreviousPrevention != nil {
         response["previous_prevention"] = map[string]interface{}{
             "action": string(analysis.PreviousPrevention.Action),
@@ -1325,7 +1325,7 @@ func (server *ActionHistoryMCPServer) ValidateActionSafety(params map[string]int
             "time_since": analysis.PreviousPrevention.EffectiveTime.String(),
         }
     }
-    
+
     return response, nil
 }
 
@@ -1333,9 +1333,9 @@ func generateSafetyReasoning(analysis *OscillationAnalysisResult) string {
     if analysis.OverallSeverity == "none" {
         return "No oscillation patterns detected. Action appears safe to proceed."
     }
-    
+
     var reasons []string
-    
+
     if analysis.ScaleOscillation != nil {
         reasons = append(reasons, fmt.Sprintf(
             "Scale oscillation detected: %d direction changes with %.1f%% effectiveness",
@@ -1343,14 +1343,14 @@ func generateSafetyReasoning(analysis *OscillationAnalysisResult) string {
             analysis.ScaleOscillation.AvgEffectiveness*100,
         ))
     }
-    
+
     if analysis.ResourceThrashing != nil {
         reasons = append(reasons, fmt.Sprintf(
             "Resource thrashing detected: %d transitions between resource/scale actions",
             analysis.ResourceThrashing.ThrashingTransitions,
         ))
     }
-    
+
     if len(analysis.IneffectiveLoops) > 0 {
         for _, loop := range analysis.IneffectiveLoops {
             reasons = append(reasons, fmt.Sprintf(
@@ -1359,7 +1359,7 @@ func generateSafetyReasoning(analysis *OscillationAnalysisResult) string {
             ))
         }
     }
-    
+
     if len(analysis.CascadingFailures) > 0 {
         for _, cascade := range analysis.CascadingFailures {
             reasons = append(reasons, fmt.Sprintf(
@@ -1368,22 +1368,22 @@ func generateSafetyReasoning(analysis *OscillationAnalysisResult) string {
             ))
         }
     }
-    
-    return fmt.Sprintf("CAUTION: %s. Recommended action: %s", 
+
+    return fmt.Sprintf("CAUTION: %s. Recommended action: %s",
         strings.Join(reasons, "; "), analysis.RecommendedAction)
 }
 ```
 
-## 🎯 **Next Steps**
+## Next Steps
 
 The oscillation detection algorithms are now complete with:
 
-✅ **Scale Oscillation Detection** - SQL + Go implementation  
-✅ **Resource Thrashing Detection** - Cross-action pattern analysis  
-✅ **Ineffective Loop Detection** - Statistical effectiveness analysis  
-✅ **Cascading Failure Detection** - Multi-alert correlation  
-✅ **Unified Detection Engine** - Parallel analysis with confidence scoring  
-✅ **MCP Integration** - AI model safety validation  
+**Scale Oscillation Detection** - SQL + Go implementation
+**Resource Thrashing Detection** - Cross-action pattern analysis
+**Ineffective Loop Detection** - Statistical effectiveness analysis
+**Cascading Failure Detection** - Multi-alert correlation
+**Unified Detection Engine** - Parallel analysis with confidence scoring
+**MCP Integration** - AI model safety validation
 
 **Ready for implementation** with:
 - Advanced SQL queries optimized for PostgreSQL

@@ -1,0 +1,83 @@
+{
+  "granite3.3:2b": {
+    "model_name": "granite3.3:2b",
+    "test_results": [
+      {
+        "test_case": {
+          "name": "ServiceUnavailable_NetworkIssue",
+          "alert": {
+            "name": "ServiceUnavailable",
+            "status": "firing",
+            "severity": "critical",
+            "description": "Service cannot be reached",
+            "namespace": "production",
+            "resource": "payment-api",
+            "labels": {
+              "alertname": "ServiceUnavailable",
+              "error": "connection_refused",
+              "service": "payment-api"
+            },
+            "annotations": {
+              "description": "Network connectivity issues detected"
+            },
+            "starts_at": "0001-01-01T00:00:00Z"
+          },
+          "expected_action": "restart_pod",
+          "expected_confidence": 0.7,
+          "reasoning": "Network connectivity issues often resolve with restart",
+          "alternative_actions": [
+            "update_network_policy",
+            "restart_network"
+          ],
+          "category": "network"
+        },
+        "recommendation": {
+          "action": "restart_pod",
+          "parameters": {},
+          "confidence": 0.9,
+          "reasoning": {
+            "summary": "The alert indicates a 'connection refused' issue with the payment-api service in the production namespace. This suggests a network problem affecting individual pods rather than the entire deployment or node. Restarting the affected pod(s) is an appropriate initial response to resolve transient connection issues."
+          }
+        },
+        "response_time": 3193033834,
+        "timestamp": "2025-08-29T20:46:04.200954-04:00"
+      }
+    ],
+    "performance": {
+      "response_time": {
+        "mean": 3193033834,
+        "p50": 3193033834,
+        "p95": 3193033834,
+        "p99": 3193033834,
+        "min": 3193033834,
+        "max": 3193033834,
+        "stddev": 0
+      },
+      "throughput": 18.79090642921136,
+      "error_rate": 0,
+      "total_requests": 1,
+      "successful_runs": 1
+    },
+    "reasoning": {
+      "action_accuracy": 1,
+      "confidence_calibration": 0.9,
+      "reasoning_quality": {
+        "relevance": 0,
+        "completeness": 0,
+        "clarity": 0,
+        "technical_depth": 0,
+        "overall": 0
+      },
+      "consistency_score": 0,
+      "alternative_action_match": 0
+    },
+    "summary": {
+      "total_test_cases": 1,
+      "successful_cases": 1,
+      "failed_cases": 0,
+      "average_confidence": 0.9,
+      "overall_rating": "Excellent",
+      "recommendation": ""
+    }
+  }
+}

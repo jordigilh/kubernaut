@@ -1,55 +1,83 @@
 # Prometheus Alerts SLM
 
-An intelligent Kubernetes remediation system that automatically analyzes Prometheus alerts using Small Language Models (SLM) and executes contextually-aware remediation actions on Kubernetes/OpenShift clusters.
+A Kubernetes remediation system that analyzes Prometheus alerts using Small Language Models (SLM) and executes remediation actions on Kubernetes/OpenShift clusters.
 
 ## Overview
 
-This production-ready system bridges the gap between monitoring and automated remediation by leveraging AI to make intelligent decisions about Kubernetes operations. Unlike simple rule-based systems, it uses context-aware analysis to recommend appropriate actions based on alert characteristics, resource state, and historical effectiveness.
+This system processes monitoring alerts and uses language models to recommend appropriate actions based on alert characteristics, resource state, and historical data.
 
 ## Key Features
 
-- 🧠 **AI-Powered Analysis** - Uses IBM Granite models via Ollama for intelligent alert interpretation
-- 🔄 **Automated Remediation** - Executes 25+ different Kubernetes actions based on SLM recommendations
-- 📊 **Oscillation Prevention** - Detection of action loops, thrashing, and cascading failures
-- 🔗 **Production Integration** - AlertManager webhook integration with proper RBAC and security
-- 📈 **Observability** - Metrics, logging, and action history tracking
-- 🗄️ **Persistent Storage** - PostgreSQL-based action history and oscillation detection
-- 🔔 **Notification System** - Pluggable notification architecture (stdout, Slack, email, etc.)
-- 🛡️ **Safety Features** - Dry-run mode, cooldown periods, and confidence thresholds
-- ⚡ **Effectiveness Assessment** - Automated evaluation of action outcomes and continuous learning
-- 🔄 **Hybrid MCP Interface** - Structured JSON + human-readable responses for LLM processing
+- **Alert Analysis** - Uses IBM Granite models via Ollama for alert interpretation
+- **Automated Actions** - Executes Kubernetes remediation actions based on model recommendations
+- **Oscillation Prevention** - Detects and prevents action loops and cascading failures
+- **AlertManager Integration** - Webhook integration with RBAC and security controls
+- **Observability** - Metrics, logging, and action history tracking
+- **Persistent Storage** - PostgreSQL-based action history and pattern detection
+- **Notification System** - Configurable notification channels
+- **Safety Controls** - Dry-run mode, cooldown periods, and confidence thresholds
+- **Effectiveness Tracking** - Evaluation of action outcomes and pattern learning
+- **MCP Interface** - Structured JSON responses for model processing
 
 ## Architecture
 
+The system implements an AI-driven Kubernetes remediation pipeline with dynamic tool calling capabilities, effectiveness assessment, and oscillation prevention mechanisms.
+
+```mermaid
+graph TD
+    A[AlertManager Webhook] --> B[Alert Handler]
+    B --> C[MCP Bridge]
+    C --> D[LocalAI Client]
+    C --> E[Kubernetes Client]
+    C --> F[Action History MCP]
+
+    D --> G[Language Model<br/>granite3.1-dense:8b]
+    G --> H[Tool Execution Request]
+
+    C --> I[Tool Router]
+    I --> J[Kubernetes Tools<br/>get_pods, get_nodes, etc.]
+    I --> K[History Tools<br/>get_similar_actions, etc.]
+
+    J --> E
+    K --> F
+
+    E --> L[K8s API Server]
+    F --> M[PostgreSQL<br/>Action History]
+
+    H --> N[Action Executor]
+    N --> L
+
+    N --> O[Effectiveness Assessor]
+    O --> P[Monitoring Clients<br/>Prometheus/AlertManager]
+    O --> M
+
+    M --> Q[Oscillation Detector]
+    Q --> C
+
+    style C fill:#e1f5fe
+    style G fill:#f3e5f5
+    style N fill:#e8f5e8
+    style O fill:#fff3e0
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌──────────────────┐
-│   AlertManager  │───▶│   Webhook API   │───▶│   SLM Analysis   │
-└─────────────────┘    └─────────────────┘    └──────────────────┘
-                                                        │
-┌─────────────────┐    ┌─────────────────┐    ┌──────────────────┐
-│   Kubernetes    │◀───│  Action Executor│◀───│ Oscillation      │
-│     Cluster     │    │                 │    │ Detection        │
-└─────────────────┘    └─────────────────┘    └──────────────────┘
-                                │                        │
-┌─────────────────┐    ┌─────────────────┐    ┌──────────────────┐
-│  Notifications  │◀───│  Action History │◀───│   PostgreSQL     │
-│     System      │    │   & Metrics     │    │   Database       │
-└─────────────────┘    └─────────────────┘    └──────────────────┘
-                                │                        │
-┌─────────────────┐    ┌─────────────────┐    ┌──────────────────┐
-│ Effectiveness   │◀───│ Hybrid MCP      │◀───│ Structured JSON  │
-│  Assessment     │    │ Action History  │    │ + Human Text     │
-│    Service      │    │    Server       │    │   Responses      │
-└─────────────────┘    └─────────────────┘    └──────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │ External K8s    │
-                       │ MCP Server      │
-                       │ (containers/    │
-                       │ k8s-mcp-server) │
-                       └─────────────────┘
-```
+
+### Key Components
+
+- **MCP Bridge**: Coordinates between the language model and available tools, managing multi-turn conversations and dynamic tool execution
+- **LocalAI Client**: Interfaces with IBM Granite models via LocalAI for alert analysis and action recommendation
+- **Tool Router**: Routes tool execution requests to appropriate handlers (Kubernetes operations, action history queries)
+- **Action Executor**: Executes recommended Kubernetes actions with safety controls and validation
+- **Effectiveness Assessor**: Evaluates action outcomes using monitoring data and updates historical effectiveness scores
+- **Oscillation Detector**: Prevents action loops by analyzing historical patterns and resource thrashing scenarios
+
+### Data Flow
+
+1. **Alert Processing**: AlertManager webhooks trigger alert analysis through the MCP Bridge
+2. **Dynamic Analysis**: Language model requests cluster context via Kubernetes tools and historical data via action history tools
+3. **Decision Making**: Model processes real-time cluster state and historical patterns to recommend actions
+4. **Safe Execution**: Action executor applies recommendations with safety controls and effectiveness tracking
+5. **Learning Loop**: Outcomes feed back into action history for future decision enhancement and oscillation prevention
+
+For comprehensive architectural details, see `docs/ARCHITECTURE.md`.
 
 ## Quick Start
 
@@ -58,316 +86,74 @@ This production-ready system bridges the gap between monitoring and automated re
 - Go 1.23.9+
 - Ollama with IBM Granite model
 - Kubernetes/OpenShift cluster access
-- PostgreSQL database (optional, for action history)
+- PostgreSQL database (for action history)
 
-### 1. Install Dependencies
+### Installation and Setup
 
-```bash
-# Install Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
+Detailed installation instructions, configuration options, and deployment guides are available in `docs/DEPLOYMENT.md`.
 
-# Pull IBM Granite model
-ollama pull granite3.1-dense:8b
-ollama serve
-
-# Optional: Set up PostgreSQL for action history
-./scripts/deploy-postgres.sh
-```
-
-### 2. Build and Test
-
-```bash
-git clone <repository>
-cd prometheus-alerts-slm
-make build
-
-# Test SLM integration
-./bin/test-slm
-
-# Run integration tests
-make test-integration
-```
-
-### 3. Run Application
-
-```bash
-# Development mode (dry-run enabled)
-SLM_PROVIDER="localai" \
-SLM_ENDPOINT="http://localhost:11434" \
-SLM_MODEL="granite3.1-dense:8b" \
-DRY_RUN="true" \
-./bin/prometheus-alerts-slm
-
-# Send test alert
-curl -X POST http://localhost:8080/alerts \
-  -H "Content-Type: application/json" \
-  -d @test/fixtures/sample-alert.json
-```
+Build and test the system using the provided Makefile targets:
+- `make build` - Build application binary
+- `make test` - Run unit tests
+- `make test-integration` - Run integration test suite
 
 ## Available Actions
 
-The system supports 25+ Kubernetes actions across multiple categories:
+The system supports 25+ Kubernetes remediation actions across categories including scaling, resource management, storage operations, security controls, and diagnostic collection.
 
-### Core Actions (9)
-- `scale_deployment` - Scale deployment replicas
-- `restart_pod` - Restart affected pods
-- `increase_resources` - Increase CPU/memory limits
-- `rollback_deployment` - Rollback to previous revision
-- `expand_pvc` - Expand persistent volume claims
-- `drain_node` - Safely drain nodes
-- `quarantine_pod` - Isolate pods with network policies
-- `collect_diagnostics` - Gather diagnostic information
-- `notify_only` - Alert-only mode
-
-### Extended Actions (16)
-- **Storage & Persistence**: `cleanup_storage`, `backup_data`, `compact_storage`
-- **Application Lifecycle**: `cordon_node`, `update_hpa`, `restart_daemonset`
-- **Security & Compliance**: `rotate_secrets`, `audit_logs`
-- **Network & Connectivity**: `update_network_policy`, `restart_network`, `reset_service_mesh`
-- **Database & Stateful**: `failover_database`, `repair_database`, `scale_statefulset`
-- **Monitoring & Observability**: `enable_debug_mode`, `create_heap_dump`
-- **Resource Management**: `optimize_resources`, `migrate_workload`
-
-See [docs/FUTURE_ACTIONS.md](docs/FUTURE_ACTIONS.md) for detailed action descriptions.
+See `docs/API_REFERENCE.md` for complete action specifications.
 
 ## Additional Features
 
 ### Oscillation Detection
-
-The system includes oscillation detection to prevent:
-- **Scale Oscillation** - Repeated up/down scaling
-- **Resource Thrashing** - Switching between scale and resource adjustments
-- **Ineffective Loops** - Repeated actions with low effectiveness
-- **Cascading Failures** - Actions that trigger more alerts
+Prevention of repeated actions, resource thrashing, and cascading failures through pattern analysis.
 
 ### Notification System
-
-Pluggable notification architecture supporting:
-- Console output (default)
-- Slack integration
-- Email notifications
-- Custom webhook notifications
+Configurable notification channels including console output, Slack, email, and webhooks.
 
 ### Action History & Effectiveness Assessment
+PostgreSQL-based action tracking with automated evaluation of remediation outcomes and continuous learning from historical patterns.
 
-Tracking of all actions with automated learning capabilities:
-- PostgreSQL storage with stored procedures for action tracking
-- **Effectiveness Assessment Service** - Automated evaluation of action outcomes
-- **Continuous Learning Loop** - Models learn from action success/failure patterns
-- **Predictive Action Success** - Estimates success probability before execution
-- Correlation analysis and pattern recognition
-- Performance metrics and trend analysis
-
-### Hybrid MCP Action History Interface
-
-Model Context Protocol integration providing dual response formats:
-- **Structured JSON Data** - Machine-readable format for LLM analysis
-- **Human-Readable Text** - Natural language summaries for user display
-- **Dual Format Processing** - Enables threshold-based decisions and numeric comparisons
-- **Pattern Analysis** - Oscillation detection with structured metrics
-- **Programmatic Integration** - Type-safe data structures for automated processing
-
-### External MCP Server Integration
-
-Leverages existing production-ready Kubernetes MCP server:
-- **containers/kubernetes-mcp-server** - Production-ready cluster state access
-- **Multi-Server Architecture** - Custom action history + external cluster queries
-- **OpenShift Compatibility** - Verified support for target platform
-- **Development Time Savings** - 4-5 weeks saved by using existing implementation
-- **Community Maintenance** - External server maintained by containers organization
+### MCP Integration
+Model Context Protocol interface providing structured JSON and human-readable response formats for language model processing and user display.
 
 ## Configuration
 
-### Environment Variables
+Configuration via environment variables or YAML files. Support for SLM provider settings, database connections, Kubernetes access, and application parameters.
 
-```bash
-# SLM Configuration
-export SLM_PROVIDER="localai"
-export SLM_ENDPOINT="http://localhost:11434"
-export SLM_MODEL="granite3.1-dense:8b"
-export SLM_TEMPERATURE="0.3"
-
-# Database Configuration (optional)
-export DATABASE_URL="postgres://user:pass@localhost/slm_db"
-
-# Kubernetes Configuration
-export KUBECONFIG="/path/to/kubeconfig"
-
-# Application Settings
-export DRY_RUN="true"
-export LOG_LEVEL="info"
-export WEBHOOK_PORT="8080"
-export METRICS_PORT="9090"
-```
-
-### Configuration Files
-
-Create `config/app.yaml`:
-
-```yaml
-slm:
-  provider: localai
-  endpoint: http://localhost:11434
-  model: granite3.1-dense:8b
-  temperature: 0.3
-  max_tokens: 16000
-  confidence_threshold: 0.7
-
-kubernetes:
-  # No default namespace - explicitly required per action
-
-actions:
-  dry_run: false
-  max_concurrent: 5
-  cooldown_period: 5m
-  oscillation_detection: true
-
-database:
-  enabled: true
-  connection_string: "postgres://localhost/slm_db"
-
-notifications:
-  default_notifier: "stdout"
-  enabled: true
-```
+See `docs/DEPLOYMENT.md` for detailed configuration options and examples.
 
 ## Documentation
 
-### Core Documentation
-- [Architecture Overview](docs/ARCHITECTURE.md) - System design and components
-- [Testing Framework](docs/TESTING_FRAMEWORK.md) - Ginkgo/Gomega testing approach
-- [Testing Status](docs/testing-status.md) - Current test coverage and gaps
-- [Future Actions](docs/FUTURE_ACTIONS.md) - Action catalog and implementation
-- [Development Roadmap](docs/ROADMAP.md) - Feature roadmap and priorities
+Documentation is organized in the `docs/` directory covering system architecture, deployment guides, testing frameworks, and technical analysis.
 
-### Technical Analysis
-- [Oscillation Detection](docs/OSCILLATION_DETECTION_ALGORITHMS.md) - Algorithm details
-- [Database Design](docs/DATABASE_ACTION_HISTORY_DESIGN.md) - Schema and procedures
-- [MCP Analysis](docs/MCP_ANALYSIS.md) - Model Context Protocol integration
-- [Action History Analysis](docs/ACTION_HISTORY_ANALYSIS.md) - Historical pattern detection
-
-### Model Evaluations
-- [Model Performance Summary](docs/MODEL_EVALUATION_SUMMARY.md) - Model comparison results
-- [Development Summary](docs/poc-development-summary.md) - Complete development chronology
+Key documents:
+- `docs/ARCHITECTURE.md` - System design and components
+- `docs/DEPLOYMENT.md` - Installation and configuration
+- `docs/TESTING.md` - Test framework and coverage
+- `docs/ROADMAP.md` - Development roadmap
 
 ## Testing
 
-### Testing Framework
-The project uses **Ginkgo v2** and **Gomega** exclusively for all testing:
-- BDD-style test specifications with clear organization
-- Rich assertion syntax with detailed failure reporting
-- Zero dependencies on legacy testing frameworks (testify removed)
+The project uses Ginkgo v2 and Gomega for BDD-style testing with unit and integration test suites.
 
-### Unit Tests
-```bash
-make test           # Run all unit tests
-make test-coverage  # Generate coverage report
-```
+Run tests using Makefile targets:
+- `make test` - Unit tests
+- `make test-integration` - Integration tests (requires Ollama and PostgreSQL)
+- `make test-coverage` - Generate coverage reports
 
-**Current Unit Test Coverage:**
-- ✅ metrics (84.2%), webhook (78.2%), config (77.8%), validation (98.7%), errors (97.0%)
-- ⚠️ k8s (46.1%), executor (42.1%), mcp (56.4%), database (20.4%)
-- ❌ processor (0%), slm (0%), notifications (0%), types (0%), cmd packages (0%)
-
-### Integration Tests
-```bash
-# Requires Ollama and PostgreSQL
-go test -tags=integration ./test/integration/ -v
-
-# Skip integration tests
-SKIP_INTEGRATION=true go test ./...
-```
-
-**Integration Test Status:**
-- Tests execute real SLM analysis workflows with Ollama
-- Some tests may fail without proper external dependencies
-- Cleaned up broken tests using undefined types
-
-### Test Coverage Report
-See [Testing Status](docs/testing-status.md) for detailed coverage analysis and recommended testing priorities.
-
-### Model Validation
-```bash
-# Test SLM connectivity and basic functionality
-OLLAMA_MODEL=granite3.1-dense:8b make test-integration
-OLLAMA_MODEL=granite3.1-dense:2b make test-integration
-
-# Run model performance tests
-OLLAMA_MODEL=granite3.1-dense:8b go test -tags=integration ./test/integration/... -ginkgo.focus="Model Performance"
-```
-
-### Test Organization
-- **Unit Tests**: `pkg/*/` - Component-specific tests using Ginkgo/Gomega
-- **Integration Tests**: `test/integration/` - Organized into 8 focused modules:
-  - Storage Actions, Security Actions, Network Actions
-  - Database Actions, Monitoring Actions, Resource Management
-  - Application Lifecycle, Action Validation
-
-See [docs/TESTING_FRAMEWORK.md](docs/TESTING_FRAMEWORK.md) for detailed testing documentation.
+See `docs/TESTING.md` for detailed testing documentation and coverage analysis.
 
 ## Deployment
 
-### Kubernetes
-```bash
-make k8s-deploy     # Deploy with Kustomize
-make k8s-status     # Check deployment status
-make k8s-logs       # View logs
-```
+Kubernetes deployment via Kustomize with RBAC configuration. Requires PostgreSQL database setup and AlertManager webhook configuration.
 
-### Production Checklist
-1. ✅ Configure RBAC permissions
-2. ✅ Set up PostgreSQL database
-3. ✅ Configure AlertManager webhooks
-4. ✅ Enable monitoring and metrics
-5. ✅ Test dry-run mode thoroughly
-6. ✅ Configure notification channels
-7. ✅ Set appropriate cooldown periods
-
-## Performance Metrics
-
-### Integration Test Results
-- **Test Coverage**: 60+ production scenarios
-- **Pass Rate**: 92%+ across all models
-- **Average Confidence**: 88%+
-- **Response Time**: <2s per alert analysis
-
-### Supported Models
-- IBM Granite 3.1 Dense (2B, 8B) ⭐ **Recommended**
-- IBM Granite 3.3 Dense (2B)
-- Gemma2 (2B)
-- Phi3 Mini
-- CodeLlama (7B)
-
-## Security
-
-### Features
-- RBAC-based Kubernetes access
-- Secure webhook authentication
-- Network policy-based quarantine
-- Audit logging for all actions
-- Configurable action restrictions
-
-### Recommended Practices
-- Run in dry-run mode initially
-- Use least-privilege RBAC
-- Enable action history logging
-- Configure cooldown periods
-- Monitor oscillation detection
+See `docs/DEPLOYMENT.md` for detailed deployment instructions and security configuration.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-See [docs/REFACTORING_REPORT.md](docs/REFACTORING_REPORT.md) for development guidelines.
+See development guidelines and contribution process in the `docs/` directory.
 
 ## License
 
 Apache 2.0
-
----
-
-**Note**: This project demonstrates production-ready AI-driven Kubernetes automation. It was developed with architectural guidance and testing to ensure reliability in production environments.
