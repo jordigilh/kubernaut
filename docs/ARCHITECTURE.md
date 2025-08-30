@@ -1,8 +1,8 @@
 # Prometheus Alerts SLM - Architecture Document
 
-## Executive Summary
+## Overview
 
-The **Prometheus Alerts SLM** is a proof-of-concept application that integrates Prometheus monitoring alerts with IBM Granite Small Language Models (SLM) to provide intelligent, automated remediation actions for Kubernetes/OpenShift clusters. The system receives AlertManager webhooks, analyzes alerts using Granite models via Ollama, and executes recommended actions through Kubernetes APIs.
+The Prometheus Alerts SLM integrates Prometheus monitoring alerts with IBM Granite Small Language Models (SLM) to provide automated remediation actions for Kubernetes/OpenShift clusters. The system receives AlertManager webhooks, analyzes alerts using Granite models via Ollama, and executes recommended actions through Kubernetes APIs.
 
 ## Table of Contents
 
@@ -20,15 +20,17 @@ The **Prometheus Alerts SLM** is a proof-of-concept application that integrates 
 ## System Overview
 
 ### Purpose
-Automate Kubernetes/OpenShift cluster remediation by leveraging AI-powered analysis of Prometheus alerts to recommend and execute appropriate actions.
+Automate Kubernetes/OpenShift cluster remediation through analysis of Prometheus alerts to recommend and execute appropriate actions.
 
 ### Key Features
-- 🔗 **AlertManager Integration** - Receives and processes Prometheus webhook alerts
-- 🧠 **AI-Powered Analysis** - Uses IBM Granite 3.1 Dense 8B model for intelligent alert analysis
-- ⚡ **Automated Actions** - Executes scaling, restart, and resource adjustment operations
-- 🚀 **Production Ready** - No mock dependencies, full LocalAI/Ollama integration
-- 📊 **Observability** - Logging and Prometheus metrics
-- 🔒 **Security** - RBAC integration and secure webhook authentication
+- **AlertManager Integration** - Receives and processes Prometheus webhook alerts
+- **MCP Bridge Architecture** - Central orchestration with dynamic tool calling
+- **Language Model Analysis** - Uses IBM Granite 3.1 Dense 8B model via LocalAI
+- **Dynamic Tool Execution** - Real-time Kubernetes and history context gathering
+- **Automated Actions** - 25+ Kubernetes remediation actions with safety controls
+- **Oscillation Prevention** - SQL-based pattern detection and action loop prevention
+- **Effectiveness Assessment** - Framework for monitoring-based outcome evaluation
+- **Observability** - Comprehensive logging and Prometheus metrics
 
 ### High-Level Architecture
 
@@ -41,35 +43,37 @@ Automate Kubernetes/OpenShift cluster remediation by leveraging AI-powered analy
 └─────────────────┘    └──────────────────┘    └───────────────────┘
                                                          │
                                                          ▼
-┌─────────────────┐    ┌──────────────────┐    ┌───────────────────┐
-│ Action Executor │    │   SLM Engine     │    │  Alert Processor  │
-│                 │◀───│                  │◀───│                   │
-│ - Scaling       │    │ - Granite Model  │    │ - Filtering       │
-│ - Restarts      │    │ - Ollama API     │    │ - Conversion      │
-│ - Resources     │    │ - Prompt Engine  │    │ - Validation      │
-│ - Effectiveness │    │ - MCP Interface  │    │ - History Context │
-└─────────────────┘    └──────────────────┘    └───────────────────┘
+┌─────────────────┐                           ┌───────────────────┐
+│ Action Executor │                           │  Alert Processor  │
+│                 │                           │                   │
+│ - Scaling       │◀──────────────────────────│ - Filtering       │
+│ - Restarts      │                           │ - Conversion      │
+│ - Resources     │                           │ - Validation      │
+│ - Safety Check  │                           │ - History Context │
+└─────────────────┘                           └───────────────────┘
+         │                                             │
+         ▼                                             ▼
+┌─────────────────┐                           ┌───────────────────┐
+│ Kubernetes API  │    ┌──────────────────┐   │    MCP Bridge     │
+│                 │    │   PostgreSQL     │   │                   │
+│ - Deployments   │    │                  │   │ - Tool Router     │
+│ - Pods          │    │ - Action History │   │ - LocalAI Client  │
+│ - Resources     │    │ - Pattern Store  │   │ - K8s Tools       │
+│ - Events        │    │ - Effectiveness  │   │ - History Tools   │
+└─────────────────┘    └──────────────────┘   │ - Multi-turn Conv │
+         ▲                       ▲             └───────────────────┘
          │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌──────────────────┐    ┌───────────────────┐
-│ External K8s    │    │ Hybrid MCP       │    │ Effectiveness     │
-│ MCP Server      │    │ Action History   │    │ Assessment        │
-│                 │    │                  │    │                   │
-│ - Pod Status    │    │ - JSON + Text    │    │ - Outcome Eval    │
-│ - Node Capacity │    │ - Structured     │    │ - Learning Loop   │
-│ - Resource Data │    │ - Pattern Data   │    │ - Success Predict │
-│ (containers/    │    │ (Our Custom)     │    │                   │
-│ k8s-mcp-server) │    └──────────────────┘    └───────────────────┘
-└─────────────────┘             │                       │
-         │                      ▼                       ▼
-         ▼              ┌──────────────────┐    ┌──────────────────┐
-┌─────────────────┐     │   PostgreSQL     │    │ Kubernetes API   │
-│ Kubernetes API  │     │                  │    │                  │
-│                 │     │ - Action History │    │ - Deployments    │
-│ - Deployments   │     │ - Pattern Store  │    │ - Pods           │
-│ - Pods          │     │ - Effectiveness  │    │ - Resources      │
-│ - Resources     │     └──────────────────┘    └──────────────────┘
-└─────────────────┘
+         └───────────────────────┴───────────────────────┘
+                                 │
+                                 ▼
+                        ┌──────────────────┐
+                        │ Effectiveness    │
+                        │ Assessment       │
+                        │                  │
+                        │ - Framework      │
+                        │ - Stub Clients   │
+                        │ - Pattern Learn  │
+                        └──────────────────┘
 ```
 
 ## Architecture Design
@@ -93,15 +97,23 @@ prometheus-alerts-slm/
 ├── pkg/                           # Public packages
 │   ├── webhook/                   # HTTP webhook handler
 │   ├── processor/                 # Alert processing logic
-│   ├── slm/                       # SLM integration
+│   ├── slm/                       # SLM integration + MCP Bridge
 │   ├── executor/                  # Action execution
-│   └── mcp/                       # Kubernetes client
+│   ├── k8s/                       # Kubernetes client (unified)
+│   ├── effectiveness/             # Effectiveness assessment
+│   ├── monitoring/                # Monitoring interfaces + stubs
+│   └── types/                     # Core type definitions
 ├── internal/                      # Private packages
 │   ├── config/                    # Configuration management
-│   └── metrics/                   # Prometheus metrics
+│   ├── metrics/                   # Prometheus metrics
+│   ├── actionhistory/             # Action history repository
+│   └── mcp/                       # Action History MCP server
 ├── test/                          # Test infrastructure
 │   ├── fixtures/                  # Test data
 │   ├── integration/               # Integration tests
+│   │   ├── shared/                # Shared test utilities
+│   │   ├── infrastructure/        # Infrastructure tests
+│   │   └── model_comparison/      # Model evaluation tests
 │   ├── e2e/                       # End-to-end tests
 │   └── manifests/                 # Test deployments
 └── deploy/                        # Deployment manifests
@@ -167,15 +179,16 @@ func (p *processor) ProcessAlert(ctx context.Context, alert Alert) error {
 }
 ```
 
-### 3. SLM Integration (`pkg/slm`)
+### 3. SLM Integration & MCP Bridge (`pkg/slm`)
 
-**Purpose**: Interfaces with IBM Granite models via Ollama for intelligent alert analysis
+**Purpose**: Central orchestration for IBM Granite model interactions with dynamic tool calling
 
 **Key Components**:
-- `Client` interface - SLM interaction contract
-- `Alert` - SLM input format
-- `ActionRecommendation` - SLM output format
-- `LocalAIRequest/Response` - Ollama API structures
+- `Client` interface - Traditional SLM interaction contract
+- `MCPBridge` struct - Core orchestration component for tool-based interactions
+- `LocalAIClient` - HTTP client for LocalAI/Ollama integration
+- `ActionHistoryMCPServer` - Internal action history service
+- `extractJSONFromResponse` - Robust JSON parsing from mixed model responses
 
 **Model Configuration**:
 ```yaml
@@ -274,25 +287,36 @@ Respond with valid JSON in this exact format:
 - **Concurrency Limits**: Control parallel executions
 - **Audit Logging**: Track all actions for compliance
 
-### 5. MCP Client (`pkg/mcp`)
+### 5. Kubernetes Client (`pkg/k8s`)
 
-**Purpose**: Kubernetes API client implementing Model Context Protocol patterns
+**Purpose**: Unified Kubernetes API client with comprehensive resource management
 
 **Key Components**:
-- `Client` interface - Kubernetes operations contract
-- Connection management and authentication
-- Resource manipulation methods
+- `Client` interface (BasicClient) - Kubernetes operations contract
+- `UnifiedClient` struct - Concrete implementation with client-go integration
+- Connection management with in-cluster and kubeconfig support
+- Resource manipulation and query methods
 
 **Supported Operations**:
 ```go
 type Client interface {
+    // Deployment operations
     GetDeployment(ctx context.Context, namespace, name string) (*appsv1.Deployment, error)
     ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) error
+
+    // Pod operations
     GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error)
+    ListPods(ctx context.Context, namespace string, options metav1.ListOptions) (*corev1.PodList, error)
     DeletePod(ctx context.Context, namespace, name string) error
-    UpdatePodResources(ctx context.Context, namespace, name string, resources corev1.ResourceRequirements) error
-    ListPodsWithLabel(ctx context.Context, namespace, labelSelector string) (*corev1.PodList, error)
+
+    // Node and cluster operations
+    ListNodes(ctx context.Context) (*corev1.NodeList, error)
+    GetEvents(ctx context.Context, namespace string) (*corev1.EventList, error)
+    GetResourceQuotas(ctx context.Context, namespace string) (*corev1.ResourceQuotaList, error)
+
+    // Health and connectivity
     IsHealthy() bool
+    AuditLogs(ctx context.Context, options AuditLogOptions) ([]byte, error)
 }
 ```
 
@@ -322,43 +346,57 @@ type Config struct {
 
 ### 7. Effectiveness Assessment Service (`pkg/effectiveness`)
 
-**Purpose**: Automated evaluation of action outcomes and continuous learning system
+**Purpose**: Framework for evaluating action outcomes (currently using stub monitoring clients)
+
+**Current Implementation Status**: Framework complete, monitoring integrations pending
 
 **Key Components**:
-- `EffectivenessAssessor` interface - Action outcome evaluation contract
-- `AssessmentService` - Automated effectiveness scoring and analysis
-- `LearningEngine` - Pattern recognition and success prediction
+- `Assessor` struct - Core effectiveness evaluation service
+- `EffectivenessFactors` - Multi-factor assessment calculation
+- **Stub Monitoring Clients** - Simple heuristics pending real integrations
 
 **Core Assessment Logic**:
 ```go
-type EffectivenessAssessor interface {
-    AssessAction(ctx context.Context, trace *actionhistory.ResourceActionTrace) (*EffectivenessResult, error)
-    PredictSuccess(ctx context.Context, action *types.ActionRecommendation, resource actionhistory.ResourceReference) (float64, error)
-    AnalyzePatterns(ctx context.Context, traces []actionhistory.ResourceActionTrace) (*PatternAnalysis, error)
+type Assessor struct {
+    repo               actionhistory.Repository
+    alertClient        monitoring.AlertClient        // Currently: StubAlertClient
+    metricsClient      monitoring.MetricsClient      // Currently: StubMetricsClient
+    sideEffectDetector monitoring.SideEffectDetector // Currently: StubSideEffectDetector
+    log                *logrus.Logger
 }
 
-type EffectivenessResult struct {
-    Score         float64                `json:"score"`          // 0.0-1.0 effectiveness
-    Confidence    float64                `json:"confidence"`     // Assessment confidence
-    Factors       map[string]float64     `json:"factors"`        // Contributing factors
-    Reasoning     string                 `json:"reasoning"`      // AI-generated explanation
-    Improvements  []string               `json:"improvements"`   // Suggested optimizations
+type EffectivenessFactors struct {
+    AlertResolved       bool    `json:"alert_resolved"`
+    AlertRecurred       bool    `json:"alert_recurred"`
+    MetricsImproved     bool    `json:"metrics_improved"`
+    SideEffectsDetected bool    `json:"side_effects_detected"`
+    ResourceStabilized  bool    `json:"resource_stabilized"`
+    EffectivenessScore  float64 `json:"effectiveness_score"`
+    AssessmentNotes     string  `json:"assessment_notes"`
 }
 ```
 
-**Assessment Criteria**:
-- **Problem Resolution** - Did the action solve the original alert?
-- **Side Effects** - Were new problems introduced?
-- **Resource Efficiency** - Cost/performance impact analysis
-- **Time to Resolution** - Speed of problem resolution
-- **Stability Impact** - Effect on system stability
+**Assessment Implementation Status**:
+- **✅ Framework**: Complete scoring algorithms and database integration
+- **⚠️ Monitoring Integration**: Using stub clients with simple heuristics
+- **❌ Production Ready**: Requires real Prometheus/AlertManager integration
 
-### 8. Hybrid MCP Action History Server (`internal/mcp`)
+**Pending Integrations** (See Roadmap 1.2):
+- **AlertManager API client** for real alert resolution checking
+- **Prometheus metrics client** for actual improvement validation
+- **Side effect monitoring** with cluster event correlation
 
-**Purpose**: Model Context Protocol server providing both structured data and human-readable responses
+### 8. Action History MCP Server (`internal/mcp`)
 
-**Implementation**: Dual response format for LLM processing
+**Purpose**: Internal MCP server providing action history data with both structured and human-readable responses
+
+**Implementation**: Integrated server accessed through MCP Bridge
 ```go
+type ActionHistoryMCPServer struct {
+    repository actionhistory.Repository
+    logger     *logrus.Logger
+}
+
 type MCPToolResponse struct {
     Content []MCPContent `json:"content"`
 }
@@ -407,56 +445,45 @@ type SafetyCheckResponse struct {
 - **Nested Property Access** - `scale_oscillation.direction_changes`
 - **Human Explanation** - Natural language for user communication
 
-### 9. External Kubernetes MCP Server Integration
+### 9. MCP Bridge Architecture
 
-**Purpose**: Leverage existing production-ready Kubernetes MCP server for real-time cluster state queries
+**Purpose**: Central orchestration component that coordinates between language models and available tools
 
-**Implementation**: **containers/kubernetes-mcp-server** (External Service)
-```yaml
-# Deployment Integration
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: prometheus-alerts-slm
-    image: prometheus-alerts-slm:latest
-  - name: k8s-mcp-server
-    image: ghcr.io/containers/kubernetes-mcp-server:latest
-  - name: action-history-mcp
-    image: prometheus-alerts-slm-mcp:latest
-```
-
-**Key Integration Points**:
-- **Multi-Server MCP Client**: Extended to connect to multiple MCP servers
-- **External Communication**: HTTP/gRPC connections to external MCP server
-- **Tool Discovery**: Dynamic discovery of available tools from external server
-- **Error Handling**: Graceful fallback when external server unavailable
-
-**Available Capabilities** (from containers/kubernetes-mcp-server):
+**Implementation**: Core component managing dynamic tool calling and multi-turn conversations
 ```go
-type ExternalMCPCapabilities struct {
-    PodOperations       []string  // get, list, describe, logs
-    NodeOperations      []string  // get, list, describe
-    DeploymentOps       []string  // get, list, scale, rollback
-    ServiceOperations   []string  // get, list, endpoints
-    ConfigMapOps        []string  // get, list, data access
-    SecretOperations    []string  // get, list (secure access)
-    EventQueries        []string  // recent events, filtering
-    ResourceQuotaOps    []string  // usage, limits, availability
-    HPAOperations       []string  // current metrics, scaling status
-    NamespaceOps        []string  // list, resource usage
-    HelmOperations      []string  // chart status, releases
-    OpenShiftSupport    bool      // native OpenShift compatibility
+type MCPBridge struct {
+    localAIClient       LocalAIClientInterface
+    actionHistoryServer ActionHistoryMCPServerInterface
+    k8sClient           k8s.Client
+    logger              *logrus.Logger
+    config              MCPBridgeConfig
 }
 ```
 
-**Benefits of External Server Approach**:
-- **Development Time Savings**: 4-5 weeks of implementation time saved
-- **Production Readiness**: Battle-tested, community-maintained implementation
-- **Security Hardening**: Pre-implemented RBAC and security controls
-- **OpenShift Compatibility**: Verified compatibility with our target platform
-- **Feature Completeness**: More tools than originally planned
-- **Maintenance**: Community support and regular updates
+**Key Capabilities**:
+- **Tool Router**: Routes tool execution requests to appropriate handlers
+- **Multi-turn Conversations**: Manages context across multiple model interactions
+- **Dynamic Tool Execution**: Real-time cluster state and history queries
+- **JSON Response Parsing**: Robust parsing of LocalAI model responses
+- **Error Handling**: Graceful degradation with comprehensive fallback mechanisms
+
+**Available Tool Categories**:
+```go
+type ToolCategories struct {
+    KubernetesTools     []string  // get_pods, get_nodes, get_events, get_deployments
+    HistoryTools        []string  // get_action_history, check_oscillation, get_similar_actions
+    SafetyTools         []string  // check_action_safety, validate_resource_state
+    AnalysisTools       []string  // analyze_resource_patterns, assess_cluster_health
+}
+```
+
+**Architecture Benefits**:
+- **Single Container Deployment**: Simplified deployment and management
+- **Direct K8s Integration**: No external dependencies for cluster operations
+- **Integrated Action History**: Built-in MCP server for historical data
+- **Performance Optimization**: Local tool execution without network overhead
+- **Security**: No external service communication required
+- **Maintainability**: Single codebase for all MCP functionality
 
 ## Data Flow
 
@@ -468,23 +495,35 @@ sequenceDiagram
     participant AM as AlertManager
     participant WH as Webhook Handler
     participant AP as Alert Processor
-    participant SLM as SLM Engine
-    participant EX as Executor
+    participant MB as MCP Bridge
+    participant LA as LocalAI Client
+    participant TR as Tool Router
     participant K8s as Kubernetes API
+    participant AH as Action History
+    participant EX as Executor
 
     P->>AM: Fire Alert
     AM->>WH: HTTP POST /alerts
     WH->>WH: Authenticate & Validate
     WH->>AP: ProcessAlert()
     AP->>AP: Filter & Convert
-    AP->>SLM: AnalyzeAlert()
-    SLM->>SLM: Generate Prompt
-    SLM->>SLM: Call Granite Model
-    SLM->>AP: ActionRecommendation
+    AP->>MB: AnalyzeAlertWithDynamicMCP()
+    MB->>LA: ChatCompletion (Initial Analysis)
+    LA->>MB: Tool Execution Request
+    MB->>TR: Route Tool Request
+    TR->>K8s: Execute K8s Tools (get_pods, get_nodes)
+    TR->>AH: Execute History Tools (get_similar_actions)
+    K8s->>TR: Cluster State Data
+    AH->>TR: Historical Context
+    TR->>MB: Tool Results
+    MB->>LA: ChatCompletion (With Context)
+    LA->>MB: Action Recommendation
+    MB->>AP: ActionRecommendation
     AP->>EX: Execute()
-    EX->>EX: Check Cooldown
+    EX->>EX: Check Safety & Cooldown
     EX->>K8s: Perform Action
     K8s->>EX: Result
+    EX->>AH: Store Action Trace
     EX->>AP: ExecutionResult
     AP->>WH: ProcessResult
     WH->>AM: HTTP 200 OK
@@ -700,7 +739,7 @@ make setup-kind
 # Unit tests (all packages) with Ginkgo
 go test ./...
 
-# Integration tests with Ollama using Ginkgo
+# Integration tests with MCP Bridge and Ollama
 make test-integration
 
 # Run specific action category tests
@@ -711,20 +750,23 @@ go test -tags=integration -ginkgo.focus="Security and Compliance Actions" ./test
 OLLAMA_ENDPOINT=http://localhost:11434 OLLAMA_MODEL=granite3.1-dense:8b \
 go test -v -tags=integration ./test/integration/...
 
+# MCP Bridge specific tests
+go test -v ./pkg/slm/mcp_bridge_test.go
+
+# Model comparison tests
+make model-comparison-demo
+
 # Quick integration tests (skip slow scenarios)
 SKIP_SLOW_TESTS=true make test-integration
 
 # Validate integration test environment
 make validate-integration
 
-# Database integration tests with MCP context
+# Database integration tests with action history
 make test-database-integration
 
 # E2E tests with KinD (in development)
 # make test-e2e-kind
-
-# Monitoring stack E2E (in development)
-# make test-e2e-monitoring
 
 # Coverage report with Ginkgo
 make test-coverage
@@ -732,7 +774,7 @@ make test-coverage
 
 ## Deployment Options
 
-### 1. Kubernetes Native with External MCP Server
+### 1. Kubernetes Native Deployment
 
 ```yaml
 # deploy/manifests/deployment.yaml
@@ -751,32 +793,35 @@ spec:
       containers:
       - name: prometheus-alerts-slm
         image: quay.io/jordigilh/prometheus-alerts-slm:latest
+        ports:
+        - containerPort: 8080
+          name: webhook
+        - containerPort: 8090
+          name: metrics
         env:
         - name: SLM_PROVIDER
           value: "localai"
         - name: SLM_ENDPOINT
           value: "http://ollama-service:11434"
-        - name: MCP_K8S_SERVER
-          value: "http://localhost:8080"
-      - name: k8s-mcp-server
-        image: ghcr.io/containers/kubernetes-mcp-server:latest
-        ports:
-        - containerPort: 8080
-        env:
-        - name: MCP_PORT
-          value: "8080"
-        - name: KUBECONFIG
-          value: "/var/run/secrets/kubernetes.io/serviceaccount"
-      - name: action-history-mcp
-        image: quay.io/jordigilh/prometheus-alerts-slm-mcp:latest
-        ports:
-        - containerPort: 8081
-        env:
+        - name: SLM_MODEL
+          value: "granite3.1-dense:8b"
         - name: DATABASE_HOST
           valueFrom:
             secretKeyRef:
               name: database-secret
               key: host
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-secret
+              key: password
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
 ```
 
 ### 2. OpenShift Deployment
@@ -788,6 +833,23 @@ kind: DeploymentConfig
 metadata:
   name: prometheus-alerts-slm
 spec:
+  replicas: 2
+  selector:
+    app: prometheus-alerts-slm
+  template:
+    spec:
+      serviceAccountName: prometheus-alerts-slm
+      containers:
+      - name: prometheus-alerts-slm
+        image: prometheus-alerts-slm:latest
+        ports:
+        - containerPort: 8080
+          name: webhook
+        env:
+        - name: SLM_PROVIDER
+          value: "localai"
+        - name: SLM_MODEL
+          value: "granite3.1-dense:8b"
   triggers:
   - type: ImageChange
     imageChangeParams:
@@ -829,12 +891,19 @@ export SLM_PROVIDER="localai"
 export SLM_ENDPOINT="http://localhost:11434"
 export SLM_MODEL="granite3.1-dense:8b"
 export DRY_RUN="true"
+export DATABASE_URL="postgres://localhost:5432/prometheus_alerts_slm"
 
-# Start Ollama
+# Start dependencies
 ollama serve &
 ollama pull granite3.1-dense:8b
 
-# Run application
+# Start PostgreSQL (for action history)
+podman run --name postgres-test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=prometheus_alerts_slm -p 5432:5432 -d postgres:15
+
+# Run database migrations
+make migrate-up
+
+# Run application with MCP Bridge
 make build && ./bin/prometheus-alerts-slm
 ```
 
@@ -889,75 +958,85 @@ k8s_actions_total{type, result}
 
 ### Short Term (3-6 months)
 
-1. **Enhanced SLM Integration**:
-   - Support for multiple SLM providers
-   - Model A/B testing capabilities
-   - Response quality metrics
+1. **Monitoring Integrations** (Roadmap 1.2):
+   - Real Prometheus/AlertManager API clients
+   - Production effectiveness assessment
+   - Side effect detection with cluster events
 
-2. **Extended Actions**:
-   - Custom script execution
-   - Multi-step workflows
-   - Rollback capabilities
+2. **Prometheus Metrics MCP Server** (Roadmap 1.5):
+   - Real-time metrics context for AI decisions
+   - Historical trend analysis capabilities
+   - Performance correlation identification
 
-3. **Improved Observability**:
-   - Distributed tracing
-   - Enhanced dashboards
-   - Alert correlation
+3. **Extended Model Evaluation** (Roadmap 1.1):
+   - Additional model comparisons (Phi-2, Gemma, Qwen2)
+   - Metrics-enhanced model comparison framework
+   - Production model recommendations
 
 ### Medium Term (6-12 months)
 
-1. **InstructLab Integration**:
-   - Custom model training
-   - Domain-specific fine-tuning
-   - Performance optimization
+1. **Vector Database & RAG Enhancement** (Roadmap 2.4-2.5):
+   - Hybrid PostgreSQL + Vector database architecture
+   - Retrieval-Augmented Generation for historical context
+   - Semantic action search and pattern recognition
 
-2. **Machine Learning Pipeline**:
-   - Automated model retraining
-   - Performance feedback loops
-   - Anomaly detection
+2. **Production Safety & Reliability** (Roadmap 2.1-2.3):
+   - Circuit breakers and rate limiting
+   - Chaos engineering with Litmus framework
+   - Enhanced observability with Grafana dashboards
 
-3. **Enterprise Features**:
-   - Multi-tenancy support
-   - Enhanced RBAC
-   - Compliance reporting
+3. **Multi-Instance Scaling** (Roadmap 1.4):
+   - Load balancing across model instances
+   - Intelligent routing strategies
+   - Performance optimization under load
 
 ### Long Term (12+ months)
 
-1. **AI-Powered Operations**:
-   - Predictive alerting
-   - Capacity planning
-   - Automated SLO optimization
+1. **Enterprise Features** (Roadmap 4.0):
+   - Cost Management MCP Server with multi-cloud billing integration
+   - Security Intelligence MCP Server with CVE analysis
+   - High-risk actions with approval workflows
 
-2. **Platform Integration**:
-   - GitOps workflows
-   - CI/CD integration
-   - Policy-as-code
+2. **AI/ML Enhancement Pipeline** (Roadmap 4.2):
+   - Model fine-tuning based on operational feedback
+   - Automated pattern learning and effectiveness prediction
+   - Custom prompt generation from learned behaviors
 
-3. **Extended Analytics**:
-   - Alert pattern analysis
-   - Cost optimization
-   - Performance insights
+3. **Advanced Capabilities**:
+   - Intelligent model routing based on scenario complexity
+   - Future actions implementation (25+ additional actions)
+   - Multi-tenant governance and policy enforcement
 
-## Conclusion
+## Summary
 
-The Prometheus Alerts SLM proof-of-concept demonstrates the potential for AI-powered automated operations in Kubernetes environments. By combining proven monitoring tools (Prometheus/AlertManager) with language models (IBM Granite), the system provides intelligent, context-aware remediation capabilities.
+The Prometheus Alerts SLM integrates monitoring tools (Prometheus/AlertManager) with language models (IBM Granite) through a central MCP Bridge architecture to provide automated remediation capabilities in Kubernetes environments.
 
-The architecture emphasizes modularity, security, and observability while maintaining the flexibility to evolve with advancing AI capabilities. The testing infrastructure ensures reliability and enables confident deployment in production environments.
+The system uses dynamic tool calling to gather real-time cluster context and historical patterns, enabling data-driven AI decisions with oscillation prevention and effectiveness assessment.
 
-### Integration with External MCP Servers
+Key architectural advantages:
+- **MCP Bridge Orchestration**: Central coordination of model interactions with available tools
+- **Integrated Tool Providers**: Direct Kubernetes API and action history integration
+- **Single Container Deployment**: Simplified operations with no external service dependencies
+- **Comprehensive Safety**: Oscillation detection, cooldown periods, and safety validations
+- **Effectiveness Framework**: Monitoring-based assessment of action outcomes (pending real integrations)
 
-A key architectural decision was to leverage the existing **containers/kubernetes-mcp-server** instead of implementing a custom Kubernetes MCP server. This approach provides:
+The testing infrastructure supports production deployment with comprehensive unit, integration, and model comparison capabilities.
 
-- **Accelerated Development**: 4-5 weeks of development time saved
-- **Production Readiness**: Mature, community-maintained implementation
-- **OpenShift Compatibility**: Verified support for our target platform
-- **Enhanced Security**: Pre-implemented RBAC and security controls
-- **Extended Capabilities**: More functionality than originally planned
+### MCP Bridge Integration Architecture
 
-The hybrid approach of using both custom MCP servers (for action history and effectiveness assessment) and external MCP servers (for cluster state queries) demonstrates how modular architecture enables leveraging existing solutions while maintaining innovation in core differentiating features.
+The system implements an integrated **MCP Bridge** approach rather than using external MCP servers. This design provides:
 
-This foundation provides a solid platform for exploring the future of AI-powered infrastructure operations, with clear paths for enhancement and integration into existing operational workflows.
+- **Simplified Deployment**: Single container with all MCP functionality integrated
+- **Direct K8s Integration**: No network overhead for cluster state queries
+- **Consistent Error Handling**: Unified error handling and retry logic
+- **Performance Optimization**: Local tool execution without external service dependencies
+- **Security**: No external service communication or additional attack vectors
+- **Maintainability**: Single codebase for all MCP tools and orchestration
+
+The architecture combines the MCP Bridge orchestration with integrated tool providers (Kubernetes client and Action History server), demonstrating efficient resource utilization and simplified operational complexity.
+
+The system provides a foundation for automated infrastructure operations with paths for enhancement and integration into operational workflows.
 
 ---
 
-*This architecture document reflects the current implementation as of August 2025. For the latest updates and implementation details, refer to the project repository and WARP.md guidance document.*
+*Architecture documentation updated August 2025. See project repository for implementation details.*

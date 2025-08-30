@@ -240,6 +240,41 @@ test-health: ## Test health endpoints
 test-metrics: ## Test metrics endpoint
 	curl -f http://localhost:9090/metrics
 
+##@ Model Comparison
+.PHONY: model-comparison-setup
+model-comparison-setup: ## Setup ramallama and vllm infrastructure for model comparison
+	@echo "Setting up model comparison infrastructure..."
+	./scripts/setup_model_comparison.sh
+
+.PHONY: model-comparison-test
+model-comparison-test: ## Run model comparison tests (requires setup)
+	@echo "Running model comparison tests..."
+	./scripts/run_model_comparison.sh
+
+.PHONY: model-comparison-stop
+model-comparison-stop: ## Stop all model comparison servers
+	@echo "Stopping model comparison infrastructure..."
+	./scripts/stop_model_comparison.sh
+
+.PHONY: model-comparison-clean
+model-comparison-clean: model-comparison-stop ## Stop servers and clean up results
+	@echo "Cleaning up model comparison results..."
+	rm -rf model_comparison_results/
+	rm -f logs/ramallama_*.log logs/vllm_*.log logs/ramallama_*.pid logs/vllm_*.pid
+	@echo "Model comparison cleanup complete"
+
+.PHONY: model-comparison-full
+model-comparison-full: model-comparison-clean model-comparison-setup model-comparison-test ## Full model comparison workflow (setup, test, analyze)
+	@echo "Full model comparison workflow completed!"
+
+.PHONY: model-comparison-demo
+model-comparison-demo: ## Demo model comparison using ollama (faster setup)
+	@echo "Setting up model comparison demo with ollama..."
+	./scripts/setup_model_comparison_ollama.sh
+	@echo "Running model comparison demo tests..."
+	go test ./test/integration/model_comparison -run "Ollama" -v
+	@echo "Demo completed! Check model_comparison_report.md for results"
+
 ##@ Release
 .PHONY: release
 release: clean deps test build docker-build docker-push ## Build and release new version
