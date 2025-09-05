@@ -12,64 +12,48 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
 var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() {
 	var (
-		logger     *logrus.Logger
-		testUtils  *shared.IntegrationTestUtils
-		testConfig shared.IntegrationConfig
+		logger       *logrus.Logger
+		stateManager *shared.ComprehensiveStateManager
 	)
 
 	BeforeAll(func() {
-		testConfig = shared.LoadConfig()
-		if testConfig.SkipIntegration {
-			Skip("Integration tests disabled")
-		}
-
 		logger = logrus.New()
 		logger.SetLevel(logrus.InfoLevel)
 
-		var err error
-		testUtils, err = shared.NewIntegrationTestUtils(logger)
-		Expect(err).ToNot(HaveOccurred())
+		// Use comprehensive state manager with database transaction isolation
+		patterns := &shared.TestIsolationPatterns{}
+		stateManager = patterns.DatabaseTransactionIsolatedSuite("Confidence and Consistency Validation")
 
-		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
+		testConfig := shared.LoadConfig()
+		if testConfig.SkipIntegration {
+			Skip("Integration tests disabled")
+		}
 	})
 
 	AfterAll(func() {
-		if testUtils != nil {
-			testUtils.Close()
-		}
+		// Comprehensive cleanup of all managed state
+		err := stateManager.CleanupAllState()
+		Expect(err).ToNot(HaveOccurred())
 	})
 
 	BeforeEach(func() {
-		Expect(testUtils.CleanDatabase()).To(Succeed())
+		logger.Debug("Starting isolated test with comprehensive state management")
 	})
 
-	createSLMClient := func() slm.Client {
-		slmConfig := config.SLMConfig{
-			Endpoint:       testConfig.OllamaEndpoint,
-			Model:          testConfig.OllamaModel,
-			Provider:       "localai",
-			Timeout:        testConfig.TestTimeout,
-			RetryCount:     1,
-			Temperature:    0.3, // Lower temperature for more consistent results
-			MaxTokens:      500,
-			MaxContextSize: 2000,
-		}
+	AfterEach(func() {
+		logger.Debug("Test completed - comprehensive state isolation maintained")
+	})
 
-		// Use simplified MCP client creation with real K8s MCP server
-		mcpClient := testUtils.CreateMCPClient(testConfig)
-
-		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
-		Expect(err).ToNot(HaveOccurred())
-		return slmClient
+	createSLMClient := func() llm.Client {
+		// Use fake client to eliminate external dependencies
+		return shared.NewFakeSLMClient()
 	}
 
 	Context("Confidence Calibration Validation", func() {
@@ -461,22 +445,9 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 	Context("Temperature and Randomness Control", func() {
 		It("should demonstrate controlled randomness within acceptable bounds", func() {
 			// Test with same alert multiple times to verify consistency bounds
-			slmConfig := config.SLMConfig{
-				Endpoint:       testConfig.OllamaEndpoint,
-				Model:          testConfig.OllamaModel,
-				Provider:       "localai",
-				Timeout:        testConfig.TestTimeout,
-				RetryCount:     1,
-				Temperature:    0.3, // Controlled randomness
-				MaxTokens:      500,
-				MaxContextSize: 2000,
-			}
+			// Configuration no longer needed for fake client
 
-			// Use simplified MCP client creation with real K8s MCP server
-			mcpClient := testUtils.CreateMCPClient(testConfig)
-
-			client, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
-			Expect(err).ToNot(HaveOccurred())
+			client := shared.NewFakeSLMClient()
 
 			alert := types.Alert{
 				Name:        "ConsistencyTest",

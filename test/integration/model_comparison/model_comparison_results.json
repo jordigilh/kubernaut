@@ -32,34 +32,34 @@
           "category": "network"
         },
         "recommendation": {
-          "action": "restart_pod",
-          "parameters": {},
+          "action": "escalate",
+          "parameters": null,
           "confidence": 0.9,
           "reasoning": {
-            "summary": "The alert indicates a 'connection refused' issue with the payment-api service in the production namespace. This suggests a network problem affecting individual pods rather than the entire deployment or node. Restarting the affected pod(s) is an appropriate initial response to resolve transient connection issues."
+            "summary": "Critical alert for payment-api requires immediate escalation"
           }
         },
-        "response_time": 3193033834,
-        "timestamp": "2025-08-29T20:46:04.200954-04:00"
+        "response_time": 11029250,
+        "timestamp": "2025-09-02T16:14:02.889643-04:00"
       }
     ],
     "performance": {
       "response_time": {
-        "mean": 3193033834,
-        "p50": 3193033834,
-        "p95": 3193033834,
-        "p99": 3193033834,
-        "min": 3193033834,
-        "max": 3193033834,
+        "mean": 11029250,
+        "p50": 11029250,
+        "p95": 11029250,
+        "p99": 11029250,
+        "min": 11029250,
+        "max": 11029250,
         "stddev": 0
       },
-      "throughput": 18.79090642921136,
+      "throughput": 5440.079787836888,
       "error_rate": 0,
       "total_requests": 1,
       "successful_runs": 1
     },
     "reasoning": {
-      "action_accuracy": 1,
+      "action_accuracy": 0,
       "confidence_calibration": 0.9,
       "reasoning_quality": {
         "relevance": 0,
@@ -76,7 +76,7 @@
       "successful_cases": 1,
       "failed_cases": 0,
       "average_confidence": 0.9,
-      "overall_rating": "Excellent",
+      "overall_rating": "Poor",
       "recommendation": ""
     }
   }

@@ -52,20 +52,20 @@ container_running() {
 wait_for_postgres() {
     local max_attempts=30
     local attempt=1
-    
+
     log_info "Waiting for PostgreSQL to be ready..."
-    
+
     while [ $attempt -le $max_attempts ]; do
         if podman exec "$POSTGRES_CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; then
             log_success "PostgreSQL is ready!"
             return 0
         fi
-        
+
         if [ $attempt -eq $max_attempts ]; then
             log_error "PostgreSQL failed to start within expected time"
             return 1
         fi
-        
+
         log_info "Attempt $attempt/$max_attempts - waiting 2 seconds..."
         sleep 2
         ((attempt++))
@@ -75,7 +75,7 @@ wait_for_postgres() {
 # Function to setup PostgreSQL database
 setup_database() {
     log_info "Setting up PostgreSQL database for integration tests..."
-    
+
     # Deploy PostgreSQL using our existing script
     if [ -f "$SCRIPT_DIR/deploy-postgres.sh" ]; then
         log_info "Running PostgreSQL deployment script..."
@@ -84,64 +84,64 @@ setup_database() {
         log_error "PostgreSQL deployment script not found at $SCRIPT_DIR/deploy-postgres.sh"
         return 1
     fi
-    
+
     # Wait for PostgreSQL to be ready
     if ! wait_for_postgres; then
         return 1
     fi
-    
+
     # Run database migrations
     log_info "Running database migrations..."
     cd "$PROJECT_ROOT"
-    
+
     # Set environment variables for migration tool (if we had one)
     export DATABASE_URL="postgres://$DB_USER:$DB_PASSWORD@localhost:$DB_PORT/$DB_NAME?sslmode=disable"
-    
+
     # For now, we'll let the integration tests handle migrations
     log_info "Database setup completed. Migrations will be handled by integration tests."
-    
+
     return 0
 }
 
 # Function to cleanup database
 cleanup_database() {
     log_info "Cleaning up database..."
-    
+
     if container_running; then
         log_info "Stopping PostgreSQL container..."
         podman stop "$POSTGRES_CONTAINER" || true
     fi
-    
+
     if container_exists; then
         log_info "Removing PostgreSQL container..."
         podman rm "$POSTGRES_CONTAINER" || true
     fi
-    
+
     log_success "Database cleanup completed"
 }
 
 # Function to check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-    
+
     # Check if podman is installed
     if ! command -v podman &> /dev/null; then
         log_error "Podman is not installed or not in PATH"
         return 1
     fi
-    
+
     # Check if Go is installed
     if ! command -v go &> /dev/null; then
         log_error "Go is not installed or not in PATH"
         return 1
     fi
-    
+
     # Check if we're in the right directory
     if [ ! -f "$PROJECT_ROOT/go.mod" ]; then
         log_error "go.mod not found. Please run this script from the project root."
         return 1
     fi
-    
+
     log_success "Prerequisites check passed"
     return 0
 }
@@ -149,9 +149,9 @@ check_prerequisites() {
 # Function to run integration tests
 run_integration_tests() {
     log_info "Running database integration tests..."
-    
+
     cd "$PROJECT_ROOT"
-    
+
     # Set environment variables for tests
     export DB_HOST="localhost"
     export DB_PORT="$DB_PORT"
@@ -159,14 +159,15 @@ run_integration_tests() {
     export DB_USER="$DB_USER"
     export DB_PASSWORD="$DB_PASSWORD"
     export DB_SSL_MODE="disable"
-    
+
     # Set test configuration
-    export OLLAMA_ENDPOINT="${OLLAMA_ENDPOINT:-http://localhost:11434}"
-    export OLLAMA_MODEL="${OLLAMA_MODEL:-granite3.1-dense:8b}"
+    export LLM_ENDPOINT="${LLM_ENDPOINT:-http://localhost:11434}"
+    export LLM_MODEL="${LLM_MODEL:-granite3.1-dense:8b}"
+    export LLM_PROVIDER="${LLM_PROVIDER:-ollama}"
     export TEST_TIMEOUT="${TEST_TIMEOUT:-120s}"
     export LOG_LEVEL="${LOG_LEVEL:-debug}"
     export SKIP_SLOW_TESTS="${SKIP_SLOW_TESTS:-false}"
-    
+
     # Ensure Kubebuilder assets are available
     if [ -z "${KUBEBUILDER_ASSETS:-}" ]; then
         if [ -d "bin/k8s/1.33.0-darwin-arm64" ]; then
@@ -175,17 +176,17 @@ run_integration_tests() {
             log_warning "KUBEBUILDER_ASSETS not set. Some tests may fail."
         fi
     fi
-    
+
     # Run the tests
     local test_command="go test -v -tags=integration ./test/integration/... -timeout=30m"
-    
+
     # Add specific test patterns if requested
     if [ "${RUN_SPECIFIC_TESTS:-}" != "" ]; then
         test_command="$test_command -run=$RUN_SPECIFIC_TESTS"
     fi
-    
+
     log_info "Executing: $test_command"
-    
+
     if eval "$test_command"; then
         log_success "Integration tests completed successfully!"
         return 0
@@ -198,19 +199,19 @@ run_integration_tests() {
 # Function to run specific database test contexts
 run_database_tests() {
     log_info "Running specific database integration test contexts..."
-    
+
     local contexts=(
         "TestDatabaseIntegration"
-        "TestOscillationDetectionIntegration" 
+        "TestOscillationDetectionIntegration"
         "TestMCPDatabaseIntegration"
         "TestWorkflowDatabaseIntegration"
     )
-    
+
     local failed_contexts=()
-    
+
     for context in "${contexts[@]}"; do
         log_info "Running context: $context"
-        
+
         if RUN_SPECIFIC_TESTS="$context" run_integration_tests; then
             log_success "Context $context passed"
         else
@@ -218,7 +219,7 @@ run_database_tests() {
             failed_contexts+=("$context")
         fi
     done
-    
+
     if [ ${#failed_contexts[@]} -eq 0 ]; then
         log_success "All database integration test contexts passed!"
         return 0
@@ -252,8 +253,9 @@ Options:
     --skip-slow         Skip slow tests
 
 Environment Variables:
-    OLLAMA_ENDPOINT     Ollama server endpoint
-    OLLAMA_MODEL        Model to use for tests
+    LLM_ENDPOINT        LLM server endpoint
+    LLM_MODEL           Model to use for tests
+    LLM_PROVIDER        LLM provider type
     SKIP_SLOW_TESTS     Skip slow tests (true/false)
     TEST_TIMEOUT        Test timeout duration
     LOG_LEVEL           Logging level (debug, info, warn, error)
@@ -273,7 +275,7 @@ main() {
     local command="full"
     local skip_setup=false
     local skip_cleanup=false
-    
+
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -293,12 +295,16 @@ main() {
                 export RUN_SPECIFIC_TESTS="${1#*=}"
                 shift
                 ;;
-            --ollama-endpoint=*)
-                export OLLAMA_ENDPOINT="${1#*=}"
+            --llm-endpoint=*)
+                export LLM_ENDPOINT="${1#*=}"
                 shift
                 ;;
-            --ollama-model=*)
-                export OLLAMA_MODEL="${1#*=}"
+            --llm-model=*)
+                export LLM_MODEL="${1#*=}"
+                shift
+                ;;
+            --llm-provider=*)
+                export LLM_PROVIDER="${1#*=}"
                 shift
                 ;;
             --skip-slow)
@@ -312,23 +318,23 @@ main() {
                 ;;
         esac
     done
-    
+
     # Handle help command
     if [ "$command" = "help" ]; then
         show_usage
         exit 0
     fi
-    
+
     # Check prerequisites
     if ! check_prerequisites; then
         exit 1
     fi
-    
+
     # Setup cleanup trap
     if [ "$skip_cleanup" = false ] && [ "$command" != "cleanup" ]; then
         trap cleanup_database EXIT
     fi
-    
+
     # Execute requested command
     case $command in
         setup)

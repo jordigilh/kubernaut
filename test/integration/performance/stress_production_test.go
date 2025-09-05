@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package integration
+package performance
 
 import (
 	"context"
@@ -13,12 +13,10 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
 var _ = Describe("Stress Testing and Production Scenario Simulation", Ordered, func() {
@@ -56,22 +54,8 @@ var _ = Describe("Stress Testing and Production Scenario Simulation", Ordered, f
 		Expect(testUtils.CleanDatabase()).To(Succeed())
 	})
 
-	createSLMClient := func() slm.Client {
-		slmConfig := config.SLMConfig{
-			Endpoint:       testConfig.OllamaEndpoint,
-			Model:          testConfig.OllamaModel,
-			Provider:       "localai",
-			Timeout:        testConfig.TestTimeout,
-			RetryCount:     1,
-			Temperature:    0.3,
-			MaxTokens:      500,
-			MaxContextSize: 2000,
-		}
-
-		// Use simplified MCP client creation with real K8s MCP server
-		mcpClient := testUtils.CreateMCPClient(testConfig)
-
-		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
+	createSLMClient := func() llm.Client {
+		slmClient, err := testUtils.CreateBasicSLMClient(testConfig)
 		Expect(err).ToNot(HaveOccurred())
 		return slmClient
 	}
@@ -266,7 +250,7 @@ var _ = Describe("Stress Testing and Production Scenario Simulation", Ordered, f
 						Annotations: map[string]string{"index": fmt.Sprintf("%d", i)},
 						FiringTime:  time.Now().Add(-time.Duration(i) * time.Hour),
 					},
-					ModelUsed:           testConfig.OllamaModel,
+					ModelUsed:           testConfig.LLMModel,
 					Confidence:          0.7 + float64(i%3)*0.1,
 					Reasoning:           shared.StringPtr(fmt.Sprintf("Historical action %d", i)),
 					ActionType:          []string{"scale_deployment", "restart_pod", "increase_resources", "notify_only"}[i%4],

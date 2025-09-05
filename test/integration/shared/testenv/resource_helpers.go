@@ -58,10 +58,8 @@ func (te *TestEnvironment) CreateTestDeployment(name, namespace string, replicas
 // CreateTestPod creates a test pod with proper ownership chain (Deployment -> ReplicaSet -> Pod)
 func (te *TestEnvironment) CreateTestPod(name, namespace string) error {
 	// Create deployment first
-	err := te.CreateTestDeployment(name+"-deployment", namespace, 1)
-	if err != nil {
-		// If deployment already exists, continue with pod creation
-	}
+	_ = te.CreateTestDeployment(name+"-deployment", namespace, 1)
+	// If deployment already exists, continue with pod creation
 
 	// Create ReplicaSet that links to the deployment
 	replicaSet := &appsv1.ReplicaSet{
@@ -115,10 +113,8 @@ func (te *TestEnvironment) CreateTestPod(name, namespace string) error {
 		},
 	}
 
-	_, err = te.Client.AppsV1().ReplicaSets(namespace).Create(te.Context, replicaSet, metav1.CreateOptions{})
-	if err != nil {
-		// If ReplicaSet already exists, continue with pod creation
-	}
+	_, _ = te.Client.AppsV1().ReplicaSets(namespace).Create(te.Context, replicaSet, metav1.CreateOptions{})
+	// If ReplicaSet already exists, continue with pod creation
 
 	// Create pod that links to the ReplicaSet
 	pod := &corev1.Pod{
@@ -160,7 +156,7 @@ func (te *TestEnvironment) CreateTestPod(name, namespace string) error {
 		},
 	}
 
-	_, err = te.Client.CoreV1().Pods(namespace).Create(te.Context, pod, metav1.CreateOptions{})
+	_, err := te.Client.CoreV1().Pods(namespace).Create(te.Context, pod, metav1.CreateOptions{})
 	return err
 }
 

@@ -2,9 +2,10 @@ package fixtures
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 )
 
 // PerformanceTestAlert creates an alert for performance testing
@@ -20,13 +21,13 @@ func PerformanceTestAlert(id int) types.Alert {
 			"alertname": "PerformanceTest",
 			"severity":  "info",
 			"namespace": "test",
-			"test_id":   string(rune(id)),
+			"test_id":   strconv.Itoa(id),
 			"test_type": "performance",
 		},
 		Annotations: map[string]string{
 			"description": "Performance test alert for measuring response times",
 			"summary":     "Performance test",
-			"test_id":     string(rune(id)),
+			"test_id":     strconv.Itoa(id),
 		},
 		StartsAt: time.Now(),
 	}
@@ -45,13 +46,13 @@ func ConcurrentTestAlert(id int) types.Alert {
 			"alertname": "ConcurrentTest",
 			"severity":  "info",
 			"namespace": "test",
-			"test_id":   string(rune(id)),
+			"test_id":   strconv.Itoa(id),
 			"test_type": "concurrent",
 		},
 		Annotations: map[string]string{
 			"description": "Concurrent test alert for parallel processing validation",
 			"summary":     "Concurrent test",
-			"test_id":     string(rune(id)),
+			"test_id":     strconv.Itoa(id),
 		},
 		StartsAt: time.Now(),
 	}

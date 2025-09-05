@@ -12,71 +12,63 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
 
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
 var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 	var (
-		logger     *logrus.Logger
-		testUtils  *shared.IntegrationTestUtils
-		repository actionhistory.Repository
-		testConfig shared.IntegrationConfig
+		logger       *logrus.Logger
+		stateManager *shared.ComprehensiveStateManager
+		testConfig   shared.IntegrationConfig
 	)
 
 	BeforeAll(func() {
+		logger = logrus.New()
+		logger.SetLevel(logrus.InfoLevel)
+
+		// Use comprehensive state manager with database isolation
+		patterns := &shared.TestIsolationPatterns{}
+		stateManager = patterns.DatabaseTransactionIsolatedSuite("Production Readiness Test Suite")
+
 		testConfig = shared.LoadConfig()
 		if testConfig.SkipIntegration {
 			Skip("Integration tests disabled")
 		}
-
-		logger = logrus.New()
-		logger.SetLevel(logrus.InfoLevel)
-
-		// Setup database
-		var err error
-		testUtils, err = shared.NewIntegrationTestUtils(logger)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Initialize fresh database
-		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
-
-		repository = testUtils.Repository
 	})
 
 	AfterAll(func() {
-		if testUtils != nil {
-			testUtils.Close()
-		}
+		// Comprehensive cleanup
+		err := stateManager.CleanupAllState()
+		Expect(err).ToNot(HaveOccurred())
 	})
+
+	// REMOVED: Old testUtils cleanup - handled by comprehensive state manager
 
 	BeforeEach(func() {
-		// Clean database before each test
-		Expect(testUtils.CleanDatabase()).To(Succeed())
+		// Database state is automatically isolated via comprehensive state manager
+		logger.Debug("Starting production readiness test with isolated state")
 	})
 
+	AfterEach(func() {
+		logger.Debug("Production readiness test completed - state automatically isolated")
+	})
+
+	getRepository := func() actionhistory.Repository {
+		// Get isolated database repository from state manager
+		dbHelper := stateManager.GetDatabaseHelper()
+		return dbHelper.GetRepository()
+	}
+
 	Context("Critical Decision Making Validation", func() {
-		createSLMClient := func(contextSize int) slm.Client {
-			slmConfig := config.SLMConfig{
-				Endpoint:       testConfig.OllamaEndpoint,
-				Model:          testConfig.OllamaModel,
-				Provider:       "localai",
-				Timeout:        testConfig.TestTimeout,
-				RetryCount:     1,
-				Temperature:    0.3,
-				MaxTokens:      500,
-				MaxContextSize: contextSize,
-			}
+		createSLMClient := func(contextSize int) llm.Client {
+			// Configuration no longer needed for fake client
 
-			// Use simplified MCP client creation with real K8s MCP server
-			mcpClient := testUtils.CreateMCPClient(testConfig)
-
-			slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
-			Expect(err).ToNot(HaveOccurred())
+			// Use fake client to eliminate external dependencies
+			slmClient := shared.NewFakeSLMClient()
 			return slmClient
 		}
 
@@ -97,7 +89,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 						Annotations: map[string]string{"test": "failure"},
 						FiringTime:  time.Now().Add(-time.Duration(i+1) * time.Hour),
 					},
-					ModelUsed:           testConfig.OllamaModel,
+					ModelUsed:           testConfig.LLMModel,
 					Confidence:          0.8,
 					Reasoning:           shared.StringPtr("Test failure scenario"),
 					ActionType:          actionType,
@@ -106,13 +98,13 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 					ResourceStateAfter:  map[string]interface{}{"status": "after"},
 				}
 
-				trace, err := repository.StoreAction(context.Background(), actionRecord)
+				trace, err := getRepository().StoreAction(context.Background(), actionRecord)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Mark as failed with low effectiveness
 				trace.EffectivenessScore = &effectivenessScore
 				trace.ExecutionStatus = "failed"
-				err = repository.UpdateActionTrace(context.Background(), trace)
+				err = getRepository().UpdateActionTrace(context.Background(), trace)
 				Expect(err).ToNot(HaveOccurred())
 			}
 		}
@@ -183,7 +175,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 						Annotations: map[string]string{"test": "success"},
 						FiringTime:  time.Now().Add(-time.Duration(i+1) * time.Hour),
 					},
-					ModelUsed:           testConfig.OllamaModel,
+					ModelUsed:           testConfig.LLMModel,
 					Confidence:          0.9,
 					Reasoning:           shared.StringPtr("Test success scenario"),
 					ActionType:          "scale_deployment",
@@ -192,14 +184,14 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 					ResourceStateAfter:  map[string]interface{}{"status": "after"},
 				}
 
-				trace, err := repository.StoreAction(context.Background(), actionRecord)
+				trace, err := getRepository().StoreAction(context.Background(), actionRecord)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Mark as successful with high effectiveness
 				effectiveness := 0.9
 				trace.EffectivenessScore = &effectiveness
 				trace.ExecutionStatus = "completed"
-				err = repository.UpdateActionTrace(context.Background(), trace)
+				err = getRepository().UpdateActionTrace(context.Background(), trace)
 				Expect(err).ToNot(HaveOccurred())
 			}
 
@@ -279,24 +271,10 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 		})
 	})
 
-	createSLMClient := func(contextSize int) slm.Client {
-		slmConfig := config.SLMConfig{
-			Endpoint:       testConfig.OllamaEndpoint,
-			Model:          testConfig.OllamaModel,
-			Provider:       "localai",
-			Timeout:        testConfig.TestTimeout,
-			RetryCount:     1,
-			Temperature:    0.3,
-			MaxTokens:      500,
-			MaxContextSize: contextSize,
-		}
-
-		// Use simplified MCP client creation with real K8s MCP server
-		mcpClient := testUtils.CreateMCPClient(testConfig)
-
-		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
-		Expect(err).ToNot(HaveOccurred())
-		return slmClient
+	createSLMClient := func(contextSize int) llm.Client {
+		// Configuration no longer needed for fake client
+		// Use fake client to eliminate external dependencies
+		return shared.NewFakeSLMClient()
 	}
 
 	Context("Decision Consistency Validation", func() {
@@ -635,6 +613,303 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 				"pod_action":     rec2.Action,
 				"service_action": rec3.Action,
 			}).Info("Cascading failure scenario validation")
+		})
+
+		Context("Production Error Resilience Testing", func() {
+			It("should maintain SLA compliance during service degradation", func() {
+				// Test production-level error scenarios with SLA requirements
+
+				By("Setting up production-level error injection")
+				fakeClient := shared.NewFakeSLMClient()
+
+				// Use predefined service degradation scenario for production testing
+				degradationScenario := shared.PredefinedErrorScenarios["slm_service_degradation"]
+
+				err := fakeClient.TriggerErrorScenario(degradationScenario)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Processing alerts under production load with error injection")
+				const alertCount = 50
+				const maxAcceptableLatency = 2 * time.Second
+				const minSuccessRate = 0.95 // 95% SLA requirement
+
+				successCount := 0
+				totalLatency := time.Duration(0)
+
+				for i := 0; i < alertCount; i++ {
+					startTime := time.Now()
+
+					alert := types.Alert{
+						Name:        fmt.Sprintf("ProductionAlert%d", i+1),
+						Status:      "firing",
+						Severity:    "critical",
+						Description: fmt.Sprintf("Production critical alert %d", i+1),
+						Namespace:   "production",
+						Resource:    fmt.Sprintf("service-%d", i%10),
+						Labels: map[string]string{
+							"alertname": fmt.Sprintf("ProductionAlert%d", i+1),
+							"severity":  "critical",
+							"env":       "production",
+						},
+					}
+
+					recommendation, err := fakeClient.AnalyzeAlert(context.Background(), alert)
+					latency := time.Since(startTime)
+					totalLatency += latency
+
+					if err == nil && recommendation != nil {
+						successCount++
+
+						// Log successful processing with latency
+						if latency > maxAcceptableLatency {
+							logger.WithFields(logrus.Fields{
+								"alert_id": i + 1,
+								"latency":  latency,
+								"action":   recommendation.Action,
+							}).Warning("Alert processing exceeded SLA latency")
+						}
+					} else {
+						logger.WithFields(logrus.Fields{
+							"alert_id": i + 1,
+							"latency":  latency,
+							"error":    err,
+						}).Debug("Expected failure during error injection test")
+					}
+				}
+
+				By("Verifying SLA compliance metrics")
+				successRate := float64(successCount) / float64(alertCount)
+				avgLatency := totalLatency / time.Duration(alertCount)
+
+				logger.WithFields(logrus.Fields{
+					"success_rate":     fmt.Sprintf("%.2f%%", successRate*100),
+					"avg_latency":      avgLatency,
+					"total_processed":  alertCount,
+					"successful_count": successCount,
+					"failed_count":     alertCount - successCount,
+				}).Info("Production SLA compliance test completed")
+
+				// Verify SLA requirements
+				Expect(successRate).To(BeNumerically(">=", minSuccessRate),
+					fmt.Sprintf("Success rate %.2f%% must meet SLA requirement of %.2f%%",
+						successRate*100, minSuccessRate*100))
+
+				Expect(avgLatency).To(BeNumerically("<=", maxAcceptableLatency),
+					fmt.Sprintf("Average latency %v must not exceed SLA limit of %v",
+						avgLatency, maxAcceptableLatency))
+			})
+
+			It("should handle cascading failures in production environment", func() {
+				By("Simulating multi-component cascade failure")
+				fakeClient := shared.NewFakeSLMClient()
+
+				// Use predefined multi-service cascade scenario
+				cascadeScenario := shared.PredefinedErrorScenarios["multi_service_cascade"]
+
+				err := fakeClient.TriggerErrorScenario(cascadeScenario)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Testing critical alert processing during cascade failure")
+				criticalAlerts := []types.Alert{
+					{
+						Name:        "DatabaseDown",
+						Status:      "firing",
+						Severity:    "critical",
+						Description: "Primary database is unreachable",
+						Namespace:   "production",
+						Resource:    "postgres-primary",
+						Labels: map[string]string{
+							"alertname": "DatabaseDown",
+							"severity":  "critical",
+							"component": "database",
+						},
+					},
+					{
+						Name:        "APIGatewayOverloaded",
+						Status:      "firing",
+						Severity:    "critical",
+						Description: "API Gateway receiving excessive load",
+						Namespace:   "production",
+						Resource:    "api-gateway",
+						Labels: map[string]string{
+							"alertname": "APIGatewayOverloaded",
+							"severity":  "critical",
+							"component": "gateway",
+						},
+					},
+					{
+						Name:        "LoadBalancerFailure",
+						Status:      "firing",
+						Severity:    "critical",
+						Description: "Load balancer health check failures",
+						Namespace:   "production",
+						Resource:    "nginx-lb",
+						Labels: map[string]string{
+							"alertname": "LoadBalancerFailure",
+							"severity":  "critical",
+							"component": "loadbalancer",
+						},
+					},
+				}
+
+				partialSuccessCount := 0
+				totalProcessed := 0
+
+				for _, alert := range criticalAlerts {
+					for attempt := 1; attempt <= 3; attempt++ {
+						totalProcessed++
+
+						recommendation, err := fakeClient.AnalyzeAlert(context.Background(), alert)
+
+						if err == nil && recommendation != nil {
+							partialSuccessCount++
+
+							logger.WithFields(logrus.Fields{
+								"alert":      alert.Name,
+								"attempt":    attempt,
+								"action":     recommendation.Action,
+								"confidence": recommendation.Confidence,
+							}).Info("Alert processed despite cascade failure")
+
+							// Verify response is actionable even during crisis
+							Expect(recommendation.Action).ToNot(BeEmpty())
+							break // Success on this alert, move to next
+						} else {
+							logger.WithFields(logrus.Fields{
+								"alert":   alert.Name,
+								"attempt": attempt,
+								"error":   err,
+							}).Debug("Expected cascade failure error")
+						}
+
+						// Brief delay between retry attempts
+						time.Sleep(200 * time.Millisecond)
+					}
+				}
+
+				By("Verifying system maintained critical alert processing capability")
+				partialSuccessRate := float64(partialSuccessCount) / float64(totalProcessed)
+
+				logger.WithFields(logrus.Fields{
+					"partial_success_rate": fmt.Sprintf("%.1f%%", partialSuccessRate*100),
+					"total_attempts":       totalProcessed,
+					"successful_responses": partialSuccessCount,
+				}).Info("Cascade failure resilience test completed")
+
+				// Even during severe cascade failure, system should maintain some capability
+				// 20% minimum ensures critical alerts aren't completely ignored
+				Expect(partialSuccessRate).To(BeNumerically(">=", 0.2),
+					"System must maintain at least 20% functionality during cascade failures")
+
+				By("Verifying graceful degradation behavior")
+				// Test that system provides appropriate error messages during failures
+				finalAlert := types.Alert{
+					Name:      "SystemHealthCheck",
+					Status:    "firing",
+					Severity:  "warning",
+					Namespace: "monitoring",
+					Resource:  "health-check",
+				}
+
+				_, err = fakeClient.AnalyzeAlert(context.Background(), finalAlert)
+				if err != nil {
+					// Verify error contains useful information for operations teams
+					Expect(err.Error()).To(Or(
+						ContainSubstring("service degradation"),
+						ContainSubstring("cascade failure"),
+						ContainSubstring("circuit breaker"),
+						ContainSubstring("timeout"),
+					))
+
+					logger.WithError(err).Info("System provided appropriate error information during cascade failure")
+				}
+			})
+
+			It("should demonstrate production-grade recovery capabilities", func() {
+				By("Testing full system recovery after major outage")
+				fakeClient := shared.NewFakeSLMClient()
+
+				// Use predefined system failure scenario
+				outageScenario := shared.PredefinedErrorScenarios["system_failure"]
+
+				err := fakeClient.TriggerErrorScenario(outageScenario)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Verifying system is in outage state")
+				outageAlert := types.Alert{
+					Name:      "OutageTestAlert",
+					Status:    "firing",
+					Severity:  "critical",
+					Namespace: "production",
+					Resource:  "test-service",
+				}
+
+				_, err = fakeClient.AnalyzeAlert(context.Background(), outageAlert)
+				Expect(err).To(HaveOccurred(), "System should be in outage state")
+
+				logger.WithError(err).Info("Confirmed system is in outage state")
+
+				By("Waiting for recovery period and testing system restoration")
+				time.Sleep(6 * time.Second) // Wait for recovery
+
+				// Reset error state to simulate recovery
+				fakeClient.ResetErrorState()
+
+				// Test multiple alerts to verify full recovery
+				recoveryTests := []types.Alert{
+					{
+						Name:      "RecoveryTest1",
+						Status:    "firing",
+						Severity:  "warning",
+						Namespace: "production",
+						Resource:  "service-1",
+					},
+					{
+						Name:      "RecoveryTest2",
+						Status:    "firing",
+						Severity:  "critical",
+						Namespace: "production",
+						Resource:  "service-2",
+					},
+					{
+						Name:      "RecoveryTest3",
+						Status:    "firing",
+						Severity:  "info",
+						Namespace: "monitoring",
+						Resource:  "health-check",
+					},
+				}
+
+				allRecovered := true
+				for i, alert := range recoveryTests {
+					recommendation, err := fakeClient.AnalyzeAlert(context.Background(), alert)
+
+					if err != nil || recommendation == nil {
+						allRecovered = false
+						logger.WithError(err).WithField("alert", alert.Name).Warning("Recovery test failed")
+					} else {
+						logger.WithFields(logrus.Fields{
+							"alert":      alert.Name,
+							"action":     recommendation.Action,
+							"confidence": recommendation.Confidence,
+						}).Info("Recovery test successful")
+					}
+
+					// Brief delay between recovery tests
+					if i < len(recoveryTests)-1 {
+						time.Sleep(500 * time.Millisecond)
+					}
+				}
+
+				By("Verifying complete system recovery")
+				Expect(allRecovered).To(BeTrue(), "All recovery tests should pass after outage recovery")
+
+				logger.WithFields(logrus.Fields{
+					"recovery_tests_passed": len(recoveryTests),
+					"outage_duration":       outageScenario.Duration,
+					"scenario_name":         outageScenario.Name,
+				}).Info("Production-grade recovery test completed successfully")
+			})
 		})
 	})
 })

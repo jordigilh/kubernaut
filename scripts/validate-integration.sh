@@ -10,8 +10,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-OLLAMA_ENDPOINT="${OLLAMA_ENDPOINT:-http://localhost:11434}"
-OLLAMA_MODEL="${OLLAMA_MODEL:-granite3.1-dense:8b}"
+LLM_ENDPOINT="${LLM_ENDPOINT:-http://localhost:11434}"
+LLM_MODEL="${LLM_MODEL:-granite3.1-dense:8b}"
+LLM_PROVIDER="${LLM_PROVIDER:-ollama}"
 MIN_MEMORY_GB=8
 MIN_DISK_GB=20
 TIMEOUT_SECONDS=300
@@ -40,7 +41,7 @@ command_exists() {
 # Function to check system resources on different platforms
 check_system_resources() {
     log "Checking system resources..."
-    
+
     # Check available memory
     if command_exists free; then
         # Linux
@@ -57,13 +58,13 @@ check_system_resources() {
         AVAILABLE_MEMORY=16  # Assume sufficient
         TOTAL_MEMORY=16
     fi
-    
+
     if [ "$AVAILABLE_MEMORY" -lt $MIN_MEMORY_GB ]; then
         error "Insufficient memory: ${AVAILABLE_MEMORY}GB available, ${MIN_MEMORY_GB}GB+ required"
         return 1
     fi
     log "Memory: ${AVAILABLE_MEMORY}GB available / ${TOTAL_MEMORY}GB total ✅"
-    
+
     # Check available disk space
     if command_exists df; then
         if df -BG . >/dev/null 2>&1; then
@@ -73,7 +74,7 @@ check_system_resources() {
             # macOS df
             AVAILABLE_DISK=$(df -g . | tail -1 | awk '{print $4}')
         fi
-        
+
         if [ "$AVAILABLE_DISK" -lt $MIN_DISK_GB ]; then
             error "Insufficient disk space: ${AVAILABLE_DISK}GB available, ${MIN_DISK_GB}GB+ required"
             return 1
@@ -82,7 +83,7 @@ check_system_resources() {
     else
         warn "Cannot check disk space on this system"
     fi
-    
+
     # Check CPU cores
     if command_exists nproc; then
         CPU_CORES=$(nproc)
@@ -97,16 +98,16 @@ check_system_resources() {
 # Function to check required tools
 check_required_tools() {
     log "Checking required tools..."
-    
+
     local missing_tools=()
-    
+
     # Essential tools
     for tool in curl jq; do
         if ! command_exists "$tool"; then
             missing_tools+=("$tool")
         fi
     done
-    
+
     # Go (for running tests)
     if ! command_exists go; then
         missing_tools+=("go")
@@ -114,7 +115,7 @@ check_required_tools() {
         GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')
         log "Go version: ${GO_VERSION} ✅"
     fi
-    
+
     # Docker/Podman (optional but recommended)
     if command_exists docker; then
         log "Docker: available ✅"
@@ -123,79 +124,80 @@ check_required_tools() {
     else
         warn "Neither Docker nor Podman found - containerized testing not available"
     fi
-    
+
     if [ ${#missing_tools[@]} -ne 0 ]; then
         error "Missing required tools: ${missing_tools[*]}"
         info "Please install the missing tools and try again"
         return 1
     fi
-    
+
     log "All required tools are available ✅"
 }
 
 # Function to check Ollama connectivity
-check_ollama_connectivity() {
-    log "Checking Ollama connectivity at ${OLLAMA_ENDPOINT}..."
-    
+check_llm_connectivity() {
+    log "Checking LLM server connectivity at ${LLM_ENDPOINT}..."
+
     local retry_count=0
     local max_retries=5
-    
+
     while [ $retry_count -lt $max_retries ]; do
-        if curl -s --connect-timeout 5 "${OLLAMA_ENDPOINT}/api/tags" >/dev/null 2>&1; then
-            log "Ollama is accessible at ${OLLAMA_ENDPOINT} ✅"
+        if curl -s --connect-timeout 5 "${LLM_ENDPOINT}/api/tags" >/dev/null 2>&1; then
+            log "LLM server is accessible at ${LLM_ENDPOINT} ✅"
             return 0
         fi
-        
+
         retry_count=$((retry_count + 1))
         if [ $retry_count -lt $max_retries ]; then
             warn "Ollama not accessible (attempt ${retry_count}/${max_retries}), retrying in 5 seconds..."
             sleep 5
         fi
     done
-    
-    error "Ollama not accessible at ${OLLAMA_ENDPOINT}"
-    info "Please ensure Ollama is running with: ollama serve"
-    info "Or set OLLAMA_ENDPOINT to the correct URL"
+
+    error "LLM server not accessible at ${LLM_ENDPOINT}"
+    info "Please ensure the LLM server is running"
+    info "For Ollama: ollama serve"
+    info "Or set LLM_ENDPOINT to the correct URL"
     return 1
 }
 
 # Function to check and download model
 check_and_download_model() {
     log "Checking Granite model availability..."
-    
+
     # Check if model is already available
-    if curl -s "${OLLAMA_ENDPOINT}/api/tags" | jq -r '.models[]?.name' 2>/dev/null | grep -q "^${OLLAMA_MODEL}$"; then
-        log "Granite model '${OLLAMA_MODEL}' is available ✅"
+    if curl -s "${LLM_ENDPOINT}/api/tags" | jq -r '.models[]?.name' 2>/dev/null | grep -q "^${LLM_MODEL}$"; then
+        log "Model '${LLM_MODEL}' is available ✅"
         return 0
     fi
-    
-    warn "Granite model '${OLLAMA_MODEL}' not found, downloading..."
+
+    warn "Model '${LLM_MODEL}' not found, downloading..."
     info "This may take several minutes depending on your internet connection..."
-    
+
     # Download the model
     local download_start=$(date +%s)
-    
-    if curl -s -X POST "${OLLAMA_ENDPOINT}/api/pull" \
+
+    if curl -s -X POST "${LLM_ENDPOINT}/api/pull" \
         -H "Content-Type: application/json" \
-        -d "{\"name\": \"${OLLAMA_MODEL}\"}" | grep -q "success"; then
-        
+        -d "{\"name\": \"${LLM_MODEL}\"}" | grep -q "success"; then
+
         # Wait for model to be available
         local wait_count=0
         local max_wait=60  # 10 minutes max wait
-        
+
         while [ $wait_count -lt $max_wait ]; do
-            if curl -s "${OLLAMA_ENDPOINT}/api/tags" | jq -r '.models[]?.name' 2>/dev/null | grep -q "^${OLLAMA_MODEL}$"; then
+            if curl -s "${LLM_ENDPOINT}/api/tags" | jq -r '.models[]?.name' 2>/dev/null | grep -q "^${LLM_MODEL}$"; then
                 local download_end=$(date +%s)
                 local download_time=$((download_end - download_start))
                 log "Granite model downloaded successfully in ${download_time} seconds ✅"
                 return 0
             fi
-            
+
             sleep 10
             wait_count=$((wait_count + 1))
             info "Waiting for model download to complete... (${wait_count}0s elapsed)"
         done
-        
+
         error "Timeout waiting for model download to complete"
         return 1
     else
@@ -207,18 +209,18 @@ check_and_download_model() {
 # Function to test basic Ollama functionality
 test_ollama_functionality() {
     log "Testing basic Ollama functionality..."
-    
+
     local test_prompt="Hello"
     local response
-    
-    response=$(curl -s -X POST "${OLLAMA_ENDPOINT}/api/generate" \
+
+    response=$(curl -s -X POST "${LLM_ENDPOINT}/api/generate" \
         -H "Content-Type: application/json" \
         -d "{
-            \"model\": \"${OLLAMA_MODEL}\",
+            \"model\": \"${LLM_MODEL}\",
             \"prompt\": \"${test_prompt}\",
             \"stream\": false
         }" --max-time 30)
-    
+
     if echo "$response" | jq -e '.response' >/dev/null 2>&1; then
         local actual_response=$(echo "$response" | jq -r '.response')
         log "Ollama is functioning correctly ✅"
@@ -234,7 +236,7 @@ test_ollama_functionality() {
 # Function to test SLM integration specific functionality
 test_slm_integration() {
     log "Testing SLM integration functionality..."
-    
+
     # Test with a realistic alert prompt
     local alert_prompt='<|system|>
 You are a Kubernetes operations expert. Respond with valid JSON only.
@@ -251,26 +253,26 @@ Respond with JSON: {"action": "...", "confidence": 0.85}
 <|assistant|>'
 
     local response
-    response=$(curl -s -X POST "${OLLAMA_ENDPOINT}/api/generate" \
+    response=$(curl -s -X POST "${LLM_ENDPOINT}/api/generate" \
         -H "Content-Type: application/json" \
         -d "{
-            \"model\": \"${OLLAMA_MODEL}\",
+            \"model\": \"${LLM_MODEL}\",
             \"prompt\": $(echo "$alert_prompt" | jq -Rs .),
             \"stream\": false
         }" --max-time 60)
-    
+
     if echo "$response" | jq -e '.response' >/dev/null 2>&1; then
         local slm_response=$(echo "$response" | jq -r '.response')
         log "SLM integration test successful ✅"
         info "SLM response preview: '$(echo "$slm_response" | head -c 100)...'"
-        
+
         # Try to extract JSON from response
         if echo "$slm_response" | jq . >/dev/null 2>&1; then
             log "Response contains valid JSON ✅"
         else
             warn "Response does not contain valid JSON (this may be normal)"
         fi
-        
+
         return 0
     else
         error "SLM integration test failed"
@@ -282,14 +284,14 @@ Respond with JSON: {"action": "...", "confidence": 0.85}
 # Function to check network connectivity for model downloads
 check_network_connectivity() {
     log "Checking network connectivity..."
-    
+
     # Test connectivity to Ollama registry
     if curl -s --connect-timeout 10 https://registry.ollama.ai >/dev/null 2>&1; then
         log "Network connectivity to Ollama registry ✅"
     else
         warn "Cannot reach Ollama registry - model downloads may fail"
     fi
-    
+
     # Test general internet connectivity
     if curl -s --connect-timeout 5 https://google.com >/dev/null 2>&1; then
         log "General internet connectivity ✅"
@@ -301,7 +303,7 @@ check_network_connectivity() {
 # Function to check Go test setup
 check_go_test_setup() {
     log "Checking Go test setup..."
-    
+
     # Check if we can build the integration tests
     if go test -c -tags=integration ./test/integration/... >/dev/null 2>&1; then
         log "Integration tests compile successfully ✅"
@@ -310,7 +312,7 @@ check_go_test_setup() {
         info "Run: go test -c -tags=integration ./test/integration/..."
         return 1
     fi
-    
+
     # Check test dependencies
     if go mod verify >/dev/null 2>&1; then
         log "Go module dependencies verified ✅"
@@ -323,15 +325,15 @@ check_go_test_setup() {
 # Function to estimate test duration
 estimate_test_duration() {
     log "Estimating test duration..."
-    
+
     local num_test_cases=7  # From our fixtures
     local avg_response_time=10  # seconds
     local setup_time=30
     local buffer_time=60
-    
+
     local estimated_duration=$(( num_test_cases * avg_response_time + setup_time + buffer_time ))
     local estimated_minutes=$(( estimated_duration / 60 ))
-    
+
     info "Estimated test duration: ${estimated_minutes} minutes"
     info "This includes ${num_test_cases} test cases with ~${avg_response_time}s average response time"
 }
@@ -341,50 +343,50 @@ main() {
     echo ""
     log "=== Prometheus Alerts SLM Integration Test Validation ==="
     echo ""
-    
+
     local validation_start=$(date +%s)
-    
+
     # Run all validation checks
     local failed_checks=()
-    
+
     if ! check_required_tools; then
         failed_checks+=("required_tools")
     fi
-    
+
     if ! check_system_resources; then
         failed_checks+=("system_resources")
     fi
-    
+
     if ! check_network_connectivity; then
         # Don't fail on network issues, just warn
         true
     fi
-    
+
     if ! check_ollama_connectivity; then
         failed_checks+=("ollama_connectivity")
     fi
-    
+
     if ! check_and_download_model; then
         failed_checks+=("model_availability")
     fi
-    
+
     if ! test_ollama_functionality; then
         failed_checks+=("ollama_functionality")
     fi
-    
+
     if ! test_slm_integration; then
         failed_checks+=("slm_integration")
     fi
-    
+
     if ! check_go_test_setup; then
         failed_checks+=("go_test_setup")
     fi
-    
+
     estimate_test_duration
-    
+
     local validation_end=$(date +%s)
     local validation_time=$((validation_end - validation_start))
-    
+
     echo ""
     if [ ${#failed_checks[@]} -eq 0 ]; then
         log "🚀 All validation checks passed! (completed in ${validation_time}s)"
@@ -410,8 +412,9 @@ case "${1:-}" in
         echo "Validates prerequisites for Prometheus Alerts SLM integration testing."
         echo ""
         echo "Environment variables:"
-        echo "  OLLAMA_ENDPOINT    Ollama API endpoint (default: http://localhost:11434)"
-        echo "  OLLAMA_MODEL       Model name to use (default: granite3.1-dense:8b)"
+        echo "  LLM_ENDPOINT    LLM API endpoint (default: http://localhost:11434)"
+        echo "  LLM_MODEL       Model name to use (default: granite3.1-dense:8b)"
+        echo "  LLM_PROVIDER    LLM provider type (default: ollama)"
         echo ""
         echo "This script checks:"
         echo "  - System resources (memory, disk, CPU)"
