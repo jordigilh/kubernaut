@@ -11,40 +11,40 @@ data:
     app:
       name: prometheus-alerts-slm
       version: 1.0.0
-      
+
     server:
       webhook_port: "8080"
       metrics_port: "9090"
       health_port: "8081"
-      
+
     logging:
       level: info
       format: json
-      
+
     slm:
       provider: localai
       endpoint: http://localai-service:8080
-      model: granite-3.0-8b-instruct
+      model: gemma3-12b-instruct
       timeout: 30s
       retry_count: 3
       temperature: 0.3
       max_tokens: 500
-      
+
     openshift:
       namespace: default
       service_account: prometheus-alerts-slm
-      
+
     actions:
       dry_run: false
       max_concurrent: 5
       cooldown_period: 5m
-      
+
     webhook:
       port: "8080"
       path: "/alerts"
       auth:
         type: bearer
-        
+
     filters:
       - name: "critical-alerts"
         conditions:
@@ -63,31 +63,33 @@ metadata:
     app.kubernetes.io/name: localai
     app.kubernetes.io/component: config
 data:
-  granite-3.0-8b-instruct.yaml: |
-    name: granite-3.0-8b-instruct
+  gemma3-12b-instruct.yaml: |
+    name: gemma3-12b-instruct
     backend: llama
     parameters:
-      model: granite-3.0-8b-instruct.gguf
-      
+      model: gemma3-12b-instruct.gguf
+
     # Model configuration
-    context_size: 4096
+    context_size: 8192
     threads: 4
     temperature: 0.3
     top_k: 40
     top_p: 0.9
-    
+
     # Performance settings
     batch: 512
     gpu_layers: 0
-    
-    # Chat template for IBM Granite
+
+    # Chat template for Gemma3
     template:
       chat: |
-        <|system|>
+        <|im_start|>system
         You are a helpful AI assistant specialized in analyzing Kubernetes alerts and recommending automated remediation actions.
-        <|user|>
+        <|im_end|>
+        <|im_start|>user
         {{.Input}}
-        <|assistant|>
-        
+        <|im_end|>
+        <|im_start|>assistant
+
       completion: |
         {{.Input}}

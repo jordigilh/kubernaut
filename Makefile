@@ -30,6 +30,24 @@ deps: ## Download dependencies
 	go mod download
 	go mod tidy
 
+.PHONY: setup-python-venv
+setup-python-venv: ## Set up Python virtual environment
+	@echo "Setting up Python virtual environment..."
+	@cd python-api && \
+	if [ ! -d "venv" ]; then \
+		echo "Creating virtual environment..."; \
+		python3 -m venv venv; \
+		echo "Installing base dependencies..."; \
+		venv/bin/pip install --upgrade pip setuptools wheel; \
+		echo "Installing Python dependencies..."; \
+		venv/bin/pip install -r requirements.txt || { \
+			echo "Warning: Some dependencies failed to install, continuing..."; \
+		}; \
+		echo "Virtual environment setup complete"; \
+	else \
+		echo "Virtual environment already exists"; \
+	fi
+
 .PHONY: envsetup
 envsetup: ## Install environment setup dependencies for testing
 	@echo "Installing envsetup dependencies..."
@@ -45,45 +63,91 @@ build: ## Build the application
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/$(APP_NAME)
 
 .PHONY: test
-test: ## Run unit tests
-	@echo "Running unit tests..."
+test: setup-python-venv ## Run unit tests (Go and Python)
+	@echo "Running Go unit tests..."
+	go test -v ./... -tags="!integration,!e2e"
+	@echo "Running Python unit tests..."
+	cd python-api && $(MAKE) -f Makefile.test test-unit
+
+.PHONY: test-python
+test-python: setup-python-venv ## Run Python unit tests only
+	@echo "Running Python unit tests..."
+	cd python-api && $(MAKE) -f Makefile.test test-unit
+
+.PHONY: test-go
+test-go: ## Run Go unit tests only
+	@echo "Running Go unit tests..."
 	go test -v ./... -tags="!integration,!e2e"
 
 .PHONY: test-coverage
-test-coverage: ## Run unit tests with coverage
-	@echo "Running unit tests with coverage..."
+test-coverage: setup-python-venv ## Run unit tests with coverage (Go and Python)
+	@echo "Running Go unit tests with coverage..."
 	go test -coverprofile=coverage.out ./... -tags="!integration,!e2e"
 	go tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report generated: coverage.html"
+	@echo "Go coverage report generated: coverage.html"
+	@echo "Running Python unit tests with coverage..."
+	cd python-api && $(MAKE) -f Makefile.test test-coverage
 
 .PHONY: test-all
 test-all: validate-integration test test-integration test-e2e ## Run all tests (unit, integration, e2e)
 	@echo "All test suites completed"
 
 .PHONY: test-ci
-test-ci: ## Run tests suitable for CI environment
+test-ci: ## Run tests suitable for CI environment (Go and Python)
 	@echo "Running CI test suite..."
 	make test
 	make test-integration-local
 	@echo "CI tests completed"
 
 .PHONY: lint
-lint: ## Run linter
+lint: setup-python-venv ## Run linters (Go and Python)
+	@echo "Running Go linter..."
+	golangci-lint run
+	@echo "Running Python linter..."
+	cd python-api && $(MAKE) -f Makefile.test test-lint
+
+.PHONY: lint-go
+lint-go: ## Run Go linter only
+	@echo "Running Go linter..."
 	golangci-lint run
 
+.PHONY: lint-python
+lint-python: setup-python-venv ## Run Python linter only
+	@echo "Running Python linter..."
+	cd python-api && $(MAKE) -f Makefile.test test-lint
+
 .PHONY: fmt
-fmt: ## Format code
+fmt: setup-python-venv ## Format code (Go and Python)
+	@echo "Formatting Go code..."
+	go fmt ./...
+	@echo "Formatting Python code..."
+	cd python-api && $(MAKE) -f Makefile.test test-format-fix
+
+.PHONY: fmt-go
+fmt-go: ## Format Go code only
+	@echo "Formatting Go code..."
 	go fmt ./...
 
+.PHONY: fmt-python
+fmt-python: setup-python-venv ## Format Python code only
+	@echo "Formatting Python code..."
+	cd python-api && $(MAKE) -f Makefile.test test-format-fix
+
 .PHONY: clean
-clean: ## Clean build artifacts
+clean: ## Clean build artifacts (Go and Python)
+	@echo "Cleaning Go artifacts..."
 	rm -rf bin/prometheus-alerts-slm bin/test-slm
 	rm -f coverage.out coverage.html
+	@echo "Cleaning Python artifacts..."
+	cd python-api && $(MAKE) -f Makefile.test clean-test
 
 .PHONY: clean-all
-clean-all: ## Clean all build artifacts including test binaries
+clean-all: ## Clean all build artifacts including test binaries (Go and Python)
+	@echo "Cleaning all Go artifacts..."
 	rm -rf bin/
 	rm -f coverage.out coverage.html
+	@echo "Cleaning all Python artifacts..."
+	cd python-api && $(MAKE) -f Makefile.test clean-all
 
 ##@ Container
 .PHONY: docker-build
@@ -168,8 +232,8 @@ ollama-test: ## Test Ollama connection and model
 test-integration: envsetup ## Run integration tests with fake Kubernetes and local Ollama
 	@echo "Running integration tests with fake Kubernetes and local Ollama..."
 	@echo "Using local envtest binaries..."
-	$(eval KUBEBUILDER_ASSETS := $(shell setup-envtest use --bin-dir ./bin -p path))
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) OLLAMA_ENDPOINT=http://localhost:11434 OLLAMA_MODEL=granite3.1-dense:8b go test -v -tags=integration ./test/integration/... -timeout=30m
+	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) LLM_ENDPOINT=http://localhost:11434 LLM_MODEL=granite3.1-dense:8b LLM_PROVIDER=ollama go test -v -tags=integration ./test/integration/... -timeout=30m
 
 .PHONY: test-integration-local
 test-integration-local: ## Run integration tests with Docker Compose
@@ -186,8 +250,17 @@ validate-integration: ## Validate prerequisites for integration testing
 test-integration-quick: envsetup ## Run integration tests (skip slow tests)
 	@echo "Running quick integration tests..."
 	@echo "Using local envtest binaries..."
-	$(eval KUBEBUILDER_ASSETS := $(shell setup-envtest use --bin-dir ./bin -p path))
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) SKIP_SLOW_TESTS=true OLLAMA_ENDPOINT=http://localhost:11434 OLLAMA_MODEL=granite3.1-dense:8b go test -v -tags=integration ./test/integration/... -timeout=15m
+	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) SKIP_SLOW_TESTS=true LLM_ENDPOINT=http://localhost:11434 LLM_MODEL=granite3.1-dense:8b LLM_PROVIDER=ollama go test -v -tags=integration ./test/integration/... -timeout=15m
+
+.PHONY: test-integration-ramalama
+test-integration-ramalama: envsetup setup-python-venv ## Run integration tests with ramalama
+	@echo "Running integration tests with ramalama at 192.168.1.169:8080..."
+	@echo "Using local envtest binaries..."
+	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) LLM_ENDPOINT=http://192.168.1.169:8080 LLM_MODEL=ggml-org/gpt-oss-20b-GGUF LLM_PROVIDER=ollama go test -v -tags=integration ./test/integration/... -timeout=30m
+	@echo "Running Python integration tests with ramalama..."
+	cd python-api && RAMALAMA_URL=http://192.168.1.169:8080 HOLMES_LLM_PROVIDER=ramalama HOLMES_DEFAULT_MODEL=gpt-oss:20b $(MAKE) -f Makefile.test test-integration
 
 .PHONY: test-e2e
 test-e2e: ## Run e2e tests with local setup

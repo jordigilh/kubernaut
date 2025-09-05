@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/errors"
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/internal/errors"
 	"github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 )
@@ -28,77 +28,77 @@ func NewProcedureExecutor(db *sql.DB, logger *logrus.Logger) *ProcedureExecutor 
 
 // ScaleOscillationResult represents the result from detect_scale_oscillation procedure
 type ScaleOscillationResult struct {
-	DirectionChanges  int                                 `json:"direction_changes"`
-	FirstChange      time.Time                           `json:"first_change"`
-	LastChange       time.Time                           `json:"last_change"`
-	AvgEffectiveness float64                             `json:"avg_effectiveness"`
-	DurationMinutes  float64                             `json:"duration_minutes"`
-	Severity         actionhistory.OscillationSeverity   `json:"severity"`
-	ActionSequence   json.RawMessage                     `json:"action_sequence"`
+	DirectionChanges int                               `json:"direction_changes"`
+	FirstChange      time.Time                         `json:"first_change"`
+	LastChange       time.Time                         `json:"last_change"`
+	AvgEffectiveness float64                           `json:"avg_effectiveness"`
+	DurationMinutes  float64                           `json:"duration_minutes"`
+	Severity         actionhistory.OscillationSeverity `json:"severity"`
+	ActionSequence   json.RawMessage                   `json:"action_sequence"`
 }
 
 // ResourceThrashingResult represents the result from detect_resource_thrashing procedure
 type ResourceThrashingResult struct {
-	ThrashingTransitions int                                 `json:"thrashing_transitions"`
-	TotalActions        int                                 `json:"total_actions"`
-	FirstAction         time.Time                           `json:"first_action"`
-	LastAction          time.Time                           `json:"last_action"`
-	AvgEffectiveness    float64                             `json:"avg_effectiveness"`
-	AvgTimeGapMinutes   float64                             `json:"avg_time_gap_minutes"`
-	Severity           actionhistory.OscillationSeverity    `json:"severity"`
+	ThrashingTransitions int                               `json:"thrashing_transitions"`
+	TotalActions         int                               `json:"total_actions"`
+	FirstAction          time.Time                         `json:"first_action"`
+	LastAction           time.Time                         `json:"last_action"`
+	AvgEffectiveness     float64                           `json:"avg_effectiveness"`
+	AvgTimeGapMinutes    float64                           `json:"avg_time_gap_minutes"`
+	Severity             actionhistory.OscillationSeverity `json:"severity"`
 }
 
 // IneffectiveLoopResult represents the result from detect_ineffective_loops procedure
 type IneffectiveLoopResult struct {
-	ActionType           string                             `json:"action_type"`
-	RepetitionCount     int                                `json:"repetition_count"`
-	AvgEffectiveness    float64                            `json:"avg_effectiveness"`
-	EffectivenessStddev float64                            `json:"effectiveness_stddev"`
-	FirstOccurrence     time.Time                          `json:"first_occurrence"`
-	LastOccurrence      time.Time                          `json:"last_occurrence"`
-	SpanMinutes         float64                            `json:"span_minutes"`
-	Severity           actionhistory.OscillationSeverity   `json:"severity"`
-	EffectivenessTrend float64                             `json:"effectiveness_trend"`
-	EffectivenessScores pq.Float64Array                    `json:"effectiveness_scores"`
-	Timestamps         pq.StringArray                      `json:"timestamps"`
+	ActionType          string                            `json:"action_type"`
+	RepetitionCount     int                               `json:"repetition_count"`
+	AvgEffectiveness    float64                           `json:"avg_effectiveness"`
+	EffectivenessStddev float64                           `json:"effectiveness_stddev"`
+	FirstOccurrence     time.Time                         `json:"first_occurrence"`
+	LastOccurrence      time.Time                         `json:"last_occurrence"`
+	SpanMinutes         float64                           `json:"span_minutes"`
+	Severity            actionhistory.OscillationSeverity `json:"severity"`
+	EffectivenessTrend  float64                           `json:"effectiveness_trend"`
+	EffectivenessScores pq.Float64Array                   `json:"effectiveness_scores"`
+	Timestamps          pq.StringArray                    `json:"timestamps"`
 }
 
 // CascadingFailureResult represents the result from detect_cascading_failures procedure
 type CascadingFailureResult struct {
-	ActionType            string                             `json:"action_type"`
-	TotalActions         int                                `json:"total_actions"`
-	AvgNewAlerts         float64                            `json:"avg_new_alerts"`
-	RecurrenceRate       float64                            `json:"recurrence_rate"`
-	AvgEffectiveness     float64                            `json:"avg_effectiveness"`
-	ActionsCausingCascades int                              `json:"actions_causing_cascades"`
-	MaxAlertsTriggered   int                                `json:"max_alerts_triggered"`
-	Severity            actionhistory.OscillationSeverity   `json:"severity"`
+	ActionType             string                            `json:"action_type"`
+	TotalActions           int                               `json:"total_actions"`
+	AvgNewAlerts           float64                           `json:"avg_new_alerts"`
+	RecurrenceRate         float64                           `json:"recurrence_rate"`
+	AvgEffectiveness       float64                           `json:"avg_effectiveness"`
+	ActionsCausingCascades int                               `json:"actions_causing_cascades"`
+	MaxAlertsTriggered     int                               `json:"max_alerts_triggered"`
+	Severity               actionhistory.OscillationSeverity `json:"severity"`
 }
 
 // ActionTrace represents a simplified action trace from procedures
 type ActionTrace struct {
-	ActionID         string          `json:"action_id"`
-	ActionTimestamp  time.Time       `json:"action_timestamp"`
-	ActionType       string          `json:"action_type"`
-	ModelUsed        string          `json:"model_used"`
-	ModelConfidence  float64         `json:"model_confidence"`
-	ExecutionStatus  string          `json:"execution_status"`
-	EffectivenessScore *float64       `json:"effectiveness_score"`
-	ModelReasoning   *string         `json:"model_reasoning"`
-	ActionParameters json.RawMessage `json:"action_parameters"`
-	AlertName        string          `json:"alert_name"`
-	AlertSeverity    string          `json:"alert_severity"`
+	ActionID           string          `json:"action_id"`
+	ActionTimestamp    time.Time       `json:"action_timestamp"`
+	ActionType         string          `json:"action_type"`
+	ModelUsed          string          `json:"model_used"`
+	ModelConfidence    float64         `json:"model_confidence"`
+	ExecutionStatus    string          `json:"execution_status"`
+	EffectivenessScore *float64        `json:"effectiveness_score"`
+	ModelReasoning     *string         `json:"model_reasoning"`
+	ActionParameters   json.RawMessage `json:"action_parameters"`
+	AlertName          string          `json:"alert_name"`
+	AlertSeverity      string          `json:"alert_severity"`
 }
 
 // EffectivenessMetrics represents effectiveness analysis results
 type EffectivenessMetrics struct {
-	ActionType        string  `json:"action_type"`
-	SampleSize        int     `json:"sample_size"`
-	AvgEffectiveness  float64 `json:"avg_effectiveness"`
+	ActionType          string  `json:"action_type"`
+	SampleSize          int     `json:"sample_size"`
+	AvgEffectiveness    float64 `json:"avg_effectiveness"`
 	StddevEffectiveness float64 `json:"stddev_effectiveness"`
-	MinEffectiveness  float64 `json:"min_effectiveness"`
-	MaxEffectiveness  float64 `json:"max_effectiveness"`
-	SuccessRate      float64 `json:"success_rate"`
+	MinEffectiveness    float64 `json:"min_effectiveness"`
+	MaxEffectiveness    float64 `json:"max_effectiveness"`
+	SuccessRate         float64 `json:"success_rate"`
 }
 
 // DetectScaleOscillation calls the stored procedure for scale oscillation detection
@@ -131,7 +131,7 @@ func (pe *ProcedureExecutor) DetectScaleOscillation(ctx context.Context, resourc
 			return nil, nil // No oscillation detected
 		}
 		return nil, errors.Wrapf(err, errors.ErrorTypeDatabase,
-			"scale oscillation detection failed for %s/%s/%s", 
+			"scale oscillation detection failed for %s/%s/%s",
 			resourceRef.Namespace, resourceRef.Kind, resourceRef.Name)
 	}
 
