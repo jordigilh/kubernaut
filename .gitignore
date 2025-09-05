@@ -1,10 +1,9 @@
 vendor/
 prometheus-alerts-slm
-integration.test
 .DS_Store
-e2e.test
-webhookt.test
+*.test
 test-slm
 *coverage.out
 bin/
 mcp-server
+*.log

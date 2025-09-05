@@ -2,8 +2,8 @@ package validation
 
 import (
 	"strings"
-	
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
+
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -17,7 +17,7 @@ var _ = Describe("Validation", func() {
 					Kind:      "Deployment",
 					Name:      "webapp",
 				}
-				
+
 				err := ValidateResourceReference(ref)
 				Expect(err).NotTo(HaveOccurred())
 			})
@@ -31,7 +31,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "Deployment",
 						Name:      "webapp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("namespace is required"))
@@ -45,7 +45,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "Deployment",
 						Name:      "webapp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("namespace must be 63 characters or less"))
@@ -59,7 +59,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "Deployment",
 						Name:      "webapp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("namespace must be a valid Kubernetes namespace name"))
@@ -71,7 +71,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "Deployment",
 						Name:      "webapp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("namespace must be a valid Kubernetes namespace name"))
@@ -87,7 +87,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "",
 						Name:      "webapp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("kind is required"))
@@ -103,7 +103,7 @@ var _ = Describe("Validation", func() {
 						Kind:      longKind,
 						Name:      "webapp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("kind must be 100 characters or less"))
@@ -117,7 +117,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "deployment",
 						Name:      "webapp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("kind must be a valid Kubernetes resource kind"))
@@ -129,7 +129,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "Deployment-V1",
 						Name:      "webapp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("kind must be a valid Kubernetes resource kind"))
@@ -145,7 +145,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "Deployment",
 						Name:      "",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("name is required"))
@@ -158,13 +158,13 @@ var _ = Describe("Validation", func() {
 					for i := 0; i < 260; i++ {
 						longName += "a"
 					}
-					
+
 					ref := actionhistory.ResourceReference{
 						Namespace: "production",
 						Kind:      "Deployment",
 						Name:      longName,
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("name must be 253 characters or less"))
@@ -178,7 +178,7 @@ var _ = Describe("Validation", func() {
 						Kind:      "Deployment",
 						Name:      "WebApp",
 					}
-					
+
 					err := ValidateResourceReference(ref)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("name must be a valid Kubernetes resource name"))
@@ -193,7 +193,7 @@ var _ = Describe("Validation", func() {
 					Kind:      "",
 					Name:      "",
 				}
-				
+
 				err := ValidateResourceReference(ref)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("namespace is required"))
@@ -320,7 +320,7 @@ var _ = Describe("Validation", func() {
 		Context("with valid window minutes", func() {
 			It("should accept valid ranges", func() {
 				validWindows := []int{1, 60, 120, 1440, 10080}
-				
+
 				for _, window := range validWindows {
 					err := ValidateWindowMinutes(window)
 					Expect(err).NotTo(HaveOccurred())
@@ -353,7 +353,7 @@ var _ = Describe("Validation", func() {
 		Context("with valid limits", func() {
 			It("should accept valid ranges", func() {
 				validLimits := []int{1, 50, 100, 1000, 10000}
-				
+
 				for _, limit := range validLimits {
 					err := ValidateLimit(limit)
 					Expect(err).NotTo(HaveOccurred())
@@ -412,7 +412,7 @@ var _ = Describe("Validation", func() {
 				for i := 0; i < 300; i++ {
 					longInput += "a"
 				}
-				
+
 				result := SanitizeForLogging(longInput)
 				Expect(len(result)).To(Equal(200))
 				Expect(result).To(HaveSuffix("..."))

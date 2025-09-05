@@ -4,103 +4,60 @@
 package shared
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/mcp"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/oscillation"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/k8s"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared/testenv"
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/internal/oscillation"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/test/integration/shared/testenv"
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 )
 
-// IntegrationTestUtils provides utilities for integration testing with real components
-type IntegrationTestUtils struct {
+// findProjectRoot finds the project root directory by looking for go.mod
+func findProjectRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("go.mod not found in any parent directory")
+		}
+		dir = parent
+	}
+}
+
+// DatabaseIntegrationTestUtils provides utilities for integration testing with real components
+type DatabaseIntegrationTestUtils struct {
 	ConnectionString   string
 	DB                 *sql.DB
 	Repository         actionhistory.Repository
 	DetectionEngine    *oscillation.OscillationDetectionEngine
-	MCPServer          *mcp.ActionHistoryMCPServer
 	K8sTestEnvironment *testenv.TestEnvironment // Real test K8s cluster
 
 	Logger *logrus.Logger
 }
 
-// DatabaseTestUtils is an alias for backward compatibility (deprecated: use IntegrationTestUtils)
-type DatabaseTestUtils = IntegrationTestUtils
+// IntegrationTestUtils is an alias - this allows external packages to access it
+type IntegrationTestUtils = DatabaseIntegrationTestUtils
 
-// NewDatabaseTestUtils creates a new IntegrationTestUtils (deprecated: use NewIntegrationTestUtils)
-func NewDatabaseTestUtils(logger *logrus.Logger) (*IntegrationTestUtils, error) {
-	return NewIntegrationTestUtils(logger)
-}
-
-// HTTPKubernetesMCPClient implements slm.K8sMCPServer interface using HTTP requests to external MCP server
-type HTTPKubernetesMCPClient struct {
-	endpoint   string
-	httpClient *http.Client
-	logger     *logrus.Logger
-}
-
-// NewHTTPK8sMCPClient creates a new HTTP-based K8s MCP client for integration testing
-func NewHTTPK8sMCPClient(endpoint string, logger *logrus.Logger) slm.K8sMCPServer {
-	return &HTTPKubernetesMCPClient{
-		endpoint: endpoint,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		logger: logger,
-	}
-}
-
-// HandleToolCall makes HTTP request to external K8s MCP server
-func (h *HTTPKubernetesMCPClient) HandleToolCall(ctx context.Context, request mcp.MCPToolRequest) (mcp.MCPToolResponse, error) {
-	h.logger.Debugf("Making HTTP request to K8s MCP server at %s for tool: %s", h.endpoint, request.Params.Name)
-
-	// Marshal request to JSON
-	requestBody, err := json.Marshal(request)
-	if err != nil {
-		return mcp.MCPToolResponse{}, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", h.endpoint+"/tools/call", bytes.NewBuffer(requestBody))
-	if err != nil {
-		return mcp.MCPToolResponse{}, fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	// Make HTTP request
-	resp, err := h.httpClient.Do(httpReq)
-	if err != nil {
-		return mcp.MCPToolResponse{}, fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return mcp.MCPToolResponse{}, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
-	}
-
-	// Parse response
-	var mcpResponse mcp.MCPToolResponse
-	if err := json.NewDecoder(resp.Body).Decode(&mcpResponse); err != nil {
-		return mcp.MCPToolResponse{}, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	h.logger.Debugf("Received response from K8s MCP server with %d content items", len(mcpResponse.Content))
-	return mcpResponse, nil
+// NewIntegrationTestUtils creates a new IntegrationTestUtils for external packages
+func NewIntegrationTestUtils(logger *logrus.Logger) (*IntegrationTestUtils, error) {
+	return NewDatabaseIntegrationTestUtils(logger)
 }
 
 // DatabaseTestConfig holds database test configuration
@@ -125,8 +82,8 @@ func LoadDatabaseTestConfig() DatabaseTestConfig {
 	}
 }
 
-// NewIntegrationTestUtils creates new integration test utilities with database, MCP servers, and mock services
-func NewIntegrationTestUtils(logger *logrus.Logger) (*IntegrationTestUtils, error) {
+// NewDatabaseIntegrationTestUtils creates new integration test utilities with database and test services
+func NewDatabaseIntegrationTestUtils(logger *logrus.Logger) (*DatabaseIntegrationTestUtils, error) {
 	config := LoadDatabaseTestConfig()
 
 	connectionString := fmt.Sprintf(
@@ -160,9 +117,6 @@ func NewIntegrationTestUtils(logger *logrus.Logger) (*IntegrationTestUtils, erro
 	// Create oscillation detection engine
 	detectionEngine := oscillation.NewOscillationDetectionEngine(db, logger)
 
-	// Create action history MCP server
-	mcpServer := mcp.NewActionHistoryMCPServer(repository, detectionEngine, logger)
-
 	// Set up K8s test environment for direct client usage
 	k8sTestEnv, err := testenv.SetupTestEnvironment()
 	if err != nil {
@@ -170,14 +124,13 @@ func NewIntegrationTestUtils(logger *logrus.Logger) (*IntegrationTestUtils, erro
 		return nil, fmt.Errorf("failed to setup test K8s environment: %w", err)
 	}
 
-	logger.Info("Integration test setup complete: using direct K8s client for MCP bridge")
+	logger.Info("Integration test setup complete: using direct K8s client")
 
-	return &IntegrationTestUtils{
+	return &DatabaseIntegrationTestUtils{
 		ConnectionString:   connectionString,
 		DB:                 db,
 		Repository:         repository,
 		DetectionEngine:    detectionEngine,
-		MCPServer:          mcpServer,
 		K8sTestEnvironment: k8sTestEnv,
 
 		Logger: logger,
@@ -209,7 +162,7 @@ func (d *IntegrationTestUtils) Close() error {
 }
 
 // WaitForDatabase waits for database to be ready
-func (d *DatabaseTestUtils) WaitForDatabase(maxWait time.Duration) error {
+func (d *DatabaseIntegrationTestUtils) WaitForDatabase(maxWait time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), maxWait)
 	defer cancel()
 
@@ -229,15 +182,21 @@ func (d *DatabaseTestUtils) WaitForDatabase(maxWait time.Duration) error {
 }
 
 // RunMigrations executes database migrations
-func (d *DatabaseTestUtils) RunMigrations() error {
+func (d *DatabaseIntegrationTestUtils) RunMigrations() error {
 	migrations := []string{
 		"001_initial_schema.sql",
 		"002_fix_partitioning.sql",
 		"003_stored_procedures.sql",
 	}
 
+	// Get project root by finding the directory containing go.mod
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find project root: %w", err)
+	}
+
 	for _, migration := range migrations {
-		migrationPath := filepath.Join("..", "..", "migrations", migration)
+		migrationPath := filepath.Join(projectRoot, "migrations", migration)
 		if err := d.executeMigrationFile(migrationPath); err != nil {
 			return fmt.Errorf("migration %s failed: %w", migration, err)
 		}
@@ -248,7 +207,7 @@ func (d *DatabaseTestUtils) RunMigrations() error {
 }
 
 // executeMigrationFile executes a migration file
-func (d *DatabaseTestUtils) executeMigrationFile(path string) error {
+func (d *DatabaseIntegrationTestUtils) executeMigrationFile(path string) error {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("failed to read migration file %s: %w", path, err)
@@ -263,7 +222,7 @@ func (d *DatabaseTestUtils) executeMigrationFile(path string) error {
 }
 
 // CleanDatabase removes all test data while preserving schema
-func (d *DatabaseTestUtils) CleanDatabase() error {
+func (d *DatabaseIntegrationTestUtils) CleanDatabase() error {
 	// Clean tables in dependency order - child tables first
 	tables := []string{
 		"oscillation_detections", // References resource_references via resource_id
@@ -284,7 +243,7 @@ func (d *DatabaseTestUtils) CleanDatabase() error {
 }
 
 // DropAllTables completely removes all database objects for fresh start
-func (d *DatabaseTestUtils) DropAllTables() error {
+func (d *DatabaseIntegrationTestUtils) DropAllTables() error {
 	d.Logger.Debug("Starting comprehensive database cleanup")
 
 	// Drop all tables and partitions in dependency order
@@ -347,7 +306,7 @@ func (d *DatabaseTestUtils) DropAllTables() error {
 }
 
 // InitializeFreshDatabase ensures a completely clean database with fresh migrations
-func (d *DatabaseTestUtils) InitializeFreshDatabase() error {
+func (d *DatabaseIntegrationTestUtils) InitializeFreshDatabase() error {
 	d.Logger.Info("Initializing fresh database for tests")
 
 	// Step 1: Drop all existing objects
@@ -370,7 +329,7 @@ func (d *DatabaseTestUtils) InitializeFreshDatabase() error {
 }
 
 // CreateTestActionHistory creates test action history data
-func (d *DatabaseTestUtils) CreateTestActionHistory(resourceRef actionhistory.ResourceReference, numActions int) ([]actionhistory.ResourceActionTrace, error) {
+func (d *DatabaseIntegrationTestUtils) CreateTestActionHistory(resourceRef actionhistory.ResourceReference, numActions int) ([]actionhistory.ResourceActionTrace, error) {
 	ctx := context.Background()
 
 	// Ensure resource reference exists
@@ -423,7 +382,7 @@ func (d *DatabaseTestUtils) CreateTestActionHistory(resourceRef actionhistory.Re
 }
 
 // getTestActionType returns action type for test data
-func (d *DatabaseTestUtils) getTestActionType(index int) string {
+func (d *DatabaseIntegrationTestUtils) getTestActionType(index int) string {
 	actionTypes := []string{
 		"scale_deployment",
 		"increase_resources",
@@ -434,13 +393,13 @@ func (d *DatabaseTestUtils) getTestActionType(index int) string {
 }
 
 // getTestAlertSeverity returns alert severity for test data
-func (d *DatabaseTestUtils) getTestAlertSeverity(index int) string {
+func (d *DatabaseIntegrationTestUtils) getTestAlertSeverity(index int) string {
 	severities := []string{"warning", "critical", "info"}
 	return severities[index%len(severities)]
 }
 
 // CreateOscillationPattern creates test data that will trigger oscillation detection
-func (d *DatabaseTestUtils) CreateOscillationPattern(resourceRef actionhistory.ResourceReference) error {
+func (d *DatabaseIntegrationTestUtils) CreateOscillationPattern(resourceRef actionhistory.ResourceReference) error {
 	ctx := context.Background()
 
 	resourceID, err := d.Repository.EnsureResourceReference(ctx, resourceRef)
@@ -489,7 +448,7 @@ func (d *DatabaseTestUtils) CreateOscillationPattern(resourceRef actionhistory.R
 }
 
 // CreateThrashingPattern creates test data that will trigger thrashing detection
-func (d *DatabaseTestUtils) CreateThrashingPattern(resourceRef actionhistory.ResourceReference) error {
+func (d *DatabaseIntegrationTestUtils) CreateThrashingPattern(resourceRef actionhistory.ResourceReference) error {
 	ctx := context.Background()
 
 	resourceID, err := d.Repository.EnsureResourceReference(ctx, resourceRef)
@@ -536,7 +495,7 @@ func (d *DatabaseTestUtils) CreateThrashingPattern(resourceRef actionhistory.Res
 }
 
 // getThrashingParameters returns appropriate parameters for thrashing pattern
-func (d *DatabaseTestUtils) getThrashingParameters(actionType string, index int) actionhistory.JSONMap {
+func (d *DatabaseIntegrationTestUtils) getThrashingParameters(actionType string, index int) actionhistory.JSONMap {
 	switch actionType {
 	case "scale_deployment":
 		return actionhistory.JSONMap{"replicas": float64(2 + index)}
@@ -551,7 +510,7 @@ func (d *DatabaseTestUtils) getThrashingParameters(actionType string, index int)
 }
 
 // VerifyDatabaseHealth performs comprehensive database health checks
-func (d *DatabaseTestUtils) VerifyDatabaseHealth() error {
+func (d *DatabaseIntegrationTestUtils) VerifyDatabaseHealth() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -639,10 +598,10 @@ func StringPtr(s string) *string {
 	return &s
 }
 
-// Context-aware test helpers for SLM+MCP+PostgreSQL integration
+// Context-aware test helpers for SLM+PostgreSQL integration
 
 // CreateFailedRestartHistory creates a history of failed restart attempts
-func (d *DatabaseTestUtils) CreateFailedRestartHistory(resourceRef actionhistory.ResourceReference, numFailures int) ([]actionhistory.ResourceActionTrace, error) {
+func (d *DatabaseIntegrationTestUtils) CreateFailedRestartHistory(resourceRef actionhistory.ResourceReference, numFailures int) ([]actionhistory.ResourceActionTrace, error) {
 	ctx := context.Background()
 
 	// Ensure resource exists
@@ -700,7 +659,7 @@ func (d *DatabaseTestUtils) CreateFailedRestartHistory(resourceRef actionhistory
 }
 
 // CreateSuccessfulScalingHistory creates a history of successful scaling actions
-func (d *DatabaseTestUtils) CreateSuccessfulScalingHistory(resourceRef actionhistory.ResourceReference, numActions int) ([]actionhistory.ResourceActionTrace, error) {
+func (d *DatabaseIntegrationTestUtils) CreateSuccessfulScalingHistory(resourceRef actionhistory.ResourceReference, numActions int) ([]actionhistory.ResourceActionTrace, error) {
 	ctx := context.Background()
 
 	resourceID, err := d.Repository.EnsureResourceReference(ctx, resourceRef)
@@ -755,7 +714,7 @@ func (d *DatabaseTestUtils) CreateSuccessfulScalingHistory(resourceRef actionhis
 }
 
 // CreateIneffectiveSecurityHistory creates a history of ineffective security responses
-func (d *DatabaseTestUtils) CreateIneffectiveSecurityHistory(resourceRef actionhistory.ResourceReference) ([]actionhistory.ResourceActionTrace, error) {
+func (d *DatabaseIntegrationTestUtils) CreateIneffectiveSecurityHistory(resourceRef actionhistory.ResourceReference) ([]actionhistory.ResourceActionTrace, error) {
 	ctx := context.Background()
 
 	resourceID, err := d.Repository.EnsureResourceReference(ctx, resourceRef)
@@ -818,7 +777,7 @@ func (d *DatabaseTestUtils) CreateIneffectiveSecurityHistory(resourceRef actionh
 }
 
 // CreateLowEffectivenessHistory creates a history of actions with low effectiveness
-func (d *DatabaseTestUtils) CreateLowEffectivenessHistory(resourceRef actionhistory.ResourceReference, actionType string, effectiveness float64) ([]actionhistory.ResourceActionTrace, error) {
+func (d *DatabaseIntegrationTestUtils) CreateLowEffectivenessHistory(resourceRef actionhistory.ResourceReference, actionType string, effectiveness float64) ([]actionhistory.ResourceActionTrace, error) {
 	ctx := context.Background()
 
 	resourceID, err := d.Repository.EnsureResourceReference(ctx, resourceRef)
@@ -872,105 +831,27 @@ func (d *DatabaseTestUtils) CreateLowEffectivenessHistory(resourceRef actionhist
 	return traces, nil
 }
 
-// CreateMCPClient creates a properly configured MCP client for integration testing with real K8s MCP server
-func (utils *IntegrationTestUtils) CreateMCPClient(config IntegrationConfig) slm.MCPClient {
-	mcpClientConfig := slm.MCPClientConfig{
-		ActionHistoryServerEndpoint: "http://localhost:8081", // Internal server
-		KubernetesServerEndpoint:    "",                      // No longer used - direct client access
-		Timeout:                     config.TestTimeout,
-		MaxRetries:                  config.MaxRetries,
-	}
-
-	// Integration tests use direct K8s client (no external MCP server needed)
-	utils.Logger.Info("Creating MCP client with action history server only")
-	return slm.NewMCPClient(mcpClientConfig, utils.MCPServer, utils.Logger)
-}
-
-// CreateSLMClient creates a properly configured SLM client with MCP integration for testing
-func (utils *IntegrationTestUtils) CreateSLMClient(testConfig IntegrationConfig, slmConfig interface{}) (slm.Client, error) {
-	// For now, we don't need to process the slmConfig parameter in detail
-	// This would be implemented when the actual SLM client creation is needed
-	_ = slmConfig // Use parameter to avoid unused warning
-
-	// Create SLM configuration struct
-	// Note: This would need proper type conversion in a real implementation
-	// For now, we'll create a basic config
-	basicSLMConfig := struct {
-		Provider       string
-		Endpoint       string
-		Model          string
-		Temperature    float64
-		MaxTokens      int
-		Timeout        time.Duration
-		RetryCount     int
-		MaxContextSize int
-	}{
-		Provider:       "localai",
-		Endpoint:       testConfig.OllamaEndpoint,
-		Model:          testConfig.OllamaModel,
-		Temperature:    0.3,
-		MaxTokens:      500,
-		Timeout:        testConfig.TestTimeout,
-		RetryCount:     1,
-		MaxContextSize: 2000,
-	}
-
-	// Create MCP client
-	mcpClient := utils.CreateMCPClient(testConfig)
-
-	// Create SLM client with MCP
-	// Note: This would need the actual NewClientWithMCP function with proper types
-	utils.Logger.Info("Created SLM client with MCP integration for testing")
-
-	// Return nil for now - this would be implemented with the actual SLM client creation
-	// slmClient, err := slm.NewClientWithMCP(basicSLMConfig, mcpClient, utils.Logger)
-	// return slmClient, err
-
-	_ = basicSLMConfig // Use variable to avoid unused warning
-	_ = mcpClient      // Use variable to avoid unused warning
-
-	return nil, fmt.Errorf("SLM client creation not fully implemented in test utils")
-}
-
-// CreateDynamicSLMClient creates a properly configured SLM client with dynamic MCP bridge for testing
-func (utils *IntegrationTestUtils) CreateDynamicSLMClient(testConfig IntegrationConfig) (slm.Client, error) {
+// CreateBasicSLMClient creates a basic SLM client for testing
+func (utils *DatabaseIntegrationTestUtils) CreateBasicSLMClient(testConfig IntegrationConfig) (llm.Client, error) {
 	// Create SLM configuration
-	slmConfig := config.SLMConfig{
-		Provider:       "localai",
-		Endpoint:       testConfig.OllamaEndpoint,
-		Model:          testConfig.OllamaModel,
-		Temperature:    0.3,
-		MaxTokens:      500,
-		Timeout:        testConfig.TestTimeout,
-		RetryCount:     1,
-		MaxContextSize: 4000,
+	slmConfig := config.LLMConfig{
+		Provider: testConfig.LLMProvider,
+		Endpoint: testConfig.LLMEndpoint,
+		Model:    testConfig.LLMModel,
 	}
-
-	// Create Kubernetes client using the test environment
-	k8sConfig := config.KubernetesConfig{
-		Context:   "", // Use test environment
-		Namespace: "default",
-	}
-
-	// Use the unified client with the test environment's clientset
-	k8sClient := k8s.NewUnifiedClient(utils.K8sTestEnvironment.Client, k8sConfig, utils.Logger)
 
 	utils.Logger.WithFields(logrus.Fields{
-		"k8s_client_configured": k8sClient != nil,
-		"slm_endpoint":          slmConfig.Endpoint,
-		"model":                 slmConfig.Model,
-	}).Info("Creating SLM client with LocalAI and Dynamic MCP Bridge")
+		"slm_endpoint": slmConfig.Endpoint,
+		"model":        slmConfig.Model,
+		"provider":     slmConfig.Provider,
+	}).Info("Creating basic SLM client")
 
-	client, err := slm.NewClientWithDynamicMCP(slmConfig, utils.MCPServer, k8sClient, utils.Logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create dynamic SLM client: %w", err)
-	}
-
-	return client, nil
+	// Use fake client to eliminate external dependencies
+	return NewFakeSLMClient(), nil
 }
 
 // CreateCascadingFailureHistory creates a history showing patterns that led to cascading failures
-func (d *DatabaseTestUtils) CreateCascadingFailureHistory(resourceRef actionhistory.ResourceReference) ([]actionhistory.ResourceActionTrace, error) {
+func (d *DatabaseIntegrationTestUtils) CreateCascadingFailureHistory(resourceRef actionhistory.ResourceReference) ([]actionhistory.ResourceActionTrace, error) {
 	ctx := context.Background()
 
 	resourceID, err := d.Repository.EnsureResourceReference(ctx, resourceRef)

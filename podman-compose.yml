@@ -1,0 +1,162 @@
+version: '3.8'
+
+# Podman Compose Configuration for HolmesGPT Local Development
+# Usage:
+#   podman-compose up -d              # Start all services
+#   podman-compose logs holmesgpt     # View HolmesGPT logs
+#   podman-compose down               # Stop and remove containers
+#   podman-compose pull               # Update images
+
+services:
+  # Ollama service for local LLM hosting
+  ollama:
+    image: docker.io/ollama/ollama:latest
+    container_name: dev-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=2
+    # GPU support for Podman (if available)
+    devices:
+      - /dev/dri:/dev/dri  # Intel GPU
+    # For NVIDIA GPU, use: --device nvidia.com/gpu=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - holmes-dev
+
+  # HolmesGPT CLI container for development
+  holmesgpt:
+    build:
+      context: ./docker/holmesgpt
+      dockerfile: Dockerfile
+    container_name: dev-holmesgpt
+    volumes:
+      - holmes_shared:/shared
+      - ~/.kube:/root/.kube:ro
+      - ./runbooks:/runbooks:ro
+      - ./logs:/app/logs  # Development logs
+    environment:
+      - OPENAI_API_BASE=http://ollama:11434/v1
+      - OPENAI_API_KEY=ollama-local
+      - LLM_MODEL=gpt-oss:20b
+      - HOLMES_SESSION_ID=dev-session
+      - HOLMES_WORKING_DIR=/shared
+      - HOLMES_MAX_TOKENS=3000
+      - HOLMES_TEMPERATURE=0.1
+      - HOLMES_TIMEOUT=300s
+      - HOLMES_DEBUG=true
+      - HOLMES_STREAMING=true
+      - HOLMES_RUN_TEST=true
+      - KUBECONFIG=/root/.kube/config
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "holmes", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - holmes-dev
+
+  # Development application with hot reload
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev  # Development Dockerfile with hot reload
+      args:
+        - BUILD_MODE=development
+    container_name: dev-prometheus-alerts-slm
+    ports:
+      - "8080:8080"   # Main application
+      - "9993:9993"   # Metrics
+      - "40000:40000" # Delve debugger port
+    volumes:
+      - .:/app:Z  # Bind mount for hot reload (Z for SELinux)
+      - holmes_shared:/shared
+      - ~/.kube:/root/.kube:ro
+      - /run/podman/podman.sock:/var/run/docker.sock  # Podman socket
+    environment:
+      - CONFIG_FILE=/app/config/development.yaml
+      - PODMAN_HOST=unix:///var/run/docker.sock
+      - HOLMES_CONTAINER_IMAGE=dev-holmesgpt:latest
+      - HOLMES_SHARED_VOLUME=/shared
+      - LLM_ENDPOINT=http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LOG_LEVEL=DEBUG
+      - GO_ENV=development
+      - CGO_ENABLED=0
+    depends_on:
+      holmesgpt:
+        condition: service_healthy
+    restart: "no"  # Don't restart in dev mode
+    networks:
+      - holmes-dev
+
+  # Prometheus for local testing
+  prometheus-dev:
+    image: docker.io/prom/prometheus:latest
+    container_name: dev-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus-dev.yml:/etc/prometheus/prometheus.yml:ro,Z
+      - prometheus_dev_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=24h'
+      - '--web.enable-lifecycle'
+      - '--log.level=debug'
+    restart: unless-stopped
+    networks:
+      - holmes-dev
+
+  # AlertManager for local testing
+  alertmanager-dev:
+    image: docker.io/prom/alertmanager:latest
+    container_name: dev-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/alertmanager-dev.yml:/etc/alertmanager/alertmanager.yml:ro,Z
+      - alertmanager_dev_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+      - '--log.level=debug'
+    restart: unless-stopped
+    networks:
+      - holmes-dev
+
+volumes:
+  ollama_data:
+    driver: local
+  holmes_shared:
+    driver: local
+  prometheus_dev_data:
+    driver: local
+  alertmanager_dev_data:
+    driver: local
+
+networks:
+  holmes-dev:
+    driver: bridge
+

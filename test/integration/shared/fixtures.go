@@ -1,10 +1,10 @@
 package shared
 
 import (
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/fixtures"
+	"github.com/jordigilh/kubernaut/test/integration/fixtures"
 )
 
-// Re-export types and variables for backward compatibility
+// Re-export types and variables for compatibility
 type TestCase = fixtures.TestCase
 
 var IntegrationTestAlerts = fixtures.IntegrationTestAlerts
@@ -19,13 +19,4 @@ var (
 	ResourceExhaustionAlert   = fixtures.ResourceExhaustionAlert
 	CascadingFailureAlert     = fixtures.CascadingFailureAlert
 	GetAllEdgeCaseAlerts      = fixtures.GetAllEdgeCaseAlerts
-)
-
-// Legacy compatibility - these were part of the original large fixtures file
-var (
-	ChaosEngineeringAlerts         []TestCase
-	SecurityComplianceAlerts       []TestCase
-	ResourceExhaustionAlerts       []TestCase
-	CascadingFailureAlerts         []TestCase
-	MultiAlertCorrelationScenarios []TestCase
 )

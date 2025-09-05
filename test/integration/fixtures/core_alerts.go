@@ -3,7 +3,7 @@ package fixtures
 import (
 	"time"
 
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 )
 
 // CoreTestAlerts contains the primary integration test cases

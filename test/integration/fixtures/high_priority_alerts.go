@@ -3,7 +3,7 @@ package fixtures
 import (
 	"time"
 
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 )
 
 // HighPriorityTestAlerts contains test cases for the 5 new high-priority actions
