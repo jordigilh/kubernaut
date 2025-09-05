@@ -6,8 +6,9 @@
 set -euo pipefail
 
 # Configuration
-OLLAMA_ENDPOINT="${OLLAMA_ENDPOINT:-http://localhost:11434}"
-OLLAMA_MODEL="${OLLAMA_MODEL:-granite3.1-dense:8b}"
+LLM_ENDPOINT="${LLM_ENDPOINT:-http://localhost:11434}"
+LLM_MODEL="${LLM_MODEL:-granite3.1-dense:8b}"
+LLM_PROVIDER="${LLM_PROVIDER:-ollama}"
 KUBEBUILDER_ASSETS="${KUBEBUILDER_ASSETS:-bin/k8s/1.33.0-darwin-arm64}"
 SKIP_SLOW_TESTS="${SKIP_SLOW_TESTS:-true}"
 
@@ -17,8 +18,9 @@ MAX_RETRIES="${MAX_RETRIES:-3}"
 
 echo "🚀 Starting Production Readiness Test Suite"
 echo "=================================================="
-echo "Model: $OLLAMA_MODEL"
-echo "Endpoint: $OLLAMA_ENDPOINT"
+echo "Model: $LLM_MODEL"
+echo "Endpoint: $LLM_ENDPOINT"
+echo "Provider: $LLM_PROVIDER"
 echo "Test Timeout: $TEST_TIMEOUT"
 echo "Skip Slow Tests: $SKIP_SLOW_TESTS"
 echo ""
@@ -30,19 +32,19 @@ cd "$(dirname "$0")/.."
 echo "📋 Checking prerequisites..."
 
 # Check if Ollama is running
-if ! curl -s "$OLLAMA_ENDPOINT/api/tags" > /dev/null; then
-    echo "❌ Ollama is not accessible at $OLLAMA_ENDPOINT"
-    echo "Please start Ollama and ensure the model is available:"
+if ! curl -s "$LLM_ENDPOINT/api/tags" > /dev/null; then
+    echo "❌ LLM server is not accessible at $LLM_ENDPOINT"
+    echo "Please start the LLM server and ensure the model is available:"
     echo "  ollama serve"
-    echo "  ollama pull $OLLAMA_MODEL"
+    echo "  ollama pull $LLM_MODEL"
     exit 1
 fi
 
 # Check if model is available
-if ! curl -s "$OLLAMA_ENDPOINT/api/tags" | grep -q "$OLLAMA_MODEL"; then
-    echo "⚠️  Model $OLLAMA_MODEL not found, attempting to pull..."
-    ollama pull "$OLLAMA_MODEL" || {
-        echo "❌ Failed to pull model $OLLAMA_MODEL"
+if ! curl -s "$LLM_ENDPOINT/api/tags" | grep -q "$LLM_MODEL"; then
+    echo "⚠️  Model $LLM_MODEL not found, attempting to pull..."
+    ollama pull "$LLM_MODEL" || {
+        echo "❌ Failed to pull model $LLM_MODEL"
         exit 1
     }
 fi
@@ -59,7 +61,7 @@ echo ""
 # Test categories to run
 TEST_CATEGORIES=(
     "Production Readiness Test Suite"
-    "Prompt Validation and Edge Case Testing" 
+    "Prompt Validation and Edge Case Testing"
     "Confidence and Consistency Validation Suite"
     "Stress Testing and Production Scenario Simulation"
 )
@@ -74,31 +76,31 @@ failed_tests=0
 run_test_category() {
     local category="$1"
     local focus_pattern="$2"
-    
+
     echo "🧪 Running: $category"
     echo "----------------------------------------"
-    
+
     local start_time=$(date +%s)
     local exit_code=0
-    
+
     # Run the test with proper environment setup
     cd test/integration
     SKIP_SLOW_TESTS="$SKIP_SLOW_TESTS" \
     KUBEBUILDER_ASSETS="../../$KUBEBUILDER_ASSETS" \
-    OLLAMA_ENDPOINT="$OLLAMA_ENDPOINT" \
-    OLLAMA_MODEL="$OLLAMA_MODEL" \
+    LLM_ENDPOINT="$LLM_ENDPOINT" \
+    LLM_MODEL="$LLM_MODEL" \
     go test -v -tags=integration \
         -ginkgo.focus="$focus_pattern" \
         -timeout="$TEST_TIMEOUT" \
         . || exit_code=$?
-    
+
     cd ../..
-    
+
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
-    
+
     test_times["$category"]=$duration
-    
+
     if [ $exit_code -eq 0 ]; then
         test_results["$category"]="✅ PASSED"
         ((passed_tests++))
@@ -108,7 +110,7 @@ run_test_category() {
         ((failed_tests++))
         echo "❌ $category failed (${duration}s)"
     fi
-    
+
     ((total_tests++))
     echo ""
 }
@@ -157,7 +159,7 @@ echo ""
 # Performance analysis
 echo "🔍 Performance Analysis"
 echo "=================================================="
-echo "Model: $OLLAMA_MODEL"
+echo "Model: $LLM_MODEL"
 echo "Context Size: 16K tokens (default)"
 echo "Temperature: 0.3 (consistent results)"
 echo ""

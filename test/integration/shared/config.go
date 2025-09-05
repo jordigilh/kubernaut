@@ -3,35 +3,51 @@ package shared
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 // IntegrationConfig holds configuration for integration tests
 type IntegrationConfig struct {
-	OllamaEndpoint  string
-	OllamaModel     string
+	LLMEndpoint     string
+	LLMModel        string
+	LLMProvider     string // "ollama", "ramalama", "localai"
 	TestTimeout     time.Duration
 	MaxRetries      int
 	SkipSlowTests   bool
 	LogLevel        string
 	SkipIntegration bool
-	// External MCP server configuration
-	ExternalMCPServerEndpoint string
 }
 
 // LoadConfig loads integration test configuration from environment variables
 func LoadConfig() IntegrationConfig {
+	endpoint := GetEnvOrDefault("LLM_ENDPOINT", "http://localhost:11434")
+	model := GetEnvOrDefault("LLM_MODEL", "granite3.1-dense:8b")
+	provider := GetEnvOrDefault("LLM_PROVIDER", detectProviderFromEndpoint(endpoint))
+
 	return IntegrationConfig{
-		OllamaEndpoint:  GetEnvOrDefault("OLLAMA_ENDPOINT", "http://localhost:11434"),
-		OllamaModel:     GetEnvOrDefault("OLLAMA_MODEL", "granite3.1-dense:8b"),
+		LLMEndpoint:     endpoint,
+		LLMModel:        model,
+		LLMProvider:     provider,
 		TestTimeout:     getDurationEnvOrDefault("TEST_TIMEOUT", 120*time.Second),
 		MaxRetries:      getIntEnvOrDefault("MAX_RETRIES", 3),
 		SkipSlowTests:   getBoolEnvOrDefault("SKIP_SLOW_TESTS", false),
 		LogLevel:        GetEnvOrDefault("LOG_LEVEL", "debug"),
 		SkipIntegration: getBoolEnvOrDefault("SKIP_INTEGRATION", false),
-		// External MCP server configuration
-		ExternalMCPServerEndpoint: GetEnvOrDefault("EXTERNAL_MCP_ENDPOINT", "http://localhost:8080"),
 	}
+}
+
+// detectProviderFromEndpoint attempts to detect provider type from endpoint
+func detectProviderFromEndpoint(endpoint string) string {
+	// Parse the endpoint to detect provider based on port
+	if strings.Contains(endpoint, ":11434") {
+		return "ollama"
+	}
+	if strings.Contains(endpoint, ":8080") {
+		return "localai"
+	}
+	// Default to localai for other cases
+	return "localai"
 }
 
 func GetEnvOrDefault(key, defaultValue string) string {

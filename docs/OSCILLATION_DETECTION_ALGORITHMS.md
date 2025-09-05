@@ -1278,11 +1278,11 @@ func (e *OscillationDetectionEngine) getPreviousPrevention(ctx context.Context, 
 
 ## Prevention Integration
 
-### **MCP Tool for AI Models**
+### **Context Provider Tool for AI Models**
 
 ```go
-// MCP tool for oscillation checking
-func (server *ActionHistoryMCPServer) ValidateActionSafety(params map[string]interface{}) (interface{}, error) {
+// Context Provider tool for oscillation checking
+func (server *ActionHistoryContext ProviderServer) ValidateActionSafety(params map[string]interface{}) (interface{}, error) {
     namespace := params["namespace"].(string)
     resourceName := params["resource_name"].(string)
     proposedAction := params["proposed_action"].(string)
@@ -1383,14 +1383,14 @@ The oscillation detection algorithms are now complete with:
 **Ineffective Loop Detection** - Statistical effectiveness analysis
 **Cascading Failure Detection** - Multi-alert correlation
 **Unified Detection Engine** - Parallel analysis with confidence scoring
-**MCP Integration** - AI model safety validation
+**Context Provider Integration** - AI model safety validation
 
 **Ready for implementation** with:
 - Advanced SQL queries optimized for PostgreSQL
 - Parallel Go implementations for performance
 - Confidence scoring and prevention recommendations
 - Database storage for audit trail and learning
-- MCP tool integration for real-time AI model guidance
+- Context Provider tool integration for real-time AI model guidance
 
 The system can now detect and prevent infinite loops before they damage production systems!
 

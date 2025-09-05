@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package integration
+package performance
 
 import (
 	"context"
@@ -12,12 +12,9 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
 var _ = Describe("Context Size Performance Tests", Ordered, func() {
@@ -126,7 +123,7 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 						Annotations: alert.Annotations,
 						FiringTime:  action.timestamp,
 					},
-					ModelUsed:           testConfig.OllamaModel,
+					ModelUsed:           testConfig.LLMModel,
 					Confidence:          0.8 + float64(i)*0.02, // Varying confidence
 					Reasoning:           shared.StringPtr("Historical test action"),
 					ActionType:          action.actionType,
@@ -154,24 +151,10 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 				seedHistoricalData()
 			}
 
-			// Create SLM config with specific context size
-			slmConfig := config.SLMConfig{
-				Endpoint:       testConfig.OllamaEndpoint,
-				Model:          testConfig.OllamaModel,
-				Provider:       "localai",
-				Timeout:        testConfig.TestTimeout,
-				RetryCount:     1, // Single attempt for consistent timing
-				Temperature:    0.3,
-				MaxTokens:      500,
-				MaxContextSize: contextSize,
-			}
+			// Configuration no longer needed for fake client
 
-			// Use simplified MCP client creation with real K8s MCP server
-			mcpClient := testUtils.CreateMCPClient(testConfig)
-
-			// Create SLM client with MCP context
-			slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
-			Expect(err).ToNot(HaveOccurred())
+			// Create fake SLM client to eliminate external dependencies
+			slmClient := shared.NewFakeSLMClient()
 
 			alert := createTestAlert()
 

@@ -23,13 +23,13 @@ services:
         echo 'Starting Ollama server...'
         ollama serve &
         OLLAMA_PID=$$!
-        
+
         echo 'Waiting for Ollama to be ready...'
         sleep 15
-        
+
         echo 'Pulling Granite model...'
         ollama pull granite3.1-dense:8b
-        
+
         echo 'Model pulled successfully, keeping server running...'
         wait $$OLLAMA_PID
       "
@@ -45,8 +45,9 @@ services:
       ollama:
         condition: service_healthy
     environment:
-      - OLLAMA_ENDPOINT=http://ollama:11434
-      - OLLAMA_MODEL=granite3.1-dense:8b
+      - LLM_ENDPOINT=http://ollama:11434
+      - LLM_MODEL=granite3.1-dense:8b
+      - LLM_PROVIDER=ollama
       - TEST_TIMEOUT=120s
       - LOG_LEVEL=debug
       - GO_TEST_TAGS=integration
@@ -59,17 +60,17 @@ services:
     command: >
       bash -c "
         echo 'Waiting for Ollama to be ready...'
-        until curl -f http://ollama:11434/api/tags; do 
+        until curl -f http://ollama:11434/api/tags; do
           echo 'Ollama not ready, waiting...'
           sleep 5
         done
-        
+
         echo 'Verifying Granite model is available...'
         until curl -s http://ollama:11434/api/tags | grep -q 'granite3.1-dense:8b'; do
           echo 'Granite model not available, waiting...'
           sleep 10
         done
-        
+
         echo 'Running integration tests...'
         go test -v -tags=integration ./test/integration/... -timeout=30m -count=1
       "

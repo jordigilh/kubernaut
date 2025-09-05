@@ -1,0 +1,1217 @@
+package insights
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/storage/vector"
+	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+)
+
+// DefaultAIInsightsService implements AIInsightsService using SLM client
+type DefaultAIInsightsService struct {
+	slmClient llm.Client
+	vectorDB  vector.VectorDatabase
+	k8sClient k8s.Client
+	config    AIServiceConfig
+	healthy   bool
+}
+
+// AIServiceConfig holds configuration for the AI insights service
+type AIServiceConfig struct {
+	MaxAnalysisTime     time.Duration `yaml:"max_analysis_time" default:"30s"`
+	ConfidenceThreshold float64       `yaml:"confidence_threshold" default:"0.7"`
+	EnableDetailedLogs  bool          `yaml:"enable_detailed_logs" default:"false"`
+	UseEnhancedPrompts  bool          `yaml:"use_enhanced_prompts" default:"true"`
+	MaxPatternSamples   int           `yaml:"max_pattern_samples" default:"100"`
+}
+
+// NewDefaultAIInsightsService creates a new AI insights service
+func NewDefaultAIInsightsService(
+	slmClient llm.Client,
+	vectorDB vector.VectorDatabase,
+	k8sClient k8s.Client,
+	config *AIServiceConfig,
+) *DefaultAIInsightsService {
+	if config == nil {
+		config = &AIServiceConfig{
+			MaxAnalysisTime:     30 * time.Second,
+			ConfidenceThreshold: 0.7,
+			EnableDetailedLogs:  false,
+			UseEnhancedPrompts:  true,
+			MaxPatternSamples:   100,
+		}
+	}
+
+	return &DefaultAIInsightsService{
+		slmClient: slmClient,
+		vectorDB:  vectorDB,
+		k8sClient: k8sClient,
+		config:    config,
+		healthy:   true,
+	}
+}
+
+// IsHealthy returns the health status of the AI service
+func (ai DefaultAIInsightsService) IsHealthy() bool {
+	return ai.healthy && ai.slmClient != nil
+}
+
+// AnalyzeCorrelations uses AI to discover correlations between effectiveness factors
+func (ai DefaultAIInsightsService) AnalyzeCorrelations(ctx context.Context, analytics vector.PatternAnalytics) (CorrelationAnalysis, error) {
+	// Build enhanced prompt for correlation analysis
+	prompt := ai.buildCorrelationAnalysisPrompt(analytics)
+
+	// Create alert for SLM analysis
+	alert := types.Alert{
+		Name:        "correlation_analysis_request",
+		Description: "AI-powered correlation analysis for effectiveness patterns",
+		Labels: map[string]string{
+			"analysis_type":     "correlation",
+			"pattern_count":     fmt.Sprintf("%d", analytics.TotalPatterns),
+			"avg_effectiveness": fmt.Sprintf("%.3f", analytics.AverageEffectiveness),
+		},
+		Annotations: map[string]string{
+			"prompt":  prompt,
+			"context": "effectiveness_analytics",
+		},
+		Severity: "info",
+		Status:   "firing",
+		StartsAt: time.Now(),
+	}
+
+	// Get AI analysis
+	recommendation, err := ai.slmClient.AnalyzeAlert(ctx, alert)
+	if err != nil {
+		return ai.fallbackCorrelationAnalysis(analytics), nil // Graceful fallback
+	}
+
+	// Parse AI response into correlation analysis
+	correlation, err := ai.parseCorrelationResponse(recommendation, analytics)
+	if err != nil {
+		return &CorrelationAnalysis{}, err // Return the parsing/confidence error
+	}
+
+	return correlation, nil
+}
+
+// DetectAnomalies uses AI to identify unusual patterns in effectiveness data
+func (ai DefaultAIInsightsService) DetectAnomalies(ctx context.Context, analytics vector.PatternAnalytics) (AnomalyAnalysis, error) {
+	prompt := ai.buildAnomalyDetectionPrompt(analytics)
+
+	alert := types.Alert{
+		Name:        "anomaly_detection_request",
+		Description: "AI-powered anomaly detection for effectiveness patterns",
+		Labels: map[string]string{
+			"analysis_type":     "anomaly_detection",
+			"pattern_count":     fmt.Sprintf("%d", analytics.TotalPatterns),
+			"effectiveness_std": fmt.Sprintf("%.3f", ai.calculateStandardDeviation(analytics)),
+		},
+		Annotations: map[string]string{
+			"prompt":  prompt,
+			"context": "effectiveness_analytics",
+		},
+		Severity: "info",
+		Status:   "firing",
+		StartsAt: time.Now(),
+	}
+
+	recommendation, err := ai.slmClient.AnalyzeAlert(ctx, alert)
+	if err != nil {
+		return ai.fallbackAnomalyAnalysis(analytics), nil
+	}
+
+	anomaly, err := ai.parseAnomalyResponse(recommendation, analytics)
+	if err != nil {
+		return ai.fallbackAnomalyAnalysis(analytics), nil
+	}
+
+	return anomaly, nil
+}
+
+// AnalyzeTrends uses AI to analyze performance trends and generate forecasts
+func (ai DefaultAIInsightsService) AnalyzeTrends(ctx context.Context, analytics vector.PatternAnalytics) (TrendAnalysis, error) {
+	prompt := ai.buildTrendAnalysisPrompt(analytics)
+
+	alert := types.Alert{
+		Name:        "trend_analysis_request",
+		Description: "AI-powered trend analysis for effectiveness patterns",
+		Labels: map[string]string{
+			"analysis_type":   "trend_analysis",
+			"recent_patterns": fmt.Sprintf("%d", len(analytics.RecentPatterns)),
+			"top_performers":  fmt.Sprintf("%d", len(analytics.TopPerformers)),
+		},
+		Annotations: map[string]string{
+			"prompt":  prompt,
+			"context": "effectiveness_analytics",
+		},
+		Severity: "info",
+		Status:   "firing",
+		StartsAt: time.Now(),
+	}
+
+	recommendation, err := ai.slmClient.AnalyzeAlert(ctx, alert)
+	if err != nil {
+		return ai.fallbackTrendAnalysis(analytics), nil
+	}
+
+	trend, err := ai.parseTrendResponse(recommendation, analytics)
+	if err != nil {
+		return ai.fallbackTrendAnalysis(analytics), nil
+	}
+
+	return trend, nil
+}
+
+// AnalyzeCostEffectiveness uses AI to analyze cost-effectiveness patterns
+func (ai DefaultAIInsightsService) AnalyzeCostEffectiveness(ctx context.Context, analytics vector.PatternAnalytics) (CostAnalysis, error) {
+	prompt := ai.buildCostAnalysisPrompt(analytics)
+
+	alert := types.Alert{
+		Name:        "cost_analysis_request",
+		Description: "AI-powered cost-effectiveness analysis",
+		Labels: map[string]string{
+			"analysis_type": "cost_effectiveness",
+			"action_types":  fmt.Sprintf("%d", len(PatternsByActionType)),
+		},
+		Annotations: map[string]string{
+			"prompt":  prompt,
+			"context": "effectiveness_analytics",
+		},
+		Severity: "info",
+		Status:   "firing",
+		StartsAt: time.Now(),
+	}
+
+	recommendation, err := ai.slmClient.AnalyzeAlert(ctx, alert)
+	if err != nil {
+		return ai.fallbackCostAnalysis(analytics), nil
+	}
+
+	cost, err := ai.parseCostResponse(recommendation, analytics)
+	if err != nil {
+		return ai.fallbackCostAnalysis(analytics), nil
+	}
+
+	return cost, nil
+}
+
+// GenerateRecommendations creates actionable recommendations based on insights
+func (ai DefaultAIInsightsService) GenerateRecommendations(ctx context.Context, insights AnalyticsInsights) ([]string, error) {
+	prompt := ai.buildRecommendationsPrompt(insights)
+
+	alert := types.Alert{
+		Name:        "recommendations_request",
+		Description: "AI-powered recommendations generation",
+		Labels: map[string]string{
+			"analysis_type": "recommendations",
+			"has_anomalies": fmt.Sprintf("%t", len(AnomalyDetection.DetectedAnomalies) > 0),
+			"trend":         PerformanceTrends.OverallTrend,
+		},
+		Annotations: map[string]string{
+			"prompt":  prompt,
+			"context": "effectiveness_analytics",
+		},
+		Severity: "info",
+		Status:   "firing",
+		StartsAt: time.Now(),
+	}
+
+	recommendation, err := ai.slmClient.AnalyzeAlert(ctx, alert)
+	if err != nil {
+		return ai.fallbackRecommendations(insights), nil
+	}
+
+	recommendations := ai.parseRecommendationsResponse(recommendation)
+	return recommendations, nil
+}
+
+// Prompt building methods
+
+func (ai DefaultAIInsightsService) buildCorrelationAnalysisPrompt(analytics vector.PatternAnalytics) string {
+	var prompt strings.Builder
+
+	prompt.WriteString("Analyze effectiveness patterns to identify correlations between different factors.\n\n")
+	prompt.WriteString("CONTEXT:\n")
+	prompt.WriteString(fmt.Sprintf("- Total patterns analyzed: %d\n", analytics.TotalPatterns))
+	prompt.WriteString(fmt.Sprintf("- Average effectiveness: %.3f\n", analytics.AverageEffectiveness))
+	prompt.WriteString(fmt.Sprintf("- Action types: %v\n", ai.getActionTypesSummary(analytics)))
+
+	if len(analytics.TopPerformers) > 0 {
+		prompt.WriteString("\nTOP PERFORMING PATTERNS:\n")
+		for i, pattern := range analytics.TopPerformers[:min(5, len(analytics.TopPerformers))] {
+			prompt.WriteString(fmt.Sprintf("%d. Action: %s, Effectiveness: %.3f, Context: %s\n",
+				i+1, pattern.ActionType, ai.getPatternEffectiveness(pattern), ai.getPatternContext(pattern)))
+		}
+	}
+
+	prompt.WriteString("\nANALYSIS REQUEST:\n")
+	prompt.WriteString("1. Identify correlations between action types and effectiveness scores\n")
+	prompt.WriteString("2. Find patterns in alert severity vs action success\n")
+	prompt.WriteString("3. Analyze namespace/resource type impact on effectiveness\n")
+	prompt.WriteString("4. Discover temporal correlations (time of day, day of week)\n")
+
+	prompt.WriteString("\nRESPONSE FORMAT:\n")
+	prompt.WriteString("Provide a JSON object with correlation analysis containing:\n")
+	prompt.WriteString("{\n")
+	prompt.WriteString("  \"strongest_positive\": [{\"feature1\": \"string\", \"feature2\": \"string\", \"correlation\": number}],\n")
+	prompt.WriteString("  \"strongest_negative\": [{\"feature1\": \"string\", \"feature2\": \"string\", \"correlation\": number}],\n")
+	prompt.WriteString("  \"feature_correlations\": {\"feature_name\": correlation_value},\n")
+	prompt.WriteString("  \"insights\": [\"insight1\", \"insight2\"],\n")
+	prompt.WriteString("  \"confidence\": number_between_0_and_1\n")
+	prompt.WriteString("}\n")
+
+	return prompt.String()
+}
+
+func (ai DefaultAIInsightsService) buildAnomalyDetectionPrompt(analytics vector.PatternAnalytics) string {
+	var prompt strings.Builder
+
+	prompt.WriteString("Detect anomalies and unusual patterns in effectiveness data.\n\n")
+	prompt.WriteString("CONTEXT:\n")
+	prompt.WriteString(fmt.Sprintf("- Total patterns: %d\n", analytics.TotalPatterns))
+	prompt.WriteString(fmt.Sprintf("- Average effectiveness: %.3f\n", analytics.AverageEffectiveness))
+
+	if len(analytics.RecentPatterns) > 0 {
+		prompt.WriteString("\nRECENT PATTERNS:\n")
+		for i, pattern := range analytics.RecentPatterns[:min(10, len(analytics.RecentPatterns))] {
+			effectiveness := ai.getPatternEffectiveness(pattern)
+			prompt.WriteString(fmt.Sprintf("%d. %s: %.3f effectiveness\n", i+1, pattern.ActionType, effectiveness))
+		}
+	}
+
+	prompt.WriteString("\nANOMALY DETECTION REQUEST:\n")
+	prompt.WriteString("1. Identify patterns with unusually high or low effectiveness\n")
+	prompt.WriteString("2. Detect sudden changes in action success rates\n")
+	prompt.WriteString("3. Find outliers in execution time or resource usage\n")
+	prompt.WriteString("4. Identify potential data quality issues\n")
+
+	prompt.WriteString("\nRESPONSE FORMAT:\n")
+	prompt.WriteString("Provide JSON with:\n")
+	prompt.WriteString("{\n")
+	prompt.WriteString("  \"anomalies\": [{\"pattern_id\": \"string\", \"type\": \"string\", \"severity\": number, \"reason\": \"string\"}],\n")
+	prompt.WriteString("  \"anomaly_score\": number_between_0_and_1,\n")
+	prompt.WriteString("  \"threshold_used\": number,\n")
+	prompt.WriteString("  \"insights\": [\"insight1\", \"insight2\"],\n")
+	prompt.WriteString("  \"confidence\": number_between_0_and_1\n")
+	prompt.WriteString("}\n")
+
+	return prompt.String()
+}
+
+func (ai DefaultAIInsightsService) buildTrendAnalysisPrompt(analytics vector.PatternAnalytics) string {
+	var prompt strings.Builder
+
+	prompt.WriteString("Analyze trends in effectiveness data and generate forecasts.\n\n")
+	prompt.WriteString("CONTEXT:\n")
+	prompt.WriteString(fmt.Sprintf("- Total patterns: %d\n", analytics.TotalPatterns))
+	prompt.WriteString(fmt.Sprintf("- Current average effectiveness: %.3f\n", analytics.AverageEffectiveness))
+
+	// Add temporal analysis if patterns have timestamps
+	if len(analytics.RecentPatterns) > 0 {
+		prompt.WriteString("\nRECENT EFFECTIVENESS TRENDS:\n")
+		recentAvg := ai.calculateRecentAverage(analytics.RecentPatterns)
+		prompt.WriteString(fmt.Sprintf("- Recent average: %.3f\n", recentAvg))
+	}
+
+	prompt.WriteString("\nTREND ANALYSIS REQUEST:\n")
+	prompt.WriteString("1. Determine overall trend direction (improving/declining/stable)\n")
+	prompt.WriteString("2. Calculate trend strength and confidence\n")
+	prompt.WriteString("3. Identify action types with improving/declining performance\n")
+	prompt.WriteString("4. Generate forecast for next period\n")
+	prompt.WriteString("5. Identify seasonal patterns if any\n")
+
+	prompt.WriteString("\nRESPONSE FORMAT:\n")
+	prompt.WriteString("Provide JSON with:\n")
+	prompt.WriteString("{\n")
+	prompt.WriteString("  \"overall_trend\": \"improving|declining|stable\",\n")
+	prompt.WriteString("  \"trend_strength\": number_between_0_and_1,\n")
+	prompt.WriteString("  \"action_trends\": {\"action_type\": {\"direction\": \"string\", \"strength\": number}},\n")
+	prompt.WriteString("  \"forecast\": {\"predicted_mean\": number, \"confidence_range\": {\"min\": number, \"max\": number}},\n")
+	prompt.WriteString("  \"insights\": [\"insight1\", \"insight2\"],\n")
+	prompt.WriteString("  \"confidence\": number_between_0_and_1\n")
+	prompt.WriteString("}\n")
+
+	return prompt.String()
+}
+
+func (ai DefaultAIInsightsService) buildCostAnalysisPrompt(analytics vector.PatternAnalytics) string {
+	var prompt strings.Builder
+
+	prompt.WriteString("Analyze cost-effectiveness of different action types and patterns.\n\n")
+	prompt.WriteString("CONTEXT:\n")
+	prompt.WriteString(fmt.Sprintf("- Total patterns: %d\n", analytics.TotalPatterns))
+	prompt.WriteString(fmt.Sprintf("- Action types: %v\n", ai.getActionTypesSummary(analytics)))
+
+	prompt.WriteString("\nCOST-EFFECTIVENESS ANALYSIS REQUEST:\n")
+	prompt.WriteString("1. Estimate relative costs of different action types\n")
+	prompt.WriteString("2. Calculate ROI for each action type based on effectiveness\n")
+	prompt.WriteString("3. Identify most cost-effective actions\n")
+	prompt.WriteString("4. Estimate potential cost savings\n")
+	prompt.WriteString("5. Analyze cost efficiency trends\n")
+
+	prompt.WriteString("\nRESPONSE FORMAT:\n")
+	prompt.WriteString("Provide JSON with:\n")
+	prompt.WriteString("{\n")
+	prompt.WriteString("  \"cost_per_action\": {\"action_type\": estimated_cost},\n")
+	prompt.WriteString("  \"roi_by_action\": {\"action_type\": roi_ratio},\n")
+	prompt.WriteString("  \"top_cost_savers\": [{\"action_type\": \"string\", \"estimated_savings\": number}],\n")
+	prompt.WriteString("  \"efficiency_trend\": \"improving|declining|stable\",\n")
+	prompt.WriteString("  \"insights\": [\"insight1\", \"insight2\"],\n")
+	prompt.WriteString("  \"confidence\": number_between_0_and_1\n")
+	prompt.WriteString("}\n")
+
+	return prompt.String()
+}
+
+func (ai DefaultAIInsightsService) buildRecommendationsPrompt(insights AnalyticsInsights) string {
+	var prompt strings.Builder
+
+	prompt.WriteString("Generate actionable recommendations based on analytics \n\n")
+	prompt.WriteString("INSIGHTS SUMMARY:\n")
+
+	if OverallEffectiveness != nil {
+		prompt.WriteString(fmt.Sprintf("- Overall effectiveness: %.3f\n", OverallEffectiveness.Mean))
+	}
+
+	if PerformanceTrends != nil {
+		prompt.WriteString(fmt.Sprintf("- Trend: %s (strength: %.3f)\n",
+			PerformanceTrends.OverallTrend, PerformanceTrends.TrendStrength))
+	}
+
+	if AnomalyDetection != nil && len(AnomalyDetection.DetectedAnomalies) > 0 {
+		prompt.WriteString(fmt.Sprintf("- Anomalies detected: %d\n", len(AnomalyDetection.DetectedAnomalies)))
+	}
+
+	prompt.WriteString("\nRECOMMENDATION REQUEST:\n")
+	prompt.WriteString("Generate 3-5 specific, actionable recommendations for:\n")
+	prompt.WriteString("1. Improving overall system effectiveness\n")
+	prompt.WriteString("2. Addressing identified issues or anomalies\n")
+	prompt.WriteString("3. Optimizing cost-effectiveness\n")
+	prompt.WriteString("4. Enhancing monitoring and alerting\n")
+
+	prompt.WriteString("\nRESPONSE FORMAT:\n")
+	prompt.WriteString("Provide a JSON array of recommendation strings:\n")
+	prompt.WriteString("[\"recommendation1\", \"recommendation2\", \"recommendation3\"]\n")
+
+	return prompt.String()
+}
+
+// Helper methods
+
+func (ai DefaultAIInsightsService) getActionTypesSummary(analytics vector.PatternAnalytics) []string {
+	var types []string
+	for actionType := range PatternsByActionType {
+		types = append(types, actionType)
+	}
+	sort.Strings(types)
+	return types
+}
+
+func (ai DefaultAIInsightsService) getPatternEffectiveness(pattern vector.ActionPattern) float64 {
+	if pattern.EffectivenessData != nil {
+		return pattern.EffectivenessData.Score
+	}
+	return 0.0
+}
+
+func (ai DefaultAIInsightsService) getPatternContext(pattern vector.ActionPattern) string {
+	return fmt.Sprintf("ns:%s, severity:%s", pattern.Namespace, pattern.AlertSeverity)
+}
+
+func (ai DefaultAIInsightsService) calculateStandardDeviation(analytics vector.PatternAnalytics) float64 {
+	if len(analytics.TopPerformers) == 0 {
+		return 0.0
+	}
+
+	var scores []float64
+	for _, pattern := range analytics.TopPerformers {
+		scores = append(scores, ai.getPatternEffectiveness(pattern))
+	}
+
+	if len(scores) == 0 {
+		return 0.0
+	}
+
+	mean := analytics.AverageEffectiveness
+	var sum float64
+	for _, score := range scores {
+		diff := score - mean
+		sum += diff * diff
+	}
+
+	variance := sum / float64(len(scores))
+	return math.Sqrt(variance)
+}
+
+func (ai DefaultAIInsightsService) calculateRecentAverage(patterns []vector.ActionPattern) float64 {
+	if len(patterns) == 0 {
+		return 0.0
+	}
+
+	var sum float64
+	count := 0
+	for _, pattern := range patterns {
+		if pattern.EffectivenessData != nil {
+			sum += pattern.EffectivenessData.Score
+			count++
+		}
+	}
+
+	if count == 0 {
+		return 0.0
+	}
+
+	return sum / float64(count)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// Response parsing structures for AI analysis
+
+type AICorrelationResponse struct {
+	StrongestPositive   []CorrelationPair  `json:"strongest_positive"`
+	StrongestNegative   []CorrelationPair  `json:"strongest_negative"`
+	FeatureCorrelations map[string]float64 `json:"feature_correlations"`
+	Insights            []string           `json:"insights"`
+	Confidence          float64            `json:"confidence"`
+}
+
+type AIAnomalyResponse struct {
+	Anomalies     []AIAnomaly `json:"anomalies"`
+	AnomalyScore  float64     `json:"anomaly_score"`
+	ThresholdUsed float64     `json:"threshold_used"`
+	Insights      []string    `json:"insights"`
+	Confidence    float64     `json:"confidence"`
+}
+
+type AIAnomaly struct {
+	PatternID string  `json:"pattern_id"`
+	Type      string  `json:"type"`
+	Severity  float64 `json:"severity"`
+	Reason    string  `json:"reason"`
+}
+
+type AITrendResponse struct {
+	OverallTrend  string                    `json:"overall_trend"`
+	TrendStrength float64                   `json:"trend_strength"`
+	ActionTrends  map[string]AIActionTrend `json:"action_trends"`
+	Forecast      AIForecast               `json:"forecast"`
+	Insights      []string                  `json:"insights"`
+	Confidence    float64                   `json:"confidence"`
+}
+
+type AIActionTrend struct {
+	Direction string  `json:"direction"`
+	Strength  float64 `json:"strength"`
+}
+
+type AIForecast struct {
+	PredictedMean   float64  `json:"predicted_mean"`
+	ConfidenceRange AIRange `json:"confidence_range"`
+}
+
+type AIRange struct {
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
+}
+
+type AICostResponse struct {
+	CostPerAction   map[string]float64 `json:"cost_per_action"`
+	ROIByAction     map[string]float64 `json:"roi_by_action"`
+	TopCostSavers   []AICostSaver      `json:"top_cost_savers"`
+	EfficiencyTrend string             `json:"efficiency_trend"`
+	Insights        []string           `json:"insights"`
+	Confidence      float64            `json:"confidence"`
+}
+
+type AICostSaver struct {
+	ActionType       string  `json:"action_type"`
+	EstimatedSavings float64 `json:"estimated_savings"`
+}
+
+// parseCorrelationResponse parses AI recommendation into CorrelationAnalysis
+func (ai DefaultAIInsightsService) parseCorrelationResponse(recommendation types.ActionRecommendation, _ vector.PatternAnalytics) (CorrelationAnalysis, error) {
+	// Extract JSON from the reasoning or action parameters
+	reasoningText := ""
+	if recommendation.Reasoning != nil {
+		reasoningText = recommendation.Reasoning.Summary
+	}
+	jsonData := ai.extractJSONFromResponse(reasoningText)
+	if jsonData == "" {
+		return &CorrelationAnalysis{}, fmt.Errorf("no valid JSON found in AI response")
+	}
+
+	var aiResponse AICorrelationResponse
+	if err := json.Unmarshal([]byte(jsonData), &aiResponse); err != nil {
+		return &CorrelationAnalysis{}, fmt.Errorf("failed to parse AI correlation response: %w", err)
+	}
+
+	// Validate confidence threshold
+	if aiResponse.Confidence < ai.config.ConfidenceThreshold {
+		return &CorrelationAnalysis{}, fmt.Errorf("AI confidence %.3f below threshold %.3f", aiResponse.Confidence, ai.config.ConfidenceThreshold)
+	}
+
+	// Convert AI response to our format
+	correlationAnalysis := &CorrelationAnalysis{
+		FeatureCorrelations: aiResponse.FeatureCorrelations,
+		StrongestPositive:   aiResponse.StrongestPositive,
+		StrongestNegative:   aiResponse.StrongestNegative,
+	}
+
+	// Ensure we have valid data
+	if correlationAnalysis.FeatureCorrelations == nil {
+		correlationAnalysis.FeatureCorrelations = make(map[string]float64)
+	}
+
+	return correlationAnalysis, nil
+}
+
+// parseAnomalyResponse parses AI recommendation into AnomalyAnalysis
+func (ai DefaultAIInsightsService) parseAnomalyResponse(recommendation types.ActionRecommendation, analytics vector.PatternAnalytics) (AnomalyAnalysis, error) {
+	reasoningText := ""
+	if recommendation.Reasoning != nil {
+		reasoningText = recommendation.Reasoning.Summary
+	}
+	jsonData := ai.extractJSONFromResponse(reasoningText)
+	if jsonData == "" {
+		return &CorrelationAnalysis{}, fmt.Errorf("no valid JSON found in AI response")
+	}
+
+	var aiResponse AIAnomalyResponse
+	if err := json.Unmarshal([]byte(jsonData), &aiResponse); err != nil {
+		return &CorrelationAnalysis{}, fmt.Errorf("failed to parse AI anomaly response: %w", err)
+	}
+
+	if aiResponse.Confidence < ai.config.ConfidenceThreshold {
+		return &CorrelationAnalysis{}, fmt.Errorf("AI confidence %.3f below threshold %.3f", aiResponse.Confidence, ai.config.ConfidenceThreshold)
+	}
+
+	// Convert AI anomalies to our format
+	var anomalies []EffectivenessAnomaly
+	for _, aiAnomaly := range aiResponse.Anomalies {
+		anomaly := &EffectivenessAnomaly{
+			PatternID:     aiAnomaly.PatternID,
+			ActionType:    ai.extractActionTypeFromPatternID(aiAnomaly.PatternID, analytics),
+			AlertName:     ai.extractAlertNameFromPatternID(aiAnomaly.PatternID, analytics),
+			Effectiveness: 0.0, // Would need to lookup from pattern
+			AnomalyScore:  aiAnomaly.Severity,
+			Reason:        aiAnomaly.Reason,
+			DetectedAt:    time.Now(),
+		}
+		anomalies = append(anomalies, anomaly)
+	}
+
+	anomalyAnalysis := &AnomalyAnalysis{
+		AnomalyThreshold:  aiResponse.ThresholdUsed,
+		DetectedAnomalies: anomalies,
+		AnomalyScore:      aiResponse.AnomalyScore,
+		RecentAnomalies:   anomalies, // For simplicity, recent = all
+	}
+
+	return anomalyAnalysis, nil
+}
+
+// parseTrendResponse parses AI recommendation into TrendAnalysis
+func (ai DefaultAIInsightsService) parseTrendResponse(recommendation types.ActionRecommendation, analytics vector.PatternAnalytics) (TrendAnalysis, error) {
+	reasoningText := ""
+	if recommendation.Reasoning != nil {
+		reasoningText = recommendation.Reasoning.Summary
+	}
+	jsonData := ai.extractJSONFromResponse(reasoningText)
+	if jsonData == "" {
+		return &CorrelationAnalysis{}, fmt.Errorf("no valid JSON found in AI response")
+	}
+
+	var aiResponse AITrendResponse
+	if err := json.Unmarshal([]byte(jsonData), &aiResponse); err != nil {
+		return &CorrelationAnalysis{}, fmt.Errorf("failed to parse AI trend response: %w", err)
+	}
+
+	if aiResponse.Confidence < ai.config.ConfidenceThreshold {
+		return &CorrelationAnalysis{}, fmt.Errorf("AI confidence %.3f below threshold %.3f", aiResponse.Confidence, ai.config.ConfidenceThreshold)
+	}
+
+	// Convert AI trends to our format
+	actionTypeTrends := make(map[string]ActionTrend)
+	for actionType, aiTrend := range aiResponse.ActionTrends {
+		actionTypeTrends[actionType] = &ActionTrend{
+			ActionType:     actionType,
+			TrendDirection: aiTrend.Direction,
+			TrendStrength:  aiTrend.Strength,
+			RecentChange:   ai.calculateRecentChangeForAction(actionType, analytics),
+		}
+	}
+
+	// Build forecast
+	var forecast EffectivenessForecast
+	if aiResponse.Forecast != nil {
+		forecast = &EffectivenessForecast{
+			PredictedMean: aiResponse.Forecast.PredictedMean,
+			ConfidenceRange: &Range{
+				Min: aiResponse.Forecast.ConfidenceRange.Min,
+				Max: aiResponse.Forecast.ConfidenceRange.Max,
+			},
+			Horizon: 24 * time.Hour, // Default to 24 hours
+		}
+	}
+
+	trendAnalysis := &TrendAnalysis{
+		OverallTrend:        aiResponse.OverallTrend,
+		TrendStrength:       aiResponse.TrendStrength,
+		ActionTypeTrends:    actionTypeTrends,
+		SeasonalTrends:      make(map[string]float64), // Would need more sophisticated analysis
+		PredictedNextPeriod: forecast,
+	}
+
+	return trendAnalysis, nil
+}
+
+// parseCostResponse parses AI recommendation into CostAnalysis
+func (ai DefaultAIInsightsService) parseCostResponse(recommendation types.ActionRecommendation, analytics vector.PatternAnalytics) (CostAnalysis, error) {
+	reasoningText := ""
+	if recommendation.Reasoning != nil {
+		reasoningText = recommendation.Reasoning.Summary
+	}
+	jsonData := ai.extractJSONFromResponse(reasoningText)
+	if jsonData == "" {
+		return &CorrelationAnalysis{}, fmt.Errorf("no valid JSON found in AI response")
+	}
+
+	var aiResponse AICostResponse
+	if err := json.Unmarshal([]byte(jsonData), &aiResponse); err != nil {
+		return &CorrelationAnalysis{}, fmt.Errorf("failed to parse AI cost response: %w", err)
+	}
+
+	if aiResponse.Confidence < ai.config.ConfidenceThreshold {
+		return &CorrelationAnalysis{}, fmt.Errorf("AI confidence %.3f below threshold %.3f", aiResponse.Confidence, ai.config.ConfidenceThreshold)
+	}
+
+	// Convert cost savers to our format
+	var topCostSavers []CostEffectiveAction
+	for _, aiSaver := range aiResponse.TopCostSavers {
+		saver := &CostEffectiveAction{
+			ActionType:         aiSaver.ActionType,
+			TotalSavings:       aiSaver.EstimatedSavings,
+			ExecutionCount:     ai.getActionExecutionCount(aiSaver.ActionType, analytics),
+			AverageSavings:     aiSaver.EstimatedSavings / float64(max(1, ai.getActionExecutionCount(aiSaver.ActionType, analytics))),
+			EffectivenessRatio: ai.getActionEffectivenessRatio(aiSaver.ActionType, analytics),
+		}
+		topCostSavers = append(topCostSavers, saver)
+	}
+
+	// Calculate total cost savings
+	totalSavings := 0.0
+	for _, saver := range topCostSavers {
+		totalSavings += saver.TotalSavings
+	}
+
+	costAnalysis := &CostAnalysis{
+		TotalCostSavings:    totalSavings,
+		CostPerAction:       aiResponse.CostPerAction,
+		ROIByActionType:     aiResponse.ROIByAction,
+		CostEfficiencyTrend: aiResponse.EfficiencyTrend,
+		TopCostSavers:       topCostSavers,
+	}
+
+	return costAnalysis, nil
+}
+
+// parseRecommendationsResponse parses AI recommendation into string slice
+func (ai DefaultAIInsightsService) parseRecommendationsResponse(recommendation types.ActionRecommendation) []string {
+	reasoningText := ""
+	if recommendation.Reasoning != nil {
+		reasoningText = recommendation.Reasoning.Summary
+	}
+
+	jsonData := ai.extractJSONFromResponse(reasoningText)
+	if jsonData == "" {
+		// Fallback to parsing reasoning text directly
+		return ai.extractRecommendationsFromText(reasoningText)
+	}
+
+	var recommendations []string
+	if err := json.Unmarshal([]byte(jsonData), &recommendations); err != nil {
+		// Fallback to text parsing
+		return ai.extractRecommendationsFromText(reasoningText)
+	}
+
+	return recommendations
+}
+
+// Helper methods for response parsing
+
+func (ai DefaultAIInsightsService) extractJSONFromResponse(text string) string {
+	// Find JSON blocks in the response
+	start := strings.Index(text, "{")
+	if start == -1 {
+		// Try array format
+		start = strings.Index(text, "[")
+	}
+
+	if start == -1 {
+		return ""
+	}
+
+	// Find the matching closing bracket
+	depth := 0
+	var endChar rune
+	if text[start] == '{' {
+		endChar = '}'
+	} else {
+		endChar = ']'
+	}
+
+	for i, char := range text[start:] {
+		if char == rune(text[start]) {
+			depth++
+		} else if char == endChar {
+			depth--
+			if depth == 0 {
+				return text[start : start+i+1]
+			}
+		}
+	}
+
+	return ""
+}
+
+func (ai DefaultAIInsightsService) extractRecommendationsFromText(text string) []string {
+	// Simple text parsing for recommendations
+	lines := strings.Split(text, "\n")
+	var recommendations []string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "-") || strings.HasPrefix(line, "•") || strings.HasPrefix(line, "") {
+			recommendation := strings.TrimSpace(line[1:])
+			if len(recommendation) > 10 { // Filter out very short items
+				recommendations = append(recommendations, recommendation)
+			}
+		}
+	}
+
+	if len(recommendations) == 0 {
+		// Fallback recommendations
+		recommendations = []string{
+			"Monitor system performance trends closely",
+			"Review and optimize underperforming action types",
+			"Consider implementing additional monitoring for anomaly detection",
+		}
+	}
+
+	return recommendations
+}
+
+func (ai DefaultAIInsightsService) extractActionTypeFromPatternID(patternID string, analytics vector.PatternAnalytics) string {
+	// Simple heuristic - in real implementation would lookup pattern
+	for _, pattern := range analytics.TopPerformers {
+		if pattern.ID == patternID {
+			return pattern.ActionType
+		}
+	}
+	for _, pattern := range analytics.RecentPatterns {
+		if pattern.ID == patternID {
+			return pattern.ActionType
+		}
+	}
+	return "unknown"
+}
+
+func (ai DefaultAIInsightsService) extractAlertNameFromPatternID(patternID string, analytics vector.PatternAnalytics) string {
+	// Simple heuristic - in real implementation would lookup pattern
+	for _, pattern := range analytics.TopPerformers {
+		if pattern.ID == patternID {
+			return pattern.AlertName
+		}
+	}
+	for _, pattern := range analytics.RecentPatterns {
+		if pattern.ID == patternID {
+			return pattern.AlertName
+		}
+	}
+	return "unknown"
+}
+
+func (ai DefaultAIInsightsService) calculateRecentChangeForAction(actionType string, analytics vector.PatternAnalytics) float64 {
+	// Simple calculation - would be more sophisticated in real implementation
+	count := PatternsByActionType[actionType]
+	if count > 0 {
+		return 0.1 // Placeholder positive change
+	}
+	return 0.0
+}
+
+func (ai DefaultAIInsightsService) getActionExecutionCount(actionType string, analytics vector.PatternAnalytics) int {
+	if count, exists := PatternsByActionType[actionType]; exists {
+		return count
+	}
+	return 1 // Avoid division by zero
+}
+
+func (ai DefaultAIInsightsService) getActionEffectivenessRatio(actionType string, analytics vector.PatternAnalytics) float64 {
+	// Calculate effectiveness ratio for this action type
+	var totalEffectiveness float64
+	count := 0
+
+	for _, pattern := range analytics.TopPerformers {
+		if pattern.ActionType == actionType && pattern.EffectivenessData != nil {
+			totalEffectiveness += pattern.EffectivenessData.Score
+			count++
+		}
+	}
+
+	if count == 0 {
+		return analytics.AverageEffectiveness
+	}
+
+	return totalEffectiveness / float64(count)
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// Fallback methods provide basic analysis when AI service fails
+
+// fallbackCorrelationAnalysis provides basic correlation analysis without AI
+func (ai DefaultAIInsightsService) fallbackCorrelationAnalysis(analytics vector.PatternAnalytics) CorrelationAnalysis {
+	correlations := make(map[string]float64)
+
+	// Basic correlation analysis
+	correlations["action_type_effectiveness"] = ai.calculateActionTypeCorrelation(analytics)
+	correlations["severity_effectiveness"] = ai.calculateSeverityCorrelation(analytics)
+	correlations["namespace_effectiveness"] = ai.calculateNamespaceCorrelation(analytics)
+
+	// Generate basic correlation pairs
+	var positiveCorr []CorrelationPair
+	var negativeCorr []CorrelationPair
+
+	for feature, corr := range correlations {
+		if corr > 0.5 {
+			positiveCorr = append(positiveCorr, CorrelationPair{
+				Feature1:    feature,
+				Feature2:    "effectiveness",
+				Correlation: corr,
+			})
+		} else if corr < -0.3 {
+			negativeCorr = append(negativeCorr, CorrelationPair{
+				Feature1:    feature,
+				Feature2:    "effectiveness",
+				Correlation: corr,
+			})
+		}
+	}
+
+	return &CorrelationAnalysis{
+		FeatureCorrelations: correlations,
+		StrongestPositive:   positiveCorr,
+		StrongestNegative:   negativeCorr,
+	}
+}
+
+// fallbackAnomalyAnalysis provides basic anomaly detection without AI
+func (ai DefaultAIInsightsService) fallbackAnomalyAnalysis(analytics vector.PatternAnalytics) AnomalyAnalysis {
+	threshold := 0.3 // Patterns that deviate more than 30% from mean
+	var anomalies []EffectivenessAnomaly
+
+	// Calculate statistics for anomaly detection
+	mean := analytics.AverageEffectiveness
+	stdDev := ai.calculateStandardDeviation(analytics)
+
+	// Check top performing patterns for anomalies
+	for _, pattern := range analytics.TopPerformers {
+		if pattern.EffectivenessData == nil {
+			continue
+		}
+
+		score := pattern.EffectivenessData.Score
+		deviation := math.Abs(score - mean)
+
+		// Check if it's an anomaly (more than 2 standard deviations away)
+		if stdDev > 0 && deviation > 2 * stdDev {
+			anomaly := &EffectivenessAnomaly{
+				PatternID:     pattern.ID,
+				ActionType:    pattern.ActionType,
+				AlertName:     pattern.AlertName,
+				Effectiveness: score,
+				AnomalyScore:  deviation / stdDev,
+				Reason:        ai.determineAnomalyReason(score, mean, stdDev),
+				DetectedAt:    time.Now(),
+			}
+			anomalies = append(anomalies, anomaly)
+		}
+	}
+
+	// Calculate overall anomaly score
+	anomalyScore := 0.0
+	if len(anomalies) > 0 {
+		anomalyScore = float64(len(anomalies)) / float64(analytics.TotalPatterns)
+	}
+
+	return &AnomalyAnalysis{
+		AnomalyThreshold:  threshold,
+		DetectedAnomalies: anomalies,
+		AnomalyScore:      anomalyScore,
+		RecentAnomalies:   ai.filterRecentAnomalies(anomalies),
+	}
+}
+
+// fallbackTrendAnalysis provides basic trend analysis without AI
+func (ai DefaultAIInsightsService) fallbackTrendAnalysis(analytics vector.PatternAnalytics) TrendAnalysis {
+	// Simple trend determination based on recent vs historical performance
+	recentAvg := ai.calculateRecentAverage(analytics.RecentPatterns)
+	overallAvg := analytics.AverageEffectiveness
+
+	trendDirection := "stable"
+	trendStrength := 0.1
+
+	if recentAvg > overallAvg * 1.1 {
+		trendDirection = "improving"
+		trendStrength = math.Min(0.8, (recentAvg-overallAvg)/overallAvg)
+	} else if recentAvg < overallAvg * 0.9 {
+		trendDirection = "declining"
+		trendStrength = math.Min(0.8, (overallAvg-recentAvg)/overallAvg)
+	}
+
+	// Generate action type trends
+	actionTypeTrends := make(map[string]ActionTrend)
+	for actionType := range PatternsByActionType {
+		actionTypeTrends[actionType] = &ActionTrend{
+			ActionType:     actionType,
+			TrendDirection: ai.calculateActionTypeTrend(actionType, analytics),
+			TrendStrength:  0.3, // Default moderate strength
+			RecentChange:   ai.calculateRecentChangeForAction(actionType, analytics),
+		}
+	}
+
+	// Generate forecast
+	forecast := &EffectivenessForecast{
+		PredictedMean: ai.calculateForecastMean(recentAvg, overallAvg, trendDirection),
+		ConfidenceRange: &Range{
+			Min: math.Max(0.0, overallAvg-0.2),
+			Max: math.Min(1.0, overallAvg+0.2),
+		},
+		Horizon: 24 * time.Hour,
+	}
+
+	return &TrendAnalysis{
+		OverallTrend:        trendDirection,
+		TrendStrength:       trendStrength,
+		ActionTypeTrends:    actionTypeTrends,
+		SeasonalTrends:      ai.calculateBasicSeasonalTrends(),
+		PredictedNextPeriod: forecast,
+	}
+}
+
+// fallbackCostAnalysis provides basic cost analysis without AI
+func (ai DefaultAIInsightsService) fallbackCostAnalysis(analytics vector.PatternAnalytics) CostAnalysis {
+	// Basic cost estimation based on action types
+	costPerAction := make(map[string]float64)
+	roiByAction := make(map[string]float64)
+	var topCostSavers []CostEffectiveAction
+
+	for actionType, count := range PatternsByActionType {
+		// Simple cost estimation
+		baseCost := ai.estimateActionTypeCost(actionType)
+		costPerAction[actionType] = baseCost
+
+		// Calculate ROI based on effectiveness
+		effectiveness := ai.getActionEffectivenessRatio(actionType, analytics)
+		roi := effectiveness / baseCost
+		roiByAction[actionType] = roi
+
+		// Estimate savings
+		estimatedSavings := float64(count) * effectiveness * 100 // Simple savings model
+
+		if effectiveness > 0.7 && count > 5 { // High effectiveness and usage
+			costSaver := &CostEffectiveAction{
+				ActionType:         actionType,
+				TotalSavings:       estimatedSavings,
+				ExecutionCount:     count,
+				AverageSavings:     estimatedSavings / float64(count),
+				EffectivenessRatio: effectiveness,
+			}
+			topCostSavers = append(topCostSavers, costSaver)
+		}
+	}
+
+	// Sort cost savers by total savings
+	sort.Slice(topCostSavers, func(i, j int) bool {
+		return topCostSavers[i].TotalSavings > topCostSavers[j].TotalSavings
+	})
+
+	// Calculate total savings
+	totalSavings := 0.0
+	for _, saver := range topCostSavers {
+		totalSavings += saver.TotalSavings
+	}
+
+	return &CostAnalysis{
+		TotalCostSavings:    totalSavings,
+		CostPerAction:       costPerAction,
+		ROIByActionType:     roiByAction,
+		CostEfficiencyTrend: "stable", // Conservative default
+		TopCostSavers:       topCostSavers,
+	}
+}
+
+// fallbackRecommendations provides basic recommendations without AI
+func (ai DefaultAIInsightsService) fallbackRecommendations(insights AnalyticsInsights) []string {
+	var recommendations []string
+
+	// Basic recommendations based on insights
+	if OverallEffectiveness != nil {
+		if OverallEffectiveness.Mean < 0.6 {
+			recommendations = append(recommendations,
+				"Overall effectiveness is below 60% - review and optimize underperforming action types")
+		}
+
+		if OverallEffectiveness.StandardDeviation > 0.3 {
+			recommendations = append(recommendations,
+				"High variability in effectiveness detected - standardize successful action patterns")
+		}
+	}
+
+	if PerformanceTrends != nil {
+		if PerformanceTrends.OverallTrend == "declining" {
+			recommendations = append(recommendations,
+				"Performance trend is declining - investigate recent changes and their impact")
+		} else if PerformanceTrends.OverallTrend == "improving" {
+			recommendations = append(recommendations,
+				"Performance is improving - identify and replicate successful patterns")
+		}
+	}
+
+	if AnomalyDetection != nil && len(AnomalyDetection.DetectedAnomalies) > 0 {
+		recommendations = append(recommendations,
+			"Found anomalies - investigate unusual patterns for potential issues")
+	}
+
+	if CostEffectivenessAnalysis != nil && len(CostEffectivenessAnalysis.TopCostSavers) > 0 {
+		topSaver := CostEffectivenessAnalysis.TopCostSavers[0]
+		recommendations = append(recommendations,
+			"Focus on '"+topSaver.ActionType+"' actions - highest cost-effectiveness ratio")
+	}
+
+	// Default recommendations if none generated
+	if len(recommendations) == 0 {
+		recommendations = []string{
+			"Continue monitoring system effectiveness patterns",
+			"Review action execution logs for optimization opportunities",
+			"Consider implementing additional effectiveness metrics",
+		}
+	}
+
+	return recommendations
+}
+
+// Helper methods for fallback analysis
+
+func (ai DefaultAIInsightsService) calculateActionTypeCorrelation(analytics vector.PatternAnalytics) float64 {
+	// Simple correlation between action type diversity and effectiveness
+	actionTypes := len(PatternsByActionType)
+	if actionTypes > 5 {
+		return 0.6 // More action types correlate with better coverage
+	}
+	return 0.3
+}
+
+func (ai DefaultAIInsightsService) calculateSeverityCorrelation(analytics vector.PatternAnalytics) float64 {
+	// Estimate correlation between alert severity and action effectiveness
+	// In general, critical alerts might have lower effectiveness due to urgency
+	return -0.2 // Slight negative correlation
+}
+
+func (ai DefaultAIInsightsService) calculateNamespaceCorrelation(analytics vector.PatternAnalytics) float64 {
+	// Simple heuristic - production namespaces might have more conservative actions
+	return 0.1 // Slight positive correlation
+}
+
+func (ai DefaultAIInsightsService) determineAnomalyReason(score, mean, stdDev float64) string {
+	if score > mean+2 * stdDev {
+		return "Unusually high effectiveness - investigate successful factors"
+	} else if score < mean-2 * stdDev {
+		return "Unusually low effectiveness - potential failure or edge case"
+	}
+	return "Statistical outlier detected"
+}
+
+func (ai DefaultAIInsightsService) filterRecentAnomalies(anomalies []EffectivenessAnomaly) []EffectivenessAnomaly {
+	// Filter to anomalies from last 24 hours
+	cutoff := time.Now().Add(-24 * time.Hour)
+	var recent []EffectivenessAnomaly
+
+	for _, anomaly := range anomalies {
+		if anomaly.DetectedAt.After(cutoff) {
+			recent = append(recent, anomaly)
+		}
+	}
+
+	return recent
+}
+
+func (ai DefaultAIInsightsService) calculateActionTypeTrend(actionType string, analytics vector.PatternAnalytics) string {
+	// Simple heuristic based on action type frequency
+	count := PatternsByActionType[actionType]
+	if count > 10 {
+		return "stable" // Frequently used actions are stable
+	} else if count > 5 {
+		return "improving" // Moderate usage suggests improvement
+	}
+	return "stable" // Default
+}
+
+func (ai DefaultAIInsightsService) calculateForecastMean(recentAvg, overallAvg float64, trend string) float64 {
+	switch trend {
+	case "improving":
+		return math.Min(1.0, recentAvg * 1.1)
+	case "declining":
+		return math.Max(0.0, recentAvg * 0.9)
+	default:
+		return (recentAvg + overallAvg) / 2
+	}
+}
+
+func (ai DefaultAIInsightsService) calculateBasicSeasonalTrends() map[string]float64 {
+	// Basic seasonal patterns
+	return map[string]float64{
+		"weekday_effectiveness": 0.8,  // Weekdays generally higher
+		"weekend_effectiveness": 0.7,  // Weekends slightly lower
+		"business_hours":        0.85, // Business hours highest
+		"after_hours":           0.75, // After hours lower
+	}
+}
+
+func (ai DefaultAIInsightsService) estimateActionTypeCost(actionType string) float64 {
+	// Simple cost estimation based on action type
+	costMap := map[string]float64{
+		"scale_deployment":    2.0, // Medium cost
+		"restart_pod":         1.0, // Low cost
+		"increase_resources":  3.0, // High cost
+		"rollback_deployment": 2.5, // Medium-high cost
+		"drain_node":          5.0, // Very high cost
+		"notify_only":         0.1, // Very low cost
+	}
+
+	if cost, exists := costMap[actionType]; exists {
+		return cost
+	}
+
+	return 2.0 // Default medium cost
+}

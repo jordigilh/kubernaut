@@ -11,6 +11,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// DatabaseExecutor interface for both *sql.DB and *sql.Tx
+type DatabaseExecutor interface {
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
+
+// TransactionProvider provides transaction capabilities (only *sql.DB implements this)
+type TransactionProvider interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
 // Repository interface defines the contract for action history storage
 type Repository interface {
 	// Resource management
@@ -41,15 +53,26 @@ type Repository interface {
 
 // PostgreSQLRepository implements Repository using PostgreSQL
 type PostgreSQLRepository struct {
-	db     *sql.DB
-	logger *logrus.Logger
+	db         DatabaseExecutor
+	txProvider TransactionProvider // nil for transaction-scoped repositories
+	logger     *logrus.Logger
 }
 
-// NewPostgreSQLRepository creates a new PostgreSQL repository
+// NewPostgreSQLRepository creates a new PostgreSQL repository using a database connection
 func NewPostgreSQLRepository(db *sql.DB, logger *logrus.Logger) *PostgreSQLRepository {
 	return &PostgreSQLRepository{
-		db:     db,
-		logger: logger,
+		db:         db,
+		txProvider: db,
+		logger:     logger,
+	}
+}
+
+// NewPostgreSQLRepositoryWithTx creates a new PostgreSQL repository using an existing transaction
+func NewPostgreSQLRepositoryWithTx(tx *sql.Tx, logger *logrus.Logger) *PostgreSQLRepository {
+	return &PostgreSQLRepository{
+		db:         tx,
+		txProvider: nil, // Cannot create nested transactions
+		logger:     logger,
 	}
 }
 
@@ -222,20 +245,35 @@ func (r *PostgreSQLRepository) UpdateActionHistory(ctx context.Context, history 
 
 // StoreAction stores a new action record
 func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRecord) (*ResourceActionTrace, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	// Check if we need to create a new transaction or use existing executor
+	var tx *sql.Tx
+	var executor DatabaseExecutor = r.db
+	var shouldCommit bool
+
+	if r.txProvider != nil {
+		// We have a database connection, create a new transaction
+		var err error
+		tx, err = r.txProvider.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		executor = tx
+		shouldCommit = true
+		defer func() { _ = tx.Rollback() }()
+	} else {
+		// We're already in a transaction context, use the existing executor
+		executor = r.db
+		shouldCommit = false
 	}
-	defer tx.Rollback()
 
 	// Ensure resource reference exists
-	resourceID, err := r.ensureResourceReferenceInTx(ctx, tx, action.ResourceReference)
+	resourceID, err := r.ensureResourceReferenceWithExecutor(ctx, executor, action.ResourceReference)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ensure resource reference: %w", err)
 	}
 
 	// Ensure action history exists
-	actionHistory, err := r.ensureActionHistoryInTx(ctx, tx, resourceID)
+	actionHistory, err := r.ensureActionHistoryWithExecutor(ctx, executor, resourceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ensure action history: %w", err)
 	}
@@ -258,7 +296,7 @@ func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRe
 		) RETURNING id, created_at, updated_at`
 
 	var trace ResourceActionTrace
-	err = tx.QueryRowContext(ctx, insertQuery,
+	err = executor.QueryRowContext(ctx, insertQuery,
 		actionHistory.ID, actionID, action.CorrelationID, action.Timestamp,
 		action.Alert.Name, action.Alert.Severity, StringMapToJSONMap(action.Alert.Labels),
 		StringMapToJSONMap(action.Alert.Annotations), action.Alert.FiringTime,
@@ -272,7 +310,7 @@ func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRe
 	}
 
 	// Update action history counters
-	_, err = tx.ExecContext(ctx, `
+	_, err = executor.ExecContext(ctx, `
 		UPDATE action_histories
 		SET total_actions = total_actions + 1,
 		    last_action_at = $2,
@@ -284,8 +322,10 @@ func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRe
 		return nil, fmt.Errorf("failed to update action history counters: %w", err)
 	}
 
-	if err = tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	if shouldCommit {
+		if err = tx.Commit(); err != nil {
+			return nil, fmt.Errorf("failed to commit transaction: %w", err)
+		}
 	}
 
 	// Populate the returned trace with the data we inserted
@@ -318,15 +358,15 @@ func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRe
 	return &trace, nil
 }
 
-// Helper method to ensure resource reference within transaction
-func (r *PostgreSQLRepository) ensureResourceReferenceInTx(ctx context.Context, tx *sql.Tx, ref ResourceReference) (int64, error) {
+// Helper method to ensure resource reference with any database executor
+func (r *PostgreSQLRepository) ensureResourceReferenceWithExecutor(ctx context.Context, executor DatabaseExecutor, ref ResourceReference) (int64, error) {
 	var resourceID int64
 	query := `
 		SELECT id FROM resource_references
 		WHERE namespace = $1 AND kind = $2 AND name = $3
 		LIMIT 1`
 
-	err := tx.QueryRowContext(ctx, query, ref.Namespace, ref.Kind, ref.Name).Scan(&resourceID)
+	err := executor.QueryRowContext(ctx, query, ref.Namespace, ref.Kind, ref.Name).Scan(&resourceID)
 	if err == nil {
 		return resourceID, nil
 	}
@@ -342,14 +382,14 @@ func (r *PostgreSQLRepository) ensureResourceReferenceInTx(ctx context.Context, 
 		) VALUES ($1, $2, $3, $4, $5, NOW())
 		RETURNING id`
 
-	err = tx.QueryRowContext(ctx, insertQuery,
+	err = executor.QueryRowContext(ctx, insertQuery,
 		ref.ResourceUID, ref.APIVersion, ref.Kind, ref.Name, ref.Namespace).Scan(&resourceID)
 
 	return resourceID, err
 }
 
-// Helper method to ensure action history within transaction
-func (r *PostgreSQLRepository) ensureActionHistoryInTx(ctx context.Context, tx *sql.Tx, resourceID int64) (*ActionHistory, error) {
+// Helper method to ensure action history with any database executor
+func (r *PostgreSQLRepository) ensureActionHistoryWithExecutor(ctx context.Context, executor DatabaseExecutor, resourceID int64) (*ActionHistory, error) {
 	var history ActionHistory
 	query := `
 		SELECT id, resource_id, max_actions, max_age_days, compaction_strategy,
@@ -360,7 +400,7 @@ func (r *PostgreSQLRepository) ensureActionHistoryInTx(ctx context.Context, tx *
 		WHERE resource_id = $1
 		LIMIT 1`
 
-	err := tx.QueryRowContext(ctx, query, resourceID).Scan(
+	err := executor.QueryRowContext(ctx, query, resourceID).Scan(
 		&history.ID, &history.ResourceID, &history.MaxActions, &history.MaxAgeDays,
 		&history.CompactionStrategy, &history.OscillationWindowMins, &history.EffectivenessThreshold,
 		&history.PatternMinOccurrences, &history.TotalActions, &history.LastActionAt,
@@ -383,7 +423,7 @@ func (r *PostgreSQLRepository) ensureActionHistoryInTx(ctx context.Context, tx *
 		) VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, created_at, updated_at`
 
-	err = tx.QueryRowContext(ctx, insertQuery,
+	err = executor.QueryRowContext(ctx, insertQuery,
 		resourceID, 1000, 30, "pattern-aware", 120, 0.70, 3).Scan(
 		&history.ID, &history.CreatedAt, &history.UpdatedAt)
 
@@ -485,7 +525,11 @@ func (r *PostgreSQLRepository) GetActionTraces(ctx context.Context, query Action
 	if err != nil {
 		return nil, fmt.Errorf("failed to query action traces: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.Warnf("Failed to close rows: %v", err)
+		}
+	}()
 
 	var traces []ResourceActionTrace
 	for rows.Next() {
@@ -604,7 +648,11 @@ func (r *PostgreSQLRepository) GetPendingEffectivenessAssessments(ctx context.Co
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pending assessments: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.Warnf("Failed to close rows: %v", err)
+		}
+	}()
 
 	var traces []*ResourceActionTrace
 	for rows.Next() {
@@ -662,7 +710,11 @@ func (r *PostgreSQLRepository) GetOscillationPatterns(ctx context.Context, patte
 	if err != nil {
 		return nil, fmt.Errorf("failed to query oscillation patterns: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.Warnf("Failed to close rows: %v", err)
+		}
+	}()
 
 	var patterns []OscillationPattern
 	for rows.Next() {

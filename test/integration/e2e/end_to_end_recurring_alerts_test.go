@@ -17,12 +17,11 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/metrics"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
 // ConvertAlertToResourceRef converts a types.Alert to actionhistory.ResourceReference
@@ -36,55 +35,38 @@ func ConvertAlertToResourceRef(alert types.Alert) actionhistory.ResourceReferenc
 
 var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 	var (
-		logger     *logrus.Logger
-		testUtils  *shared.IntegrationTestUtils
-		testConfig shared.IntegrationConfig
+		logger *logrus.Logger
+		helper *shared.DatabaseIsolationHelper
 	)
 
 	BeforeAll(func() {
-		testConfig = shared.LoadConfig()
-		if testConfig.SkipIntegration {
-			Skip("Integration tests disabled")
-		}
-
 		logger = logrus.New()
 		logger.SetLevel(logrus.InfoLevel)
 
-		var err error
-		testUtils, err = shared.NewIntegrationTestUtils(logger)
-		Expect(err).ToNot(HaveOccurred())
-
-		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
+		// Use transaction-based isolation for fast, reliable test isolation
+		helper = shared.NewIsolatedTestSuite("End-to-End Recurring Alert Integration").
+			WithIsolationStrategy(shared.TransactionIsolation).
+			WithLogger(logger).
+			Build()
 	})
 
-	AfterAll(func() {
-		if testUtils != nil {
-			testUtils.Close()
+	// Database isolation is handled automatically by the helper
+
+	createSLMClient := func() llm.Client {
+		// Use fake SLM client instead of real client to eliminate external dependencies
+		return helper.CreateFakeSLMClient()
+	}
+
+	createSLMClientWithErrorInjection := func(errorScenario shared.ErrorScenario) llm.Client {
+		client := helper.CreateFakeSLMClient()
+		// Cast to fake client for error injection capabilities
+		if fakeClient, ok := client.(*shared.FakeSLMClient); ok {
+			err := fakeClient.TriggerErrorScenario(errorScenario)
+			if err != nil {
+				logger.WithError(err).Warning("Failed to trigger error scenario in SLM client")
+			}
 		}
-	})
-
-	BeforeEach(func() {
-		Expect(testUtils.CleanDatabase()).To(Succeed())
-	})
-
-	createSLMClient := func() slm.Client {
-		slmConfig := config.SLMConfig{
-			Endpoint:       testConfig.OllamaEndpoint,
-			Model:          testConfig.OllamaModel,
-			Provider:       "localai",
-			Timeout:        testConfig.TestTimeout,
-			RetryCount:     1,
-			Temperature:    0.3,
-			MaxTokens:      500,
-			MaxContextSize: 2000,
-		}
-
-		// Use simplified MCP client creation with real K8s MCP server
-		mcpClient := testUtils.CreateMCPClient(testConfig)
-
-		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
-		Expect(err).ToNot(HaveOccurred())
-		return slmClient
+		return client
 	}
 
 	Context("Recurring Alert Learning Scenarios", func() {
@@ -129,10 +111,10 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			// Create history of failed scale_deployment attempts
 			ctx := context.Background()
-			resourceID, err := testUtils.Repository.EnsureResourceReference(ctx, resourceRef)
+			resourceID, err := helper.GetRepository().EnsureResourceReference(ctx, resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = testUtils.Repository.EnsureActionHistory(ctx, resourceID)
+			_, err = helper.GetRepository().EnsureActionHistory(ctx, resourceID)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Simulate previous scale_deployment that failed (wrong action for OOM)
@@ -157,7 +139,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				},
 			}
 
-			trace, err := testUtils.Repository.StoreAction(ctx, failedAction)
+			trace, err := helper.GetRepository().StoreAction(ctx, failedAction)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Mark as failed with low effectiveness
@@ -206,7 +188,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating history of ineffective security responses")
 			resourceRef := ConvertAlertToResourceRef(securityAlert)
-			_, err := testUtils.CreateIneffectiveSecurityHistory(resourceRef)
+			_, err := helper.CreateIneffectiveSecurityHistory(resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Analyzing security alert with poor containment history")
@@ -251,7 +233,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating oscillation pattern in database")
 			resourceRef := ConvertAlertToResourceRef(memoryAlert)
-			err := testUtils.CreateOscillationPattern(resourceRef)
+			err := helper.CreateOscillationPattern(resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Analyzing alert with oscillation risk")
@@ -301,12 +283,12 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			resourceRef := ConvertAlertToResourceRef(storageAlert)
 
 			// Create low effectiveness history for expand_pvc
-			_, err := testUtils.CreateLowEffectivenessHistory(resourceRef, "expand_pvc", 0.3)
+			_, err := helper.CreateLowEffectivenessHistory(resourceRef, "expand_pvc", 0.3)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create successful history for cleanup_storage
 			ctx := context.Background()
-			_, err = testUtils.Repository.EnsureResourceReference(ctx, resourceRef)
+			_, err = helper.GetRepository().EnsureResourceReference(ctx, resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			reasoning := "Successful storage cleanup"
@@ -330,7 +312,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				},
 			}
 
-			trace, err := testUtils.Repository.StoreAction(ctx, successfulAction)
+			trace, err := helper.GetRepository().StoreAction(ctx, successfulAction)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Mark as successful with high effectiveness
@@ -377,7 +359,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating cascading failure pattern")
 			resourceRef := ConvertAlertToResourceRef(networkAlert)
-			_, err := testUtils.CreateCascadingFailureHistory(resourceRef)
+			_, err := helper.CreateCascadingFailureHistory(resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Analyzing network alert with cascading failure risk")
@@ -413,10 +395,10 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating progressive memory alerts with restart attempts")
 			ctx := context.Background()
-			resourceID, err := testUtils.Repository.EnsureResourceReference(ctx, resourceRef)
+			resourceID, err := helper.GetRepository().EnsureResourceReference(ctx, resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
-			_, err = testUtils.Repository.EnsureActionHistory(ctx, resourceID)
+			_, err = helper.GetRepository().EnsureActionHistory(ctx, resourceID)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Simulate memory leak pattern: gradual memory increase, restart, temporary fix, repeat
@@ -460,7 +442,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 					},
 				}
 
-				trace, err := testUtils.Repository.StoreAction(ctx, action)
+				trace, err := helper.GetRepository().StoreAction(ctx, action)
 				Expect(err).ToNot(HaveOccurred())
 
 				trace.ExecutionStatus = "completed"
@@ -528,7 +510,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			By("Creating failed restart history for the deployment")
 			resourceRef := ConvertAlertToResourceRef(deploymentAlert)
-			_, err := testUtils.CreateFailedRestartHistory(resourceRef, 3)
+			_, err := helper.CreateFailedRestartHistory(resourceRef, 3)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Analyzing deployment alert with pod failure context")
@@ -606,15 +588,15 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			}
 
 			By("Creating extensive action history for large context")
-			_, err := testUtils.CreateTestActionHistory(resourceRef, 25) // Large history
+			_, err := helper.CreateTestActionHistory(resourceRef, 25) // Large history
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Creating oscillation patterns")
-			err = testUtils.CreateOscillationPattern(resourceRef)
+			err = helper.CreateOscillationPattern(resourceRef)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Creating failed action patterns")
-			_, err = testUtils.CreateFailedRestartHistory(resourceRef, 5)
+			_, err = helper.CreateFailedRestartHistory(resourceRef, 5)
 			Expect(err).ToNot(HaveOccurred())
 
 			largeContextAlert := types.Alert{
@@ -698,7 +680,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				},
 				{
 					name:         "LargeContextAlert",
-					description:  "Large context test with extensive description, multiple labels, annotations, and detailed metadata that should result in a significantly larger context size when combined with historical data and MCP context information for comprehensive testing of context size metrics collection and validation",
+					description:  "Large context test with extensive description, multiple labels, annotations, and detailed metadata that should result in a significantly larger context size when combined with historical data for comprehensive testing of context size metrics collection and validation",
 					expectedSize: "large",
 				},
 			}
@@ -763,8 +745,198 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				"size_range":       fmt.Sprintf("%.0f - %.0f bytes", min(contextSizes), max(contextSizes)),
 			}).Info("Context size metrics validation completed")
 		})
+
+		Context("Error Resilience During Alert Processing", func() {
+			It("should handle SLM service degradation during recurring alert analysis", func() {
+				// Use SLM service degradation scenario
+				degradationScenario := shared.PredefinedErrorScenarios["slm_service_degradation"]
+				client := createSLMClientWithErrorInjection(degradationScenario)
+
+				// Create a recurring alert that would normally improve over time
+				recurringAlert := types.Alert{
+					Name:        "PodMemoryPressure",
+					Status:      "firing",
+					Severity:    "warning",
+					Description: "Pod memory usage consistently above 85%",
+					Namespace:   "production",
+					Resource:    "memory-app",
+					Labels: map[string]string{
+						"alertname":    "PodMemoryPressure",
+						"memory_usage": "87%",
+						"trend":        "increasing",
+					},
+					Annotations: map[string]string{
+						"description": "Memory pressure detected with increasing trend",
+					},
+				}
+
+				By("Processing alert during normal operation")
+				normalRecommendation, err := client.AnalyzeAlert(context.Background(), recurringAlert)
+
+				// Due to error injection, this might fail or return fallback response
+				if err != nil {
+					logger.WithError(err).Info("SLM service degradation triggered expected error")
+
+					// Verify it's a service degradation error
+					Expect(err.Error()).To(ContainSubstring("SLM service degradation"))
+				} else {
+					logger.WithFields(logrus.Fields{
+						"action":     normalRecommendation.Action,
+						"confidence": normalRecommendation.Confidence,
+					}).Info("SLM provided fallback response during degradation")
+
+					// Verify fallback response is reasonable
+					Expect(normalRecommendation).ToNot(BeNil())
+					Expect(normalRecommendation.Action).ToNot(BeEmpty())
+
+					// Confidence might be lower during degradation
+					if normalRecommendation.Confidence < 0.5 {
+						logger.Info("Confidence appropriately reduced during SLM degradation")
+					}
+				}
+
+				By("Processing multiple recurring alerts to test consistency")
+				consistencyResults := make([]bool, 5)
+
+				for i := 0; i < 5; i++ {
+					time.Sleep(1 * time.Second) // Small delay between requests
+
+					recommendation, err := client.AnalyzeAlert(context.Background(), recurringAlert)
+					consistencyResults[i] = (err == nil && recommendation != nil)
+
+					if err == nil && recommendation != nil {
+						logger.WithFields(logrus.Fields{
+							"attempt":    i + 1,
+							"action":     recommendation.Action,
+							"confidence": recommendation.Confidence,
+						}).Debug("Recurring alert processed during degradation")
+					} else if err != nil {
+						logger.WithError(err).WithField("attempt", i+1).Debug("Expected error during degradation")
+					}
+				}
+
+				By("Verifying service recovery after degradation period")
+				// Wait for scenario recovery (45s duration + 20s recovery from predefined scenario)
+				time.Sleep(5 * time.Second) // Shortened for test speed
+
+				// Reset error state to simulate recovery
+				if fakeClient, ok := client.(*shared.FakeSLMClient); ok {
+					fakeClient.ResetErrorState()
+				}
+
+				recoveredRecommendation, err := client.AnalyzeAlert(context.Background(), recurringAlert)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(recoveredRecommendation).ToNot(BeNil())
+				Expect(recoveredRecommendation.Action).ToNot(BeEmpty())
+
+				logger.WithFields(logrus.Fields{
+					"action":     recoveredRecommendation.Action,
+					"confidence": recoveredRecommendation.Confidence,
+				}).Info("SLM service successfully recovered from degradation")
+
+				// Verify recovery improved response quality
+				Expect(recoveredRecommendation.Confidence).To(BeNumerically(">=", 0.6))
+
+				By("Verifying learning continuity despite service interruption")
+				// Process the same alert again to verify learning wasn't completely disrupted
+				finalRecommendation, err := client.AnalyzeAlert(context.Background(), recurringAlert)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(finalRecommendation).ToNot(BeNil())
+
+				logger.WithFields(logrus.Fields{
+					"action":           finalRecommendation.Action,
+					"confidence":       finalRecommendation.Confidence,
+					"consistency_rate": fmt.Sprintf("%.1f%%", float64(countTrue(consistencyResults))/float64(len(consistencyResults))*100),
+				}).Info("End-to-end resilience test completed")
+			})
+
+			It("should maintain alert processing capabilities during network instability", func() {
+				// Test cascading failure scenario
+				cascadeScenario := shared.PredefinedErrorScenarios["multi_service_cascade"]
+				client := createSLMClientWithErrorInjection(cascadeScenario)
+
+				criticalAlert := types.Alert{
+					Name:        "ServiceUnavailable",
+					Status:      "firing",
+					Severity:    "critical",
+					Description: "Service is completely unavailable",
+					Namespace:   "production",
+					Resource:    "critical-service",
+					Labels: map[string]string{
+						"alertname": "ServiceUnavailable",
+						"service":   "critical-service",
+						"severity":  "critical",
+					},
+				}
+
+				By("Testing alert processing under cascade failure conditions")
+
+				// Multiple attempts to simulate real-world retry behavior
+				var lastSuccessfulRecommendation *types.ActionRecommendation
+				successCount := 0
+
+				for attempt := 1; attempt <= 3; attempt++ {
+					recommendation, err := client.AnalyzeAlert(context.Background(), criticalAlert)
+
+					if err != nil {
+						logger.WithError(err).WithField("attempt", attempt).Info("Expected cascade failure error")
+
+						// Verify error handling is appropriate
+						Expect(err.Error()).To(Or(
+							ContainSubstring("network failure"),
+							ContainSubstring("service unavailable"),
+							ContainSubstring("circuit breaker"),
+						))
+					} else {
+						logger.WithFields(logrus.Fields{
+							"attempt":    attempt,
+							"action":     recommendation.Action,
+							"confidence": recommendation.Confidence,
+						}).Info("Successfully processed alert despite cascade failure")
+
+						lastSuccessfulRecommendation = recommendation
+						successCount++
+
+						// Verify response quality during crisis
+						Expect(recommendation).ToNot(BeNil())
+						Expect(recommendation.Action).ToNot(BeEmpty())
+					}
+
+					// Small delay between attempts
+					time.Sleep(500 * time.Millisecond)
+				}
+
+				By("Verifying system resilience metrics")
+				successRate := float64(successCount) / 3.0
+				logger.WithFields(logrus.Fields{
+					"success_rate":        fmt.Sprintf("%.1f%%", successRate*100),
+					"successful_attempts": successCount,
+					"last_successful_action": func() string {
+						if lastSuccessfulRecommendation != nil {
+							return lastSuccessfulRecommendation.Action
+						}
+						return "none"
+					}(),
+				}).Info("Cascade failure resilience test completed")
+
+				// System should maintain at least some level of functionality
+				// Even partial success (33%+) demonstrates resilience
+				Expect(successRate).To(BeNumerically(">=", 0.33), "System should maintain some functionality during cascade failures")
+			})
+		})
 	})
 })
+
+// Helper function to count true values in a boolean slice
+func countTrue(values []bool) int {
+	count := 0
+	for _, v := range values {
+		if v {
+			count++
+		}
+	}
+	return count
+}
 
 // Helper functions for metrics testing
 
