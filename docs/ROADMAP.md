@@ -9,7 +9,7 @@
 ### ✅ **Completed Features**
 
 1. **Core System Architecture**
-   - MCP Bridge with dynamic tool calling for LocalAI
+   - Context Provider Bridge with dynamic tool calling for LocalAI
    - Kubernetes unified client with comprehensive API coverage
    - PostgreSQL-based action history storage
    - Effectiveness assessment framework (requires monitoring integrations)
@@ -122,7 +122,117 @@ OLLAMA_MODEL={model} go test -v -tags=integration ./test/integration/...
 
 ---
 
-### 1.3 Production Safety Enhancements
+### 1.3 Kubernetes Operator Development
+**Status**: Pending
+**Duration**: 4-5 weeks
+**Priority**: High
+
+**Objective**: Package Kubernaut as a professional Kubernetes operator for enterprise deployment
+
+**Scope**: Transform the current multi-service architecture into a production-ready Kubernetes operator that can be distributed via OperatorHub and community operators.
+
+#### **Operator Development Tasks**:
+- [ ] **Operator SDK Implementation**: Create operator using Operator SDK framework
+- [ ] **Custom Resource Definitions (CRDs)**: Design CRDs for Kubernaut configuration and management
+  ```yaml
+  apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    name: kubernauts.ai.kubernaut.io
+  spec:
+    group: ai.kubernaut.io
+    versions:
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                llmProvider:
+                  type: string
+                  enum: ["openai", "anthropic", "azure", "aws", "local"]
+                vectorDatabase:
+                  type: object
+                  properties:
+                    enabled: {type: boolean}
+                    storage: {type: string}
+                historicalLearning:
+                  type: object
+                  properties:
+                    enabled: {type: boolean}
+                    retentionDays: {type: integer}
+  ```
+
+- [ ] **Operator Controller Logic**: Implement reconciliation logic for Kubernaut resources
+- [ ] **Multi-Service Orchestration**: Operator manages Go service, Python API, PostgreSQL, and Vector DB
+- [ ] **LLM Provider Configuration**: Support for both cloud APIs and on-premises LLM instances
+- [ ] **Lifecycle Management**: Install, upgrade, backup, and deletion procedures
+- [ ] **RBAC & Security**: Kubernetes-native security model with proper service accounts
+- [ ] **OperatorHub Packaging**: Create operator bundle for distribution
+
+#### **Configuration Management**:
+```go
+// KubernautSpec defines the desired state of Kubernaut
+type KubernautSpec struct {
+    // LLM Provider configuration
+    LLMProvider LLMProviderSpec `json:"llmProvider"`
+
+    // Vector database configuration
+    VectorDatabase VectorDatabaseSpec `json:"vectorDatabase,omitempty"`
+
+    // Historical learning configuration
+    HistoricalLearning HistoricalLearningSpec `json:"historicalLearning,omitempty"`
+
+    // Resource requirements for services
+    Resources ResourceRequirementsSpec `json:"resources,omitempty"`
+
+    // On-premises LLM configuration
+    OnPremisesLLM *OnPremisesLLMSpec `json:"onPremisesLLM,omitempty"`
+}
+```
+
+#### **Operator Features**:
+- **Automated Dependency Management**: Operator handles PostgreSQL and Vector DB deployment
+- **Configuration Validation**: Validate LLM provider settings and connectivity
+- **Health Monitoring**: Built-in health checks and status reporting
+- **Upgrade Management**: Zero-downtime rolling updates for all components
+- **Backup & Recovery**: Automated backup of vector embeddings and historical data
+- **Cost Optimization**: Support for both cloud LLM APIs and on-premises deployments
+
+#### **Enterprise Distribution**:
+- [ ] **OperatorHub Bundle**: Package for Kubernetes OperatorHub distribution
+- [ ] **Community Operators**: Submit to community-operators repository
+- [ ] **Certification Ready**: Prepare for potential ecosystem certifications
+- [ ] **Documentation**: Comprehensive operator installation and management guides
+- [ ] **Examples**: Sample configurations for different deployment scenarios
+
+#### **Testing & Validation**:
+- [ ] **Operator Testing**: Comprehensive test suite for operator functionality
+- [ ] **Deployment Testing**: Validate operator deployment across different Kubernetes distributions
+- [ ] **Upgrade Testing**: Ensure smooth upgrades between operator versions
+- [ ] **Multi-Tenancy Testing**: Validate namespace isolation and RBAC
+- [ ] **Performance Testing**: Operator overhead and resource management validation
+
+#### **Deliverables**:
+- [ ] **Production-ready Kubernetes operator** with full lifecycle management
+- [ ] **OperatorHub distribution package** for professional deployment
+- [ ] **On-premises LLM support** eliminating external API dependencies
+- [ ] **Enterprise-grade security** with Kubernetes-native RBAC
+- [ ] **Comprehensive documentation** and deployment guides
+- [ ] **Cost flexibility** supporting both cloud and on-premises deployment models
+
+**Expected Outcomes**:
+- Addresses "complex multi-service architecture" competitive disadvantage
+- Provides professional enterprise packaging comparable to competitors
+- Enables cost-flexible deployment (cloud APIs vs. on-premises LLM)
+- Simplifies installation and lifecycle management
+- Positions Kubernaut as enterprise-ready solution
+
+---
+
+### 1.4 Production Safety Enhancements
 **Status**: Partial (Safety assessment implemented, circuit breakers pending)
 
 **Objective**: Implement production-grade safety mechanisms
@@ -185,7 +295,7 @@ var scenarios = []LoadTestScenario{
 
 ---
 
-### 1.4 Multi-Instance Scaling Architecture Design
+### 1.5 Multi-Instance Scaling Architecture Design
 **Status**: Pending
 **Duration**: 2-3 weeks
 **Owner**: TBD
@@ -243,7 +353,7 @@ type ModelRouter struct {
 
 ---
 
-### 1.5 Prometheus Metrics MCP Server
+### 1.6 Prometheus Metrics Context Provider Server
 **Status**: Pending
 **Duration**: 3-4 weeks
 **Owner**: TBD
@@ -252,12 +362,12 @@ type ModelRouter struct {
 
 **Strategic Value**: Transform from reactive alert-based decisions to proactive, metrics-informed remediation with historical context
 
-#### MCP Server Architecture:
+#### Context Provider Server Architecture:
 ```go
-// Prometheus Metrics MCP Server providing real-time metrics access to models
-type PrometheusMetricsMCPServer struct {
+// Prometheus Metrics Context Provider Server providing real-time metrics access to models
+type PrometheusMetricsContext ProviderServer struct {
     prometheusClient prometheus.API
-    tools           []MCPTool
+    tools           []Context ProviderTool
     rateLimit       rate.Limiter
     cachingLayer    MetricsCache
     queryTemplates  []MetricsQueryTemplate
@@ -308,7 +418,7 @@ reasoning: "High memory pressure correlates with response time degradation under
 ```
 
 #### Deliverables:
-- [ ] **Prometheus Metrics MCP server** with comprehensive metrics library
+- [ ] **Prometheus Metrics Context Provider server** with comprehensive metrics library
 - [ ] **Historical trend analysis** for predictive decision making
 - [ ] **Metrics correlation engine** for root cause identification
 - [ ] **Performance optimization** with intelligent caching and batching
@@ -316,7 +426,7 @@ reasoning: "High memory pressure correlates with response time degradation under
 
 ---
 
-### 1.6 Metrics-Enhanced Model Comparison
+### 1.7 Metrics-Enhanced Model Comparison
 **Status**: Pending
 **Duration**: 3-4 weeks
 **Owner**: TBD
@@ -327,9 +437,9 @@ reasoning: "High memory pressure correlates with response time degradation under
 
 #### Enhanced Evaluation Framework:
 ```bash
-# Test each model with Prometheus MCP capabilities
+# Test each model with Prometheus Context Provider capabilities
 for model in granite-8b granite-2b phi-2 gemma-2b qwen2-2b; do
-    PROMETHEUS_MCP_ENABLED=true OLLAMA_MODEL=$model \
+    PROMETHEUS_Context Provider_ENABLED=true OLLAMA_MODEL=$model \
     go test -v -tags=integration,metrics ./test/integration/...
 done
 ```
@@ -348,7 +458,7 @@ done
 - **Smaller Models**: ❌ Likely insufficient for complex metrics correlation
 
 #### Implementation Tasks:
-- [ ] **Prometheus MCP integration** testing for all candidate models
+- [ ] **Prometheus Context Provider integration** testing for all candidate models
 - [ ] **Metrics query evaluation** (correctness of Prometheus queries)
 - [ ] **Decision quality comparison** (metrics-enhanced vs. basic responses)
 - [ ] **Performance impact analysis** (latency with metrics queries)
@@ -810,7 +920,7 @@ performance_considerations:
 - [ ] **Comprehensive fallback strategy** ensuring system reliability
 
 #### Integration Points:
-- **MCP Bridge Enhancement**: RAG context integrated into tool conversations
+- **Context Provider Bridge Enhancement**: RAG context integrated into tool conversations
 - **Vector Database Dependency**: Requires hybrid storage from item 2.4
 - **Model Selection Impact**: RAG may favor models with better context handling
 
@@ -1223,7 +1333,7 @@ type RouterStrategy interface {
 
 ---
 
-### 4.4 Cost Management MCP Server
+### 4.4 Cost Management Context Provider Server
 **Status**: Pending
 **Duration**: 6-8 weeks
 **Owner**: TBD
@@ -1239,7 +1349,7 @@ Cost-Aware: "Increase memory allocation instead" → 16% cost increase, same res
 Budget Impact: Stays within monthly allocation vs. causing budget overage
 ```
 
-#### Cost Management MCP Architecture:
+#### Cost Management Context Provider Architecture:
 ```go
 // Cost-aware decision making
 type CostIntelligentRemediation struct {
@@ -1288,7 +1398,7 @@ CloudProviders: ["AWS Cost Explorer", "GCP Billing API", "Azure Cost Management"
 - **Strategic cost planning** with AI-driven financial intelligence
 
 #### Deliverables:
-- [ ] **Cost MCP server** with multi-cloud integration
+- [ ] **Cost Context Provider server** with multi-cloud integration
 - [ ] **Budget-aware AI decision making** for all remediation actions
 - [ ] **Cost optimization engine** with automated recommendations
 - [ ] **Enterprise governance** framework for financial controls
@@ -1296,7 +1406,255 @@ CloudProviders: ["AWS Cost Explorer", "GCP Billing API", "Azure Cost Management"
 
 ---
 
-### 4.5 Security Intelligence MCP Server
+### 4.5 Tekton Pipelines Evaluation for Workflow Replacement
+**Status**: Pending (Evaluation Phase)
+**Duration**: 3-4 weeks
+**Priority**: Medium (Architectural Assessment)
+**Dependencies**: Workflow Engine Implementation (see [WORKFLOWS.md](./WORKFLOWS.md))
+
+**Objective**: Evaluate Tekton Pipelines as a potential replacement for the custom workflow engine to leverage Kubernetes-native CI/CD capabilities for alert remediation orchestration
+
+**Strategic Rationale**: Assess whether adopting Tekton could provide better scalability, maintainability, and operational consistency compared to the custom workflow implementation, while reducing development and maintenance overhead.
+
+#### Current Workflow System Assessment:
+```yaml
+current_implementation:
+  components:
+    - AdaptiveOrchestrator: "Custom Go implementation"
+    - WorkflowEngine: "Custom step execution engine"
+    - WorkflowTemplates: "Custom YAML/JSON format"
+    - StateStorage: "Custom persistence layer"
+
+  limitations:
+    - maintenance_overhead: "Full custom implementation to maintain"
+    - kubernetes_integration: "Not Kubernetes-native"
+    - operational_tooling: "Requires custom debugging and monitoring"
+    - scaling_complexity: "Custom horizontal scaling implementation needed"
+```
+
+#### Tekton Pipelines Evaluation Framework:
+```yaml
+# Tekton-based remediation pipeline example
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: alert-remediation-pipeline
+spec:
+  params:
+    - name: alert-name
+    - name: alert-severity
+    - name: target-namespace
+    - name: target-resource
+  tasks:
+    - name: assess-alert-context
+      taskRef:
+        name: k8s-context-analysis
+      params:
+        - name: namespace
+          value: $(params.target-namespace)
+        - name: resource
+          value: $(params.target-resource)
+
+    - name: ai-decision-making
+      taskRef:
+        name: slm-analysis
+      runAfter: ["assess-alert-context"]
+      params:
+        - name: alert-data
+          value: $(params.alert-name)
+        - name: context-data
+          value: $(tasks.assess-alert-context.results.context)
+
+    - name: execute-remediation
+      taskRef:
+        name: k8s-remediation-action
+      runAfter: ["ai-decision-making"]
+      params:
+        - name: action-type
+          value: $(tasks.ai-decision-making.results.recommended-action)
+        - name: action-parameters
+          value: $(tasks.ai-decision-making.results.action-params)
+
+    - name: verify-effectiveness
+      taskRef:
+        name: effectiveness-assessment
+      runAfter: ["execute-remediation"]
+      params:
+        - name: action-trace-id
+          value: $(tasks.execute-remediation.results.trace-id)
+```
+
+#### Evaluation Criteria Matrix:
+| Aspect | Custom Workflow Engine | Tekton Pipelines | Assessment Weight |
+|--------|------------------------|-------------------|-------------------|
+| **Kubernetes Native** | ❌ Custom implementation | ✅ Cloud Native Computing Foundation project | High |
+| **Operational Tooling** | 🔧 Custom debugging/monitoring | ✅ kubectl, Tekton CLI, Dashboard | High |
+| **Scalability** | 🔧 Custom scaling logic | ✅ Kubernetes-native horizontal scaling | High |
+| **State Management** | 🔧 Custom persistence | ✅ Kubernetes resources (CRDs) | Medium |
+| **Conditional Logic** | ✅ Full AI-driven conditions | 🔧 Limited conditional capabilities | High |
+| **Dynamic Workflow Generation** | ✅ AI-generated workflows | ❌ Static pipeline definitions | High |
+| **Multi-step Dependencies** | ✅ Complex dependency graphs | ✅ runAfter, conditions support | Medium |
+| **Error Handling** | ✅ Custom retry/recovery logic | 🔧 Basic retry mechanisms | Medium |
+| **Learning/Adaptation** | ✅ AI-driven adaptation | ❌ No built-in learning capabilities | High |
+| **Development Overhead** | ❌ High (custom implementation) | ✅ Low (standard patterns) | High |
+| **Community Support** | ❌ Internal team only | ✅ Large CNCF community | Medium |
+
+#### Technical Integration Analysis:
+
+##### Advantages of Tekton Adoption:
+```go
+// Tekton integration benefits
+type TektonAdvantages struct {
+    KubernetesNative    bool   // Native CRDs, kubectl integration
+    OperationalTooling  []string // Tekton CLI, Dashboard, standard debugging
+    CommunitySupport    bool   // CNCF project with active community
+    ScalingCapabilities bool   // Kubernetes-native horizontal scaling
+    MaintenanceReduction float64 // Estimated 60-70% reduction in custom code
+}
+
+tektonBenefits := TektonAdvantages{
+    KubernetesNative:    true,
+    OperationalTooling:  []string{"tkn CLI", "Tekton Dashboard", "kubectl describe"},
+    CommunitySupport:    true,
+    ScalingCapabilities: true,
+    MaintenanceReduction: 0.65,
+}
+```
+
+##### Limitations and Challenges:
+```go
+// Tekton adoption challenges
+type TektonLimitations struct {
+    ConditionalLogic     string // Limited compared to custom AI conditions
+    DynamicGeneration    string // Static pipeline definitions
+    LearningCapabilities string // No built-in AI/ML integration
+    MigrationComplexity  string // Significant refactoring required
+}
+
+tektonChallenges := TektonLimitations{
+    ConditionalLogic:     "Basic when/unless conditions vs. AI-driven decisions",
+    DynamicGeneration:    "Requires pipeline template generation approach",
+    LearningCapabilities: "Need custom integration for AI learning/adaptation",
+    MigrationComplexity:  "Major architectural change from current implementation",
+}
+```
+
+#### Implementation Approaches:
+
+##### Option 1: Full Migration to Tekton
+```yaml
+approach: "full_migration"
+effort: "8-12 weeks"
+risk: "high"
+benefits:
+  - "Complete Kubernetes-native solution"
+  - "Maximum operational tooling benefits"
+  - "Significant maintenance reduction"
+challenges:
+  - "Loss of custom AI-driven features"
+  - "Complex migration from current workflow system"
+  - "Need to rebuild dynamic generation capabilities"
+```
+
+##### Option 2: Hybrid Approach
+```yaml
+approach: "hybrid_tekton_ai"
+effort: "6-8 weeks"
+risk: "medium"
+benefits:
+  - "Leverage Tekton for orchestration, custom AI for intelligence"
+  - "Kubernetes-native execution with AI enhancement"
+  - "Gradual migration path possible"
+implementation:
+  orchestration: "Tekton Pipelines"
+  ai_integration: "Custom Tasks calling existing SLM components"
+  workflow_generation: "AI generates Tekton PipelineRun definitions"
+```
+
+##### Option 3: Tekton-Inspired Custom Enhancement
+```yaml
+approach: "tekton_patterns_adoption"
+effort: "3-4 weeks"
+risk: "low"
+benefits:
+  - "Keep existing AI capabilities"
+  - "Adopt Tekton patterns and tooling approaches"
+  - "Minimal disruption to current system"
+implementation:
+  - "CRD-based workflow definitions (like Tekton)"
+  - "kubectl-compatible workflow management"
+  - "Tekton Dashboard-inspired monitoring"
+```
+
+#### Evaluation Tasks:
+- [ ] **Technical Proof of Concept**: Build sample alert remediation pipeline using Tekton
+- [ ] **Feature Gap Analysis**: Detailed comparison of custom vs. Tekton capabilities
+- [ ] **Migration Complexity Assessment**: Effort estimation for each approach
+- [ ] **Performance Benchmarking**: Compare execution overhead and latency
+- [ ] **Operational Tooling Evaluation**: Assess debugging, monitoring, and management capabilities
+
+#### AI Integration Strategies for Tekton:
+```go
+// AI-enhanced Tekton task integration
+type AIEnhancedTektonTask struct {
+    TaskName    string
+    SLMClient   slm.Client
+    InputParams []TektonParam
+    OutputResults []TektonResult
+}
+
+// Custom Tekton task for AI decision making
+func (t *AIEnhancedTektonTask) Execute(ctx context.Context, params TektonParams) (*TektonResults, error) {
+    // 1. Extract alert data from Tekton parameters
+    // 2. Call existing SLM analysis components
+    // 3. Return recommendations as Tekton results
+    // 4. Support dynamic pipeline generation
+}
+
+// Tekton pipeline generation from AI recommendations
+func GenerateTektonPipeline(recommendation *types.ActionRecommendation) (*TektonPipeline, error) {
+    // Dynamically generate Tekton Pipeline YAML from AI recommendations
+    // Maintain current AI-driven workflow capabilities
+}
+```
+
+#### Decision Framework:
+```yaml
+evaluation_timeline:
+  week_1: "Technical PoC and basic Tekton pipeline creation"
+  week_2: "AI integration assessment and custom task development"
+  week_3: "Performance comparison and operational tooling evaluation"
+  week_4: "Migration complexity analysis and recommendation report"
+
+success_criteria:
+  functionality_parity: ">95% feature compatibility with current system"
+  performance_impact: "<20% overhead increase acceptable"
+  operational_benefits: "Significant improvement in debugging/monitoring"
+  maintenance_reduction: ">50% reduction in custom code maintenance"
+  community_benefits: "Access to Tekton community and ecosystem"
+
+risk_assessment:
+  technical_risk: "Medium - well-understood technology"
+  migration_risk: "High - significant architectural change"
+  operational_risk: "Low - mature Kubernetes ecosystem"
+  timeline_risk: "Medium - depends on feature gap handling"
+```
+
+#### Deliverables:
+- [ ] **Tekton Evaluation Report** with detailed technical assessment
+- [ ] **Feature Parity Analysis** comparing custom vs. Tekton capabilities
+- [ ] **Migration Strategy Document** with effort estimates for each approach
+- [ ] **Proof of Concept Implementation** demonstrating AI-Tekton integration
+- [ ] **Recommendation** on whether to adopt Tekton based on evaluation results
+
+#### Decision Impact on Roadmap:
+- **If Adopted**: Major architecture change requiring workflow engine replacement
+- **If Rejected**: Continue with custom workflow engine development per [WORKFLOWS.md](./WORKFLOWS.md)
+- **If Hybrid**: Gradual migration path maintaining AI capabilities while gaining Kubernetes-native benefits
+
+---
+
+### 4.6 Security Intelligence Context Provider Server
 **Status**: Pending
 **Priority**: Medium (Enterprise Security Enhancement)
 **Duration**: 5-7 weeks
@@ -1310,8 +1668,8 @@ CloudProviders: ["AWS Cost Explorer", "GCP Billing API", "Azure Cost Management"
 
 ##### CVE & Vulnerability Management
 ```go
-// Security MCP Server providing vulnerability intelligence
-type SecurityMCPServer struct {
+// Security Context Provider Server providing vulnerability intelligence
+type SecurityContext ProviderServer struct {
     cveDatabase      CVEClient        // NIST NVD, CVE API integration
     vulnerabilityDB  VulnerabilityDB  // Trivy, Grype, Snyk integration
     imageScanner     ImageScanner     // Container image vulnerability scanning
@@ -1406,7 +1764,7 @@ type NetworkSecurityAnalyzer struct {
 }
 ```
 
-##### Security-Enhanced MCP Tools:
+##### Security-Enhanced Context Provider Tools:
 - **check_image_cves(image_name, tag)**: Lookup CVE data for container images
 - **scan_pod_vulnerabilities(namespace, pod_name)**: Real-time vulnerability assessment
 - **validate_network_connectivity(source, destination, port)**: Security policy validation
@@ -1430,7 +1788,7 @@ type SecurityRiskAssessment struct {
 }
 
 // Risk-based action prioritization
-func (s *SecurityMCPServer) AssessActionSecurity(action Action, context AlertContext) SecurityRiskAssessment {
+func (s *SecurityContext ProviderServer) AssessActionSecurity(action Action, context AlertContext) SecurityRiskAssessment {
     // Analyze CVE implications
     cveRisk := s.assessCVERisk(action.TargetImage)
 
@@ -1499,7 +1857,7 @@ func (s *SecurityMCPServer) AssessActionSecurity(action Action, context AlertCon
 - **Proactive Security**: Prevention of security-degrading remediation choices
 
 #### Deliverables:
-- [ ] **Security MCP server** with comprehensive CVE and vulnerability integration
+- [ ] **Security Context Provider server** with comprehensive CVE and vulnerability integration
 - [ ] **Security-enhanced AI decision making** for all remediation scenarios
 - [ ] **Network security validation** framework for connectivity decisions
 - [ ] **Compliance integration** with enterprise security policy engines
@@ -1511,11 +1869,11 @@ func (s *SecurityMCPServer) AssessActionSecurity(action Action, context AlertCon
 
 ### System Performance
 - **Model Selection Accuracy**: Choose optimal model >95% of time
-- **Response Time SLA**: <3s for 95% of requests (including MCP queries)
+- **Response Time SLA**: <3s for 95% of requests (including Context Provider queries)
 - **Throughput**: Handle 50+ concurrent requests without degradation
 - **Availability**: 99.9% uptime for the remediation system
-- **MCP Intelligence**: >90% improvement in decision quality with cluster context
-- **Tool Usage Accuracy**: Models use MCP tools correctly >95% of time
+- **Context Provider Intelligence**: >90% improvement in decision quality with cluster context
+- **Tool Usage Accuracy**: Models use Context Provider tools correctly >95% of time
 
 ### Operational Impact
 - **Action Success Rate**: >95% for all implemented actions
@@ -1580,7 +1938,7 @@ func (s *SecurityMCPServer) AssessActionSecurity(action Action, context AlertCon
 
 | Phase | Duration | Focus | Key Deliverables |
 |-------|----------|-------|------------------|
-| **Phase 1** | 13-17 weeks | Model Selection & MCP Innovation | Optimal model choice, MCP-enhanced intelligence, scaling architecture |
+| **Phase 1** | 13-17 weeks | Model Selection & Context Provider Innovation | Optimal model choice, Context Provider-enhanced intelligence, scaling architecture |
 | **Phase 2** | 14-19 weeks | Safety & Reliability | Production-ready deployment, safety mechanisms, **chaos testing**, **action history intelligence** |
 | **Phase 3** | 9-12 weeks | Enhanced Capabilities | Additional actions, intelligent routing |
 | **Phase 4** | 20-28 weeks | Enterprise Features | High-risk actions, governance, AI/ML pipeline, **cost intelligence** |
@@ -1591,8 +1949,8 @@ func (s *SecurityMCPServer) AssessActionSecurity(action Action, context AlertCon
 - **Weeks 1-3**: Extended model comparison (6 additional 2B models)
 - **Weeks 4-6**: Concurrent load testing & stress analysis
 - **Weeks 7-9**: Multi-instance scaling architecture design
-- **Weeks 10-14**: Kubernetes MCP Server development
-- **Weeks 15-17**: MCP-enhanced model comparison
+- **Weeks 10-14**: Kubernetes Context Provider Server development
+- **Weeks 15-17**: Context Provider-enhanced model comparison
 
 ### **Phase 2 Breakdown**:
 - **Weeks 1-4**: Safety mechanisms implementation (circuit breakers, rate limiting)
@@ -1634,7 +1992,7 @@ This roadmap integrates with comprehensive technical analysis documents:
 ### **Existing Architecture & Design**
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)**: Overall system architecture and component design
 - **[DATABASE_ACTION_HISTORY_DESIGN.md](./DATABASE_ACTION_HISTORY_DESIGN.md)**: Current PostgreSQL action history implementation
-- **[MCP_ANALYSIS.md](./MCP_ANALYSIS.md)**: Multi-Context Provider integration analysis
+- **[Context Provider_ANALYSIS.md](./Context Provider_ANALYSIS.md)**: Multi-Context Provider integration analysis
 
 ### **Roadmap Integration Points**
 ```yaml
@@ -1652,7 +2010,7 @@ phase_2_enhancements:
 dependencies:
   vector_database: "Required for RAG implementation"
   action_history: "Enhanced by both vector DB and RAG capabilities"
-  mcp_bridge: "Integrates with RAG for dynamic context retrieval"
+  context_providers_bridge: "Integrates with RAG for dynamic context retrieval"
 ```
 
 ### **Expected Intelligence Evolution**

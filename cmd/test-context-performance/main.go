@@ -6,27 +6,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 	"github.com/sirupsen/logrus"
 )
 
 type ContextTest struct {
-	Model        string
-	ContextSize  int
-	Description  string
+	Model       string
+	ContextSize int
+	Description string
 }
 
 type TestResult struct {
-	Model           string
-	ContextSize     int
-	ResponseTime    time.Duration
-	Success         bool
-	Action          string
-	Confidence      float64
-	Error           error
-	ResponseLength  int
+	Model          string
+	ContextSize    int
+	ResponseTime   time.Duration
+	Success        bool
+	Action         string
+	Confidence     float64
+	Error          error
+	ResponseLength int
 }
 
 func main() {
@@ -51,20 +51,20 @@ func main() {
 	for _, model := range models {
 		for _, contextSize := range contextSizes {
 			fmt.Printf("Testing %s with %dk context tokens...\n", model, contextSize/1000)
-			
+
 			result := testModelWithContext(model, contextSize, logger)
 			allResults = append(allResults, result)
-			
+
 			// Print immediate result
 			if result.Success {
-				fmt.Printf("✅ Success: %s (%.2fs, confidence: %.2f)\n", 
+				fmt.Printf("✅ Success: %s (%.2fs, confidence: %.2f)\n",
 					result.Action, result.ResponseTime.Seconds(), result.Confidence)
 			} else {
-				fmt.Printf("❌ Failed: %v (%.2fs)\n", 
+				fmt.Printf("❌ Failed: %v (%.2fs)\n",
 					result.Error, result.ResponseTime.Seconds())
 			}
 			fmt.Println()
-			
+
 			// Small delay between tests
 			time.Sleep(2 * time.Second)
 		}
@@ -76,8 +76,8 @@ func main() {
 
 func testModelWithContext(model string, contextSize int, logger *logrus.Logger) TestResult {
 	start := time.Now()
-	
-	cfg := config.SLMConfig{
+
+	cfg := config.LLMConfig{
 		Provider:    "localai",
 		Endpoint:    "http://localhost:11434",
 		Model:       model,
@@ -88,7 +88,7 @@ func testModelWithContext(model string, contextSize int, logger *logrus.Logger) 
 	}
 
 	// Create SLM client
-	client, err := slm.NewClient(cfg, logger)
+	client, err := llm.NewClient(cfg, logger)
 	if err != nil {
 		return TestResult{
 			Model:        model,
@@ -119,16 +119,16 @@ func testModelWithContext(model string, contextSize int, logger *logrus.Logger) 
 		Namespace:   "production",
 		Resource:    "web-server-deployment",
 		Labels: map[string]string{
-			"alertname":     "ComplexMemoryAndCPUPressure",
-			"severity":      "critical",
-			"cluster":       "production-us-east-1",
-			"datacenter":    "us-east-1a",
-			"application":   "web-server",
-			"team":          "platform",
-			"service":       "user-facing",
-			"tier":          "critical",
-			"environment":   "production",
-			"region":        "us-east-1",
+			"alertname":   "ComplexMemoryAndCPUPressure",
+			"severity":    "critical",
+			"cluster":     "production-us-east-1",
+			"datacenter":  "us-east-1a",
+			"application": "web-server",
+			"team":        "platform",
+			"service":     "user-facing",
+			"tier":        "critical",
+			"environment": "production",
+			"region":      "us-east-1",
 		},
 		Annotations: map[string]string{
 			"summary":     "High memory and CPU pressure detected on critical web server deployment",
@@ -179,11 +179,11 @@ func getReasoningSummary(recommendation *types.ActionRecommendation) string {
 }
 
 func generateComplexDescription(contextSize int) string {
-	baseDescription := `The production web-server deployment is experiencing severe resource pressure with both memory and CPU utilization reaching critical levels. 
+	baseDescription := `The production web-server deployment is experiencing severe resource pressure with both memory and CPU utilization reaching critical levels.
 
 Current Resource Metrics:
 - Memory Usage: 95.4% (7.6GB / 8GB allocated)
-- CPU Usage: 89.7% (3.6 cores / 4 cores allocated) 
+- CPU Usage: 89.7% (3.6 cores / 4 cores allocated)
 - Memory Growth Rate: +2.3% per minute over last 10 minutes
 - CPU Spikes: 12 instances above 95% in last 15 minutes
 
@@ -240,7 +240,7 @@ Recommended Investigation:
 		padding := strings.Repeat(`
 
 Additional Monitoring Data:
-- Metric timestamp: ` + time.Now().Format(time.RFC3339) + `
+- Metric timestamp: `+time.Now().Format(time.RFC3339)+`
 - Alert evaluation frequency: every 30 seconds
 - Data retention: 30 days
 - Collection interval: 15 seconds
@@ -250,9 +250,9 @@ Additional Monitoring Data:
 - Escalation policy: immediate page to on-call engineer
 - Business impact: high - customer facing service degradation
 - SLA impact: approaching breach threshold (99.9% availability)
-- Revenue impact: estimated $1,200 per minute of downtime`, 
+- Revenue impact: estimated $1,200 per minute of downtime`,
 			(targetLength-len(baseDescription))/500)
-		
+
 		baseDescription += padding
 	}
 
@@ -262,7 +262,7 @@ Additional Monitoring Data:
 func printSummary(results []TestResult) {
 	fmt.Println("=== Performance Test Summary ===")
 	fmt.Println()
-	
+
 	// Group by model
 	modelResults := make(map[string][]TestResult)
 	for _, result := range results {
@@ -272,16 +272,16 @@ func printSummary(results []TestResult) {
 	for model, results := range modelResults {
 		fmt.Printf("Model: %s\n", model)
 		fmt.Println(strings.Repeat("-", 50))
-		
+
 		totalSuccess := 0
 		var totalTime time.Duration
 		var avgConfidence float64
-		
+
 		for _, result := range results {
 			status := "❌ FAIL"
 			confidence := "N/A"
 			action := "N/A"
-			
+
 			if result.Success {
 				status = "✅ PASS"
 				confidence = fmt.Sprintf("%.2f", result.Confidence)
@@ -289,9 +289,9 @@ func printSummary(results []TestResult) {
 				totalSuccess++
 				avgConfidence += result.Confidence
 			}
-			
+
 			totalTime += result.ResponseTime
-			
+
 			fmt.Printf("  %dk tokens: %s | %6.2fs | conf: %s | action: %s\n",
 				result.ContextSize/1000,
 				status,
@@ -299,13 +299,13 @@ func printSummary(results []TestResult) {
 				confidence,
 				action)
 		}
-		
+
 		if totalSuccess > 0 {
 			avgConfidence /= float64(totalSuccess)
 		}
-		
+
 		fmt.Printf("\n  Summary:\n")
-		fmt.Printf("    Success Rate: %d/%d (%.1f%%)\n", 
+		fmt.Printf("    Success Rate: %d/%d (%.1f%%)\n",
 			totalSuccess, len(results), float64(totalSuccess)/float64(len(results))*100)
 		fmt.Printf("    Avg Response Time: %.2fs\n", totalTime.Seconds()/float64(len(results)))
 		if totalSuccess > 0 {
@@ -313,7 +313,7 @@ func printSummary(results []TestResult) {
 		}
 		fmt.Println()
 	}
-	
+
 	// Overall summary
 	totalTests := len(results)
 	totalSuccess := 0
@@ -322,7 +322,7 @@ func printSummary(results []TestResult) {
 			totalSuccess++
 		}
 	}
-	
-	fmt.Printf("Overall Success Rate: %d/%d (%.1f%%)\n", 
+
+	fmt.Printf("Overall Success Rate: %d/%d (%.1f%%)\n",
 		totalSuccess, totalTests, float64(totalSuccess)/float64(totalTests)*100)
 }

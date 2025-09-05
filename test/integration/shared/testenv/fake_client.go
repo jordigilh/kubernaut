@@ -3,8 +3,8 @@ package testenv
 import (
 	"context"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/k8s"
+	"github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
 	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,8 +17,8 @@ import (
 func setupFakeK8sEnvironment() (*TestEnvironment, error) {
 	// Create scheme with necessary objects
 	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
-	appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
 
 	// Create fake client
 	client := fake.NewSimpleClientset()
@@ -53,4 +53,3 @@ func (te *TestEnvironment) CreateK8sClient(logger *logrus.Logger) k8s.Client {
 		Namespace: "default",
 	}, logger)
 }
-

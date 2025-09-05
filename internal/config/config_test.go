@@ -212,7 +212,7 @@ actions:
 					WebhookPort: "8080",
 					MetricsPort: "9090",
 				},
-				SLM: SLMConfig{
+				SLM: LLMConfig{
 					Endpoint:    "http://localhost:11434",
 					Model:       "llama2",
 					Timeout:     30 * time.Second,
@@ -265,7 +265,7 @@ actions:
 				err := validate(config)
 				// SLM endpoint gets default value in validation, so this won't fail
 				Expect(err).NotTo(HaveOccurred())
-				Expect(config.SLM.Endpoint).To(Equal("http://localhost:8080"))
+				Expect(config.SLM.Endpoint).To(Equal("http://localhost:11434"))
 			})
 		})
 
@@ -277,7 +277,7 @@ actions:
 			It("should return validation error", func() {
 				err := validate(config)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("SLM model is required for LocalAI provider"))
+				Expect(err.Error()).To(ContainSubstring("SLM model is required"))
 			})
 		})
 

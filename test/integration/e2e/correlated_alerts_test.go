@@ -13,12 +13,10 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared"
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
 func TestCorrelatedAlertsIntegration(t *testing.T) {
@@ -28,57 +26,47 @@ func TestCorrelatedAlertsIntegration(t *testing.T) {
 
 var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 	var (
-		logger     *logrus.Logger
-		testUtils  *shared.IntegrationTestUtils
-		repository actionhistory.Repository
-		testConfig shared.IntegrationConfig
+		logger       *logrus.Logger
+		stateManager *shared.ComprehensiveStateManager
 	)
 
 	BeforeAll(func() {
-		testConfig = shared.LoadConfig()
-		if testConfig.SkipIntegration {
-			Skip("Integration tests disabled")
-		}
-
 		logger = logrus.New()
 		logger.SetLevel(logrus.InfoLevel)
 
-		var err error
-		testUtils, err = shared.NewIntegrationTestUtils(logger)
-		Expect(err).ToNot(HaveOccurred())
+		// Use comprehensive state manager with database isolation
+		patterns := &shared.TestIsolationPatterns{}
+		stateManager = patterns.DatabaseTransactionIsolatedSuite("Correlated Alerts and Root Cause Analysis")
 
-		Expect(testUtils.InitializeFreshDatabase()).To(Succeed())
-		repository = testUtils.Repository
+		testConfig := shared.LoadConfig()
+		if testConfig.SkipIntegration {
+			Skip("Integration tests disabled")
+		}
 	})
 
 	AfterAll(func() {
-		if testUtils != nil {
-			testUtils.Close()
-		}
+		// Comprehensive cleanup
+		err := stateManager.CleanupAllState()
+		Expect(err).ToNot(HaveOccurred())
 	})
 
 	BeforeEach(func() {
-		Expect(testUtils.CleanDatabase()).To(Succeed())
+		logger.Debug("Starting correlated alerts test with isolated state")
 	})
 
-	createSLMClient := func() slm.Client {
-		slmConfig := config.SLMConfig{
-			Endpoint:       testConfig.OllamaEndpoint,
-			Model:          testConfig.OllamaModel,
-			Provider:       "localai",
-			Timeout:        testConfig.TestTimeout,
-			RetryCount:     1,
-			Temperature:    0.3,
-			MaxTokens:      500,
-			MaxContextSize: 2000,
-		}
+	AfterEach(func() {
+		logger.Debug("Correlated alerts test completed - state automatically isolated")
+	})
 
-		// Use simplified MCP client creation with real K8s MCP server
-		mcpClient := testUtils.CreateMCPClient(testConfig)
+	getRepository := func() actionhistory.Repository {
+		// Get isolated database repository from state manager
+		dbHelper := stateManager.GetDatabaseHelper()
+		return dbHelper.GetRepository()
+	}
 
-		slmClient, err := slm.NewClientWithMCP(slmConfig, mcpClient, logger)
-		Expect(err).ToNot(HaveOccurred())
-		return slmClient
+	createSLMClient := func() llm.Client {
+		// Use fake SLM client instead of real client to eliminate external dependencies
+		return shared.NewFakeSLMClient()
 	}
 
 	simulateAlertHistory := func(alertName, resource, action string, timestamp time.Time, effectiveness float64) {
@@ -97,7 +85,7 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 				Annotations: map[string]string{"simulation": "true"},
 				FiringTime:  timestamp,
 			},
-			ModelUsed:           testConfig.OllamaModel,
+			ModelUsed:           "fake-test-model",
 			Confidence:          0.8,
 			Reasoning:           func(s string) *string { return &s }("Simulated alert history"),
 			ActionType:          action,
@@ -106,12 +94,12 @@ var _ = Describe("Correlated Alerts and Root Cause Analysis", Ordered, func() {
 			ResourceStateAfter:  map[string]interface{}{"status": "after"},
 		}
 
-		trace, err := repository.StoreAction(context.Background(), actionRecord)
+		trace, err := getRepository().StoreAction(context.Background(), actionRecord)
 		Expect(err).ToNot(HaveOccurred())
 
 		trace.EffectivenessScore = &effectiveness
 		trace.ExecutionStatus = "completed"
-		err = repository.UpdateActionTrace(context.Background(), trace)
+		err = getRepository().UpdateActionTrace(context.Background(), trace)
 		Expect(err).ToNot(HaveOccurred())
 	}
 

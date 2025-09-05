@@ -16,12 +16,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/actionhistory"
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/executor"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared/testenv"
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/platform/executor"
+	"github.com/jordigilh/kubernaut/test/integration/shared"
+	"github.com/jordigilh/kubernaut/test/integration/shared/testenv"
 )
 
 // SimpleMockRepository for integration testing
@@ -88,35 +89,45 @@ func (m *SimpleMockRepository) GetActionHistorySummaries(ctx context.Context, si
 }
 
 var _ = Describe("SLM Integration", func() {
+	var (
+		logger       *logrus.Logger
+		errorMetrics *shared.MetricsCollector
+	)
+
+	BeforeEach(func() {
+		logger = logrus.New()
+		logger.SetLevel(logrus.DebugLevel)
+		errorMetrics = shared.NewMetricsCollector(logger)
+	})
+
+	AfterEach(func() {
+		if errorMetrics != nil {
+			// Generate and log error analytics report
+			report, err := errorMetrics.GenerateReport()
+			if err == nil {
+				logger.WithFields(logrus.Fields{
+					"resilience_score":      report.SystemResilienceScore,
+					"scenarios_executed":    report.TotalScenariosExecuted,
+					"recovery_tests":        report.TotalRecoveryTests,
+					"recommendations_count": len(report.Recommendations),
+				}).Info("Error injection test analytics completed")
+			}
+		}
+	})
+
 	It("should successfully analyze alerts with SLM", func() {
 		// Skip if Ollama is not available
 		if os.Getenv("SKIP_INTEGRATION") != "" {
 			Skip("Integration tests skipped")
 		}
 
-		// Create logger
-		logger := logrus.New()
-		logger.SetLevel(logrus.DebugLevel)
+		// Configuration no longer needed for fake client
 
-		// Create SLM configuration
-		cfg := config.SLMConfig{
-			Provider:    "localai",
-			Endpoint:    "http://localhost:11434",
-			Model:       "granite3.1-dense:8b",
-			Temperature: 0.3,
-			MaxTokens:   500,
-			Timeout:     30 * time.Second,
-			RetryCount:  2,
-		}
+		// Create fake SLM client to eliminate external dependencies
+		client := shared.NewFakeSLMClient()
 
-		// Create SLM client
-		client, err := slm.NewClient(cfg, logger)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Test health check
-		if !client.IsHealthy() {
-			Skip("Ollama is not healthy, skipping integration test")
-		}
+		// Fake client is always healthy
+		Expect(client.IsHealthy()).To(BeTrue())
 
 		// Create test alert
 		testAlert := types.Alert{
@@ -291,8 +302,9 @@ var _ = Describe("End-to-End Flow", func() {
 	var (
 		testEnv   *testenv.TestEnvironment
 		logger    *logrus.Logger
-		slmClient slm.Client
+		slmClient llm.Client
 		exec      executor.Executor
+		err       error
 	)
 
 	BeforeEach(func() {
@@ -306,40 +318,26 @@ var _ = Describe("End-to-End Flow", func() {
 		logger.SetLevel(logrus.InfoLevel)
 
 		// Setup fake Kubernetes environment
-		var err error
 		testEnv, err = testenv.SetupFakeEnvironment()
 		Expect(err).ToNot(HaveOccurred())
 
 		// Setup SLM client (only if not skipping integration)
 		if os.Getenv("SKIP_INTEGRATION") == "" {
-			cfg := config.SLMConfig{
-				Provider:    "localai",
-				Endpoint:    "http://localhost:11434",
-				Model:       "granite3.1-dense:8b",
-				Temperature: 0.3,
-				MaxTokens:   500,
-				Timeout:     30 * time.Second,
-				RetryCount:  1,
-			}
+			// Configuration no longer needed for fake client
 
-			slmClient, err = slm.NewClient(cfg, logger)
-			if err != nil {
-				Skip("Failed to create SLM client, skipping E2E test")
-			}
-
-			if !slmClient.IsHealthy() {
-				Skip("SLM is not healthy, skipping E2E test")
-			}
+			slmClient = shared.NewFakeSLMClient()
+			Expect(slmClient.IsHealthy()).To(BeTrue())
 		}
 
 		// Create executor with K8s client
 		k8sClient := testEnv.CreateK8sClient(logger)
 		mockRepo := &SimpleMockRepository{}
-		exec = executor.NewExecutor(k8sClient, config.ActionsConfig{
+		exec, err = executor.NewExecutor(k8sClient, config.ActionsConfig{
 			DryRun:         false,
 			MaxConcurrent:  5,
 			CooldownPeriod: 30 * time.Second,
 		}, mockRepo, logger)
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
@@ -464,5 +462,259 @@ var _ = Describe("End-to-End Flow", func() {
 		}
 
 		GinkgoWriter.Printf("End-to-end test completed successfully: %s\n", recommendation.Action)
+	})
+
+	Context("Error Injection and Resilience Testing", func() {
+		var (
+			localErrorMetrics *shared.MetricsCollector
+		)
+
+		BeforeEach(func() {
+			localErrorMetrics = shared.NewMetricsCollector(logger)
+		})
+
+		AfterEach(func() {
+			if localErrorMetrics != nil {
+				// Generate and log error analytics report
+				report, err := localErrorMetrics.GenerateReport()
+				if err == nil && report.TotalScenariosExecuted > 0 {
+					logger.WithFields(logrus.Fields{
+						"resilience_score":      report.SystemResilienceScore,
+						"scenarios_executed":    report.TotalScenariosExecuted,
+						"recovery_tests":        report.TotalRecoveryTests,
+						"recommendations_count": len(report.Recommendations),
+					}).Info("Error injection test completed with analytics")
+				}
+			}
+		})
+
+		It("should handle SLM service failures gracefully", func() {
+			// Skip if integration tests are disabled
+			if os.Getenv("SKIP_INTEGRATION") != "" {
+				Skip("Integration tests skipped")
+			}
+
+			// Create fake SLM client with error injection capabilities
+			client := shared.NewFakeSLMClient()
+
+			// Test alert for error injection scenarios
+			testAlert := types.Alert{
+				Name:        "HighMemoryUsage",
+				Status:      "firing",
+				Severity:    "warning",
+				Description: "Container memory usage is above 80%",
+				Namespace:   "default",
+				Resource:    "test-app",
+				Labels: map[string]string{
+					"alertname": "HighMemoryUsage",
+					"pod":       "test-app-pod",
+				},
+			}
+
+			By("Testing normal operation baseline")
+			baseline, err := client.AnalyzeAlert(context.Background(), testAlert)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(baseline).ToNot(BeNil())
+			Expect(baseline.Action).ToNot(BeEmpty())
+
+			logger.WithFields(logrus.Fields{
+				"action":     baseline.Action,
+				"confidence": baseline.Confidence,
+			}).Info("Baseline SLM analysis successful")
+
+			By("Injecting transient network failure scenario")
+			networkFailureScenario := shared.PredefinedErrorScenarios["transient_network_failure"]
+
+			// Record scenario execution for metrics
+			scenarioExecution := &shared.ErrorScenarioExecution{
+				Scenario:  networkFailureScenario,
+				StartTime: time.Now(),
+				Status:    shared.ScenarioStatusActive,
+			}
+
+			err = client.TriggerErrorScenario(networkFailureScenario)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Test behavior under network failure
+			logger.Info("Testing SLM behavior under network failure")
+
+			failureResponse, err := client.AnalyzeAlert(context.Background(), testAlert)
+
+			if err != nil {
+				// Network failure should trigger error (expected behavior)
+				logger.WithError(err).Info("Network failure correctly triggered error response")
+
+				// Verify error is retryable network error
+				Expect(shared.IsNetworkError(err)).To(BeTrue())
+
+				// Record component operation for metrics
+				localErrorMetrics.RecordComponentOperation("slm_client", "analyze_alert", false, 0, shared.NetworkError)
+			} else {
+				// If no error, should still get valid response (fallback behavior)
+				logger.Info("SLM service provided fallback response during network failure")
+				Expect(failureResponse).ToNot(BeNil())
+
+				// Record successful fallback
+				localErrorMetrics.RecordComponentOperation("slm_client", "analyze_alert", true, time.Since(scenarioExecution.StartTime), shared.NetworkError)
+			}
+
+			By("Verifying automatic recovery after scenario duration")
+			// Wait for scenario recovery (network failure scenario has 30s duration + 5s recovery)
+			time.Sleep(6 * time.Second) // Give time for recovery
+
+			recoveryResponse, err := client.AnalyzeAlert(context.Background(), testAlert)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(recoveryResponse).ToNot(BeNil())
+			Expect(recoveryResponse.Action).ToNot(BeEmpty())
+
+			logger.WithFields(logrus.Fields{
+				"action":     recoveryResponse.Action,
+				"confidence": recoveryResponse.Confidence,
+			}).Info("SLM service successfully recovered from network failure")
+
+			// Record scenario completion (metrics collector doesn't need scenario details)
+			logger.WithFields(logrus.Fields{
+				"scenario": networkFailureScenario.Name,
+				"duration": time.Since(scenarioExecution.StartTime),
+				"status":   "completed",
+			}).Info("Network failure scenario completed successfully")
+		})
+
+		It("should handle circuit breaker activation", func() {
+			// Skip if integration tests are disabled
+			if os.Getenv("SKIP_INTEGRATION") != "" {
+				Skip("Integration tests skipped")
+			}
+
+			client := shared.NewFakeSLMClient()
+
+			testAlert := types.Alert{
+				Name:      "ServiceDegraded",
+				Status:    "firing",
+				Severity:  "critical",
+				Namespace: "production",
+				Resource:  "api-service",
+			}
+
+			By("Configuring circuit breaker with low threshold for testing")
+			circuitBreakerConfig := shared.CircuitBreakerConfig{
+				Enabled:          true,
+				FailureThreshold: 3,
+				RecoveryTimeout:  5 * time.Second,
+				SuccessThreshold: 2,
+			}
+			client.EnableCircuitBreaker(circuitBreakerConfig)
+
+			By("Triggering circuit breaker activation scenario")
+			circuitBreakerScenario := shared.PredefinedErrorScenarios["circuit_breaker_activation"]
+
+			err := client.TriggerErrorScenario(circuitBreakerScenario)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying circuit breaker state transitions")
+			// Initial state should be closed
+			Expect(client.GetCircuitBreakerState()).To(Equal(shared.CircuitClosed))
+
+			// Trigger multiple failures to open circuit breaker
+			for i := 0; i < 4; i++ {
+				_, err := client.AnalyzeAlert(context.Background(), testAlert)
+				// Expect failures due to circuit breaker scenario
+				if err != nil {
+					logger.WithError(err).WithField("attempt", i+1).Debug("Circuit breaker failure triggered")
+				}
+
+				// Record circuit breaker transition for metrics
+				if i == 2 { // Should open after 3rd failure (threshold = 3)
+					localErrorMetrics.RecordCircuitBreakerTransition("slm_client", "closed", "open", "failure_threshold_exceeded", 3)
+				}
+			}
+
+			// Circuit should now be open
+			Eventually(func() shared.CircuitBreakerState {
+				return client.GetCircuitBreakerState()
+			}, "10s", "1s").Should(Equal(shared.CircuitOpen))
+
+			logger.Info("Circuit breaker successfully opened after failure threshold")
+
+			By("Testing circuit breaker recovery")
+			// Wait for recovery timeout
+			time.Sleep(6 * time.Second)
+
+			// Circuit should transition to half-open
+			Expect(client.GetCircuitBreakerState()).To(Equal(shared.CircuitHalfOpen))
+			logger.Info("Circuit breaker transitioned to half-open state")
+
+			// Reset error state to allow successful calls
+			client.ResetErrorState()
+
+			// Make successful calls to close circuit
+			for i := 0; i < 3; i++ {
+				response, err := client.AnalyzeAlert(context.Background(), testAlert)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response).ToNot(BeNil())
+			}
+
+			// Circuit should close after successful calls
+			Eventually(func() shared.CircuitBreakerState {
+				return client.GetCircuitBreakerState()
+			}, "5s", "500ms").Should(Equal(shared.CircuitClosed))
+
+			logger.Info("Circuit breaker successfully closed after recovery")
+
+			// Record final transition
+			localErrorMetrics.RecordCircuitBreakerTransition("slm_client", "half_open", "closed", "success_threshold_met", 0)
+		})
+
+		It("should provide comprehensive resilience analytics", func() {
+			// This test verifies that error metrics collection works properly
+			// Create a test metrics collector and add some sample data
+			testMetrics := shared.NewMetricsCollector(logger)
+
+			// Add some sample component operations for testing
+			testMetrics.RecordComponentOperation("slm_client", "analyze_alert", true, 100*time.Millisecond, shared.NetworkError)
+			testMetrics.RecordComponentOperation("k8s_client", "get_pod", false, 500*time.Millisecond, shared.K8sAPIError)
+			testMetrics.RecordCircuitBreakerTransition("slm_client", "closed", "open", "threshold_exceeded", 3)
+
+			report, err := testMetrics.GenerateReport()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(report).ToNot(BeNil())
+
+			// Verify analytics capabilities
+			Expect(report.SystemResilienceScore).To(BeNumerically(">=", 0))
+			Expect(report.SystemResilienceScore).To(BeNumerically("<=", 1))
+
+			logger.WithFields(logrus.Fields{
+				"resilience_score":   report.SystemResilienceScore,
+				"scenarios_executed": report.TotalScenariosExecuted,
+				"recovery_tests":     report.TotalRecoveryTests,
+				"component_count":    len(report.ComponentReliability),
+				"recommendations":    len(report.Recommendations),
+			}).Info("Comprehensive resilience analytics generated")
+
+			// Export analytics to JSON for inspection
+			analyticsJSON, err := testMetrics.ExportToJSON()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(analyticsJSON)).To(BeNumerically(">", 100))
+
+			// Verify recommendations are generated
+			if len(report.Recommendations) > 0 {
+				logger.WithField("recommendations", report.Recommendations).Info("System resilience recommendations generated")
+			}
+
+			// Verify component reliability metrics
+			Expect(len(report.ComponentReliability)).To(BeNumerically(">", 0))
+			for componentName, reliability := range report.ComponentReliability {
+				logger.WithFields(logrus.Fields{
+					"component":         componentName,
+					"reliability_score": reliability.ReliabilityScore,
+					"total_operations":  reliability.TotalOperations,
+					"failed_operations": reliability.FailedOperations,
+				}).Debug("Component reliability metrics")
+
+				// Verify reliability score is valid
+				Expect(reliability.ReliabilityScore).To(BeNumerically(">=", 0))
+				Expect(reliability.ReliabilityScore).To(BeNumerically("<=", 1))
+			}
+		})
 	})
 })

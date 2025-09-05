@@ -815,10 +815,10 @@ type OperationalRisk struct {
 - **Data Source**: Hybrid PostgreSQL + Vector DB provides retrieval foundation
 - **Sync Strategy**: Real-time embedding generation for new actions
 
-### **MCP Bridge Enhancement**
+### **Context Provider Bridge Enhancement**
 ```go
-// Integrate RAG with MCP Bridge
-func (b *MCPBridge) AnalyzeAlertWithRAG(ctx context.Context, alert types.Alert) (*types.ActionRecommendation, error) {
+// Integrate RAG with Context Provider Bridge
+func (b *Context ProviderBridge) AnalyzeAlertWithRAG(ctx context.Context, alert types.Alert) (*types.ActionRecommendation, error) {
     // 1. RAG-enhanced initial analysis
     ragContext, err := b.ragEngine.GetContext(ctx, alert)
     if err != nil {
@@ -828,7 +828,7 @@ func (b *MCPBridge) AnalyzeAlertWithRAG(ctx context.Context, alert types.Alert) 
     // 2. Generate enhanced prompt with RAG context
     prompt := b.generateRAGAwarePrompt(alert, ragContext)
 
-    // 3. Continue with normal MCP bridge flow
+    // 3. Continue with normal Context Provider bridge flow
     return b.conductToolConversation(ctx, alert, prompt, 0)
 }
 ```
@@ -841,7 +841,7 @@ phase_2_enhancement:
     rag_integration: "RAG enhances historical intelligence"
     timeline: "+2 months for RAG implementation"
 
-  - item: "1.5 MCP-Enhanced Model Comparison"
+  - item: "1.5 Context Provider-Enhanced Model Comparison"
     rag_consideration: "Evaluate models with RAG capabilities"
     impact: "RAG may favor models with better context handling"
 
@@ -858,7 +858,7 @@ phase_3_addition:
 
 ### **Phase 1: Foundation (Months 1-2)**
 - **Month 1**: Simple RAG implementation with basic retrieval
-- **Month 2**: Integration with existing MCP bridge and testing
+- **Month 2**: Integration with existing Context Provider bridge and testing
 
 ### **Phase 2: Enhancement (Months 3-4)**
 - **Month 3**: Quality filtering and fallback mechanisms

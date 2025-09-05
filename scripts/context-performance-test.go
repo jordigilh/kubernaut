@@ -9,9 +9,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/prometheus-alerts-slm/internal/config"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/slm"
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/types"
+	"github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 )
 
 func main() {
@@ -20,12 +20,12 @@ func main() {
 	logger.SetLevel(logrus.InfoLevel)
 
 	// Get configuration from environment
-	ollamaEndpoint := getEnvOrDefault("OLLAMA_ENDPOINT", "http://localhost:11434")
-	ollamaModel := getEnvOrDefault("OLLAMA_MODEL", "granite3.1-dense:8b")
+	llmEndpoint := getEnvOrDefault("LLM_ENDPOINT", "http://localhost:11434")
+	llmModel := getEnvOrDefault("LLM_MODEL", "granite3.1-dense:8b")
 
 	logger.WithFields(logrus.Fields{
-		"endpoint": ollamaEndpoint,
-		"model":    ollamaModel,
+		"endpoint": llmEndpoint,
+		"model":    llmModel,
 	}).Info("Starting context size performance comparison")
 
 	// Test different context sizes
@@ -39,14 +39,14 @@ func main() {
 	results := make(map[int]PerformanceResult)
 
 	for _, contextSize := range contextSizes {
-		result := testContextSize(contextSize, ollamaEndpoint, ollamaModel, logger)
+		result := testContextSize(contextSize, llmEndpoint, llmModel, logger)
 		results[contextSize] = result
-		
+
 		sizeLabel := fmt.Sprintf("%d", contextSize)
 		if contextSize == 0 {
 			sizeLabel = "unlimited"
 		}
-		
+
 		logger.WithFields(logrus.Fields{
 			"context_size":  sizeLabel,
 			"response_time": result.ResponseTime,
@@ -58,27 +58,27 @@ func main() {
 
 	// Analyze results
 	baselineTime := results[0].ResponseTime
-	
+
 	fmt.Printf("\n=== Context Size Performance Analysis ===\n")
 	fmt.Printf("Baseline (unlimited): %v\n", baselineTime)
-	
+
 	for _, contextSize := range contextSizes[1:] {
 		result := results[contextSize]
 		speedupRatio := float64(baselineTime) / float64(result.ResponseTime)
-		
-		fmt.Printf("Context %dk: %v (speedup: %.2fx)\n", 
+
+		fmt.Printf("Context %dk: %v (speedup: %.2fx)\n",
 			contextSize/1000, result.ResponseTime, speedupRatio)
 	}
 
 	// Specific analysis for 8K context
 	result8K := results[8000]
 	speedup8K := float64(baselineTime) / float64(result8K.ResponseTime)
-	
+
 	fmt.Printf("\n=== 8K Context Analysis ===\n")
 	fmt.Printf("8K Response Time: %v\n", result8K.ResponseTime)
 	fmt.Printf("Speedup vs Unlimited: %.2fx\n", speedup8K)
 	fmt.Printf("Action Quality: %s (confidence: %.2f)\n", result8K.Action, result8K.Confidence)
-	
+
 	if speedup8K > 1.0 {
 		fmt.Printf("✅ 8K context shows performance improvement\n")
 	} else if speedup8K > 0.8 {
@@ -98,7 +98,7 @@ type PerformanceResult struct {
 
 func testContextSize(contextSize int, endpoint, model string, logger *logrus.Logger) PerformanceResult {
 	// Create SLM config with specific context size
-	slmConfig := config.SLMConfig{
+	llmConfig := config.LLMConfig{
 		Endpoint:       endpoint,
 		Model:          model,
 		Provider:       "localai",
@@ -110,9 +110,9 @@ func testContextSize(contextSize int, endpoint, model string, logger *logrus.Log
 	}
 
 	// Create SLM client
-	slmClient, err := slm.NewClient(slmConfig, logger)
+	llmClient, err := llm.NewClient(llmConfig, logger)
 	if err != nil {
-		log.Fatalf("Failed to create SLM client: %v", err)
+		log.Fatalf("Failed to create LLM client: %v", err)
 	}
 
 	// Create test alert
@@ -137,7 +137,7 @@ func testContextSize(contextSize int, endpoint, model string, logger *logrus.Log
 
 	// Measure performance
 	startTime := time.Now()
-	recommendation, err := slmClient.AnalyzeAlert(context.Background(), alert)
+	recommendation, err := llmClient.AnalyzeAlert(context.Background(), alert)
 	responseTime := time.Since(startTime)
 
 	if err != nil {

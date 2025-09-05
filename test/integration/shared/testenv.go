@@ -4,10 +4,10 @@
 package shared
 
 import (
-	"github.com/jordigilh/prometheus-alerts-slm/test/integration/shared/testenv"
+	"github.com/jordigilh/kubernaut/test/integration/shared/testenv"
 )
 
-// Re-export types and functions for backward compatibility
+// Re-export types and functions for compatibility
 type TestEnvironment = testenv.TestEnvironment
 
 var (

@@ -13,11 +13,13 @@ type Config struct {
 	App        AppConfig        `yaml:"app"`
 	Server     ServerConfig     `yaml:"server"`
 	Logging    LoggingConfig    `yaml:"logging"`
-	SLM        SLMConfig        `yaml:"slm"`
+	SLM        LLMConfig        `yaml:"slm"`
 	Kubernetes KubernetesConfig `yaml:"kubernetes"`
 	Actions    ActionsConfig    `yaml:"actions"`
 	Webhook    WebhookConfig    `yaml:"webhook"`
 	Database   DatabaseConfig   `yaml:"database"`
+	VectorDB   VectorDBConfig   `yaml:"vectordb"`
+	Monitoring MonitoringConfig `yaml:"monitoring"`
 	Filters    []FilterConfig   `yaml:"filters"`
 }
 
@@ -37,13 +39,13 @@ type LoggingConfig struct {
 	Format string `yaml:"format"`
 }
 
-type SLMConfig struct {
+type LLMConfig struct {
 	Endpoint       string        `yaml:"endpoint"`
 	Model          string        `yaml:"model"`
 	APIKey         string        `yaml:"api_key"`
 	Timeout        time.Duration `yaml:"timeout"`
 	RetryCount     int           `yaml:"retry_count"`
-	Provider       string        `yaml:"provider"`         // Only "localai" supported
+	Provider       string        `yaml:"provider"`         // Supports "localai", "ramalama", "ollama"
 	Temperature    float32       `yaml:"temperature"`      // Model temperature (0.0-1.0)
 	MaxTokens      int           `yaml:"max_tokens"`       // Maximum tokens for response
 	MaxContextSize int           `yaml:"max_context_size"` // Maximum context size in tokens (0 = unlimited)
@@ -85,6 +87,95 @@ type DatabaseConfig struct {
 	ConnMaxLifetimeMinutes int    `yaml:"conn_max_lifetime_minutes"`
 }
 
+type VectorDBConfig struct {
+	Enabled          bool                   `yaml:"enabled"`
+	Backend          string                 `yaml:"backend"`           // "postgresql", "pinecone", "weaviate", "memory"
+	EmbeddingService EmbeddingConfig        `yaml:"embedding_service"` // Embedding service configuration
+	PostgreSQL       PostgreSQLVectorConfig `yaml:"postgresql"`        // PostgreSQL-specific config (when backend=postgresql)
+	Pinecone         PineconeConfig         `yaml:"pinecone"`          // Pinecone-specific config (when backend=pinecone)
+	Weaviate         WeaviateConfig         `yaml:"weaviate"`          // Weaviate-specific config (when backend=weaviate)
+	Cache            VectorCacheConfig      `yaml:"cache"`             // Caching configuration
+}
+
+type EmbeddingConfig struct {
+	Service   string `yaml:"service"`   // "local", "openai", "huggingface", "hybrid"
+	Dimension int    `yaml:"dimension"` // Embedding dimension (default: 384)
+	Model     string `yaml:"model"`     // Model name (e.g., "all-MiniLM-L6-v2", "text-embedding-ada-002")
+	APIKey    string `yaml:"api_key"`   // API key for external services
+	Endpoint  string `yaml:"endpoint"`  // Custom endpoint for self-hosted services
+}
+
+type PostgreSQLVectorConfig struct {
+	// Uses same connection as main database by default
+	// Can override with separate connection if needed
+	UseMainDB  bool   `yaml:"use_main_db"` // Use main database connection
+	Host       string `yaml:"host"`        // Override host
+	Port       string `yaml:"port"`        // Override port
+	Database   string `yaml:"database"`    // Override database
+	Username   string `yaml:"username"`    // Override username
+	Password   string `yaml:"password"`    // Override password
+	IndexLists int    `yaml:"index_lists"` // IVFFlat index lists parameter (default: 100)
+}
+
+type PineconeConfig struct {
+	APIKey      string `yaml:"api_key"`
+	Environment string `yaml:"environment"`
+	IndexName   string `yaml:"index_name"`
+	Namespace   string `yaml:"namespace"`
+}
+
+type WeaviateConfig struct {
+	Host   string `yaml:"host"`
+	APIKey string `yaml:"api_key"`
+	Class  string `yaml:"class"`  // Weaviate class name for patterns
+	Scheme string `yaml:"scheme"` // http or https
+}
+
+type VectorCacheConfig struct {
+	Enabled   bool          `yaml:"enabled"`
+	TTL       time.Duration `yaml:"ttl"`        // Time to live for cached embeddings
+	MaxSize   int           `yaml:"max_size"`   // Maximum cache entries
+	CacheType string        `yaml:"cache_type"` // "memory", "redis" (future)
+}
+
+type MonitoringConfig struct {
+	UseProductionClients bool                `yaml:"use_production_clients"`
+	AlertManager         AlertManagerConfig  `yaml:"alertmanager"`
+	Prometheus           PrometheusConfig    `yaml:"prometheus"`
+	Effectiveness        EffectivenessConfig `yaml:"effectiveness"`
+}
+
+type AlertManagerConfig struct {
+	Enabled  bool          `yaml:"enabled"`
+	Endpoint string        `yaml:"endpoint"`
+	Timeout  time.Duration `yaml:"timeout"`
+}
+
+type PrometheusConfig struct {
+	Enabled  bool          `yaml:"enabled"`
+	Endpoint string        `yaml:"endpoint"`
+	Timeout  time.Duration `yaml:"timeout"`
+}
+
+type EffectivenessConfig struct {
+	Enabled            bool          `yaml:"enabled"`
+	AssessmentDelay    time.Duration `yaml:"assessment_delay"`
+	ProcessingInterval time.Duration `yaml:"processing_interval"`
+
+	// Phase 2 Enhanced Assessment Settings
+	EnableEnhancedAssessment  bool    `yaml:"enable_enhanced_assessment"`
+	EnablePatternLearning     bool    `yaml:"enable_pattern_learning"`
+	EnablePredictiveAnalytics bool    `yaml:"enable_predictive_analytics"`
+	EnableCostAnalysis        bool    `yaml:"enable_cost_analysis"`
+	MinSimilarityThreshold    float64 `yaml:"min_similarity_threshold"`
+	PredictionModel           string  `yaml:"prediction_model"`
+	AsyncProcessing           bool    `yaml:"async_processing"`
+	BatchSize                 int     `yaml:"batch_size"`
+
+	// Vector Database Settings
+	VectorDB VectorDBConfig `yaml:"vector_db"`
+}
+
 type FilterConfig struct {
 	Name       string              `yaml:"name"`
 	Conditions map[string][]string `yaml:"conditions"`
@@ -105,9 +196,9 @@ func Load(configFile string) (*Config, error) {
 			Level:  "info",
 			Format: "json",
 		},
-		SLM: SLMConfig{
+		SLM: LLMConfig{
 			Model:          "granite3.1-dense:8b",
-			Provider:       "localai",
+			Provider:       "ollama",
 			Endpoint:       "http://localhost:11434",
 			Timeout:        30 * time.Second,
 			RetryCount:     3,
@@ -142,6 +233,54 @@ func Load(configFile string) (*Config, error) {
 			MaxOpenConns:           10,
 			MaxIdleConns:           5,
 			ConnMaxLifetimeMinutes: 5,
+		},
+		Monitoring: MonitoringConfig{
+			UseProductionClients: false, // Use stub clients by default
+			AlertManager: AlertManagerConfig{
+				Enabled:  false,
+				Endpoint: "http://localhost:9093",
+				Timeout:  30 * time.Second,
+			},
+			Prometheus: PrometheusConfig{
+				Enabled:  false,
+				Endpoint: "http://localhost:9090",
+				Timeout:  30 * time.Second,
+			},
+			Effectiveness: EffectivenessConfig{
+				Enabled:            true,
+				AssessmentDelay:    10 * time.Minute,
+				ProcessingInterval: 2 * time.Minute,
+
+				// Phase 2 Enhanced Assessment Defaults (disabled by default)
+				EnableEnhancedAssessment:  false,
+				EnablePatternLearning:     false,
+				EnablePredictiveAnalytics: false,
+				EnableCostAnalysis:        false,
+				MinSimilarityThreshold:    0.3,
+				PredictionModel:           "similarity",
+				AsyncProcessing:           true,
+				BatchSize:                 10,
+
+				// Vector Database Defaults
+				VectorDB: VectorDBConfig{
+					Enabled: false,
+					Backend: "memory",
+					EmbeddingService: EmbeddingConfig{
+						Service:   "local",
+						Dimension: 384,
+						Model:     "all-MiniLM-L6-v2",
+					},
+					PostgreSQL: PostgreSQLVectorConfig{
+						UseMainDB:  true,
+						IndexLists: 100,
+					},
+					Cache: VectorCacheConfig{
+						Enabled:   false,
+						MaxSize:   1000,
+						CacheType: "memory",
+					},
+				},
+			},
 		},
 	}
 
@@ -184,7 +323,7 @@ func loadFromEnv(config *Config) error {
 	if provider := os.Getenv("SLM_PROVIDER"); provider != "" {
 		config.SLM.Provider = provider
 	}
-	// Mock functionality removed - only LocalAI supported
+
 	if temp := os.Getenv("SLM_TEMPERATURE"); temp != "" {
 		if val, err := strconv.ParseFloat(temp, 32); err == nil {
 			config.SLM.Temperature = float32(val)
@@ -238,16 +377,24 @@ func loadFromEnv(config *Config) error {
 }
 
 func validate(config *Config) error {
-	// Only LocalAI provider supported
-	if config.SLM.Provider != "localai" {
-		return fmt.Errorf("unsupported SLM provider: %s (only 'localai' supported)", config.SLM.Provider)
+	// Validate supported providers
+	supportedProviders := []string{"localai", "ramalama", "ollama"}
+	validProvider := false
+	for _, provider := range supportedProviders {
+		if config.SLM.Provider == provider {
+			validProvider = true
+			break
+		}
+	}
+	if !validProvider {
+		return fmt.Errorf("unsupported SLM provider: %s, supported: %v", config.SLM.Provider, supportedProviders)
 	}
 
 	if config.SLM.Endpoint == "" {
-		config.SLM.Endpoint = "http://localhost:8080" // LocalAI default
+		config.SLM.Endpoint = "http://localhost:11434" // Default endpoint
 	}
 	if config.SLM.Model == "" {
-		return fmt.Errorf("SLM model is required for LocalAI provider")
+		return fmt.Errorf("SLM model is required")
 	}
 
 	// Validate temperature range

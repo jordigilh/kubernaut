@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/webhook"
+	"github.com/jordigilh/kubernaut/pkg/integration/webhook"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -102,10 +102,10 @@ func testAlertManagerDeployment(t *testing.T) {
 func testAlertRulesLoaded(t *testing.T) {
 	// Port forward to Prometheus to check if rules are loaded
 	client := getKubernetesClient(t)
-	
+
 	// For e2e tests, we'll use a simple HTTP check after port forwarding
 	// In a real scenario, you'd set up port forwarding programmatically
-	
+
 	// Check if the rules configmap exists
 	ctx := context.Background()
 	_, err := client.CoreV1().ConfigMaps(monitoringNamespace).Get(ctx, "prometheus-rules", metav1.GetOptions{})
@@ -158,7 +158,7 @@ func testAlertWebhookFlow(t *testing.T) {
 	// Send to webhook endpoint (assuming app is running on port 8080)
 	// In a complete e2e test, the app would be deployed in the cluster
 	webhookURL := "http://localhost:8080/alerts"
-	
+
 	// For now, we'll just validate the payload structure
 	var decoded webhook.AlertManagerWebhook
 	if err := json.Unmarshal(jsonData, &decoded); err != nil {
@@ -220,7 +220,7 @@ func testEndToEndAlertProcessing(t *testing.T) {
 	t.Logf("- Test pods available: %d", len(testPods.Items))
 	t.Log("- Alert rules configured")
 	t.Log("- AlertManager webhook configured")
-	
+
 	// In a complete implementation, this would:
 	// 1. Wait for alerts to fire
 	// 2. Monitor webhook endpoint for incoming alerts
@@ -237,7 +237,7 @@ func testEndToEndAlertProcessing(t *testing.T) {
 func checkPrometheusAPI(t *testing.T, endpoint string) {
 	// Helper function to check Prometheus API endpoints
 	// This would be used with port forwarding in a real test
-	
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(endpoint)
 	if err != nil {
@@ -262,7 +262,7 @@ func checkPrometheusAPI(t *testing.T, endpoint string) {
 
 func simulateAlertManagerWebhook(t *testing.T, webhookURL string, alert webhook.AlertManagerWebhook) {
 	// Helper function to simulate AlertManager sending a webhook
-	
+
 	jsonData, err := json.Marshal(alert)
 	if err != nil {
 		t.Fatalf("Failed to marshal alert: %v", err)

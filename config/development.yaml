@@ -1,0 +1,110 @@
+# Development Configuration for Podman-based HolmesGPT Integration
+effectiveness:
+  enable_holmes_gpt: true
+  enable_pattern_learning: true
+  enable_predictive_analytics: true
+  enable_cost_analysis: true
+
+  # Podman bindings configuration for local development
+  podman_bindings:
+    # Container configuration
+    holmes_image: "localhost/dev-holmesgpt:latest"
+    container_name: "dev-holmesgpt"
+    network_name: "holmes-dev"
+    shared_volume_mount: "/shared"
+    working_dir: "/tmp/holmes-podman-sessions"
+
+    # Ollama configuration (container-to-container)
+    ollama_url: "http://ollama:11434"
+    model: "gpt-oss:20b"
+    temperature: 0.1
+    max_tokens: 3000
+    timeout: "300s"
+
+    # Container lifecycle (development settings)
+    reuse_container: true
+    auto_cleanup: false  # Keep containers for debugging
+
+    # Resources (lighter for development)
+    cpu_limit: "1.0"
+    memory_limit: "2g"
+
+    # Kubernetes integration (local development)
+    kube_config_path: "/root/.kube/config"
+
+    # Environment variables
+    environment:
+      HOLMES_LOG_LEVEL: "DEBUG"
+      HOLMES_CACHE_DIR: "/shared/cache"
+      PROMETHEUS_URL: "http://prometheus-dev:9090"
+      ALERTMANAGER_URL: "http://alertmanager-dev:9093"
+
+    # Debug and logging (enabled for development)
+    enable_debug: true
+    enable_streaming: true
+
+  # HolmesGPT integration configuration
+  holmes_integration:
+    max_tokens: 3000
+    max_patterns: 3
+    max_alternative_costs: 5
+    prompt_optimization: true
+    response_parsing_timeout: "300s"
+    fallback_on_parse_error: true
+
+# Application configuration
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+
+# Metrics configuration
+metrics:
+  enabled: true
+  port: 9993
+  path: "/metrics"
+
+# Logging configuration (development settings)
+logging:
+  level: "debug"
+  format: "text"  # Better for development console output
+  output: "stdout"
+
+# Health check configuration
+health:
+  enabled: true
+  path: "/health"
+  checks:
+    - name: "holmes_podman"
+      type: "podman_bindings"
+      timeout: "10s"
+    - name: "ollama"
+      type: "http"
+      url: "http://ollama:11434/api/version"
+      timeout: "5s"
+    - name: "podman"
+      type: "podman_client"
+      timeout: "5s"
+
+# Kubernetes configuration (local development)
+kubernetes:
+  in_cluster: false
+  config_path: "/root/.kube/config"
+  namespace: "default"
+
+# Monitoring URLs (development services)
+monitoring:
+  prometheus_url: "http://prometheus-dev:9090"
+  alertmanager_url: "http://alertmanager-dev:9093"
+  grafana_url: "http://grafana:3000"
+
+# Development-specific settings
+development:
+  hot_reload: true
+  debug_mode: true
+  mock_external_services: false
+  enable_profiling: true
+  profiling_port: 6060
+

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jordigilh/prometheus-alerts-slm/pkg/webhook"
+	"github.com/jordigilh/kubernaut/pkg/integration/webhook"
 )
 
 const (
@@ -182,12 +182,12 @@ func TestLoadTest(t *testing.T) {
 	// Send multiple requests concurrently
 	concurrency := 10
 	requests := 50
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	results := make(chan error, requests)
-	
+
 	for i := 0; i < concurrency; i++ {
 		go func() {
 			for j := 0; j < requests/concurrency; j++ {
@@ -202,12 +202,12 @@ func TestLoadTest(t *testing.T) {
 						continue
 					}
 					resp.Body.Close()
-					
+
 					if resp.StatusCode != http.StatusOK {
 						results <- fmt.Errorf("unexpected status: %d", resp.StatusCode)
 						continue
 					}
-					
+
 					results <- nil
 				}
 			}
@@ -217,7 +217,7 @@ func TestLoadTest(t *testing.T) {
 	// Collect results
 	successCount := 0
 	errorCount := 0
-	
+
 	for i := 0; i < requests; i++ {
 		select {
 		case err := <-results:
@@ -233,7 +233,7 @@ func TestLoadTest(t *testing.T) {
 	}
 
 	t.Logf("Load test completed - Success: %d, Errors: %d", successCount, errorCount)
-	
+
 	if errorCount > requests/10 { // Allow 10% error rate
 		t.Errorf("Too many errors in load test: %d/%d", errorCount, requests)
 	}
@@ -246,6 +246,6 @@ func isApplicationHealthy() bool {
 		return false
 	}
 	defer resp.Body.Close()
-	
+
 	return resp.StatusCode == http.StatusOK
 }

@@ -92,12 +92,12 @@ func (c *Config) Validate() error {
 func (c *Config) ConnectionString() string {
 	connStr := fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=%s",
 		c.Host, c.Port, c.User, c.Database, c.SSLMode)
-	
+
 	// Only add password if provided (could come from other auth methods)
 	if c.Password != "" {
 		connStr += fmt.Sprintf(" password=%s", c.Password)
 	}
-	
+
 	return connStr
 }
 
@@ -120,7 +120,9 @@ func Connect(config *Config, logger *logrus.Logger) (*sql.DB, error) {
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			logger.Warnf("Failed to close database connection: %v", closeErr)
+		}
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
@@ -138,6 +140,6 @@ func Connect(config *Config, logger *logrus.Logger) (*sql.DB, error) {
 func HealthCheck(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	return db.PingContext(ctx)
 }

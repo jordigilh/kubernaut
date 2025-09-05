@@ -105,7 +105,7 @@ func (rm *ResourceMonitor) GenerateReport() ResourceReport {
 	// Calculate response time statistics
 	var totalResponse time.Duration
 	var maxResponse time.Duration
-	var minResponse time.Duration = time.Hour // Initialize to large value
+	var minResponse = time.Hour // Initialize to large value
 	var maxMemory uint64
 	responseTimes := make([]time.Duration, len(rm.Measurements))
 
@@ -248,7 +248,7 @@ func (itr *IntegrationTestReport) calculateConfidenceStats() ConfidenceStats {
 
 	// Calculate basic statistics
 	var sum float64
-	var min, max float64 = 1.0, 0.0
+	var min, max = 1.0, 0.0
 
 	for _, conf := range confidences {
 		sum += conf

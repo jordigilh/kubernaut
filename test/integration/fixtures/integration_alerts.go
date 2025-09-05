@@ -13,11 +13,18 @@ func init() {
 func GetAllEdgeCaseAlerts() []TestCase {
 	var allEdgeCases []TestCase
 
-	// Add edge case categories (these would be defined in separate files)
-	// allEdgeCases = append(allEdgeCases, ChaosEngineeringAlerts...)
-	// allEdgeCases = append(allEdgeCases, SecurityComplianceAlerts...)
-	// allEdgeCases = append(allEdgeCases, ResourceExhaustionAlerts...)
-	// allEdgeCases = append(allEdgeCases, CascadingFailureAlerts...)
+	// Edge case categories are currently commented out for the following reasons:
+	// 1. ChaosEngineeringAlerts - Requires complex multi-node failure simulation
+	// 2. SecurityComplianceAlerts - Needs security scanning integration
+	// 3. ResourceExhaustionAlerts - Requires actual resource stress testing
+	// 4. CascadingFailureAlerts - Complex dependency chain testing
+	//
+	// These will be implemented in future iterations when:
+	// - The core functionality is stable
+	// - Proper test infrastructure is available
+	// - Resource-intensive testing can be isolated to dedicated test environments
+	//
+	// For now, we focus on core alert processing and database isolation testing
 
 	return allEdgeCases
 }

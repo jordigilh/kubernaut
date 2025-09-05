@@ -163,8 +163,9 @@ export DB_PASSWORD="slm_password_dev"
 export DB_SSL_MODE="disable"
 
 # Test Configuration
-export OLLAMA_ENDPOINT="http://localhost:11434"
-export OLLAMA_MODEL="granite3.1-dense:8b"
+export LLM_ENDPOINT="http://localhost:11434"
+export LLM_MODEL="granite3.1-dense:8b"
+export LLM_PROVIDER="ollama"
 export TEST_TIMEOUT="120s"
 export LOG_LEVEL="debug"
 export SKIP_SLOW_TESTS="false"
@@ -303,10 +304,10 @@ The tests include performance scenarios with larger datasets:
    ```bash
    # Check if PostgreSQL container is running
    podman ps | grep prometheus-alerts-slm-postgres
-   
+
    # Check container logs
    podman logs prometheus-alerts-slm-postgres
-   
+
    # Restart database
    ./scripts/deploy-postgres.sh
    ```
@@ -315,7 +316,7 @@ The tests include performance scenarios with larger datasets:
    ```bash
    # Check migration files exist
    ls -la migrations/
-   
+
    # Manual migration execution
    podman exec -it prometheus-alerts-slm-postgres psql -U slm_user -d action_history -f /path/to/migration.sql
    ```
@@ -324,7 +325,7 @@ The tests include performance scenarios with larger datasets:
    ```bash
    # Increase test timeout
    export TEST_TIMEOUT="300s"
-   
+
    # Skip slow tests
    export SKIP_SLOW_TESTS="true"
    ```
@@ -333,9 +334,9 @@ The tests include performance scenarios with larger datasets:
    ```bash
    # Check Ollama server
    curl http://localhost:11434/api/tags
-   
+
    # Use different endpoint
-   export OLLAMA_ENDPOINT="http://your-ollama-server:11434"
+   export LLM_ENDPOINT="http://your-llm-server:11434"
    ```
 
 ### Debugging
@@ -383,7 +384,7 @@ jobs:
     - uses: actions/setup-go@v4
       with:
         go-version: '1.21'
-    
+
     - name: Run Database Integration Tests
       env:
         DB_HOST: localhost

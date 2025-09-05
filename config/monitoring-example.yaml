@@ -1,0 +1,272 @@
+# Prometheus Alerts SLM - Monitoring Configuration Example
+# This configuration demonstrates Phase 1 monitoring integrations
+
+app:
+  name: "prometheus-alerts-slm"
+  version: "1.1.0"
+
+server:
+  webhook_port: "8080"
+  metrics_port: "9090"
+  health_port: "8081"
+
+logging:
+  level: "info"
+  format: "json"
+
+# SLM Configuration
+slm:
+  provider: "localai"
+  endpoint: "http://localhost:11434"
+  model: "granite3.1-dense:8b"
+  timeout: "30s"
+  retry_count: 3
+  temperature: 0.3
+  max_tokens: 500
+  max_context_size: 2000
+
+# Kubernetes Configuration
+kubernetes:
+  in_cluster: false
+  kubeconfig_path: "~/.kube/config"
+
+# Action Configuration
+actions:
+  dry_run: false
+  max_concurrent: 5
+  cooldown_period: "5m"
+
+# Webhook Configuration
+webhook:
+  port: "8080"
+  path: "/alerts"
+  auth:
+    type: "bearer"
+    token: "${WEBHOOK_AUTH_TOKEN}"
+
+# Database Configuration (for action history)
+database:
+  enabled: true
+  host: "localhost"
+  port: "5432"
+  database: "prometheus_alerts_slm"
+  username: "slm_user"
+  password: "${DATABASE_PASSWORD}"
+  ssl_mode: "disable"
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime_minutes: 5
+
+# Monitoring Configuration - Phase 1 Implementation
+monitoring:
+  # Enable production monitoring clients (vs stub implementations)
+  use_production_clients: true
+
+  # AlertManager Integration
+  alertmanager:
+    enabled: true
+    endpoint: "http://alertmanager.monitoring.svc.cluster.local:9093"
+    timeout: "30s"
+
+  # Prometheus Integration
+  prometheus:
+    enabled: true
+    endpoint: "http://prometheus.monitoring.svc.cluster.local:9090"
+    timeout: "30s"
+
+  # Effectiveness Assessment Configuration
+  effectiveness:
+    enabled: true
+    assessment_delay: "10m"    # Wait 10 minutes before assessing action effectiveness
+    processing_interval: "2m"  # Check for pending assessments every 2 minutes
+
+    # Phase 2 Enhanced Assessment Features (disabled by default)
+    enable_enhanced_assessment: false   # Enable Phase 2 ML-based assessment
+    enable_pattern_learning: false      # Learn from historical patterns
+    enable_predictive_analytics: false  # Enable effectiveness prediction
+    enable_cost_analysis: false         # Enable cost-effectiveness analysis
+    min_similarity_threshold: 0.3       # Minimum similarity for pattern matching
+    prediction_model: "similarity"      # Prediction model type
+    async_processing: true               # Process assessments asynchronously
+    batch_size: 10                       # Batch size for processing
+
+    # Vector Database Configuration
+    vector_db:
+      type: "memory"                     # "memory" or "pgvector"
+      connection_url: ""                 # For external vector databases
+      embedding_model: "text-embedding-ada-002"
+      vector_size: 1536
+
+# Alert Processing Filters
+filters:
+  - name: "severity_filter"
+    conditions:
+      severity: ["warning", "critical"]
+  - name: "namespace_filter"
+    conditions:
+      namespace: ["production", "staging"]
+
+---
+# Alternative Configuration: Development/Testing Setup
+# Use this configuration for development environments
+
+monitoring:
+  # Use stub clients for development/testing
+  use_production_clients: false
+
+  # AlertManager settings (not used with stub clients)
+  alertmanager:
+    enabled: false
+    endpoint: "http://localhost:9093"
+    timeout: "30s"
+
+  # Prometheus settings (not used with stub clients)
+  prometheus:
+    enabled: false
+    endpoint: "http://localhost:9090"
+    timeout: "30s"
+
+  # Effectiveness assessment still works with stub clients
+  effectiveness:
+    enabled: true
+    assessment_delay: "5m"     # Shorter delay for testing
+    processing_interval: "1m"  # More frequent processing for testing
+
+    # Phase 2 features for development/testing
+    enable_enhanced_assessment: false
+    enable_pattern_learning: false
+    enable_predictive_analytics: false
+    enable_cost_analysis: false
+
+---
+# Phase 2 Enhanced Assessment Configuration
+# Use this configuration to enable all Phase 2 features
+
+monitoring:
+  use_production_clients: true
+
+  alertmanager:
+    enabled: true
+    endpoint: "http://alertmanager.monitoring.svc.cluster.local:9093"
+    timeout: "30s"
+
+  prometheus:
+    enabled: true
+    endpoint: "http://prometheus.monitoring.svc.cluster.local:9090"
+    timeout: "30s"
+
+  # Enhanced effectiveness assessment with all Phase 2 features enabled
+  effectiveness:
+    enabled: true
+    assessment_delay: "10m"
+    processing_interval: "2m"
+
+    # Enable all Phase 2 features
+    enable_enhanced_assessment: true    # Master switch for Phase 2
+    enable_pattern_learning: true       # Learn from historical patterns
+    enable_predictive_analytics: true   # Predict effectiveness before action
+    enable_cost_analysis: true          # Analyze cost-effectiveness
+    min_similarity_threshold: 0.3       # Pattern matching threshold
+    prediction_model: "similarity"      # Use similarity-based prediction
+    async_processing: true               # Process in background
+    batch_size: 20                       # Larger batch for production
+
+    # Production vector database configuration
+    vector_db:
+      type: "memory"                     # Use memory for simplicity
+      connection_url: ""
+      embedding_model: "text-embedding-ada-002"
+      vector_size: 1536
+
+# Alternative: PostgreSQL with pgvector for large-scale deployments
+# monitoring:
+#   effectiveness:
+#     vector_db:
+#       type: "pgvector"
+#       connection_url: "postgresql://user:password@postgres:5432/vectors"
+#       embedding_model: "text-embedding-ada-002"
+#       vector_size: 1536
+
+---
+# Environment Variable Configuration
+# You can also configure monitoring via environment variables:
+
+# USE_PRODUCTION_MONITORING_CLIENTS=true
+# ALERTMANAGER_ENABLED=true
+# ALERTMANAGER_ENDPOINT=http://alertmanager:9093
+# ALERTMANAGER_TIMEOUT=30s
+# PROMETHEUS_ENABLED=true
+# PROMETHEUS_ENDPOINT=http://prometheus:9090
+# PROMETHEUS_TIMEOUT=30s
+
+# Example Kubernetes Deployment with Monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alerts-slm-config
+  namespace: monitoring
+data:
+  config.yaml: |
+    monitoring:
+      use_production_clients: true
+      alertmanager:
+        enabled: true
+        endpoint: "http://alertmanager.monitoring.svc.cluster.local:9093"
+        timeout: "30s"
+      prometheus:
+        enabled: true
+        endpoint: "http://prometheus.monitoring.svc.cluster.local:9090"
+        timeout: "30s"
+      effectiveness:
+        enabled: true
+        assessment_delay: "10m"
+        processing_interval: "2m"
+
+---
+# Example Usage in Application Code:
+
+# ```go
+# import (
+#     "github.com/jordigilh/kubernaut/internal/config"
+#     "github.com/jordigilh/kubernaut/pkg/monitoring"
+#     "github.com/jordigilh/kubernaut/pkg/effectiveness"
+# )
+#
+# // Load configuration
+# cfg, err := config.Load("config.yaml")
+# if err != nil {
+#     log.Fatal(err)
+# }
+#
+# // Create monitoring clients
+# factory := monitoring.NewClientFactory(cfg.Monitoring, k8sClient, logger)
+#
+# // Validate configuration
+# if err := factory.ValidateConfig(); err != nil {
+#     log.Fatal("Invalid monitoring config:", err)
+# }
+#
+# // Create clients
+# monitoringClients := factory.CreateClients()
+#
+# // Health check
+# if err := factory.HealthCheck(monitoringClients); err != nil {
+#     log.Warn("Monitoring health check failed:", err)
+# }
+#
+# // Create effectiveness assessor with monitoring clients
+# assessor := effectiveness.NewAssessorWithFactory(
+#     actionHistoryRepo,
+#     monitoringClients,
+#     logger,
+# )
+#
+# // Create and start effectiveness service
+# service := effectiveness.NewService(
+#     assessor,
+#     cfg.Monitoring.Effectiveness.ProcessingInterval,
+#     logger,
+# )
+# service.Start(ctx)
+# ```
