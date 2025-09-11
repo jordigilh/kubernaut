@@ -7,7 +7,11 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
 	"github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -115,9 +119,63 @@ func SetupTestEnvironment() (*TestEnvironment, error) {
 	return env, nil
 }
 
-// SetupFakeEnvironment creates a fake Kubernetes environment for testing
-func SetupFakeEnvironment() (*TestEnvironment, error) {
-	return setupFakeK8sEnvironment()
+// SetupEnvironment creates a test Kubernetes environment for integration testing
+// Uses real K8s cluster (envtest) by default, or fake client if USE_FAKE_K8S_CLIENT=true
+func SetupEnvironment() (*TestEnvironment, error) {
+	// Check if we should use fake client (for backward compatibility and fast tests)
+	if os.Getenv("USE_FAKE_K8S_CLIENT") == "true" {
+		logrus.Info("Using fake Kubernetes client for integration tests")
+		return setupFakeK8sEnvironment()
+	}
+
+	// Use real Kubernetes environment by default
+	logrus.Info("Using real Kubernetes cluster (envtest) for integration tests")
+	env, err := SetupTestEnvironment()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to setup real K8s test environment, falling back to fake client")
+		// Fallback to fake client if real environment setup fails
+		return setupFakeK8sEnvironment()
+	}
+
+	return env, nil
+}
+
+// CreateDefaultNamespace creates the default namespace in the environment
+func (te *TestEnvironment) CreateDefaultNamespace() error {
+	// Check if we already have a default namespace (real cluster might have it)
+	ns, err := te.Client.CoreV1().Namespaces().Get(te.Context, "default", metav1.GetOptions{})
+	if err == nil && ns != nil {
+		logrus.Debug("Default namespace already exists in test environment")
+		return nil
+	}
+
+	// Create default namespace
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "default",
+		},
+	}
+
+	_, err = te.Client.CoreV1().Namespaces().Create(te.Context, namespace, metav1.CreateOptions{})
+	if err != nil {
+		logrus.WithError(err).Error("Failed to create default namespace in test environment")
+		return err
+	}
+
+	logrus.Debug("Created default namespace in test environment")
+	return nil
+}
+
+// CreateK8sClient creates a k8s.Client using the test environment
+func (te *TestEnvironment) CreateK8sClient(logger *logrus.Logger) k8s.Client {
+	if logger == nil {
+		logger = logrus.New()
+	}
+
+	logger.Debug("Creating unified K8s client for real test environment")
+	return k8s.NewUnifiedClient(te.Client, config.KubernetesConfig{
+		Namespace: "default",
+	}, logger)
 }
 
 // Cleanup tears down the test environment

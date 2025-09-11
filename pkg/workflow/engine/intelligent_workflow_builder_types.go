@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 )
 
@@ -131,12 +132,14 @@ func (iwb *DefaultIntelligentWorkflowBuilder) convertActionPatternToWorkflowPatt
 }
 
 // createStepsFromActionPattern creates workflow steps from action pattern
-func (iwb *DefaultIntelligentWorkflowBuilder) createStepsFromActionPattern(pattern *vector.ActionPattern) []*WorkflowStep {
-	steps := make([]*WorkflowStep, 1) // Create at least one step from the pattern
+func (iwb *DefaultIntelligentWorkflowBuilder) createStepsFromActionPattern(pattern *vector.ActionPattern) []*ExecutableWorkflowStep {
+	steps := make([]*ExecutableWorkflowStep, 1) // Create at least one step from the pattern
 
-	step := &WorkflowStep{
-		ID:   uuid.New().String(),
-		Name: fmt.Sprintf("Execute-%s", pattern.ActionType),
+	step := &ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   uuid.New().String(),
+			Name: fmt.Sprintf("Execute-%s", pattern.ActionType),
+		},
 		Type: StepTypeAction,
 		Action: &StepAction{
 			Type:       pattern.ActionType,
@@ -269,11 +272,13 @@ func (iwb *DefaultIntelligentWorkflowBuilder) validateAIResponse(response *AIWor
 	return nil
 }
 
-// convertAIStepToWorkflowStep converts AI step to workflow step
-func (iwb *DefaultIntelligentWorkflowBuilder) convertAIStepToWorkflowStep(aiStep *AIGeneratedStep, index int) (*WorkflowStep, error) {
-	step := &WorkflowStep{
-		ID:           uuid.New().String(),
-		Name:         aiStep.Name,
+// convertAIStepToExecutableWorkflowStep converts AI step to workflow step
+func (iwb *DefaultIntelligentWorkflowBuilder) convertAIStepToExecutableWorkflowStep(aiStep *AIGeneratedStep, index int) (*ExecutableWorkflowStep, error) {
+	step := &ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   uuid.New().String(),
+			Name: aiStep.Name,
+		},
 		Type:         StepType(aiStep.Type),
 		Dependencies: aiStep.Dependencies,
 		OnSuccess:    aiStep.OnSuccess,
@@ -321,18 +326,6 @@ func (iwb *DefaultIntelligentWorkflowBuilder) convertAIStepToWorkflowStep(aiStep
 	}
 
 	return step, nil
-}
-
-// convertAIConditionToWorkflowCondition converts AI condition to workflow condition
-func (iwb *DefaultIntelligentWorkflowBuilder) convertAIConditionToWorkflowCondition(aiCondition *AIGeneratedCondition) *WorkflowCondition {
-	return &WorkflowCondition{
-		ID:         uuid.New().String(),
-		Name:       aiCondition.Name,
-		Type:       ConditionType(aiCondition.Type),
-		Expression: aiCondition.Expression,
-		Variables:  aiCondition.Variables,
-		Timeout:    iwb.config.DefaultStepTimeout / 2,
-	}
 }
 
 // createTimeoutsFromEstimation creates timeouts from AI estimation
@@ -488,22 +481,26 @@ func (iwb *DefaultIntelligentWorkflowBuilder) calculateObjectiveComplexity(objec
 }
 
 // deepCopyTemplate creates a deep copy of a workflow template
-func (iwb *DefaultIntelligentWorkflowBuilder) deepCopyTemplate(template *WorkflowTemplate) *WorkflowTemplate {
+func (iwb *DefaultIntelligentWorkflowBuilder) deepCopyTemplate(template *ExecutableTemplate) *ExecutableTemplate {
 	// In production, use a proper deep copy library
 	// For now, create a new template with copied values
-	copied := &WorkflowTemplate{
-		ID:          template.ID,
-		Name:        template.Name,
-		Description: template.Description,
-		Version:     template.Version,
-		Steps:       make([]*WorkflowStep, len(template.Steps)),
-		Conditions:  make([]*WorkflowCondition, len(template.Conditions)),
-		Variables:   make(map[string]interface{}),
-		Timeouts:    template.Timeouts,
-		Recovery:    template.Recovery,
-		Tags:        make([]string, len(template.Tags)),
-		CreatedBy:   template.CreatedBy,
-		CreatedAt:   template.CreatedAt,
+	copied := &ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          template.ID,
+				Name:        template.Name,
+				Description: template.Description,
+				CreatedAt:   template.CreatedAt,
+			},
+			Version:   template.Version,
+			CreatedBy: template.CreatedBy,
+		},
+		Steps:      make([]*ExecutableWorkflowStep, len(template.Steps)),
+		Conditions: make([]*ExecutableCondition, len(template.Conditions)),
+		Variables:  make(map[string]interface{}),
+		Timeouts:   template.Timeouts,
+		Recovery:   template.Recovery,
+		Tags:       make([]string, len(template.Tags)),
 	}
 
 	// Copy steps
@@ -607,7 +604,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) incrementVersion(version string) s
 }
 
 // calculateSimulatedDuration calculates simulated execution duration for a step
-func (iwb *DefaultIntelligentWorkflowBuilder) calculateSimulatedDuration(step *WorkflowStep, env *ExtendedSimulatedEnvironment) time.Duration {
+func (iwb *DefaultIntelligentWorkflowBuilder) calculateSimulatedDuration(step *ExecutableWorkflowStep, env *ExtendedSimulatedEnvironment) time.Duration {
 	baseDuration := time.Second * 30 // Base duration
 
 	// Adjust based on step type
@@ -637,7 +634,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) calculateSimulatedDuration(step *W
 }
 
 // shouldStepFail determines if a step should fail in simulation
-func (iwb *DefaultIntelligentWorkflowBuilder) shouldStepFail(step *WorkflowStep, env *ExtendedSimulatedEnvironment) bool {
+func (iwb *DefaultIntelligentWorkflowBuilder) shouldStepFail(step *ExecutableWorkflowStep, env *ExtendedSimulatedEnvironment) bool {
 	failureRate := 0.0
 
 	// Get failure rate from environment
@@ -684,7 +681,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) simulateActionResult(action *StepA
 }
 
 // calculateStepRiskScore calculates risk score for a step
-func (iwb *DefaultIntelligentWorkflowBuilder) calculateStepRiskScore(step *WorkflowStep) float64 {
+func (iwb *DefaultIntelligentWorkflowBuilder) calculateStepRiskScore(step *ExecutableWorkflowStep) float64 {
 	riskScore := 0.0
 
 	// Base risk based on action type

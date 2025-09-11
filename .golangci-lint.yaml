@@ -1,0 +1,7 @@
+linters-settings:
+  revive:
+    ignore-generated-header: false
+    # comment out or customize the dot-imports rule
+    rules:
+      - name: dot-imports
+        severity: off

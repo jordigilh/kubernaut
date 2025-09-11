@@ -1,0 +1,51 @@
+# HolmesGPT REST API Configuration
+# Production configuration for the HolmesGPT REST API wrapper
+
+# Server Configuration
+server:
+  port: 8090
+  metrics_port: 9091
+  host: "0.0.0.0"
+
+# LLM Configuration
+llm:
+  provider: "openai"  # openai, anthropic, local, ollama, azure
+  model: "gpt-4"
+  api_key: "${HOLMESGPT_LLM_API_KEY}"
+  base_url: "${HOLMESGPT_LLM_BASE_URL}"  # For local/custom providers
+
+# HolmesGPT Configuration
+holmesgpt:
+  config_path: "/app/config/settings.yaml"
+  toolsets_dir: "/app/toolsets"
+
+# Context API Integration
+context_api:
+  url: "http://kubernaut-context-api:8091"
+  timeout: 30
+
+# Security Configuration
+security:
+  jwt_secret_key: "${HOLMESGPT_JWT_SECRET_KEY}"
+  jwt_algorithm: "HS256"
+  jwt_expire_minutes: 60
+
+# Rate Limiting
+rate_limiting:
+  requests_per_minute: 100
+  window_seconds: 60
+
+# Caching
+cache:
+  redis_url: "${HOLMESGPT_REDIS_URL}"
+  ttl_seconds: 300
+
+# Logging
+logging:
+  level: "INFO"
+  format: "json"  # json or text
+
+# Resource Limits
+resources:
+  max_concurrent_investigations: 10
+  investigation_timeout_seconds: 300

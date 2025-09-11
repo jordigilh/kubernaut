@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 	sharedhttp "github.com/jordigilh/kubernaut/pkg/shared/http"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -368,7 +368,11 @@ func (c *PrometheusClient) queryInstantMetricAtTime(ctx context.Context, query s
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.WithError(err).Error("Failed to close HTTP response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("Prometheus API returned status %d", resp.StatusCode)
@@ -427,7 +431,11 @@ func (c *PrometheusClient) queryRangeMetric(ctx context.Context, query string, s
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.WithError(err).Error("Failed to close HTTP response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Prometheus API returned status %d", resp.StatusCode)
@@ -498,7 +506,11 @@ func (c *PrometheusClient) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute health check: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.WithError(err).Error("Failed to close HTTP response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Prometheus health check failed with status %d", resp.StatusCode)

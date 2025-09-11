@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // setupConfidencePatterns configures realistic confidence patterns for different alert types

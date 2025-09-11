@@ -9,7 +9,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	sharedmath "github.com/jordigilh/kubernaut/pkg/shared/math"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	workflowtypes "github.com/jordigilh/kubernaut/pkg/workflow/types"
 	"github.com/sirupsen/logrus"
 	"gonum.org/v1/gonum/mat"
@@ -111,7 +111,7 @@ func NewMachineLearningAnalyzer(config *MLConfig, log *logrus.Logger) *MachineLe
 }
 
 // ExtractFeatures extracts features from workflow execution data
-func (mla *MachineLearningAnalyzer) ExtractFeatures(data *engine.WorkflowExecutionData) (*shared.WorkflowFeatures, error) {
+func (mla *MachineLearningAnalyzer) ExtractFeatures(data *sharedtypes.WorkflowExecutionData) (*shared.WorkflowFeatures, error) {
 	return mla.featureExtractor.Extract(data)
 }
 
@@ -135,7 +135,7 @@ func (mla *MachineLearningAnalyzer) GetModels() map[string]*MLModel {
 }
 
 // TrainModel trains or updates an ML model
-func (mla *MachineLearningAnalyzer) TrainModel(modelType string, trainingData []*engine.WorkflowExecutionData) (*MLModel, error) {
+func (mla *MachineLearningAnalyzer) TrainModel(modelType string, trainingData []*sharedtypes.WorkflowExecutionData) (*MLModel, error) {
 	mla.log.WithFields(logrus.Fields{
 		"model_type":    modelType,
 		"training_size": len(trainingData),
@@ -184,7 +184,7 @@ func (mla *MachineLearningAnalyzer) UpdateModel(learningData *shared.WorkflowLea
 }
 
 // AnalyzeModelPerformance evaluates model performance
-func (mla *MachineLearningAnalyzer) AnalyzeModelPerformance(modelID string, testData []*engine.WorkflowExecutionData) (*ModelPerformanceReport, error) {
+func (mla *MachineLearningAnalyzer) AnalyzeModelPerformance(modelID string, testData []*sharedtypes.WorkflowExecutionData) (*ModelPerformanceReport, error) {
 	model, exists := mla.models[modelID]
 	if !exists {
 		return nil, fmt.Errorf("model %s not found", modelID)
@@ -224,13 +224,13 @@ func (mla *MachineLearningAnalyzer) AnalyzeModelPerformance(modelID string, test
 		predResult := &PredictionResult{
 			Features:  features,
 			Predicted: prediction,
-			Actual:    &workflowtypes.WorkflowExecutionResult{Success: data.Success, Duration: data.Duration},
-			Error:     mla.calculatePredictionError(prediction, &workflowtypes.WorkflowExecutionResult{Success: data.Success, Duration: data.Duration}),
+			Actual:    &workflowtypes.CoreWorkflowExecutionResult{Success: data.Success, Duration: data.Duration},
+			Error:     mla.calculatePredictionError(prediction, &workflowtypes.CoreWorkflowExecutionResult{Success: data.Success, Duration: data.Duration}),
 		}
 
 		predictions = append(predictions, predResult)
 
-		if mla.isPredictionCorrect(prediction, &workflowtypes.WorkflowExecutionResult{Success: data.Success, Duration: data.Duration}) {
+		if mla.isPredictionCorrect(prediction, &workflowtypes.CoreWorkflowExecutionResult{Success: data.Success, Duration: data.Duration}) {
 			correct++
 		}
 
@@ -253,7 +253,7 @@ func (mla *MachineLearningAnalyzer) AnalyzeModelPerformance(modelID string, test
 }
 
 // CrossValidateModel performs k-fold cross-validation on a model
-func (mla *MachineLearningAnalyzer) CrossValidateModel(modelType string, data []*engine.WorkflowExecutionData, folds int) (*CrossValidationMetrics, error) {
+func (mla *MachineLearningAnalyzer) CrossValidateModel(modelType string, data []*sharedtypes.WorkflowExecutionData, folds int) (*CrossValidationMetrics, error) {
 	if len(data) < folds {
 		return nil, fmt.Errorf("insufficient data for %d-fold cross-validation: have %d samples", folds, len(data))
 	}
@@ -265,7 +265,7 @@ func (mla *MachineLearningAnalyzer) CrossValidateModel(modelType string, data []
 	}).Info("Performing cross-validation")
 
 	// Shuffle data
-	shuffledData := make([]*engine.WorkflowExecutionData, len(data))
+	shuffledData := make([]*sharedtypes.WorkflowExecutionData, len(data))
 	copy(shuffledData, data)
 
 	// Simple shuffle
@@ -405,7 +405,7 @@ func (mla *MachineLearningAnalyzer) initializeDefaultModels() {
 	}
 }
 
-func (mla *MachineLearningAnalyzer) trainSuccessPredictionModel(trainingData []*engine.WorkflowExecutionData) (*MLModel, error) {
+func (mla *MachineLearningAnalyzer) trainSuccessPredictionModel(trainingData []*sharedtypes.WorkflowExecutionData) (*MLModel, error) {
 	// Extract features and labels
 	features := make([][]float64, 0)
 	labels := make([]float64, 0)
@@ -447,7 +447,7 @@ func (mla *MachineLearningAnalyzer) trainSuccessPredictionModel(trainingData []*
 	return model, nil
 }
 
-func (mla *MachineLearningAnalyzer) trainDurationPredictionModel(trainingData []*engine.WorkflowExecutionData) (*MLModel, error) {
+func (mla *MachineLearningAnalyzer) trainDurationPredictionModel(trainingData []*sharedtypes.WorkflowExecutionData) (*MLModel, error) {
 	// Extract features and duration labels
 	features := make([][]float64, 0)
 	durations := make([]float64, 0)
@@ -485,7 +485,7 @@ func (mla *MachineLearningAnalyzer) trainDurationPredictionModel(trainingData []
 	return model, nil
 }
 
-func (mla *MachineLearningAnalyzer) trainResourcePredictionModel(trainingData []*engine.WorkflowExecutionData) (*MLModel, error) {
+func (mla *MachineLearningAnalyzer) trainResourcePredictionModel(trainingData []*sharedtypes.WorkflowExecutionData) (*MLModel, error) {
 	// Multi-output regression for CPU, memory, network, storage
 	features := make([][]float64, 0)
 	resourceUsage := make([][]float64, 0) // [cpu, memory, network, storage]
@@ -568,7 +568,7 @@ func (mla *MachineLearningAnalyzer) trainResourcePredictionModel(trainingData []
 	return model, nil
 }
 
-func (mla *MachineLearningAnalyzer) trainClusteringModel(trainingData []*engine.WorkflowExecutionData) (*MLModel, error) {
+func (mla *MachineLearningAnalyzer) trainClusteringModel(trainingData []*sharedtypes.WorkflowExecutionData) (*MLModel, error) {
 	// K-means clustering for pattern discovery
 	features := make([][]float64, 0)
 
@@ -962,7 +962,7 @@ func (mla *MachineLearningAnalyzer) predictRegression(model *MLModel, features [
 	return result
 }
 
-func (mla *MachineLearningAnalyzer) calculatePredictionError(prediction interface{}, actual *workflowtypes.WorkflowExecutionResult) float64 {
+func (mla *MachineLearningAnalyzer) calculatePredictionError(prediction interface{}, actual *workflowtypes.CoreWorkflowExecutionResult) float64 {
 	switch pred := prediction.(type) {
 	case bool:
 		if (pred && actual.Success) || (!pred && !actual.Success) {
@@ -978,7 +978,7 @@ func (mla *MachineLearningAnalyzer) calculatePredictionError(prediction interfac
 	}
 }
 
-func (mla *MachineLearningAnalyzer) isPredictionCorrect(prediction interface{}, actual *workflowtypes.WorkflowExecutionResult) bool {
+func (mla *MachineLearningAnalyzer) isPredictionCorrect(prediction interface{}, actual *workflowtypes.CoreWorkflowExecutionResult) bool {
 	switch pred := prediction.(type) {
 	case bool:
 		return (pred && actual.Success) || (!pred && !actual.Success)
@@ -1063,10 +1063,10 @@ func (mla *MachineLearningAnalyzer) countOutliers(errors []float64) int {
 // Supporting types
 
 type PredictionResult struct {
-	Features  *shared.WorkflowFeatures               `json:"features"`
-	Predicted interface{}                            `json:"predicted"`
-	Actual    *workflowtypes.WorkflowExecutionResult `json:"actual"`
-	Error     float64                                `json:"error"`
+	Features  *shared.WorkflowFeatures                   `json:"features"`
+	Predicted interface{}                                `json:"predicted"`
+	Actual    *workflowtypes.CoreWorkflowExecutionResult `json:"actual"`
+	Error     float64                                    `json:"error"`
 }
 
 type MLAnalysisPerformance struct {
@@ -1115,7 +1115,7 @@ func NewMLAnalyzerClusterer(config *MLConfig, log *logrus.Logger) *MLAnalyzerClu
 }
 
 // Methods for ML analyzer components
-func (fe *MLAnalyzerFeatureExtractor) Extract(data *engine.WorkflowExecutionData) (*shared.WorkflowFeatures, error) {
+func (fe *MLAnalyzerFeatureExtractor) Extract(data *sharedtypes.WorkflowExecutionData) (*shared.WorkflowFeatures, error) {
 	if data == nil {
 		return nil, fmt.Errorf("workflow execution data is nil")
 	}
@@ -1159,7 +1159,7 @@ func (fe *MLAnalyzerFeatureExtractor) Extract(data *engine.WorkflowExecutionData
 	return features, nil
 }
 
-func (fe *MLAnalyzerFeatureExtractor) ExtractVector(data *engine.WorkflowExecutionData) ([]float64, error) {
+func (fe *MLAnalyzerFeatureExtractor) ExtractVector(data *sharedtypes.WorkflowExecutionData) ([]float64, error) {
 	features, err := fe.Extract(data)
 	if err != nil {
 		return nil, err

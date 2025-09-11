@@ -270,17 +270,21 @@ func (db *MemoryVectorDatabase) GetPatternAnalytics(ctx context.Context) (*Patte
 	}
 	analytics.TopPerformingPatterns = allPatterns[:topCount]
 
+	// Create a separate copy for recent patterns sorting
+	recentPatterns := make([]*ActionPattern, len(allPatterns))
+	copy(recentPatterns, allPatterns)
+
 	// Sort by creation time for recent patterns
-	sort.Slice(allPatterns, func(i, j int) bool {
-		return allPatterns[i].CreatedAt.After(allPatterns[j].CreatedAt)
+	sort.Slice(recentPatterns, func(i, j int) bool {
+		return recentPatterns[i].CreatedAt.After(recentPatterns[j].CreatedAt)
 	})
 
 	// Recent 10 patterns
 	recentCount := 10
-	if len(allPatterns) < recentCount {
-		recentCount = len(allPatterns)
+	if len(recentPatterns) < recentCount {
+		recentCount = len(recentPatterns)
 	}
-	analytics.RecentPatterns = allPatterns[:recentCount]
+	analytics.RecentPatterns = recentPatterns[:recentCount]
 
 	return analytics, nil
 }
@@ -312,8 +316,74 @@ func (db *MemoryVectorDatabase) GetPattern(patternID string) (*ActionPattern, er
 		return nil, fmt.Errorf("pattern with ID %s not found", patternID)
 	}
 
-	// Return a copy to prevent external modifications
+	// Return a deep copy to prevent external modifications
 	patternCopy := *pattern
+
+	// Deep copy nested structures
+	if pattern.EffectivenessData != nil {
+		effectivenessCopy := *pattern.EffectivenessData
+		if pattern.EffectivenessData.CostImpact != nil {
+			costCopy := *pattern.EffectivenessData.CostImpact
+			effectivenessCopy.CostImpact = &costCopy
+		}
+		if pattern.EffectivenessData.ContextualFactors != nil {
+			factorsCopy := make(map[string]float64)
+			for k, v := range pattern.EffectivenessData.ContextualFactors {
+				factorsCopy[k] = v
+			}
+			effectivenessCopy.ContextualFactors = factorsCopy
+		}
+		patternCopy.EffectivenessData = &effectivenessCopy
+	}
+
+	// Deep copy maps
+	if pattern.ActionParameters != nil {
+		paramsCopy := make(map[string]interface{})
+		for k, v := range pattern.ActionParameters {
+			paramsCopy[k] = v
+		}
+		patternCopy.ActionParameters = paramsCopy
+	}
+
+	if pattern.ContextLabels != nil {
+		labelsCopy := make(map[string]string)
+		for k, v := range pattern.ContextLabels {
+			labelsCopy[k] = v
+		}
+		patternCopy.ContextLabels = labelsCopy
+	}
+
+	if pattern.PreConditions != nil {
+		preCopy := make(map[string]interface{})
+		for k, v := range pattern.PreConditions {
+			preCopy[k] = v
+		}
+		patternCopy.PreConditions = preCopy
+	}
+
+	if pattern.PostConditions != nil {
+		postCopy := make(map[string]interface{})
+		for k, v := range pattern.PostConditions {
+			postCopy[k] = v
+		}
+		patternCopy.PostConditions = postCopy
+	}
+
+	if pattern.Metadata != nil {
+		metaCopy := make(map[string]interface{})
+		for k, v := range pattern.Metadata {
+			metaCopy[k] = v
+		}
+		patternCopy.Metadata = metaCopy
+	}
+
+	// Deep copy slice
+	if pattern.Embedding != nil {
+		embeddingCopy := make([]float64, len(pattern.Embedding))
+		copy(embeddingCopy, pattern.Embedding)
+		patternCopy.Embedding = embeddingCopy
+	}
+
 	return &patternCopy, nil
 }
 

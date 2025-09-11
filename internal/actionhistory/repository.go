@@ -785,7 +785,11 @@ func (r *PostgreSQLRepository) GetOscillationDetections(ctx context.Context, res
 	if err != nil {
 		return nil, fmt.Errorf("failed to query oscillation detections: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var detections []OscillationDetection
 	for rows.Next() {
@@ -864,7 +868,11 @@ func (r *PostgreSQLRepository) GetActionHistorySummaries(ctx context.Context, si
 	if err != nil {
 		return nil, fmt.Errorf("failed to query action history summaries: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var summaries []ActionHistorySummary
 	for rows.Next() {

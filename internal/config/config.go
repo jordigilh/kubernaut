@@ -13,7 +13,8 @@ type Config struct {
 	App        AppConfig        `yaml:"app"`
 	Server     ServerConfig     `yaml:"server"`
 	Logging    LoggingConfig    `yaml:"logging"`
-	SLM        LLMConfig        `yaml:"slm"`
+	AIServices AIServicesConfig `yaml:"ai_services"`
+	SLM        LLMConfig        `yaml:"slm"` // Deprecated: Use ai_services.llm instead
 	Kubernetes KubernetesConfig `yaml:"kubernetes"`
 	Actions    ActionsConfig    `yaml:"actions"`
 	Webhook    WebhookConfig    `yaml:"webhook"`
@@ -37,6 +38,33 @@ type ServerConfig struct {
 type LoggingConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
+}
+
+// AIServicesConfig holds configuration for all AI services
+type AIServicesConfig struct {
+	LLM        LLMConfig        `yaml:"llm"`        // General-purpose LLM service
+	HolmesGPT  HolmesGPTConfig  `yaml:"holmesgpt"`  // HolmesGPT investigation service
+	ContextAPI ContextAPIConfig `yaml:"context_api"` // Context API for HolmesGPT orchestration
+}
+
+// HolmesGPTConfig holds HolmesGPT-specific configuration
+type HolmesGPTConfig struct {
+	Enabled    bool          `yaml:"enabled"`     // Enable HolmesGPT integration
+	Mode       string        `yaml:"mode"`        // "development" or "production"
+	Endpoint   string        `yaml:"endpoint"`    // HolmesGPT service endpoint
+	Timeout    time.Duration `yaml:"timeout"`     // Request timeout
+	RetryCount int           `yaml:"retry_count"` // Number of retries
+	Toolsets   []string      `yaml:"toolsets"`    // Available toolsets
+	Priority   int           `yaml:"priority"`    // Priority for investigation (higher = first)
+}
+
+// ContextAPIConfig holds Context API-specific configuration for HolmesGPT orchestration
+// Following development guideline: reuse existing patterns (same structure as HolmesGPTConfig)
+type ContextAPIConfig struct {
+	Enabled bool          `yaml:"enabled"` // Enable Context API server
+	Host    string        `yaml:"host"`    // Context API server host (0.0.0.0 for all interfaces)
+	Port    int           `yaml:"port"`    // Context API server port (suggest 8091)
+	Timeout time.Duration `yaml:"timeout"` // Request timeout for context gathering
 }
 
 type LLMConfig struct {
@@ -301,12 +329,65 @@ func Load(configFile string) (*Config, error) {
 		return nil, fmt.Errorf("failed to load environment variables: %w", err)
 	}
 
+	// Handle backward compatibility: migrate SLM config to AIServices.LLM if needed
+	if config.SLM.Endpoint != "" && config.AIServices.LLM.Endpoint == "" {
+		config.AIServices.LLM = config.SLM
+	}
+
+	// Set defaults for HolmesGPT if not specified
+	if config.AIServices.HolmesGPT.Timeout == 0 {
+		config.AIServices.HolmesGPT.Timeout = 60 * time.Second
+	}
+	if config.AIServices.HolmesGPT.RetryCount == 0 {
+		config.AIServices.HolmesGPT.RetryCount = 3
+	}
+	if len(config.AIServices.HolmesGPT.Toolsets) == 0 {
+		config.AIServices.HolmesGPT.Toolsets = []string{"kubernetes", "prometheus"}
+	}
+	if config.AIServices.HolmesGPT.Priority == 0 {
+		config.AIServices.HolmesGPT.Priority = 100 // Higher priority for investigations
+	}
+	if config.AIServices.HolmesGPT.Mode == "" {
+		config.AIServices.HolmesGPT.Mode = "development"
+	}
+
 	// Validate configuration
 	if err := validate(config); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	return config, nil
+}
+
+// GetLLMConfig returns the LLM configuration, handling backward compatibility
+func (c *Config) GetLLMConfig() LLMConfig {
+	if c.AIServices.LLM.Endpoint != "" {
+		return c.AIServices.LLM
+	}
+	// Fallback to deprecated SLM config
+	return c.SLM
+}
+
+// GetHolmesGPTConfig returns the HolmesGPT configuration
+func (c *Config) GetHolmesGPTConfig() HolmesGPTConfig {
+	return c.AIServices.HolmesGPT
+}
+
+// IsHolmesGPTEnabled checks if HolmesGPT is enabled and configured
+func (c *Config) IsHolmesGPTEnabled() bool {
+	return c.AIServices.HolmesGPT.Enabled && c.AIServices.HolmesGPT.Endpoint != ""
+}
+
+// GetContextAPIConfig returns the Context API configuration
+// Following development guideline: reuse existing patterns (same as GetHolmesGPTConfig)
+func (c *Config) GetContextAPIConfig() ContextAPIConfig {
+	return c.AIServices.ContextAPI
+}
+
+// IsContextAPIEnabled checks if Context API is enabled and configured
+// Following development guideline: reuse existing patterns (same as IsHolmesGPTEnabled)
+func (c *Config) IsContextAPIEnabled() bool {
+	return c.AIServices.ContextAPI.Enabled && c.AIServices.ContextAPI.Port > 0
 }
 
 func loadFromEnv(config *Config) error {

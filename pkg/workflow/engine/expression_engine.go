@@ -14,7 +14,6 @@ import (
 type ExpressionEngine struct {
 	compiledExpressions sync.Map // map[string]*CompiledExpression
 	functions           map[string]ExpressionFunction
-	mu                  sync.RWMutex
 }
 
 // CompiledExpression represents a pre-compiled expression for faster evaluation

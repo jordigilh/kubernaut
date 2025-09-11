@@ -204,4 +204,3 @@ func PerformanceFields(operation string, duration time.Duration, success bool) S
 		Duration(duration).
 		Custom("success", success)
 }
-

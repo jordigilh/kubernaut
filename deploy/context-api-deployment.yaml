@@ -1,0 +1,118 @@
+# Kubernaut Context API Deployment for HolmesGPT Integration
+# This deploys the Context API that HolmesGPT will use via custom toolset
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernaut-context-api
+  namespace: robusta
+  labels:
+    app: kubernaut-context-api
+    component: ai-orchestration
+spec:
+  replicas: 2  # High availability for production
+  selector:
+    matchLabels:
+      app: kubernaut-context-api
+  template:
+    metadata:
+      labels:
+        app: kubernaut-context-api
+    spec:
+      serviceAccountName: kubernaut-context-api
+      containers:
+      - name: context-api
+        image: kubernaut/context-api:latest  # Replace with actual image
+        ports:
+        - containerPort: 8091
+          name: http
+        env:
+        - name: LOG_LEVEL
+          value: "info"
+        - name: CACHE_TTL_DEFAULT
+          value: "5m"
+        - name: CACHE_TTL_MAX
+          value: "10m"
+        - name: PROMETHEUS_ENDPOINT
+          value: "http://prometheus:9090"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/v1/context/health
+            port: 8091
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/v1/context/health
+            port: 8091
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: context-api
+  namespace: robusta
+  labels:
+    app: kubernaut-context-api
+spec:
+  selector:
+    app: kubernaut-context-api
+  ports:
+  - port: 8091
+    targetPort: 8091
+    protocol: TCP
+    name: http
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-context-api
+  namespace: robusta
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-context-api
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "nodes", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["metrics.k8s.io"]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-context-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-context-api
+subjects:
+- kind: ServiceAccount
+  name: kubernaut-context-api
+  namespace: robusta
