@@ -88,6 +88,44 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// Merge creates a new Config by merging this config with another, with the other config taking precedence
+func (c *Config) Merge(other *Config) *Config {
+	result := *c // Copy base config
+
+	if other.Host != "" {
+		result.Host = other.Host
+	}
+	if other.Port != 0 {
+		result.Port = other.Port
+	}
+	if other.User != "" {
+		result.User = other.User
+	}
+	if other.Password != "" {
+		result.Password = other.Password
+	}
+	if other.Database != "" {
+		result.Database = other.Database
+	}
+	if other.SSLMode != "" {
+		result.SSLMode = other.SSLMode
+	}
+	if other.MaxOpenConns != 0 {
+		result.MaxOpenConns = other.MaxOpenConns
+	}
+	if other.MaxIdleConns != 0 {
+		result.MaxIdleConns = other.MaxIdleConns
+	}
+	if other.ConnMaxLifetime != 0 {
+		result.ConnMaxLifetime = other.ConnMaxLifetime
+	}
+	if other.ConnMaxIdleTime != 0 {
+		result.ConnMaxIdleTime = other.ConnMaxIdleTime
+	}
+
+	return &result
+}
+
 // ConnectionString builds a PostgreSQL connection string
 func (c *Config) ConnectionString() string {
 	connStr := fmt.Sprintf("host=%s port=%d user=%s dbname=%s sslmode=%s",

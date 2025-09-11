@@ -14,12 +14,12 @@ import (
 
 // AnomalyDetectionResult contains the results of batch anomaly detection
 type AnomalyDetectionResult struct {
-	Anomalies       []*AnomalyResult         `json:"anomalies"`
-	Summary         *DetectionSummary        `json:"summary"`
-	BaselineHealth  *BaselineHealthReport    `json:"baseline_health"`
-	TrendAnalysis   *TimeSeriesTrendAnalysis `json:"trend_analysis"`
-	Recommendations []*SystemRecommendation  `json:"recommendations"`
-	AnalyzedPeriod  TimeRange                `json:"analyzed_period"`
+	Anomalies       []*AnomalyResult          `json:"anomalies"`
+	Summary         *DetectionSummary         `json:"summary"`
+	BaselineHealth  *BaselineHealthReport     `json:"baseline_health"`
+	TrendAnalysis   *TimeSeriesTrendAnalysis  `json:"trend_analysis"`
+	Recommendations []*SystemRecommendation   `json:"recommendations"`
+	AnalyzedPeriod  AnomalyDetectionTimeRange `json:"analyzed_period"`
 }
 
 // AnomalyDetector detects anomalous patterns in workflow execution data
@@ -114,7 +114,7 @@ type AnomalyRecommendation struct {
 // HistoricalDataBuffer maintains recent execution data for baseline updates
 type HistoricalDataBuffer struct {
 	maxSize int
-	data    []*engine.WorkflowExecutionData
+	data    []*engine.EngineWorkflowExecutionData
 	index   int
 	full    bool
 }
@@ -152,17 +152,17 @@ type SystemRecommendation struct {
 
 // TimeSeriesTrendAnalysis contains trend analysis results
 type TimeSeriesTrendAnalysis struct {
-	Direction    string    `json:"direction"` // "increasing", "decreasing", "stable"
-	Slope        float64   `json:"slope"`
-	Confidence   float64   `json:"confidence"`
-	StartValue   float64   `json:"start_value"`
-	EndValue     float64   `json:"end_value"`
-	TrendPeriod  TimeRange `json:"trend_period"`
-	Significance float64   `json:"significance"`
+	Direction    string                    `json:"direction"` // "increasing", "decreasing", "stable"
+	Slope        float64                   `json:"slope"`
+	Confidence   float64                   `json:"confidence"`
+	StartValue   float64                   `json:"start_value"`
+	EndValue     float64                   `json:"end_value"`
+	TrendPeriod  AnomalyDetectionTimeRange `json:"trend_period"`
+	Significance float64                   `json:"significance"`
 }
 
-// TimeRange represents a time period
-type TimeRange struct {
+// AnomalyDetectionTimeRange represents a time period
+type AnomalyDetectionTimeRange struct {
 	Start time.Time `json:"start"`
 	End   time.Time `json:"end"`
 }
@@ -238,7 +238,7 @@ func (ad *AnomalyDetector) DetectAnomaly(event *WorkflowExecutionEvent) *Anomaly
 }
 
 // DetectBatchAnomalies analyzes multiple executions for anomalies
-func (ad *AnomalyDetector) DetectBatchAnomalies(ctx context.Context, executions []*engine.WorkflowExecutionData) (*AnomalyDetectionResult, error) {
+func (ad *AnomalyDetector) DetectBatchAnomalies(ctx context.Context, executions []*engine.EngineWorkflowExecutionData) (*AnomalyDetectionResult, error) {
 	ad.log.WithField("executions", len(executions)).Info("Detecting batch anomalies")
 
 	if len(executions) == 0 {
@@ -284,7 +284,7 @@ func (ad *AnomalyDetector) DetectBatchAnomalies(ctx context.Context, executions 
 		BaselineHealth:  baselineHealth,
 		TrendAnalysis:   trendAnalysis,
 		Recommendations: systemRecommendations,
-		AnalyzedPeriod: TimeRange{
+		AnalyzedPeriod: AnomalyDetectionTimeRange{
 			Start: executions[0].Timestamp,
 			End:   executions[len(executions)-1].Timestamp,
 		},
@@ -294,7 +294,7 @@ func (ad *AnomalyDetector) DetectBatchAnomalies(ctx context.Context, executions 
 }
 
 // UpdateBaseline updates baseline models with new execution data
-func (ad *AnomalyDetector) UpdateBaseline(executions []*engine.WorkflowExecutionData) error {
+func (ad *AnomalyDetector) UpdateBaseline(executions []*engine.EngineWorkflowExecutionData) error {
 	return ad.updateBaselines(executions)
 }
 
@@ -554,7 +554,7 @@ func (ad *AnomalyDetector) detectBehavioralAnomaly(event *WorkflowExecutionEvent
 	return nil
 }
 
-func (ad *AnomalyDetector) updateBaselines(executions []*engine.WorkflowExecutionData) error {
+func (ad *AnomalyDetector) updateBaselines(executions []*engine.EngineWorkflowExecutionData) error {
 	// Add data to historical buffer
 	for _, execution := range executions {
 		ad.historicalData.Add(execution)
@@ -576,7 +576,7 @@ func (ad *AnomalyDetector) updateBaselines(executions []*engine.WorkflowExecutio
 	return nil
 }
 
-func (ad *AnomalyDetector) updateStatisticalBaseline(executions []*engine.WorkflowExecutionData) error {
+func (ad *AnomalyDetector) updateStatisticalBaseline(executions []*engine.EngineWorkflowExecutionData) error {
 	modelID := "statistical_baseline"
 
 	// Extract metrics
@@ -670,7 +670,7 @@ func (ad *AnomalyDetector) updateStatisticalBaseline(executions []*engine.Workfl
 	return nil
 }
 
-func (ad *AnomalyDetector) updateTemporalBaseline(executions []*engine.WorkflowExecutionData) error {
+func (ad *AnomalyDetector) updateTemporalBaseline(executions []*engine.EngineWorkflowExecutionData) error {
 	modelID := "temporal_baseline"
 
 	// Group executions by hour and weekday
@@ -747,7 +747,7 @@ func (ad *AnomalyDetector) updateTemporalBaseline(executions []*engine.WorkflowE
 	return nil
 }
 
-func (ad *AnomalyDetector) updateBehavioralBaseline(executions []*engine.WorkflowExecutionData) error {
+func (ad *AnomalyDetector) updateBehavioralBaseline(executions []*engine.EngineWorkflowExecutionData) error {
 	modelID := "behavioral_baseline"
 
 	// Analyze workflow execution patterns
@@ -803,7 +803,7 @@ func (ad *AnomalyDetector) updateBehavioralBaseline(executions []*engine.Workflo
 	return nil
 }
 
-func (ad *AnomalyDetector) convertExecutionToEvent(execution *engine.WorkflowExecutionData) *WorkflowExecutionEvent {
+func (ad *AnomalyDetector) convertExecutionToEvent(execution *engine.EngineWorkflowExecutionData) *WorkflowExecutionEvent {
 	event := &WorkflowExecutionEvent{
 		Type:        "workflow_execution",
 		ExecutionID: execution.ExecutionID,
@@ -954,7 +954,7 @@ func (ad *AnomalyDetector) generateRecommendations(anomaly *AnomalyResult) []*An
 	return recommendations
 }
 
-func (ad *AnomalyDetector) analyzeTrends(executions []*engine.WorkflowExecutionData) (*TimeSeriesTrendAnalysis, error) {
+func (ad *AnomalyDetector) analyzeTrends(executions []*engine.EngineWorkflowExecutionData) (*TimeSeriesTrendAnalysis, error) {
 	if len(executions) < 10 {
 		return nil, fmt.Errorf("insufficient data for trend analysis")
 	}
@@ -1047,7 +1047,7 @@ func (ad *AnomalyDetector) analyzeTrends(executions []*engine.WorkflowExecutionD
 		Confidence:   confidence,
 		StartValue:   values[0],
 		EndValue:     values[len(values)-1],
-		TrendPeriod:  TimeRange{Start: timestamps[0], End: timestamps[len(timestamps)-1]},
+		TrendPeriod:  AnomalyDetectionTimeRange{Start: timestamps[0], End: timestamps[len(timestamps)-1]},
 		Significance: math.Abs(slope) * confidence,
 	}
 
@@ -1176,13 +1176,13 @@ func (ad *AnomalyDetector) generateSystemRecommendations(anomalies []*AnomalyRes
 func NewHistoricalDataBuffer(maxSize int) *HistoricalDataBuffer {
 	return &HistoricalDataBuffer{
 		maxSize: maxSize,
-		data:    make([]*engine.WorkflowExecutionData, maxSize),
+		data:    make([]*engine.EngineWorkflowExecutionData, maxSize),
 		index:   0,
 		full:    false,
 	}
 }
 
-func (hdb *HistoricalDataBuffer) Add(execution *engine.WorkflowExecutionData) {
+func (hdb *HistoricalDataBuffer) Add(execution *engine.EngineWorkflowExecutionData) {
 	hdb.data[hdb.index] = execution
 	hdb.index = (hdb.index + 1) % hdb.maxSize
 
@@ -1191,9 +1191,9 @@ func (hdb *HistoricalDataBuffer) Add(execution *engine.WorkflowExecutionData) {
 	}
 }
 
-func (hdb *HistoricalDataBuffer) GetRecent(count int) []*engine.WorkflowExecutionData {
+func (hdb *HistoricalDataBuffer) GetRecent(count int) []*engine.EngineWorkflowExecutionData {
 	if count <= 0 {
-		return []*engine.WorkflowExecutionData{}
+		return []*engine.EngineWorkflowExecutionData{}
 	}
 
 	size := hdb.maxSize
@@ -1205,7 +1205,7 @@ func (hdb *HistoricalDataBuffer) GetRecent(count int) []*engine.WorkflowExecutio
 		count = size
 	}
 
-	result := make([]*engine.WorkflowExecutionData, count)
+	result := make([]*engine.EngineWorkflowExecutionData, count)
 	for i := 0; i < count; i++ {
 		idx := (hdb.index - 1 - i + hdb.maxSize) % hdb.maxSize
 		result[i] = hdb.data[idx]

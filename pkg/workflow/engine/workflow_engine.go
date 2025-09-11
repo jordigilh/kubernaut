@@ -12,6 +12,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
 	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
 	"github.com/jordigilh/kubernaut/pkg/platform/monitoring"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // DefaultWorkflowEngine implements the WorkflowEngine interface
@@ -26,6 +27,9 @@ type DefaultWorkflowEngine struct {
 
 	// State storage
 	stateStorage StateStorage
+
+	// Execution repository
+	executionRepo ExecutionRepository
 
 	// AI condition evaluator
 	aiConditionEvaluator AIConditionEvaluator
@@ -43,6 +47,7 @@ type WorkflowEngineConfig struct {
 	MaxRetryDelay         time.Duration `yaml:"max_retry_delay" default:"5m"`
 	EnableStateRecovery   bool          `yaml:"enable_state_recovery" default:"true"`
 	EnableDetailedLogging bool          `yaml:"enable_detailed_logging" default:"false"`
+	MaxConcurrency        int           `yaml:"max_concurrency" default:"10"`
 }
 
 // ActionExecutor defines the interface for executing specific action types
@@ -54,8 +59,8 @@ type ActionExecutor interface {
 
 // StateStorage defines the interface for workflow state persistence
 type StateStorage interface {
-	SaveWorkflowState(ctx context.Context, execution *WorkflowExecution) error
-	LoadWorkflowState(ctx context.Context, executionID string) (*WorkflowExecution, error)
+	SaveWorkflowState(ctx context.Context, execution *RuntimeWorkflowExecution) error
+	LoadWorkflowState(ctx context.Context, executionID string) (*RuntimeWorkflowExecution, error)
 	DeleteWorkflowState(ctx context.Context, executionID string) error
 }
 
@@ -65,6 +70,7 @@ func NewDefaultWorkflowEngine(
 	actionRepo actionhistory.Repository,
 	monitoringClients *monitoring.MonitoringClients,
 	stateStorage StateStorage,
+	executionRepo ExecutionRepository,
 	config *WorkflowEngineConfig,
 	log *logrus.Logger,
 ) *DefaultWorkflowEngine {
@@ -82,6 +88,7 @@ func NewDefaultWorkflowEngine(
 		actionRepo:            actionRepo,
 		monitoringClients:     monitoringClients,
 		stateStorage:          stateStorage,
+		executionRepo:         executionRepo,
 		config:                config,
 		log:                   log,
 		actionExecutors:       make(map[string]ActionExecutor),
@@ -95,17 +102,23 @@ func NewDefaultWorkflowEngine(
 	return engine
 }
 
+// RegisterActionExecutor registers an action executor for a specific action type
+func (dwe *DefaultWorkflowEngine) RegisterActionExecutor(actionType string, executor ActionExecutor) {
+	dwe.actionExecutors[actionType] = executor
+}
+
 // NewDefaultWorkflowEngineWithAI creates a new workflow engine with AI condition evaluator
 func NewDefaultWorkflowEngineWithAI(
 	k8sClient k8s.Client,
 	actionRepo actionhistory.Repository,
 	monitoringClients *monitoring.MonitoringClients,
 	stateStorage StateStorage,
+	executionRepo ExecutionRepository,
 	aiConditionEvaluator AIConditionEvaluator,
 	config *WorkflowEngineConfig,
 	log *logrus.Logger,
 ) *DefaultWorkflowEngine {
-	engine := NewDefaultWorkflowEngine(k8sClient, actionRepo, monitoringClients, stateStorage, config, log)
+	engine := NewDefaultWorkflowEngine(k8sClient, actionRepo, monitoringClients, stateStorage, executionRepo, config, log)
 	engine.aiConditionEvaluator = aiConditionEvaluator
 	return engine
 }
@@ -116,7 +129,7 @@ func (dwe *DefaultWorkflowEngine) SetAIConditionEvaluator(evaluator AIConditionE
 }
 
 // ExecuteStep executes a single workflow step
-func (dwe *DefaultWorkflowEngine) ExecuteStep(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
+func (dwe *DefaultWorkflowEngine) ExecuteStep(ctx context.Context, step *ExecutableWorkflowStep, stepContext *StepContext) (*StepResult, error) {
 	start := time.Now()
 
 	if dwe.config.EnableDetailedLogging {
@@ -202,8 +215,154 @@ func (dwe *DefaultWorkflowEngine) ExecuteStep(ctx context.Context, step *Workflo
 	return result, nil
 }
 
+// Execute executes a complete workflow following business requirements
+// BR-WF-001: Execute complex multi-step remediation workflows reliably
+// BR-WF-003: Support parallel and sequential execution patterns
+// BR-WF-004: Provide workflow state management and persistence
+func (dwe *DefaultWorkflowEngine) Execute(ctx context.Context, workflow *Workflow) (*RuntimeWorkflowExecution, error) {
+	if workflow == nil {
+		return nil, fmt.Errorf("workflow cannot be nil")
+	}
+	if workflow.Template == nil {
+		return nil, fmt.Errorf("workflow template cannot be nil")
+	}
+
+	// Create execution ID
+	executionID := uuid.New().String()
+
+	dwe.log.WithFields(logrus.Fields{
+		"workflow_id":  workflow.ID,
+		"execution_id": executionID,
+		"step_count":   len(workflow.Template.Steps),
+	}).Info("Starting workflow execution")
+
+	// Create runtime execution record
+	execution := NewRuntimeWorkflowExecution(executionID, workflow.ID)
+	execution.OperationalStatus = ExecutionStatusRunning
+	execution.Context = &ExecutionContext{
+		BaseContext: types.BaseContext{
+			Environment: "default", // TODO: Extract from workflow context
+			Cluster:     "default", // TODO: Extract from workflow context
+			Timestamp:   time.Now(),
+			Metadata:    make(map[string]interface{}),
+		},
+		User:          "system", // TODO: Extract from context
+		RequestID:     executionID,
+		TraceID:       executionID,
+		Variables:     make(map[string]interface{}),
+		Configuration: make(map[string]interface{}),
+	}
+
+	// Copy workflow variables to execution context
+	if workflow.Template.Variables != nil {
+		for k, v := range workflow.Template.Variables {
+			execution.Context.Variables[k] = v
+		}
+	}
+
+	// Store initial execution state
+	if err := dwe.executionRepo.StoreExecution(ctx, execution); err != nil {
+		dwe.log.WithError(err).Error("Failed to store initial execution state")
+		return nil, fmt.Errorf("failed to store execution: %w", err)
+	}
+
+	// Save workflow state for recovery
+	if err := dwe.stateStorage.SaveWorkflowState(ctx, execution); err != nil {
+		dwe.log.WithError(err).Warn("Failed to save initial workflow state")
+	}
+
+	// Execute workflow steps
+	err := dwe.executeWorkflowSteps(ctx, workflow.Template.Steps, execution)
+
+	// Update final execution status
+	now := time.Now()
+	execution.EndTime = &now
+	execution.Duration = execution.EndTime.Sub(execution.StartTime)
+
+	if err != nil {
+		execution.OperationalStatus = ExecutionStatusFailed
+		execution.Error = err.Error()
+		execution.Status = string(ExecutionStatusFailed)
+
+		dwe.log.WithError(err).WithFields(logrus.Fields{
+			"workflow_id":  workflow.ID,
+			"execution_id": executionID,
+			"duration":     execution.Duration,
+		}).Error("Workflow execution failed")
+	} else {
+		execution.OperationalStatus = ExecutionStatusCompleted
+		execution.Status = string(ExecutionStatusCompleted)
+
+		dwe.log.WithFields(logrus.Fields{
+			"workflow_id":  workflow.ID,
+			"execution_id": executionID,
+			"duration":     execution.Duration,
+			"step_count":   len(execution.Steps),
+		}).Info("Workflow execution completed successfully")
+	}
+
+	// Store final execution state
+	if storeErr := dwe.executionRepo.StoreExecution(ctx, execution); storeErr != nil {
+		dwe.log.WithError(storeErr).Error("Failed to store final execution state")
+	}
+
+	// Save final workflow state
+	if stateErr := dwe.stateStorage.SaveWorkflowState(ctx, execution); stateErr != nil {
+		dwe.log.WithError(stateErr).Warn("Failed to save final workflow state")
+	}
+
+	return execution, err
+}
+
+// GetExecution retrieves a workflow execution by ID
+func (dwe *DefaultWorkflowEngine) GetExecution(ctx context.Context, executionID string) (*RuntimeWorkflowExecution, error) {
+	return dwe.executionRepo.GetExecution(ctx, executionID)
+}
+
+// ListExecutions lists all executions for a workflow
+func (dwe *DefaultWorkflowEngine) ListExecutions(ctx context.Context, workflowID string) ([]*RuntimeWorkflowExecution, error) {
+	return dwe.executionRepo.GetExecutionsByWorkflowID(ctx, workflowID)
+}
+
+// executeWorkflowSteps executes all workflow steps with dependency management
+// BR-WF-002: Support conditional logic and branching within workflows
+// BR-WF-003: Implement parallel and sequential execution patterns
+func (dwe *DefaultWorkflowEngine) executeWorkflowSteps(ctx context.Context, steps []*ExecutableWorkflowStep, execution *RuntimeWorkflowExecution) error {
+	if len(steps) == 0 {
+		return nil
+	}
+
+	// Build dependency graph
+	dependencyGraph := dwe.buildDependencyGraph(steps)
+
+	// Execute steps in dependency order
+	executed := make(map[string]*StepResult)
+
+	for len(executed) < len(steps) {
+		// Find steps ready for execution (all dependencies satisfied)
+		readySteps := dwe.findReadySteps(steps, dependencyGraph, executed)
+
+		if len(readySteps) == 0 {
+			return fmt.Errorf("dependency deadlock detected - no steps can be executed")
+		}
+
+		// Execute ready steps (potentially in parallel)
+		stepResults, err := dwe.executeReadySteps(ctx, readySteps, execution)
+		if err != nil {
+			return fmt.Errorf("failed to execute steps: %w", err)
+		}
+
+		// Update executed steps
+		for stepID, result := range stepResults {
+			executed[stepID] = result
+		}
+	}
+
+	return nil
+}
+
 // EvaluateCondition evaluates a workflow condition
-func (dwe *DefaultWorkflowEngine) EvaluateCondition(ctx context.Context, condition *WorkflowCondition, stepContext *StepContext) (bool, error) {
+func (dwe *DefaultWorkflowEngine) EvaluateCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
 	switch condition.Type {
 	case ConditionTypeMetric:
 		return dwe.evaluateMetricCondition(ctx, condition, stepContext)
@@ -221,7 +380,7 @@ func (dwe *DefaultWorkflowEngine) EvaluateCondition(ctx context.Context, conditi
 }
 
 // SaveWorkflowState saves the current state of a workflow execution
-func (dwe *DefaultWorkflowEngine) SaveWorkflowState(ctx context.Context, execution *WorkflowExecution) error {
+func (dwe *DefaultWorkflowEngine) SaveWorkflowState(ctx context.Context, execution *RuntimeWorkflowExecution) error {
 	if dwe.stateStorage == nil {
 		return fmt.Errorf("state storage not configured")
 	}
@@ -229,7 +388,7 @@ func (dwe *DefaultWorkflowEngine) SaveWorkflowState(ctx context.Context, executi
 }
 
 // LoadWorkflowState loads the state of a workflow execution
-func (dwe *DefaultWorkflowEngine) LoadWorkflowState(ctx context.Context, executionID string) (*WorkflowExecution, error) {
+func (dwe *DefaultWorkflowEngine) LoadWorkflowState(ctx context.Context, executionID string) (*RuntimeWorkflowExecution, error) {
 	if dwe.stateStorage == nil {
 		return nil, fmt.Errorf("state storage not configured")
 	}
@@ -237,7 +396,7 @@ func (dwe *DefaultWorkflowEngine) LoadWorkflowState(ctx context.Context, executi
 }
 
 // RecoverFromFailure attempts to recover from a workflow failure
-func (dwe *DefaultWorkflowEngine) RecoverFromFailure(ctx context.Context, execution *WorkflowExecution, step *WorkflowStep) (*RecoveryPlan, error) {
+func (dwe *DefaultWorkflowEngine) RecoverFromFailure(ctx context.Context, execution *RuntimeWorkflowExecution, step *ExecutableWorkflowStep) (*RecoveryPlan, error) {
 	plan := &RecoveryPlan{
 		ID:       generateRecoveryPlanID(),
 		Actions:  []RecoveryAction{},
@@ -297,7 +456,7 @@ func (dwe *DefaultWorkflowEngine) RecoverFromFailure(ctx context.Context, execut
 }
 
 // RollbackWorkflow rolls back a workflow to a specific step
-func (dwe *DefaultWorkflowEngine) RollbackWorkflow(ctx context.Context, execution *WorkflowExecution, toStep int) error {
+func (dwe *DefaultWorkflowEngine) RollbackWorkflow(ctx context.Context, execution *RuntimeWorkflowExecution, toStep int) error {
 	if toStep < 0 || toStep >= len(execution.Steps) {
 		return fmt.Errorf("invalid rollback step index: %d", toStep)
 	}
@@ -324,14 +483,14 @@ func (dwe *DefaultWorkflowEngine) RollbackWorkflow(ctx context.Context, executio
 	}
 
 	execution.CurrentStep = toStep
-	execution.Status = ExecutionStatusRollingBack
+	execution.Status = string(ExecutionStatusRollingBack)
 
 	return nil
 }
 
 // Private helper methods
 
-func (dwe *DefaultWorkflowEngine) executeAction(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
+func (dwe *DefaultWorkflowEngine) executeAction(ctx context.Context, step *ExecutableWorkflowStep, stepContext *StepContext) (*StepResult, error) {
 	if step.Action == nil {
 		return nil, fmt.Errorf("step action is nil")
 	}
@@ -435,7 +594,7 @@ func (dwe *DefaultWorkflowEngine) executeAction(ctx context.Context, step *Workf
 	return result, nil
 }
 
-func (dwe *DefaultWorkflowEngine) executeCondition(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
+func (dwe *DefaultWorkflowEngine) executeCondition(ctx context.Context, step *ExecutableWorkflowStep, stepContext *StepContext) (*StepResult, error) {
 	if step.Condition == nil {
 		return nil, fmt.Errorf("step condition is nil")
 	}
@@ -466,7 +625,7 @@ func (dwe *DefaultWorkflowEngine) executeCondition(ctx context.Context, step *Wo
 	return result, nil
 }
 
-func (dwe *DefaultWorkflowEngine) executeWait(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
+func (dwe *DefaultWorkflowEngine) executeWait(ctx context.Context, step *ExecutableWorkflowStep, stepContext *StepContext) (*StepResult, error) {
 	// Extract wait duration from step variables
 	waitDuration := time.Minute // Default wait time
 	if duration, exists := step.Variables["duration"]; exists {
@@ -500,7 +659,7 @@ func (dwe *DefaultWorkflowEngine) executeWait(ctx context.Context, step *Workflo
 	}, nil
 }
 
-func (dwe *DefaultWorkflowEngine) executeDecision(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
+func (dwe *DefaultWorkflowEngine) executeDecision(ctx context.Context, step *ExecutableWorkflowStep, stepContext *StepContext) (*StepResult, error) {
 	// Decision steps evaluate multiple conditions and choose a path
 	if step.Condition == nil {
 		return nil, fmt.Errorf("decision step requires a condition")
@@ -535,13 +694,7 @@ func (dwe *DefaultWorkflowEngine) executeDecision(ctx context.Context, step *Wor
 	}, nil
 }
 
-func (dwe *DefaultWorkflowEngine) executeParallel(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
-	// Parallel execution is not implemented in this basic version
-	// It would require more complex orchestration logic
-	return nil, fmt.Errorf("parallel step execution not implemented")
-}
-
-func (dwe *DefaultWorkflowEngine) executeSequential(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
+func (dwe *DefaultWorkflowEngine) executeSequential(ctx context.Context, step *ExecutableWorkflowStep, stepContext *StepContext) (*StepResult, error) {
 	// Sequential execution is the default behavior
 	return &StepResult{
 		Success: true,
@@ -551,17 +704,7 @@ func (dwe *DefaultWorkflowEngine) executeSequential(ctx context.Context, step *W
 	}, nil
 }
 
-func (dwe *DefaultWorkflowEngine) executeLoop(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
-	// Loop execution is not implemented in this basic version
-	return nil, fmt.Errorf("loop step execution not implemented")
-}
-
-func (dwe *DefaultWorkflowEngine) executeSubflow(ctx context.Context, step *WorkflowStep, stepContext *StepContext) (*StepResult, error) {
-	// Subflow execution is not implemented in this basic version
-	return nil, fmt.Errorf("subflow step execution not implemented")
-}
-
-func (dwe *DefaultWorkflowEngine) evaluateMetricCondition(ctx context.Context, condition *WorkflowCondition, stepContext *StepContext) (bool, error) {
+func (dwe *DefaultWorkflowEngine) evaluateMetricCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
 	// Use AI condition evaluator if available, otherwise fallback to basic logic
 	if dwe.aiConditionEvaluator != nil {
 		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
@@ -572,7 +715,7 @@ func (dwe *DefaultWorkflowEngine) evaluateMetricCondition(ctx context.Context, c
 	return dwe.basicMetricEvaluation(condition, stepContext), nil
 }
 
-func (dwe *DefaultWorkflowEngine) evaluateResourceCondition(ctx context.Context, condition *WorkflowCondition, stepContext *StepContext) (bool, error) {
+func (dwe *DefaultWorkflowEngine) evaluateResourceCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
 	// Use AI condition evaluator if available, otherwise fallback to basic logic
 	if dwe.aiConditionEvaluator != nil {
 		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
@@ -583,7 +726,7 @@ func (dwe *DefaultWorkflowEngine) evaluateResourceCondition(ctx context.Context,
 	return dwe.basicResourceEvaluation(condition, stepContext), nil
 }
 
-func (dwe *DefaultWorkflowEngine) evaluateTimeCondition(ctx context.Context, condition *WorkflowCondition, stepContext *StepContext) (bool, error) {
+func (dwe *DefaultWorkflowEngine) evaluateTimeCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
 	// Use AI condition evaluator if available, otherwise fallback to basic logic
 	if dwe.aiConditionEvaluator != nil {
 		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
@@ -594,7 +737,7 @@ func (dwe *DefaultWorkflowEngine) evaluateTimeCondition(ctx context.Context, con
 	return dwe.basicTimeEvaluation(condition, stepContext), nil
 }
 
-func (dwe *DefaultWorkflowEngine) evaluateExpressionCondition(ctx context.Context, condition *WorkflowCondition, stepContext *StepContext) (bool, error) {
+func (dwe *DefaultWorkflowEngine) evaluateExpressionCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
 	// Use AI condition evaluator if available, otherwise fallback to basic logic
 	if dwe.aiConditionEvaluator != nil {
 		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
@@ -605,7 +748,7 @@ func (dwe *DefaultWorkflowEngine) evaluateExpressionCondition(ctx context.Contex
 	return dwe.basicExpressionEvaluation(condition, stepContext), nil
 }
 
-func (dwe *DefaultWorkflowEngine) evaluateCustomCondition(ctx context.Context, condition *WorkflowCondition, stepContext *StepContext) (bool, error) {
+func (dwe *DefaultWorkflowEngine) evaluateCustomCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
 	// Use AI condition evaluator if available, otherwise fallback to basic logic
 	if dwe.aiConditionEvaluator != nil {
 		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
@@ -626,7 +769,7 @@ func (dwe *DefaultWorkflowEngine) validateCondition(ctx context.Context, rule *V
 	return true
 }
 
-func (dwe *DefaultWorkflowEngine) rollbackStep(ctx context.Context, execution *WorkflowExecution, stepIndex int) error {
+func (dwe *DefaultWorkflowEngine) rollbackStep(ctx context.Context, execution *RuntimeWorkflowExecution, stepIndex int) error {
 	if stepIndex >= len(execution.Steps) {
 		return fmt.Errorf("invalid step index: %d", stepIndex)
 	}
@@ -645,10 +788,37 @@ func (dwe *DefaultWorkflowEngine) rollbackStep(ctx context.Context, execution *W
 }
 
 func (dwe *DefaultWorkflowEngine) registerDefaultExecutors() {
-	// TODO: Register action executors when they are implemented
-	// dwe.actionExecutors["kubernetes"] = NewKubernetesActionExecutor(dwe.k8sClient, dwe.log)
-	// dwe.actionExecutors["monitoring"] = NewMonitoringActionExecutor(dwe.monitoringClients, dwe.log)
-	// dwe.actionExecutors["custom"] = NewCustomActionExecutor(dwe.log)
+	// Business Requirement: Register real action executors to enable actual workflow execution
+
+	// Register Kubernetes action executor for pod restarts, scaling, etc.
+	k8sExecutor := NewKubernetesActionExecutor(dwe.k8sClient, dwe.log)
+	dwe.actionExecutors["kubernetes"] = k8sExecutor
+	dwe.actionExecutors["k8s"] = k8sExecutor // Alias for convenience
+
+	// Register monitoring action executor for alerts, silencing, etc.
+	monitoringExecutor := NewMonitoringActionExecutor(dwe.monitoringClients, dwe.log)
+	dwe.actionExecutors["monitoring"] = monitoringExecutor
+	dwe.actionExecutors["alerting"] = monitoringExecutor // Alias
+
+	// Register custom action executor for notifications, webhooks, etc.
+	customExecutor := NewCustomActionExecutor(dwe.log)
+	dwe.actionExecutors["custom"] = customExecutor
+	dwe.actionExecutors["generic"] = customExecutor // Alias
+
+	// Log successful registration with supported action counts
+	k8sActions := len(k8sExecutor.GetSupportedActions())
+	monitoringActions := len(monitoringExecutor.GetSupportedActions())
+	customActions := len(customExecutor.GetSupportedActions())
+
+	dwe.log.WithFields(logrus.Fields{
+		"kubernetes_actions": k8sActions,
+		"monitoring_actions": monitoringActions,
+		"custom_actions":     customActions,
+		"total_executors":    len(dwe.actionExecutors),
+	}).Info("Successfully registered workflow action executors")
+
+	// Business Requirement: Workflow engine must be capable of executing real operations
+	dwe.log.Info("Workflow engine is now capable of executing real Kubernetes and monitoring operations")
 }
 
 // Utility functions
@@ -663,7 +833,7 @@ func generateRecoveryActionID() string {
 
 // Basic fallback evaluation methods for when AI is unavailable
 
-func (dwe *DefaultWorkflowEngine) basicMetricEvaluation(condition *WorkflowCondition, stepContext *StepContext) bool {
+func (dwe *DefaultWorkflowEngine) basicMetricEvaluation(condition *ExecutableCondition, stepContext *StepContext) bool {
 	// Simple metric evaluation without AI
 	expr := strings.ToLower(condition.Expression)
 
@@ -686,7 +856,7 @@ func (dwe *DefaultWorkflowEngine) basicMetricEvaluation(condition *WorkflowCondi
 	return true
 }
 
-func (dwe *DefaultWorkflowEngine) basicResourceEvaluation(condition *WorkflowCondition, stepContext *StepContext) bool {
+func (dwe *DefaultWorkflowEngine) basicResourceEvaluation(condition *ExecutableCondition, stepContext *StepContext) bool {
 	// Simple resource evaluation without AI
 	expr := strings.ToLower(condition.Expression)
 
@@ -714,7 +884,7 @@ func (dwe *DefaultWorkflowEngine) basicResourceEvaluation(condition *WorkflowCon
 	return true
 }
 
-func (dwe *DefaultWorkflowEngine) basicTimeEvaluation(condition *WorkflowCondition, stepContext *StepContext) bool {
+func (dwe *DefaultWorkflowEngine) basicTimeEvaluation(condition *ExecutableCondition, stepContext *StepContext) bool {
 	// Simple time evaluation without AI
 	expr := strings.ToLower(condition.Expression)
 	now := time.Now()
@@ -739,7 +909,7 @@ func (dwe *DefaultWorkflowEngine) basicTimeEvaluation(condition *WorkflowConditi
 	return true
 }
 
-func (dwe *DefaultWorkflowEngine) basicExpressionEvaluation(condition *WorkflowCondition, stepContext *StepContext) bool {
+func (dwe *DefaultWorkflowEngine) basicExpressionEvaluation(condition *ExecutableCondition, stepContext *StepContext) bool {
 	// Simple expression evaluation without AI
 	expr := condition.Expression
 	if expr == "" {
@@ -765,7 +935,7 @@ func (dwe *DefaultWorkflowEngine) basicExpressionEvaluation(condition *WorkflowC
 	return true
 }
 
-func (dwe *DefaultWorkflowEngine) basicCustomEvaluation(condition *WorkflowCondition, stepContext *StepContext) bool {
+func (dwe *DefaultWorkflowEngine) basicCustomEvaluation(condition *ExecutableCondition, stepContext *StepContext) bool {
 	// Simple custom evaluation without AI - combine other basic evaluations
 	metric := dwe.basicMetricEvaluation(condition, stepContext)
 	resource := dwe.basicResourceEvaluation(condition, stepContext)
@@ -820,4 +990,174 @@ func (dwe *DefaultWorkflowEngine) executeRollback(ctx context.Context, rollback 
 
 	dwe.log.WithField("rollback_id", rollback.ID).Info("Rollback executed successfully")
 	return nil
+}
+
+// Helper methods for Priority 2 Advanced Workflow Patterns
+
+// Helper methods for configuration parsing
+
+func (dwe *DefaultWorkflowEngine) getStringFromMap(m map[string]interface{}, key, defaultValue string) string {
+	if value, ok := m[key].(string); ok {
+		return value
+	}
+	return defaultValue
+}
+
+func (dwe *DefaultWorkflowEngine) getIntFromMap(m map[string]interface{}, key string, defaultValue int) int {
+	if value, ok := m[key].(int); ok {
+		return value
+	}
+	if value, ok := m[key].(float64); ok {
+		return int(value)
+	}
+	return defaultValue
+}
+
+func (dwe *DefaultWorkflowEngine) getDurationFromMap(m map[string]interface{}, key string, defaultValue time.Duration) time.Duration {
+	if value, ok := m[key].(string); ok {
+		if duration, err := time.ParseDuration(value); err == nil {
+			return duration
+		}
+	}
+	if value, ok := m[key].(int64); ok {
+		return time.Duration(value) * time.Second
+	}
+	if value, ok := m[key].(float64); ok {
+		return time.Duration(value) * time.Second
+	}
+	return defaultValue
+}
+
+// Helper methods for workflow execution
+
+// buildDependencyGraph creates a dependency graph from workflow steps
+func (dwe *DefaultWorkflowEngine) buildDependencyGraph(steps []*ExecutableWorkflowStep) map[string][]string {
+	graph := make(map[string][]string)
+
+	for _, step := range steps {
+		graph[step.ID] = step.Dependencies
+	}
+
+	return graph
+}
+
+// findReadySteps finds steps that have all their dependencies satisfied
+func (dwe *DefaultWorkflowEngine) findReadySteps(steps []*ExecutableWorkflowStep, dependencyGraph map[string][]string, executed map[string]*StepResult) []*ExecutableWorkflowStep {
+	var readySteps []*ExecutableWorkflowStep
+
+	for _, step := range steps {
+		if _, alreadyExecuted := executed[step.ID]; alreadyExecuted {
+			continue
+		}
+
+		// Check if all dependencies are satisfied
+		dependencies := dependencyGraph[step.ID]
+		allDependenciesSatisfied := true
+
+		for _, depID := range dependencies {
+			if result, executed := executed[depID]; !executed || !result.Success {
+				allDependenciesSatisfied = false
+				break
+			}
+		}
+
+		if allDependenciesSatisfied {
+			readySteps = append(readySteps, step)
+		}
+	}
+
+	return readySteps
+}
+
+// executeReadySteps executes a batch of ready steps, potentially in parallel
+func (dwe *DefaultWorkflowEngine) executeReadySteps(ctx context.Context, steps []*ExecutableWorkflowStep, execution *RuntimeWorkflowExecution) (map[string]*StepResult, error) {
+	if len(steps) == 0 {
+		return make(map[string]*StepResult), nil
+	}
+
+	results := make(map[string]*StepResult)
+
+	// For now, execute steps sequentially
+	// TODO: Implement parallel execution based on step configuration
+	for _, step := range steps {
+		dwe.log.WithFields(logrus.Fields{
+			"execution_id": execution.ID,
+			"step_id":      step.ID,
+			"step_type":    step.Type,
+		}).Debug("Executing workflow step")
+
+		// Create step context
+		stepContext := &StepContext{
+			ExecutionID:   execution.ID,
+			StepID:        step.ID,
+			Variables:     make(map[string]interface{}),
+			PreviousSteps: []*StepResult{}, // TODO: Add previous step results
+			Environment:   execution.Context,
+			Timeout:       step.Timeout,
+		}
+
+		// Copy execution variables to step context
+		for k, v := range execution.Context.Variables {
+			stepContext.Variables[k] = v
+		}
+
+		// Create step execution record
+		stepExecution := &StepExecution{
+			StepID:    step.ID,
+			Status:    ExecutionStatusRunning,
+			StartTime: time.Now(),
+			Variables: step.Variables,
+		}
+
+		// Execute the step
+		result, err := dwe.ExecuteStep(ctx, step, stepContext)
+
+		// Update step execution record
+		endTime := time.Now()
+		stepExecution.EndTime = &endTime
+		stepExecution.Duration = stepExecution.EndTime.Sub(stepExecution.StartTime)
+
+		if err != nil {
+			stepExecution.Status = ExecutionStatusFailed
+			stepExecution.Error = err.Error()
+			execution.Steps = append(execution.Steps, stepExecution)
+
+			return results, fmt.Errorf("step %s failed: %w", step.ID, err)
+		}
+
+		if result == nil || !result.Success {
+			stepExecution.Status = ExecutionStatusFailed
+			if result != nil && result.Error != "" {
+				stepExecution.Error = result.Error
+			} else {
+				stepExecution.Error = "step failed without specific error"
+			}
+			execution.Steps = append(execution.Steps, stepExecution)
+
+			return results, fmt.Errorf("step %s failed: %s", step.ID, stepExecution.Error)
+		}
+
+		// Step succeeded
+		stepExecution.Status = ExecutionStatusCompleted
+		stepExecution.Result = result
+		execution.Steps = append(execution.Steps, stepExecution)
+
+		results[step.ID] = result
+
+		// Update execution variables with step results
+		if result.Variables != nil {
+			for k, v := range result.Variables {
+				execution.Context.Variables[fmt.Sprintf("%s.%s", step.ID, k)] = v
+			}
+		}
+
+		dwe.log.WithFields(logrus.Fields{
+			"execution_id": execution.ID,
+			"step_id":      step.ID,
+			"duration":     stepExecution.Duration,
+			"success":      true,
+		}).Debug("Workflow step completed successfully")
+	}
+
+	return results, nil
 }

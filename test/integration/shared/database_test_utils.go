@@ -14,8 +14,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
 	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/oscillation"
+
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/integration/shared/testenv"
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
@@ -72,9 +73,16 @@ type DatabaseTestConfig struct {
 
 // LoadDatabaseTestConfig loads database configuration from environment
 func LoadDatabaseTestConfig() DatabaseTestConfig {
+	// Default to containerized database ports for integration testing
+	defaultPort := "5432"
+	config := LoadConfig()
+	if config.UseContainerDB {
+		defaultPort = "5433" // Integration test container port
+	}
+
 	return DatabaseTestConfig{
 		Host:     GetEnvOrDefault("DB_HOST", "localhost"),
-		Port:     GetEnvOrDefault("DB_PORT", "5432"),
+		Port:     GetEnvOrDefault("DB_PORT", defaultPort),
 		Database: GetEnvOrDefault("DB_NAME", "action_history"),
 		Username: GetEnvOrDefault("DB_USER", "slm_user"),
 		Password: GetEnvOrDefault("DB_PASSWORD", "slm_password_dev"),

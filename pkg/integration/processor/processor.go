@@ -9,13 +9,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
 	"github.com/jordigilh/kubernaut/internal/config"
+
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 	"github.com/jordigilh/kubernaut/pkg/platform/executor"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 
+// Processor provides intelligent alert processing capabilities
+// Business Requirements: BR-AP-001, BR-AP-016, BR-PA-006, BR-PA-007
+// Enables configurable alert filtering and AI-powered alert analysis
 type Processor interface {
 	ProcessAlert(ctx context.Context, alert types.Alert) error
 	ShouldProcess(alert types.Alert) bool
@@ -39,7 +43,27 @@ func NewProcessor(llmClient llm.Client, executor executor.Executor, filters []co
 	}
 }
 
+// ProcessAlert processes incoming alerts through the complete intelligence pipeline
+// Business Requirements: BR-PA-003 (process within 5 seconds), BR-AP-001 (configurable filtering),
+// BR-PA-006 (AI analysis), BR-PA-007 (remediation recommendations), BR-AP-021 (lifecycle tracking)
+// Following development guidelines: proper error handling and business requirement alignment
 func (p *processor) ProcessAlert(ctx context.Context, alert types.Alert) error {
+	// Validate alert input - following development guidelines: strengthen assertions
+	if alert.Name == "" {
+		err := fmt.Errorf("alert name cannot be empty")
+		p.log.WithError(err).WithField("alert", alert).Error("Invalid alert: missing name")
+		return err
+	}
+
+	if alert.Status == "" {
+		err := fmt.Errorf("alert status cannot be empty")
+		p.log.WithError(err).WithFields(logrus.Fields{
+			"alert":     alert.Name,
+			"namespace": alert.Namespace,
+		}).Error("Invalid alert: missing status")
+		return err
+	}
+
 	p.log.WithFields(logrus.Fields{
 		"alert":     alert.Name,
 		"namespace": alert.Namespace,
@@ -69,11 +93,43 @@ func (p *processor) ProcessAlert(ctx context.Context, alert types.Alert) error {
 
 	// Analyze the alert with SLM
 	timer := metrics.NewTimer()
-	recommendation, err := p.llmClient.AnalyzeAlert(ctx, alert)
+	llmResponse, err := p.llmClient.AnalyzeAlert(ctx, alert)
 	timer.RecordSLMAnalysis()
 
 	if err != nil {
+		// Following development guidelines: ALWAYS log errors with context
+		p.log.WithError(err).WithFields(logrus.Fields{
+			"alert":     alert.Name,
+			"namespace": alert.Namespace,
+			"severity":  alert.Severity,
+		}).Error("Failed to analyze alert with SLM")
 		return fmt.Errorf("failed to analyze alert with SLM: %w", err)
+	}
+
+	// Convert LLM response to ActionRecommendation - following development guidelines: proper type conversion
+	// Validate LLM response before conversion - following development guidelines: strengthen assertions
+	if llmResponse.Action == "" {
+		err := fmt.Errorf("LLM returned empty action for alert: %s", alert.Name)
+		p.log.WithError(err).WithFields(logrus.Fields{
+			"alert":    alert.Name,
+			"response": llmResponse,
+		}).Error("Invalid LLM response: empty action")
+		return err
+	}
+
+	// Validate action is supported - following development guidelines: business requirement alignment
+	if !types.IsValidAction(llmResponse.Action) {
+		p.log.WithFields(logrus.Fields{
+			"alert":  alert.Name,
+			"action": llmResponse.Action,
+		}).Warn("LLM recommended unsupported action, proceeding with caution")
+	}
+
+	recommendation := &types.ActionRecommendation{
+		Action:     llmResponse.Action,
+		Parameters: llmResponse.Parameters,
+		Confidence: llmResponse.Confidence,
+		Reasoning:  llmResponse.Reasoning,
 	}
 
 	p.log.WithFields(logrus.Fields{
@@ -98,8 +154,15 @@ func (p *processor) ProcessAlert(ctx context.Context, alert types.Alert) error {
 		}
 	}
 
-	// Execute the recommended action
+	// Execute the recommended action - following BR-PA-011 (execute remediation actions)
 	if err := p.executor.Execute(ctx, recommendation, alert, actionTrace); err != nil {
+		// Following development guidelines: ALWAYS log errors with context
+		p.log.WithError(err).WithFields(logrus.Fields{
+			"alert":      alert.Name,
+			"action":     recommendation.Action,
+			"confidence": recommendation.Confidence,
+			"namespace":  alert.Namespace,
+		}).Error("Failed to execute remediation action")
 		return fmt.Errorf("failed to execute action: %w", err)
 	}
 
@@ -111,6 +174,8 @@ func (p *processor) ProcessAlert(ctx context.Context, alert types.Alert) error {
 	return nil
 }
 
+// ShouldProcess determines if an alert should be processed based on configured filters
+// Business Requirements: BR-AP-001 (configurable filtering), BR-AP-006 (rule-based filtering)
 func (p *processor) ShouldProcess(alert types.Alert) bool {
 	// If no filters are configured, process all alerts
 	if len(p.filters) == 0 {
@@ -216,17 +281,28 @@ func (p *processor) matchesPattern(value, pattern string) bool {
 }
 
 // createActionRecord creates an action record from alert and recommendation
+// Business Requirements: BR-AP-021 (track alert states), BR-PA-009 (confidence scoring)
+// Following development guidelines: proper validation and type safety
 func (p *processor) createActionRecord(alert types.Alert, recommendation *types.ActionRecommendation) *actionhistory.ActionRecord {
-	// Generate action ID if not present in recommendation
-	actionID := uuid.New().String()
+	// Validate inputs - following development guidelines: proper validation
+	if recommendation == nil {
+		p.log.Warn("Received nil recommendation when creating action record")
+		recommendation = &types.ActionRecommendation{
+			Action:     "unknown",
+			Confidence: 0.0,
+		}
+	}
 
-	// Extract reasoning text
+	// Generate action ID if not present in recommendation - following development guidelines: reuse code
+	actionID := generateActionID()
+
+	// Extract reasoning text with safety checks
 	var reasoning *string
 	if recommendation.Reasoning != nil && recommendation.Reasoning.Summary != "" {
 		reasoning = &recommendation.Reasoning.Summary
 	}
 
-	// Convert parameters to interface map
+	// Convert parameters to interface map with nil safety
 	parameters := make(map[string]interface{})
 	if recommendation.Parameters != nil {
 		for k, v := range recommendation.Parameters {
@@ -259,6 +335,8 @@ func (p *processor) createActionRecord(alert types.Alert, recommendation *types.
 }
 
 // ProcessAlerts processes multiple alerts in batch
+// Business Requirements: BR-PA-004 (concurrent processing), BR-AP-021 (lifecycle tracking)
+// Following development guidelines: proper error handling and logging
 func (p *processor) ProcessAlerts(ctx context.Context, alerts []types.Alert) []error {
 	var errors []error
 
@@ -291,3 +369,14 @@ func (p *processor) GetStats() ProcessingStats {
 		ActionCounts: make(map[string]int),
 	}
 }
+
+// Utility functions - following development guidelines: reuse code whenever possible
+
+// generateUniqueID creates a unique ID with the specified prefix
+// Following development guidelines: avoid duplicating structure names and reuse code
+func generateUniqueID(prefix string) string {
+	return prefix + "-" + uuid.New().String()
+}
+
+// ID generation convenience functions using the consolidated approach
+func generateActionID() string { return generateUniqueID("action") }

@@ -11,8 +11,8 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 	"github.com/jordigilh/kubernaut/pkg/integration/processor"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -107,7 +107,11 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 		metrics.RecordWebhookRequest("error")
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			h.log.WithError(err).Error("Failed to close request body")
+		}
+	}()
 
 	var webhook AlertManagerWebhook
 	if err := json.Unmarshal(body, &webhook); err != nil {

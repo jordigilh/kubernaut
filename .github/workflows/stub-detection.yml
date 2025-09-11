@@ -1,0 +1,224 @@
+name: Kubernaut CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  detect-stubs:
+    runs-on: ubuntu-latest
+    name: Check for stub implementations
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
+    - name: Run stub detection
+      run: |
+        echo "🔍 Scanning for stub implementations in production code..."
+        go run scripts/detect-stubs.go
+
+    - name: Report results
+      if: failure()
+      run: |
+        echo "❌ CRITICAL: Stub implementations detected in production code"
+        echo ""
+        echo "📋 Next Steps:"
+        echo "1. Review the STUB_IMPLEMENTATION_REMEDIATION_PLAN.md"
+        echo "2. Implement actual business logic for detected stubs"
+        echo "3. Ensure all functions perform their intended business purpose"
+        echo "4. Run tests to verify business requirements are met"
+        echo ""
+        echo "💡 This check prevents deployment of non-functional code"
+        exit 1
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    name: Unit Tests
+    needs: detect-stubs
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run unit tests
+      run: make test
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    name: Integration Tests (Kind + Mocked LLM)
+    needs: unit-tests
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_PASSWORD: slm_password_dev
+          POSTGRES_USER: slm_user
+          POSTGRES_DB: action_history
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5433:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6380:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install Kind
+      run: |
+        curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+
+    - name: Install kubectl
+      run: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/kubectl
+
+    - name: Set up environment dependencies
+      run: make envsetup
+
+    - name: Run integration tests with Kind cluster
+      run: |
+        echo "🚀 Running CI Integration Tests with Hybrid Strategy"
+        echo "  ├── Kubernetes: Real Kind cluster"
+        echo "  ├── Database: Real PostgreSQL + Vector DB (GitHub Services)"
+        echo "  ├── LLM: Mocked (for CI/CD reliability)"
+        echo "  └── Purpose: CI/CD pipeline validation"
+        make test-ci
+      env:
+        CI: true
+        USE_MOCK_LLM: true
+        DB_HOST: localhost
+        DB_PORT: 5433
+        DB_NAME: action_history
+        DB_USER: slm_user
+        DB_PASSWORD: slm_password_dev
+        REDIS_HOST: localhost
+        REDIS_PORT: 6380
+
+  validate-business-requirements:
+    runs-on: ubuntu-latest
+    name: Validate business requirement implementation
+    needs: detect-stubs
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
+    - name: Check for business requirement tests
+      run: |
+        echo "🔍 Validating business requirement test coverage..."
+
+        # Check for business requirement test patterns
+        BUSINESS_TESTS=$(find . -name "*_test.go" -exec grep -l "Business.*Requirement\|BusinessRequirement\|validates.*business\|business.*outcome\|business.*logic" {} \; | wc -l)
+        TOTAL_TESTS=$(find . -name "*_test.go" | wc -l)
+
+        if [ $TOTAL_TESTS -eq 0 ]; then
+          echo "⚠️  No test files found"
+          exit 1
+        fi
+
+        COVERAGE_PERCENT=$((BUSINESS_TESTS * 100 / TOTAL_TESTS))
+        echo "📊 Business requirement test coverage: $COVERAGE_PERCENT% ($BUSINESS_TESTS/$TOTAL_TESTS files)"
+
+        if [ $COVERAGE_PERCENT -lt 20 ]; then
+          echo "❌ Business requirement test coverage too low (< 20%)"
+          echo "📋 Action needed: Convert implementation tests to business requirement tests"
+          echo "💡 See test/integration/shared/business_test_framework.go for examples"
+          exit 1
+        else
+          echo "✅ Business requirement test coverage acceptable"
+        fi
+
+    - name: Verify critical business functionality
+      run: |
+        echo "🔍 Checking critical business functionality implementation..."
+
+        # Check for specific critical business implementations
+        CRITICAL_AREAS=(
+          "AI.*Effectiveness.*Assessment.*ProcessPendingAssessments"
+          "Workflow.*Action.*Execution.*registerDefaultExecutors"
+          "Pattern.*Discovery.*Engine"
+        )
+
+        MISSING_IMPLEMENTATIONS=()
+
+        for area in "${CRITICAL_AREAS[@]}"; do
+          if grep -r "$area" pkg/ | grep -q "TODO\|stub.*implementation\|not implemented"; then
+            MISSING_IMPLEMENTATIONS+=("$area")
+          fi
+        done
+
+        if [ ${#MISSING_IMPLEMENTATIONS[@]} -gt 0 ]; then
+          echo "❌ Critical business functionality not implemented:"
+          for missing in "${MISSING_IMPLEMENTATIONS[@]}"; do
+            echo "   - $missing"
+          done
+          echo ""
+          echo "📋 These areas must be implemented before deployment"
+          echo "💡 See STUB_IMPLEMENTATION_REMEDIATION_PLAN.md Phase 1"
+          exit 1
+        fi
+
+        echo "✅ Critical business functionality checks passed"

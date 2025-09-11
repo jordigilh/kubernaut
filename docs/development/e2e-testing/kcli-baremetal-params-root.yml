@@ -1,0 +1,190 @@
+# KCLI OpenShift 4.18 Bare Metal Configuration for Root User on RHEL 9.7
+# Customize all values according to your environment
+
+# Cluster Configuration
+cluster: ocp418-baremetal
+domain: kubernaut.io
+version: stable
+tag: '4.18'
+
+# Authentication - Root user paths
+pull_secret: '/root/.pull-secret.txt'
+ssh_key: '/root/.ssh/id_rsa.pub'
+
+# Network Configuration
+network: default
+network_type: OVNKubernetes
+cidr: 192.168.122.0/24
+api_ip: 192.168.122.100
+ingress_ip: 192.168.122.101
+
+# Provisioning Network Configuration
+provisioning_enable: false
+provisioning_network: default
+provisioning_cidr: 172.22.0.0/24
+provisioning_interface: enp1s0
+provisioning_ip: 172.22.0.4
+provisioning_dhcp_start: 172.22.0.10
+provisioning_dhcp_end: 172.22.0.100
+provisioning_bootstrap_ip: 172.22.0.3
+
+# Node Specifications (Optimized for RHEL 9.7 host: Intel Xeon Gold 5218R, 256GB RAM, 3TB disk)
+# Resource allocation: ~84GB RAM, 24 vCPU, ~500GB disk (leaves 172GB+ RAM, 16+ CPU, 2.5TB+ disk free)
+ctlplane: 3
+workers: 3
+ctlplane_memory: 16384  # 16 GB (reduced for testing environment)
+ctlplane_numcpus: 4     # 4 vCPU (reduced from 8 for better resource sharing)
+ctlplane_disk: 80       # 80 GB (sufficient for testing)
+worker_memory: 12288  # 12 GB (reduced for testing environment)
+worker_numcpus: 4     # 4 vCPU (adequate for testing workloads)
+worker_disk: 80       # 80 GB (sufficient for testing)
+
+# RHEL 9.7 Host Configuration - Root User Optimized
+hypervisor: kvm       # Use KVM on RHEL 9.7
+cpu_model: host-passthrough  # Use host CPU features for better performance
+libvirt_user: root    # Run libvirt as root
+pool_path: /var/lib/libvirt/images  # Root libvirt storage path
+
+# Storage Configuration
+disk_interface: virtio
+disk_pool: default
+
+# Bare Metal Host Inventory
+# UPDATE: Replace with your actual hardware details
+baremetal_hosts:
+  # Control Plane Nodes
+  - name: master-0
+    mac: "aa:bb:cc:dd:ee:f0"
+    ipmi_address: "192.168.122.10"
+    ipmi_user: "admin"
+    ipmi_password: "password"
+    ipmi_port: 623
+    role: master
+    boot_mode: legacy
+    root_device: "/dev/sda"
+
+  - name: master-1
+    mac: "aa:bb:cc:dd:ee:f1"
+    ipmi_address: "192.168.122.11"
+    ipmi_user: "admin"
+    ipmi_password: "password"
+    ipmi_port: 623
+    role: master
+    boot_mode: legacy
+    root_device: "/dev/sda"
+
+  - name: master-2
+    mac: "aa:bb:cc:dd:ee:f2"
+    ipmi_address: "192.168.122.12"
+    ipmi_user: "admin"
+    ipmi_password: "password"
+    ipmi_port: 623
+    role: master
+    boot_mode: legacy
+    root_device: "/dev/sda"
+
+  # Worker Nodes
+  - name: worker-0
+    mac: "aa:bb:cc:dd:ee:f3"
+    ip: "192.168.122.103"
+    ipmi_address: "192.168.122.13"
+    ipmi_user: "admin"
+    ipmi_password: "password"
+    ipmi_port: 623
+    role: worker
+    boot_mode: legacy
+    root_device: "/dev/sda"
+
+  - name: worker-1
+    mac: "aa:bb:cc:dd:ee:f4"
+    ip: "192.168.122.104"
+    ipmi_address: "192.168.122.14"
+    ipmi_user: "admin"
+    ipmi_password: "password"
+    ipmi_port: 623
+    role: worker
+    boot_mode: legacy
+    root_device: "/dev/sda"
+
+  - name: worker-2
+    mac: "aa:bb:cc:dd:ee:f5"
+    ip: "192.168.122.105"
+    ipmi_address: "192.168.122.15"
+    ipmi_user: "admin"
+    ipmi_password: "password"
+    ipmi_port: 623
+    role: worker
+    boot_mode: legacy
+    root_device: "/dev/sda"
+
+# Installation Options
+baremetal_iso: true              # Create ISO for non-PXE environments
+baremetal_uefi: false           # Use UEFI boot mode (set to true if needed)
+baremetal_redfish: false        # Use Redfish instead of IPMI
+notify: false                   # Disable notifications
+
+# Storage Configuration
+storage_operators: true         # Install storage operators automatically
+local_storage: true            # Install Local Storage Operator (LSO)
+odf: true                      # Install OpenShift Data Foundation (ODF)
+odf_size: "200Gi"              # ODF storage size per node
+local_storage_devices:         # Local storage devices to use
+  - "/dev/sdb"
+  - "/dev/sdc"
+
+# Post-deployment Applications and Operators
+apps:
+  - local-storage-operator      # Local Storage Operator
+  - odf-operator               # OpenShift Data Foundation
+  - monitoring                 # Enhanced monitoring for storage
+
+# Advanced Options
+disconnected: false             # Set to true for air-gapped environments
+nfs: false                     # Use NFS for storage
+metallb: false                 # Install MetalLB for load balancing
+sno: false                     # Single Node OpenShift (overrides node counts)
+
+# Root User Specific Configuration
+root_home: /root               # Root home directory
+kcli_config_path: /root/.kcli  # KCLI configuration path for root
+kubeconfig_path: /root/.kcli/clusters  # Kubeconfig storage path
+
+# Optional: Custom Registry Configuration (for disconnected installs)
+# disconnected_url: "registry.kubernaut.io:5000"
+# disconnected_user: "admin"
+# disconnected_password: "password"
+# disconnected_prefix: "ocp4"
+
+# Optional: Additional Trust Bundle
+# ca_bundle: |
+#   -----BEGIN CERTIFICATE-----
+#   ... your CA certificate content ...
+#   -----END CERTIFICATE-----
+
+# Optional: Image Content Sources (for disconnected installs)
+# imagecontentsources: |
+#   - mirrors:
+#     - registry.kubernaut.io:5000/ocp4/openshift4
+#     source: quay.io/openshift-release-dev/ocp-release
+#   - mirrors:
+#     - registry.kubernaut.io:5000/ocp4/openshift4
+#     source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+
+# Optional: Custom Network Configuration
+# network_config: |
+#   interfaces:
+#   - name: enp1s0
+#     type: ethernet
+#     state: up
+#     ipv4:
+#       enabled: true
+#       dhcp: false
+#       address:
+#       - ip: 192.168.122.50
+#         prefix-length: 24
+#       gateway: 192.168.122.1
+#       dns-resolver:
+#         config:
+#           server:
+#           - 8.8.8.8
+#           - 8.8.4.4

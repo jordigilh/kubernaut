@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 )

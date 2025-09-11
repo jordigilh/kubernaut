@@ -3,13 +3,15 @@ package engine
 import (
 	"context"
 	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Core workflow interfaces
 type WorkflowEngine interface {
-	Execute(ctx context.Context, workflow *Workflow) (*WorkflowExecution, error)
-	GetExecution(ctx context.Context, executionID string) (*WorkflowExecution, error)
-	ListExecutions(ctx context.Context, workflowID string) ([]*WorkflowExecution, error)
+	Execute(ctx context.Context, workflow *Workflow) (*RuntimeWorkflowExecution, error)
+	GetExecution(ctx context.Context, executionID string) (*RuntimeWorkflowExecution, error)
+	ListExecutions(ctx context.Context, workflowID string) ([]*RuntimeWorkflowExecution, error)
 }
 
 // Storage and data interfaces
@@ -27,23 +29,23 @@ type VectorSearchResult struct {
 }
 
 type PatternStore interface {
-	StorePattern(ctx context.Context, pattern *DiscoveredPattern) error
-	GetPattern(ctx context.Context, patternID string) (*DiscoveredPattern, error)
-	ListPatterns(ctx context.Context, patternType string) ([]*DiscoveredPattern, error)
+	StorePattern(ctx context.Context, pattern *types.DiscoveredPattern) error
+	GetPattern(ctx context.Context, patternID string) (*types.DiscoveredPattern, error)
+	ListPatterns(ctx context.Context, patternType string) ([]*types.DiscoveredPattern, error)
 	DeletePattern(ctx context.Context, patternID string) error
 }
 
 // Analytics and ML interfaces
 type MachineLearningAnalyzer interface {
-	AnalyzePatterns(ctx context.Context, data []*WorkflowExecutionData) ([]*DiscoveredPattern, error)
+	AnalyzePatterns(ctx context.Context, data []*EngineWorkflowExecutionData) ([]*types.DiscoveredPattern, error)
 	PredictEffectiveness(ctx context.Context, workflow *Workflow) (float64, error)
-	TrainModel(ctx context.Context, trainingData []*WorkflowExecutionData) error
+	TrainModel(ctx context.Context, trainingData []*EngineWorkflowExecutionData) error
 }
 
 type TimeSeriesAnalyzer interface {
-	AnalyzeTrends(ctx context.Context, data []*WorkflowExecutionData, timeRange TimeRange) (*TimeSeriesTrendAnalysis, error)
-	DetectAnomalies(ctx context.Context, data []*WorkflowExecutionData) ([]*AnomalyResult, error)
-	ForecastMetrics(ctx context.Context, data []*WorkflowExecutionData, horizonHours int) (*ForecastResult, error)
+	AnalyzeTrends(ctx context.Context, data []*EngineWorkflowExecutionData, timeRange WorkflowTimeRange) (*TimeSeriesTrendAnalysis, error)
+	DetectAnomalies(ctx context.Context, data []*EngineWorkflowExecutionData) ([]*AnomalyResult, error)
+	ForecastMetrics(ctx context.Context, data []*EngineWorkflowExecutionData, horizonHours int) (*ForecastResult, error)
 }
 
 type TimeSeriesTrendAnalysis struct {
@@ -78,17 +80,17 @@ type PredictionPoint struct {
 }
 
 type ClusteringEngine interface {
-	ClusterWorkflows(ctx context.Context, data []*WorkflowExecutionData, config *PatternDiscoveryConfig) ([]*WorkflowCluster, error)
+	ClusterWorkflows(ctx context.Context, data []*EngineWorkflowExecutionData, config *PatternDiscoveryConfig) ([]*WorkflowCluster, error)
 	FindSimilarWorkflows(ctx context.Context, workflow *Workflow, limit int) ([]*SimilarWorkflow, error)
 }
 
 type WorkflowCluster struct {
-	ID       string                   `json:"id"`
-	Centroid map[string]float64       `json:"centroid"`
-	Members  []*WorkflowExecutionData `json:"members"`
-	Size     int                      `json:"size"`
-	Cohesion float64                  `json:"cohesion"`
-	Metadata map[string]interface{}   `json:"metadata"`
+	ID       string                         `json:"id"`
+	Centroid map[string]float64             `json:"centroid"`
+	Members  []*EngineWorkflowExecutionData `json:"members"`
+	Size     int                            `json:"size"`
+	Cohesion float64                        `json:"cohesion"`
+	Metadata map[string]interface{}         `json:"metadata"`
 }
 
 type SimilarWorkflow struct {
@@ -98,22 +100,22 @@ type SimilarWorkflow struct {
 }
 
 type AnomalyDetector interface {
-	DetectAnomalies(ctx context.Context, data []*WorkflowExecutionData, baseline *BaselineStatistics) ([]*AnomalyResult, error)
-	UpdateBaseline(ctx context.Context, data []*WorkflowExecutionData) (*BaselineStatistics, error)
+	DetectAnomalies(ctx context.Context, data []*EngineWorkflowExecutionData, baseline *BaselineStatistics) ([]*AnomalyResult, error)
+	UpdateBaseline(ctx context.Context, data []*EngineWorkflowExecutionData) (*BaselineStatistics, error)
 	GetBaseline(ctx context.Context, workflowType string) (*BaselineStatistics, error)
 }
 
 // AI and optimization interfaces
 type AIConditionEvaluator interface {
-	EvaluateCondition(ctx context.Context, condition *WorkflowCondition, context *StepContext) (bool, error)
-	ValidateCondition(ctx context.Context, condition *WorkflowCondition) error
+	EvaluateCondition(ctx context.Context, condition *ExecutableCondition, context *StepContext) (bool, error)
+	ValidateCondition(ctx context.Context, condition *ExecutableCondition) error
 }
 
 // PostConditionValidator evaluates post-conditions after action execution (DEPRECATED: use ValidatorRegistry)
 // This interface is kept for backwards compatibility but is no longer used
 
 type SelfOptimizer interface {
-	OptimizeWorkflow(ctx context.Context, workflow *Workflow, executionHistory []*WorkflowExecution) (*Workflow, error)
+	OptimizeWorkflow(ctx context.Context, workflow *Workflow, executionHistory []*RuntimeWorkflowExecution) (*Workflow, error)
 	SuggestImprovements(ctx context.Context, workflow *Workflow) ([]*OptimizationSuggestion, error)
 }
 
@@ -180,51 +182,23 @@ type PromptOptimizer interface {
 }
 
 type AIMetricsCollector interface {
-	CollectMetrics(ctx context.Context, execution *WorkflowExecution) (map[string]float64, error)
-	GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange TimeRange) (map[string]float64, error)
+	CollectMetrics(ctx context.Context, execution *RuntimeWorkflowExecution) (map[string]float64, error)
+	GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange WorkflowTimeRange) (map[string]float64, error)
 	RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error
 	EvaluateResponseQuality(ctx context.Context, response string, context map[string]interface{}) (*AIResponseQuality, error)
 }
 
 type LearningEnhancedPromptBuilder interface {
 	BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error)
-	GetLearnFromExecution(ctx context.Context, execution *WorkflowExecution) error
+	GetLearnFromExecution(ctx context.Context, execution *RuntimeWorkflowExecution) error
 	GetGetOptimizedTemplate(ctx context.Context, templateID string) (string, error)
 	GetBuildEnhancedPrompt(ctx context.Context, basePrompt string, context map[string]interface{}) (string, error)
 }
 
 // Analytics package interface
+// Note: Analytics types moved to pkg/shared/types/analytics.go to resolve import cycles
 
-type AnalyticsInsights struct {
-	GeneratedAt      time.Time              `json:"generated_at"`
-	WorkflowInsights map[string]interface{} `json:"workflow_insights"`
-	PatternInsights  map[string]interface{} `json:"pattern_insights"`
-	Recommendations  []string               `json:"recommendations"`
-	Metadata         map[string]interface{} `json:"metadata"`
-}
-
-type PatternAnalytics struct {
-	TotalPatterns        int                    `json:"total_patterns"`
-	AverageEffectiveness float64                `json:"average_effectiveness"`
-	PatternsByType       map[string]int         `json:"patterns_by_type"`
-	SuccessRateByType    map[string]float64     `json:"success_rate_by_type"`
-	RecentPatterns       []*DiscoveredPattern   `json:"recent_patterns"`
-	TopPerformers        []*DiscoveredPattern   `json:"top_performers"`
-	FailurePatterns      []*DiscoveredPattern   `json:"failure_patterns"`
-	TrendAnalysis        map[string]interface{} `json:"trend_analysis"`
-}
-
-// Missing type definitions
-type DiscoveredPattern struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Confidence  float64                `json:"confidence"`
-	Support     float64                `json:"support"`
-	Description string                 `json:"description"`
-	Metadata    map[string]interface{} `json:"metadata"`
-}
-
-type WorkflowExecutionData struct {
+type EngineWorkflowExecutionData struct {
 	ExecutionID string                 `json:"execution_id"`
 	WorkflowID  string                 `json:"workflow_id"`
 	Timestamp   time.Time              `json:"timestamp"`
@@ -260,11 +234,11 @@ type AIResponseQuality struct {
 
 // IntelligentWorkflowBuilder interface for AI-driven workflow generation
 type IntelligentWorkflowBuilder interface {
-	GenerateWorkflow(ctx context.Context, objective *WorkflowObjective) (*WorkflowTemplate, error)
-	OptimizeWorkflowStructure(ctx context.Context, template *WorkflowTemplate) (*WorkflowTemplate, error)
+	GenerateWorkflow(ctx context.Context, objective *WorkflowObjective) (*ExecutableTemplate, error)
+	OptimizeWorkflowStructure(ctx context.Context, template *ExecutableTemplate) (*ExecutableTemplate, error)
 	FindWorkflowPatterns(ctx context.Context, criteria *PatternCriteria) ([]*WorkflowPattern, error)
-	ApplyWorkflowPattern(ctx context.Context, pattern *WorkflowPattern, workflowContext *WorkflowContext) (*WorkflowTemplate, error)
-	ValidateWorkflow(ctx context.Context, template *WorkflowTemplate) (*ValidationReport, error)
-	SimulateWorkflow(ctx context.Context, template *WorkflowTemplate, scenario *SimulationScenario) (*SimulationResult, error)
-	LearnFromWorkflowExecution(ctx context.Context, execution *WorkflowExecution) error
+	ApplyWorkflowPattern(ctx context.Context, pattern *WorkflowPattern, workflowContext *WorkflowContext) (*ExecutableTemplate, error)
+	ValidateWorkflow(ctx context.Context, template *ExecutableTemplate) (*ValidationReport, error)
+	SimulateWorkflow(ctx context.Context, template *ExecutableTemplate, scenario *SimulationScenario) (*SimulationResult, error)
+	LearnFromWorkflowExecution(ctx context.Context, execution *RuntimeWorkflowExecution) error
 }

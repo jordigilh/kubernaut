@@ -9,20 +9,20 @@ import (
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
 
 // WorkflowValidator interface for validating workflow templates
 type WorkflowValidator interface {
-	ValidateWorkflow(ctx context.Context, template *engine.WorkflowTemplate) (*engine.ValidationReport, error)
+	ValidateWorkflow(ctx context.Context, template *engine.ExecutableTemplate) (*engine.ValidationReport, error)
 }
 
 // WorkflowTemplateFactory creates standardized workflow templates
 type WorkflowTemplateFactory struct {
-	alertPatterns    map[string]*engine.WorkflowTemplate
-	actionSequences  map[string][]*engine.WorkflowStep
-	conditionLibrary map[string]*engine.WorkflowCondition
+	alertPatterns    map[string]*engine.ExecutableTemplate
+	actionSequences  map[string][]*engine.ExecutableWorkflowStep
+	conditionLibrary map[string]*engine.ExecutableCondition
 	validator        WorkflowValidator
 	log              *logrus.Logger
 	config           *TemplateFactoryConfig
@@ -62,9 +62,9 @@ func NewWorkflowTemplateFactory(validator WorkflowValidator, log *logrus.Logger)
 	}
 
 	factory := &WorkflowTemplateFactory{
-		alertPatterns:    make(map[string]*engine.WorkflowTemplate),
-		actionSequences:  make(map[string][]*engine.WorkflowStep),
-		conditionLibrary: make(map[string]*engine.WorkflowCondition),
+		alertPatterns:    make(map[string]*engine.ExecutableTemplate),
+		actionSequences:  make(map[string][]*engine.ExecutableWorkflowStep),
+		conditionLibrary: make(map[string]*engine.ExecutableCondition),
 		validator:        validator,
 		log:              log,
 		config:           config,
@@ -79,23 +79,29 @@ func NewWorkflowTemplateFactory(validator WorkflowValidator, log *logrus.Logger)
 }
 
 // BuildHighMemoryWorkflow creates workflow for high memory usage scenarios
-func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *engine.ExecutableTemplate {
 	workflowID := fmt.Sprintf("high-memory-%s", uuid.New().String()[:8])
 
-	template := &engine.WorkflowTemplate{
-		ID:          workflowID,
-		Name:        "High Memory Usage Remediation",
-		Description: fmt.Sprintf("Automated remediation for high memory usage in %s/%s", alert.Namespace, alert.Resource),
-		Version:     "1.0.0",
-		Tags:        []string{"memory", "performance", "scaling", "automated"},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
+	template := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          workflowID,
+				Name:        "High Memory Usage Remediation",
+				Description: fmt.Sprintf("Automated remediation for high memory usage in %s/%s", alert.Namespace, alert.Resource),
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
+		Tags: []string{"memory", "performance", "scaling", "automated"},
 	}
 
 	// Step 1: Check current memory usage and pod state
-	checkStep := &engine.WorkflowStep{
-		ID:   "check-memory-state",
-		Name: "Check Current Memory Usage",
+	checkStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "check-memory-state",
+			Name: "Check Current Memory Usage",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -116,9 +122,11 @@ func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *
 
 	// Step 2: Evaluate memory threshold condition
 	memoryThreshold := wtf.conditionLibrary["memory_threshold"]
-	evaluateStep := &engine.WorkflowStep{
-		ID:           "evaluate-memory-threshold",
-		Name:         "Evaluate Memory Threshold",
+	evaluateStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "evaluate-memory-threshold",
+			Name: "Evaluate Memory Threshold",
+		},
 		Type:         engine.StepTypeCondition,
 		Condition:    memoryThreshold,
 		Dependencies: []string{"check-memory-state"},
@@ -126,9 +134,11 @@ func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *
 	}
 
 	// Step 3: Scale deployment (conditional on high memory)
-	scaleStep := &engine.WorkflowStep{
-		ID:           "scale-deployment",
-		Name:         "Scale Deployment",
+	scaleStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "scale-deployment",
+			Name: "Scale Deployment",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"evaluate-memory-threshold"},
 		Action: &engine.StepAction{
@@ -157,9 +167,11 @@ func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *
 	}
 
 	// Step 4: Verify scaling success
-	verifyStep := &engine.WorkflowStep{
-		ID:           "verify-scaling",
-		Name:         "Verify Scaling Success",
+	verifyStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "verify-scaling",
+			Name: "Verify Scaling Success",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"scale-deployment"},
 		Action: &engine.StepAction{
@@ -180,9 +192,11 @@ func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *
 	}
 
 	// Step 5: Rollback on failure
-	rollbackStep := &engine.WorkflowStep{
-		ID:   "rollback-scaling",
-		Name: "Rollback Scaling",
+	rollbackStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "rollback-scaling",
+			Name: "Rollback Scaling",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -202,9 +216,11 @@ func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *
 	}
 
 	// Step 6: Notification steps
-	notifyFailureStep := &engine.WorkflowStep{
-		ID:   "notify-failure",
-		Name: "Notify Failure",
+	notifyFailureStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-failure",
+			Name: "Notify Failure",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -217,9 +233,11 @@ func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *
 		Timeout: 10 * time.Second,
 	}
 
-	notifyRollbackStep := &engine.WorkflowStep{
-		ID:   "notify-rollback",
-		Name: "Notify Rollback",
+	notifyRollbackStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-rollback",
+			Name: "Notify Rollback",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -232,11 +250,11 @@ func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *
 		Timeout: 10 * time.Second,
 	}
 
-	template.Steps = []*engine.WorkflowStep{
+	template.Steps = []*engine.ExecutableWorkflowStep{
 		checkStep, evaluateStep, scaleStep, verifyStep,
 		rollbackStep, notifyFailureStep, notifyRollbackStep,
 	}
-	template.Conditions = []*engine.WorkflowCondition{memoryThreshold}
+	template.Conditions = []*engine.ExecutableCondition{memoryThreshold}
 	template.Timeouts = &engine.WorkflowTimeouts{
 		Execution: wtf.config.DefaultTimeout,
 		Step:      60 * time.Second,
@@ -250,23 +268,29 @@ func (wtf *WorkflowTemplateFactory) BuildHighMemoryWorkflow(alert types.Alert) *
 }
 
 // BuildPodCrashLoopWorkflow creates workflow for pod crash loop scenarios
-func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert) *engine.ExecutableTemplate {
 	workflowID := fmt.Sprintf("crash-loop-%s", uuid.New().String()[:8])
 
-	template := &engine.WorkflowTemplate{
-		ID:          workflowID,
-		Name:        "Pod Crash Loop Recovery",
-		Description: fmt.Sprintf("Automated recovery for crash loop in %s/%s", alert.Namespace, alert.Resource),
-		Version:     "1.0.0",
-		Tags:        []string{"crash-loop", "recovery", "diagnostics", "automated"},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
+	template := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          workflowID,
+				Name:        "Pod Crash Loop Recovery",
+				Description: fmt.Sprintf("Automated recovery for crash loop in %s/%s", alert.Namespace, alert.Resource),
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
+		Tags: []string{"crash-loop", "recovery", "diagnostics", "automated"},
 	}
 
 	// Step 1: Collect diagnostics
-	diagnosticsStep := &engine.WorkflowStep{
-		ID:   "collect-diagnostics",
-		Name: "Collect Pod Diagnostics",
+	diagnosticsStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "collect-diagnostics",
+			Name: "Collect Pod Diagnostics",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -286,9 +310,11 @@ func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert)
 	}
 
 	// Step 2: Analyze crash pattern
-	analyzeStep := &engine.WorkflowStep{
-		ID:           "analyze-crash-pattern",
-		Name:         "Analyze Crash Pattern",
+	analyzeStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "analyze-crash-pattern",
+			Name: "Analyze Crash Pattern",
+		},
 		Type:         engine.StepTypeCondition,
 		Dependencies: []string{"collect-diagnostics"},
 		Condition:    wtf.conditionLibrary["crash_pattern_analysis"],
@@ -296,9 +322,11 @@ func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert)
 	}
 
 	// Step 3: Restart pod (primary recovery action)
-	restartStep := &engine.WorkflowStep{
-		ID:           "restart-pod",
-		Name:         "Restart Pod",
+	restartStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "restart-pod",
+			Name: "Restart Pod",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"analyze-crash-pattern"},
 		Action: &engine.StepAction{
@@ -321,9 +349,11 @@ func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert)
 	}
 
 	// Step 4: Verify restart success
-	verifyStep := &engine.WorkflowStep{
-		ID:           "verify-restart",
-		Name:         "Verify Pod Restart",
+	verifyStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "verify-restart",
+			Name: "Verify Pod Restart",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"restart-pod"},
 		Action: &engine.StepAction{
@@ -344,9 +374,11 @@ func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert)
 	}
 
 	// Step 5: Rollback deployment if restart fails
-	rollbackStep := &engine.WorkflowStep{
-		ID:   "rollback-deployment",
-		Name: "Rollback Deployment",
+	rollbackStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "rollback-deployment",
+			Name: "Rollback Deployment",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -367,9 +399,11 @@ func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert)
 	}
 
 	// Notification steps
-	notifyRollbackStep := &engine.WorkflowStep{
-		ID:   "notify-rollback-success",
-		Name: "Notify Rollback Success",
+	notifyRollbackStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-rollback-success",
+			Name: "Notify Rollback Success",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -382,9 +416,11 @@ func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert)
 		Timeout: 10 * time.Second,
 	}
 
-	notifyManualStep := &engine.WorkflowStep{
-		ID:   "notify-manual-intervention",
-		Name: "Notify Manual Intervention Required",
+	notifyManualStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-manual-intervention",
+			Name: "Notify Manual Intervention Required",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -397,11 +433,11 @@ func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert)
 		Timeout: 10 * time.Second,
 	}
 
-	template.Steps = []*engine.WorkflowStep{
+	template.Steps = []*engine.ExecutableWorkflowStep{
 		diagnosticsStep, analyzeStep, restartStep, verifyStep,
 		rollbackStep, notifyRollbackStep, notifyManualStep,
 	}
-	template.Conditions = []*engine.WorkflowCondition{
+	template.Conditions = []*engine.ExecutableCondition{
 		wtf.conditionLibrary["crash_pattern_analysis"],
 	}
 	template.Timeouts = &engine.WorkflowTimeouts{
@@ -418,23 +454,29 @@ func (wtf *WorkflowTemplateFactory) BuildPodCrashLoopWorkflow(alert types.Alert)
 }
 
 // BuildNodeIssueWorkflow creates workflow for node-level issues
-func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *engine.ExecutableTemplate {
 	workflowID := fmt.Sprintf("node-issue-%s", uuid.New().String()[:8])
 
-	template := &engine.WorkflowTemplate{
-		ID:          workflowID,
-		Name:        "Node Issue Remediation",
-		Description: fmt.Sprintf("Automated remediation for node issues in %s", alert.Resource),
-		Version:     "1.0.0",
-		Tags:        []string{"node", "infrastructure", "maintenance", "automated"},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
+	template := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          workflowID,
+				Name:        "Node Issue Remediation",
+				Description: fmt.Sprintf("Automated remediation for node issues in %s", alert.Resource),
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
+		Tags: []string{"node", "infrastructure", "automated"},
 	}
 
 	// Step 1: Assess node health
-	assessStep := &engine.WorkflowStep{
-		ID:   "assess-node-health",
-		Name: "Assess Node Health",
+	assessStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "assess-node-health",
+			Name: "Assess Node Health",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -452,9 +494,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 	}
 
 	// Step 2: Evaluate node condition
-	evaluateStep := &engine.WorkflowStep{
-		ID:           "evaluate-node-condition",
-		Name:         "Evaluate Node Condition",
+	evaluateStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "evaluate-node-condition",
+			Name: "Evaluate Node Condition",
+		},
 		Type:         engine.StepTypeCondition,
 		Dependencies: []string{"assess-node-health"},
 		Condition:    wtf.conditionLibrary["node_health_condition"],
@@ -462,9 +506,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 	}
 
 	// Step 3: Cordon node (prevent new workloads)
-	cordonStep := &engine.WorkflowStep{
-		ID:           "cordon-node",
-		Name:         "Cordon Node",
+	cordonStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "cordon-node",
+			Name: "Cordon Node",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"evaluate-node-condition"},
 		Action: &engine.StepAction{
@@ -490,9 +536,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 	}
 
 	// Step 4: Migrate workloads
-	migrateStep := &engine.WorkflowStep{
-		ID:           "migrate-workloads",
-		Name:         "Migrate Workloads",
+	migrateStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "migrate-workloads",
+			Name: "Migrate Workloads",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"cordon-node"},
 		Action: &engine.StepAction{
@@ -514,9 +562,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 	}
 
 	// Step 5: Verify migration
-	verifyStep := &engine.WorkflowStep{
-		ID:           "verify-migration",
-		Name:         "Verify Migration Success",
+	verifyStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "verify-migration",
+			Name: "Verify Migration Success",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"migrate-workloads"},
 		Action: &engine.StepAction{
@@ -536,9 +586,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 	}
 
 	// Notification steps
-	notifySuccessStep := &engine.WorkflowStep{
-		ID:   "notify-success",
-		Name: "Notify Success",
+	notifySuccessStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-success",
+			Name: "Notify Success",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -551,9 +603,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 		Timeout: 10 * time.Second,
 	}
 
-	notifyCordonFailureStep := &engine.WorkflowStep{
-		ID:   "notify-cordon-failure",
-		Name: "Notify Cordon Failure",
+	notifyCordonFailureStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-cordon-failure",
+			Name: "Notify Cordon Failure",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -566,9 +620,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 		Timeout: 10 * time.Second,
 	}
 
-	notifyMigrationFailureStep := &engine.WorkflowStep{
-		ID:   "notify-migration-failure",
-		Name: "Notify Migration Failure",
+	notifyMigrationFailureStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-migration-failure",
+			Name: "Notify Migration Failure",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -581,9 +637,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 		Timeout: 10 * time.Second,
 	}
 
-	notifyIncompleteStep := &engine.WorkflowStep{
-		ID:   "notify-migration-incomplete",
-		Name: "Notify Migration Incomplete",
+	notifyIncompleteStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-migration-incomplete",
+			Name: "Notify Migration Incomplete",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -596,11 +654,11 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 		Timeout: 10 * time.Second,
 	}
 
-	template.Steps = []*engine.WorkflowStep{
+	template.Steps = []*engine.ExecutableWorkflowStep{
 		assessStep, evaluateStep, cordonStep, migrateStep, verifyStep,
 		notifySuccessStep, notifyCordonFailureStep, notifyMigrationFailureStep, notifyIncompleteStep,
 	}
-	template.Conditions = []*engine.WorkflowCondition{
+	template.Conditions = []*engine.ExecutableCondition{
 		wtf.conditionLibrary["node_health_condition"],
 	}
 	template.Timeouts = &engine.WorkflowTimeouts{
@@ -617,23 +675,27 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 }
 
 // BuildStorageIssueWorkflow creates workflow for storage-related issues
-func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert) *engine.ExecutableTemplate {
 	workflowID := fmt.Sprintf("storage-issue-%s", uuid.New().String()[:8])
 
-	template := &engine.WorkflowTemplate{
-		ID:          workflowID,
-		Name:        "Storage Issue Remediation",
-		Description: fmt.Sprintf("Automated remediation for storage issues in %s/%s", alert.Namespace, alert.Resource),
-		Version:     "1.0.0",
-		Tags:        []string{"storage", "disk", "cleanup", "automated"},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
+	template := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          workflowID,
+				Name:        "Storage Issue Remediation",
+				Description: fmt.Sprintf("Automated remediation for storage issues in %s/%s", alert.Namespace, alert.Resource),
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
 	}
-
 	// Step 1: Check disk usage
-	checkDiskStep := &engine.WorkflowStep{
-		ID:   "check-disk-usage",
-		Name: "Check Disk Usage",
+	checkDiskStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "check-disk-usage",
+			Name: "Check Disk Usage",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -652,9 +714,11 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 	}
 
 	// Step 2: Evaluate storage threshold
-	evaluateStep := &engine.WorkflowStep{
-		ID:           "evaluate-storage-threshold",
-		Name:         "Evaluate Storage Threshold",
+	evaluateStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "evaluate-storage-threshold",
+			Name: "Evaluate Storage Threshold",
+		},
 		Type:         engine.StepTypeCondition,
 		Dependencies: []string{"check-disk-usage"},
 		Condition:    wtf.conditionLibrary["storage_threshold"],
@@ -662,9 +726,11 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 	}
 
 	// Step 3: Cleanup storage
-	cleanupStep := &engine.WorkflowStep{
-		ID:           "cleanup-storage",
-		Name:         "Cleanup Storage",
+	cleanupStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "cleanup-storage",
+			Name: "Cleanup Storage",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"evaluate-storage-threshold"},
 		Action: &engine.StepAction{
@@ -687,9 +753,11 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 	}
 
 	// Step 4: Verify cleanup
-	verifyStep := &engine.WorkflowStep{
-		ID:           "verify-cleanup",
-		Name:         "Verify Storage Cleanup",
+	verifyStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "verify-cleanup",
+			Name: "Verify Storage Cleanup",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"cleanup-storage"},
 		Action: &engine.StepAction{
@@ -710,9 +778,11 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 	}
 
 	// Step 5: Expand PVC (fallback)
-	expandStep := &engine.WorkflowStep{
-		ID:   "expand-pvc",
-		Name: "Expand Persistent Volume",
+	expandStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "expand-pvc",
+			Name: "Expand Persistent Volume",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -733,9 +803,11 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 	}
 
 	// Notification steps
-	notifyCleanupStep := &engine.WorkflowStep{
-		ID:   "notify-cleanup-success",
-		Name: "Notify Cleanup Success",
+	notifyCleanupStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-cleanup-success",
+			Name: "Notify Cleanup Success",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -748,9 +820,11 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 		Timeout: 10 * time.Second,
 	}
 
-	notifyExpandStep := &engine.WorkflowStep{
-		ID:   "notify-expand-success",
-		Name: "Notify Expansion Success",
+	notifyExpandStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-expand-success",
+			Name: "Notify Expansion Success",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -763,9 +837,11 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 		Timeout: 10 * time.Second,
 	}
 
-	notifyManualStep := &engine.WorkflowStep{
-		ID:   "notify-manual-intervention",
-		Name: "Notify Manual Intervention Required",
+	notifyManualStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-manual-intervention",
+			Name: "Notify Manual Intervention Required",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -778,11 +854,11 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 		Timeout: 10 * time.Second,
 	}
 
-	template.Steps = []*engine.WorkflowStep{
+	template.Steps = []*engine.ExecutableWorkflowStep{
 		checkDiskStep, evaluateStep, cleanupStep, verifyStep, expandStep,
 		notifyCleanupStep, notifyExpandStep, notifyManualStep,
 	}
-	template.Conditions = []*engine.WorkflowCondition{
+	template.Conditions = []*engine.ExecutableCondition{
 		wtf.conditionLibrary["storage_threshold"],
 	}
 	template.Timeouts = &engine.WorkflowTimeouts{
@@ -798,23 +874,29 @@ func (wtf *WorkflowTemplateFactory) BuildStorageIssueWorkflow(alert types.Alert)
 }
 
 // BuildNetworkIssueWorkflow creates workflow for network connectivity issues
-func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert) *engine.ExecutableTemplate {
 	workflowID := fmt.Sprintf("network-issue-%s", uuid.New().String()[:8])
 
-	template := &engine.WorkflowTemplate{
-		ID:          workflowID,
-		Name:        "Network Issue Remediation",
-		Description: fmt.Sprintf("Automated remediation for network issues in %s/%s", alert.Namespace, alert.Resource),
-		Version:     "1.0.0",
-		Tags:        []string{"network", "connectivity", "dns", "automated"},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
+	template := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          workflowID,
+				Name:        "Network Issue Remediation",
+				Description: fmt.Sprintf("Automated remediation for network issues in %s/%s", alert.Namespace, alert.Resource),
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
+		Tags: []string{"network", "connectivity", "dns", "automated"},
 	}
 
 	// Step 1: Test network connectivity
-	testConnectivityStep := &engine.WorkflowStep{
-		ID:   "test-network-connectivity",
-		Name: "Test Network Connectivity",
+	testConnectivityStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "test-network-connectivity",
+			Name: "Test Network Connectivity",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -834,9 +916,11 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 	}
 
 	// Step 2: Evaluate network condition
-	evaluateStep := &engine.WorkflowStep{
-		ID:           "evaluate-network-condition",
-		Name:         "Evaluate Network Condition",
+	evaluateStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "evaluate-network-condition",
+			Name: "Evaluate Network Condition",
+		},
 		Type:         engine.StepTypeCondition,
 		Dependencies: []string{"test-network-connectivity"},
 		Condition:    wtf.conditionLibrary["network_connectivity"],
@@ -844,9 +928,11 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 	}
 
 	// Step 3: Restart network components
-	restartNetworkStep := &engine.WorkflowStep{
-		ID:           "restart-network-components",
-		Name:         "Restart Network Components",
+	restartNetworkStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "restart-network-components",
+			Name: "Restart Network Components",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"evaluate-network-condition"},
 		Action: &engine.StepAction{
@@ -867,9 +953,11 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 	}
 
 	// Step 4: Verify network fix
-	verifyStep := &engine.WorkflowStep{
-		ID:           "verify-network-fix",
-		Name:         "Verify Network Fix",
+	verifyStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "verify-network-fix",
+			Name: "Verify Network Fix",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"restart-network-components"},
 		Action: &engine.StepAction{
@@ -891,9 +979,11 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 	}
 
 	// Step 5: Update network policy (fallback)
-	updatePolicyStep := &engine.WorkflowStep{
-		ID:   "update-network-policy",
-		Name: "Update Network Policy",
+	updatePolicyStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "update-network-policy",
+			Name: "Update Network Policy",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -913,9 +1003,11 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 	}
 
 	// Notification steps
-	notifyNetworkSuccessStep := &engine.WorkflowStep{
-		ID:   "notify-network-success",
-		Name: "Notify Network Success",
+	notifyNetworkSuccessStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-network-success",
+			Name: "Notify Network Success",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -928,9 +1020,11 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 		Timeout: 10 * time.Second,
 	}
 
-	notifyPolicyUpdateStep := &engine.WorkflowStep{
-		ID:   "notify-policy-update",
-		Name: "Notify Policy Update",
+	notifyPolicyUpdateStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-policy-update",
+			Name: "Notify Policy Update",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -943,9 +1037,11 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 		Timeout: 10 * time.Second,
 	}
 
-	notifyManualStep := &engine.WorkflowStep{
-		ID:   "notify-manual-intervention",
-		Name: "Notify Manual Intervention Required",
+	notifyManualStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-manual-intervention",
+			Name: "Notify Manual Intervention Required",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "notification",
@@ -958,11 +1054,11 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 		Timeout: 10 * time.Second,
 	}
 
-	template.Steps = []*engine.WorkflowStep{
+	template.Steps = []*engine.ExecutableWorkflowStep{
 		testConnectivityStep, evaluateStep, restartNetworkStep, verifyStep, updatePolicyStep,
 		notifyNetworkSuccessStep, notifyPolicyUpdateStep, notifyManualStep,
 	}
-	template.Conditions = []*engine.WorkflowCondition{
+	template.Conditions = []*engine.ExecutableCondition{
 		wtf.conditionLibrary["network_connectivity"],
 	}
 	template.Timeouts = &engine.WorkflowTimeouts{
@@ -979,7 +1075,7 @@ func (wtf *WorkflowTemplateFactory) BuildNetworkIssueWorkflow(alert types.Alert)
 }
 
 // BuildFromAlert creates workflow template dynamically from alert context
-func (wtf *WorkflowTemplateFactory) BuildFromAlert(ctx context.Context, alert types.Alert) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) BuildFromAlert(ctx context.Context, alert types.Alert) *engine.ExecutableTemplate {
 	wtf.log.WithFields(logrus.Fields{
 		"alert_name": alert.Name,
 		"namespace":  alert.Namespace,
@@ -1007,7 +1103,7 @@ func (wtf *WorkflowTemplateFactory) BuildFromAlert(ctx context.Context, alert ty
 }
 
 // BuildFromObjective creates workflow template from high-level objective
-func (wtf *WorkflowTemplateFactory) BuildFromObjective(ctx context.Context, objective *engine.WorkflowObjective) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) BuildFromObjective(ctx context.Context, objective *engine.WorkflowObjective) *engine.ExecutableTemplate {
 	wtf.log.WithFields(logrus.Fields{
 		"objective_id":   objective.ID,
 		"objective_type": objective.Type,
@@ -1015,15 +1111,19 @@ func (wtf *WorkflowTemplateFactory) BuildFromObjective(ctx context.Context, obje
 
 	workflowID := fmt.Sprintf("objective-%s", uuid.New().String()[:8])
 
-	template := &engine.WorkflowTemplate{
-		ID:          workflowID,
-		Name:        objective.Description,
-		Description: fmt.Sprintf("Workflow for objective: %s", objective.Description),
-		Version:     "1.0.0",
-		Tags:        []string{"objective-driven", "automated"},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
-		Variables:   objective.Constraints,
+	template := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          workflowID,
+				Name:        objective.Description,
+				Description: fmt.Sprintf("Workflow for objective: %s", objective.Description),
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
+		Tags:      []string{"objective-driven", "automated"},
+		Variables: objective.Constraints,
 	}
 
 	// Build steps based on objective type and targets
@@ -1038,7 +1138,7 @@ func (wtf *WorkflowTemplateFactory) BuildFromObjective(ctx context.Context, obje
 }
 
 // BuildFromPattern creates workflow template from existing pattern
-func (wtf *WorkflowTemplateFactory) BuildFromPattern(ctx context.Context, pattern *engine.WorkflowPattern, context *engine.WorkflowContext) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) BuildFromPattern(ctx context.Context, pattern *engine.WorkflowPattern, context *engine.WorkflowContext) *engine.ExecutableTemplate {
 	wtf.log.WithFields(logrus.Fields{
 		"pattern_id":  pattern.ID,
 		"workflow_id": context.WorkflowID,
@@ -1047,24 +1147,28 @@ func (wtf *WorkflowTemplateFactory) BuildFromPattern(ctx context.Context, patter
 
 	workflowID := fmt.Sprintf("pattern-%s", uuid.New().String()[:8])
 
-	template := &engine.WorkflowTemplate{
-		ID:          workflowID,
-		Name:        pattern.Name,
-		Description: fmt.Sprintf("Workflow based on pattern: %s", pattern.Name),
-		Version:     "1.0.0",
-		Tags:        []string{"pattern-based", pattern.Type},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
+	template := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          workflowID,
+				Name:        pattern.Name,
+				Description: fmt.Sprintf("Workflow based on pattern: %s", pattern.Name),
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
+		Tags: []string{"pattern-based", pattern.Type},
 	}
 
 	// Adapt pattern steps to current context
 	adaptedSteps := wtf.adaptPatternSteps(pattern.Steps, context)
 	template.Steps = adaptedSteps
 
-	// Convert ActionConditions to WorkflowConditions
-	var workflowConditions []*engine.WorkflowCondition
+	// Convert ActionConditions to ExecutableConditions
+	var workflowConditions []*engine.ExecutableCondition
 	for _, actionCond := range pattern.Conditions {
-		workflowCond := &engine.WorkflowCondition{
+		workflowCond := &engine.ExecutableCondition{
 			ID:         actionCond.ID,
 			Name:       fmt.Sprintf("Condition %s", actionCond.ID),
 			Type:       engine.ConditionType(actionCond.Type),
@@ -1083,7 +1187,7 @@ func (wtf *WorkflowTemplateFactory) BuildFromPattern(ctx context.Context, patter
 }
 
 // ComposeWorkflows combines multiple templates into one
-func (wtf *WorkflowTemplateFactory) ComposeWorkflows(templates ...*engine.WorkflowTemplate) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) ComposeWorkflows(templates ...*engine.ExecutableTemplate) *engine.ExecutableTemplate {
 	if len(templates) == 0 {
 		return nil
 	}
@@ -1093,19 +1197,23 @@ func (wtf *WorkflowTemplateFactory) ComposeWorkflows(templates ...*engine.Workfl
 	}
 
 	compositeID := fmt.Sprintf("composite-%s", uuid.New().String()[:8])
-	composite := &engine.WorkflowTemplate{
-		ID:          compositeID,
-		Name:        "Composite Workflow",
-		Description: "Combined workflow from multiple templates",
-		Version:     "1.0.0",
-		Tags:        []string{"composite", "multi-template"},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
+	composite := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          compositeID,
+				Name:        "Composite Workflow",
+				Description: "Combined workflow from multiple templates",
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
+		Tags: []string{"composite", "automated"},
 	}
 
 	// Combine steps from all templates
-	var allSteps []*engine.WorkflowStep
-	var allConditions []*engine.WorkflowCondition
+	var allSteps []*engine.ExecutableWorkflowStep
+	var allConditions []*engine.ExecutableCondition
 	var maxTimeout time.Duration
 
 	for i, template := range templates {
@@ -1139,7 +1247,7 @@ func (wtf *WorkflowTemplateFactory) ComposeWorkflows(templates ...*engine.Workfl
 }
 
 // CustomizeForEnvironment customizes template for specific environment
-func (wtf *WorkflowTemplateFactory) CustomizeForEnvironment(template *engine.WorkflowTemplate, env string) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) CustomizeForEnvironment(template *engine.ExecutableTemplate, env string) *engine.ExecutableTemplate {
 	customized := wtf.deepCopyTemplate(template)
 	customized.ID = fmt.Sprintf("%s-%s", template.ID, env)
 	customized.Tags = append(customized.Tags, fmt.Sprintf("env-%s", env))
@@ -1158,7 +1266,7 @@ func (wtf *WorkflowTemplateFactory) CustomizeForEnvironment(template *engine.Wor
 }
 
 // AddSafetyConstraints adds safety constraints to template
-func (wtf *WorkflowTemplateFactory) AddSafetyConstraints(template *engine.WorkflowTemplate, constraints *SafetyConstraints) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) AddSafetyConstraints(template *engine.ExecutableTemplate, constraints *SafetyConstraints) *engine.ExecutableTemplate {
 	constrained := wtf.deepCopyTemplate(template)
 
 	// Apply safety constraints to each step
@@ -1196,7 +1304,7 @@ func (wtf *WorkflowTemplateFactory) initializePredefinedTemplates() {
 
 func (wtf *WorkflowTemplateFactory) initializeConditionLibrary() {
 	// Memory threshold condition
-	wtf.conditionLibrary["memory_threshold"] = &engine.WorkflowCondition{
+	wtf.conditionLibrary["memory_threshold"] = &engine.ExecutableCondition{
 		ID:         "memory-threshold",
 		Name:       "Memory Usage Threshold",
 		Type:       "metric",
@@ -1205,7 +1313,7 @@ func (wtf *WorkflowTemplateFactory) initializeConditionLibrary() {
 	}
 
 	// Crash pattern analysis condition
-	wtf.conditionLibrary["crash_pattern_analysis"] = &engine.WorkflowCondition{
+	wtf.conditionLibrary["crash_pattern_analysis"] = &engine.ExecutableCondition{
 		ID:         "crash-pattern",
 		Name:       "Crash Pattern Analysis",
 		Type:       "custom",
@@ -1214,7 +1322,7 @@ func (wtf *WorkflowTemplateFactory) initializeConditionLibrary() {
 	}
 
 	// Node health condition
-	wtf.conditionLibrary["node_health_condition"] = &engine.WorkflowCondition{
+	wtf.conditionLibrary["node_health_condition"] = &engine.ExecutableCondition{
 		ID:         "node-health",
 		Name:       "Node Health Check",
 		Type:       "resource",
@@ -1223,7 +1331,7 @@ func (wtf *WorkflowTemplateFactory) initializeConditionLibrary() {
 	}
 
 	// Storage threshold condition
-	wtf.conditionLibrary["storage_threshold"] = &engine.WorkflowCondition{
+	wtf.conditionLibrary["storage_threshold"] = &engine.ExecutableCondition{
 		ID:         "storage-threshold",
 		Name:       "Storage Usage Threshold",
 		Type:       "metric",
@@ -1232,7 +1340,7 @@ func (wtf *WorkflowTemplateFactory) initializeConditionLibrary() {
 	}
 
 	// Network connectivity condition
-	wtf.conditionLibrary["network_connectivity"] = &engine.WorkflowCondition{
+	wtf.conditionLibrary["network_connectivity"] = &engine.ExecutableCondition{
 		ID:         "network-connectivity",
 		Name:       "Network Connectivity Check",
 		Type:       "custom",
@@ -1243,29 +1351,37 @@ func (wtf *WorkflowTemplateFactory) initializeConditionLibrary() {
 
 func (wtf *WorkflowTemplateFactory) initializeActionSequences() {
 	// Common action sequences for reuse
-	wtf.actionSequences["scale_and_verify"] = []*engine.WorkflowStep{
+	wtf.actionSequences["scale_and_verify"] = []*engine.ExecutableWorkflowStep{
 		{
-			ID:   "scale",
-			Name: "Scale Resource",
+			BaseEntity: types.BaseEntity{
+				ID:   "scale",
+				Name: "Scale Resource",
+			},
 			Type: engine.StepTypeAction,
 		},
 		{
-			ID:           "verify",
-			Name:         "Verify Scaling",
+			BaseEntity: types.BaseEntity{
+				ID:   "verify",
+				Name: "Verify Scaling",
+			},
 			Type:         engine.StepTypeAction,
 			Dependencies: []string{"scale"},
 		},
 	}
 
-	wtf.actionSequences["diagnose_and_restart"] = []*engine.WorkflowStep{
+	wtf.actionSequences["diagnose_and_restart"] = []*engine.ExecutableWorkflowStep{
 		{
-			ID:   "diagnose",
-			Name: "Collect Diagnostics",
+			BaseEntity: types.BaseEntity{
+				ID:   "diagnose",
+				Name: "Collect Diagnostics",
+			},
 			Type: engine.StepTypeAction,
 		},
 		{
-			ID:           "restart",
-			Name:         "Restart Component",
+			BaseEntity: types.BaseEntity{
+				ID:   "restart",
+				Name: "Restart Component",
+			},
 			Type:         engine.StepTypeAction,
 			Dependencies: []string{"diagnose"},
 		},
@@ -1305,23 +1421,29 @@ func (wtf *WorkflowTemplateFactory) determineTemplateType(alert types.Alert) str
 	return "generic"
 }
 
-func (wtf *WorkflowTemplateFactory) buildGenericWorkflow(alert types.Alert) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) buildGenericWorkflow(alert types.Alert) *engine.ExecutableTemplate {
 	workflowID := fmt.Sprintf("generic-%s", uuid.New().String()[:8])
 
-	template := &engine.WorkflowTemplate{
-		ID:          workflowID,
-		Name:        "Generic Alert Remediation",
-		Description: fmt.Sprintf("Generic workflow for %s in %s/%s", alert.Name, alert.Namespace, alert.Resource),
-		Version:     "1.0.0",
-		Tags:        []string{"generic", "automated", "fallback"},
-		CreatedBy:   "template-factory",
-		CreatedAt:   time.Now(),
+	template := &engine.ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:          workflowID,
+				Name:        "Generic Alert Remediation",
+				Description: fmt.Sprintf("Generic workflow for %s in %s/%s", alert.Name, alert.Namespace, alert.Resource),
+				CreatedAt:   time.Now(),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "template-factory",
+		},
+		Tags: []string{"generic", "automated", "fallback"},
 	}
 
 	// Generic workflow: diagnose -> notify
-	diagnoseStep := &engine.WorkflowStep{
-		ID:   "diagnose-issue",
-		Name: "Diagnose Issue",
+	diagnoseStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "diagnose-issue",
+			Name: "Diagnose Issue",
+		},
 		Type: engine.StepTypeAction,
 		Action: &engine.StepAction{
 			Type: "kubernetes",
@@ -1338,9 +1460,11 @@ func (wtf *WorkflowTemplateFactory) buildGenericWorkflow(alert types.Alert) *eng
 		Timeout: 30 * time.Second,
 	}
 
-	notifyStep := &engine.WorkflowStep{
-		ID:           "notify-investigation",
-		Name:         "Notify Investigation Required",
+	notifyStep := &engine.ExecutableWorkflowStep{
+		BaseEntity: types.BaseEntity{
+			ID:   "notify-investigation",
+			Name: "Notify Investigation Required",
+		},
 		Type:         engine.StepTypeAction,
 		Dependencies: []string{"diagnose-issue"},
 		Action: &engine.StepAction{
@@ -1354,7 +1478,7 @@ func (wtf *WorkflowTemplateFactory) buildGenericWorkflow(alert types.Alert) *eng
 		Timeout: 10 * time.Second,
 	}
 
-	template.Steps = []*engine.WorkflowStep{diagnoseStep, notifyStep}
+	template.Steps = []*engine.ExecutableWorkflowStep{diagnoseStep, notifyStep}
 	template.Timeouts = &engine.WorkflowTimeouts{
 		Execution: 5 * time.Minute,
 		Step:      30 * time.Second,
@@ -1387,14 +1511,16 @@ func getResourceNameFromAlert(alert types.Alert) string {
 	return alert.Resource
 }
 
-func (wtf *WorkflowTemplateFactory) buildStepsFromObjective(objective *engine.WorkflowObjective) []*engine.WorkflowStep {
-	var steps []*engine.WorkflowStep
+func (wtf *WorkflowTemplateFactory) buildStepsFromObjective(objective *engine.WorkflowObjective) []*engine.ExecutableWorkflowStep {
+	var steps []*engine.ExecutableWorkflowStep
 
 	// Simple implementation - expand based on requirements
 	for i, target := range objective.Targets {
-		step := &engine.WorkflowStep{
-			ID:   fmt.Sprintf("objective-step-%d", i),
-			Name: fmt.Sprintf("Execute %s on %s", target.Metric, target.Type),
+		step := &engine.ExecutableWorkflowStep{
+			BaseEntity: types.BaseEntity{
+				ID:   fmt.Sprintf("objective-step-%d", i),
+				Name: fmt.Sprintf("Execute %s on %s", target.Metric, target.Type),
+			},
 			Type: engine.StepTypeAction,
 			Action: &engine.StepAction{
 				Type:       target.Type,
@@ -1428,8 +1554,8 @@ func (wtf *WorkflowTemplateFactory) createRecoveryFromObjective(objective *engin
 	}
 }
 
-func (wtf *WorkflowTemplateFactory) adaptPatternSteps(steps []*engine.WorkflowStep, context *engine.WorkflowContext) []*engine.WorkflowStep {
-	adapted := make([]*engine.WorkflowStep, len(steps))
+func (wtf *WorkflowTemplateFactory) adaptPatternSteps(steps []*engine.ExecutableWorkflowStep, context *engine.WorkflowContext) []*engine.ExecutableWorkflowStep {
+	adapted := make([]*engine.ExecutableWorkflowStep, len(steps))
 
 	for i, step := range steps {
 		adaptedStep := wtf.deepCopyStep(step)
@@ -1489,7 +1615,7 @@ func (wtf *WorkflowTemplateFactory) adaptRecovery(recovery *engine.RecoveryPolic
 	return adapted
 }
 
-func (wtf *WorkflowTemplateFactory) adaptStepForComposition(step *engine.WorkflowStep, prefix string) *engine.WorkflowStep {
+func (wtf *WorkflowTemplateFactory) adaptStepForComposition(step *engine.ExecutableWorkflowStep, prefix string) *engine.ExecutableWorkflowStep {
 	adapted := wtf.deepCopyStep(step)
 	adapted.ID = prefix + adapted.ID
 
@@ -1509,9 +1635,9 @@ func (wtf *WorkflowTemplateFactory) adaptStepForComposition(step *engine.Workflo
 	return adapted
 }
 
-func (wtf *WorkflowTemplateFactory) deduplicateConditions(conditions []*engine.WorkflowCondition) []*engine.WorkflowCondition {
-	seen := make(map[string]*engine.WorkflowCondition)
-	var result []*engine.WorkflowCondition
+func (wtf *WorkflowTemplateFactory) deduplicateConditions(conditions []*engine.ExecutableCondition) []*engine.ExecutableCondition {
+	seen := make(map[string]*engine.ExecutableCondition)
+	var result []*engine.ExecutableCondition
 
 	for _, condition := range conditions {
 		if _, exists := seen[condition.ID]; !exists {
@@ -1523,14 +1649,14 @@ func (wtf *WorkflowTemplateFactory) deduplicateConditions(conditions []*engine.W
 	return result
 }
 
-func (wtf *WorkflowTemplateFactory) deepCopyTemplate(template *engine.WorkflowTemplate) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) deepCopyTemplate(template *engine.ExecutableTemplate) *engine.ExecutableTemplate {
 	// Simple deep copy implementation
 	// In production, consider using a more robust deep copy library
 	copied := *template
 
 	// Copy steps
 	if template.Steps != nil {
-		copied.Steps = make([]*engine.WorkflowStep, len(template.Steps))
+		copied.Steps = make([]*engine.ExecutableWorkflowStep, len(template.Steps))
 		for i, step := range template.Steps {
 			copied.Steps[i] = wtf.deepCopyStep(step)
 		}
@@ -1538,7 +1664,7 @@ func (wtf *WorkflowTemplateFactory) deepCopyTemplate(template *engine.WorkflowTe
 
 	// Copy conditions
 	if template.Conditions != nil {
-		copied.Conditions = make([]*engine.WorkflowCondition, len(template.Conditions))
+		copied.Conditions = make([]*engine.ExecutableCondition, len(template.Conditions))
 		copy(copied.Conditions, template.Conditions)
 	}
 
@@ -1559,7 +1685,7 @@ func (wtf *WorkflowTemplateFactory) deepCopyTemplate(template *engine.WorkflowTe
 	return &copied
 }
 
-func (wtf *WorkflowTemplateFactory) deepCopyStep(step *engine.WorkflowStep) *engine.WorkflowStep {
+func (wtf *WorkflowTemplateFactory) deepCopyStep(step *engine.ExecutableWorkflowStep) *engine.ExecutableWorkflowStep {
 	copied := *step
 
 	// Copy dependencies
@@ -1597,7 +1723,7 @@ func (wtf *WorkflowTemplateFactory) deepCopyStep(step *engine.WorkflowStep) *eng
 	return &copied
 }
 
-func (wtf *WorkflowTemplateFactory) applyProductionCustomizations(template *engine.WorkflowTemplate) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) applyProductionCustomizations(template *engine.ExecutableTemplate) *engine.ExecutableTemplate {
 	// Production: more conservative settings
 	for _, step := range template.Steps {
 		if step.RetryPolicy != nil {
@@ -1610,12 +1736,12 @@ func (wtf *WorkflowTemplateFactory) applyProductionCustomizations(template *engi
 	return template
 }
 
-func (wtf *WorkflowTemplateFactory) applyStagingCustomizations(template *engine.WorkflowTemplate) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) applyStagingCustomizations(template *engine.ExecutableTemplate) *engine.ExecutableTemplate {
 	// Staging: balanced settings
 	return template
 }
 
-func (wtf *WorkflowTemplateFactory) applyDevelopmentCustomizations(template *engine.WorkflowTemplate) *engine.WorkflowTemplate {
+func (wtf *WorkflowTemplateFactory) applyDevelopmentCustomizations(template *engine.ExecutableTemplate) *engine.ExecutableTemplate {
 	// Development: faster iterations, more aggressive
 	for _, step := range template.Steps {
 		step.Timeout = step.Timeout / 2 // Shorter timeouts in development
@@ -1624,7 +1750,7 @@ func (wtf *WorkflowTemplateFactory) applyDevelopmentCustomizations(template *eng
 	return template
 }
 
-func (wtf *WorkflowTemplateFactory) applySafetyConstraintsToStep(step *engine.WorkflowStep, constraints *SafetyConstraints) {
+func (wtf *WorkflowTemplateFactory) applySafetyConstraintsToStep(step *engine.ExecutableWorkflowStep, constraints *SafetyConstraints) {
 	if step.Action == nil {
 		return
 	}

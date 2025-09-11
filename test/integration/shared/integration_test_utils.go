@@ -3,7 +3,7 @@ package shared
 import (
 	"context"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // MockSLMClient provides a mock SLM client for testing
