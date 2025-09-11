@@ -20,9 +20,9 @@
   "commonAnnotations": {
     "description": "Pod webapp-deployment-5c7d8f9b4c-xyz123 in namespace production is using 95% of memory limit (1.9GB/2GB)",
     "summary": "High memory usage detected",
-    "runbook_url": "https://runbooks.example.com/HighMemoryUsage"
+    "runbook_url": "https://runbooks.kubernaut.io/HighMemoryUsage"
   },
-  "externalURL": "https://alertmanager.example.com",
+  "externalURL": "https://alertmanager.kubernaut.io",
   "alerts": [
     {
       "status": "firing",
@@ -41,14 +41,14 @@
       "annotations": {
         "description": "Pod webapp-deployment-5c7d8f9b4c-xyz123 in namespace production is using 95% of memory limit (1.9GB/2GB)",
         "summary": "High memory usage detected",
-        "runbook_url": "https://runbooks.example.com/HighMemoryUsage",
+        "runbook_url": "https://runbooks.kubernaut.io/HighMemoryUsage",
         "memory_usage_bytes": "2040109465",
         "memory_limit_bytes": "2147483648",
         "memory_percentage": "95"
       },
       "startsAt": "2024-08-25T10:30:00Z",
       "endsAt": "0001-01-01T00:00:00Z",
-      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_memory_usage_bytes",
+      "generatorURL": "https://prometheus.kubernaut.io/graph?g0.expr=container_memory_usage_bytes",
       "fingerprint": "6f3d2e1a9b8c7d5e"
     }
   ]

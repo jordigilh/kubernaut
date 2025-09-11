@@ -1,0 +1,308 @@
+# Dynamic Toolset Configuration for HolmesGPT Integration
+# Business Requirement: BR-HOLMES-016 to BR-HOLMES-030
+
+app:
+  name: "kubernaut-dynamic-toolsets"
+  version: "1.0.0"
+
+server:
+  port: "8080"
+  metrics_port: "9090"
+  health_port: "8081"
+
+logging:
+  level: "info"
+  format: "json"
+
+# Service Discovery Configuration
+# Business Requirement: BR-HOLMES-016 - Dynamic service discovery in Kubernetes cluster
+service_discovery:
+  enabled: true
+  discovery_interval: "5m"
+  cache_ttl: "10m"
+  health_check_interval: "30s"
+
+  # Namespaces to scan for services (empty means all namespaces)
+  # Business Requirement: BR-HOLMES-027 - Multi-namespace service discovery
+  namespaces:
+    - "monitoring"
+    - "observability"
+    - "kube-system"
+    # - ""  # Uncomment to scan all namespaces
+
+  # Well-known service patterns
+  # Business Requirement: BR-HOLMES-017 - Automatic detection of well-known services
+  service_patterns:
+    prometheus:
+      enabled: true
+      priority: 80
+      selectors:
+        - app.kubernetes.io/name: prometheus
+        - app: prometheus
+      service_names:
+        - "prometheus"
+        - "prometheus-server"
+        - "prometheus-operated"
+      required_ports: [9090]
+      capabilities:
+        - "query_metrics"
+        - "alert_rules"
+        - "time_series"
+        - "resource_usage_analysis"
+        - "threshold_analysis"
+      health_check:
+        endpoint: "/api/v1/status/buildinfo"
+        timeout: "2s"
+        retries: 3
+        method: "GET"
+
+    grafana:
+      enabled: true
+      priority: 70
+      selectors:
+        - app.kubernetes.io/name: grafana
+      service_names:
+        - "grafana"
+      required_ports: [3000]
+      capabilities:
+        - "get_dashboards"
+        - "query_datasource"
+        - "get_alerts"
+        - "visualization"
+        - "dashboard_analysis"
+      health_check:
+        endpoint: "/api/health"
+        timeout: "2s"
+        retries: 3
+        method: "GET"
+
+    jaeger:
+      enabled: true
+      priority: 60
+      selectors:
+        - app.kubernetes.io/name: jaeger
+        - app.kubernetes.io/component: query
+      service_names:
+        - "jaeger-query"
+        - "jaeger"
+      required_ports: [16686]
+      capabilities:
+        - "search_traces"
+        - "get_services"
+        - "analyze_latency"
+        - "distributed_tracing"
+        - "service_dependencies"
+      health_check:
+        endpoint: "/api/services"
+        timeout: "2s"
+        retries: 3
+        method: "GET"
+
+    elasticsearch:
+      enabled: true
+      priority: 50
+      selectors:
+        - app.kubernetes.io/name: elasticsearch
+      service_names:
+        - "elasticsearch"
+        - "elasticsearch-master"
+      required_ports: [9200]
+      capabilities:
+        - "search_logs"
+        - "analyze_patterns"
+        - "aggregation"
+        - "log_analysis"
+        - "full_text_search"
+      health_check:
+        endpoint: "/_cluster/health"
+        timeout: "2s"
+        retries: 3
+        method: "GET"
+
+    # Custom service detection through annotations
+    # Business Requirement: BR-HOLMES-018 - Custom service detection
+    custom:
+      enabled: true
+      priority: 30
+      # Services must have kubernaut.io/toolset annotation to be detected
+      # Additional annotations:
+      #   kubernaut.io/endpoints: "metrics:8080,logs:3100"
+      #   kubernaut.io/capabilities: "custom_metrics,log_analysis"
+      #   kubernaut.io/health-endpoint: "/health"
+
+# HolmesGPT Integration Configuration
+# Business Requirement: BR-HOLMES-020 - Real-time toolset configuration updates
+holmesgpt:
+  enabled: true
+  endpoint: "http://localhost:8090"
+  timeout: "60s"
+  retry_count: 3
+
+  # Dynamic toolset configuration
+  # Business Requirement: BR-HOLMES-022 - Service-specific toolset configurations
+  dynamic_toolsets:
+    enabled: true
+    update_interval: "30s"
+
+    # Baseline toolsets always available
+    # Business Requirement: BR-HOLMES-028 - Maintain baseline toolsets
+    baseline_toolsets:
+      - "kubernetes"
+      - "internet"
+
+    # Toolset generation templates
+    # Business Requirement: BR-HOLMES-023 - Toolset configuration templates
+    templates:
+      prometheus:
+        description: "Prometheus metrics analysis tools for ${service_name}"
+        tools:
+          - name: "prometheus_query"
+            description: "Execute PromQL queries"
+            command: "curl -s '${endpoint}/api/v1/query?query=${query}'"
+          - name: "prometheus_range_query"
+            description: "Execute range queries for time series"
+            command: "curl -s '${endpoint}/api/v1/query_range?query=${query}&start=${start}&end=${end}'"
+          - name: "prometheus_targets"
+            description: "Get target status"
+            command: "curl -s '${endpoint}/api/v1/targets'"
+
+      grafana:
+        description: "Grafana dashboard and visualization tools for ${service_name}"
+        tools:
+          - name: "grafana_dashboards"
+            description: "List available dashboards"
+            command: "curl -s '${endpoint}/api/search?type=dash-db'"
+          - name: "grafana_datasources"
+            description: "List data sources"
+            command: "curl -s '${endpoint}/api/datasources'"
+
+      jaeger:
+        description: "Jaeger distributed tracing tools for ${service_name}"
+        tools:
+          - name: "jaeger_services"
+            description: "List traced services"
+            command: "curl -s '${endpoint}/api/services'"
+          - name: "jaeger_traces"
+            description: "Search traces"
+            command: "curl -s '${endpoint}/api/traces?service=${service}'"
+
+# Context API Configuration for HolmesGPT Integration
+# Business Requirement: BR-HOLMES-025 - Runtime toolset management API
+context_api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8091
+  timeout: "30s"
+
+  # Toolset management endpoints
+  endpoints:
+    - "/api/v1/toolsets"              # Get available toolsets
+    - "/api/v1/toolsets/stats"        # Get toolset statistics
+    - "/api/v1/toolsets/refresh"      # Refresh toolsets
+    - "/api/v1/service-discovery"     # Service discovery status
+    - "/api/v1/health"                # Health check
+
+# Caching Configuration
+# Business Requirement: BR-HOLMES-021 - Service discovery result caching
+cache:
+  type: "memory"  # "memory" or "redis"
+  ttl: "10m"
+  max_size: 1000
+  cleanup_interval: "5m"
+
+  # Redis configuration (if type is "redis")
+  redis:
+    host: "localhost"
+    port: 6379
+    db: 0
+    password: ""
+
+# Monitoring Configuration
+# Business Requirement: BR-HOLMES-029 - Service discovery metrics and monitoring
+monitoring:
+  metrics:
+    enabled: true
+    endpoint: "/metrics"
+    port: 9090
+
+    # Custom metrics for dynamic toolsets
+    custom_metrics:
+      - "kubernaut_service_discovery_total"
+      - "kubernaut_toolset_configurations_active"
+      - "kubernaut_service_health_check_duration_seconds"
+      - "kubernaut_toolset_update_propagation_seconds"
+      - "kubernaut_service_discovery_cache_hit_ratio"
+
+  health_check:
+    enabled: true
+    endpoint: "/health"
+    interval: "30s"
+
+# Security Configuration
+# Business Requirement: BR-HOLMES-027 - RBAC considerations
+security:
+  rbac:
+    enabled: true
+    service_account: "kubernaut-service-discovery"
+
+  # Network policies for service discovery
+  network_policies:
+    enabled: true
+    allowed_namespaces:
+      - "monitoring"
+      - "observability"
+
+  # Service access validation
+  service_validation:
+    enabled: true
+    validate_endpoints: true
+    validate_health: true
+    validate_rbac: true
+
+# Performance Tuning
+# Business Requirement: BR-PERF-011 to BR-PERF-015
+performance:
+  max_concurrent_discoveries: 10
+  service_discovery_timeout: "5s"
+  toolset_update_timeout: "30s"
+  health_check_timeout: "2s"
+  cache_size_limit: "100MB"
+
+  # Circuit breaker configuration
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 5
+    recovery_timeout: "30s"
+
+# A/B Testing Configuration
+# Business Requirement: BR-HOLMES-030 - Gradual toolset enablement with A/B testing
+ab_testing:
+  enabled: false  # Enable for gradual rollout
+
+  # Percentage of investigations to use dynamic toolsets
+  rollout_percentage: 50  # 0-100
+
+  # Toolset-specific rollout configuration
+  toolset_rollout:
+    prometheus: 100  # Fully rolled out
+    grafana: 75     # 75% rollout
+    jaeger: 50      # 50% rollout
+    elasticsearch: 25 # 25% rollout
+    custom: 10      # 10% rollout for new services
+
+# Development and Debug Configuration
+development:
+  debug_mode: false
+  log_service_events: true
+  simulate_services: false  # Simulate services for testing
+
+  # Mock services for development/testing
+  mock_services:
+    - name: "mock-prometheus"
+      namespace: "monitoring"
+      type: "prometheus"
+      endpoints: ["http://localhost:9090"]
+    - name: "mock-grafana"
+      namespace: "monitoring"
+      type: "grafana"
+      endpoints: ["http://localhost:3000"]

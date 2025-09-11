@@ -39,7 +39,7 @@ func TestAlertToAction(t *testing.T) {
 		GroupKey: "e2e-test-group",
 		Status:   "firing",
 		Receiver: "prometheus-alerts-slm",
-		Alerts: []webhook.Alert{
+		Alerts: []webhook.AlertManagerAlert{
 			{
 				Status: "firing",
 				Labels: map[string]string{
@@ -158,7 +158,7 @@ func TestLoadTest(t *testing.T) {
 		GroupKey: "load-test-group",
 		Status:   "firing",
 		Receiver: "prometheus-alerts-slm",
-		Alerts: []webhook.Alert{
+		Alerts: []webhook.AlertManagerAlert{
 			{
 				Status: "firing",
 				Labels: map[string]string{

@@ -1,0 +1,155 @@
+# OpenShift Data Foundation (ODF) Configuration
+# This file contains the configuration for ODF installation and setup
+
+---
+# ODF Operator Subscription
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: odf-operator
+  namespace: openshift-storage
+spec:
+  channel: stable-4.18
+  installPlanApproval: Automatic
+  name: odf-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+
+---
+# ODF Operator Group
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-storage-operatorgroup
+  namespace: openshift-storage
+spec:
+  targetNamespaces:
+  - openshift-storage
+
+---
+# Storage Cluster Configuration
+apiVersion: ocs.openshift.io/v1
+kind: StorageCluster
+metadata:
+  name: ocs-storagecluster
+  namespace: openshift-storage
+spec:
+  # Use local storage for ODF
+  storageDeviceSets:
+  - name: ocs-deviceset-local-block
+    count: 1
+    dataPVCTemplate:
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Ti
+        storageClassName: local-block
+        volumeMode: Block
+    portable: false
+    replica: 3
+    resources:
+      requests:
+        cpu: 2
+        memory: 5Gi
+    placement: {}
+    preparePlacement: {}
+  # Manage nodes automatically
+  manageNodes: false
+  # Resource requirements
+  resources:
+    mds:
+      limits:
+        cpu: 3
+        memory: 8Gi
+      requests:
+        cpu: 1
+        memory: 8Gi
+    mgr:
+      limits:
+        cpu: 2
+        memory: 4Gi
+      requests:
+        cpu: 500m
+        memory: 4Gi
+    mon:
+      limits:
+        cpu: 2
+        memory: 4Gi
+      requests:
+        cpu: 500m
+        memory: 4Gi
+    osd:
+      limits:
+        cpu: 4
+        memory: 8Gi
+      requests:
+        cpu: 1
+        memory: 8Gi
+  # Monitoring configuration
+  monitoring:
+    enabled: true
+  # Network configuration
+  network:
+    provider: ""
+    selectors: {}
+  # Node topology
+  nodeTopologies: {}
+  # Version
+  version: 4.18.0
+  # External storage (disabled for local setup)
+  externalStorage: {}
+  # Managed services
+  managedResources:
+    cephBlockPools:
+      defaultStorageClass: true
+    cephFileSystems: {}
+    cephObjectStoreUsers: {}
+    cephObjectStores: {}
+
+---
+# Additional Storage Classes
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ocs-storagecluster-cephfs
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: openshift-storage.cephfs.csi.ceph.com
+parameters:
+  clusterID: openshift-storage
+  fsName: ocs-storagecluster-cephfilesystem
+  pool: ocs-storagecluster-cephfilesystem-data0
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ocs-storagecluster-ceph-rbd
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: openshift-storage.rbd.csi.ceph.com
+parameters:
+  clusterID: openshift-storage
+  pool: ocs-storagecluster-cephblockpool
+  imageFeatures: layering
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: Immediate
+
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: ocs-storagecluster-ceph-rgw
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: openshift-storage.ceph.rook.io/bucket
+reclaimPolicy: Delete
+parameters:
+  objectStoreName: ocs-storagecluster-cephobjectstore
+  objectStoreNamespace: openshift-storage

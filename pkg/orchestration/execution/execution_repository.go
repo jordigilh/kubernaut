@@ -26,7 +26,7 @@ func NewDatabaseExecutionRepository(db *sql.DB, log *logrus.Logger) *DatabaseExe
 }
 
 // GetExecutionsInTimeWindow retrieves executions within a time window
-func (der *DatabaseExecutionRepository) GetExecutionsInTimeWindow(ctx context.Context, start, end time.Time) ([]*engine.WorkflowExecution, error) {
+func (der *DatabaseExecutionRepository) GetExecutionsInTimeWindow(ctx context.Context, start, end time.Time) ([]*engine.RuntimeWorkflowExecution, error) {
 	query := `
 		SELECT id, workflow_id, status, start_time, end_time, duration_ms, error, metadata
 		FROM workflow_executions
@@ -40,7 +40,7 @@ func (der *DatabaseExecutionRepository) GetExecutionsInTimeWindow(ctx context.Co
 	}
 	defer func() { _ = rows.Close() }()
 
-	executions := make([]*engine.WorkflowExecution, 0)
+	executions := make([]*engine.RuntimeWorkflowExecution, 0)
 	for rows.Next() {
 		execution, err := der.scanExecution(rows)
 		if err != nil {
@@ -64,7 +64,7 @@ func (der *DatabaseExecutionRepository) GetExecutionsInTimeWindow(ctx context.Co
 }
 
 // GetExecutionsByWorkflowID retrieves executions for a specific workflow
-func (der *DatabaseExecutionRepository) GetExecutionsByWorkflowID(ctx context.Context, workflowID string) ([]*engine.WorkflowExecution, error) {
+func (der *DatabaseExecutionRepository) GetExecutionsByWorkflowID(ctx context.Context, workflowID string) ([]*engine.RuntimeWorkflowExecution, error) {
 	query := `
 		SELECT id, workflow_id, status, start_time, end_time, duration_ms, error, metadata
 		FROM workflow_executions
@@ -78,7 +78,7 @@ func (der *DatabaseExecutionRepository) GetExecutionsByWorkflowID(ctx context.Co
 	}
 	defer func() { _ = rows.Close() }()
 
-	executions := make([]*engine.WorkflowExecution, 0)
+	executions := make([]*engine.RuntimeWorkflowExecution, 0)
 	for rows.Next() {
 		execution, err := der.scanExecution(rows)
 		if err != nil {
@@ -101,7 +101,7 @@ func (der *DatabaseExecutionRepository) GetExecutionsByWorkflowID(ctx context.Co
 }
 
 // GetExecutionsByPattern retrieves executions matching a pattern
-func (der *DatabaseExecutionRepository) GetExecutionsByPattern(ctx context.Context, patternID string) ([]*engine.WorkflowExecution, error) {
+func (der *DatabaseExecutionRepository) GetExecutionsByPattern(ctx context.Context, patternID string) ([]*engine.RuntimeWorkflowExecution, error) {
 	query := `
 		SELECT id, workflow_id, status, start_time, end_time, duration_ms, error, metadata
 		FROM workflow_executions
@@ -115,7 +115,7 @@ func (der *DatabaseExecutionRepository) GetExecutionsByPattern(ctx context.Conte
 	}
 	defer func() { _ = rows.Close() }()
 
-	executions := make([]*engine.WorkflowExecution, 0)
+	executions := make([]*engine.RuntimeWorkflowExecution, 0)
 	for rows.Next() {
 		execution, err := der.scanExecution(rows)
 		if err != nil {
@@ -138,7 +138,7 @@ func (der *DatabaseExecutionRepository) GetExecutionsByPattern(ctx context.Conte
 }
 
 // StoreExecution stores a workflow execution
-func (der *DatabaseExecutionRepository) StoreExecution(ctx context.Context, execution *engine.WorkflowExecution) error {
+func (der *DatabaseExecutionRepository) StoreExecution(ctx context.Context, execution *engine.RuntimeWorkflowExecution) error {
 	query := `
 		INSERT INTO workflow_executions
 		(id, workflow_id, status, start_time, end_time, duration_ms, error, metadata)
@@ -196,8 +196,8 @@ func (der *DatabaseExecutionRepository) StoreExecution(ctx context.Context, exec
 }
 
 // scanExecution scans a database row into a WorkflowExecution
-func (der *DatabaseExecutionRepository) scanExecution(rows *sql.Rows) (*engine.WorkflowExecution, error) {
-	var execution engine.WorkflowExecution
+func (der *DatabaseExecutionRepository) scanExecution(rows *sql.Rows) (*engine.RuntimeWorkflowExecution, error) {
+	var execution engine.RuntimeWorkflowExecution
 	var endTime sql.NullTime
 	var durationMs sql.NullInt64
 	var errorStr sql.NullString
@@ -240,7 +240,7 @@ func (der *DatabaseExecutionRepository) scanExecution(rows *sql.Rows) (*engine.W
 
 // OrchestrationInMemoryExecutionRepository provides in-memory execution storage for testing
 type OrchestrationInMemoryExecutionRepository struct {
-	executions map[string]*engine.WorkflowExecution
+	executions map[string]*engine.RuntimeWorkflowExecution
 	mutex      sync.RWMutex
 	log        *logrus.Logger
 }
@@ -248,17 +248,17 @@ type OrchestrationInMemoryExecutionRepository struct {
 // NewOrchestrationInMemoryExecutionRepository creates a new in-memory execution repository
 func NewOrchestrationInMemoryExecutionRepository(log *logrus.Logger) *OrchestrationInMemoryExecutionRepository {
 	return &OrchestrationInMemoryExecutionRepository{
-		executions: make(map[string]*engine.WorkflowExecution),
+		executions: make(map[string]*engine.RuntimeWorkflowExecution),
 		log:        log,
 	}
 }
 
 // GetExecutionsInTimeWindow retrieves executions within a time window
-func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsInTimeWindow(ctx context.Context, start, end time.Time) ([]*engine.WorkflowExecution, error) {
+func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsInTimeWindow(ctx context.Context, start, end time.Time) ([]*engine.RuntimeWorkflowExecution, error) {
 	imer.mutex.RLock()
 	defer imer.mutex.RUnlock()
 
-	executions := make([]*engine.WorkflowExecution, 0)
+	executions := make([]*engine.RuntimeWorkflowExecution, 0)
 
 	for _, execution := range imer.executions {
 		if !execution.StartTime.Before(start) && !execution.StartTime.After(end) {
@@ -276,11 +276,11 @@ func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsInTimeWindow(
 }
 
 // GetExecutionsByWorkflowID retrieves executions for a specific workflow
-func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsByWorkflowID(ctx context.Context, workflowID string) ([]*engine.WorkflowExecution, error) {
+func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsByWorkflowID(ctx context.Context, workflowID string) ([]*engine.RuntimeWorkflowExecution, error) {
 	imer.mutex.RLock()
 	defer imer.mutex.RUnlock()
 
-	executions := make([]*engine.WorkflowExecution, 0)
+	executions := make([]*engine.RuntimeWorkflowExecution, 0)
 
 	for _, execution := range imer.executions {
 		if execution.WorkflowID == workflowID {
@@ -297,11 +297,11 @@ func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsByWorkflowID(
 }
 
 // GetExecutionsByPattern retrieves executions matching a pattern
-func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsByPattern(ctx context.Context, patternID string) ([]*engine.WorkflowExecution, error) {
+func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsByPattern(ctx context.Context, patternID string) ([]*engine.RuntimeWorkflowExecution, error) {
 	imer.mutex.RLock()
 	defer imer.mutex.RUnlock()
 
-	executions := make([]*engine.WorkflowExecution, 0)
+	executions := make([]*engine.RuntimeWorkflowExecution, 0)
 
 	for _, execution := range imer.executions {
 		if execution.Metadata != nil {
@@ -320,7 +320,7 @@ func (imer *OrchestrationInMemoryExecutionRepository) GetExecutionsByPattern(ctx
 }
 
 // StoreExecution stores a workflow execution in memory
-func (imer *OrchestrationInMemoryExecutionRepository) StoreExecution(ctx context.Context, execution *engine.WorkflowExecution) error {
+func (imer *OrchestrationInMemoryExecutionRepository) StoreExecution(ctx context.Context, execution *engine.RuntimeWorkflowExecution) error {
 	imer.mutex.Lock()
 	defer imer.mutex.Unlock()
 

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // PerformanceTestAlert creates an alert for performance testing

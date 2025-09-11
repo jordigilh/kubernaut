@@ -8,15 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	sharedmath "github.com/jordigilh/kubernaut/pkg/shared/math"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 
-type ValidationResult struct {
+type PatternValidationResult struct {
 	RuleID    string
 	Type      ValidationType
 	Passed    bool
@@ -27,18 +25,18 @@ type ValidationResult struct {
 
 type ValidationType string
 
-type WorkflowExecutionData struct {
+type PatternAnalysisExecutionData struct {
 	ExecutionID     string
 	TemplateID      string
 	Timestamp       time.Time
 	Alert           *types.Alert
-	ExecutionResult *WorkflowExecutionResult
-	ResourceUsage   *sharedtypes.ResourceUsageData
+	ExecutionResult *PatternWorkflowExecutionResult
+	ResourceUsage   *types.ResourceUsageData
 	Context         map[string]interface{}
 }
 
 // WorkflowExecutionResult represents the result of a workflow execution
-type WorkflowExecutionResult struct {
+type PatternWorkflowExecutionResult struct {
 	Success           bool          `json:"success"`
 	Duration          time.Duration `json:"duration"`
 	StepsCompleted    int           `json:"steps_completed"`
@@ -47,7 +45,7 @@ type WorkflowExecutionResult struct {
 }
 
 // WorkflowExecutionEvent represents real-time events during workflow execution
-// This is semantically different from WorkflowExecutionData which represents completed execution summaries
+// This is semantically different from PatternAnalysisExecutionData which represents completed execution summaries
 type WorkflowExecutionEvent struct {
 	Type        string                 `json:"type"`              // Event type: "step_start", "step_complete", "error", "alert_triggered", etc.
 	WorkflowID  string                 `json:"workflow_id"`       // ID of the workflow being executed
@@ -57,14 +55,6 @@ type WorkflowExecutionEvent struct {
 	Data        map[string]interface{} `json:"data"`              // Event-specific payload (alert details, step results, etc.)
 	Metrics     map[string]float64     `json:"metrics"`           // Real-time metrics snapshot at event time
 	Context     map[string]interface{} `json:"context"`           // Execution context (environment, user, etc.)
-}
-
-// minInt returns the minimum of two integers
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // Helper methods for PatternDiscoveryEngine
@@ -157,7 +147,7 @@ func (pde *PatternDiscoveryEngine) calculateConfidenceDistribution(patterns []*s
 // eventMatchesPattern checks if an event matches a pattern
 func (pde *PatternDiscoveryEngine) eventMatchesPattern(event *WorkflowExecutionEvent, pattern *shared.DiscoveredPattern) bool {
 	// Check pattern type compatibility
-	switch pattern.Type {
+	switch pattern.PatternType {
 	case shared.PatternTypeAlert:
 		return pde.matchesAlertPattern(event, pattern)
 	case shared.PatternTypeTemporal:
@@ -172,16 +162,19 @@ func (pde *PatternDiscoveryEngine) eventMatchesPattern(event *WorkflowExecutionE
 // createAnomalyPattern creates an anomaly pattern from an event
 func (pde *PatternDiscoveryEngine) createAnomalyPattern(event *WorkflowExecutionEvent, anomaly interface{}) *shared.DiscoveredPattern {
 	pattern := &shared.DiscoveredPattern{
-		ID:           fmt.Sprintf("anomaly-%d", time.Now().Unix()),
-		Type:         shared.PatternTypeAnomaly,
-		Name:         "Real-time Anomaly Detection",
-		Description:  "Anomaly detected in real-time workflow execution",
-		Confidence:   0.7, // Medium confidence for anomalies
-		Frequency:    1,
-		SuccessRate:  0.5,
+		BasePattern: types.BasePattern{
+			BaseEntity: types.BaseEntity{
+				ID:          fmt.Sprintf("anomaly-%d", time.Now().Unix()),
+				Description: "Anomaly detected in real-time workflow execution",
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
+				Metadata:    map[string]interface{}{"pattern_type": shared.PatternTypeAnomaly},
+			},
+			Confidence: 0.7,
+			Metrics:    make(map[string]float64),
+		},
+		PatternType:  shared.PatternTypeAnomaly,
 		DiscoveredAt: time.Now(),
-		LastSeen:     time.Now(),
-		Metrics:      make(map[string]float64),
 	}
 
 	return pattern
@@ -207,7 +200,7 @@ func (pde *PatternDiscoveryEngine) updateVectorEmbeddings(ctx context.Context, e
 }
 
 // extractPredictionFeatures extracts features for prediction with robust error handling
-func (pde *PatternDiscoveryEngine) extractPredictionFeatures(template *sharedtypes.WorkflowTemplate, alert *types.Alert) *shared.WorkflowFeatures {
+func (pde *PatternDiscoveryEngine) extractPredictionFeatures(template *types.TemplateSpec, alert *types.Alert) *shared.WorkflowFeatures {
 	// Initialize with safe defaults
 	features := &shared.WorkflowFeatures{
 		AlertCount:      0,
@@ -365,7 +358,7 @@ func (pde *PatternDiscoveryEngine) extractBooleanFeature(labels map[string]strin
 }
 
 // calculateDependencyDepthRobust calculates dependency depth with error handling
-func (pde *PatternDiscoveryEngine) calculateDependencyDepthRobust(template *sharedtypes.WorkflowTemplate) int {
+func (pde *PatternDiscoveryEngine) calculateDependencyDepthRobust(template *types.TemplateSpec) int {
 	if template == nil || len(template.Steps) == 0 {
 		return 0
 	}
@@ -389,7 +382,7 @@ func (pde *PatternDiscoveryEngine) calculateDependencyDepthRobust(template *shar
 }
 
 // calculateStepDepth recursively calculates step dependency depth
-func (pde *PatternDiscoveryEngine) calculateStepDepth(step *sharedtypes.WorkflowStep, allSteps []sharedtypes.WorkflowStep, visited map[string]bool, currentDepth int) int {
+func (pde *PatternDiscoveryEngine) calculateStepDepth(step *types.WorkflowStep, allSteps []types.WorkflowStep, visited map[string]bool, currentDepth int) int {
 	if step == nil || visited[step.ID] || currentDepth > 20 {
 		return currentDepth
 	}
@@ -415,7 +408,7 @@ func (pde *PatternDiscoveryEngine) calculateStepDepth(step *sharedtypes.Workflow
 }
 
 // calculateTemplateComplexity calculates overall template complexity
-func (pde *PatternDiscoveryEngine) calculateTemplateComplexity(template *sharedtypes.WorkflowTemplate) float64 {
+func (pde *PatternDiscoveryEngine) calculateTemplateComplexity(template *types.TemplateSpec) float64 {
 	if template == nil || len(template.Steps) == 0 {
 		return 0.0
 	}
@@ -447,7 +440,7 @@ func (pde *PatternDiscoveryEngine) calculateTemplateComplexity(template *sharedt
 }
 
 // extractConditionalStepsFeature checks for conditional steps
-func (pde *PatternDiscoveryEngine) extractConditionalStepsFeature(template *sharedtypes.WorkflowTemplate) float64 {
+func (pde *PatternDiscoveryEngine) extractConditionalStepsFeature(template *types.TemplateSpec) float64 {
 	if template == nil || len(template.Steps) == 0 {
 		return 0.0
 	}
@@ -467,7 +460,7 @@ func (pde *PatternDiscoveryEngine) extractConditionalStepsFeature(template *shar
 }
 
 // calculateParallelStepsRatio calculates ratio of parallelizable steps
-func (pde *PatternDiscoveryEngine) calculateParallelStepsRatio(template *sharedtypes.WorkflowTemplate) float64 {
+func (pde *PatternDiscoveryEngine) calculateParallelStepsRatio(template *types.TemplateSpec) float64 {
 	if template == nil || len(template.Steps) == 0 {
 		return 0.0
 	}
@@ -567,15 +560,22 @@ func (pde *PatternDiscoveryEngine) findSimilarPatterns(ctx context.Context, feat
 
 	// Convert results to patterns using proper shared types
 	patterns := make([]*shared.DiscoveredPattern, 0)
-	for _, result := range results {
-		if result.Score > 0.7 { // Similarity threshold
+	for _, result := range results.Results {
+		if float64(result.Score) > 0.7 { // Similarity threshold
 			pattern := &shared.DiscoveredPattern{
-				ID:          result.ID,
-				Type:        shared.PatternTypeAnomaly, // Use proper enum
-				Name:        fmt.Sprintf("Similar Pattern %s", result.ID),
-				Description: "Pattern discovered through similarity search",
-				Confidence:  result.Score,
-				Frequency:   1,
+				BasePattern: types.BasePattern{
+					BaseEntity: types.BaseEntity{
+						ID:          result.ID,
+						Name:        fmt.Sprintf("Similar Pattern %s", result.ID),
+						Description: "Pattern discovered through similarity search",
+						CreatedAt:   time.Now(),
+						UpdatedAt:   time.Now(),
+						Metadata:    map[string]interface{}{"pattern_type": shared.PatternTypeAnomaly},
+					},
+					Confidence: float64(result.Score),
+					Frequency:  1,
+				},
+				PatternType: shared.PatternTypeAnomaly, // Use proper enum
 			}
 			patterns = append(patterns, pattern)
 		}
@@ -585,12 +585,12 @@ func (pde *PatternDiscoveryEngine) findSimilarPatterns(ctx context.Context, feat
 }
 
 // generateOptimizationSuggestions generates optimization suggestions
-func (pde *PatternDiscoveryEngine) generateOptimizationSuggestions(patterns []*shared.DiscoveredPattern, template *sharedtypes.WorkflowTemplate) []*sharedtypes.OptimizationSuggestion {
-	suggestions := make([]*sharedtypes.OptimizationSuggestion, 0)
+func (pde *PatternDiscoveryEngine) generateOptimizationSuggestions(patterns []*shared.DiscoveredPattern, template *types.TemplateSpec) []*types.OptimizationSuggestion {
+	suggestions := make([]*types.OptimizationSuggestion, 0)
 
 	for _, pattern := range patterns {
 		for _, hint := range pattern.OptimizationHints {
-			suggestion := &sharedtypes.OptimizationSuggestion{
+			suggestion := &types.OptimizationSuggestion{
 				Type:                 hint.Type,
 				Description:          hint.Description,
 				ExpectedImprovement:  hint.ImpactEstimate,
@@ -605,7 +605,7 @@ func (pde *PatternDiscoveryEngine) generateOptimizationSuggestions(patterns []*s
 }
 
 // findRelevantPatterns finds patterns relevant to a template
-func (pde *PatternDiscoveryEngine) findRelevantPatterns(ctx context.Context, template *sharedtypes.WorkflowTemplate) ([]*shared.DiscoveredPattern, error) {
+func (pde *PatternDiscoveryEngine) findRelevantPatterns(ctx context.Context, template *types.TemplateSpec) ([]*shared.DiscoveredPattern, error) {
 	// For now, return all active patterns
 	// In a full implementation, this would filter by template characteristics
 	patterns := make([]*shared.DiscoveredPattern, 0)
@@ -619,43 +619,8 @@ func (pde *PatternDiscoveryEngine) findRelevantPatterns(ctx context.Context, tem
 	return patterns, nil
 }
 
-// cloneTemplate creates a copy of a workflow template
-func (pde *PatternDiscoveryEngine) cloneTemplate(template *engine.WorkflowTemplate) *engine.WorkflowTemplate {
-	cloned := &engine.WorkflowTemplate{
-		ID:          template.ID + "-optimized",
-		Name:        template.Name + " (Optimized)",
-		Description: template.Description,
-		Version:     template.Version,
-		Steps:       make([]*engine.WorkflowStep, len(template.Steps)),
-		Variables:   make(map[string]interface{}),
-		Tags:        make([]string, len(template.Tags)),
-	}
-
-	// Deep copy steps
-	for i, step := range template.Steps {
-		cloned.Steps[i] = &engine.WorkflowStep{
-			ID:           step.ID,
-			Name:         step.Name,
-			Type:         step.Type,
-			Dependencies: make([]string, len(step.Dependencies)),
-			Timeout:      step.Timeout,
-		}
-		copy(cloned.Steps[i].Dependencies, step.Dependencies)
-	}
-
-	// Copy variables
-	for k, v := range template.Variables {
-		cloned.Variables[k] = v
-	}
-
-	// Copy tags
-	copy(cloned.Tags, template.Tags)
-
-	return cloned
-}
-
 // applyOptimizationHint applies an optimization hint to a template
-func (pde *PatternDiscoveryEngine) applyOptimizationHint(template *engine.WorkflowTemplate, hint *shared.OptimizationHint, pattern *engine.DiscoveredPattern) *TemplateOptimization {
+func (pde *PatternDiscoveryEngine) applyOptimizationHint(template *types.TemplateSpec, hint *shared.OptimizationHint, pattern *shared.DiscoveredPattern) *TemplateOptimization {
 	optimization := &TemplateOptimization{
 		ID:                  fmt.Sprintf("opt-%d", time.Now().Unix()),
 		Type:                hint.Type,
@@ -706,15 +671,20 @@ func (pde *PatternDiscoveryEngine) calculateOptimizationImpact(optimizations []*
 }
 
 // extractLearningData extracts learning data from execution
-func (pde *PatternDiscoveryEngine) extractLearningData(execution *engine.WorkflowExecution) *shared.WorkflowLearningData {
+func (pde *PatternDiscoveryEngine) extractLearningData(execution *types.WorkflowExecutionRecord) *shared.WorkflowLearningData {
 	return &shared.WorkflowLearningData{
 		ExecutionID:       execution.ID,
 		TemplateID:        execution.WorkflowID,
 		LearningObjective: "pattern_discovery",
 		Context: map[string]interface{}{
-			"success":        execution.Status == engine.ExecutionStatusCompleted,
-			"duration":       execution.Duration.Seconds(),
-			"steps_executed": len(execution.Steps),
+			"success": execution.Status == string(types.ExecutionStatusCompleted),
+			"duration": func() float64 {
+				if execution.EndTime != nil {
+					return execution.EndTime.Sub(execution.StartTime).Seconds()
+				}
+				return 0.0
+			}(),
+			"steps_executed": 0, // WorkflowExecutionRecord doesn't have Steps field
 		},
 	}
 }
@@ -893,7 +863,7 @@ func (pde *PatternDiscoveryEngine) getTopOptimizations(patterns []*shared.Discov
 }
 
 // analyzeOptimizationPatterns analyzes optimization patterns
-func (pde *PatternDiscoveryEngine) analyzeOptimizationPatterns(data []*engine.WorkflowExecutionData) ([]*shared.DiscoveredPattern, error) {
+func (pde *PatternDiscoveryEngine) analyzeOptimizationPatterns(data []*types.WorkflowExecutionData) ([]*shared.DiscoveredPattern, error) {
 	patterns := make([]*shared.DiscoveredPattern, 0)
 
 	// Analyze execution times for optimization opportunities
@@ -913,9 +883,17 @@ func (pde *PatternDiscoveryEngine) analyzeOptimizationPatterns(data []*engine.Wo
 			variance := pde.calculateDurationVariance(durations)
 			if variance > 0.5 { // High variance threshold
 				pattern := &shared.DiscoveredPattern{
-					ID:           fmt.Sprintf("opt-pattern-%s", templateID),
-					Type:         shared.PatternTypeOptimization,
-					Confidence:   variance,
+					BasePattern: types.BasePattern{
+						BaseEntity: types.BaseEntity{
+							ID:          fmt.Sprintf("opt-pattern-%s", templateID),
+							Description: "High variance in execution time",
+							CreatedAt:   time.Now(),
+							UpdatedAt:   time.Now(),
+							Metadata:    map[string]interface{}{"pattern_type": shared.PatternTypeOptimization},
+						},
+						Confidence: variance,
+					},
+					PatternType:  shared.PatternTypeOptimization,
 					DiscoveredAt: time.Now(),
 				}
 				patterns = append(patterns, pattern)
@@ -927,7 +905,7 @@ func (pde *PatternDiscoveryEngine) analyzeOptimizationPatterns(data []*engine.Wo
 }
 
 // analyzeAnomalyPatterns analyzes anomaly patterns
-func (pde *PatternDiscoveryEngine) analyzeAnomalyPatterns(data []*engine.WorkflowExecutionData) ([]*shared.DiscoveredPattern, error) {
+func (pde *PatternDiscoveryEngine) analyzeAnomalyPatterns(data []*types.WorkflowExecutionData) ([]*shared.DiscoveredPattern, error) {
 	patterns := make([]*shared.DiscoveredPattern, 0)
 
 	// Simple anomaly detection based on success rate
@@ -935,9 +913,17 @@ func (pde *PatternDiscoveryEngine) analyzeAnomalyPatterns(data []*engine.Workflo
 
 	if successRate < 0.7 { // Low success rate threshold
 		pattern := &shared.DiscoveredPattern{
-			ID:           fmt.Sprintf("anomaly-pattern-%d", time.Now().Unix()),
-			Type:         shared.PatternTypeAnomaly,
-			Confidence:   1.0 - successRate, // Higher confidence for lower success rates
+			BasePattern: types.BasePattern{
+				BaseEntity: types.BaseEntity{
+					ID:          fmt.Sprintf("anomaly-pattern-%d", time.Now().Unix()),
+					Description: "Anomaly detected in real-time workflow execution",
+					CreatedAt:   time.Now(),
+					UpdatedAt:   time.Now(),
+					Metadata:    map[string]interface{}{"pattern_type": shared.PatternTypeAnomaly},
+				},
+				Confidence: 1.0 - successRate,
+			},
+			PatternType:  shared.PatternTypeAnomaly,
 			DiscoveredAt: time.Now(),
 		}
 		patterns = append(patterns, pattern)
@@ -947,15 +933,15 @@ func (pde *PatternDiscoveryEngine) analyzeAnomalyPatterns(data []*engine.Workflo
 }
 
 // analyzeWorkflowPatterns analyzes workflow effectiveness patterns
-func (pde *PatternDiscoveryEngine) analyzeWorkflowPatterns(data []*engine.WorkflowExecutionData) ([]*shared.DiscoveredPattern, error) {
+func (pde *PatternDiscoveryEngine) analyzeWorkflowPatterns(data []*types.WorkflowExecutionData) ([]*shared.DiscoveredPattern, error) {
 	patterns := make([]*shared.DiscoveredPattern, 0)
 
 	// Group by template ID
-	templateGroups := make(map[string][]*engine.WorkflowExecutionData)
+	templateGroups := make(map[string][]*types.WorkflowExecutionData)
 
 	for _, execution := range data {
 		if _, exists := templateGroups[execution.WorkflowID]; !exists {
-			templateGroups[execution.WorkflowID] = make([]*engine.WorkflowExecutionData, 0)
+			templateGroups[execution.WorkflowID] = make([]*types.WorkflowExecutionData, 0)
 		}
 		templateGroups[execution.WorkflowID] = append(templateGroups[execution.WorkflowID], execution)
 	}
@@ -966,9 +952,17 @@ func (pde *PatternDiscoveryEngine) analyzeWorkflowPatterns(data []*engine.Workfl
 			successRate := pde.calculateSuccessRateForGroup(executions)
 
 			pattern := &shared.DiscoveredPattern{
-				ID:           fmt.Sprintf("workflow-pattern-%s", templateID),
-				Type:         shared.PatternTypeWorkflow,
-				Confidence:   successRate,
+				BasePattern: types.BasePattern{
+					BaseEntity: types.BaseEntity{
+						ID:          fmt.Sprintf("workflow-pattern-%s", templateID),
+						Description: "Workflow effectiveness pattern",
+						CreatedAt:   time.Now(),
+						UpdatedAt:   time.Now(),
+						Metadata:    map[string]interface{}{"pattern_type": shared.PatternTypeWorkflow},
+					},
+					Confidence: successRate,
+				},
+				PatternType:  shared.PatternTypeWorkflow,
 				DiscoveredAt: time.Now(),
 			}
 			patterns = append(patterns, pattern)
@@ -979,11 +973,11 @@ func (pde *PatternDiscoveryEngine) analyzeWorkflowPatterns(data []*engine.Workfl
 }
 
 // analyzeFailureChains analyzes failure propagation chains
-func (pde *PatternDiscoveryEngine) analyzeFailureChains(data []*engine.WorkflowExecutionData) []*FailureChainAnalysis {
+func (pde *PatternDiscoveryEngine) analyzeFailureChains(data []*types.WorkflowExecutionData) []*FailureChainAnalysis {
 	chains := make([]*FailureChainAnalysis, 0)
 
 	// Group failures by time windows
-	failures := make([]*engine.WorkflowExecutionData, 0)
+	failures := make([]*types.WorkflowExecutionData, 0)
 	for _, execution := range data {
 		if !execution.Success {
 			failures = append(failures, execution)
@@ -1027,7 +1021,7 @@ func (pde *PatternDiscoveryEngine) analyzeFailureChains(data []*engine.WorkflowE
 // Helper utility methods
 
 // extractAlertFromMetadata extracts alert information from execution metadata
-func (pde *PatternDiscoveryEngine) extractAlertFromMetadata(execution *engine.WorkflowExecutionData) *types.Alert {
+func (pde *PatternDiscoveryEngine) extractAlertFromMetadata(execution *types.WorkflowExecutionData) *types.Alert {
 	alertData, hasAlert := execution.Metadata["alert"]
 	if !hasAlert {
 		return nil
@@ -1057,7 +1051,7 @@ func (pde *PatternDiscoveryEngine) extractAlertFromMetadata(execution *engine.Wo
 // Helper functions for pattern field access since engine.DiscoveredPattern may not have all fields
 
 // getPatternName returns a pattern name, using ID if Name field doesn't exist
-func (pde *PatternDiscoveryEngine) getPatternName(pattern *engine.DiscoveredPattern) string {
+func (pde *PatternDiscoveryEngine) getPatternName(pattern *shared.DiscoveredPattern) string {
 	// Use pattern ID as name since engine.DiscoveredPattern doesn't have Name field
 	return pattern.ID
 }
@@ -1180,7 +1174,7 @@ func (pde *PatternDiscoveryEngine) featuresToVector(features *shared.WorkflowFea
 	return vector
 }
 
-func (pde *PatternDiscoveryEngine) calculateDependencyDepth(template *engine.WorkflowTemplate) int {
+func (pde *PatternDiscoveryEngine) calculateDependencyDepth(template *types.TemplateSpec) int {
 	if len(template.Steps) == 0 {
 		return 0
 	}
@@ -1197,7 +1191,7 @@ func (pde *PatternDiscoveryEngine) calculateDependencyDepth(template *engine.Wor
 	return maxDepth
 }
 
-func (pde *PatternDiscoveryEngine) optimizeTimeouts(template *engine.WorkflowTemplate, optimization *TemplateOptimization) {
+func (pde *PatternDiscoveryEngine) optimizeTimeouts(template *types.TemplateSpec, optimization *TemplateOptimization) {
 	// Reduce timeouts by 20%
 	for _, step := range template.Steps {
 		originalTimeout := step.Timeout
@@ -1209,13 +1203,13 @@ func (pde *PatternDiscoveryEngine) optimizeTimeouts(template *engine.WorkflowTem
 	}
 }
 
-func (pde *PatternDiscoveryEngine) optimizeParallelization(template *engine.WorkflowTemplate, optimization *TemplateOptimization) {
+func (pde *PatternDiscoveryEngine) optimizeParallelization(template *types.TemplateSpec, optimization *TemplateOptimization) {
 	// Identify steps that can be parallelized
 	optimization.Description = "Identified steps that can be executed in parallel"
 	optimization.ExpectedImprovement = 0.3 // 30% improvement
 }
 
-func (pde *PatternDiscoveryEngine) optimizeRetryPolicy(template *engine.WorkflowTemplate, optimization *TemplateOptimization) {
+func (pde *PatternDiscoveryEngine) optimizeRetryPolicy(template *types.TemplateSpec, optimization *TemplateOptimization) {
 	// Optimize retry policies
 	optimization.Description = "Optimized retry policies for better reliability"
 	optimization.ExpectedImprovement = 0.2 // 20% improvement
@@ -1246,7 +1240,7 @@ func (pde *PatternDiscoveryEngine) calculateDurationVariance(durations []time.Du
 	return variance / (mean * mean) // Coefficient of variation
 }
 
-func (pde *PatternDiscoveryEngine) calculateOverallSuccessRate(data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) calculateOverallSuccessRate(data []*types.WorkflowExecutionData) float64 {
 	if len(data) == 0 {
 		return 0
 	}
@@ -1261,11 +1255,11 @@ func (pde *PatternDiscoveryEngine) calculateOverallSuccessRate(data []*engine.Wo
 	return float64(successful) / float64(len(data))
 }
 
-func (pde *PatternDiscoveryEngine) calculateSuccessRateForGroup(executions []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) calculateSuccessRateForGroup(executions []*types.WorkflowExecutionData) float64 {
 	return pde.calculateOverallSuccessRate(executions)
 }
 
-func (pde *PatternDiscoveryEngine) calculateAverageDuration(executions []*engine.WorkflowExecutionData) time.Duration {
+func (pde *PatternDiscoveryEngine) calculateAverageDuration(executions []*types.WorkflowExecutionData) time.Duration {
 	if len(executions) == 0 {
 		return 0
 	}
@@ -1287,7 +1281,7 @@ func (pde *PatternDiscoveryEngine) calculateAverageDuration(executions []*engine
 
 // PatternFailureChainAnalysis represents analysis of failure chains in pattern discovery
 type PatternFailureChainAnalysis struct {
-	Nodes              []*FailureNode
+	Nodes              []*shared.FailureNode
 	RootCause          string
 	FinalEffect        string
 	PropagationTime    time.Duration
@@ -1334,7 +1328,7 @@ func (pde *PatternDiscoveryEngine) validateAnalysisRequest(request *PatternAnaly
 }
 
 // collectFromPatternStore collects data from the pattern store
-func (pde *PatternDiscoveryEngine) collectFromPatternStore(ctx context.Context, request *PatternAnalysisRequest) ([]*engine.WorkflowExecutionData, error) {
+func (pde *PatternDiscoveryEngine) collectFromPatternStore(ctx context.Context, request *PatternAnalysisRequest) ([]*types.WorkflowExecutionData, error) {
 	// Create filters for pattern store query
 	filters := make(map[string]interface{})
 
@@ -1354,11 +1348,11 @@ func (pde *PatternDiscoveryEngine) collectFromPatternStore(ctx context.Context, 
 	}
 
 	// Convert patterns to workflow execution data
-	executions := make([]*engine.WorkflowExecutionData, 0)
+	executions := make([]*types.WorkflowExecutionData, 0)
 	for _, pattern := range patterns {
 		for _, sourceExecution := range pattern.SourceExecutions {
 			// Create synthetic execution data from pattern
-			execution := &engine.WorkflowExecutionData{
+			execution := &types.WorkflowExecutionData{
 				ExecutionID: sourceExecution,
 				WorkflowID:  fmt.Sprintf("template-from-pattern-%s", pattern.ID),
 				Timestamp:   pattern.LastSeen,
@@ -1382,18 +1376,18 @@ func (pde *PatternDiscoveryEngine) collectFromPatternStore(ctx context.Context, 
 }
 
 // collectFromVectorDB collects data from the vector database
-func (pde *PatternDiscoveryEngine) collectFromVectorDB(ctx context.Context, request *PatternAnalysisRequest) ([]*engine.WorkflowExecutionData, error) {
+func (pde *PatternDiscoveryEngine) collectFromVectorDB(ctx context.Context, request *PatternAnalysisRequest) ([]*types.WorkflowExecutionData, error) {
 	// Create a query vector based on request
 	queryVector := pde.createQueryVector(request)
 
-	// Search for similar vectors
-	results, err := pde.vectorDB.Search(ctx, queryVector, 100) // Limit to 100 results
+	// Search for similar vectors using unified interface
+	resultSet, err := pde.vectorDB.Search(ctx, queryVector, 100) // Limit to 100 results
 	if err != nil {
 		return nil, err
 	}
 
-	executions := make([]*engine.WorkflowExecutionData, 0)
-	for _, result := range results {
+	executions := make([]*types.WorkflowExecutionData, 0)
+	for _, result := range resultSet.Results {
 		// Check if result is within time range
 		if timestamp, ok := result.Metadata["timestamp"].(time.Time); ok {
 			if timestamp.Before(request.TimeRange.Start) || timestamp.After(request.TimeRange.End) {
@@ -1402,7 +1396,7 @@ func (pde *PatternDiscoveryEngine) collectFromVectorDB(ctx context.Context, requ
 		}
 
 		// Convert vector result to execution data
-		execution := pde.vectorResultToExecution(result)
+		execution := pde.vectorResultToExecution(&result)
 		if execution != nil {
 			executions = append(executions, execution)
 		}
@@ -1412,20 +1406,20 @@ func (pde *PatternDiscoveryEngine) collectFromVectorDB(ctx context.Context, requ
 }
 
 // collectFromHistoricalBuffer collects data from the anomaly detector's historical buffer
-func (pde *PatternDiscoveryEngine) collectFromHistoricalBuffer(request *PatternAnalysisRequest) []*engine.WorkflowExecutionData {
+func (pde *PatternDiscoveryEngine) collectFromHistoricalBuffer(request *PatternAnalysisRequest) []*types.WorkflowExecutionData {
 	if pde.anomalyDetector == nil {
-		return []*engine.WorkflowExecutionData{}
+		return []*types.WorkflowExecutionData{}
 	}
 
 	// Since engine.AnomalyDetector doesn't have historicalData field,
 	// we return empty slice for now. In a real implementation, this would
 	// need to be properly implemented based on the actual AnomalyDetector interface
-	return []*engine.WorkflowExecutionData{}
+	return []*types.WorkflowExecutionData{}
 }
 
 // validateAndCleanData validates and cleans the collected data
-func (pde *PatternDiscoveryEngine) validateAndCleanData(data []*engine.WorkflowExecutionData) ([]*engine.WorkflowExecutionData, []error) {
-	cleaned := make([]*engine.WorkflowExecutionData, 0)
+func (pde *PatternDiscoveryEngine) validateAndCleanData(data []*types.WorkflowExecutionData) ([]*types.WorkflowExecutionData, []error) {
+	cleaned := make([]*types.WorkflowExecutionData, 0)
 	errors := make([]error, 0)
 
 	for i, execution := range data {
@@ -1459,9 +1453,9 @@ func (pde *PatternDiscoveryEngine) validateAndCleanData(data []*engine.WorkflowE
 }
 
 // cleanExecutionData cleans and normalizes execution data
-func (pde *PatternDiscoveryEngine) cleanExecutionData(execution *engine.WorkflowExecutionData) *engine.WorkflowExecutionData {
+func (pde *PatternDiscoveryEngine) cleanExecutionData(execution *types.WorkflowExecutionData) *types.WorkflowExecutionData {
 	// Create cleaned version using the engine.WorkflowExecutionData structure
-	cleaned := &engine.WorkflowExecutionData{
+	cleaned := &types.WorkflowExecutionData{
 		ExecutionID: strings.TrimSpace(execution.ExecutionID),
 		WorkflowID:  strings.TrimSpace(execution.WorkflowID),
 		Timestamp:   execution.Timestamp,
@@ -1539,12 +1533,12 @@ func (pde *PatternDiscoveryEngine) normalizeResourceValue(value float64) float64
 }
 
 // applyRequestFilters applies filters from the request to the data
-func (pde *PatternDiscoveryEngine) applyRequestFilters(data []*engine.WorkflowExecutionData, request *PatternAnalysisRequest) []*engine.WorkflowExecutionData {
+func (pde *PatternDiscoveryEngine) applyRequestFilters(data []*types.WorkflowExecutionData, request *PatternAnalysisRequest) []*types.WorkflowExecutionData {
 	if len(request.Filters) == 0 {
 		return data
 	}
 
-	filtered := make([]*engine.WorkflowExecutionData, 0)
+	filtered := make([]*types.WorkflowExecutionData, 0)
 
 	for _, execution := range data {
 		if pde.matchesFilters(execution, request.Filters) {
@@ -1556,7 +1550,7 @@ func (pde *PatternDiscoveryEngine) applyRequestFilters(data []*engine.WorkflowEx
 }
 
 // matchesFilters checks if execution matches the provided filters
-func (pde *PatternDiscoveryEngine) matchesFilters(execution *engine.WorkflowExecutionData, filters map[string]interface{}) bool {
+func (pde *PatternDiscoveryEngine) matchesFilters(execution *types.WorkflowExecutionData, filters map[string]interface{}) bool {
 	for key, value := range filters {
 		switch key {
 		case "template_id":
@@ -1681,9 +1675,9 @@ func (pde *PatternDiscoveryEngine) createQueryVector(request *PatternAnalysisReq
 	return vector
 }
 
-// vectorResultToExecution converts a vector search result to execution data
-func (pde *PatternDiscoveryEngine) vectorResultToExecution(result *VectorSearchResult) *engine.WorkflowExecutionData {
-	execution := &engine.WorkflowExecutionData{
+// vectorResultToExecution converts a unified vector search result to execution data
+func (pde *PatternDiscoveryEngine) vectorResultToExecution(result *UnifiedSearchResult) *types.WorkflowExecutionData {
+	execution := &types.WorkflowExecutionData{
 		ExecutionID: result.ID,
 		Metrics:     make(map[string]float64),
 		Metadata:    make(map[string]interface{}),
@@ -1698,9 +1692,9 @@ func (pde *PatternDiscoveryEngine) vectorResultToExecution(result *VectorSearchR
 		execution.Timestamp = timestamp
 	}
 
-	// Set success and duration
-	execution.Success = result.Score > 0.7 // Use similarity score as success indicator
-	execution.Duration = time.Minute * 5   // Default duration
+	// Set success and duration - convert float32 Score to float64 for comparison
+	execution.Success = float64(result.Score) > 0.7 // Use similarity score as success indicator
+	execution.Duration = time.Minute * 5            // Default duration
 
 	// Store alert information in metadata
 	if alertName, ok := result.Metadata["alert_name"].(string); ok {
@@ -1737,10 +1731,10 @@ func (pde *PatternDiscoveryEngine) hashStringToFloat(s string) float64 {
 }
 
 // collectFromExecutionRepository collects data from execution repository if available
-func (pde *PatternDiscoveryEngine) collectFromExecutionRepository(ctx context.Context, request *PatternAnalysisRequest) ([]*engine.WorkflowExecutionData, error) {
+func (pde *PatternDiscoveryEngine) collectFromExecutionRepository(ctx context.Context, request *PatternAnalysisRequest) ([]*types.WorkflowExecutionData, error) {
 	// Check if execution repository is available (would be injected)
 	if pde.executionRepo == nil {
-		return []*engine.WorkflowExecutionData{}, nil
+		return []*types.WorkflowExecutionData{}, nil
 	}
 
 	// Query executions within time range
@@ -1750,7 +1744,7 @@ func (pde *PatternDiscoveryEngine) collectFromExecutionRepository(ctx context.Co
 	}
 
 	// Convert execution repository format to WorkflowExecutionData
-	executionData := make([]*engine.WorkflowExecutionData, 0)
+	executionData := make([]*types.WorkflowExecutionData, 0)
 	for _, exec := range executions {
 		data := pde.convertExecutionToWorkflowData(exec)
 		if data != nil {
@@ -1763,9 +1757,9 @@ func (pde *PatternDiscoveryEngine) collectFromExecutionRepository(ctx context.Co
 }
 
 // deduplicateExecutionData removes duplicate execution data based on execution ID
-func (pde *PatternDiscoveryEngine) deduplicateExecutionData(data []*engine.WorkflowExecutionData) []*engine.WorkflowExecutionData {
+func (pde *PatternDiscoveryEngine) deduplicateExecutionData(data []*types.WorkflowExecutionData) []*types.WorkflowExecutionData {
 	seen := make(map[string]bool)
-	unique := make([]*engine.WorkflowExecutionData, 0)
+	unique := make([]*types.WorkflowExecutionData, 0)
 
 	for _, execution := range data {
 		if execution == nil || execution.ExecutionID == "" {
@@ -1782,12 +1776,12 @@ func (pde *PatternDiscoveryEngine) deduplicateExecutionData(data []*engine.Workf
 }
 
 // convertExecutionToWorkflowData converts execution repository format to WorkflowExecutionData
-func (pde *PatternDiscoveryEngine) convertExecutionToWorkflowData(exec *engine.WorkflowExecution) *engine.WorkflowExecutionData {
+func (pde *PatternDiscoveryEngine) convertExecutionToWorkflowData(exec *types.RuntimeWorkflowExecution) *types.WorkflowExecutionData {
 	if exec == nil {
 		return nil
 	}
 
-	data := &engine.WorkflowExecutionData{
+	data := &types.WorkflowExecutionData{
 		ExecutionID: exec.ID,
 		WorkflowID:  exec.WorkflowID,
 		Timestamp:   exec.StartTime,
@@ -1797,16 +1791,16 @@ func (pde *PatternDiscoveryEngine) convertExecutionToWorkflowData(exec *engine.W
 	}
 
 	// Set success based on execution status
-	data.Success = (exec.Status == engine.ExecutionStatusCompleted)
+	data.Success = (exec.OperationalStatus == types.ExecutionStatusCompleted)
 
-	// Extract alert information from context if available and store in metadata
-	if exec.Context != nil && exec.Context.Variables != nil {
-		if alertData, exists := exec.Context.Variables["alert"]; exists {
+	// Extract alert information from variables if available and store in metadata
+	if exec.Variables != nil {
+		if alertData, exists := exec.Variables["alert"]; exists {
 			data.Metadata["alert"] = alertData
 		}
 
 		// Extract resource usage as metrics if available
-		if resourceData, exists := exec.Context.Variables["resource_usage"]; exists {
+		if resourceData, exists := exec.Variables["resource_usage"]; exists {
 			if resourceMap, ok := resourceData.(map[string]interface{}); ok {
 				if cpu, ok := resourceMap["cpu"].(float64); ok {
 					data.Metrics["cpu_usage"] = cpu
@@ -1825,15 +1819,10 @@ func (pde *PatternDiscoveryEngine) convertExecutionToWorkflowData(exec *engine.W
 	}
 
 	// Store execution context in metadata if available
-	if exec.Context != nil {
+	if exec.Input != nil {
 		data.Metadata["execution_context"] = map[string]interface{}{
-			"environment":    exec.Context.Environment,
-			"cluster":        exec.Context.Cluster,
-			"user":           exec.Context.User,
-			"request_id":     exec.Context.RequestID,
-			"trace_id":       exec.Context.TraceID,
-			"correlation_id": exec.Context.CorrelationID,
-			"configuration":  exec.Context.Configuration,
+			"environment": exec.Input.Environment,
+			"context":     exec.Input.Context,
 		}
 	}
 
@@ -1843,7 +1832,7 @@ func (pde *PatternDiscoveryEngine) convertExecutionToWorkflowData(exec *engine.W
 // Enhanced empirical validation methods for pattern analysis
 
 // validateAlertPatternEmpirical performs empirical validation using statistical tests
-func (pde *PatternDiscoveryEngine) validateAlertPatternEmpirical(group *AlertClusterGroup, data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) validateAlertPatternEmpirical(group *AlertClusterGroup, data []*types.WorkflowExecutionData) float64 {
 	if len(group.Members) < 5 {
 		return 0.5 // Low confidence for small samples
 	}
@@ -1880,12 +1869,12 @@ func (pde *PatternDiscoveryEngine) validateAlertPatternEmpirical(group *AlertClu
 }
 
 // bootstrapSample creates a bootstrap sample from the data
-func (pde *PatternDiscoveryEngine) bootstrapSample(data []*engine.WorkflowExecutionData, size int) []*engine.WorkflowExecutionData {
+func (pde *PatternDiscoveryEngine) bootstrapSample(data []*types.WorkflowExecutionData, size int) []*types.WorkflowExecutionData {
 	if size > len(data) {
 		size = len(data)
 	}
 
-	sample := make([]*engine.WorkflowExecutionData, size)
+	sample := make([]*types.WorkflowExecutionData, size)
 	for i := 0; i < size; i++ {
 		randomIndex := int(time.Now().UnixNano()+int64(i)) % len(data)
 		sample[i] = data[randomIndex]
@@ -1894,7 +1883,7 @@ func (pde *PatternDiscoveryEngine) bootstrapSample(data []*engine.WorkflowExecut
 }
 
 // calculateBootstrapScore calculates a score for bootstrap sample
-func (pde *PatternDiscoveryEngine) calculateBootstrapScore(sample []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) calculateBootstrapScore(sample []*types.WorkflowExecutionData) float64 {
 	if len(sample) == 0 {
 		return 0.0
 	}
@@ -1910,7 +1899,7 @@ func (pde *PatternDiscoveryEngine) calculateBootstrapScore(sample []*engine.Work
 }
 
 // calculateChiSquareTest performs chi-square test for independence
-func (pde *PatternDiscoveryEngine) calculateChiSquareTest(data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) calculateChiSquareTest(data []*types.WorkflowExecutionData) float64 {
 	// Simplified chi-square calculation
 	// Group by alert type and success/failure
 	alertSuccessCount := make(map[string]int)
@@ -1963,13 +1952,13 @@ func (pde *PatternDiscoveryEngine) calculateChiSquareTest(data []*engine.Workflo
 }
 
 // calculateTemporalStability measures how stable patterns are across time
-func (pde *PatternDiscoveryEngine) calculateTemporalStability(data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) calculateTemporalStability(data []*types.WorkflowExecutionData) float64 {
 	if len(data) < 10 {
 		return 0.5
 	}
 
 	// Sort by timestamp
-	sorted := make([]*engine.WorkflowExecutionData, len(data))
+	sorted := make([]*types.WorkflowExecutionData, len(data))
 	copy(sorted, data)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Timestamp.Before(sorted[j].Timestamp)
@@ -1981,7 +1970,7 @@ func (pde *PatternDiscoveryEngine) calculateTemporalStability(data []*engine.Wor
 		return 0.5
 	}
 
-	windows := [][]*engine.WorkflowExecutionData{
+	windows := [][]*types.WorkflowExecutionData{
 		sorted[:windowSize],
 		sorted[windowSize : 2*windowSize],
 		sorted[2*windowSize:],
@@ -2044,7 +2033,7 @@ func (pde *PatternDiscoveryEngine) calculateEnhancedPatternConfidence(
 // Statistical validation methods for resource patterns
 
 // validateResourcePatternEmpirical validates resource utilization patterns
-func (pde *PatternDiscoveryEngine) validateResourcePatternEmpirical(pattern *shared.DiscoveredPattern, data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) validateResourcePatternEmpirical(pattern *shared.DiscoveredPattern, data []*types.WorkflowExecutionData) float64 {
 	if len(data) < 10 {
 		return 0.5
 	}
@@ -2177,16 +2166,6 @@ type ConfidenceCalibrator struct {
 	sampleCounts     map[float64]int     // Number of samples for each confidence bin
 	isCalibrated     bool
 	lastUpdated      time.Time
-}
-
-// NewConfidenceCalibrator creates a new confidence calibrator
-func NewConfidenceCalibrator() *ConfidenceCalibrator {
-	return &ConfidenceCalibrator{
-		calibrationCurve: make(map[float64]float64),
-		sampleCounts:     make(map[float64]int),
-		isCalibrated:     false,
-		lastUpdated:      time.Now(),
-	}
 }
 
 // calibratePatternConfidence calibrates confidence scores based on historical accuracy
@@ -2395,7 +2374,7 @@ func (pde *PatternDiscoveryEngine) updateCalibrationData(patternID string, predi
 // Reliability scoring for confidence validation
 
 // calculateConfidenceReliability calculates how reliable a confidence score is
-func (pde *PatternDiscoveryEngine) calculateConfidenceReliability(pattern *shared.DiscoveredPattern, data []*engine.WorkflowExecutionData) *ConfidenceReliabilityScore {
+func (pde *PatternDiscoveryEngine) calculateConfidenceReliability(pattern *shared.DiscoveredPattern, data []*types.WorkflowExecutionData) *ConfidenceReliabilityScore {
 	reliability := &ConfidenceReliabilityScore{
 		OverallReliability: 0.5,
 		DataQualityScore:   0.5,
@@ -2449,7 +2428,7 @@ func (pde *PatternDiscoveryEngine) calculateConfidenceReliability(pattern *share
 }
 
 // assessDataQuality assesses the quality of input data
-func (pde *PatternDiscoveryEngine) assessDataQuality(data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) assessDataQuality(data []*types.WorkflowExecutionData) float64 {
 	if len(data) == 0 {
 		return 0.0
 	}
@@ -2525,9 +2504,9 @@ func (pde *PatternDiscoveryEngine) calculateSampleSizeScore(sampleSize int) floa
 // Confidence interval calculation
 
 // calculateConfidenceInterval calculates confidence interval for pattern effectiveness
-func (pde *PatternDiscoveryEngine) calculateConfidenceInterval(pattern *shared.DiscoveredPattern, data []*engine.WorkflowExecutionData, confidenceLevel float64) *sharedtypes.ConfidenceInterval {
+func (pde *PatternDiscoveryEngine) calculateConfidenceInterval(pattern *shared.DiscoveredPattern, data []*types.WorkflowExecutionData, confidenceLevel float64) *types.ConfidenceInterval {
 	if len(data) < 5 {
-		return &sharedtypes.ConfidenceInterval{
+		return &types.ConfidenceInterval{
 			Level: confidenceLevel,
 			Lower: []float64{0.0},
 			Upper: []float64{1.0},
@@ -2559,7 +2538,7 @@ func (pde *PatternDiscoveryEngine) calculateConfidenceInterval(pattern *shared.D
 	lower = math.Max(0.0, lower)
 	upper = math.Min(1.0, upper)
 
-	return &sharedtypes.ConfidenceInterval{
+	return &types.ConfidenceInterval{
 		Level: confidenceLevel,
 		Lower: []float64{lower},
 		Upper: []float64{upper},
@@ -2627,7 +2606,7 @@ func (pde *PatternDiscoveryEngine) generateClusterName(group *AlertClusterGroup)
 	}
 
 	if len(group.AlertTypes) <= 3 {
-		return fmt.Sprintf("%s Cluster", strings.Join(group.AlertTypes[:minInt(3, len(group.AlertTypes))], "+"))
+		return fmt.Sprintf("%s Cluster", strings.Join(group.AlertTypes[:min(3, len(group.AlertTypes))], "+"))
 	}
 
 	return fmt.Sprintf("Multi-Alert Cluster (%d types)", len(group.AlertTypes))
@@ -2638,11 +2617,11 @@ func (pde *PatternDiscoveryEngine) generateClusterDescription(group *AlertCluste
 	desc := fmt.Sprintf("Cluster of %d alert occurrences", len(group.Members))
 
 	if len(group.AlertTypes) > 0 {
-		desc += fmt.Sprintf(" including %s alerts", strings.Join(group.AlertTypes[:minInt(2, len(group.AlertTypes))], ", "))
+		desc += fmt.Sprintf(" including %s alerts", strings.Join(group.AlertTypes[:min(2, len(group.AlertTypes))], ", "))
 	}
 
 	if len(group.Namespaces) > 0 {
-		desc += fmt.Sprintf(" in namespace(s) %s", strings.Join(group.Namespaces[:minInt(2, len(group.Namespaces))], ", "))
+		desc += fmt.Sprintf(" in namespace(s) %s", strings.Join(group.Namespaces[:min(2, len(group.Namespaces))], ", "))
 	}
 
 	desc += fmt.Sprintf(" with %.1f%% success rate", group.SuccessRate*100)
@@ -2722,15 +2701,15 @@ func (pde *PatternDiscoveryEngine) calculateClusterMetrics(group *AlertClusterGr
 }
 
 // groupAlertsByTimeWindows groups alerts into time windows
-func (pde *PatternDiscoveryEngine) groupAlertsByTimeWindows(data []*engine.WorkflowExecutionData, windowSize time.Duration) map[time.Time][]*engine.WorkflowExecutionData {
-	windows := make(map[time.Time][]*engine.WorkflowExecutionData)
+func (pde *PatternDiscoveryEngine) groupAlertsByTimeWindows(data []*types.WorkflowExecutionData, windowSize time.Duration) map[time.Time][]*types.WorkflowExecutionData {
+	windows := make(map[time.Time][]*types.WorkflowExecutionData)
 
 	for _, execution := range data {
 		// Round timestamp to window boundary
 		windowStart := execution.Timestamp.Truncate(windowSize)
 
 		if _, exists := windows[windowStart]; !exists {
-			windows[windowStart] = make([]*engine.WorkflowExecutionData, 0)
+			windows[windowStart] = make([]*types.WorkflowExecutionData, 0)
 		}
 		windows[windowStart] = append(windows[windowStart], execution)
 	}
@@ -2739,13 +2718,13 @@ func (pde *PatternDiscoveryEngine) groupAlertsByTimeWindows(data []*engine.Workf
 }
 
 // analyzeAlertSequence analyzes a sequence of alerts for patterns
-func (pde *PatternDiscoveryEngine) analyzeAlertSequence(alerts []*engine.WorkflowExecutionData) *AlertSequenceAnalysis {
+func (pde *PatternDiscoveryEngine) analyzeAlertSequence(alerts []*types.WorkflowExecutionData) *AlertSequenceAnalysis {
 	if len(alerts) < 2 {
 		return &AlertSequenceAnalysis{IsSignificant: false}
 	}
 
 	// Sort by timestamp
-	sortedAlerts := make([]*engine.WorkflowExecutionData, len(alerts))
+	sortedAlerts := make([]*types.WorkflowExecutionData, len(alerts))
 	copy(sortedAlerts, alerts)
 	sort.Slice(sortedAlerts, func(i, j int) bool {
 		return sortedAlerts[i].Timestamp.Before(sortedAlerts[j].Timestamp)
@@ -2806,7 +2785,7 @@ func (pde *PatternDiscoveryEngine) analyzeAlertSequence(alerts []*engine.Workflo
 }
 
 // calculateSeverityEscalation calculates severity escalation in alert sequence
-func (pde *PatternDiscoveryEngine) calculateSeverityEscalation(alerts []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) calculateSeverityEscalation(alerts []*types.WorkflowExecutionData) float64 {
 	if len(alerts) < 2 {
 		return 0.0
 	}
@@ -2838,7 +2817,7 @@ func (pde *PatternDiscoveryEngine) calculateSeverityEscalation(alerts []*engine.
 }
 
 // calculateResourceAffinity calculates resource affinity analysis
-func (pde *PatternDiscoveryEngine) calculateResourceAffinity(executions []*engine.WorkflowExecutionData) *ResourceAffinityAnalysis {
+func (pde *PatternDiscoveryEngine) calculateResourceAffinity(executions []*types.WorkflowExecutionData) *ResourceAffinityAnalysis {
 	if len(executions) == 0 {
 		return &ResourceAffinityAnalysis{IsSignificant: false}
 	}
@@ -2907,7 +2886,7 @@ func (pde *PatternDiscoveryEngine) calculateResourceAffinity(executions []*engin
 		ResourceType:       resourceType,
 		AlertTypes:         alertTypes,
 		AverageUtilization: avgUtilization,
-		UtilizationTrend: &sharedtypes.UtilizationTrend{
+		UtilizationTrend: &types.UtilizationTrend{
 			ResourceType:       resourceType,
 			TrendDirection:     "variable",
 			GrowthRate:         0.1, // Default values
@@ -2920,7 +2899,7 @@ func (pde *PatternDiscoveryEngine) calculateResourceAffinity(executions []*engin
 }
 
 // findSeverityEscalations finds severity escalation patterns
-func (pde *PatternDiscoveryEngine) findSeverityEscalations(data []*engine.WorkflowExecutionData) []*SeverityEscalationAnalysis {
+func (pde *PatternDiscoveryEngine) findSeverityEscalations(data []*types.WorkflowExecutionData) []*SeverityEscalationAnalysis {
 	escalations := make([]*SeverityEscalationAnalysis, 0)
 
 	if len(data) < 3 {
@@ -2944,13 +2923,13 @@ func (pde *PatternDiscoveryEngine) findSeverityEscalations(data []*engine.Workfl
 }
 
 // analyzeEscalationWindow analyzes a time window for escalation patterns
-func (pde *PatternDiscoveryEngine) analyzeEscalationWindow(alerts []*engine.WorkflowExecutionData, windowStart time.Time) *SeverityEscalationAnalysis {
+func (pde *PatternDiscoveryEngine) analyzeEscalationWindow(alerts []*types.WorkflowExecutionData, windowStart time.Time) *SeverityEscalationAnalysis {
 	if len(alerts) < 3 {
 		return nil
 	}
 
 	// Sort by timestamp
-	sorted := make([]*engine.WorkflowExecutionData, len(alerts))
+	sorted := make([]*types.WorkflowExecutionData, len(alerts))
 	copy(sorted, alerts)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Timestamp.Before(sorted[j].Timestamp)
@@ -3037,7 +3016,7 @@ func (pde *PatternDiscoveryEngine) severityToValue(severity string) float64 {
 }
 
 // crossValidatePattern performs cross-validation on a discovered pattern
-func (pde *PatternDiscoveryEngine) crossValidatePattern(pattern *shared.DiscoveredPattern, data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) crossValidatePattern(pattern *shared.DiscoveredPattern, data []*types.WorkflowExecutionData) float64 {
 	if len(data) < 5 {
 		return 0.5 // Default confidence for insufficient data
 	}
@@ -3074,7 +3053,7 @@ func (pde *PatternDiscoveryEngine) crossValidatePattern(pattern *shared.Discover
 }
 
 // executionMatchesPattern checks if an execution matches a discovered pattern
-func (pde *PatternDiscoveryEngine) executionMatchesPattern(execution *engine.WorkflowExecutionData, pattern *shared.DiscoveredPattern) bool {
+func (pde *PatternDiscoveryEngine) executionMatchesPattern(execution *types.WorkflowExecutionData, pattern *shared.DiscoveredPattern) bool {
 	switch strings.ToLower(string(pattern.Type)) {
 	case "alert":
 		return pde.executionMatchesAlertPattern(execution, pattern)
@@ -3088,7 +3067,7 @@ func (pde *PatternDiscoveryEngine) executionMatchesPattern(execution *engine.Wor
 }
 
 // executionMatchesAlertPattern checks if execution matches alert pattern
-func (pde *PatternDiscoveryEngine) executionMatchesAlertPattern(execution *engine.WorkflowExecutionData, pattern *shared.DiscoveredPattern) bool {
+func (pde *PatternDiscoveryEngine) executionMatchesAlertPattern(execution *types.WorkflowExecutionData, pattern *shared.DiscoveredPattern) bool {
 	alert := pde.extractAlertFromMetadata(execution)
 	if alert == nil {
 		return false
@@ -3105,7 +3084,7 @@ func (pde *PatternDiscoveryEngine) executionMatchesAlertPattern(execution *engin
 }
 
 // executionMatchesTemporalPattern checks if execution matches temporal pattern
-func (pde *PatternDiscoveryEngine) executionMatchesTemporalPattern(execution *engine.WorkflowExecutionData, pattern *shared.DiscoveredPattern) bool {
+func (pde *PatternDiscoveryEngine) executionMatchesTemporalPattern(execution *types.WorkflowExecutionData, pattern *shared.DiscoveredPattern) bool {
 	if len(pattern.TemporalPatterns) == 0 {
 		return false
 	}
@@ -3123,7 +3102,7 @@ func (pde *PatternDiscoveryEngine) executionMatchesTemporalPattern(execution *en
 }
 
 // executionMatchesResourcePattern checks if execution matches resource pattern
-func (pde *PatternDiscoveryEngine) executionMatchesResourcePattern(execution *engine.WorkflowExecutionData, pattern *shared.DiscoveredPattern) bool {
+func (pde *PatternDiscoveryEngine) executionMatchesResourcePattern(execution *types.WorkflowExecutionData, pattern *shared.DiscoveredPattern) bool {
 	// Check if execution has resource metrics
 	hasResourceMetrics := false
 	for key := range execution.Metrics {
@@ -3165,7 +3144,7 @@ type ResourceAffinityAnalysis struct {
 	ResourceType       string
 	AlertTypes         []string
 	AverageUtilization float64
-	UtilizationTrend   *sharedtypes.UtilizationTrend
+	UtilizationTrend   *types.UtilizationTrend
 }
 
 type SeverityEscalationAnalysis struct {
@@ -3186,17 +3165,17 @@ type SeverityEscalationAnalysis struct {
 
 // PatternAccuracyTracker tracks the accuracy of discovered patterns over time
 type PatternAccuracyTracker struct {
-	PatternID          string                  `json:"pattern_id"`
-	CreatedAt          time.Time               `json:"created_at"`
-	TotalPredictions   int                     `json:"total_predictions"`
-	CorrectPredictions int                     `json:"correct_predictions"`
-	FalsePositives     int                     `json:"false_positives"`
-	FalseNegatives     int                     `json:"false_negatives"`
-	ConfidenceHistory  []ConfidenceDataPoint   `json:"confidence_history"`
-	AccuracyMetrics    *PatternAccuracyMetrics `json:"accuracy_metrics"`
-	ValidationResults  []*ValidationResult     `json:"validation_results"`
-	LastValidated      time.Time               `json:"last_validated"`
-	PerformanceTrend   string                  `json:"performance_trend"` // "improving", "declining", "stable"
+	PatternID          string                     `json:"pattern_id"`
+	CreatedAt          time.Time                  `json:"created_at"`
+	TotalPredictions   int                        `json:"total_predictions"`
+	CorrectPredictions int                        `json:"correct_predictions"`
+	FalsePositives     int                        `json:"false_positives"`
+	FalseNegatives     int                        `json:"false_negatives"`
+	ConfidenceHistory  []ConfidenceDataPoint      `json:"confidence_history"`
+	AccuracyMetrics    *PatternAccuracyMetrics    `json:"accuracy_metrics"`
+	ValidationResults  []*PatternValidationResult `json:"validation_results"`
+	LastValidated      time.Time                  `json:"last_validated"`
+	PerformanceTrend   string                     `json:"performance_trend"` // "improving", "declining", "stable"
 }
 
 // ConfidenceDataPoint represents a point in confidence tracking
@@ -3232,7 +3211,7 @@ func (pde *PatternDiscoveryEngine) startAccuracyTracking(pattern *shared.Discove
 		FalseNegatives:     0,
 		ConfidenceHistory:  make([]ConfidenceDataPoint, 0),
 		AccuracyMetrics:    &PatternAccuracyMetrics{},
-		ValidationResults:  make([]*ValidationResult, 0),
+		ValidationResults:  make([]*PatternValidationResult, 0),
 		LastValidated:      time.Now(),
 		PerformanceTrend:   "stable",
 	}
@@ -3525,10 +3504,10 @@ func (pde *PatternDiscoveryEngine) updatePerformanceTrend(tracker *PatternAccura
 }
 
 // performPatternValidation performs comprehensive validation of a pattern
-func (pde *PatternDiscoveryEngine) performPatternValidation(pattern *shared.DiscoveredPattern, data []*engine.WorkflowExecutionData) *ValidationResult {
+func (pde *PatternDiscoveryEngine) performPatternValidation(pattern *shared.DiscoveredPattern, data []*types.WorkflowExecutionData) *PatternValidationResult {
 	validationID := fmt.Sprintf("validation-%s-%d", pattern.ID, time.Now().Unix())
 
-	result := &ValidationResult{
+	result := &PatternValidationResult{
 		RuleID:    validationID,
 		Type:      ValidationType("comprehensive"),
 		Passed:    false,
@@ -3578,7 +3557,7 @@ func (pde *PatternDiscoveryEngine) performPatternValidation(pattern *shared.Disc
 }
 
 // performCrossValidation performs k-fold cross-validation
-func (pde *PatternDiscoveryEngine) performCrossValidation(pattern *shared.DiscoveredPattern, data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) performCrossValidation(pattern *shared.DiscoveredPattern, data []*types.WorkflowExecutionData) float64 {
 	k := 5 // 5-fold cross-validation
 	if len(data) < k {
 		return 0.5 // Default score for insufficient data
@@ -3613,7 +3592,7 @@ func (pde *PatternDiscoveryEngine) performCrossValidation(pattern *shared.Discov
 }
 
 // performHoldoutValidation performs holdout validation (80/20 split)
-func (pde *PatternDiscoveryEngine) performHoldoutValidation(pattern *shared.DiscoveredPattern, data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) performHoldoutValidation(pattern *shared.DiscoveredPattern, data []*types.WorkflowExecutionData) float64 {
 	if len(data) < 10 {
 		return 0.5
 	}
@@ -3633,13 +3612,13 @@ func (pde *PatternDiscoveryEngine) performHoldoutValidation(pattern *shared.Disc
 }
 
 // performTemporalValidation performs temporal validation (patterns should work across time)
-func (pde *PatternDiscoveryEngine) performTemporalValidation(pattern *shared.DiscoveredPattern, data []*engine.WorkflowExecutionData) float64 {
+func (pde *PatternDiscoveryEngine) performTemporalValidation(pattern *shared.DiscoveredPattern, data []*types.WorkflowExecutionData) float64 {
 	if len(data) < 20 {
 		return 0.5
 	}
 
 	// Sort data by timestamp
-	sortedData := make([]*engine.WorkflowExecutionData, len(data))
+	sortedData := make([]*types.WorkflowExecutionData, len(data))
 	copy(sortedData, data)
 	sort.Slice(sortedData, func(i, j int) bool {
 		return sortedData[i].Timestamp.Before(sortedData[j].Timestamp)

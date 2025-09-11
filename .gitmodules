@@ -1,0 +1,4 @@
+[submodule "vendor/holmesgpt"]
+	path = vendor/holmesgpt
+	url = https://github.com/robusta-dev/holmesgpt.git
+	branch = master

@@ -12,5 +12,5 @@ type TestEnvironment = testenv.TestEnvironment
 
 var (
 	SetupTestEnvironment = testenv.SetupTestEnvironment
-	SetupFakeEnvironment = testenv.SetupFakeEnvironment
+	SetupEnvironment     = testenv.SetupEnvironment
 )

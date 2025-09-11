@@ -71,6 +71,8 @@ func (c *ComprehensiveStateManager) SetupTestIsolation() {
 		c.dbHelper.dbUtils, err = NewIsolatedDatabaseTestUtils(c.logger, c.dbHelper.strategy)
 		if err != nil {
 			c.logger.WithError(err).Error("Failed to initialize database isolation")
+			// Set dbHelper to nil to indicate database is unavailable
+			c.dbHelper = nil
 		}
 	}
 }
@@ -113,8 +115,8 @@ type StateIsolationBuilder struct {
 	manager   *ComprehensiveStateManager
 }
 
-// NewIsolatedTestSuiteV2 creates a new state isolation builder
-func NewIsolatedTestSuiteV2(suiteName string) *StateIsolationBuilder {
+// NewTestSuite creates a new state isolation builder
+func NewTestSuite(suiteName string) *StateIsolationBuilder {
 	logger := logrus.New()
 	logger.SetLevel(logrus.InfoLevel)
 
@@ -169,7 +171,7 @@ type TestIsolationPatterns struct{}
 
 // DatabaseTransactionIsolatedSuite creates a database transaction isolated suite
 func (t *TestIsolationPatterns) DatabaseTransactionIsolatedSuite(suiteName string) *ComprehensiveStateManager {
-	return NewIsolatedTestSuiteV2(suiteName).
+	return NewTestSuite(suiteName).
 		WithDatabaseIsolation(TransactionIsolation).
 		WithStandardLLMEnvironment().
 		Build()
@@ -177,7 +179,7 @@ func (t *TestIsolationPatterns) DatabaseTransactionIsolatedSuite(suiteName strin
 
 // FullyIsolatedSuite creates a fully isolated test suite
 func (t *TestIsolationPatterns) FullyIsolatedSuite(suiteName string) *ComprehensiveStateManager {
-	return NewIsolatedTestSuiteV2(suiteName).
+	return NewTestSuite(suiteName).
 		WithDatabaseIsolation(SchemaIsolation).
 		WithEnvironmentIsolation(StandardIntegrationTestEnvironmentVariables()...).
 		Build()
@@ -185,7 +187,7 @@ func (t *TestIsolationPatterns) FullyIsolatedSuite(suiteName string) *Comprehens
 
 // LightweightIsolatedSuite creates a lightweight isolated suite
 func (t *TestIsolationPatterns) LightweightIsolatedSuite(suiteName string) *ComprehensiveStateManager {
-	return NewIsolatedTestSuiteV2(suiteName).
+	return NewTestSuite(suiteName).
 		WithDatabaseIsolation(TableTruncation).
 		WithStandardLLMEnvironment().
 		Build()
