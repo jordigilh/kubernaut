@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -20,7 +19,6 @@ type WorkflowSimulator struct {
 	timeAccelerator *TimeAccelerator
 	failureInjector *FailureInjector
 	log             *logrus.Logger
-	mu              sync.RWMutex
 	simulations     map[string]*ActiveSimulation
 }
 
@@ -127,7 +125,7 @@ func NewWorkflowSimulator(config *SimulationConfig, log *logrus.Logger) *Workflo
 }
 
 // SimulateExecution runs workflow in simulated environment
-func (ws *WorkflowSimulator) SimulateExecution(ctx context.Context, template *WorkflowTemplate, scenario *WorkflowSimulationScenario) (*WorkflowSimulationResult, error) {
+func (ws *WorkflowSimulator) SimulateExecution(ctx context.Context, template *ExecutableTemplate, scenario *WorkflowSimulationScenario) (*WorkflowSimulationResult, error) {
 	// Input validation
 	if template == nil {
 		return nil, fmt.Errorf("workflow template cannot be nil")
@@ -190,7 +188,7 @@ func (ws *WorkflowSimulator) SimulateExecution(ctx context.Context, template *Wo
 }
 
 // StressTest validates workflow under various load conditions
-func (ws *WorkflowSimulator) StressTest(ctx context.Context, template *WorkflowTemplate, loadScenarios []*LoadScenario) (*StressTestResult, error) {
+func (ws *WorkflowSimulator) StressTest(ctx context.Context, template *ExecutableTemplate, loadScenarios []*LoadScenario) (*StressTestResult, error) {
 	// Input validation
 	if template == nil {
 		return nil, fmt.Errorf("workflow template cannot be nil")
@@ -255,7 +253,7 @@ func (ws *WorkflowSimulator) StressTest(ctx context.Context, template *WorkflowT
 }
 
 // FailureInjection tests workflow resilience
-func (ws *WorkflowSimulator) FailureInjection(ctx context.Context, template *WorkflowTemplate, failures []*FailureScenario) (*ResilienceTestResult, error) {
+func (ws *WorkflowSimulator) FailureInjection(ctx context.Context, template *ExecutableTemplate, failures []*FailureScenario) (*ResilienceTestResult, error) {
 	ws.log.WithFields(logrus.Fields{
 		"template_id":       template.ID,
 		"failure_scenarios": len(failures),
@@ -317,7 +315,7 @@ func (ws *WorkflowSimulator) FailureInjection(ctx context.Context, template *Wor
 }
 
 // ResourceImpactAnalysis models resource usage patterns
-func (ws *WorkflowSimulator) ResourceImpactAnalysis(ctx context.Context, template *WorkflowTemplate) (*ResourceImpactReport, error) {
+func (ws *WorkflowSimulator) ResourceImpactAnalysis(ctx context.Context, template *ExecutableTemplate) (*ResourceImpactReport, error) {
 	ws.log.WithFields(logrus.Fields{
 		"template_id": template.ID,
 	}).Info("Starting resource impact analysis")
@@ -361,7 +359,7 @@ func (ws *WorkflowSimulator) ResourceImpactAnalysis(ctx context.Context, templat
 
 // Helper methods for simulation execution
 
-func (ws *WorkflowSimulator) createSimulationContext(ctx context.Context, template *WorkflowTemplate, scenario *WorkflowSimulationScenario) (*SimulationContext, error) {
+func (ws *WorkflowSimulator) createSimulationContext(ctx context.Context, template *ExecutableTemplate, scenario *WorkflowSimulationScenario) (*SimulationContext, error) {
 	simCtx := &SimulationContext{
 		ID:              fmt.Sprintf("sim-%s-%d", template.ID, time.Now().Unix()),
 		Template:        template,
@@ -497,7 +495,7 @@ func (ws *WorkflowSimulator) applyScenarioConfiguration(simCtx *SimulationContex
 	}).Debug("Applied scenario configuration")
 }
 
-func (ws *WorkflowSimulator) executeWorkflowSimulation(simCtx *SimulationContext, template *WorkflowTemplate) (*WorkflowSimulationResult, error) {
+func (ws *WorkflowSimulator) executeWorkflowSimulation(simCtx *SimulationContext, template *ExecutableTemplate) (*WorkflowSimulationResult, error) {
 	result := &WorkflowSimulationResult{
 		ID:          simCtx.ID,
 		StepResults: make([]*StepSimulationResult, 0),
@@ -540,7 +538,7 @@ func (ws *WorkflowSimulator) executeWorkflowSimulation(simCtx *SimulationContext
 	return result, nil
 }
 
-func (ws *WorkflowSimulator) simulateWorkflowStep(simCtx *SimulationContext, step *WorkflowStep) (*StepSimulationResult, error) {
+func (ws *WorkflowSimulator) simulateWorkflowStep(simCtx *SimulationContext, step *ExecutableWorkflowStep) (*StepSimulationResult, error) {
 	stepResult := &StepSimulationResult{
 		StepID:            step.ID,
 		StepName:          step.Name,
@@ -562,7 +560,7 @@ func (ws *WorkflowSimulator) simulateWorkflowStep(simCtx *SimulationContext, ste
 	}
 }
 
-func (ws *WorkflowSimulator) simulateActionStep(simCtx *SimulationContext, step *WorkflowStep) (*StepSimulationResult, error) {
+func (ws *WorkflowSimulator) simulateActionStep(simCtx *SimulationContext, step *ExecutableWorkflowStep) (*StepSimulationResult, error) {
 	if step.Action == nil {
 		return nil, fmt.Errorf("action step %s has no action defined", step.ID)
 	}
@@ -594,7 +592,7 @@ func (ws *WorkflowSimulator) simulateActionStep(simCtx *SimulationContext, step 
 	return stepResult, nil
 }
 
-func (ws *WorkflowSimulator) simulateKubernetesAction(simCtx *SimulationContext, step *WorkflowStep, stepResult *StepSimulationResult) (*StepSimulationResult, error) {
+func (ws *WorkflowSimulator) simulateKubernetesAction(simCtx *SimulationContext, step *ExecutableWorkflowStep, stepResult *StepSimulationResult) (*StepSimulationResult, error) {
 	action := step.Action.Parameters["action"].(string)
 
 	switch action {
@@ -615,7 +613,7 @@ func (ws *WorkflowSimulator) simulateKubernetesAction(simCtx *SimulationContext,
 	return stepResult, nil
 }
 
-func (ws *WorkflowSimulator) simulateScaleDeployment(simCtx *SimulationContext, step *WorkflowStep, stepResult *StepSimulationResult) (*StepSimulationResult, error) {
+func (ws *WorkflowSimulator) simulateScaleDeployment(simCtx *SimulationContext, step *ExecutableWorkflowStep, stepResult *StepSimulationResult) (*StepSimulationResult, error) {
 	target := step.Action.Target
 	replicas := step.Action.Parameters["replicas"].(int)
 
@@ -659,7 +657,7 @@ func (ws *WorkflowSimulator) simulateScaleDeployment(simCtx *SimulationContext, 
 
 type SimulationContext struct {
 	ID              string
-	Template        *WorkflowTemplate
+	Template        *ExecutableTemplate
 	Scenario        *WorkflowSimulationScenario
 	StartTime       time.Time
 	State           *ClusterState
@@ -820,7 +818,7 @@ func (ws *WorkflowSimulator) generateSimulationResults(ctx context.Context, resu
 }
 
 // executeStressScenario executes a single stress test scenario
-func (ws *WorkflowSimulator) executeStressScenario(ctx context.Context, template *WorkflowTemplate, scenario *LoadScenario) (*StressTestScenarioResult, error) {
+func (ws *WorkflowSimulator) executeStressScenario(ctx context.Context, template *ExecutableTemplate, scenario *LoadScenario) (*StressTestScenarioResult, error) {
 	startTime := time.Now()
 
 	result := &StressTestScenarioResult{
@@ -1429,7 +1427,7 @@ func (ws *WorkflowSimulator) identifyResourceConflicts(result *WorkflowSimulatio
 }
 
 // calculateScalingRequirements calculates scaling requirements
-func (ws *WorkflowSimulator) calculateScalingRequirements(template *WorkflowTemplate, report *ResourceImpactReport) map[string]interface{} {
+func (ws *WorkflowSimulator) calculateScalingRequirements(template *ExecutableTemplate, report *ResourceImpactReport) map[string]interface{} {
 	// Calculate realistic scaling requirements based on template complexity and impact analysis
 	cpuIncrease := "25%"    // Default conservative increase
 	memoryIncrease := "20%" // Default conservative increase
@@ -1512,7 +1510,7 @@ func (ws *WorkflowSimulator) calculateScalingRequirements(template *WorkflowTemp
 }
 
 // estimateResourceCosts estimates resource costs
-func (ws *WorkflowSimulator) estimateResourceCosts(template *WorkflowTemplate, consumption map[string]interface{}) map[string]interface{} {
+func (ws *WorkflowSimulator) estimateResourceCosts(template *ExecutableTemplate, consumption map[string]interface{}) map[string]interface{} {
 	// Base cost rates (simulated cloud pricing)
 	cpuCostPerCoreHour := 0.05    // $0.05 per core hour
 	memoryCostPerGBHour := 0.01   // $0.01 per GB hour
@@ -1570,7 +1568,7 @@ func (ws *WorkflowSimulator) estimateResourceCosts(template *WorkflowTemplate, c
 }
 
 // calculateUtilizationEfficiency calculates utilization efficiency
-func (ws *WorkflowSimulator) calculateUtilizationEfficiency(template *WorkflowTemplate, consumption, peak map[string]interface{}) float64 {
+func (ws *WorkflowSimulator) calculateUtilizationEfficiency(template *ExecutableTemplate, consumption, peak map[string]interface{}) float64 {
 	// Calculate efficiency based on resource utilization patterns
 	baseEfficiency := 0.70 // Start with 70% base efficiency
 
@@ -1906,7 +1904,7 @@ func (ws *WorkflowSimulator) isDestructiveAction(actionType string) bool {
 }
 
 // updateSimulationState updates the simulation state
-func (ws *WorkflowSimulator) updateSimulationState(simCtx *SimulationContext, step *WorkflowStep) {
+func (ws *WorkflowSimulator) updateSimulationState(simCtx *SimulationContext, step *ExecutableWorkflowStep) {
 	ws.log.WithFields(logrus.Fields{
 		"step_id":       step.ID,
 		"simulation_id": simCtx.ID,
@@ -2035,7 +2033,7 @@ func (ws *WorkflowSimulator) simulationSince(start time.Time) time.Duration {
 // Additional missing simulation methods
 
 // simulateConditionStep simulates a condition step
-func (ws *WorkflowSimulator) simulateConditionStep(simCtx *SimulationContext, step *WorkflowStep) (*StepSimulationResult, error) {
+func (ws *WorkflowSimulator) simulateConditionStep(simCtx *SimulationContext, step *ExecutableWorkflowStep) (*StepSimulationResult, error) {
 	ws.log.WithFields(logrus.Fields{
 		"simulation_id": simCtx.ID,
 		"step_id":       step.ID,
@@ -2051,7 +2049,7 @@ func (ws *WorkflowSimulator) simulateConditionStep(simCtx *SimulationContext, st
 }
 
 // simulateWaitStep simulates a wait step
-func (ws *WorkflowSimulator) simulateWaitStep(simCtx *SimulationContext, step *WorkflowStep) (*StepSimulationResult, error) {
+func (ws *WorkflowSimulator) simulateWaitStep(simCtx *SimulationContext, step *ExecutableWorkflowStep) (*StepSimulationResult, error) {
 	ws.log.WithFields(logrus.Fields{
 		"simulation_id": simCtx.ID,
 		"step_id":       step.ID,
@@ -2139,7 +2137,7 @@ func (ws *WorkflowSimulator) simulateNotificationAction(result *StepSimulationRe
 	// Extract notification details from action
 	notificationType := "email" // Default
 	message := "Workflow notification"
-	recipient := "admin@example.com"
+	recipient := "admin@kubernaut.io"
 
 	if action.Parameters != nil {
 		if nType, ok := action.Parameters["type"].(string); ok {
@@ -2316,7 +2314,7 @@ func (ws *WorkflowSimulator) increasePercentage(original string, increaseBy int)
 }
 
 // generateScalingRationale generates rationale for scaling recommendations
-func (ws *WorkflowSimulator) generateScalingRationale(template *WorkflowTemplate, report *ResourceImpactReport) string {
+func (ws *WorkflowSimulator) generateScalingRationale(template *ExecutableTemplate, report *ResourceImpactReport) string {
 	rationale := "Scaling recommendation based on: "
 	reasons := make([]string, 0)
 

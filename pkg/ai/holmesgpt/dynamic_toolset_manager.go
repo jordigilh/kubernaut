@@ -1,0 +1,518 @@
+package holmesgpt
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
+	"github.com/sirupsen/logrus"
+)
+
+// DynamicToolsetManager manages dynamic toolset configuration based on discovered services
+// Business Requirement: BR-HOLMES-022 - Generate appropriate toolset configurations
+type DynamicToolsetManager struct {
+	serviceDiscovery *k8s.ServiceDiscovery
+	templateEngine   *ToolsetTemplateEngine
+	configCache      *ToolsetConfigCache
+	generators       map[string]ToolsetGenerator
+	eventHandlers    []ToolsetEventHandler
+	log              *logrus.Logger
+	mu               sync.RWMutex
+	stopChannel      chan struct{}
+}
+
+// ToolsetConfig represents a dynamic toolset configuration for HolmesGPT
+// Business Requirement: BR-HOLMES-022 - Service-specific toolset configurations
+type ToolsetConfig struct {
+	Name         string            `json:"name"`
+	ServiceType  string            `json:"service_type"`
+	Description  string            `json:"description"`
+	Version      string            `json:"version"`
+	Endpoints    map[string]string `json:"endpoints"`
+	Capabilities []string          `json:"capabilities"`
+	Tools        []HolmesGPTTool   `json:"tools"`
+	HealthCheck  HealthCheckConfig `json:"health_check"`
+	Priority     int               `json:"priority"`
+	Enabled      bool              `json:"enabled"`
+	ServiceMeta  ServiceMetadata   `json:"service_meta"`
+	LastUpdated  time.Time         `json:"last_updated"`
+}
+
+// HolmesGPTTool represents a tool definition for HolmesGPT
+type HolmesGPTTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Command     string          `json:"command"`
+	Parameters  []ToolParameter `json:"parameters,omitempty"`
+	Examples    []ToolExample   `json:"examples,omitempty"`
+	Category    string          `json:"category"`
+}
+
+// ToolParameter represents a tool parameter
+type ToolParameter struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"` // "string", "int", "bool", "array"
+	Required    bool   `json:"required"`
+	Default     string `json:"default,omitempty"`
+}
+
+// ToolExample represents a tool usage example
+type ToolExample struct {
+	Description string `json:"description"`
+	Command     string `json:"command"`
+	Expected    string `json:"expected"`
+}
+
+// ServiceMetadata contains metadata about the discovered service
+type ServiceMetadata struct {
+	Namespace    string            `json:"namespace"`
+	ServiceName  string            `json:"service_name"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
+	DiscoveredAt time.Time         `json:"discovered_at"`
+}
+
+// HealthCheckConfig represents health check configuration for toolsets
+type HealthCheckConfig struct {
+	Endpoint string        `json:"endpoint"`
+	Interval time.Duration `json:"interval"`
+	Timeout  time.Duration `json:"timeout"`
+	Retries  int           `json:"retries"`
+}
+
+// ToolsetGenerator interface for generating service-specific toolsets
+type ToolsetGenerator interface {
+	Generate(ctx context.Context, service *k8s.DetectedService) (*ToolsetConfig, error)
+	GetServiceType() string
+	GetPriority() int
+}
+
+// ToolsetEventHandler interface for handling toolset configuration changes
+// Business Requirement: BR-HOLMES-020 - Real-time toolset configuration updates
+type ToolsetEventHandler interface {
+	OnToolsetAdded(config *ToolsetConfig) error
+	OnToolsetUpdated(config *ToolsetConfig) error
+	OnToolsetRemoved(config *ToolsetConfig) error
+}
+
+// NewDynamicToolsetManager creates a new dynamic toolset manager
+// Following development guideline: reuse existing patterns
+func NewDynamicToolsetManager(
+	serviceDiscovery *k8s.ServiceDiscovery,
+	log *logrus.Logger,
+) *DynamicToolsetManager {
+	dtm := &DynamicToolsetManager{
+		serviceDiscovery: serviceDiscovery,
+		templateEngine:   NewToolsetTemplateEngine(log),
+		configCache:      NewToolsetConfigCache(10*time.Minute, log),
+		generators:       make(map[string]ToolsetGenerator),
+		eventHandlers:    make([]ToolsetEventHandler, 0),
+		log:              log,
+		stopChannel:      make(chan struct{}),
+	}
+
+	// Register default toolset generators
+	// Business Requirement: BR-HOLMES-023 - Toolset configuration templates
+	dtm.registerDefaultGenerators()
+
+	return dtm
+}
+
+// Start starts the dynamic toolset manager
+func (dtm *DynamicToolsetManager) Start(ctx context.Context) error {
+	dtm.log.Info("Starting dynamic toolset manager")
+
+	// Initial toolset generation from discovered services
+	if err := dtm.generateInitialToolsets(ctx); err != nil {
+		dtm.log.WithError(err).Error("Failed to generate initial toolsets")
+		return fmt.Errorf("failed to generate initial toolsets: %w", err)
+	}
+
+	// Start listening for service discovery events
+	go dtm.handleServiceEvents(ctx)
+
+	dtm.log.Info("Dynamic toolset manager started successfully")
+	return nil
+}
+
+// Stop stops the dynamic toolset manager
+func (dtm *DynamicToolsetManager) Stop() {
+	dtm.log.Info("Stopping dynamic toolset manager")
+	close(dtm.stopChannel)
+}
+
+// GetAvailableToolsets returns all currently available toolsets
+// Business Requirement: BR-HOLMES-025 - Toolset configuration API endpoints
+func (dtm *DynamicToolsetManager) GetAvailableToolsets() []*ToolsetConfig {
+	return dtm.configCache.GetAllToolsets()
+}
+
+// GetToolsetByServiceType returns toolsets for a specific service type
+func (dtm *DynamicToolsetManager) GetToolsetByServiceType(serviceType string) []*ToolsetConfig {
+	return dtm.configCache.GetToolsetsByType(serviceType)
+}
+
+// GetToolsetConfig returns a specific toolset configuration
+func (dtm *DynamicToolsetManager) GetToolsetConfig(name string) *ToolsetConfig {
+	return dtm.configCache.GetToolset(name)
+}
+
+// AddEventHandler adds a toolset event handler
+func (dtm *DynamicToolsetManager) AddEventHandler(handler ToolsetEventHandler) {
+	dtm.mu.Lock()
+	defer dtm.mu.Unlock()
+	dtm.eventHandlers = append(dtm.eventHandlers, handler)
+}
+
+// RegisterGenerator registers a toolset generator for a service type
+func (dtm *DynamicToolsetManager) RegisterGenerator(generator ToolsetGenerator) {
+	if generator == nil {
+		return
+	}
+
+	dtm.mu.Lock()
+	defer dtm.mu.Unlock()
+
+	dtm.generators[generator.GetServiceType()] = generator
+	dtm.log.WithField("service_type", generator.GetServiceType()).Debug("Registered toolset generator")
+}
+
+// generateInitialToolsets generates toolsets from currently discovered services
+func (dtm *DynamicToolsetManager) generateInitialToolsets(ctx context.Context) error {
+	discoveredServices := dtm.serviceDiscovery.GetDiscoveredServices()
+
+	dtm.log.WithField("service_count", len(discoveredServices)).Info("Generating initial toolsets")
+
+	// Always include baseline toolsets (Kubernetes, internet)
+	// Business Requirement: BR-HOLMES-028 - Maintain baseline toolsets
+	baselineToolsets := dtm.generateBaselineToolsets()
+	for _, toolset := range baselineToolsets {
+		dtm.configCache.SetToolset(toolset)
+		dtm.notifyEventHandlers("added", toolset)
+	}
+
+	// Generate toolsets for discovered services
+	var generatedCount int
+	for _, service := range discoveredServices {
+		if service.Available {
+			toolset, err := dtm.generateToolsetForService(ctx, service)
+			if err != nil {
+				dtm.log.WithError(err).WithField("service", service.Name).Error("Failed to generate toolset for service")
+				continue
+			}
+
+			if toolset != nil {
+				dtm.configCache.SetToolset(toolset)
+				dtm.notifyEventHandlers("added", toolset)
+				generatedCount++
+			}
+		}
+	}
+
+	dtm.log.WithField("generated_count", generatedCount).Info("Initial toolset generation completed")
+	return nil
+}
+
+// generateToolsetForService generates a toolset for a specific service
+func (dtm *DynamicToolsetManager) generateToolsetForService(ctx context.Context, service *k8s.DetectedService) (*ToolsetConfig, error) {
+	dtm.mu.RLock()
+	generator, exists := dtm.generators[service.ServiceType]
+	dtm.mu.RUnlock()
+
+	if !exists {
+		dtm.log.WithField("service_type", service.ServiceType).Debug("No generator found for service type")
+		return nil, nil
+	}
+
+	toolset, err := generator.Generate(ctx, service)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate toolset for service %s: %w", service.Name, err)
+	}
+
+	if toolset != nil {
+		toolset.LastUpdated = time.Now()
+		dtm.log.WithFields(logrus.Fields{
+			"service":      service.Name,
+			"service_type": service.ServiceType,
+			"toolset_name": toolset.Name,
+		}).Debug("Generated toolset for service")
+	}
+
+	return toolset, nil
+}
+
+// handleServiceEvents listens for service discovery events and updates toolsets
+// Business Requirement: BR-HOLMES-020 - Real-time toolset configuration updates
+func (dtm *DynamicToolsetManager) handleServiceEvents(ctx context.Context) {
+	eventChannel := dtm.serviceDiscovery.GetEventChannel()
+
+	for {
+		select {
+		case event := <-eventChannel:
+			if err := dtm.processServiceEvent(ctx, event); err != nil {
+				dtm.log.WithError(err).WithField("event_type", event.Type).Error("Failed to process service event")
+			}
+
+		case <-dtm.stopChannel:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// processServiceEvent processes a single service event
+func (dtm *DynamicToolsetManager) processServiceEvent(ctx context.Context, event k8s.ServiceEvent) error {
+	switch event.Type {
+	case "created", "updated":
+		return dtm.handleServiceUpdated(ctx, event.Service)
+	case "deleted":
+		return dtm.handleServiceDeleted(event.Service)
+	default:
+		dtm.log.WithField("event_type", event.Type).Debug("Unknown service event type")
+		return nil
+	}
+}
+
+// handleServiceUpdated handles service creation or update events
+func (dtm *DynamicToolsetManager) handleServiceUpdated(ctx context.Context, service *k8s.DetectedService) error {
+	if !service.Available {
+		// If service is not available, remove its toolset
+		return dtm.handleServiceDeleted(service)
+	}
+
+	// Generate or update toolset for the service
+	toolset, err := dtm.generateToolsetForService(ctx, service)
+	if err != nil {
+		return fmt.Errorf("failed to generate toolset for updated service: %w", err)
+	}
+
+	if toolset == nil {
+		return nil // No toolset generated for this service type
+	}
+
+	// Check if toolset already exists
+	existingToolset := dtm.configCache.GetToolset(toolset.Name)
+
+	dtm.configCache.SetToolset(toolset)
+
+	if existingToolset == nil {
+		// New toolset
+		dtm.log.WithFields(logrus.Fields{
+			"service":      service.Name,
+			"toolset_name": toolset.Name,
+		}).Info("Added new toolset for service")
+		dtm.notifyEventHandlers("added", toolset)
+	} else {
+		// Updated toolset
+		dtm.log.WithFields(logrus.Fields{
+			"service":      service.Name,
+			"toolset_name": toolset.Name,
+		}).Info("Updated toolset for service")
+		dtm.notifyEventHandlers("updated", toolset)
+	}
+
+	return nil
+}
+
+// handleServiceDeleted handles service deletion events
+func (dtm *DynamicToolsetManager) handleServiceDeleted(service *k8s.DetectedService) error {
+	// Find and remove toolsets for this service
+	toolsetName := dtm.getToolsetNameForService(service)
+	existingToolset := dtm.configCache.GetToolset(toolsetName)
+
+	if existingToolset != nil {
+		dtm.configCache.RemoveToolset(toolsetName)
+		dtm.log.WithFields(logrus.Fields{
+			"service":      service.Name,
+			"toolset_name": toolsetName,
+		}).Info("Removed toolset for deleted service")
+		dtm.notifyEventHandlers("removed", existingToolset)
+	}
+
+	return nil
+}
+
+// getToolsetNameForService generates a toolset name for a service
+func (dtm *DynamicToolsetManager) getToolsetNameForService(service *k8s.DetectedService) string {
+	return fmt.Sprintf("%s-%s-%s", service.ServiceType, service.Namespace, service.Name)
+}
+
+// notifyEventHandlers notifies all registered event handlers
+func (dtm *DynamicToolsetManager) notifyEventHandlers(eventType string, toolset *ToolsetConfig) {
+	dtm.mu.RLock()
+	handlers := dtm.eventHandlers
+	dtm.mu.RUnlock()
+
+	for _, handler := range handlers {
+		var err error
+		switch eventType {
+		case "added":
+			err = handler.OnToolsetAdded(toolset)
+		case "updated":
+			err = handler.OnToolsetUpdated(toolset)
+		case "removed":
+			err = handler.OnToolsetRemoved(toolset)
+		}
+
+		if err != nil {
+			dtm.log.WithError(err).WithFields(logrus.Fields{
+				"event_type":   eventType,
+				"toolset_name": toolset.Name,
+			}).Error("Event handler failed")
+		}
+	}
+}
+
+// generateBaselineToolsets generates baseline toolsets that are always available
+// Business Requirement: BR-HOLMES-028 - Maintain baseline toolsets
+func (dtm *DynamicToolsetManager) generateBaselineToolsets() []*ToolsetConfig {
+	return []*ToolsetConfig{
+		{
+			Name:        "kubernetes",
+			ServiceType: "kubernetes",
+			Description: "Kubernetes cluster investigation tools",
+			Version:     "1.0.0",
+			Capabilities: []string{
+				"get_pods",
+				"get_services",
+				"get_deployments",
+				"get_events",
+				"describe_resources",
+				"get_logs",
+			},
+			Tools: []HolmesGPTTool{
+				{
+					Name:        "get_pods",
+					Description: "Get pods in a namespace",
+					Command:     "kubectl get pods -n ${namespace} -o json",
+					Parameters: []ToolParameter{
+						{Name: "namespace", Description: "Kubernetes namespace", Type: "string", Required: true},
+					},
+					Category: "kubernetes",
+				},
+				{
+					Name:        "get_pod_logs",
+					Description: "Get logs from a pod",
+					Command:     "kubectl logs -n ${namespace} ${pod_name} --tail=${lines}",
+					Parameters: []ToolParameter{
+						{Name: "namespace", Description: "Kubernetes namespace", Type: "string", Required: true},
+						{Name: "pod_name", Description: "Pod name", Type: "string", Required: true},
+						{Name: "lines", Description: "Number of lines", Type: "int", Default: "100"},
+					},
+					Category: "kubernetes",
+				},
+				{
+					Name:        "describe_pod",
+					Description: "Describe a pod with detailed information",
+					Command:     "kubectl describe pod -n ${namespace} ${pod_name}",
+					Parameters: []ToolParameter{
+						{Name: "namespace", Description: "Kubernetes namespace", Type: "string", Required: true},
+						{Name: "pod_name", Description: "Pod name", Type: "string", Required: true},
+					},
+					Category: "kubernetes",
+				},
+			},
+			Priority:    100,
+			Enabled:     true,
+			LastUpdated: time.Now(),
+		},
+		{
+			Name:        "internet",
+			ServiceType: "internet",
+			Description: "Internet connectivity and external API tools",
+			Version:     "1.0.0",
+			Capabilities: []string{
+				"web_search",
+				"documentation_lookup",
+				"api_status_check",
+			},
+			Tools: []HolmesGPTTool{
+				{
+					Name:        "check_external_api",
+					Description: "Check external API availability",
+					Command:     "curl -s -o /dev/null -w '%{http_code}' ${url}",
+					Parameters: []ToolParameter{
+						{Name: "url", Description: "External URL to check", Type: "string", Required: true},
+					},
+					Category: "connectivity",
+				},
+			},
+			Priority:    10,
+			Enabled:     true,
+			LastUpdated: time.Now(),
+		},
+	}
+}
+
+// registerDefaultGenerators registers the default toolset generators
+func (dtm *DynamicToolsetManager) registerDefaultGenerators() {
+	dtm.RegisterGenerator(NewPrometheusToolsetGenerator(dtm.log))
+	dtm.RegisterGenerator(NewGrafanaToolsetGenerator(dtm.log))
+	dtm.RegisterGenerator(NewJaegerToolsetGenerator(dtm.log))
+	dtm.RegisterGenerator(NewElasticsearchToolsetGenerator(dtm.log))
+	dtm.RegisterGenerator(NewCustomToolsetGenerator(dtm.log))
+}
+
+// GetToolsetStats returns statistics about managed toolsets
+// Business Requirement: BR-HOLMES-029 - Service discovery metrics and monitoring
+func (dtm *DynamicToolsetManager) GetToolsetStats() ToolsetStats {
+	allToolsets := dtm.configCache.GetAllToolsets()
+
+	stats := ToolsetStats{
+		TotalToolsets: len(allToolsets),
+		EnabledCount:  0,
+		TypeCounts:    make(map[string]int),
+		LastUpdate:    time.Time{},
+	}
+
+	for _, toolset := range allToolsets {
+		if toolset.Enabled {
+			stats.EnabledCount++
+		}
+
+		stats.TypeCounts[toolset.ServiceType]++
+
+		if toolset.LastUpdated.After(stats.LastUpdate) {
+			stats.LastUpdate = toolset.LastUpdated
+		}
+	}
+
+	// Add cache statistics
+	cacheStats := dtm.configCache.GetStats()
+	stats.CacheHitRate = cacheStats.HitRate
+	stats.CacheSize = cacheStats.Size
+
+	return stats
+}
+
+// ToolsetStats represents statistics about managed toolsets
+type ToolsetStats struct {
+	TotalToolsets int            `json:"total_toolsets"`
+	EnabledCount  int            `json:"enabled_count"`
+	TypeCounts    map[string]int `json:"type_counts"`
+	LastUpdate    time.Time      `json:"last_update"`
+	CacheHitRate  float64        `json:"cache_hit_rate"`
+	CacheSize     int            `json:"cache_size"`
+}
+
+// SortToolsetsByPriority sorts toolsets by priority (higher priority first)
+// Business Requirement: BR-HOLMES-024 - Toolset priority ordering
+func SortToolsetsByPriority(toolsets []*ToolsetConfig) []*ToolsetConfig {
+	sorted := make([]*ToolsetConfig, len(toolsets))
+	copy(sorted, toolsets)
+
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Priority != sorted[j].Priority {
+			return sorted[i].Priority > sorted[j].Priority // Higher priority first
+		}
+		// If priority is the same, sort by name for consistency
+		return sorted[i].Name < sorted[j].Name
+	})
+
+	return sorted
+}

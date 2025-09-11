@@ -3,7 +3,7 @@ package fixtures
 import (
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // CoreTestAlerts contains the primary integration test cases
@@ -28,7 +28,7 @@ var CoreTestAlerts = []TestCase{
 			Annotations: map[string]string{
 				"description": "Pod webapp-123 is using 95% memory (7.6Gi/8Gi)",
 				"summary":     "High memory usage detected",
-				"runbook_url": "https://wiki.example.com/runbooks/memory",
+				"runbook_url": "https://wiki.kubernaut.io/runbooks/memory",
 			},
 			StartsAt: time.Now().Add(-5 * time.Minute),
 		},

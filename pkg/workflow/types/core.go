@@ -2,8 +2,8 @@ package types
 
 import "time"
 
-// WorkflowExecutionResult represents the result of a workflow execution
-type WorkflowExecutionResult struct {
+// CoreWorkflowExecutionResult represents the result of a workflow execution
+type CoreWorkflowExecutionResult struct {
 	Success           bool          `json:"success"`
 	Duration          time.Duration `json:"duration"`
 	StepsCompleted    int           `json:"steps_completed"`

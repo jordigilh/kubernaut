@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // AlertClient provides access to alert manager for checking alert status
@@ -18,6 +18,18 @@ type AlertClient interface {
 
 	// GetAlertHistory returns the firing history of an alert
 	GetAlertHistory(ctx context.Context, alertName, namespace string, from, to time.Time) ([]AlertEvent, error)
+
+	// CreateSilence creates a silence for specified alerts (BR-MET-011: Must provide monitoring operations)
+	CreateSilence(ctx context.Context, silence *SilenceRequest) (*SilenceResponse, error)
+
+	// DeleteSilence removes an existing silence
+	DeleteSilence(ctx context.Context, silenceID string) error
+
+	// GetSilences returns active silences matching criteria
+	GetSilences(ctx context.Context, matchers []SilenceMatcher) ([]Silence, error)
+
+	// AcknowledgeAlert acknowledges an alert (BR-ALERT-012: Alert acknowledgment support)
+	AcknowledgeAlert(ctx context.Context, alertID string, acknowledgedBy string) error
 }
 
 // MetricsClient provides access to monitoring metrics for effectiveness assessment
@@ -46,13 +58,53 @@ type AlertEvent struct {
 	AlertName   string            `json:"alert_name"`
 	Namespace   string            `json:"namespace"`
 	Severity    string            `json:"severity"`
-	Status      string            `json:"status"` // "firing" or "resolved"
+	State       string            `json:"state"`  // "firing", "resolved", "pending"
+	Status      string            `json:"status"` // "firing" or "resolved" (alias for State)
+	Timestamp   time.Time         `json:"timestamp"`
+	Value       string            `json:"value"`
 	Labels      map[string]string `json:"labels"`
 	Annotations map[string]string `json:"annotations"`
-	Timestamp   time.Time         `json:"timestamp"`
 }
 
-// MetricPoint represents a single metric value at a point in time
+// SilenceRequest represents a request to create a silence
+type SilenceRequest struct {
+	Matchers  []SilenceMatcher `json:"matchers"`
+	StartsAt  time.Time        `json:"startsAt"`
+	EndsAt    time.Time        `json:"endsAt"`
+	CreatedBy string           `json:"createdBy"`
+	Comment   string           `json:"comment"`
+}
+
+// SilenceMatcher represents criteria for matching alerts to silence
+type SilenceMatcher struct {
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	IsRegex bool   `json:"isRegex"`
+}
+
+// SilenceResponse represents the response from creating a silence
+type SilenceResponse struct {
+	SilenceID string `json:"silenceID"`
+}
+
+// Silence represents an active silence
+type Silence struct {
+	ID        string           `json:"id"`
+	Matchers  []SilenceMatcher `json:"matchers"`
+	StartsAt  time.Time        `json:"startsAt"`
+	EndsAt    time.Time        `json:"endsAt"`
+	UpdatedAt time.Time        `json:"updatedAt"`
+	CreatedBy string           `json:"createdBy"`
+	Comment   string           `json:"comment"`
+	Status    SilenceStatus    `json:"status"`
+}
+
+// SilenceStatus represents the status of a silence
+type SilenceStatus struct {
+	State string `json:"state"` // "active", "pending", "expired"
+}
+
+// MetricPoint represents a single metric measurement
 type MetricPoint struct {
 	MetricName string            `json:"metric_name"`
 	Value      float64           `json:"value"`

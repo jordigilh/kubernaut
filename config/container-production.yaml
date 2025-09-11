@@ -104,6 +104,22 @@ kubernetes:
   config_path: "/root/.kube/config"
   namespace: "default"
 
+# Vector Database configuration (production)
+vectordb:
+  enabled: true
+  backend: "postgresql"  # Use PostgreSQL for production
+  embedding_service:
+    service: "local"
+    dimension: 384
+    model: "all-MiniLM-L6-v2"
+  postgresql:
+    use_main_db: true
+    index_lists: 100
+  cache:
+    enabled: true
+    max_size: 10000
+    cache_type: "memory"
+
 # Monitoring URLs
 monitoring:
   prometheus_url: "http://prometheus:9090"

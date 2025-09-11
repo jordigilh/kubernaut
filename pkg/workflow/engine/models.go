@@ -1,10 +1,13 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 )
 
@@ -12,40 +15,34 @@ import (
 
 // Workflow represents a complex multi-step automation process
 type Workflow struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Version     string                 `json:"version"`
-	Template    *WorkflowTemplate      `json:"template"`
-	Status      WorkflowStatus         `json:"status"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	types.BaseVersionedEntity // Embedded: ID, Name, Description, Version, CreatedAt, UpdatedAt, Metadata, CreatedBy
+
+	// Workflow-specific fields
+	Template *ExecutableTemplate `json:"template"`
+	Status   WorkflowStatus      `json:"status"`
 }
 
-// WorkflowTemplate defines the structure and logic of a workflow
-type WorkflowTemplate struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Version     string                 `json:"version"`
-	Steps       []*WorkflowStep        `json:"steps"`
-	Conditions  []*WorkflowCondition   `json:"conditions"`
-	Variables   map[string]interface{} `json:"variables"`
-	Timeouts    *WorkflowTimeouts      `json:"timeouts"`
-	Recovery    *RecoveryPolicy        `json:"recovery"`
-	Tags        []string               `json:"tags"`
-	CreatedBy   string                 `json:"created_by"`
-	CreatedAt   time.Time              `json:"created_at"`
+// ExecutableTemplate defines the structure and logic of an executable workflow
+type ExecutableTemplate struct {
+	types.BaseVersionedEntity // Embedded: ID, Name, Description, Version, CreatedAt, UpdatedAt, Metadata, CreatedBy
+
+	// Template-specific fields
+	Steps      []*ExecutableWorkflowStep `json:"steps"`
+	Conditions []*ExecutableCondition    `json:"conditions"`
+	Variables  map[string]interface{}    `json:"variables"`
+	Timeouts   *WorkflowTimeouts         `json:"timeouts"`
+	Recovery   *RecoveryPolicy           `json:"recovery"`
+	Tags       []string                  `json:"tags"`
 }
 
-// WorkflowStep represents a single step in a workflow
-type WorkflowStep struct {
-	ID           string                 `json:"id"`
-	Name         string                 `json:"name"`
+// ExecutableWorkflowStep represents a single step in a workflow with execution capabilities
+type ExecutableWorkflowStep struct {
+	types.BaseEntity // Embedded: ID, Name, Description, CreatedAt, UpdatedAt, Metadata
+
+	// Step-specific fields
 	Type         StepType               `json:"type"`
 	Action       *StepAction            `json:"action,omitempty"`
-	Condition    *WorkflowCondition     `json:"condition,omitempty"`
+	Condition    *ExecutableCondition   `json:"condition,omitempty"`
 	Dependencies []string               `json:"dependencies"`
 	Timeout      time.Duration          `json:"timeout"`
 	RetryPolicy  *RetryPolicy           `json:"retry_policy"`
@@ -88,8 +85,8 @@ type ActionTarget struct {
 	Endpoint  string            `json:"endpoint,omitempty"`
 }
 
-// WorkflowCondition defines conditional logic in workflows
-type WorkflowCondition struct {
+// ExecutableCondition defines conditional logic in workflows with full execution context
+type ExecutableCondition struct {
 	ID         string                 `json:"id"`
 	Name       string                 `json:"name"`
 	Type       ConditionType          `json:"type"`
@@ -111,21 +108,108 @@ const (
 
 // Workflow Execution Types
 
-// WorkflowExecution represents an active execution of a workflow
-type WorkflowExecution struct {
-	ID          string                 `json:"id"`
-	WorkflowID  string                 `json:"workflow_id"`
-	Status      ExecutionStatus        `json:"status"`
-	Input       *WorkflowInput         `json:"input"`
-	Output      *WorkflowOutput        `json:"output,omitempty"`
-	Context     *ExecutionContext      `json:"context"`
-	Steps       []*StepExecution       `json:"steps"`
-	CurrentStep int                    `json:"current_step"`
-	StartTime   time.Time              `json:"start_time"`
-	EndTime     *time.Time             `json:"end_time,omitempty"`
-	Duration    time.Duration          `json:"duration"`
-	Error       string                 `json:"error,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata"`
+// RuntimeWorkflowExecution represents an active execution of a workflow with full operational state
+// It embeds WorkflowExecutionRecord for shared analytics fields and extends with operational fields
+type RuntimeWorkflowExecution struct {
+	types.WorkflowExecutionRecord // Embedded shared analytics fields (ID, WorkflowID, Status, StartTime, EndTime, Metadata)
+
+	// Operational-specific fields (Status is overridden with enum type)
+	OperationalStatus ExecutionStatus   `json:"status"` // Override embedded Status with enum type for operations
+	Input             *WorkflowInput    `json:"input"`
+	Output            *WorkflowOutput   `json:"output,omitempty"`
+	Context           *ExecutionContext `json:"context"`
+	Steps             []*StepExecution  `json:"steps"`
+	CurrentStep       int               `json:"current_step"`
+	Duration          time.Duration     `json:"duration"`
+	Error             string            `json:"error,omitempty"`
+}
+
+// IsSuccessful returns true if the workflow execution completed successfully
+func (rwe *RuntimeWorkflowExecution) IsSuccessful() bool {
+	return rwe.OperationalStatus == ExecutionStatusCompleted
+}
+
+// IsCompleted returns true if the workflow execution has finished (either successfully or with failure)
+func (rwe *RuntimeWorkflowExecution) IsCompleted() bool {
+	return rwe.OperationalStatus == ExecutionStatusCompleted ||
+		rwe.OperationalStatus == ExecutionStatusFailed ||
+		rwe.OperationalStatus == ExecutionStatusCancelled
+}
+
+// IsFailed returns true if the workflow execution failed
+func (rwe *RuntimeWorkflowExecution) IsFailed() bool {
+	return rwe.OperationalStatus == ExecutionStatusFailed
+}
+
+// IsRunning returns true if the workflow execution is currently running
+func (rwe *RuntimeWorkflowExecution) IsRunning() bool {
+	return rwe.OperationalStatus == ExecutionStatusRunning
+}
+
+// IsPending returns true if the workflow execution is pending
+func (rwe *RuntimeWorkflowExecution) IsPending() bool {
+	return rwe.OperationalStatus == ExecutionStatusPending
+}
+
+// GetSuccessRate returns the success rate of completed steps
+func (rwe *RuntimeWorkflowExecution) GetSuccessRate() float64 {
+	if len(rwe.Steps) == 0 {
+		return 0.0
+	}
+
+	successfulSteps := 0
+	for _, step := range rwe.Steps {
+		if step.Status == ExecutionStatusCompleted {
+			successfulSteps++
+		}
+	}
+
+	return float64(successfulSteps) / float64(len(rwe.Steps))
+}
+
+// GetCompletionStatus returns detailed completion statistics
+func (rwe *RuntimeWorkflowExecution) GetCompletionStatus() ExecutionCompletionStatus {
+	totalSteps := len(rwe.Steps)
+	completedSteps := 0
+	failedSteps := 0
+	pendingSteps := 0
+	runningSteps := 0
+
+	for _, step := range rwe.Steps {
+		switch step.Status {
+		case ExecutionStatusCompleted:
+			completedSteps++
+		case ExecutionStatusFailed:
+			failedSteps++
+		case ExecutionStatusPending:
+			pendingSteps++
+		case ExecutionStatusRunning:
+			runningSteps++
+		}
+	}
+
+	return ExecutionCompletionStatus{
+		TotalSteps:     totalSteps,
+		CompletedSteps: completedSteps,
+		FailedSteps:    failedSteps,
+		PendingSteps:   pendingSteps,
+		RunningSteps:   runningSteps,
+		SuccessRate:    rwe.GetSuccessRate(),
+		IsFinished:     rwe.IsCompleted(),
+		IsSuccessful:   rwe.IsSuccessful(),
+	}
+}
+
+// ExecutionCompletionStatus provides detailed status information about an execution
+type ExecutionCompletionStatus struct {
+	TotalSteps     int     `json:"total_steps"`
+	CompletedSteps int     `json:"completed_steps"`
+	FailedSteps    int     `json:"failed_steps"`
+	PendingSteps   int     `json:"pending_steps"`
+	RunningSteps   int     `json:"running_steps"`
+	SuccessRate    float64 `json:"success_rate"`
+	IsFinished     bool    `json:"is_finished"`
+	IsSuccessful   bool    `json:"is_successful"`
 }
 
 // ExecutionStatus represents the status of a workflow execution
@@ -231,7 +315,7 @@ type AdaptationRules struct {
 // AdaptationTrigger defines when adaptation should occur
 type AdaptationTrigger struct {
 	Type      TriggerType            `json:"type"`
-	Condition *WorkflowCondition     `json:"condition"`
+	Condition *ExecutableCondition   `json:"condition"`
 	Threshold float64                `json:"threshold"`
 	Variables map[string]interface{} `json:"variables"`
 }
@@ -254,7 +338,7 @@ type AdaptationAction struct {
 	Target     string                 `json:"target"`    // step ID, parameter name, etc.
 	Operation  string                 `json:"operation"` // "modify", "add", "remove", "replace"
 	Value      interface{}            `json:"value"`
-	Conditions []*WorkflowCondition   `json:"conditions"`
+	Conditions []*ExecutableCondition `json:"conditions"`
 	Metadata   map[string]interface{} `json:"metadata"`
 }
 
@@ -273,15 +357,15 @@ const (
 
 // OptimizationResult contains the result of workflow optimization
 type OptimizationResult struct {
-	ID               string                  `json:"id"`
-	WorkflowID       string                  `json:"workflow_id"`
-	Type             OptimizationType        `json:"type"`
-	Changes          []*OptimizationChange   `json:"changes"`
-	Performance      *PerformanceImprovement `json:"performance"`
-	Confidence       float64                 `json:"confidence"`
-	ValidationResult *ValidationResult       `json:"validation_result"`
-	AppliedAt        *time.Time              `json:"applied_at,omitempty"`
-	CreatedAt        time.Time               `json:"created_at"`
+	ID               string                        `json:"id"`
+	WorkflowID       string                        `json:"workflow_id"`
+	Type             OptimizationType              `json:"type"`
+	Changes          []*OptimizationChange         `json:"changes"`
+	Performance      *PerformanceImprovement       `json:"performance"`
+	Confidence       float64                       `json:"confidence"`
+	ValidationResult *WorkflowRuleValidationResult `json:"validation_result"`
+	AppliedAt        *time.Time                    `json:"applied_at,omitempty"`
+	CreatedAt        time.Time                     `json:"created_at"`
 }
 
 // OptimizationType defines the type of optimization
@@ -325,7 +409,7 @@ type ClusterKnowledge struct {
 	ID            string                  `json:"id"`
 	SourceCluster string                  `json:"source_cluster"`
 	Patterns      []*vector.ActionPattern `json:"patterns"`
-	Workflows     []*WorkflowTemplate     `json:"workflows"`
+	Workflows     []*ExecutableTemplate   `json:"workflows"`
 	Optimizations []*OptimizationResult   `json:"optimizations"`
 	Metrics       *ClusterMetrics         `json:"metrics"`
 	Timestamp     time.Time               `json:"timestamp"`
@@ -372,15 +456,15 @@ type SystemSituation struct {
 
 // AdaptiveDecision represents a decision made by the adaptive system
 type AdaptiveDecision struct {
-	ID           string                 `json:"id"`
-	Type         DecisionType           `json:"type"`
-	Action       *AdaptiveAction        `json:"action,omitempty"`
-	Workflow     *WorkflowExecution     `json:"workflow,omitempty"`
-	Confidence   float64                `json:"confidence"`
-	Reasoning    string                 `json:"reasoning"`
-	Alternatives []*DecisionAlternative `json:"alternatives"`
-	Timestamp    time.Time              `json:"timestamp"`
-	Metadata     map[string]interface{} `json:"metadata"`
+	ID           string                    `json:"id"`
+	Type         DecisionType              `json:"type"`
+	Action       *AdaptiveAction           `json:"action,omitempty"`
+	Workflow     *RuntimeWorkflowExecution `json:"workflow,omitempty"`
+	Confidence   float64                   `json:"confidence"`
+	Reasoning    string                    `json:"reasoning"`
+	Alternatives []*DecisionAlternative    `json:"alternatives"`
+	Timestamp    time.Time                 `json:"timestamp"`
+	Metadata     map[string]interface{}    `json:"metadata"`
 }
 
 // DecisionType defines the type of adaptive decision
@@ -472,7 +556,7 @@ const (
 )
 
 // TimeRange represents a time range for analysis
-type TimeRange struct {
+type WorkflowTimeRange struct {
 	Start time.Time `json:"start"`
 	End   time.Time `json:"end"`
 }
@@ -481,27 +565,25 @@ type TimeRange struct {
 
 // AlertContext provides context about an alert
 type AlertContext struct {
-	Name         string                 `json:"name"`
-	Severity     Severity               `json:"severity"`
-	Labels       map[string]string      `json:"labels"`
-	Annotations  map[string]string      `json:"annotations"`
-	StartsAt     time.Time              `json:"starts_at"`
-	EndsAt       *time.Time             `json:"ends_at,omitempty"`
-	GeneratorURL string                 `json:"generator_url,omitempty"`
-	Fingerprint  string                 `json:"fingerprint"`
-	Metadata     map[string]interface{} `json:"metadata"`
+	types.BaseContext // Embedded: Labels, Annotations, Metadata, Environment, Cluster, Timestamp
+
+	// Alert-specific fields
+	Name         string     `json:"name"`
+	Severity     Severity   `json:"severity"`
+	StartsAt     time.Time  `json:"starts_at"`
+	EndsAt       *time.Time `json:"ends_at,omitempty"`
+	GeneratorURL string     `json:"generator_url,omitempty"`
+	Fingerprint  string     `json:"fingerprint"`
 }
 
 // ResourceContext provides context about a Kubernetes resource
 type ResourceContext struct {
-	Namespace   string                 `json:"namespace"`
-	Kind        string                 `json:"kind"`
-	Name        string                 `json:"name"`
-	Labels      map[string]string      `json:"labels"`
-	Annotations map[string]string      `json:"annotations"`
-	Status      map[string]interface{} `json:"status"`
-	Spec        map[string]interface{} `json:"spec"`
-	Metadata    map[string]interface{} `json:"metadata"`
+	types.BaseContext      // Embedded: Labels, Annotations, Metadata, Environment, Cluster, Timestamp
+	types.BaseResourceInfo // Embedded: Namespace, Kind, Name
+
+	// Resource-specific fields
+	Status map[string]interface{} `json:"status"`
+	Spec   map[string]interface{} `json:"spec"`
 }
 
 // ActionContext provides context for action decision making
@@ -517,8 +599,9 @@ type ActionContext struct {
 
 // ExecutionContext provides context for workflow execution
 type ExecutionContext struct {
-	Environment   string                 `json:"environment"`
-	Cluster       string                 `json:"cluster"`
+	types.BaseContext // Embedded: Labels, Annotations, Metadata, Environment, Cluster, Timestamp
+
+	// Execution-specific fields
 	User          string                 `json:"user"`
 	RequestID     string                 `json:"request_id"`
 	TraceID       string                 `json:"trace_id"`
@@ -536,6 +619,69 @@ type StepContext struct {
 	PreviousSteps []*StepResult          `json:"previous_steps"`
 	Environment   *ExecutionContext      `json:"environment"`
 	Timeout       time.Duration          `json:"timeout"`
+}
+
+// NewStepContext creates a new step context with initialized variables
+func NewStepContext() *StepContext {
+	return &StepContext{
+		Variables: make(map[string]interface{}),
+	}
+}
+
+// Set sets a variable in the step context
+func (sc *StepContext) Set(key string, value interface{}) {
+	if sc.Variables == nil {
+		sc.Variables = make(map[string]interface{})
+	}
+	sc.Variables[key] = value
+}
+
+// Get gets a variable from the step context
+func (sc *StepContext) Get(key string) (interface{}, bool) {
+	if sc.Variables == nil {
+		return nil, false
+	}
+	value, exists := sc.Variables[key]
+	return value, exists
+}
+
+// GetString gets a string variable from the step context
+func (sc *StepContext) GetString(key, defaultValue string) string {
+	if value, exists := sc.Get(key); exists {
+		if str, ok := value.(string); ok {
+			return str
+		}
+	}
+	return defaultValue
+}
+
+// GetInt gets an integer variable from the step context
+func (sc *StepContext) GetInt(key string, defaultValue int) int {
+	if value, exists := sc.Get(key); exists {
+		switch v := value.(type) {
+		case int:
+			return v
+		case int64:
+			return int(v)
+		case float64:
+			return int(v)
+		case string:
+			if i, err := strconv.Atoi(v); err == nil {
+				return i
+			}
+		}
+	}
+	return defaultValue
+}
+
+// GetBool gets a boolean variable from the step context
+func (sc *StepContext) GetBool(key string, defaultValue bool) bool {
+	if value, exists := sc.Get(key); exists {
+		if b, ok := value.(bool); ok {
+			return b
+		}
+	}
+	return defaultValue
 }
 
 // Metrics and Analysis Types
@@ -630,10 +776,10 @@ type RecoveryPolicy struct {
 
 // RecoveryStrategy defines a recovery strategy
 type RecoveryStrategy struct {
-	Type       RecoveryType         `json:"type"`
-	Conditions []*WorkflowCondition `json:"conditions"`
-	Actions    []*RecoveryAction    `json:"actions"`
-	Priority   Priority             `json:"priority"`
+	Type       RecoveryType           `json:"type"`
+	Conditions []*ExecutableCondition `json:"conditions"`
+	Actions    []*RecoveryAction      `json:"actions"`
+	Priority   Priority               `json:"priority"`
 }
 
 // RecoveryType defines the type of recovery strategy
@@ -663,8 +809,8 @@ type JSONMap = map[string]interface{}
 // Serialization helpers
 
 // MarshalJSON customizes JSON marshaling for complex types
-func (w *WorkflowExecution) MarshalJSON() ([]byte, error) {
-	type Alias WorkflowExecution
+func (w *RuntimeWorkflowExecution) MarshalJSON() ([]byte, error) {
+	type Alias RuntimeWorkflowExecution
 	return json.Marshal(&struct {
 		*Alias
 		DurationMs int64 `json:"duration_ms"`
@@ -819,17 +965,18 @@ type PreventionPlan struct {
 }
 
 type WorkflowContext struct {
-	WorkflowID  string                 `json:"workflow_id"`
-	Execution   *WorkflowExecution     `json:"execution"`
-	Environment string                 `json:"environment"`
-	Cluster     string                 `json:"cluster"`
-	Namespace   string                 `json:"namespace"`
-	Alert       *AlertContext          `json:"alert,omitempty"`
-	Resource    *ResourceContext       `json:"resource,omitempty"`
-	Variables   map[string]interface{} `json:"variables,omitempty"`
-	History     []*ActionResult        `json:"history,omitempty"`
-	Metrics     map[string]float64     `json:"metrics,omitempty"`
-	CreatedAt   time.Time              `json:"created_at"`
+	types.BaseContext // Embedded: Labels, Annotations, Metadata, Environment, Cluster, Timestamp
+
+	// Workflow-specific fields
+	WorkflowID string                    `json:"workflow_id"`
+	Execution  *RuntimeWorkflowExecution `json:"execution"`
+	Namespace  string                    `json:"namespace"`
+	Alert      *AlertContext             `json:"alert,omitempty"`
+	Resource   *ResourceContext          `json:"resource,omitempty"`
+	Variables  map[string]interface{}    `json:"variables,omitempty"`
+	History    []*ActionResult           `json:"history,omitempty"`
+	Metrics    map[string]float64        `json:"metrics,omitempty"`
+	CreatedAt  time.Time                 `json:"created_at"`
 }
 
 type WorkflowObjective struct {
@@ -857,20 +1004,20 @@ type PatternCriteria struct {
 }
 
 type WorkflowPattern struct {
-	ID             string             `json:"id"`
-	Name           string             `json:"name"`
-	Type           string             `json:"type"`
-	Steps          []*WorkflowStep    `json:"steps"`
-	Conditions     []*ActionCondition `json:"conditions"`
-	SuccessRate    float64            `json:"success_rate"`
-	ExecutionCount int                `json:"execution_count"`
-	AverageTime    time.Duration      `json:"average_time"`
-	Environments   []string           `json:"environments"`
-	ResourceTypes  []string           `json:"resource_types"`
-	Confidence     float64            `json:"confidence"`
-	LastUsed       time.Time          `json:"last_used"`
-	CreatedAt      time.Time          `json:"created_at"`
-	UpdatedAt      time.Time          `json:"updated_at"`
+	ID             string                    `json:"id"`
+	Name           string                    `json:"name"`
+	Type           string                    `json:"type"`
+	Steps          []*ExecutableWorkflowStep `json:"steps"`
+	Conditions     []*ActionCondition        `json:"conditions"`
+	SuccessRate    float64                   `json:"success_rate"`
+	ExecutionCount int                       `json:"execution_count"`
+	AverageTime    time.Duration             `json:"average_time"`
+	Environments   []string                  `json:"environments"`
+	ResourceTypes  []string                  `json:"resource_types"`
+	Confidence     float64                   `json:"confidence"`
+	LastUsed       time.Time                 `json:"last_used"`
+	CreatedAt      time.Time                 `json:"created_at"`
+	UpdatedAt      time.Time                 `json:"updated_at"`
 }
 
 // Simulation and Validation Types
@@ -888,10 +1035,12 @@ type SimulationScenario struct {
 }
 
 type SimulationResult struct {
+	Success  bool          `json:"success"`
+	Duration time.Duration `json:"duration"`
+
+	// Simulation-specific fields
 	ID         string                 `json:"id"`
 	ScenarioID string                 `json:"scenario_id"`
-	Success    bool                   `json:"success"`
-	Duration   time.Duration          `json:"duration"`
 	Results    map[string]interface{} `json:"results"`
 	Metrics    map[string]float64     `json:"metrics"`
 	Logs       []string               `json:"logs,omitempty"`
@@ -900,18 +1049,18 @@ type SimulationResult struct {
 }
 
 type ValidationReport struct {
-	ID          string              `json:"id"`
-	WorkflowID  string              `json:"workflow_id"`
-	ExecutionID string              `json:"execution_id"`
-	Type        ValidationType      `json:"type"`
-	Status      string              `json:"status"`
-	Results     []*ValidationResult `json:"results"`
-	Summary     *ValidationSummary  `json:"summary"`
-	CreatedAt   time.Time           `json:"created_at"`
-	CompletedAt *time.Time          `json:"completed_at,omitempty"`
+	ID          string                          `json:"id"`
+	WorkflowID  string                          `json:"workflow_id"`
+	ExecutionID string                          `json:"execution_id"`
+	Type        ValidationType                  `json:"type"`
+	Status      string                          `json:"status"`
+	Results     []*WorkflowRuleValidationResult `json:"results"`
+	Summary     *ValidationSummary              `json:"summary"`
+	CreatedAt   time.Time                       `json:"created_at"`
+	CompletedAt *time.Time                      `json:"completed_at,omitempty"`
 }
 
-// ValidationResult is defined in types.go
+// WorkflowRuleValidationResult is defined above
 
 type ValidationSummary struct {
 	Total   int `json:"total"`
@@ -1042,7 +1191,7 @@ type AdaptationConstraint struct {
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 
-type ValidationResult struct {
+type WorkflowRuleValidationResult struct {
 	RuleID    string                 `json:"rule_id"`
 	Type      ValidationType         `json:"type"`
 	Passed    bool                   `json:"passed"`
@@ -1084,6 +1233,34 @@ type AdaptiveAction struct {
 	Parameters map[string]interface{} `json:"parameters"`
 	Conditions []string               `json:"conditions"`
 	Priority   int                    `json:"priority"`
+}
+
+// Workflow validation types needed for testing
+type WorkflowValidationResult struct {
+	Valid            bool                   `json:"valid"`
+	ValidationChecks map[string]interface{} `json:"validation_checks"`
+	Warnings         []string               `json:"warnings"`
+	SafetyScore      float64                `json:"safety_score"`
+	CorrectnessScore float64                `json:"correctness_score"`
+	SecurityScore    float64                `json:"security_score"`
+	OverallScore     float64                `json:"overall_score"`
+}
+
+// ExecutionOutcome represents the outcome of a workflow execution for learning
+type ExecutionOutcome struct {
+	WorkflowID        string                 `json:"workflow_id"`
+	Success           bool                   `json:"success"`
+	Duration          time.Duration          `json:"duration"`
+	EffectivenesScore float64                `json:"effectiveness_score"`
+	Feedback          map[string]interface{} `json:"feedback"`
+}
+
+// LearningResult represents the result of learning from workflow executions
+type LearningResult struct {
+	UpdatedAlgorithms   []string               `json:"updated_algorithms"`
+	AccuracyImprovement float64                `json:"accuracy_improvement"`
+	GenerationUpdates   map[string]interface{} `json:"generation_updates"`
+	LearningMetrics     map[string]interface{} `json:"learning_metrics"`
 }
 
 type DecisionAlternative struct {
@@ -1204,6 +1381,37 @@ const (
 const (
 	SimulationTypeLoad SimulationType = "load"
 )
+
+// Missing types for workflow builder
+type EffectivenessReport struct {
+	ID          string             `json:"id"`
+	ExecutionID string             `json:"execution_id"`
+	Score       float64            `json:"score"`
+	Metrics     map[string]float64 `json:"metrics"`
+	Insights    []string           `json:"insights"`
+	CreatedAt   time.Time          `json:"created_at"`
+}
+
+type PatternInsights struct {
+	PatternID     string                 `json:"pattern_id"`
+	Effectiveness float64                `json:"effectiveness"`
+	UsageCount    int                    `json:"usage_count"`
+	Insights      []string               `json:"insights"`
+	Metrics       map[string]interface{} `json:"metrics"`
+}
+
+type TemplateFactory struct {
+	templates map[string]*ExecutableTemplate
+}
+
+type PatternMatcher struct {
+}
+
+// Note: AnalyticsEngine interface moved to pkg/shared/types/analytics.go for consolidation
+
+type WorkflowValidator interface {
+	ValidateWorkflow(ctx context.Context, template *ExecutableTemplate) (*ValidationReport, error)
+}
 
 // Add missing simulation constants and fields
 const (

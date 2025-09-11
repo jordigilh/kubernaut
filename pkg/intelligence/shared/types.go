@@ -4,7 +4,6 @@ import (
 	"time"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	"github.com/jordigilh/kubernaut/pkg/workflow/types"
 )
 
@@ -60,24 +59,24 @@ type WorkflowPrediction struct {
 
 // ResourcePrediction predicts resource usage
 type ResourcePrediction struct {
-	CPUUsage     float64            `json:"cpu_usage"`
-	MemoryUsage  float64            `json:"memory_usage"`
-	NetworkUsage float64            `json:"network_usage"`
-	StorageUsage float64            `json:"storage_usage"`
-	PeakTimes    []engine.TimeRange `json:"peak_times"`
-	Confidence   float64            `json:"confidence"`
+	CPUUsage     float64                 `json:"cpu_usage"`
+	MemoryUsage  float64                 `json:"memory_usage"`
+	NetworkUsage float64                 `json:"network_usage"`
+	StorageUsage float64                 `json:"storage_usage"`
+	PeakTimes    []sharedtypes.TimeRange `json:"peak_times"`
+	Confidence   float64                 `json:"confidence"`
 }
 
 // WorkflowLearningData represents data used for learning from workflow executions
 type WorkflowLearningData struct {
-	ExecutionID       string                               `json:"execution_id"`
-	TemplateID        string                               `json:"template_id"`
-	Features          *WorkflowFeatures                    `json:"features"`
-	ExecutionResult   *sharedtypes.WorkflowExecutionResult `json:"execution_result"`
-	ResourceUsage     *sharedtypes.ResourceUsageData       `json:"resource_usage"`
-	Context           map[string]interface{}               `json:"context"`
-	LearningObjective string                               `json:"learning_objective"`
-	Feedback          *LearningFeedback                    `json:"feedback,omitempty"`
+	ExecutionID       string                                     `json:"execution_id"`
+	TemplateID        string                                     `json:"template_id"`
+	Features          *WorkflowFeatures                          `json:"features"`
+	ExecutionResult   *sharedtypes.SharedWorkflowExecutionResult `json:"execution_result"`
+	ResourceUsage     *sharedtypes.ResourceUsageData             `json:"resource_usage"`
+	Context           map[string]interface{}                     `json:"context"`
+	LearningObjective string                                     `json:"learning_objective"`
+	Feedback          *LearningFeedback                          `json:"feedback,omitempty"`
 }
 
 // LearningFeedback provides feedback for learning algorithms
@@ -93,14 +92,10 @@ type LearningFeedback struct {
 
 // DiscoveredPattern represents a comprehensive pattern found in historical data
 type DiscoveredPattern struct {
-	ID                   string        `json:"id"`
-	Type                 PatternType   `json:"type"`
-	Name                 string        `json:"name"`
-	Description          string        `json:"description"`
-	Confidence           float64       `json:"confidence"`
-	Frequency            int           `json:"frequency"`
-	SuccessRate          float64       `json:"success_rate"`
-	AverageExecutionTime time.Duration `json:"average_execution_time"`
+	sharedtypes.BasePattern // Embedded: ID, Name, Description, Type, Confidence, Frequency, SuccessRate, AverageExecutionTime, LastSeen, Tags, SourceExecutions, Metrics, CreatedAt, UpdatedAt, Metadata
+
+	// Pattern type-specific field
+	PatternType PatternType `json:"pattern_type"` // Separate from generic Type field
 
 	// Pattern Characteristics
 	AlertPatterns    []*AlertPattern    `json:"alert_patterns"`
@@ -109,16 +104,11 @@ type DiscoveredPattern struct {
 	FailurePatterns  []*FailurePattern  `json:"failure_patterns"`
 
 	// Optimization Insights
-	OptimizationHints []*OptimizationHint           `json:"optimization_hints"`
-	WorkflowTemplate  *sharedtypes.WorkflowTemplate `json:"suggested_template,omitempty"`
+	OptimizationHints []*OptimizationHint       `json:"optimization_hints"`
+	WorkflowTemplate  *sharedtypes.TemplateSpec `json:"suggested_template,omitempty"`
 
-	// Metadata
-	DiscoveredAt     time.Time          `json:"discovered_at"`
-	LastSeen         time.Time          `json:"last_seen"`
-	UpdatedAt        time.Time          `json:"updated_at"`
-	SourceExecutions []string           `json:"source_executions"`
-	Tags             []string           `json:"tags"`
-	Metrics          map[string]float64 `json:"metrics"`
+	// Discovery-specific metadata
+	DiscoveredAt time.Time `json:"discovered_at"`
 }
 
 // PatternType defines different types of patterns
@@ -228,4 +218,84 @@ type OptimizationHint struct {
 	Priority           int      `json:"priority"`
 	ActionSuggestion   string   `json:"action_suggestion"`
 	Evidence           []string `json:"evidence"`
+}
+
+// ResourceTrendAnalysis represents analysis of resource usage trends
+// Consolidated from pkg/intelligence/learning and pkg/intelligence/patterns
+type ResourceTrendAnalysis struct {
+	ResourceType   string                    `json:"resource_type"`
+	TrendDirection string                    `json:"trend_direction"`
+	Slope          float64                   `json:"slope"`
+	Correlation    float64                   `json:"correlation"`
+	Seasonality    []float64                 `json:"seasonality"`
+	Anomalies      []int                     `json:"anomalies"`
+	StartTime      time.Time                 `json:"start_time"`
+	EndTime        time.Time                 `json:"end_time"`
+	Confidence     float64                   `json:"confidence"`
+	Significance   float64                   `json:"significance"`
+	Occurrences    int                       `json:"occurrences"`
+	MetricPatterns map[string]*MetricPattern `json:"metric_patterns"`
+}
+
+// TemporalAnalysis represents temporal pattern analysis results
+// Consolidated from pkg/intelligence/learning and pkg/intelligence/patterns
+type TemporalAnalysis struct {
+	PatternType     string                 `json:"pattern_type"`
+	Confidence      float64                `json:"confidence"`
+	StartTime       time.Time              `json:"start_time"`
+	EndTime         time.Time              `json:"end_time"`
+	Frequency       time.Duration          `json:"frequency"`
+	Peaks           []time.Time            `json:"peaks"`
+	Description     string                 `json:"description"`
+	Metadata        map[string]interface{} `json:"metadata"`
+	PeakTimes       []PatternTimeRange     `json:"peak_times"`
+	SeasonalFactors map[string]float64     `json:"seasonal_factors"`
+	CycleDuration   time.Duration          `json:"cycle_duration"`
+}
+
+// Overfitting-related types consolidated from pkg/intelligence/learning
+// to break import cycles
+
+// OverfittingRisk levels
+type OverfittingRisk string
+
+const (
+	OverfittingRiskLow      OverfittingRisk = "low"
+	OverfittingRiskModerate OverfittingRisk = "moderate"
+	OverfittingRiskHigh     OverfittingRisk = "high"
+	OverfittingRiskCritical OverfittingRisk = "critical"
+)
+
+// OverfittingAssessment contains the result of overfitting analysis
+type OverfittingAssessment struct {
+	OverfittingRisk      OverfittingRisk         `json:"overfitting_risk"`
+	RiskScore            float64                 `json:"risk_score"`
+	Indicators           []*OverfittingIndicator `json:"indicators"`
+	Recommendations      []string                `json:"recommendations"`
+	ValidationMetrics    *ValidationMetrics      `json:"validation_metrics"`
+	PreventionStrategies []string                `json:"prevention_strategies"`
+	IsModelReliable      bool                    `json:"is_model_reliable"`
+}
+
+// OverfittingIndicator represents a specific indicator of overfitting
+type OverfittingIndicator struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Value       float64 `json:"value"`
+	Threshold   float64 `json:"threshold"`
+	Severity    string  `json:"severity"`
+	Detected    bool    `json:"detected"`
+	Impact      string  `json:"impact"`
+}
+
+// ValidationMetrics contains validation-specific metrics
+type ValidationMetrics struct {
+	TrainingAccuracy    float64 `json:"training_accuracy"`
+	ValidationAccuracy  float64 `json:"validation_accuracy"`
+	TestAccuracy        float64 `json:"test_accuracy,omitempty"`
+	AccuracyGap         float64 `json:"accuracy_gap"`
+	VarianceScore       float64 `json:"variance_score"`
+	BiasScore           float64 `json:"bias_score"`
+	ComplexityScore     float64 `json:"complexity_score"`
+	GeneralizationScore float64 `json:"generalization_score"`
 }

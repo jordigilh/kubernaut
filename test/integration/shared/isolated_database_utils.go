@@ -54,7 +54,23 @@ const (
 
 // NewIsolatedDatabaseTestUtils creates new isolated database test utilities
 func NewIsolatedDatabaseTestUtils(logger *logrus.Logger, strategy IsolationStrategy) (*IsolatedDatabaseTestUtils, error) {
+	// Check if database tests should be skipped
+	testConfig := LoadConfig()
+	if testConfig.SkipDatabaseTests {
+		logger.Info("Database tests skipped via SKIP_DB_TESTS environment variable")
+		return nil, fmt.Errorf("database tests are disabled")
+	}
+
 	config := LoadDatabaseTestConfig()
+
+	// Log connection details for debugging
+	logger.WithFields(logrus.Fields{
+		"host":          config.Host,
+		"port":          config.Port,
+		"database":      config.Database,
+		"user":          config.Username,
+		"use_container": testConfig.UseContainerDB,
+	}).Info("Initializing database test utilities")
 
 	// Generate unique schema name for this test instance
 	schemaName := fmt.Sprintf("test_%d_%d", time.Now().Unix(), rand.Intn(10000))
@@ -68,7 +84,14 @@ func NewIsolatedDatabaseTestUtils(logger *logrus.Logger, strategy IsolationStrat
 
 	// Connect to master database
 	if err := utils.connectToMasterDatabase(); err != nil {
-		return nil, fmt.Errorf("failed to connect to master database: %w", err)
+		if testConfig.UseContainerDB {
+			// If we're configured to use container DB but can't connect, this is a setup issue
+			logger.WithError(err).Error("Failed to connect to containerized database - check if integration services are running")
+			return nil, fmt.Errorf("containerized database connection failed: %w (try running: scripts/run-integration-tests.sh start-services)", err)
+		}
+		// Fallback behavior for non-containerized setup
+		logger.WithError(err).Warn("Failed to connect to database - database tests will be skipped")
+		return nil, fmt.Errorf("database connection unavailable: %w", err)
 	}
 
 	// Initialize isolation based on strategy

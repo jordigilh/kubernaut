@@ -195,7 +195,11 @@ func (pe *ProcedureExecutor) DetectIneffectiveLoops(ctx context.Context, resourc
 			"ineffective loop detection failed for %s/%s/%s",
 			resourceRef.Namespace, resourceRef.Kind, resourceRef.Name)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			pe.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var results []IneffectiveLoopResult
 	for rows.Next() {
@@ -245,7 +249,11 @@ func (pe *ProcedureExecutor) DetectCascadingFailures(ctx context.Context, resour
 			"cascading failure detection failed for %s/%s/%s",
 			resourceRef.Namespace, resourceRef.Kind, resourceRef.Name)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			pe.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var results []CascadingFailureResult
 	for rows.Next() {
@@ -294,7 +302,11 @@ func (pe *ProcedureExecutor) GetActionTraces(ctx context.Context, resourceRef ac
 			"get action traces failed for %s/%s/%s",
 			resourceRef.Namespace, resourceRef.Kind, resourceRef.Name)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			pe.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var traces []ActionTrace
 	for rows.Next() {
@@ -344,7 +356,11 @@ func (pe *ProcedureExecutor) GetActionEffectiveness(ctx context.Context, resourc
 			"get action effectiveness failed for %s/%s/%s",
 			resourceRef.Namespace, resourceRef.Kind, resourceRef.Name)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			pe.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var metrics []EffectivenessMetrics
 	for rows.Next() {

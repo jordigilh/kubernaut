@@ -1,0 +1,252 @@
+tools:
+  # Direct Kubernetes access - HolmesGPT connects directly to K8s API
+  - name: get_pods
+    description: "Get pods directly from Kubernetes API"
+    parameters:
+      - name: namespace
+        type: string
+        required: true
+        description: "Kubernetes namespace"
+      - name: labels
+        type: string
+        required: false
+        description: "Label selector (e.g., 'app=nginx,version=v1')"
+    examples:
+      - description: "Get all pods in default namespace"
+        parameters:
+          namespace: "default"
+    command: |
+      kubectl get pods -n {{ namespace }} {% if labels %}-l "{{ labels }}"{% endif %} -o json
+
+  - name: get_pod_logs
+    description: "Get pod logs directly using kubectl"
+    parameters:
+      - name: namespace
+        type: string
+        required: true
+        description: "Kubernetes namespace"
+      - name: pod_name
+        type: string
+        required: true
+        description: "Name of the pod"
+      - name: container
+        type: string
+        required: false
+        description: "Container name (for multi-container pods)"
+      - name: tail_lines
+        type: string
+        required: false
+        description: "Number of lines to tail"
+    examples:
+      - description: "Get logs from crashed pod"
+        parameters:
+          namespace: "default"
+          pod_name: "nginx-deployment-7d9c5b89d-abc123"
+          tail_lines: "100"
+    command: |
+      kubectl logs -n {{ namespace }} {{ pod_name }} {% if container %}-c {{ container }}{% endif %} {% if tail_lines %}--tail={{ tail_lines }}{% endif %}
+
+  - name: get_services
+    description: "Get services directly from Kubernetes API"
+    parameters:
+      - name: namespace
+        type: string
+        required: true
+        description: "Kubernetes namespace"
+      - name: labels
+        type: string
+        required: false
+        description: "Label selector"
+    examples:
+      - description: "Get services in kube-system"
+        parameters:
+          namespace: "kube-system"
+    command: |
+      kubectl get services -n {{ namespace }} {% if labels %}-l "{{ labels }}"{% endif %} -o json
+
+  - name: get_deployments
+    description: "Get deployments directly from Kubernetes API"
+    parameters:
+      - name: namespace
+        type: string
+        required: true
+        description: "Kubernetes namespace"
+      - name: labels
+        type: string
+        required: false
+        description: "Label selector"
+    examples:
+      - description: "Get all deployments"
+        parameters:
+          namespace: "default"
+    command: |
+      kubectl get deployments -n {{ namespace }} {% if labels %}-l "{{ labels }}"{% endif %} -o json
+
+  - name: get_events
+    description: "Get Kubernetes events directly"
+    parameters:
+      - name: namespace
+        type: string
+        required: true
+        description: "Kubernetes namespace"
+      - name: field_selector
+        type: string
+        required: false
+        description: "Field selector (e.g., 'involvedObject.name=my-pod')"
+    examples:
+      - description: "Get events for specific pod"
+        parameters:
+          namespace: "default"
+          field_selector: "involvedObject.name=nginx-deployment-7d9c5b89d-abc123"
+    command: |
+      kubectl get events -n {{ namespace }} {% if field_selector %}--field-selector="{{ field_selector }}"{% endif %} -o json
+
+  - name: describe_pod
+    description: "Get detailed pod information using kubectl describe"
+    parameters:
+      - name: namespace
+        type: string
+        required: true
+        description: "Kubernetes namespace"
+      - name: pod_name
+        type: string
+        required: true
+        description: "Name of the pod"
+    examples:
+      - description: "Describe problematic pod"
+        parameters:
+          namespace: "default"
+          pod_name: "nginx-deployment-7d9c5b89d-abc123"
+    command: |
+      kubectl describe pod -n {{ namespace }} {{ pod_name }}
+
+  # Direct Prometheus access - HolmesGPT connects directly to Prometheus
+  - name: query_prometheus_metrics
+    description: "Query Prometheus metrics directly"
+    parameters:
+      - name: query
+        type: string
+        required: true
+        description: "PromQL query"
+      - name: time_range
+        type: string
+        required: false
+        description: "Time range (e.g., 5m, 1h)"
+    examples:
+      - description: "Get CPU usage by pod"
+        parameters:
+          query: "rate(container_cpu_usage_seconds_total[5m])"
+      - description: "Get memory usage"
+        parameters:
+          query: "container_memory_usage_bytes"
+    command: |
+      curl -s "http://prometheus:9090/api/v1/query?query={{ query | urlencode }}{% if time_range %}&time={{ time_range }}{% endif %}"
+
+  - name: query_prometheus_range
+    description: "Query Prometheus for range data"
+    parameters:
+      - name: query
+        type: string
+        required: true
+        description: "PromQL query"
+      - name: start
+        type: string
+        required: true
+        description: "Start time (e.g., 2023-01-01T00:00:00Z)"
+      - name: end
+        type: string
+        required: true
+        description: "End time (e.g., 2023-01-01T01:00:00Z)"
+      - name: step
+        type: string
+        required: false
+        description: "Query resolution step (e.g., 30s)"
+    examples:
+      - description: "Get CPU usage over time"
+        parameters:
+          query: "rate(container_cpu_usage_seconds_total[5m])"
+          start: "2023-01-01T00:00:00Z"
+          end: "2023-01-01T01:00:00Z"
+          step: "30s"
+    command: |
+      curl -s "http://prometheus:9090/api/v1/query_range?query={{ query | urlencode }}&start={{ start }}&end={{ end }}{% if step %}&step={{ step }}{% endif %}"
+
+  - name: get_prometheus_alerts
+    description: "Get active alerts from Prometheus Alertmanager"
+    parameters: []
+    examples:
+      - description: "Get all active alerts"
+    command: |
+      curl -s "http://alertmanager:9093/api/v1/alerts"
+
+  # Kubernaut-specific context - Only these use the Context API
+  - name: discover_kubernaut_context
+    description: "Discover available Kubernaut-specific context types for dynamic investigation"
+    parameters:
+      - name: alertType
+        type: string
+        required: false
+        description: "Type of alert (e.g., PodCrashLoopBackOff, NodeNotReady)"
+      - name: namespace
+        type: string
+        required: false
+        description: "Kubernetes namespace"
+    examples:
+      - description: "Discover Kubernaut context for alert"
+        parameters:
+          alertType: "PodCrashLoopBackOff"
+          namespace: "default"
+    command: |
+      curl -s "http://localhost:8091/api/v1/context/discover?alertType={{ alertType }}&namespace={{ namespace }}"
+
+  - name: get_kubernaut_action_history
+    description: "Get Kubernaut workflow execution history and action data"
+    parameters:
+      - name: workflow_id
+        type: string
+        required: false
+        description: "Specific workflow ID to query"
+      - name: alert_type
+        type: string
+        required: false
+        description: "Filter by alert type"
+      - name: limit
+        type: string
+        required: false
+        description: "Maximum number of records to return"
+    examples:
+      - description: "Get recent Kubernaut workflow history"
+        parameters:
+          limit: "50"
+      - description: "Get history for specific alert type handled by Kubernaut"
+        parameters:
+          alert_type: "PodCrashLoopBackOff"
+          limit: "20"
+    command: |
+      curl -s "http://localhost:8091/api/v1/context/action-history?workflowId={{ workflow_id }}&alertType={{ alert_type }}&limit={{ limit }}"
+
+  - name: analyze_kubernaut_patterns
+    description: "Get Kubernaut pattern analysis and intelligent recommendations based on historical workflows"
+    parameters:
+      - name: signature
+        type: string
+        required: true
+        description: "Pattern signature or identifier from Kubernaut's pattern detection"
+      - name: alert_context
+        type: string
+        required: false
+        description: "Additional alert context for Kubernaut pattern matching"
+    examples:
+      - description: "Analyze Kubernaut patterns for crash loop"
+        parameters:
+          signature: "pod-crash-loop-default-nginx"
+    command: |
+      curl -s "http://localhost:8091/api/v1/context/patterns/{{ signature }}?context={{ alert_context }}"
+
+  - name: get_kubernaut_context_health
+    description: "Check health of Kubernaut Context API"
+    parameters: []
+    examples:
+      - description: "Health check Kubernaut Context API"
+    command: |
+      curl -s "http://localhost:8091/api/v1/context/health"
