@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-
 // emailNotifier implements the Notifier interface for email
 type emailNotifier struct {
 	config EmailNotifierConfig

@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -57,7 +56,7 @@ func (lm *LearningMetrics) RecordAnalysis(result *PatternAnalysisResult) {
 }
 
 // RecordExecution records a workflow execution
-func (lm *LearningMetrics) RecordExecution(execution *engine.WorkflowExecution) {
+func (lm *LearningMetrics) RecordExecution(execution *sharedtypes.WorkflowExecutionRecord) {
 	lm.TotalExecutions++
 	lm.LastUpdated = time.Now()
 }
@@ -134,12 +133,12 @@ type ImplementationGuide struct {
 
 // OptimizedWorkflowTemplate represents an optimized workflow template
 type OptimizedWorkflowTemplate struct {
-	OriginalTemplate  *sharedtypes.WorkflowTemplate `json:"original_template"`
-	OptimizedTemplate *sharedtypes.WorkflowTemplate `json:"optimized_template"`
-	Optimizations     []*TemplateOptimization       `json:"optimizations"`
-	ImpactEstimate    *OptimizationImpact           `json:"impact_estimate"`
-	ConfidenceScore   float64                       `json:"confidence_score"`
-	RecommendedFor    []string                      `json:"recommended_for"`
+	OriginalTemplate  *sharedtypes.TemplateSpec `json:"original_template"`
+	OptimizedTemplate *sharedtypes.TemplateSpec `json:"optimized_template"`
+	Optimizations     []*TemplateOptimization   `json:"optimizations"`
+	ImpactEstimate    *OptimizationImpact       `json:"impact_estimate"`
+	ConfidenceScore   float64                   `json:"confidence_score"`
+	RecommendedFor    []string                  `json:"recommended_for"`
 }
 
 // TemplateOptimization represents a specific optimization
@@ -219,15 +218,8 @@ type QualityAssessment struct {
 	QualityFactors     map[string]float64 `json:"quality_factors"`
 }
 
-// VectorSearchResult represents a result from vector database search
-type VectorSearchResult struct {
-	ID         string                 `json:"id"`
-	Score      float64                `json:"score"`
-	Vector     []float64              `json:"vector,omitempty"`
-	Metadata   map[string]interface{} `json:"metadata"`
-	Distance   float64                `json:"distance"`
-	Similarity float64                `json:"similarity"`
-}
+// VectorSearchResult is now defined as a type alias in pattern_discovery_engine.go
+// for integration with the unified vector database interface
 
 // PatternWorkflowExecution represents a historical workflow execution for pattern analysis
 type PatternWorkflowExecution struct {
@@ -263,14 +255,14 @@ type StepExecutionResult struct {
 
 // WorkflowLearningData represents data used for learning from workflow executions
 type WorkflowLearningData struct {
-	ExecutionID       string                               `json:"execution_id"`
-	TemplateID        string                               `json:"template_id"`
-	Features          *shared.WorkflowFeatures             `json:"features"`
-	ExecutionResult   *sharedtypes.WorkflowExecutionResult `json:"execution_result"`
-	ResourceUsage     *sharedtypes.ResourceUsageData       `json:"resource_usage"`
-	Context           map[string]interface{}               `json:"context"`
-	LearningObjective string                               `json:"learning_objective"`
-	Feedback          *LearningFeedback                    `json:"feedback,omitempty"`
+	ExecutionID       string                                     `json:"execution_id"`
+	TemplateID        string                                     `json:"template_id"`
+	Features          *shared.WorkflowFeatures                   `json:"features"`
+	ExecutionResult   *sharedtypes.SharedWorkflowExecutionResult `json:"execution_result"`
+	ResourceUsage     *sharedtypes.ResourceUsageData             `json:"resource_usage"`
+	Context           map[string]interface{}                     `json:"context"`
+	LearningObjective string                                     `json:"learning_objective"`
+	Feedback          *LearningFeedback                          `json:"feedback,omitempty"`
 }
 
 // LearningFeedback provides feedback for learning algorithms
@@ -282,4 +274,61 @@ type LearningFeedback struct {
 	ConfidenceScore   float64                `json:"confidence_score"`
 	Improvements      []string               `json:"improvements"`
 	Labels            map[string]interface{} `json:"labels"`
+}
+
+// Pattern analysis result types for insights and effectiveness assessment
+
+// ActionSequencePattern represents patterns in action sequences
+type ActionSequencePattern struct {
+	Actions       []string      `json:"actions"`
+	Frequency     int           `json:"frequency"`
+	SuccessRate   float64       `json:"success_rate"`
+	AvgDuration   time.Duration `json:"avg_duration"`
+	ResourceType  string        `json:"resource_type"`
+	Effectiveness float64       `json:"effectiveness"`
+}
+
+// ResourcePattern represents patterns by resource type
+type ResourcePattern struct {
+	ResourceName     string        `json:"resource_name"`
+	ActionCount      int           `json:"action_count"`
+	SuccessRate      float64       `json:"success_rate"`
+	AvgEffectiveness float64       `json:"avg_effectiveness"`
+	AvgDuration      time.Duration `json:"avg_duration"`
+	CommonActions    []string      `json:"common_actions"`
+}
+
+// TemporalPattern represents temporal patterns in actions
+type TemporalPattern struct {
+	Type             string  `json:"type"`
+	Description      string  `json:"description"`
+	ActionCount      int     `json:"action_count"`
+	SuccessRate      float64 `json:"success_rate"`
+	AvgEffectiveness float64 `json:"avg_effectiveness"`
+}
+
+// EffectivenessPattern represents effectiveness patterns
+type EffectivenessPattern struct {
+	Action                string  `json:"action"`
+	AvgEffectiveness      float64 `json:"avg_effectiveness"`
+	Count                 int     `json:"count"`
+	HighEffectivenessRate float64 `json:"high_effectiveness_rate"`
+	LowEffectivenessRate  float64 `json:"low_effectiveness_rate"`
+}
+
+// OscillationAnalysisPattern represents oscillation patterns for analysis
+type OscillationAnalysisPattern struct {
+	ResourceName        string        `json:"resource_name"`
+	Pattern             string        `json:"pattern"`
+	Frequency           int           `json:"frequency"`
+	AvgInterval         time.Duration `json:"avg_interval"`
+	EffectivenessImpact float64       `json:"effectiveness_impact"`
+}
+
+// SuccessPattern represents success and failure patterns
+type SuccessPattern struct {
+	Action           string  `json:"action"`
+	SuccessRate      float64 `json:"success_rate"`
+	TotalExecutions  int     `json:"total_executions"`
+	AvgEffectiveness float64 `json:"avg_effectiveness"`
 }

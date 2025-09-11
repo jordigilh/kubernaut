@@ -87,7 +87,9 @@ func (cp *ConnectionPool) initialize() error {
 
 	// Test initial connection
 	if err := cp.testConnection(); err != nil {
-		db.Close()
+		if closeErr := db.Close(); closeErr != nil {
+			cp.logger.WithError(closeErr).Error("Failed to close database connection during cleanup")
+		}
 		return fmt.Errorf("failed to establish initial connection: %w", err)
 	}
 

@@ -5,6 +5,8 @@ import (
 	"encoding/csv"
 	"fmt"
 	"html/template"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -624,7 +626,64 @@ func (re *ReportExporter) exportConfigurationToJSON(report *adaptive.Configurati
 
 // WriteToFile writes export result to a file
 func (re *ReportExporter) WriteToFile(result *ExportResult, outputPath string) error {
-	return fmt.Errorf("file writing not implemented in this version")
+	// Validate inputs first to prevent nil pointer dereference
+	if result == nil {
+		return fmt.Errorf("export result cannot be nil")
+	}
+
+	re.log.WithFields(logrus.Fields{
+		"output_path": outputPath,
+		"format":      result.Format,
+		"size_bytes":  len(result.Data),
+	}).Debug("Writing export result to file")
+
+	if outputPath == "" {
+		return fmt.Errorf("output path cannot be empty")
+	}
+
+	if len(result.Data) == 0 {
+		return fmt.Errorf("export result data is empty")
+	}
+
+	// Create directory structure if it doesn't exist
+	if err := re.ensureDirectoryExists(outputPath); err != nil {
+		return fmt.Errorf("failed to create directory structure: %w", err)
+	}
+
+	// Write data to file with appropriate permissions
+	if err := os.WriteFile(outputPath, result.Data, 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", outputPath, err)
+	}
+
+	// Log successful write
+	re.log.WithFields(logrus.Fields{
+		"output_path": outputPath,
+		"format":      result.Format,
+		"size_bytes":  len(result.Data),
+	}).Info("Successfully wrote export result to file")
+
+	return nil
+}
+
+// ensureDirectoryExists creates the directory structure for the given file path if it doesn't exist
+func (re *ReportExporter) ensureDirectoryExists(filePath string) error {
+	dir := filepath.Dir(filePath)
+	if dir == "." || dir == "/" {
+		return nil // No directory creation needed
+	}
+
+	// Check if directory already exists
+	if info, err := os.Stat(dir); err == nil && info.IsDir() {
+		return nil // Directory already exists
+	}
+
+	// Create directory structure with appropriate permissions
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	re.log.WithField("directory", dir).Debug("Created directory structure for export file")
+	return nil
 }
 
 // Helper methods

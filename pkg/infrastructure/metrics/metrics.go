@@ -196,3 +196,14 @@ func (t *Timer) RecordAction(action string) {
 func (t *Timer) RecordSLMAnalysis() {
 	RecordSLMAnalysis(t.Elapsed())
 }
+
+// Client provides a simple metrics client interface
+type Client struct {
+	// This is a minimal client that can be extended as needed
+}
+
+// RecordCounter records a counter metric
+func (c *Client) RecordCounter(name string, value float64, labels map[string]string) error {
+	// For now, this is a no-op, but could be implemented to record actual metrics
+	return nil
+}

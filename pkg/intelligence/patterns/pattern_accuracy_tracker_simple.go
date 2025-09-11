@@ -6,7 +6,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/ai/common"
+	"github.com/jordigilh/kubernaut/pkg/intelligence/analytics"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	sharedmath "github.com/jordigilh/kubernaut/pkg/shared/math"
 	"github.com/sirupsen/logrus"
@@ -93,7 +93,7 @@ type SimplePredictionRecord struct {
 type SimpleAccuracyReport struct {
 	PatternID           string                         `json:"pattern_id"`
 	ReportTimestamp     time.Time                      `json:"report_timestamp"`
-	AnalysisPeriod      common.TimeRange               `json:"analysis_period"`
+	AnalysisPeriod      analytics.TimeRange            `json:"analysis_period"`
 	OverallMetrics      *SimpleAccuracyMetrics         `json:"overall_metrics"`
 	PerformanceAnalysis *SimplePerformanceAnalysis     `json:"performance_analysis"`
 	QualityAssessment   *SimpleQualityAssessment       `json:"quality_assessment"`
@@ -219,9 +219,10 @@ func (pat *PatternAccuracyTrackerSimple) GenerateAccuracyReport(ctx context.Cont
 	report := &SimpleAccuracyReport{
 		PatternID:       patternID,
 		ReportTimestamp: time.Now(),
-		AnalysisPeriod: common.TimeRange{
-			Start: time.Now().Add(-analysisWindow),
-			End:   time.Now(),
+		AnalysisPeriod: analytics.TimeRange{
+			StartTime: time.Now().Add(-analysisWindow),
+			EndTime:   time.Now(),
+			Interval:  time.Minute,
 		},
 		ComparisonBaselines: map[string]float64{
 			"random_baseline":   0.5,
@@ -311,6 +312,23 @@ func (pat *PatternAccuracyTrackerSimple) updateAccuracyMetrics(ctx context.Conte
 }
 
 func (pat *PatternAccuracyTrackerSimple) calculateSimpleMetrics(ctx context.Context, history *SimplePatternAccuracyHistory) (*SimpleAccuracyMetrics, error) {
+	startTime := time.Now()
+
+	// Add structured logging with context
+	pat.log.WithFields(logrus.Fields{
+		"pattern_type":        history.PatternType,
+		"total_predictions":   history.TotalPredictions,
+		"correct_predictions": history.CorrectPredictions,
+	}).Debug("Starting pattern accuracy metrics calculation")
+
+	// Check for cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		// Continue with calculations
+	}
+
 	if history.TotalPredictions == 0 {
 		return nil, fmt.Errorf("no predictions to calculate metrics from")
 	}
@@ -335,6 +353,16 @@ func (pat *PatternAccuracyTrackerSimple) calculateSimpleMetrics(ctx context.Cont
 	// Calculate simple confidence interval
 	metrics.AccuracyCI = pat.calculateSimpleWilsonConfidenceInterval(accuracy, history.TotalPredictions)
 
+	// Log completion with calculated metrics
+	pat.log.WithFields(logrus.Fields{
+		"accuracy":             metrics.Accuracy,
+		"precision":            metrics.Precision,
+		"recall":               metrics.Recall,
+		"f1_score":             metrics.F1Score,
+		"sample_size":          metrics.SampleSize,
+		"calculation_duration": time.Since(startTime),
+	}).Debug("Completed pattern accuracy metrics calculation")
+
 	return metrics, nil
 }
 
@@ -356,14 +384,40 @@ func (pat *PatternAccuracyTrackerSimple) calculateSimpleWilsonConfidenceInterval
 }
 
 func (pat *PatternAccuracyTrackerSimple) analyzeSimplePerformance(ctx context.Context, patternID string) *SimplePerformanceAnalysis {
+	startTime := time.Now()
+
+	// Add structured logging with request context
+	pat.log.WithFields(logrus.Fields{
+		"pattern_id":    patternID,
+		"analysis_type": "simple_performance",
+	}).Debug("Starting simple performance analysis")
+
 	window := pat.performanceTracker.performanceWindows[patternID]
 	if window == nil {
+		pat.log.WithFields(logrus.Fields{
+			"pattern_id": patternID,
+		}).Debug("No performance window found, returning default analysis")
+
 		return &SimplePerformanceAnalysis{
 			ConsistencyScore:     0.5,
 			StabilityScore:       0.5,
 			RobustnessScore:      0.5,
 			PerformanceAnomalies: make([]*SimplePerformanceAnomaly, 0),
 		}
+	}
+
+	// Check for cancellation before processing
+	select {
+	case <-ctx.Done():
+		pat.log.WithError(ctx.Err()).WithField("pattern_id", patternID).Warn("Performance analysis cancelled")
+		return &SimplePerformanceAnalysis{
+			ConsistencyScore:     0.5,
+			StabilityScore:       0.5,
+			RobustnessScore:      0.5,
+			PerformanceAnomalies: make([]*SimplePerformanceAnomaly, 0),
+		}
+	default:
+		// Continue with analysis
 	}
 
 	// Calculate simple performance metrics
@@ -401,6 +455,17 @@ func (pat *PatternAccuracyTrackerSimple) analyzeSimplePerformance(ctx context.Co
 			})
 		}
 	}
+
+	// Log completion with analysis results
+	pat.log.WithFields(logrus.Fields{
+		"pattern_id":         patternID,
+		"window_size":        len(window.Predictions),
+		"consistency_score":  analysis.ConsistencyScore,
+		"stability_score":    analysis.StabilityScore,
+		"robustness_score":   analysis.RobustnessScore,
+		"anomalies_detected": len(analysis.PerformanceAnomalies),
+		"analysis_duration":  time.Since(startTime),
+	}).Debug("Completed simple performance analysis")
 
 	return analysis
 }

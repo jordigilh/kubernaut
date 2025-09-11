@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	"github.com/sirupsen/logrus"
 )
@@ -246,7 +247,7 @@ type VectorEntry struct {
 
 // InMemoryPatternFallback provides in-memory fallback for pattern storage
 type InMemoryPatternFallback struct {
-	patterns map[string]*engine.DiscoveredPattern
+	patterns map[string]*types.DiscoveredPattern
 	mu       sync.RWMutex
 	metrics  *FallbackMetrics
 	log      *logrus.Logger
@@ -267,14 +268,14 @@ func (impf *InMemoryPatternFallback) ProvideFallback(ctx context.Context, operat
 
 	switch operation {
 	case "store":
-		pattern := params["pattern"].(*engine.DiscoveredPattern)
+		pattern := params["pattern"].(*types.DiscoveredPattern)
 		impf.patterns[pattern.ID] = pattern
 		impf.metrics.SuccessfulFallbacks++
 		return nil, nil
 
 	case "get":
 		filters := params["filters"].(map[string]interface{})
-		patterns := make([]*engine.DiscoveredPattern, 0)
+		patterns := make([]*types.DiscoveredPattern, 0)
 
 		// Simple filtering - in practice would be more sophisticated
 		limit := 100
@@ -451,7 +452,7 @@ func (dm *DependencyManager) initializeFallbacks() {
 
 	// Initialize in-memory pattern fallback
 	patternFallback := &InMemoryPatternFallback{
-		patterns: make(map[string]*engine.DiscoveredPattern),
+		patterns: make(map[string]*types.DiscoveredPattern),
 		metrics:  &FallbackMetrics{},
 		log:      dm.log,
 	}
@@ -710,7 +711,7 @@ type ManagedPatternStore struct {
 	log     *logrus.Logger
 }
 
-func (mps *ManagedPatternStore) StorePattern(ctx context.Context, pattern *engine.DiscoveredPattern) error {
+func (mps *ManagedPatternStore) StorePattern(ctx context.Context, pattern *types.DiscoveredPattern) error {
 	// Try primary pattern store first
 	if dep, err := mps.manager.GetDependency("pattern_store"); err == nil {
 		if psd, ok := dep.(*PatternStoreDependency); ok && psd.IsHealthy(ctx) {
@@ -734,7 +735,7 @@ func (mps *ManagedPatternStore) StorePattern(ctx context.Context, pattern *engin
 	return fmt.Errorf("pattern store unavailable and fallback disabled")
 }
 
-func (mps *ManagedPatternStore) ListPatterns(ctx context.Context, patternType string) ([]*engine.DiscoveredPattern, error) {
+func (mps *ManagedPatternStore) ListPatterns(ctx context.Context, patternType string) ([]*types.DiscoveredPattern, error) {
 	// Try primary pattern store first
 	if dep, err := mps.manager.GetDependency("pattern_store"); err == nil {
 		if psd, ok := dep.(*PatternStoreDependency); ok && psd.IsHealthy(ctx) {
@@ -751,14 +752,14 @@ func (mps *ManagedPatternStore) ListPatterns(ctx context.Context, patternType st
 		result, err := fallback.ProvideFallback(ctx, "get", params)
 		if err == nil {
 			mps.log.Debug("Used pattern store fallback for get operation")
-			return result.([]*engine.DiscoveredPattern), nil
+			return result.([]*types.DiscoveredPattern), nil
 		}
 	}
 
 	return nil, fmt.Errorf("pattern store unavailable and fallback disabled")
 }
 
-func (mps *ManagedPatternStore) GetPattern(ctx context.Context, patternID string) (*engine.DiscoveredPattern, error) {
+func (mps *ManagedPatternStore) GetPattern(ctx context.Context, patternID string) (*types.DiscoveredPattern, error) {
 	// Try primary pattern store first
 	if dep, err := mps.manager.GetDependency("pattern_store"); err == nil {
 		if psd, ok := dep.(*PatternStoreDependency); ok && psd.IsHealthy(ctx) {
@@ -770,7 +771,7 @@ func (mps *ManagedPatternStore) GetPattern(ctx context.Context, patternID string
 	return nil, fmt.Errorf("pattern store unavailable for get operation")
 }
 
-func (mps *ManagedPatternStore) UpdatePattern(ctx context.Context, pattern *engine.DiscoveredPattern) error {
+func (mps *ManagedPatternStore) UpdatePattern(ctx context.Context, pattern *types.DiscoveredPattern) error {
 	return mps.StorePattern(ctx, pattern) // Simplified implementation
 }
 

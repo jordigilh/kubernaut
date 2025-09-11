@@ -68,7 +68,7 @@ func NewClusteringEngine(config *patterns.PatternDiscoveryConfig, log *logrus.Lo
 }
 
 // ClusterAlerts clusters workflow executions based on alert characteristics
-func (ce *ClusteringEngine) ClusterAlerts(data []*engine.WorkflowExecutionData) []*AlertClusterGroup {
+func (ce *ClusteringEngine) ClusterAlerts(data []*engine.EngineWorkflowExecutionData) []*AlertClusterGroup {
 	ce.log.WithField("data_points", len(data)).Info("Clustering alerts")
 
 	if len(data) < ce.config.MinClusterSize {
@@ -124,7 +124,7 @@ func (ce *ClusteringEngine) ClusterAlerts(data []*engine.WorkflowExecutionData) 
 }
 
 // ClusterExecutionPatterns clusters executions based on execution characteristics
-func (ce *ClusteringEngine) ClusterExecutionPatterns(data []*engine.WorkflowExecutionData) (*ClusteringResult, error) {
+func (ce *ClusteringEngine) ClusterExecutionPatterns(data []*engine.EngineWorkflowExecutionData) (*ClusteringResult, error) {
 	ce.log.WithField("data_points", len(data)).Info("Clustering execution patterns")
 
 	if len(data) < ce.config.MinClusterSize {
@@ -163,11 +163,11 @@ func (ce *ClusteringEngine) ClusterExecutionPatterns(data []*engine.WorkflowExec
 }
 
 // ClusterResourceUsage clusters executions based on resource usage patterns
-func (ce *ClusteringEngine) ClusterResourceUsage(data []*engine.WorkflowExecutionData) (*ClusteringResult, error) {
+func (ce *ClusteringEngine) ClusterResourceUsage(data []*engine.EngineWorkflowExecutionData) (*ClusteringResult, error) {
 	ce.log.WithField("data_points", len(data)).Info("Clustering resource usage patterns")
 
 	// Filter data with resource usage information
-	validData := make([]*engine.WorkflowExecutionData, 0)
+	validData := make([]*engine.EngineWorkflowExecutionData, 0)
 	for _, execution := range data {
 		// Check if execution has resource metrics
 		if execution.Metrics != nil {
@@ -342,7 +342,7 @@ func (ce *ClusteringEngine) PerformDBSCANClustering(features [][]float64, metada
 
 // Private helper methods
 
-func (ce *ClusteringEngine) extractAlertFeatures(execution *engine.WorkflowExecutionData) []float64 {
+func (ce *ClusteringEngine) extractAlertFeatures(execution *engine.EngineWorkflowExecutionData) []float64 {
 	// Extract alert info from metadata
 	alertName := ""
 	alertSeverity := ""
@@ -407,7 +407,7 @@ func (ce *ClusteringEngine) extractAlertFeatures(execution *engine.WorkflowExecu
 	return features
 }
 
-func (ce *ClusteringEngine) extractExecutionFeatures(execution *engine.WorkflowExecutionData) []float64 {
+func (ce *ClusteringEngine) extractExecutionFeatures(execution *engine.EngineWorkflowExecutionData) []float64 {
 	features := make([]float64, 0)
 
 	// Execution success
@@ -473,7 +473,7 @@ func (ce *ClusteringEngine) extractExecutionFeatures(execution *engine.WorkflowE
 	return features
 }
 
-func (ce *ClusteringEngine) extractResourceFeatures(execution *engine.WorkflowExecutionData) []float64 {
+func (ce *ClusteringEngine) extractResourceFeatures(execution *engine.EngineWorkflowExecutionData) []float64 {
 	// Extract resource usage from metrics
 	cpuUsage := 0.0
 	memoryUsage := 0.0
@@ -885,7 +885,7 @@ func (ce *ClusteringEngine) calculateMinInterClusterDistance(member *ClusterMemb
 	return minAvgDistance
 }
 
-func (ce *ClusteringEngine) convertToAlertClusters(result *ClusteringResult, data []*engine.WorkflowExecutionData) []*AlertClusterGroup {
+func (ce *ClusteringEngine) convertToAlertClusters(result *ClusteringResult, data []*engine.EngineWorkflowExecutionData) []*AlertClusterGroup {
 	alertClusters := make([]*AlertClusterGroup, 0)
 
 	for _, cluster := range result.Clusters {
@@ -894,7 +894,7 @@ func (ce *ClusteringEngine) convertToAlertClusters(result *ClusteringResult, dat
 		}
 
 		alertCluster := &AlertClusterGroup{
-			Members:               make([]*engine.WorkflowExecutionData, 0),
+			Members:               make([]*engine.EngineWorkflowExecutionData, 0),
 			CommonCharacteristics: "",
 			AlertTypes:            make([]string, 0),
 			Namespaces:            make([]string, 0),
@@ -1138,13 +1138,13 @@ func NewMLClusterer(config *patterns.PatternDiscoveryConfig, log *logrus.Logger)
 }
 
 type AlertClusterGroup struct {
-	Members               []*engine.WorkflowExecutionData `json:"members"`
-	CommonCharacteristics string                          `json:"common_characteristics"`
-	AlertTypes            []string                        `json:"alert_types"`
-	Namespaces            []string                        `json:"namespaces"`
-	Resources             []string                        `json:"resources"`
-	TimeWindow            time.Duration                   `json:"time_window"`
-	CommonLabels          map[string]string               `json:"common_labels"`
-	Confidence            float64                         `json:"confidence"`
-	SuccessRate           float64                         `json:"success_rate"`
+	Members               []*engine.EngineWorkflowExecutionData `json:"members"`
+	CommonCharacteristics string                                `json:"common_characteristics"`
+	AlertTypes            []string                              `json:"alert_types"`
+	Namespaces            []string                              `json:"namespaces"`
+	Resources             []string                              `json:"resources"`
+	TimeWindow            time.Duration                         `json:"time_window"`
+	CommonLabels          map[string]string                     `json:"common_labels"`
+	Confidence            float64                               `json:"confidence"`
+	SuccessRate           float64                               `json:"success_rate"`
 }

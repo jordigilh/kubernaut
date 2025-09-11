@@ -20,9 +20,9 @@
   "commonAnnotations": {
     "description": "Pod webapp-deployment-5c7d8f9b4c-xyz123 memory usage is back to normal (65% of limit)",
     "summary": "Memory usage normalized",
-    "runbook_url": "https://runbooks.example.com/HighMemoryUsage"
+    "runbook_url": "https://runbooks.kubernaut.io/HighMemoryUsage"
   },
-  "externalURL": "https://alertmanager.example.com",
+  "externalURL": "https://alertmanager.kubernaut.io",
   "alerts": [
     {
       "status": "resolved",
@@ -41,14 +41,14 @@
       "annotations": {
         "description": "Pod webapp-deployment-5c7d8f9b4c-xyz123 memory usage is back to normal (65% of limit)",
         "summary": "Memory usage normalized",
-        "runbook_url": "https://runbooks.example.com/HighMemoryUsage",
+        "runbook_url": "https://runbooks.kubernaut.io/HighMemoryUsage",
         "memory_usage_bytes": "1395864371",
         "memory_limit_bytes": "2147483648",
         "memory_percentage": "65"
       },
       "startsAt": "2024-08-25T10:30:00Z",
       "endsAt": "2024-08-25T14:00:00Z",
-      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_memory_usage_bytes",
+      "generatorURL": "https://prometheus.kubernaut.io/graph?g0.expr=container_memory_usage_bytes",
       "fingerprint": "6f3d2e1a9b8c7d5e"
     }
   ]

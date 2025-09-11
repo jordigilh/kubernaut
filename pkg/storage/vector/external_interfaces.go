@@ -1,0 +1,56 @@
+package vector
+
+import (
+	"context"
+	"time"
+)
+
+// ExternalVectorDatabase defines the interface for external vector database services
+type ExternalVectorDatabase interface {
+	// Store stores vectors in the external database
+	Store(ctx context.Context, vectors []VectorData) error
+
+	// Query searches for similar vectors
+	Query(ctx context.Context, embedding []float64, topK int, filters map[string]interface{}) ([]BaseSearchResult, error)
+
+	// QueryByText searches for similar vectors using text input
+	QueryByText(ctx context.Context, text string, topK int, filters map[string]interface{}) ([]BaseSearchResult, error)
+
+	// Delete removes vectors by their IDs
+	Delete(ctx context.Context, ids []string) error
+
+	// DeleteByFilter removes vectors matching the filter
+	DeleteByFilter(ctx context.Context, filters map[string]interface{}) error
+
+	// Close closes the database connection
+	Close() error
+}
+
+// VectorData represents data to be stored in a vector database
+type VectorData struct {
+	ID        string                 `json:"id"`
+	Text      string                 `json:"text,omitempty"`
+	Embedding []float64              `json:"embedding,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Source    string                 `json:"source,omitempty"`
+	Timestamp time.Time              `json:"timestamp,omitempty"`
+}
+
+// ExternalVectorSearchResult represents a search result from external vector databases
+// Now uses embedded BaseSearchResult for consistency
+type ExternalVectorSearchResult = BaseSearchResult
+
+// ExternalEmbeddingGenerator creates embeddings for external services
+type ExternalEmbeddingGenerator interface {
+	// GenerateEmbedding generates a single embedding from text
+	GenerateEmbedding(ctx context.Context, text string) ([]float64, error)
+
+	// GenerateBatchEmbeddings generates embeddings for multiple texts
+	GenerateBatchEmbeddings(ctx context.Context, texts []string) ([][]float64, error)
+
+	// GetDimension returns the dimensionality of embeddings
+	GetDimension() int
+
+	// GetModel returns the model name
+	GetModel() string
+}

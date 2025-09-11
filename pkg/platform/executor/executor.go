@@ -10,8 +10,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
 	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 

@@ -1,7 +1,10 @@
 package patterns
 
 import (
+	"fmt"
 	"time"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Common types used across pattern discovery components
@@ -12,13 +15,9 @@ type Range struct {
 	Max float64 `json:"max"`
 }
 
-// ResourceUsage represents resource utilization metrics
-type ResourceUsage struct {
-	CPUUsage     float64 `json:"cpu_usage"`
-	MemoryUsage  float64 `json:"memory_usage"`
-	NetworkUsage float64 `json:"network_usage"`
-	StorageUsage float64 `json:"storage_usage"`
-}
+// ResourceUsage is an alias for the shared ResourceUsageData type
+// to maintain backward compatibility while consolidating duplicated types
+type ResourceUsage = sharedtypes.ResourceUsageData
 
 // PatternTimeRange represents a time range for pattern analysis
 type PatternTimeRange struct {
@@ -49,18 +48,24 @@ type PatternValidationRule struct {
 	Required      bool                             `json:"required"`
 }
 
-// PatternValidationResult represents pattern validation test results
-type PatternValidationResult struct {
-	ValidationID      string             `json:"validation_id"`
-	TestType          string             `json:"test_type"`
-	Timestamp         time.Time          `json:"timestamp"`
-	TestAccuracy      float64            `json:"test_accuracy"`
-	TrainAccuracy     float64            `json:"train_accuracy"`
-	GeneralizationGap float64            `json:"generalization_gap"`
-	OverfittingScore  float64            `json:"overfitting_score"`
-	TestMetrics       *AccuracyMetrics   `json:"test_metrics"`
-	Recommendations   []string           `json:"recommendations"`
-	QualityIndicators map[string]float64 `json:"quality_indicators"`
+// PatternValidationResult is now defined in pattern_discovery_helpers.go
+// This comment maintained for backward compatibility documentation
+
+// NewPatternValidationResult creates a ValidationResult configured for pattern validation
+func NewSharedPatternValidationResult(validationID, testType string, testAccuracy, trainAccuracy, generalizationGap, overfittingScore float64) *sharedtypes.ValidationResult {
+	return &sharedtypes.ValidationResult{
+		RuleID:            validationID,
+		Type:              sharedtypes.ValidationTypePattern,
+		Passed:            generalizationGap < 0.1, // reasonable default threshold
+		Message:           fmt.Sprintf("Pattern validation: %s (gap: %.3f)", testType, generalizationGap),
+		TestType:          testType,
+		TestAccuracy:      testAccuracy,
+		TrainAccuracy:     trainAccuracy,
+		GeneralizationGap: generalizationGap,
+		OverfittingScore:  overfittingScore,
+		Timestamp:         time.Now(),
+		Details:           make(map[string]interface{}),
+	}
 }
 
 // AccuracyMetrics represents comprehensive accuracy measurements

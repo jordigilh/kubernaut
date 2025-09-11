@@ -155,10 +155,10 @@ func (f *ClientFactory) ValidateConfig() error {
 	// Validate Prometheus configuration
 	if f.config.PrometheusConfig.Enabled {
 		if f.config.PrometheusConfig.Endpoint == "" {
-			return fmt.Errorf("Prometheus endpoint is required when enabled")
+			return fmt.Errorf("prometheus endpoint is required when enabled")
 		}
 		if f.config.PrometheusConfig.Timeout <= 0 {
-			return fmt.Errorf("Prometheus timeout must be positive")
+			return fmt.Errorf("prometheus timeout must be positive")
 		}
 	}
 

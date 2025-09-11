@@ -57,6 +57,19 @@ database:
   max_idle_conns: 5
   conn_max_lifetime_minutes: 5
 
+# Vector Database Configuration (for pattern learning and analytics)
+vectordb:
+  enabled: true
+  backend: "memory"  # Use memory for example/development
+  embedding_service:
+    service: "local"
+    dimension: 384
+    model: "all-MiniLM-L6-v2"
+  cache:
+    enabled: true
+    max_size: 1000
+    cache_type: "memory"
+
 # Monitoring Configuration - Phase 1 Implementation
 monitoring:
   # Enable production monitoring clients (vs stub implementations)

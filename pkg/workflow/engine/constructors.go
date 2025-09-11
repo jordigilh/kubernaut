@@ -6,36 +6,62 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/sirupsen/logrus"
 )
 
 // Constructor functions for core types
-func NewWorkflowTemplate(id, name string) *WorkflowTemplate {
-	return &WorkflowTemplate{
-		ID:         id,
-		Name:       name,
-		Steps:      []*WorkflowStep{},
-		Conditions: []*WorkflowCondition{},
+func NewWorkflowTemplate(id, name string) *ExecutableTemplate {
+	return &ExecutableTemplate{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:        id,
+				Name:      name,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+				Metadata:  make(map[string]interface{}),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "system",
+		},
+		Steps:      []*ExecutableWorkflowStep{},
+		Conditions: []*ExecutableCondition{},
 		Variables:  make(map[string]interface{}),
 		Tags:       []string{},
 	}
 }
 
-func NewWorkflow(id string, template *WorkflowTemplate) *Workflow {
+func NewWorkflow(id string, template *ExecutableTemplate) *Workflow {
 	return &Workflow{
-		ID:       id,
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
+				ID:        id,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+				Metadata:  make(map[string]interface{}),
+			},
+			Version:   "1.0.0",
+			CreatedBy: "system",
+		},
 		Template: template,
 		Status:   StatusPending,
-		Metadata: make(map[string]interface{}),
 	}
 }
 
-func NewWorkflowExecution(id, workflowID string) *WorkflowExecution {
-	return &WorkflowExecution{
-		ID:         id,
-		WorkflowID: workflowID,
-		Status:     ExecutionStatusPending,
-		Steps:      []*StepExecution{},
+func NewRuntimeWorkflowExecution(id, workflowID string) *RuntimeWorkflowExecution {
+	return &RuntimeWorkflowExecution{
+		WorkflowExecutionRecord: types.WorkflowExecutionRecord{
+			ID:         id,
+			WorkflowID: workflowID,
+			Status:     string(ExecutionStatusPending),
+			StartTime:  time.Now(),
+			Metadata:   make(map[string]interface{}),
+		},
+		Steps: []*StepExecution{},
 	}
 }
 
@@ -65,53 +91,135 @@ func NewPromptOptimizer() PromptOptimizer {
 
 // Stub implementations for other interfaces
 
-// Missing constructor functions for missing types
+// Constructor functions that return intelligent implementations based on service availability
 func NewAIMetricsCollector() AIMetricsCollector {
-	return &StubAIMetricsCollector{}
+	// Return real implementation with working dependencies
+	log := logrus.New()
+	log.SetLevel(logrus.WarnLevel) // Reduce noise for fallback scenarios
+
+	// Create actual working dependencies instead of nil
+	llmClient, _ := llm.NewClient(config.LLMConfig{}, log) // Will use fallback mode safely
+	vectorDB := vector.NewMemoryVectorDatabase(log)        // In-memory vector DB for basic functionality
+	// Note: metricsClient can be nil - the implementation handles this gracefully
+
+	return NewDefaultAIMetricsCollector(llmClient, vectorDB, nil, log)
 }
 
 func NewLearningEnhancedPromptBuilder() LearningEnhancedPromptBuilder {
-	return &StubLearningEnhancedPromptBuilder{}
+	// Return real implementation with working dependencies
+	log := logrus.New()
+	log.SetLevel(logrus.WarnLevel) // Reduce noise for fallback scenarios
+
+	// Create actual working dependencies instead of nil
+	llmClient, _ := llm.NewClient(config.LLMConfig{}, log) // Will use fallback mode safely
+	vectorDB := vector.NewMemoryVectorDatabase(log)        // In-memory vector DB for basic functionality
+	executionRepo := NewMemoryExecutionRepository(log)     // In-memory execution repository
+
+	return NewDefaultLearningEnhancedPromptBuilder(llmClient, vectorDB, executionRepo, log)
 }
 
-// Stub implementations
-type StubAIMetricsCollector struct{}
+// NewConfiguredAIMetricsCollector creates an AI metrics collector with intelligent service detection
+func NewConfiguredAIMetricsCollector(
+	cfg *config.Config,
+	llmClient llm.Client,
+	vectorDB vector.VectorDatabase,
+	metricsClient *metrics.Client,
+	log *logrus.Logger,
+) AIMetricsCollector {
+	if cfg == nil || log == nil {
+		log.Warn("Invalid configuration for AI metrics collector, using fail-fast implementation")
+		return &FailFastAIMetricsCollector{}
+	}
 
-func (s *StubAIMetricsCollector) CollectMetrics(ctx context.Context, execution *WorkflowExecution) (map[string]float64, error) {
-	return make(map[string]float64), nil
+	// Create AI service integrator
+	integrator := NewAIServiceIntegrator(cfg, llmClient, nil, vectorDB, metricsClient, log)
+
+	// Use intelligent detection to create appropriate implementation
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	return integrator.CreateConfiguredAIMetricsCollector(ctx)
 }
 
-func (s *StubAIMetricsCollector) GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange TimeRange) (map[string]float64, error) {
-	return make(map[string]float64), nil
+// NewConfiguredLearningEnhancedPromptBuilder creates a prompt builder with intelligent service detection
+func NewConfiguredLearningEnhancedPromptBuilder(
+	cfg *config.Config,
+	llmClient llm.Client,
+	vectorDB vector.VectorDatabase,
+	executionRepo ExecutionRepository,
+	log *logrus.Logger,
+) LearningEnhancedPromptBuilder {
+	if cfg == nil || log == nil {
+		log.Warn("Invalid configuration for prompt builder, using fail-fast implementation")
+		return &FailFastLearningEnhancedPromptBuilder{}
+	}
+
+	// Create AI service integrator
+	integrator := NewAIServiceIntegrator(cfg, llmClient, nil, vectorDB, nil, log)
+
+	// Use intelligent detection to create appropriate implementation
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	return integrator.CreateConfiguredLearningEnhancedPromptBuilder(ctx, executionRepo)
 }
 
-type StubLearningEnhancedPromptBuilder struct{}
-
-func (s *StubLearningEnhancedPromptBuilder) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {
-	return template, nil
+// NewRealAIMetricsCollector creates a real AI metrics collector with service dependencies
+func NewRealAIMetricsCollector(
+	llmClient llm.Client,
+	vectorDB vector.VectorDatabase,
+	metricsClient *metrics.Client, // Concrete type for type safety
+	log *logrus.Logger,
+) AIMetricsCollector {
+	return NewDefaultAIMetricsCollector(llmClient, vectorDB, metricsClient, log)
 }
 
-func (s *StubLearningEnhancedPromptBuilder) GetLearnFromExecution(ctx context.Context, execution *WorkflowExecution) error {
-	return nil
+// NewRealLearningEnhancedPromptBuilder creates a real learning-enhanced prompt builder
+func NewRealLearningEnhancedPromptBuilder(
+	llmClient llm.Client,
+	vectorDB vector.VectorDatabase,
+	executionRepo ExecutionRepository,
+	log *logrus.Logger,
+) LearningEnhancedPromptBuilder {
+	return NewDefaultLearningEnhancedPromptBuilder(llmClient, vectorDB, executionRepo, log)
 }
 
-func (s *StubLearningEnhancedPromptBuilder) GetGetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
-	return "", nil
+// Fail-fast implementations that replace misleading stubs
+// These provide clear error messages instead of returning fake data that creates false confidence
+type FailFastAIMetricsCollector struct{}
+
+func (f *FailFastAIMetricsCollector) CollectMetrics(ctx context.Context, execution *RuntimeWorkflowExecution) (map[string]float64, error) {
+	return nil, fmt.Errorf("AI metrics collection not implemented - implement this interface to enable workflow metrics collection functionality")
 }
 
-// Fix missing AIMetricsCollector methods
-func (s *StubAIMetricsCollector) RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error {
-	return nil
+func (f *FailFastAIMetricsCollector) GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange WorkflowTimeRange) (map[string]float64, error) {
+	return nil, fmt.Errorf("aggregated metrics collection not implemented - implement this interface to enable workflow analytics")
 }
 
-// Add missing methods to StubAIMetricsCollector
-func (s *StubAIMetricsCollector) EvaluateResponseQuality(ctx context.Context, response string, context map[string]interface{}) (*AIResponseQuality, error) {
-	return &AIResponseQuality{
-		Score:      0.8,
-		Confidence: 0.9,
-		Relevance:  0.85,
-		Clarity:    0.9,
-	}, nil
+func (f *FailFastAIMetricsCollector) RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error {
+	return fmt.Errorf("AI request recording not implemented - implement this interface to enable AI request tracking")
+}
+
+func (f *FailFastAIMetricsCollector) EvaluateResponseQuality(ctx context.Context, response string, context map[string]interface{}) (*AIResponseQuality, error) {
+	return nil, fmt.Errorf("AI response quality evaluation not implemented - implement this interface to enable response quality assessment")
+}
+
+type FailFastLearningEnhancedPromptBuilder struct{}
+
+func (f *FailFastLearningEnhancedPromptBuilder) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {
+	return "", fmt.Errorf("learning-enhanced prompt building not implemented - implement this interface to enable intelligent prompt generation")
+}
+
+func (f *FailFastLearningEnhancedPromptBuilder) GetLearnFromExecution(ctx context.Context, execution *RuntimeWorkflowExecution) error {
+	return fmt.Errorf("execution-based learning not implemented - implement this interface to enable workflow learning capabilities")
+}
+
+func (f *FailFastLearningEnhancedPromptBuilder) GetGetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
+	return "", fmt.Errorf("template optimization not implemented - implement this interface to enable template optimization")
+}
+
+func (f *FailFastLearningEnhancedPromptBuilder) GetBuildEnhancedPrompt(ctx context.Context, basePrompt string, context map[string]interface{}) (string, error) {
+	return "", fmt.Errorf("enhanced prompt building not implemented - implement this interface to enable context-aware prompt enhancement")
 }
 
 // Real PromptOptimizer implementation
@@ -363,9 +471,119 @@ func (rpo *RealPromptOptimizer) GetRunningExperiments() []*PromptExperiment {
 	return running
 }
 
-// Add missing method to LearningEnhancedPromptBuilder stub
-func (s *StubLearningEnhancedPromptBuilder) GetBuildEnhancedPrompt(ctx context.Context, basePrompt string, context map[string]interface{}) (string, error) {
-	return basePrompt, nil
+// MemoryExecutionRepository provides an in-memory implementation of ExecutionRepository
+type MemoryExecutionRepository struct {
+	executions map[string]*RuntimeWorkflowExecution
+	mu         sync.RWMutex
+	log        *logrus.Logger
 }
 
-// DefaultIntelligentWorkflowBuilder methods are declared in intelligent_workflow_builder_types.go
+// NewMemoryExecutionRepository creates a new in-memory execution repository
+func NewMemoryExecutionRepository(log *logrus.Logger) ExecutionRepository {
+	if log == nil {
+		log = logrus.New()
+		log.SetLevel(logrus.WarnLevel)
+	}
+
+	return &MemoryExecutionRepository{
+		executions: make(map[string]*RuntimeWorkflowExecution),
+		log:        log,
+	}
+}
+
+func (mer *MemoryExecutionRepository) GetExecution(ctx context.Context, executionID string) (*RuntimeWorkflowExecution, error) {
+	mer.mu.RLock()
+	defer mer.mu.RUnlock()
+
+	if execution, exists := mer.executions[executionID]; exists {
+		mer.log.WithField("execution_id", executionID).Debug("Retrieved execution from memory")
+		return execution, nil
+	}
+
+	return nil, fmt.Errorf("execution not found: %s", executionID)
+}
+
+func (mer *MemoryExecutionRepository) GetExecutionsInTimeWindow(ctx context.Context, start, end time.Time) ([]*RuntimeWorkflowExecution, error) {
+	mer.mu.RLock()
+	defer mer.mu.RUnlock()
+
+	var results []*RuntimeWorkflowExecution
+	for _, execution := range mer.executions {
+		if execution.StartTime.After(start) && execution.StartTime.Before(end) {
+			results = append(results, execution)
+		}
+	}
+
+	mer.log.WithFields(logrus.Fields{
+		"start_time":       start,
+		"end_time":         end,
+		"executions_found": len(results),
+	}).Debug("Retrieved executions in time window from memory")
+
+	return results, nil
+}
+
+func (mer *MemoryExecutionRepository) GetExecutionsByWorkflowID(ctx context.Context, workflowID string) ([]*RuntimeWorkflowExecution, error) {
+	mer.mu.RLock()
+	defer mer.mu.RUnlock()
+
+	var results []*RuntimeWorkflowExecution
+	for _, execution := range mer.executions {
+		if execution.WorkflowID == workflowID {
+			results = append(results, execution)
+		}
+	}
+
+	mer.log.WithFields(logrus.Fields{
+		"workflow_id":      workflowID,
+		"executions_found": len(results),
+	}).Debug("Retrieved executions by workflow ID from memory")
+
+	return results, nil
+}
+
+func (mer *MemoryExecutionRepository) GetExecutionsByPattern(ctx context.Context, patternID string) ([]*RuntimeWorkflowExecution, error) {
+	mer.mu.RLock()
+	defer mer.mu.RUnlock()
+
+	var results []*RuntimeWorkflowExecution
+	for _, execution := range mer.executions {
+		// Look for pattern ID in execution metadata
+		if execution.Metadata != nil {
+			if executionPatternID, exists := execution.Metadata["pattern_id"]; exists {
+				if executionPatternID == patternID {
+					results = append(results, execution)
+				}
+			}
+		}
+	}
+
+	mer.log.WithFields(logrus.Fields{
+		"pattern_id":       patternID,
+		"executions_found": len(results),
+	}).Debug("Retrieved executions by pattern ID from memory")
+
+	return results, nil
+}
+
+func (mer *MemoryExecutionRepository) StoreExecution(ctx context.Context, execution *RuntimeWorkflowExecution) error {
+	if execution == nil {
+		return fmt.Errorf("execution cannot be nil")
+	}
+
+	if execution.ID == "" {
+		return fmt.Errorf("execution ID cannot be empty")
+	}
+
+	mer.mu.Lock()
+	defer mer.mu.Unlock()
+
+	mer.executions[execution.ID] = execution
+
+	mer.log.WithFields(logrus.Fields{
+		"execution_id": execution.ID,
+		"workflow_id":  execution.WorkflowID,
+	}).Debug("Stored execution in memory")
+
+	return nil
+}

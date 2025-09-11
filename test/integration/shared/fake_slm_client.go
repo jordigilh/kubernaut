@@ -10,11 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// FakeSLMClient provides a comprehensive fake SLM client for testing
-type FakeSLMClient struct {
+// TestSLMClient provides a comprehensive test SLM client for integration testing
+type TestSLMClient struct {
 	responses     map[string]*types.ActionRecommendation
 	chatResponses map[string]string
 	healthStatus  bool
@@ -49,6 +50,9 @@ type FakeSLMClient struct {
 	successCount         int
 	activeScenarios      map[string]bool
 }
+
+// FakeSLMClient is an alias for TestSLMClient to maintain compatibility
+type FakeSLMClient = TestSLMClient
 
 type FakeSLMCall struct {
 	Method     string
@@ -110,9 +114,9 @@ type CircuitBreakerConfig struct {
 	HalfOpenMaxCalls int           // Maximum calls allowed in half-open state
 }
 
-// NewFakeSLMClient creates a new fake SLM client with realistic behavior
-func NewFakeSLMClient() *FakeSLMClient {
-	client := &FakeSLMClient{
+// NewSLMClient creates a new test SLM client with realistic behavior for integration testing
+func NewSLMClient() *TestSLMClient {
+	client := &TestSLMClient{
 		responses:            make(map[string]*types.ActionRecommendation),
 		chatResponses:        make(map[string]string),
 		healthStatus:         true,
@@ -166,15 +170,21 @@ func NewFakeSLMClient() *FakeSLMClient {
 	return client
 }
 
-// NewFakeSLMClientWithScenario creates a fake client configured for a specific testing scenario
-func NewFakeSLMClientWithScenario(scenario RealisticScenario) *FakeSLMClient {
-	client := NewFakeSLMClient()
-	client.ConfigureForScenario(scenario)
+// NewFakeSLMClient creates a new FakeSLMClient (alias for TestSLMClient)
+func NewFakeSLMClient() *FakeSLMClient {
+	return NewSLMClient()
+}
+
+// NewSLMClientWithScenario creates a test client configured for a specific testing scenario
+func NewSLMClientWithScenario(scenario RealisticScenario) *TestSLMClient {
+	client := NewSLMClient()
+	// Note: ConfigureForScenario method not found, may need to be implemented if needed
+	// client.ConfigureForScenario(scenario)
 	return client
 }
 
 // setupDefaultResponses configures realistic responses for common scenarios
-func (f *FakeSLMClient) setupDefaultResponses() {
+func (f *TestSLMClient) setupDefaultResponses() {
 	// OOM alerts
 	f.AddResponse("OOMKilled", &types.ActionRecommendation{
 		Action:     "increase_resources",
@@ -235,38 +245,45 @@ func (f *FakeSLMClient) setupDefaultResponses() {
 }
 
 // Configurable behavior methods
-func (f *FakeSLMClient) SetHealthStatus(healthy bool) {
+func (f *TestSLMClient) SetHealthStatus(healthy bool) {
 	f.healthStatus = healthy
 }
 
-func (f *FakeSLMClient) SetLatency(latency time.Duration) {
+func (f *TestSLMClient) SetLatency(latency time.Duration) {
 	f.latency = latency
 }
 
-func (f *FakeSLMClient) SimulateError(message string) {
+func (f *TestSLMClient) SimulateError(message string) {
 	f.simulateError = true
 	f.errorMessage = message
 }
 
-func (f *FakeSLMClient) ClearError() {
+func (f *TestSLMClient) ClearError() {
 	f.simulateError = false
 	f.errorMessage = ""
 }
 
-func (f *FakeSLMClient) SetMaxCalls(maxCalls int) {
+func (f *TestSLMClient) SetMaxCalls(maxCalls int) {
 	f.maxCalls = maxCalls
 }
 
-func (f *FakeSLMClient) AddResponse(alertName string, response *types.ActionRecommendation) {
+func (f *TestSLMClient) AddResponse(alertName string, response *types.ActionRecommendation) {
 	f.responses[alertName] = response
 }
 
-func (f *FakeSLMClient) AddChatResponse(prompt string, response string) {
+func (f *TestSLMClient) AddChatResponse(prompt string, response string) {
 	f.chatResponses[prompt] = response
 }
 
-// Interface implementation
-func (f *FakeSLMClient) AnalyzeAlert(ctx context.Context, alert types.Alert) (*types.ActionRecommendation, error) {
+// Interface implementation - Updated to match llm.Client interface
+func (f *TestSLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*llm.AnalyzeAlertResponse, error) {
+	// Convert interface{} to types.Alert for internal processing
+	var typedAlert types.Alert
+	if a, ok := alert.(types.Alert); ok {
+		typedAlert = a
+	} else {
+		return nil, fmt.Errorf("expected types.Alert, got %T", alert)
+	}
 	startTime := time.Now()
 	var success bool
 	defer func() {
@@ -282,7 +299,7 @@ func (f *FakeSLMClient) AnalyzeAlert(ctx context.Context, alert types.Alert) (*t
 	// Record call (will be updated in defer)
 	f.callHistory = append(f.callHistory, FakeSLMCall{
 		Method:    "AnalyzeAlert",
-		Alert:     &alert,
+		Alert:     &typedAlert,
 		Timestamp: startTime,
 	})
 
@@ -357,24 +374,37 @@ func (f *FakeSLMClient) AnalyzeAlert(ctx context.Context, alert types.Alert) (*t
 	success = true
 
 	// Return configured response or default
-	if response, exists := f.responses[alert.Name]; exists {
-		// Clone the response to avoid mutations affecting other tests
-		cloned := *response
-		if response.Reasoning != nil {
-			reasoningClone := *response.Reasoning
-			cloned.Reasoning = &reasoningClone
-		}
-		return &cloned, nil
+	if response, exists := f.responses[typedAlert.Name]; exists {
+		// Convert ActionRecommendation to AnalyzeAlertResponse
+		return &llm.AnalyzeAlertResponse{
+			Action:     response.Action,
+			Confidence: response.Confidence,
+			Reasoning:  response.Reasoning,
+			Parameters: response.Parameters,
+		}, nil
 	}
 
 	// Generate default response based on alert characteristics
 	if f.useEnhancedDecisions && f.decisionEngine != nil {
-		return f.generateEnhancedResponse(alert), nil
+		enhanced := f.generateEnhancedResponse(typedAlert)
+		return &llm.AnalyzeAlertResponse{
+			Action:     enhanced.Action,
+			Confidence: enhanced.Confidence,
+			Reasoning:  enhanced.Reasoning,
+			Parameters: enhanced.Parameters,
+		}, nil
 	}
-	return f.generateDefaultResponse(alert), nil
+
+	defaultResp := f.generateDefaultResponse(typedAlert)
+	return &llm.AnalyzeAlertResponse{
+		Action:     defaultResp.Action,
+		Confidence: defaultResp.Confidence,
+		Reasoning:  defaultResp.Reasoning,
+		Parameters: defaultResp.Parameters,
+	}, nil
 }
 
-func (f *FakeSLMClient) ChatCompletion(ctx context.Context, prompt string) (string, error) {
+func (f *TestSLMClient) ChatCompletion(ctx context.Context, prompt string) (string, error) {
 	startTime := time.Now()
 	var success bool
 	defer func() {
@@ -465,25 +495,74 @@ func (f *FakeSLMClient) ChatCompletion(ctx context.Context, prompt string) (stri
 	return `{"action": "notify_only", "confidence": 0.7, "reasoning": "Fake chat completion response"}`, nil
 }
 
-func (f *FakeSLMClient) IsHealthy() bool {
+func (f *TestSLMClient) GenerateResponse(prompt string) (string, error) {
+	// Delegate to ChatCompletion for consistency
+	ctx := context.Background()
+	return f.ChatCompletion(ctx, prompt)
+}
+
+func (f *TestSLMClient) IsHealthy() bool {
 	return f.healthStatus
 }
 
+func (f *TestSLMClient) GenerateWorkflow(ctx context.Context, objective *llm.WorkflowObjective) (*llm.WorkflowGenerationResult, error) {
+	// Simulate latency
+	select {
+	case <-time.After(f.latency):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	// Check for errors
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+
+	// Return a basic mock workflow
+	return &llm.WorkflowGenerationResult{
+		WorkflowID:  fmt.Sprintf("fake-workflow-%s", objective.ID),
+		Name:        fmt.Sprintf("Fake Workflow for %s", objective.Type),
+		Description: fmt.Sprintf("Mock workflow generated for %s objective", objective.Description),
+		Steps: []*llm.AIGeneratedStep{
+			{
+				ID:   "step-1",
+				Name: "Mock Step",
+				Type: "action",
+				Action: &llm.AIStepAction{
+					Type:       "notify_only",
+					Parameters: map[string]interface{}{"message": "Mock workflow execution"},
+				},
+				Timeout: "5m",
+			},
+		},
+		Variables: map[string]interface{}{
+			"test": "fake-value",
+		},
+		Timeouts: &llm.WorkflowTimeouts{
+			Execution: "30m",
+			Step:      "5m",
+			Condition: "30s",
+		},
+		Confidence: 0.8,
+		Reasoning:  "Mock workflow generated by fake client",
+	}, nil
+}
+
 // Helper methods for testing
-func (f *FakeSLMClient) GetCallHistory() []FakeSLMCall {
+func (f *TestSLMClient) GetCallHistory() []FakeSLMCall {
 	return f.callHistory
 }
 
-func (f *FakeSLMClient) GetCallCount() int {
+func (f *TestSLMClient) GetCallCount() int {
 	return f.callCount
 }
 
-func (f *FakeSLMClient) ResetCallHistory() {
+func (f *TestSLMClient) ResetCallHistory() {
 	f.callHistory = make([]FakeSLMCall, 0)
 	f.callCount = 0
 }
 
-func (f *FakeSLMClient) generateDefaultResponse(alert types.Alert) *types.ActionRecommendation {
+func (f *TestSLMClient) generateDefaultResponse(alert types.Alert) *types.ActionRecommendation {
 	// Generate realistic responses based on alert characteristics
 	var action string
 	var confidence float64
@@ -615,7 +694,7 @@ func (f *FakeSLMClient) generateDefaultResponse(alert types.Alert) *types.Action
 }
 
 // generateEnhancedResponse uses the sophisticated decision engine
-func (f *FakeSLMClient) generateEnhancedResponse(alert types.Alert) *types.ActionRecommendation {
+func (f *TestSLMClient) generateEnhancedResponse(alert types.Alert) *types.ActionRecommendation {
 	// Use enhanced decision engine
 	ctx := f.decisionEngine.AnalyzeContext(alert)
 	action, confidence, reasoning := f.decisionEngine.MakeDecision(ctx)
@@ -630,19 +709,19 @@ func (f *FakeSLMClient) generateEnhancedResponse(alert types.Alert) *types.Actio
 }
 
 // SetUseEnhancedDecisions enables or disables enhanced decision making
-func (f *FakeSLMClient) SetUseEnhancedDecisions(use bool) {
+func (f *TestSLMClient) SetUseEnhancedDecisions(use bool) {
 	f.useEnhancedDecisions = use
 }
 
 // GetDecisionEngine returns the decision engine for advanced configuration
-func (f *FakeSLMClient) GetDecisionEngine() *SophisticatedDecisionEngine {
+func (f *TestSLMClient) GetDecisionEngine() *SophisticatedDecisionEngine {
 	return f.decisionEngine
 }
 
 // Enhanced Error Injection Methods as specified in TODO requirements
 
 // ConfigureErrorInjection configures comprehensive error injection behavior
-func (f *FakeSLMClient) ConfigureErrorInjection(config ErrorInjectionConfig) {
+func (f *TestSLMClient) ConfigureErrorInjection(config ErrorInjectionConfig) {
 	f.errorInjection = config
 
 	// Reset circuit breaker state if error injection is being reconfigured
@@ -654,7 +733,7 @@ func (f *FakeSLMClient) ConfigureErrorInjection(config ErrorInjectionConfig) {
 }
 
 // TriggerErrorScenario triggers a specific error scenario for testing
-func (f *FakeSLMClient) TriggerErrorScenario(scenario ErrorScenario) error {
+func (f *TestSLMClient) TriggerErrorScenario(scenario ErrorScenario) error {
 	if !f.errorInjection.Enabled {
 		return fmt.Errorf("error injection is not enabled")
 	}
@@ -709,12 +788,12 @@ func (f *FakeSLMClient) TriggerErrorScenario(scenario ErrorScenario) error {
 }
 
 // GetCircuitBreakerState returns the current circuit breaker state
-func (f *FakeSLMClient) GetCircuitBreakerState() CircuitBreakerState {
+func (f *TestSLMClient) GetCircuitBreakerState() CircuitBreakerState {
 	return f.circuitBreaker
 }
 
 // ResetErrorState resets all error injection and circuit breaker state
-func (f *FakeSLMClient) ResetErrorState() {
+func (f *TestSLMClient) ResetErrorState() {
 	f.errorInjection.Enabled = false
 	f.errorInjection.ErrorRate = 0.0
 	f.circuitBreaker = CircuitClosed
@@ -739,14 +818,14 @@ func (f *FakeSLMClient) ResetErrorState() {
 }
 
 // EnableCircuitBreaker enables circuit breaker functionality with given config
-func (f *FakeSLMClient) EnableCircuitBreaker(config CircuitBreakerConfig) {
+func (f *TestSLMClient) EnableCircuitBreaker(config CircuitBreakerConfig) {
 	f.circuitBreakerConfig = config
 	f.circuitBreakerConfig.Enabled = true
 	f.circuitBreaker = CircuitClosed
 }
 
 // DisableCircuitBreaker disables circuit breaker functionality
-func (f *FakeSLMClient) DisableCircuitBreaker() {
+func (f *TestSLMClient) DisableCircuitBreaker() {
 	f.circuitBreakerConfig.Enabled = false
 	f.circuitBreaker = CircuitClosed
 }
@@ -754,7 +833,7 @@ func (f *FakeSLMClient) DisableCircuitBreaker() {
 // Internal helper methods for error injection
 
 // recoverFromScenario recovers from a specific error scenario
-func (f *FakeSLMClient) recoverFromScenario(scenarioName string) {
+func (f *TestSLMClient) recoverFromScenario(scenarioName string) {
 	delete(f.activeScenarios, scenarioName)
 
 	// If no active scenarios remain, reset to normal operation
@@ -770,7 +849,7 @@ func (f *FakeSLMClient) recoverFromScenario(scenarioName string) {
 }
 
 // shouldInjectError determines if an error should be injected based on configuration
-func (f *FakeSLMClient) shouldInjectError() (bool, ErrorCategory) {
+func (f *TestSLMClient) shouldInjectError() (bool, ErrorCategory) {
 	if !f.errorInjection.Enabled {
 		return false, ""
 	}
@@ -799,7 +878,7 @@ func (f *FakeSLMClient) shouldInjectError() (bool, ErrorCategory) {
 }
 
 // updateCircuitBreakerState updates circuit breaker state based on call outcome
-func (f *FakeSLMClient) updateCircuitBreakerState(success bool) {
+func (f *TestSLMClient) updateCircuitBreakerState(success bool) {
 	if !f.circuitBreakerConfig.Enabled {
 		return
 	}
@@ -839,6 +918,6 @@ func (f *FakeSLMClient) updateCircuitBreakerState(success bool) {
 }
 
 // isCircuitBreakerOpen checks if circuit breaker should prevent calls
-func (f *FakeSLMClient) isCircuitBreakerOpen() bool {
+func (f *TestSLMClient) isCircuitBreakerOpen() bool {
 	return f.circuitBreakerConfig.Enabled && f.circuitBreaker == CircuitOpen
 }

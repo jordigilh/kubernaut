@@ -179,9 +179,8 @@ type DateRange struct {
 }
 
 // VectorSearchResult represents the result of a vector search
-type VectorSearchResult struct {
-	Patterns    []*SimilarPattern `json:"patterns"`
-	TotalCount  int               `json:"total_count"`
-	SearchTime  time.Duration     `json:"search_time"`
-	QueryVector []float64         `json:"query_vector,omitempty"`
-}
+// Unified with new search result system for consistency
+type VectorSearchResult = UnifiedSearchResultSet
+
+// PatternSearchResult represents pattern-specific search results
+type PatternSearchResult = UnifiedSearchResult

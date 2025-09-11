@@ -100,6 +100,19 @@ monitoring:
   alertmanager_url: "http://alertmanager-dev:9093"
   grafana_url: "http://grafana:3000"
 
+# Vector Database configuration (development)
+vectordb:
+  enabled: true
+  backend: "memory"  # Use in-memory for development
+  embedding_service:
+    service: "local"
+    dimension: 384
+    model: "all-MiniLM-L6-v2"
+  cache:
+    enabled: true
+    max_size: 1000
+    cache_type: "memory"
+
 # Development-specific settings
 development:
   hot_reload: true

@@ -1,0 +1,76 @@
+//go:build integration
+
+package ai
+
+import (
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/sirupsen/logrus"
+)
+
+// Integration scenario management and utilities
+
+type IntegrationScenarioManager struct {
+	logger          *logrus.Logger
+	scenarioResults map[string]*ScenarioResult
+	mutex           sync.RWMutex
+}
+
+type ScenarioResult struct {
+	Name      string
+	Success   bool
+	Duration  time.Duration
+	Timestamp time.Time
+	Metadata  map[string]interface{}
+}
+
+func NewIntegrationScenarioManager(logger *logrus.Logger) *IntegrationScenarioManager {
+	return &IntegrationScenarioManager{
+		logger:          logger,
+		scenarioResults: make(map[string]*ScenarioResult),
+	}
+}
+
+func (ism *IntegrationScenarioManager) RecordScenario(name string, success bool, duration time.Duration) {
+	ism.mutex.Lock()
+	defer ism.mutex.Unlock()
+
+	ism.scenarioResults[name] = &ScenarioResult{
+		Name:      name,
+		Success:   success,
+		Duration:  duration,
+		Timestamp: time.Now(),
+		Metadata:  make(map[string]interface{}),
+	}
+}
+
+func (ism *IntegrationScenarioManager) GenerateReport() map[string]interface{} {
+	ism.mutex.RLock()
+	defer ism.mutex.RUnlock()
+
+	totalScenarios := len(ism.scenarioResults)
+	successfulScenarios := 0
+	totalDuration := time.Duration(0)
+
+	for _, result := range ism.scenarioResults {
+		if result.Success {
+			successfulScenarios++
+		}
+		totalDuration += result.Duration
+	}
+
+	var avgDuration time.Duration
+	if totalScenarios > 0 {
+		avgDuration = totalDuration / time.Duration(totalScenarios)
+	}
+
+	return map[string]interface{}{
+		"total_scenarios":      totalScenarios,
+		"successful_scenarios": successfulScenarios,
+		"success_rate":         fmt.Sprintf("%.2f%%", float64(successfulScenarios)/float64(totalScenarios)*100),
+		"average_duration":     avgDuration,
+		"scenario_details":     ism.scenarioResults,
+	}
+}

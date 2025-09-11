@@ -1,6 +1,6 @@
 package fixtures
 
-import "github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+import "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 // TestCase represents a test case for alert analysis
 type TestCase struct {

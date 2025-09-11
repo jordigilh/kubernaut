@@ -6,9 +6,15 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
+
+// Minimal interfaces required by this package to avoid import cycles
+// These are intentionally simple and focused on what the pattern engine actually needs
+type PatternAnalyzer interface {
+	AnalyzeData(ctx context.Context, data interface{}) (interface{}, error)
+}
 
 // EnhancedPatternDiscoveryEngine wraps the original pattern discovery engine with additional validation and monitoring
 type EnhancedPatternDiscoveryEngine struct {
@@ -60,15 +66,16 @@ type EnhancedPatternAnalysisResult struct {
 	IsProductionReady      bool     `json:"is_production_ready"`
 }
 
-// NewEnhancedPatternDiscoveryEngine creates an enhanced pattern discovery engine
+// NewEnhancedPatternDiscoveryEngine creates an enhanced pattern discovery engine with validation and monitoring
 func NewEnhancedPatternDiscoveryEngine(
 	patternStore PatternStore,
-	vectorDB VectorDatabase,
+	vectorDB PatternVectorDatabase,
 	executionRepo ExecutionRepository,
 	mlAnalyzer MachineLearningAnalyzer,
-	timeSeriesEngine engine.TimeSeriesAnalyzer,
-	clusteringEngine engine.ClusteringEngine,
-	anomalyDetector engine.AnomalyDetector,
+	patternAnalyzer PatternAnalyzer,
+	timeSeriesAnalyzer sharedtypes.TimeSeriesAnalyzer,
+	clusteringEngine sharedtypes.ClusteringEngine,
+	anomalyDetector sharedtypes.AnomalyDetector,
 	config *EnhancedPatternConfig,
 	log *logrus.Logger,
 ) (*EnhancedPatternDiscoveryEngine, error) {
@@ -106,7 +113,7 @@ func NewEnhancedPatternDiscoveryEngine(
 		vectorDB,
 		executionRepo,
 		mlAnalyzer,
-		timeSeriesEngine,
+		timeSeriesAnalyzer,
 		clusteringEngine,
 		anomalyDetector,
 		config.PatternDiscoveryConfig,
@@ -306,7 +313,7 @@ func (epde *EnhancedPatternDiscoveryEngine) GetActiveAlerts() []*EngineAlert {
 // ValidatePatternReliability validates a specific pattern's reliability
 func (epde *EnhancedPatternDiscoveryEngine) ValidatePatternReliability(
 	pattern *shared.DiscoveredPattern,
-	validationData []*engine.WorkflowExecutionData,
+	validationData []*sharedtypes.WorkflowExecutionData,
 ) (*PatternReliabilityResult, error) {
 
 	if epde.statisticalValidator == nil {

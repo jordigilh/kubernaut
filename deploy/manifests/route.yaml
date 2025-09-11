@@ -11,7 +11,7 @@ metadata:
     haproxy.router.openshift.io/timeout: "60s"
     haproxy.router.openshift.io/balance: "roundrobin"
 spec:
-  host: alerts-slm.apps.cluster.example.com  # Update with your cluster domain
+  host: alerts-slm.apps.cluster.kubernaut.io  # Update with your cluster domain
   to:
     kind: Service
     name: prometheus-alerts-slm-webhook
@@ -42,10 +42,10 @@ metadata:
 spec:
   tls:
     - hosts:
-        - alerts-slm.example.com
+        - alerts-slm.kubernaut.io
       secretName: alerts-slm-tls
   rules:
-    - host: alerts-slm.example.com
+    - host: alerts-slm.kubernaut.io
       http:
         paths:
           - path: /

@@ -103,4 +103,3 @@ func LLMClientConfig(timeout time.Duration) ClientConfig {
 	config.ResponseHeaderTimeout = timeout / 3 // Allow more time for LLM processing
 	return config
 }
-

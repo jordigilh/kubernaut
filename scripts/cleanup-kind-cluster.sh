@@ -23,93 +23,147 @@ error() {
     echo -e "${RED}[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1${NC}"
 }
 
-# Clean up kind cluster
+# Check if kind is available
+check_kind() {
+    if ! command -v kind &> /dev/null; then
+        warn "KinD is not installed, skipping Kind cluster cleanup"
+        return 1
+    fi
+    return 0
+}
+
+# Check if podman is available
+check_podman() {
+    if ! command -v podman &> /dev/null; then
+        warn "Podman is not installed, skipping registry cleanup"
+        return 1
+    fi
+    return 0
+}
+
+# Delete Kind cluster
 cleanup_cluster() {
     log "Cleaning up KinD cluster: ${CLUSTER_NAME}"
-    
+
+    # Check if cluster exists
     if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+        log "Deleting KinD cluster: ${CLUSTER_NAME}"
         kind delete cluster --name="${CLUSTER_NAME}"
-        log "KinD cluster deleted"
+        log "KinD cluster deleted successfully"
     else
-        warn "KinD cluster ${CLUSTER_NAME} not found"
+        log "KinD cluster ${CLUSTER_NAME} does not exist, skipping"
     fi
 }
 
-# Clean up registry
+# Cleanup local registry
 cleanup_registry() {
     log "Cleaning up local registry: ${REGISTRY_NAME}"
-    
-    if command -v podman &> /dev/null; then
-        if podman ps --format "{{.Names}}" | grep -q "^${REGISTRY_NAME}$"; then
-            podman stop "${REGISTRY_NAME}"
-            log "Registry stopped"
-        fi
-        
-        if podman ps -a --format "{{.Names}}" | grep -q "^${REGISTRY_NAME}$"; then
-            podman rm "${REGISTRY_NAME}"
-            log "Registry container removed"
-        fi
+
+    # Check if registry container exists
+    if podman ps -a --format "{{.Names}}" | grep -q "^${REGISTRY_NAME}$"; then
+        log "Stopping and removing registry container: ${REGISTRY_NAME}"
+        podman stop "${REGISTRY_NAME}" 2>/dev/null || true
+        podman rm "${REGISTRY_NAME}" 2>/dev/null || true
+        log "Registry container cleaned up successfully"
     else
-        warn "Podman not found, skipping registry cleanup"
+        log "Registry container ${REGISTRY_NAME} does not exist, skipping"
     fi
 }
 
-# Clean up kubectl context
-cleanup_kubectl() {
-    log "Cleaning up kubectl context"
-    
-    local context_name="kind-${CLUSTER_NAME}"
-    
-    if kubectl config get-contexts -o name | grep -q "^${context_name}$"; then
-        # Switch to different context if currently using the one we're deleting
-        local current_context
-        current_context=$(kubectl config current-context 2>/dev/null || echo "")
-        
-        if [[ "${current_context}" == "${context_name}" ]]; then
-            # Try to switch to default context
-            if kubectl config get-contexts -o name | grep -q "^default$"; then
-                kubectl config use-context default
-            else
-                warn "No default context found, you may need to set kubectl context manually"
-            fi
-        fi
-        
-        kubectl config delete-context "${context_name}" 2>/dev/null || warn "Failed to delete context ${context_name}"
-        kubectl config delete-cluster "kind-${CLUSTER_NAME}" 2>/dev/null || warn "Failed to delete cluster config"
-        kubectl config delete-user "kind-${CLUSTER_NAME}" 2>/dev/null || warn "Failed to delete user config"
-        
-        log "Kubectl context cleaned up"
+# Cleanup bootstrap directory
+cleanup_bootstrap() {
+    log "Cleaning up bootstrap directory..."
+
+    if [[ -d "/tmp/kind-bootstrap" ]]; then
+        rm -rf /tmp/kind-bootstrap
+        log "Bootstrap directory cleaned up"
     else
-        warn "Kubectl context ${context_name} not found"
+        log "Bootstrap directory does not exist, skipping"
     fi
+}
+
+# Cleanup kubectl context
+cleanup_kubectl_context() {
+    log "Cleaning up kubectl context..."
+
+    local context_name="kind-${CLUSTER_NAME}"
+    if kubectl config get-contexts --no-headers | grep -q "${context_name}"; then
+        kubectl config delete-context "${context_name}" 2>/dev/null || true
+        log "kubectl context ${context_name} removed"
+    else
+        log "kubectl context ${context_name} does not exist, skipping"
+    fi
+}
+
+# Force cleanup (remove all kind clusters and registries)
+force_cleanup() {
+    log "Performing force cleanup of all Kind resources..."
+
+    if check_kind; then
+        log "Deleting all Kind clusters..."
+        kind get clusters 2>/dev/null | xargs -r -I {} kind delete cluster --name={}
+    fi
+
+    if check_podman; then
+        log "Stopping all kind-registry containers..."
+        podman ps -a --format "{{.Names}}" | grep kind-registry | xargs -r -I {} podman rm -f {}
+    fi
+
+    cleanup_bootstrap
+
+    log "Force cleanup completed"
 }
 
 # Main execution
 main() {
-    log "Cleaning up KinD cluster and related resources..."
-    
-    cleanup_cluster
-    cleanup_registry
-    cleanup_kubectl
-    
-    log "Cleanup complete!"
+    log "🧹 Cleaning up KinD cluster and related resources..."
+    log "Strategy: Kind for CI/CD and local testing, OCP for E2E"
     echo ""
-    log "Current kubectl contexts:"
-    kubectl config get-contexts 2>/dev/null || warn "No kubectl contexts found"
+
+    if check_kind; then
+        cleanup_cluster
+        cleanup_kubectl_context
+    fi
+
+    if check_podman; then
+        cleanup_registry
+    fi
+
+    cleanup_bootstrap
+
+    log "✅ KinD cluster cleanup completed!"
+    echo ""
+    log "📋 Cleanup Summary:"
+    echo "  ├── Kind cluster: ${CLUSTER_NAME} removed"
+    echo "  ├── Registry: ${REGISTRY_NAME} removed"
+    echo "  ├── Bootstrap: /tmp/kind-bootstrap removed"
+    echo "  └── kubectl context: kind-${CLUSTER_NAME} removed"
+    echo ""
+    log "🚀 Ready for fresh setup:"
+    echo "  make test-integration-kind     # Local development with Kind"
+    echo "  make test-ci                   # CI/CD with mocked LLM"
+    echo "  make test-e2e-ocp             # Production E2E with OCP"
 }
 
 # Handle script arguments
 case "${1:-}" in
     --help|-h)
-        echo "Usage: $0 [--help]"
+        echo "Usage: $0 [--force|--help]"
         echo ""
-        echo "Cleans up the KinD cluster and related resources created for e2e testing."
+        echo "Cleans up KinD cluster and related resources for integration testing."
         echo ""
-        echo "This will:"
-        echo "  - Delete the KinD cluster: ${CLUSTER_NAME}"
-        echo "  - Stop and remove the local registry: ${REGISTRY_NAME}"
-        echo "  - Clean up kubectl contexts and cluster configurations"
+        echo "Options:"
+        echo "  --force     Force cleanup of all Kind clusters and registries"
+        echo "  --help      Show this help message"
+        echo ""
+        echo "Default behavior:"
+        echo "  - Removes the specific cluster: ${CLUSTER_NAME}"
+        echo "  - Removes the registry: ${REGISTRY_NAME}"
+        echo "  - Cleans up bootstrap directory and kubectl context"
         exit 0
+        ;;
+    --force)
+        force_cleanup
         ;;
     *)
         main "$@"

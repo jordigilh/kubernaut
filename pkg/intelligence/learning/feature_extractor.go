@@ -7,17 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	workflowtypes "github.com/jordigilh/kubernaut/pkg/workflow/types"
 	"github.com/sirupsen/logrus"
 )
 
 // FeatureExtractor extracts numerical features from workflow execution data
 type FeatureExtractor struct {
-	config       *engine.PatternDiscoveryConfig
+	config       *PatternDiscoveryConfig
 	log          *logrus.Logger
 	featureNames []string
 	scaleFactors map[string]float64
@@ -25,7 +23,7 @@ type FeatureExtractor struct {
 }
 
 // NewFeatureExtractor creates a new feature extractor
-func NewFeatureExtractor(config *engine.PatternDiscoveryConfig, log *logrus.Logger) *FeatureExtractor {
+func NewFeatureExtractor(config *PatternDiscoveryConfig, log *logrus.Logger) *FeatureExtractor {
 	fe := &FeatureExtractor{
 		config:       config,
 		log:          log,
@@ -41,7 +39,7 @@ func NewFeatureExtractor(config *engine.PatternDiscoveryConfig, log *logrus.Logg
 }
 
 // Extract extracts features from workflow execution data
-func (fe *FeatureExtractor) Extract(data *engine.WorkflowExecutionData) (*shared.WorkflowFeatures, error) {
+func (fe *FeatureExtractor) Extract(data *sharedtypes.WorkflowExecutionData) (*shared.WorkflowFeatures, error) {
 	features := &shared.WorkflowFeatures{
 		CustomMetrics: make(map[string]float64),
 	}
@@ -88,7 +86,7 @@ func (fe *FeatureExtractor) Extract(data *engine.WorkflowExecutionData) (*shared
 }
 
 // ExtractVector converts workflow execution data to a numerical vector
-func (fe *FeatureExtractor) ExtractVector(data *engine.WorkflowExecutionData) ([]float64, error) {
+func (fe *FeatureExtractor) ExtractVector(data *sharedtypes.WorkflowExecutionData) ([]float64, error) {
 	features, err := fe.Extract(data)
 	if err != nil {
 		return nil, err
@@ -162,7 +160,7 @@ func (fe *FeatureExtractor) GetFeatureImportance(model *MLModel) map[string]floa
 }
 
 // AnalyzeFeatureCorrelations analyzes correlations between features
-func (fe *FeatureExtractor) AnalyzeFeatureCorrelations(data []*engine.WorkflowExecutionData) (*FeatureCorrelationAnalysis, error) {
+func (fe *FeatureExtractor) AnalyzeFeatureCorrelations(data []*sharedtypes.WorkflowExecutionData) (*FeatureCorrelationAnalysis, error) {
 	if len(data) < 10 {
 		return nil, fmt.Errorf("insufficient data for correlation analysis: %d samples", len(data))
 	}
@@ -318,7 +316,7 @@ func (fe *FeatureExtractor) initializeScaleFactors() {
 	}
 }
 
-func (fe *FeatureExtractor) extractAlertFeatures(data *engine.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractAlertFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
 	// Extract alert info from metadata
 	alertData, hasAlert := data.Metadata["alert"]
 	if !hasAlert {
@@ -381,7 +379,7 @@ func (fe *FeatureExtractor) extractAlertFeatures(data *engine.WorkflowExecutionD
 	return nil
 }
 
-func (fe *FeatureExtractor) extractResourceFeatures(data *engine.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractResourceFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
 	// Extract resource info from metadata
 	resourceData, hasResource := data.Metadata["resource"]
 	if !hasResource {
@@ -439,7 +437,7 @@ func (fe *FeatureExtractor) extractResourceFeatures(data *engine.WorkflowExecuti
 	return nil
 }
 
-func (fe *FeatureExtractor) extractTemporalFeatures(data *engine.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractTemporalFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
 	timestamp := data.Timestamp
 
 	// Time-based features
@@ -456,7 +454,7 @@ func (fe *FeatureExtractor) extractTemporalFeatures(data *engine.WorkflowExecuti
 	return nil
 }
 
-func (fe *FeatureExtractor) extractHistoricalFeatures(data *engine.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractHistoricalFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
 	// These would typically query historical data from database
 	// For now, use context data or defaults
 
@@ -493,7 +491,7 @@ func (fe *FeatureExtractor) extractHistoricalFeatures(data *engine.WorkflowExecu
 	return nil
 }
 
-func (fe *FeatureExtractor) extractComplexityFeatures(data *engine.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractComplexityFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
 	// These would be extracted from the workflow template
 	// For now, use context data or make reasonable estimates
 
@@ -534,7 +532,7 @@ func (fe *FeatureExtractor) extractComplexityFeatures(data *engine.WorkflowExecu
 	return nil
 }
 
-func (fe *FeatureExtractor) extractEnvironmentFeatures(data *engine.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractEnvironmentFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
 	// These would be fetched from cluster metrics
 	// For now, use context data or defaults
 
@@ -664,28 +662,6 @@ func (fe *FeatureExtractor) hashString(s string) uint32 {
 	return uint32(hash[0])<<24 | uint32(hash[1])<<16 | uint32(hash[2])<<8 | uint32(hash[3])
 }
 
-func (fe *FeatureExtractor) estimateStepCount(alert *types.Alert) int {
-	if alert == nil {
-		return 5 // Default estimate
-	}
-
-	// Estimate based on alert type
-	switch alert.Name {
-	case "HighMemoryUsage":
-		return 6 // Check, evaluate, scale, verify, rollback, cleanup
-	case "PodCrashLoop":
-		return 8 // Diagnose, analyze, restart, monitor, rollback, etc.
-	case "NodeNotReady":
-		return 10 // More complex node operations
-	case "DiskSpaceCritical":
-		return 7 // Cleanup, expand, verify
-	case "NetworkIssue":
-		return 6 // Test, restart, update
-	default:
-		return 5
-	}
-}
-
 func (fe *FeatureExtractor) estimateStepCountFromMap(alertMap map[string]interface{}) int {
 	if alertMap == nil {
 		return 5 // Default estimate
@@ -713,22 +689,6 @@ func (fe *FeatureExtractor) estimateStepCountFromMap(alertMap map[string]interfa
 	}
 }
 
-func (fe *FeatureExtractor) estimateDependencyDepth(alert *types.Alert) int {
-	if alert == nil {
-		return 2
-	}
-
-	// Estimate based on complexity
-	switch alert.Name {
-	case "NodeNotReady":
-		return 4 // Deep dependencies for node operations
-	case "PodCrashLoop":
-		return 3 // Medium depth
-	default:
-		return 2 // Shallow dependencies
-	}
-}
-
 func (fe *FeatureExtractor) estimateDependencyDepthFromMap(alertMap map[string]interface{}) int {
 	if alertMap == nil {
 		return 2
@@ -747,22 +707,6 @@ func (fe *FeatureExtractor) estimateDependencyDepthFromMap(alertMap map[string]i
 		return 3 // Medium depth
 	default:
 		return 2 // Shallow dependencies
-	}
-}
-
-func (fe *FeatureExtractor) estimateParallelSteps(alert *types.Alert) int {
-	if alert == nil {
-		return 1
-	}
-
-	// Most workflows have some parallel execution capability
-	switch alert.Name {
-	case "HighMemoryUsage":
-		return 2 // Can check multiple resources in parallel
-	case "DiskSpaceCritical":
-		return 3 // Multiple cleanup operations
-	default:
-		return 1
 	}
 }
 

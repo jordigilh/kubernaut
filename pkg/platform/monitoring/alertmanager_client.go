@@ -151,10 +151,12 @@ func (c *AlertManagerClient) GetAlertHistory(ctx context.Context, alertName, nam
 					AlertName:   alertName,
 					Namespace:   namespace,
 					Severity:    alert.Labels["severity"],
+					State:       alert.State,
 					Status:      "firing",
 					Labels:      alert.Labels,
 					Annotations: alert.Annotations,
 					Timestamp:   activeTime,
+					Value:       alert.Value,
 				}
 				events = append(events, event)
 			}
@@ -201,7 +203,11 @@ func (c *AlertManagerClient) getActiveAlerts(ctx context.Context, alertName, nam
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.WithError(err).Error("Failed to close HTTP response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("AlertManager API returned status %d", resp.StatusCode)
@@ -246,11 +252,222 @@ func (c *AlertManagerClient) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to execute health check: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.WithError(err).Error("Failed to close HTTP response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("AlertManager health check failed with status %d", resp.StatusCode)
 	}
+
+	return nil
+}
+
+// CreateSilence creates a silence in AlertManager (BR-MET-011: Must provide monitoring operations)
+func (c *AlertManagerClient) CreateSilence(ctx context.Context, silence *SilenceRequest) (*SilenceResponse, error) {
+	c.log.WithFields(logrus.Fields{
+		"matchers":   silence.Matchers,
+		"starts_at":  silence.StartsAt,
+		"ends_at":    silence.EndsAt,
+		"created_by": silence.CreatedBy,
+		"comment":    silence.Comment,
+	}).Info("Creating silence via AlertManager API")
+
+	// Prepare AlertManager silence payload
+	silencePayload := map[string]interface{}{
+		"matchers":  silence.Matchers,
+		"startsAt":  silence.StartsAt.Format(time.RFC3339),
+		"endsAt":    silence.EndsAt.Format(time.RFC3339),
+		"createdBy": silence.CreatedBy,
+		"comment":   silence.Comment,
+	}
+
+	payload, err := json.Marshal(silencePayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal silence payload: %w", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint+"/api/v1/silences", strings.NewReader(string(payload)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create silence request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	// Execute request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute silence request: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.WithError(err).Error("Failed to close HTTP response body")
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("AlertManager silence API returned status %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var response struct {
+		Status string `json:"status"`
+		Data   struct {
+			SilenceID string `json:"silenceID"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode silence response: %w", err)
+	}
+
+	if response.Status != "success" {
+		return nil, fmt.Errorf("AlertManager silence API returned status: %s", response.Status)
+	}
+
+	c.log.WithFields(logrus.Fields{
+		"silence_id": response.Data.SilenceID,
+		"matchers":   silence.Matchers,
+		"duration":   silence.EndsAt.Sub(silence.StartsAt),
+	}).Info("Successfully created silence")
+
+	return &SilenceResponse{
+		SilenceID: response.Data.SilenceID,
+	}, nil
+}
+
+// DeleteSilence removes an existing silence from AlertManager
+func (c *AlertManagerClient) DeleteSilence(ctx context.Context, silenceID string) error {
+	c.log.WithField("silence_id", silenceID).Info("Deleting silence via AlertManager API")
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "DELETE", fmt.Sprintf("%s/api/v1/silence/%s", c.endpoint, silenceID), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create silence deletion request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+
+	// Execute request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to execute silence deletion request: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.WithError(err).Error("Failed to close HTTP response body")
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("AlertManager silence deletion returned status %d", resp.StatusCode)
+	}
+
+	c.log.WithField("silence_id", silenceID).Info("Successfully deleted silence")
+	return nil
+}
+
+// GetSilences returns active silences matching criteria
+func (c *AlertManagerClient) GetSilences(ctx context.Context, matchers []SilenceMatcher) ([]Silence, error) {
+	c.log.WithField("matcher_count", len(matchers)).Debug("Getting silences via AlertManager API")
+
+	// Build query URL
+	queryURL := c.endpoint + "/api/v1/silences"
+
+	// Add query parameters for filtering (if supported by AlertManager)
+	params := url.Values{}
+	for _, matcher := range matchers {
+		params.Add("filter", fmt.Sprintf("%s=\"%s\"", matcher.Name, matcher.Value))
+	}
+
+	if len(params) > 0 {
+		queryURL += "?" + params.Encode()
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create get silences request: %w", err)
+	}
+
+	req.Header.Set("Accept", "application/json")
+
+	// Execute request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute get silences request: %w", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.log.WithError(err).Error("Failed to close HTTP response body")
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("AlertManager get silences API returned status %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var response struct {
+		Status string    `json:"status"`
+		Data   []Silence `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode silences response: %w", err)
+	}
+
+	if response.Status != "success" {
+		return nil, fmt.Errorf("AlertManager get silences API returned status: %s", response.Status)
+	}
+
+	c.log.WithFields(logrus.Fields{
+		"silence_count": len(response.Data),
+		"matcher_count": len(matchers),
+	}).Debug("Retrieved silences from AlertManager")
+
+	return response.Data, nil
+}
+
+// AcknowledgeAlert acknowledges an alert (BR-ALERT-012: Alert acknowledgment support)
+func (c *AlertManagerClient) AcknowledgeAlert(ctx context.Context, alertID string, acknowledgedBy string) error {
+	c.log.WithFields(logrus.Fields{
+		"alert_id":        alertID,
+		"acknowledged_by": acknowledgedBy,
+	}).Info("Acknowledging alert via AlertManager API")
+
+	// Note: AlertManager doesn't have a native acknowledgment API
+	// This is typically handled by creating a silence or through external systems
+	// For now, we'll create a short-term silence as an acknowledgment
+
+	// Create a 1-hour silence as acknowledgment
+	silenceRequest := &SilenceRequest{
+		Matchers: []SilenceMatcher{
+			{
+				Name:    "alertname",
+				Value:   alertID,
+				IsRegex: false,
+			},
+		},
+		StartsAt:  time.Now(),
+		EndsAt:    time.Now().Add(time.Hour),
+		CreatedBy: acknowledgedBy,
+		Comment:   fmt.Sprintf("Acknowledged by %s via Kubernaut", acknowledgedBy),
+	}
+
+	_, err := c.CreateSilence(ctx, silenceRequest)
+	if err != nil {
+		return fmt.Errorf("failed to acknowledge alert via silence: %w", err)
+	}
+
+	c.log.WithFields(logrus.Fields{
+		"alert_id":        alertID,
+		"acknowledged_by": acknowledgedBy,
+	}).Info("Successfully acknowledged alert")
 
 	return nil
 }

@@ -3,12 +3,8 @@ package testenv
 import (
 	"context"
 
-	"github.com/jordigilh/kubernaut/internal/config"
-	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
-	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -34,22 +30,4 @@ func setupFakeK8sEnvironment() (*TestEnvironment, error) {
 	}
 
 	return env, nil
-}
-
-// CreateDefaultNamespace creates the default namespace in the environment
-func (te *TestEnvironment) CreateDefaultNamespace() error {
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "default",
-		},
-	}
-	_, err := te.Client.CoreV1().Namespaces().Create(te.Context, ns, metav1.CreateOptions{})
-	return err
-}
-
-// CreateK8sClient creates a k8s.Client using the test environment
-func (te *TestEnvironment) CreateK8sClient(logger *logrus.Logger) k8s.Client {
-	return k8s.NewUnifiedClient(te.Client, config.KubernetesConfig{
-		Namespace: "default",
-	}, logger)
 }

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 	"gonum.org/v1/gonum/stat"
 )
@@ -14,6 +14,7 @@ import (
 // PatternDiscoveryConfig provides configuration for pattern discovery
 type PatternDiscoveryConfig struct {
 	MinExecutionsForPattern int `yaml:"min_executions_for_pattern" default:"10"`
+	MaxHistoryDays          int `yaml:"max_history_days" default:"30"`
 }
 
 // StatisticalValidator provides validation for statistical assumptions in ML models
@@ -77,7 +78,7 @@ func NewStatisticalValidator(config *PatternDiscoveryConfig, log *logrus.Logger)
 }
 
 // ValidateStatisticalAssumptions validates key statistical assumptions for ML models
-func (sv *StatisticalValidator) ValidateStatisticalAssumptions(data []*engine.WorkflowExecutionData) *StatisticalAssumptionResult {
+func (sv *StatisticalValidator) ValidateStatisticalAssumptions(data []*sharedtypes.WorkflowExecutionData) *StatisticalAssumptionResult {
 	result := &StatisticalAssumptionResult{
 		IsValid:            true,
 		Assumptions:        make([]*AssumptionCheck, 0),
@@ -195,7 +196,7 @@ func (sv *StatisticalValidator) CalculateConfidenceInterval(successes, total int
 }
 
 // AssessReliability provides a comprehensive reliability assessment
-func (sv *StatisticalValidator) AssessReliability(data []*engine.WorkflowExecutionData) *ReliabilityAssessment {
+func (sv *StatisticalValidator) AssessReliability(data []*sharedtypes.WorkflowExecutionData) *ReliabilityAssessment {
 	assessment := &ReliabilityAssessment{
 		ActualSize:      len(data),
 		Recommendations: make([]string, 0),
@@ -276,7 +277,7 @@ func (sv *StatisticalValidator) checkSampleSizeAdequacy(sampleSize int) *Assumpt
 	}
 }
 
-func (sv *StatisticalValidator) checkNormality(data []*engine.WorkflowExecutionData) *AssumptionCheck {
+func (sv *StatisticalValidator) checkNormality(data []*sharedtypes.WorkflowExecutionData) *AssumptionCheck {
 	if len(data) < 8 {
 		return &AssumptionCheck{
 			Name:        "normality",
@@ -325,7 +326,7 @@ func (sv *StatisticalValidator) checkNormality(data []*engine.WorkflowExecutionD
 	}
 }
 
-func (sv *StatisticalValidator) checkTemporalIndependence(data []*engine.WorkflowExecutionData) *AssumptionCheck {
+func (sv *StatisticalValidator) checkTemporalIndependence(data []*sharedtypes.WorkflowExecutionData) *AssumptionCheck {
 	if len(data) < 10 {
 		return &AssumptionCheck{
 			Name:        "temporal_independence",
@@ -366,7 +367,7 @@ func (sv *StatisticalValidator) checkTemporalIndependence(data []*engine.Workflo
 	}
 }
 
-func (sv *StatisticalValidator) checkVarianceHomogeneity(data []*engine.WorkflowExecutionData) *AssumptionCheck {
+func (sv *StatisticalValidator) checkVarianceHomogeneity(data []*sharedtypes.WorkflowExecutionData) *AssumptionCheck {
 	// Group data by success/failure and check variance equality
 	successTimes := make([]float64, 0)
 	failureTimes := make([]float64, 0)
@@ -413,7 +414,7 @@ func (sv *StatisticalValidator) checkVarianceHomogeneity(data []*engine.Workflow
 	}
 }
 
-func (sv *StatisticalValidator) checkForOutliers(data []*engine.WorkflowExecutionData) *AssumptionCheck {
+func (sv *StatisticalValidator) checkForOutliers(data []*sharedtypes.WorkflowExecutionData) *AssumptionCheck {
 	if len(data) < 10 {
 		return &AssumptionCheck{
 			Name:        "outlier_detection",
@@ -473,7 +474,7 @@ func (sv *StatisticalValidator) checkForOutliers(data []*engine.WorkflowExecutio
 
 // Additional helper methods
 
-func (sv *StatisticalValidator) calculateDataQuality(data []*engine.WorkflowExecutionData) float64 {
+func (sv *StatisticalValidator) calculateDataQuality(data []*sharedtypes.WorkflowExecutionData) float64 {
 	if len(data) == 0 {
 		return 0.0
 	}
@@ -509,7 +510,7 @@ func (sv *StatisticalValidator) calculateDataQuality(data []*engine.WorkflowExec
 	return qualityScore / float64(validCount)
 }
 
-func (sv *StatisticalValidator) calculateTemporalStability(data []*engine.WorkflowExecutionData) float64 {
+func (sv *StatisticalValidator) calculateTemporalStability(data []*sharedtypes.WorkflowExecutionData) float64 {
 	if len(data) < 6 {
 		return 0.5 // Neutral score for insufficient data
 	}
@@ -568,13 +569,13 @@ func (sv *StatisticalValidator) getZScore(confidenceLevel float64) float64 {
 	}
 }
 
-func (sv *StatisticalValidator) extractSuccessRatesOverTime(data []*engine.WorkflowExecutionData, windowSize time.Duration) []float64 {
+func (sv *StatisticalValidator) extractSuccessRatesOverTime(data []*sharedtypes.WorkflowExecutionData, windowSize time.Duration) []float64 {
 	if len(data) == 0 {
 		return []float64{}
 	}
 
 	// Sort by timestamp
-	sortedData := make([]*engine.WorkflowExecutionData, len(data))
+	sortedData := make([]*sharedtypes.WorkflowExecutionData, len(data))
 	copy(sortedData, data)
 	sort.Slice(sortedData, func(i, j int) bool {
 		return sortedData[i].Timestamp.Before(sortedData[j].Timestamp)

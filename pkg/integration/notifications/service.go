@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -156,13 +156,13 @@ func (ns *notificationService) NotifyActionStarted(ctx context.Context, alert ty
 
 func (ns *notificationService) NotifyActionCompleted(ctx context.Context, alert types.Alert, recommendation types.ActionRecommendation, result types.ExecutionResult) error {
 	level := NotificationLevelInfo
-	if result.Error != nil {
+	if result.Error != "" {
 		level = NotificationLevelError
 	}
 
 	message := fmt.Sprintf("Action '%s' completed for alert '%s'", recommendation.Action, alert.Name)
-	if result.Error != nil {
-		message = fmt.Sprintf("Action '%s' failed for alert '%s': %s", recommendation.Action, alert.Name, result.Error.Error())
+	if result.Error != "" {
+		message = fmt.Sprintf("Action '%s' failed for alert '%s': %s", recommendation.Action, alert.Name, result.Error)
 	}
 
 	builder := ns.buildNotificationFromAlert(alert).
@@ -172,16 +172,16 @@ func (ns *notificationService) NotifyActionCompleted(ctx context.Context, alert 
 		WithComponent("executor").
 		WithAction(recommendation.Action).
 		WithMetadata("duration", result.Duration.String()).
-		WithMetadata("success", fmt.Sprintf("%t", result.Error == nil))
+		WithMetadata("success", fmt.Sprintf("%t", result.Error == ""))
 
-	if result.Error == nil {
+	if result.Error == "" {
 		builder = builder.WithTag("action-completed")
 	} else {
 		builder = builder.WithTag("action-failed")
 	}
 
-	if result.Output != "" {
-		builder = builder.WithMetadata("output", result.Output)
+	if result.Message != "" {
+		builder = builder.WithMetadata("output", result.Message)
 	}
 
 	return ns.Notify(ctx, builder.Build())

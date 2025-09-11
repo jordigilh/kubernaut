@@ -36,17 +36,17 @@ type MaintainabilityConfig struct {
 
 // MaintainabilityReport provides a comprehensive maintainability assessment
 type MaintainabilityReport struct {
-	GeneratedAt       time.Time              `json:"generated_at"`
-	PackagePath       string                 `json:"package_path"`
-	OverallScore      float64                `json:"overall_score"`
-	TotalFiles        int                    `json:"total_files"`
-	TotalLines        int                    `json:"total_lines"`
-	TotalFunctions    int                    `json:"total_functions"`
-	FileAnalysis      []*FileAnalysis        `json:"file_analysis"`
-	ComplexityMetrics *ComplexityMetrics     `json:"complexity_metrics"`
-	QualityMetrics    *QualityMetrics        `json:"quality_metrics"`
-	Recommendations   []*MaintainabilityFix  `json:"recommendations"`
-	TechnicalDebt     *TechnicalDebtAnalysis `json:"technical_debt"`
+	GeneratedAt       time.Time                      `json:"generated_at"`
+	PackagePath       string                         `json:"package_path"`
+	OverallScore      float64                        `json:"overall_score"`
+	TotalFiles        int                            `json:"total_files"`
+	TotalLines        int                            `json:"total_lines"`
+	TotalFunctions    int                            `json:"total_functions"`
+	FileAnalysis      []*FileAnalysis                `json:"file_analysis"`
+	ComplexityMetrics *ComplexityMetrics             `json:"complexity_metrics"`
+	QualityMetrics    *MaintainabilityQualityMetrics `json:"quality_metrics"`
+	Recommendations   []*MaintainabilityFix          `json:"recommendations"`
+	TechnicalDebt     *TechnicalDebtAnalysis         `json:"technical_debt"`
 }
 
 // FileAnalysis contains analysis for a single file
@@ -127,8 +127,8 @@ type ComplexityMetrics struct {
 	ComplexityDistribution  map[string]int `json:"complexity_distribution"`
 }
 
-// QualityMetrics contains quality-related metrics
-type QualityMetrics struct {
+// MaintainabilityQualityMetrics contains quality-related metrics for maintainability analysis
+type MaintainabilityQualityMetrics struct {
 	DocumentationCoverage  float64 `json:"documentation_coverage"`
 	TestCoverageOverall    float64 `json:"test_coverage_overall"`
 	ErrorHandlingScore     float64 `json:"error_handling_score"`
@@ -601,9 +601,9 @@ func (ma *MaintainabilityAnalyzer) calculateComplexityMetrics(files []*FileAnaly
 	}
 }
 
-func (ma *MaintainabilityAnalyzer) calculateQualityMetrics(files []*FileAnalysis) *QualityMetrics {
+func (ma *MaintainabilityAnalyzer) calculateQualityMetrics(files []*FileAnalysis) *MaintainabilityQualityMetrics {
 	// Simplified quality metrics calculation
-	return &QualityMetrics{
+	return &MaintainabilityQualityMetrics{
 		DocumentationCoverage:  0.75, // Would be calculated from actual comments
 		TestCoverageOverall:    0.80, // Would be calculated from test files
 		ErrorHandlingScore:     0.85, // Would be calculated from error handling patterns
@@ -685,7 +685,7 @@ func (ma *MaintainabilityAnalyzer) normalizeComplexityScore(avgComplexity float6
 	return (20.0 - avgComplexity) / 15.0 * 100.0
 }
 
-func (ma *MaintainabilityAnalyzer) calculateQualityScore(metrics *QualityMetrics) float64 {
+func (ma *MaintainabilityAnalyzer) calculateQualityScore(metrics *MaintainabilityQualityMetrics) float64 {
 	return (metrics.DocumentationCoverage +
 		metrics.TestCoverageOverall +
 		metrics.ErrorHandlingScore +

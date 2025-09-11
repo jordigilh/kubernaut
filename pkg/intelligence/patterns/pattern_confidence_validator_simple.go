@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -81,7 +81,7 @@ func NewPatternConfidenceValidatorSimple(config *PatternDiscoveryConfig, log *lo
 }
 
 // ValidatePatternConfidence performs comprehensive confidence validation
-func (pcv *PatternConfidenceValidatorSimple) ValidatePatternConfidence(ctx context.Context, pattern *engine.DiscoveredPattern, historicalData []*engine.WorkflowExecutionData) (*SimpleConfidenceValidationReport, error) {
+func (pcv *PatternConfidenceValidatorSimple) ValidatePatternConfidence(ctx context.Context, pattern *shared.DiscoveredPattern, historicalData []*sharedtypes.WorkflowExecutionData) (*SimpleConfidenceValidationReport, error) {
 	pcv.log.WithFields(logrus.Fields{
 		"pattern_id":      pattern.ID,
 		"pattern_type":    pattern.Type,
@@ -133,7 +133,7 @@ func (pcv *PatternConfidenceValidatorSimple) ValidatePatternConfidence(ctx conte
 }
 
 // calculateBasicCalibrationMetrics calculates simplified calibration metrics
-func (pcv *PatternConfidenceValidatorSimple) calculateBasicCalibrationMetrics(pattern *engine.DiscoveredPattern, data []*engine.WorkflowExecutionData) (*SimpleCalibrationMetrics, error) {
+func (pcv *PatternConfidenceValidatorSimple) calculateBasicCalibrationMetrics(pattern *shared.DiscoveredPattern, data []*sharedtypes.WorkflowExecutionData) (*SimpleCalibrationMetrics, error) {
 	// Group predictions by confidence bins
 	binCount := 10
 	bins := make([][]bool, binCount)
@@ -230,7 +230,7 @@ func (pcv *PatternConfidenceValidatorSimple) calculateBasicCalibrationMetrics(pa
 
 // Helper methods
 
-func (pcv *PatternConfidenceValidatorSimple) patternApplies(pattern *engine.DiscoveredPattern, execData *engine.WorkflowExecutionData) bool {
+func (pcv *PatternConfidenceValidatorSimple) patternApplies(pattern *shared.DiscoveredPattern, execData *sharedtypes.WorkflowExecutionData) bool {
 	// Simplified pattern applicability check
 	// Since Alert and AlertPatterns fields don't exist in current implementation,
 	// we'll use a basic pattern matching approach based on pattern type and metadata
@@ -303,7 +303,7 @@ func (pcv *PatternConfidenceValidatorSimple) calculateConfidenceBias(curve []Sim
 	return overConfidence, underConfidence
 }
 
-func (pcv *PatternConfidenceValidatorSimple) calculatePatternAccuracy(pattern *engine.DiscoveredPattern, data []*engine.WorkflowExecutionData) float64 {
+func (pcv *PatternConfidenceValidatorSimple) calculatePatternAccuracy(pattern *shared.DiscoveredPattern, data []*sharedtypes.WorkflowExecutionData) float64 {
 	if len(data) == 0 {
 		return 0.0
 	}
@@ -331,7 +331,7 @@ func (pcv *PatternConfidenceValidatorSimple) calculatePatternAccuracy(pattern *e
 	return float64(correct) / float64(total)
 }
 
-func (pcv *PatternConfidenceValidatorSimple) calculateConfidenceAdjustment(pattern *engine.DiscoveredPattern, metrics *SimpleCalibrationMetrics) float64 {
+func (pcv *PatternConfidenceValidatorSimple) calculateConfidenceAdjustment(pattern *shared.DiscoveredPattern, metrics *SimpleCalibrationMetrics) float64 {
 	// Simple adjustment based on calibration error
 	adjustment := 0.0
 

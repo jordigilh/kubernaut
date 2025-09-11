@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // NotificationLevel defines the importance level of a notification

@@ -13,9 +13,9 @@
     "prometheus": "openshift-monitoring/k8s"
   },
   "commonAnnotations": {
-    "runbook_url": "https://runbooks.example.com"
+    "runbook_url": "https://runbooks.kubernaut.io"
   },
-  "externalURL": "https://alertmanager.example.com",
+  "externalURL": "https://alertmanager.kubernaut.io",
   "alerts": [
     {
       "status": "firing",
@@ -35,7 +35,7 @@
       },
       "startsAt": "2024-08-25T13:00:00Z",
       "endsAt": "0001-01-01T00:00:00Z",
-      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_memory_usage_bytes",
+      "generatorURL": "https://prometheus.kubernaut.io/graph?g0.expr=container_memory_usage_bytes",
       "fingerprint": "mem123abc"
     },
     {
@@ -56,7 +56,7 @@
       },
       "startsAt": "2024-08-25T13:05:00Z",
       "endsAt": "0001-01-01T00:00:00Z",
-      "generatorURL": "https://prometheus.example.com/graph?g0.expr=container_cpu_cfs_throttled_periods_total",
+      "generatorURL": "https://prometheus.kubernaut.io/graph?g0.expr=container_cpu_cfs_throttled_periods_total",
       "fingerprint": "cpu456def"
     },
     {
@@ -76,7 +76,7 @@
       },
       "startsAt": "2024-08-25T13:10:00Z",
       "endsAt": "0001-01-01T00:00:00Z",
-      "generatorURL": "https://prometheus.example.com/graph?g0.expr=kube_pod_status_ready",
+      "generatorURL": "https://prometheus.kubernaut.io/graph?g0.expr=kube_pod_status_ready",
       "fingerprint": "ready789ghi"
     }
   ]

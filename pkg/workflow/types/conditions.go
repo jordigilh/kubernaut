@@ -11,8 +11,8 @@ const (
 	ConditionTypeCustom     ConditionType = "custom"
 )
 
-// WorkflowCondition represents a condition that must be evaluated
-type WorkflowCondition struct {
+// ConditionExpression represents a condition expression that must be evaluated
+type ConditionExpression struct {
 	Type       ConditionType          `json:"type"`
 	Expression string                 `json:"expression"`
 	Variables  map[string]interface{} `json:"variables"`

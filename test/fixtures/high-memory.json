@@ -15,7 +15,7 @@
     "description": "Pod memory usage is critically high",
     "summary": "Memory usage above 90%"
   },
-  "externalURL": "http://alertmanager.example.com:9093",
+  "externalURL": "http://alertmanager.kubernaut.io:9093",
   "alerts": [
     {
       "status": "firing",
@@ -31,11 +31,11 @@
       "annotations": {
         "description": "Pod web-app-567abc is using 92% memory (7.4Gi/8Gi)",
         "summary": "High memory usage on pod web-app-567abc",
-        "runbook_url": "https://wiki.example.com/runbooks/memory"
+        "runbook_url": "https://wiki.kubernaut.io/runbooks/memory"
       },
       "startsAt": "2024-01-15T14:20:00.000Z",
       "endsAt": "0001-01-01T00:00:00Z",
-      "generatorURL": "http://prometheus.example.com:9090/graph?g0.expr=memory_usage",
+      "generatorURL": "http://prometheus.kubernaut.io:9090/graph?g0.expr=memory_usage",
       "fingerprint": "mem123abc456"
     }
   ]

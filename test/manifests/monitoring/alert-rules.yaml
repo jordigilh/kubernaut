@@ -19,8 +19,8 @@ data:
         annotations:
           summary: "High memory usage detected in e2e test"
           description: "Pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of memory limit"
-          runbook_url: "https://wiki.example.com/runbooks/memory"
-      
+          runbook_url: "https://wiki.kubernaut.io/runbooks/memory"
+
       - alert: PodCrashLoopingE2E
         expr: rate(kube_pod_container_status_restarts_total{namespace="e2e-test"}[5m]) > 0.1
         for: 30s
@@ -32,7 +32,7 @@ data:
           summary: "Pod is crash looping in e2e test"
           description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in the last 5 minutes"
           last_termination_reason: "OOMKilled"
-      
+
       - alert: DeploymentReplicasMismatchE2E
         expr: kube_deployment_status_replicas{namespace="e2e-test"} != kube_deployment_spec_replicas{namespace="e2e-test"}
         for: 60s
@@ -43,7 +43,7 @@ data:
         annotations:
           summary: "Deployment replicas mismatch in e2e test"
           description: "Deployment {{ $labels.deployment }} has {{ $value }} ready replicas, expected {{ $labels.spec_replicas }}"
-      
+
       - alert: TestAlertAlwaysFiring
         expr: up{job="prometheus-alerts-slm"} >= 0
         for: 1s

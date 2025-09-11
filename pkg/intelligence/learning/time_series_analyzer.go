@@ -6,19 +6,20 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	sharedmath "github.com/jordigilh/kubernaut/pkg/shared/math"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	"github.com/sirupsen/logrus"
 	"gonum.org/v1/gonum/stat"
 )
 
+// Types now consolidated in pkg/intelligence/shared/types.go
+
 // TimeSeriesAnalyzer analyzes temporal patterns in workflow execution data
 type TimeSeriesAnalyzer struct {
-	config *engine.PatternDiscoveryConfig
+	config *PatternDiscoveryConfig
 	log    *logrus.Logger
 }
 
@@ -31,24 +32,24 @@ type TimeSeriesData struct {
 
 // SeasonalityAnalysis contains seasonality detection results
 type SeasonalityAnalysis struct {
-	Pattern         string             `json:"pattern"`  // "daily", "weekly", "monthly"
-	Strength        float64            `json:"strength"` // 0-1, strength of seasonal pattern
-	Period          time.Duration      `json:"period"`
-	PeakTimes       []engine.TimeRange `json:"peak_times"`
-	ValleyTimes     []engine.TimeRange `json:"valley_times"`
-	SeasonalFactors map[string]float64 `json:"seasonal_factors"`
-	Confidence      float64            `json:"confidence"`
+	Pattern         string                  `json:"pattern"`  // "daily", "weekly", "monthly"
+	Strength        float64                 `json:"strength"` // 0-1, strength of seasonal pattern
+	Period          time.Duration           `json:"period"`
+	PeakTimes       []sharedtypes.TimeRange `json:"peak_times"`
+	ValleyTimes     []sharedtypes.TimeRange `json:"valley_times"`
+	SeasonalFactors map[string]float64      `json:"seasonal_factors"`
+	Confidence      float64                 `json:"confidence"`
 }
 
 // TimeSeriesTrendAnalysis contains trend detection results for time series
 type TimeSeriesTrendAnalysis struct {
-	Direction    string           `json:"direction"` // "increasing", "decreasing", "stable"
-	Slope        float64          `json:"slope"`
-	Confidence   float64          `json:"confidence"`
-	StartValue   float64          `json:"start_value"`
-	EndValue     float64          `json:"end_value"`
-	TrendPeriod  engine.TimeRange `json:"trend_period"`
-	Significance float64          `json:"significance"`
+	Direction    string                `json:"direction"` // "increasing", "decreasing", "stable"
+	Slope        float64               `json:"slope"`
+	Confidence   float64               `json:"confidence"`
+	StartValue   float64               `json:"start_value"`
+	EndValue     float64               `json:"end_value"`
+	TrendPeriod  sharedtypes.TimeRange `json:"trend_period"`
+	Significance float64               `json:"significance"`
 }
 
 // AnomalyDetection contains anomaly detection results
@@ -87,7 +88,7 @@ type ForecastResult struct {
 	ConfidenceInterval *types.ConfidenceInterval `json:"confidence_interval"`
 	Model              string                    `json:"model"`
 	Accuracy           float64                   `json:"accuracy"`
-	ForecastPeriod     engine.TimeRange          `json:"forecast_period"`
+	ForecastPeriod     sharedtypes.TimeRange     `json:"forecast_period"`
 }
 
 // ForecastPoint represents a forecasted value
@@ -101,7 +102,7 @@ type ForecastPoint struct {
 // ConfidenceInterval represents confidence bounds for forecasts
 
 // NewTimeSeriesAnalyzer creates a new time series analyzer
-func NewTimeSeriesAnalyzer(config *engine.PatternDiscoveryConfig, log *logrus.Logger) *TimeSeriesAnalyzer {
+func NewTimeSeriesAnalyzer(config *PatternDiscoveryConfig, log *logrus.Logger) *TimeSeriesAnalyzer {
 	return &TimeSeriesAnalyzer{
 		config: config,
 		log:    log,
@@ -109,13 +110,13 @@ func NewTimeSeriesAnalyzer(config *engine.PatternDiscoveryConfig, log *logrus.Lo
 }
 
 // AnalyzeResourceTrends analyzes resource utilization trends over time
-func (tsa *TimeSeriesAnalyzer) AnalyzeResourceTrends(data []*engine.WorkflowExecutionData) []*patterns.ResourceTrendAnalysis {
+func (tsa *TimeSeriesAnalyzer) AnalyzeResourceTrends(data []*sharedtypes.WorkflowExecutionData) []*shared.ResourceTrendAnalysis {
 	tsa.log.WithField("data_points", len(data)).Info("Analyzing resource trends")
 
 	// Group data by resource type
 	resourceData := tsa.groupByResourceType(data)
 
-	trends := make([]*patterns.ResourceTrendAnalysis, 0)
+	trends := make([]*shared.ResourceTrendAnalysis, 0)
 	for resourceType, executions := range resourceData {
 		if len(executions) < 5 {
 			continue // Need minimum data points for trend analysis
@@ -131,14 +132,14 @@ func (tsa *TimeSeriesAnalyzer) AnalyzeResourceTrends(data []*engine.WorkflowExec
 }
 
 // DetectTemporalPatterns detects time-based patterns in execution data
-func (tsa *TimeSeriesAnalyzer) DetectTemporalPatterns(data []*engine.WorkflowExecutionData) []*patterns.TemporalAnalysis {
+func (tsa *TimeSeriesAnalyzer) DetectTemporalPatterns(data []*sharedtypes.WorkflowExecutionData) []*shared.TemporalAnalysis {
 	tsa.log.WithField("data_points", len(data)).Info("Detecting temporal patterns")
 
 	if len(data) < 10 {
-		return []*patterns.TemporalAnalysis{}
+		return []*shared.TemporalAnalysis{}
 	}
 
-	patterns := make([]*patterns.TemporalAnalysis, 0)
+	patterns := make([]*shared.TemporalAnalysis, 0)
 
 	// Convert to time series
 	timeSeries := tsa.convertToTimeSeries(data)
@@ -256,7 +257,7 @@ func (tsa *TimeSeriesAnalyzer) DetectTrends(timeSeries []*TimeSeriesData, metric
 		Confidence:   confidence,
 		StartValue:   values[0],
 		EndValue:     values[n-1],
-		TrendPeriod:  engine.TimeRange{Start: timestamps[0], End: timestamps[n-1]},
+		TrendPeriod:  sharedtypes.TimeRange{Start: timestamps[0], End: timestamps[n-1]},
 		Significance: math.Abs(slope) * confidence,
 	}
 
@@ -415,7 +416,7 @@ func (tsa *TimeSeriesAnalyzer) ForecastTimeSeries(timeSeries []*TimeSeriesData, 
 		Predictions: predictions,
 		Model:       "Linear Regression",
 		Accuracy:    math.Max(0, rSquared),
-		ForecastPeriod: engine.TimeRange{
+		ForecastPeriod: sharedtypes.TimeRange{
 			Start: predictions[0].Timestamp,
 			End:   predictions[len(predictions)-1].Timestamp,
 		},
@@ -426,7 +427,7 @@ func (tsa *TimeSeriesAnalyzer) ForecastTimeSeries(timeSeries []*TimeSeriesData, 
 
 // Private helper methods
 
-func convertToPatternTimeRanges(ranges []engine.TimeRange) []shared.PatternTimeRange {
+func convertToPatternTimeRanges(ranges []sharedtypes.TimeRange) []shared.PatternTimeRange {
 	result := make([]shared.PatternTimeRange, len(ranges))
 	for i, tr := range ranges {
 		result[i] = shared.PatternTimeRange{
@@ -437,8 +438,8 @@ func convertToPatternTimeRanges(ranges []engine.TimeRange) []shared.PatternTimeR
 	return result
 }
 
-func (tsa *TimeSeriesAnalyzer) groupByResourceType(data []*engine.WorkflowExecutionData) map[string][]*engine.WorkflowExecutionData {
-	groups := make(map[string][]*engine.WorkflowExecutionData)
+func (tsa *TimeSeriesAnalyzer) groupByResourceType(data []*sharedtypes.WorkflowExecutionData) map[string][]*sharedtypes.WorkflowExecutionData {
+	groups := make(map[string][]*sharedtypes.WorkflowExecutionData)
 
 	for _, execution := range data {
 		resourceType := "unknown"
@@ -447,7 +448,7 @@ func (tsa *TimeSeriesAnalyzer) groupByResourceType(data []*engine.WorkflowExecut
 		}
 
 		if _, exists := groups[resourceType]; !exists {
-			groups[resourceType] = make([]*engine.WorkflowExecutionData, 0)
+			groups[resourceType] = make([]*sharedtypes.WorkflowExecutionData, 0)
 		}
 		groups[resourceType] = append(groups[resourceType], execution)
 	}
@@ -455,7 +456,7 @@ func (tsa *TimeSeriesAnalyzer) groupByResourceType(data []*engine.WorkflowExecut
 	return groups
 }
 
-func (tsa *TimeSeriesAnalyzer) analyzeResourceTypeTrend(resourceType string, executions []*engine.WorkflowExecutionData) *patterns.ResourceTrendAnalysis {
+func (tsa *TimeSeriesAnalyzer) analyzeResourceTypeTrend(resourceType string, executions []*sharedtypes.WorkflowExecutionData) *shared.ResourceTrendAnalysis {
 	if len(executions) < 5 {
 		return nil
 	}
@@ -496,7 +497,7 @@ func (tsa *TimeSeriesAnalyzer) analyzeResourceTypeTrend(resourceType string, exe
 	slope, _ := tsa.calculateLinearRegression(x, successRates)
 	rSquared := tsa.calculateRSquared(x, successRates, slope, 0)
 
-	trend := &patterns.ResourceTrendAnalysis{
+	trend := &shared.ResourceTrendAnalysis{
 		ResourceType:   resourceType,
 		Confidence:     math.Max(0, rSquared),
 		Significance:   math.Abs(slope),
@@ -507,7 +508,7 @@ func (tsa *TimeSeriesAnalyzer) analyzeResourceTypeTrend(resourceType string, exe
 	return trend
 }
 
-func (tsa *TimeSeriesAnalyzer) convertToTimeSeries(data []*engine.WorkflowExecutionData) []*TimeSeriesData {
+func (tsa *TimeSeriesAnalyzer) convertToTimeSeries(data []*sharedtypes.WorkflowExecutionData) []*TimeSeriesData {
 	timeSeries := make([]*TimeSeriesData, 0)
 
 	for _, execution := range data {
@@ -555,7 +556,7 @@ func (tsa *TimeSeriesAnalyzer) convertToTimeSeries(data []*engine.WorkflowExecut
 	return timeSeries
 }
 
-func (tsa *TimeSeriesAnalyzer) detectDailyPattern(timeSeries []*TimeSeriesData) *patterns.TemporalAnalysis {
+func (tsa *TimeSeriesAnalyzer) detectDailyPattern(timeSeries []*TimeSeriesData) *shared.TemporalAnalysis {
 	if len(timeSeries) < 24 {
 		return nil
 	}
@@ -586,7 +587,7 @@ func (tsa *TimeSeriesAnalyzer) detectDailyPattern(timeSeries []*TimeSeriesData) 
 	}
 
 	// Find peak and valley hours
-	peakTimes := make([]engine.TimeRange, 0)
+	peakTimes := make([]sharedtypes.TimeRange, 0)
 	minSuccessRate := 1.0
 	maxSuccessRate := 0.0
 
@@ -605,7 +606,7 @@ func (tsa *TimeSeriesAnalyzer) detectDailyPattern(timeSeries []*TimeSeriesData) 
 		if rate >= threshold {
 			peakStart := time.Date(2000, 1, 1, hour, 0, 0, 0, time.UTC)
 			peakEnd := peakStart.Add(time.Hour)
-			peakTimes = append(peakTimes, engine.TimeRange{Start: peakStart, End: peakEnd})
+			peakTimes = append(peakTimes, sharedtypes.TimeRange{Start: peakStart, End: peakEnd})
 		}
 	}
 
@@ -618,7 +619,7 @@ func (tsa *TimeSeriesAnalyzer) detectDailyPattern(timeSeries []*TimeSeriesData) 
 	variance := stat.Variance(rates, nil)
 	strength := math.Min(variance*4, 1.0) // Scale to 0-1
 
-	analysis := &patterns.TemporalAnalysis{
+	analysis := &shared.TemporalAnalysis{
 		PatternType:     "daily",
 		Confidence:      strength,
 		PeakTimes:       convertToPatternTimeRanges(peakTimes),
@@ -634,7 +635,7 @@ func (tsa *TimeSeriesAnalyzer) detectDailyPattern(timeSeries []*TimeSeriesData) 
 	return analysis
 }
 
-func (tsa *TimeSeriesAnalyzer) detectWeeklyPattern(timeSeries []*TimeSeriesData) *patterns.TemporalAnalysis {
+func (tsa *TimeSeriesAnalyzer) detectWeeklyPattern(timeSeries []*TimeSeriesData) *shared.TemporalAnalysis {
 	if len(timeSeries) < 7*24 { // Need at least a week of hourly data
 		return nil
 	}
@@ -673,7 +674,7 @@ func (tsa *TimeSeriesAnalyzer) detectWeeklyPattern(timeSeries []*TimeSeriesData)
 	variance := stat.Variance(rates, nil)
 	strength := math.Min(variance*7, 1.0) // Scale to 0-1
 
-	analysis := &patterns.TemporalAnalysis{
+	analysis := &shared.TemporalAnalysis{
 		PatternType:     "weekly",
 		Confidence:      strength,
 		SeasonalFactors: make(map[string]float64),
@@ -688,7 +689,7 @@ func (tsa *TimeSeriesAnalyzer) detectWeeklyPattern(timeSeries []*TimeSeriesData)
 	return analysis
 }
 
-func (tsa *TimeSeriesAnalyzer) detectBurstPattern(timeSeries []*TimeSeriesData) *patterns.TemporalAnalysis {
+func (tsa *TimeSeriesAnalyzer) detectBurstPattern(timeSeries []*TimeSeriesData) *shared.TemporalAnalysis {
 	if len(timeSeries) < 10 {
 		return nil
 	}
@@ -729,7 +730,7 @@ func (tsa *TimeSeriesAnalyzer) detectBurstPattern(timeSeries []*TimeSeriesData) 
 		return nil
 	}
 
-	analysis := &patterns.TemporalAnalysis{
+	analysis := &shared.TemporalAnalysis{
 		PatternType: "burst",
 		Confidence:  burstRatio,
 		SeasonalFactors: map[string]float64{
@@ -833,13 +834,13 @@ func (tsa *TimeSeriesAnalyzer) analyzeWeeklySeasonality(values []float64, timest
 	}
 }
 
-func (tsa *TimeSeriesAnalyzer) groupExecutionsByTimeWindow(executions []*engine.WorkflowExecutionData, windowSize time.Duration) map[time.Time][]*engine.WorkflowExecutionData {
-	windows := make(map[time.Time][]*engine.WorkflowExecutionData)
+func (tsa *TimeSeriesAnalyzer) groupExecutionsByTimeWindow(executions []*sharedtypes.WorkflowExecutionData, windowSize time.Duration) map[time.Time][]*sharedtypes.WorkflowExecutionData {
+	windows := make(map[time.Time][]*sharedtypes.WorkflowExecutionData)
 
 	for _, execution := range executions {
 		windowStart := execution.Timestamp.Truncate(windowSize)
 		if _, exists := windows[windowStart]; !exists {
-			windows[windowStart] = make([]*engine.WorkflowExecutionData, 0)
+			windows[windowStart] = make([]*sharedtypes.WorkflowExecutionData, 0)
 		}
 		windows[windowStart] = append(windows[windowStart], execution)
 	}
@@ -971,12 +972,12 @@ func (tsa *TimeSeriesAnalyzer) sortTimeSeriesByTimestamp(values []float64, times
 // Supporting types for time series analysis
 
 type CapacityPattern struct {
-	ResourceType        string             `json:"resource_type"`
-	CapacityTrend       string             `json:"capacity_trend"` // "approaching_limit", "stable", "decreasing"
-	UtilizationPeaks    []engine.TimeRange `json:"utilization_peaks"`
-	ScalingTriggers     []float64          `json:"scaling_triggers"` // Threshold values
-	PredictedExhaustion *time.Time         `json:"predicted_exhaustion,omitempty"`
-	Recommendations     []string           `json:"recommendations"`
+	ResourceType        string                  `json:"resource_type"`
+	CapacityTrend       string                  `json:"capacity_trend"` // "approaching_limit", "stable", "decreasing"
+	UtilizationPeaks    []sharedtypes.TimeRange `json:"utilization_peaks"`
+	ScalingTriggers     []float64               `json:"scaling_triggers"` // Threshold values
+	PredictedExhaustion *time.Time              `json:"predicted_exhaustion,omitempty"`
+	Recommendations     []string                `json:"recommendations"`
 }
 
 type ScalingPattern struct {

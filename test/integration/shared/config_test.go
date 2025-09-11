@@ -23,10 +23,10 @@ var _ = Describe("Provider Detection", func() {
 			Expect(result).To(Equal(expectedProvider))
 		},
 		Entry("localhost with port 11434", "http://localhost:11434", "ollama"),
-		Entry("any host with port 11434", "http://example.com:11434", "ollama"),
+		Entry("any host with port 11434", "http://kubernaut.io:11434", "ollama"),
 		Entry("localhost with port 8080", "http://localhost:8080", "localai"),
-		Entry("any host with port 8080", "http://example.com:8080", "localai"),
-		Entry("custom port", "http://example.com:9999", "localai"),
+		Entry("any host with port 8080", "http://kubernaut.io:8080", "localai"),
+		Entry("custom port", "http://kubernaut.io:9999", "localai"),
 	)
 })
 

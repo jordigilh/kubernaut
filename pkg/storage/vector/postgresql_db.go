@@ -158,7 +158,11 @@ func (db *PostgreSQLVectorDatabase) FindSimilarPatterns(ctx context.Context, pat
 		db.log.WithError(err).Error("Failed to execute similarity search")
 		return nil, fmt.Errorf("failed to execute similarity search: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			db.log.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var similarPatterns []*SimilarPattern
 	rank := 1
@@ -306,7 +310,11 @@ func (db *PostgreSQLVectorDatabase) SearchBySemantics(ctx context.Context, query
 		db.log.WithError(err).Error("Failed to execute semantic search")
 		return nil, fmt.Errorf("failed to execute semantic search: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			db.log.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var patterns []*ActionPattern
 
@@ -411,7 +419,11 @@ func (db *PostgreSQLVectorDatabase) GetPatternAnalytics(ctx context.Context) (*P
 	if err != nil {
 		return nil, fmt.Errorf("failed to get patterns by action type: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			db.log.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	for rows.Next() {
 		var actionType string
@@ -427,7 +439,11 @@ func (db *PostgreSQLVectorDatabase) GetPatternAnalytics(ctx context.Context) (*P
 	if err != nil {
 		return nil, fmt.Errorf("failed to get patterns by severity: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			db.log.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	for rows.Next() {
 		var severity string
@@ -459,7 +475,11 @@ func (db *PostgreSQLVectorDatabase) GetPatternAnalytics(ctx context.Context) (*P
 	`
 	rows, err = db.db.QueryContext(ctx, topPatternsQuery)
 	if err == nil {
-		defer rows.Close()
+		defer func() {
+			if err := rows.Close(); err != nil {
+				db.log.WithError(err).Error("Failed to close database rows")
+			}
+		}()
 		for rows.Next() {
 			var p ActionPattern
 			var effectivenessJSON []byte
@@ -481,7 +501,11 @@ func (db *PostgreSQLVectorDatabase) GetPatternAnalytics(ctx context.Context) (*P
 	`
 	rows, err = db.db.QueryContext(ctx, recentPatternsQuery)
 	if err == nil {
-		defer rows.Close()
+		defer func() {
+			if err := rows.Close(); err != nil {
+				db.log.WithError(err).Error("Failed to close database rows")
+			}
+		}()
 		for rows.Next() {
 			var p ActionPattern
 			err := rows.Scan(&p.ID, &p.ActionType, &p.AlertName, &p.AlertSeverity, &p.CreatedAt)

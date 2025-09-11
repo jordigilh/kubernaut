@@ -2,10 +2,11 @@ package monitoring
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -55,6 +56,47 @@ func (s *StubAlertClient) GetAlertHistory(ctx context.Context, alertName, namesp
 
 	// Return empty history for now
 	return []AlertEvent{}, nil
+}
+
+// CreateSilence implements AlertClient interface (BR-MET-011: Must provide monitoring operations)
+func (s *StubAlertClient) CreateSilence(ctx context.Context, silence *SilenceRequest) (*SilenceResponse, error) {
+	s.log.WithFields(logrus.Fields{
+		"matchers":   silence.Matchers,
+		"starts_at":  silence.StartsAt,
+		"ends_at":    silence.EndsAt,
+		"created_by": silence.CreatedBy,
+		"comment":    silence.Comment,
+	}).Info("Stub: Creating silence")
+
+	// Generate a mock silence ID
+	silenceID := fmt.Sprintf("stub-silence-%d", time.Now().Unix())
+
+	return &SilenceResponse{
+		SilenceID: silenceID,
+	}, nil
+}
+
+// DeleteSilence implements AlertClient interface
+func (s *StubAlertClient) DeleteSilence(ctx context.Context, silenceID string) error {
+	s.log.WithField("silence_id", silenceID).Info("Stub: Deleting silence")
+	return nil
+}
+
+// GetSilences implements AlertClient interface
+func (s *StubAlertClient) GetSilences(ctx context.Context, matchers []SilenceMatcher) ([]Silence, error) {
+	s.log.WithField("matcher_count", len(matchers)).Debug("Stub: Getting silences")
+
+	// Return empty silences list
+	return []Silence{}, nil
+}
+
+// AcknowledgeAlert implements AlertClient interface (BR-ALERT-012: Alert acknowledgment support)
+func (s *StubAlertClient) AcknowledgeAlert(ctx context.Context, alertID string, acknowledgedBy string) error {
+	s.log.WithFields(logrus.Fields{
+		"alert_id":        alertID,
+		"acknowledged_by": acknowledgedBy,
+	}).Info("Stub: Acknowledging alert")
+	return nil
 }
 
 // StubMetricsClient provides a basic implementation for testing and development

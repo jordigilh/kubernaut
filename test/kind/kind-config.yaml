@@ -7,24 +7,54 @@ nodes:
   - |
     kind: InitConfiguration
     nodeRegistration:
-      criSocket: unix:///var/run/crio/crio.sock
+      criSocket: unix:///run/containerd/containerd.sock
   - |
     kind: KubeletConfiguration
     serverTLSBootstrap: true
     cgroupDriver: systemd
   extraPortMappings:
+  # LLM model endpoint (for local testing)
   - containerPort: 30080
     hostPort: 8080
     protocol: TCP
+  # Prometheus monitoring
   - containerPort: 30090
     hostPort: 9090
     protocol: TCP
+  # AlertManager
+  - containerPort: 30093
+    hostPort: 9093
+    protocol: TCP
+  # Kubernaut API (for integration testing)
+  - containerPort: 30800
+    hostPort: 8800
+    protocol: TCP
+  extraMounts:
+  - hostPath: /tmp/kind-bootstrap
+    containerPath: /tmp/bootstrap
+    readOnly: true
+
 - role: worker
   kubeadmConfigPatches:
   - |
     kind: JoinConfiguration
     nodeRegistration:
-      criSocket: unix:///var/run/crio/crio.sock
+      criSocket: unix:///run/containerd/containerd.sock
+  - |
+    kind: KubeletConfiguration
+    serverTLSBootstrap: true
+    cgroupDriver: systemd
+  extraMounts:
+  - hostPath: /tmp/kind-bootstrap
+    containerPath: /tmp/bootstrap
+    readOnly: true
+
+- role: worker
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+      criSocket: unix:///run/containerd/containerd.sock
   - |
     kind: KubeletConfiguration
     serverTLSBootstrap: true
@@ -34,7 +64,7 @@ networking:
   # Use default podSubnet and serviceSubnet to avoid conflicts
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/12"
-  
+
 containerdConfigPatches:
 - |-
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]

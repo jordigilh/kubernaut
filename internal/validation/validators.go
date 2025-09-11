@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 var (
@@ -26,32 +27,14 @@ var (
 	}
 )
 
-// ValidationError represents a validation error
-type ValidationError struct {
-	Field   string
-	Message string
-}
+// ValidationError and ValidationErrors are aliases for the shared types
+// to maintain backward compatibility while consolidating duplicated types
+type ValidationError = sharedtypes.ValidationResult
+type ValidationErrors = sharedtypes.ValidationErrors
 
-func (e ValidationError) Error() string {
-	return fmt.Sprintf("validation error for field '%s': %s", e.Field, e.Message)
-}
-
-// ValidationErrors represents multiple validation errors
-type ValidationErrors []ValidationError
-
-func (e ValidationErrors) Error() string {
-	if len(e) == 0 {
-		return ""
-	}
-	if len(e) == 1 {
-		return e[0].Error()
-	}
-
-	var messages []string
-	for _, err := range e {
-		messages = append(messages, err.Error())
-	}
-	return strings.Join(messages, "; ")
+// NewValidationError creates a validation error using the shared type
+func NewValidationError(field, message string) ValidationError {
+	return sharedtypes.NewValidationError(field, message)
 }
 
 // ValidateResourceReference validates a Kubernetes resource reference
@@ -60,56 +43,29 @@ func ValidateResourceReference(ref actionhistory.ResourceReference) error {
 
 	// Validate namespace
 	if ref.Namespace == "" {
-		errors = append(errors, ValidationError{
-			Field:   "namespace",
-			Message: "namespace is required",
-		})
+		errors = append(errors, NewValidationError("namespace", "namespace is required"))
 	} else if len(ref.Namespace) > 63 {
-		errors = append(errors, ValidationError{
-			Field:   "namespace",
-			Message: "namespace must be 63 characters or less",
-		})
+		errors = append(errors, NewValidationError("namespace", "namespace must be 63 characters or less"))
 	} else if !kubernetesNamespaceRegex.MatchString(ref.Namespace) {
-		errors = append(errors, ValidationError{
-			Field:   "namespace",
-			Message: "namespace must be a valid Kubernetes namespace name",
-		})
+		errors = append(errors, NewValidationError("namespace", "namespace must be a valid Kubernetes namespace name"))
 	}
 
 	// Validate kind
 	if ref.Kind == "" {
-		errors = append(errors, ValidationError{
-			Field:   "kind",
-			Message: "kind is required",
-		})
+		errors = append(errors, NewValidationError("kind", "kind is required"))
 	} else if len(ref.Kind) > 100 {
-		errors = append(errors, ValidationError{
-			Field:   "kind",
-			Message: "kind must be 100 characters or less",
-		})
+		errors = append(errors, NewValidationError("kind", "kind must be 100 characters or less"))
 	} else if !isValidKubernetesKind(ref.Kind) {
-		errors = append(errors, ValidationError{
-			Field:   "kind",
-			Message: "kind must be a valid Kubernetes resource kind",
-		})
+		errors = append(errors, NewValidationError("kind", "kind must be a valid Kubernetes resource kind"))
 	}
 
 	// Validate name
 	if ref.Name == "" {
-		errors = append(errors, ValidationError{
-			Field:   "name",
-			Message: "name is required",
-		})
+		errors = append(errors, NewValidationError("name", "name is required"))
 	} else if len(ref.Name) > 253 {
-		errors = append(errors, ValidationError{
-			Field:   "name",
-			Message: "name must be 253 characters or less",
-		})
+		errors = append(errors, NewValidationError("name", "name must be 253 characters or less"))
 	} else if !kubernetesNameRegex.MatchString(ref.Name) {
-		errors = append(errors, ValidationError{
-			Field:   "name",
-			Message: "name must be a valid Kubernetes resource name",
-		})
+		errors = append(errors, NewValidationError("name", "name must be a valid Kubernetes resource name"))
 	}
 
 	if len(errors) > 0 {
@@ -122,29 +78,20 @@ func ValidateResourceReference(ref actionhistory.ResourceReference) error {
 // ValidateStringInput validates a string input for safety
 func ValidateStringInput(field, value string, maxLength int) error {
 	if len(value) > maxLength {
-		return ValidationError{
-			Field:   field,
-			Message: fmt.Sprintf("must be %d characters or less", maxLength),
-		}
+		return NewValidationError(field, fmt.Sprintf("must be %d characters or less", maxLength))
 	}
 
 	// Check for SQL injection patterns
 	for _, pattern := range sqlInjectionPatterns {
 		if pattern.MatchString(value) {
-			return ValidationError{
-				Field:   field,
-				Message: "contains potentially unsafe characters",
-			}
+			return NewValidationError(field, "contains potentially unsafe characters")
 		}
 	}
 
 	// Check for control characters
 	for _, r := range value {
 		if unicode.IsControl(r) && r != '\t' && r != '\n' && r != '\r' {
-			return ValidationError{
-				Field:   field,
-				Message: "contains invalid control characters",
-			}
+			return NewValidationError(field, "contains invalid control characters")
 		}
 	}
 
@@ -174,10 +121,7 @@ func ValidateActionType(actionType string) error {
 	}
 
 	if !allowedActions[actionType] {
-		return ValidationError{
-			Field:   "actionType",
-			Message: fmt.Sprintf("'%s' is not a recognized action type", actionType),
-		}
+		return NewValidationError("actionType", fmt.Sprintf("'%s' is not a recognized action type", actionType))
 	}
 
 	return nil
@@ -192,10 +136,7 @@ func ValidateTimeRange(timeRange string) error {
 	// Valid time range formats
 	validFormats := regexp.MustCompile(`^[0-9]+[hdm]$`)
 	if !validFormats.MatchString(timeRange) {
-		return ValidationError{
-			Field:   "timeRange",
-			Message: "must be in format like '24h', '7d', or '30m'",
-		}
+		return NewValidationError("timeRange", "must be in format like '24h', '7d', or '30m'")
 	}
 
 	return nil
@@ -204,17 +145,11 @@ func ValidateTimeRange(timeRange string) error {
 // ValidateWindowMinutes validates a window minutes parameter
 func ValidateWindowMinutes(windowMinutes int) error {
 	if windowMinutes < 1 {
-		return ValidationError{
-			Field:   "windowMinutes",
-			Message: "must be greater than 0",
-		}
+		return NewValidationError("windowMinutes", "must be greater than 0")
 	}
 
 	if windowMinutes > 10080 { // 7 days in minutes
-		return ValidationError{
-			Field:   "windowMinutes",
-			Message: "must be 7 days (10080 minutes) or less",
-		}
+		return NewValidationError("windowMinutes", "must be 7 days (10080 minutes) or less")
 	}
 
 	return nil
@@ -223,17 +158,11 @@ func ValidateWindowMinutes(windowMinutes int) error {
 // ValidateLimit validates a limit parameter
 func ValidateLimit(limit int) error {
 	if limit < 1 {
-		return ValidationError{
-			Field:   "limit",
-			Message: "must be greater than 0",
-		}
+		return NewValidationError("limit", "must be greater than 0")
 	}
 
 	if limit > 10000 {
-		return ValidationError{
-			Field:   "limit",
-			Message: "must be 10000 or less",
-		}
+		return NewValidationError("limit", "must be 10000 or less")
 	}
 
 	return nil

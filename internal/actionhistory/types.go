@@ -325,13 +325,13 @@ type ActionRecord struct {
 }
 
 // TimeRange represents a time range for queries
-type TimeRange struct {
+type ActionHistoryTimeRange struct {
 	Start time.Time `json:"start"`
 	End   time.Time `json:"end"`
 }
 
 // Contains checks if a time is within the range
-func (tr TimeRange) Contains(t time.Time) bool {
+func (tr ActionHistoryTimeRange) Contains(t time.Time) bool {
 	return t.After(tr.Start) && t.Before(tr.End)
 }
 
@@ -342,7 +342,7 @@ type ActionQuery struct {
 	ResourceName string
 	ActionType   string
 	ModelUsed    string
-	TimeRange    TimeRange
+	TimeRange    ActionHistoryTimeRange
 	Limit        int
 	Offset       int
 }

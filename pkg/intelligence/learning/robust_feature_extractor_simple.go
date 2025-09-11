@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -68,7 +68,7 @@ func NewRobustFeatureExtractor(baseExtractor *FeatureExtractor, log *logrus.Logg
 }
 
 // ExtractWithValidation extracts features with comprehensive validation
-func (rfe *RobustFeatureExtractor) ExtractWithValidation(data *engine.WorkflowExecutionData) (*RobustFeatureExtractionResult, error) {
+func (rfe *RobustFeatureExtractor) ExtractWithValidation(data *sharedtypes.WorkflowExecutionData) (*RobustFeatureExtractionResult, error) {
 	rfe.log.WithField("execution_id", data.ExecutionID).Debug("Starting robust feature extraction")
 
 	result := &RobustFeatureExtractionResult{
@@ -123,7 +123,7 @@ func (rfe *RobustFeatureExtractor) ExtractWithValidation(data *engine.WorkflowEx
 }
 
 // validateInputData validates the input workflow execution data
-func (rfe *RobustFeatureExtractor) validateInputData(data *engine.WorkflowExecutionData) error {
+func (rfe *RobustFeatureExtractor) validateInputData(data *sharedtypes.WorkflowExecutionData) error {
 	if data == nil {
 		return fmt.Errorf("workflow execution data is nil")
 	}
@@ -151,7 +151,7 @@ func (rfe *RobustFeatureExtractor) validateInputData(data *engine.WorkflowExecut
 }
 
 // extractWithErrorRecovery extracts features with error recovery
-func (rfe *RobustFeatureExtractor) extractWithErrorRecovery(data *engine.WorkflowExecutionData) (*shared.WorkflowFeatures, []error) {
+func (rfe *RobustFeatureExtractor) extractWithErrorRecovery(data *sharedtypes.WorkflowExecutionData) (*shared.WorkflowFeatures, []error) {
 	errors := make([]error, 0)
 
 	// Try normal extraction first
@@ -178,7 +178,7 @@ func (rfe *RobustFeatureExtractor) extractWithErrorRecovery(data *engine.Workflo
 }
 
 // safeExtractBasicFeatures safely extracts basic features with error recovery
-func (rfe *RobustFeatureExtractor) safeExtractBasicFeatures(data *engine.WorkflowExecutionData, features *shared.WorkflowFeatures) []error {
+func (rfe *RobustFeatureExtractor) safeExtractBasicFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) []error {
 	errors := make([]error, 0)
 
 	// Safe alert feature extraction

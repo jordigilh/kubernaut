@@ -1,0 +1,524 @@
+# Dynamic Toolset Configuration Deployment for Kubernaut
+# Business Requirements: BR-HOLMES-016 through BR-HOLMES-030
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-system
+  labels:
+    name: kubernaut-system
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: system
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-service-discovery
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: service-discovery
+
+---
+# RBAC Configuration for Service Discovery
+# Business Requirement: BR-HOLMES-027 - Multi-namespace service discovery with RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-service-discovery
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: service-discovery
+rules:
+# Service discovery permissions
+- apiGroups: [""]
+  resources: ["services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list"]
+# Application discovery permissions
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+# ServiceMonitor discovery (if using Prometheus Operator)
+- apiGroups: ["monitoring.coreos.com"]
+  resources: ["servicemonitors"]
+  verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-service-discovery
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: service-discovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-service-discovery
+subjects:
+- kind: ServiceAccount
+  name: kubernaut-service-discovery
+  namespace: kubernaut-system
+
+---
+# ConfigMap for Dynamic Toolset Configuration
+# Business Requirement: BR-HOLMES-016 - Service discovery configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernaut-dynamic-toolset-config
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: configuration
+data:
+  config.yaml: |
+    service_discovery:
+      enabled: true
+      discovery_interval: "5m"
+      cache_ttl: "10m"
+      health_check_interval: "30s"
+      namespaces:
+        - "monitoring"
+        - "observability"
+        - "kube-system"
+        - "istio-system"
+
+      service_patterns:
+        prometheus:
+          enabled: true
+          priority: 80
+          selectors:
+            - app.kubernetes.io/name: prometheus
+            - app: prometheus
+          service_names: ["prometheus", "prometheus-server", "prometheus-operated"]
+          required_ports: [9090]
+          health_check:
+            endpoint: "/api/v1/status/buildinfo"
+            timeout: "2s"
+            retries: 3
+
+        grafana:
+          enabled: true
+          priority: 70
+          selectors:
+            - app.kubernetes.io/name: grafana
+          service_names: ["grafana"]
+          required_ports: [3000]
+          health_check:
+            endpoint: "/api/health"
+            timeout: "2s"
+            retries: 3
+
+        jaeger:
+          enabled: true
+          priority: 60
+          selectors:
+            - app.kubernetes.io/name: jaeger
+            - app.kubernetes.io/component: query
+          service_names: ["jaeger-query", "jaeger"]
+          required_ports: [16686]
+          health_check:
+            endpoint: "/api/services"
+            timeout: "2s"
+            retries: 3
+
+        custom:
+          enabled: true
+          priority: 30
+
+    holmesgpt:
+      enabled: true
+      endpoint: "http://holmesgpt-api:8080"
+      timeout: "60s"
+      dynamic_toolsets:
+        enabled: true
+        update_interval: "30s"
+        baseline_toolsets: ["kubernetes", "internet"]
+
+---
+# Main Kubernaut Application Deployment with Dynamic Toolsets
+# Business Requirement: BR-HOLMES-020 - Real-time toolset configuration updates
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernaut-dynamic-toolsets
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: dynamic-toolsets
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut
+      app.kubernetes.io/component: dynamic-toolsets
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernaut
+        app.kubernetes.io/component: dynamic-toolsets
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kubernaut-service-discovery
+      containers:
+      - name: kubernaut
+        image: kubernaut/kubernaut:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        env:
+        - name: CONFIG_FILE
+          value: "/etc/kubernaut/config.yaml"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: SERVICE_DISCOVERY_ENABLED
+          value: "true"
+        - name: DYNAMIC_TOOLSETS_ENABLED
+          value: "true"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/kubernaut
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: config
+        configMap:
+          name: kubernaut-dynamic-toolset-config
+
+---
+# Service for Kubernaut Dynamic Toolsets
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernaut-dynamic-toolsets
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: dynamic-toolsets
+spec:
+  selector:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: dynamic-toolsets
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+
+---
+# Context API Service for HolmesGPT Integration
+# Business Requirement: BR-HOLMES-025 - Runtime toolset management API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernaut-context-api
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: context-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut
+      app.kubernetes.io/component: context-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernaut
+        app.kubernetes.io/component: context-api
+    spec:
+      serviceAccountName: kubernaut-service-discovery
+      containers:
+      - name: context-api
+        image: kubernaut/context-api:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8091
+          protocol: TCP
+        env:
+        - name: CONFIG_FILE
+          value: "/etc/kubernaut/config.yaml"
+        - name: SERVICE_DISCOVERY_ENDPOINT
+          value: "http://kubernaut-dynamic-toolsets:8080"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/kubernaut
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "250m"
+      volumes:
+      - name: config
+        configMap:
+          name: kubernaut-dynamic-toolset-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernaut-context-api
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: context-api
+spec:
+  selector:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: context-api
+  ports:
+  - name: http
+    port: 8091
+    targetPort: http
+    protocol: TCP
+  type: ClusterIP
+
+---
+# ServiceMonitor for Prometheus Scraping
+# Business Requirement: BR-HOLMES-029 - Service discovery metrics and monitoring
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kubernaut-dynamic-toolsets
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut
+      app.kubernetes.io/component: dynamic-toolsets
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# NetworkPolicy for Security
+# Business Requirement: BR-HOLMES-027 - Network security for service discovery
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kubernaut-dynamic-toolsets
+  namespace: kubernaut-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kubernaut-system
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 9090
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow Kubernetes API access
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow access to discovered services in monitored namespaces
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: observability
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+    ports:
+    - protocol: TCP
+      port: 9090  # Prometheus
+    - protocol: TCP
+      port: 3000  # Grafana
+    - protocol: TCP
+      port: 16686 # Jaeger
+    - protocol: TCP
+      port: 9200  # Elasticsearch
+
+---
+# Custom Resource Definition for Dynamic Toolset Configuration (Optional)
+# This allows advanced users to configure service discovery patterns via CRDs
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: servicepatterns.kubernaut.io
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: crd
+spec:
+  group: kubernaut.io
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              serviceType:
+                type: string
+                description: "Type of service (e.g., prometheus, grafana)"
+              priority:
+                type: integer
+                description: "Priority for toolset ordering"
+              selectors:
+                type: array
+                items:
+                  type: object
+                  additionalProperties:
+                    type: string
+              serviceNames:
+                type: array
+                items:
+                  type: string
+              requiredPorts:
+                type: array
+                items:
+                  type: integer
+              capabilities:
+                type: array
+                items:
+                  type: string
+              healthCheck:
+                type: object
+                properties:
+                  endpoint:
+                    type: string
+                  timeout:
+                    type: string
+                  retries:
+                    type: integer
+            required:
+            - serviceType
+            - priority
+          status:
+            type: object
+            properties:
+              discovered:
+                type: boolean
+              lastDiscovery:
+                type: string
+  scope: Namespaced
+  names:
+    plural: servicepatterns
+    singular: servicepattern
+    kind: ServicePattern
+
+---
+# Example ServicePattern Custom Resource
+apiVersion: kubernaut.io/v1
+kind: ServicePattern
+metadata:
+  name: custom-monitoring-service
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: custom-pattern
+spec:
+  serviceType: "custom-monitoring"
+  priority: 40
+  selectors:
+    - app.kubernetes.io/name: custom-monitoring
+    - monitoring-type: custom
+  serviceNames:
+    - "custom-metrics"
+    - "monitoring-service"
+  requiredPorts:
+    - 8080
+    - 8443
+  capabilities:
+    - "custom_metrics"
+    - "advanced_analytics"
+    - "real_time_alerting"
+  healthCheck:
+    endpoint: "/health"
+    timeout: "3s"
+    retries: 3
