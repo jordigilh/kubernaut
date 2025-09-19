@@ -10,6 +10,8 @@ Kubernaut has successfully transformed from a stub-heavy development system to a
 
 ## 📚 **Documentation Organization**
 
+> **📖 [Complete Documentation Index](DOCUMENTATION_INDEX.md)** - Comprehensive navigation with cross-references between business requirements, architecture, and implementation
+
 ### 🚀 **Getting Started**
 New to Kubernaut? Start here for quick setup and integration examples.
 
@@ -21,11 +23,12 @@ New to Kubernaut? Start here for quick setup and integration examples.
   - **[Deployment Guide](getting-started/setup/DEPLOYMENT.md)** - Production deployment instructions
 
 ### 🏗️ **Architecture & Design**
-Understand Kubernaut's technical architecture and design decisions.
+Comprehensive system architecture with 630+ business requirements coverage.
 
-- **[System Architecture](ARCHITECTURE.md)** - Overall system design and components
-- **[Workflow Engine](WORKFLOWS.md)** - Multi-step remediation orchestration
-- **[HolmesGPT Integration](HOLMESGPT_INTEGRATION.md)** - AI analysis integration
+- **[AI Context Orchestration Architecture](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)** - Dynamic context discovery and intelligent caching
+- **[Workflow Engine & Orchestration Architecture](architecture/WORKFLOW_ENGINE_ORCHESTRATION_ARCHITECTURE.md)** - Adaptive orchestration and step execution
+- **[Intelligence & Pattern Discovery Architecture](architecture/INTELLIGENCE_PATTERN_DISCOVERY_ARCHITECTURE.md)** - ML analytics and anomaly detection
+- **[Storage & Data Management Architecture](architecture/STORAGE_DATA_MANAGEMENT_ARCHITECTURE.md)** - Multi-modal storage and caching strategies
 - **Technical Analysis**:
   - **[Vector Database Analysis](architecture/analysis/VECTOR_DATABASE_ANALYSIS.md)** - Storage architecture decisions
   - **[RAG Enhancement Analysis](architecture/analysis/RAG_ENHANCEMENT_ANALYSIS.md)** - AI decision enhancement

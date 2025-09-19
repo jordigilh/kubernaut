@@ -235,12 +235,26 @@ func NewMockPatternStore() *MockPatternStore {
 }
 
 func (mps *MockPatternStore) StorePattern(ctx context.Context, pattern *shared.DiscoveredPattern) error {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	mps.storeCallCount++
 	mps.storedPatterns = append(mps.storedPatterns, pattern)
 	return nil
 }
 
 func (mps *MockPatternStore) GetPattern(ctx context.Context, id string) (*shared.DiscoveredPattern, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	for _, pattern := range mps.storedPatterns {
 		if pattern.ID == id {
 			return pattern, nil
@@ -250,6 +264,13 @@ func (mps *MockPatternStore) GetPattern(ctx context.Context, id string) (*shared
 }
 
 func (mps *MockPatternStore) GetPatternsByType(ctx context.Context, patternType shared.PatternType) ([]*shared.DiscoveredPattern, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	results := make([]*shared.DiscoveredPattern, 0)
 	for _, pattern := range mps.storedPatterns {
 		if pattern.PatternType == patternType {
@@ -260,6 +281,13 @@ func (mps *MockPatternStore) GetPatternsByType(ctx context.Context, patternType 
 }
 
 func (mps *MockPatternStore) UpdatePatternAccuracy(ctx context.Context, patternID string, accuracy float64) error {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	mps.patternAccuracy[patternID] = accuracy
 	return nil
 }
@@ -357,11 +385,25 @@ func (mps *MockPatternStore) updateConfidenceInsights() {
 
 // GetPatterns retrieves patterns from the mock store (required by PatternStore interface)
 func (mps *MockPatternStore) GetPatterns(ctx context.Context, filters map[string]interface{}) ([]*shared.DiscoveredPattern, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	return mps.storedPatterns, nil
 }
 
 // UpdatePattern updates a pattern in the mock store (required by PatternStore interface)
 func (mps *MockPatternStore) UpdatePattern(ctx context.Context, pattern *shared.DiscoveredPattern) error {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	for i, p := range mps.storedPatterns {
 		if p.ID == pattern.ID {
 			mps.storedPatterns[i] = pattern
@@ -373,6 +415,13 @@ func (mps *MockPatternStore) UpdatePattern(ctx context.Context, pattern *shared.
 
 // DeletePattern removes a pattern from the mock store (required by PatternStore interface)
 func (mps *MockPatternStore) DeletePattern(ctx context.Context, patternID string) error {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	for i, p := range mps.storedPatterns {
 		if p.ID == patternID {
 			mps.storedPatterns = append(mps.storedPatterns[:i], mps.storedPatterns[i+1:]...)
@@ -400,11 +449,25 @@ func NewMockPatternDiscoveryVectorDatabase() *MockPatternDiscoveryVectorDatabase
 }
 
 func (mvd *MockPatternDiscoveryVectorDatabase) StoreEmbedding(ctx context.Context, id string, embedding []float64) error {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	mvd.vectorData[id] = embedding
 	return nil
 }
 
 func (mvd *MockPatternDiscoveryVectorDatabase) FindSimilar(ctx context.Context, embedding []float64, threshold float64, limit int) ([]*SimilarityResult, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Return predefined similarity results for testing
 	results := make([]*SimilarityResult, 0)
 	for i, result := range mvd.similarityResults {
@@ -419,6 +482,13 @@ func (mvd *MockPatternDiscoveryVectorDatabase) FindSimilar(ctx context.Context, 
 }
 
 func (mvd *MockPatternDiscoveryVectorDatabase) GetEmbedding(ctx context.Context, id string) ([]float64, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if embedding, exists := mvd.vectorData[id]; exists {
 		return embedding, nil
 	}
@@ -431,18 +501,39 @@ func (mvd *MockPatternDiscoveryVectorDatabase) SetSimilarityResults(results []*S
 
 // Store stores a vector with metadata (required by VectorDatabase interface)
 func (mvd *MockPatternDiscoveryVectorDatabase) Store(ctx context.Context, id string, vector []float64, metadata map[string]interface{}) error {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	mvd.vectorData[id] = vector
 	return nil
 }
 
 // Update updates a vector with metadata (required by VectorDatabase interface)
 func (mvd *MockPatternDiscoveryVectorDatabase) Update(ctx context.Context, id string, vector []float64, metadata map[string]interface{}) error {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	mvd.vectorData[id] = vector
 	return nil
 }
 
 // Search searches for similar vectors (required by VectorDatabase interface)
 func (mvd *MockPatternDiscoveryVectorDatabase) Search(ctx context.Context, queryVector []float64, limit int) (*patterns.UnifiedSearchResultSet, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	results := make([]vector.UnifiedSearchResult, 0)
 
 	// Simple mock: return some results based on stored vectors
@@ -470,49 +561,6 @@ func (mvd *MockPatternDiscoveryVectorDatabase) Search(ctx context.Context, query
 	return &vector.UnifiedSearchResultSet{
 		Results: results,
 	}, nil
-}
-
-// MockExecutionRepository implements ExecutionRepository interface
-type MockExecutionRepository struct {
-	executionsData      []*types.RuntimeWorkflowExecution
-	timeWindowCallCount int
-}
-
-func NewMockExecutionRepository() *MockExecutionRepository {
-	return &MockExecutionRepository{
-		executionsData:      make([]*types.RuntimeWorkflowExecution, 0),
-		timeWindowCallCount: 0,
-	}
-}
-
-func (mer *MockExecutionRepository) GetExecutionsInTimeWindow(ctx context.Context, start, end time.Time) ([]*types.RuntimeWorkflowExecution, error) {
-	mer.timeWindowCallCount++
-
-	// **Business Logic Fix**: Filter executions that overlap with the time window
-	// **Development Principle**: Ensure functionality aligns with business requirements
-	results := make([]*types.RuntimeWorkflowExecution, 0)
-	for _, execution := range mer.executionsData {
-		execStart := execution.StartTime
-		execEnd := time.Now() // Use Now() if EndTime is nil
-		if execution.EndTime != nil {
-			execEnd = *execution.EndTime
-		}
-
-		// Check if execution overlaps with requested time window
-		// An execution overlaps if: execStart < end AND execEnd > start
-		if execStart.Before(end) && execEnd.After(start) {
-			results = append(results, execution)
-		}
-	}
-	return results, nil
-}
-
-func (mer *MockExecutionRepository) SetExecutionsInTimeWindow(executions []*types.RuntimeWorkflowExecution) {
-	mer.executionsData = executions
-}
-
-func (mer *MockExecutionRepository) GetTimeWindowCallCount() int {
-	return mer.timeWindowCallCount
 }
 
 // MockMLAnalyzer implements MachineLearningAnalyzer interface
@@ -739,15 +787,36 @@ func NewMockTimeSeriesEngine() *MockTimeSeriesEngine {
 }
 
 func (mts *MockTimeSeriesEngine) AnalyzeTimeSeries(ctx context.Context, data []TimeSeriesDataPoint) (*TimeSeriesAnalysisResult, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	mts.analysisCallCount++
 	return mts.temporalResults, nil
 }
 
 func (mts *MockTimeSeriesEngine) DetectSeasonality(ctx context.Context, data []TimeSeriesDataPoint) (float64, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return 0.0, ctx.Err()
+	default:
+	}
+
 	return mts.seasonalityScore, nil
 }
 
 func (mts *MockTimeSeriesEngine) ForecastValues(ctx context.Context, data []TimeSeriesDataPoint, periods int) ([]float64, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if periods <= len(mts.forecastResults) {
 		return mts.forecastResults[:periods], nil
 	}
@@ -778,11 +847,25 @@ func NewMockClusteringEngine() *MockClusteringEngine {
 }
 
 func (mce *MockClusteringEngine) ClusterData(ctx context.Context, data [][]float64, config *ClusteringConfig) ([]*ClusterResult, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	mce.clusterCallCount++
 	return mce.clusterResults, nil
 }
 
 func (mce *MockClusteringEngine) ClusterAlerts(ctx context.Context, alerts []*types.WorkflowExecutionData, config *types.PatternDiscoveryConfig) ([]*types.AlertCluster, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Convert cluster results to alert clusters
 	alertClusters := make([]*types.AlertCluster, len(mce.clusterResults))
 	for i, cluster := range mce.clusterResults {
@@ -795,6 +878,13 @@ func (mce *MockClusteringEngine) ClusterAlerts(ctx context.Context, alerts []*ty
 }
 
 func (mce *MockClusteringEngine) AnalyzeCorrelations(ctx context.Context, data [][]float64) (*CorrelationAnalysisResult, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	return mce.correlationResults, nil
 }
 
@@ -822,15 +912,36 @@ func NewMockAnomalyDetector() *MockAnomalyDetector {
 }
 
 func (mad *MockAnomalyDetector) DetectAnomalies(ctx context.Context, data []float64) ([]*Anomaly, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	mad.detectionCallCount++
 	return mad.anomalies, nil
 }
 
 func (mad *MockAnomalyDetector) CalculateAnomalyScore(ctx context.Context, value float64, baseline []float64) (float64, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return 0.0, ctx.Err()
+	default:
+	}
+
 	return mad.anomalyScore, nil
 }
 
 func (mad *MockAnomalyDetector) TrainModel(ctx context.Context, trainingData [][]float64) error {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	return nil
 }
 

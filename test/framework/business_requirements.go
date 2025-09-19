@@ -312,12 +312,26 @@ func (f *BusinessRequirementTestFramework) ValidatePatternDiscovery() BusinessRe
 // Helper methods for business validation
 
 func (f *BusinessRequirementTestFramework) executeBusinessLogic(ctx context.Context, requirementID string) interface{} {
+	// Check for context cancellation (testing framework)
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	// This would return the actual business component being tested
 	// For now, return a placeholder that tests can cast to their specific types
 	return NewMockBusinessComponent(requirementID)
 }
 
 func (f *BusinessRequirementTestFramework) validatePodWasRestarted(ctx context.Context, namespace, podName string) bool {
+	// Check for context cancellation (testing framework)
+	select {
+	case <-ctx.Done():
+		return false
+	default:
+	}
+
 	// In real implementation:
 	// 1. Get original pod creation timestamp
 	// 2. Execute restart action

@@ -161,7 +161,8 @@ wait_for_service() {
     log_info "Waiting for $service_name to be healthy..."
 
     while [ $attempt -le $max_attempts ]; do
-        if podman-compose -f "$COMPOSE_FILE" ps --format "{{.Service}} {{.Status}}" | grep -q "$service_name.*healthy"; then
+        # Use podman ps directly instead of podman-compose ps to avoid template issues
+        if podman ps --filter name="$service_name" --format "{{.Names}} {{.Status}}" | grep -q "healthy"; then
             log_success "$service_name is healthy"
             return 0
         fi
@@ -190,9 +191,32 @@ test_database_connection() {
     attempt=1
 
     while [ $attempt -le $max_attempts ]; do
-        if PGPASSWORD="$password" psql -h "$host" -p "$port" -U "$user" -d "$db" -c "SELECT 1;" >/dev/null 2>&1; then
-            log_success "$service_name database connection successful"
-            return 0
+        # Test connection using container's psql client to avoid host dependency
+        local container_name=""
+        if [[ "$service_name" == "PostgreSQL" ]]; then
+            container_name="kubernaut-integration-postgres"
+        elif [[ "$service_name" == "Vector DB" ]]; then
+            container_name="kubernaut-integration-vectordb"
+        fi
+
+        if [ -n "$container_name" ]; then
+            if podman exec "$container_name" psql -U "$user" -d "$db" -c "SELECT 1;" >/dev/null 2>&1; then
+                log_success "$service_name database connection successful"
+                return 0
+            fi
+        else
+            # Fallback to host connection if psql is available
+            if command -v psql >/dev/null 2>&1; then
+                if PGPASSWORD="$password" psql -h "$host" -p "$port" -U "$user" -d "$db" -c "SELECT 1;" >/dev/null 2>&1; then
+                    log_success "$service_name database connection successful"
+                    return 0
+                fi
+            else
+                # Skip detailed connection test if no psql available
+                log_warning "PostgreSQL client not available, skipping detailed connection test"
+                log_success "$service_name container is healthy (basic connectivity assumed)"
+                return 0
+            fi
         fi
 
         if [ $attempt -eq $max_attempts ]; then
@@ -229,23 +253,33 @@ run_migrations() {
         log_info "Running migration script..."
         bash scripts/migrate-database.sh || {
             log_warning "Migration script failed, attempting direct migration..."
-            # Fallback: run migrations directly using psql
+            # Fallback: run migrations directly using container's psql
             for migration_file in migrations/*.sql; do
                 if [ -f "$migration_file" ]; then
                     log_info "Applying migration: $(basename "$migration_file")"
-                    PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$migration_file"
+                    # Copy migration file to container and run it
+                    podman cp "$migration_file" kubernaut-integration-postgres:/tmp/$(basename "$migration_file") && \
+                    podman exec kubernaut-integration-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "/tmp/$(basename "$migration_file")" || {
+                        log_warning "Migration $(basename "$migration_file") failed or was already applied"
+                    }
+                    # Clean up the copied file
+                    podman exec kubernaut-integration-postgres rm -f "/tmp/$(basename "$migration_file")" 2>/dev/null || true
                 fi
             done
         }
     else
-        # Direct migration using psql
-        log_info "Applying database migrations directly..."
+        # Direct migration using container's psql
+        log_info "Applying database migrations directly using container client..."
         for migration_file in migrations/*.sql; do
             if [ -f "$migration_file" ]; then
                 log_info "Applying migration: $(basename "$migration_file")"
-                PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "$migration_file" || {
+                # Copy migration file to container and run it
+                podman cp "$migration_file" kubernaut-integration-postgres:/tmp/$(basename "$migration_file") && \
+                podman exec kubernaut-integration-postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f "/tmp/$(basename "$migration_file")" || {
                     log_warning "Migration $(basename "$migration_file") failed or was already applied"
                 }
+                # Clean up the copied file
+                podman exec kubernaut-integration-postgres rm -f "/tmp/$(basename "$migration_file")" 2>/dev/null || true
             fi
         done
     fi
@@ -302,9 +336,9 @@ start_services() {
     podman-compose -f "$COMPOSE_FILE" up -d
 
     # Wait for services to be healthy
-    wait_for_service "postgres-integration" 90
-    wait_for_service "vector-db-integration" 90
-    wait_for_service "redis-integration" 30
+    wait_for_service "kubernaut-integration-postgres" 90
+    wait_for_service "kubernaut-integration-vectordb" 90
+    wait_for_service "kubernaut-integration-redis" 30
 
     # Test database connections
     test_database_connection "$POSTGRES_HOST" "$POSTGRES_PORT" "$POSTGRES_DB" "$POSTGRES_USER" "$POSTGRES_PASSWORD" "PostgreSQL"

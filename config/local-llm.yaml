@@ -1,5 +1,5 @@
-# Configuration for local LLM instance at 192.168.1.169:8080
-# This configuration enables AI features using your LocalAI/Compatible instance
+# Configuration for Enterprise 20B+ Model LLM instance at 192.168.1.169:8080
+# This configuration enables enterprise AI features using 20B+ parameter models (MINIMUM REQUIREMENT)
 
 app:
   name: "prometheus-alerts-slm"
@@ -16,17 +16,19 @@ logging:
 
 # AI Services Configuration - Direct HolmesGPT Integration (Phase 2)
 ai_services:
-  # General-purpose LLM for workflow generation
+  # Enterprise 20B+ Model for sophisticated workflow generation and analysis
   llm:
     endpoint: "http://192.168.1.169:8080"
-    provider: "localai"              # LocalAI compatible provider
-    model: "gpt-oss:20b"             # Default model
-    api_key: ""                      # Leave empty if no API key required
-    timeout: 30s
+    provider: "ramalama"                  # Enterprise ramalama provider for 20B+ models
+    model: "ggml-org/gpt-oss-20b-GGUF"  # 20B+ parameter model (MINIMUM REQUIREMENT)
+    api_key: ""                          # Leave empty for Ollama local deployment
+    timeout: 60s                         # Extended timeout for complex reasoning
     retry_count: 3
-    temperature: 0.3                 # Conservative for reliable decisions
-    max_tokens: 500                  # Reasonable response size
-    max_context_size: 2000           # Good balance for decision quality
+    temperature: 0.7                     # Enterprise reasoning temperature
+    max_tokens: 131072                   # Full 131K context window utilization
+    min_parameter_count: 20000000000     # 20B parameter minimum enforcement
+    enable_rule_fallback: true           # Enable rule-based fallback for availability
+    max_concurrent_alerts: 5             # Maximum concurrent alerts for current hardware
 
   # HolmesGPT for specialized alert investigation
   holmesgpt:
@@ -48,16 +50,49 @@ ai_services:
     port: 8091                       # Context API port (avoids conflicts with 8080=main, 8090=HolmesGPT)
     timeout: 30s                     # Context gathering timeout
 
-# Backward compatibility - will be migrated to ai_services.llm automatically
+# Heartbeat monitoring configuration for 20B+ model availability
+heartbeat:
+  enabled: true                      # Enable heartbeat monitoring
+  monitor_service: "context_api"     # Monitoring from Context API server (recommended)
+  check_interval: "30s"             # Health check frequency
+  failure_threshold: 3              # Consecutive failures before failover
+  healthy_threshold: 2              # Consecutive successes before recovery
+  timeout: "10s"                    # Health check timeout
+  health_prompt: "System health check. Respond with: HEALTHY"
+
+# Failover configuration for rule-based processing
+failover:
+  enabled: true                     # Enable automatic failover
+  mode: "rule_based"               # Fallback mode: rule_based processing
+  confidence_reduction: 0.2        # Reduce confidence by 20% in fallback mode (0.8 -> 0.6)
+  process_with_lower_confidence: true  # Process alerts with lower confidence (don't queue)
+  notification_webhook: ""         # Optional webhook for failover notifications
+  max_fallback_duration: "30m"     # Maximum time in fallback before manual intervention
+
+# Legacy configuration section - automatically uses enterprise 20B+ model settings
+# DEPRECATED: Use ai_services.llm for new deployments
 slm:
   endpoint: "http://192.168.1.169:8080"
-  provider: "localai"
-  model: "gpt-oss:20b"
-  timeout: 30s
+  provider: "ramalama"                  # Updated to enterprise provider
+  model: "ggml-org/gpt-oss-20b-GGUF"  # 20B+ parameter model requirement
+  timeout: 60s                         # Extended for complex reasoning
   retry_count: 3
-  temperature: 0.3
-  max_tokens: 500
-  max_context_size: 2000
+  temperature: 0.7                     # Enterprise reasoning temperature
+  max_tokens: 131072                   # Full 131K context utilization
+  min_parameter_count: 20000000000     # 20B parameter minimum
+  enable_rule_fallback: true           # Enable rule-based fallback
+  max_concurrent_alerts: 5             # 5 concurrent alerts for current hardware
+
+# Future Anthropic Claude-4-Sonnet integration (after 20B model validation)
+# COMMENTED OUT - Enable after validating acceptance tests with 20B model
+# anthropic:
+#   enabled: false                     # Enable after 20B model validation
+#   api_key: "${ANTHROPIC_API_KEY}"    # Set via environment variable
+#   model: "claude-3-5-sonnet-20241022" # Claude-4-Sonnet when available
+#   endpoint: "https://api.anthropic.com/v1/messages"
+#   max_tokens: 200000                 # Claude's context window
+#   temperature: 0.7
+#   priority: 200                      # Higher priority for testing after validation
 
 kubernetes:
   context: ""                      # Use default context

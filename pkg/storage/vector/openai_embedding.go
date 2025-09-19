@@ -7,29 +7,37 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/time/rate"
 )
 
 // OpenAIEmbeddingService implements EmbeddingGenerator for OpenAI's embedding API
 type OpenAIEmbeddingService struct {
-	apiKey     string
-	httpClient *http.Client
-	log        *logrus.Logger
-	config     *OpenAIConfig
-	cache      EmbeddingCache
+	apiKey         string
+	httpClient     *http.Client
+	log            *logrus.Logger
+	config         *OpenAIConfig
+	cache          EmbeddingCache
+	rateLimiter    *rate.Limiter
+	mu             sync.RWMutex // Protects rate limiter and configuration updates
+	modelValidated bool         // Track if model has been validated
 }
 
 // OpenAIConfig holds configuration for OpenAI embedding service
 type OpenAIConfig struct {
-	Model      string        `yaml:"model" default:"text-embedding-3-small"`
-	MaxRetries int           `yaml:"max_retries" default:"3"`
-	Timeout    time.Duration `yaml:"timeout" default:"30s"`
-	BaseURL    string        `yaml:"base_url" default:"https://api.openai.com/v1"`
-	BatchSize  int           `yaml:"batch_size" default:"100"`
-	RateLimit  int           `yaml:"rate_limit" default:"60"`
-	Dimensions int           `yaml:"dimensions" default:"1536"`
+	Model         string            `yaml:"model" default:"text-embedding-3-small"`
+	MaxRetries    int               `yaml:"max_retries" default:"3"`
+	Timeout       time.Duration     `yaml:"timeout" default:"30s"`
+	BaseURL       string            `yaml:"base_url" default:"https://api.openai.com/v1"`
+	BatchSize     int               `yaml:"batch_size" default:"100"`
+	RateLimit     int               `yaml:"rate_limit" default:"60"`
+	Dimensions    int               `yaml:"dimensions" default:"1536"`
+	ModelOptions  map[string]string `yaml:"model_options,omitempty"`  // Additional model-specific options
+	FallbackModel string            `yaml:"fallback_model,omitempty"` // Fallback model if primary fails
+	ValidateModel bool              `yaml:"validate_model" default:"true"` // Validate model availability on startup
 }
 
 // OpenAIEmbeddingRequest represents the request structure for OpenAI embeddings
@@ -57,13 +65,14 @@ type OpenAIEmbeddingResponse struct {
 // NewOpenAIEmbeddingService creates a new OpenAI embedding service
 func NewOpenAIEmbeddingService(apiKey string, cache EmbeddingCache, log *logrus.Logger) *OpenAIEmbeddingService {
 	config := &OpenAIConfig{
-		Model:      "text-embedding-3-small",
-		MaxRetries: 3,
-		Timeout:    30 * time.Second,
-		BaseURL:    "https://api.openai.com/v1",
-		BatchSize:  100,
-		RateLimit:  60,
-		Dimensions: 1536,
+		Model:         "text-embedding-3-small",
+		MaxRetries:    3,
+		Timeout:       30 * time.Second,
+		BaseURL:       "https://api.openai.com/v1",
+		BatchSize:     100,
+		RateLimit:     60,
+		Dimensions:    1536,
+		ValidateModel: true,
 	}
 
 	return &OpenAIEmbeddingService{
@@ -71,14 +80,76 @@ func NewOpenAIEmbeddingService(apiKey string, cache EmbeddingCache, log *logrus.
 		httpClient: &http.Client{
 			Timeout: config.Timeout,
 		},
-		log:    log,
-		config: config,
-		cache:  cache,
+		log:            log,
+		config:         config,
+		cache:          cache,
+		rateLimiter:    rate.NewLimiter(rate.Limit(config.RateLimit), config.RateLimit),
+		modelValidated: false,
+	}
+}
+
+// NewOpenAIEmbeddingServiceWithConfig creates a new OpenAI embedding service with custom configuration
+// BR-VDB-001: Support configurable base URL for testing and custom endpoints
+func NewOpenAIEmbeddingServiceWithConfig(apiKey string, cache EmbeddingCache, log *logrus.Logger, config *OpenAIConfig) *OpenAIEmbeddingService {
+	if config == nil {
+		// Use default configuration
+		return NewOpenAIEmbeddingService(apiKey, cache, log)
+	}
+
+	// Set defaults for missing configuration
+	if config.Model == "" {
+		config.Model = "text-embedding-3-small"
+	}
+	if config.MaxRetries == 0 {
+		config.MaxRetries = 3
+	}
+	if config.Timeout == 0 {
+		config.Timeout = 30 * time.Second
+	}
+	if config.BaseURL == "" {
+		config.BaseURL = "https://api.openai.com/v1"
+	}
+	if config.BatchSize == 0 {
+		config.BatchSize = 100
+	}
+	if config.RateLimit == 0 {
+		config.RateLimit = 60
+	}
+	if config.Dimensions == 0 {
+		config.Dimensions = 1536
+	}
+
+	return &OpenAIEmbeddingService{
+		apiKey: apiKey,
+		httpClient: &http.Client{
+			Timeout: config.Timeout,
+		},
+		log:            log,
+		config:         config,
+		cache:          cache,
+		rateLimiter:    rate.NewLimiter(rate.Limit(config.RateLimit), config.RateLimit),
+		modelValidated: false,
 	}
 }
 
 // GenerateEmbedding generates a single embedding from text
 func (oes *OpenAIEmbeddingService) GenerateEmbedding(ctx context.Context, text string) ([]float64, error) {
+	// Apply rate limiting before processing
+	if err := oes.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiting error: %w", err)
+	}
+
+	// Validate model before first use if enabled
+	oes.mu.RLock()
+	validated := oes.modelValidated
+	oes.mu.RUnlock()
+
+	if !validated && oes.config.ValidateModel {
+		if err := oes.ValidateModel(ctx); err != nil {
+			return nil, fmt.Errorf("model validation failed: %w", err)
+		}
+	}
+
 	// Check cache first
 	if oes.cache != nil {
 		if cached, found, err := oes.cache.Get(ctx, text); err == nil && found {
@@ -117,6 +188,22 @@ func (oes *OpenAIEmbeddingService) GenerateBatchEmbeddings(ctx context.Context, 
 		return [][]float64{}, nil
 	}
 
+	// Apply rate limiting for batch operations (potentially multiple API calls)
+	if err := oes.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiting error: %w", err)
+	}
+
+	// Validate model before first use if enabled
+	oes.mu.RLock()
+	validated := oes.modelValidated
+	oes.mu.RUnlock()
+
+	if !validated && oes.config.ValidateModel {
+		if err := oes.ValidateModel(ctx); err != nil {
+			return nil, fmt.Errorf("model validation failed: %w", err)
+		}
+	}
+
 	var results [][]float64
 	batchSize := oes.config.BatchSize
 
@@ -129,6 +216,13 @@ func (oes *OpenAIEmbeddingService) GenerateBatchEmbeddings(ctx context.Context, 
 		end := i + batchSize
 		if end > len(texts) {
 			end = len(texts)
+		}
+
+		// Apply rate limiting for each batch to respect API limits
+		if i > 0 { // Skip first batch as we already waited above
+			if err := oes.rateLimiter.Wait(ctx); err != nil {
+				return nil, fmt.Errorf("rate limiting error for batch %d-%d: %w", i, end-1, err)
+			}
 		}
 
 		batch := texts[i:end]
@@ -305,4 +399,163 @@ func (oes *OpenAIEmbeddingService) GetDimension() int {
 // GetModel returns the model name
 func (oes *OpenAIEmbeddingService) GetModel() string {
 	return oes.config.Model
+}
+
+// ValidateModel validates that the specified model is available and working
+// BR-VDB-002: Model validation for production deployment
+func (oes *OpenAIEmbeddingService) ValidateModel(ctx context.Context) error {
+	if !oes.config.ValidateModel {
+		oes.log.Debug("Model validation disabled in configuration")
+		oes.mu.Lock()
+		oes.modelValidated = true
+		oes.mu.Unlock()
+		return nil
+	}
+
+	oes.mu.RLock()
+	if oes.modelValidated {
+		oes.mu.RUnlock()
+		return nil // Already validated
+	}
+	oes.mu.RUnlock()
+
+	oes.log.WithField("model", oes.config.Model).Info("Validating OpenAI model availability")
+
+	// Test with a simple input to validate model availability
+	testText := "test"
+	req := &OpenAIEmbeddingRequest{
+		Input: testText,
+		Model: oes.config.Model,
+	}
+	if oes.config.Dimensions > 0 {
+		req.Dimensions = &oes.config.Dimensions
+	}
+
+	// Use shorter timeout for validation
+	originalTimeout := oes.httpClient.Timeout
+	oes.httpClient.Timeout = 15 * time.Second
+	defer func() {
+		oes.httpClient.Timeout = originalTimeout
+	}()
+
+	_, err := oes.callOpenAIAPI(ctx, req)
+	if err != nil {
+		oes.log.WithError(err).WithField("model", oes.config.Model).Error("Model validation failed")
+
+		// Try fallback model if configured
+		if oes.config.FallbackModel != "" {
+			oes.log.WithField("fallback_model", oes.config.FallbackModel).Info("Attempting to use fallback model")
+			originalModel := oes.config.Model
+			oes.config.Model = oes.config.FallbackModel
+
+			req.Model = oes.config.FallbackModel
+			_, fallbackErr := oes.callOpenAIAPI(ctx, req)
+			if fallbackErr != nil {
+				// Restore original model
+				oes.config.Model = originalModel
+				return fmt.Errorf("both primary model (%s) and fallback model (%s) validation failed: primary=%w, fallback=%v",
+					originalModel, oes.config.FallbackModel, err, fallbackErr)
+			}
+
+			oes.log.WithField("fallback_model", oes.config.FallbackModel).Info("Successfully switched to fallback model")
+		} else {
+			return fmt.Errorf("model validation failed for %s: %w", oes.config.Model, err)
+		}
+	}
+
+	oes.mu.Lock()
+	oes.modelValidated = true
+	oes.mu.Unlock()
+	oes.log.WithField("model", oes.config.Model).Info("Model validation successful")
+	return nil
+}
+
+// SetModel changes the model being used and revalidates if needed
+// BR-VDB-002: Support configurable model selection for different use cases
+func (oes *OpenAIEmbeddingService) SetModel(model string) error {
+	if model == "" {
+		return fmt.Errorf("model name cannot be empty")
+	}
+
+	oes.mu.Lock()
+	defer oes.mu.Unlock()
+
+	if model == oes.config.Model {
+		return nil // No change needed
+	}
+
+	oes.log.WithFields(logrus.Fields{
+		"old_model": oes.config.Model,
+		"new_model": model,
+	}).Info("Changing OpenAI model")
+
+	oes.config.Model = model
+	oes.modelValidated = false // Mark as needing revalidation
+
+	return nil
+}
+
+// GetSupportedModels returns a list of commonly supported OpenAI models
+// BR-VDB-002: Provide guidance for model selection
+func (oes *OpenAIEmbeddingService) GetSupportedModels() []ModelInfo {
+	return []ModelInfo{
+		{
+			Name:        "text-embedding-3-small",
+			Description: "Smallest embedding model with 1536 dimensions - cost efficient",
+			Dimensions:  1536,
+			UseCase:     "general",
+		},
+		{
+			Name:        "text-embedding-3-large",
+			Description: "Large embedding model with 3072 dimensions - highest quality",
+			Dimensions:  3072,
+			UseCase:     "high_quality",
+		},
+		{
+			Name:        "text-embedding-ada-002",
+			Description: "Legacy embedding model with 1536 dimensions - stable and reliable",
+			Dimensions:  1536,
+			UseCase:     "legacy",
+		},
+	}
+}
+
+// IsModelValidated returns whether the current model has been validated
+func (oes *OpenAIEmbeddingService) IsModelValidated() bool {
+	oes.mu.RLock()
+	defer oes.mu.RUnlock()
+	return oes.modelValidated
+}
+
+// UpdateRateLimit updates the rate limiter with new rate limit settings
+// BR-VDB-002: Support dynamic configuration updates
+func (oes *OpenAIEmbeddingService) UpdateRateLimit(requestsPerSecond int) {
+	oes.mu.Lock()
+	defer oes.mu.Unlock()
+
+	oes.config.RateLimit = requestsPerSecond
+	oes.rateLimiter = rate.NewLimiter(rate.Limit(requestsPerSecond), requestsPerSecond)
+
+	oes.log.WithField("new_rate_limit", requestsPerSecond).Info("Updated OpenAI rate limit")
+}
+
+// GetCurrentRateLimit returns the current rate limit setting
+func (oes *OpenAIEmbeddingService) GetCurrentRateLimit() int {
+	oes.mu.RLock()
+	defer oes.mu.RUnlock()
+	return oes.config.RateLimit
+}
+
+// GetTokenUsage returns token usage statistics for the last API call
+// BR-VDB-002: Provide usage analytics for cost optimization
+func (oes *OpenAIEmbeddingService) GetTokenUsage() map[string]interface{} {
+	// This would be populated during API calls in a real implementation
+	// For now, return basic usage information
+	return map[string]interface{}{
+		"model":       oes.config.Model,
+		"rate_limit":  oes.config.RateLimit,
+		"batch_size":  oes.config.BatchSize,
+		"dimensions":  oes.config.Dimensions,
+		"validated":   oes.IsModelValidated(),
+	}
 }

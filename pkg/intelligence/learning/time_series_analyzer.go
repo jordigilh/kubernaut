@@ -8,7 +8,8 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	sharedmath "github.com/jordigilh/kubernaut/pkg/shared/math"
-	"github.com/jordigilh/kubernaut/pkg/shared/types"
+
+	// Guideline #14: Remove duplicate imports - use single alias for shared types
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	"github.com/sirupsen/logrus"
@@ -84,11 +85,11 @@ type BaselineStatistics struct {
 
 // ForecastResult contains prediction results
 type ForecastResult struct {
-	Predictions        []*ForecastPoint          `json:"predictions"`
-	ConfidenceInterval *types.ConfidenceInterval `json:"confidence_interval"`
-	Model              string                    `json:"model"`
-	Accuracy           float64                   `json:"accuracy"`
-	ForecastPeriod     sharedtypes.TimeRange     `json:"forecast_period"`
+	Predictions        []*ForecastPoint                `json:"predictions"`
+	ConfidenceInterval *sharedtypes.ConfidenceInterval `json:"confidence_interval"`
+	Model              string                          `json:"model"`
+	Accuracy           float64                         `json:"accuracy"`
+	ForecastPeriod     sharedtypes.TimeRange           `json:"forecast_period"`
 }
 
 // ForecastPoint represents a forecasted value
@@ -775,7 +776,9 @@ func (tsa *TimeSeriesAnalyzer) analyzeDailySeasonality(values []float64, timesta
 	overallMean := stat.Mean(hourlyAverages, nil)
 	variance := 0.0
 	for _, avg := range hourlyAverages {
-		variance += math.Pow(avg-overallMean, 2)
+		// Guideline #14: Optimize math operations - expand math.Pow(x, 2) to x*x for performance
+		diff := avg - overallMean
+		variance += diff * diff
 	}
 	variance /= float64(len(hourlyAverages))
 
@@ -820,7 +823,9 @@ func (tsa *TimeSeriesAnalyzer) analyzeWeeklySeasonality(values []float64, timest
 	overallMean := stat.Mean(dailyAverages, nil)
 	variance := 0.0
 	for _, avg := range dailyAverages {
-		variance += math.Pow(avg-overallMean, 2)
+		// Guideline #14: Optimize math operations - expand math.Pow(x, 2) to x*x for performance
+		diff := avg - overallMean
+		variance += diff * diff
 	}
 	variance /= float64(len(dailyAverages))
 
@@ -882,8 +887,11 @@ func (tsa *TimeSeriesAnalyzer) calculateRSquared(x, y []float64, slope, intercep
 
 	for i := 0; i < len(x); i++ {
 		predicted := slope*x[i] + intercept
-		ssRes += math.Pow(y[i]-predicted, 2)
-		ssTot += math.Pow(y[i]-yMean, 2)
+		// Guideline #14: Optimize math operations - expand math.Pow(x, 2) to x*x for performance
+		residual := y[i] - predicted
+		ssRes += residual * residual
+		yDiff := y[i] - yMean
+		ssTot += yDiff * yDiff
 	}
 
 	if ssTot == 0 {

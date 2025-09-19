@@ -40,9 +40,9 @@ func LoadConfig() IntegrationConfig {
 		provider = "mock"
 		useMockLLM = true
 	} else {
-		// Local development: use real LLM at port 8080
-		endpoint = GetEnvOrDefault("LLM_ENDPOINT", "http://localhost:8080")
-		model = GetEnvOrDefault("LLM_MODEL", "granite3.1-dense:8b")
+		// Local development: use real LLM at ramalama endpoint
+		endpoint = GetEnvOrDefault("LLM_ENDPOINT", "http://192.168.1.169:8080")
+		model = GetEnvOrDefault("LLM_MODEL", "ggml-org/gpt-oss-20b-GGUF")
 		provider = GetEnvOrDefault("LLM_PROVIDER", detectProviderFromEndpoint(endpoint))
 		useMockLLM = false
 	}
@@ -79,10 +79,10 @@ func detectProviderFromEndpoint(endpoint string) string {
 		return "ollama"
 	}
 	if strings.Contains(endpoint, ":8080") {
-		return "localai" // Default for port 8080 is local AI model
+		return "ramalama" // Default for port 8080 with ramalama deployment
 	}
-	// Default to localai for other cases
-	return "localai"
+	// Default to ramalama for other cases
+	return "ramalama"
 }
 
 func GetEnvOrDefault(key, defaultValue string) string {

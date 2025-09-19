@@ -238,7 +238,7 @@ type IntelligentWorkflowBuilder interface {
 	OptimizeWorkflowStructure(ctx context.Context, template *ExecutableTemplate) (*ExecutableTemplate, error)
 	FindWorkflowPatterns(ctx context.Context, criteria *PatternCriteria) ([]*WorkflowPattern, error)
 	ApplyWorkflowPattern(ctx context.Context, pattern *WorkflowPattern, workflowContext *WorkflowContext) (*ExecutableTemplate, error)
-	ValidateWorkflow(ctx context.Context, template *ExecutableTemplate) (*ValidationReport, error)
+	ValidateWorkflow(ctx context.Context, template *ExecutableTemplate) *ValidationReport
 	SimulateWorkflow(ctx context.Context, template *ExecutableTemplate, scenario *SimulationScenario) (*SimulationResult, error)
-	LearnFromWorkflowExecution(ctx context.Context, execution *RuntimeWorkflowExecution) error
+	LearnFromWorkflowExecution(ctx context.Context, execution *RuntimeWorkflowExecution)
 }

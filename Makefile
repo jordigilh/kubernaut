@@ -189,7 +189,7 @@ ollama-start: ## Start Ollama with Granite model
 	@echo "Waiting for Ollama to start..."
 	sleep 5
 	@echo "Pulling Granite model..."
-	ollama pull granite3.1-dense:8b
+	ollama pull hf://ggml-org/gpt-oss-20b-GGUF
 	@echo "Ollama ready with Granite model"
 
 .PHONY: ollama-stop
@@ -202,7 +202,7 @@ ollama-test: ## Test Ollama connection and model
 	@echo "Testing Ollama connectivity..."
 	curl -s http://localhost:11434/api/tags
 	@echo "Testing Granite model..."
-	curl -s -X POST http://localhost:11434/api/generate -d '{"model":"granite3.1-dense:8b","prompt":"Hello","stream":false}'
+	curl -s -X POST http://192.168.1.169:8080/v1/completions -d '{"model":"hf://ggml-org/gpt-oss-20b-GGUF","prompt":"Hello","max_tokens":10}'
 
 ##@ Integration Testing (Hybrid Strategy)
 # 🎯 STRATEGY: Kind for CI/CD and local testing, OCP for E2E tests
@@ -215,7 +215,7 @@ test-integration-kind: envsetup ## Run integration tests with Kind cluster + rea
 	@echo "🏗️ Running integration tests with Kind cluster (Hybrid Strategy)..."
 	@echo "  ├── Kubernetes: Real Kind cluster"
 	@echo "  ├── Database: Real PostgreSQL + Vector DB (containerized)"
-	@echo "  ├── LLM: Local model at localhost:8080"
+	@echo "  ├── LLM: Local model at 192.168.1.169:8080"
 	@echo "  └── Purpose: Local development and testing"
 	@echo ""
 	@echo "Starting containerized services..."
@@ -226,11 +226,11 @@ test-integration-kind: envsetup ## Run integration tests with Kind cluster + rea
 	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
 	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) \
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) \
-	LLM_ENDPOINT=http://localhost:8080 \
-	LLM_MODEL=granite3.1-dense:8b \
-	LLM_PROVIDER=localai \
+	LLM_ENDPOINT=$(or $(LLM_ENDPOINT),http://192.168.1.169:8080) \
+	LLM_MODEL=$(or $(LLM_MODEL),hf://ggml-org/gpt-oss-20b-GGUF) \
+	LLM_PROVIDER=$(or $(LLM_PROVIDER),ollama) \
 	USE_FAKE_K8S_CLIENT=false \
-	go test -v -tags=integration ./test/integration/... -timeout=45m
+	go test -v -tags=integration ./test/integration/... -timeout=90m
 	@echo "Cleaning up..."
 	./scripts/cleanup-kind-cluster.sh
 	make integration-services-stop
@@ -254,7 +254,7 @@ test-integration-kind-ci: envsetup ## Run integration tests with Kind cluster fo
 	USE_MOCK_LLM=true \
 	CI=true \
 	USE_FAKE_K8S_CLIENT=false \
-	go test -v -tags=integration ./test/integration/... -timeout=30m
+	go test -v -tags=integration ./test/integration/... -timeout=60m
 	@echo "Cleaning up..."
 	./scripts/cleanup-kind-cluster.sh
 	make integration-services-stop
@@ -270,12 +270,33 @@ validate-integration: ## Validate prerequisites for integration testing
 	@echo "Validating integration test prerequisites..."
 	./scripts/validate-integration.sh
 
+##@ Integration Infrastructure
+.PHONY: integration-infrastructure-setup
+integration-infrastructure-setup: ## Setup integration test infrastructure (PostgreSQL, Vector DB, Redis)
+	@echo "Setting up integration test infrastructure..."
+	./scripts/setup-integration-infrastructure.sh setup
+
+.PHONY: integration-infrastructure-status
+integration-infrastructure-status: ## Show integration infrastructure status
+	@echo "Checking integration infrastructure status..."
+	./scripts/setup-integration-infrastructure.sh status
+
+.PHONY: integration-infrastructure-stop
+integration-infrastructure-stop: ## Stop integration infrastructure services
+	@echo "Stopping integration infrastructure services..."
+	./scripts/setup-integration-infrastructure.sh stop
+
+.PHONY: integration-infrastructure-restart
+integration-infrastructure-restart: ## Restart integration infrastructure services
+	@echo "Restarting integration infrastructure services..."
+	./scripts/setup-integration-infrastructure.sh restart
+
 .PHONY: test-integration-quick
-test-integration-quick: envsetup ## Run integration tests (skip slow tests)
-	@echo "Running quick integration tests..."
-	@echo "Using local envtest binaries..."
+test-integration-quick: envsetup integration-infrastructure-setup ## Run integration tests (skip slow tests)
+	@echo "Running quick integration tests with updated LLM endpoint..."
+	@echo "Using local envtest binaries and LLM at 192.168.1.169:8080..."
 	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) SKIP_SLOW_TESTS=true LLM_ENDPOINT=http://localhost:11434 LLM_MODEL=granite3.1-dense:8b LLM_PROVIDER=ollama go test -v -tags=integration ./test/integration/... -timeout=15m
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) SKIP_SLOW_TESTS=true LLM_ENDPOINT=http://192.168.1.169:8080 LLM_MODEL=hf://ggml-org/gpt-oss-20b-GGUF LLM_PROVIDER=ramalama go test -v -tags=integration ./test/integration/... -timeout=30m
 
 .PHONY: test-integration-ramalama
 test-integration-ramalama: envsetup ## Run integration tests with ramalama
@@ -292,7 +313,7 @@ test-integration-fake-k8s: envsetup ## [LEGACY] Run integration tests with fake 
 	@echo "💡 RECOMMENDED: Use 'make test-integration-kind-ci' for CI/CD instead"
 	@echo "Using local envtest binaries for fallback..."
 	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) USE_FAKE_K8S_CLIENT=true LLM_ENDPOINT=http://localhost:8080 LLM_MODEL=granite3.1-dense:8b LLM_PROVIDER=localai go test -v -tags=integration ./test/integration/... -timeout=30m
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) USE_FAKE_K8S_CLIENT=true LLM_ENDPOINT=$(or $(LLM_ENDPOINT),http://192.168.1.169:8080) LLM_MODEL=$(or $(LLM_MODEL),ggml-org/gpt-oss-20b-GGUF) LLM_PROVIDER=$(or $(LLM_PROVIDER),ramalama) go test -v -tags=integration ./test/integration/... -timeout=30m
 
 .PHONY: test-integration-ollama
 test-integration-ollama: envsetup ## [LEGACY] Run integration tests with Ollama at localhost:11434 (use test-integration-kind instead)
@@ -300,7 +321,7 @@ test-integration-ollama: envsetup ## [LEGACY] Run integration tests with Ollama 
 	@echo "💡 RECOMMENDED: Use 'make test-integration-kind' for local testing instead"
 	@echo "Using local envtest binaries..."
 	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
-	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) LLM_ENDPOINT=http://localhost:11434 LLM_MODEL=granite3.1-dense:8b LLM_PROVIDER=ollama go test -v -tags=integration ./test/integration/... -timeout=30m
+	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) LLM_ENDPOINT=http://192.168.1.169:8080 LLM_MODEL=ggml-org/gpt-oss-20b-GGUF LLM_PROVIDER=ramalama go test -v -tags=integration ./test/integration/... -timeout=30m
 
 ##@ End-to-End Testing (Multi-Node OCP Strategy)
 # 🎯 STRATEGY: Use OpenShift Container Platform for production-like E2E testing
@@ -319,7 +340,7 @@ test-e2e-ocp: ## Run e2e tests with OpenShift Container Platform (production-lik
 	@echo "Setting up OCP cluster environment..."
 	cd docs/development/e2e-testing && ./setup-complete-e2e-environment.sh
 	@echo "Running comprehensive E2E tests..."
-	go test -v -tags=e2e ./test/e2e/... -timeout=120m
+	go test -v -tags=e2e ./test/e2e/... -timeout=240m
 	@echo "E2E tests completed"
 
 .PHONY: test-e2e-kind
@@ -329,7 +350,7 @@ test-e2e-kind: ## [ALTERNATIVE] Run e2e tests with KinD cluster (limited scenari
 	@echo "Setting up KinD cluster for e2e tests..."
 	./scripts/setup-kind-cluster.sh
 	@echo "Running e2e tests with KinD..."
-	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) USE_KIND=true go test -v -tags=e2e ./test/e2e/... -run TestKindClusterOperations -timeout=45m
+	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) USE_KIND=true go test -v -tags=e2e ./test/e2e/... -run TestKindClusterOperations -timeout=90m
 	@echo "Cleaning up KinD cluster..."
 	./scripts/cleanup-kind-cluster.sh
 
@@ -338,7 +359,7 @@ test-e2e-monitoring: ## Run e2e tests with full monitoring stack
 	@echo "Setting up complete monitoring stack..."
 	./scripts/setup-kind-cluster.sh
 	@echo "Running complete monitoring flow tests..."
-	KUBECONFIG=~/.kube/config USE_KIND=true go test -v -tags=e2e ./test/e2e/... -run TestCompleteMonitoringFlow -timeout=60m
+	KUBECONFIG=~/.kube/config USE_KIND=true go test -v -tags=e2e ./test/e2e/... -run TestCompleteMonitoringFlow -timeout=120m
 	@echo "Cleaning up test environment..."
 	./scripts/cleanup-kind-cluster.sh
 
@@ -436,7 +457,7 @@ deploy-cluster-remote-only: ## Deploy ONLY OpenShift cluster on remote host for 
 .PHONY: setup-local-hybrid
 setup-local-hybrid: ## Setup local Kubernaut to connect to remote cluster (hybrid)
 	@echo "Setting up local Kubernaut for hybrid architecture..."
-	@echo "Remote cluster: $(REMOTE_HOST), Local AI: localhost:8080"
+	@echo "Remote cluster: $(REMOTE_HOST), Local AI: 192.168.1.169:8080"
 	cd $(E2E_DIR) && chmod +x setup-local-kubernaut-remote-cluster.sh
 	cd $(E2E_DIR) && ./setup-local-kubernaut-remote-cluster.sh $(REMOTE_HOST) $(REMOTE_USER)
 
@@ -457,7 +478,7 @@ status-hybrid: ## Check status of hybrid deployment (remote cluster + local comp
 	@echo "=== Remote Cluster Status ==="
 	ssh $(REMOTE_USER)@$(REMOTE_HOST) "cd $(REMOTE_PATH) && export KUBECONFIG=./kubeconfig && oc get nodes 2>/dev/null || echo 'Cluster not accessible'"
 	@echo "=== Local AI Model Status ==="
-	curl -s http://localhost:8080/health >/dev/null 2>&1 && echo "✓ AI model running on localhost:8080" || echo "✗ AI model not running on localhost:8080"
+	curl -s http://192.168.1.169:8080/health >/dev/null 2>&1 && echo "✓ AI model running on 192.168.1.169:8080" || echo "✗ AI model not running on 192.168.1.169:8080"
 	@echo "=== Local Components ==="
 	pgrep kubernaut >/dev/null 2>&1 && echo "✓ Kubernaut running locally" || echo "✗ Kubernaut not running locally"
 	pgrep postgres >/dev/null 2>&1 && echo "✓ PostgreSQL running locally" || echo "✗ PostgreSQL not running locally"
@@ -575,15 +596,15 @@ cleanup-kind: ## Cleanup KinD cluster
 
 .PHONY: test-webhook
 test-webhook: ## Test webhook endpoint
-	curl -X POST http://localhost:8080/alerts \
+	curl -X POST http://192.168.1.169:8080/alerts \
 		-H "Content-Type: application/json" \
 		-H "Authorization: Bearer test-token" \
 		-d @test/fixtures/sample-alert.json
 
 .PHONY: test-health
 test-health: ## Test health endpoints
-	curl -f http://localhost:8080/health
-	curl -f http://localhost:8080/ready
+	curl -f http://192.168.1.169:8080/health
+	curl -f http://192.168.1.169:8080/ready
 
 .PHONY: test-metrics
 test-metrics: ## Test metrics endpoint
@@ -691,6 +712,96 @@ integration-test-vector: ## Run vector database integration tests only
 integration-test-all: ## Run all integration tests with full service lifecycle management
 	@echo "Running all integration tests with service management..."
 	./scripts/run-integration-tests.sh test-all
+
+##@ Development Environment Management
+.PHONY: bootstrap-dev cleanup-dev test-integration-dev
+
+bootstrap-dev: ## Bootstrap complete development environment (all except LLM at 192.168.1.169:8080)
+	@echo "🚀 Bootstrapping development environment..."
+	@./scripts/bootstrap-dev-environment.sh
+
+cleanup-dev: ## Clean up development environment (preserves LLM)
+	@echo "🧹 Cleaning up development environment..."
+	@./scripts/cleanup-dev-environment.sh
+
+test-integration-dev: ## Run integration tests (assumes bootstrapped environment)
+	@echo "🧪 Running integration tests..."
+	@./scripts/run-tests.sh
+
+test-ai-dev: ## Run AI integration tests only
+	@./scripts/run-tests.sh ai
+
+test-infrastructure-dev: ## Run infrastructure integration tests only
+	@./scripts/run-tests.sh infrastructure
+
+test-performance-dev: ## Run performance integration tests only
+	@./scripts/run-tests.sh performance
+
+test-quick-dev: ## Run quick integration tests only
+	@./scripts/run-tests.sh quick
+
+dev-setup: bootstrap-dev ## Alias for bootstrap-dev
+	@echo "✅ Development environment ready!"
+	@echo "Run 'make test-integration-dev' to start testing"
+
+dev-teardown: cleanup-dev ## Alias for cleanup-dev
+	@echo "✅ Development environment cleaned up!"
+
+dev-status: ## Show status of development environment components
+	@echo "🔍 Development Environment Status"
+	@echo "================================="
+	@echo ""
+	@echo "📊 Service Status:"
+	@echo "  LLM Service:        $$(curl -s http://192.168.1.169:8080/v1/models >/dev/null 2>&1 && echo '✅ Running' || echo '❌ Not running')"
+	@echo "  PostgreSQL:         $$(PGPASSWORD=slm_password_dev psql -h localhost -p 5433 -U slm_user -d action_history -c 'SELECT 1;' >/dev/null 2>&1 && echo '✅ Running' || echo '❌ Not running')"
+	@echo "  Vector DB:          $$(PGPASSWORD=vector_password_dev psql -h localhost -p 5434 -U vector_user -d vector_store -c 'SELECT 1;' >/dev/null 2>&1 && echo '✅ Running' || echo '❌ Not running')"
+	@echo "  Redis Cache:        $$(echo 'PING' | redis-cli -h localhost -p 6380 -a integration_redis_password --no-auth-warning >/dev/null 2>&1 && echo '✅ Running' || echo '❌ Not running')"
+	@echo "  Kind Cluster:       $$(kubectl get nodes >/dev/null 2>&1 && echo '✅ Running ('$$(kubectl get nodes --no-headers | wc -l | xargs)' nodes)' || echo '❌ Not running')"
+	@echo ""
+	@echo "🔧 Environment Config:"
+	@echo "  Config File:        $$(test -f .env.development && echo '✅ .env.development exists' || echo '❌ .env.development missing')"
+	@echo "  Built Binary:       $$(test -f bin/kubernaut && echo '✅ bin/kubernaut exists' || echo '❌ bin/kubernaut missing')"
+	@echo ""
+	@echo "💡 Commands:"
+	@echo "  Bootstrap:          make bootstrap-dev"
+	@echo "  Run Tests:          make test-integration-dev"
+	@echo "  Cleanup:            make cleanup-dev"
+
+dev-help: ## Show development environment help
+	@echo "Kubernaut Development Environment"
+	@echo "================================"
+	@echo ""
+	@echo "🚀 Quick Start:"
+	@echo "  1. Start LocalAI with a model at 192.168.1.169:8080"
+	@echo "  2. make bootstrap-dev    # Setup everything else"
+	@echo "  3. make test-integration-dev  # Run tests"
+	@echo "  4. make cleanup-dev      # Clean up when done"
+	@echo ""
+	@echo "🔧 Environment Management:"
+	@echo "  bootstrap-dev       - Setup complete environment (except LLM)"
+	@echo "  cleanup-dev         - Clean up environment (preserves LLM)"
+	@echo "  dev-setup          - Alias for bootstrap-dev"
+	@echo "  dev-teardown       - Alias for cleanup-dev"
+	@echo "  dev-status         - Show status of all services"
+	@echo ""
+	@echo "🧪 Testing:"
+	@echo "  test-integration-dev   - Run all integration tests"
+	@echo "  test-ai-dev           - Run AI integration tests"
+	@echo "  test-infrastructure-dev - Run infrastructure tests"
+	@echo "  test-performance-dev  - Run performance tests"
+	@echo "  test-quick-dev        - Run quick tests only"
+	@echo ""
+	@echo "📋 Components Managed:"
+	@echo "  ✓ Kind Kubernetes cluster with Prometheus"
+	@echo "  ✓ PostgreSQL with pgvector extension"
+	@echo "  ✓ Vector Database (separate PostgreSQL)"
+	@echo "  ✓ Redis cache"
+	@echo "  ✓ Kubernaut application build"
+	@echo "  ✗ LLM model (must be started manually)"
+	@echo ""
+	@echo "⚠️  Prerequisites:"
+	@echo "  - LocalAI running at 192.168.1.169:8080 with a loaded model"
+	@echo "  - podman, kind, kubectl, go installed"
 
 ##@ HolmesGPT REST API
 .PHONY: holmesgpt-api-init
@@ -810,6 +921,16 @@ holmesgpt-api-dev-setup: holmesgpt-api-init ## Setup HolmesGPT development envir
 	chmod +x scripts/release-holmesgpt-api.sh
 	chmod +x docker/holmesgpt-api/entrypoint.sh
 	@echo "✅ HolmesGPT development environment ready"
+
+.PHONY: test-holmesgpt-llm-only
+test-holmesgpt-llm-only: ## Run holmesgpt-api LLM-only integration tests
+	@echo "🧠 Running holmesgpt-api LLM-only tests..."
+	cd docker/holmesgpt-api && \
+	LLM_ENDPOINT=$(or $(LLM_ENDPOINT),http://192.168.1.169:8080) \
+	LLM_PROVIDER=$(or $(LLM_PROVIDER),auto-detect) \
+	USE_MOCK_LLM=$(or $(USE_MOCK_LLM),false) \
+	PYTHON_CMD=/usr/local/bin/python3 \
+	./run-llm-only-tests.sh
 
 .PHONY: holmesgpt-api-clean
 holmesgpt-api-clean: ## Clean HolmesGPT build artifacts

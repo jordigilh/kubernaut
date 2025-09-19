@@ -52,8 +52,13 @@ func NewPerformanceTestClient(latency time.Duration, logger *logrus.Logger) *Per
 
 // AnalyzeAlert implements LLM client interface for performance testing
 func (c *PerformanceTestClient) AnalyzeAlert(ctx context.Context, alert types.Alert) (*types.ActionRecommendation, error) {
-	// Simulate processing time for realistic performance testing
-	time.Sleep(c.latency)
+	// Simulate processing time for realistic performance testing with context cancellation support
+	select {
+	case <-time.After(c.latency):
+		// Processing completed normally
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 
 	// Generate realistic action recommendations based on alert characteristics
 	var action string

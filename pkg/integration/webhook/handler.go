@@ -185,6 +185,8 @@ func (h *handler) authenticate(r *http.Request) error {
 }
 
 func (h *handler) processWebhookAlerts(ctx context.Context, webhook *AlertManagerWebhook) error {
+	var processingErrors []error
+
 	for i, alert := range webhook.Alerts {
 		slmAlert := h.convertToSLMAlert(alert, webhook)
 
@@ -203,9 +205,15 @@ func (h *handler) processWebhookAlerts(ctx context.Context, webhook *AlertManage
 				"alert_name": slmAlert.Name,
 				"error":      err,
 			}).Error("Failed to process individual alert")
+			processingErrors = append(processingErrors, fmt.Errorf("alert %s: %w", slmAlert.Name, err))
 			// Continue processing other alerts even if one fails
 			continue
 		}
+	}
+
+	// Return error if any alerts failed to process
+	if len(processingErrors) > 0 {
+		return fmt.Errorf("failed to process %d/%d alerts: %v", len(processingErrors), len(webhook.Alerts), processingErrors)
 	}
 
 	return nil

@@ -366,8 +366,32 @@ func (iwb *DefaultIntelligentWorkflowBuilder) hasPermission(ctx context.Context,
 
 // hasConfirmationStep checks if there's a confirmation step before destructive action
 func (iwb *DefaultIntelligentWorkflowBuilder) hasConfirmationStep(template *ExecutableTemplate, step *ExecutableWorkflowStep) bool {
-	// Check if there's a validation condition
-	return step.Condition != nil
+	// Check if there's a validation condition on the step itself
+	if step.Condition != nil {
+		return true
+	}
+
+	// Check template-level confirmation requirements based on environment or tags
+	if template != nil {
+		// Check if template is tagged for high-risk environments requiring confirmation
+		for _, tag := range template.Tags {
+			if tag == "production" || tag == "critical" || tag == "high-risk" {
+				// High-risk templates should have confirmation for destructive actions
+				if step.Action != nil && iwb.isDestructiveAction(step.Action.Type) {
+					return false // Indicates missing confirmation for high-risk action
+				}
+			}
+		}
+
+		// Check template-level conditions that might provide confirmation
+		for _, condition := range template.Conditions {
+			if condition.Type == "user_input" || condition.Expression == "user_confirmation == true" {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // shouldHaveRetryPolicy determines if a step should have retry policy

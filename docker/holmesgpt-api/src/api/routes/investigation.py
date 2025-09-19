@@ -10,6 +10,8 @@ from prometheus_client import Counter, Gauge
 from models.api_models import InvestigateRequest, InvestigateResponse
 from services.holmesgpt_service import HolmesGPTService
 from services.context_api_service import ContextAPIService
+from services.auth_service import User
+from api.routes.auth import get_current_active_user
 
 logger = structlog.get_logger(__name__)
 
@@ -40,6 +42,7 @@ def get_context_service(request: Request) -> ContextAPIService:
 async def investigate_alert(
     request: InvestigateRequest,
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user),  # BR-HAPI-002: Requires authentication
     holmes_service: HolmesGPTService = Depends(get_holmesgpt_service),
     context_service: ContextAPIService = Depends(get_context_service)
 ) -> InvestigateResponse:

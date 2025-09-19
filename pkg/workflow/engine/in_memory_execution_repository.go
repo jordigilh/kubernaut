@@ -56,11 +56,25 @@ func (repo *InMemoryExecutionRepository) GetExecution(ctx context.Context, execu
 
 // ListExecutions lists all executions for a workflow
 func (repo *InMemoryExecutionRepository) ListExecutions(ctx context.Context, workflowID string) ([]*RuntimeWorkflowExecution, error) {
+	// Check for context cancellation before acquiring lock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	repo.mutex.RLock()
 	defer repo.mutex.RUnlock()
 
 	var executions []*RuntimeWorkflowExecution
 	for _, execution := range repo.executions {
+		// Check for context cancellation during iteration for large datasets
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		if execution.WorkflowID == workflowID {
 			executions = append(executions, execution)
 		}
@@ -111,6 +125,13 @@ func (repo *InMemoryExecutionRepository) GetExecutionsInTimeWindow(ctx context.C
 
 // UpdateExecution updates an existing execution
 func (repo *InMemoryExecutionRepository) UpdateExecution(ctx context.Context, execution *RuntimeWorkflowExecution) error {
+	// Check for context cancellation before acquiring lock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	repo.mutex.Lock()
 	defer repo.mutex.Unlock()
 
@@ -120,7 +141,7 @@ func (repo *InMemoryExecutionRepository) UpdateExecution(ctx context.Context, ex
 
 	repo.executions[execution.ID] = execution
 
-	repo.log.WithFields(logrus.Fields{
+	repo.log.WithContext(ctx).WithFields(logrus.Fields{
 		"execution_id": execution.ID,
 		"status":       execution.Status,
 	}).Debug("Updated workflow execution in memory")
@@ -130,6 +151,13 @@ func (repo *InMemoryExecutionRepository) UpdateExecution(ctx context.Context, ex
 
 // DeleteExecution deletes an execution from memory
 func (repo *InMemoryExecutionRepository) DeleteExecution(ctx context.Context, executionID string) error {
+	// Check for context cancellation before acquiring lock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	repo.mutex.Lock()
 	defer repo.mutex.Unlock()
 
@@ -139,13 +167,20 @@ func (repo *InMemoryExecutionRepository) DeleteExecution(ctx context.Context, ex
 
 	delete(repo.executions, executionID)
 
-	repo.log.WithField("execution_id", executionID).Debug("Deleted workflow execution from memory")
+	repo.log.WithContext(ctx).WithField("execution_id", executionID).Debug("Deleted workflow execution from memory")
 
 	return nil
 }
 
 // GetExecutionCount returns the total number of executions stored
 func (repo *InMemoryExecutionRepository) GetExecutionCount(ctx context.Context) (int, error) {
+	// Check for context cancellation before acquiring lock
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	default:
+	}
+
 	repo.mutex.RLock()
 	defer repo.mutex.RUnlock()
 
