@@ -10,15 +10,15 @@ import (
 type ErrorType string
 
 const (
-	ErrorTypeValidation    ErrorType = "validation"
-	ErrorTypeDatabase      ErrorType = "database"
-	ErrorTypeNetwork       ErrorType = "network"
-	ErrorTypeAuth          ErrorType = "auth"
-	ErrorTypeNotFound      ErrorType = "not_found"
-	ErrorTypeConflict      ErrorType = "conflict"
-	ErrorTypeInternal      ErrorType = "internal"
-	ErrorTypeTimeout       ErrorType = "timeout"
-	ErrorTypeRateLimit     ErrorType = "rate_limit"
+	ErrorTypeValidation ErrorType = "validation"
+	ErrorTypeDatabase   ErrorType = "database"
+	ErrorTypeNetwork    ErrorType = "network"
+	ErrorTypeAuth       ErrorType = "auth"
+	ErrorTypeNotFound   ErrorType = "not_found"
+	ErrorTypeConflict   ErrorType = "conflict"
+	ErrorTypeInternal   ErrorType = "internal"
+	ErrorTypeTimeout    ErrorType = "timeout"
+	ErrorTypeRateLimit  ErrorType = "rate_limit"
 )
 
 // AppError represents a structured application error
@@ -159,22 +159,22 @@ func GetStatusCode(err error) int {
 
 // ErrorMessages contains common error messages to ensure consistency
 var ErrorMessages = struct {
-	ResourceNotFound     string
-	InvalidInput         string
-	DatabaseUnavailable  string
-	AuthenticationFailed string
-	PermissionDenied     string
-	RateLimitExceeded    string
-	OperationTimeout     string
+	ResourceNotFound       string
+	InvalidInput           string
+	DatabaseUnavailable    string
+	AuthenticationFailed   string
+	PermissionDenied       string
+	RateLimitExceeded      string
+	OperationTimeout       string
 	ConcurrentModification string
 }{
-	ResourceNotFound:     "The requested resource was not found",
-	InvalidInput:         "The provided input is invalid",
-	DatabaseUnavailable:  "Database is temporarily unavailable",
-	AuthenticationFailed: "Authentication failed",
-	PermissionDenied:     "Permission denied",
-	RateLimitExceeded:    "Rate limit exceeded, please try again later",
-	OperationTimeout:     "Operation timed out",
+	ResourceNotFound:       "The requested resource was not found",
+	InvalidInput:           "The provided input is invalid",
+	DatabaseUnavailable:    "Database is temporarily unavailable",
+	AuthenticationFailed:   "Authentication failed",
+	PermissionDenied:       "Permission denied",
+	RateLimitExceeded:      "Rate limit exceeded, please try again later",
+	OperationTimeout:       "Operation timed out",
 	ConcurrentModification: "Resource was modified by another process",
 }
 
@@ -206,7 +206,7 @@ func LogFields(err error) map[string]interface{} {
 	fields := map[string]interface{}{
 		"error": err.Error(),
 	}
-	
+
 	if appErr, ok := err.(*AppError); ok {
 		fields["error_type"] = string(appErr.Type)
 		fields["status_code"] = appErr.StatusCode
@@ -217,7 +217,7 @@ func LogFields(err error) map[string]interface{} {
 			fields["underlying_error"] = appErr.Cause.Error()
 		}
 	}
-	
+
 	return fields
 }
 
@@ -226,7 +226,7 @@ func Chain(errors ...error) error {
 	if len(errors) == 0 {
 		return nil
 	}
-	
+
 	// Filter out nil errors
 	var validErrors []error
 	for _, err := range errors {
@@ -234,20 +234,20 @@ func Chain(errors ...error) error {
 			validErrors = append(validErrors, err)
 		}
 	}
-	
+
 	if len(validErrors) == 0 {
 		return nil
 	}
 	if len(validErrors) == 1 {
 		return validErrors[0]
 	}
-	
+
 	// Create a chain of error messages
 	var messages []string
 	for _, err := range validErrors {
 		messages = append(messages, err.Error())
 	}
-	
+
 	return &AppError{
 		Type:       ErrorTypeInternal,
 		Message:    strings.Join(messages, " -> "),

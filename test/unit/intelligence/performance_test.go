@@ -232,28 +232,6 @@ var _ = Describe("Intelligence Performance - Business Requirements Testing", fun
 	})
 })
 
-// Helper functions for creating performance test data
-
-func createLargeExecutionDataset(size int) []*engine.RuntimeWorkflowExecution {
-	executions := make([]*engine.RuntimeWorkflowExecution, size)
-
-	for i := 0; i < size; i++ {
-		executions[i] = &engine.RuntimeWorkflowExecution{
-			WorkflowExecutionRecord: sharedtypes.WorkflowExecutionRecord{
-				ID:         fmt.Sprintf("perf-exec-%d", i),
-				WorkflowID: fmt.Sprintf("perf-workflow-%d", i%10),
-				StartTime:  time.Now().Add(-time.Duration(i) * time.Minute),
-			},
-		}
-
-		endTime := executions[i].StartTime.Add(time.Duration(30+i%60) * time.Minute)
-		executions[i].EndTime = &endTime
-		executions[i].Duration = executions[i].EndTime.Sub(executions[i].StartTime)
-	}
-
-	return executions
-}
-
 func createLargeClusteringDataset(size int) []*engine.EngineWorkflowExecutionData {
 	data := make([]*engine.EngineWorkflowExecutionData, size)
 

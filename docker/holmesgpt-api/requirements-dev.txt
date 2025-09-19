@@ -1,0 +1,40 @@
+# Development and Testing Dependencies for HolmesGPT API
+# Following project guidelines and existing patterns
+
+# Testing Framework
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-timeout==2.2.0
+
+# Kubernetes Testing
+kubernetes==29.0.0
+pyyaml==6.0.1
+
+# HTTP Testing
+requests==2.31.0
+httpx==0.25.2
+
+# Code Quality
+flake8==6.1.0
+black==23.11.0
+isort==5.12.0
+mypy==1.7.1
+
+# Security and JWT
+PyJWT==2.8.0
+cryptography==41.0.8
+
+# Development Utilities
+ipython==8.17.2
+jupyter==1.0.0
+
+# Additional testing utilities
+factory-boy==3.3.0  # For test data generation
+faker==20.1.0       # For fake data generation
+freezegun==1.2.2    # For time mocking in tests
+
+# Performance testing
+pytest-benchmark==4.0.0
+

@@ -1,0 +1,162 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holmesgpt-api
+  namespace: holmesgpt
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/version: test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: holmesgpt-api
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: holmesgpt-api
+        app.kubernetes.io/component: api
+        app.kubernetes.io/version: test
+    spec:
+      serviceAccountName: holmesgpt-api
+      containers:
+      - name: holmesgpt-api
+        image: holmesgpt-api:test
+        imagePullPolicy: Never  # Use locally built image in Kind
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        env:
+        # LLM Configuration (mock for testing)
+        - name: LLM_PROVIDER
+          value: "mock"
+        - name: LLM_MODEL
+          value: "mock-model"
+        - name: LLM_ENDPOINT
+          value: "mock://localhost:8080"
+        # Database Configuration (integration test DB)
+        - name: DB_HOST
+          value: "host.docker.internal"  # Access host from container in Kind
+        - name: DB_PORT
+          value: "5433"
+        - name: DB_NAME
+          value: "action_history"
+        - name: DB_USER
+          value: "slm_user"
+        - name: DB_PASSWORD
+          value: "slm_password_dev"
+        - name: DB_SSL_MODE
+          value: "disable"
+        # Vector DB Configuration
+        - name: VECTOR_DB_HOST
+          value: "host.docker.internal"
+        - name: VECTOR_DB_PORT
+          value: "5434"
+        - name: VECTOR_DB_NAME
+          value: "vector_store"
+        - name: VECTOR_DB_USER
+          value: "vector_user"
+        - name: VECTOR_DB_PASSWORD
+          value: "vector_password_dev"
+        # K8s Authentication Configuration
+        - name: K8S_AUTH_MODE
+          value: "serviceaccount"
+        - name: K8S_TOKEN_VALIDATION_ENABLED
+          value: "true"
+        - name: OAUTH2_RESOURCE_SERVER_MODE
+          value: "true"
+        # API Configuration
+        - name: API_HOST
+          value: "0.0.0.0"
+        - name: API_PORT
+          value: "8000"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        # Security
+        - name: SECRET_KEY
+          value: "test-secret-key-for-integration-testing"
+        - name: ACCESS_TOKEN_EXPIRE_MINUTES
+          value: "30"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # FastAPI needs write access for temp files
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+      restartPolicy: Always
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: holmesgpt-api
+  namespace: holmesgpt
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: api
+
+---
+# NodePort service for external access during testing
+apiVersion: v1
+kind: Service
+metadata:
+  name: holmesgpt-api-nodeport
+  namespace: holmesgpt
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: api
+    test: integration
+spec:
+  type: NodePort
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+    nodePort: 30800  # Matches kind-config.yaml port mapping
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: api
+

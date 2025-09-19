@@ -193,7 +193,13 @@ class AuthService:
         else:
             expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
 
-        to_encode.update({"exp": expire})
+        # Add unique identifier and issued at time to ensure token uniqueness
+        import uuid
+        to_encode.update({
+            "exp": expire,
+            "iat": datetime.utcnow(),  # Issued at time
+            "jti": str(uuid.uuid4())   # JWT ID for uniqueness
+        })
 
         try:
             encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
@@ -231,7 +237,7 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token expired"
             )
-        except jwt.JWTError as e:
+        except jwt.PyJWTError as e:
             logger.warning(f"JWT validation error: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

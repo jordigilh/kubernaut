@@ -69,6 +69,9 @@ func (mt *ModelTrainer) extractFeatures(traces []actionhistory.ResourceActionTra
 		vector.TimeOfDay = float64(trace.ActionTimestamp.Hour()) + float64(trace.ActionTimestamp.Minute())/60.0
 		vector.DayOfWeek = float64(trace.ActionTimestamp.Weekday())
 
+		// BR-AI-003: Extract log-based features from training logs - Following project guideline: use parameters properly
+		mt.enrichFeaturesFromLogs(&vector, trace, trainingLogs)
+
 		features = append(features, vector)
 	}
 
@@ -169,6 +172,16 @@ func (mt *ModelTrainer) pearsonCorrelation(x, y []float64) float64 {
 
 // trainModelByType implements model training for different types per BR-AI-003
 func (mt *ModelTrainer) trainModelByType(ctx context.Context, modelType ModelType, features []FeatureVector, trainingLogs []string) *ModelTrainingResult {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &ModelTrainingResult{
+			ModelType: string(modelType),
+			Success:   false,
+		}
+	default:
+	}
+
 	result := &ModelTrainingResult{
 		ModelType:       string(modelType),
 		Success:         true,
@@ -553,6 +566,7 @@ func (mt *ModelTrainer) predictActionEffectiveness(f FeatureVector, actionStats 
 }
 
 // predictActionType predicts optimal action type based on features
+// Milestone 2: Advanced ML prediction capabilities - excluded from unused warnings via .golangci.yml
 func (mt *ModelTrainer) predictActionType(f FeatureVector, actionEffectiveness map[string]float64) string {
 	// Rule-based classification with effectiveness weighting
 
@@ -1012,4 +1026,78 @@ func (mt *ModelTrainer) createActionClassificationModel(trainFeatures []FeatureV
 		}
 		return 0.6 // Default prediction
 	}
+}
+
+// enrichFeaturesFromLogs extracts additional features from training logs
+// Following project guideline: use structured parameters properly instead of ignoring them
+func (mt *ModelTrainer) enrichFeaturesFromLogs(vector *FeatureVector, trace actionhistory.ResourceActionTrace, trainingLogs []string) {
+	if len(trainingLogs) == 0 {
+		return // No logs to analyze
+	}
+
+	// Initialize log-based feature counters
+	errorCount := 0.0
+	warningCount := 0.0
+	infoCount := 0.0
+	containsActionType := false
+	avgLogLength := 0.0
+	logMatchingTrace := 0
+
+	// Analyze training logs for patterns related to this trace
+	for _, logEntry := range trainingLogs {
+		logLower := strings.ToLower(logEntry)
+
+		// Count log levels
+		if strings.Contains(logLower, "error") || strings.Contains(logLower, "fatal") {
+			errorCount++
+		} else if strings.Contains(logLower, "warn") || strings.Contains(logLower, "warning") {
+			warningCount++
+		} else if strings.Contains(logLower, "info") || strings.Contains(logLower, "debug") {
+			infoCount++
+		}
+
+		// Check if log mentions the action type
+		if strings.Contains(logLower, strings.ToLower(trace.ActionType)) {
+			containsActionType = true
+			logMatchingTrace++
+		}
+
+		// Track average log entry length
+		avgLogLength += float64(len(logEntry))
+	}
+
+	if len(trainingLogs) > 0 {
+		avgLogLength /= float64(len(trainingLogs))
+	}
+
+	// Extract log-based features and add to feature vector
+	if vector.FeatureImportance == nil {
+		vector.FeatureImportance = make(map[string]float64)
+	}
+
+	// Normalize counts by total log entries
+	totalLogs := float64(len(trainingLogs))
+	if totalLogs > 0 {
+		vector.FeatureImportance["log_error_rate"] = errorCount / totalLogs
+		vector.FeatureImportance["log_warning_rate"] = warningCount / totalLogs
+		vector.FeatureImportance["log_info_rate"] = infoCount / totalLogs
+		vector.FeatureImportance["log_avg_length"] = avgLogLength / 1000.0 // Normalize to 0-1 range approximately
+		vector.FeatureImportance["log_action_mentions"] = float64(logMatchingTrace) / totalLogs
+	}
+
+	// Boolean features
+	if containsActionType {
+		vector.FeatureImportance["log_mentions_action"] = 1.0
+	} else {
+		vector.FeatureImportance["log_mentions_action"] = 0.0
+	}
+
+	// Composite log health score (lower error rate + higher info rate = better health)
+	logHealthScore := 1.0 - (errorCount/totalLogs)*0.8 - (warningCount/totalLogs)*0.3 + (infoCount/totalLogs)*0.1
+	if logHealthScore < 0 {
+		logHealthScore = 0
+	} else if logHealthScore > 1 {
+		logHealthScore = 1
+	}
+	vector.FeatureImportance["log_health_score"] = logHealthScore
 }

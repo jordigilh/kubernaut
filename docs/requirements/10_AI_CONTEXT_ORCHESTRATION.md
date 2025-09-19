@@ -56,21 +56,45 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
 - **BR-CONTEXT-014**: MUST detect and handle context data inconsistencies or conflicts
 - **BR-CONTEXT-015**: MUST support context data enrichment with calculated insights and patterns
 
+#### 2.1.4 Investigation Complexity Assessment
+- **BR-CONTEXT-016**: MUST assess investigation complexity based on alert characteristics (severity, scope, dependencies)
+- **BR-CONTEXT-017**: MUST dynamically adjust context gathering strategy based on complexity assessment
+- **BR-CONTEXT-018**: MUST classify alerts into complexity tiers (simple, moderate, complex, critical) for context optimization
+- **BR-CONTEXT-019**: MUST provide minimum context guarantees for each complexity tier to ensure model effectiveness
+- **BR-CONTEXT-020**: MUST escalate to higher context tiers when initial analysis indicates insufficient context
+
+#### 2.1.5 Context Adequacy Validation
+- **BR-CONTEXT-021**: MUST validate context adequacy before proceeding with investigation analysis
+- **BR-CONTEXT-022**: MUST implement context sufficiency scoring based on investigation requirements
+- **BR-CONTEXT-023**: MUST trigger additional context gathering when adequacy scores fall below thresholds
+- **BR-CONTEXT-024**: MUST maintain context adequacy metrics per investigation type for continuous improvement
+- **BR-CONTEXT-025**: MUST provide context adequacy feedback to AI models for self-assessment capabilities
+
 ### 2.2 Performance & Efficiency Requirements
 
 #### 2.2.1 Response Time Targets
-- **BR-CONTEXT-016**: MUST provide individual context responses within 100ms for cached data
-- **BR-CONTEXT-017**: MUST provide individual context responses within 500ms for fresh data retrieval
-- **BR-CONTEXT-018**: MUST support concurrent context requests with linear scalability
-- **BR-CONTEXT-019**: MUST maintain 99.9% availability for context API endpoints
-- **BR-CONTEXT-020**: MUST provide graceful degradation when context sources are unavailable
+- **BR-CONTEXT-026**: MUST provide individual context responses within 100ms for cached data
+- **BR-CONTEXT-027**: MUST provide individual context responses within 500ms for fresh data retrieval
+- **BR-CONTEXT-028**: MUST support concurrent context requests with linear scalability
+- **BR-CONTEXT-029**: MUST maintain 99.9% availability for context API endpoints
+- **BR-CONTEXT-030**: MUST provide graceful degradation when context sources are unavailable
 
-#### 2.2.2 Resource Optimization
-- **BR-CONTEXT-021**: MUST reduce total investigation payload sizes by 50-70% compared to static enrichment
-- **BR-CONTEXT-022**: MUST minimize memory footprint through streaming context delivery
-- **BR-CONTEXT-023**: MUST optimize network utilization through intelligent context batching
-- **BR-CONTEXT-024**: MUST provide context compression for large data sets
-- **BR-CONTEXT-025**: MUST implement efficient context deduplication across concurrent investigations
+#### 2.2.2 Graduated Resource Optimization
+- **BR-CONTEXT-031**: MUST implement graduated reduction targets based on investigation complexity rather than fixed percentages
+- **BR-CONTEXT-032**: Simple alerts MUST achieve 60-80% payload reduction while maintaining investigation quality
+- **BR-CONTEXT-033**: Complex alerts MUST prioritize context completeness over aggressive reduction (20-40% reduction)
+- **BR-CONTEXT-034**: Critical alerts MUST ensure maximum context availability with minimal reduction (<20%)
+- **BR-CONTEXT-035**: MUST minimize memory footprint through streaming context delivery without compromising model performance
+- **BR-CONTEXT-036**: MUST optimize network utilization through intelligent context batching based on investigation needs
+- **BR-CONTEXT-037**: MUST provide context compression for large data sets while preserving semantic integrity
+- **BR-CONTEXT-038**: MUST implement efficient context deduplication across concurrent investigations
+
+#### 2.2.3 Model Performance Monitoring
+- **BR-CONTEXT-039**: MUST monitor AI model performance correlation with context reduction levels
+- **BR-CONTEXT-040**: MUST detect when context reduction negatively impacts investigation confidence scores
+- **BR-CONTEXT-041**: MUST automatically adjust context gathering when model performance degradation is detected
+- **BR-CONTEXT-042**: MUST maintain performance baselines for different context optimization strategies
+- **BR-CONTEXT-043**: MUST provide alerting when context reduction causes investigation quality regression
 
 ---
 
@@ -328,6 +352,11 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
 - **BR-MONITORING-008**: System MUST monitor investigation confidence score improvements
 - **BR-MONITORING-009**: System MUST track context usage patterns for optimization insights
 - **BR-MONITORING-010**: System MUST measure investigation success rates by context gathering strategy
+- **BR-MONITORING-016**: System MUST monitor context adequacy scores and their correlation with investigation outcomes
+- **BR-MONITORING-017**: System MUST track context reduction impact on model performance across complexity tiers
+- **BR-MONITORING-018**: System MUST measure context optimization effectiveness vs. investigation quality trade-offs
+- **BR-MONITORING-019**: System MUST alert when context reduction strategies negatively impact business outcomes
+- **BR-MONITORING-020**: System MUST provide dashboards showing context optimization balance and model effectiveness
 
 #### 10.1.3 Dynamic Toolset Configuration Metrics
 - **BR-MONITORING-011**: System MUST track service discovery success rates and failure modes per service type
@@ -421,6 +450,10 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
   - *Mitigation*: Maintain static enrichment fallback and implement circuit breaker patterns
 - **RISK-TECH-003**: **HolmesGPT Integration Complexity** - Custom toolset development may be complex
   - *Mitigation*: Start with proof-of-concept and follow HolmesGPT best practices
+- **RISK-TECH-004**: **Over-Aggressive Context Reduction** - Fixed reduction targets may compromise model effectiveness
+  - *Mitigation*: Implement graduated reduction based on complexity assessment and continuous performance monitoring
+- **RISK-TECH-005**: **Context Inadequacy** - Insufficient context may lead to poor investigation outcomes
+  - *Mitigation*: Implement context adequacy validation and automatic escalation to higher context tiers
 
 #### 13.1.2 Performance Risks
 - **RISK-PERF-001**: **Context Cache Invalidation** - Poor cache strategies may degrade performance
@@ -451,6 +484,10 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
 - [ ] Dynamic toolset configuration automatically detecting and configuring services
 - [ ] Service discovery accurately identifying well-known services (Prometheus, Grafana, Jaeger)
 - [ ] Toolset configuration updates propagating in real-time upon service changes
+- [ ] Investigation complexity assessment correctly categorizing alerts into complexity tiers
+- [ ] Context adequacy validation preventing insufficient context scenarios
+- [ ] Graduated reduction targets maintaining model effectiveness across all complexity levels
+- [ ] Model performance monitoring detecting and preventing context reduction impact
 
 #### 14.1.2 Integration Validation
 - [ ] End-to-end investigation workflows using dynamic context orchestration

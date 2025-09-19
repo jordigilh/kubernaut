@@ -1,0 +1,104 @@
+{
+  "confidence_test_scenarios": [
+    {
+      "scenario_name": "high_confidence_common_alert",
+      "expected_confidence_range": [0.7, 1.0],
+      "alert_data": {
+        "alerts": [{
+          "status": "firing",
+          "labels": {
+            "alertname": "PodMemoryHigh",
+            "severity": "warning",
+            "namespace": "web-services",
+            "pod": "webapp-deployment-abc123",
+            "container": "web-app"
+          },
+          "annotations": {
+            "description": "Pod webapp-deployment-abc123 memory usage is 95% of limit",
+            "summary": "High memory usage in web application pod",
+            "current_usage": "3.8GB",
+            "limit": "4GB"
+          },
+          "startsAt": "2025-01-01T10:00:00Z"
+        }]
+      },
+      "alert_complexity": "low",
+      "context_clarity": "high",
+      "expected_confidence": "high"
+    },
+    {
+      "scenario_name": "medium_confidence_partial_context",
+      "expected_confidence_range": [0.4, 0.8],
+      "alert_data": {
+        "alerts": [{
+          "status": "firing",
+          "labels": {
+            "alertname": "ServiceResponseTime",
+            "severity": "warning",
+            "service": "unknown-service"
+          },
+          "annotations": {
+            "description": "Service response time above threshold",
+            "summary": "Response time issues detected"
+          },
+          "startsAt": "2025-01-01T10:15:00Z"
+        }]
+      },
+      "alert_complexity": "medium",
+      "context_clarity": "partial",
+      "expected_confidence": "medium"
+    },
+    {
+      "scenario_name": "low_confidence_ambiguous_alert",
+      "expected_confidence_range": [0.0, 0.5],
+      "alert_data": {
+        "alerts": [{
+          "status": "firing",
+          "labels": {
+            "alertname": "GenericError",
+            "severity": "info"
+          },
+          "annotations": {
+            "description": "Something went wrong",
+            "summary": "Error detected"
+          },
+          "startsAt": "2025-01-01T10:30:00Z"
+        }]
+      },
+      "alert_complexity": "high",
+      "context_clarity": "low",
+      "expected_confidence": "low"
+    },
+    {
+      "scenario_name": "variable_confidence_complex_scenario",
+      "expected_confidence_range": [0.3, 0.9],
+      "alert_data": {
+        "alerts": [{
+          "status": "firing",
+          "labels": {
+            "alertname": "MultiComponentFailure",
+            "severity": "critical",
+            "namespace": "complex-system",
+            "affected_components": "database,cache,api"
+          },
+          "annotations": {
+            "description": "Multiple components showing degraded performance",
+            "summary": "Complex system degradation detected",
+            "affected_count": "3",
+            "primary_impact": "database_latency"
+          },
+          "startsAt": "2025-01-01T10:45:00Z"
+        }]
+      },
+      "alert_complexity": "very_high",
+      "context_clarity": "medium",
+      "expected_confidence": "variable"
+    }
+  ],
+  "confidence_validation_criteria": {
+    "score_range_compliance": [0.0, 1.0],
+    "minimum_score_precision": 2,
+    "correlation_threshold": 0.6,
+    "consistency_tolerance": 0.2
+  }
+}

@@ -295,14 +295,14 @@ var _ = Describe("Memory Embedding Cache Unit Tests", func() {
 			embedding := []float64{0.1, 0.2}
 
 			// 2 misses
-			cache.Get(ctx, key)
-			cache.Get(ctx, "another-key")
+			_, _, _ = cache.Get(ctx, key)           // Intentionally ignoring all return values for stats test
+			_, _, _ = cache.Get(ctx, "another-key") // Intentionally ignoring all return values for stats test
 
 			// Store and get 3 hits
-			cache.Set(ctx, key, embedding, time.Hour)
-			cache.Get(ctx, key)
-			cache.Get(ctx, key)
-			cache.Get(ctx, key)
+			_ = cache.Set(ctx, key, embedding, time.Hour) // Intentionally ignoring error for stats test
+			_, _, _ = cache.Get(ctx, key)                 // Intentionally ignoring all return values for stats test
+			_, _, _ = cache.Get(ctx, key)                 // Intentionally ignoring all return values for stats test
+			_, _, _ = cache.Get(ctx, key)                 // Intentionally ignoring all return values for stats test
 
 			stats := cache.GetStats(ctx)
 			expectedHitRate := 3.0 / 5.0 // 3 hits out of 5 total attempts
@@ -317,14 +317,14 @@ var _ = Describe("Memory Embedding Cache Unit Tests", func() {
 			for i := 0; i < 5; i++ {
 				key := fmt.Sprintf("count-test-%d", i)
 				embedding := []float64{float64(i)}
-				cache.Set(ctx, key, embedding, time.Hour)
+				_ = cache.Set(ctx, key, embedding, time.Hour) // Intentionally ignoring error for stats test
 			}
 
 			stats := cache.GetStats(ctx)
 			Expect(stats.TotalKeys).To(Equal(int64(5)), "Should track total keys correctly")
 
 			// Delete one key
-			cache.Delete(ctx, "count-test-2")
+			_ = cache.Delete(ctx, "count-test-2") // Intentionally ignoring error for stats test
 
 			stats = cache.GetStats(ctx)
 			Expect(stats.TotalKeys).To(Equal(int64(4)), "Should update count after deletion")
@@ -383,10 +383,10 @@ var _ = Describe("Memory Embedding Cache Unit Tests", func() {
 						if i%2 == 0 {
 							key := fmt.Sprintf("stats-concurrent-%d", goroutineID)
 							embedding := []float64{float64(goroutineID)}
-							cache.Set(ctx, key, embedding, time.Hour)
-							cache.Get(ctx, key) // Hit
+							_ = cache.Set(ctx, key, embedding, time.Hour) // Intentionally ignoring error for stats test
+							_, _, _ = cache.Get(ctx, key)                 // Hit - intentionally ignoring all return values for stats test
 						} else {
-							cache.Get(ctx, "non-existent") // Miss
+							_, _, _ = cache.Get(ctx, "non-existent") // Miss - intentionally ignoring all return values for stats test
 						}
 					}
 				}(g)
@@ -447,6 +447,9 @@ var _ = Describe("Cached Embedding Service Unit Tests", func() {
 	BeforeEach(func() {
 		logger = logrus.New()
 		logger.SetLevel(logrus.WarnLevel)
+
+		// Reset all global mock state to avoid test interference
+		ResetGlobalMockState()
 
 		mockService = NewMockEmbeddingGenerator(384)
 		mockCache = NewMockEmbeddingCache()
@@ -651,8 +654,8 @@ var _ = Describe("Cached Embedding Service Unit Tests", func() {
 			mockCache.SetGetResult(nil, false, nil)
 
 			// Generate embedding twice
-			cachedService.GenerateTextEmbedding(ctx, text)
-			cachedService.GenerateTextEmbedding(ctx, text)
+			_, _ = cachedService.GenerateTextEmbedding(ctx, text) // Intentionally ignoring return for cache behavior test
+			_, _ = cachedService.GenerateTextEmbedding(ctx, text) // Intentionally ignoring return for cache behavior test
 
 			getCalls := mockCache.GetGetCalls()
 			Expect(len(getCalls)).To(Equal(2), "Should have two get calls")
@@ -665,8 +668,8 @@ var _ = Describe("Cached Embedding Service Unit Tests", func() {
 
 			mockCache.SetGetResult(nil, false, nil)
 
-			cachedService.GenerateTextEmbedding(ctx, text1)
-			cachedService.GenerateTextEmbedding(ctx, text2)
+			_, _ = cachedService.GenerateTextEmbedding(ctx, text1) // Intentionally ignoring return for cache behavior test
+			_, _ = cachedService.GenerateTextEmbedding(ctx, text2) // Intentionally ignoring return for cache behavior test
 
 			getCalls := mockCache.GetGetCalls()
 			Expect(len(getCalls)).To(Equal(2), "Should have two get calls")
@@ -677,9 +680,9 @@ var _ = Describe("Cached Embedding Service Unit Tests", func() {
 			mockCache.SetGetResult(nil, false, nil)
 
 			// Generate different types of embeddings with similar content
-			cachedService.GenerateTextEmbedding(ctx, "test")
-			cachedService.GenerateActionEmbedding(ctx, "test", nil)
-			cachedService.GenerateContextEmbedding(ctx, map[string]string{"test": "test"}, nil)
+			_, _ = cachedService.GenerateTextEmbedding(ctx, "test")                                    // Intentionally ignoring return for cache behavior test
+			_, _ = cachedService.GenerateActionEmbedding(ctx, "test", nil)                             // Intentionally ignoring return for cache behavior test
+			_, _ = cachedService.GenerateContextEmbedding(ctx, map[string]string{"test": "test"}, nil) // Intentionally ignoring return for cache behavior test
 
 			getCalls := mockCache.GetGetCalls()
 			Expect(len(getCalls)).To(Equal(3), "Should have three get calls")

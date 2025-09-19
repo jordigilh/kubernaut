@@ -345,6 +345,21 @@ func (pcv *PatternConfidenceValidatorSimple) calculateConfidenceAdjustment(patte
 		adjustment = metrics.UnderConfidence * 0.3
 	}
 
+	// Apply pattern-specific adjustments based on pattern maturity
+	if pattern != nil {
+		// More mature patterns (higher frequency) get smaller adjustments
+		if pattern.Frequency > 100 {
+			adjustment *= 0.5 // Reduce adjustment for well-established patterns
+		} else if pattern.Frequency < 10 {
+			adjustment *= 1.5 // Increase adjustment for new patterns
+		}
+
+		// Adjust based on pattern confidence - very low confidence patterns need more correction
+		if pattern.Confidence < 0.3 {
+			adjustment *= 1.2
+		}
+	}
+
 	// Cap adjustments to reasonable range
 	return math.Max(-0.3, math.Min(0.2, adjustment))
 }

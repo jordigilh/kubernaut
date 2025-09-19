@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -22,11 +23,19 @@ func NewCustomActionExecutor(log *logrus.Logger) *CustomActionExecutor {
 
 // Execute performs custom operations
 func (cae *CustomActionExecutor) Execute(ctx context.Context, action *StepAction, stepContext *StepContext) (*StepResult, error) {
-	cae.log.WithFields(logrus.Fields{
+	logFields := logrus.Fields{
 		"action_type": action.Type,
-		"step_id":     stepContext.StepID,
 		"parameters":  action.Parameters,
-	}).Info("Executing custom action")
+	}
+
+	// Handle nil step context gracefully
+	if stepContext != nil {
+		logFields["step_id"] = stepContext.StepID
+	} else {
+		logFields["step_id"] = "unknown"
+	}
+
+	cae.log.WithFields(logFields).Info("Executing custom action")
 
 	startTime := time.Now()
 
@@ -129,7 +138,19 @@ func (cae *CustomActionExecutor) waitAction(ctx context.Context, action *StepAct
 		}, nil
 	}
 
-	cae.log.WithField("duration", duration).Info("Waiting")
+	// Following project guideline: use stepContext parameter for contextual logging and tracking
+	logFields := cae.log.WithField("duration", duration)
+	if stepContext != nil && stepContext.Variables != nil {
+		// Use available stepContext fields for logging context
+		logFields = logFields.WithFields(map[string]interface{}{
+			"step_context":    "available",
+			"variables_count": len(stepContext.Variables),
+		})
+		if stepID, ok := stepContext.Variables["step_id"].(string); ok {
+			logFields = logFields.WithField("step_id", stepID)
+		}
+	}
+	logFields.Info("Waiting")
 
 	select {
 	case <-ctx.Done():
@@ -156,6 +177,13 @@ func (cae *CustomActionExecutor) waitAction(ctx context.Context, action *StepAct
 
 // logAction implements a logging operation
 func (cae *CustomActionExecutor) logAction(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{Success: false, Error: "context_cancelled", Data: make(map[string]interface{})}, nil
+	default:
+	}
+
 	message := cae.getStringParameter(action, "message")
 	level := cae.getStringParameter(action, "level")
 
@@ -165,6 +193,16 @@ func (cae *CustomActionExecutor) logAction(ctx context.Context, action *StepActi
 
 	if level == "" {
 		level = "info"
+	}
+
+	// Following project guideline: use stepContext parameter to enrich log entries
+	if stepContext != nil && stepContext.Variables != nil {
+		// Extract context information from available variables
+		contextInfo := "unknown"
+		if stepID, ok := stepContext.Variables["step_id"].(string); ok {
+			contextInfo = stepID
+		}
+		message = fmt.Sprintf("[step:%s] %s", contextInfo, message)
 	}
 
 	// Log the message at the specified level
@@ -192,11 +230,19 @@ func (cae *CustomActionExecutor) logAction(ctx context.Context, action *StepActi
 			"level":       level,
 			"action_type": "log",
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
 // notificationAction implements a notification operation
 func (cae *CustomActionExecutor) notificationAction(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{Success: false, Error: "context_cancelled", Data: make(map[string]interface{})}, nil
+	default:
+	}
+
 	message := cae.getStringParameter(action, "message")
 	channel := cae.getStringParameter(action, "channel")
 	severity := cae.getStringParameter(action, "severity")
@@ -211,6 +257,16 @@ func (cae *CustomActionExecutor) notificationAction(ctx context.Context, action 
 
 	if severity == "" {
 		severity = "info"
+	}
+
+	// Enhance message with step context information
+	if stepContext != nil && stepContext.Variables != nil {
+		if stepID, ok := stepContext.Variables["step_id"].(string); ok {
+			message = fmt.Sprintf("[Step: %s] %s", stepID, message)
+		}
+		if workflowID, ok := stepContext.Variables["workflow_id"].(string); ok {
+			message = fmt.Sprintf("[Workflow: %s] %s", workflowID, message)
+		}
 	}
 
 	cae.log.WithFields(logrus.Fields{
@@ -233,11 +289,19 @@ func (cae *CustomActionExecutor) notificationAction(ctx context.Context, action 
 			"action_type": "notification",
 			"status":      "sent",
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
 // webhookAction implements a webhook call operation
 func (cae *CustomActionExecutor) webhookAction(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{Success: false, Error: "context_cancelled", Data: make(map[string]interface{})}, nil
+	default:
+	}
+
 	url := cae.getStringParameter(action, "url")
 	method := cae.getStringParameter(action, "method")
 	payload := cae.getStringParameter(action, "payload")
@@ -252,6 +316,20 @@ func (cae *CustomActionExecutor) webhookAction(ctx context.Context, action *Step
 
 	if method == "" {
 		method = "POST"
+	}
+
+	// Include step context in payload if available
+	if stepContext != nil && stepContext.Variables != nil && payload == "" {
+		// Create a default payload with context information
+		stepID := "unknown"
+		workflowID := "unknown"
+		if sid, ok := stepContext.Variables["step_id"]; ok && sid != nil {
+			stepID = fmt.Sprintf("%v", sid)
+		}
+		if wid, ok := stepContext.Variables["workflow_id"]; ok && wid != nil {
+			workflowID = fmt.Sprintf("%v", wid)
+		}
+		payload = fmt.Sprintf(`{"step_id": "%s", "workflow_id": "%s"}`, stepID, workflowID)
 	}
 
 	cae.log.WithFields(logrus.Fields{
@@ -274,11 +352,19 @@ func (cae *CustomActionExecutor) webhookAction(ctx context.Context, action *Step
 			"action_type": "webhook",
 			"status":      "called",
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
 // scriptAction implements a script execution operation
 func (cae *CustomActionExecutor) scriptAction(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{Success: false, Error: "context_cancelled", Data: make(map[string]interface{})}, nil
+	default:
+	}
+
 	scriptPath := cae.getStringParameter(action, "script_path")
 	args := cae.getStringParameter(action, "args")
 	workingDir := cae.getStringParameter(action, "working_dir")
@@ -291,10 +377,26 @@ func (cae *CustomActionExecutor) scriptAction(ctx context.Context, action *StepA
 		}, nil
 	}
 
+	// Set default working directory and enhance with context if available
+	if workingDir == "" {
+		workingDir = "/tmp"
+	}
+
+	// Add step context variables as environment for script execution
+	envVars := make(map[string]string)
+	if stepContext != nil && stepContext.Variables != nil {
+		for key, value := range stepContext.Variables {
+			if strValue, ok := value.(string); ok {
+				envVars[fmt.Sprintf("STEP_%s", strings.ToUpper(key))] = strValue
+			}
+		}
+	}
+
 	cae.log.WithFields(logrus.Fields{
 		"script_path": scriptPath,
 		"args":        args,
 		"working_dir": workingDir,
+		"env_vars":    len(envVars),
 	}).Info("Executing script")
 
 	// In a real implementation, this would execute the script using os/exec
@@ -309,17 +411,27 @@ func (cae *CustomActionExecutor) scriptAction(ctx context.Context, action *StepA
 			"script_path": scriptPath,
 			"args":        args,
 			"working_dir": workingDir,
+			"env_vars":    envVars,
 			"action_type": "script",
 			"status":      "executed",
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
 // rollbackNotification sends a rollback notification
 func (cae *CustomActionExecutor) rollbackNotification(ctx context.Context, action *StepAction, result *StepResult) error {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	originalMessage := ""
 	originalChannel := "default"
 
+	// Extract original data from result
 	if result.Data != nil {
 		if msg, ok := result.Data["message"].(string); ok {
 			originalMessage = msg
@@ -329,7 +441,15 @@ func (cae *CustomActionExecutor) rollbackNotification(ctx context.Context, actio
 		}
 	}
 
-	rollbackMessage := fmt.Sprintf("ROLLBACK: Previous notification has been cancelled: %s", originalMessage)
+	// Use action parameters to customize rollback behavior
+	rollbackReason := "workflow_rollback"
+	if action.Parameters != nil {
+		if reason, ok := action.Parameters["rollback_reason"].(string); ok {
+			rollbackReason = reason
+		}
+	}
+
+	rollbackMessage := fmt.Sprintf("ROLLBACK (%s): Previous notification has been cancelled: %s", rollbackReason, originalMessage)
 
 	cae.log.WithFields(logrus.Fields{
 		"rollback_message": rollbackMessage,

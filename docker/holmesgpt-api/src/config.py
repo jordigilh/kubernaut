@@ -9,7 +9,8 @@ from typing import Optional
 from functools import lru_cache
 
 import structlog
-from pydantic import BaseSettings, validator, Field
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -56,15 +57,17 @@ class Settings(BaseSettings):
     max_concurrent_investigations: int = Field(default=10, description="Maximum concurrent investigations")
     investigation_timeout: int = Field(default=300, description="Investigation timeout in seconds")
 
-    @validator('llm_provider')
+    @field_validator('llm_provider')
+    @classmethod
     def validate_llm_provider(cls, v):
         """Validate LLM provider - BR-HAPI-027"""
-        valid_providers = ['openai', 'anthropic', 'local', 'ollama', 'azure']
+        valid_providers = ['openai', 'anthropic', 'local', 'ollama', 'azure', 'ramalama']
         if v not in valid_providers:
             raise ValueError(f'LLM provider must be one of: {valid_providers}')
         return v
 
-    @validator('log_level')
+    @field_validator('log_level')
+    @classmethod
     def validate_log_level(cls, v):
         """Validate log level"""
         valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -72,9 +75,10 @@ class Settings(BaseSettings):
             raise ValueError(f'Log level must be one of: {valid_levels}')
         return v.upper()
 
-    class Config:
-        env_prefix = "HOLMESGPT_"
-        case_sensitive = False
+    model_config = {
+        "env_prefix": "HOLMESGPT_",
+        "case_sensitive": False
+    }
 
 
 @lru_cache()

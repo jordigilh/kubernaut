@@ -10,18 +10,19 @@ import (
 )
 
 type Config struct {
-	App        AppConfig        `yaml:"app"`
-	Server     ServerConfig     `yaml:"server"`
-	Logging    LoggingConfig    `yaml:"logging"`
-	AIServices AIServicesConfig `yaml:"ai_services"`
-	SLM        LLMConfig        `yaml:"slm"` // Deprecated: Use ai_services.llm instead
-	Kubernetes KubernetesConfig `yaml:"kubernetes"`
-	Actions    ActionsConfig    `yaml:"actions"`
-	Webhook    WebhookConfig    `yaml:"webhook"`
-	Database   DatabaseConfig   `yaml:"database"`
-	VectorDB   VectorDBConfig   `yaml:"vectordb"`
-	Monitoring MonitoringConfig `yaml:"monitoring"`
-	Filters    []FilterConfig   `yaml:"filters"`
+	App                 AppConfig                 `yaml:"app"`
+	Server              ServerConfig              `yaml:"server"`
+	Logging             LoggingConfig             `yaml:"logging"`
+	AIServices          AIServicesConfig          `yaml:"ai_services"`
+	SLM                 LLMConfig                 `yaml:"slm"` // Deprecated: Use ai_services.llm instead
+	Kubernetes          KubernetesConfig          `yaml:"kubernetes"`
+	Actions             ActionsConfig             `yaml:"actions"`
+	Webhook             WebhookConfig             `yaml:"webhook"`
+	Database            DatabaseConfig            `yaml:"database"`
+	VectorDB            VectorDBConfig            `yaml:"vectordb"`
+	Monitoring          MonitoringConfig          `yaml:"monitoring"`
+	Filters             []FilterConfig            `yaml:"filters"`
+	ContextOptimization ContextOptimizationConfig `yaml:"context_optimization"`
 }
 
 type AppConfig struct {
@@ -42,8 +43,8 @@ type LoggingConfig struct {
 
 // AIServicesConfig holds configuration for all AI services
 type AIServicesConfig struct {
-	LLM        LLMConfig        `yaml:"llm"`        // General-purpose LLM service
-	HolmesGPT  HolmesGPTConfig  `yaml:"holmesgpt"`  // HolmesGPT investigation service
+	LLM        LLMConfig        `yaml:"llm"`         // General-purpose LLM service
+	HolmesGPT  HolmesGPTConfig  `yaml:"holmesgpt"`   // HolmesGPT investigation service
 	ContextAPI ContextAPIConfig `yaml:"context_api"` // Context API for HolmesGPT orchestration
 }
 
@@ -68,15 +69,23 @@ type ContextAPIConfig struct {
 }
 
 type LLMConfig struct {
-	Endpoint       string        `yaml:"endpoint"`
-	Model          string        `yaml:"model"`
-	APIKey         string        `yaml:"api_key"`
-	Timeout        time.Duration `yaml:"timeout"`
-	RetryCount     int           `yaml:"retry_count"`
-	Provider       string        `yaml:"provider"`         // Supports "localai", "ramalama", "ollama"
-	Temperature    float32       `yaml:"temperature"`      // Model temperature (0.0-1.0)
-	MaxTokens      int           `yaml:"max_tokens"`       // Maximum tokens for response
-	MaxContextSize int           `yaml:"max_context_size"` // Maximum context size in tokens (0 = unlimited)
+	Endpoint       string                 `yaml:"endpoint"`
+	Model          string                 `yaml:"model"`
+	Models         map[string]ModelConfig `yaml:"models"` // Model-specific configurations
+	APIKey         string                 `yaml:"api_key"`
+	Timeout        time.Duration          `yaml:"timeout"`
+	RetryCount     int                    `yaml:"retry_count"`
+	Provider       string                 `yaml:"provider"`         // Supports "localai", "ramalama", "ollama"
+	Temperature    float32                `yaml:"temperature"`      // Model temperature (0.0-1.0)
+	MaxTokens      int                    `yaml:"max_tokens"`       // Maximum tokens for response
+	MaxContextSize int                    `yaml:"max_context_size"` // Maximum context size in tokens (0 = unlimited)
+}
+
+// ModelConfig holds model-specific configuration
+type ModelConfig struct {
+	MaxTokens     int     `yaml:"max_tokens"`
+	Temperature   float32 `yaml:"temperature"`
+	ContextWindow int     `yaml:"context_window"`
 }
 
 type KubernetesConfig struct {
@@ -406,17 +415,23 @@ func loadFromEnv(config *Config) error {
 	}
 
 	if temp := os.Getenv("SLM_TEMPERATURE"); temp != "" {
-		if val, err := strconv.ParseFloat(temp, 32); err == nil {
+		if val, err := strconv.ParseFloat(temp, 32); err != nil {
+			return fmt.Errorf("invalid SLM_TEMPERATURE value '%s': %w", temp, err)
+		} else {
 			config.SLM.Temperature = float32(val)
 		}
 	}
 	if maxTokens := os.Getenv("SLM_MAX_TOKENS"); maxTokens != "" {
-		if val, err := strconv.Atoi(maxTokens); err == nil {
+		if val, err := strconv.Atoi(maxTokens); err != nil {
+			return fmt.Errorf("invalid SLM_MAX_TOKENS value '%s': %w", maxTokens, err)
+		} else {
 			config.SLM.MaxTokens = val
 		}
 	}
 	if maxContextSize := os.Getenv("SLM_MAX_CONTEXT_SIZE"); maxContextSize != "" {
-		if val, err := strconv.Atoi(maxContextSize); err == nil {
+		if val, err := strconv.Atoi(maxContextSize); err != nil {
+			return fmt.Errorf("invalid SLM_MAX_CONTEXT_SIZE value '%s': %w", maxContextSize, err)
+		} else {
 			config.SLM.MaxContextSize = val
 		}
 	}
@@ -449,12 +464,41 @@ func loadFromEnv(config *Config) error {
 		config.Actions.DryRun = true
 	}
 	if maxConcurrent := os.Getenv("MAX_CONCURRENT_ACTIONS"); maxConcurrent != "" {
-		if val, err := strconv.Atoi(maxConcurrent); err == nil {
+		if val, err := strconv.Atoi(maxConcurrent); err != nil {
+			return fmt.Errorf("invalid MAX_CONCURRENT_ACTIONS value '%s': %w", maxConcurrent, err)
+		} else {
 			config.Actions.MaxConcurrent = val
 		}
 	}
 
 	return nil
+}
+
+// ContextOptimizationConfig holds configuration for context optimization
+type ContextOptimizationConfig struct {
+	Enabled               bool                        `yaml:"enabled"`
+	GraduatedReduction    GraduatedReductionConfig    `yaml:"graduated_reduction"`
+	PerformanceMonitoring PerformanceMonitoringConfig `yaml:"performance_monitoring"`
+}
+
+// GraduatedReductionConfig holds configuration for graduated context reduction
+type GraduatedReductionConfig struct {
+	Enabled bool                     `yaml:"enabled"`
+	Tiers   map[string]ReductionTier `yaml:"tiers"`
+}
+
+// ReductionTier defines reduction parameters for each complexity tier
+type ReductionTier struct {
+	MaxReduction    float64 `yaml:"max_reduction"`
+	MinContextTypes int     `yaml:"min_context_types"`
+}
+
+// PerformanceMonitoringConfig holds configuration for performance monitoring
+type PerformanceMonitoringConfig struct {
+	Enabled              bool    `yaml:"enabled"`
+	CorrelationTracking  bool    `yaml:"correlation_tracking"`
+	DegradationThreshold float64 `yaml:"degradation_threshold"`
+	AutoAdjustment       bool    `yaml:"auto_adjustment"`
 }
 
 func validate(config *Config) error {
@@ -489,7 +533,7 @@ func validate(config *Config) error {
 	}
 
 	if config.Kubernetes.Namespace == "" {
-		return fmt.Errorf("Kubernetes namespace is required")
+		return fmt.Errorf("kubernetes namespace is required")
 	}
 
 	if config.Actions.MaxConcurrent <= 0 {

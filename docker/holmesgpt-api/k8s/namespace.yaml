@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: holmesgpt
+  labels:
+    name: holmesgpt
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: api
+    test: integration
+
