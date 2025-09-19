@@ -312,9 +312,9 @@ func GetDefaultConfig() config.VectorDBConfig {
 			IndexLists: 100,
 		},
 		Cache: config.VectorCacheConfig{
-			Enabled:   false, // Disabled by default
-			TTL:       0,     // No TTL by default
-			MaxSize:   1000,  // 1000 cached embeddings
+			Enabled:   true,           // BR-CONFIG-01: Enable caching by default for production
+			TTL:       24 * time.Hour, // 24 hour TTL for production use
+			MaxSize:   1000,           // 1000 cached embeddings
 			CacheType: "memory",
 		},
 	}
@@ -357,9 +357,17 @@ func ValidateConfig(config *config.VectorDBConfig) error {
 		return fmt.Errorf("embedding dimension must be between 1 and 4096, got %d", config.EmbeddingService.Dimension)
 	}
 
-	// Backend-specific validation
+	// Backend-specific validation and defaults application
 	switch config.Backend {
 	case "postgresql", "postgres":
+		// BR-CONFIG-01: Apply defaults for graceful handling of minimal configs
+		if config.PostgreSQL.IndexLists == 0 {
+			config.PostgreSQL.IndexLists = 100 // Default from GetDefaultConfig()
+		}
+		// Default to UseMainDB if not explicitly set to false
+		if !config.PostgreSQL.UseMainDB && config.PostgreSQL.Host == "" {
+			config.PostgreSQL.UseMainDB = true
+		}
 		if config.PostgreSQL.IndexLists < 1 || config.PostgreSQL.IndexLists > 1000 {
 			return fmt.Errorf("PostgreSQL index lists must be between 1 and 1000, got %d", config.PostgreSQL.IndexLists)
 		}

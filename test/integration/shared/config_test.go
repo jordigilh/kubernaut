@@ -24,9 +24,9 @@ var _ = Describe("Provider Detection", func() {
 		},
 		Entry("localhost with port 11434", "http://localhost:11434", "ollama"),
 		Entry("any host with port 11434", "http://kubernaut.io:11434", "ollama"),
-		Entry("localhost with port 8080", "http://localhost:8080", "localai"),
-		Entry("any host with port 8080", "http://kubernaut.io:8080", "localai"),
-		Entry("custom port", "http://kubernaut.io:9999", "localai"),
+		Entry("localhost with port 8080", "http://localhost:8080", "ramalama"),
+		Entry("any host with port 8080", "http://kubernaut.io:8080", "ramalama"),
+		Entry("custom port", "http://kubernaut.io:9999", "ramalama"),
 	)
 })
 
@@ -76,10 +76,10 @@ var _ = Describe("Configuration Loading", func() {
 		It("should load default configuration values", func() {
 			cfg := LoadConfig()
 
-			Expect(cfg.LLMEndpoint).To(Equal("http://localhost:11434"))
-			Expect(cfg.LLMModel).To(Equal("granite3.1-dense:8b"))
+			Expect(cfg.LLMEndpoint).To(Equal("http://192.168.1.169:8080"))
+			Expect(cfg.LLMModel).To(Equal("ggml-org/gpt-oss-20b-GGUF"))
 			// Provider should be auto-detected from endpoint
-			Expect(cfg.LLMProvider).To(Equal("ollama"))
+			Expect(cfg.LLMProvider).To(Equal("ramalama"))
 		})
 	})
 })

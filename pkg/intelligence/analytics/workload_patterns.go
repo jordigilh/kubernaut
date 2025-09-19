@@ -310,6 +310,13 @@ func (wpd *WorkloadPatternDetector) DetectWorkloadPatterns(ctx context.Context, 
 
 // Helper methods for business logic implementation
 func (wpd *WorkloadPatternDetector) clusterWorkloads(ctx context.Context, workflowData []*types.WorkflowExecutionData, resourceData *ResourceUtilizationData) ([]*WorkloadPattern, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Simplified clustering - production would use proper clustering algorithms
 	patterns := []*WorkloadPattern{}
 
@@ -365,6 +372,13 @@ func (wpd *WorkloadPatternDetector) clusterWorkloads(ctx context.Context, workfl
 }
 
 func (wpd *WorkloadPatternDetector) generateCapacityInsights(ctx context.Context, patterns []*WorkloadPattern, resourceData *ResourceUtilizationData) (*CapacityPlanningInsights, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	insights := &CapacityPlanningInsights{
 		CurrentUtilization: &ResourceUtilizationSummary{
 			CPU: &UtilizationStats{

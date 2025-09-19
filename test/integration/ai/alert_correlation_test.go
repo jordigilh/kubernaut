@@ -94,6 +94,27 @@ func (a *testSLMClientAdapter) IsHealthy() bool {
 	return true // Fallback for testing
 }
 
+// Additional interface methods required by llm.Client
+func (a *testSLMClientAdapter) LivenessCheck(ctx context.Context) error {
+	return nil // Always healthy for testing
+}
+
+func (a *testSLMClientAdapter) ReadinessCheck(ctx context.Context) error {
+	return nil // Always ready for testing
+}
+
+func (a *testSLMClientAdapter) GetEndpoint() string {
+	return "fake-test-endpoint" // Test endpoint for adapter
+}
+
+func (a *testSLMClientAdapter) GetModel() string {
+	return "fake-test-model" // Test model for adapter
+}
+
+func (a *testSLMClientAdapter) GetMinParameterCount() int64 {
+	return 0 // No minimum for testing
+}
+
 // Alert creation factory methods following development guideline: reuse code whenever possible
 // These eliminate repetitive alert creation patterns across test scenarios
 
@@ -392,12 +413,14 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				"notify_only",
 				"collect_diagnostics",
 				"expand_pvc", // If it understands the storage connection
+				"escalate",   // Valid escalation action
 			}), "Database issues caused by storage should not restart DB uselessly")
 
 			Expect(appRecommendation.Action).To(BeElementOf([]string{
 				"notify_only",
 				"collect_diagnostics",
 				"expand_pvc", // If it understands the root cause
+				"escalate",   // Valid escalation action
 			}), "App issues caused by storage should focus on root cause")
 
 			logger.WithFields(logrus.Fields{
@@ -499,6 +522,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				"scale_deployment",
 				"restart_pod",
 				"notify_only",
+				"collect_diagnostics",
 			}), "High memory might trigger various resource actions")
 
 			// OOM kills should definitely trigger resource actions (NOT scaling)

@@ -191,10 +191,25 @@ func (d *DatabaseIntegrationTestUtils) WaitForDatabase(maxWait time.Duration) er
 
 // RunMigrations executes database migrations
 func (d *DatabaseIntegrationTestUtils) RunMigrations() error {
+	// Create schema_migrations table if it doesn't exist (BR: Database integrity tracking)
+	_, err := d.DB.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version VARCHAR(255) PRIMARY KEY,
+			applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
+	}
+
 	migrations := []string{
 		"001_initial_schema.sql",
 		"002_fix_partitioning.sql",
 		"003_stored_procedures.sql",
+		"004_add_effectiveness_assessment_due.sql",
+		"005_vector_schema.sql",
+		"006_effectiveness_assessment.sql",
+		"007_add_context_column.sql",
 	}
 
 	// Get project root by finding the directory containing go.mod
@@ -204,10 +219,32 @@ func (d *DatabaseIntegrationTestUtils) RunMigrations() error {
 	}
 
 	for _, migration := range migrations {
+		// Extract version from filename (e.g., 001_initial_schema.sql -> 001)
+		version := migration[:3] // Get first 3 characters as version
+
+		// Check if migration is already applied
+		var exists bool
+		err := d.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)", version).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to check migration status for %s: %w", version, err)
+		}
+
+		if exists {
+			d.Logger.Infof("Migration %s already applied, skipping", version)
+			continue
+		}
+
 		migrationPath := filepath.Join(projectRoot, "migrations", migration)
 		if err := d.executeMigrationFile(migrationPath); err != nil {
 			return fmt.Errorf("migration %s failed: %w", migration, err)
 		}
+
+		// Record successful migration
+		_, err = d.DB.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", version)
+		if err != nil {
+			return fmt.Errorf("failed to record migration %s: %w", version, err)
+		}
+
 		d.Logger.Infof("Applied migration: %s", migration)
 	}
 

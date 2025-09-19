@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 	"text/template"
+	"unicode"
 
 	"github.com/sirupsen/logrus"
 )
@@ -12,6 +14,7 @@ import (
 // ToolsetTemplateEngine provides templating capabilities for toolset generation
 // Business Requirement: BR-HOLMES-023 - Toolset configuration templates
 type ToolsetTemplateEngine struct {
+	mu        sync.RWMutex // Protects concurrent access to templates map
 	templates map[string]*template.Template
 	log       *logrus.Logger
 }
@@ -42,7 +45,10 @@ func NewToolsetTemplateEngine(log *logrus.Logger) *ToolsetTemplateEngine {
 
 // RenderTemplate renders a template with the provided variables
 func (tte *ToolsetTemplateEngine) RenderTemplate(templateName string, variables TemplateVariables) (string, error) {
+	tte.mu.RLock()
 	tmpl, exists := tte.templates[templateName]
+	tte.mu.RUnlock()
+
 	if !exists {
 		return "", fmt.Errorf("template %s not found", templateName)
 	}
@@ -56,38 +62,80 @@ func (tte *ToolsetTemplateEngine) RenderTemplate(templateName string, variables 
 }
 
 // RenderToolCommand renders a tool command template
+// Uses shell-style variable substitution (${var}) for tool commands per BR-HOLMES-023
 func (tte *ToolsetTemplateEngine) RenderToolCommand(commandTemplate string, variables map[string]string) (string, error) {
-	tmpl, err := template.New("command").Parse(commandTemplate)
-	if err != nil {
+	// Validate template syntax first
+	if err := tte.validateCommandTemplateSyntax(commandTemplate); err != nil {
 		return "", fmt.Errorf("failed to parse command template: %w", err)
 	}
 
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, variables); err != nil {
-		return "", fmt.Errorf("failed to execute command template: %w", err)
+	// Replace known variables
+	result := commandTemplate
+	for key, value := range variables {
+		placeholder := "${" + key + "}"
+		result = strings.ReplaceAll(result, placeholder, value)
 	}
 
-	return buf.String(), nil
+	// Handle missing variables by replacing any remaining ${...} with empty strings
+	// This supports the test case for missing variables
+	// Business Requirement: BR-HOLMES-023 - Toolset configuration templates
+	for strings.Contains(result, "${") {
+		start := strings.Index(result, "${")
+		end := strings.Index(result[start:], "}")
+		if end == -1 {
+			// This shouldn't happen after validation, but just in case
+			return "", fmt.Errorf("failed to parse command template: unclosed variable at position %d", start)
+		}
+		end += start                             // Convert to absolute position
+		result = result[:start] + result[end+1:] // Remove ${var} including the }
+	}
+
+	return result, nil
+}
+
+// validateCommandTemplateSyntax validates shell-style template syntax
+func (tte *ToolsetTemplateEngine) validateCommandTemplateSyntax(template string) error {
+	// Check for basic syntax issues in shell-style templates
+	pos := 0
+	for {
+		start := strings.Index(template[pos:], "${")
+		if start == -1 {
+			break
+		}
+		start += pos
+		end := strings.Index(template[start:], "}")
+		if end == -1 {
+			return fmt.Errorf("unclosed template variable starting at position %d", start)
+		}
+		pos = start + end + 1
+	}
+
+	return nil
 }
 
 // AddTemplate adds a custom template to the engine
 func (tte *ToolsetTemplateEngine) AddTemplate(name, templateContent string) error {
-	tmpl, err := template.New(name).Parse(templateContent)
+	tmpl, err := template.New(name).Funcs(tte.GetTemplateHelpers()).Parse(templateContent)
 	if err != nil {
 		return fmt.Errorf("failed to parse template %s: %w", name, err)
 	}
 
+	tte.mu.Lock()
 	tte.templates[name] = tmpl
+	tte.mu.Unlock()
+
 	tte.log.WithField("template_name", name).Debug("Added custom template")
 	return nil
 }
 
 // GetAvailableTemplates returns the names of all available templates
 func (tte *ToolsetTemplateEngine) GetAvailableTemplates() []string {
+	tte.mu.RLock()
 	names := make([]string, 0, len(tte.templates))
 	for name := range tte.templates {
 		names = append(names, name)
 	}
+	tte.mu.RUnlock()
 	return names
 }
 
@@ -172,17 +220,19 @@ func (tte *ToolsetTemplateEngine) GenerateToolsetConfig(serviceType string, vari
 	// This is a simplified version - in practice, you would render the template
 	// and then unmarshal it into a ToolsetConfig struct
 
-	templateName := serviceType
-	if _, exists := tte.templates[templateName]; !exists {
-		templateName = "custom" // Fallback to custom template
-	}
+	// Guideline #14: Remove ineffectual assignments - template name logic removed since not used
+	// TODO: Implement actual template rendering using template name when needed
 
 	// For now, return a basic config based on the variables
 	// In a full implementation, this would render the JSON template and unmarshal it
+
+	// Handle hyphenated service types by capitalizing each part
+	serviceTypeTitle := strings.ReplaceAll(toTitle(strings.ReplaceAll(variables.ServiceType, "-", " ")), " ", "-")
+
 	config := &ToolsetConfig{
 		Name:         fmt.Sprintf("%s-%s-%s", variables.ServiceType, variables.Namespace, variables.ServiceName),
 		ServiceType:  variables.ServiceType,
-		Description:  fmt.Sprintf("%s tools for %s", strings.Title(variables.ServiceType), variables.ServiceName),
+		Description:  fmt.Sprintf("%s tools for %s", serviceTypeTitle, variables.ServiceName),
 		Version:      "1.0.0",
 		Endpoints:    variables.Endpoints,
 		Capabilities: variables.Capabilities,
@@ -199,8 +249,11 @@ func (tte *ToolsetTemplateEngine) GenerateToolsetConfig(serviceType string, vari
 }
 
 // ValidateTemplate validates a template for syntax errors
+// Business Requirement: BR-HOLMES-023 - Comprehensive template validation
 func (tte *ToolsetTemplateEngine) ValidateTemplate(templateContent string) error {
-	_, err := template.New("validation").Parse(templateContent)
+	// Use Go template parser for comprehensive validation
+	// This catches all syntax errors including unclosed braces, invalid constructs, etc.
+	_, err := template.New("validation").Funcs(tte.GetTemplateHelpers()).Parse(templateContent)
 	if err != nil {
 		return fmt.Errorf("template validation failed: %w", err)
 	}
@@ -212,7 +265,8 @@ func (tte *ToolsetTemplateEngine) GetTemplateHelpers() template.FuncMap {
 	return template.FuncMap{
 		"upper": strings.ToUpper,
 		"lower": strings.ToLower,
-		"title": strings.Title,
+		// Guideline #14: Replace deprecated strings.Title with simple title case
+		"title": toTitle,
 		"contains": func(s, substr string) bool {
 			return strings.Contains(s, substr)
 		},
@@ -223,4 +277,22 @@ func (tte *ToolsetTemplateEngine) GetTemplateHelpers() template.FuncMap {
 			return strings.Join(elems, sep)
 		},
 	}
+}
+
+// toTitle provides simple title case functionality to replace deprecated strings.Title
+// Guideline #14: Use simple, dependency-free implementations when possible
+func toTitle(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+
+	// Split into words and capitalize each word
+	words := strings.Fields(s)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = string(unicode.ToUpper(rune(word[0]))) + strings.ToLower(word[1:])
+		}
+	}
+
+	return strings.Join(words, " ")
 }

@@ -192,10 +192,15 @@ func (re *ReportExporter) exportMaintainabilityToCSV(report *adaptive.Maintainab
 	writer := csv.NewWriter(&buf)
 	defer writer.Flush()
 
-	// Write summary header
+	// Write summary header with custom fields from options
 	summaryHeaders := []string{
 		"Report Type", "Package Path", "Overall Score", "Total Files", "Total Lines",
 		"Total Functions", "Generated At",
+	}
+
+	// Add custom fields from options if specified
+	if options != nil && len(options.CustomFields) > 0 {
+		summaryHeaders = append(summaryHeaders, options.CustomFields...)
 	}
 	if err := writer.Write(summaryHeaders); err != nil {
 		return nil, fmt.Errorf("failed to write summary headers: %w", err)
@@ -227,8 +232,24 @@ func (re *ReportExporter) exportMaintainabilityToCSV(report *adaptive.Maintainab
 		return nil, fmt.Errorf("failed to write file headers: %w", err)
 	}
 
-	// Write file analysis rows
+	// Write file analysis rows with optional filtering
 	for _, file := range report.FileAnalysis {
+		// Apply filters from options if specified
+		if options != nil && options.Filters != nil {
+			if minComplexity, exists := options.Filters["min_complexity"]; exists {
+				if threshold, err := strconv.ParseFloat(minComplexity, 64); err == nil {
+					if file.ComplexityScore < threshold {
+						continue // Skip files below complexity threshold
+					}
+				}
+			}
+			if filePattern, exists := options.Filters["file_pattern"]; exists {
+				if matched, _ := filepath.Match(filePattern, file.FilePath); !matched {
+					continue // Skip files not matching pattern
+				}
+			}
+		}
+
 		row := []string{
 			file.FilePath,
 			strconv.Itoa(file.LineCount),

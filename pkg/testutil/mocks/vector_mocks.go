@@ -516,6 +516,23 @@ func (m *MockEmbeddingGenerator) GetContextEmbeddingCalls() []string {
 	return result
 }
 
+// ResetGlobalMockState resets all global mock state variables
+// This should be called in BeforeEach to avoid test interference
+func ResetGlobalMockState() {
+	mockCallMutex.Lock()
+	defer mockCallMutex.Unlock()
+
+	mockTextEmbeddingResult = nil
+	mockTextEmbeddingError = nil
+	mockActionEmbeddingResult = nil
+	mockActionEmbeddingError = nil
+	mockContextEmbeddingResult = nil
+	mockContextEmbeddingError = nil
+	mockTextEmbeddingCalls = []EmbeddingCall{}
+	mockActionEmbeddingCalls = []string{}
+	mockContextEmbeddingCalls = []string{}
+}
+
 // MockEmbeddingCache implements caching interface for testing
 type MockEmbeddingCache struct {
 	getCalls  []CacheGetCall
@@ -642,13 +659,15 @@ func CreateTestActionPattern(id string) *vector.ActionPattern {
 	return &vector.ActionPattern{
 		ID:               id,
 		ActionType:       "scale_deployment",
-		AlertName:        "test-alert",
-		AlertSeverity:    "warning",
-		Namespace:        "default",
-		ResourceType:     "Deployment",
-		ResourceName:     "test-app",
+		AlertName:        "HighMemoryUsage", // Updated to match business requirement tests
+		AlertSeverity:    "critical",        // Updated to match business requirement tests
+		Namespace:        "production",      // Updated to match business requirement tests
+		ResourceType:     "deployment",      // Updated to match business requirement tests
+		ResourceName:     "web-server",      // Updated to match business requirement tests
 		ActionParameters: map[string]interface{}{"replicas": 3},
-		ContextLabels:    map[string]string{"app": "test"},
+		ContextLabels:    map[string]string{"app": "test", "version": "v1.0"},
+		PreConditions:    map[string]interface{}{"current_replicas": 1},
+		PostConditions:   map[string]interface{}{"target_replicas": 3},
 		Embedding:        []float64{0.1, 0.2, 0.3, 0.4, 0.5},
 		CreatedAt:        time.Now().Add(-time.Hour),
 		UpdatedAt:        time.Now(),
@@ -662,6 +681,6 @@ func CreateTestActionPattern(id string) *vector.ActionPattern {
 			ContextualFactors:    map[string]float64{"load": 0.7},
 			LastAssessed:         time.Now().Add(-30 * time.Minute),
 		},
-		Metadata: map[string]interface{}{"test": true},
+		Metadata: map[string]interface{}{"test": true, "source": "mock_generator"},
 	}
 }

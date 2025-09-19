@@ -18,7 +18,7 @@ import (
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
-var _ = Describe("Workflow Orchestration Integration Testing", func() {
+var _ = Describe("Workflow Orchestration Integration Testing", Ordered, func() {
 	var (
 		hooks           *testshared.TestLifecycleHooks
 		ctx             context.Context
@@ -31,8 +31,15 @@ var _ = Describe("Workflow Orchestration Integration Testing", func() {
 		hooks = testshared.SetupAIIntegrationTest("Workflow Orchestration",
 			testshared.WithMockLLM(), // Use mock for consistent testing
 		)
+		hooks.Setup()
 
 		scenarioManager = NewIntegrationScenarioManager(hooks.GetLogger())
+	})
+
+	AfterAll(func() {
+		if hooks != nil {
+			hooks.Cleanup()
+		}
 	})
 
 	BeforeEach(func() {
@@ -65,7 +72,7 @@ var _ = Describe("Workflow Orchestration Integration Testing", func() {
 				}
 
 				By("Analyzing alerts across all environments")
-				environmentRecommendations := make(map[string]*types.ActionRecommendation)
+				var environmentRecommendations sync.Map // Guideline #2: Use thread-safe sync.Map for concurrent access
 				var analysisWG sync.WaitGroup
 
 				for env, alert := range environmentAlerts {
@@ -78,7 +85,11 @@ var _ = Describe("Workflow Orchestration Integration Testing", func() {
 						analyzeResponse, err := llmClient.AnalyzeAlert(ctx, *a)
 						Expect(err).ToNot(HaveOccurred())
 						recommendation := testshared.ConvertAnalyzeAlertResponse(analyzeResponse)
-						environmentRecommendations[environment] = recommendation
+						// Guideline #2: Always validate before assignment to prevent nil pointer issues
+						Expect(recommendation).ToNot(BeNil(), "ConvertAnalyzeAlertResponse should not return nil")
+
+						// Guideline #2: Use thread-safe sync.Map for concurrent writes
+						environmentRecommendations.Store(environment, recommendation)
 					}(env, alert)
 				}
 				analysisWG.Wait()
@@ -100,6 +111,13 @@ var _ = Describe("Workflow Orchestration Integration Testing", func() {
 
 				// Add targets for each environment with proper sequencing
 				for i, env := range environments {
+					// Guideline #2: Use thread-safe sync.Map access
+					value, exists := environmentRecommendations.Load(env)
+					Expect(exists).To(BeTrue(), fmt.Sprintf("Missing recommendation for environment %s", env))
+					recommendation, ok := value.(*types.ActionRecommendation)
+					Expect(ok).To(BeTrue(), fmt.Sprintf("Invalid recommendation type for environment %s", env))
+					Expect(recommendation).ToNot(BeNil(), fmt.Sprintf("Nil recommendation for environment %s", env))
+
 					target := &engine.OptimizationTarget{
 						Type:     "kubernetes",
 						Metric:   "environment_deployment_fix",
@@ -108,7 +126,7 @@ var _ = Describe("Workflow Orchestration Integration Testing", func() {
 							"environment":         env,
 							"namespace":           env,
 							"resource":            fmt.Sprintf("app-%s", env),
-							"action":              environmentRecommendations[env].Action,
+							"action":              recommendation.Action,
 							"depends_on":          getPreviousEnvironment(env),
 							"validation_required": env == "production",
 						},

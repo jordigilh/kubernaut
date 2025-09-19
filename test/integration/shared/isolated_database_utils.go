@@ -305,6 +305,17 @@ func (d *IsolatedDatabaseTestUtils) runMigrationsInPath(migrationsPath string) e
 		return fmt.Errorf("failed to find project root: %w", err)
 	}
 
+	// BR-SCHEMA-01: Create schema_migrations table for proper tracking
+	_, err = d.masterDB.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version VARCHAR(255) PRIMARY KEY,
+			applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create schema_migrations table: %w", err)
+	}
+
 	migrationDir := filepath.Join(projectRoot, migrationsPath)
 
 	// Migration files in order
@@ -313,11 +324,28 @@ func (d *IsolatedDatabaseTestUtils) runMigrationsInPath(migrationsPath string) e
 		"002_fix_partitioning.sql",
 		"003_stored_procedures.sql",
 		"004_add_effectiveness_assessment_due.sql",
+		"005_vector_schema.sql",
+		"006_effectiveness_assessment.sql",
+		"007_add_context_column.sql",
 	}
 
 	for _, migration := range migrations {
-		migrationFile := filepath.Join(migrationDir, migration)
+		// Extract version from filename (e.g., 001_initial_schema.sql -> 001)
+		version := migration[:3] // Get first 3 characters as version
 
+		// Check if migration is already applied - BR-SCHEMA-01: Prevent duplicate migrations
+		var exists bool
+		err := d.masterDB.QueryRow("SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)", version).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to check migration status for %s: %w", version, err)
+		}
+
+		if exists {
+			d.logger.WithField("version", version).Debug("Migration already applied, skipping")
+			continue
+		}
+
+		migrationFile := filepath.Join(migrationDir, migration)
 		d.logger.WithField("file", migration).Debug("Running migration")
 
 		content, err := readFile(migrationFile)
@@ -330,6 +358,14 @@ func (d *IsolatedDatabaseTestUtils) runMigrationsInPath(migrationsPath string) e
 		if err != nil {
 			return fmt.Errorf("migration %s failed: %w", migration, err)
 		}
+
+		// BR-SCHEMA-01: Record successful migration application
+		_, err = d.masterDB.Exec("INSERT INTO schema_migrations (version) VALUES ($1)", version)
+		if err != nil {
+			return fmt.Errorf("failed to record migration %s: %w", version, err)
+		}
+
+		d.logger.WithField("version", version).Debug("Migration applied and recorded")
 	}
 
 	d.logger.Debug("All migrations completed successfully")
