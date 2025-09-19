@@ -58,6 +58,9 @@ var _ = Describe("AI Condition Implementation - Business Requirements Testing", 
 			evaluatorConfig,
 			testLogger, // Fix undefined logger variable (Guideline #6: Log errors properly)
 		)
+
+		// Set the mock SLM client for AI integration using adapter
+		conditionEvaluator.SetSLMClient(NewSLMClientAdapter(mockSLMClient))
 	})
 
 	AfterEach(func() {
@@ -910,6 +913,13 @@ func NewMockMetricsClient() *MockMetricsClient {
 }
 
 func (m *MockMetricsClient) GetResourceMetrics(ctx context.Context, namespace, resourceName string, metricNames []string) (map[string]float64, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if m.error != nil {
 		return nil, m.error
 	}
@@ -928,6 +938,13 @@ func (m *MockMetricsClient) GetResourceMetrics(ctx context.Context, namespace, r
 }
 
 func (m *MockMetricsClient) CheckMetricsImprovement(ctx context.Context, alert types.Alert, trace *actionhistory.ResourceActionTrace) (bool, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	default:
+	}
+
 	if m.error != nil {
 		return false, m.error
 	}
@@ -937,6 +954,13 @@ func (m *MockMetricsClient) CheckMetricsImprovement(ctx context.Context, alert t
 }
 
 func (m *MockMetricsClient) GetMetricsHistory(ctx context.Context, namespace, resourceName string, metricNames []string, from, to time.Time) ([]monitoring.MetricPoint, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if m.error != nil {
 		return nil, m.error
 	}
@@ -965,3 +989,54 @@ func (m *MockMetricsClient) ClearState() {
 }
 
 // Note: Using existing GetDeployment method from MockKubernetesClient which creates default deployments
+
+// SLMClientAdapter adapts MockLLMClient to SLMClient interface
+type SLMClientAdapter struct {
+	mockClient *mocks.MockLLMClient
+}
+
+func NewSLMClientAdapter(mockClient *mocks.MockLLMClient) *SLMClientAdapter {
+	return &SLMClientAdapter{mockClient: mockClient}
+}
+
+func (a *SLMClientAdapter) AnalyzeAlert(ctx context.Context, alert interface{}) (*types.ActionRecommendation, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	// If the mock has a configured response, return it directly
+	if a.mockClient != nil {
+		// The MockLLMClient has a SetAnalysisResult method that stores ActionRecommendation
+		// We need to call the mock's analysis and convert if necessary
+		response, err := a.mockClient.AnalyzeAlert(ctx, alert)
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert AnalyzeAlertResponse to ActionRecommendation
+		if response != nil {
+			result := &types.ActionRecommendation{
+				Action:     response.Action,
+				Confidence: response.Confidence,
+				Reasoning:  response.Reasoning,
+			}
+			// Copy parameters if they exist
+			if response.Parameters != nil {
+				result.Parameters = response.Parameters
+			}
+			return result, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no response configured")
+}
+
+func (a *SLMClientAdapter) IsHealthy() bool {
+	if a.mockClient != nil {
+		return a.mockClient.IsHealthy()
+	}
+	return false
+}

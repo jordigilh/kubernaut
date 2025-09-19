@@ -109,23 +109,30 @@ type ExecutionRepository interface {
 // Helper methods implementation
 
 // analyzeObjective analyzes the workflow objective to extract context and requirements
-func (iwb *DefaultIntelligentWorkflowBuilder) analyzeObjective(ctx context.Context, objective *WorkflowObjective) (*ObjectiveAnalysisResult, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) analyzeObjective(ctx context.Context, objective *WorkflowObjective) *ObjectiveAnalysisResult {
 	iwb.log.WithContext(ctx).WithField("objective_type", objective.Type).Debug("Analyzing workflow objective")
 
 	// Extract keywords from description
 	keywords := iwb.extractKeywords(objective.Description)
 
 	// Identify potential action types based on objective
-	actionTypes := iwb.identifyActionTypesFromObjective(objective)
+	actionTypes := iwb.identifyActionTypesFromObjective(objective.Description, map[string]interface{}{
+		"priority": objective.Priority,
+		"type":     objective.Type,
+	})
 
 	// Assess complexity based on targets and constraints
-	complexity := iwb.calculateObjectiveComplexity(objective)
+	complexity := iwb.calculateObjectiveComplexity(objective.Description, map[string]interface{}{
+		"targets":     len(objective.Targets),
+		"constraints": len(objective.Constraints),
+		"priority":    objective.Priority,
+	})
 
 	// Determine risk level
 	riskLevel := iwb.assessRiskLevel(objective, complexity)
 
 	// Generate recommendation
-	recommendation := iwb.generateObjectiveRecommendation(objective, complexity, riskLevel)
+	recommendation := iwb.generateObjectiveRecommendation(objective.Description, complexity, riskLevel)
 
 	return &ObjectiveAnalysisResult{
 		Keywords:       keywords,
@@ -135,7 +142,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) analyzeObjective(ctx context.Conte
 		Complexity:     complexity,
 		RiskLevel:      riskLevel,
 		Recommendation: recommendation,
-	}, nil
+	}
 }
 
 // findSimilarSuccessfulPatterns finds patterns similar to the objective
@@ -192,9 +199,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) generateWorkflowWithAI(ctx context
 		record.Error = err.Error()
 
 		// Record failed AI request for analytics
-		if err := iwb.recordAIAnalytics(ctx, record); err != nil {
-			iwb.log.WithError(err).Warn("Failed to record AI analytics for failed request")
-		}
+		iwb.recordAIAnalytics(ctx, record)
 
 		return nil, fmt.Errorf("failed to generate workflow with AI: %w", err)
 	}
@@ -207,9 +212,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) generateWorkflowWithAI(ctx context
 		record.ValidationPassed = false
 
 		// Record failed AI request for analytics
-		if err := iwb.recordAIAnalytics(ctx, record); err != nil {
-			iwb.log.WithError(err).Warn("Failed to record AI analytics for failed parsing")
-		}
+		iwb.recordAIAnalytics(ctx, record)
 
 		return nil, fmt.Errorf("failed to parse AI workflow response: %w", err)
 	}
@@ -222,19 +225,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) generateWorkflowWithAI(ctx context
 	}
 
 	// Convert AI response to workflow template
-	template, err := iwb.convertAIResponseToTemplate(aiResponse, objective)
-	if err != nil {
-		record.Success = false
-		record.Error = err.Error()
-		record.ValidationPassed = false
-
-		// Record failed AI request for analytics
-		if err := iwb.recordAIAnalytics(ctx, record); err != nil {
-			iwb.log.WithError(err).Warn("Failed to record AI analytics for failed conversion")
-		}
-
-		return nil, fmt.Errorf("failed to convert AI response to template: %w", err)
-	}
+	template := iwb.convertAIResponseToTemplate(aiResponse, objective)
 
 	// Update record with successful results
 	record.ValidationPassed = true
@@ -262,9 +253,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) generateWorkflowWithAI(ctx context
 	record.Context["complexity_score"] = analysis.Complexity
 
 	// Record comprehensive AI analytics for successful request
-	if err := iwb.recordAIAnalytics(ctx, record); err != nil {
-		iwb.log.WithError(err).Warn("Failed to record AI analytics for successful request")
-	}
+	iwb.recordAIAnalytics(ctx, record)
 
 	// Apply prompt optimization analytics
 	if err := iwb.optimizePromptBasedOnAnalytics(ctx, record, qualityScore); err != nil {
@@ -272,9 +261,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) generateWorkflowWithAI(ctx context
 	}
 
 	// Integrate learning analytics for continuous improvement
-	if err := iwb.integrateLearningAnalytics(ctx, record, template); err != nil {
-		iwb.log.WithError(err).Debug("Failed to integrate learning analytics")
-	}
+	iwb.integrateLearningAnalytics(ctx, record, template)
 
 	return template, nil
 }
@@ -292,6 +279,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) buildWorkflowGenerationPrompt(obje
 }
 
 // buildPromptFromVersion builds a prompt using a specific prompt version
+// Milestone 2: Advanced prompt engineering and ML-driven workflow generation - excluded from unused warnings via .golangci.yml
 func (iwb *DefaultIntelligentWorkflowBuilder) buildPromptFromVersion(version *PromptVersion, objective *WorkflowObjective, analysis *ObjectiveAnalysisResult, patterns []*WorkflowPattern) string {
 	promptData := &WorkflowGenerationPrompt{
 		Objective:        objective,
@@ -422,7 +410,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) parseAIWorkflowResponse(response s
 }
 
 // convertAIResponseToTemplate converts AI response to workflow template
-func (iwb *DefaultIntelligentWorkflowBuilder) convertAIResponseToTemplate(aiResponse *AIWorkflowResponse, objective *WorkflowObjective) (*ExecutableTemplate, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) convertAIResponseToTemplate(aiResponse *AIWorkflowResponse, objective *WorkflowObjective) *ExecutableTemplate {
 	template := &ExecutableTemplate{
 		BaseVersionedEntity: types.BaseVersionedEntity{
 			BaseEntity: types.BaseEntity{
@@ -442,10 +430,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) convertAIResponseToTemplate(aiResp
 
 	// Convert AI steps to workflow steps
 	for i, aiStep := range aiResponse.Steps {
-		step, err := iwb.convertAIStepToExecutableWorkflowStep(aiStep, i)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert step %d: %w", i, err)
-		}
+		step := iwb.convertAIStepToExecutableWorkflowStep(aiStep, i)
 		template.Steps = append(template.Steps, step)
 	}
 
@@ -459,10 +444,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) convertAIResponseToTemplate(aiResp
 			Expression: aiCondition.Expression,
 			Timeout:    "30s", // Default timeout since local type doesn't have one
 		}
-		condition, err := iwb.convertAIConditionToExecutableCondition(llmCondition)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert condition %s: %w", aiCondition.Name, err)
-		}
+		condition := iwb.convertAIConditionToExecutableCondition(llmCondition)
 		template.Conditions = append(template.Conditions, condition)
 	}
 
@@ -472,11 +454,12 @@ func (iwb *DefaultIntelligentWorkflowBuilder) convertAIResponseToTemplate(aiResp
 	// Create recovery policy
 	template.Recovery = iwb.createRecoveryPolicyFromRisk(aiResponse.RiskAssessment)
 
-	return template, nil
+	return template
 }
 
 // optimizeWorkflowForConstraints optimizes workflow based on constraints
-func (iwb *DefaultIntelligentWorkflowBuilder) optimizeWorkflowForConstraints(ctx context.Context, template *ExecutableTemplate, constraints map[string]interface{}) (*ExecutableTemplate, error) {
+// Milestone 2: Advanced workflow optimization and constraint satisfaction - excluded from unused warnings via .golangci.yml
+func (iwb *DefaultIntelligentWorkflowBuilder) optimizeWorkflowForConstraints(ctx context.Context, template *ExecutableTemplate, constraints map[string]interface{}) *ExecutableTemplate {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"template_id":      template.ID,
 		"constraint_count": len(constraints),
@@ -510,11 +493,18 @@ func (iwb *DefaultIntelligentWorkflowBuilder) optimizeWorkflowForConstraints(ctx
 	// Optimize step ordering for efficiency
 	iwb.optimizeStepOrdering(optimizedTemplate)
 
-	return optimizedTemplate, nil
+	return optimizedTemplate
 }
 
 // analyzeWorkflowPerformance analyzes workflow performance metrics
 func (iwb *DefaultIntelligentWorkflowBuilder) analyzeWorkflowPerformance(ctx context.Context, template *ExecutableTemplate) (*PerformanceAnalysis, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Execution repository not available - return default analysis
 	executions := []*RuntimeWorkflowExecution{}
 
@@ -582,7 +572,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) identifyBottlenecks(analysis *Perf
 }
 
 // generateOptimizationRecommendations generates optimization recommendations
-func (iwb *DefaultIntelligentWorkflowBuilder) generateOptimizationRecommendations(ctx context.Context, template *ExecutableTemplate, bottlenecks []*Bottleneck) ([]*OptimizationSuggestion, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) generateOptimizationRecommendations(ctx context.Context, template *ExecutableTemplate, bottlenecks []*Bottleneck) []*OptimizationSuggestion {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"template_id":      template.ID,
 		"bottleneck_count": len(bottlenecks),
@@ -628,11 +618,12 @@ func (iwb *DefaultIntelligentWorkflowBuilder) generateOptimizationRecommendation
 		}
 	}
 
-	return recommendations, nil
+	return recommendations
 }
 
 // applyOptimizations applies optimization recommendations to template
-func (iwb *DefaultIntelligentWorkflowBuilder) applyOptimizations(ctx context.Context, template *ExecutableTemplate, recommendations []*OptimizationSuggestion) (*ExecutableTemplate, error) {
+// Milestone 2: Advanced workflow optimization and AI-driven recommendations - excluded from unused warnings via .golangci.yml
+func (iwb *DefaultIntelligentWorkflowBuilder) applyOptimizations(ctx context.Context, template *ExecutableTemplate, recommendations []*OptimizationSuggestion) *ExecutableTemplate {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"template_id":          template.ID,
 		"recommendation_count": len(recommendations),
@@ -655,7 +646,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) applyOptimizations(ctx context.Con
 	optimizedTemplate.Version = iwb.incrementVersion(template.Version)
 	optimizedTemplate.Description += " (optimized)"
 
-	return optimizedTemplate, nil
+	return optimizedTemplate
 }
 
 // Missing helper methods for pattern discovery and learning
@@ -686,6 +677,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) filterExecutionsByCriteria(executi
 }
 
 // groupExecutionsBySimilarity groups executions by similarity
+// Milestone 2: Advanced execution clustering and similarity analysis - excluded from unused warnings via .golangci.yml
 func (iwb *DefaultIntelligentWorkflowBuilder) groupExecutionsBySimilarity(ctx context.Context, executions []*RuntimeWorkflowExecution, minSimilarity float64) map[string][]*RuntimeWorkflowExecution {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"execution_count": len(executions),
@@ -703,6 +695,8 @@ func (iwb *DefaultIntelligentWorkflowBuilder) groupExecutionsBySimilarity(ctx co
 }
 
 // extractPatternFromExecutions extracts a pattern from executions
+//
+//nolint:unused // Milestone 2: Advanced pattern discovery and ML-based pattern extraction
 func (iwb *DefaultIntelligentWorkflowBuilder) extractPatternFromExecutions(ctx context.Context, groupID string, executions []*RuntimeWorkflowExecution) (*WorkflowPattern, error) {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"group_id":        groupID,
@@ -772,7 +766,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) calculateAverageExecutionTime(exec
 }
 
 // adaptPatternStepsToContext adapts pattern steps to context
-func (iwb *DefaultIntelligentWorkflowBuilder) adaptPatternStepsToContext(ctx context.Context, steps []*ExecutableWorkflowStep, context *WorkflowContext) ([]*ExecutableWorkflowStep, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) adaptPatternStepsToContext(ctx context.Context, steps []*ExecutableWorkflowStep, context *WorkflowContext) []*ExecutableWorkflowStep {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"step_count":  len(steps),
 		"environment": context.Environment,
@@ -789,11 +783,11 @@ func (iwb *DefaultIntelligentWorkflowBuilder) adaptPatternStepsToContext(ctx con
 		}
 	}
 
-	return adaptedSteps, nil
+	return adaptedSteps
 }
 
 // customizeStepsForEnvironment customizes steps for environment
-func (iwb *DefaultIntelligentWorkflowBuilder) customizeStepsForEnvironment(ctx context.Context, steps []*ExecutableWorkflowStep, environment string) ([]*ExecutableWorkflowStep, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) customizeStepsForEnvironment(ctx context.Context, steps []*ExecutableWorkflowStep, environment string) []*ExecutableWorkflowStep {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"step_count":  len(steps),
 		"environment": environment,
@@ -809,11 +803,11 @@ func (iwb *DefaultIntelligentWorkflowBuilder) customizeStepsForEnvironment(ctx c
 		step.Variables["environment"] = environment
 	}
 
-	return customizedSteps, nil
+	return customizedSteps
 }
 
 // addContextSpecificConditions adds context-specific conditions
-func (iwb *DefaultIntelligentWorkflowBuilder) addContextSpecificConditions(ctx context.Context, steps []*ExecutableWorkflowStep, context *WorkflowContext) ([]*ExecutableWorkflowStep, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) addContextSpecificConditions(ctx context.Context, steps []*ExecutableWorkflowStep, context *WorkflowContext) []*ExecutableWorkflowStep {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"step_count":  len(steps),
 		"environment": context.Environment,
@@ -837,7 +831,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) addContextSpecificConditions(ctx c
 		}
 	}
 
-	return enhancedSteps, nil
+	return enhancedSteps
 }
 
 // updatePatternsFromLearning updates patterns from learning
@@ -935,7 +929,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) updatePatternsFromLearning(ctx con
 }
 
 // findPatternsForWorkflow finds patterns for workflow
-func (iwb *DefaultIntelligentWorkflowBuilder) findPatternsForWorkflow(ctx context.Context, workflowID string) ([]*WorkflowPattern, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) findPatternsForWorkflow(ctx context.Context, workflowID string) []*WorkflowPattern {
 	iwb.log.WithField("workflow_id", workflowID).Info("Finding patterns for workflow")
 
 	// Execution repository not available
@@ -943,7 +937,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) findPatternsForWorkflow(ctx contex
 
 	if len(executions) == 0 {
 		iwb.log.WithField("workflow_id", workflowID).Info("No executions found for workflow")
-		return make([]*WorkflowPattern, 0), nil
+		return make([]*WorkflowPattern, 0)
 	}
 
 	// Group executions by success/failure and extract patterns
@@ -998,11 +992,11 @@ func (iwb *DefaultIntelligentWorkflowBuilder) findPatternsForWorkflow(ctx contex
 		"executions":     len(executions),
 	}).Info("Found patterns for workflow")
 
-	return patterns, nil
+	return patterns
 }
 
 // applyLearningsToPattern applies learnings to pattern
-func (iwb *DefaultIntelligentWorkflowBuilder) applyLearningsToPattern(ctx context.Context, pattern *WorkflowPattern, learnings []*WorkflowLearning) (bool, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) applyLearningsToPattern(ctx context.Context, pattern *WorkflowPattern, learnings []*WorkflowLearning) bool {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"pattern_id":      pattern.ID,
 		"learnings_count": len(learnings),
@@ -1083,7 +1077,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) applyLearningsToPattern(ctx contex
 		"new_confidence":      pattern.Confidence,
 	}).Info("Applied learnings to pattern")
 
-	return updated, nil
+	return updated
 }
 
 // storeUpdatedPattern stores updated pattern
@@ -1138,7 +1132,9 @@ func (iwb *DefaultIntelligentWorkflowBuilder) storeUpdatedPattern(ctx context.Co
 }
 
 // createNewPatternsFromLearnings creates new patterns from learnings
-func (iwb *DefaultIntelligentWorkflowBuilder) createNewPatternsFromLearnings(ctx context.Context, workflowID string, learnings []*WorkflowLearning) ([]*WorkflowPattern, error) {
+//
+//nolint:unused // Milestone 2: Advanced pattern learning and ML-driven pattern creation
+func (iwb *DefaultIntelligentWorkflowBuilder) createNewPatternsFromLearnings(ctx context.Context, workflowID string, learnings []*WorkflowLearning) []*WorkflowPattern {
 	iwb.log.WithContext(ctx).WithFields(logrus.Fields{
 		"workflow_id":    workflowID,
 		"learning_count": len(learnings),
@@ -1173,7 +1169,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) createNewPatternsFromLearnings(ctx
 		}
 	}
 
-	return patterns, nil
+	return patterns
 }
 
 // Missing optimization helper methods (stubs for now)
@@ -1312,7 +1308,6 @@ func (iwb *DefaultIntelligentWorkflowBuilder) identifyPerformanceBottlenecks(exe
 		return bottlenecks
 	}
 
-	// Note: WorkflowExecution doesn't have StepExecutions field, so we'll create generic bottlenecks
 	// Analyze execution durations to identify slow workflows
 	var totalDuration time.Duration
 	for _, exec := range executions {
@@ -1321,7 +1316,43 @@ func (iwb *DefaultIntelligentWorkflowBuilder) identifyPerformanceBottlenecks(exe
 
 	avgDuration := totalDuration / time.Duration(len(executions))
 
-	// If average duration is > 5 minutes, consider it a bottleneck
+	// Enhanced analysis using template structure
+	if template != nil {
+		// Analyze template complexity for bottleneck identification
+		stepCount := len(template.Steps)
+
+		// Check for sequential processing bottlenecks
+		if stepCount > 10 && avgDuration > 3*time.Minute {
+			bottleneck := &Bottleneck{
+				ID:          "high-step-count",
+				Type:        BottleneckTypeResource,
+				StepID:      template.ID,
+				Description: fmt.Sprintf("Template has %d steps with average duration %v", stepCount, avgDuration),
+				Impact:      0.9, // Very high impact
+				Severity:    "critical",
+				Suggestion:  fmt.Sprintf("Consider breaking down template %s into smaller workflows or enable parallelism", template.Name),
+			}
+			bottlenecks = append(bottlenecks, bottleneck)
+		}
+
+		// Analyze template for timeout optimization opportunities
+		for i, step := range template.Steps {
+			if step.Timeout > 10*time.Minute {
+				bottleneck := &Bottleneck{
+					ID:          fmt.Sprintf("long-timeout-step-%d", i),
+					Type:        BottleneckTypeTimeout,
+					StepID:      step.ID,
+					Description: fmt.Sprintf("Step '%s' has timeout of %v which may indicate performance issues", step.Name, step.Timeout),
+					Impact:      0.7,
+					Severity:    "medium",
+					Suggestion:  fmt.Sprintf("Review timeout configuration for step '%s' in template '%s'", step.Name, template.Name),
+				}
+				bottlenecks = append(bottlenecks, bottleneck)
+			}
+		}
+	}
+
+	// Generic bottleneck analysis if average duration is > 5 minutes
 	if avgDuration > 5*time.Minute {
 		bottleneck := &Bottleneck{
 			ID:          "slow-workflow",
@@ -1341,33 +1372,67 @@ func (iwb *DefaultIntelligentWorkflowBuilder) identifyPerformanceBottlenecks(exe
 func (iwb *DefaultIntelligentWorkflowBuilder) generateOptimizationCandidates(executions []*RuntimeWorkflowExecution, template *ExecutableTemplate, bottlenecks []*Bottleneck) []*OptimizationCandidate {
 	candidates := make([]*OptimizationCandidate, 0)
 
+	// Analyze execution history for intelligent optimization
+	var successfulExecutions, failedExecutions int
+	var totalDuration time.Duration
+
+	for _, exec := range executions {
+		if exec.OperationalStatus == "completed" {
+			successfulExecutions++
+		} else {
+			failedExecutions++
+		}
+		totalDuration += exec.Duration
+	}
+
+	executionCount := len(executions)
+	successRate := float64(successfulExecutions) / float64(executionCount)
+	avgDuration := totalDuration / time.Duration(executionCount)
+
 	// Generate candidates based on bottlenecks
 	for _, bottleneck := range bottlenecks {
 		switch bottleneck.Type {
 		case BottleneckTypeTimeout:
+			// Use execution history to determine optimal timeout reduction
+			timeoutReduction := "20%"
+			confidence := 0.7
+			if successRate > 0.9 && avgDuration < 3*time.Minute {
+				timeoutReduction = "30%" // More aggressive if historically successful
+				confidence = 0.85
+			}
+
 			candidate := &OptimizationCandidate{
 				ID:          fmt.Sprintf("opt-%s", bottleneck.ID),
 				Type:        "reduce_timeout",
 				Target:      bottleneck.StepID,
-				Description: fmt.Sprintf("Optimize timeout for slow step %s", bottleneck.StepID),
+				Description: fmt.Sprintf("Optimize timeout for slow step %s (success rate: %.1f%%)", bottleneck.StepID, successRate*100),
 				Impact:      0.6, // Medium impact
 				Parameters: map[string]interface{}{
-					"timeout_reduction":  "20%",
-					"parallel_execution": true,
+					"timeout_reduction":       timeoutReduction,
+					"parallel_execution":      true,
+					"historical_success_rate": successRate,
 				},
-				Confidence: 0.7,
+				Confidence: confidence,
 			}
 			candidates = append(candidates, candidate)
 		case BottleneckTypeResource:
+			// Adjust resource optimization based on execution patterns
+			impact := 0.8
+			if failedExecutions > successfulExecutions {
+				impact = 0.9 // Higher impact if many failures suggest resource issues
+			}
+
 			candidate := &OptimizationCandidate{
 				ID:          fmt.Sprintf("opt-%s", bottleneck.ID),
 				Type:        "resource_optimization",
 				Target:      bottleneck.StepID,
-				Description: fmt.Sprintf("Optimize resource usage for step %s", bottleneck.StepID),
-				Impact:      0.8, // High impact
+				Description: fmt.Sprintf("Optimize resource usage for step %s (%d failed executions)", bottleneck.StepID, failedExecutions),
+				Impact:      impact,
 				Parameters: map[string]interface{}{
-					"cpu_limit":    "500m",
-					"memory_limit": "1Gi",
+					"cpu_limit":     "500m",
+					"memory_limit":  "1Gi",
+					"failure_count": failedExecutions,
+					"avg_duration":  avgDuration.String(),
 				},
 				Confidence: 0.8,
 			}
@@ -1375,18 +1440,45 @@ func (iwb *DefaultIntelligentWorkflowBuilder) generateOptimizationCandidates(exe
 		}
 	}
 
-	// Add general optimization candidates
-	if len(template.Steps) > 5 {
+	// Add execution-history-based optimization candidates
+	if len(template.Steps) > 5 && successRate > 0.8 {
+		maxParallel := 3
+		confidence := 0.9
+		if executionCount > 10 && successRate > 0.95 {
+			maxParallel = 5 // More aggressive parallelism for proven stable workflows
+			confidence = 0.95
+		}
+
 		candidate := &OptimizationCandidate{
-			ID:          "parallel-execution",
+			ID:          "parallel-execution-history-based",
 			Type:        "enable_parallelism",
 			Target:      "workflow",
-			Description: "Enable parallel execution for independent steps",
+			Description: fmt.Sprintf("Enable parallel execution based on %d successful executions (%.1f%% success rate)", successfulExecutions, successRate*100),
 			Impact:      0.8, // High impact
 			Parameters: map[string]interface{}{
-				"max_parallel": 3,
+				"max_parallel":            maxParallel,
+				"execution_history_count": executionCount,
+				"success_rate":            successRate,
 			},
-			Confidence: 0.9,
+			Confidence: confidence,
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	// Generate retry optimization if failure rate is high
+	if executionCount > 5 && successRate < 0.7 {
+		candidate := &OptimizationCandidate{
+			ID:          "retry-optimization",
+			Type:        "enhance_retry_strategy",
+			Target:      "workflow",
+			Description: fmt.Sprintf("Enhance retry strategy due to low success rate (%.1f%%)", successRate*100),
+			Impact:      0.7,
+			Parameters: map[string]interface{}{
+				"max_retries":          3,
+				"backoff_strategy":     "exponential",
+				"current_success_rate": successRate,
+			},
+			Confidence: 0.75,
 		}
 		candidates = append(candidates, candidate)
 	}
@@ -1940,7 +2032,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) calculatePatternConfidenceFromExec
 // Business Requirement: BR-AA-001 - Advanced Analytics & AI Response Tracking System
 
 // recordAIAnalytics records comprehensive AI response analytics
-func (iwb *DefaultIntelligentWorkflowBuilder) recordAIAnalytics(ctx context.Context, record *aiResponseRecord) error {
+func (iwb *DefaultIntelligentWorkflowBuilder) recordAIAnalytics(ctx context.Context, record *aiResponseRecord) {
 	iwb.log.WithFields(logrus.Fields{
 		"request_id":        record.ID,
 		"success":           record.Success,
@@ -1966,16 +2058,20 @@ func (iwb *DefaultIntelligentWorkflowBuilder) recordAIAnalytics(ctx context.Cont
 	}
 
 	// Update AI performance metrics
-	if err := iwb.updateAIPerformanceMetrics(record); err != nil {
-		iwb.log.WithError(err).Debug("Failed to update AI performance metrics")
-	}
+	iwb.updateAIPerformanceMetrics(record)
 
 	iwb.log.WithField("record_id", record.ID).Info("AI analytics recorded successfully")
-	return nil
 }
 
 // calculateFallbackQualityScore evaluates AI response quality using fallback criteria
 func (iwb *DefaultIntelligentWorkflowBuilder) calculateFallbackQualityScore(ctx context.Context, response string, context map[string]interface{}) (float64, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return 0.0, ctx.Err()
+	default:
+	}
+
 	iwb.log.Debug("Evaluating AI response quality")
 
 	// Analytics engine is available for workflow effectiveness analysis
@@ -2024,6 +2120,13 @@ func (iwb *DefaultIntelligentWorkflowBuilder) calculateBasicQualityScore(respons
 
 // optimizePromptBasedOnAnalytics applies prompt optimization based on analytics
 func (iwb *DefaultIntelligentWorkflowBuilder) optimizePromptBasedOnAnalytics(ctx context.Context, record *aiResponseRecord, qualityScore float64) error {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	iwb.log.WithFields(logrus.Fields{
 		"record_id":     record.ID,
 		"quality_score": qualityScore,
@@ -2060,7 +2163,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) optimizePromptBasedOnAnalytics(ctx
 }
 
 // integrateLearningAnalytics integrates learning data for continuous improvement
-func (iwb *DefaultIntelligentWorkflowBuilder) integrateLearningAnalytics(ctx context.Context, record *aiResponseRecord, template *ExecutableTemplate) error {
+func (iwb *DefaultIntelligentWorkflowBuilder) integrateLearningAnalytics(ctx context.Context, record *aiResponseRecord, template *ExecutableTemplate) {
 	iwb.log.WithFields(logrus.Fields{
 		"record_id":       record.ID,
 		"template_id":     template.ID,
@@ -2095,7 +2198,6 @@ func (iwb *DefaultIntelligentWorkflowBuilder) integrateLearningAnalytics(ctx con
 	}
 
 	iwb.log.WithField("learning_id", learning.ID).Info("Learning analytics integrated successfully")
-	return nil
 }
 
 // storeAIAnalyticsPattern stores AI analytics as searchable patterns
@@ -2157,7 +2259,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) storeAIAnalyticsPattern(ctx contex
 }
 
 // updateAIPerformanceMetrics updates running AI performance metrics
-func (iwb *DefaultIntelligentWorkflowBuilder) updateAIPerformanceMetrics(record *aiResponseRecord) error {
+func (iwb *DefaultIntelligentWorkflowBuilder) updateAIPerformanceMetrics(record *aiResponseRecord) {
 	// This would typically update persistent metrics storage
 	// For now, we'll just log the performance indicators
 
@@ -2175,8 +2277,6 @@ func (iwb *DefaultIntelligentWorkflowBuilder) updateAIPerformanceMetrics(record 
 		"model":                  record.Model,
 		"performance_indicators": performanceIndicators,
 	}).Info("AI performance metrics updated")
-
-	return nil
 }
 
 // PromptPerformanceMetrics tracks prompt performance for optimization

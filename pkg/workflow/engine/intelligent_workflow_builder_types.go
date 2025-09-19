@@ -25,43 +25,7 @@ type ResourceReference struct {
 
 // Implementation of helper methods
 
-// identifyActionTypesFromObjective identifies potential action types from objective
-func (iwb *DefaultIntelligentWorkflowBuilder) identifyActionTypesFromObjective(objective *WorkflowObjective) []string {
-	actionTypes := make([]string, 0)
-	description := strings.ToLower(objective.Description)
-
-	// Map keywords to action types
-	actionMap := map[string][]string{
-		"scale":    {"scale_deployment", "increase_resources"},
-		"restart":  {"restart_pod", "rollback_deployment"},
-		"memory":   {"increase_resources", "collect_diagnostics"},
-		"cpu":      {"increase_resources", "scale_deployment"},
-		"disk":     {"cleanup_resources", "expand_pvc"},
-		"network":  {"update_network_policy", "restart_network"},
-		"backup":   {"create_backup", "migrate_data"},
-		"security": {"rotate_secrets", "update_rbac"},
-		"monitor":  {"collect_diagnostics", "update_monitoring"},
-		"cleanup":  {"cleanup_resources", "garbage_collect"},
-	}
-
-	for keyword, actions := range actionMap {
-		if strings.Contains(description, keyword) {
-			actionTypes = append(actionTypes, actions...)
-		}
-	}
-
-	// Remove duplicates
-	seen := make(map[string]bool)
-	unique := make([]string, 0)
-	for _, action := range actionTypes {
-		if !seen[action] {
-			seen[action] = true
-			unique = append(unique, action)
-		}
-	}
-
-	return unique
-}
+// Note: identifyActionTypesFromObjective moved to intelligent_workflow_builder_impl.go
 
 // assessRiskLevel assesses the risk level of an objective
 func (iwb *DefaultIntelligentWorkflowBuilder) assessRiskLevel(objective *WorkflowObjective, complexity float64) string {
@@ -91,25 +55,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) assessRiskLevel(objective *Workflo
 	return risk
 }
 
-// generateObjectiveRecommendation generates a recommendation for the objective
-func (iwb *DefaultIntelligentWorkflowBuilder) generateObjectiveRecommendation(objective *WorkflowObjective, complexity float64, riskLevel string) string {
-	recommendations := []string{
-		"Consider implementing comprehensive monitoring and alerting",
-		"Add appropriate rollback mechanisms for critical changes",
-		"Ensure proper testing in development environment first",
-		"Implement gradual rollout strategies for production changes",
-	}
-
-	if complexity > 0.5 {
-		recommendations = append(recommendations, "Break down complex objectives into smaller, manageable steps")
-	}
-
-	if riskLevel == "high" {
-		recommendations = append(recommendations, "Implement additional safety measures and approval processes")
-	}
-
-	return strings.Join(recommendations, "; ")
-}
+// Note: generateObjectiveRecommendation moved to intelligent_workflow_builder_impl.go
 
 // convertActionPatternToWorkflowPattern converts action pattern to workflow pattern
 func (iwb *DefaultIntelligentWorkflowBuilder) convertActionPatternToWorkflowPattern(actionPattern *vector.ActionPattern) *WorkflowPattern {
@@ -273,7 +219,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) validateAIResponse(response *AIWor
 }
 
 // convertAIStepToExecutableWorkflowStep converts AI step to workflow step
-func (iwb *DefaultIntelligentWorkflowBuilder) convertAIStepToExecutableWorkflowStep(aiStep *AIGeneratedStep, index int) (*ExecutableWorkflowStep, error) {
+func (iwb *DefaultIntelligentWorkflowBuilder) convertAIStepToExecutableWorkflowStep(aiStep *AIGeneratedStep, index int) *ExecutableWorkflowStep {
 	step := &ExecutableWorkflowStep{
 		BaseEntity: types.BaseEntity{
 			ID:   uuid.New().String(),
@@ -325,7 +271,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) convertAIStepToExecutableWorkflowS
 		Conditions:  []string{"network_error", "timeout", "temporary_failure"},
 	}
 
-	return step, nil
+	return step
 }
 
 // createTimeoutsFromEstimation creates timeouts from AI estimation
@@ -463,22 +409,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) extractKeywords(text string) []str
 	return keywords
 }
 
-// calculateObjectiveComplexity calculates the complexity of an objective
-func (iwb *DefaultIntelligentWorkflowBuilder) calculateObjectiveComplexity(objective *WorkflowObjective) float64 {
-	complexity := 0.0
-
-	// Base complexity on number of targets
-	complexity += float64(len(objective.Targets)) * 0.2
-
-	// Add complexity for constraints
-	complexity += float64(len(objective.Constraints)) * 0.1
-
-	// Add complexity based on priority (higher priority = more complex requirements)
-	complexity += float64(objective.Priority) * 0.1
-
-	// Normalize to 0-1 range
-	return math.Min(complexity, 1.0)
-}
+// Note: calculateObjectiveComplexity moved to intelligent_workflow_builder_impl.go
 
 // deepCopyTemplate creates a deep copy of a workflow template
 func (iwb *DefaultIntelligentWorkflowBuilder) deepCopyTemplate(template *ExecutableTemplate) *ExecutableTemplate {
@@ -491,6 +422,7 @@ func (iwb *DefaultIntelligentWorkflowBuilder) deepCopyTemplate(template *Executa
 				Name:        template.Name,
 				Description: template.Description,
 				CreatedAt:   template.CreatedAt,
+				Metadata:    make(map[string]interface{}),
 			},
 			Version:   template.Version,
 			CreatedBy: template.CreatedBy,
@@ -503,14 +435,46 @@ func (iwb *DefaultIntelligentWorkflowBuilder) deepCopyTemplate(template *Executa
 		Tags:       make([]string, len(template.Tags)),
 	}
 
-	// Copy steps
-	copy(copied.Steps, template.Steps)
-	copy(copied.Conditions, template.Conditions)
+	// Deep copy steps to ensure metadata maps are initialized
+	for i, step := range template.Steps {
+		if step != nil {
+			stepCopy := *step // Shallow copy the step
+			// Initialize metadata map if nil
+			if stepCopy.Metadata == nil {
+				stepCopy.Metadata = make(map[string]interface{})
+			} else {
+				// Deep copy metadata
+				newMetadata := make(map[string]interface{})
+				for k, v := range stepCopy.Metadata {
+					newMetadata[k] = v
+				}
+				stepCopy.Metadata = newMetadata
+			}
+			copied.Steps[i] = &stepCopy
+		}
+	}
+
+	// Deep copy conditions
+	for i, condition := range template.Conditions {
+		if condition != nil {
+			conditionCopy := *condition // Shallow copy the condition
+			copied.Conditions[i] = &conditionCopy
+		}
+	}
+
+	// Copy tags
 	copy(copied.Tags, template.Tags)
 
 	// Copy variables
 	for k, v := range template.Variables {
 		copied.Variables[k] = v
+	}
+
+	// Copy metadata from original template
+	if template.Metadata != nil {
+		for k, v := range template.Metadata {
+			copied.Metadata[k] = v
+		}
 	}
 
 	return copied
@@ -655,26 +619,97 @@ func (iwb *DefaultIntelligentWorkflowBuilder) shouldStepFail(step *ExecutableWor
 	return rand.Float64() < failureRate
 }
 
-// simulateActionResult simulates the result of an action
+// simulateActionResult simulates the result of an action with environment-aware behavior
 func (iwb *DefaultIntelligentWorkflowBuilder) simulateActionResult(action *StepAction, env *ExtendedSimulatedEnvironment) map[string]interface{} {
 	result := map[string]interface{}{
 		"action_type": action.Type,
 		"simulated":   true,
 	}
 
+	// Use environment state to create realistic simulation results
+	if env != nil {
+		// BR-SIM-01: Access environment data through existing Config/Resources maps
+		if envType, ok := env.Config["type"].(string); ok {
+			result["environment"] = envType
+		} else {
+			result["environment"] = env.Name // fallback to name
+		}
+
+		if clusterLoad, ok := env.Resources["cluster_load"].(float64); ok {
+			result["cluster_load"] = clusterLoad
+		} else {
+			result["cluster_load"] = 0.5 // default moderate load
+		}
+
+		if resourceUtil, ok := env.Resources["resource_utilization"].(float64); ok {
+			result["resource_utilization"] = resourceUtil
+		} else {
+			result["resource_utilization"] = 0.6 // default moderate utilization
+		}
+	}
+
 	switch action.Type {
 	case "scale_deployment":
-		result["replicas_before"] = 3
-		result["replicas_after"] = 5
-		result["scaling_time"] = "45s"
+		// Adjust scaling behavior based on environment load
+		replicasBefore := 3
+		replicasAfter := 5
+		scalingTime := "45s"
+
+		if env != nil {
+			clusterLoad := 0.5 // default
+			if load, ok := env.Resources["cluster_load"].(float64); ok {
+				clusterLoad = load
+			}
+			if clusterLoad > 0.8 {
+				// High load environments take longer to scale
+				scalingTime = "90s"
+				result["warning"] = "scaling_delayed_due_to_high_load"
+			} else if clusterLoad < 0.3 {
+				// Low load environments scale faster
+				scalingTime = "20s"
+			}
+		}
+
+		result["replicas_before"] = replicasBefore
+		result["replicas_after"] = replicasAfter
+		result["scaling_time"] = scalingTime
 	case "restart_pod":
+		restartTime := "30s"
+		if env != nil {
+			resourceUtil := 0.6 // default
+			if util, ok := env.Resources["resource_utilization"].(float64); ok {
+				resourceUtil = util
+			}
+			if resourceUtil > 0.9 {
+				// High resource utilization slows down restarts
+				restartTime = "60s"
+				result["warning"] = "restart_delayed_due_to_resource_pressure"
+			}
+		}
 		result["pod_restarted"] = true
-		result["restart_time"] = "30s"
+		result["restart_time"] = restartTime
 	case "increase_resources":
+		// Adjust resource increases based on environment capacity
+		cpuAfter := "200m"
+		memoryAfter := "512Mi"
+
+		if env != nil {
+			resourceUtil := 0.6 // default
+			if util, ok := env.Resources["resource_utilization"].(float64); ok {
+				resourceUtil = util
+			}
+			if resourceUtil > 0.8 {
+				// Conservative increases in high-utilization environments
+				cpuAfter = "150m"
+				memoryAfter = "384Mi"
+				result["warning"] = "conservative_increase_due_to_resource_constraints"
+			}
+		}
+
 		result["cpu_before"] = "100m"
-		result["cpu_after"] = "200m"
+		result["cpu_after"] = cpuAfter
 		result["memory_before"] = "256Mi"
-		result["memory_after"] = "512Mi"
+		result["memory_after"] = memoryAfter
 	}
 
 	return result

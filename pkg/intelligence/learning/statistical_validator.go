@@ -546,7 +546,8 @@ func (sv *StatisticalValidator) calculateMinSampleSize(power, alpha float64) int
 	zAlpha := sv.getZScore(1.0 - alpha/2.0)
 	zBeta := sv.getZScore(power)
 
-	n := math.Pow(zAlpha+zBeta, 2) / math.Pow(effectSize, 2)
+	// Guideline #14: Optimize math operations - expand math.Pow(x, 2) to x*x for performance
+	n := (zAlpha + zBeta) * (zAlpha + zBeta) / (effectSize * effectSize)
 
 	// Minimum practical size
 	return int(math.Max(30, math.Ceil(n)))
@@ -626,7 +627,9 @@ func (sv *StatisticalValidator) calculateSkewness(values []float64, mean, varian
 	stdDev := math.Sqrt(variance)
 
 	for _, v := range values {
-		sum += math.Pow((v-mean)/stdDev, 3)
+		// Guideline #14: Optimize math operations - manual cube calculation for clarity
+		normalized := (v - mean) / stdDev
+		sum += normalized * normalized * normalized
 	}
 
 	return sum / float64(len(values))

@@ -1121,11 +1121,11 @@ func (fe *MLAnalyzerFeatureExtractor) Extract(data *sharedtypes.WorkflowExecutio
 	}
 
 	features := &shared.WorkflowFeatures{
-		AlertCount:      int(fe.extractMetricValue(data.Metrics, "alert_count", 0.0)),
-		SeverityScore:   fe.extractMetricValue(data.Metrics, "severity_score", 0.0),
-		ResourceCount:   int(fe.extractMetricValue(data.Metrics, "resource_count", 0.0)),
-		StepCount:       int(fe.extractMetricValue(data.Metrics, "step_count", 0.0)),
-		DependencyDepth: int(fe.extractMetricValue(data.Metrics, "dependency_depth", 0.0)),
+		AlertCount:      int(fe.extractMetricValue(data.Metrics, "alert_count")),
+		SeverityScore:   fe.extractMetricValue(data.Metrics, "severity_score"),
+		ResourceCount:   int(fe.extractMetricValue(data.Metrics, "resource_count")),
+		StepCount:       int(fe.extractMetricValue(data.Metrics, "step_count")),
+		DependencyDepth: int(fe.extractMetricValue(data.Metrics, "dependency_depth")),
 	}
 
 	// Extract temporal features from timestamp
@@ -1136,8 +1136,8 @@ func (fe *MLAnalyzerFeatureExtractor) Extract(data *sharedtypes.WorkflowExecutio
 
 	// Extract resource pressure features from metrics
 	if data.Metrics != nil {
-		features.ClusterLoad = fe.extractMetricValue(data.Metrics, "cluster_load", 0.0)
-		features.ResourcePressure = fe.extractMetricValue(data.Metrics, "resource_pressure", 0.0)
+		features.ClusterLoad = fe.extractMetricValue(data.Metrics, "cluster_load")
+		features.ResourcePressure = fe.extractMetricValue(data.Metrics, "resource_pressure")
 
 		// Initialize custom metrics map
 		features.CustomMetrics = make(map[string]float64)
@@ -1241,11 +1241,11 @@ func (fe *MLAnalyzerFeatureExtractor) ConvertToVector(features *shared.WorkflowF
 }
 
 // Helper methods for feature extraction
-func (fe *MLAnalyzerFeatureExtractor) extractMetricValue(metrics map[string]float64, key string, defaultValue float64) float64 {
+func (fe *MLAnalyzerFeatureExtractor) extractMetricValue(metrics map[string]float64, key string) float64 {
 	if value, exists := metrics[key]; exists {
 		return value
 	}
-	return defaultValue
+	return 0.0
 }
 
 func (op *MLAnalyzerOutcomePredictor) Predict(features *shared.WorkflowFeatures, patterns []*shared.DiscoveredPattern, models map[string]*MLModel) (*shared.WorkflowPrediction, error) {

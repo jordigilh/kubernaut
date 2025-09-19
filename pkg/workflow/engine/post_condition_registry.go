@@ -63,14 +63,27 @@ func (vr *ValidatorRegistry) ValidatePostConditions(
 	conditions []*PostCondition,
 	result *StepResult,
 	stepCtx *StepContext,
-) (*PostConditionValidationResult, error) {
+) *PostConditionValidationResult {
+	// Check for context cancellation early
+	select {
+	case <-ctx.Done():
+		vr.log.WithContext(ctx).Warn("Context cancelled during post-condition validation")
+		return &PostConditionValidationResult{
+			Success:       false,
+			Results:       []*PostConditionResult{},
+			TotalDuration: 0,
+			Message:       "Post-condition validation cancelled due to context cancellation",
+		}
+	default:
+	}
+
 	if len(conditions) == 0 {
 		return &PostConditionValidationResult{
 			Success:       true,
 			Results:       []*PostConditionResult{},
 			TotalDuration: 0,
 			Message:       "No post-conditions to validate",
-		}, nil
+		}
 	}
 
 	startTime := time.Now()
@@ -78,7 +91,7 @@ func (vr *ValidatorRegistry) ValidatePostConditions(
 	// Filter enabled conditions and sort by priority
 	enabledConditions := vr.filterAndSortConditions(conditions)
 
-	vr.log.WithFields(logrus.Fields{
+	vr.log.WithContext(ctx).WithFields(logrus.Fields{
 		"total_conditions":   len(conditions),
 		"enabled_conditions": len(enabledConditions),
 	}).Debug("Starting post-condition validation")
@@ -90,7 +103,7 @@ func (vr *ValidatorRegistry) ValidatePostConditions(
 	criticalFailed := 0
 	totalFailed := 0
 
-	// Use worker pool to limit concurrent validations
+	// Use worker pool to limit concurrent validations with context awareness
 	maxWorkers := min(len(enabledConditions), 10)
 	semaphore := make(chan struct{}, maxWorkers)
 
@@ -98,6 +111,20 @@ func (vr *ValidatorRegistry) ValidatePostConditions(
 		wg.Add(1)
 		go func(index int, cond *PostCondition) {
 			defer wg.Done()
+
+			// Check context cancellation in worker
+			select {
+			case <-ctx.Done():
+				vr.log.WithContext(ctx).WithField("condition", cond.Name).Warn("Worker cancelled due to context")
+				results[index] = &PostConditionResult{
+					Satisfied: false,
+					Critical:  cond.Critical,
+					Message:   "Validation cancelled due to context cancellation",
+					Duration:  0,
+				}
+				return
+			default:
+			}
 
 			semaphore <- struct{}{}        // Acquire
 			defer func() { <-semaphore }() // Release
@@ -138,7 +165,7 @@ func (vr *ValidatorRegistry) ValidatePostConditions(
 		Message:        message,
 	}
 
-	vr.log.WithFields(logrus.Fields{
+	vr.log.WithContext(ctx).WithFields(logrus.Fields{
 		"success":         success,
 		"total_passed":    totalPassed,
 		"total_failed":    totalFailed,
@@ -146,7 +173,7 @@ func (vr *ValidatorRegistry) ValidatePostConditions(
 		"total_duration":  totalDuration,
 	}).Info("Post-condition validation completed")
 
-	return validationResult, nil
+	return validationResult
 }
 
 // validateSingleCondition validates a single post-condition with timing and error handling

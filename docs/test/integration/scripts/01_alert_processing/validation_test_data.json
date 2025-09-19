@@ -1,0 +1,116 @@
+{
+  "valid_alerts": [
+    {
+      "name": "complete_valid_alert",
+      "payload": {
+        "alerts": [{
+          "status": "firing",
+          "labels": {
+            "alertname": "HighMemoryUsage",
+            "severity": "critical",
+            "namespace": "test-workloads"
+          },
+          "annotations": {
+            "description": "Pod memory usage is above 90%",
+            "summary": "High memory usage detected"
+          },
+          "startsAt": "2025-01-01T10:00:00Z"
+        }]
+      }
+    },
+    {
+      "name": "minimal_valid_alert",
+      "payload": {
+        "alerts": [{
+          "status": "firing",
+          "labels": {
+            "alertname": "SimpleAlert"
+          }
+        }]
+      }
+    }
+  ],
+  "invalid_alerts": [
+    {
+      "name": "missing_alerts_array",
+      "payload": {
+        "version": "4"
+      },
+      "expected_error": "missing_alerts_array"
+    },
+    {
+      "name": "empty_alerts_array",
+      "payload": {
+        "alerts": []
+      },
+      "expected_error": "empty_alerts_array"
+    },
+    {
+      "name": "missing_status",
+      "payload": {
+        "alerts": [{
+          "labels": {
+            "alertname": "TestAlert"
+          }
+        }]
+      },
+      "expected_error": "missing_status"
+    },
+    {
+      "name": "invalid_status",
+      "payload": {
+        "alerts": [{
+          "status": "invalid_status_value",
+          "labels": {
+            "alertname": "TestAlert"
+          }
+        }]
+      },
+      "expected_error": "invalid_status"
+    },
+    {
+      "name": "missing_labels",
+      "payload": {
+        "alerts": [{
+          "status": "firing"
+        }]
+      },
+      "expected_error": "missing_labels"
+    },
+    {
+      "name": "missing_alertname",
+      "payload": {
+        "alerts": [{
+          "status": "firing",
+          "labels": {
+            "severity": "warning"
+          }
+        }]
+      },
+      "expected_error": "missing_alertname"
+    },
+    {
+      "name": "invalid_json",
+      "payload": "{ invalid json structure",
+      "expected_error": "json_parse_error"
+    },
+    {
+      "name": "non_object_payload",
+      "payload": ["array", "instead", "of", "object"],
+      "expected_error": "invalid_payload_type"
+    },
+    {
+      "name": "oversized_payload",
+      "payload": {
+        "alerts": [{
+          "status": "firing",
+          "labels": {
+            "alertname": "OversizedAlert",
+            "large_field": "X".repeat(1000000)
+          }
+        }]
+      },
+      "expected_error": "payload_too_large"
+    }
+  ]
+}

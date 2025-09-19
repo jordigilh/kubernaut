@@ -3,7 +3,7 @@
 set -euo pipefail
 
 CLUSTER_NAME="prometheus-alerts-slm-test"
-KIND_CONFIG="test/kind/kind-config.yaml"
+KIND_CONFIG="${KIND_CONFIG:-test/kind/kind-config.yaml}"
 REGISTRY_NAME="kind-registry"
 REGISTRY_PORT="5001"
 

@@ -18,7 +18,7 @@ from services.auth_service import (
     AuthService, User, Role, Permission,
     get_auth_service, security
 )
-from config import settings
+from config import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -27,7 +27,7 @@ router = APIRouter()
 
 def get_auth_service_dependency() -> AuthService:
     """Dependency injection for auth service"""
-    return get_auth_service(settings)
+    return get_auth_service(get_settings())
 
 
 async def get_current_user(

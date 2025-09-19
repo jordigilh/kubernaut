@@ -9,6 +9,8 @@ from fastapi import APIRouter, HTTPException, Depends, Request
 from models.api_models import ChatRequest, ChatResponse
 from services.holmesgpt_service import HolmesGPTService
 from services.context_api_service import ContextAPIService
+from services.auth_service import User
+from api.routes.auth import get_current_active_user
 
 logger = structlog.get_logger(__name__)
 
@@ -34,6 +36,7 @@ def get_context_service(request: Request) -> ContextAPIService:
 @router.post("/chat", response_model=ChatResponse)
 async def interactive_chat(
     request: ChatRequest,
+    current_user: User = Depends(get_current_active_user),  # BR-HAPI-007: Requires authentication
     holmes_service: HolmesGPTService = Depends(get_holmesgpt_service),
     context_service: ContextAPIService = Depends(get_context_service)
 ) -> ChatResponse:

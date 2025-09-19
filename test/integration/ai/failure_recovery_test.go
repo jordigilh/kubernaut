@@ -16,7 +16,7 @@ import (
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
-var _ = Describe("Failure Recovery Integration Testing", func() {
+var _ = Describe("Failure Recovery Integration Testing", Ordered, func() {
 	var (
 		hooks           *testshared.TestLifecycleHooks
 		ctx             context.Context
@@ -29,8 +29,15 @@ var _ = Describe("Failure Recovery Integration Testing", func() {
 		hooks = testshared.SetupAIIntegrationTest("Failure Recovery",
 			testshared.WithMockLLM(), // Use mock for consistent testing
 		)
+		hooks.Setup()
 
 		scenarioManager = NewIntegrationScenarioManager(hooks.GetLogger())
+	})
+
+	AfterAll(func() {
+		if hooks != nil {
+			hooks.Cleanup()
+		}
 	})
 
 	BeforeEach(func() {

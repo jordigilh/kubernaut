@@ -177,10 +177,7 @@ func (e *executor) executeRestartPod(ctx context.Context, action *types.ActionRe
 }
 
 func (e *executor) executeIncreaseResources(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
-	resources, err := e.getResourcesFromParameters(action.Parameters)
-	if err != nil {
-		return fmt.Errorf("failed to get resources from parameters: %w", err)
-	}
+	resources := e.getResourcesFromParameters(action.Parameters)
 
 	podName := e.getPodName(alert)
 	if podName == "" {
@@ -346,7 +343,7 @@ func (e *executor) getReplicasFromParameters(params map[string]interface{}) (int
 	}
 }
 
-func (e *executor) getResourcesFromParameters(params map[string]interface{}) (k8s.ResourceRequirements, error) {
+func (e *executor) getResourcesFromParameters(params map[string]interface{}) k8s.ResourceRequirements {
 	resources := k8s.ResourceRequirements{}
 
 	if cpuLimit, ok := params["cpu_limit"].(string); ok {
@@ -372,7 +369,7 @@ func (e *executor) getResourcesFromParameters(params map[string]interface{}) (k8
 		resources.MemoryRequest = "512Mi"
 	}
 
-	return resources, nil
+	return resources
 }
 
 func (e *executor) getDeploymentName(alert types.Alert) string {

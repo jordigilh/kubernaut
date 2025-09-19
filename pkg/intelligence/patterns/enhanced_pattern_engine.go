@@ -202,8 +202,9 @@ func (epde *EnhancedPatternDiscoveryEngine) EnhancedDiscoverPatterns(
 		}).Info("Statistical validation completed")
 	}
 
+	// Guideline #14: Use idiomatic patterns - call method directly without embedded field selector
 	// Perform the core pattern discovery
-	result, err := epde.PatternDiscoveryEngine.DiscoverPatterns(ctx, request)
+	result, err := epde.DiscoverPatterns(ctx, request)
 	if err != nil {
 		epde.recordAnalysisMetrics(time.Since(startTime), 0, 0.0, false)
 		return nil, fmt.Errorf("pattern discovery failed: %w", err)

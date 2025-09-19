@@ -44,6 +44,86 @@ progress() {
     echo -e "${CYAN}[STEP ${CURRENT_STEP}/${TOTAL_STEPS}]${NC} $1"
 }
 
+# Robust confirmation function with retry logic
+confirm_cleanup() {
+    local max_attempts=5
+    local attempt=1
+
+    while [[ $attempt -le $max_attempts ]]; do
+        echo -e "${YELLOW}WARNING: This will remove the following components:${NC}"
+        echo "  • Kubernaut application and configurations"
+        echo "  • Vector database and stored patterns"
+        echo "  • LitmusChaos framework and experiments"
+        echo "  • Test applications and data"
+        echo "  • Monitoring stack components"
+        if [[ "$PRESERVE_CLUSTER" != "true" ]]; then
+            echo "  • OpenShift cluster (${CLUSTER_NAME})"
+            echo "  • libvirt VMs and storage"
+        fi
+        echo ""
+
+        # Temporarily disable exit on error for interactive input
+        set +e
+
+        echo -n "Are you sure you want to continue? (y/N): "
+        local user_input
+
+        # Read input with timeout to handle hanging terminals
+        if read -t 30 -r user_input; then
+            # Re-enable exit on error
+            set -e
+
+            # Normalize input to lowercase and trim whitespace
+            user_input=$(echo "$user_input" | tr '[:upper:]' '[:lower:]' | xargs)
+
+            case "$user_input" in
+                "y" | "yes")
+                    log_info "Cleanup confirmed by root user"
+                    return 0
+                    ;;
+                "n" | "no" | "")
+                    log_info "Cleanup cancelled by root user"
+                    exit 0
+                    ;;
+                *)
+                    log_warning "Invalid input: '$user_input'. Please enter 'y' for yes or 'n' for no."
+                    if [[ $attempt -lt $max_attempts ]]; then
+                        log_info "Attempt $attempt of $max_attempts. Please try again..."
+                        echo ""
+                        ((attempt++))
+                        sleep 1
+                    else
+                        log_error "Maximum attempts reached. Defaulting to 'no' for safety."
+                        log_info "Cleanup cancelled after $max_attempts invalid attempts"
+                        exit 0
+                    fi
+                    ;;
+            esac
+        else
+            # Handle timeout or read failure
+            local read_exit_code=$?
+            set -e  # Re-enable exit on error
+
+            if [[ $read_exit_code -eq 142 ]]; then
+                log_warning "Input timeout (30 seconds). Please respond promptly."
+            else
+                log_warning "Input error (interrupted or invalid terminal state). Please try again."
+            fi
+
+            if [[ $attempt -lt $max_attempts ]]; then
+                log_info "Attempt $attempt of $max_attempts. Please try again..."
+                echo ""
+                ((attempt++))
+                sleep 1
+            else
+                log_error "Maximum attempts reached. Defaulting to 'no' for safety."
+                log_info "Cleanup cancelled after $max_attempts failed attempts"
+                exit 0
+            fi
+        fi
+    done
+}
+
 # Banner
 echo -e "${PURPLE}"
 cat << "EOF"
@@ -70,25 +150,9 @@ log_info "Preserve Cluster: ${PRESERVE_CLUSTER}"
 log_info "Preserve Data: ${PRESERVE_DATA}"
 echo ""
 
-# Confirmation prompt
+# Confirmation prompt with retry logic
 if [[ "$FORCE_CLEANUP" != "true" ]]; then
-    echo -e "${YELLOW}WARNING: This will remove the following components:${NC}"
-    echo "  • Kubernaut application and configurations"
-    echo "  • Vector database and stored patterns"
-    echo "  • LitmusChaos framework and experiments"
-    echo "  • Test applications and data"
-    echo "  • Monitoring stack components"
-    if [[ "$PRESERVE_CLUSTER" != "true" ]]; then
-        echo "  • OpenShift cluster (${CLUSTER_NAME})"
-        echo "  • libvirt VMs and storage"
-    fi
-    echo ""
-    read -p "Are you sure you want to continue? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Cleanup cancelled by root user"
-        exit 0
-    fi
+    confirm_cleanup
 fi
 
 # Set kubeconfig for cleanup operations

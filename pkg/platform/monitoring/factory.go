@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
 	"github.com/sirupsen/logrus"
 )
@@ -40,6 +41,7 @@ type MonitoringClients struct {
 	AlertClient        AlertClient
 	MetricsClient      MetricsClient
 	SideEffectDetector SideEffectDetector
+	HealthMonitor      HealthMonitor
 }
 
 // ClientFactory creates monitoring clients based on configuration
@@ -119,6 +121,10 @@ func (f *ClientFactory) createProductionClients() *MonitoringClients {
 		clients.SideEffectDetector = NewStubSideEffectDetector(f.logger)
 	}
 
+	// Note: LLM Health Monitor requires LLM client dependency - will be injected at service level
+	// This follows the dependency injection pattern established in the codebase
+	f.logger.Info("LLM Health Monitor requires LLM client injection at service level")
+
 	return clients
 }
 
@@ -130,6 +136,7 @@ func (f *ClientFactory) createStubClients() *MonitoringClients {
 		AlertClient:        NewStubAlertClient(f.logger),
 		MetricsClient:      NewStubMetricsClient(f.logger),
 		SideEffectDetector: NewStubSideEffectDetector(f.logger),
+		HealthMonitor:      nil, // Will be injected with LLM client at service level
 	}
 }
 
@@ -166,6 +173,24 @@ func (f *ClientFactory) ValidateConfig() error {
 	return nil
 }
 
+// InjectLLMHealthMonitor injects LLM health monitor after LLM client is available
+// This follows dependency injection pattern and ensures proper integration
+// BR-HEALTH-001: MUST implement comprehensive health checks for all components
+func (f *ClientFactory) InjectLLMHealthMonitor(clients *MonitoringClients, llmClient llm.Client) {
+	if clients == nil {
+		f.logger.Error("Cannot inject LLM health monitor: monitoring clients is nil")
+		return
+	}
+
+	if llmClient == nil {
+		f.logger.Error("Cannot inject LLM health monitor: LLM client is nil")
+		return
+	}
+
+	f.logger.Info("Injecting LLM health monitor with enterprise 20B+ model support")
+	clients.HealthMonitor = NewLLMHealthMonitor(llmClient, f.logger)
+}
+
 // HealthCheck performs health checks on enabled monitoring clients
 func (f *ClientFactory) HealthCheck(clients *MonitoringClients) error {
 	if !f.config.UseProductionClients {
@@ -189,7 +214,7 @@ func (f *ClientFactory) HealthCheck(clients *MonitoringClients) error {
 	if f.config.PrometheusConfig.Enabled {
 		if promClient, ok := clients.MetricsClient.(*PrometheusClient); ok {
 			if err := promClient.HealthCheck(context.Background()); err != nil {
-				return fmt.Errorf("Prometheus health check failed: %w", err)
+				return fmt.Errorf("prometheus health check failed: %w", err)
 			}
 			f.logger.Info("Prometheus health check passed")
 		}

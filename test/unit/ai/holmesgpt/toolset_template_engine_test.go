@@ -343,9 +343,9 @@ var _ = Describe("ToolsetTemplateEngine - Implementation Correctness Testing", f
 
 			It("should fail validation for templates with syntax errors", func() {
 				syntaxErrorTemplates := []string{
-					`{"name": "{{.ServiceName", "missing": "closing"}`, // Missing closing brace
-					`{"name": "{{.ServiceName}}", "unclosed": "{{if"}`, // Unclosed if
-					`{"name": "{{.ServiceName}}", "invalid": "{{.}}"`,  // Invalid field access
+					`{"name": "{{.ServiceName", "missing": "closing"}`,   // Missing closing brace
+					`{"name": "{{.ServiceName}}", "unclosed": "{{if"}`,   // Unclosed if
+					`{"name": "{{.ServiceName}}", "invalid": "{{end}}"}`, // Invalid end without matching if
 				}
 
 				for _, template := range syntaxErrorTemplates {

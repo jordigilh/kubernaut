@@ -8,6 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/holmesgpt"
 	contextapi "github.com/jordigilh/kubernaut/pkg/api/context"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
@@ -30,8 +31,14 @@ type ContextAPIConfig struct {
 
 // NewContextAPIServer creates a new Context API server using standard library
 // Following development guideline: reuse existing patterns
-func NewContextAPIServer(config ContextAPIConfig, aiIntegrator *engine.AIServiceIntegrator, log *logrus.Logger) *ContextAPIServer {
-	contextController := contextapi.NewContextController(aiIntegrator, log)
+// Architecture: Context API serves data TO HolmesGPT, no direct client needed
+func NewContextAPIServer(
+	config ContextAPIConfig,
+	aiIntegrator *engine.AIServiceIntegrator,
+	serviceIntegration holmesgpt.ServiceIntegrationInterface, // Business Requirement: BR-HOLMES-025
+	log *logrus.Logger,
+) *ContextAPIServer {
+	contextController := contextapi.NewContextController(aiIntegrator, serviceIntegration, log)
 
 	mux := http.NewServeMux()
 

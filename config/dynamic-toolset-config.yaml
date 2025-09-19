@@ -149,6 +149,8 @@ holmesgpt:
     baseline_toolsets:
       - "kubernetes"
       - "internet"
+      - "prometheus"
+      - "grafana"
 
     # Toolset generation templates
     # Business Requirement: BR-HOLMES-023 - Toolset configuration templates
