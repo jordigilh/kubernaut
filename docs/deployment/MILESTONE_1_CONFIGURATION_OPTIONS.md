@@ -22,17 +22,18 @@ vector_db:
     index_lists: 100               # pgvector IVFFlat configuration
 ```
 
-### **2. LocalAI Integration**
+### **2. Enterprise 20B+ Model Integration**
 
 ```yaml
-slm:
-  endpoint: "http://192.168.1.169:8080"  # NEW: Your LocalAI endpoint
-  provider: "localai"                    # NEW: LocalAI provider
-  model: "gpt-oss:20b"                  # NEW: Your specific model
-  temperature: 0.3                      # AI reasoning temperature
-  max_tokens: 2000                      # Response length limit
-  timeout: "30s"                       # Connection timeout
-  fallback_to_statistical: true        # NEW: Enable statistical fallback
+llm:
+  endpoint: "http://192.168.1.169:8080"        # Enterprise LLM endpoint (Ollama/OpenAI/HuggingFace)
+  provider: "ollama"                           # Enterprise provider (ollama, openai, huggingface)
+  model: "granite3.1-dense:8b"               # Granite 3.1 Dense 8B model (production ready)
+  temperature: 0.7                            # Enterprise reasoning temperature
+  max_tokens: 131072                          # Full 131K context window utilization
+  timeout: "60s"                             # Extended timeout for complex analysis
+  min_parameter_count: 20000000000           # 20B parameter minimum enforcement
+  # NOTE: Fallback mechanisms removed - 20B+ models required for enterprise deployment
 ```
 
 ### **3. Report Export Configuration**

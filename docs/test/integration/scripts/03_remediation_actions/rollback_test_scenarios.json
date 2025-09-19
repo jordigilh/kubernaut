@@ -1,0 +1,84 @@
+{
+  "reversible_action_scenarios": [
+    {
+      "scenario_name": "deployment_scaling_rollback",
+      "action_category": "scaling",
+      "reversibility": "reversible",
+      "initial_action": {
+        "action_type": "scale_deployment",
+        "target": "test-deployment",
+        "original_replicas": 3,
+        "new_replicas": 5,
+        "expected_rollback": "scale back to 3 replicas"
+      },
+      "rollback_complexity": "simple"
+    },
+    {
+      "scenario_name": "resource_limit_adjustment_rollback",
+      "action_category": "resource_modification",
+      "reversibility": "reversible",
+      "initial_action": {
+        "action_type": "patch_resource_limits",
+        "target": "test-deployment",
+        "original_limits": {"cpu": "200m", "memory": "256Mi"},
+        "new_limits": {"cpu": "400m", "memory": "512Mi"},
+        "expected_rollback": "restore original resource limits"
+      },
+      "rollback_complexity": "medium"
+    },
+    {
+      "scenario_name": "node_cordon_rollback",
+      "action_category": "node_management",
+      "reversibility": "reversible",
+      "initial_action": {
+        "action_type": "cordon_node",
+        "target": "test-node",
+        "original_state": "schedulable",
+        "new_state": "unschedulable",
+        "expected_rollback": "uncordon node"
+      },
+      "rollback_complexity": "simple"
+    },
+    {
+      "scenario_name": "configmap_update_rollback",
+      "action_category": "configuration",
+      "reversibility": "reversible",
+      "initial_action": {
+        "action_type": "patch_configmap",
+        "target": "test-config",
+        "original_data": {"setting1": "value1", "debug": "false"},
+        "new_data": {"setting1": "value2", "debug": "true"},
+        "expected_rollback": "restore original configuration"
+      },
+      "rollback_complexity": "medium"
+    }
+  ],
+  "irreversible_action_scenarios": [
+    {
+      "scenario_name": "pod_deletion_no_rollback",
+      "action_category": "deletion",
+      "reversibility": "irreversible",
+      "action": {
+        "action_type": "delete_pod",
+        "target": "test-pod",
+        "reason": "Pod deletion cannot be rolled back"
+      }
+    },
+    {
+      "scenario_name": "namespace_deletion_no_rollback",
+      "action_category": "deletion",
+      "reversibility": "irreversible",
+      "action": {
+        "action_type": "delete_namespace",
+        "target": "test-namespace",
+        "reason": "Namespace deletion cannot be rolled back"
+      }
+    }
+  ],
+  "rollback_validation_criteria": {
+    "successful_rollback_rate": 0.90,
+    "rollback_state_accuracy": 0.95,
+    "rollback_time_limit_seconds": 300,
+    "irreversible_action_identification": true
+  }
+}

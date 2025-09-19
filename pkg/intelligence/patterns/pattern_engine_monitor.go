@@ -303,7 +303,9 @@ func (sv *StatisticalValidator) calculateMinSampleSize(power, alpha float64) int
 	zAlpha := sv.getZScore(1.0 - alpha/2.0)
 	zBeta := sv.getZScore(power)
 
-	n := math.Pow(zAlpha+zBeta, 2) / math.Pow(effectSize, 2)
+	// Guideline #14: Use idiomatic patterns - expand math.Pow for simple squaring
+	numerator := zAlpha + zBeta
+	n := (numerator * numerator) / (effectSize * effectSize)
 
 	// Minimum practical size
 	return int(math.Max(30, math.Ceil(n)))

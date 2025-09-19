@@ -31,7 +31,7 @@ The main applications serve as the primary entry points for Kubernaut's intellig
 - **BR-PA-005**: MUST maintain alert processing order for the same alert source
 
 #### 2.1.2 AI-Powered Decision Making
-- **BR-PA-006**: MUST analyze alerts using configured LLM providers (OpenAI, Anthropic, Azure, AWS Bedrock, Ollama, Ramalama)
+- **BR-PA-006**: MUST analyze alerts using enterprise 20B+ parameter LLM providers (minimum 20 billion parameters required)
 - **BR-PA-007**: MUST generate contextual remediation recommendations based on alert content
 - **BR-PA-008**: MUST consider historical action effectiveness in decision making
 - **BR-PA-009**: MUST provide confidence scoring for all remediation recommendations

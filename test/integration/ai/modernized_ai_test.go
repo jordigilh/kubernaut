@@ -15,7 +15,7 @@ import (
 )
 
 // ModernizedAIIntegrationTest demonstrates the new standardized testing approach
-var _ = Describe("Modernized AI Integration Test (Example)", func() {
+var _ = Describe("Modernized AI Integration Test (Example)", Ordered, func() {
 	var hooks *testshared.TestLifecycleHooks
 
 	// BEFORE: This would require 50+ lines of boilerplate setup
@@ -26,6 +26,13 @@ var _ = Describe("Modernized AI Integration Test (Example)", func() {
 			testshared.WithMockLLM(), // Fast tests with mock by default
 			testshared.WithRealVectorDB(),
 		)
+		hooks.Setup()
+	})
+
+	AfterAll(func() {
+		if hooks != nil {
+			hooks.Cleanup()
+		}
 	})
 
 	Context("Alert Processing Workflow", func() {
@@ -179,7 +186,7 @@ var _ = Describe("Modernized AI Integration Test (Example)", func() {
 })
 
 // Example of how to extend with custom test-specific setup if needed
-var _ = Describe("Custom AI Test Extensions", func() {
+var _ = Describe("Custom AI Test Extensions", Ordered, func() {
 	var hooks *testshared.TestLifecycleHooks
 
 	BeforeAll(func() {
@@ -193,6 +200,13 @@ var _ = Describe("Custom AI Test Extensions", func() {
 				return nil
 			}),
 		)
+		hooks.Setup()
+	})
+
+	AfterAll(func() {
+		if hooks != nil {
+			hooks.Cleanup()
+		}
 	})
 
 	// Add test-specific setup if needed

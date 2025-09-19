@@ -1,6 +1,7 @@
 package holmesgpt_test
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -401,19 +402,26 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 
 			It("should expire non-baseline toolsets after TTL", func() {
 				// Create cache with very short TTL for testing
-				shortCache := holmesgpt.NewToolsetConfigCache(10*time.Millisecond, log)
+				shortCache := holmesgpt.NewToolsetConfigCache(50*time.Millisecond, log)
 
 				toolset := &holmesgpt.ToolsetConfig{
 					Name:        "expiring-toolset",
-					ServiceType: "prometheus",                   // Non-baseline
-					LastUpdated: time.Now().Add(-1 * time.Hour), // Very old
+					ServiceType: "prometheus", // Non-baseline
 				}
 
+				// Store toolset (SetToolset will set LastUpdated to now)
 				shortCache.SetToolset(toolset)
 
-				// Should be immediately expired due to old timestamp
+				// Should exist immediately after storing
 				retrieved := shortCache.GetToolset("expiring-toolset")
-				Expect(retrieved).To(BeNil()) // Should be expired
+				Expect(retrieved).ToNot(BeNil())
+
+				// Wait for TTL to expire
+				time.Sleep(100 * time.Millisecond) // Double the TTL to ensure expiration
+
+				// Should now be expired
+				expired := shortCache.GetToolset("expiring-toolset")
+				Expect(expired).To(BeNil()) // Should be expired
 			})
 		})
 
@@ -437,6 +445,78 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 				Expect(stats.MissCount).To(Equal(int64(1)))
 				Expect(stats.HitRate).To(BeNumerically("~", 2.0/3.0, 0.01))
 				Expect(stats.TTL).To(Equal(5 * time.Minute))
+			})
+		})
+
+		// Business Requirement: BR-HOLMES-021 - Memory leak prevention in toolset cache
+		Context("Cache Lifecycle Management", func() {
+			AfterEach(func() {
+				// Ensure cleanup goroutine is stopped to prevent test interference
+				if cache != nil {
+					cache.Stop()
+				}
+			})
+
+			It("should stop cleanup goroutine and prevent memory leaks", func() {
+				// Business Validation: Cache should have a Stop method to prevent goroutine leaks
+				// Act: Stop the cache
+				cache.Stop()
+
+				// Business Validation: Stop should be idempotent (safe to call multiple times)
+				cache.Stop() // Should not panic or block
+
+				// Business Validation: Cache should remain functional for basic operations after stop
+				cache.SetToolset(&holmesgpt.ToolsetConfig{Name: "after-stop", ServiceType: "test"})
+				retrieved := cache.GetToolset("after-stop")
+				Expect(retrieved).ToNot(BeNil())
+				Expect(retrieved.Name).To(Equal("after-stop"))
+			})
+
+			It("should properly manage goroutine lifecycle during concurrent operations", func() {
+				// Business Validation: Cache should handle concurrent access during shutdown
+				done := make(chan bool)
+
+				// Start concurrent operations
+				go func() {
+					defer func() { done <- true }()
+					for i := 0; i < 100; i++ {
+						cache.SetToolset(&holmesgpt.ToolsetConfig{
+							Name:        fmt.Sprintf("concurrent-%d", i),
+							ServiceType: "test",
+						})
+						cache.GetToolset(fmt.Sprintf("concurrent-%d", i))
+					}
+				}()
+
+				// Stop cache while operations are running
+				cache.Stop()
+
+				// Wait for concurrent operations to complete
+				select {
+				case <-done:
+					// Success - operations completed without deadlock
+				case <-time.After(5 * time.Second):
+					Fail("Concurrent operations did not complete after cache stop - possible deadlock")
+				}
+
+				// Business Validation: Cache should remain functional after concurrent stop
+				cache.SetToolset(&holmesgpt.ToolsetConfig{Name: "post-concurrent", ServiceType: "test"})
+				retrieved := cache.GetToolset("post-concurrent")
+				Expect(retrieved).ToNot(BeNil())
+			})
+
+			It("should handle stop being called on already stopped cache", func() {
+				// Business Validation: Multiple stops should be safe and idempotent
+				cache.Stop()
+
+				// Should not panic or block when called again
+				cache.Stop()
+				cache.Stop()
+
+				// Business Validation: Cache should remain functional
+				cache.SetToolset(&holmesgpt.ToolsetConfig{Name: "multi-stop-test", ServiceType: "test"})
+				retrieved := cache.GetToolset("multi-stop-test")
+				Expect(retrieved).ToNot(BeNil())
 			})
 		})
 	})

@@ -45,7 +45,9 @@ var _ = Describe("ServiceValidators - Implementation Correctness Testing", func(
 				// Create test HTTP server that returns 200 OK
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusOK)
-					w.Write([]byte("OK"))
+					if _, err := w.Write([]byte("OK")); err != nil {
+						// Test server write failure is not critical for this test
+					}
 				}))
 				defer server.Close()
 
@@ -104,7 +106,9 @@ var _ = Describe("ServiceValidators - Implementation Correctness Testing", func(
 				// Create test HTTP server that returns 500 error
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte("Internal Server Error"))
+					if _, err := w.Write([]byte("Internal Server Error")); err != nil {
+						// Test server write failure is not critical for this test
+					}
 				}))
 				defer server.Close()
 

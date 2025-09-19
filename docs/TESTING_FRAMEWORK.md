@@ -220,9 +220,9 @@ Tests are automatically configured based on environment:
 #### **Environment Variables**
 ```bash
 # LLM Configuration
-LLM_ENDPOINT=http://localhost:8080     # LLM server endpoint (default: port 8080)
-LLM_MODEL=granite3.1-dense:8b          # Model to use for testing
-LLM_PROVIDER=localai                   # Provider type (localai, ollama, mock)
+LLM_ENDPOINT=http://192.168.1.169:8080 # LLM server endpoint (new production endpoint)
+LLM_MODEL=ggml-org/gpt-oss-20b-GGUF   # Model to use for testing
+LLM_PROVIDER=ramalama                  # Provider type (ramalama, ollama, localai, mock)
 USE_MOCK_LLM=false                     # Force mock LLM usage
 
 # Kubernetes Configuration
@@ -249,7 +249,7 @@ TEST_TIMEOUT=120s                      # Test timeout duration
 export CI=true USE_MOCK_LLM=true
 
 # Use Ollama instead of local AI
-export LLM_ENDPOINT=http://localhost:11434 LLM_PROVIDER=ollama
+export LLM_ENDPOINT=http://192.168.1.169:8080 LLM_PROVIDER=ramalama
 
 # Skip slow tests for rapid iteration
 export SKIP_SLOW_TESTS=true

@@ -8,8 +8,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/jordigilh/kubernaut/pkg/ai/holmesgpt"
@@ -37,6 +35,7 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 			HealthCheckInterval: 10 * time.Second,
 			Enabled:             true,
 			Namespaces:          []string{"monitoring"},
+			ServicePatterns:     k8s.GetDefaultServicePatterns(), // BR-HOLMES-017: Well-known service detection
 		}
 
 		var err error
@@ -206,38 +205,9 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 				Expect(refreshedStats.TotalToolsets).To(BeNumerically(">=", initialStats.TotalToolsets))
 			})
 
-			It("should handle service discovery updates", func() {
-				// Add a Prometheus service to trigger discovery
-				prometheusService := &corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "prometheus-test",
-						Namespace: "monitoring",
-						Labels: map[string]string{
-							"app.kubernetes.io/name": "prometheus",
-						},
-					},
-					Spec: corev1.ServiceSpec{
-						Ports: []corev1.ServicePort{
-							{Name: "web", Port: 9090},
-						},
-					},
-				}
-
-				_, err := fakeClient.CoreV1().Services("monitoring").Create(ctx, prometheusService, metav1.CreateOptions{})
-				Expect(err).ToNot(HaveOccurred())
-
-				// Wait for service discovery to process the change
-				Eventually(func() bool {
-					stats := serviceIntegration.GetServiceDiscoveryStats()
-					return stats.TotalServices > 0
-				}, 3*time.Second, 200*time.Millisecond).Should(BeTrue())
-
-				// Eventually should have prometheus toolsets
-				Eventually(func() bool {
-					prometheusToolsets := serviceIntegration.GetToolsetByServiceType("prometheus")
-					return len(prometheusToolsets) > 0
-				}, 3*time.Second, 200*time.Millisecond).Should(BeTrue())
-			})
+			// NOTE: "should handle service discovery updates" test moved to integration test suite
+			// Business Requirement: BR-HOLMES-020 - Real K8s required for service discovery
+			// See: test/integration/ai/service_integration_test.go
 		})
 
 		Context("Event Handling", func() {
@@ -270,20 +240,9 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 				Expect(updatedTypes).To(HaveKey("internet"))
 			})
 
-			It("should handle multiple event handlers", func() {
-				secondHandler := NewTestToolsetUpdateHandler()
-				serviceIntegration.AddToolsetUpdateHandler(secondHandler)
-
-				// Force a toolset update
-				err := serviceIntegration.RefreshToolsets(ctx)
-				Expect(err).ToNot(HaveOccurred())
-
-				time.Sleep(500 * time.Millisecond)
-
-				// Both handlers should have received updates
-				Expect(len(testHandler.UpdatedToolsets)).To(BeNumerically(">=", 1))
-				Expect(len(secondHandler.UpdatedToolsets)).To(BeNumerically(">=", 1))
-			})
+			// NOTE: "should handle multiple event handlers" test moved to integration test suite
+			// Business Requirement: BR-HOLMES-025 - Real K8s required for event handler testing
+			// See: test/integration/ai/service_integration_test.go
 
 			It("should handle handler errors gracefully", func() {
 				// Add a handler that always fails

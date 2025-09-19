@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -13,6 +14,21 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 )
+
+// ServiceEventMetrics tracks structured metrics for service discovery events
+// Business Requirement: BR-HOLMES-029 - Service discovery metrics and monitoring
+// Following project guideline: use structured field values instead of interface{}
+type ServiceEventMetrics struct {
+	TotalEventsProcessed  int64            `json:"total_events_processed"`
+	SuccessfulEvents      int64            `json:"successful_events"`
+	DroppedEvents         int64            `json:"dropped_events"`
+	EventTypeCounts       map[string]int64 `json:"event_type_counts"`
+	AverageProcessingTime time.Duration    `json:"average_processing_time"`
+	MaxProcessingTime     time.Duration    `json:"max_processing_time"`
+	LastEventTimestamp    time.Time        `json:"last_event_timestamp"`
+	DropRate              float64          `json:"drop_rate"`
+	ProcessingLatencies   []time.Duration  `json:"processing_latencies"` // Recent latencies for calculation
+}
 
 // ServiceDiscovery provides dynamic service discovery for toolset configuration
 // Business Requirement: BR-HOLMES-016 - Dynamic service discovery in Kubernetes cluster
@@ -26,6 +42,10 @@ type ServiceDiscovery struct {
 	log             *logrus.Logger
 	mu              sync.RWMutex
 	discoveryConfig *ServiceDiscoveryConfig
+
+	// Event metrics tracking - BR-HOLMES-029
+	eventMetrics ServiceEventMetrics
+	metricsMutex sync.RWMutex
 }
 
 // DetectedService represents a discovered service in the cluster
@@ -134,6 +154,11 @@ func NewServiceDiscovery(client kubernetes.Interface, config *ServiceDiscoveryCo
 		stopChannel:     make(chan struct{}),
 		log:             log,
 		discoveryConfig: config,
+		// Initialize metrics tracking - BR-HOLMES-029
+		eventMetrics: ServiceEventMetrics{
+			EventTypeCounts:     make(map[string]int64),
+			ProcessingLatencies: make([]time.Duration, 0, 100), // Keep recent 100 latencies
+		},
 	}
 
 	// Initialize default detectors
@@ -176,7 +201,18 @@ func (sd *ServiceDiscovery) Start(ctx context.Context) error {
 // Stop stops the service discovery process
 func (sd *ServiceDiscovery) Stop() {
 	sd.log.Info("Stopping service discovery")
-	close(sd.stopChannel)
+
+	// Safely close stop channel only once to prevent panic
+	select {
+	case <-sd.stopChannel:
+		// Channel already closed
+		sd.log.Debug("Service discovery already stopped")
+		return
+	default:
+		// Channel not closed, safe to close it
+		close(sd.stopChannel)
+		sd.log.Debug("Service discovery stop channel closed")
+	}
 }
 
 // GetDiscoveredServices returns all discovered services
@@ -204,10 +240,108 @@ func (sd *ServiceDiscovery) GetEventChannel() <-chan ServiceEvent {
 	return sd.eventChannel
 }
 
+// trackEventMetrics records event processing metrics in a thread-safe manner
+// Business Requirement: BR-HOLMES-029 - Service discovery metrics and monitoring
+func (sd *ServiceDiscovery) trackEventMetrics(eventType string, processingTime time.Duration, successful bool) {
+	sd.metricsMutex.Lock()
+	defer sd.metricsMutex.Unlock()
+
+	start := time.Now()
+	defer func() {
+		// Track the time it takes to update metrics (should be minimal)
+		metricUpdateTime := time.Since(start)
+		if metricUpdateTime > 100*time.Microsecond {
+			sd.log.WithField("metric_update_time", metricUpdateTime).Warn("Slow metrics update detected")
+		}
+	}()
+
+	// Update total counters using atomic operations where possible
+	atomic.AddInt64(&sd.eventMetrics.TotalEventsProcessed, 1)
+
+	if successful {
+		atomic.AddInt64(&sd.eventMetrics.SuccessfulEvents, 1)
+
+		// Update event type counts
+		sd.eventMetrics.EventTypeCounts[eventType]++
+
+		// Track processing latency
+		if processingTime > sd.eventMetrics.MaxProcessingTime {
+			sd.eventMetrics.MaxProcessingTime = processingTime
+		}
+
+		// Keep recent latencies for average calculation (circular buffer)
+		if len(sd.eventMetrics.ProcessingLatencies) >= 100 {
+			// Remove oldest entry
+			sd.eventMetrics.ProcessingLatencies = sd.eventMetrics.ProcessingLatencies[1:]
+		}
+		sd.eventMetrics.ProcessingLatencies = append(sd.eventMetrics.ProcessingLatencies, processingTime)
+
+		sd.eventMetrics.LastEventTimestamp = time.Now()
+	}
+}
+
+// trackDroppedEvent records when an event is dropped due to channel being full
+// Business Requirement: BR-HOLMES-029 - Event drop monitoring
+func (sd *ServiceDiscovery) trackDroppedEvent(eventType string) {
+	atomic.AddInt64(&sd.eventMetrics.DroppedEvents, 1)
+	sd.log.WithFields(logrus.Fields{
+		"event_type":    eventType,
+		"total_dropped": atomic.LoadInt64(&sd.eventMetrics.DroppedEvents),
+	}).Warn("Service discovery event dropped due to full channel")
+}
+
+// GetEventMetrics returns structured event processing metrics
+// Business Requirement: BR-HOLMES-029 - Service discovery metrics and monitoring
+func (sd *ServiceDiscovery) GetEventMetrics() ServiceEventMetrics {
+	sd.metricsMutex.RLock()
+	defer sd.metricsMutex.RUnlock()
+
+	// Calculate drop rate
+	total := sd.eventMetrics.TotalEventsProcessed + sd.eventMetrics.DroppedEvents
+	dropRate := 0.0
+	if total > 0 {
+		dropRate = float64(sd.eventMetrics.DroppedEvents) / float64(total)
+	}
+
+	// Calculate average processing time from recent latencies
+	avgProcessingTime := time.Duration(0)
+	if len(sd.eventMetrics.ProcessingLatencies) > 0 {
+		var totalDuration time.Duration
+		for _, latency := range sd.eventMetrics.ProcessingLatencies {
+			totalDuration += latency
+		}
+		avgProcessingTime = totalDuration / time.Duration(len(sd.eventMetrics.ProcessingLatencies))
+	}
+
+	// Create a copy to avoid race conditions
+	eventTypeCounts := make(map[string]int64)
+	for k, v := range sd.eventMetrics.EventTypeCounts {
+		eventTypeCounts[k] = v
+	}
+
+	return ServiceEventMetrics{
+		TotalEventsProcessed:  sd.eventMetrics.TotalEventsProcessed,
+		SuccessfulEvents:      sd.eventMetrics.SuccessfulEvents,
+		DroppedEvents:         sd.eventMetrics.DroppedEvents,
+		EventTypeCounts:       eventTypeCounts,
+		AverageProcessingTime: avgProcessingTime,
+		MaxProcessingTime:     sd.eventMetrics.MaxProcessingTime,
+		LastEventTimestamp:    sd.eventMetrics.LastEventTimestamp,
+		DropRate:              dropRate,
+		ProcessingLatencies:   nil, // Don't expose internal latency slice
+	}
+}
+
 // performDiscoveryScan performs a full service discovery scan
 // Business Requirement: BR-HOLMES-016 - Cluster service discovery
 func (sd *ServiceDiscovery) performDiscoveryScan(ctx context.Context) error {
 	sd.log.Debug("Starting service discovery scan")
+
+	// Safety check: ensure client is initialized before proceeding
+	if sd.client == nil {
+		sd.log.Error("Kubernetes client is not initialized")
+		return fmt.Errorf("kubernetes client is not initialized - cannot perform service discovery")
+	}
 
 	namespaces := sd.discoveryConfig.Namespaces
 	if len(namespaces) == 0 {
@@ -251,11 +385,7 @@ func (sd *ServiceDiscovery) discoverServicesInNamespace(ctx context.Context, nam
 	var discoveredServices []*DetectedService
 
 	for _, service := range serviceList.Items {
-		detectedService, err := sd.detectServiceType(ctx, &service)
-		if err != nil {
-			sd.log.WithError(err).WithField("service", service.Name).Debug("Service detection failed")
-			continue
-		}
+		detectedService := sd.detectServiceType(ctx, &service)
 
 		if detectedService != nil {
 			discoveredServices = append(discoveredServices, detectedService)
@@ -266,7 +396,7 @@ func (sd *ServiceDiscovery) discoverServicesInNamespace(ctx context.Context, nam
 }
 
 // detectServiceType attempts to detect the service type using registered detectors
-func (sd *ServiceDiscovery) detectServiceType(ctx context.Context, service *corev1.Service) (*DetectedService, error) {
+func (sd *ServiceDiscovery) detectServiceType(ctx context.Context, service *corev1.Service) *DetectedService {
 	sd.mu.RLock()
 	detectors := sd.detectors
 	sd.mu.RUnlock()
@@ -291,11 +421,11 @@ func (sd *ServiceDiscovery) detectServiceType(ctx context.Context, service *core
 				continue
 			}
 
-			return detectedService, nil
+			return detectedService
 		}
 	}
 
-	return nil, nil // Service not recognized by any detector
+	return nil // Service not recognized by any detector
 }
 
 // validateService validates a detected service using registered validators
@@ -357,7 +487,13 @@ func (sd *ServiceDiscovery) registerDetector(detector ServiceDetector) {
 
 // periodicDiscovery performs periodic service discovery
 func (sd *ServiceDiscovery) periodicDiscovery(ctx context.Context) {
-	ticker := time.NewTicker(sd.discoveryConfig.DiscoveryInterval)
+	// Ensure minimum discovery interval to prevent ticker panic
+	discoveryInterval := sd.discoveryConfig.DiscoveryInterval
+	if discoveryInterval <= 0 {
+		discoveryInterval = 5 * time.Minute // Default minimum discovery interval
+	}
+
+	ticker := time.NewTicker(discoveryInterval)
 	defer ticker.Stop()
 
 	for {
@@ -436,11 +572,7 @@ func (sd *ServiceDiscovery) handleServiceWatchEvents(ctx context.Context, watchI
 func (sd *ServiceDiscovery) handleServiceEvent(ctx context.Context, eventType watch.EventType, service *corev1.Service) {
 	switch eventType {
 	case watch.Added, watch.Modified:
-		detectedService, err := sd.detectServiceType(ctx, service)
-		if err != nil {
-			sd.log.WithError(err).WithField("service", service.Name).Debug("Service detection failed during watch")
-			return
-		}
+		detectedService := sd.detectServiceType(ctx, service)
 
 		if detectedService != nil {
 			sd.cache.SetService(detectedService)
@@ -482,7 +614,13 @@ func (sd *ServiceDiscovery) handleServiceEvent(ctx context.Context, eventType wa
 // healthMonitoring performs periodic health monitoring of discovered services
 // Business Requirement: BR-HOLMES-026 - Service discovery health checks
 func (sd *ServiceDiscovery) healthMonitoring(ctx context.Context) {
-	ticker := time.NewTicker(sd.discoveryConfig.HealthCheckInterval)
+	// Ensure minimum health check interval to prevent ticker panic
+	healthCheckInterval := sd.discoveryConfig.HealthCheckInterval
+	if healthCheckInterval <= 0 {
+		healthCheckInterval = 60 * time.Second // Default minimum health check interval
+	}
+
+	ticker := time.NewTicker(healthCheckInterval)
 	defer ticker.Stop()
 
 	for {
@@ -583,7 +721,12 @@ func (sd *ServiceDiscovery) performHealthCheckRequest(ctx context.Context, servi
 	if err != nil {
 		return fmt.Errorf("health check request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	// Guideline #6: Proper error handling - explicitly handle or log defer errors
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Debug("Failed to close response body during health check")
+		}
+	}()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("health check failed with status: %d", resp.StatusCode)

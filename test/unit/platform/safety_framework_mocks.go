@@ -159,10 +159,24 @@ func NewMockSafetyValidator(logger *logrus.Logger) *MockSafetyValidator {
 
 // Validator interface implementation
 func (m *MockSafetyValidator) ValidateClusterAccess(ctx context.Context, namespace string) *ClusterValidationResult {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	return m.clusterAccessResult
 }
 
 func (m *MockSafetyValidator) ValidateResourceState(ctx context.Context, namespace, resourceName, resourceType string) *ResourceValidationResult {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	if resourceName == "non-existent-pod" || resourceName == "non-existent-deployment" {
 		return &ResourceValidationResult{
 			IsValid:        false,
@@ -244,6 +258,13 @@ func (m *MockSafetyValidator) GenerateMitigationPlan(riskAssessment *RiskAssessm
 }
 
 func (m *MockSafetyValidator) ValidateRollbackRequest(ctx context.Context, request RollbackRequest) *RollbackValidationResult {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	if request.ResourceName == "non-existent-deployment" {
 		return &RollbackValidationResult{
 			IsValid:              false,
@@ -269,6 +290,13 @@ func (m *MockSafetyValidator) ValidateRollbackRequest(ctx context.Context, reque
 }
 
 func (m *MockSafetyValidator) CaptureRollbackState(ctx context.Context, namespace, resourceName, actionType string) *RollbackState {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
 	m.stateMutex.Lock()
 	defer m.stateMutex.Unlock()
 

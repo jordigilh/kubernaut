@@ -386,7 +386,12 @@ func (wdb *WeaviateVectorDatabase) executeRequest(ctx context.Context, method, u
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
+		// Guideline #6: Proper error handling - explicitly handle or log defer errors
+		defer func(response *http.Response) {
+			if closeErr := response.Body.Close(); closeErr != nil {
+				logrus.WithError(closeErr).Debug("Failed to close response body in vector database")
+			}
+		}(resp)
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {

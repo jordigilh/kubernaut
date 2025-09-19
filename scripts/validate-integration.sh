@@ -10,9 +10,9 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-LLM_ENDPOINT="${LLM_ENDPOINT:-http://localhost:11434}"
-LLM_MODEL="${LLM_MODEL:-granite3.1-dense:8b}"
-LLM_PROVIDER="${LLM_PROVIDER:-ollama}"
+LLM_ENDPOINT="${LLM_ENDPOINT:-http://192.168.1.169:8080}"
+LLM_MODEL="${LLM_MODEL:-ggml-org/gpt-oss-20b-GGUF}"
+LLM_PROVIDER="${LLM_PROVIDER:-ramalama}"
 MIN_MEMORY_GB=8
 MIN_DISK_GB=20
 TIMEOUT_SECONDS=300
@@ -412,9 +412,9 @@ case "${1:-}" in
         echo "Validates prerequisites for Prometheus Alerts SLM integration testing."
         echo ""
         echo "Environment variables:"
-        echo "  LLM_ENDPOINT    LLM API endpoint (default: http://localhost:11434)"
-        echo "  LLM_MODEL       Model name to use (default: granite3.1-dense:8b)"
-        echo "  LLM_PROVIDER    LLM provider type (default: ollama)"
+        echo "  LLM_ENDPOINT    LLM API endpoint (default: http://192.168.1.169:8080)"
+        echo "  LLM_MODEL       Model name to use (default: ggml-org/gpt-oss-20b-GGUF)"
+        echo "  LLM_PROVIDER    LLM provider type (default: ramalama)"
         echo ""
         echo "This script checks:"
         echo "  - System resources (memory, disk, CPU)"

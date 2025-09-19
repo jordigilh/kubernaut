@@ -1,0 +1,80 @@
+{
+  "supported_providers": [
+    {
+      "name": "ollama",
+      "type": "local",
+      "endpoint": "http://localhost:8080",
+      "model": "llama2",
+      "expected_available": true,
+      "test_priority": "high"
+    },
+    {
+      "name": "openai",
+      "type": "external",
+      "endpoint": "https://api.openai.com/v1",
+      "model": "gpt-3.5-turbo",
+      "expected_available": false,
+      "test_priority": "medium",
+      "note": "Requires API key"
+    },
+    {
+      "name": "anthropic",
+      "type": "external",
+      "endpoint": "https://api.anthropic.com/v1",
+      "model": "claude-3-sonnet",
+      "expected_available": false,
+      "test_priority": "medium",
+      "note": "Requires API key"
+    },
+    {
+      "name": "google",
+      "type": "external",
+      "endpoint": "https://generativelanguage.googleapis.com/v1",
+      "model": "gemini-pro",
+      "expected_available": false,
+      "test_priority": "medium",
+      "note": "Requires API key"
+    },
+    {
+      "name": "azure_openai",
+      "type": "external",
+      "endpoint": "https://your-resource.openai.azure.com/",
+      "model": "gpt-35-turbo",
+      "expected_available": false,
+      "test_priority": "low",
+      "note": "Requires Azure setup"
+    },
+    {
+      "name": "cohere",
+      "type": "external",
+      "endpoint": "https://api.cohere.ai/v1",
+      "model": "command",
+      "expected_available": false,
+      "test_priority": "low",
+      "note": "Requires API key"
+    },
+    {
+      "name": "huggingface",
+      "type": "external",
+      "endpoint": "https://api-inference.huggingface.co/models",
+      "model": "microsoft/DialoGPT-medium",
+      "expected_available": false,
+      "test_priority": "low",
+      "note": "Requires HF token"
+    }
+  ],
+  "test_prompts": [
+    {
+      "name": "remediation_request",
+      "prompt": "You are a Kubernetes expert. A pod in namespace 'test-workloads' is showing high memory usage (90%). Suggest 3 specific remediation actions.",
+      "expected_elements": ["memory", "remediation", "kubernetes", "pod"],
+      "category": "kubernetes_expertise"
+    },
+    {
+      "name": "alert_analysis",
+      "prompt": "Analyze this Prometheus alert: 'NodeMemoryHigh - Node memory usage above 85%'. Provide severity assessment and recommended actions.",
+      "expected_elements": ["memory", "node", "severity", "actions"],
+      "category": "alert_analysis"
+    }
+  ]
+}

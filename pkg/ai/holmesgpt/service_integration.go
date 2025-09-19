@@ -10,6 +10,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+// ServiceIntegrationInterface defines the contract for service integration
+// Following development guideline: create interface abstraction for testability
+type ServiceIntegrationInterface interface {
+	GetAvailableToolsets() []*ToolsetConfig
+	GetToolsetStats() ToolsetStats
+	GetServiceDiscoveryStats() ServiceDiscoveryStats
+	RefreshToolsets(ctx context.Context) error
+	GetHealthStatus() ServiceIntegrationHealth
+}
+
 // ServiceIntegration provides integration between dynamic toolset manager and HolmesGPT API
 // Business Requirement: BR-HOLMES-025 - Runtime toolset management API
 type ServiceIntegration struct {
@@ -217,14 +227,25 @@ func (si *ServiceIntegration) GetAvailableServiceTypes() []string {
 func (si *ServiceIntegration) RefreshToolsets(ctx context.Context) error {
 	si.log.Info("Forcing toolset refresh")
 
-	// Trigger service discovery scan
+	// Trigger service discovery scan to get latest services
 	services := si.serviceDiscovery.GetDiscoveredServices()
 
 	si.log.WithField("discovered_services", len(services)).Info("Refreshed service discovery")
 
-	// The dynamic toolset manager will automatically update toolsets based on
-	// service discovery events, so no additional action needed here
+	// Force toolset regeneration for all discovered services
+	// This ensures event handlers are notified of toolset changes
+	if err := si.dynamicToolsetManager.RefreshAllToolsets(ctx); err != nil {
+		si.log.WithError(err).Error("Failed to refresh dynamic toolsets")
+		return fmt.Errorf("failed to refresh dynamic toolsets: %w", err)
+	}
 
+	// Notify all registered handlers about the refresh
+	if err := si.notifyHandlers(); err != nil {
+		si.log.WithError(err).Error("Failed to notify handlers after toolset refresh")
+		return fmt.Errorf("failed to notify handlers: %w", err)
+	}
+
+	si.log.Info("Toolset refresh completed successfully")
 	return nil
 }
 

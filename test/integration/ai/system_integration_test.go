@@ -20,7 +20,7 @@ import (
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
-var _ = Describe("System Integration Testing", func() {
+var _ = Describe("System Integration Testing", Ordered, func() {
 	var (
 		hooks           *testshared.TestLifecycleHooks
 		ctx             context.Context
@@ -33,8 +33,15 @@ var _ = Describe("System Integration Testing", func() {
 		hooks = testshared.SetupAIIntegrationTest("System Integration",
 			testshared.WithMockLLM(), // Use mock for consistent testing
 		)
+		hooks.Setup()
 
 		scenarioManager = NewIntegrationScenarioManager(hooks.GetLogger())
+	})
+
+	AfterAll(func() {
+		if hooks != nil {
+			hooks.Cleanup()
+		}
 	})
 
 	BeforeEach(func() {

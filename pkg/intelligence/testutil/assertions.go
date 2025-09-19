@@ -7,7 +7,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 
-	. "github.com/onsi/gomega" //nolint:revive,errcheck
+	// Guideline #14: Exception for test utilities - dot import acceptable for test assertion APIs
+	. "github.com/onsi/gomega" //nolint:revive
 )
 
 // Minimal interfaces to avoid import cycles - assertions only need these methods

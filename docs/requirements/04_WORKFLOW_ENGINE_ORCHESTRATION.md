@@ -48,24 +48,36 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 
 #### 2.1.4 Post-Condition Registry
 - **BR-WF-016**: MUST validate workflow outcomes against expected conditions
-- **BR-WF-017**: MUST implement post-condition checks for each workflow step
-- **BR-WF-018**: MUST support custom validation rules and business logic
-- **BR-WF-019**: MUST provide condition evaluation metrics and reporting
-- **BR-WF-020**: MUST maintain condition registry with versioning support
+
+#### 2.1.5 Multi-Stage Remediation Processing
+- **BR-WF-017**: MUST process AI-generated JSON workflow responses with primary and secondary actions
+- **BR-WF-018**: MUST execute conditional action sequences based on primary action outcomes
+- **BR-WF-019**: MUST preserve context across multiple remediation stages
+- **BR-WF-020**: MUST support execution conditions (if_primary_fails, after_primary, parallel_with_primary)
+- **BR-WF-021**: MUST implement dynamic monitoring based on AI-defined success criteria
+- **BR-WF-022**: MUST execute rollback actions when AI-defined triggers are met
+- **BR-WF-023**: MUST pass parameters from AI responses to action executors seamlessly
+- **BR-WF-024**: MUST track multi-stage workflow progress with stage-aware metrics
+
+#### 2.1.6 Post-Condition Validation
+- **BR-WF-050**: MUST implement post-condition checks for each workflow step
+- **BR-WF-051**: MUST support custom validation rules and business logic
+- **BR-WF-052**: MUST provide condition evaluation metrics and reporting
+- **BR-WF-053**: MUST maintain condition registry with versioning support
 
 ### 2.2 Workflow Management
-- **BR-WF-021**: MUST support workflow versioning and lifecycle management
-- **BR-WF-022**: MUST implement workflow templates and reusable components
-- **BR-WF-023**: MUST provide workflow import/export capabilities
-- **BR-WF-024**: MUST support workflow inheritance and composition
-- **BR-WF-025**: MUST maintain workflow execution history and audit trails
+- **BR-WF-025**: MUST support workflow versioning and lifecycle management
+- **BR-WF-026**: MUST implement workflow templates and reusable components
+- **BR-WF-027**: MUST provide workflow import/export capabilities
+- **BR-WF-028**: MUST support workflow inheritance and composition
+- **BR-WF-029**: MUST maintain workflow execution history and audit trails
 
 ### 2.3 Simulation & Testing
-- **BR-WF-026**: MUST provide workflow simulation capabilities for testing
-- **BR-WF-027**: MUST support dry-run execution for validation
-- **BR-WF-028**: MUST implement test scenario generation and validation
-- **BR-WF-029**: MUST provide performance testing for complex workflows
-- **BR-WF-030**: MUST support A/B testing for workflow optimization
+- **BR-WF-030**: MUST provide workflow simulation capabilities for testing
+- **BR-WF-031**: MUST support dry-run execution for validation
+- **BR-WF-032**: MUST implement test scenario generation and validation
+- **BR-WF-033**: MUST provide performance testing for complex workflows
+- **BR-WF-034**: MUST support A/B testing for workflow optimization
 
 ---
 

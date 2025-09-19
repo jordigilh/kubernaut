@@ -2,6 +2,7 @@ package conditions
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // Real conditions engine implementation supporting complex conditional logic
@@ -410,10 +413,12 @@ func (e *ConditionsEngineImpl) validateExpressionSyntax(expression string) error
 
 	// Check for balanced parentheses
 	openCount := 0
+	// Guideline #14: Use idiomatic patterns - switch for multiple character comparisons
 	for _, char := range expression {
-		if char == '(' {
+		switch char {
+		case '(':
 			openCount++
-		} else if char == ')' {
+		case ')':
 			openCount--
 			if openCount < 0 {
 				return fmt.Errorf("unmatched closing parenthesis")
@@ -434,7 +439,19 @@ type SimpleEvaluator struct {
 }
 
 func (se *SimpleEvaluator) Evaluate(ctx context.Context, expression string, context map[string]interface{}) (bool, error) {
-	se.logger.WithField("expression", expression).Debug("Evaluating simple expression")
+	// Add context-aware logging for traceability and potential timeout handling
+	logger := se.logger.WithFields(logrus.Fields{
+		"expression": expression,
+		"trace_id":   ctx.Value("trace_id"),
+	})
+	logger.Debug("Evaluating simple expression")
+
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	default:
+	}
 
 	// Simple evaluation logic - can be enhanced with more sophisticated parsing
 	switch strings.ToLower(strings.TrimSpace(expression)) {
@@ -579,12 +596,19 @@ type AIConditionEvaluatorConfig struct {
 	UseContextualAnalysis   bool `yaml:"use_contextual_analysis" default:"true"`
 }
 
+// SLMClient interface for AI service integration
+type SLMClient interface {
+	AnalyzeAlert(ctx context.Context, alert interface{}) (*types.ActionRecommendation, error)
+	IsHealthy() bool
+}
+
 // DefaultAIConditionEvaluator provides default AI condition evaluation
 type DefaultAIConditionEvaluator struct {
 	id           string
 	logger       *logrus.Logger
 	config       *AIConditionEvaluatorConfig
 	capabilities []string
+	slmClient    SLMClient
 }
 
 // NewDefaultAIConditionEvaluator creates a new default AI condition evaluator
@@ -611,7 +635,13 @@ func NewDefaultAIConditionEvaluator(config *AIConditionEvaluatorConfig, logger *
 		logger:       logger,
 		config:       config,
 		capabilities: []string{"simple", "complex", "ai_enhanced"},
+		slmClient:    nil, // Will be set via dependency injection in tests
 	}
+}
+
+// SetSLMClient sets the SLM client for AI integration
+func (d *DefaultAIConditionEvaluator) SetSLMClient(client SLMClient) {
+	d.slmClient = client
 }
 
 // EvaluateCondition implements AIConditionEvaluator interface
@@ -627,7 +657,247 @@ func (d *DefaultAIConditionEvaluator) EvaluateCondition(ctx context.Context, con
 		Metadata:    make(map[string]interface{}),
 	}
 
-	// Simple evaluation for now - can be enhanced with AI logic
+	// Set basic evaluator metadata
+	result.Metadata["evaluator_id"] = d.id
+	result.Metadata["evaluator_type"] = "ai_condition_evaluator"
+
+	// Try AI analysis first if SLM client is available
+	if d.slmClient != nil {
+		d.logger.WithFields(logrus.Fields{
+			"client_available": true,
+			"client_healthy":   d.slmClient.IsHealthy(),
+		}).Debug("Checking SLM client availability")
+
+		if d.slmClient.IsHealthy() {
+			d.logger.Debug("SLM client is healthy, attempting AI evaluation")
+			aiResult, err := d.evaluateWithAI(ctx, condition)
+			if err == nil && aiResult != nil {
+				// Successfully got AI analysis
+				d.logger.WithFields(logrus.Fields{
+					"confidence": aiResult.Confidence,
+					"method":     "ai",
+				}).Debug("AI evaluation succeeded")
+				result.Result = aiResult.Result
+				result.Confidence = aiResult.Confidence
+				result.Reasoning = aiResult.Reasoning
+				result.Context = aiResult.Context
+				if aiResult.Metadata != nil {
+					for k, v := range aiResult.Metadata {
+						result.Metadata[k] = v
+					}
+				}
+				result.ExecutionTime = time.Since(start)
+				return result, nil
+			}
+			// AI failed, fall back to basic evaluation
+			d.logger.WithError(err).Debug("AI evaluation failed, using fallback")
+		} else {
+			d.logger.Debug("SLM client not healthy, using fallback")
+		}
+	} else {
+		d.logger.Debug("No SLM client available, using fallback")
+	}
+
+	// Fallback evaluation when AI is not available or failed
+	fallbackResult := d.evaluateWithFallback(ctx, condition)
+	result.Result = fallbackResult.Result
+	result.Confidence = fallbackResult.Confidence
+	result.Reasoning = fallbackResult.Reasoning
+	result.Context = fallbackResult.Context
+	if fallbackResult.Metadata != nil {
+		for k, v := range fallbackResult.Metadata {
+			result.Metadata[k] = v
+		}
+	}
+
+	result.ExecutionTime = time.Since(start)
+
+	d.logger.WithFields(logrus.Fields{
+		"condition_id": condition.ID,
+		"result":       result.Result,
+		"confidence":   result.Confidence,
+		"duration":     result.ExecutionTime,
+		"method":       "fallback",
+	}).Debug("AI condition evaluation completed")
+
+	return result, nil
+}
+
+// evaluateWithAI performs AI-powered condition evaluation
+func (d *DefaultAIConditionEvaluator) evaluateWithAI(ctx context.Context, condition *Condition) (*EvaluationResult, error) {
+	// Create a proper Alert structure for the AI analysis
+	mockAlert := types.Alert{
+		ID:          condition.ID,
+		Name:        condition.Name,
+		Summary:     fmt.Sprintf("Condition: %s", condition.Name),
+		Description: fmt.Sprintf("Condition evaluation: %s", condition.Expression),
+		Severity:    "info", // Default severity
+		Status:      "active",
+		Labels: map[string]string{
+			"condition_id":   condition.ID,
+			"condition_type": condition.Type,
+			"priority":       fmt.Sprintf("%d", condition.Priority),
+		},
+		Annotations: map[string]string{
+			"expression": condition.Expression,
+		},
+		StartsAt:  time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// Call the AI service
+	recommendation, err := d.slmClient.AnalyzeAlert(ctx, mockAlert)
+	if err != nil {
+		return nil, fmt.Errorf("AI analysis failed: %w", err)
+	}
+
+	// Parse the AI response - expecting ActionRecommendation format
+	if recommendation != nil {
+		return d.parseAIRecommendation(recommendation, condition)
+	}
+
+	return nil, fmt.Errorf("received nil AI response")
+}
+
+// parseAIRecommendation parses ActionRecommendation into EvaluationResult
+func (d *DefaultAIConditionEvaluator) parseAIRecommendation(recommendation *types.ActionRecommendation, condition *Condition) (*EvaluationResult, error) {
+	result := &EvaluationResult{
+		ConditionID: condition.ID,
+		Result:      true, // Default to true for now
+		Confidence:  recommendation.Confidence,
+		Context:     make(map[string]interface{}),
+		EvaluatedAt: time.Now(),
+		Metadata:    make(map[string]interface{}),
+	}
+
+	// Parse reasoning details to extract structured analysis
+	if recommendation.Reasoning != nil && recommendation.Reasoning.Summary != "" {
+		// Try to parse the summary as JSON
+		var aiAnalysis map[string]interface{}
+		if err := json.Unmarshal([]byte(recommendation.Reasoning.Summary), &aiAnalysis); err == nil {
+			// Successfully parsed JSON response
+			if satisfied, ok := aiAnalysis["satisfied"].(bool); ok {
+				result.Result = satisfied
+			}
+
+			// Extract detailed analysis
+			if detailedAnalysis, ok := aiAnalysis["detailed_analysis"].(map[string]interface{}); ok {
+				result.Metadata["detailed_analysis"] = detailedAnalysis
+			}
+
+			// Set reasoning context
+			if reasoning, ok := aiAnalysis["reasoning"].(string); ok {
+				result.Context["reasoning"] = reasoning
+			}
+
+			// Add recommendations if available
+			if recommendations, ok := aiAnalysis["recommendations"].([]interface{}); ok {
+				result.Context["recommendations"] = recommendations
+			}
+
+			result.Reasoning = recommendation.Reasoning.Summary
+		} else {
+			// Fallback: treat as plain text reasoning
+			result.Reasoning = recommendation.Reasoning.Summary
+			result.Context["reasoning"] = recommendation.Reasoning.Summary
+		}
+	}
+
+	return result, nil
+}
+
+// evaluateWithFallback performs basic condition evaluation when AI is unavailable
+func (d *DefaultAIConditionEvaluator) evaluateWithFallback(ctx context.Context, condition *Condition) *EvaluationResult {
+	result := &EvaluationResult{
+		ConditionID: condition.ID,
+		Result:      false,
+		Confidence:  0.5, // Lower confidence for fallback - should be < 0.7
+		Context:     make(map[string]interface{}),
+		EvaluatedAt: time.Now(),
+		Metadata:    make(map[string]interface{}),
+	}
+
+	logger := d.logger.WithFields(logrus.Fields{
+		"condition": condition,
+		"trace_id":  ctx.Value("trace_id"),
+	})
+	logger.Debug("Evaluating simple expression")
+
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil
+	default:
+	}
+
+	// Basic evaluation logic based on condition type and expression
+	switch strings.ToLower(condition.Type) {
+	case "time":
+		result = d.evaluateTimeConditionFallback(condition)
+	case "metric", "resource":
+		result = d.evaluateMetricConditionFallback(condition)
+	default:
+		result = d.evaluateGenericConditionFallback(condition)
+	}
+
+	// Ensure fallback results have appropriate context
+	result.Context["evaluation_method"] = "fallback"
+	result.Context["ai_available"] = false
+
+	return result
+}
+
+// evaluateTimeConditionFallback handles time-based conditions without AI
+func (d *DefaultAIConditionEvaluator) evaluateTimeConditionFallback(condition *Condition) *EvaluationResult {
+	result := &EvaluationResult{
+		ConditionID: condition.ID,
+		Result:      true,
+		Confidence:  0.5, // Lower confidence for fallback
+		Context:     make(map[string]interface{}),
+		EvaluatedAt: time.Now(),
+		Metadata:    make(map[string]interface{}),
+		Reasoning:   "Basic time evaluation using confidence threshold",
+	}
+
+	// Add time context
+	result.Context["current_time"] = time.Now().Format("15:04")
+	result.Context["current_day"] = time.Now().Weekday().String()
+
+	return result
+}
+
+// evaluateMetricConditionFallback handles metric/resource conditions without AI
+func (d *DefaultAIConditionEvaluator) evaluateMetricConditionFallback(condition *Condition) *EvaluationResult {
+	result := &EvaluationResult{
+		ConditionID: condition.ID,
+		Result:      true,
+		Confidence:  0.5, // Lower confidence for fallback
+		Context:     make(map[string]interface{}),
+		EvaluatedAt: time.Now(),
+		Metadata:    make(map[string]interface{}),
+		Reasoning:   "Basic evaluation using confidence threshold",
+	}
+
+	// Add basic metric context
+	result.Context["expression"] = condition.Expression
+	result.Context["metadata"] = condition.Metadata
+
+	return result
+}
+
+// evaluateGenericConditionFallback handles generic conditions without AI
+func (d *DefaultAIConditionEvaluator) evaluateGenericConditionFallback(condition *Condition) *EvaluationResult {
+	result := &EvaluationResult{
+		ConditionID: condition.ID,
+		Result:      false,
+		Confidence:  0.5, // Lower confidence for fallback
+		Context:     make(map[string]interface{}),
+		EvaluatedAt: time.Now(),
+		Metadata:    make(map[string]interface{}),
+		Reasoning:   "Default evaluation using confidence threshold",
+	}
+
+	// Simple expression evaluation
 	switch strings.ToLower(strings.TrimSpace(condition.Expression)) {
 	case "true", "1", "yes", "enabled":
 		result.Result = true
@@ -638,24 +908,13 @@ func (d *DefaultAIConditionEvaluator) EvaluateCondition(ctx context.Context, con
 		result.Confidence = 0.95
 		result.Reasoning = "Direct boolean evaluation to false"
 	default:
-		// Default to true with lower confidence for unknown expressions
+		// Default to true with lower fallback confidence
 		result.Result = true
-		result.Confidence = d.config.ConfidenceThreshold
+		result.Confidence = 0.5 // Lower than AI analysis
 		result.Reasoning = "Default evaluation using confidence threshold"
 	}
 
-	result.ExecutionTime = time.Since(start)
-	result.Metadata["evaluator_id"] = d.id
-	result.Metadata["evaluator_type"] = "ai_condition_evaluator"
-
-	d.logger.WithFields(logrus.Fields{
-		"condition_id": condition.ID,
-		"result":       result.Result,
-		"confidence":   result.Confidence,
-		"duration":     result.ExecutionTime,
-	}).Debug("AI condition evaluation completed")
-
-	return result, nil
+	return result
 }
 
 // GetID implements AIConditionEvaluator interface
@@ -678,7 +937,19 @@ type RegexEvaluator struct {
 }
 
 func (re *RegexEvaluator) Evaluate(ctx context.Context, expression string, context map[string]interface{}) (bool, error) {
-	re.logger.WithField("expression", expression).Debug("Evaluating regex expression")
+	// Add context-aware logging for traceability and potential timeout handling
+	logger := re.logger.WithFields(logrus.Fields{
+		"expression": expression,
+		"trace_id":   ctx.Value("trace_id"),
+	})
+	logger.Debug("Evaluating regex expression")
+
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return false, ctx.Err()
+	default:
+	}
 
 	// Expected format: "field MATCHES pattern" or "field =~ pattern"
 	parts := regexp.MustCompile(`\s+(MATCHES|=~)\s+`).Split(expression, 2)

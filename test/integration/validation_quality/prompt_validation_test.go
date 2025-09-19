@@ -80,13 +80,16 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 				{"increase_resources", 2, 0.20},
 			}
 
+			actionCounter := 0
 			for _, pattern := range failurePatterns {
 				for i := 0; i < pattern.failures; i++ {
+					actionCounter++
 					actionRecord := &actionhistory.ActionRecord{
 						ResourceReference: actionhistory.ResourceReference{
-							Namespace: "production",
-							Kind:      "Deployment",
-							Name:      "unstable-service",
+							ResourceUID: fmt.Sprintf("test-uid-%d", actionCounter),
+							Namespace:   "production",
+							Kind:        "Deployment",
+							Name:        fmt.Sprintf("unstable-service-%s-%d", pattern.actionType, i),
 						},
 						ActionID:  fmt.Sprintf("failure-%s-%d", pattern.actionType, i),
 						Timestamp: time.Now().Add(-time.Duration(i+1) * time.Hour),

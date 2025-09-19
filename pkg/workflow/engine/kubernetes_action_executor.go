@@ -136,6 +136,18 @@ func (kae *KubernetesActionExecutor) restartPod(ctx context.Context, action *Ste
 	namespace := kae.getStringParameter(action, "namespace")
 	podName := kae.getStringParameter(action, "pod_name")
 
+	// Use stepContext for enhanced parameter resolution
+	if namespace == "" && stepContext != nil && stepContext.Variables != nil {
+		if ns, ok := stepContext.Variables["namespace"].(string); ok {
+			namespace = ns
+		}
+	}
+	if podName == "" && stepContext != nil && stepContext.Variables != nil {
+		if pod, ok := stepContext.Variables["pod_name"].(string); ok {
+			podName = pod
+		}
+	}
+
 	// Use target if namespace/name not in parameters
 	if namespace == "" && action.Target != nil {
 		namespace = action.Target.Namespace
@@ -212,6 +224,23 @@ func (kae *KubernetesActionExecutor) scaleDeployment(ctx context.Context, action
 	deploymentName := kae.getStringParameter(action, "deployment")
 	targetReplicas := kae.getIntParameter(action, "replicas")
 
+	// Use stepContext for enhanced parameter resolution
+	if namespace == "" && stepContext != nil && stepContext.Variables != nil {
+		if ns, ok := stepContext.Variables["namespace"].(string); ok {
+			namespace = ns
+		}
+	}
+	if deploymentName == "" && stepContext != nil && stepContext.Variables != nil {
+		if dep, ok := stepContext.Variables["deployment"].(string); ok {
+			deploymentName = dep
+		}
+	}
+	if targetReplicas <= 0 && stepContext != nil && stepContext.Variables != nil {
+		if replicas, ok := stepContext.Variables["replicas"].(int); ok && replicas > 0 {
+			targetReplicas = replicas
+		}
+	}
+
 	if namespace == "" || deploymentName == "" || targetReplicas <= 0 {
 		return &StepResult{
 			Success: false,
@@ -282,6 +311,18 @@ func (kae *KubernetesActionExecutor) deletePod(ctx context.Context, action *Step
 	namespace := kae.getStringParameter(action, "namespace")
 	podName := kae.getStringParameter(action, "pod_name")
 
+	// Use stepContext for enhanced parameter resolution
+	if namespace == "" && stepContext != nil && stepContext.Variables != nil {
+		if ns, ok := stepContext.Variables["namespace"].(string); ok {
+			namespace = ns
+		}
+	}
+	if podName == "" && stepContext != nil && stepContext.Variables != nil {
+		if pod, ok := stepContext.Variables["pod_name"].(string); ok {
+			podName = pod
+		}
+	}
+
 	if namespace == "" || podName == "" {
 		return &StepResult{
 			Success: false,
@@ -346,6 +387,13 @@ func (kae *KubernetesActionExecutor) deletePod(ctx context.Context, action *Step
 func (kae *KubernetesActionExecutor) drainNode(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
 	nodeName := kae.getStringParameter(action, "node_name")
 
+	// Use stepContext for enhanced parameter resolution
+	if nodeName == "" && stepContext != nil && stepContext.Variables != nil {
+		if node, ok := stepContext.Variables["node_name"].(string); ok {
+			nodeName = node
+		}
+	}
+
 	if nodeName == "" {
 		return &StepResult{
 			Success: false,
@@ -370,19 +418,46 @@ func (kae *KubernetesActionExecutor) drainNode(ctx context.Context, action *Step
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Node %s successfully cordoned", nodeName),
 		},
+		Variables: map[string]interface{}{
+			"cordoned_node": nodeName,
+		},
 		Data: map[string]interface{}{
 			"action_type": "cordon_node",
 			"node_name":   nodeName,
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
 // increaseResources increases resource limits/requests for a deployment
 func (kae *KubernetesActionExecutor) increaseResources(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{
+			Success: false,
+			Error:   "operation cancelled",
+			Data:    make(map[string]interface{}),
+		}, ctx.Err()
+	default:
+	}
+
 	namespace := kae.getStringParameter(action, "namespace")
 	deploymentName := kae.getStringParameter(action, "deployment")
 	cpuIncrease := kae.getStringParameter(action, "cpu_increase")
 	memoryIncrease := kae.getStringParameter(action, "memory_increase")
+
+	// Use stepContext for enhanced parameter resolution
+	if namespace == "" && stepContext != nil && stepContext.Variables != nil {
+		if ns, ok := stepContext.Variables["namespace"].(string); ok {
+			namespace = ns
+		}
+	}
+	if deploymentName == "" && stepContext != nil && stepContext.Variables != nil {
+		if dep, ok := stepContext.Variables["deployment"].(string); ok {
+			deploymentName = dep
+		}
+	}
 
 	if namespace == "" || deploymentName == "" {
 		return &StepResult{
@@ -425,6 +500,18 @@ func (kae *KubernetesActionExecutor) increaseResources(ctx context.Context, acti
 func (kae *KubernetesActionExecutor) rollbackDeployment(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
 	namespace := kae.getStringParameter(action, "namespace")
 	deploymentName := kae.getStringParameter(action, "deployment")
+
+	// Use stepContext for enhanced parameter resolution
+	if namespace == "" && stepContext != nil && stepContext.Variables != nil {
+		if ns, ok := stepContext.Variables["namespace"].(string); ok {
+			namespace = ns
+		}
+	}
+	if deploymentName == "" && stepContext != nil && stepContext.Variables != nil {
+		if dep, ok := stepContext.Variables["deployment"].(string); ok {
+			deploymentName = dep
+		}
+	}
 
 	if namespace == "" || deploymentName == "" {
 		return &StepResult{

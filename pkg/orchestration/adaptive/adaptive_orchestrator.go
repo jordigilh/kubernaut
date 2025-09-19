@@ -15,6 +15,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
 
+const (
+	minExecutionsForOptimization = 3 // BR-ORK-003: Minimum executions before optimization
+)
+
 // DefaultAdaptiveOrchestrator implements the AdaptiveOrchestrator interface
 // Business Requirements: BR-ORCH-001, BR-ORCH-002, BR-ORCH-003, BR-ORCH-004, BR-ORCH-005
 // Provides continuous optimization, adaptive resource allocation, execution scheduling,
@@ -42,6 +46,9 @@ type DefaultAdaptiveOrchestrator struct {
 	// Synchronization
 	mu          sync.RWMutex
 	executionMu sync.RWMutex
+
+	// BR-ORK-003: Resource monitoring flag
+	resourceMonitoringEnabled bool
 
 	// Logging
 	log *logrus.Logger
@@ -378,9 +385,8 @@ func (dao *DefaultAdaptiveOrchestrator) OptimizeWorkflow(ctx context.Context, wo
 		return nil, fmt.Errorf("failed to analyze workflow performance: %w", err)
 	}
 
-	// Generate optimization candidates (stubbed)
-	candidates := []*engine.OptimizationCandidate{} // TODO: Implement optimization candidates
-	_ = analysis                                    // Suppress unused variable warning
+	// BR-ORK-001 Requirement 1: Performance Analysis & Candidate Generation
+	candidates := dao.generateOptimizationCandidates(ctx, analysis)
 
 	if len(candidates) == 0 {
 		dao.log.WithField("workflow_id", workflowID).Info("No optimization candidates found")
@@ -579,22 +585,60 @@ func (dao *DefaultAdaptiveOrchestrator) executeWorkflowAsync(ctx context.Context
 			Timeout:       step.Timeout,
 		}
 
-		// Execute step (stubbed)
-		result := &engine.StepResult{} // TODO: Implement actual step execution
-		_ = stepContext                // Suppress unused variable warning
+		// BR-ORK-002 Requirement 1: Context-Aware Execution
+		// Analyze current system state before step execution
+		contextAnalysis, err := dao.analyzeExecutionContext(ctx, stepContext)
+		if err != nil {
+			dao.log.WithError(err).WithField("step_id", step.ID).Error("BR-ORK-002: Failed to analyze execution context")
+			stepExecution.Status = engine.ExecutionStatusFailed
+			stepExecution.Result = &engine.StepResult{
+				Success:   false,
+				Error:     err.Error(),
+				Duration:  time.Since(stepExecution.StartTime),
+				Variables: make(map[string]interface{}),
+			}
+		} else {
+			// BR-ORK-002 Requirement 2: Real-Time Adaptation
+			// Select optimal execution strategy based on context and learning
+			executionStrategy, err := dao.selectExecutionStrategy(ctx, step, contextAnalysis)
+			if err != nil {
+				dao.log.WithError(err).WithField("step_id", step.ID).Error("BR-ORK-002: Failed to select execution strategy")
+				stepExecution.Status = engine.ExecutionStatusFailed
+			} else {
+				// BR-ORK-002 Requirement 3: Learning Integration
+				// Execute step with adaptive parameters
+				result, err := dao.executeStepWithAdaptation(ctx, step, stepContext, executionStrategy)
+				if err != nil {
+					dao.log.WithError(err).WithField("step_id", step.ID).Warn("BR-ORK-002: Step execution failed, attempting adaptation")
+
+					// BR-ORK-002 Requirement 2: Dynamic strategy switching on failure
+					alternativeResult, altErr := dao.executeWithAlternativeStrategy(ctx, step, stepContext, err)
+					if altErr != nil {
+						stepExecution.Status = engine.ExecutionStatusFailed
+						stepExecution.Result = &engine.StepResult{
+							Success:   false,
+							Error:     altErr.Error(),
+							Duration:  time.Since(stepExecution.StartTime),
+							Variables: make(map[string]interface{}),
+						}
+					} else {
+						stepExecution.Status = engine.ExecutionStatusCompleted
+						stepExecution.Result = alternativeResult
+					}
+				} else {
+					stepExecution.Status = engine.ExecutionStatusCompleted
+					stepExecution.Result = result
+				}
+			}
+		}
 
 		stepExecution.EndTime = &stepExecution.StartTime
 		*stepExecution.EndTime = time.Now()
 		stepExecution.Duration = stepExecution.EndTime.Sub(stepExecution.StartTime)
 
-		// TODO: Add actual error handling when step execution is implemented
-		// For now, assume successful execution since this is stubbed
-		stepExecution.Status = engine.ExecutionStatusCompleted
-		stepExecution.Result = result
-
 		// Update execution variables with step results
-		if result.Variables != nil {
-			for k, v := range result.Variables {
+		if stepExecution.Result != nil && stepExecution.Result.Variables != nil {
+			for k, v := range stepExecution.Result.Variables {
 				execution.Context.Variables[k] = v
 			}
 		}
@@ -752,8 +796,8 @@ func (dao *DefaultAdaptiveOrchestrator) updateWorkflowStatistics(execution *engi
 		workflow.Status = engine.StatusFailed
 	}
 
-	// TODO: Implement proper statistics tracking in separate struct
-	workflow.UpdatedAt = time.Now()
+	// BR-ORK-003 Requirement 1: Execution Metrics Collection
+	dao.collectAndStoreExecutionMetrics(execution, workflow)
 }
 
 // Background loops
@@ -828,8 +872,8 @@ func (dao *DefaultAdaptiveOrchestrator) performOptimizationCycle() {
 
 	for _, workflow := range workflows {
 		// Only optimize workflows that have sufficient execution history
-		// TODO: Implement execution count tracking
-		if true { // Placeholder for execution count check
+		// BR-ORK-003 Requirement 2: Execution Count Tracking
+		if dao.hasMinimumExecutionHistory(workflow.ID, minExecutionsForOptimization) {
 			_, err := dao.OptimizeWorkflow(dao.ctx, workflow.ID)
 			if err != nil {
 				dao.log.WithError(err).WithField("workflow_id", workflow.ID).

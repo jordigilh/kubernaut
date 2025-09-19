@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse
 from services.metrics_service import MetricsService, get_metrics_service
 from services.auth_service import User, Permission
 from api.routes.auth import get_current_active_user
-from config import settings
+from config import get_settings
 
 logger = structlog.get_logger(__name__)
 

@@ -154,8 +154,9 @@ func (rfe *RobustFeatureExtractor) validateInputData(data *sharedtypes.WorkflowE
 func (rfe *RobustFeatureExtractor) extractWithErrorRecovery(data *sharedtypes.WorkflowExecutionData) (*shared.WorkflowFeatures, []error) {
 	errors := make([]error, 0)
 
+	// Guideline #14: Use idiomatic patterns - call method directly without embedded field selector
 	// Try normal extraction first
-	features, err := rfe.FeatureExtractor.Extract(data)
+	features, err := rfe.Extract(data)
 	if err == nil {
 		return features, errors
 	}

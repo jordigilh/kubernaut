@@ -90,7 +90,7 @@ func StandardLLMConfig() *config.LLMConfig {
 		Temperature: 0.1,
 		Timeout:     30,
 		RetryCount:  3,
-		Endpoint:    "http://localhost:11434",
+		Endpoint:    "http://192.168.1.169:8080",
 	}
 }
 
@@ -103,7 +103,7 @@ func FastLLMConfig() *config.LLMConfig {
 		Temperature: 0.0, // Deterministic for testing
 		Timeout:     10,
 		RetryCount:  1,
-		Endpoint:    "http://localhost:11434",
+		Endpoint:    "http://192.168.1.169:8080",
 	}
 }
 
@@ -116,7 +116,7 @@ func PerformanceLLMConfig() *config.LLMConfig {
 		Temperature: 0.1,
 		Timeout:     60,
 		RetryCount:  5,
-		Endpoint:    "http://localhost:11434",
+		Endpoint:    "http://192.168.1.169:8080",
 	}
 }
 

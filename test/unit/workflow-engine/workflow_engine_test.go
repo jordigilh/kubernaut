@@ -574,13 +574,20 @@ func createSequentialWorkflow(workflowID string, stepNames []string) *engine.Wor
 	steps := make([]*engine.ExecutableWorkflowStep, len(stepNames))
 
 	for i, stepName := range stepNames {
+		// Create sequential dependencies - each step depends on the previous one
+		var dependencies []string
+		if i > 0 {
+			dependencies = []string{stepNames[i-1]} // Depend on previous step
+		}
+
 		steps[i] = &engine.ExecutableWorkflowStep{
 			BaseEntity: types.BaseEntity{
 				ID:   stepName,
 				Name: stepName,
 			},
-			Type:    engine.StepTypeAction,
-			Timeout: 30 * time.Second,
+			Type:         engine.StepTypeAction,
+			Timeout:      30 * time.Second,
+			Dependencies: dependencies, // Set sequential dependencies
 			Action: &engine.StepAction{
 				Type: "kubernetes",
 				Parameters: map[string]interface{}{

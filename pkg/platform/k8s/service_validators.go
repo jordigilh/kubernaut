@@ -58,7 +58,12 @@ func (hv *HealthValidator) Validate(ctx context.Context, service *DetectedServic
 		// Don't fail validation - network issues don't mean service is invalid
 		return nil
 	}
-	defer resp.Body.Close()
+	// Guideline #6: Proper error handling - explicitly handle or log defer errors
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			hv.log.WithError(closeErr).Debug("Failed to close response body during validation")
+		}
+	}()
 
 	hv.log.WithFields(logrus.Fields{
 		"service":     service.Name,

@@ -48,8 +48,17 @@ type PatternValidationRule struct {
 	Required      bool                             `json:"required"`
 }
 
-// PatternValidationResult is now defined in pattern_discovery_helpers.go
-// This comment maintained for backward compatibility documentation
+// PatternValidationResult represents the result of pattern validation
+type PatternValidationResult struct {
+	RuleID    string
+	Type      ValidationType
+	Passed    bool
+	Message   string
+	Details   map[string]interface{}
+	Timestamp time.Time
+}
+
+type ValidationType string
 
 // NewPatternValidationResult creates a ValidationResult configured for pattern validation
 func NewSharedPatternValidationResult(validationID, testType string, testAccuracy, trainAccuracy, generalizationGap, overfittingScore float64) *sharedtypes.ValidationResult {

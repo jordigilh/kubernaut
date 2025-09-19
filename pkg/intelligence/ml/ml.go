@@ -264,6 +264,13 @@ func (sla *SupervisedLearningAnalyzer) convertToMLFormat(businessData []Business
 }
 
 func (sla *SupervisedLearningAnalyzer) calculateBusinessAccuracy(ctx context.Context, model *learning.MLModel, trainingData []BusinessIncidentCase) (*BusinessModelMetrics, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Calculate business-specific accuracy metrics
 	accuracyByType := make(map[string]float64)
 
@@ -300,6 +307,13 @@ func (sla *SupervisedLearningAnalyzer) calculateBusinessAccuracy(ctx context.Con
 }
 
 func (sla *SupervisedLearningAnalyzer) predictIncidentOutcome(ctx context.Context, model *TrainedModel, incident BusinessIncidentCase) (*IncidentPrediction, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Simplified prediction logic - would use actual trained model in production
 	confidence := 0.85 + (rand.Float64() * 0.1) // Business-grade confidence
 
@@ -638,10 +652,12 @@ func (pad *PerformanceAnomalyDetector) calculateBusinessThreshold(metricName str
 	warningMultiplier := 1.5
 	criticalMultiplier := 2.0
 
-	if criticality == "critical" {
+	// Guideline #14: Use idiomatic patterns - switch for multiple conditional checks
+	switch criticality {
+	case "critical":
 		warningMultiplier = 1.2
 		criticalMultiplier = 1.5
-	} else if criticality == "high" {
+	case "high":
 		warningMultiplier = 1.3
 		criticalMultiplier = 1.8
 	}
