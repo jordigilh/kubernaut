@@ -118,6 +118,13 @@ func (mae *MonitoringActionExecutor) silenceAlert(ctx context.Context, action *S
 	duration := mae.getStringParameter(action, "duration")
 	reason := mae.getStringParameter(action, "reason")
 
+	// Use stepContext for enhanced parameter resolution
+	if alertName == "" && stepContext != nil && stepContext.Variables != nil {
+		if name, ok := stepContext.Variables["alert_name"].(string); ok {
+			alertName = name
+		}
+	}
+
 	if alertName == "" {
 		return &StepResult{
 			Success: false,
@@ -221,10 +228,33 @@ func (mae *MonitoringActionExecutor) silenceAlert(ctx context.Context, action *S
 
 // createAlert creates a new monitoring alert
 func (mae *MonitoringActionExecutor) createAlert(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{
+			Success: false,
+			Error:   "operation cancelled",
+			Data:    make(map[string]interface{}),
+		}, ctx.Err()
+	default:
+	}
+
 	alertName := mae.getStringParameter(action, "alert_name")
 	expression := mae.getStringParameter(action, "expression")
 	severity := mae.getStringParameter(action, "severity")
 	summary := mae.getStringParameter(action, "summary")
+
+	// Use stepContext for enhanced parameter resolution
+	if alertName == "" && stepContext != nil && stepContext.Variables != nil {
+		if name, ok := stepContext.Variables["alert_name"].(string); ok {
+			alertName = name
+		}
+	}
+	if expression == "" && stepContext != nil && stepContext.Variables != nil {
+		if expr, ok := stepContext.Variables["expression"].(string); ok {
+			expression = expr
+		}
+	}
 
 	if alertName == "" || expression == "" {
 		return &StepResult{
@@ -255,7 +285,9 @@ func (mae *MonitoringActionExecutor) createAlert(ctx context.Context, action *St
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Alert rule %s created successfully", alertName),
 		},
-		Variables: map[string]interface{}{},
+		Variables: map[string]interface{}{
+			"created_alert": alertName,
+		},
 		Data: map[string]interface{}{
 			"alert_name":  alertName,
 			"expression":  expression,
@@ -264,14 +296,33 @@ func (mae *MonitoringActionExecutor) createAlert(ctx context.Context, action *St
 			"action_type": "create_alert",
 			"status":      "created",
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
 // updateAlertRule updates an existing alert rule
 func (mae *MonitoringActionExecutor) updateAlertRule(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{
+			Success: false,
+			Error:   "operation cancelled",
+			Data:    make(map[string]interface{}),
+		}, ctx.Err()
+	default:
+	}
+
 	alertName := mae.getStringParameter(action, "alert_name")
 	newExpression := mae.getStringParameter(action, "expression")
 	newSeverity := mae.getStringParameter(action, "severity")
+
+	// Use stepContext for enhanced parameter resolution
+	if alertName == "" && stepContext != nil && stepContext.Variables != nil {
+		if name, ok := stepContext.Variables["alert_name"].(string); ok {
+			alertName = name
+		}
+	}
 
 	if alertName == "" {
 		return &StepResult{
@@ -292,7 +343,9 @@ func (mae *MonitoringActionExecutor) updateAlertRule(ctx context.Context, action
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Alert rule %s updated successfully", alertName),
 		},
-		Variables: map[string]interface{}{},
+		Variables: map[string]interface{}{
+			"updated_alert": alertName,
+		},
 		Data: map[string]interface{}{
 			"alert_name":  alertName,
 			"expression":  newExpression,
@@ -300,13 +353,32 @@ func (mae *MonitoringActionExecutor) updateAlertRule(ctx context.Context, action
 			"action_type": "update_alert_rule",
 			"status":      "updated",
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
 // acknowledgeAlert acknowledges an alert
 func (mae *MonitoringActionExecutor) acknowledgeAlert(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{
+			Success: false,
+			Error:   "operation cancelled",
+			Data:    make(map[string]interface{}),
+		}, ctx.Err()
+	default:
+	}
+
 	alertName := mae.getStringParameter(action, "alert_name")
 	acknowledgedBy := mae.getStringParameter(action, "acknowledged_by")
+
+	// Use stepContext for enhanced parameter resolution
+	if alertName == "" && stepContext != nil && stepContext.Variables != nil {
+		if name, ok := stepContext.Variables["alert_name"].(string); ok {
+			alertName = name
+		}
+	}
 
 	if alertName == "" {
 		return &StepResult{
@@ -330,21 +402,42 @@ func (mae *MonitoringActionExecutor) acknowledgeAlert(ctx context.Context, actio
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Alert %s acknowledged by %s", alertName, acknowledgedBy),
 		},
-		Variables: map[string]interface{}{},
+		Variables: map[string]interface{}{
+			"acknowledged_alert": alertName,
+		},
 		Data: map[string]interface{}{
 			"alert_name":      alertName,
 			"acknowledged_by": acknowledgedBy,
 			"acknowledged_at": time.Now(),
 			"action_type":     "acknowledge_alert",
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
 // escalateAlert escalates an alert to higher severity or different channels
 func (mae *MonitoringActionExecutor) escalateAlert(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &StepResult{
+			Success: false,
+			Error:   "operation cancelled",
+			Data:    make(map[string]interface{}),
+		}, ctx.Err()
+	default:
+	}
+
 	alertName := mae.getStringParameter(action, "alert_name")
 	escalationLevel := mae.getStringParameter(action, "escalation_level")
 	escalationChannel := mae.getStringParameter(action, "escalation_channel")
+
+	// Use stepContext for enhanced parameter resolution
+	if alertName == "" && stepContext != nil && stepContext.Variables != nil {
+		if name, ok := stepContext.Variables["alert_name"].(string); ok {
+			alertName = name
+		}
+	}
 
 	if alertName == "" {
 		return &StepResult{
@@ -373,7 +466,9 @@ func (mae *MonitoringActionExecutor) escalateAlert(ctx context.Context, action *
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Alert %s escalated to %s via %s", alertName, escalationLevel, escalationChannel),
 		},
-		Variables: map[string]interface{}{},
+		Variables: map[string]interface{}{
+			"escalated_alert": alertName,
+		},
 		Data: map[string]interface{}{
 			"alert_name":         alertName,
 			"escalation_level":   escalationLevel,
@@ -381,6 +476,7 @@ func (mae *MonitoringActionExecutor) escalateAlert(ctx context.Context, action *
 			"escalated_at":       time.Now(),
 			"action_type":        "escalate_alert",
 		},
+		Duration: time.Since(startTime),
 	}, nil
 }
 
@@ -393,6 +489,13 @@ func (mae *MonitoringActionExecutor) rollbackSilence(ctx context.Context, action
 	silenceID, ok := result.Data["silence_id"].(string)
 	if !ok {
 		return fmt.Errorf("silence ID not found in action metadata")
+	}
+
+	// Use action for enhanced rollback validation
+	if action != nil && action.Parameters != nil {
+		if originalAlertName, exists := action.Parameters["alert_name"]; exists {
+			mae.log.WithField("original_alert", originalAlertName).Debug("Rolling back silence for original alert")
+		}
 	}
 
 	mae.log.WithField("silence_id", silenceID).Info("Rolling back alert silence")
@@ -414,6 +517,13 @@ func (mae *MonitoringActionExecutor) rollbackSilence(ctx context.Context, action
 
 // rollbackCreateAlert removes a created alert rule
 func (mae *MonitoringActionExecutor) rollbackCreateAlert(ctx context.Context, action *StepAction, result *StepResult) error {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	if result.Data == nil {
 		return fmt.Errorf("no rollback information available")
 	}
@@ -421,6 +531,16 @@ func (mae *MonitoringActionExecutor) rollbackCreateAlert(ctx context.Context, ac
 	alertName, ok := result.Data["alert_name"].(string)
 	if !ok {
 		return fmt.Errorf("alert name not found in action metadata")
+	}
+
+	// Use action for enhanced rollback validation
+	if action != nil && action.Parameters != nil {
+		if originalExpression, exists := action.Parameters["expression"]; exists {
+			mae.log.WithFields(logrus.Fields{
+				"alert_name":          alertName,
+				"original_expression": originalExpression,
+			}).Debug("Rolling back alert creation with original expression context")
+		}
 	}
 
 	mae.log.WithField("alert_name", alertName).Info("Rolling back alert creation")

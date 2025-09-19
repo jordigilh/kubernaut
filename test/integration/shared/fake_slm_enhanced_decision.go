@@ -67,6 +67,12 @@ func (sde *SophisticatedDecisionEngine) MakeDecision(ctx *DecisionContext) (stri
 		return sde.handleInfrastructureNetworkIssue(ctx)
 	}
 
+	// PRIORITY FIX: Handle OOM kills BEFORE generic resource exhaustion
+	// OOM kills are memory limit issues, not capacity problems - should not trigger scaling
+	if sde.isOOMKill(ctx.Alert) {
+		return sde.handleOOMKill(ctx)
+	}
+
 	if ctx.ResourceExhaustion {
 		return sde.handleResourceExhaustion(ctx)
 	}
@@ -121,6 +127,14 @@ func (sde *SophisticatedDecisionEngine) handleApplicationLevel(ctx *DecisionCont
 		strings.Contains(strings.ToLower(ctx.Alert.Description), "crash") {
 		confidence := sde.getConfidence("PodCrashLooping", 0.75)
 		return "restart_pod", confidence, "Pod crash looping detected, attempting restart"
+	}
+
+	// Deployment failures - BR-2: Consistent action mapping
+	if ctx.Alert.Name == "DeploymentFailed" ||
+		strings.Contains(strings.ToLower(ctx.Alert.Description), "deployment") &&
+			strings.Contains(strings.ToLower(ctx.Alert.Description), "failed") {
+		confidence := sde.getConfidence("DeploymentFailed", 0.8)
+		return "rollback_deployment", confidence, "Deployment failure detected, rolling back to last stable version"
 	}
 
 	// High memory/CPU usage
@@ -291,6 +305,41 @@ func (sde *SophisticatedDecisionEngine) isNetworkIssue(alert types.Alert) bool {
 	}
 
 	return false
+}
+
+// isOOMKill specifically identifies OOM kill scenarios
+func (sde *SophisticatedDecisionEngine) isOOMKill(alert types.Alert) bool {
+	oomIndicators := []string{
+		"oomkilled", "oom killed", "out of memory", "container killed due to",
+		"memory limit exceeded", "killed by oom", "memory exhausted",
+	}
+
+	alertText := strings.ToLower(alert.Name + " " + alert.Description)
+
+	// Check for OOM-specific patterns
+	for _, indicator := range oomIndicators {
+		if strings.Contains(alertText, indicator) {
+			return true
+		}
+	}
+
+	// Check labels for OOM indicators
+	if alert.Labels != nil {
+		if reason, exists := alert.Labels["reason"]; exists && strings.Contains(strings.ToLower(reason), "oom") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// handleOOMKill provides specific handling for OOM kill scenarios
+func (sde *SophisticatedDecisionEngine) handleOOMKill(ctx *DecisionContext) (string, float64, string) {
+	confidence := sde.getConfidence("OOMKilled", 0.85)
+
+	// OOM kills indicate memory limit issues, NOT capacity problems
+	// Solution: increase memory limits, NOT scaling (which would create more failing containers)
+	return "increase_resources", confidence, "OOM kill detected - memory limit issue requires resource increase, not scaling"
 }
 
 func (sde *SophisticatedDecisionEngine) estimateHistoricalFailures(alert types.Alert) int {

@@ -1,8 +1,18 @@
-# KCLI OpenShift 4.18 Bare Metal Configuration for Root User on RHEL 9.7
-# Customize all values according to your environment
+# KCLI OpenShift 4.18 Virtualized Configuration for Root User on RHEL 9.7
+#
+# IMPORTANT: This configuration deploys OpenShift in a virtualized environment using KCLI VMs
+# It is NOT for actual bare metal with IPMI - use this for lab/testing environments
+#
+# FIXES APPLIED:
+# - Set baremetal: false to prevent platform: none configuration
+# - Removed baremetal_hosts section to ensure proper VM-based deployment
+# - Disabled local_storage due to missing block devices in VMs
+# - This prevents compact cluster deployment where workers aren't created
+#
+# For actual bare metal deployment, see: kcli-baremetal-params-physical.yml
 
 # Cluster Configuration
-cluster: ocp418-baremetal
+cluster: e2e
 domain: kubernaut.io
 version: stable
 tag: '4.18'
@@ -13,20 +23,14 @@ ssh_key: '/root/.ssh/id_rsa.pub'
 
 # Network Configuration
 network: default
-network_type: OVNKubernetes
 cidr: 192.168.122.0/24
 api_ip: 192.168.122.100
 ingress_ip: 192.168.122.101
 
-# Provisioning Network Configuration
+# CRITICAL: Disable bare metal provisioning for virtualized deployment
+# This prevents the platform: none configuration that causes compact clusters
 provisioning_enable: false
-provisioning_network: default
-provisioning_cidr: 172.22.0.0/24
-provisioning_interface: enp1s0
-provisioning_ip: 172.22.0.4
-provisioning_dhcp_start: 172.22.0.10
-provisioning_dhcp_end: 172.22.0.100
-provisioning_bootstrap_ip: 172.22.0.3
+baremetal: false
 
 # Node Specifications (Optimized for RHEL 9.7 host: Intel Xeon Gold 5218R, 256GB RAM, 3TB disk)
 # Resource allocation: ~84GB RAM, 24 vCPU, ~500GB disk (leaves 172GB+ RAM, 16+ CPU, 2.5TB+ disk free)
@@ -49,94 +53,34 @@ pool_path: /var/lib/libvirt/images  # Root libvirt storage path
 disk_interface: virtio
 disk_pool: default
 
-# Bare Metal Host Inventory
-# UPDATE: Replace with your actual hardware details
-baremetal_hosts:
-  # Control Plane Nodes
-  - name: master-0
-    mac: "aa:bb:cc:dd:ee:f0"
-    ipmi_address: "192.168.122.10"
-    ipmi_user: "admin"
-    ipmi_password: "password"
-    ipmi_port: 623
-    role: master
-    boot_mode: legacy
-    root_device: "/dev/sda"
+# VIRTUALIZED DEPLOYMENT - No bare metal hosts needed
+# KCLI will create VMs automatically based on ctlplane/workers counts
+# Remove baremetal_hosts section to prevent platform: none configuration
 
-  - name: master-1
-    mac: "aa:bb:cc:dd:ee:f1"
-    ipmi_address: "192.168.122.11"
-    ipmi_user: "admin"
-    ipmi_password: "password"
-    ipmi_port: 623
-    role: master
-    boot_mode: legacy
-    root_device: "/dev/sda"
+# For actual bare metal deployment, use a separate config file with:
+# - baremetal: true
+# - provisioning_enable: true
+# - baremetal_hosts: [list of physical servers with IPMI details]
 
-  - name: master-2
-    mac: "aa:bb:cc:dd:ee:f2"
-    ipmi_address: "192.168.122.12"
-    ipmi_user: "admin"
-    ipmi_password: "password"
-    ipmi_port: 623
-    role: master
-    boot_mode: legacy
-    root_device: "/dev/sda"
-
-  # Worker Nodes
-  - name: worker-0
-    mac: "aa:bb:cc:dd:ee:f3"
-    ip: "192.168.122.103"
-    ipmi_address: "192.168.122.13"
-    ipmi_user: "admin"
-    ipmi_password: "password"
-    ipmi_port: 623
-    role: worker
-    boot_mode: legacy
-    root_device: "/dev/sda"
-
-  - name: worker-1
-    mac: "aa:bb:cc:dd:ee:f4"
-    ip: "192.168.122.104"
-    ipmi_address: "192.168.122.14"
-    ipmi_user: "admin"
-    ipmi_password: "password"
-    ipmi_port: 623
-    role: worker
-    boot_mode: legacy
-    root_device: "/dev/sda"
-
-  - name: worker-2
-    mac: "aa:bb:cc:dd:ee:f5"
-    ip: "192.168.122.105"
-    ipmi_address: "192.168.122.15"
-    ipmi_user: "admin"
-    ipmi_password: "password"
-    ipmi_port: 623
-    role: worker
-    boot_mode: legacy
-    root_device: "/dev/sda"
-
-# Installation Options
-baremetal_iso: true              # Create ISO for non-PXE environments
-baremetal_uefi: false           # Use UEFI boot mode (set to true if needed)
-baremetal_redfish: false        # Use Redfish instead of IPMI
+# Installation Options - Updated for virtualized deployment
 notify: false                   # Disable notifications
 
-# Storage Configuration
+# Storage Configuration - Updated for virtualized environment
 storage_operators: true         # Install storage operators automatically
-local_storage: true            # Install Local Storage Operator (LSO)
+local_storage: false           # DISABLED: LSO requires additional block devices
 odf: true                      # Install OpenShift Data Foundation (ODF)
-odf_size: "200Gi"              # ODF storage size per node
-local_storage_devices:         # Local storage devices to use
-  - "/dev/sdb"
-  - "/dev/sdc"
+odf_size: "100Gi"              # ODF storage size per node
+
+# Note: Local storage devices /dev/sdb, /dev/sdc don't exist in VMs
+# For local storage testing, either:
+# 1. Add additional virtual disks to VMs, or
+# 2. Use file-based loop devices
 
 # Post-deployment Applications and Operators
 apps:
-  - local-storage-operator      # Local Storage Operator
   - odf-operator               # OpenShift Data Foundation
   - monitoring                 # Enhanced monitoring for storage
+# Note: local-storage-operator removed due to missing block devices in VMs
 
 # Advanced Options
 disconnected: false             # Set to true for air-gapped environments

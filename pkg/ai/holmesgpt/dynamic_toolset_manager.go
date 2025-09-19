@@ -142,7 +142,18 @@ func (dtm *DynamicToolsetManager) Start(ctx context.Context) error {
 // Stop stops the dynamic toolset manager
 func (dtm *DynamicToolsetManager) Stop() {
 	dtm.log.Info("Stopping dynamic toolset manager")
-	close(dtm.stopChannel)
+
+	// Safely close stop channel only once to prevent panic
+	select {
+	case <-dtm.stopChannel:
+		// Channel already closed
+		dtm.log.Debug("Dynamic toolset manager already stopped")
+		return
+	default:
+		// Channel not closed, safe to close it
+		close(dtm.stopChannel)
+		dtm.log.Debug("Dynamic toolset manager stop channel closed")
+	}
 }
 
 // GetAvailableToolsets returns all currently available toolsets
@@ -159,6 +170,29 @@ func (dtm *DynamicToolsetManager) GetToolsetByServiceType(serviceType string) []
 // GetToolsetConfig returns a specific toolset configuration
 func (dtm *DynamicToolsetManager) GetToolsetConfig(name string) *ToolsetConfig {
 	return dtm.configCache.GetToolset(name)
+}
+
+// RefreshAllToolsets forces regeneration of all toolsets from discovered services
+// Business Requirement: BR-HOLMES-025 - Runtime toolset management
+func (dtm *DynamicToolsetManager) RefreshAllToolsets(ctx context.Context) error {
+	dtm.log.Info("Refreshing all toolsets from discovered services")
+
+	// Get all discovered services
+	discoveredServices := dtm.serviceDiscovery.GetDiscoveredServices()
+
+	// Process each discovered service to regenerate its toolset
+	for _, service := range discoveredServices {
+		if err := dtm.handleServiceUpdated(ctx, service); err != nil {
+			dtm.log.WithError(err).WithFields(logrus.Fields{
+				"service":      service.Name,
+				"service_type": service.ServiceType,
+			}).Error("Failed to refresh toolset for service")
+			// Continue with other services rather than failing completely
+		}
+	}
+
+	dtm.log.WithField("services_processed", len(discoveredServices)).Info("Toolset refresh completed")
+	return nil
 }
 
 // AddEventHandler adds a toolset event handler
@@ -182,6 +216,7 @@ func (dtm *DynamicToolsetManager) RegisterGenerator(generator ToolsetGenerator) 
 }
 
 // generateInitialToolsets generates toolsets from currently discovered services
+// Removed backwards compatibility - implements proper error handling following project guidelines
 func (dtm *DynamicToolsetManager) generateInitialToolsets(ctx context.Context) error {
 	discoveredServices := dtm.serviceDiscovery.GetDiscoveredServices()
 
@@ -190,17 +225,35 @@ func (dtm *DynamicToolsetManager) generateInitialToolsets(ctx context.Context) e
 	// Always include baseline toolsets (Kubernetes, internet)
 	// Business Requirement: BR-HOLMES-028 - Maintain baseline toolsets
 	baselineToolsets := dtm.generateBaselineToolsets()
+	if len(baselineToolsets) == 0 {
+		return fmt.Errorf("failed to generate baseline toolsets")
+	}
+
 	for _, toolset := range baselineToolsets {
+		if toolset == nil {
+			return fmt.Errorf("baseline toolset generation returned nil toolset")
+		}
 		dtm.configCache.SetToolset(toolset)
 		dtm.notifyEventHandlers("added", toolset)
 	}
 
 	// Generate toolsets for discovered services
 	var generatedCount int
+	var generationErrors []string
+
 	for _, service := range discoveredServices {
+		// Check for context cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		if service.Available {
 			toolset, err := dtm.generateToolsetForService(ctx, service)
 			if err != nil {
+				errorMsg := fmt.Sprintf("failed to generate toolset for service %s: %v", service.Name, err)
+				generationErrors = append(generationErrors, errorMsg)
 				dtm.log.WithError(err).WithField("service", service.Name).Error("Failed to generate toolset for service")
 				continue
 			}
@@ -213,7 +266,29 @@ func (dtm *DynamicToolsetManager) generateInitialToolsets(ctx context.Context) e
 		}
 	}
 
-	dtm.log.WithField("generated_count", generatedCount).Info("Initial toolset generation completed")
+	dtm.log.WithFields(logrus.Fields{
+		"generated_count": generatedCount,
+		"error_count":     len(generationErrors),
+		"baseline_count":  len(baselineToolsets),
+	}).Info("Initial toolset generation completed")
+
+	// Return error if we have baseline toolsets but failed to generate any service toolsets from available services
+	availableServices := 0
+	for _, service := range discoveredServices {
+		if service.Available {
+			availableServices++
+		}
+	}
+
+	if availableServices > 0 && generatedCount == 0 && len(generationErrors) > 0 {
+		return fmt.Errorf("failed to generate toolsets for any of %d available services: %v", availableServices, generationErrors)
+	}
+
+	// Log warnings for partial failures but don't fail the entire operation
+	if len(generationErrors) > 0 {
+		dtm.log.WithField("generation_errors", generationErrors).Warn("Some service toolset generations failed")
+	}
+
 	return nil
 }
 
@@ -371,8 +446,9 @@ func (dtm *DynamicToolsetManager) notifyEventHandlers(eventType string, toolset 
 // generateBaselineToolsets generates baseline toolsets that are always available
 // Business Requirement: BR-HOLMES-028 - Maintain baseline toolsets
 func (dtm *DynamicToolsetManager) generateBaselineToolsets() []*ToolsetConfig {
-	return []*ToolsetConfig{
-		{
+	// Define all available baseline toolsets
+	baselineTemplates := map[string]*ToolsetConfig{
+		"kubernetes": {
 			Name:        "kubernetes",
 			ServiceType: "kubernetes",
 			Description: "Kubernetes cluster investigation tools",
@@ -421,7 +497,7 @@ func (dtm *DynamicToolsetManager) generateBaselineToolsets() []*ToolsetConfig {
 			Enabled:     true,
 			LastUpdated: time.Now(),
 		},
-		{
+		"internet": {
 			Name:        "internet",
 			ServiceType: "internet",
 			Description: "Internet connectivity and external API tools",
@@ -446,7 +522,88 @@ func (dtm *DynamicToolsetManager) generateBaselineToolsets() []*ToolsetConfig {
 			Enabled:     true,
 			LastUpdated: time.Now(),
 		},
+		"prometheus": {
+			Name:        "prometheus",
+			ServiceType: "prometheus",
+			Description: "Prometheus metrics analysis tools",
+			Version:     "1.0.0",
+			Capabilities: []string{
+				"prometheus_query",
+				"prometheus_range_query",
+				"prometheus_targets",
+			},
+			Tools: []HolmesGPTTool{
+				{
+					Name:        "prometheus_query",
+					Description: "Execute PromQL queries",
+					Command:     "curl -s '${endpoint}/api/v1/query?query=${query}'",
+					Parameters: []ToolParameter{
+						{Name: "endpoint", Description: "Prometheus endpoint", Type: "string", Required: true},
+						{Name: "query", Description: "PromQL query", Type: "string", Required: true},
+					},
+					Category: "monitoring",
+				},
+			},
+			Priority:    50,
+			Enabled:     true,
+			LastUpdated: time.Now(),
+		},
+		"grafana": {
+			Name:        "grafana",
+			ServiceType: "grafana",
+			Description: "Grafana dashboard and visualization tools",
+			Version:     "1.0.0",
+			Capabilities: []string{
+				"grafana_dashboards",
+				"grafana_datasources",
+			},
+			Tools: []HolmesGPTTool{
+				{
+					Name:        "grafana_dashboards",
+					Description: "List available dashboards",
+					Command:     "curl -s '${endpoint}/api/search?type=dash-db'",
+					Parameters: []ToolParameter{
+						{Name: "endpoint", Description: "Grafana endpoint", Type: "string", Required: true},
+					},
+					Category: "visualization",
+				},
+			},
+			Priority:    40,
+			Enabled:     true,
+			LastUpdated: time.Now(),
+		},
 	}
+
+	// Return baseline toolsets from configuration
+	// Following project guidelines: follow configuration-driven baseline toolsets
+	// Exclude services that have dynamic generators to avoid conflicts
+	dynamicallyDiscoverableServices := map[string]bool{
+		"grafana":       true, // Has GrafanaToolsetGenerator
+		"prometheus":    true, // Has PrometheusToolsetGenerator
+		"jaeger":        true, // Has JaegerToolsetGenerator
+		"elasticsearch": true, // Has ElasticsearchToolsetGenerator
+	}
+
+	baselineNames := []string{"kubernetes", "internet", "prometheus", "grafana"}
+
+	var baselineToolsets []*ToolsetConfig
+	for _, name := range baselineNames {
+		// Skip baseline for services that can be dynamically discovered
+		// This prevents conflicts between baseline and service-discovered toolsets
+		if dynamicallyDiscoverableServices[name] {
+			dtm.log.WithField("service_type", name).Debug("Skipping baseline toolset for dynamically discoverable service")
+			continue
+		}
+
+		if template, exists := baselineTemplates[name]; exists {
+			baselineToolsets = append(baselineToolsets, template)
+		} else {
+			dtm.log.WithField("toolset_name", name).Warn("Baseline toolset template not found")
+		}
+	}
+
+	dtm.log.WithField("baseline_count", len(baselineToolsets)).Info("Generated baseline toolsets")
+	return baselineToolsets
 }
 
 // registerDefaultGenerators registers the default toolset generators

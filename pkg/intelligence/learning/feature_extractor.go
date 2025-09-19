@@ -45,42 +45,22 @@ func (fe *FeatureExtractor) Extract(data *sharedtypes.WorkflowExecutionData) (*s
 	}
 
 	// Extract alert-based features
-	if err := fe.extractAlertFeatures(data, features); err != nil {
-		return nil, fmt.Errorf("failed to extract alert features: %w", err)
-	}
+	fe.extractAlertFeatures(data, features)
 
 	// Extract resource-based features
-	if err := fe.extractResourceFeatures(data, features); err != nil {
-		return nil, fmt.Errorf("failed to extract resource features: %w", err)
-	}
+	fe.extractResourceFeatures(data, features)
 
 	// Extract temporal features
-	if err := fe.extractTemporalFeatures(data, features); err != nil {
-		return nil, fmt.Errorf("failed to extract temporal features: %w", err)
-	}
+	fe.extractTemporalFeatures(data, features)
 
 	// Extract historical features
-	if err := fe.extractHistoricalFeatures(data, features); err != nil {
-		fe.log.WithError(err).Warn("Failed to extract historical features")
-		// Don't fail completely, just set defaults
-		features.RecentFailures = 0
-		features.AverageSuccessRate = 0.5
-		features.LastExecutionTime = 0
-	}
+	fe.extractHistoricalFeatures(data, features)
 
 	// Extract complexity features
-	if err := fe.extractComplexityFeatures(data, features); err != nil {
-		return nil, fmt.Errorf("failed to extract complexity features: %w", err)
-	}
+	fe.extractComplexityFeatures(data, features)
 
 	// Extract environment features
-	if err := fe.extractEnvironmentFeatures(data, features); err != nil {
-		fe.log.WithError(err).Warn("Failed to extract environment features")
-		// Set defaults
-		features.ClusterSize = 10
-		features.ClusterLoad = 0.5
-		features.ResourcePressure = 0.3
-	}
+	fe.extractEnvironmentFeatures(data, features)
 
 	return features, nil
 }
@@ -316,7 +296,7 @@ func (fe *FeatureExtractor) initializeScaleFactors() {
 	}
 }
 
-func (fe *FeatureExtractor) extractAlertFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractAlertFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) {
 	// Extract alert info from metadata
 	alertData, hasAlert := data.Metadata["alert"]
 	if !hasAlert {
@@ -325,7 +305,7 @@ func (fe *FeatureExtractor) extractAlertFeatures(data *sharedtypes.WorkflowExecu
 		features.SeverityScore = 0.0
 		features.AlertDuration = 0
 		features.AlertTypes = make(map[string]int)
-		return nil
+		return
 	}
 
 	alertMap, ok := alertData.(map[string]interface{})
@@ -335,7 +315,7 @@ func (fe *FeatureExtractor) extractAlertFeatures(data *sharedtypes.WorkflowExecu
 		features.SeverityScore = 0.0
 		features.AlertDuration = 0
 		features.AlertTypes = make(map[string]int)
-		return nil
+		return
 	}
 
 	// Basic alert features
@@ -375,18 +355,16 @@ func (fe *FeatureExtractor) extractAlertFeatures(data *sharedtypes.WorkflowExecu
 		descHash := fe.hashString(description)
 		features.CustomMetrics["alert_description_hash"] = float64(descHash)
 	}
-
-	return nil
 }
 
-func (fe *FeatureExtractor) extractResourceFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractResourceFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) {
 	// Extract resource info from metadata
 	resourceData, hasResource := data.Metadata["resource"]
 	if !hasResource {
 		features.ResourceCount = 0
 		features.ResourceTypes = make(map[string]int)
 		features.NamespaceCount = 0
-		return nil
+		return
 	}
 
 	resourceMap, ok := resourceData.(map[string]interface{})
@@ -394,7 +372,7 @@ func (fe *FeatureExtractor) extractResourceFeatures(data *sharedtypes.WorkflowEx
 		features.ResourceCount = 0
 		features.ResourceTypes = make(map[string]int)
 		features.NamespaceCount = 0
-		return nil
+		return
 	}
 
 	// Basic resource features
@@ -433,11 +411,9 @@ func (fe *FeatureExtractor) extractResourceFeatures(data *sharedtypes.WorkflowEx
 			}
 		}
 	}
-
-	return nil
 }
 
-func (fe *FeatureExtractor) extractTemporalFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractTemporalFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) {
 	timestamp := data.Timestamp
 
 	// Time-based features
@@ -451,10 +427,9 @@ func (fe *FeatureExtractor) extractTemporalFeatures(data *sharedtypes.WorkflowEx
 	features.CustomMetrics["day_of_month"] = float64(timestamp.Day())
 	features.CustomMetrics["quarter"] = float64((timestamp.Month()-1)/3 + 1)
 
-	return nil
 }
 
-func (fe *FeatureExtractor) extractHistoricalFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractHistoricalFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) {
 	// These would typically query historical data from database
 	// For now, use context data or defaults
 
@@ -488,10 +463,9 @@ func (fe *FeatureExtractor) extractHistoricalFeatures(data *sharedtypes.Workflow
 		features.LastExecutionTime = 24 * time.Hour // Assume last execution was 24h ago
 	}
 
-	return nil
 }
 
-func (fe *FeatureExtractor) extractComplexityFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractComplexityFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) {
 	// These would be extracted from the workflow template
 	// For now, use context data or make reasonable estimates
 
@@ -529,10 +503,9 @@ func (fe *FeatureExtractor) extractComplexityFeatures(data *sharedtypes.Workflow
 		features.ParallelSteps = fe.estimateParallelStepsFromMap(alertMap)
 	}
 
-	return nil
 }
 
-func (fe *FeatureExtractor) extractEnvironmentFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) error {
+func (fe *FeatureExtractor) extractEnvironmentFeatures(data *sharedtypes.WorkflowExecutionData, features *shared.WorkflowFeatures) {
 	// These would be fetched from cluster metrics
 	// For now, use context data or defaults
 
@@ -580,7 +553,6 @@ func (fe *FeatureExtractor) extractEnvironmentFeatures(data *sharedtypes.Workflo
 		features.CustomMetrics["storage_utilization"] = storageUsage
 	}
 
-	return nil
 }
 
 func (fe *FeatureExtractor) getFeatureValue(features *shared.WorkflowFeatures, featureName string) (float64, error) {

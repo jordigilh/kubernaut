@@ -3,6 +3,8 @@ package integration
 import (
 	"context"
 	"fmt"
+	"math"
+	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/internal/config"
@@ -265,16 +267,10 @@ func (emm *ExternalMonitoringManager) IntegrateProvider(ctx context.Context, sce
 	metricsMatched := emm.validateProviderCapabilities(providerInfo, scenario.ExpectedMetrics)
 
 	// Collect initial metrics to validate integration
-	initialMetrics, err := emm.collectInitialMetrics(ctx, provider, scenario)
-	if err != nil {
-		emm.logger.WithError(err).Warn("Initial metrics collection failed, but integration proceeding")
-	}
+	initialMetrics := emm.collectInitialMetrics(ctx, provider, scenario)
 
 	// Check provider health
-	providerHealth, err := emm.checkProviderHealth(ctx, provider, scenario)
-	if err != nil {
-		emm.logger.WithError(err).Error("Provider health check failed")
-	}
+	providerHealth := emm.checkProviderHealth(ctx, provider, scenario)
 
 	// Calculate integration time and business value
 	integrationTime := time.Since(integrationStart)
@@ -423,6 +419,13 @@ func (emm *ExternalMonitoringManager) validateProviderScenario(scenario Monitori
 }
 
 func (emm *ExternalMonitoringManager) createProviderClient(ctx context.Context, scenario MonitoringProviderScenario) (MonitoringProvider, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// In production, this would create actual provider clients (Prometheus, Datadog, etc.)
 	// For now, return a mock provider that meets business requirements
 	return &MockMonitoringProvider{
@@ -448,7 +451,7 @@ func (emm *ExternalMonitoringManager) validateProviderCapabilities(providerInfo 
 	return matched
 }
 
-func (emm *ExternalMonitoringManager) collectInitialMetrics(ctx context.Context, provider MonitoringProvider, scenario MonitoringProviderScenario) ([]MonitoringMetric, error) {
+func (emm *ExternalMonitoringManager) collectInitialMetrics(ctx context.Context, provider MonitoringProvider, scenario MonitoringProviderScenario) []MonitoringMetric {
 	metrics := []MonitoringMetric{}
 
 	// Collect each expected metric
@@ -461,10 +464,10 @@ func (emm *ExternalMonitoringManager) collectInitialMetrics(ctx context.Context,
 		metrics = append(metrics, metricData...)
 	}
 
-	return metrics, nil
+	return metrics
 }
 
-func (emm *ExternalMonitoringManager) checkProviderHealth(ctx context.Context, provider MonitoringProvider, scenario MonitoringProviderScenario) (*ProviderHealthStatus, error) {
+func (emm *ExternalMonitoringManager) checkProviderHealth(ctx context.Context, provider MonitoringProvider, scenario MonitoringProviderScenario) *ProviderHealthStatus {
 	healthCheckStart := time.Now()
 
 	err := provider.ValidateConnection(ctx)
@@ -489,7 +492,7 @@ func (emm *ExternalMonitoringManager) checkProviderHealth(ctx context.Context, p
 		ResponseTime:        responseTime,
 		AvailabilityScore:   availabilityScore,
 		BusinessImpactLevel: businessImpactLevel,
-	}, nil
+	}
 }
 
 func (emm *ExternalMonitoringManager) calculateBusinessValue(scenario MonitoringProviderScenario, metricsCount int, health *ProviderHealthStatus) float64 {
@@ -535,6 +538,13 @@ func (emm *ExternalMonitoringManager) setupProviderHealthMonitoring(providerName
 }
 
 func (emm *ExternalMonitoringManager) collectProviderMetrics(ctx context.Context, provider MonitoringProvider) ([]MonitoringMetric, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// In production, this would query the actual provider
 	// For now, generate realistic business metrics
 	metrics := []MonitoringMetric{
@@ -634,6 +644,16 @@ func (emm *ExternalMonitoringManager) enrichWithBusinessContext(providerName str
 	criticalMetrics := 0
 	totalCostImpact := 0.0
 
+	// Determine business domain based on provider name and metrics
+	businessDomain := "infrastructure_monitoring"
+	if strings.Contains(strings.ToLower(providerName), "datadog") || strings.Contains(strings.ToLower(providerName), "newrelic") {
+		businessDomain = "application_performance_monitoring"
+	} else if strings.Contains(strings.ToLower(providerName), "prometheus") {
+		businessDomain = "infrastructure_monitoring"
+	} else if strings.Contains(strings.ToLower(providerName), "cloudwatch") {
+		businessDomain = "cloud_monitoring"
+	}
+
 	for _, metric := range metrics {
 		if criticality, exists := metric.BusinessTags["criticality"]; exists && criticality == "critical" {
 			criticalMetrics++
@@ -648,15 +668,26 @@ func (emm *ExternalMonitoringManager) enrichWithBusinessContext(providerName str
 		criticalityLevel = "low"
 	}
 
+	// Adjust service level impact based on provider quality and business domain
+	serviceLevelImpact := map[string]float64{
+		"availability": 0.95,
+		"performance":  0.88,
+		"reliability":  0.92,
+	}
+
+	// Enterprise providers typically have higher reliability
+	if strings.Contains(strings.ToLower(providerName), "enterprise") ||
+		strings.Contains(strings.ToLower(providerName), "datadog") ||
+		strings.Contains(strings.ToLower(providerName), "newrelic") {
+		serviceLevelImpact["availability"] = 0.98
+		serviceLevelImpact["reliability"] = 0.96
+	}
+
 	return &BusinessMetricsContext{
-		BusinessDomain:   "infrastructure_monitoring",
-		CriticalityLevel: criticalityLevel,
-		ServiceLevelImpact: map[string]float64{
-			"availability": 0.95,
-			"performance":  0.88,
-			"reliability":  0.92,
-		},
-		CostImpact: totalCostImpact,
+		BusinessDomain:     businessDomain,
+		CriticalityLevel:   criticalityLevel,
+		ServiceLevelImpact: serviceLevelImpact,
+		CostImpact:         totalCostImpact,
 	}
 }
 
@@ -671,11 +702,59 @@ func (emm *ExternalMonitoringManager) groupMetricsByName(metrics []MonitoringMet
 }
 
 func (emm *ExternalMonitoringManager) analyzeMetricCorrelation(metricName string, metrics []MonitoringMetric) CorrelationInsight {
-	// Simplified correlation analysis
-	correlationScore := 0.85 // Assume good correlation
-	businessRelevance := 0.9 // High business relevance for correlated metrics
+	// Analyze actual metrics for correlation
+	if len(metrics) < 2 {
+		return CorrelationInsight{
+			MetricPair:        []string{metricName, "single_provider"},
+			CorrelationScore:  0.5,
+			BusinessRelevance: 0.6,
+			ActionableInsight: fmt.Sprintf("Metric %s from single provider - correlation analysis not applicable", metricName),
+		}
+	}
 
-	actionableInsight := fmt.Sprintf("Metric %s shows consistent values across providers, enabling reliable business decisions", metricName)
+	// Calculate correlation based on metric variance and quality
+	totalValues := 0.0
+	qualitySum := 0.0
+	valueVariance := 0.0
+
+	for _, metric := range metrics {
+		totalValues += metric.Value
+		switch metric.Quality {
+		case "high":
+			qualitySum += 1.0
+		case "medium":
+			qualitySum += 0.7
+		case "low":
+			qualitySum += 0.3
+		}
+	}
+
+	avgValue := totalValues / float64(len(metrics))
+	for _, metric := range metrics {
+		valueVariance += (metric.Value - avgValue) * (metric.Value - avgValue)
+	}
+	valueVariance /= float64(len(metrics))
+
+	// Lower variance indicates better correlation
+	correlationScore := 1.0 - math.Min(0.5, valueVariance/avgValue)
+	if correlationScore < 0.3 {
+		correlationScore = 0.3 // Minimum threshold
+	}
+
+	// Quality affects business relevance
+	avgQuality := qualitySum / float64(len(metrics))
+	businessRelevance := 0.5 + (avgQuality * 0.4) // Base 0.5 + up to 0.4 from quality
+
+	actionableInsight := fmt.Sprintf("Metric %s from %d providers shows %.1f%% correlation with %.1f business relevance",
+		metricName, len(metrics), correlationScore*100, businessRelevance)
+
+	if correlationScore >= 0.8 {
+		actionableInsight += " - highly reliable for business decisions"
+	} else if correlationScore >= 0.6 {
+		actionableInsight += " - moderately reliable for business decisions"
+	} else {
+		actionableInsight += " - requires additional validation before business use"
+	}
 
 	return CorrelationInsight{
 		MetricPair:        []string{metricName, "cross_provider"},

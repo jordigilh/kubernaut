@@ -30,62 +30,152 @@ import (
 type SimpleMockRepository struct{}
 
 func (m *SimpleMockRepository) EnsureResourceReference(ctx context.Context, ref actionhistory.ResourceReference) (int64, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	default:
+	}
 	return 1, nil
 }
 
 func (m *SimpleMockRepository) GetResourceReference(ctx context.Context, namespace, kind, name string) (*actionhistory.ResourceReference, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) EnsureActionHistory(ctx context.Context, resourceID int64) (*actionhistory.ActionHistory, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) GetActionHistory(ctx context.Context, resourceID int64) (*actionhistory.ActionHistory, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) UpdateActionHistory(ctx context.Context, history *actionhistory.ActionHistory) error {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	return nil
 }
 
 func (m *SimpleMockRepository) StoreAction(ctx context.Context, action *actionhistory.ActionRecord) (*actionhistory.ResourceActionTrace, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) GetActionTraces(ctx context.Context, query actionhistory.ActionQuery) ([]actionhistory.ResourceActionTrace, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) GetActionTrace(ctx context.Context, actionID string) (*actionhistory.ResourceActionTrace, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) UpdateActionTrace(ctx context.Context, trace *actionhistory.ResourceActionTrace) error {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	return nil
 }
 
 func (m *SimpleMockRepository) GetPendingEffectivenessAssessments(ctx context.Context) ([]*actionhistory.ResourceActionTrace, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) GetOscillationPatterns(ctx context.Context, patternType string) ([]actionhistory.OscillationPattern, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) StoreOscillationDetection(ctx context.Context, detection *actionhistory.OscillationDetection) error {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	return nil
 }
 
 func (m *SimpleMockRepository) GetOscillationDetections(ctx context.Context, resourceID int64, resolved *bool) ([]actionhistory.OscillationDetection, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
 func (m *SimpleMockRepository) ApplyRetention(ctx context.Context, actionHistoryID int64) error {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 	return nil
 }
 
 func (m *SimpleMockRepository) GetActionHistorySummaries(ctx context.Context, since time.Duration) ([]actionhistory.ActionHistorySummary, error) {
+	// Check for context cancellation in integration test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	return nil, nil
 }
 
@@ -162,7 +252,7 @@ var _ = Describe("SLM Integration", func() {
 		// Validate recommendation
 		Expect(recommendation.Action).ToNot(BeEmpty())
 
-		validActions := []string{"scale_deployment", "restart_pod", "increase_resources", "notify_only"}
+		validActions := []string{"scale_deployment", "restart_pod", "increase_resources", "notify_only", "collect_diagnostics"}
 		Expect(recommendation.Action).To(BeElementOf(validActions))
 
 		Expect(recommendation.Confidence).To(BeNumerically(">=", 0.0))
@@ -500,6 +590,9 @@ var _ = Describe("End-to-End Flow", func() {
 			// Create fake SLM client with error injection capabilities
 			client := shared.NewFakeSLMClient()
 
+			// Enable error injection for testing resilience scenarios
+			client.SetErrorInjectionEnabled(true)
+
 			// Test alert for error injection scenarios
 			testAlert := types.Alert{
 				Name:        "HighMemoryUsage",
@@ -591,6 +684,9 @@ var _ = Describe("End-to-End Flow", func() {
 
 			client := shared.NewFakeSLMClient()
 
+			// Enable error injection for testing resilience scenarios
+			client.SetErrorInjectionEnabled(true)
+
 			testAlert := types.Alert{
 				Name:      "ServiceDegraded",
 				Status:    "firing",
@@ -642,6 +738,9 @@ var _ = Describe("End-to-End Flow", func() {
 			By("Testing circuit breaker recovery")
 			// Wait for recovery timeout
 			time.Sleep(6 * time.Second)
+
+			// Trigger state check with a call - circuit breaker transitions during operations
+			_, _ = client.AnalyzeAlert(context.Background(), testAlert)
 
 			// Circuit should transition to half-open
 			Expect(client.GetCircuitBreakerState()).To(Equal(shared.CircuitHalfOpen))

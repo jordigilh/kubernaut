@@ -37,6 +37,7 @@ var _ = Describe("DynamicToolsetManager", func() {
 			HealthCheckInterval: 1 * time.Second,
 			Enabled:             true,
 			Namespaces:          []string{"monitoring"},
+			ServicePatterns:     k8s.GetDefaultServicePatterns(), // BR-HOLMES-017: Well-known service detection
 		}
 
 		serviceDiscovery = k8s.NewServiceDiscovery(fakeClient, config, log)

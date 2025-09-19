@@ -2,6 +2,7 @@ package holmesgpt
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -17,6 +18,8 @@ type ToolsetConfigCache struct {
 	missCount   int64
 	log         *logrus.Logger
 	lastCleanup time.Time
+	stopCh      chan struct{} // MEMORY LEAK FIX: Add stop channel for goroutine cleanup
+	stopped     int32         // MEMORY LEAK FIX: Atomic flag to track if cache is stopped
 }
 
 // NewToolsetConfigCache creates a new toolset configuration cache
@@ -26,15 +29,17 @@ func NewToolsetConfigCache(ttl time.Duration, log *logrus.Logger) *ToolsetConfig
 		ttl:         ttl,
 		log:         log,
 		lastCleanup: time.Now(),
+		stopCh:      make(chan struct{}), // MEMORY LEAK FIX: Initialize stop channel
 	}
 
-	// Start cleanup goroutine
+	// MEMORY LEAK FIX: Start cleanup goroutine with proper lifecycle management
 	go cache.cleanupExpired()
 
 	return cache
 }
 
 // SetToolset stores a toolset configuration in the cache
+// Business Requirement: BR-HOLMES-025 - Runtime toolset management
 func (tcc *ToolsetConfigCache) SetToolset(toolset *ToolsetConfig) {
 	if toolset == nil {
 		return
@@ -43,6 +48,7 @@ func (tcc *ToolsetConfigCache) SetToolset(toolset *ToolsetConfig) {
 	tcc.mu.Lock()
 	defer tcc.mu.Unlock()
 
+	// Always update LastUpdated when storing (per business requirement)
 	toolset.LastUpdated = time.Now()
 	tcc.toolsets[toolset.Name] = toolset
 
@@ -59,17 +65,17 @@ func (tcc *ToolsetConfigCache) GetToolset(name string) *ToolsetConfig {
 
 	toolset, exists := tcc.toolsets[name]
 	if !exists {
-		tcc.missCount++
+		atomic.AddInt64(&tcc.missCount, 1)
 		return nil
 	}
 
 	// Check if toolset has expired
 	if tcc.isExpired(toolset) {
-		tcc.missCount++
+		atomic.AddInt64(&tcc.missCount, 1)
 		return nil
 	}
 
-	tcc.hitCount++
+	atomic.AddInt64(&tcc.hitCount, 1)
 	return toolset
 }
 
@@ -131,27 +137,28 @@ func (tcc *ToolsetConfigCache) RemoveToolset(name string) {
 
 // GetHitRate returns the cache hit rate
 // Business Requirement: BR-PERF-014 - Cache hit rate monitoring
+// RACE CONDITION FIX: Use atomic loads for hitCount and missCount
 func (tcc *ToolsetConfigCache) GetHitRate() float64 {
-	tcc.mu.RLock()
-	defer tcc.mu.RUnlock()
-
-	total := tcc.hitCount + tcc.missCount
+	hitCount := atomic.LoadInt64(&tcc.hitCount)
+	missCount := atomic.LoadInt64(&tcc.missCount)
+	total := hitCount + missCount
 	if total == 0 {
 		return 0.0
 	}
 
-	return float64(tcc.hitCount) / float64(total)
+	return float64(hitCount) / float64(total)
 }
 
 // GetStats returns cache statistics
+// RACE CONDITION FIX: Use atomic loads for hitCount and missCount
 func (tcc *ToolsetConfigCache) GetStats() ToolsetCacheStats {
 	tcc.mu.RLock()
 	defer tcc.mu.RUnlock()
 
 	return ToolsetCacheStats{
 		Size:        len(tcc.toolsets),
-		HitCount:    tcc.hitCount,
-		MissCount:   tcc.missCount,
+		HitCount:    atomic.LoadInt64(&tcc.hitCount),
+		MissCount:   atomic.LoadInt64(&tcc.missCount),
 		HitRate:     tcc.GetHitRateUnsafe(),
 		LastCleanup: tcc.lastCleanup,
 		TTL:         tcc.ttl,
@@ -169,13 +176,14 @@ type ToolsetCacheStats struct {
 }
 
 // Clear removes all toolset configurations from the cache
+// RACE CONDITION FIX: Use atomic stores for hitCount and missCount
 func (tcc *ToolsetConfigCache) Clear() {
 	tcc.mu.Lock()
 	defer tcc.mu.Unlock()
 
 	tcc.toolsets = make(map[string]*ToolsetConfig)
-	tcc.hitCount = 0
-	tcc.missCount = 0
+	atomic.StoreInt64(&tcc.hitCount, 0)
+	atomic.StoreInt64(&tcc.missCount, 0)
 	tcc.log.Info("Cleared toolset configuration cache")
 }
 
@@ -216,20 +224,34 @@ func (tcc *ToolsetConfigCache) isExpired(toolset *ToolsetConfig) bool {
 
 // GetHitRateUnsafe returns the cache hit rate without locking (internal use only)
 func (tcc *ToolsetConfigCache) GetHitRateUnsafe() float64 {
-	total := tcc.hitCount + tcc.missCount
+	hitCount := atomic.LoadInt64(&tcc.hitCount)
+	missCount := atomic.LoadInt64(&tcc.missCount)
+	total := hitCount + missCount
 	if total == 0 {
 		return 0.0
 	}
-	return float64(tcc.hitCount) / float64(total)
+	return float64(hitCount) / float64(total)
 }
 
 // cleanupExpired removes expired toolset configurations from the cache
+// MEMORY LEAK FIX: Added proper goroutine lifecycle management
 func (tcc *ToolsetConfigCache) cleanupExpired() {
 	ticker := time.NewTicker(tcc.ttl / 2) // Cleanup more frequently than TTL
 	defer ticker.Stop()
 
-	for range ticker.C {
-		tcc.performCleanup()
+	for {
+		select {
+		case <-ticker.C:
+			// Check if cache is stopped before performing cleanup
+			if atomic.LoadInt32(&tcc.stopped) == 1 {
+				tcc.log.Debug("Cleanup goroutine stopping - cache has been stopped")
+				return
+			}
+			tcc.performCleanup()
+		case <-tcc.stopCh:
+			tcc.log.Debug("Cleanup goroutine received stop signal")
+			return
+		}
 	}
 }
 
@@ -257,10 +279,13 @@ func (tcc *ToolsetConfigCache) performCleanup() {
 	if len(keysToDelete) > 0 {
 		tcc.log.WithField("removed_count", len(keysToDelete)).Debug("Cleaned up expired toolsets")
 
-		// Reset hit/miss counters periodically to prevent overflow
-		if tcc.hitCount > 10000 || tcc.missCount > 10000 {
-			tcc.hitCount = tcc.hitCount / 2
-			tcc.missCount = tcc.missCount / 2
+		// Reset hit/miss counters periodically to prevent overflow using atomic operations
+		// RACE CONDITION FIX: Use atomic loads and stores for hitCount and missCount
+		hitCount := atomic.LoadInt64(&tcc.hitCount)
+		missCount := atomic.LoadInt64(&tcc.missCount)
+		if hitCount > 10000 || missCount > 10000 {
+			atomic.StoreInt64(&tcc.hitCount, hitCount/2)
+			atomic.StoreInt64(&tcc.missCount, missCount/2)
 		}
 	}
 }
@@ -327,4 +352,15 @@ func (tcc *ToolsetConfigCache) FindToolsetsByCapability(capability string) []*To
 
 	// Sort by priority
 	return SortToolsetsByPriority(matchingToolsets)
+}
+
+// Stop gracefully stops the cache cleanup goroutine to prevent memory leaks
+// Business Requirement: BR-HOLMES-021 - Memory leak prevention in toolset cache
+// MEMORY LEAK FIX: Implement proper goroutine lifecycle management
+func (tcc *ToolsetConfigCache) Stop() {
+	// Use atomic compare-and-swap to ensure Stop is idempotent
+	if atomic.CompareAndSwapInt32(&tcc.stopped, 0, 1) {
+		close(tcc.stopCh)
+		tcc.log.Debug("Toolset cache stopped - cleanup goroutine will terminate")
+	}
 }

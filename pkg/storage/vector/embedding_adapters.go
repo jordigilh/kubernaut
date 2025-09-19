@@ -88,6 +88,15 @@ func NewExternalVectorDatabaseAdapter(external ExternalVectorDatabase, embedding
 
 // StoreActionPattern stores an action pattern as a vector
 func (evda *ExternalVectorDatabaseAdapter) StoreActionPattern(ctx context.Context, pattern *ActionPattern) error {
+	// BR-VALIDATION-01: Validate pattern data before storage
+	if pattern.ID == "" {
+		return fmt.Errorf("pattern ID cannot be empty")
+	}
+
+	if len(pattern.Embedding) == 0 {
+		return fmt.Errorf("pattern embedding cannot be empty")
+	}
+
 	vectorData := VectorData{
 		ID:        pattern.ID,
 		Text:      fmt.Sprintf("%s %s %s", pattern.ActionType, pattern.AlertName, pattern.AlertSeverity),

@@ -33,9 +33,51 @@ func NewPrometheusClient(endpoint string, timeout time.Duration, log *logrus.Log
 }
 
 // PrometheusQueryResult represents a single query result from Prometheus
+// BR-TYPE-006: Define standard metric types instead of interface{}
 type PrometheusQueryResult struct {
 	Metric map[string]string `json:"metric"`
-	Value  []interface{}     `json:"value"` // [timestamp, value]
+	Value  PrometheusValue   `json:"value"` // [timestamp, value]
+}
+
+// PrometheusValue represents a single metric value with timestamp
+// Replaces []interface{} with proper typed structure that handles JSON marshaling
+type PrometheusValue struct {
+	Timestamp float64 `json:"-"` // Unix timestamp
+	Value     string  `json:"-"` // Metric value as string (Prometheus format)
+}
+
+// UnmarshalJSON implements json.Unmarshaler to handle Prometheus [timestamp, value] format
+// BR-TYPE-007: Implement data validation and schema enforcement
+func (pv *PrometheusValue) UnmarshalJSON(data []byte) error {
+	var raw []interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	if len(raw) != 2 {
+		return fmt.Errorf("prometheus value must have exactly 2 elements, got %d", len(raw))
+	}
+
+	// Parse timestamp
+	if ts, ok := raw[0].(float64); ok {
+		pv.Timestamp = ts
+	} else {
+		return fmt.Errorf("prometheus timestamp must be a number, got %T", raw[0])
+	}
+
+	// Parse value
+	if val, ok := raw[1].(string); ok {
+		pv.Value = val
+	} else {
+		return fmt.Errorf("prometheus value must be a string, got %T", raw[1])
+	}
+
+	return nil
+}
+
+// MarshalJSON implements json.Marshaler to output Prometheus [timestamp, value] format
+func (pv PrometheusValue) MarshalJSON() ([]byte, error) {
+	return json.Marshal([]interface{}{pv.Timestamp, pv.Value})
 }
 
 // PrometheusQueryResponse represents the response from Prometheus query API
@@ -48,9 +90,10 @@ type PrometheusQueryResponse struct {
 }
 
 // PrometheusRangeResult represents a range query result from Prometheus
+// BR-TYPE-006: Define standard metric types instead of interface{}
 type PrometheusRangeResult struct {
 	Metric map[string]string `json:"metric"`
-	Values [][]interface{}   `json:"values"` // [[timestamp, value], ...]
+	Values []PrometheusValue `json:"values"` // Multiple [timestamp, value] pairs
 }
 
 // PrometheusRangeResponse represents the response from Prometheus range query API
@@ -375,7 +418,7 @@ func (c *PrometheusClient) queryInstantMetricAtTime(ctx context.Context, query s
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("Prometheus API returned status %d", resp.StatusCode)
+		return 0, fmt.Errorf("prometheus API returned status %d", resp.StatusCode)
 	}
 
 	var response PrometheusQueryResponse
@@ -391,18 +434,13 @@ func (c *PrometheusClient) queryInstantMetricAtTime(ctx context.Context, query s
 		return 0, fmt.Errorf("no data returned for query: %s", query)
 	}
 
-	// Parse the value from the first result
+	// Parse the value from the first result using typed PrometheusValue
 	result := response.Data.Result[0]
-	if len(result.Value) < 2 {
+	if result.Value.Value == "" {
 		return 0, fmt.Errorf("invalid value format in result")
 	}
 
-	valueStr, ok := result.Value[1].(string)
-	if !ok {
-		return 0, fmt.Errorf("value is not a string")
-	}
-
-	value, err := strconv.ParseFloat(valueStr, 64)
+	value, err := strconv.ParseFloat(result.Value.Value, 64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse value: %w", err)
 	}
@@ -453,28 +491,19 @@ func (c *PrometheusClient) queryRangeMetric(ctx context.Context, query string, s
 	var points []MetricPoint
 	for _, result := range response.Data.Result {
 		for _, valuePoint := range result.Values {
-			if len(valuePoint) < 2 {
+			// Use typed PrometheusValue fields instead of array indexing
+			if valuePoint.Value == "" {
 				continue
 			}
 
-			timestamp, ok := valuePoint[0].(float64)
-			if !ok {
-				continue
-			}
-
-			valueStr, ok := valuePoint[1].(string)
-			if !ok {
-				continue
-			}
-
-			value, err := strconv.ParseFloat(valueStr, 64)
+			value, err := strconv.ParseFloat(valuePoint.Value, 64)
 			if err != nil {
 				continue
 			}
 
 			point := MetricPoint{
 				Value:     value,
-				Timestamp: time.Unix(int64(timestamp), 0),
+				Timestamp: time.Unix(int64(valuePoint.Timestamp), 0),
 				Labels:    result.Metric,
 			}
 			points = append(points, point)

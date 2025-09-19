@@ -2,6 +2,7 @@ package k8s_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -48,6 +49,108 @@ var _ = Describe("ServiceDiscovery", func() {
 	})
 
 	// Business Requirement: BR-HOLMES-016 - Dynamic service discovery in Kubernetes cluster
+	Describe("BR-HOLMES-029: Service discovery metrics and monitoring", func() {
+		It("should track service discovery event metrics with structured data", func() {
+			// Business Requirement: BR-HOLMES-029 - Event monitoring without interface{} usage
+			err := serviceDiscovery.Start(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create a test service
+			testService := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prometheus-service",
+					Namespace: "monitoring",
+					Labels: map[string]string{
+						"app.kubernetes.io/name": "prometheus",
+					},
+				},
+				Spec: corev1.ServiceSpec{
+					Ports: []corev1.ServicePort{
+						{Name: "web", Port: 9090},
+					},
+				},
+			}
+
+			// Add service to fake client
+			_, err = fakeClient.CoreV1().Services("monitoring").Create(ctx, testService, metav1.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			// Wait for service discovery to process
+			Eventually(func() bool {
+				metrics := serviceDiscovery.GetEventMetrics()
+				return metrics.TotalEventsProcessed > 0
+			}, 3*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			// Validate structured metrics - no interface{} usage
+			metrics := serviceDiscovery.GetEventMetrics()
+			Expect(metrics.TotalEventsProcessed).To(BeNumerically(">", 0))
+			Expect(metrics.SuccessfulEvents).To(BeNumerically(">", 0))
+			Expect(metrics.DroppedEvents).To(BeNumerically(">=", 0))
+			Expect(metrics.EventTypeCounts).To(HaveKey("added"))
+			Expect(metrics.EventTypeCounts["added"]).To(BeNumerically(">", 0))
+		})
+
+		It("should track dropped events when channel buffer is full", func() {
+			// Business Requirement: BR-HOLMES-029 - Monitor event drops for reliability
+			err := serviceDiscovery.Start(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create many services rapidly to potentially cause drops
+			for i := 0; i < 100; i++ {
+				testService := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      fmt.Sprintf("test-service-%d", i),
+						Namespace: "monitoring",
+					},
+					Spec: corev1.ServiceSpec{
+						Ports: []corev1.ServicePort{{Name: "web", Port: 8080}},
+					},
+				}
+				_, err = fakeClient.CoreV1().Services("monitoring").Create(ctx, testService, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+			}
+
+			// Allow processing
+			time.Sleep(2 * time.Second)
+
+			// Validate metrics track all events (processed + dropped)
+			metrics := serviceDiscovery.GetEventMetrics()
+			totalEvents := metrics.TotalEventsProcessed + metrics.DroppedEvents
+			Expect(totalEvents).To(BeNumerically(">=", 100))
+
+			// Ensure dropped events are properly tracked if they occur
+			if metrics.DroppedEvents > 0 {
+				Expect(metrics.DropRate).To(BeNumerically(">", 0))
+				Expect(metrics.DropRate).To(BeNumerically("<=", 1))
+			}
+		})
+
+		It("should provide event processing latency metrics", func() {
+			// Business Requirement: BR-HOLMES-029 - Performance monitoring
+			err := serviceDiscovery.Start(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			testService := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "latency-test-service",
+					Namespace: "monitoring",
+				},
+			}
+
+			_, err = fakeClient.CoreV1().Services("monitoring").Create(ctx, testService, metav1.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			Eventually(func() bool {
+				metrics := serviceDiscovery.GetEventMetrics()
+				return metrics.AverageProcessingTime > 0
+			}, 3*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			metrics := serviceDiscovery.GetEventMetrics()
+			Expect(metrics.AverageProcessingTime).To(BeNumerically(">", 0))
+			Expect(metrics.MaxProcessingTime).To(BeNumerically(">", 0))
+			Expect(metrics.LastEventTimestamp).ToNot(BeZero())
+		})
+	})
 	Describe("BR-HOLMES-016: Dynamic Service Discovery", func() {
 		It("should discover Prometheus services", func() {
 			// Create a Prometheus service in the test cluster

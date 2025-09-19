@@ -181,7 +181,13 @@ func (sc *ServiceCache) isExpired(service *DetectedService) bool {
 
 // cleanupExpired removes expired services from the cache
 func (sc *ServiceCache) cleanupExpired() {
-	ticker := time.NewTicker(sc.ttl / 2) // Cleanup more frequently than TTL
+	// Ensure minimum ticker interval to prevent panic
+	cleanupInterval := sc.ttl / 2
+	if cleanupInterval <= 0 {
+		cleanupInterval = 30 * time.Second // Default minimum cleanup interval
+	}
+
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {

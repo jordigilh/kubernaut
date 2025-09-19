@@ -249,24 +249,53 @@ preflight_checks() {
         log_success "SSH key found: ${SSH_KEY_PATH}"
     fi
 
-    # Check if cluster already exists
+    # Check for existing clusters and VMs that might conflict
     if kcli list cluster | grep -q "^${CLUSTER_NAME}"; then
         log_warning "Cluster '${CLUSTER_NAME}' already exists!"
-        read -p "Do you want to delete and recreate it? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            log_info "Deleting existing cluster..."
-            kcli delete cluster "${CLUSTER_NAME}" --yes
-        else
-            log_info "Aborting deployment."
-            exit 0
+        log_info "Existing cluster will cause KCLI to skip VM creation, leading to deployment failure"
+        log_info "Automatically cleaning up existing cluster for fresh deployment..."
+        
+        # Always cleanup existing cluster to ensure fresh deployment
+        log_info "Deleting existing cluster and VMs..."
+        kcli delete cluster "${CLUSTER_NAME}" --yes || log_warning "Cluster deletion had issues, continuing..."
+        
+        # Wait for cleanup to complete
+        sleep 10
+        
+        # Verify cleanup
+        if kcli list cluster | grep -q "^${CLUSTER_NAME}"; then
+            log_error "Failed to cleanup existing cluster. Manual cleanup required."
+            log_info "Run: kcli delete cluster ${CLUSTER_NAME} --yes"
+            exit 1
         fi
+        
+        log_success "Existing cluster cleaned up successfully"
+    fi
+    
+    # Additional check for orphaned VMs that might cause skipping
+    EXISTING_VMS=$(virsh list --all | grep "${CLUSTER_NAME}" | awk '{print $2}' || true)
+    if [[ -n "$EXISTING_VMS" ]]; then
+        log_warning "Found existing VMs that might conflict with deployment:"
+        echo "$EXISTING_VMS" | while read vm; do
+            [[ -n "$vm" ]] && log_info "  - $vm"
+        done
+        
+        log_info "Cleaning up conflicting VMs to ensure fresh deployment..."
+        echo "$EXISTING_VMS" | while read vm; do
+            if [[ -n "$vm" ]]; then
+                log_info "Removing VM: $vm"
+                virsh destroy "$vm" 2>/dev/null || true
+                virsh undefine "$vm" --remove-all-storage 2>/dev/null || true
+            fi
+        done
+        
+        log_success "Conflicting VMs cleaned up"
     fi
 
     log_success "Pre-flight checks completed"
 }
 
-# Deploy cluster with root-specific settings
+# Deploy cluster with proper state management
 deploy_cluster() {
     log_header "Deploying OpenShift Cluster"
 
@@ -278,12 +307,24 @@ deploy_cluster() {
 
     # Run deployment with output logging
     LOG_FILE="/root/kcli-deploy-${CLUSTER_NAME}.log"
-    if ${DEPLOY_CMD} 2>&1 | tee "${LOG_FILE}"; then
-        log_success "Cluster deployment initiated successfully"
+    
+    # Run the deployment with timeout
+    if timeout 7200 ${DEPLOY_CMD} 2>&1 | tee "${LOG_FILE}"; then
+        log_success "Cluster deployment completed successfully"
         log_info "Deployment log saved to: ${LOG_FILE}"
     else
-        log_error "Cluster deployment failed. Check logs at ${LOG_FILE}"
-        exit 1
+        local exit_code=$?
+        log_error "Cluster deployment failed with exit code: ${exit_code}"
+        log_error "Check logs at ${LOG_FILE}"
+        
+        # Check if this was a VM skipping issue (common cause)
+        if grep -q "skipped on local" "${LOG_FILE}"; then
+            log_error "VMs were skipped during deployment - this indicates conflicting existing resources"
+            log_error "This script should have cleaned up conflicts in pre-flight checks"
+            log_info "Try running the deployment again - cleanup may resolve the issue"
+        fi
+        
+        exit $exit_code
     fi
 }
 

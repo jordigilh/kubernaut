@@ -106,9 +106,20 @@ func (dwe *DefaultWorkflowEngine) executeParallelSteps(ctx context.Context, step
 		go func(idx int, s *ExecutableWorkflowStep) {
 			defer wg.Done()
 
-			// Acquire semaphore
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
+			// DEADLOCK PREVENTION FIX: Use select with context to prevent semaphore blocking
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-parallelCtx.Done():
+				// Context cancelled while waiting for semaphore - exit early
+				errors[idx] = parallelCtx.Err()
+				dwe.log.WithFields(logrus.Fields{
+					"step_id":    s.ID,
+					"step_index": idx,
+					"reason":     "context_cancelled_before_semaphore_acquire",
+				}).Debug("Step cancelled while waiting for semaphore")
+				return
+			}
 
 			// Create isolated step context
 			isolatedCtx := dwe.createIsolatedStepContext(stepContext, s.ID)
@@ -544,6 +555,11 @@ func (dwe *DefaultWorkflowEngine) createIsolatedStepContext(parentContext *StepC
 }
 
 func (dwe *DefaultWorkflowEngine) extractLoopConfig(step *ExecutableWorkflowStep) (*LoopConfig, error) {
+	// Following project guideline: validate input and return meaningful errors
+	if step == nil {
+		return nil, fmt.Errorf("step cannot be nil")
+	}
+
 	config := &LoopConfig{
 		Type:           LoopTypeFor,
 		MaxIterations:  100, // Default max iterations
@@ -553,15 +569,33 @@ func (dwe *DefaultWorkflowEngine) extractLoopConfig(step *ExecutableWorkflowStep
 
 	if step.Variables != nil {
 		if loopType, ok := step.Variables["loop_type"].(string); ok {
-			config.Type = LoopType(loopType)
+			// Validate loop type
+			switch LoopType(loopType) {
+			case LoopTypeFor, LoopTypeWhile, LoopTypeForEach:
+				config.Type = LoopType(loopType)
+			default:
+				return nil, fmt.Errorf("invalid loop type: %s. Must be 'for', 'while', or 'forEach'", loopType)
+			}
 		}
 		if maxIter, ok := step.Variables["max_iterations"].(int); ok {
+			if maxIter <= 0 {
+				return nil, fmt.Errorf("max_iterations must be positive, got: %d", maxIter)
+			}
+			if maxIter > 10000 {
+				return nil, fmt.Errorf("max_iterations too high (%d), maximum allowed: 10000", maxIter)
+			}
 			config.MaxIterations = maxIter
 		}
 		if condition, ok := step.Variables["termination_condition"].(string); ok {
+			if condition == "" {
+				return nil, fmt.Errorf("termination_condition cannot be empty")
+			}
 			config.TerminationCondition = condition
 		}
 		if delay, ok := step.Variables["iteration_delay"].(time.Duration); ok {
+			if delay < 0 {
+				return nil, fmt.Errorf("iteration_delay cannot be negative: %v", delay)
+			}
 			config.IterationDelay = delay
 		}
 		if breakOnFailure, ok := step.Variables["break_on_failure"].(bool); ok {
@@ -864,6 +898,7 @@ func (dwe *DefaultWorkflowEngine) createGenericTemplate(workflowID string) *Exec
 	return dwe.createBasicTemplate(workflowID, "Generic Workflow", "Automatically generated generic template", "generic", stepConfigs)
 }
 
+// Milestone 2: Advanced subflow monitoring and execution patterns - excluded from unused warnings via .golangci-lint.yml
 func (dwe *DefaultWorkflowEngine) waitForSubflowCompletion(ctx context.Context, executionID string, timeout time.Duration) (*RuntimeWorkflowExecution, error) {
 	dwe.log.WithFields(logrus.Fields{
 		"execution_id": executionID,
@@ -939,6 +974,8 @@ func (dwe *DefaultWorkflowEngine) waitForSubflowCompletion(ctx context.Context, 
 }
 
 // isExecutionComplete checks if a workflow execution has reached a terminal state
+//
+// Milestone 2: Advanced subflow monitoring and execution patterns - excluded from unused warnings via .golangci-lint.yml
 func (dwe *DefaultWorkflowEngine) isExecutionComplete(execution *RuntimeWorkflowExecution) bool {
 	if execution == nil {
 		return false
@@ -959,6 +996,8 @@ func (dwe *DefaultWorkflowEngine) isExecutionComplete(execution *RuntimeWorkflow
 }
 
 // areAllStepsComplete checks if all steps in an execution are in terminal states
+//
+// Milestone 2: Advanced subflow monitoring and execution patterns - excluded from unused warnings via .golangci-lint.yml
 func (dwe *DefaultWorkflowEngine) areAllStepsComplete(execution *RuntimeWorkflowExecution) bool {
 	if execution == nil || len(execution.Steps) == 0 {
 		return false
@@ -979,6 +1018,8 @@ func (dwe *DefaultWorkflowEngine) areAllStepsComplete(execution *RuntimeWorkflow
 }
 
 // countCompletedSteps counts the number of completed steps for progress tracking
+//
+// Milestone 2: Advanced subflow monitoring and execution patterns - excluded from unused warnings via .golangci-lint.yml
 func (dwe *DefaultWorkflowEngine) countCompletedSteps(execution *RuntimeWorkflowExecution) int {
 	if execution == nil {
 		return 0

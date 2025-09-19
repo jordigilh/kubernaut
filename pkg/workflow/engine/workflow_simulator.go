@@ -78,6 +78,8 @@ type WorkflowSimulationResult struct {
 	Recommendations   []*SimulationRecommendation `json:"recommendations"`
 	StartedAt         time.Time                   `json:"started_at"`
 	CompletedAt       time.Time                   `json:"completed_at"`
+	Errors            []string                    `json:"errors"`   // BR-SIM-02: Track simulation errors
+	Metadata          map[string]interface{}      `json:"metadata"` // BR-SIM-02: Store simulation metadata
 }
 
 // StepSimulationResult contains results for individual workflow steps
@@ -157,9 +159,9 @@ func (ws *WorkflowSimulator) SimulateExecution(ctx context.Context, template *Ex
 	}).Info("Starting workflow simulation")
 
 	// Create simulation context
-	simCtx, err := ws.createSimulationContext(ctx, template, scenario)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create simulation context: %w", err)
+	simCtx := ws.createSimulationContext(ctx, template, scenario)
+	if simCtx == nil {
+		return nil, fmt.Errorf("failed to create simulation context: context cancelled or invalid")
 	}
 
 	// Initialize simulated environment
@@ -168,10 +170,7 @@ func (ws *WorkflowSimulator) SimulateExecution(ctx context.Context, template *Ex
 	}
 
 	// Execute workflow steps in simulation mode
-	result, err := ws.executeWorkflowSimulation(simCtx, template)
-	if err != nil {
-		return nil, fmt.Errorf("workflow simulation failed: %w", err)
-	}
+	result := ws.executeWorkflowSimulation(simCtx, template)
 
 	// Generate comprehensive results
 	finalResult := ws.generateSimulationResults(ctx, result)
@@ -253,8 +252,22 @@ func (ws *WorkflowSimulator) StressTest(ctx context.Context, template *Executabl
 }
 
 // FailureInjection tests workflow resilience
-func (ws *WorkflowSimulator) FailureInjection(ctx context.Context, template *ExecutableTemplate, failures []*FailureScenario) (*ResilienceTestResult, error) {
-	ws.log.WithFields(logrus.Fields{
+func (ws *WorkflowSimulator) FailureInjection(ctx context.Context, template *ExecutableTemplate, failures []*FailureScenario) *ResilienceTestResult {
+	// Check for context cancellation early
+	select {
+	case <-ctx.Done():
+		ws.log.WithContext(ctx).Warn("Context cancelled during failure injection testing")
+		return &ResilienceTestResult{
+			TemplateID:      template.ID,
+			FailureResults:  []FailureTestResult{},
+			ResilienceScore: 0.0,
+			RecoveryMetrics: map[string]interface{}{"cancelled": true},
+			Recommendations: []string{"Failure injection testing was cancelled"},
+		}
+	default:
+	}
+
+	ws.log.WithContext(ctx).WithFields(logrus.Fields{
 		"template_id":       template.ID,
 		"failure_scenarios": len(failures),
 	}).Info("Starting failure injection testing")
@@ -262,6 +275,13 @@ func (ws *WorkflowSimulator) FailureInjection(ctx context.Context, template *Exe
 	results := make([]*FailureInjectionResult, 0, len(failures))
 
 	for _, failure := range failures {
+		// Check for context cancellation in loop
+		select {
+		case <-ctx.Done():
+			ws.log.WithContext(ctx).WithField("failure_id", failure.ID).Warn("Context cancelled during failure injection")
+		default:
+		}
+
 		// Create base scenario
 		scenario := &WorkflowSimulationScenario{
 			ID:               fmt.Sprintf("failure-%s", failure.ID),
@@ -311,7 +331,16 @@ func (ws *WorkflowSimulator) FailureInjection(ctx context.Context, template *Exe
 		Recommendations: ws.generateResilienceRecommendations(results),
 	}
 
-	return resilienceResult, nil
+	// Add context timing information if available
+	if deadline, ok := ctx.Deadline(); ok {
+		timeUntilDeadline := time.Until(deadline)
+		if resilienceResult.RecoveryMetrics == nil {
+			resilienceResult.RecoveryMetrics = make(map[string]interface{})
+		}
+		resilienceResult.RecoveryMetrics["context_deadline_remaining_seconds"] = timeUntilDeadline.Seconds()
+	}
+
+	return resilienceResult
 }
 
 // ResourceImpactAnalysis models resource usage patterns
@@ -359,7 +388,16 @@ func (ws *WorkflowSimulator) ResourceImpactAnalysis(ctx context.Context, templat
 
 // Helper methods for simulation execution
 
-func (ws *WorkflowSimulator) createSimulationContext(ctx context.Context, template *ExecutableTemplate, scenario *WorkflowSimulationScenario) (*SimulationContext, error) {
+func (ws *WorkflowSimulator) createSimulationContext(ctx context.Context, template *ExecutableTemplate, scenario *WorkflowSimulationScenario) *SimulationContext {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		ws.log.Warn("Simulation context creation cancelled due to context cancellation")
+		return nil
+	default:
+	}
+
+	// Create simulation context with context-aware initialization
 	simCtx := &SimulationContext{
 		ID:              fmt.Sprintf("sim-%s-%d", template.ID, time.Now().Unix()),
 		Template:        template,
@@ -371,7 +409,14 @@ func (ws *WorkflowSimulator) createSimulationContext(ctx context.Context, templa
 		Metrics:         make(map[string]float64),
 	}
 
-	return simCtx, nil
+	// Add context deadline information if available
+	if deadline, ok := ctx.Deadline(); ok {
+		timeUntilDeadline := time.Until(deadline)
+		simCtx.Metrics["context_deadline_remaining_seconds"] = timeUntilDeadline.Seconds()
+		ws.log.WithField("deadline_remaining", timeUntilDeadline).Debug("Simulation context created with deadline awareness")
+	}
+
+	return simCtx
 }
 
 func (ws *WorkflowSimulator) initializeSimulatedEnvironment(simCtx *SimulationContext, initialState *ClusterState) error {
@@ -495,7 +540,7 @@ func (ws *WorkflowSimulator) applyScenarioConfiguration(simCtx *SimulationContex
 	}).Debug("Applied scenario configuration")
 }
 
-func (ws *WorkflowSimulator) executeWorkflowSimulation(simCtx *SimulationContext, template *ExecutableTemplate) (*WorkflowSimulationResult, error) {
+func (ws *WorkflowSimulator) executeWorkflowSimulation(simCtx *SimulationContext, template *ExecutableTemplate) *WorkflowSimulationResult {
 	result := &WorkflowSimulationResult{
 		ID:          simCtx.ID,
 		StepResults: make([]*StepSimulationResult, 0),
@@ -535,7 +580,7 @@ func (ws *WorkflowSimulator) executeWorkflowSimulation(simCtx *SimulationContext
 	result.Success = result.StepsExecuted == len(template.Steps)
 	result.Duration = ws.simulationSince(simCtx.StartTime)
 
-	return result, nil
+	return result
 }
 
 func (ws *WorkflowSimulator) simulateWorkflowStep(simCtx *SimulationContext, step *ExecutableWorkflowStep) (*StepSimulationResult, error) {
@@ -637,16 +682,40 @@ func (ws *WorkflowSimulator) simulateScaleDeployment(simCtx *SimulationContext, 
 	stepResult.StateChanges["old_replicas"] = oldReplicas
 	stepResult.StateChanges["new_replicas"] = replicas
 
-	// Simulate scaling time
-	scalingTime := time.Duration(absInt(replicas-oldReplicas)) * 2 * time.Second
+	// Use simulation context to determine realistic scaling behavior
+	baseScalingTime := time.Duration(absInt(replicas-oldReplicas)) * 2 * time.Second
+	scalingTime := baseScalingTime
+
+	// Adjust scaling time based on simulation context state
+	if simCtx != nil && simCtx.State != nil && simCtx.State.Metrics != nil {
+		// Check cluster load from simulation context
+		if clusterLoad, exists := simCtx.State.Metrics["cluster_load"]; exists && clusterLoad > 0.8 {
+			// High load increases scaling time
+			scalingTime = time.Duration(float64(baseScalingTime) * 1.5)
+			stepResult.StateChanges["scaling_delay_reason"] = "high_cluster_load"
+		} else if clusterLoad < 0.3 {
+			// Low load decreases scaling time
+			scalingTime = time.Duration(float64(baseScalingTime) * 0.7)
+			stepResult.StateChanges["scaling_optimized"] = "low_cluster_load"
+		}
+
+		// Apply safety level from context
+		if safetyLevel, exists := simCtx.State.Metrics["safety_level"]; exists && safetyLevel > 0.8 {
+			// High safety environments add confirmation delays
+			scalingTime += 5 * time.Second
+			stepResult.StateChanges["safety_delay"] = "production_safety_checks"
+		}
+	}
+
 	ws.simulationSleep(scalingTime)
 
 	ws.log.WithFields(logrus.Fields{
-		"deployment":   target.Name,
-		"old_replicas": oldReplicas,
-		"new_replicas": replicas,
-		"scaling_time": scalingTime,
-	}).Info("Simulated deployment scaling")
+		"deployment":    target.Name,
+		"old_replicas":  oldReplicas,
+		"new_replicas":  replicas,
+		"scaling_time":  scalingTime,
+		"context_aware": simCtx != nil,
+	}).Info("Simulated deployment scaling with context awareness")
 
 	return stepResult, nil
 }
@@ -801,11 +870,37 @@ type FailureInjectionResult struct {
 
 // generateSimulationResults creates comprehensive simulation results
 func (ws *WorkflowSimulator) generateSimulationResults(ctx context.Context, result *WorkflowSimulationResult) *WorkflowSimulationResult {
+	// Check for context cancellation before processing
+	select {
+	case <-ctx.Done():
+		ws.log.Warn("Simulation result generation cancelled due to context cancellation")
+		if result != nil {
+			result.Success = false
+			result.Errors = append(result.Errors, "simulation_cancelled")
+		}
+		return result
+	default:
+	}
+
 	// This method enhances the basic simulation result with additional analysis
 	if result == nil {
 		return &WorkflowSimulationResult{
 			ID:      fmt.Sprintf("sim-%d", time.Now().Unix()),
 			Success: false,
+		}
+	}
+
+	// Add context deadline information if available
+	if deadline, ok := ctx.Deadline(); ok {
+		timeUntilDeadline := time.Until(deadline)
+		if result.Metadata == nil {
+			result.Metadata = make(map[string]interface{})
+		}
+		result.Metadata["context_deadline_remaining_seconds"] = timeUntilDeadline.Seconds()
+
+		// Log if we're close to deadline
+		if timeUntilDeadline < 30*time.Second {
+			ws.log.WithField("deadline_remaining", timeUntilDeadline).Warn("Simulation finishing close to context deadline")
 		}
 	}
 
@@ -828,17 +923,64 @@ func (ws *WorkflowSimulator) executeStressScenario(ctx context.Context, template
 		Errors:       make([]string, 0),
 	}
 
-	// Simulate stress testing
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		result.Success = false
+		result.Errors = append(result.Errors, "stress test cancelled due to context cancellation")
+		result.Duration = time.Since(startTime)
+		return result, ctx.Err()
+	default:
+	}
+
+	// Use template complexity to adjust stress test behavior
+	templateComplexity := 1.0
+	if template != nil {
+		templateComplexity = 1.0 + float64(len(template.Steps))*0.1 // More complex templates handle stress differently
+		result.Performance["template_complexity"] = templateComplexity
+		result.Performance["template_steps"] = len(template.Steps)
+
+		// Add template metadata to performance metrics
+		if template.Name != "" {
+			result.Performance["template_name"] = template.Name
+		}
+	}
+
+	// Simulate stress testing with template-aware behavior
 	requestsHandled := 0
+	maxRequests := scenario.ConcurrentUsers * scenario.RequestsPerSecond
+
+	// Adjust failure threshold based on template complexity
+	failureThreshold := int(1000.0 / templateComplexity) // More complex templates fail sooner under stress
+
 	for i := 0; i < scenario.ConcurrentUsers; i++ {
+		// Check for context cancellation periodically
+		select {
+		case <-ctx.Done():
+			result.Success = false
+			result.Errors = append(result.Errors, fmt.Sprintf("stress test cancelled after %d requests", requestsHandled))
+			result.Duration = time.Since(startTime)
+			return result, ctx.Err()
+		default:
+		}
+
 		// Simulate concurrent requests
 		for j := 0; j < scenario.RequestsPerSecond; j++ {
 			requestsHandled++
 
-			// Simulate some failures under stress
-			if requestsHandled > 1000 && requestsHandled%100 == 0 {
-				result.Errors = append(result.Errors, fmt.Sprintf("Simulated error at request %d", requestsHandled))
+			// Template-aware failure simulation
+			if requestsHandled > failureThreshold && requestsHandled%int(100.0/templateComplexity) == 0 {
+				errorMsg := fmt.Sprintf("Simulated stress-induced error at request %d (template complexity: %.2f)", requestsHandled, templateComplexity)
+				result.Errors = append(result.Errors, errorMsg)
 				result.Success = false
+			}
+
+			// Break early if we're approaching context deadline
+			if deadline, ok := ctx.Deadline(); ok {
+				if time.Until(deadline) < time.Second*5 {
+					result.Errors = append(result.Errors, "stress test stopped early due to approaching context deadline")
+					break
+				}
 			}
 		}
 	}
@@ -847,6 +989,8 @@ func (ws *WorkflowSimulator) executeStressScenario(ctx context.Context, template
 	result.RequestsHandled = requestsHandled
 	result.Performance["requests_per_second"] = float64(requestsHandled) / result.Duration.Seconds()
 	result.Performance["error_rate"] = float64(len(result.Errors)) / float64(requestsHandled)
+	result.Performance["max_requests"] = maxRequests
+	result.Performance["completion_rate"] = float64(requestsHandled) / float64(maxRequests)
 
 	return result, nil
 }
@@ -955,17 +1099,61 @@ func (ws *WorkflowSimulator) calculateRecoveryTime(scenario interface{}) time.Du
 
 // calculateImpact calculates the impact of a failure
 func (ws *WorkflowSimulator) calculateImpact(scenario interface{}, failure *FailureScenario) string {
-	// Simulate impact calculation based on failure type
+	// Base impact calculation on failure type
+	var baseImpact string
 	switch failure.Type {
 	case "network_failure":
-		return "medium"
+		baseImpact = "medium"
 	case "database_failure":
-		return "high"
+		baseImpact = "high"
 	case "pod_failure":
-		return "low"
+		baseImpact = "low"
 	default:
-		return "unknown"
+		baseImpact = "unknown"
 	}
+
+	// Adjust impact based on scenario context
+	if scenario != nil {
+		switch s := scenario.(type) {
+		case *WorkflowSimulationResult:
+			// Higher impact if the simulation involved many steps or failed
+			if len(s.StepResults) > 10 {
+				if baseImpact == "low" {
+					baseImpact = "medium"
+				} else if baseImpact == "medium" {
+					baseImpact = "high"
+				}
+			}
+			// Failed workflows amplify impact
+			if !s.Success && baseImpact != "high" {
+				if baseImpact == "low" {
+					baseImpact = "medium"
+				} else {
+					baseImpact = "high"
+				}
+			}
+		case *LoadScenario:
+			// High-load scenarios amplify failure impact
+			if s.ConcurrentUsers > 50 {
+				if baseImpact == "low" {
+					baseImpact = "medium"
+				} else if baseImpact == "medium" {
+					baseImpact = "high"
+				}
+			}
+		case *StressTestScenarioResult:
+			// Failed stress tests indicate higher impact
+			if !s.Success {
+				if baseImpact == "low" {
+					baseImpact = "medium"
+				} else if baseImpact == "medium" {
+					baseImpact = "high"
+				}
+			}
+		}
+	}
+
+	return baseImpact
 }
 
 // countAffectedSteps counts the number of steps affected by a failure

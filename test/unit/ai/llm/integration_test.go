@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -145,6 +146,7 @@ var _ = Describe("LLM Integration Layer - Business Requirements Testing", func()
 					"BR-LLM-002: %s should provide high confidence analysis", model)
 
 				// **Business Value Validation**: Verify Claude-specific reasoning
+				By(fmt.Sprintf("Checking reasoning content: %q", response.Reasoning))
 				Expect(strings.Contains(response.Reasoning, "analysis") ||
 					strings.Contains(response.Reasoning, "consideration")).To(BeTrue(),
 					"BR-LLM-002: Claude models should provide detailed analytical reasoning")
@@ -513,32 +515,637 @@ var _ = Describe("LLM Integration Layer - Business Requirements Testing", func()
 			Expect(accuracyTrend).ToNot(BeEmpty(), "BR-LLM-020: Should identify accuracy trends")
 		})
 	})
+
+	// BR-LLM-010: MUST implement cost optimization strategies for business ROI
+	Context("BR-LLM-010: Cost Optimization Strategies for Business ROI", func() {
+		It("should implement effective cost optimization strategies with measurable business ROI", func() {
+			// Business LLM usage patterns with cost optimization potential
+			optimizationScenarios := []struct {
+				UsagePattern       string
+				CurrentCost        float64 // Monthly cost in USD
+				OptimizationTarget float64 // Target cost reduction
+				BusinessContext    string
+			}{
+				{
+					UsagePattern:       "high_frequency_simple_queries",
+					CurrentCost:        2500.00, // $2,500/month
+					OptimizationTarget: 0.40,    // 40% reduction through caching
+					BusinessContext:    "customer_support",
+				},
+				{
+					UsagePattern:       "complex_analysis_queries",
+					CurrentCost:        5000.00, // $5,000/month
+					OptimizationTarget: 0.25,    // 25% reduction through provider optimization
+					BusinessContext:    "business_intelligence",
+				},
+				{
+					UsagePattern:       "batch_processing_queries",
+					CurrentCost:        3000.00, // $3,000/month
+					OptimizationTarget: 0.35,    // 35% reduction through scheduling optimization
+					BusinessContext:    "data_processing",
+				},
+			}
+
+			totalCurrentCost := 0.0
+			totalOptimizedCost := 0.0
+			successfulOptimizations := 0
+
+			for _, scenario := range optimizationScenarios {
+				By(fmt.Sprintf("Optimizing %s pattern for %s context", scenario.UsagePattern, scenario.BusinessContext))
+
+				// Mock cost optimization analysis using LLM client
+				alert := &types.Alert{
+					Name:        fmt.Sprintf("cost_optimization_%s", scenario.UsagePattern),
+					Severity:    "info",
+					Description: fmt.Sprintf("Cost optimization analysis for %s", scenario.BusinessContext),
+					Labels: map[string]string{
+						"usage_pattern":    scenario.UsagePattern,
+						"business_context": scenario.BusinessContext,
+						"current_cost":     fmt.Sprintf("%.2f", scenario.CurrentCost),
+					},
+				}
+
+				// Use LLM client to analyze cost optimization strategies
+				response, err := llmClient.AnalyzeAlert(ctx, *alert)
+				Expect(err).ToNot(HaveOccurred(), "LLM cost analysis must succeed for business ROI")
+				Expect(response).ToNot(BeNil())
+
+				currentMonthlyCost := scenario.CurrentCost
+				totalCurrentCost += currentMonthlyCost
+
+				// Simulate cost optimization strategies based on LLM confidence
+				optimizationPotential := scenario.OptimizationTarget
+				if response.Confidence >= 0.80 {
+					optimizedCost := currentMonthlyCost * (1.0 - optimizationPotential)
+					totalOptimizedCost += optimizedCost
+
+					actualReduction := (currentMonthlyCost - optimizedCost) / currentMonthlyCost
+					if actualReduction >= 0.30 { // Meets 30% reduction target
+						successfulOptimizations++
+					}
+				} else {
+					totalOptimizedCost += currentMonthlyCost // No optimization if low confidence
+				}
+			}
+
+			// BR-LLM-010: Cost reduction ≥30% through intelligent optimization
+			overallCostReduction := (totalCurrentCost - totalOptimizedCost) / totalCurrentCost
+			Expect(overallCostReduction).To(BeNumerically(">=", 0.30),
+				"BR-LLM-010: Must achieve ≥30% cost reduction through intelligent optimization strategies")
+
+			// BR-LLM-010: ROI measurement and tracking
+			monthlySavings := totalCurrentCost - totalOptimizedCost
+			annualSavings := monthlySavings * 12
+			Expect(annualSavings).To(BeNumerically(">", 10000),
+				"BR-LLM-010: Annual cost savings must exceed $10,000 for meaningful business impact")
+
+			logger.WithFields(logrus.Fields{
+				"business_requirement":     "BR-LLM-010",
+				"scenarios_optimized":      len(optimizationScenarios),
+				"overall_cost_reduction":   overallCostReduction,
+				"monthly_savings":          monthlySavings,
+				"annual_savings":           annualSavings,
+				"successful_optimizations": successfulOptimizations,
+				"cost_optimization_ready":  overallCostReduction >= 0.30,
+				"business_impact":          "LLM cost optimization delivers measurable business ROI and operational efficiency",
+			}).Info("BR-LLM-010: Cost optimization strategies business validation completed")
+		})
+	})
+
+	// BR-LLM-013: MUST implement response quality assessment for business confidence
+	Context("BR-LLM-013: Response Quality Assessment for Business Confidence", func() {
+		It("should provide accurate response quality assessment for business decision confidence", func() {
+			// Business response quality scenarios with confidence requirements
+			qualityScenarios := []struct {
+				ResponseType     string
+				ExpectedQuality  float64
+				BusinessCritical bool
+				QualityThreshold float64
+			}{
+				{
+					ResponseType:     "incident_diagnosis",
+					ExpectedQuality:  0.92, // High quality expected for incident response
+					BusinessCritical: true,
+					QualityThreshold: 0.85, // High threshold for critical responses
+				},
+				{
+					ResponseType:     "optimization_recommendation",
+					ExpectedQuality:  0.88, // Good quality for optimization advice
+					BusinessCritical: true,
+					QualityThreshold: 0.80, // Moderate threshold for recommendations
+				},
+				{
+					ResponseType:     "general_inquiry",
+					ExpectedQuality:  0.75, // Acceptable quality for general queries
+					BusinessCritical: false,
+					QualityThreshold: 0.70, // Lower threshold for general queries
+				},
+			}
+
+			correctQualityAssessments := 0
+			totalAssessments := 0
+			qualityThresholdViolations := 0
+
+			for _, scenario := range qualityScenarios {
+				By(fmt.Sprintf("Assessing quality for %s responses (critical: %v)", scenario.ResponseType, scenario.BusinessCritical))
+
+				// Test multiple responses per scenario
+				for i := 0; i < 3; i++ {
+					totalAssessments++
+
+					// Create business-realistic alerts that should yield high confidence
+					var alert *types.Alert
+					switch scenario.ResponseType {
+					case "incident_diagnosis":
+						alert = &types.Alert{
+							Name:        fmt.Sprintf("kubernetes_pod_crash_loop_%d", i),
+							Severity:    "critical",
+							Description: "Critical: Kubernetes pod in crash loop, memory limit exceeded",
+							Labels: map[string]string{
+								"response_type":     scenario.ResponseType,
+								"business_critical": fmt.Sprintf("%t", scenario.BusinessCritical),
+								"quality_threshold": fmt.Sprintf("%.2f", scenario.QualityThreshold),
+							},
+						}
+					case "optimization_recommendation":
+						alert = &types.Alert{
+							Name:        fmt.Sprintf("cpu_usage_optimization_%d", i),
+							Severity:    "warning",
+							Description: "CPU usage high, optimization recommended for kubernetes deployment",
+							Labels: map[string]string{
+								"response_type":     scenario.ResponseType,
+								"business_critical": fmt.Sprintf("%t", scenario.BusinessCritical),
+								"quality_threshold": fmt.Sprintf("%.2f", scenario.QualityThreshold),
+							},
+						}
+					default: // general_inquiry
+						alert = &types.Alert{
+							Name:        fmt.Sprintf("%s_quality_test_%d", scenario.ResponseType, i),
+							Severity:    "info",
+							Description: fmt.Sprintf("Quality assessment test for %s", scenario.ResponseType),
+							Labels: map[string]string{
+								"response_type":     scenario.ResponseType,
+								"business_critical": fmt.Sprintf("%t", scenario.BusinessCritical),
+								"quality_threshold": fmt.Sprintf("%.2f", scenario.QualityThreshold),
+							},
+						}
+					}
+
+					// Use LLM client for response quality analysis
+					response, err := llmClient.AnalyzeAlert(ctx, *alert)
+					Expect(err).ToNot(HaveOccurred(), "Quality assessment must succeed")
+					Expect(response).ToNot(BeNil())
+
+					// Business validation: Quality assessment accuracy ≥90%
+					assessedQuality := response.Confidence
+
+					// Calculate expected confidence based on business requirements
+					// High-specificity scenarios (incident_diagnosis, optimization) should have high confidence
+					var expectedMinConfidence float64
+					switch scenario.ResponseType {
+					case "incident_diagnosis":
+						// Critical alerts with k8s terminology should yield high confidence (>0.85)
+						expectedMinConfidence = 0.85
+					case "optimization_recommendation":
+						// Optimization scenarios should yield good confidence (>0.80)
+						expectedMinConfidence = 0.80
+					case "general_inquiry":
+						// General queries should yield moderate confidence (>0.65)
+						expectedMinConfidence = 0.65
+					default:
+						expectedMinConfidence = 0.70
+					}
+
+					// Quality assessment is correct if confidence meets minimum threshold
+					if assessedQuality >= expectedMinConfidence {
+						correctQualityAssessments++
+						logger.WithFields(logrus.Fields{
+							"scenario_type":    scenario.ResponseType,
+							"assessed_quality": assessedQuality,
+							"expected_min":     expectedMinConfidence,
+							"result":           "PASS",
+						}).Info("BR-LLM-013: Quality assessment scenario result")
+					} else {
+						logger.WithFields(logrus.Fields{
+							"scenario_type":    scenario.ResponseType,
+							"assessed_quality": assessedQuality,
+							"expected_min":     expectedMinConfidence,
+							"result":           "FAIL",
+							"shortfall":        expectedMinConfidence - assessedQuality,
+						}).Warn("BR-LLM-013: Quality assessment scenario FAILED")
+					}
+
+					// Check quality threshold enforcement
+					if scenario.BusinessCritical && assessedQuality < scenario.QualityThreshold {
+						qualityThresholdViolations++
+					}
+				}
+			}
+
+			// BR-LLM-013: Quality assessment accuracy ≥90% for business decision confidence
+			qualityAssessmentAccuracy := float64(correctQualityAssessments) / float64(totalAssessments)
+			Expect(qualityAssessmentAccuracy).To(BeNumerically(">=", 0.90),
+				"BR-LLM-013: Must achieve ≥90% quality assessment accuracy for business decision confidence")
+
+			// BR-LLM-013: Quality threshold enforcement for business protection
+			thresholdViolationRate := float64(qualityThresholdViolations) / float64(totalAssessments)
+			Expect(thresholdViolationRate).To(BeNumerically("<", 0.10),
+				"BR-LLM-013: Quality threshold violations must be <10% for business protection")
+
+			logger.WithFields(logrus.Fields{
+				"business_requirement":        "BR-LLM-013",
+				"scenarios_tested":            len(qualityScenarios),
+				"total_assessments":           totalAssessments,
+				"quality_assessment_accuracy": qualityAssessmentAccuracy,
+				"correct_assessments":         correctQualityAssessments,
+				"threshold_violation_rate":    thresholdViolationRate,
+				"threshold_violations":        qualityThresholdViolations,
+				"quality_confidence_ready":    qualityAssessmentAccuracy >= 0.90,
+				"business_impact":             "Response quality assessment ensures business decision confidence and operational reliability",
+			}).Info("BR-LLM-013: Response quality assessment business validation completed")
+		})
+	})
+
+	// NEW BUSINESS REQUIREMENTS: Context Optimization and Model Performance
+	// BR-CONTEXT-016 to BR-CONTEXT-043 Integration with LLM Services
+
+	Context("BR-CONTEXT-016/039: LLM Context Optimization with Performance Monitoring", func() {
+		It("should optimize LLM context based on investigation complexity while monitoring model performance", func() {
+			// Given: Different complexity scenarios requiring context optimization
+			complexityScenarios := []struct {
+				alertComplexity  string
+				maxTokens        int
+				minConfidence    float64
+				expectedStrategy string
+			}{
+				{"simple", 32000, 0.75, "aggressive_optimization"},      // High context reduction
+				{"moderate", 65000, 0.80, "balanced_optimization"},      // Moderate context reduction
+				{"complex", 98000, 0.85, "conservative_optimization"},   // Minimal context reduction
+				{"critical", 131000, 0.90, "full_context_preservation"}, // No context reduction
+			}
+
+			for _, scenario := range complexityScenarios {
+				// Arrange: Alert with specific complexity characteristics
+				alert := &types.Alert{
+					Name:        fmt.Sprintf("%sComplexityTest", scenario.alertComplexity),
+					Severity:    map[string]string{"simple": "info", "moderate": "warning", "complex": "critical", "critical": "critical"}[scenario.alertComplexity],
+					Namespace:   "production",
+					Description: fmt.Sprintf("Alert requiring %s investigation with %s context optimization", scenario.alertComplexity, scenario.expectedStrategy),
+					Labels: map[string]string{
+						"complexity_tier":  scenario.alertComplexity,
+						"context_strategy": scenario.expectedStrategy,
+						"max_tokens":       fmt.Sprintf("%d", scenario.maxTokens),
+						"min_confidence":   fmt.Sprintf("%.2f", scenario.minConfidence),
+					},
+				}
+
+				// Setup mock response with context optimization metrics
+				enhancedClient.SetAnalysisResponse(&mocks.AnalysisResponse{
+					RecommendedAction: "context_optimized_action",
+					Confidence:        scenario.minConfidence + 0.05, // Should meet or exceed minimum
+					Reasoning:         fmt.Sprintf("Analysis completed with %s strategy", scenario.expectedStrategy),
+					ProcessingTime:    2 * time.Second,
+					Metadata: map[string]interface{}{
+						"context_optimization": map[string]interface{}{
+							"complexity_tier":       scenario.alertComplexity,
+							"optimization_strategy": scenario.expectedStrategy,
+							"token_usage":           scenario.maxTokens,
+							"reduction_percentage":  map[string]float64{"simple": 0.75, "moderate": 0.40, "complex": 0.20, "critical": 0.05}[scenario.alertComplexity],
+							"adequacy_score":        0.85 + (map[string]float64{"simple": 0.0, "moderate": 0.05, "complex": 0.10, "critical": 0.15}[scenario.alertComplexity]),
+						},
+						"performance_monitoring": map[string]interface{}{
+							"confidence_correlation": scenario.minConfidence + 0.02,
+							"quality_maintained":     true,
+							"degradation_detected":   false,
+							"baseline_comparison":    "stable",
+						},
+					},
+				})
+
+				// Act: Analyze alert with context optimization
+				response, err := enhancedClient.AnalyzeAlertWithModel(ctx, alert, "gpt-4")
+
+				// **Business Requirement BR-CONTEXT-016**: Investigation complexity assessment
+				Expect(err).ToNot(HaveOccurred(),
+					"Should successfully analyze %s complexity alert with context optimization", scenario.alertComplexity)
+				Expect(response.Confidence).To(BeNumerically(">=", scenario.minConfidence),
+					"BR-CONTEXT-016: %s complexity should maintain >= %.2f confidence with context optimization",
+					scenario.alertComplexity, scenario.minConfidence)
+
+				// **Business Requirement BR-CONTEXT-039**: Performance correlation monitoring
+				contextOpt, exists := response.Metadata["context_optimization"]
+				Expect(exists).To(BeTrue(), "BR-CONTEXT-039: Should provide context optimization metrics")
+
+				optimization, ok := contextOpt.(map[string]interface{})
+				Expect(ok).To(BeTrue(), "BR-CONTEXT-039: Context optimization should be structured")
+
+				tokenUsage := optimization["token_usage"]
+				Expect(tokenUsage).To(BeNumerically("<=", scenario.maxTokens),
+					"BR-CONTEXT-039: Token usage should respect %s complexity limits (<%d)",
+					scenario.alertComplexity, scenario.maxTokens)
+
+				// **Business Requirement BR-CONTEXT-040**: Performance degradation detection
+				perfMonitoring, exists := response.Metadata["performance_monitoring"]
+				Expect(exists).To(BeTrue(), "BR-CONTEXT-040: Should monitor performance correlation")
+
+				monitoring, ok := perfMonitoring.(map[string]interface{})
+				Expect(ok).To(BeTrue(), "BR-CONTEXT-040: Performance monitoring should be structured")
+
+				qualityMaintained := monitoring["quality_maintained"]
+				Expect(qualityMaintained).To(BeTrue(),
+					"BR-CONTEXT-040: Context optimization should maintain investigation quality")
+
+				degradationDetected := monitoring["degradation_detected"]
+				Expect(degradationDetected).To(BeFalse(),
+					"BR-CONTEXT-040: Should not detect performance degradation with proper optimization")
+			}
+		})
+
+		It("should implement context adequacy validation for LLM investigations", func() {
+			// Given: Investigation scenarios requiring context adequacy validation
+			adequacyScenarios := []struct {
+				investigationType string
+				requiredContext   []string
+				minAdequacyScore  float64
+				fallbackTrigger   bool
+			}{
+				{"root_cause_analysis", []string{"metrics", "logs", "events"}, 0.90, false},
+				{"performance_optimization", []string{"metrics", "resources"}, 0.85, false},
+				{"security_investigation", []string{"logs", "events", "network"}, 0.95, false},
+				{"basic_troubleshooting", []string{"basic_info"}, 0.60, true}, // Inadequate context
+			}
+
+			for _, scenario := range adequacyScenarios {
+				// Arrange: Alert requiring specific investigation type
+				alert := &types.Alert{
+					Name:        fmt.Sprintf("%sInvestigation", scenario.investigationType),
+					Severity:    "warning",
+					Namespace:   "production",
+					Description: fmt.Sprintf("Alert requiring %s with context adequacy validation", scenario.investigationType),
+					Labels: map[string]string{
+						"investigation_type": scenario.investigationType,
+						"required_context":   strings.Join(scenario.requiredContext, ","),
+						"min_adequacy_score": fmt.Sprintf("%.2f", scenario.minAdequacyScore),
+						"validate_adequacy":  "true",
+					},
+				}
+
+				// Setup mock response with adequacy validation results
+				enhancedClient.SetAnalysisResponse(&mocks.AnalysisResponse{
+					RecommendedAction: "adequacy_validated_action",
+					Confidence:        scenario.minAdequacyScore + 0.02,
+					Reasoning:         fmt.Sprintf("Investigation completed with adequate context for %s", scenario.investigationType),
+					ProcessingTime:    1500 * time.Millisecond,
+					Metadata: map[string]interface{}{
+						"context_adequacy": map[string]interface{}{
+							"validation_performed": true,
+							"adequacy_score":       scenario.minAdequacyScore + 0.05,
+							"required_contexts":    scenario.requiredContext,
+							"available_contexts":   scenario.requiredContext, // All available for test
+							"sufficiency_met":      !scenario.fallbackTrigger,
+							"fallback_triggered":   scenario.fallbackTrigger,
+						},
+						"investigation_quality": map[string]interface{}{
+							"context_completeness": map[string]bool{"root_cause_analysis": true, "performance_optimization": true, "security_investigation": true, "basic_troubleshooting": false}[scenario.investigationType],
+							"analysis_depth":       map[string]string{"root_cause_analysis": "comprehensive", "performance_optimization": "detailed", "security_investigation": "thorough", "basic_troubleshooting": "basic"}[scenario.investigationType],
+							"confidence_level":     scenario.minAdequacyScore + 0.03,
+						},
+					},
+				})
+
+				// Act: Perform investigation with adequacy validation
+				response, err := enhancedClient.AnalyzeAlertWithModel(ctx, alert, "claude-3-opus")
+
+				// **Business Requirement BR-CONTEXT-021**: Context adequacy validation
+				Expect(err).ToNot(HaveOccurred(),
+					"Should successfully validate context adequacy for %s", scenario.investigationType)
+
+				// **Business Requirement BR-CONTEXT-022**: Context sufficiency scoring
+				contextAdequacy, exists := response.Metadata["context_adequacy"]
+				Expect(exists).To(BeTrue(), "BR-CONTEXT-022: Should provide context adequacy assessment")
+
+				adequacy, ok := contextAdequacy.(map[string]interface{})
+				Expect(ok).To(BeTrue(), "BR-CONTEXT-022: Adequacy assessment should be structured")
+
+				validationPerformed := adequacy["validation_performed"]
+				Expect(validationPerformed).To(BeTrue(),
+					"BR-CONTEXT-021: Context adequacy validation should be performed")
+
+				adequacyScore := adequacy["adequacy_score"]
+				Expect(adequacyScore).To(BeNumerically(">=", scenario.minAdequacyScore),
+					"BR-CONTEXT-022: %s should achieve >= %.2f adequacy score",
+					scenario.investigationType, scenario.minAdequacyScore)
+
+				// **Business Requirement BR-CONTEXT-023**: Additional context triggering
+				sufficiencyMet := adequacy["sufficiency_met"]
+				if scenario.fallbackTrigger {
+					Expect(sufficiencyMet).To(BeFalse(),
+						"BR-CONTEXT-023: %s should trigger additional context gathering", scenario.investigationType)
+
+					fallbackTriggered := adequacy["fallback_triggered"]
+					Expect(fallbackTriggered).To(BeTrue(),
+						"BR-CONTEXT-023: Inadequate context should trigger fallback mechanism")
+				} else {
+					Expect(sufficiencyMet).To(BeTrue(),
+						"BR-CONTEXT-022: %s should meet context sufficiency requirements", scenario.investigationType)
+				}
+
+				// **Business Requirement BR-CONTEXT-025**: AI model self-assessment
+				investigationQuality, exists := response.Metadata["investigation_quality"]
+				Expect(exists).To(BeTrue(), "BR-CONTEXT-025: Should provide investigation quality self-assessment")
+
+				quality, ok := investigationQuality.(map[string]interface{})
+				Expect(ok).To(BeTrue(), "BR-CONTEXT-025: Investigation quality should be structured")
+
+				confidenceLevel := quality["confidence_level"]
+				Expect(confidenceLevel).To(BeNumerically(">=", scenario.minAdequacyScore),
+					"BR-CONTEXT-025: AI self-assessment should correlate with adequacy score")
+			}
+		})
+	})
+
+	Context("BR-CONTEXT-041/042: Automatic Context Adjustment and Performance Baselines", func() {
+		It("should automatically adjust context gathering when performance degradation is detected", func() {
+			// Given: Performance degradation scenarios requiring automatic adjustment
+			degradationScenarios := []struct {
+				scenarioName     string
+				initialTokens    int
+				degradationLevel string
+				adjustedTokens   int
+				expectedRecovery bool
+			}{
+				{"mild_degradation", 32000, "mild", 48000, true},
+				{"moderate_degradation", 48000, "moderate", 65000, true},
+				{"severe_degradation", 65000, "severe", 98000, true},
+				{"critical_degradation", 32000, "critical", 131000, true}, // Full context restoration
+			}
+
+			for _, scenario := range degradationScenarios {
+				// Arrange: Alert with detected performance degradation
+				alert := &types.Alert{
+					Name:        fmt.Sprintf("PerformanceDegradation_%s", scenario.scenarioName),
+					Severity:    "critical",
+					Namespace:   "production",
+					Description: fmt.Sprintf("Performance degradation detected requiring automatic context adjustment: %s", scenario.degradationLevel),
+					Labels: map[string]string{
+						"degradation_detected": "true",
+						"degradation_level":    scenario.degradationLevel,
+						"initial_tokens":       fmt.Sprintf("%d", scenario.initialTokens),
+						"auto_adjust":          "true",
+					},
+				}
+
+				// Setup mock response showing automatic adjustment
+				enhancedClient.SetAnalysisResponse(&mocks.AnalysisResponse{
+					RecommendedAction: "performance_recovery_action",
+					Confidence:        0.88, // Improved after adjustment
+					Reasoning:         fmt.Sprintf("Performance recovered after automatic context adjustment for %s", scenario.degradationLevel),
+					ProcessingTime:    3 * time.Second,
+					Metadata: map[string]interface{}{
+						"automatic_adjustment": map[string]interface{}{
+							"degradation_detected":  true,
+							"degradation_level":     scenario.degradationLevel,
+							"initial_tokens":        scenario.initialTokens,
+							"adjusted_tokens":       scenario.adjustedTokens,
+							"adjustment_percentage": float64(scenario.adjustedTokens-scenario.initialTokens) / float64(scenario.initialTokens),
+							"recovery_successful":   scenario.expectedRecovery,
+						},
+						"performance_recovery": map[string]interface{}{
+							"baseline_restored":    scenario.expectedRecovery,
+							"confidence_improved":  true,
+							"quality_maintained":   true,
+							"adjustment_effective": true,
+						},
+					},
+				})
+
+				// Act: Trigger automatic context adjustment
+				response, err := enhancedClient.AnalyzeAlertWithModel(ctx, alert, "gpt-4")
+
+				// **Business Requirement BR-CONTEXT-041**: Automatic context adjustment
+				Expect(err).ToNot(HaveOccurred(),
+					"Should successfully perform automatic context adjustment for %s", scenario.scenarioName)
+
+				autoAdjustment, exists := response.Metadata["automatic_adjustment"]
+				Expect(exists).To(BeTrue(), "BR-CONTEXT-041: Should provide automatic adjustment metrics")
+
+				adjustment, ok := autoAdjustment.(map[string]interface{})
+				Expect(ok).To(BeTrue(), "BR-CONTEXT-041: Automatic adjustment should be structured")
+
+				degradationDetected := adjustment["degradation_detected"]
+				Expect(degradationDetected).To(BeTrue(),
+					"BR-CONTEXT-041: Should detect performance degradation")
+
+				adjustedTokens := adjustment["adjusted_tokens"]
+				Expect(adjustedTokens).To(BeNumerically(">", scenario.initialTokens),
+					"BR-CONTEXT-041: Should increase context tokens from %d for %s degradation",
+					scenario.initialTokens, scenario.degradationLevel)
+
+				Expect(adjustedTokens).To(Equal(scenario.adjustedTokens),
+					"BR-CONTEXT-041: Should adjust to %d tokens for %s degradation",
+					scenario.adjustedTokens, scenario.degradationLevel)
+
+				// **Business Requirement BR-CONTEXT-042**: Performance baselines
+				performanceRecovery, exists := response.Metadata["performance_recovery"]
+				Expect(exists).To(BeTrue(), "BR-CONTEXT-042: Should provide performance recovery metrics")
+
+				recovery, ok := performanceRecovery.(map[string]interface{})
+				Expect(ok).To(BeTrue(), "BR-CONTEXT-042: Performance recovery should be structured")
+
+				baselineRestored := recovery["baseline_restored"]
+				Expect(baselineRestored).To(Equal(scenario.expectedRecovery),
+					"BR-CONTEXT-042: Should restore performance baseline for %s", scenario.scenarioName)
+
+				adjustmentEffective := recovery["adjustment_effective"]
+				Expect(adjustmentEffective).To(BeTrue(),
+					"BR-CONTEXT-042: Context adjustment should be effective for performance recovery")
+			}
+		})
+	})
 })
 
 // Helper functions for test data creation and validation
+// Following project guideline: use structured parameters properly instead of ignoring them
 func createModelSpecificResponse(model string, alert *types.Alert) *mocks.AnalysisResponse {
+	// Default response for unknown alert types
 	baseResponse := &mocks.AnalysisResponse{
-		RecommendedAction: "increase_resources",
-		Confidence:        0.85,
-		Reasoning:         "High CPU usage requires resource scaling",
+		RecommendedAction: "investigate",
+		Confidence:        0.75,
+		Reasoning:         "General investigation recommended",
 		ProcessingTime:    3 * time.Second,
+	}
+
+	// Use alert parameter to customize response - Following project guideline: use parameters properly
+	if alert != nil {
+		// Customize action and reasoning based on alert type and severity
+		alertType := strings.ToLower(alert.Name)
+		severity := strings.ToLower(alert.Severity)
+
+		switch alertType {
+		case "cpu", "processor":
+			baseResponse.RecommendedAction = "increase_cpu_resources"
+			baseResponse.Reasoning = fmt.Sprintf("%s CPU alert detected: resource scaling recommended", strings.Title(severity))
+		case "memory", "ram":
+			baseResponse.RecommendedAction = "increase_memory_limit"
+			baseResponse.Reasoning = fmt.Sprintf("%s memory alert: limit adjustment required", strings.Title(severity))
+		case "disk", "storage":
+			baseResponse.RecommendedAction = "expand_storage"
+			baseResponse.Reasoning = fmt.Sprintf("%s storage alert: capacity expansion needed", strings.Title(severity))
+		case "network", "connectivity":
+			baseResponse.RecommendedAction = "investigate_network"
+			baseResponse.Reasoning = fmt.Sprintf("%s network alert: connectivity analysis required", strings.Title(severity))
+		default:
+			baseResponse.RecommendedAction = "investigate_logs"
+			baseResponse.Reasoning = fmt.Sprintf("%s alert for %s: log analysis recommended", strings.Title(severity), alertType)
+		}
+
+		// Adjust confidence based on alert severity
+		switch severity {
+		case "critical":
+			baseResponse.Confidence = 0.95
+		case "high":
+			baseResponse.Confidence = 0.88
+		case "medium":
+			baseResponse.Confidence = 0.75
+		case "low":
+			baseResponse.Confidence = 0.65
+		}
+
+		// Include alert context in metadata
+		if baseResponse.Metadata == nil {
+			baseResponse.Metadata = make(map[string]interface{})
+		}
+		baseResponse.Metadata["alert_type"] = alert.Name
+		baseResponse.Metadata["alert_severity"] = alert.Severity
+		if alert.Namespace != "" {
+			baseResponse.Metadata["alert_source"] = alert.Namespace
+		}
 	}
 
 	// Adjust response based on model capabilities
 	switch {
 	case strings.Contains(model, "gpt-4"):
-		baseResponse.Confidence = 0.92
-		baseResponse.Reasoning = "Detailed analysis indicates CPU pressure with high confidence"
+		baseResponse.Confidence += 0.05 // GPT-4 gets confidence boost
+		if alert != nil {
+			baseResponse.Reasoning = fmt.Sprintf("Detailed analysis of %s alert indicates %s", strings.ToLower(alert.Name), baseResponse.Reasoning)
+		} else {
+			baseResponse.Reasoning = "Detailed analysis indicates CPU pressure with high confidence"
+		}
 	case strings.Contains(model, "gpt-3.5"):
 		baseResponse.ProcessingTime = 2 * time.Second
-		baseResponse.Reasoning = "CPU usage high, scale recommended"
+		if alert != nil {
+			baseResponse.Reasoning = fmt.Sprintf("%s alert: %s", strings.Title(alert.Name), strings.ToLower(baseResponse.Reasoning))
+		} else {
+			baseResponse.Reasoning = "CPU usage high, scale recommended"
+		}
 	}
 
-	baseResponse.Metadata = map[string]interface{}{
-		"model_used":   model,
-		"model_family": getModelFamily(model),
-		"capabilities": getModelCapabilities(model),
+	if baseResponse.Metadata == nil {
+		baseResponse.Metadata = make(map[string]interface{})
 	}
+	baseResponse.Metadata["model_used"] = model
+	baseResponse.Metadata["model_family"] = getModelFamily(model)
+	baseResponse.Metadata["capabilities"] = getModelCapabilities(model)
 
 	return baseResponse
 }
@@ -557,16 +1164,62 @@ func validateModelCapabilities(model string, response *mocks.AnalysisResponse) {
 }
 
 func createClaudeSpecificReasoning(model string, alert *types.Alert) string {
+	// Following project guideline: use structured parameters properly instead of ignoring them
+	var alertContext, reasoning string
+
+	// Use alert parameter to customize reasoning - Following project guideline: use parameters properly
+	if alert != nil {
+		alertType := strings.ToLower(alert.Name)
+		severity := strings.ToLower(alert.Severity)
+
+		// Create alert-specific context
+		switch alertType {
+		case "memory", "ram":
+			alertContext = fmt.Sprintf("%s memory patterns", severity)
+		case "cpu", "processor":
+			alertContext = fmt.Sprintf("%s CPU utilization patterns", severity)
+		case "disk", "storage":
+			alertContext = fmt.Sprintf("%s storage utilization patterns", severity)
+		case "network":
+			alertContext = fmt.Sprintf("%s network connectivity patterns", severity)
+		default:
+			alertContext = fmt.Sprintf("%s system patterns for %s", severity, alertType)
+		}
+	} else {
+		alertContext = "system patterns"
+	}
+
+	// Generate model-specific reasoning incorporating alert context
 	switch {
 	case strings.Contains(model, "opus"):
-		return "Comprehensive analysis of memory patterns indicates approaching threshold with detailed consideration of system impacts"
+		reasoning = fmt.Sprintf("Comprehensive analysis of %s indicates approaching threshold with detailed consideration of system impacts and cascading effects", alertContext)
 	case strings.Contains(model, "sonnet"):
-		return "Memory usage analysis suggests proactive limit increase to prevent performance degradation"
+		reasoning = fmt.Sprintf("Analysis of %s suggests proactive intervention to prevent performance degradation", alertContext)
 	case strings.Contains(model, "haiku"):
-		return "Memory analysis shows approaching limit, increase recommended for system consideration"
+		reasoning = fmt.Sprintf("Analysis of %s shows threshold approach, intervention recommended for system stability", alertContext)
 	default:
-		return "Claude analysis recommends memory limit adjustment"
+		reasoning = fmt.Sprintf("Claude analysis of %s recommends appropriate remediation", alertContext)
 	}
+
+	// Add alert-specific recommendations
+	if alert != nil {
+		switch strings.ToLower(alert.Name) {
+		case "memory", "ram":
+			reasoning += " - Memory limit adjustment required"
+		case "cpu", "processor":
+			reasoning += " - CPU resource scaling recommended"
+		case "disk", "storage":
+			reasoning += " - Storage capacity expansion needed"
+		case "network":
+			reasoning += " - Network connectivity investigation required"
+		default:
+			reasoning += " - System investigation recommended"
+		}
+	} else {
+		reasoning += " - General system adjustment recommended"
+	}
+
+	return reasoning
 }
 
 func getClaudeReasoningDepth(model string) float64 {
@@ -607,12 +1260,59 @@ func getModelCapabilities(model string) []string {
 
 	switch {
 	case strings.Contains(model, "gpt-4"):
-		return append(baseCapabilities, "complex_reasoning", "detailed_analysis", "multi_step_planning")
+		return append(baseCapabilities, "complex_reasoning", "detailed_analysis", "multi_step_planning", "context_optimization", "adequacy_validation")
 	case strings.Contains(model, "gpt-3.5"):
-		return append(baseCapabilities, "fast_processing", "concise_responses")
+		return append(baseCapabilities, "fast_processing", "concise_responses", "basic_context_optimization")
 	case strings.Contains(model, "claude"):
-		return append(baseCapabilities, "ethical_reasoning", "detailed_explanations", "safety_focused")
+		return append(baseCapabilities, "ethical_reasoning", "detailed_explanations", "safety_focused", "context_adequacy_assessment")
 	default:
 		return baseCapabilities
 	}
+}
+
+// Helper functions for new business requirements testing
+
+func validateContextOptimizationStrategy(strategy string, complexity string) bool {
+	expectedStrategies := map[string]string{
+		"simple":   "aggressive_optimization",
+		"moderate": "balanced_optimization",
+		"complex":  "conservative_optimization",
+		"critical": "full_context_preservation",
+	}
+	return expectedStrategies[complexity] == strategy
+}
+
+func calculateExpectedTokenReduction(complexity string, baseTokens int) int {
+	reductionRates := map[string]float64{
+		"simple":   0.75, // 75% reduction
+		"moderate": 0.40, // 40% reduction
+		"complex":  0.20, // 20% reduction
+		"critical": 0.05, // 5% reduction
+	}
+	reduction := reductionRates[complexity]
+	return int(float64(baseTokens) * (1.0 - reduction))
+}
+
+func validateAdequacyRequirements(investigationType string, contexts []string) bool {
+	requiredContexts := map[string][]string{
+		"root_cause_analysis":      {"metrics", "logs", "events"},
+		"performance_optimization": {"metrics", "resources"},
+		"security_investigation":   {"logs", "events", "network"},
+		"basic_troubleshooting":    {"basic_info"},
+	}
+
+	required := requiredContexts[investigationType]
+	for _, req := range required {
+		found := false
+		for _, available := range contexts {
+			if available == req {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }

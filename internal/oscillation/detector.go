@@ -221,7 +221,11 @@ func (d *ResourceThrashingDetector) getDetailedActionPattern(ctx context.Context
 	if err != nil {
 		return nil, fmt.Errorf("failed to query detailed action pattern: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			d.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var patterns []ResourceActionDetail
 	var prevTimestamp *time.Time
@@ -289,7 +293,11 @@ func (d *IneffectiveLoopDetector) DetectIneffectiveLoops(ctx context.Context, re
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect ineffective loops: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			d.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var results []IneffectiveLoopResult
 	for rows.Next() {
@@ -355,7 +363,11 @@ func (d *CascadingFailureDetector) DetectCascadingFailures(ctx context.Context, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect cascading failures: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			d.logger.WithError(err).Error("Failed to close database rows")
+		}
+	}()
 
 	var results []CascadingFailureResult
 	for rows.Next() {

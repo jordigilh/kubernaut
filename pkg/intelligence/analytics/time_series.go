@@ -283,7 +283,14 @@ func (tsa *TimeSeriesAnalyzer) AnalyzeTimeSeriesTrends(ctx context.Context, metr
 	}
 
 	// Calculate overall analysis metrics
-	overallAccuracy := totalAccuracy / float64(trendsDetected)
+	// Avoid division by zero when no trends detected
+	var overallAccuracy float64
+	if trendsDetected > 0 {
+		overallAccuracy = totalAccuracy / float64(trendsDetected)
+	} else {
+		overallAccuracy = 0.0
+		tsa.logger.Warn("No trends detected during analysis")
+	}
 
 	trendAnalysis.OverallTrends = &OverallTrendSummary{
 		TotalMetricsAnalyzed: trendsDetected,
@@ -311,6 +318,13 @@ func (tsa *TimeSeriesAnalyzer) AnalyzeTimeSeriesTrends(ctx context.Context, metr
 
 // Helper methods for business logic implementation
 func (tsa *TimeSeriesAnalyzer) analyzeMetricTrend(ctx context.Context, metricName string, data *TimeSeriesData) (*MetricTrendAnalysis, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	// Simplified trend analysis - production would use statistical methods
 	trendDirection := tsa.calculateTrendDirection(data.DataPoints)
 	trendStrength := tsa.calculateTrendStrength(data.DataPoints)
@@ -350,17 +364,26 @@ func (tsa *TimeSeriesAnalyzer) calculateTrendStrength(dataPoints []TimeSeriesDat
 }
 
 func (tsa *TimeSeriesAnalyzer) calculateBusinessTrendRelevance(metricName, direction string, strength float64) *BusinessTrendRelevance {
-	// Business-specific relevance based on metric importance
-	relevance := &BusinessTrendRelevance{
+	// Business-specific relevance based on metric importance and trend strength
+	baseRelevance := &BusinessTrendRelevance{
 		CapacityPlanningImpact: 0.8,
 		CostOptimizationImpact: 0.7,
 		PerformanceImpact:      0.9,
 		BusinessContinuityRisk: 0.6,
 	}
 
+	// Adjust relevance based on trend strength (0.0 to 1.0)
+	strengthMultiplier := strength
+	relevance := &BusinessTrendRelevance{
+		CapacityPlanningImpact: baseRelevance.CapacityPlanningImpact * strengthMultiplier,
+		CostOptimizationImpact: baseRelevance.CostOptimizationImpact * strengthMultiplier,
+		PerformanceImpact:      baseRelevance.PerformanceImpact * strengthMultiplier,
+		BusinessContinuityRisk: baseRelevance.BusinessContinuityRisk * strengthMultiplier,
+	}
+
 	if direction == "increasing" && metricName == "cpu_usage_percent" {
-		relevance.CapacityPlanningImpact = 0.95
-		relevance.BusinessContinuityRisk = 0.8
+		relevance.CapacityPlanningImpact = 0.95 * strengthMultiplier
+		relevance.BusinessContinuityRisk = 0.8 * strengthMultiplier
 	}
 
 	return relevance
@@ -395,6 +418,13 @@ func (tsa *TimeSeriesAnalyzer) generateTrendBasedActions(trends map[string]*Metr
 }
 
 func (tsa *TimeSeriesAnalyzer) generateBusinessInsights(ctx context.Context, trends map[string]*MetricTrendAnalysis, overallAccuracy float64) *BusinessTrendInsights {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &BusinessTrendInsights{}
+	default:
+	}
+
 	insights := &BusinessTrendInsights{
 		CapacityPlanningInsights:      []string{},
 		CostOptimizationOpportunities: []string{},
@@ -406,6 +436,33 @@ func (tsa *TimeSeriesAnalyzer) generateBusinessInsights(ctx context.Context, tre
 	if overallAccuracy >= 0.90 {
 		insights.CapacityPlanningInsights = append(insights.CapacityPlanningInsights,
 			"High-accuracy trend analysis enables reliable capacity forecasting")
+	}
+
+	// Analyze specific trends for business insights
+	for metricName, trend := range trends {
+		if trend.TrendDirection == "increasing" && trend.TrendStrength > 0.7 {
+			switch metricName {
+			case "cpu_usage_percent":
+				insights.CapacityPlanningInsights = append(insights.CapacityPlanningInsights,
+					fmt.Sprintf("CPU usage showing strong upward trend (%.1f%% strength) - consider scaling", trend.TrendStrength*100))
+				insights.PerformanceWarnings = append(insights.PerformanceWarnings, PerformanceWarning{
+					MetricName:        metricName,
+					Severity:          "High",
+					Warning:           "Sustained CPU growth may impact performance",
+					RecommendedAction: "Consider scaling resources or optimizing workloads",
+				})
+			case "memory_usage_percent":
+				insights.CostOptimizationOpportunities = append(insights.CostOptimizationOpportunities,
+					"Memory usage trending up - evaluate rightsizing opportunities")
+			case "error_rate":
+				insights.BusinessContinuityRisks = append(insights.BusinessContinuityRisks, BusinessRisk{
+					RiskType:       "Service Availability",
+					BusinessImpact: "Critical",
+					Description:    fmt.Sprintf("Error rate increasing with %.1f%% trend strength", trend.TrendStrength*100),
+					Probability:    trend.TrendStrength,
+				})
+			}
+		}
 	}
 
 	return insights

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -339,7 +340,7 @@ func (f *TestSLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*l
 		// Check for network failure
 		if f.networkSimulation.FailureRate > 0 && f.callCount%int(1.0/f.networkSimulation.FailureRate) == 0 {
 			success = false
-			return nil, errors.New("network failure simulation")
+			return nil, errors.New("connection refused: network failure simulation")
 		}
 
 		// Check for timeout
@@ -372,6 +373,11 @@ func (f *TestSLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*l
 
 	// If we get here, the call was successful
 	success = true
+
+	// BR-3B: Emit context size metrics for monitoring during SLM analysis
+	contextSize := f.calculateContextSize(typedAlert)
+	provider := f.getProviderName()
+	metrics.RecordSLMContextSize(provider, contextSize)
 
 	// Return configured response or default
 	if response, exists := f.responses[typedAlert.Name]; exists {
@@ -460,7 +466,7 @@ func (f *TestSLMClient) ChatCompletion(ctx context.Context, prompt string) (stri
 		// Check for network failure
 		if f.networkSimulation.FailureRate > 0 && f.callCount%int(1.0/f.networkSimulation.FailureRate) == 0 {
 			success = false
-			return "", errors.New("network failure simulation")
+			return "", errors.New("connection refused: network failure simulation")
 		}
 
 		// Check for timeout
@@ -792,6 +798,50 @@ func (f *TestSLMClient) GetCircuitBreakerState() CircuitBreakerState {
 	return f.circuitBreaker
 }
 
+// SetErrorInjectionEnabled enables or disables error injection
+func (f *TestSLMClient) SetErrorInjectionEnabled(enabled bool) {
+	f.errorInjection.Enabled = enabled
+}
+
+// calculateContextSize estimates the context size in bytes for metrics collection (BR-3B)
+func (f *TestSLMClient) calculateContextSize(alert types.Alert) int {
+	// Calculate rough context size based on alert data
+	contextSize := 0
+
+	// Basic alert fields
+	contextSize += len(alert.Name)
+	contextSize += len(alert.Description)
+	contextSize += len(alert.Namespace)
+	contextSize += len(alert.Resource)
+	contextSize += len(alert.Severity)
+	contextSize += len(alert.Status)
+
+	// Labels and annotations
+	for k, v := range alert.Labels {
+		contextSize += len(k) + len(v)
+	}
+	for k, v := range alert.Annotations {
+		contextSize += len(k) + len(v)
+	}
+
+	// Add baseline prompt overhead (typical SLM prompt structure)
+	baselinePrompt := 1200 // Estimated base prompt size in bytes
+	contextSize += baselinePrompt
+
+	// Simulate varying context sizes based on alert complexity
+	if len(alert.Description) > 100 {
+		contextSize += len(alert.Description) * 2 // Historical context for complex alerts
+	}
+
+	return contextSize
+}
+
+// getProviderName returns the provider name for metrics labeling (BR-3B)
+func (f *TestSLMClient) getProviderName() string {
+	// Return a consistent provider name for test metrics
+	return "fake_test_client"
+}
+
 // ResetErrorState resets all error injection and circuit breaker state
 func (f *TestSLMClient) ResetErrorState() {
 	f.errorInjection.Enabled = false
@@ -920,4 +970,56 @@ func (f *TestSLMClient) updateCircuitBreakerState(success bool) {
 // isCircuitBreakerOpen checks if circuit breaker should prevent calls
 func (f *TestSLMClient) isCircuitBreakerOpen() bool {
 	return f.circuitBreakerConfig.Enabled && f.circuitBreaker == CircuitOpen
+}
+
+// Additional health monitoring methods required for llm.Client interface
+
+// LivenessCheck performs a liveness check simulation
+func (f *TestSLMClient) LivenessCheck(ctx context.Context) error {
+	if f.simulateError {
+		return errors.New(f.errorMessage)
+	}
+	if !f.healthStatus {
+		return errors.New("test SLM client is not healthy")
+	}
+
+	// Simulate network latency for realistic testing
+	time.Sleep(f.latency)
+	return nil
+}
+
+// ReadinessCheck performs a readiness check simulation
+func (f *TestSLMClient) ReadinessCheck(ctx context.Context) error {
+	if f.simulateError {
+		return errors.New(f.errorMessage)
+	}
+	if !f.healthStatus {
+		return errors.New("test SLM client is not ready")
+	}
+
+	// Simulate more complex readiness check with model availability
+	for model, available := range f.modelAvailability {
+		if !available {
+			return fmt.Errorf("model %s is not available", model)
+		}
+	}
+
+	// Simulate network latency for realistic testing
+	time.Sleep(f.latency)
+	return nil
+}
+
+// GetEndpoint returns the simulated endpoint for the test client
+func (f *TestSLMClient) GetEndpoint() string {
+	return "http://test-slm-client:8080"
+}
+
+// GetModel returns the simulated model name for the test client
+func (f *TestSLMClient) GetModel() string {
+	return "granite3.1-dense:8b" // Default test model
+}
+
+// GetMinParameterCount returns the minimum parameter count for testing
+func (f *TestSLMClient) GetMinParameterCount() int64 {
+	return 8000000000 // 8B parameters for test model
 }

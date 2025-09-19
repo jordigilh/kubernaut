@@ -113,20 +113,26 @@ class DynamicToolsetService:
     async def _fetch_toolsets_from_kubernaut(self) -> List[Toolset]:
         """
         Fetch toolsets from Kubernaut service integration
-        This would make HTTP calls to the Go service in a real implementation
+        Business Requirement: BR-HOLMES-025 - Runtime toolset management API
         """
-        # Simulate fetching from Go service integration
-        # In practice, this would be:
-        # async with aiohttp.ClientSession() as session:
-        #     async with session.get(f"{self.kubernaut_endpoint}/api/v1/toolsets") as resp:
-        #         data = await resp.json()
-        #         return [self._convert_go_toolset_to_python(ts) for ts in data["toolsets"]]
+        try:
+            # Real HTTP integration with Go Context API
+            import aiohttp
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(f"{self.kubernaut_endpoint}/api/v1/toolsets") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        # Convert Go toolset format to Python Toolset objects
+                        return [self._convert_go_toolset_to_python(ts) for ts in data.get("toolsets", [])]
+                    else:
+                        logger.warning(f"⚠️ Context API returned status {resp.status}, falling back to baseline toolsets")
+                        return self._get_baseline_toolsets()
 
-        # For now, return baseline toolsets plus some discovered ones
-        baseline_toolsets = self._get_baseline_toolsets()
-        discovered_toolsets = await self._simulate_discovered_toolsets()
-
-        return baseline_toolsets + discovered_toolsets
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch toolsets from Kubernaut Context API: {e}")
+            logger.info("🔄 Falling back to baseline toolsets")
+            # Fallback to baseline toolsets following BR-HOLMES-012
+            return self._get_baseline_toolsets()
 
     def _get_baseline_toolsets(self) -> List[Toolset]:
         """
@@ -233,26 +239,43 @@ class DynamicToolsetService:
         Business Requirement: BR-HOLMES-026 - Service discovery health checks
         """
         try:
-            # In practice, this would call the Go service health endpoint
-            # For now, simulate health status
-            return {
-                "healthy": True,
-                "service_discovery_healthy": True,
-                "toolset_manager_healthy": True,
-                "total_toolsets": len(self.cached_toolsets),
-                "enabled_toolsets": len([ts for ts in self.cached_toolsets.values() if ts.enabled]),
-                "discovered_services": 3,  # Simulated
-                "available_services": 2,   # Simulated
-                "last_update": self.last_update.isoformat() if self.last_update else None
-            }
+            # Real HTTP integration with Go Context API
+            import aiohttp
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as session:
+                async with session.get(f"{self.kubernaut_endpoint}/api/v1/service-discovery") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return {
+                            "healthy": data.get("health", {}).get("healthy", False),
+                            "service_discovery_healthy": data.get("health", {}).get("service_discovery_healthy", False),
+                            "toolset_manager_healthy": data.get("health", {}).get("toolset_manager_healthy", False),
+                            "total_toolsets": data.get("available_toolsets", len(self.cached_toolsets)),
+                            "enabled_toolsets": data.get("enabled_toolsets", len([ts for ts in self.cached_toolsets.values() if ts.enabled])),
+                            "discovered_services": data.get("discovered_services", 0),
+                            "available_services": data.get("statistics", {}).get("available_services", 0),
+                            "last_update": self.last_update.isoformat() if self.last_update else None
+                        }
+                    else:
+                        logger.warning(f"⚠️ Context API health check returned status {resp.status}")
+                        return self._create_fallback_health_status()
+
         except Exception as e:
             logger.error(f"❌ Failed to get service integration health: {e}")
-            return {
-                "healthy": False,
-                "error": str(e),
-                "total_toolsets": len(self.cached_toolsets),
-                "enabled_toolsets": 0
-            }
+            return self._create_fallback_health_status()
+
+    def _create_fallback_health_status(self) -> Dict[str, Any]:
+        """Create fallback health status when Context API is unavailable"""
+        return {
+            "healthy": False,
+            "service_discovery_healthy": False,
+            "toolset_manager_healthy": False,
+            "total_toolsets": len(self.cached_toolsets),
+            "enabled_toolsets": len([ts for ts in self.cached_toolsets.values() if ts.enabled]),
+            "discovered_services": 0,
+            "available_services": 0,
+            "last_update": self.last_update.isoformat() if self.last_update else None,
+            "note": "Context API unavailable, using cached data"
+        }
 
     async def get_toolset_stats(self) -> Dict[str, Any]:
         """

@@ -428,7 +428,8 @@ func (s *AICommonService) calculateConfidence(data interface{}, insights []strin
 }
 
 func (s *AICommonService) assessPatternComplexity(pattern *AIPattern) string {
-	if pattern.Metadata != nil && len(pattern.Metadata) > 5 {
+	// Guideline #14: Use idiomatic Go patterns - len() is safe on nil maps
+	if len(pattern.Metadata) > 5 {
 		return "high"
 	}
 	if pattern.Data != nil {

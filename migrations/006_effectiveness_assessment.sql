@@ -150,7 +150,7 @@ CREATE OR REPLACE FUNCTION create_assessment_for_action_trace()
 RETURNS TRIGGER AS $$
 BEGIN
     -- Only create assessment for completed actions
-    IF NEW.status = 'completed' THEN
+    IF NEW.execution_status = 'completed' THEN
         INSERT INTO action_assessments (
             trace_id,
             action_type,
@@ -161,14 +161,14 @@ BEGIN
             executed_at,
             scheduled_for
         ) VALUES (
-            NEW.id,
+            NEW.id::VARCHAR,
             NEW.action_type,
-            -- Simple context hash based on action type + namespace + alert
-            encode(sha256(CONCAT(NEW.action_type, ':', NEW.namespace, ':', COALESCE(NEW.alert_name, 'no-alert'))::bytea), 'hex'),
+            -- Simple context hash based on action type + alert
+            encode(sha256(CONCAT(NEW.action_type, ':', COALESCE(NEW.alert_name, 'no-alert'))::bytea), 'hex'),
             COALESCE(NEW.alert_name, 'no-alert'),
-            NEW.namespace,
-            NEW.resource_name,
-            NEW.executed_at,
+            'unknown', -- Default namespace until we can join with resource_references
+            'unknown', -- Default resource name until we can join with resource_references
+            COALESCE(NEW.execution_end_time, NEW.action_timestamp),
             NOW() + INTERVAL '5 minutes' -- Schedule assessment 5 minutes after execution
         );
     END IF;

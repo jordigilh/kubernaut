@@ -10,9 +10,9 @@ Use these standardized environment variables for all deployments:
 
 ```bash
 # LLM Server Configuration
-export LLM_ENDPOINT="http://localhost:11434"     # LLM server endpoint
-export LLM_MODEL="granite3.1-dense:8b"          # Model name to use
-export LLM_PROVIDER="ollama"                     # Provider type: ollama, ramalama, localai
+export LLM_ENDPOINT="http://192.168.1.169:8080" # LLM server endpoint
+export LLM_MODEL="gpt-oss:20b"                  # Model name to use
+export LLM_PROVIDER="ramalama"                   # Provider type: ollama, ramalama, localai
 
 # Optional Test Configuration
 export TEST_TIMEOUT="120s"                       # Test timeout duration
@@ -24,18 +24,18 @@ export SKIP_INTEGRATION="false"                 # Skip integration tests
 
 ## Provider-Specific Configuration
 
-### Ollama
+### Ramalama (Default - OpenAI-compatible)
+```bash
+export LLM_PROVIDER="ramalama"
+export LLM_ENDPOINT="http://192.168.1.169:8080"
+export LLM_MODEL="gpt-oss:20b"
+```
+
+### Ollama (Alternative)
 ```bash
 export LLM_PROVIDER="ollama"
 export LLM_ENDPOINT="http://localhost:11434"
 export LLM_MODEL="granite3.1-dense:8b"
-```
-
-### Ramalama (OpenAI-compatible)
-```bash
-export LLM_PROVIDER="ramalama"
-export LLM_ENDPOINT="http://ramalama-server:8080"
-export LLM_MODEL="gpt-oss:20b"
 ```
 
 ### LocalAI (OpenAI-compatible)
@@ -49,22 +49,22 @@ export LLM_MODEL="ggml-gpt4all-j"
 
 ### Integration Tests
 ```bash
-export LLM_ENDPOINT="http://localhost:11434"
-export LLM_MODEL="granite3.1-dense:8b"
-export LLM_PROVIDER="ollama"
+export LLM_ENDPOINT="http://192.168.1.169:8080"
+export LLM_MODEL="gpt-oss:20b"
+export LLM_PROVIDER="ramalama"
 go test -tags=integration ./test/integration/...
 ```
 
 ### Multi-Provider Testing
 ```bash
-# Test with Ollama
-export LLM_PROVIDER="ollama" LLM_ENDPOINT="http://localhost:11434"
-export LLM_MODEL="granite3.1-dense:8b"
+# Test with Ramalama (Default)
+export LLM_PROVIDER="ramalama" LLM_ENDPOINT="http://192.168.1.169:8080"
+export LLM_MODEL="gpt-oss:20b"
 go test -tags=integration ./test/integration/...
 
-# Test with Ramalama
-export LLM_PROVIDER="ramalama" LLM_ENDPOINT="http://ramalama:8080"
-export LLM_MODEL="gpt-oss:20b"
+# Test with Ollama (Alternative)
+export LLM_PROVIDER="ollama" LLM_ENDPOINT="http://localhost:11434"
+export LLM_MODEL="granite3.1-dense:8b"
 go test -tags=integration ./test/integration/...
 ```
 
@@ -73,11 +73,11 @@ go test -tags=integration ./test/integration/...
 All Makefile targets use the standardized LLM_* variables:
 
 ```bash
-# Run integration tests with Ollama
+# Run integration tests with Ramalama (Default)
 make test-integration
 
-# Run integration tests with Ramalama
-make test-integration-ramalama
+# Run integration tests with Ollama (Alternative)
+make test-integration-ollama
 
 # Quick integration tests
 make test-integration-quick
@@ -115,9 +115,9 @@ go test -v ./test/integration/shared
 
 If no environment variables are set, the system uses these defaults:
 
-- **LLM_ENDPOINT**: `http://localhost:11434`
-- **LLM_MODEL**: `granite3.1-dense:8b`
-- **LLM_PROVIDER**: Auto-detected based on endpoint (localhost:11434 → ollama, others → ramalama)
+- **LLM_ENDPOINT**: `http://192.168.1.169:8080`
+- **LLM_MODEL**: `gpt-oss:20b`
+- **LLM_PROVIDER**: Auto-detected based on endpoint (defaults to ramalama for port 8080)
 - **TEST_TIMEOUT**: `120s`
 - **MAX_RETRIES**: `3`
 - **LOG_LEVEL**: `debug`

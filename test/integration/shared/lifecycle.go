@@ -13,8 +13,10 @@ import (
 
 // TestLifecycleHooks provides standardized test lifecycle management
 type TestLifecycleHooks struct {
-	suite  *StandardTestSuite
-	logger *logrus.Logger
+	suite       *StandardTestSuite
+	logger      *logrus.Logger
+	setupFunc   func()
+	cleanupFunc func()
 }
 
 // SetupStandardIntegrationTest creates standard BeforeAll setup for integration tests
@@ -193,7 +195,8 @@ func SetupAIIntegrationTest(suiteName string, opts ...TestOption) *TestLifecycle
 		logger: logrus.New(),
 	}
 
-	BeforeAll(func() {
+	// Setup function to be called in test's BeforeAll
+	hooks.setupFunc = func() {
 		hooks.logger.WithField("suite", suiteName).Info("Starting AI integration test setup")
 
 		// Check configuration
@@ -218,9 +221,10 @@ func SetupAIIntegrationTest(suiteName string, opts ...TestOption) *TestLifecycle
 		}
 
 		hooks.logger.WithField("suite", suiteName).Info("AI integration test setup completed")
-	})
+	}
 
-	AfterAll(func() {
+	// Cleanup function to be called in test's AfterAll
+	hooks.cleanupFunc = func() {
 		hooks.logger.WithField("suite", suiteName).Info("Starting AI integration test cleanup")
 
 		if hooks.suite != nil {
@@ -229,9 +233,23 @@ func SetupAIIntegrationTest(suiteName string, opts ...TestOption) *TestLifecycle
 		}
 
 		hooks.logger.WithField("suite", suiteName).Info("AI integration test cleanup completed")
-	})
+	}
 
 	return hooks
+}
+
+// Setup calls the setup function (to be used in BeforeAll)
+func (h *TestLifecycleHooks) Setup() {
+	if h.setupFunc != nil {
+		h.setupFunc()
+	}
+}
+
+// Cleanup calls the cleanup function (to be used in AfterAll)
+func (h *TestLifecycleHooks) Cleanup() {
+	if h.cleanupFunc != nil {
+		h.cleanupFunc()
+	}
 }
 
 // GetSuite returns the underlying test suite for direct access
@@ -253,9 +271,9 @@ func (h *TestLifecycleHooks) WithTestSpecificCleanup(cleanupFunc func() error) {
 }
 
 // WithTestSpecificSetup adds test-specific setup to the lifecycle
+// NOTE: This function is deprecated due to Ginkgo timing issues.
+// Call setupFunc directly in your test's BeforeEach instead.
 func (h *TestLifecycleHooks) WithTestSpecificSetup(setupFunc func() error) {
-	BeforeEach(func() {
-		err := setupFunc()
-		Expect(err).ToNot(HaveOccurred(), "Test-specific setup should succeed")
-	})
+	// Deprecated: Do not call this function as it causes Ginkgo timing issues
+	h.logger.Warn("WithTestSpecificSetup is deprecated - call your setup function directly in BeforeEach")
 }

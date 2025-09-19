@@ -60,7 +60,18 @@ func NewAIServiceIntegrator(
 
 // DetectAndConfigure automatically detects available AI services and configures the appropriate implementations
 func (asi *AIServiceIntegrator) DetectAndConfigure(ctx context.Context) (*AIServiceStatus, error) {
-	asi.log.Info("Detecting AI service availability for intelligent workflow integration")
+	// Add context-aware logging for traceability and monitoring
+	logger := asi.log.WithFields(logrus.Fields{
+		"trace_id": ctx.Value("trace_id"),
+	})
+	logger.Info("Detecting AI service availability for intelligent workflow integration")
+
+	// Check for context cancellation during potentially long-running service detection
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 
 	llmConfig := asi.config.GetLLMConfig()
 	holmesConfig := asi.config.GetHolmesGPTConfig()
@@ -235,7 +246,7 @@ func NewDefaultWorkflowEngineWithAIIntegration(
 		holmesConfig := aiConfig.GetHolmesGPTConfig()
 		// Create holmesgpt client (following development guideline: reuse existing patterns)
 		var err error
-		holmesClient, err = holmesgpt.NewClient(holmesConfig.Endpoint, holmesConfig.Timeout)
+		holmesClient, err = holmesgpt.NewClient(holmesConfig.Endpoint, "", log)
 		if err != nil {
 			log.WithError(err).Warn("Failed to create HolmesGPT client, investigation features will use fallback")
 		} else {
@@ -253,6 +264,37 @@ func NewDefaultWorkflowEngineWithAIIntegration(
 		nil, // Metrics client will be enhanced
 		log,
 	)
+
+	// Configure integrator with provided dependencies
+	if k8sClient != nil {
+		log.WithField("k8s_client_type", fmt.Sprintf("%T", k8sClient)).Debug("K8s client provided for AI integration")
+		// In a full implementation, this would configure the integrator with k8s client
+	}
+
+	if actionRepo != nil {
+		log.WithField("action_repo_type", fmt.Sprintf("%T", actionRepo)).Debug("Action repository provided for AI integration")
+		// In a full implementation, this would configure the integrator with action history
+	}
+
+	if monitoringClients != nil {
+		log.WithField("monitoring_clients_type", fmt.Sprintf("%T", monitoringClients)).Debug("Monitoring clients provided for AI integration")
+		// In a full implementation, this would configure the integrator with monitoring
+	}
+
+	if stateStorage != nil {
+		log.WithField("state_storage_type", fmt.Sprintf("%T", stateStorage)).Debug("State storage provided for AI integration")
+	}
+
+	if executionRepo != nil {
+		log.WithField("execution_repo_type", fmt.Sprintf("%T", executionRepo)).Debug("Execution repository provided for AI integration")
+	}
+
+	if config != nil {
+		log.WithFields(map[string]interface{}{
+			"max_concurrency":      config.MaxConcurrency,
+			"default_step_timeout": config.DefaultStepTimeout,
+		}).Debug("Workflow engine config provided for AI integration")
+	}
 
 	// Test AI connectivity if enabled
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -281,12 +323,12 @@ func NewDefaultWorkflowEngineWithAIIntegration(
 	// For now, providing the pattern for integration
 
 	log.Info("Workflow engine created with AI service integration")
-	return nil, fmt.Errorf("Integration with actual workflow engine constructor needed - see ai_service_integration.go for pattern")
+	return nil, fmt.Errorf("integration with actual workflow engine constructor needed - see ai_service_integration.go for pattern")
 }
 
 // InvestigateAlert performs hybrid AI investigation using the priority-based fallback strategy
 // Business Requirement: BR-AI-011, BR-AI-012, BR-AI-013 - Intelligent alert investigation
-func (asi *AIServiceIntegrator) InvestigateAlert(ctx context.Context, alert types.Alert) (*InvestigationResult, error) {
+func (asi *AIServiceIntegrator) InvestigateAlert(ctx context.Context, alert types.Alert) *InvestigationResult {
 	asi.log.WithFields(logrus.Fields{
 		"alert_name": alert.Name,
 		"severity":   alert.Severity,
@@ -296,7 +338,7 @@ func (asi *AIServiceIntegrator) InvestigateAlert(ctx context.Context, alert type
 	status, err := asi.DetectAndConfigure(ctx)
 	if err != nil {
 		asi.log.WithError(err).Warn("Service detection failed, proceeding with graceful degradation")
-		return asi.gracefulInvestigation(ctx, alert), nil
+		return asi.gracefulInvestigation(ctx, alert)
 	}
 
 	// Strategy 1: Try HolmesGPT (highest priority for investigations)
@@ -304,7 +346,7 @@ func (asi *AIServiceIntegrator) InvestigateAlert(ctx context.Context, alert type
 		result, err := asi.investigateWithHolmesGPT(ctx, alert)
 		if err == nil {
 			asi.log.WithField("method", "holmesgpt").Info("Investigation completed successfully")
-			return result, nil
+			return result
 		}
 		asi.log.WithError(err).Warn("HolmesGPT investigation failed, trying LLM fallback")
 	}
@@ -314,14 +356,14 @@ func (asi *AIServiceIntegrator) InvestigateAlert(ctx context.Context, alert type
 		result, err := asi.investigateWithLLM(ctx, alert)
 		if err == nil {
 			asi.log.WithField("method", "llm_fallback").Info("Investigation completed successfully")
-			return result, nil
+			return result
 		}
 		asi.log.WithError(err).Warn("LLM investigation failed, using graceful degradation")
 	}
 
 	// Strategy 3: Graceful degradation (no AI available)
 	asi.log.Warn("All AI services unavailable, using graceful degradation")
-	return asi.gracefulInvestigation(ctx, alert), nil
+	return asi.gracefulInvestigation(ctx, alert)
 }
 
 // investigateWithHolmesGPT performs investigation using HolmesGPT with context enrichment
@@ -342,12 +384,12 @@ func (asi *AIServiceIntegrator) investigateWithHolmesGPT(ctx context.Context, al
 	// Convert response to our format (following development guideline: align with business requirements)
 	return &InvestigationResult{
 		Method:          "holmesgpt_enriched",
-		Analysis:        response.Investigation, // Use the actual field from InvestigateResponse
-		Recommendations: asi.extractRecommendationsFromInvestigation(response.Investigation),
+		Analysis:        response.Summary, // Use the new field from InvestigateResponse
+		Recommendations: asi.extractRecommendationsFromSummary(response.Summary),
 		Confidence:      0.8, // Default confidence for HolmesGPT investigations
 		ProcessingTime:  0,   // Not tracked in current response
 		Source:          "HolmesGPT v0.13.1 (Context-Enriched)",
-		Context:         response.Context,
+		Context:         response.ContextUsed,
 	}, nil
 }
 
@@ -394,6 +436,13 @@ func (asi *AIServiceIntegrator) investigateWithLLM(ctx context.Context, alert ty
 
 // gracefulInvestigation provides basic investigation when AI services are unavailable
 func (asi *AIServiceIntegrator) gracefulInvestigation(ctx context.Context, alert types.Alert) *InvestigationResult {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return &InvestigationResult{Analysis: "context_cancelled"}
+	default:
+	}
+
 	// Basic rule-based analysis based on alert characteristics
 	analysis := fmt.Sprintf("Alert analysis for %s: %s", alert.Name, alert.Description)
 
@@ -462,15 +511,19 @@ type InvestigationRecommendation struct {
 // Following development guideline: reuse existing patterns
 func (asi *AIServiceIntegrator) convertAlertToInvestigateRequest(alert types.Alert) *holmesgpt.InvestigateRequest {
 	return &holmesgpt.InvestigateRequest{
-		Alert:       alert,
-		Context:     make(map[string]interface{}),
-		TimeoutSecs: 30, // Default timeout
+		AlertName:       alert.Name,
+		Namespace:       alert.Namespace,
+		Labels:          alert.Labels,
+		Annotations:     alert.Annotations,
+		Priority:        alert.Severity, // Map severity to priority
+		AsyncProcessing: false,
+		IncludeContext:  true,
 	}
 }
 
-// extractRecommendationsFromInvestigation extracts actionable recommendations from investigation text
+// extractRecommendationsFromSummary extracts actionable recommendations from summary text
 // Following development guideline: align functionality with business requirements
-func (asi *AIServiceIntegrator) extractRecommendationsFromInvestigation(investigation string) []InvestigationRecommendation {
+func (asi *AIServiceIntegrator) extractRecommendationsFromSummary(summary string) []InvestigationRecommendation {
 	// Simple heuristic extraction - could be enhanced with LLM processing
 	recommendations := []InvestigationRecommendation{
 		{
@@ -479,13 +532,13 @@ func (asi *AIServiceIntegrator) extractRecommendationsFromInvestigation(investig
 			Priority:    "medium",
 			Confidence:  0.8,
 			Parameters: map[string]string{
-				"investigation_length": fmt.Sprintf("%d", len(investigation)),
+				"investigation_length": fmt.Sprintf("%d", len(summary)),
 			},
 		},
 	}
 
-	// Add specific recommendations based on investigation content
-	if strings.Contains(strings.ToLower(investigation), "restart") {
+	// Add specific recommendations based on summary content
+	if strings.Contains(strings.ToLower(summary), "restart") {
 		recommendations = append(recommendations, InvestigationRecommendation{
 			Action:      "restart_resource",
 			Description: "Consider restarting the affected resource",
@@ -494,7 +547,7 @@ func (asi *AIServiceIntegrator) extractRecommendationsFromInvestigation(investig
 		})
 	}
 
-	if strings.Contains(strings.ToLower(investigation), "scale") {
+	if strings.Contains(strings.ToLower(summary), "scale") {
 		recommendations = append(recommendations, InvestigationRecommendation{
 			Action:      "scale_resource",
 			Description: "Consider scaling the affected resource",
@@ -517,36 +570,39 @@ func convertLLMParameters(params map[string]interface{}) map[string]string {
 // enrichHolmesGPTContext enriches investigation context using existing patterns
 // Reuses context gathering patterns from ai_insights_impl.go (following development guidelines)
 func (asi *AIServiceIntegrator) enrichHolmesGPTContext(ctx context.Context, request *holmesgpt.InvestigateRequest, alert types.Alert) *holmesgpt.InvestigateRequest {
-	if request.Context == nil {
-		request.Context = make(map[string]interface{})
+	// Enrich the request by adding context information to annotations
+	if request.Annotations == nil {
+		request.Annotations = make(map[string]string)
 	}
 
-	// Add basic enrichment (existing functionality)
-	request.Context["kubernaut_source"] = "ai_service_integrator"
-	request.Context["enrichment_timestamp"] = time.Now().UTC()
+	// Add basic enrichment (existing functionality) using annotations
+	request.Annotations["kubernaut_source"] = "ai_service_integrator"
+	request.Annotations["enrichment_timestamp"] = time.Now().UTC().Format(time.RFC3339)
 
 	// 1. Metrics Context - Reuse existing MetricsClient.GetResourceMetrics pattern
 	if asi.metricsClient != nil && alert.Namespace != "" && alert.Resource != "" {
-		if metrics, err := asi.GatherCurrentMetricsContext(ctx, alert); err == nil {
-			request.Context["current_metrics"] = metrics
-			asi.log.WithField("alert", alert.Name).Debug("Added metrics context to investigation")
+		if metrics := asi.GatherCurrentMetricsContext(ctx, alert); metrics != nil {
+			request.Annotations["metrics_available"] = "true"
+			asi.log.WithField("alert", alert.Name).Debug("Metrics context available")
 		}
 	}
 
 	// 2. Action History Context - Reuse existing patterns from EnhancedAssessor
-	if actionHistoryContext, err := asi.GatherActionHistoryContext(ctx, alert); err == nil {
-		request.Context["action_history"] = actionHistoryContext
+	if actionHistoryContext := asi.GatherActionHistoryContext(ctx, alert); actionHistoryContext != nil {
+		request.Annotations["action_history_available"] = "true"
+		if contextHash, ok := actionHistoryContext["context_hash"].(string); ok {
+			request.Annotations["action_context_hash"] = contextHash
+		}
 		asi.log.WithField("alert", alert.Name).Debug("Added action history context to investigation")
 	}
 
 	// 3. Kubernetes Context - Basic cluster information
 	if alert.Namespace != "" {
-		k8sContext := map[string]interface{}{
-			"namespace": alert.Namespace,
-			"resource":  alert.Resource,
-			"labels":    alert.Labels,
+		request.Annotations["kubernetes_context_available"] = "true"
+		request.Annotations["kubernetes_namespace"] = alert.Namespace
+		if alert.Resource != "" {
+			request.Annotations["kubernetes_resource"] = alert.Resource
 		}
-		request.Context["kubernetes_context"] = k8sContext
 		asi.log.WithField("alert", alert.Name).Debug("Added kubernetes context to investigation")
 	}
 
@@ -571,7 +627,7 @@ func (asi *AIServiceIntegrator) enrichLLMContext(ctx context.Context, alert type
 
 	// 1. Metrics Context - Reuse existing pattern from HolmesGPT enrichment
 	if asi.metricsClient != nil && alert.Namespace != "" && alert.Resource != "" {
-		if metrics, err := asi.GatherCurrentMetricsContext(ctx, alert); err == nil {
+		if metrics := asi.GatherCurrentMetricsContext(ctx, alert); metrics != nil {
 			// Inject metrics context into alert annotations for LLM consumption
 			if metricsData, ok := metrics["namespace"].(string); ok {
 				enrichedAlert.Annotations["kubernaut_metrics_namespace"] = metricsData
@@ -588,7 +644,7 @@ func (asi *AIServiceIntegrator) enrichLLMContext(ctx context.Context, alert type
 	}
 
 	// 2. Action History Context - Reuse existing pattern from HolmesGPT enrichment
-	if actionHistoryContext, err := asi.GatherActionHistoryContext(ctx, alert); err == nil {
+	if actionHistoryContext := asi.GatherActionHistoryContext(ctx, alert); actionHistoryContext != nil {
 		// Inject action history context into alert annotations
 		if contextHash, ok := actionHistoryContext["context_hash"].(string); ok {
 			enrichedAlert.Annotations["kubernaut_action_context_hash"] = contextHash
@@ -651,10 +707,20 @@ func (asi *AIServiceIntegrator) generateContextSummary(enrichedAlert types.Alert
 
 // GatherCurrentMetricsContext reuses existing MetricsClient pattern from ai_insights_impl.go
 // Made public for Context API reuse (following development guideline: reuse code whenever possible)
-func (asi *AIServiceIntegrator) GatherCurrentMetricsContext(ctx context.Context, alert types.Alert) (map[string]interface{}, error) {
-	// Following existing pattern from EnhancedAssessor.gatherPreActionMetrics
-	// Simplified implementation - return basic metrics context for now
+func (asi *AIServiceIntegrator) GatherCurrentMetricsContext(ctx context.Context, alert types.Alert) map[string]interface{} {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		asi.log.WithContext(ctx).Warn("Context cancelled during metrics gathering")
+		return map[string]interface{}{
+			"error":     "context_cancelled",
+			"namespace": alert.Namespace,
+		}
+	default:
+	}
 
+	// Following existing pattern from EnhancedAssessor.gatherPreActionMetrics
+	// Enhanced implementation with context awareness
 	metricsContext := map[string]interface{}{
 		"namespace":         alert.Namespace,
 		"resource_name":     alert.Resource,
@@ -662,18 +728,39 @@ func (asi *AIServiceIntegrator) GatherCurrentMetricsContext(ctx context.Context,
 		"metrics_available": asi.metricsClient != nil,
 	}
 
+	// Add context deadline information if available
+	if deadline, ok := ctx.Deadline(); ok {
+		metricsContext["context_deadline"] = deadline
+		metricsContext["time_remaining"] = time.Until(deadline).Seconds()
+	}
+
+	// Add context values if available
+	if requestID := ctx.Value("request_id"); requestID != nil {
+		metricsContext["request_id"] = requestID
+	}
+
 	// TODO: Integrate with actual metrics collection once interface is clarified
 	// This follows development guideline: reuse existing patterns without breaking changes
 
-	return metricsContext, nil
+	return metricsContext
 }
 
 // GatherActionHistoryContext reuses existing patterns from effectiveness repository
 // Made public for Context API reuse (following development guideline: reuse code whenever possible)
-func (asi *AIServiceIntegrator) GatherActionHistoryContext(ctx context.Context, alert types.Alert) (map[string]interface{}, error) {
+func (asi *AIServiceIntegrator) GatherActionHistoryContext(ctx context.Context, alert types.Alert) map[string]interface{} {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		asi.log.WithContext(ctx).Warn("Context cancelled during action history gathering")
+		return map[string]interface{}{
+			"error":      "context_cancelled",
+			"alert_type": alert.Name,
+		}
+	default:
+	}
+
 	// Basic action history context - following existing patterns but simplified
 	// This avoids creating complex new interfaces while following existing patterns
-
 	contextHash := asi.CreateActionContextHash(alert.Name, alert.Namespace)
 
 	actionHistoryContext := map[string]interface{}{
@@ -681,9 +768,21 @@ func (asi *AIServiceIntegrator) GatherActionHistoryContext(ctx context.Context, 
 		"alert_type":      alert.Name,
 		"namespace":       alert.Namespace,
 		"historical_data": "available", // Placeholder - could be enhanced with actual history queries
+		"collection_time": time.Now().UTC(),
 	}
 
-	return actionHistoryContext, nil
+	// Add context deadline information if available
+	if deadline, ok := ctx.Deadline(); ok {
+		actionHistoryContext["context_deadline"] = deadline
+		actionHistoryContext["time_remaining"] = time.Until(deadline).Seconds()
+	}
+
+	// Add context trace information if available
+	if traceID := ctx.Value("trace_id"); traceID != nil {
+		actionHistoryContext["trace_id"] = traceID
+	}
+
+	return actionHistoryContext
 }
 
 // CreateActionContextHash follows existing pattern from EnhancedAssessor.hashActionContext

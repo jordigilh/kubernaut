@@ -96,7 +96,7 @@ copy_deployment_scripts() {
     log_success "Deployment scripts copied to remote host"
 }
 
-# Deploy cluster on remote host
+# Deploy cluster on remote host with proper state management
 deploy_remote_cluster() {
     log_header "Deploying OpenShift Cluster on Remote Host"
 
@@ -113,6 +113,19 @@ deploy_remote_cluster() {
         log_success "Cluster deployment completed successfully"
     else
         log_error "Cluster deployment failed - kubeconfig not found"
+
+        # Check for common issues
+        log_info "Checking for common deployment issues..."
+        ssh "${REMOTE_USER}@${REMOTE_HOST}" "
+            echo '=== Checking deployment logs ==='
+            tail -20 /root/kcli-deploy-*.log 2>/dev/null | grep -E '(error|failed|skipped)' || echo 'No obvious errors in logs'
+
+            echo '=== Checking VM status ==='
+            virsh list --all | grep '${CLUSTER_NAME}' | head -5 || echo 'No cluster VMs found'
+        " | while read line; do
+            echo -e "${YELLOW}[REMOTE-DEBUG]${NC} $line"
+        done
+
         exit 1
     fi
 }

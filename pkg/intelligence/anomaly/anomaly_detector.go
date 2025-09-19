@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
@@ -307,6 +308,115 @@ func (ad *AnomalyDetector) GetBaselineModels() map[string]*BaselineModel {
 	return models
 }
 
+// DetectPerformanceAnomaly analyzes performance metrics for anomalies
+// Business Requirement: BR-AD-003 - Performance anomaly detection with <5% false positive rate
+func (ad *AnomalyDetector) DetectPerformanceAnomaly(ctx context.Context, serviceName string, metrics map[string]float64) (*PerformanceAnomalyResult, error) {
+	ad.log.WithFields(logrus.Fields{
+		"service_name":  serviceName,
+		"metrics_count": len(metrics),
+		"business_req":  "BR-AD-003",
+	}).Debug("Detecting performance anomaly for business protection")
+
+	// Find applicable baseline model for service
+	baselineKey := fmt.Sprintf("%s_performance", serviceName)
+	baseline, exists := ad.baselineModels[baselineKey]
+
+	result := &PerformanceAnomalyResult{
+		ServiceName:              serviceName,
+		AnomalyDetected:          false,
+		Severity:                 "none",
+		BusinessImpactAssessment: "none",
+		AnalysisTimestamp:        time.Now(),
+		RecommendedActions:       []string{},
+		EstimatedTimeToImpact:    0,
+		DetectionLatency:         time.Since(time.Now()),
+	}
+
+	if !exists || baseline == nil {
+		ad.log.WithField("service_name", serviceName).Warn("No baseline found for service - creating default")
+		result.RecommendedActions = append(result.RecommendedActions, "establish_performance_baseline")
+		return result, nil
+	}
+
+	// BR-AD-003: Analyze performance metrics against baseline with statistical methods
+	anomalyScore := 0.0
+	anomalyReasons := []string{}
+	criticalAnomalies := 0
+
+	for metricName, currentValue := range metrics {
+		if stats := ad.getMetricBaseline(baseline, metricName); stats != nil {
+			// Statistical anomaly detection using z-score and IQR
+			zScore := math.Abs(currentValue-stats.Mean) / stats.StdDev
+			iqrBound := stats.Q3 + 1.5*(stats.Q3-stats.Q1)
+
+			isStatisticalAnomaly := zScore > 3.0 || currentValue > iqrBound
+
+			if isStatisticalAnomaly {
+				anomalyScore += ad.calculateMetricAnomalyWeight(metricName, zScore)
+				anomalyReasons = append(anomalyReasons, fmt.Sprintf("%s: %.2f (z-score: %.2f)", metricName, currentValue, zScore))
+
+				// Business impact assessment based on metric criticality
+				if ad.isCriticalMetric(metricName, currentValue) {
+					criticalAnomalies++
+				}
+			}
+		}
+	}
+
+	// BR-AD-003: Business logic for anomaly classification and impact assessment
+	if anomalyScore > 0.7 || criticalAnomalies > 0 {
+		result.AnomalyDetected = true
+
+		// Severity assessment based on anomaly score and critical metrics
+		if criticalAnomalies > 1 || anomalyScore > 0.9 {
+			result.Severity = "critical"
+			result.BusinessImpactAssessment = "high"
+			result.EstimatedTimeToImpact = 5 * time.Minute // Immediate business impact expected
+		} else if criticalAnomalies > 0 || anomalyScore > 0.8 {
+			result.Severity = "high"
+			result.BusinessImpactAssessment = "medium"
+			result.EstimatedTimeToImpact = 15 * time.Minute // Business impact within 15 minutes
+		} else {
+			result.Severity = "medium"
+			result.BusinessImpactAssessment = "low"
+			result.EstimatedTimeToImpact = 30 * time.Minute // Business impact within 30 minutes
+		}
+
+		// Generate business-focused recommendations
+		result.RecommendedActions = ad.generateBusinessRecommendations(serviceName, metrics, anomalyReasons)
+	}
+
+	// Business audit logging for compliance and monitoring
+	ad.log.WithFields(logrus.Fields{
+		"service_name":          serviceName,
+		"anomaly_detected":      result.AnomalyDetected,
+		"severity":              result.Severity,
+		"business_impact":       result.BusinessImpactAssessment,
+		"anomaly_score":         anomalyScore,
+		"critical_anomalies":    criticalAnomalies,
+		"estimated_impact_time": result.EstimatedTimeToImpact,
+		"business_requirement":  "BR-AD-003",
+	}).Info("Performance anomaly detection completed")
+
+	return result, nil
+}
+
+// EstablishBaselines creates performance baselines for anomaly detection
+// Business Requirement: BR-AD-003 - Baseline establishment for accurate anomaly detection
+func (ad *AnomalyDetector) EstablishBaselines(ctx context.Context, baselines interface{}) error {
+	ad.log.WithField("business_req", "BR-AD-003").Info("Establishing performance baselines")
+
+	// Handle different baseline input types based on test usage
+	switch b := baselines.(type) {
+	case []BusinessPerformanceBaseline:
+		return ad.establishBusinessBaselines(b)
+	case []*BaselineModel:
+		return ad.establishModelBaselines(b)
+	default:
+		return fmt.Errorf("unsupported baseline type: %T", baselines)
+	}
+}
+
 // Private methods
 
 func (ad *AnomalyDetector) initializeDetectionMethods() {
@@ -561,22 +671,16 @@ func (ad *AnomalyDetector) updateBaselines(executions []*engine.EngineWorkflowEx
 	}
 
 	// Update or create baseline models
-	if err := ad.updateStatisticalBaseline(executions); err != nil {
-		return fmt.Errorf("failed to update statistical baseline: %w", err)
-	}
+	ad.updateStatisticalBaseline(executions)
 
-	if err := ad.updateTemporalBaseline(executions); err != nil {
-		return fmt.Errorf("failed to update temporal baseline: %w", err)
-	}
+	ad.updateTemporalBaseline(executions)
 
-	if err := ad.updateBehavioralBaseline(executions); err != nil {
-		return fmt.Errorf("failed to update behavioral baseline: %w", err)
-	}
+	ad.updateBehavioralBaseline(executions)
 
 	return nil
 }
 
-func (ad *AnomalyDetector) updateStatisticalBaseline(executions []*engine.EngineWorkflowExecutionData) error {
+func (ad *AnomalyDetector) updateStatisticalBaseline(executions []*engine.EngineWorkflowExecutionData) {
 	modelID := "statistical_baseline"
 
 	// Extract metrics
@@ -619,7 +723,7 @@ func (ad *AnomalyDetector) updateStatisticalBaseline(executions []*engine.Engine
 	}
 
 	if len(durations) == 0 {
-		return nil
+		return
 	}
 
 	successRate /= float64(len(executions))
@@ -667,10 +771,9 @@ func (ad *AnomalyDetector) updateStatisticalBaseline(executions []*engine.Engine
 	}
 
 	ad.baselineModels[modelID] = model
-	return nil
 }
 
-func (ad *AnomalyDetector) updateTemporalBaseline(executions []*engine.EngineWorkflowExecutionData) error {
+func (ad *AnomalyDetector) updateTemporalBaseline(executions []*engine.EngineWorkflowExecutionData) {
 	modelID := "temporal_baseline"
 
 	// Group executions by hour and weekday
@@ -744,10 +847,9 @@ func (ad *AnomalyDetector) updateTemporalBaseline(executions []*engine.EngineWor
 	}
 
 	ad.baselineModels[modelID] = model
-	return nil
 }
 
-func (ad *AnomalyDetector) updateBehavioralBaseline(executions []*engine.EngineWorkflowExecutionData) error {
+func (ad *AnomalyDetector) updateBehavioralBaseline(executions []*engine.EngineWorkflowExecutionData) {
 	modelID := "behavioral_baseline"
 
 	// Analyze workflow execution patterns
@@ -800,7 +902,6 @@ func (ad *AnomalyDetector) updateBehavioralBaseline(executions []*engine.EngineW
 	}
 
 	ad.baselineModels[modelID] = model
-	return nil
 }
 
 func (ad *AnomalyDetector) convertExecutionToEvent(execution *engine.EngineWorkflowExecutionData) *WorkflowExecutionEvent {
@@ -1274,4 +1375,163 @@ func statVariance(data []float64) float64 {
 		sum += (v - m) * (v - m)
 	}
 	return sum / float64(len(data))
+}
+
+// PerformanceAnomalyResult contains performance-specific anomaly detection results
+// Business Requirement: BR-AD-003 - Structured anomaly results for business decision making
+type PerformanceAnomalyResult struct {
+	ServiceName              string                 `json:"service_name"`
+	AnomalyDetected          bool                   `json:"anomaly_detected"`
+	Severity                 string                 `json:"severity"`
+	BusinessImpactAssessment string                 `json:"business_impact_assessment"`
+	AnalysisTimestamp        time.Time              `json:"analysis_timestamp"`
+	RecommendedActions       []string               `json:"recommended_actions"`
+	EstimatedTimeToImpact    time.Duration          `json:"estimated_time_to_impact"`
+	DetectionLatency         time.Duration          `json:"detection_latency"`
+	AnomalyScore             float64                `json:"anomaly_score,omitempty"`
+	AnalysisDetails          map[string]interface{} `json:"analysis_details,omitempty"`
+}
+
+// BusinessPerformanceBaseline represents baseline performance expectations
+type BusinessPerformanceBaseline struct {
+	ServiceName         string                      `json:"service_name"`
+	TimeOfDay           string                      `json:"time_of_day"`
+	BaselineMetrics     map[string]PerformanceRange `json:"baseline_metrics"`
+	BusinessCriticality string                      `json:"business_criticality"`
+}
+
+// PerformanceRange defines expected performance metric ranges
+type PerformanceRange struct {
+	Min    float64 `json:"min"`
+	Max    float64 `json:"max"`
+	Mean   float64 `json:"mean"`
+	StdDev float64 `json:"std_dev"`
+}
+
+// Private helper methods for BR-AD-003 implementation
+
+func (ad *AnomalyDetector) establishBusinessBaselines(baselines []BusinessPerformanceBaseline) error {
+	for _, baseline := range baselines {
+		// Convert business baseline to internal baseline model
+		baselineModel := &BaselineModel{
+			ID:         fmt.Sprintf("%s_performance", baseline.ServiceName),
+			Type:       "performance",
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+			DataPoints: 100, // Assumed sufficient baseline data
+			Statistics: &BaselineStatistics{},
+			Parameters: make(map[string]interface{}),
+			Confidence: 0.85, // High confidence for business baselines
+		}
+
+		// Convert performance ranges to baseline statistics
+		baselineModel.Parameters["service_name"] = baseline.ServiceName
+		baselineModel.Parameters["time_of_day"] = baseline.TimeOfDay
+		baselineModel.Parameters["business_criticality"] = baseline.BusinessCriticality
+		baselineModel.Parameters["metric_ranges"] = baseline.BaselineMetrics
+
+		ad.baselineModels[baselineModel.ID] = baselineModel
+
+		ad.log.WithFields(logrus.Fields{
+			"service_name":  baseline.ServiceName,
+			"baseline_id":   baselineModel.ID,
+			"metrics_count": len(baseline.BaselineMetrics),
+		}).Debug("Business performance baseline established")
+	}
+
+	ad.log.WithField("baselines_count", len(baselines)).Info("Business performance baselines established successfully")
+	return nil
+}
+
+func (ad *AnomalyDetector) establishModelBaselines(baselines []*BaselineModel) error {
+	for _, baseline := range baselines {
+		ad.baselineModels[baseline.ID] = baseline
+	}
+	return nil
+}
+
+func (ad *AnomalyDetector) getMetricBaseline(baseline *BaselineModel, metricName string) *BaselineStatistics {
+	if ranges, ok := baseline.Parameters["metric_ranges"].(map[string]PerformanceRange); ok {
+		if perfRange, exists := ranges[metricName]; exists {
+			return &BaselineStatistics{
+				Mean:   perfRange.Mean,
+				StdDev: perfRange.StdDev,
+				Min:    perfRange.Min,
+				Max:    perfRange.Max,
+				Q1:     perfRange.Mean - perfRange.StdDev*0.674, // Approximate Q1
+				Q3:     perfRange.Mean + perfRange.StdDev*0.674, // Approximate Q3
+				IQR:    perfRange.StdDev * 1.348,                // Approximate IQR
+			}
+		}
+	}
+	return nil
+}
+
+func (ad *AnomalyDetector) calculateMetricAnomalyWeight(metricName string, zScore float64) float64 {
+	// Weight anomalies based on business impact of metrics
+	weights := map[string]float64{
+		"response_time_ms":     0.3,
+		"error_rate_percent":   0.4, // High weight for errors
+		"throughput_rps":       0.25,
+		"memory_usage_percent": 0.2,
+		"cpu_usage_percent":    0.15,
+	}
+
+	if weight, exists := weights[metricName]; exists {
+		return weight * (zScore / 10.0) // Normalize z-score to 0-1 range approximately
+	}
+	return 0.1 * (zScore / 10.0) // Default weight for unknown metrics
+}
+
+func (ad *AnomalyDetector) isCriticalMetric(metricName string, value float64) bool {
+	// Business-critical thresholds that indicate immediate impact
+	switch metricName {
+	case "error_rate_percent":
+		return value > 5.0 // >5% error rate is critical
+	case "response_time_ms":
+		return value > 1000.0 // >1s response time is critical
+	case "memory_usage_percent":
+		return value > 90.0 // >90% memory usage is critical
+	case "cpu_usage_percent":
+		return value > 85.0 // >85% CPU usage is critical
+	}
+	return false
+}
+
+func (ad *AnomalyDetector) generateBusinessRecommendations(serviceName string, metrics map[string]float64, anomalyReasons []string) []string {
+	recommendations := []string{}
+
+	// Generate recommendations based on specific anomalies detected
+	for _, reason := range anomalyReasons {
+		if strings.Contains(reason, "response_time_ms") {
+			recommendations = append(recommendations, "investigate_performance_bottlenecks", "consider_scaling_up")
+		}
+		if strings.Contains(reason, "error_rate_percent") {
+			recommendations = append(recommendations, "review_error_logs", "check_service_health")
+		}
+		if strings.Contains(reason, "memory_usage_percent") {
+			recommendations = append(recommendations, "investigate_memory_leaks", "increase_memory_allocation")
+		}
+		if strings.Contains(reason, "cpu_usage_percent") {
+			recommendations = append(recommendations, "optimize_cpu_intensive_operations", "horizontal_scaling")
+		}
+		if strings.Contains(reason, "throughput_rps") {
+			recommendations = append(recommendations, "investigate_capacity_constraints", "check_upstream_services")
+		}
+	}
+
+	// Always include general monitoring recommendation
+	recommendations = append(recommendations, "monitor_service_closely", "prepare_incident_response")
+
+	// Remove duplicates
+	uniqueRecommendations := make([]string, 0)
+	seen := make(map[string]bool)
+	for _, rec := range recommendations {
+		if !seen[rec] {
+			uniqueRecommendations = append(uniqueRecommendations, rec)
+			seen[rec] = true
+		}
+	}
+
+	return uniqueRecommendations
 }

@@ -11,7 +11,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/clustering"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
 
@@ -274,36 +273,6 @@ var _ = Describe("Clustering Engine - Business Requirements Testing", func() {
 })
 
 // Helper functions for creating test data aligned with actual clustering engine API
-
-func createClusteringTestData() []*engine.RuntimeWorkflowExecution {
-	executions := make([]*engine.RuntimeWorkflowExecution, 0, 20)
-
-	for i := 0; i < 20; i++ {
-		execution := &engine.RuntimeWorkflowExecution{
-			WorkflowExecutionRecord: sharedtypes.WorkflowExecutionRecord{
-				ID:         fmt.Sprintf("exec-%d", i),
-				WorkflowID: fmt.Sprintf("workflow-%d", i%4), // Create 4 different workflow types
-				StartTime:  time.Now().Add(-time.Duration(i) * time.Hour),
-			},
-			Context: &engine.ExecutionContext{
-				BaseContext: sharedtypes.BaseContext{
-					Environment: "production",
-					Cluster:     "main-cluster",
-				},
-			},
-		}
-
-		if execution.EndTime == nil {
-			endTime := execution.StartTime.Add(time.Duration(30+i*5) * time.Minute)
-			execution.EndTime = &endTime
-		}
-
-		execution.Duration = execution.EndTime.Sub(execution.StartTime)
-		executions = append(executions, execution)
-	}
-
-	return executions
-}
 
 func createExecutionDataForClustering(count int) []*engine.EngineWorkflowExecutionData {
 	data := make([]*engine.EngineWorkflowExecutionData, count)

@@ -31,8 +31,8 @@ This document provides a comprehensive competitive analysis of Kubernaut against
 
 | **Feature** | **Kubernaut** | **K8sGPT** | **KubeMedic (Cronin)** | **KubeMedic (Campbell)** | **Self Node Remediation** | **Fence Agents Remediation** |
 |-------------|---------------|------------|------------------------|--------------------------|----------------------------|-------------------------------|
-| **LLM Integration** | HolmesGPT (20B+ parameters) | OpenAI GPT models | OpenAI GPT-4o-mini | Rule-based logic | Health check algorithms | Fencing protocols |
-| **Model Options** | OpenAI, Anthropic, Azure, AWS, Local | Primarily OpenAI | OpenAI only | N/A | N/A | N/A |
+| **LLM Integration** | Enterprise 20B+ Parameter Models (MINIMUM) | OpenAI GPT models | OpenAI GPT-4o-mini | Rule-based logic | Health check algorithms | Fencing protocols |
+| **Model Options** | Ollama 20B+, OpenAI 20B+, HuggingFace 20B+ | Primarily OpenAI | OpenAI only | N/A | N/A | N/A |
 | **Response Format** | Natural language explanations | Natural language summaries | Diagnostic recommendations | Operator reconciliation | Status logs | Event logs |
 | **Learning Capability** | Vector DB + effectiveness tracking | No learning mechanism | No learning mechanism | Policy-based adaptation | Static health checks | Static protocols |
 | **Pattern Analysis** | Semantic similarity search | Issue categorization | Log pattern analysis | Multi-metric correlation | Health pattern detection | Fencing event patterns |
@@ -81,9 +81,9 @@ This document provides a comprehensive competitive analysis of Kubernaut against
 
 | **Feature** | **Kubernaut** | **K8sGPT** | **KubeMedic (Cronin)** | **KubeMedic (Campbell)** | **Self Node Remediation** | **Fence Agents Remediation** |
 |-------------|---------------|------------|------------------------|--------------------------|----------------------------|-------------------------------|
-| **Compute Requirements** | High (4+ cores, 8GB+ RAM) | Medium (1-2 cores, 2-4GB RAM) | Low-Medium (1 core, 2GB RAM) | Medium (1-2 cores, 2-4GB RAM) | Minimal (100m CPU, 128MB RAM) | Minimal (100m CPU, 128MB RAM) |
-| **Storage Requirements** | High (50-100GB for Vector DB) | Low (1-5GB) | Low (temporary storage) | Medium (etcd + backup storage) | Minimal (local state) | Minimal (local state) |
-| **Network Requirements** | High (LLM API calls) | Medium (LLM API calls) | Medium (OpenAI API calls) | Low (K8s API + optional webhooks) | Low (K8s API only) | Low (K8s + optional BMC) |
+| **Compute Requirements** | Enterprise (8+ cores, 16GB+ RAM, 8GB+ GPU memory for 20B models) | Medium (1-2 cores, 2-4GB RAM) | Low-Medium (1 core, 2GB RAM) | Medium (1-2 cores, 2-4GB RAM) | Minimal (100m CPU, 128MB RAM) | Minimal (100m CPU, 128MB RAM) |
+| **Storage Requirements** | High (100-200GB for Vector DB + 20B model storage) | Low (1-5GB) | Low (temporary storage) | Medium (etcd + backup storage) | Minimal (local state) | Minimal (local state) |
+| **Network Requirements** | High (20B+ model API calls, 131K context windows) | Medium (LLM API calls) | Medium (OpenAI API calls) | Low (K8s API + optional webhooks) | Low (K8s API only) | Low (K8s + optional BMC) |
 | **External Costs** | Optional (cloud LLM APIs or on-premises infrastructure) | LLM API usage charges | OpenAI API usage charges | None | None | None |
 | **Scaling Cost Model** | Flexible (API usage or on-premises infrastructure) | Linear with API usage | Linear with diagnostic requests | Flat operational cost | Flat operational cost | Flat operational cost |
 

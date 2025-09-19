@@ -303,6 +303,65 @@ func IsValidAction(action string) bool {
 }
 
 // =============================================================================
+// HEALTH MONITORING TYPES - BR-HEALTH-XXX Requirements
+// =============================================================================
+
+// HealthStatus represents the comprehensive health status of a system component
+// BR-HEALTH-001: MUST implement comprehensive health checks for all components
+type HealthStatus struct {
+	BaseEntity
+	BaseTimestampedResult
+	IsHealthy       bool                   `json:"is_healthy"`
+	ComponentType   string                 `json:"component_type"`
+	ServiceEndpoint string                 `json:"service_endpoint"`
+	ResponseTime    time.Duration          `json:"response_time"`
+	HealthMetrics   HealthMetrics          `json:"health_metrics"`
+	ProbeResults    map[string]ProbeResult `json:"probe_results,omitempty"`
+}
+
+// HealthMetrics provides detailed health metrics with structured types
+// BR-HEALTH-016: MUST track system availability and uptime metrics
+// BR-REL-011: MUST maintain monitoring accuracy >99% for critical metrics
+type HealthMetrics struct {
+	UptimePercentage   float64       `json:"uptime_percentage"`
+	TotalUptime        time.Duration `json:"total_uptime"`
+	TotalDowntime      time.Duration `json:"total_downtime"`
+	FailureCount       int           `json:"failure_count"`
+	DowntimeEvents     int           `json:"downtime_events"`
+	AccuracyRate       float64       `json:"accuracy_rate"`
+	LastFailureTime    time.Time     `json:"last_failure_time,omitempty"`
+	LastRecoveryTime   time.Time     `json:"last_recovery_time,omitempty"`
+	ResponseTimestamps []time.Time   `json:"response_timestamps,omitempty"`
+}
+
+// ProbeResult represents Kubernetes liveness/readiness probe results
+// BR-HEALTH-002: MUST provide liveness and readiness probes for Kubernetes
+type ProbeResult struct {
+	ProbeType           string        `json:"probe_type"` // "liveness" or "readiness"
+	IsHealthy           bool          `json:"is_healthy"`
+	ComponentID         string        `json:"component_id"`
+	ResponseTime        time.Duration `json:"response_time"`
+	LastCheckTime       time.Time     `json:"last_check_time"`
+	ConsecutivePasses   int           `json:"consecutive_passes"`
+	ConsecutiveFailures int           `json:"consecutive_failures"`
+}
+
+// DependencyStatus represents external dependency health status
+// BR-HEALTH-003: MUST monitor external dependency health and availability
+type DependencyStatus struct {
+	BaseEntity
+	IsAvailable    bool              `json:"is_available"`
+	DependencyType string            `json:"dependency_type"`
+	Endpoint       string            `json:"endpoint"`
+	Criticality    string            `json:"criticality"`
+	LastError      string            `json:"last_error,omitempty"`
+	FailureCount   int               `json:"failure_count"`
+	LastCheckTime  time.Time         `json:"last_check_time"`
+	HealthMetrics  HealthMetrics     `json:"health_metrics"`
+	Configuration  map[string]string `json:"configuration,omitempty"`
+}
+
+// =============================================================================
 // LLM AI TYPES
 // =============================================================================
 
