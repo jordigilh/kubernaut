@@ -38,6 +38,13 @@ func (m *MockIntelligentWorkflowBuilder) SetBuildError(err error) {
 
 // GenerateWorkflow implements intelligent workflow generation following IntelligentWorkflowBuilder interface
 func (m *MockIntelligentWorkflowBuilder) GenerateWorkflow(ctx context.Context, objective *engine.WorkflowObjective) (*engine.ExecutableTemplate, error) {
+	// Check for context cancellation in test mock
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if m.buildError != nil {
 		return nil, m.buildError
 	}
@@ -265,17 +272,11 @@ func (m *MockLearningIntegrator) LearnFromExecutions(executions []engine.Executi
 		return m.learningResult, nil
 	}
 
-	// Default learning result
+	// Default learning result - using new LearningResult structure
 	return &engine.LearningResult{
-		AccuracyImprovement: 0.05,
-		UpdatedAlgorithms:   []string{"default_algorithm"},
-		GenerationUpdates: map[string]interface{}{
-			"default_parameter": 0.8,
-		},
-		LearningMetrics: map[string]interface{}{
-			"training_samples":    len(executions),
-			"validation_accuracy": 0.85,
-		},
+		PatternConfidence: 0.85,
+		LearningImpact:    "medium",
+		UpdatedRules:      []string{"default_algorithm_rule"},
 	}, nil
 }
 

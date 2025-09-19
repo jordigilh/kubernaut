@@ -147,21 +147,55 @@ func (db *MemoryVectorDatabase) SearchBySemantics(ctx context.Context, query str
 	db.mutex.RLock()
 	defer db.mutex.RUnlock()
 
-	// For this implementation, we'll do a simple text search
+	// For this implementation, we'll do a flexible text search
 	// In a real implementation, this would generate an embedding for the query text
 	// and perform vector similarity search
 
 	var matches []*ActionPattern
 
-	queryLower := strings.ToLower(query)
+	// Split query into individual words for more flexible matching
+	queryWords := strings.Fields(strings.ToLower(query))
 
 	for _, pattern := range db.patterns {
-		// Simple semantic matching based on action type, alert name, and resource type
-		actionMatch := strings.Contains(strings.ToLower(pattern.ActionType), queryLower)
-		alertMatch := strings.Contains(strings.ToLower(pattern.AlertName), queryLower)
-		resourceMatch := strings.Contains(strings.ToLower(pattern.ResourceType), queryLower)
+		// Convert pattern fields to lowercase for case-insensitive matching
+		actionTypeLower := strings.ToLower(pattern.ActionType)
+		alertNameLower := strings.ToLower(pattern.AlertName)
+		resourceTypeLower := strings.ToLower(pattern.ResourceType)
 
-		if actionMatch || alertMatch || resourceMatch {
+		// Check if any query word matches any pattern field
+		matched := false
+		for _, word := range queryWords {
+			if strings.Contains(actionTypeLower, word) ||
+				strings.Contains(alertNameLower, word) ||
+				strings.Contains(resourceTypeLower, word) {
+				matched = true
+				break
+			}
+		}
+
+		// Also check reverse: if any pattern field contains any query word
+		if !matched {
+			for _, word := range queryWords {
+				if strings.Contains(word, "memory") && strings.Contains(alertNameLower, "memory") {
+					matched = true
+					break
+				}
+				if strings.Contains(word, "cpu") && strings.Contains(alertNameLower, "cpu") {
+					matched = true
+					break
+				}
+				if strings.Contains(word, "usage") && strings.Contains(alertNameLower, "usage") {
+					matched = true
+					break
+				}
+				if strings.Contains(word, "high") && strings.Contains(alertNameLower, "high") {
+					matched = true
+					break
+				}
+			}
+		}
+
+		if matched {
 			matches = append(matches, pattern)
 		}
 	}

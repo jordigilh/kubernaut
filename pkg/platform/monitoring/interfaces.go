@@ -53,6 +53,33 @@ type SideEffectDetector interface {
 	CheckNewAlerts(ctx context.Context, namespace string, since time.Time) ([]types.Alert, error)
 }
 
+// HealthMonitor provides health monitoring capabilities for system components
+// Integrates with existing monitoring infrastructure following BR-HEALTH-XXX requirements
+type HealthMonitor interface {
+	// GetHealthStatus returns comprehensive health status for a component
+	// BR-HEALTH-001: MUST implement comprehensive health checks for all components
+	GetHealthStatus(ctx context.Context) (*types.HealthStatus, error)
+
+	// PerformLivenessProbe checks if the component is alive (Kubernetes liveness)
+	// BR-HEALTH-002: MUST provide liveness and readiness probes for Kubernetes
+	PerformLivenessProbe(ctx context.Context) (*types.ProbeResult, error)
+
+	// PerformReadinessProbe checks if the component is ready to serve traffic
+	// BR-HEALTH-002: MUST provide liveness and readiness probes for Kubernetes
+	PerformReadinessProbe(ctx context.Context) (*types.ProbeResult, error)
+
+	// GetDependencyStatus monitors external dependency health and availability
+	// BR-HEALTH-003: MUST monitor external dependency health and availability
+	GetDependencyStatus(ctx context.Context, dependencyName string) (*types.DependencyStatus, error)
+
+	// StartHealthMonitoring begins continuous health monitoring
+	// BR-HEALTH-016: MUST track system availability and uptime metrics
+	StartHealthMonitoring(ctx context.Context) error
+
+	// StopHealthMonitoring stops continuous health monitoring
+	StopHealthMonitoring(ctx context.Context) error
+}
+
 // AlertEvent represents an alert firing/resolving event
 type AlertEvent struct {
 	AlertName   string            `json:"alert_name"`

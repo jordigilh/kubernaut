@@ -163,7 +163,7 @@ class HolmesGPTService:
             await asyncio.sleep(processing_time if not async_mode else 0.1)
 
             # Generate sample recommendations based on alert type
-            recommendations = await self._generate_recommendations(
+            recommendations = self._generate_recommendations(
                 alert_name, namespace, context, priority
             )
 

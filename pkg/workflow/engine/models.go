@@ -357,15 +357,16 @@ const (
 
 // OptimizationResult contains the result of workflow optimization
 type OptimizationResult struct {
-	ID               string                        `json:"id"`
-	WorkflowID       string                        `json:"workflow_id"`
-	Type             OptimizationType              `json:"type"`
-	Changes          []*OptimizationChange         `json:"changes"`
-	Performance      *PerformanceImprovement       `json:"performance"`
-	Confidence       float64                       `json:"confidence"`
-	ValidationResult *WorkflowRuleValidationResult `json:"validation_result"`
-	AppliedAt        *time.Time                    `json:"applied_at,omitempty"`
-	CreatedAt        time.Time                     `json:"created_at"`
+	ID                     string                        `json:"id"`
+	WorkflowID             string                        `json:"workflow_id"`
+	Type                   OptimizationType              `json:"type"`
+	Changes                []*OptimizationChange         `json:"changes"`
+	Performance            *PerformanceImprovement       `json:"performance"`
+	Confidence             float64                       `json:"confidence"`
+	ValidationResult       *WorkflowRuleValidationResult `json:"validation_result"`
+	AppliedAt              *time.Time                    `json:"applied_at,omitempty"`
+	CreatedAt              time.Time                     `json:"created_at"`
+	OptimizationCandidates interface{}                   `json:"optimization_candidates,omitempty"` // Added for BR-ORK-001
 }
 
 // OptimizationType defines the type of optimization
@@ -1020,6 +1021,174 @@ type WorkflowPattern struct {
 	UpdatedAt      time.Time                 `json:"updated_at"`
 }
 
+// Advanced Pattern Testing Types (TDD Implementation)
+// Following project guideline #5: Define business contracts to enable test compilation
+// Note: ObjectiveAnalysisResult already exists in intelligent_workflow_builder_helpers.go
+
+type ResourceConstraints struct {
+	MaxCPUUtilization    float64       `json:"max_cpu_utilization"`
+	MaxMemoryUtilization float64       `json:"max_memory_utilization"`
+	MaxConcurrentSteps   int           `json:"max_concurrent_steps"`
+	TimeoutBuffer        time.Duration `json:"timeout_buffer"`
+}
+
+type ResourcePlan struct {
+	TotalCPUWeight             float64    `json:"total_cpu_weight"`
+	TotalMemoryWeight          float64    `json:"total_memory_weight"`
+	MaxConcurrency             int        `json:"max_concurrency"`
+	EstimatedCPUUtilization    float64    `json:"estimated_cpu_utilization"`
+	EstimatedMemoryUtilization float64    `json:"estimated_memory_utilization"`
+	EfficiencyScore            float64    `json:"efficiency_score"`
+	OptimalBatches             [][]string `json:"optimal_batches"`
+}
+
+type ParallelizationStrategy struct {
+	ParallelGroups          [][]string `json:"parallel_groups"`
+	EstimatedSpeedup        float64    `json:"estimated_speedup"`
+	HasCircularDependencies bool       `json:"has_circular_dependencies"`
+	ConflictResolution      string     `json:"conflict_resolution"`
+}
+
+type LoopExecutionMetrics struct {
+	TotalIterations      int           `json:"total_iterations"`
+	SuccessfulIterations int           `json:"successful_iterations"`
+	FailedIterations     int           `json:"failed_iterations"`
+	AverageIterationTime time.Duration `json:"average_iteration_time"`
+	TotalExecutionTime   time.Duration `json:"total_execution_time"`
+}
+
+type LoopTerminationResult struct {
+	ShouldContinue bool   `json:"should_continue"`
+	NextIteration  int    `json:"next_iteration"`
+	Reason         string `json:"reason"`
+}
+
+type ComplexLoopEvaluation struct {
+	BreakConditionMet    bool   `json:"break_condition_met"`
+	ContinueConditionMet bool   `json:"continue_condition_met"`
+	ConditionEvaluation  string `json:"condition_evaluation"`
+}
+
+type LoopPerformanceOptimization struct {
+	SuccessRate     float64  `json:"success_rate"`
+	EfficiencyScore float64  `json:"efficiency_score"`
+	Recommendations []string `json:"recommendations"`
+}
+
+type WorkflowComplexity struct {
+	OverallScore float64            `json:"overall_score"`
+	FactorScores map[string]float64 `json:"factor_scores"`
+}
+
+type WorkflowRiskAssessment struct {
+	RiskLevel string  `json:"risk_level"`
+	RiskScore float64 `json:"risk_score"`
+}
+
+type WorkflowExecution struct {
+	WorkflowID  string                 `json:"workflow_id"`
+	Status      ExecutionStatus        `json:"status"`
+	Duration    time.Duration          `json:"duration"`
+	StepResults map[string]*StepResult `json:"step_results"`
+	StartTime   time.Time              `json:"start_time"`
+	EndTime     time.Time              `json:"end_time"`
+}
+
+// Note: StepResult already defined in models.go line 287
+
+type ExecutionPattern struct {
+	PatternID       string                 `json:"pattern_id"`
+	SuccessRate     float64                `json:"success_rate"`
+	AverageDuration time.Duration          `json:"average_duration"`
+	CommonFailures  []string               `json:"common_failures"`
+	ContextFactors  map[string]interface{} `json:"context_factors"`
+}
+
+type OptimizationConstraints struct {
+	MaxRiskLevel       string  `json:"max_risk_level"`
+	MinSuccessRate     float64 `json:"min_success_rate"`
+	MaxPerformanceGain float64 `json:"max_performance_gain"`
+	PreferReliability  bool    `json:"prefer_reliability"`
+}
+
+type WorkflowMetrics struct {
+	AverageExecutionTime time.Duration `json:"average_execution_time"`
+	SuccessRate          float64       `json:"success_rate"`
+	ResourceUtilization  float64       `json:"resource_utilization"`
+	FailureRate          float64       `json:"failure_rate"`
+	ErrorRate            float64       `json:"error_rate"`
+}
+
+type PerformanceThresholds struct {
+	MaxExecutionTime time.Duration `json:"max_execution_time"`
+	MinSuccessRate   float64       `json:"min_success_rate"`
+	MaxResourceUsage float64       `json:"max_resource_usage"`
+	MaxErrorRate     float64       `json:"max_error_rate"`
+}
+
+type PerformanceAlert struct {
+	Severity string `json:"severity"`
+	Metric   string `json:"metric"`
+	Message  string `json:"message"`
+}
+
+type AIOptimizationResult struct {
+	OptimizationScore    float64            `json:"optimization_score"`
+	Recommendations      []string           `json:"recommendations"`
+	EstimatedImprovement map[string]float64 `json:"estimated_improvement"`
+}
+
+type LearningResult struct {
+	PatternConfidence float64  `json:"pattern_confidence"`
+	LearningImpact    string   `json:"learning_impact"`
+	UpdatedRules      []string `json:"updated_rules"`
+}
+
+type SuccessPrediction struct {
+	SuccessProbability float64  `json:"success_probability"`
+	RiskFactors        []string `json:"risk_factors"`
+	ConfidenceLevel    string   `json:"confidence_level"`
+}
+
+type ExecutionOptimization struct {
+	EstimatedImprovement float64  `json:"estimated_improvement"`
+	OptimizedSteps       []string `json:"optimized_steps"`
+	Techniques           []string `json:"techniques"`
+}
+
+type SafetyConstraints struct {
+	MaxConcurrentOperations int           `json:"max_concurrent_operations"`
+	MaxWorkflowDuration     time.Duration `json:"max_workflow_duration"`
+	AllowedEnvironments     []string      `json:"allowed_environments"`
+	RequiredApprovals       []string      `json:"required_approvals"`
+}
+
+type SafetyCheck struct {
+	IsSafe      bool     `json:"is_safe"`
+	RiskFactors []string `json:"risk_factors"`
+	SafetyScore float64  `json:"safety_score"`
+}
+
+type SafetyEnforcement struct {
+	ConstraintsViolated   []string `json:"constraints_violated"`
+	RequiredModifications []string `json:"required_modifications"`
+	CanProceed            bool     `json:"can_proceed"`
+}
+
+type ConstrainedOptimizationResult struct {
+	RiskLevel       string  `json:"risk_level"`
+	PerformanceGain float64 `json:"performance_gain"`
+}
+
+type OptimizationImpact struct {
+	TimeImprovement        float64 `json:"time_improvement"`
+	ReliabilityImprovement float64 `json:"reliability_improvement"`
+	ResourceEfficiencyGain float64 `json:"resource_efficiency_gain"`
+	OverallScore           float64 `json:"overall_score"`
+}
+
+// Note: ExecutionMetrics and TrendAnalysis already exist - using existing types
+
 // Simulation and Validation Types
 type SimulationScenario struct {
 	ID          string                 `json:"id"`
@@ -1255,13 +1424,7 @@ type ExecutionOutcome struct {
 	Feedback          map[string]interface{} `json:"feedback"`
 }
 
-// LearningResult represents the result of learning from workflow executions
-type LearningResult struct {
-	UpdatedAlgorithms   []string               `json:"updated_algorithms"`
-	AccuracyImprovement float64                `json:"accuracy_improvement"`
-	GenerationUpdates   map[string]interface{} `json:"generation_updates"`
-	LearningMetrics     map[string]interface{} `json:"learning_metrics"`
-}
+// Note: LearningResult already defined above for TDD implementation at line 1141
 
 type DecisionAlternative struct {
 	ID          string                 `json:"id"`
@@ -1410,7 +1573,7 @@ type PatternMatcher struct {
 // Note: AnalyticsEngine interface moved to pkg/shared/types/analytics.go for consolidation
 
 type WorkflowValidator interface {
-	ValidateWorkflow(ctx context.Context, template *ExecutableTemplate) (*ValidationReport, error)
+	ValidateWorkflow(ctx context.Context, template *ExecutableTemplate) *ValidationReport
 }
 
 // Add missing simulation constants and fields
@@ -1452,4 +1615,65 @@ type WorkflowRecommendation struct {
 	Priority      Priority               `json:"priority"`
 	Effectiveness float64                `json:"effectiveness"`
 	Risk          RiskLevel              `json:"risk"`
+}
+
+// BR-ORK-002 Type definitions for adaptive step execution
+
+// ContextAnalysis represents analysis of execution context
+type ContextAnalysis struct {
+	SystemLoad             map[string]interface{} `json:"system_load"`
+	HistoricalPerformance  map[string]interface{} `json:"historical_performance"`
+	ClusterHealth          map[string]interface{} `json:"cluster_health"`
+	RecommendedAdaptations []string               `json:"recommended_adaptations"`
+	AnalyzedAt             time.Time              `json:"analyzed_at"`
+}
+
+// ExecutionStrategy represents a strategy for step execution
+type ExecutionStrategy struct {
+	Name       string                 `json:"name"`
+	Parameters map[string]interface{} `json:"parameters"`
+	Confidence float64                `json:"confidence"`
+	CreatedAt  time.Time              `json:"created_at"`
+}
+
+// WorkflowStep represents a workflow step (updated definition)
+type WorkflowStep struct {
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"`
+	Name       string                 `json:"name"`
+	Action     string                 `json:"action"`
+	Parameters map[string]interface{} `json:"parameters"`
+	Timeout    time.Duration          `json:"timeout"`
+	Conditions []*ExecutableCondition `json:"conditions,omitempty"`
+	DependsOn  []string               `json:"depends_on,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt  time.Time              `json:"created_at"`
+}
+
+// BR-ORK-003 Type definitions for statistics tracking and analysis
+
+// WorkflowExecutionMetrics represents comprehensive execution metrics
+type WorkflowExecutionMetrics struct {
+	WorkflowID    string                `json:"workflow_id"`
+	ExecutionID   string                `json:"execution_id"`
+	Duration      time.Duration         `json:"duration"`
+	SuccessRate   float64               `json:"success_rate"`
+	StepCount     int                   `json:"step_count"`
+	SuccessCount  int                   `json:"success_count"`
+	FailureCount  int                   `json:"failure_count"`
+	ResourceUsage *ResourceUsageMetrics `json:"resource_usage"`
+	Timestamp     time.Time             `json:"timestamp"`
+}
+
+// SystemResourceImpact represents system resource impact during orchestration
+type SystemResourceImpact struct {
+	ExecutionID  string        `json:"execution_id"`
+	CPUDelta     float64       `json:"cpu_delta"`
+	MemoryDelta  float64       `json:"memory_delta"`
+	NetworkDelta float64       `json:"network_delta"`
+	DiskDelta    float64       `json:"disk_delta"`
+	PeakCPU      float64       `json:"peak_cpu"`
+	PeakMemory   float64       `json:"peak_memory"`
+	Duration     time.Duration `json:"duration"`
+	Timestamp    time.Time     `json:"timestamp"`
 }

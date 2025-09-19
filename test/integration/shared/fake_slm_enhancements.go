@@ -302,6 +302,7 @@ func (f *FakeSLMClient) generateRealisticAction(alert types.Alert) string {
 		"PodCrashLooping":         "restart_pod",
 		"ServiceDown":             "restart_pod",
 		"DatabaseConnectionsHigh": "scale_deployment",
+		"DeploymentFailed":        "rollback_deployment", // BR-2: Consistent action mapping
 	}
 
 	mediumConfidenceActions := map[string]string{

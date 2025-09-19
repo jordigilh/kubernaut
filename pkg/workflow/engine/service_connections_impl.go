@@ -163,36 +163,68 @@ func NewProductionServiceConnector(config *ServiceConnectionConfig, log *logrus.
 }
 
 // Connect establishes connections to all required services
-func (psc *ProductionServiceConnector) Connect(ctx context.Context) error {
-	psc.log.Info("Establishing production service connections")
+func (psc *ProductionServiceConnector) Connect(ctx context.Context) {
+	// Check for context cancellation early
+	select {
+	case <-ctx.Done():
+		psc.log.WithContext(ctx).Warn("Context cancelled during service connection")
+		return
+	default:
+	}
 
-	// Connect to LLM service
+	psc.log.WithContext(ctx).Info("Establishing production service connections")
+
+	// Connect to LLM service with context monitoring
 	if err := psc.connectLLMService(ctx); err != nil {
-		psc.log.WithError(err).Error("Failed to connect to LLM service")
+		psc.log.WithContext(ctx).WithError(err).Error("Failed to connect to LLM service")
 		psc.updateConnectionState("llm", "disconnected", err.Error())
 	} else {
 		psc.updateConnectionState("llm", "connected", "")
 	}
 
-	// Connect to Vector Database
+	// Check context between connections
+	select {
+	case <-ctx.Done():
+		psc.log.WithContext(ctx).Warn("Context cancelled during vector DB connection")
+		return
+	default:
+	}
+
+	// Connect to Vector Database with context monitoring
 	if err := psc.connectVectorDB(ctx); err != nil {
-		psc.log.WithError(err).Error("Failed to connect to vector database")
+		psc.log.WithContext(ctx).WithError(err).Error("Failed to connect to vector database")
 		psc.updateConnectionState("vector_db", "disconnected", err.Error())
 	} else {
 		psc.updateConnectionState("vector_db", "connected", "")
 	}
 
-	// Connect to Analytics Engine
+	// Check context between connections
+	select {
+	case <-ctx.Done():
+		psc.log.WithContext(ctx).Warn("Context cancelled during analytics engine connection")
+		return
+	default:
+	}
+
+	// Connect to Analytics Engine with context monitoring
 	if err := psc.connectAnalyticsEngine(ctx); err != nil {
-		psc.log.WithError(err).Error("Failed to connect to analytics engine")
+		psc.log.WithContext(ctx).WithError(err).Error("Failed to connect to analytics engine")
 		psc.updateConnectionState("analytics", "disconnected", err.Error())
 	} else {
 		psc.updateConnectionState("analytics", "connected", "")
 	}
 
-	// Connect to Metrics Service
+	// Check context between connections
+	select {
+	case <-ctx.Done():
+		psc.log.WithContext(ctx).Warn("Context cancelled during metrics service connection")
+		return
+	default:
+	}
+
+	// Connect to Metrics Service with context monitoring
 	if err := psc.connectMetricsService(ctx); err != nil {
-		psc.log.WithError(err).Error("Failed to connect to metrics service")
+		psc.log.WithContext(ctx).WithError(err).Error("Failed to connect to metrics service")
 		psc.updateConnectionState("metrics", "disconnected", err.Error())
 	} else {
 		psc.updateConnectionState("metrics", "connected", "")
@@ -201,8 +233,8 @@ func (psc *ProductionServiceConnector) Connect(ctx context.Context) error {
 	// Start health monitoring
 	psc.startHealthMonitoring()
 
-	psc.log.WithField("connected_services", len(psc.getConnectedServices())).Info("Production service connections established")
-	return nil
+	connectedServices := psc.getConnectedServices()
+	psc.log.WithContext(ctx).WithField("connected_services", len(connectedServices)).Info("Production service connections established")
 }
 
 // GetConnectedLLMClient returns the connected LLM client
@@ -264,19 +296,35 @@ func (psc *ProductionServiceConnector) GetServiceHealth() map[string]*ServiceCon
 }
 
 // Disconnect gracefully disconnects from all services
-func (psc *ProductionServiceConnector) Disconnect(ctx context.Context) error {
-	psc.log.Info("Disconnecting from production services")
+func (psc *ProductionServiceConnector) Disconnect(ctx context.Context) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		psc.log.WithContext(ctx).Warn("Context cancelled during service disconnection")
+		return
+	default:
+	}
+
+	psc.log.WithContext(ctx).Info("Disconnecting from production services")
 
 	// Stop health monitoring
 	if psc.healthChecker != nil {
 		psc.healthChecker.Stop()
 	}
 
-	// Disconnect from services (if they have close methods)
+	// Disconnect from services with context awareness (if they have close methods)
 	// This is service-dependent and would be implemented based on actual clients
+	if deadline, ok := ctx.Deadline(); ok {
+		remainingTime := time.Until(deadline)
+		psc.log.WithContext(ctx).WithField("remaining_time", remainingTime).Debug("Disconnecting with deadline awareness")
+	}
 
-	psc.log.Info("Disconnected from production services")
-	return nil
+	// Mark all services as disconnected during graceful shutdown
+	for serviceName := range psc.connectionStates {
+		psc.updateConnectionState(serviceName, "disconnected", "graceful_shutdown")
+	}
+
+	psc.log.WithContext(ctx).Info("Disconnected from production services")
 }
 
 // Private helper methods
@@ -309,10 +357,7 @@ func (psc *ProductionServiceConnector) connectVectorDB(ctx context.Context) erro
 	psc.log.WithField("provider", psc.config.VectorDBConfig.Provider).Debug("Connecting to vector database")
 
 	// Create vector database client based on provider
-	vectorDB, err := psc.createVectorDBClient()
-	if err != nil {
-		return fmt.Errorf("failed to create vector DB client: %w", err)
-	}
+	vectorDB := psc.createVectorDBClient()
 
 	// Test connection
 	if err := psc.testVectorDBConnection(ctx, vectorDB); err != nil {
@@ -326,6 +371,13 @@ func (psc *ProductionServiceConnector) connectVectorDB(ctx context.Context) erro
 }
 
 func (psc *ProductionServiceConnector) connectAnalyticsEngine(ctx context.Context) error {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	psc.log.Debug("Initializing analytics engine")
 
 	// Analytics engine requires vector DB and pattern extractor
@@ -345,10 +397,7 @@ func (psc *ProductionServiceConnector) connectMetricsService(ctx context.Context
 	psc.log.WithField("provider", psc.config.MetricsConfig.Provider).Debug("Connecting to metrics service")
 
 	// Create metrics client based on provider
-	metricsClient, err := psc.createMetricsClient()
-	if err != nil {
-		return fmt.Errorf("failed to create metrics client: %w", err)
-	}
+	metricsClient := psc.createMetricsClient()
 
 	// Test connection
 	if err := psc.testMetricsConnection(ctx, metricsClient); err != nil {
@@ -361,18 +410,18 @@ func (psc *ProductionServiceConnector) connectMetricsService(ctx context.Context
 	return nil
 }
 
-func (psc *ProductionServiceConnector) createVectorDBClient() (vector.VectorDatabase, error) {
+func (psc *ProductionServiceConnector) createVectorDBClient() vector.VectorDatabase {
 	// For now, return fallback implementation since external vector DB clients
 	// would need proper factory implementations
 	psc.log.Warn("Using fallback vector DB - external providers not fully implemented")
-	return NewFallbackVectorDB(psc.log), nil
+	return NewFallbackVectorDB(psc.log)
 }
 
-func (psc *ProductionServiceConnector) createMetricsClient() (*metrics.Client, error) {
+func (psc *ProductionServiceConnector) createMetricsClient() *metrics.Client {
 	// For now, return fallback implementation since external metrics clients
 	// would need proper factory implementations
 	psc.log.Warn("Using fallback metrics client - external providers not fully implemented")
-	return NewFallbackMetricsClient(psc.log), nil
+	return NewFallbackMetricsClient(psc.log)
 }
 
 func (psc *ProductionServiceConnector) testLLMConnection(ctx context.Context, client llm.Client) error {
@@ -387,6 +436,13 @@ func (psc *ProductionServiceConnector) testVectorDBConnection(ctx context.Contex
 }
 
 func (psc *ProductionServiceConnector) testMetricsConnection(ctx context.Context, metricsClient *metrics.Client) error {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	// Simple connection test - try to record a test metric
 	return metricsClient.RecordCounter("connection_test", 1, map[string]string{"test": "true"})
 }
@@ -624,6 +680,35 @@ func (f *FallbackLLMClient) GenerateWorkflow(ctx context.Context, objective *llm
 	}, nil
 }
 
+// GetEndpoint returns the fallback LLM endpoint
+func (f *FallbackLLMClient) GetEndpoint() string {
+	return "fallback://llm-client"
+}
+
+// GetModel returns the fallback model name
+func (f *FallbackLLMClient) GetModel() string {
+	return "fallback-model"
+}
+
+// GetMinParameterCount returns the minimum parameter count for fallback operations
+func (f *FallbackLLMClient) GetMinParameterCount() int64 {
+	return 0
+}
+
+// LivenessCheck performs a liveness check for the fallback client
+func (f *FallbackLLMClient) LivenessCheck(ctx context.Context) error {
+	// Fallback client is always "alive" but limited
+	f.log.Debug("Fallback LLM client liveness check - always healthy but limited")
+	return nil
+}
+
+// ReadinessCheck performs a readiness check for the fallback client
+func (f *FallbackLLMClient) ReadinessCheck(ctx context.Context) error {
+	// Fallback client is always ready but provides limited functionality
+	f.log.Debug("Fallback LLM client readiness check - ready with limited functionality")
+	return nil
+}
+
 // NewFallbackEnhancedLLMClient creates a fallback enhanced LLM client
 func NewFallbackEnhancedLLMClient(log *logrus.Logger) llm.EnhancedClient {
 	return &FallbackEnhancedLLMClient{
@@ -690,8 +775,11 @@ func (f *FallbackVectorDB) IsHealthy(ctx context.Context) error {
 
 // NewFallbackAnalyticsEngine creates a fallback analytics engine
 func NewFallbackAnalyticsEngine(log *logrus.Logger) types.AnalyticsEngine {
-	// Return a basic analytics engine with minimal functionality
-	return insights.NewAnalyticsEngine()
+	// Return a basic analytics engine with minimal functionality and logging
+	log.Warn("Creating fallback analytics engine - limited functionality available")
+	engine := insights.NewAnalyticsEngine()
+	log.WithField("engine_type", "fallback").Debug("Fallback analytics engine created")
+	return engine
 }
 
 // NewFallbackMetricsClient creates a fallback metrics client
