@@ -38,6 +38,7 @@ var _ = Describe("AI Condition Implementation - Business Requirements Testing", 
 		testLogger.SetLevel(logrus.WarnLevel) // Reduce noise in tests
 
 		// Initialize mocks following existing patterns
+		// MOCK-MIGRATION: Use direct mock creation instead of factory
 		mockSLMClient = mocks.NewMockLLMClient()
 		mockK8sClient = mocks.NewMockKubernetesClient()
 		mockMetricsClient = NewMockMetricsClient()
@@ -506,8 +507,7 @@ var _ = Describe("AI Condition Implementation - Business Requirements Testing", 
 			// **Business Requirement BR-AI-024**: Validate fallback mechanism
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-AI-024: Should not fail when AI service is unavailable")
-			Expect(result).ToNot(BeNil(),
-				"BR-AI-024: Should provide fallback result")
+			Expect(result.Confidence).To(BeNumerically(">=", 0), "BR-AI-001-CONFIDENCE: AI condition fallback must provide measurable confidence values for reliable decision making")
 			Expect(result.Confidence).To(BeNumerically("<", 0.7),
 				"BR-AI-024: Fallback should have lower confidence than AI analysis")
 			Expect(result.Reasoning).To(ContainSubstring("Basic"),
@@ -577,8 +577,7 @@ var _ = Describe("AI Condition Implementation - Business Requirements Testing", 
 			// Validate system provides reasonable time-based analysis
 			// The key validation is that fallback mechanism works, not the specific time result
 			// since the test runs at different times
-			Expect(result).ToNot(BeNil(),
-				"BR-AI-024: Should provide fallback time evaluation result")
+			Expect(result.Result).To(BeTrue(), "BR-AI-001-CONFIDENCE: AI condition time evaluation must provide valid fallback results for decision reliability")
 
 			// Verify fallback behavior by checking confidence and reasoning
 			// Fallback may have fixed confidence (0.8) - the key is that it works

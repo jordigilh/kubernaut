@@ -34,8 +34,14 @@ type DefaultWorkflowEngine struct {
 	// AI condition evaluator
 	aiConditionEvaluator AIConditionEvaluator
 
+	// Expression engine for advanced condition evaluation
+	expressionEngine *ExpressionEngine
+
 	// Post-condition validator registry
 	postConditionRegistry *ValidatorRegistry
+
+	// Metrics collector for subflow monitoring (BR-WF-ADV-628)
+	metricsCollector SubflowMetricsCollector
 
 	// Configuration
 	config *WorkflowEngineConfig
@@ -48,6 +54,14 @@ type WorkflowEngineConfig struct {
 	EnableStateRecovery   bool          `yaml:"enable_state_recovery" default:"true"`
 	EnableDetailedLogging bool          `yaml:"enable_detailed_logging" default:"false"`
 	MaxConcurrency        int           `yaml:"max_concurrency" default:"10"`
+
+	// Resilient Engine Configuration (BR-WF-541, BR-ORCH-001, BR-ORCH-004)
+	EnableResilientMode    bool          `yaml:"enable_resilient_mode" default:"false"`
+	ResilientFailurePolicy string        `yaml:"resilient_failure_policy" default:"continue"`
+	MaxPartialFailures     int           `yaml:"max_partial_failures" default:"2"`
+	OptimizationEnabled    bool          `yaml:"optimization_enabled" default:"true"`
+	LearningEnabled        bool          `yaml:"learning_enabled" default:"true"`
+	HealthCheckInterval    time.Duration `yaml:"health_check_interval" default:"1m"`
 }
 
 // ActionExecutor defines the interface for executing specific action types
@@ -92,7 +106,8 @@ func NewDefaultWorkflowEngine(
 		config:                config,
 		log:                   log,
 		actionExecutors:       make(map[string]ActionExecutor),
-		aiConditionEvaluator:  nil, // Will be set via SetAIConditionEvaluator
+		aiConditionEvaluator:  nil,                   // Will be set via SetAIConditionEvaluator
+		expressionEngine:      NewExpressionEngine(), // Initialize expression engine for advanced condition evaluation
 		postConditionRegistry: NewValidatorRegistry(log),
 	}
 
@@ -105,6 +120,68 @@ func NewDefaultWorkflowEngine(
 // RegisterActionExecutor registers an action executor for a specific action type
 func (dwe *DefaultWorkflowEngine) RegisterActionExecutor(actionType string, executor ActionExecutor) {
 	dwe.actionExecutors[actionType] = executor
+}
+
+// NewWorkflowEngineWithConfig creates the appropriate workflow engine based on configuration
+// Following guideline #20: Use configuration settings, never hardcode
+func NewWorkflowEngineWithConfig(
+	k8sClient k8s.Client,
+	actionRepo actionhistory.Repository,
+	monitoringClients *monitoring.MonitoringClients,
+	stateStorage StateStorage,
+	executionRepo ExecutionRepository,
+	config *WorkflowEngineConfig,
+	log *logrus.Logger,
+) (WorkflowEngine, error) {
+	if config == nil {
+		config = &WorkflowEngineConfig{
+			DefaultStepTimeout:     10 * time.Minute,
+			MaxRetryDelay:          5 * time.Minute,
+			EnableStateRecovery:    true,
+			EnableDetailedLogging:  false,
+			MaxConcurrency:         10,
+			EnableResilientMode:    false, // Default to standard engine
+			ResilientFailurePolicy: "continue",
+			MaxPartialFailures:     2,
+			OptimizationEnabled:    true,
+			LearningEnabled:        true,
+			HealthCheckInterval:    1 * time.Minute,
+		}
+	}
+
+	// Create base default engine
+	defaultEngine := NewDefaultWorkflowEngine(
+		k8sClient, actionRepo, monitoringClients,
+		stateStorage, executionRepo, config, log,
+	)
+
+	// Return resilient engine if enabled
+	if config.EnableResilientMode {
+		log.Info("✅ Creating resilient workflow engine (BR-WF-541, BR-ORCH-001, BR-ORCH-004)")
+
+		// Create production components
+		failureHandler := NewProductionFailureHandler(log)
+		healthChecker := NewProductionWorkflowHealthChecker(log)
+
+		// Configure components based on config settings
+		failureHandler.EnableLearning(config.LearningEnabled)
+
+		resilientEngine := NewResilientWorkflowEngine(
+			defaultEngine, failureHandler, healthChecker, NewLogrusAdapter(log),
+		)
+
+		log.WithFields(logrus.Fields{
+			"failure_policy":       config.ResilientFailurePolicy,
+			"max_partial_failures": config.MaxPartialFailures,
+			"optimization_enabled": config.OptimizationEnabled,
+			"learning_enabled":     config.LearningEnabled,
+		}).Info("✅ Resilient workflow engine configured with business requirements")
+
+		return resilientEngine, nil
+	}
+
+	log.Info("✅ Using standard workflow engine (resilient mode disabled)")
+	return defaultEngine, nil
 }
 
 // NewDefaultWorkflowEngineWithAI creates a new workflow engine with AI condition evaluator
@@ -126,6 +203,92 @@ func NewDefaultWorkflowEngineWithAI(
 // SetAIConditionEvaluator sets the AI condition evaluator for the workflow engine
 func (dwe *DefaultWorkflowEngine) SetAIConditionEvaluator(evaluator AIConditionEvaluator) {
 	dwe.aiConditionEvaluator = evaluator
+}
+
+// SetMetricsCollector sets the metrics collector for subflow monitoring (BR-WF-ADV-628)
+func (dwe *DefaultWorkflowEngine) SetMetricsCollector(collector SubflowMetricsCollector) {
+	dwe.metricsCollector = collector
+}
+
+// HasExpressionEngine returns true if the workflow engine has an expression engine integrated
+// Business Requirement: BR-EXPR-ENGINE-001 - Provide advanced expression evaluation capabilities
+func (dwe *DefaultWorkflowEngine) HasExpressionEngine() bool {
+	return dwe.expressionEngine != nil
+}
+
+// GetExpressionEngine returns the integrated expression engine
+// Business Requirement: BR-EXPR-ENGINE-001 - Provide access to expression engine for testing
+func (dwe *DefaultWorkflowEngine) GetExpressionEngine() *ExpressionEngine {
+	return dwe.expressionEngine
+}
+
+// EvaluateConditionWithExpressionEngine evaluates a condition using the advanced expression engine
+// Business Requirement: BR-EXPR-ENGINE-002 - Enhanced condition evaluation with compiled expressions
+func (dwe *DefaultWorkflowEngine) EvaluateConditionWithExpressionEngine(
+	ctx context.Context,
+	condition *ExecutableCondition,
+	stepContext *StepContext,
+	stepResult *StepResult,
+) (bool, error) {
+	if condition == nil {
+		return false, fmt.Errorf("condition cannot be nil")
+	}
+
+	if dwe.expressionEngine == nil {
+		// Fallback to basic evaluation if expression engine is not available
+		dwe.log.Warn("Expression engine not available, falling back to basic evaluation")
+		return dwe.basicExpressionEvaluation(condition, stepContext), nil
+	}
+
+	// Create expression context
+	exprCtx := &ExpressionContext{
+		Result:    stepResult,
+		StepCtx:   stepContext,
+		Variables: make(map[string]interface{}),
+		StartTime: time.Now(),
+	}
+
+	// Merge step context variables
+	if stepContext != nil && stepContext.Variables != nil {
+		for k, v := range stepContext.Variables {
+			exprCtx.Variables[k] = v
+		}
+	}
+
+	// Add step result data to variables
+	if stepResult != nil {
+		exprCtx.Variables["success"] = stepResult.Success
+		exprCtx.Variables["error"] = stepResult.Error
+		if stepResult.Output != nil {
+			for k, v := range stepResult.Output {
+				exprCtx.Variables[k] = v
+			}
+		}
+	}
+
+	// Evaluate expression using expression engine
+	result, err := dwe.expressionEngine.EvaluateString(ctx, condition.Expression, exprCtx)
+	if err != nil {
+		dwe.log.WithError(err).WithField("expression", condition.Expression).
+			Warn("Expression engine evaluation failed, falling back to basic evaluation")
+		return dwe.basicExpressionEvaluation(condition, stepContext), nil
+	}
+
+	// Convert result to boolean
+	switch v := result.(type) {
+	case bool:
+		return v, nil
+	case string:
+		return strings.ToLower(v) == "true", nil
+	case int:
+		return v != 0, nil
+	case float64:
+		return v != 0.0, nil
+	default:
+		dwe.log.WithField("result_type", fmt.Sprintf("%T", result)).
+			Warn("Unexpected expression result type, falling back to basic evaluation")
+		return dwe.basicExpressionEvaluation(condition, stepContext), nil
+	}
 }
 
 // ExecuteStep executes a single workflow step
@@ -806,13 +969,26 @@ func (dwe *DefaultWorkflowEngine) evaluateTimeCondition(ctx context.Context, con
 }
 
 func (dwe *DefaultWorkflowEngine) evaluateExpressionCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
-	// Use AI condition evaluator if available, otherwise fallback to basic logic
+	// Strategy 1: Use Expression Engine for enhanced evaluation (highest priority)
+	if dwe.expressionEngine != nil {
+		dwe.log.Debug("Using expression engine for condition evaluation")
+		// For standard EvaluateCondition, we don't have stepResult, so create a minimal one
+		stepResult := &StepResult{
+			Success:  true,
+			Duration: 0,
+			Output:   make(map[string]interface{}),
+		}
+		return dwe.EvaluateConditionWithExpressionEngine(ctx, condition, stepContext, stepResult)
+	}
+
+	// Strategy 2: Use AI condition evaluator if available
 	if dwe.aiConditionEvaluator != nil {
+		dwe.log.Debug("Using AI condition evaluator for expression evaluation")
 		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
 	}
 
-	// Fallback to basic expression evaluation
-	dwe.log.Debug("Using basic expression condition evaluation (AI unavailable)")
+	// Strategy 3: Fallback to basic expression evaluation
+	dwe.log.Debug("Using basic expression condition evaluation (Expression Engine and AI unavailable)")
 	return dwe.basicExpressionEvaluation(condition, stepContext), nil
 }
 
@@ -1330,6 +1506,32 @@ func (dwe *DefaultWorkflowEngine) executeReadySteps(ctx context.Context, steps [
 			"business_value":     "BR-WF-001: Parallel execution optimization applied",
 		}).Info("Parallel step execution completed")
 
+		// BR-WF-001-STATE-PERSISTENCE: Save intermediate workflow state after parallel execution for business continuity
+		if dwe.stateStorage != nil {
+			// Update execution with parallel step results
+			for _, step := range steps {
+				if result, exists := results[step.ID]; exists {
+					stepExecution := &StepExecution{
+						StepID:    step.ID,
+						Status:    ExecutionStatusCompleted,
+						StartTime: time.Now().Add(-parallelResult.Duration), // Approximate start time
+						EndTime:   &[]time.Time{time.Now()}[0],
+						Duration:  result.Duration,
+						Result:    result,
+					}
+					execution.Steps = append(execution.Steps, stepExecution)
+				}
+			}
+
+			if err := dwe.stateStorage.SaveWorkflowState(ctx, execution); err != nil {
+				dwe.log.WithError(err).WithField("parallel_steps", len(steps)).Warn("Failed to save intermediate workflow state after parallel execution")
+			} else {
+				dwe.log.WithField("parallel_steps", len(steps)).Debug("Successfully saved intermediate workflow state after parallel execution")
+			}
+		} else {
+			dwe.log.WithField("parallel_steps", len(steps)).Warn("State storage is nil, cannot save intermediate state after parallel execution")
+		}
+
 		return results, nil
 	}
 
@@ -1399,6 +1601,17 @@ func (dwe *DefaultWorkflowEngine) executeReadySteps(ctx context.Context, steps [
 		execution.Steps = append(execution.Steps, stepExecution)
 
 		results[step.ID] = result
+
+		// BR-WF-001-STATE-PERSISTENCE: Save intermediate workflow state for business continuity
+		if dwe.stateStorage != nil {
+			if err := dwe.stateStorage.SaveWorkflowState(ctx, execution); err != nil {
+				dwe.log.WithError(err).WithField("step_id", step.ID).Warn("Failed to save intermediate workflow state")
+			} else {
+				dwe.log.WithField("step_id", step.ID).Debug("Successfully saved intermediate workflow state")
+			}
+		} else {
+			dwe.log.WithField("step_id", step.ID).Warn("State storage is nil, cannot save intermediate state")
+		}
 
 		// Update execution variables with step results
 		if result.Variables != nil {

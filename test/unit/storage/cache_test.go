@@ -41,22 +41,20 @@ var _ = Describe("Memory Embedding Cache Unit Tests", func() {
 			testCache := vector.NewMemoryEmbeddingCache(maxSize, logger)
 			defer Expect(testCache.Close()).To(Succeed())
 
-			Expect(testCache).ToNot(BeNil(), "Should create cache successfully")
-
 			stats := testCache.GetStats(ctx)
-			Expect(stats.CacheType).To(Equal("memory"), "Should identify as memory cache")
+			Expect(stats.CacheType).To(Equal("memory"), "BR-DATABASE-001-A: Cache creation must provide functional memory storage type for database caching operations")
 		})
 
 		It("should use default max size for invalid input", func() {
 			testCache := vector.NewMemoryEmbeddingCache(0, logger)
 			defer Expect(testCache.Close()).To(Succeed())
 
-			Expect(testCache).ToNot(BeNil(), "Should create cache with default size for zero")
+			Expect(testCache.GetStats(ctx).CacheType).To(Equal("memory"), "BR-DATABASE-001-A: Cache creation with zero size must default to functional memory storage for database operations")
 
 			testCache2 := vector.NewMemoryEmbeddingCache(-10, logger)
 			defer Expect(testCache.Close()).To(Succeed())
 
-			Expect(testCache2).ToNot(BeNil(), "Should create cache with default size for negative")
+			Expect(testCache2.GetStats(ctx).CacheType).To(Equal("memory"), "BR-DATABASE-001-A: Cache creation with negative size must default to functional memory storage for database operations")
 		})
 
 		It("should initialize with zero statistics", func() {
@@ -463,15 +461,15 @@ var _ = Describe("Cached Embedding Service Unit Tests", func() {
 			ttl := 2 * time.Hour
 			service := vector.NewCachedEmbeddingService(mockService, mockCache, ttl, logger)
 
-			Expect(service).ToNot(BeNil(), "Should create cached service successfully")
+			Expect(service.GetCacheStats(ctx).CacheType).To(Equal("memory"), "BR-DATABASE-001-A: Cached service creation must provide functional cache backend for database embedding operations")
 		})
 
 		It("should use default TTL for zero/negative values", func() {
 			service1 := vector.NewCachedEmbeddingService(mockService, mockCache, 0, logger)
-			Expect(service1).ToNot(BeNil(), "Should handle zero TTL")
+			Expect(service1.GetCacheStats(ctx).CacheType).To(Equal("memory"), "BR-DATABASE-001-A: Cached service with zero TTL must provide functional cache backend for database operations")
 
 			service2 := vector.NewCachedEmbeddingService(mockService, mockCache, -time.Hour, logger)
-			Expect(service2).ToNot(BeNil(), "Should handle negative TTL")
+			Expect(service2.GetCacheStats(ctx).CacheType).To(Equal("memory"), "BR-DATABASE-001-A: Cached service with negative TTL must provide functional cache backend for database operations")
 		})
 
 		It("should enable caching by default", func() {

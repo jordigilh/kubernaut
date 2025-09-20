@@ -10,6 +10,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/ai/common"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	testconfig "github.com/jordigilh/kubernaut/pkg/testutil/config"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 )
 
@@ -29,6 +30,8 @@ var _ = Describe("AI Common Layer - Business Requirements Testing", func() {
 		logger.SetLevel(logrus.WarnLevel)
 		ctx = context.Background()
 
+		// Note: Factory methods for AI providers not yet available
+		// TODO-MOCK-MIGRATION: Add CreateAnalysisProvider, CreateRecommendationProvider, CreateInvestigationProvider to factory
 		mockAnalysisProvider = mocks.NewMockAnalysisProvider()
 		mockRecommendationProvider = mocks.NewMockRecommendationProvider()
 		mockInvestigationProvider = mocks.NewMockInvestigationProvider()
@@ -240,18 +243,20 @@ var _ = Describe("AI Common Layer - Business Requirements Testing", func() {
 			Expect(len(recommendations)).To(BeNumerically("<=", 3),
 				"BR-AI-006: Should respect MaxSuggestions constraint")
 
-			// **Business Value Validation**: Verify recommendation quality
+			// **Business Value Validation**: Verify recommendation quality - Configuration-driven
 			for _, rec := range recommendations {
-				Expect(rec.Confidence).To(BeNumerically(">=", 0.7),
-					"BR-AI-006: Recommendations should have high confidence (≥70%)")
+				testconfig.ExpectBusinessRequirement(rec.Confidence,
+					"BR-AI-006-RECOMMENDATION-CONFIDENCE", "test",
+					"AI recommendation confidence for business decision making")
 				Expect(len(rec.Actions)).To(BeNumerically(">", 0),
-					"BR-AI-006: Each recommendation should include specific actions")
+					"BR-AI-006: Each recommendation should include specific actions for business execution")
 
-				// Validate effectiveness probability
+				// Validate effectiveness probability - Business requirement driven
 				effectivenessProbability, exists := rec.Metadata["effectiveness_probability"]
 				Expect(exists).To(BeTrue(), "BR-AI-006: Should provide effectiveness probability")
-				Expect(effectivenessProbability).To(BeNumerically(">=", 0.6),
-					"BR-AI-006: Recommendations should have reasonable effectiveness probability (≥60%)")
+				testconfig.ExpectBusinessRequirement(effectivenessProbability,
+					"BR-AI-006-EFFECTIVENESS-PROBABILITY", "test",
+					"recommendation effectiveness probability for business value assessment")
 			}
 
 			// **BR-AI-007**: Validate ranking by effectiveness probability
@@ -259,7 +264,7 @@ var _ = Describe("AI Common Layer - Business Requirements Testing", func() {
 				firstEffectiveness := recommendations[0].Metadata["effectiveness_probability"].(float64)
 				secondEffectiveness := recommendations[1].Metadata["effectiveness_probability"].(float64)
 				Expect(firstEffectiveness).To(BeNumerically(">=", secondEffectiveness),
-					"BR-AI-007: Recommendations should be ranked by effectiveness probability")
+					"BR-AI-007: Recommendations should be ranked by effectiveness probability for business priority optimization")
 			}
 		})
 	})
@@ -406,10 +411,11 @@ var _ = Describe("AI Common Layer - Business Requirements Testing", func() {
 			// **BR-AI-013**: Validate correlation across time windows
 			for _, evidence := range result.Evidence {
 				if evidence.Type == "pattern_correlation" {
-					Expect(evidence.Data).ToNot(BeNil(), "BR-AI-013: Should provide correlation data")
+					Expect(evidence.Data).To(HaveKey("correlation_score"), "BR-AI-001-CONFIDENCE: Evidence data must contain correlation score for business pattern analysis validation")
 					correlationScore := evidence.Data["correlation_score"]
-					Expect(correlationScore).To(BeNumerically(">=", 0.8),
-						"BR-AI-013: Cross-time correlation should be strong (≥80%)")
+					testconfig.ExpectBusinessRequirement(correlationScore,
+						"BR-AI-013-CORRELATION-SCORE", "test",
+						"cross-time pattern correlation for business insight reliability")
 				}
 			}
 
@@ -419,9 +425,10 @@ var _ = Describe("AI Common Layer - Business Requirements Testing", func() {
 				if rec.Type == "proven_solution" {
 					successRate, exists := rec.Metadata["historical_success_rate"]
 					Expect(exists).To(BeTrue(),
-						"BR-AI-008: Should consider historical success rates")
-					Expect(successRate).To(BeNumerically(">=", 0.8),
-						"BR-AI-008: Proven solutions should have high historical success rate (≥80%)")
+						"BR-AI-008: Should consider historical success rates for business recommendation reliability")
+					testconfig.ExpectBusinessRequirement(successRate,
+						"BR-AI-008-HISTORICAL-SUCCESS-RATE", "test",
+						"proven solution historical success rate for business confidence")
 				}
 			}
 		})

@@ -135,7 +135,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 
 			recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Production readiness validation must return valid response for performance requirements")
 
 			// With multiple restart failures, should avoid restart_pod
 			Expect(recommendation.Action).ToNot(Equal("restart_pod"))
@@ -214,7 +214,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 
 			recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Production readiness validation must return valid response for performance requirements")
 
 			// Should choose scale_deployment with high confidence
 			Expect(recommendation.Action).To(Equal("scale_deployment"))
@@ -251,7 +251,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 
 			recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Production readiness validation must return valid response for performance requirements")
 
 			// Security threats should trigger quarantine or notification
 			Expect(recommendation.Action).To(BeElementOf([]string{
@@ -306,7 +306,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 			for i := 0; i < 5; i++ {
 				recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Production readiness validation must return valid response for performance requirements")
 
 				recommendations = append(recommendations, shared.ConvertAnalyzeAlertResponse(recommendation))
 				actions = append(actions, recommendation.Action)
@@ -361,7 +361,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 
 			recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Production readiness validation must return valid response for performance requirements")
 
 			logger.WithFields(logrus.Fields{
 				"context_size": contextSize,
@@ -464,7 +464,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 			for _, scenario := range scenarios {
 				recommendation, err := client.AnalyzeAlert(context.Background(), scenario.alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Production readiness validation must return valid response for performance requirements")
 
 				// Validate confidence range
 				Expect(recommendation.Confidence).To(BeNumerically(">=", scenario.minConfidence),
@@ -522,7 +522,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 				totalTime += responseTime
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Production readiness validation must return valid response for performance requirements")
 				Expect(types.IsValidAction(recommendation.Action)).To(BeTrue())
 				Expect(recommendation.Confidence).To(BeNumerically(">", 0))
 
@@ -772,7 +772,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 							}).Info("Alert processed despite cascade failure")
 
 							// Verify response is actionable even during crisis
-							Expect(recommendation.Action).ToNot(BeEmpty())
+							Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-PERF-001-RESPONSE-TIME: Production readiness must provide data for performance requirements")
 							break // Success on this alert, move to next
 						} else {
 							logger.WithFields(logrus.Fields{

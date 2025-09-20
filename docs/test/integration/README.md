@@ -82,7 +82,7 @@ Local Host Environment:
 docs/test/integration/
 ├── README.md                           # This overview
 ├── ENVIRONMENT_SETUP.md               # Complete setup instructions
-├── BUSINESS_REQUIREMENTS_MAPPING.md   # BR to test traceability
+├── INTEGRATION_TEST_COVERAGE_EXTENSION_PLAN.md   # Comprehensive integration test plan
 ├── TEST_EXECUTION_GUIDE.md           # Manual execution procedures
 └── test_suites/
     ├── 00_environment_validation/
@@ -262,6 +262,6 @@ docs/test/integration/
 
 ## 📚 **Related Documentation**
 - [Environment Setup Guide](ENVIRONMENT_SETUP.md)
-- [Business Requirements Mapping](BUSINESS_REQUIREMENTS_MAPPING.md)
+- [Integration Test Coverage Extension Plan](INTEGRATION_TEST_COVERAGE_EXTENSION_PLAN.md)
 - [Test Execution Procedures](TEST_EXECUTION_GUIDE.md)
 - [Performance Analysis Framework](test_suites/99_performance_analysis/README.md)

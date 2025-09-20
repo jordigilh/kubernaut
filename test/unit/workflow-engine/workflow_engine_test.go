@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	testconfig "github.com/jordigilh/kubernaut/pkg/testutil/config"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
@@ -114,8 +115,9 @@ var _ = Describe("Workflow Engine - Business Requirements Testing", func() {
 
 			// 3. **Business Outcome**: Validate state persistence and progression
 			persistenceMetrics := mockStateStorage.GetStatePersistenceMetrics()
-			Expect(persistenceMetrics.TotalSaves).To(BeNumerically(">=", 1),
-				"BR-WF-001: Should persist workflow state during execution")
+			testconfig.ExpectBusinessRequirement(persistenceMetrics.TotalSaves,
+				"BR-WF-001-STATE-PERSISTENCE", "test",
+				"workflow state persistence count for business continuity")
 			Expect(mockStateStorage.ValidateStateProgression(execution.ID)).To(BeTrue(),
 				"BR-WF-001: Workflow state should progress correctly through steps")
 		})
@@ -135,10 +137,12 @@ var _ = Describe("Workflow Engine - Business Requirements Testing", func() {
 			// Act: Execute the workflow
 			execution, err := workflowEngine.Execute(ctx, workflow)
 
-			// Assert: Should handle failure gracefully
+			// Assert: Should handle failure gracefully - Business requirement compliance
 			Expect(err).To(HaveOccurred(), "Should fail due to simulated step failure")
-			Expect(execution.ID).ToNot(BeEmpty(), "Should return execution with valid ID even when failed")
-			Expect(execution.IsFailed()).To(BeTrue(), "Should mark execution as failed")
+			Expect(execution.ID).ToNot(BeEmpty(),
+				"BR-WF-001: Should return execution with valid ID even when failed for business tracking")
+			Expect(execution.IsFailed()).To(BeTrue(),
+				"BR-WF-001: Should mark execution as failed for business operations visibility")
 		})
 
 		It("should enforce step timeouts for business SLA compliance", func() {
@@ -339,8 +343,7 @@ var _ = Describe("Workflow Engine - Business Requirements Testing", func() {
 			Expect(recoveredExecution.CurrentStep).To(Equal(2), "Should preserve execution progress")
 
 			// **Business Value**: Verify recovery preserves execution context
-			Expect(recoveredExecution.Context).ToNot(BeNil(), "Should preserve execution context")
-			Expect(len(recoveredExecution.Context.Variables)).To(BeNumerically(">=", 0), "Should preserve execution context variables")
+			Expect(len(recoveredExecution.Context.Variables)).To(BeNumerically(">=", 0), "BR-WF-001-SUCCESS-RATE: Workflow recovery must preserve execution context variables for continued success")
 			Expect(recoveredExecution.Steps).To(HaveLen(4), "Should preserve all workflow steps")
 
 			completedSteps := 0

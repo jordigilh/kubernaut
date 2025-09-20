@@ -52,12 +52,12 @@ var _ = Describe("Health Monitoring Configuration Integration", func() {
 			isolatedRegistry := prometheus.NewRegistry()
 			isolatedMetrics := metrics.NewEnhancedHealthMetrics(isolatedRegistry)
 			healthMonitor = monitoring.NewLLMHealthMonitorWithMetrics(mockLLMClient, logger, isolatedMetrics)
-			Expect(healthMonitor).ToNot(BeNil())
+			Expect(healthMonitor).ToNot(BeNil(), "BR-MON-001-UPTIME: Health monitoring configuration must return valid monitoring setup for uptime requirements")
 
 			By("Verifying default configuration is applied")
 			healthStatus, err := healthMonitor.GetHealthStatus(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(healthStatus).ToNot(BeNil())
+			Expect(healthStatus).ToNot(BeNil(), "BR-MON-001-UPTIME: Health monitoring configuration must return valid monitoring setup for uptime requirements")
 			Expect(healthStatus.ComponentType).To(Equal("llm-20b"))
 
 			GinkgoWriter.Printf("✅ Default health monitoring configuration loaded successfully\n")
@@ -99,7 +99,7 @@ var _ = Describe("Health Monitoring Configuration Integration", func() {
 			By("Verifying health monitor functions with defaults")
 			healthStatus, err := healthMonitor.GetHealthStatus(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(healthStatus).ToNot(BeNil())
+			Expect(healthStatus).ToNot(BeNil(), "BR-MON-001-UPTIME: Health monitoring configuration must return valid monitoring setup for uptime requirements")
 
 			GinkgoWriter.Printf("✅ Missing configuration handled gracefully with defaults\n")
 		})
@@ -129,12 +129,12 @@ var _ = Describe("Health Monitoring Configuration Integration", func() {
 			healthMonitor = monitoring.NewLLMHealthMonitorWithMetrics(realLLMClient, logger, isolatedMetrics)
 
 			By("Verifying configuration integration")
-			Expect(healthMonitor).ToNot(BeNil())
+			Expect(healthMonitor).ToNot(BeNil(), "BR-MON-001-UPTIME: Health monitoring configuration must return valid monitoring setup for uptime requirements")
 
 			// Test basic functionality
 			healthStatus, err := healthMonitor.GetHealthStatus(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(healthStatus).ToNot(BeNil())
+			Expect(healthStatus).ToNot(BeNil(), "BR-MON-001-UPTIME: Health monitoring configuration must return valid monitoring setup for uptime requirements")
 
 			GinkgoWriter.Printf("✅ LLM client configuration integrated successfully\n")
 		})
@@ -238,7 +238,7 @@ var _ = Describe("Health Monitoring Configuration Integration", func() {
 
 			healthStatus, err := healthMonitor.GetHealthStatus(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(healthStatus).ToNot(BeNil())
+			Expect(healthStatus).ToNot(BeNil(), "BR-MON-001-UPTIME: Health monitoring configuration must return valid monitoring setup for uptime requirements")
 			Expect(healthStatus.IsHealthy).To(BeFalse())
 
 			GinkgoWriter.Printf("✅ Failover configuration loaded and functional\n")
@@ -277,7 +277,7 @@ var _ = Describe("Health Monitoring Configuration Integration", func() {
 
 			healthStatus, err := healthMonitor.GetHealthStatus(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(healthStatus).ToNot(BeNil())
+			Expect(healthStatus).ToNot(BeNil(), "BR-MON-001-UPTIME: Health monitoring configuration must return valid monitoring setup for uptime requirements")
 
 			GinkgoWriter.Printf("✅ Health check intervals validated and functional\n")
 		})
@@ -300,7 +300,7 @@ var _ = Describe("Health Monitoring Configuration Integration", func() {
 
 			// Verify configuration fields follow expected patterns
 			Expect(healthStatus.ComponentType).To(MatchRegexp("^[a-z0-9-]+$"))
-			Expect(healthStatus.BaseEntity.Name).ToNot(BeEmpty())
+			Expect(healthStatus.BaseEntity.Name).To(BeNumerically(">=", 1), "BR-MON-001-UPTIME: Health monitoring configuration must provide data for uptime requirements")
 			Expect(healthStatus.BaseEntity.CreatedAt).ToNot(BeZero())
 
 			GinkgoWriter.Printf("✅ Configuration system integration verified\n")

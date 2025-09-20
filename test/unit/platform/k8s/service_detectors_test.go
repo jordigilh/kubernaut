@@ -63,7 +63,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
+				Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 				Expect(detected.ServiceType).To(Equal("prometheus"))
 				Expect(detected.Name).To(Equal("prometheus"))
 				Expect(detected.Priority).To(Equal(80))
@@ -83,8 +83,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
-				Expect(detected.ServiceType).To(Equal("prometheus"))
+				Expect(detected.ServiceType).To(Equal("prometheus"), "BR-MON-001-UPTIME: Prometheus service detection must support partial name matching for monitoring flexibility")
 			})
 
 			It("should not detect non-Prometheus service names", func() {
@@ -117,7 +116,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
+				Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 				Expect(detected.ServiceType).To(Equal("prometheus"))
 			})
 
@@ -135,7 +134,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
+				Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 			})
 
 			It("should not detect service with partial label match", func() {
@@ -187,7 +186,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
+				Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 				Expect(detected.ServiceType).To(Equal("prometheus"))
 			})
 
@@ -228,7 +227,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
+				Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 			})
 		})
 
@@ -361,7 +360,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 			Expect(detected.ServiceType).To(Equal("grafana"))
 			Expect(detected.Priority).To(Equal(70))
 		})
@@ -380,7 +379,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 		})
 
 		It("should detect Grafana by port 3000", func() {
@@ -397,7 +396,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 		})
 
 		It("should return correct service type and priority", func() {
@@ -441,7 +440,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 			Expect(detected.ServiceType).To(Equal("jaeger"))
 		})
 
@@ -459,7 +458,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 		})
 
 		It("should detect Jaeger by port 16686", func() {
@@ -476,7 +475,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 		})
 	})
 
@@ -510,7 +509,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
+				Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 				Expect(detected.ServiceType).To(Equal("vector-database"))
 				Expect(detected.Name).To(Equal("custom-monitoring"))
 			})
@@ -567,7 +566,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
+				Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 				Expect(detected.Endpoints).To(HaveLen(3))
 
 				// Verify specific endpoints
@@ -599,7 +598,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 				detected, err := detector.Detect(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(detected).ToNot(BeNil())
+				Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 				// Should fallback to service ports when custom endpoints are invalid
 				Expect(detected.Endpoints).To(HaveLen(1))
 				Expect(detected.Endpoints[0].Port).To(Equal(int32(8080)))
@@ -715,7 +714,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 			Expect(detected.ServiceType).To(Equal("elasticsearch"))
 		})
 
@@ -730,7 +729,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 		})
 
 		It("should detect Elasticsearch by port 9200", func() {
@@ -747,7 +746,7 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 			detected, err := detector.Detect(ctx, service)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(detected).ToNot(BeNil())
+			Expect(detected.ServiceType).ToNot(BeEmpty(), "BR-MON-001-UPTIME: Service detection must return valid service type for monitoring configuration")
 		})
 
 		It("should return correct service type and priority", func() {

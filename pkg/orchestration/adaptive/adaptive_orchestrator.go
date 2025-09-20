@@ -1,4 +1,4 @@
-package orchestration
+package adaptive
 
 import (
 	"context"
@@ -874,31 +874,140 @@ func (dao *DefaultAdaptiveOrchestrator) performOptimizationCycle() {
 		// Only optimize workflows that have sufficient execution history
 		// BR-ORK-003 Requirement 2: Execution Count Tracking
 		if dao.hasMinimumExecutionHistory(workflow.ID, minExecutionsForOptimization) {
-			_, err := dao.OptimizeWorkflow(dao.ctx, workflow.ID)
-			if err != nil {
-				dao.log.WithError(err).WithField("workflow_id", workflow.ID).
-					Warn("Failed to optimize workflow during cycle")
+			// CRITICAL FIX: Use Self Optimizer for actual workflow optimization
+			// Following project guideline: integrate new business logic with existing code
+			if dao.selfOptimizer != nil {
+				// Get execution history for Self Optimizer
+				executionHistory := dao.getWorkflowExecutionHistory(workflow.ID)
+
+				// Call Self Optimizer - this was the missing integration!
+				optimizedWorkflow, err := dao.selfOptimizer.OptimizeWorkflow(dao.ctx, workflow, executionHistory)
+				if err != nil {
+					dao.log.WithError(err).WithField("workflow_id", workflow.ID).
+						Warn("Self Optimizer failed, falling back to legacy optimization")
+					// Fallback to legacy optimization
+					_, fallbackErr := dao.OptimizeWorkflow(dao.ctx, workflow.ID)
+					if fallbackErr != nil {
+						dao.log.WithError(fallbackErr).WithField("workflow_id", workflow.ID).
+							Error("Both Self Optimizer and legacy optimization failed")
+					}
+				} else if optimizedWorkflow != nil {
+					// Apply the optimized workflow
+					err = dao.applyOptimizedWorkflow(workflow.ID, optimizedWorkflow)
+					if err != nil {
+						dao.log.WithError(err).WithField("workflow_id", workflow.ID).
+							Error("Failed to apply optimized workflow")
+					} else {
+						dao.log.WithFields(logrus.Fields{
+							"workflow_id":  workflow.ID,
+							"original_id":  workflow.ID,
+							"optimized_id": optimizedWorkflow.ID,
+						}).Info("Successfully applied Self Optimizer optimization")
+					}
+				}
+			} else {
+				// Fallback to legacy optimization when Self Optimizer is not available
+				dao.log.WithField("workflow_id", workflow.ID).Debug("Self Optimizer not available, using legacy optimization")
+				_, err := dao.OptimizeWorkflow(dao.ctx, workflow.ID)
+				if err != nil {
+					dao.log.WithError(err).WithField("workflow_id", workflow.ID).
+						Warn("Failed to optimize workflow during cycle")
+				}
 			}
 		}
 	}
+}
+
+// getWorkflowExecutionHistory retrieves execution history for Self Optimizer
+// Business Requirement: BR-SELF-OPT-001 - Provide execution history for adaptive optimization
+func (dao *DefaultAdaptiveOrchestrator) getWorkflowExecutionHistory(workflowID string) []*engine.RuntimeWorkflowExecution {
+	dao.executionMu.RLock()
+	defer dao.executionMu.RUnlock()
+
+	history := make([]*engine.RuntimeWorkflowExecution, 0)
+	for _, execution := range dao.executions {
+		if execution.WorkflowID == workflowID {
+			history = append(history, execution)
+		}
+	}
+
+	dao.log.WithFields(logrus.Fields{
+		"workflow_id":   workflowID,
+		"history_count": len(history),
+	}).Debug("Retrieved execution history for Self Optimizer")
+
+	return history
+}
+
+// applyOptimizedWorkflow applies an optimized workflow to replace the original
+// Business Requirement: BR-SELF-OPT-001 - Apply Self Optimizer optimizations to workflows
+func (dao *DefaultAdaptiveOrchestrator) applyOptimizedWorkflow(originalWorkflowID string, optimizedWorkflow *engine.Workflow) error {
+	dao.mu.Lock()
+	defer dao.mu.Unlock()
+
+	// Validate optimized workflow
+	if optimizedWorkflow == nil {
+		return fmt.Errorf("optimized workflow cannot be nil")
+	}
+
+	if optimizedWorkflow.Template == nil {
+		return fmt.Errorf("optimized workflow template cannot be nil")
+	}
+
+	// Store the optimized workflow
+	dao.workflows[originalWorkflowID] = optimizedWorkflow
+	dao.templates[originalWorkflowID] = optimizedWorkflow.Template
+
+	dao.log.WithFields(logrus.Fields{
+		"original_workflow_id":  originalWorkflowID,
+		"optimized_workflow_id": optimizedWorkflow.ID,
+		"optimization_applied":  true,
+	}).Info("Applied optimized workflow from Self Optimizer")
+
+	return nil
 }
 
 func (dao *DefaultAdaptiveOrchestrator) collectMetrics() {
 	// Collect orchestrator-level metrics
 	dao.executionMu.RLock()
 	runningExecutions := 0
+	optimizedExecutions := 0
 	for _, execution := range dao.executions {
 		if execution.Status == string(engine.ExecutionStatusRunning) {
 			runningExecutions++
 		}
+		// Count Self Optimizer optimized executions
+		if execution.Metadata != nil {
+			if _, isOptimized := execution.Metadata["self_optimizer_applied"]; isOptimized {
+				optimizedExecutions++
+			}
+		}
 	}
 	dao.executionMu.RUnlock()
 
+	// Count workflows with Self Optimizer optimizations
+	dao.mu.RLock()
+	optimizedWorkflows := 0
+	selfOptimizerAvailable := dao.selfOptimizer != nil
+	for _, workflow := range dao.workflows {
+		if workflow.Template != nil && workflow.Template.Metadata != nil {
+			if _, isOptimized := workflow.Template.Metadata["optimization_source"]; isOptimized {
+				optimizedWorkflows++
+			}
+		}
+	}
+	dao.mu.RUnlock()
+
+	// Production monitoring metrics for Self Optimizer
 	dao.log.WithFields(logrus.Fields{
-		"running_executions": runningExecutions,
-		"total_workflows":    len(dao.workflows),
-		"total_executions":   len(dao.executions),
-	}).Debug("Collected orchestrator metrics")
+		"running_executions":       runningExecutions,
+		"total_workflows":          len(dao.workflows),
+		"total_executions":         len(dao.executions),
+		"self_optimizer_available": selfOptimizerAvailable,
+		"optimized_workflows":      optimizedWorkflows,
+		"optimized_executions":     optimizedExecutions,
+		"optimization_rate":        float64(optimizedWorkflows) / float64(len(dao.workflows)),
+	}).Info("Orchestrator metrics with Self Optimizer monitoring")
 }
 
 // Utility functions - following development guidelines: reuse code whenever possible

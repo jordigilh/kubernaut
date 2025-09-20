@@ -807,13 +807,13 @@ dev-help: ## Show development environment help
 .PHONY: holmesgpt-api-init
 holmesgpt-api-init: ## Initialize HolmesGPT submodule
 	@echo "🔄 Initializing HolmesGPT submodule..."
-	git submodule update --init --recursive vendor/holmesgpt
+	git submodule update --init --recursive dependencies/holmesgpt
 	@echo "✅ HolmesGPT submodule initialized"
 
 .PHONY: holmesgpt-api-update
 holmesgpt-api-update: ## Update HolmesGPT submodule to latest
 	@echo "🔄 Updating HolmesGPT submodule..."
-	git submodule update --remote vendor/holmesgpt
+	git submodule update --remote dependencies/holmesgpt
 	@echo "✅ HolmesGPT submodule updated"
 
 .PHONY: holmesgpt-api-build

@@ -106,7 +106,7 @@ var _ = Describe("MachineLearningAnalyzer", func() {
 
 			// **Business Outcome**: Model should be ready for prediction use
 			Expect(model.ID).ToNot(BeEmpty(), "Should have model identifier for operational use")
-			Expect(model.Features).ToNot(BeNil(), "Should have feature definitions for prediction")
+			Expect(len(model.Features)).To(BeNumerically(">", 0), "BR-ORK-001: ML model must contain measurable feature definitions for orchestration prediction success")
 		})
 
 		It("should train a duration prediction model successfully", func() {
@@ -117,8 +117,7 @@ var _ = Describe("MachineLearningAnalyzer", func() {
 			Expect(model.Type).To(Equal("regression"), "Should create regression model for duration prediction")
 
 			// **Business Value Validation**: Model should provide measurable regression capability
-			Expect(model.TrainingMetrics).ToNot(BeNil(), "Should provide training metrics for model evaluation")
-			Expect(model.TrainingMetrics.R2Score).To(BeNumerically(">=", 0), "R2 score should be calculable")
+			Expect(model.TrainingMetrics.R2Score).To(BeNumerically(">=", 0), "BR-ORK-001: ML model training must produce measurable R2 score metrics for orchestration optimization success")
 			Expect(model.TrainingMetrics.R2Score).To(BeNumerically("<=", 1.0), "R2 score should be within valid range")
 
 			// **Business Outcome**: Model should be ready for duration prediction use
@@ -141,7 +140,7 @@ var _ = Describe("MachineLearningAnalyzer", func() {
 
 			// **Business Requirement Validation**: Verify model produces valid quality metrics
 			Expect(err).ToNot(HaveOccurred(), "Should successfully train model for quality validation")
-			Expect(model.TrainingMetrics).ToNot(BeNil(), "Should provide training metrics for quality assessment")
+			Expect(model.TrainingMetrics.R2Score).To(BeNumerically(">=", 0), "BR-ORK-001: ML model training must produce measurable quality assessment metrics for orchestration success")
 
 			// **Business Value Validation**: Model metrics should be within operational boundaries
 			Expect(model.TrainingMetrics.Accuracy).To(BeNumerically(">=", 0), "Accuracy should be measurable")
@@ -188,10 +187,9 @@ var _ = Describe("MachineLearningAnalyzer", func() {
 
 			// **Business Requirement Validation**: Verify prediction capability with known patterns
 			Expect(err).ToNot(HaveOccurred(), "Should successfully generate predictions for known patterns")
-			Expect(prediction).ToNot(BeNil(), "Should return a valid prediction object")
+			Expect(prediction.Confidence).To(BeNumerically(">", 0), "BR-ORK-002: ML prediction must provide measurable confidence scores for orchestration decision making")
 
 			// **Business Value Validation**: Prediction should provide actionable intelligence
-			Expect(prediction.Confidence).To(BeNumerically(">", 0), "Should provide measurable confidence in prediction")
 			Expect(prediction.Confidence).To(BeNumerically("<=", 1.0), "Confidence should be within valid range")
 			Expect(prediction.SuccessProbability).To(BeNumerically(">=", 0), "Should calculate success probability")
 			Expect(prediction.SuccessProbability).To(BeNumerically("<=", 1.0), "Success probability should be within valid range")
@@ -222,8 +220,7 @@ var _ = Describe("MachineLearningAnalyzer", func() {
 
 			// **Business Requirement Validation**: Verify cross-validation provides model reliability assessment
 			Expect(err).ToNot(HaveOccurred(), "Should successfully perform cross-validation analysis")
-			Expect(metrics).ToNot(BeNil(), "Should return cross-validation metrics")
-			Expect(metrics.Folds).To(Equal(5), "Should use requested number of validation folds")
+			Expect(metrics.Folds).To(Equal(5), "BR-ORK-003: Cross-validation must provide measurable fold-based metrics for orchestration model reliability")
 
 			// **Business Value Validation**: Cross-validation should provide statistical validity assessment
 			Expect(metrics.MeanAccuracy).To(BeNumerically(">=", 0), "Should calculate mean accuracy across folds")
@@ -262,17 +259,15 @@ var _ = Describe("MachineLearningAnalyzer", func() {
 
 			// **Business Requirement Validation**: Verify model performance analysis capability
 			Expect(err).ToNot(HaveOccurred(), "Should successfully analyze model performance")
-			Expect(performance).ToNot(BeNil(), "Should return performance analysis results")
-			Expect(performance.ModelID).To(Equal("success_prediction"), "Should track correct model ID")
+			Expect(performance.ModelID).To(Equal("success_prediction"), "BR-ORK-003: Performance analysis must provide measurable model identification for orchestration tracking")
 			Expect(performance.TestDataSize).To(Equal(10), "Should use correct test data size")
 
 			// **Business Value Validation**: Performance analysis should provide actionable metrics
-			Expect(performance.Metrics).ToNot(BeNil(), "Should provide performance metrics for evaluation")
-			Expect(performance.Metrics["accuracy"]).To(BeNumerically(">=", 0), "Should calculate test accuracy")
+			Expect(performance.Metrics["accuracy"]).To(BeNumerically(">=", 0), "BR-ORK-003: Performance analysis must provide measurable accuracy metrics for orchestration evaluation")
 			Expect(performance.Metrics["accuracy"]).To(BeNumerically("<=", 1.0), "Test accuracy should be within valid range")
 
 			// **Business Outcome**: Performance analysis should support operational decisions
-			Expect(performance.EvaluatedAt).ToNot(BeNil(), "Should timestamp analysis for tracking")
+			Expect(performance.EvaluatedAt.Before(time.Now().Add(time.Minute))).To(BeTrue(), "BR-ORK-003: Performance analysis must provide valid evaluation timestamps for orchestration tracking")
 			Expect(len(performance.Metrics)).To(BeNumerically(">=", 1), "Should provide multiple performance metrics")
 		})
 

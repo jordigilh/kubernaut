@@ -7,3 +7,4 @@ test-slm
 bin/
 mcp-server
 *.log
+dependencies/

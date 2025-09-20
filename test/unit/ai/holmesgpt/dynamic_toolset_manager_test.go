@@ -95,7 +95,7 @@ var _ = Describe("DynamicToolsetManager", func() {
 
 			// Verify Prometheus toolset was generated
 			prometheusToolsets := toolsetManager.GetToolsetByServiceType("prometheus")
-			Expect(prometheusToolsets).ToNot(BeEmpty())
+			Expect(len(prometheusToolsets)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Dynamic toolset management must provide Prometheus tools for AI confidence requirements")
 
 			toolset := prometheusToolsets[0]
 			Expect(toolset.Name).To(ContainSubstring("prometheus"))
@@ -191,8 +191,8 @@ var _ = Describe("DynamicToolsetManager", func() {
 			prometheusToolsets := toolsetManager.GetToolsetByServiceType("prometheus")
 			jaegerToolsets := toolsetManager.GetToolsetByServiceType("jaeger")
 
-			Expect(prometheusToolsets).ToNot(BeEmpty())
-			Expect(jaegerToolsets).ToNot(BeEmpty())
+			Expect(len(prometheusToolsets)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Dynamic toolset management must provide Prometheus tools for AI confidence requirements")
+			Expect(len(jaegerToolsets)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Dynamic toolset management must provide Jaeger tools for AI confidence requirements")
 
 			// Prometheus should have metrics capabilities
 			Expect(prometheusToolsets[0].Capabilities).To(ContainElement("query_metrics"))
@@ -269,7 +269,7 @@ var _ = Describe("DynamicToolsetManager", func() {
 
 			// Should have at least baseline toolsets
 			toolsets := toolsetManager.GetAvailableToolsets()
-			Expect(toolsets).ToNot(BeEmpty())
+			Expect(len(toolsets)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Dynamic toolset management must provide available tools for AI confidence requirements")
 
 			// Check for baseline toolsets
 			var hasKubernetes, hasInternet bool
@@ -291,7 +291,7 @@ var _ = Describe("DynamicToolsetManager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			kubernetesToolsets := toolsetManager.GetToolsetByServiceType("kubernetes")
-			Expect(kubernetesToolsets).ToNot(BeEmpty())
+			Expect(len(kubernetesToolsets)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Dynamic toolset management must provide Kubernetes tools for AI confidence requirements")
 			Expect(kubernetesToolsets[0].ServiceType).To(Equal("kubernetes"))
 		})
 	})
@@ -304,7 +304,7 @@ var _ = Describe("DynamicToolsetManager", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			toolsets := toolsetManager.GetAvailableToolsets()
-			Expect(toolsets).ToNot(BeEmpty())
+			Expect(len(toolsets)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Dynamic toolset management must provide available tools for AI confidence requirements")
 
 			// Should have baseline toolsets even with no services
 			serviceTypes := make(map[string]bool)
@@ -411,7 +411,7 @@ var _ = Describe("DynamicToolsetManager", func() {
 
 			// Get initial toolsets
 			toolsets := toolsetManager.GetAvailableToolsets()
-			Expect(toolsets).ToNot(BeEmpty())
+			Expect(len(toolsets)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Dynamic toolset management must provide available tools for AI confidence requirements")
 
 			// All baseline toolsets should be enabled by default
 			for _, toolset := range toolsets {

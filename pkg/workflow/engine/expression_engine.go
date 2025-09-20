@@ -177,6 +177,17 @@ func (ee *ExpressionEngine) EvaluateString(ctx context.Context, expression strin
 	return ee.Evaluate(ctx, compiled, exprCtx)
 }
 
+// GetCacheSize returns the number of compiled expressions currently cached
+// Business Requirement: BR-EXPR-ENGINE-003 - Provide cache metrics for performance monitoring
+func (ee *ExpressionEngine) GetCacheSize() int {
+	size := 0
+	ee.compiledExpressions.Range(func(_, _ interface{}) bool {
+		size++
+		return true
+	})
+	return size
+}
+
 // compileExpression parses and compiles an expression
 func (ee *ExpressionEngine) compileExpression(expression string) (*CompiledExpression, error) {
 	tokens, err := ee.tokenize(expression)
@@ -647,14 +658,4 @@ func (ee *ExpressionEngine) toFloat64(val interface{}) (float64, error) {
 // ClearCache clears the compiled expression cache
 func (ee *ExpressionEngine) ClearCache() {
 	ee.compiledExpressions = sync.Map{}
-}
-
-// GetCacheSize returns the number of cached expressions
-func (ee *ExpressionEngine) GetCacheSize() int {
-	count := 0
-	ee.compiledExpressions.Range(func(key, value interface{}) bool {
-		count++
-		return true
-	})
-	return count
 }

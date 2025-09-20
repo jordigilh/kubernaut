@@ -79,6 +79,9 @@ These business requirements focus on **pure algorithmic logic and isolated compo
 - Connection pool management
 - Caching algorithms and invalidation logic
 - Performance optimization algorithms
+- **Dependency management and fallback logic**
+- **Circuit breaker state transitions and threshold calculations**
+- **Health check algorithms and failure detection**
 
 #### **📊 Intelligence & Analytics**
 - Statistical processing and validation
@@ -752,3 +755,408 @@ Describe("BR-AI-030: Confidence Calculation Algorithms", func() {
 ---
 
 **🎯 Phases 1 & 2 demonstrate the systematic approach to achieving comprehensive unit test coverage has delivered exceptional business value, with all success criteria exceeded and critical algorithmic foundations (including security and monitoring) thoroughly validated for production deployment.**
+
+---
+
+## 🚀 **PHASE 3: SELF OPTIMIZER UNIT TEST COVERAGE** (Current Priority - January 2025)
+
+### **📊 TDD-BASED SELF OPTIMIZER GAP ANALYSIS**
+
+Following **project guidelines principle #5 (TDD methodology)**, recent assessment revealed **CRITICAL unit test gaps** for Self Optimizer business logic that require immediate TDD implementation.
+
+#### **🔴 CRITICAL UNIT TEST GAPS IDENTIFIED**
+
+| **Component** | **Current Status** | **TDD Gap** | **Business Impact** |
+|---------------|-------------------|-------------|-------------------|
+| **`DefaultSelfOptimizer`** | ❌ **NO UNIT TESTS** | **CRITICAL** - Core logic untested | Cannot validate optimization algorithms |
+| **`OptimizeWorkflow()` method** | ❌ **NO UNIT TESTS** | **HIGH** - No algorithm validation | Cannot validate BR-ORCH-001 compliance |
+| **`SuggestImprovements()` method** | ❌ **NO UNIT TESTS** | **HIGH** - No suggestion logic testing | Cannot validate BR-ORK-358 (3-5 candidates) |
+| **`analyzeExecutionPatterns()` method** | ❌ **NO UNIT TESTS** | **MEDIUM** - Pattern analysis untested | Cannot validate BR-ORCH-004 learning |
+
+#### **Current Test Coverage Assessment:**
+- **Existing Self Optimizer Tests**: `test/unit/main-app/self_optimizer_integration_test.go` (Main app integration only)
+- **Missing Core Logic Tests**: **0%** coverage of `DefaultSelfOptimizer` implementation
+- **Business Requirements at Risk**: BR-ORCH-001, BR-ORK-358, BR-ORCH-004, BR-ORK-551
+
+### **🎯 TDD IMPLEMENTATION PLAN: SELF OPTIMIZER UNIT TESTS**
+
+#### **Week 1: Core Self Optimizer Logic (TDD Phase)**
+**Target**: Create `test/unit/workflow-engine/self_optimizer_test.go`
+**Focus**: **Write failing tests FIRST**, then implement to pass
+
+**BR-SELF-OPT-UNIT-001 to BR-SELF-OPT-UNIT-015: Core Algorithm Logic**
+```go
+// test/unit/workflow-engine/self_optimizer_test.go
+Describe("BR-SELF-OPT-UNIT-001-015: DefaultSelfOptimizer Core Logic", func() {
+
+    Describe("BR-SELF-OPT-UNIT-001: OptimizeWorkflow Algorithm", func() {
+        Context("with sufficient execution history", func() {
+            It("should optimize workflow based on execution patterns") // TDD: Write test first
+            It("should improve execution time by measurable percentage") // TDD: Write test first
+            It("should maintain workflow correctness during optimization") // TDD: Write test first
+        })
+
+        Context("with insufficient execution history", func() {
+            It("should return original workflow when history < 3 executions") // TDD: Write test first
+            It("should provide clear reason for no optimization") // TDD: Write test first
+        })
+
+        Context("with edge cases", func() {
+            It("should handle nil workflow gracefully") // TDD: Write test first
+            It("should handle corrupted execution history") // TDD: Write test first
+        })
+    })
+
+    Describe("BR-SELF-OPT-UNIT-002: SuggestImprovements Algorithm", func() {
+        Context("with valid execution data", func() {
+            It("should generate 3-5 optimization suggestions") // BR-ORK-358 validation
+            It("should categorize suggestions by type (structural/logic/performance)")
+            It("should provide confidence scores for each suggestion")
+        })
+
+        Context("with optimization filtering", func() {
+            It("should filter suggestions based on workflow characteristics")
+            It("should prioritize suggestions by potential impact")
+            It("should exclude invalid optimization candidates")
+        })
+    })
+
+    Describe("BR-SELF-OPT-UNIT-003: analyzeExecutionPatterns Algorithm", func() {
+        Context("with execution history data", func() {
+            It("should calculate execution success rates accurately")
+            It("should identify failure patterns with >70% accuracy") // BR-ORK-358
+            It("should measure performance trends over time")
+        })
+
+        Context("with pattern recognition", func() {
+            It("should detect recurring performance bottlenecks")
+            It("should identify optimization opportunities")
+            It("should calculate pattern confidence scores")
+        })
+    })
+
+    Describe("BR-SELF-OPT-UNIT-004: applyOptimizationsToWorkflow Algorithm", func() {
+        Context("with valid optimization suggestions", func() {
+            It("should apply structural optimizations correctly")
+            It("should apply logic optimizations without breaking workflow")
+            It("should apply performance optimizations with measurable impact")
+        })
+
+        Context("with optimization validation", func() {
+            It("should validate optimization safety before application")
+            It("should rollback unsafe optimizations")
+            It("should track optimization effectiveness")
+        })
+    })
+
+    Describe("BR-SELF-OPT-UNIT-005: Advanced Algorithm Edge Cases", func() {
+        Context("with complex scenarios", func() {
+            It("should handle concurrent optimization requests")
+            It("should manage optimization conflicts")
+            It("should handle resource constraints during optimization")
+        })
+    })
+})
+```
+
+#### **Expected TDD Test Failures (Week 1)**
+- **`OptimizeWorkflow()` tests**: ❌ Current implementation too basic for sophisticated optimization
+- **`SuggestImprovements()` tests**: ❌ Current implementation lacks 3-5 candidate generation sophistication
+- **`analyzeExecutionPatterns()` tests**: ❌ Current implementation lacks >70% accuracy pattern recognition
+- **`applyOptimizationsToWorkflow()` tests**: ❌ Current implementation lacks safety validation and rollback
+
+#### **TDD Implementation Strategy (Week 1-2)**
+1. **Day 1-2**: Write comprehensive failing tests for all core methods
+2. **Day 3-4**: Implement minimal code to make tests pass (Red → Green)
+3. **Day 5**: Refactor implementation for production readiness (Refactor)
+4. **Week 2**: Add advanced algorithm logic and edge case handling
+
+### **Business Requirements Coverage After Self Optimizer Unit Tests**
+
+| **Requirement** | **Current Coverage** | **After TDD Unit Tests** | **Confidence Improvement** |
+|-----------------|---------------------|---------------------------|---------------------------|
+| **BR-ORCH-001** (Continuous optimization) | **40%** | **85%** | **+45%** |
+| **BR-ORK-358** (3-5 candidates, >70% accuracy) | **25%** | **90%** | **+65%** |
+| **BR-ORCH-004** (Learn from failures) | **30%** | **80%** | **+50%** |
+| **BR-ORK-551** (Adaptive filtering logic) | **20%** | **75%** | **+55%** |
+
+### **Updated Target State Goals**
+- **Unit Test Coverage**: **92%** of pure algorithmic/mathematical logic requirements (**+2% with Self Optimizer**)
+- **Unit Test Scope**: **95+ BRs** focused on algorithmic foundations (**+10 BRs**)
+- **Overall Confidence Level**: **🟢 HIGH (92%)** (**+2% improvement**)
+
+**Next Immediate Action**: Create failing unit tests for `DefaultSelfOptimizer` core methods following strict TDD methodology.
+
+## 🎯 **CURRENT MILESTONE ADDENDUM (Updated Sep 2025)**
+
+### **REFINED SCOPE - MILESTONE 1 CONSTRAINTS**
+Based on stakeholder decisions, the following scope refinements apply to this unit test plan:
+
+#### **❌ EXCLUDED FROM CURRENT MILESTONE:**
+- External vector database providers (OpenAI, HuggingFace, Pinecone, Weaviate)
+- Enterprise integration features
+- External monitoring system integrations
+- SSO/OIDC providers
+- Advanced enterprise workflow patterns
+
+#### **✅ CURRENT MILESTONE PRIORITY GAPS - ADDITIONAL UNIT TESTS NEEDED:**
+
+### **🧠 AI & Machine Learning - pgvector Optimization Focus**
+```go
+// pkg/ai/pgvector/ - Additional unit tests for current milestone
+func TestPgVectorPerformanceOptimization(t *testing.T) {
+    // Test vector query optimization algorithms
+    // Test connection pooling efficiency
+    // Test embedding storage strategies
+}
+
+func TestPgVectorEmbeddingAccuracy(t *testing.T) {
+    // Test embedding quality validation (accuracy/cost focus)
+    // Test dimension reduction algorithms
+    // Test similarity calculation precision
+}
+
+func TestPgVectorConnectionManagement(t *testing.T) {
+    // Test connection pool sizing for cost optimization
+    // Test connection retry mechanisms
+    // Test graceful degradation scenarios
+}
+```
+
+### **⚙️ Platform Kubernetes Operations - Multi-cluster Unit Tests**
+```go
+// pkg/platform/kubernetes/ - Multi-cluster unit tests
+func TestMultiClusterClientConfiguration(t *testing.T) {
+    // Test cluster configuration validation
+    // Test client switching logic
+    // Test authentication handling per cluster
+}
+
+func TestClusterFailoverMechanisms(t *testing.T) {
+    // Test failover decision algorithms
+    // Test cluster health assessment
+    // Test automatic cluster switching
+}
+
+func TestCrossClusterResourceDiscovery(t *testing.T) {
+    // Test resource enumeration across clusters
+    // Test resource conflict detection
+    // Test resource mapping strategies
+}
+```
+
+### **🔄 Workflow Engine - Current Milestone Pattern Tests**
+```go
+// pkg/workflow/engine/ - Advanced patterns within current scope
+func TestConditionalBranchingWithPgVector(t *testing.T) {
+    // Test vector-based decision making
+    // Test conditional workflow routing
+    // Test dynamic path selection
+}
+
+func TestWorkflowStateRecoveryMechanisms(t *testing.T) {
+    // Test state persistence to pgvector
+    // Test recovery from partial failures
+    // Test checkpoint/rollback mechanisms
+}
+
+func TestResourceConstrainedExecution(t *testing.T) {
+    // Test execution under limited resources
+    // Test priority-based task scheduling
+    // Test resource allocation algorithms
+}
+```
+
+### **🔄 DEPENDENCY MANAGEMENT UNIT TESTS** (NEW - CRITICAL PRIORITY)
+
+**Business Requirements Coverage**: BR-REL-009, BR-ERR-007, BR-RELIABILITY-006
+**Target Files**: `pkg/orchestration/dependency/dependency_manager_test.go`
+**Implementation Priority**: **🔴 CRITICAL** - Infrastructure component enabling all business workflows
+**Estimated Effort**: 3-4 days
+
+#### **BR-DEPEND-001: Circuit Breaker State Transitions**
+```go
+var _ = Describe("Circuit Breaker State Management", func() {
+    Context("when failure threshold is reached", func() {
+        It("should transition from Closed to Open state", func() {
+            // Business Requirement: BR-REL-009 - Circuit breaker patterns
+            cb := NewCircuitBreaker("test", 0.5, 60*time.Second)
+
+            // Simulate failures to reach threshold (50% failure rate)
+            for i := 0; i < 5; i++ {
+                cb.Call(func() error { return nil }) // Success
+                cb.Call(func() error { return fmt.Errorf("failure") }) // Failure
+            }
+
+            // One more failure should trigger circuit breaker
+            err := cb.Call(func() error { return fmt.Errorf("failure") })
+            Expect(err).To(HaveOccurred())
+            Expect(cb.state).To(Equal(CircuitStateOpen))
+        })
+
+        It("should calculate failure rate correctly", func() {
+            // Test mathematical accuracy of failure rate calculation
+            cb := NewCircuitBreaker("test", 0.6, 60*time.Second)
+
+            // 6 failures out of 10 requests = 60% failure rate
+            for i := 0; i < 4; i++ {
+                cb.Call(func() error { return nil }) // Success
+            }
+            for i := 0; i < 6; i++ {
+                cb.Call(func() error { return fmt.Errorf("failure") }) // Failure
+            }
+
+            failureRate := float64(cb.failures) / float64(cb.requests)
+            Expect(failureRate).To(Equal(0.6))
+            Expect(cb.state).To(Equal(CircuitStateOpen))
+        })
+    })
+})
+```
+
+#### **BR-DEPEND-002: Dependency Health Monitoring**
+```go
+var _ = Describe("Dependency Health Monitoring", func() {
+    Context("when monitoring dependency health", func() {
+        It("should detect unhealthy dependencies accurately", func() {
+            // Business Requirement: BR-RELIABILITY-006 - Health monitoring
+            dm := NewDependencyManager(nil, logger)
+
+            // Register mock dependency that fails health check
+            mockDep := &MockDependency{
+                name:      "test_vector_db",
+                depType:   DependencyTypeVectorDB,
+                isHealthy: false,
+                metrics: &DependencyMetrics{
+                    TotalRequests:      100,
+                    FailedRequests:     75, // 75% failure rate
+                    SuccessfulRequests: 25,
+                },
+            }
+
+            err := dm.RegisterDependency(mockDep)
+            Expect(err).ToNot(HaveOccurred())
+
+            // Get health report and verify calculations
+            report := dm.GetHealthReport()
+            Expect(report.OverallHealthy).To(BeFalse())
+            Expect(report.HealthyDependencies).To(Equal(0))
+            Expect(report.TotalDependencies).To(Equal(1))
+
+            // Verify error rate calculation
+            status := report.DependencyStatus["test_vector_db"]
+            Expect(status.ErrorRate).To(Equal(0.75))
+        })
+    })
+})
+```
+
+#### **BR-DEPEND-003: Fallback Provider Logic**
+```go
+var _ = Describe("Fallback Provider Logic", func() {
+    Context("when primary dependency fails", func() {
+        It("should calculate vector similarity correctly", func() {
+            // Business Requirement: BR-ERR-007 - Mathematical accuracy in fallbacks
+            fallback := &InMemoryVectorFallback{
+                storage: make(map[string]*VectorEntry),
+                metrics: &FallbackMetrics{},
+                log:     logger,
+            }
+
+            // Test cosine similarity calculation with known vectors
+            vectorA := []float64{1.0, 0.0, 0.0}
+            vectorB := []float64{0.0, 1.0, 0.0}
+            vectorC := []float64{1.0, 0.0, 0.0} // Same as A
+            vectorD := []float64{0.707, 0.707, 0.0} // 45 degrees from A
+
+            similarityAB := fallback.calculateSimilarity(vectorA, vectorB)
+            similarityAC := fallback.calculateSimilarity(vectorA, vectorC)
+            similarityAD := fallback.calculateSimilarity(vectorA, vectorD)
+
+            Expect(similarityAB).To(BeNumerically("~", 0.0, 0.001)) // Orthogonal
+            Expect(similarityAC).To(BeNumerically("~", 1.0, 0.001)) // Identical
+            Expect(similarityAD).To(BeNumerically("~", 0.707, 0.001)) // 45 degrees
+        })
+
+        It("should handle edge cases in similarity calculation", func() {
+            // Test mathematical robustness
+            fallback := &InMemoryVectorFallback{}
+
+            // Zero vectors
+            zeroA := []float64{0.0, 0.0, 0.0}
+            zeroB := []float64{0.0, 0.0, 0.0}
+            similarity := fallback.calculateSimilarity(zeroA, zeroB)
+            Expect(similarity).To(Equal(0.0)) // Should handle division by zero
+
+            // Different dimensions
+            shortVec := []float64{1.0, 0.0}
+            longVec := []float64{1.0, 0.0, 0.0}
+            similarity = fallback.calculateSimilarity(shortVec, longVec)
+            Expect(similarity).To(Equal(0.0)) // Should handle dimension mismatch
+        })
+    })
+})
+```
+
+#### **BR-DEPEND-004: Configuration Validation Logic**
+```go
+var _ = Describe("Dependency Configuration Validation", func() {
+    Context("when validating dependency configuration", func() {
+        It("should apply correct default values", func() {
+            // Business Requirement: Configuration correctness
+            dm := NewDependencyManager(nil, logger)
+
+            // Verify default configuration values
+            Expect(dm.config.HealthCheckInterval).To(Equal(time.Minute))
+            Expect(dm.config.ConnectionTimeout).To(Equal(10 * time.Second))
+            Expect(dm.config.MaxRetries).To(Equal(3))
+            Expect(dm.config.CircuitBreakerThreshold).To(Equal(0.5))
+            Expect(dm.config.EnableFallbacks).To(BeTrue())
+            Expect(dm.config.FallbackTimeout).To(Equal(5 * time.Second))
+        })
+
+        It("should validate configuration constraints", func() {
+            // Test configuration validation logic
+            config := &DependencyConfig{
+                HealthCheckInterval:     0, // Invalid
+                CircuitBreakerThreshold: 1.5, // Invalid (> 1.0)
+                MaxRetries:              -1, // Invalid
+            }
+
+            // Configuration validation should normalize or reject invalid values
+            dm := NewDependencyManager(config, logger)
+
+            // Should apply sensible defaults for invalid values
+            Expect(dm.config.HealthCheckInterval).To(BeNumerically(">", 0))
+            Expect(dm.config.CircuitBreakerThreshold).To(BeNumerically("<=", 1.0))
+            Expect(dm.config.MaxRetries).To(BeNumerically(">=", 0))
+        })
+    })
+})
+```
+
+### **📊 UPDATED COVERAGE TARGETS - CURRENT MILESTONE**
+
+| **Module** | **Previous Target** | **Milestone 1 Target** | **Priority** |
+|------------|--------------------|-----------------------|--------------|
+| **AI/ML (pgvector)** | 85% | **90%** | **🔴 HIGH** |
+| **Platform K8s** | 85% | **87%** | **🟡 MEDIUM** |
+| **Workflow Engine** | 90% | **92%** | **🔴 HIGH** |
+| **Dependency Management** | 0% | **85%** | **🔴 CRITICAL** |
+| **Overall Project** | 85% | **88%** | **🔴 HIGH** |
+
+### **MILESTONE 1 SUCCESS CRITERIA:**
+- Unit test coverage > 88% for all current milestone modules
+- **Dependency management unit tests implemented with 85% coverage**
+- **Circuit breaker and fallback logic fully validated**
+- pgvector integration fully validated through unit tests
+- Multi-cluster K8s operations tested (without external dependencies)
+- Advanced workflow patterns tested within resource constraints
+- All tests focus on accuracy/cost optimization over speed
+
+### **DEPENDENCY MANAGER TESTING PRIORITY:**
+The dependency manager is **CRITICAL INFRASTRUCTURE** that enables all business workflows. Testing priority:
+1. **🔴 CRITICAL**: Circuit breaker state transitions and mathematical accuracy
+2. **🔴 CRITICAL**: Health monitoring algorithms and failure detection
+3. **🔴 CRITICAL**: Fallback provider logic and similarity calculations
+4. **🟡 MEDIUM**: Configuration validation and edge case handling
