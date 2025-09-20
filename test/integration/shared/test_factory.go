@@ -162,6 +162,17 @@ func (a *PatternStoreAdapter) DeletePattern(ctx context.Context, patternID strin
 	return a.store.DeletePattern(ctx, patternID)
 }
 
+// CreatePatternStoreForTesting creates a standardized pattern store for testing
+// This consolidates the duplicate createPatternStore functions across test files
+func CreatePatternStoreForTesting(logger *logrus.Logger) engine.PatternStore {
+	// Business Contract: Create pattern store for workflow builder testing
+	// Following guideline: REUSE existing code and AVOID duplication (Principle #13)
+	standardStore := NewStandardPatternStore(logger)
+	return &PatternStoreAdapter{
+		store: standardStore,
+	}
+}
+
 // StandardTestSuite provides common test setup for all integration tests
 type StandardTestSuite struct {
 	SuiteName        string

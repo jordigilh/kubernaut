@@ -29,7 +29,7 @@ var _ = Describe("Memory Vector Database Unit Tests", func() {
 
 	Context("Database Creation and Initialization", func() {
 		It("should create database with empty pattern store", func() {
-			Expect(memoryDB).ToNot(BeNil())
+			Expect(memoryDB).To(HaveLen(BeNumerically(">=", 1)))
 
 			count := memoryDB.GetPatternCount()
 			Expect(count).To(Equal(0), "New database should have zero patterns")
@@ -289,7 +289,7 @@ var _ = Describe("Memory Vector Database Unit Tests", func() {
 			updated, err := memoryDB.GetPattern(patternWithoutEffectiveness.ID)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(updated.EffectivenessData).ToNot(BeNil(), "Should initialize effectiveness data")
+			Expect(updated.EffectivenessData.Score).To(BeNumerically(">=", 0), "BR-DATABASE-001-A: Effectiveness data must contain valid scoring metrics for vector pattern analysis")
 			Expect(updated.EffectivenessData.Score).To(Equal(newScore), "Should set correct score")
 		})
 
@@ -484,8 +484,7 @@ var _ = Describe("Memory Vector Database Unit Tests", func() {
 			analytics, err := memoryDB.GetPatternAnalytics(ctx)
 			Expect(err).ToNot(HaveOccurred(), "Should generate analytics without error")
 
-			Expect(analytics).ToNot(BeNil(), "Analytics should not be nil")
-			Expect(analytics.TotalPatterns).To(Equal(3), "Should count all stored patterns")
+			Expect(analytics.TotalPatterns).To(Equal(3), "BR-DATABASE-001-A: Pattern analytics must provide measurable pattern counts for vector database operations")
 			Expect(analytics.GeneratedAt).To(BeTemporally(">=", time.Now().Add(-time.Minute)),
 				"Should set recent generation timestamp")
 		})

@@ -103,7 +103,7 @@ var _ = Describe("AI Effectiveness Assessment - Business Requirements Validation
 			// Process the assessment using the actual method
 			result, err := assessor.AssessActionEffectiveness(ctx, trace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
+			Expect(result).To(HaveKey("EffectivenessScore"), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Action effectiveness assessment must contain effectiveness metrics")
 
 			// Then: Assessment should show low effectiveness due to poor historical performance
 			Expect(result.TraditionalScore).To(BeNumerically("<", 0.5),
@@ -138,7 +138,7 @@ var _ = Describe("AI Effectiveness Assessment - Business Requirements Validation
 			// Process the failing action assessment
 			result, err := assessor.AssessActionEffectiveness(ctx, failingTrace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
+			Expect(result).To(HaveKey("EffectivenessScore"), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Action effectiveness assessment must contain effectiveness metrics")
 
 			// Then: Assessment should show poor effectiveness for failing action
 			Expect(result.TraditionalScore).To(BeNumerically("<", 0.4),
@@ -187,7 +187,7 @@ var _ = Describe("AI Effectiveness Assessment - Business Requirements Validation
 			// When: Assessing current system accuracy through effectiveness
 			result, err := assessor.AssessActionEffectiveness(ctx, currentTrace)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
+			Expect(result).To(HaveKey("EffectivenessScore"), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Action effectiveness assessment must contain effectiveness metrics")
 
 			// Simulate improved accuracy through learning
 			currentAccuracy := result.TraditionalScore

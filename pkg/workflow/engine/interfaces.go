@@ -12,6 +12,19 @@ type WorkflowEngine interface {
 	Execute(ctx context.Context, workflow *Workflow) (*RuntimeWorkflowExecution, error)
 	GetExecution(ctx context.Context, executionID string) (*RuntimeWorkflowExecution, error)
 	ListExecutions(ctx context.Context, workflowID string) ([]*RuntimeWorkflowExecution, error)
+
+	// BR-WF-ADV-628: Subflow completion monitoring
+	WaitForSubflowCompletion(ctx context.Context, executionID string, timeout time.Duration) (*RuntimeWorkflowExecution, error)
+}
+
+// Metrics and monitoring interfaces
+
+// SubflowMetricsCollector defines interface for collecting subflow monitoring metrics
+// Business Requirement: BR-WF-ADV-628 - Resource optimization during waiting periods
+type SubflowMetricsCollector interface {
+	RecordSubflowMonitoring(executionID string, monitoringDuration, executionDuration time.Duration, success bool)
+	RecordSubflowProgress(executionID string, progressPercent float64, monitoringDuration time.Duration)
+	RecordCircuitBreakerActivation(executionID string, consecutiveFailures int, backoffDuration time.Duration)
 }
 
 // Storage and data interfaces
@@ -117,6 +130,57 @@ type AIConditionEvaluator interface {
 type SelfOptimizer interface {
 	OptimizeWorkflow(ctx context.Context, workflow *Workflow, executionHistory []*RuntimeWorkflowExecution) (*Workflow, error)
 	SuggestImprovements(ctx context.Context, workflow *Workflow) ([]*OptimizationSuggestion, error)
+}
+
+// AdaptiveResourceAllocator provides intelligent resource allocation optimization
+// Business Requirements: BR-ORCH-002 - Adaptive Resource Allocation Integration
+type AdaptiveResourceAllocator interface {
+	// OptimizeResourceAllocation optimizes resource allocation based on execution patterns
+	OptimizeResourceAllocation(ctx context.Context, workflow *Workflow, executionHistory []*RuntimeWorkflowExecution) (*ResourceAllocationResult, error)
+
+	// OptimizeForClusterCapacity adapts resource allocation to cluster capacity constraints
+	OptimizeForClusterCapacity(ctx context.Context, workflow *Workflow, clusterCapacity *ClusterCapacity) (*ResourceAllocationResult, error)
+
+	// PredictResourceRequirements predicts future resource needs based on historical patterns
+	PredictResourceRequirements(ctx context.Context, workflow *Workflow, historicalPatterns []*RuntimeWorkflowExecution) (*ResourcePrediction, error)
+}
+
+// ExecutionScheduler provides intelligent workflow execution scheduling optimization
+// Business Requirements: BR-ORCH-003 - Execution Scheduling Integration
+type ExecutionScheduler interface {
+	// OptimizeScheduling optimizes execution scheduling based on workflow patterns
+	OptimizeScheduling(ctx context.Context, workflows []*Workflow, executionHistory []*RuntimeWorkflowExecution) (*SchedulingResult, error)
+
+	// ScheduleForSystemLoad adapts scheduling to current system load constraints
+	ScheduleForSystemLoad(ctx context.Context, workflows []*Workflow, systemLoad *SystemLoad) (*SchedulingResult, error)
+
+	// PredictOptimalScheduling predicts optimal scheduling based on historical patterns
+	PredictOptimalScheduling(ctx context.Context, workflows []*Workflow, historicalPatterns []*RuntimeWorkflowExecution) (*SchedulingPrediction, error)
+
+	// ScheduleWithPriority schedules workflows considering business priority ordering
+	ScheduleWithPriority(ctx context.Context, workflows []*Workflow) (*PrioritySchedulingResult, error)
+}
+
+// FeedbackProcessor provides intelligent feedback loop processing for continuous optimization
+// Business Requirements: BR-ORCH-001 - Feedback Loop Integration
+type FeedbackProcessor interface {
+	// ProcessFeedbackLoop processes feedback to improve optimization accuracy
+	ProcessFeedbackLoop(ctx context.Context, workflow *Workflow, feedbackData []*ExecutionFeedback, optimizer SelfOptimizer) (*FeedbackLoopResult, error)
+
+	// AdaptOptimizationStrategy adapts optimization strategies based on performance feedback
+	AdaptOptimizationStrategy(ctx context.Context, workflow *Workflow, performanceFeedback *PerformanceFeedback) (*StrategyAdaptationResult, error)
+
+	// ProcessConvergenceCycle processes feedback cycles to achieve optimization convergence
+	ProcessConvergenceCycle(ctx context.Context, workflow *Workflow, feedbackCycle []*ExecutionFeedback, optimizer SelfOptimizer) (*FeedbackConvergenceResult, error)
+
+	// AnalyzeRealTimeFeedback analyzes real-time feedback for actionable optimization insights
+	AnalyzeRealTimeFeedback(ctx context.Context, workflow *Workflow, feedbackStream []*ExecutionFeedback) (*RealTimeFeedbackAnalysis, error)
+
+	// ResolveConflictingFeedback resolves conflicting feedback signals
+	ResolveConflictingFeedback(ctx context.Context, workflow *Workflow, conflictingFeedback []*ExecutionFeedback) (*ConflictResolutionResult, error)
+
+	// ProcessHighVolumeFeedback processes high-volume feedback streams efficiently
+	ProcessHighVolumeFeedback(ctx context.Context, workflow *Workflow, highVolumeFeedback []*ExecutionFeedback) (*HighVolumeFeedbackResult, error)
 }
 
 // PromptVersion represents a versioned prompt with performance tracking
@@ -241,4 +305,6 @@ type IntelligentWorkflowBuilder interface {
 	ValidateWorkflow(ctx context.Context, template *ExecutableTemplate) *ValidationReport
 	SimulateWorkflow(ctx context.Context, template *ExecutableTemplate, scenario *SimulationScenario) (*SimulationResult, error)
 	LearnFromWorkflowExecution(ctx context.Context, execution *RuntimeWorkflowExecution)
+	// Phase 2 TDD Activations - Medium confidence functions
+	AnalyzeObjective(description string, constraints map[string]interface{}) *ObjectiveAnalysisResult
 }

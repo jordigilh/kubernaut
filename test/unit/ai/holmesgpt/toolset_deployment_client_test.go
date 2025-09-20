@@ -210,7 +210,7 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 
 			// BR-HOLMES-001: Must handle deployment failures
 			Expect(err).To(HaveOccurred(), "BR-HOLMES-001: Must detect deployment failures")
-			Expect(response).ToNot(BeNil(), "BR-HOLMES-001: Must provide failure response details")
+			Expect(response.Success).To(BeFalse(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Toolset deployment response must indicate failure status for validation")
 			Expect(response.Success).To(BeFalse(), "BR-HOLMES-001: Must indicate deployment failure")
 			Expect(response.Message).To(ContainSubstring("validation failed"), "BR-HOLMES-001: Must provide meaningful error messages")
 		})

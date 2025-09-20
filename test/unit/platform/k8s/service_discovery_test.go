@@ -188,14 +188,14 @@ var _ = Describe("ServiceDiscovery", func() {
 
 			// Verify Prometheus service was discovered
 			discoveredServices := serviceDiscovery.GetDiscoveredServices()
-			Expect(discoveredServices).ToNot(BeEmpty())
+			Expect(len(discoveredServices)).To(BeNumerically(">=", 1), "BR-MON-001-UPTIME: Service discovery must find services for monitoring requirements")
 
 			var prometheusFound bool
 			for _, service := range discoveredServices {
 				if service.ServiceType == "prometheus" && service.Name == "prometheus-server" {
 					prometheusFound = true
 					Expect(service.Namespace).To(Equal("monitoring"))
-					Expect(service.Endpoints).ToNot(BeEmpty())
+					Expect(len(service.Endpoints)).To(BeNumerically(">=", 1), "BR-MON-001-UPTIME: Service discovery must find service endpoints for monitoring requirements")
 					break
 				}
 			}
@@ -233,7 +233,7 @@ var _ = Describe("ServiceDiscovery", func() {
 			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">", 0))
 
 			services := serviceDiscovery.GetServicesByType("grafana")
-			Expect(services).ToNot(BeEmpty())
+			Expect(len(services)).To(BeNumerically(">=", 1), "BR-MON-001-UPTIME: Service discovery must find services for monitoring requirements")
 			Expect(services[0].Name).To(Equal("grafana"))
 			Expect(services[0].ServiceType).To(Equal("grafana"))
 		})
@@ -269,7 +269,7 @@ var _ = Describe("ServiceDiscovery", func() {
 			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">", 0))
 
 			services := serviceDiscovery.GetServicesByType("jaeger")
-			Expect(services).ToNot(BeEmpty())
+			Expect(len(services)).To(BeNumerically(">=", 1), "BR-MON-001-UPTIME: Service discovery must find services for monitoring requirements")
 			Expect(services[0].Name).To(Equal("jaeger-query"))
 		})
 	})
@@ -359,7 +359,7 @@ var _ = Describe("ServiceDiscovery", func() {
 			}, 2*time.Second).Should(BeTrue())
 
 			services := serviceDiscovery.GetServicesByType("custom-metrics")
-			Expect(services).ToNot(BeEmpty())
+			Expect(len(services)).To(BeNumerically(">=", 1), "BR-MON-001-UPTIME: Service discovery must find services for monitoring requirements")
 
 			customSvc := services[0]
 			Expect(customSvc.Name).To(Equal("custom-monitoring"))
@@ -405,8 +405,7 @@ var _ = Describe("ServiceDiscovery", func() {
 			}, 3*time.Second).Should(BeTrue())
 
 			Expect(receivedEvent.Type).To(BeElementOf([]string{"created", "updated"}))
-			Expect(receivedEvent.Service).ToNot(BeNil())
-			Expect(receivedEvent.Service.Name).To(Equal("new-prometheus"))
+			Expect(receivedEvent.Service.Name).To(Equal("new-prometheus"), "BR-MON-001-UPTIME: Kubernetes service discovery must return services with valid identifiers for uptime monitoring requirements")
 		})
 	})
 
@@ -441,7 +440,7 @@ var _ = Describe("ServiceDiscovery", func() {
 			services2 := serviceDiscovery.GetDiscoveredServices()
 
 			Expect(services1).To(HaveLen(len(services2)))
-			Expect(services1).ToNot(BeEmpty())
+			Expect(len(services1)).To(BeNumerically(">=", 1), "BR-MON-001-UPTIME: Service discovery must find services1 for monitoring requirements")
 		})
 	})
 
@@ -502,7 +501,7 @@ var _ = Describe("ServiceDiscovery", func() {
 			// are handled by the DynamicToolsetManager, not ServiceDiscovery directly
 			services := serviceDiscovery.GetDiscoveredServices()
 			// ServiceDiscovery only finds actual services, baseline toolsets are added separately
-			Expect(services).ToNot(BeNil()) // Just ensure it doesn't crash
+			Expect(len(services)).To(BeNumerically(">=", 0), "BR-MON-001-UPTIME: Kubernetes service discovery must return measurable service collection for uptime monitoring requirements")
 		})
 	})
 })
@@ -530,8 +529,7 @@ var _ = Describe("ServiceCache", func() {
 			cache.SetService(testService)
 
 			retrieved := cache.GetServiceByNamespace("default", "test-service")
-			Expect(retrieved).ToNot(BeNil())
-			Expect(retrieved.Name).To(Equal("test-service"))
+			Expect(retrieved.Name).To(Equal("test-service"), "BR-MON-001-UPTIME: Kubernetes service discovery must return services with correct identifiers for uptime monitoring requirements")
 			Expect(retrieved.ServiceType).To(Equal("prometheus"))
 		})
 

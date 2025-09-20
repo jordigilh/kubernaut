@@ -43,19 +43,19 @@ var _ = Describe("Modernized AI Integration Test (Example)", Ordered, func() {
 			// BEFORE: 20+ lines of alert creation boilerplate
 			// AFTER: Single factory call with pre-configured realistic data
 			alert := testshared.CreateDatabaseAlert()
-			Expect(alert).ToNot(BeNil())
+			Expect(alert).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Modernized AI implementation must return valid responses for confidence requirements")
 			Expect(alert.Name).To(Equal("DatabaseHighCPU"))
 			Expect(alert.Severity).To(Equal("critical"))
 
 			// BEFORE: Manual LLM client setup and configuration
 			// AFTER: Pre-configured client ready for use
-			Expect(suite.LLMClient).ToNot(BeNil())
+			Expect(suite.LLMClient).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Modernized AI implementation must return valid responses for confidence requirements")
 			Expect(suite.LLMClient.IsHealthy()).To(BeTrue())
 
 			// Test alert processing
 			recommendation, err := suite.LLMClient.AnalyzeAlert(ctx, *alert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Modernized AI implementation must return valid responses for confidence requirements")
 			Expect(recommendation.Confidence).To(BeNumerically(">", 0.0))
 		})
 
@@ -72,7 +72,7 @@ var _ = Describe("Modernized AI Integration Test (Example)", Ordered, func() {
 			for _, alert := range alerts {
 				recommendation, err := suite.LLMClient.AnalyzeAlert(ctx, *alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation.Action).ToNot(BeEmpty())
+				Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Modernized AI must provide data for confidence requirements")
 			}
 		})
 
@@ -81,7 +81,7 @@ var _ = Describe("Modernized AI Integration Test (Example)", Ordered, func() {
 
 			// BEFORE: Vector DB setup required 25+ lines
 			// AFTER: Pre-configured and ready for use
-			Expect(suite.VectorDB).ToNot(BeNil())
+			Expect(suite.VectorDB).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Modernized AI implementation must return valid responses for confidence requirements")
 
 			// BEFORE: Manual pattern creation and mock setup
 			// AFTER: Standardized mock pattern with realistic data
@@ -101,7 +101,7 @@ var _ = Describe("Modernized AI Integration Test (Example)", Ordered, func() {
 
 			// BEFORE: Workflow builder setup required configuration of multiple components
 			// AFTER: Pre-configured builder with all dependencies injected
-			Expect(suite.WorkflowBuilder).ToNot(BeNil())
+			Expect(suite.WorkflowBuilder).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Modernized AI implementation must return valid responses for confidence requirements")
 
 			// Create test alert and recommendation
 			alert := testshared.CreatePerformanceAlert()
@@ -109,7 +109,7 @@ var _ = Describe("Modernized AI Integration Test (Example)", Ordered, func() {
 
 			// Generate workflow objective
 			objective := testshared.CreateStandardWorkflowObjective(alert, recommendation, "performance")
-			Expect(objective).ToNot(BeNil())
+			Expect(objective).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Modernized AI implementation must return valid responses for confidence requirements")
 			Expect(objective.Type).To(Equal("performance"))
 			Expect(objective.Priority).To(Equal(5))
 		})
@@ -223,7 +223,7 @@ var _ = Describe("Custom AI Test Extensions", Ordered, func() {
 		ctx := context.Background()
 
 		// This test uses the real LLM as configured in BeforeAll
-		Expect(suite.LLMClient).ToNot(BeNil())
+		Expect(suite.LLMClient).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Modernized AI implementation must return valid responses for confidence requirements")
 
 		// Test advanced scenarios that require real LLM processing
 		alert := testshared.CreateSecurityAlert()

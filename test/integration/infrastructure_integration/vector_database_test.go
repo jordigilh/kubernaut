@@ -94,12 +94,12 @@ var _ = Describe("Vector Database Integration", Ordered, func() {
 
 		// Create fresh instances for each test
 		factory = vector.NewVectorDatabaseFactory(vectorConfig, nil, logger) // Use nil for memory DB tests
-		Expect(factory).ToNot(BeNil())
+		Expect(factory).ToNot(BeNil(), "BR-DATABASE-001-A: Vector database operations must return valid results for database utilization requirements")
 
 		var err error
 		embeddingService, err = factory.CreateEmbeddingService()
 		Expect(err).ToNot(HaveOccurred())
-		Expect(embeddingService).ToNot(BeNil())
+		Expect(embeddingService).ToNot(BeNil(), "BR-DATABASE-001-A: Vector database operations must return valid results for database utilization requirements")
 	})
 
 	AfterEach(func() {
@@ -143,7 +143,7 @@ var _ = Describe("Vector Database Integration", Ordered, func() {
 		})
 
 		It("should create vector database factory", func() {
-			Expect(factory).ToNot(BeNil())
+			Expect(factory).ToNot(BeNil(), "BR-DATABASE-001-A: Vector database operations must return valid results for database utilization requirements")
 		})
 
 		It("should provide default configuration", func() {
@@ -229,7 +229,7 @@ var _ = Describe("Vector Database Integration", Ordered, func() {
 
 		BeforeEach(func() {
 			memoryDB = vector.NewMemoryVectorDatabase(logger)
-			Expect(memoryDB).ToNot(BeNil())
+			Expect(memoryDB).ToNot(BeNil(), "BR-DATABASE-001-A: Vector database operations must return valid results for database utilization requirements")
 		})
 
 		It("should perform health checks", func() {
@@ -316,7 +316,7 @@ var _ = Describe("Vector Database Integration", Ordered, func() {
 
 			// Should find similar scaling patterns
 			for _, similar := range similarPatterns {
-				Expect(similar.Pattern).ToNot(BeNil())
+				Expect(similar.Pattern).ToNot(BeNil(), "BR-DATABASE-001-A: Vector database operations must return valid results for database utilization requirements")
 				Expect(similar.Similarity).To(BeNumerically(">=", 0.0))
 				Expect(similar.Similarity).To(BeNumerically("<=", 1.0))
 			}

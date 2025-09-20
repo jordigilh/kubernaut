@@ -129,7 +129,7 @@ var _ = Describe("BR-SEC-001-010: Security Algorithm Logic Tests", func() {
 					Expect(invalidManager).To(BeNil(), "Should not create manager with invalid key")
 				} else {
 					// Current implementation accepts any key due to SHA256 normalization
-					Expect(invalidManager).ToNot(BeNil(), "Manager created but key was normalized")
+					Expect(invalidManager.StoreSecret(ctx, "test", []byte("data"))).To(Succeed(), "BR-SEC-001-010: Security manager must provide functional encryption capabilities regardless of key normalization")
 					// Verify it can still encrypt/decrypt
 					testErr := invalidManager.StoreSecret(ctx, "test", []byte("data"))
 					Expect(testErr).ToNot(HaveOccurred(), "Should work with normalized key")
@@ -212,9 +212,9 @@ var _ = Describe("BR-SEC-001-010: Security Algorithm Logic Tests", func() {
 				}{
 					{"normal-key", true},
 					{"KEY_WITH_TRIM_SPACES  ", true}, // should be trimmed
-					{"  LEADING_SPACES", true},      // should be trimmed
-					{"../path/traversal", true},     // Current implementation is permissive
-					{"null\x00byte", true},          // Current implementation is permissive
+					{"  LEADING_SPACES", true},       // should be trimmed
+					{"../path/traversal", true},      // Current implementation is permissive
+					{"null\x00byte", true},           // Current implementation is permissive
 				}
 
 				for _, tc := range testCases {
@@ -458,10 +458,10 @@ var _ = Describe("BR-SEC-001-010: Security Algorithm Logic Tests", func() {
 			It("should calculate risk scores based on access patterns", func() {
 				// Test risk calculation algorithm
 				testCases := []struct {
-					name           string
-					accessCount    int
-					timeWindow     time.Duration
-					expectedRisk   string // "low", "medium", "high"
+					name         string
+					accessCount  int
+					timeWindow   time.Duration
+					expectedRisk string // "low", "medium", "high"
 				}{
 					{"normal usage", 5, 10 * time.Second, "low"},
 					{"moderate usage", 15, 5 * time.Second, "medium"},
@@ -590,9 +590,9 @@ var _ = Describe("BR-SEC-001-010: Security Algorithm Logic Tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Scrypt parameters (N, r, p, keyLen)
-				N := 32768  // CPU/memory cost parameter
-				r := 8      // block size parameter
-				p := 1      // parallelization parameter
+				N := 32768 // CPU/memory cost parameter
+				r := 8     // block size parameter
+				p := 1     // parallelization parameter
 				keyLen := 32
 
 				// Test scrypt algorithm properties
@@ -696,7 +696,7 @@ var _ = Describe("BR-SEC-001-010: Security Algorithm Logic Tests", func() {
 				// Test security policy validation algorithms
 				validPolicies := []security.Role{
 					{
-						Name: "valid-minimal",
+						Name:        "valid-minimal",
 						Permissions: []security.Permission{security.PermissionViewWorkflow},
 					},
 					{

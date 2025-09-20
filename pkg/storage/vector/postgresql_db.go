@@ -375,6 +375,97 @@ func (db *PostgreSQLVectorDatabase) SearchBySemantics(ctx context.Context, query
 	return patterns, nil
 }
 
+// SearchByVector performs vector similarity search for patterns
+// Business Requirement: BR-AI-COND-001 - Enhanced vector-based condition evaluation
+func (db *PostgreSQLVectorDatabase) SearchByVector(ctx context.Context, embedding []float64, limit int, threshold float64) ([]*ActionPattern, error) {
+	if len(embedding) == 0 {
+		return nil, fmt.Errorf("embedding vector cannot be empty for vector search")
+	}
+
+	embeddingStr := db.embeddingToString(embedding)
+
+	// Use L2 distance for similarity search with pgvector
+	sqlQuery := `
+		SELECT id, action_type, alert_name, alert_severity, namespace, resource_type, resource_name,
+			   action_parameters, context_labels, pre_conditions, post_conditions, effectiveness_data,
+			   embedding, metadata, created_at, updated_at
+		FROM action_patterns
+		WHERE embedding <-> $1::vector <= $2
+		ORDER BY embedding <-> $1::vector
+		LIMIT $3
+	`
+
+	rows, err := db.db.QueryContext(ctx, sqlQuery, embeddingStr, threshold, limit)
+	if err != nil {
+		db.log.WithError(err).Error("Failed to execute vector search")
+		return nil, fmt.Errorf("failed to execute vector search: %w", err)
+	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			db.log.WithError(err).Error("Failed to close database rows")
+		}
+	}()
+
+	var patterns []*ActionPattern
+
+	for rows.Next() {
+		var p ActionPattern
+		var actionParamsJSON, contextLabelsJSON, preConditionsJSON, postConditionsJSON []byte
+		var effectivenessJSON, metadataJSON []byte
+		var embeddingStr string
+
+		err := rows.Scan(
+			&p.ID, &p.ActionType, &p.AlertName, &p.AlertSeverity,
+			&p.Namespace, &p.ResourceType, &p.ResourceName,
+			&actionParamsJSON, &contextLabelsJSON, &preConditionsJSON, &postConditionsJSON,
+			&effectivenessJSON, &embeddingStr, &metadataJSON,
+			&p.CreatedAt, &p.UpdatedAt,
+		)
+		if err != nil {
+			db.log.WithError(err).Warn("Failed to scan vector search result")
+			continue
+		}
+
+		// Deserialize JSON fields
+		if err := json.Unmarshal(actionParamsJSON, &p.ActionParameters); err != nil {
+			db.log.WithError(err).Warn("Failed to unmarshal action parameters")
+		}
+		if err := json.Unmarshal(contextLabelsJSON, &p.ContextLabels); err != nil {
+			db.log.WithError(err).Warn("Failed to unmarshal context labels")
+		}
+		if err := json.Unmarshal(preConditionsJSON, &p.PreConditions); err != nil {
+			db.log.WithError(err).Warn("Failed to unmarshal pre conditions")
+		}
+		if err := json.Unmarshal(postConditionsJSON, &p.PostConditions); err != nil {
+			db.log.WithError(err).Warn("Failed to unmarshal post conditions")
+		}
+		if err := json.Unmarshal(effectivenessJSON, &p.EffectivenessData); err != nil {
+			db.log.WithError(err).Warn("Failed to unmarshal effectiveness data")
+		}
+		if err := json.Unmarshal(metadataJSON, &p.Metadata); err != nil {
+			db.log.WithError(err).Warn("Failed to unmarshal metadata")
+		}
+
+		// Convert embedding string back to float64 slice
+		p.Embedding = db.stringToEmbedding(embeddingStr)
+
+		patterns = append(patterns, &p)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating vector search results: %w", err)
+	}
+
+	db.log.WithFields(logrus.Fields{
+		"embedding_dim":  len(embedding),
+		"found_patterns": len(patterns),
+		"limit":          limit,
+		"threshold":      threshold,
+	}).Debug("Performed vector similarity search")
+
+	return patterns, nil
+}
+
 // DeletePattern removes a pattern from the vector database
 func (db *PostgreSQLVectorDatabase) DeletePattern(ctx context.Context, patternID string) error {
 	query := `DELETE FROM action_patterns WHERE id = $1`

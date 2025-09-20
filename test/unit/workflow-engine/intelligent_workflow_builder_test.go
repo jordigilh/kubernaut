@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	testconfig "github.com/jordigilh/kubernaut/pkg/testutil/config"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
 
@@ -177,8 +178,9 @@ var _ = Describe("Intelligent Workflow Builder - Business Requirements Testing",
 				"Compliance requirements should be tracked for business operations")
 
 			notificationTeams := workflow.Metadata["failure_notification"].([]string)
-			Expect(len(notificationTeams)).To(BeNumerically(">=", 2),
-				"Failure notifications should include multiple teams for business continuity")
+			testconfig.ExpectBusinessRequirement(len(notificationTeams),
+				"BR-WF-001-NOTIFICATION-TEAMS", "test",
+				"failure notification team count for business continuity")
 
 			// Business requirement validation: Version should follow semantic versioning
 			Expect(workflow.Version).To(MatchRegexp(`^\d+\.\d+\.\d+$`),
@@ -225,7 +227,7 @@ var _ = Describe("Intelligent Workflow Builder - Business Requirements Testing",
 						Version: "1.0.0",
 					},
 					Variables: map[string]interface{}{
-						"max_downtime_minutes":       15,
+						"max_downtime_minutes":       5, // BR-WF-001-MAX-DOWNTIME-MINUTES: Business continuity requirement
 						"health_check_interval":      "2m",
 						"rollback_trigger_threshold": 0.5,
 					},
@@ -249,8 +251,9 @@ var _ = Describe("Intelligent Workflow Builder - Business Requirements Testing",
 
 			// Business validation: Template should have reasonable constraints
 			maxDowntime := workflow.Template.Variables["max_downtime_minutes"].(int)
-			Expect(maxDowntime).To(BeNumerically("<=", 30),
-				"BR-WF-001: Production workflows should minimize business downtime")
+			testconfig.ExpectBusinessRequirement(maxDowntime,
+				"BR-WF-001-MAX-DOWNTIME-MINUTES", "test",
+				"maximum downtime minutes for business impact minimization")
 
 			healthCheckInterval := workflow.Template.Variables["health_check_interval"].(string)
 			Expect(healthCheckInterval).To(MatchRegexp(`\d+[ms]`),

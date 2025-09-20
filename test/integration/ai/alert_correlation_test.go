@@ -14,7 +14,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
-
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/integration/shared"
@@ -348,7 +347,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			storageRecommendation, err := client.AnalyzeAlert(context.Background(), storageAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(storageRecommendation).ToNot(BeNil())
+			Expect(storageRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid storage analysis for confidence requirements")
 
 			// Symptom 1: Database connection failures
 			dbConnectionAlert := types.Alert{
@@ -373,7 +372,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			dbRecommendation, err := client.AnalyzeAlert(context.Background(), dbConnectionAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(dbRecommendation).ToNot(BeNil())
+			Expect(dbRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid database analysis for confidence requirements")
 
 			// Symptom 2: Application service degradation
 			appDegradationAlert := types.Alert{
@@ -398,7 +397,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			appRecommendation, err := client.AnalyzeAlert(context.Background(), appDegradationAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(appRecommendation).ToNot(BeNil())
+			Expect(appRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid application analysis for confidence requirements")
 
 			// Validate cascading failure handling
 			// Storage issue should get storage-focused remedy
@@ -464,7 +463,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			memoryRecommendation, err := client.AnalyzeAlert(context.Background(), memoryAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(memoryRecommendation).ToNot(BeNil())
+			Expect(memoryRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Escalated symptom: OOM kills starting
 			oomAlert := types.Alert{
@@ -489,7 +488,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			oomRecommendation, err := client.AnalyzeAlert(context.Background(), oomAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(oomRecommendation).ToNot(BeNil())
+			Expect(oomRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Performance degradation symptom
 			performanceAlert := types.Alert{
@@ -513,7 +512,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			performanceRecommendation, err := client.AnalyzeAlert(context.Background(), performanceAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(performanceRecommendation).ToNot(BeNil())
+			Expect(performanceRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Validate memory leak correlation handling
 			// Early memory alert might trigger scaling or resource increase
@@ -596,7 +595,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			deploymentRecommendation, err := client.AnalyzeAlert(context.Background(), deploymentAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(deploymentRecommendation).ToNot(BeNil())
+			Expect(deploymentRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Symptom 1: Service unavailable
 			serviceAlert := types.Alert{
@@ -621,7 +620,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			serviceRecommendation, err := client.AnalyzeAlert(context.Background(), serviceAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(serviceRecommendation).ToNot(BeNil())
+			Expect(serviceRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Symptom 2: Load balancer errors
 			lbAlert := types.Alert{
@@ -645,7 +644,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			lbRecommendation, err := client.AnalyzeAlert(context.Background(), lbAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(lbRecommendation).ToNot(BeNil())
+			Expect(lbRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Validate deployment failure correlation
 			// Deployment failure should trigger rollback (given successful history)
@@ -716,7 +715,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			dbRecommendation, err := client.AnalyzeAlert(context.Background(), dbAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(dbRecommendation).ToNot(BeNil())
+			Expect(dbRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Symptom 1: User service issues in production namespace
 			userServiceAlert := types.Alert{
@@ -741,7 +740,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			userServiceRecommendation, err := client.AnalyzeAlert(context.Background(), userServiceAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(userServiceRecommendation).ToNot(BeNil())
+			Expect(userServiceRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Symptom 2: Order service issues in ecommerce namespace
 			orderServiceAlert := types.Alert{
@@ -766,7 +765,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			orderServiceRecommendation, err := client.AnalyzeAlert(context.Background(), orderServiceAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(orderServiceRecommendation).ToNot(BeNil())
+			Expect(orderServiceRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Validate cross-namespace correlation
 			// Database alert should focus on database remediation
@@ -838,7 +837,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			networkRecommendation, err := client.AnalyzeAlert(context.Background(), networkAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(networkRecommendation).ToNot(BeNil())
+			Expect(networkRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// T+30s: Pod scheduling failures due to network issues
 			schedulingAlert := types.Alert{
@@ -863,7 +862,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			schedulingRecommendation, err := client.AnalyzeAlert(context.Background(), schedulingAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(schedulingRecommendation).ToNot(BeNil())
+			Expect(schedulingRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// T+60s: Service discovery failures
 			serviceDiscoveryAlert := types.Alert{
@@ -887,7 +886,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 			serviceDiscoveryRecommendation, err := client.AnalyzeAlert(context.Background(), serviceDiscoveryAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(serviceDiscoveryRecommendation).ToNot(BeNil())
+			Expect(serviceDiscoveryRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
 			// Validate temporal correlation handling
 			// Network issue should trigger network-focused remediation

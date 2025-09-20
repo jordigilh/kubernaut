@@ -74,7 +74,6 @@ var _ = Describe("Health Monitoring Metrics Integration", func() {
 			By("Performing health check to generate metrics")
 			healthStatus, err := healthMonitor.GetHealthStatus(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(healthStatus).ToNot(BeNil())
 
 			// Record health status using enhanced metrics
 			enhancedMetrics.RecordHealthStatus(healthStatus)

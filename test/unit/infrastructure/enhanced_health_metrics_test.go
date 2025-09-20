@@ -48,7 +48,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify gauge exists and can record health status following business requirements
 			gauge := healthMetrics.GetHealthStatusGauge()
-			Expect(gauge).ToNot(BeNil(), "BR-METRICS-020: Health status gauge must be available")
+			Expect(func() { gauge.WithLabelValues("component").Set(1.0) }).ToNot(Panic(), "BR-METRICS-020: Health status gauge must provide functional value setting capability")
 
 			// Business requirement: Should be able to record healthy state
 			Expect(func() { healthMetrics.RecordHealthStatus(healthStatus) }).ToNot(Panic(), "BR-METRICS-020: Must record healthy state")
@@ -71,7 +71,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify proper component labeling business functionality
 			gauge := healthMetrics.GetHealthStatusGauge()
-			Expect(gauge).ToNot(BeNil(), "BR-METRICS-020: Health status gauge must support multiple components")
+			Expect(func() { gauge.WithLabelValues("component1").Set(1.0) }).ToNot(Panic(), "BR-METRICS-020: Health status gauge must provide functional multi-component labeling capability")
 
 			// Business requirement: Should handle multiple component types without error
 			Expect(func() {
@@ -93,7 +93,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify histogram exists and records timing following business requirements
 			histogram := healthMetrics.GetHealthCheckDurationHistogram()
-			Expect(histogram).ToNot(BeNil(), "BR-METRICS-021: Health check duration histogram must be available")
+			Expect(func() { histogram.WithLabelValues("component").Observe(0.5) }).ToNot(Panic(), "BR-METRICS-021: Health check duration histogram must provide functional timing observation capability")
 
 			// Business requirement: Should record duration without error
 			Expect(func() { healthMetrics.RecordHealthCheckDuration("llm-20b", checkDuration) }).ToNot(Panic(), "BR-METRICS-021: Must record health check duration")
@@ -118,7 +118,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify histogram can handle multiple recordings
 			histogram := healthMetrics.GetHealthCheckDurationHistogram()
-			Expect(histogram).ToNot(BeNil(), "BR-METRICS-021: Health check duration histogram must be available")
+			Expect(func() { histogram.WithLabelValues("component").Observe(0.75) }).ToNot(Panic(), "BR-METRICS-021: Health check duration histogram must provide functional labeled timing observation capability")
 
 			// Business requirement: Should handle multiple duration recordings without error
 			Expect(func() {
@@ -142,7 +142,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify counter tracks success/failure separately
 			counter := healthMetrics.GetHealthChecksTotalCounter()
-			Expect(counter).ToNot(BeNil(), "BR-METRICS-022: Health checks total counter must be available")
+			Expect(func() { counter.WithLabelValues("component", "status").Inc() }).ToNot(Panic(), "BR-METRICS-022: Health checks total counter must provide functional increment capability")
 
 			// Business requirement: Should track successful and failed checks without error
 			Expect(func() {
@@ -163,7 +163,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify consecutive failure tracking capability
 			gauge := healthMetrics.GetConsecutiveFailuresGauge()
-			Expect(gauge).ToNot(BeNil(), "BR-METRICS-023: Consecutive failures gauge must be available")
+			Expect(func() { gauge.WithLabelValues("component").Set(3.0) }).ToNot(Panic(), "BR-METRICS-023: Consecutive failures gauge must provide functional failure count tracking capability")
 
 			// Business requirement: Should track failure counts without error
 			Expect(func() {
@@ -185,7 +185,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify failure count reset capability
 			gauge := healthMetrics.GetConsecutiveFailuresGauge()
-			Expect(gauge).ToNot(BeNil(), "BR-METRICS-023: Consecutive failures gauge must be available")
+			Expect(func() { gauge.WithLabelValues("component").Set(0.0) }).ToNot(Panic(), "BR-METRICS-023: Consecutive failures gauge must provide functional failure count reset capability")
 
 			// Business requirement: Should reset failures without error
 			Expect(func() {
@@ -206,7 +206,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify uptime tracking capability
 			gauge := healthMetrics.GetUptimePercentageGauge()
-			Expect(gauge).ToNot(BeNil(), "BR-METRICS-024: Uptime percentage gauge must be available")
+			Expect(func() { gauge.WithLabelValues("service").Set(99.5) }).ToNot(Panic(), "BR-METRICS-024: Uptime percentage gauge must provide functional uptime percentage tracking capability")
 
 			// Business requirement: Should record uptime without error
 			Expect(func() {
@@ -230,7 +230,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify probe timing tracking capability
 			histogram := healthMetrics.GetProbeDurationHistogram()
-			Expect(histogram).ToNot(BeNil(), "BR-METRICS-025: Probe duration histogram must be available")
+			Expect(func() { histogram.WithLabelValues("liveness").Observe(0.1) }).ToNot(Panic(), "BR-METRICS-025: Probe duration histogram must provide functional liveness probe timing capability")
 
 			// Business requirement: Should record probe duration without error
 			Expect(func() {
@@ -254,7 +254,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify readiness probe timing capability
 			histogram := healthMetrics.GetProbeDurationHistogram()
-			Expect(histogram).ToNot(BeNil(), "BR-METRICS-026: Probe duration histogram must be available")
+			Expect(func() { histogram.WithLabelValues("readiness").Observe(0.2) }).ToNot(Panic(), "BR-METRICS-026: Probe duration histogram must provide functional readiness probe timing capability")
 
 			// Business requirement: Should record readiness probe duration without error
 			Expect(func() {
@@ -278,7 +278,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify accuracy compliance tracking capability
 			gauge := healthMetrics.GetMonitoringAccuracyGauge()
-			Expect(gauge).ToNot(BeNil(), "BR-METRICS-035: Monitoring accuracy gauge must be available")
+			Expect(func() { gauge.WithLabelValues("monitoring").Set(0.99) }).ToNot(Panic(), "BR-METRICS-035: Monitoring accuracy gauge must provide functional accuracy compliance tracking capability")
 
 			// Business requirement: Should record accuracy without error
 			Expect(func() {
@@ -302,7 +302,7 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 
 			// Assert: Verify enterprise model validation capability
 			gauge := healthMetrics.GetModelParameterCountGauge()
-			Expect(gauge).ToNot(BeNil(), "BR-METRICS-036: Model parameter count gauge must be available")
+			Expect(func() { gauge.WithLabelValues("model").Set(20000000000) }).ToNot(Panic(), "BR-METRICS-036: Model parameter count gauge must provide functional parameter count tracking capability")
 
 			// Business requirement: Should record parameter count without error
 			Expect(func() {

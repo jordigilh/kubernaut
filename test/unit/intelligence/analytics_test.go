@@ -87,7 +87,7 @@ var _ = Describe("Business Requirement Validation: Advanced Analytics", func() {
 
 			By("Validating business requirements and performance")
 			Expect(err).ToNot(HaveOccurred(), "Time series analysis must succeed for business planning")
-			Expect(trendAnalysis).ToNot(BeNil(), "Must provide trend analysis results")
+			Expect(trendAnalysis.OverallTrends.OverallAccuracy).To(BeNumerically(">=", 0.85), "BR-STAT-006: Trend analysis must achieve ≥85% accuracy for reliable business planning")
 
 			// BR-STAT-006: Analysis completion time <30 seconds for real-time business decisions
 			analysisTime := time.Since(startTime)
@@ -107,9 +107,7 @@ var _ = Describe("Business Requirement Validation: Advanced Analytics", func() {
 			accurateTrends := 0
 
 			for metricName, trend := range trendAnalysis.MetricTrends {
-				Expect(trend).ToNot(BeNil(), fmt.Sprintf("Must provide trend analysis for %s", metricName))
-				Expect(trend.TrendStrength).To(BeNumerically(">", 0.5),
-					fmt.Sprintf("Trend strength must be meaningful for %s", metricName))
+				Expect(trend.TrendStrength).To(BeNumerically(">", 0.5), "BR-STAT-006: Individual trend analysis must provide meaningful strength metrics for business decision support")
 
 				// Business validation: Check if trend direction is detected
 				Expect(trend.TrendDirection).ToNot(BeEmpty(),
@@ -179,7 +177,7 @@ var _ = Describe("Business Requirement Validation: Advanced Analytics", func() {
 
 			By("Validating business requirements and performance")
 			Expect(err).ToNot(HaveOccurred(), "Workload pattern detection must succeed for business optimization")
-			Expect(patternAnalysis).ToNot(BeNil(), "Must provide pattern analysis results")
+			Expect(len(patternAnalysis.DetectedPatterns)).To(BeNumerically(">=", 1), "BR-CL-009: Workload pattern detection must identify concrete patterns for business optimization")
 
 			// BR-CL-009: Analysis completion time <60 seconds for operational responsiveness
 			analysisTime := time.Since(startTime)

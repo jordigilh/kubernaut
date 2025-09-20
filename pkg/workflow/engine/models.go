@@ -394,6 +394,24 @@ type OptimizationChange struct {
 	CreatedAt   time.Time   `json:"created_at"`
 }
 
+// OptimizationCandidate represents a potential optimization
+// Business Requirements: BR-ORK-001 - Generate 3-5 viable optimization candidates
+type OptimizationCandidate struct {
+	ID                     string                 `json:"id"`
+	Type                   string                 `json:"type"`
+	Target                 string                 `json:"target"`
+	Description            string                 `json:"description"`
+	Impact                 float64                `json:"impact"`                   // Expected performance impact (0.0 to 1.0)
+	Confidence             float64                `json:"confidence"`               // Confidence in prediction (0.0 to 1.0)
+	PredictedTimeReduction float64                `json:"predicted_time_reduction"` // Expected time reduction percentage
+	ROIScore               float64                `json:"roi_score"`                // Return on investment score
+	CostReduction          float64                `json:"cost_reduction"`           // Expected cost reduction
+	ImplementationEffort   time.Duration          `json:"implementation_effort"`    // Expected implementation time
+	Priority               int                    `json:"priority"`                 // Priority ranking
+	ApplicableSteps        []string               `json:"applicable_steps"`         // Steps this optimization applies to
+	Parameters             map[string]interface{} `json:"parameters"`               // Additional optimization parameters
+}
+
 // PerformanceImprovement represents performance improvements from optimization
 type PerformanceImprovement struct {
 	ExecutionTime float64 `json:"execution_time"`
@@ -879,16 +897,7 @@ const (
 	BottleneckTypeTimeout  BottleneckType = "timeout"
 )
 
-type OptimizationCandidate struct {
-	ID          string                 `json:"id"`
-	Type        string                 `json:"type"`
-	Target      string                 `json:"target"`
-	Description string                 `json:"description"`
-	Impact      float64                `json:"impact"`
-	Confidence  float64                `json:"confidence"`
-	Parameters  map[string]interface{} `json:"parameters"`
-	Applied     bool                   `json:"applied"`
-}
+// OptimizationCandidate is already defined above at line 399 - removing duplicate
 
 type OptimizationSuggestion struct {
 	ID          string                 `json:"id"`
@@ -1105,10 +1114,13 @@ type ExecutionPattern struct {
 }
 
 type OptimizationConstraints struct {
-	MaxRiskLevel       string  `json:"max_risk_level"`
-	MinSuccessRate     float64 `json:"min_success_rate"`
-	MaxPerformanceGain float64 `json:"max_performance_gain"`
-	PreferReliability  bool    `json:"prefer_reliability"`
+	MaxRiskLevel       string        `json:"max_risk_level"`
+	MinSuccessRate     float64       `json:"min_success_rate"`
+	MaxPerformanceGain float64       `json:"max_performance_gain"`
+	PreferReliability  bool          `json:"prefer_reliability"`
+	MaxExecutionTime   time.Duration `json:"max_execution_time"`
+	MinPerformanceGain float64       `json:"min_performance_gain"`
+	RequiredConfidence float64       `json:"required_confidence"`
 }
 
 type WorkflowMetrics struct {
@@ -1117,6 +1129,27 @@ type WorkflowMetrics struct {
 	ResourceUtilization  float64       `json:"resource_utilization"`
 	FailureRate          float64       `json:"failure_rate"`
 	ErrorRate            float64       `json:"error_rate"`
+}
+
+// OrchestrationEfficiency represents orchestration efficiency metrics
+type OrchestrationEfficiency struct {
+	OverallEfficiency     float64                `json:"overall_efficiency"`
+	ParallelizationRatio  float64                `json:"parallelization_ratio"`
+	ResourceUtilization   float64                `json:"resource_utilization"`
+	StepDependencyMetrics map[string]interface{} `json:"step_dependency_metrics"`
+	OptimizationPotential float64                `json:"optimization_potential"`
+}
+
+// OptimizationImpact represents the impact of orchestration optimization
+type OptimizationImpact struct {
+	ExecutionTimeImprovement float64 `json:"execution_time_improvement"`
+	ResourceEfficiencyGain   float64 `json:"resource_efficiency_gain"`
+	StepReduction            float64 `json:"step_reduction"`
+	OverallImpact            float64 `json:"overall_impact"`
+	TimeImprovement          float64 `json:"time_improvement"`        // For production optimization engine compatibility
+	ReliabilityImprovement   float64 `json:"reliability_improvement"` // For production optimization engine compatibility
+	OverallScore             float64 `json:"overall_score"`           // For production optimization engine compatibility
+	ROIAchieved              float64 `json:"roi_achieved"`            // For production optimization engine compatibility
 }
 
 type PerformanceThresholds struct {
@@ -1161,12 +1194,119 @@ type SafetyConstraints struct {
 	MaxWorkflowDuration     time.Duration `json:"max_workflow_duration"`
 	AllowedEnvironments     []string      `json:"allowed_environments"`
 	RequiredApprovals       []string      `json:"required_approvals"`
+	RequireApproval         bool          `json:"require_approval"`          // For security enhancement compatibility
+	AllowDestructiveActions bool          `json:"allow_destructive_actions"` // For security enhancement compatibility
 }
 
 type SafetyCheck struct {
 	IsSafe      bool     `json:"is_safe"`
 	RiskFactors []string `json:"risk_factors"`
 	SafetyScore float64  `json:"safety_score"`
+}
+
+// SecurityReport represents a comprehensive security analysis report
+type SecurityReport struct {
+	WorkflowID         string                 `json:"workflow_id"`
+	SecurityScore      float64                `json:"security_score"`
+	VulnerabilityCount int                    `json:"vulnerability_count"`
+	ComplianceStatus   string                 `json:"compliance_status"`
+	SecurityFindings   []SecurityFinding      `json:"security_findings"`
+	RecommendedActions []string               `json:"recommended_actions"`
+	GeneratedAt        time.Time              `json:"generated_at"`
+	SecurityMetadata   map[string]interface{} `json:"security_metadata"`
+}
+
+// SecurityFinding represents a specific security finding
+type SecurityFinding struct {
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Severity    string                 `json:"severity"`
+	Description string                 `json:"description"`
+	StepID      string                 `json:"step_id,omitempty"`
+	Remediation string                 `json:"remediation"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+// AdvancedInsights represents comprehensive workflow insights
+type AdvancedInsights struct {
+	WorkflowID  string                 `json:"workflow_id"`
+	InsightType string                 `json:"insight_type"`
+	Confidence  float64                `json:"confidence"`
+	Insights    []WorkflowInsight      `json:"insights"`
+	GeneratedAt time.Time              `json:"generated_at"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+// WorkflowInsight represents a specific workflow insight
+type WorkflowInsight struct {
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Category    string                 `json:"category"`
+	Description string                 `json:"description"`
+	Impact      string                 `json:"impact"`
+	Confidence  float64                `json:"confidence"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+// PredictiveMetrics represents predictive analytics for workflows
+type PredictiveMetrics struct {
+	WorkflowID             string        `json:"workflow_id"`
+	PredictedExecutionTime time.Duration `json:"predicted_execution_time"`
+	PredictedSuccessRate   float64       `json:"predicted_success_rate"`
+	PredictedResourceUsage float64       `json:"predicted_resource_usage"`
+	ConfidenceLevel        float64       `json:"confidence_level"`
+	TrendAnalysis          []string      `json:"trend_analysis"`
+	PredictionHorizon      time.Duration `json:"prediction_horizon"`
+	GeneratedAt            time.Time     `json:"generated_at"`
+	PredictiveFactors      []string      `json:"predictive_factors"`
+	RiskAssessment         string        `json:"risk_assessment"`
+}
+
+// AIRecommendations represents AI-generated workflow recommendations
+type AIRecommendations struct {
+	WorkflowID         string                 `json:"workflow_id"`
+	RecommendationType string                 `json:"recommendation_type"`
+	Confidence         float64                `json:"confidence"`
+	Recommendations    []AIRecommendation     `json:"recommendations"`
+	GeneratedAt        time.Time              `json:"generated_at"`
+	ModelVersion       string                 `json:"model_version"`
+	Metadata           map[string]interface{} `json:"metadata"`
+}
+
+// AIRecommendation represents a specific AI recommendation
+type AIRecommendation struct {
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Priority    string                 `json:"priority"`
+	Description string                 `json:"description"`
+	Impact      string                 `json:"impact"`
+	Confidence  float64                `json:"confidence"`
+	Parameters  map[string]interface{} `json:"parameters"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+// AIOptimizationParams represents parameters for AI optimization
+type AIOptimizationParams struct {
+	OptimizationType string                 `json:"optimization_type"`
+	TargetMetrics    []string               `json:"target_metrics"`
+	Confidence       float64                `json:"confidence"`
+	ModelVersion     string                 `json:"model_version"`
+	LearningData     map[string]interface{} `json:"learning_data"`
+	Constraints      map[string]interface{} `json:"constraints"`
+	Preferences      map[string]interface{} `json:"preferences"`
+}
+
+// MachineLearningContext represents context for machine learning enhancement
+type MachineLearningContext struct {
+	ModelType       string                 `json:"model_type"`
+	TrainingData    []string               `json:"training_data"`
+	FeatureSet      []string               `json:"feature_set"`
+	LearningRate    float64                `json:"learning_rate"`
+	Epochs          int                    `json:"epochs"`
+	ValidationSplit float64                `json:"validation_split"`
+	ModelAccuracy   float64                `json:"model_accuracy"`
+	Hyperparameters map[string]interface{} `json:"hyperparameters"`
+	Metadata        map[string]interface{} `json:"metadata"`
 }
 
 type SafetyEnforcement struct {
@@ -1180,12 +1320,7 @@ type ConstrainedOptimizationResult struct {
 	PerformanceGain float64 `json:"performance_gain"`
 }
 
-type OptimizationImpact struct {
-	TimeImprovement        float64 `json:"time_improvement"`
-	ReliabilityImprovement float64 `json:"reliability_improvement"`
-	ResourceEfficiencyGain float64 `json:"resource_efficiency_gain"`
-	OverallScore           float64 `json:"overall_score"`
-}
+// Note: OptimizationImpact already defined above with all required fields
 
 // Note: ExecutionMetrics and TrendAnalysis already exist - using existing types
 
@@ -1379,6 +1514,7 @@ const (
 	ValidationTypeSyntax    ValidationType = "syntax"
 	ValidationTypeSemantic  ValidationType = "semantic"
 	ValidationTypeRuntime   ValidationType = "runtime"
+	ValidationTypeSecurity  ValidationType = "security" // For security enhancement validation
 )
 
 // Missing types referenced in models.go
@@ -1676,4 +1812,265 @@ type SystemResourceImpact struct {
 	PeakMemory   float64       `json:"peak_memory"`
 	Duration     time.Duration `json:"duration"`
 	Timestamp    time.Time     `json:"timestamp"`
+}
+
+// Business Requirements: BR-ORCH-002 - Adaptive Resource Allocation Types
+
+// ResourceAllocationResult represents the result of resource allocation optimization
+type ResourceAllocationResult struct {
+	OptimizationApplied     bool    `json:"optimization_applied"`
+	EstimatedEfficiencyGain float64 `json:"estimated_efficiency_gain"`
+	AllocatedCPU            float64 `json:"allocated_cpu"`
+	AllocatedMemory         float64 `json:"allocated_memory"`
+	OptimizationDetails     string  `json:"optimization_details"`
+	Confidence              float64 `json:"confidence"`
+}
+
+// ClusterCapacity represents the available capacity of a cluster
+type ClusterCapacity struct {
+	Level           ClusterCapacityLevel `json:"level"`
+	AvailableCPU    float64              `json:"available_cpu"`
+	AvailableMemory float64              `json:"available_memory"`
+	NodeCount       int                  `json:"node_count"`
+	Utilization     float64              `json:"utilization"`
+}
+
+// ClusterCapacityLevel represents different levels of cluster capacity
+type ClusterCapacityLevel string
+
+const (
+	ClusterCapacityHigh        ClusterCapacityLevel = "high"
+	ClusterCapacityMedium      ClusterCapacityLevel = "medium"
+	ClusterCapacityLow         ClusterCapacityLevel = "low"
+	ClusterCapacityConstrained ClusterCapacityLevel = "constrained"
+)
+
+// ResourcePrediction represents predicted resource requirements
+type ResourcePrediction struct {
+	PredictedCPU       float64 `json:"predicted_cpu"`
+	PredictedMemory    float64 `json:"predicted_memory"`
+	ConfidenceLevel    float64 `json:"confidence_level"`
+	PredictionAccuracy float64 `json:"prediction_accuracy"`
+	BasedOnExecutions  int     `json:"based_on_executions"`
+	TimeWindow         string  `json:"time_window"`
+}
+
+// AdaptiveResourceMetrics represents resource usage metrics for adaptive allocation
+type AdaptiveResourceMetrics struct {
+	CPUUtilization    float64 `json:"cpu_utilization"`
+	MemoryUtilization float64 `json:"memory_utilization"`
+	EstimatedCost     float64 `json:"estimated_cost"`
+	Efficiency        float64 `json:"efficiency"`
+}
+
+// Business Requirements: BR-ORCH-003 - Execution Scheduling Types
+
+// SchedulingResult represents the result of execution scheduling optimization
+type SchedulingResult struct {
+	OptimizationApplied     bool                          `json:"optimization_applied"`
+	EstimatedThroughputGain float64                       `json:"estimated_throughput_gain"`
+	ScheduledWorkflows      []*ScheduledWorkflowExecution `json:"scheduled_workflows"`
+	TotalSchedulingTime     time.Duration                 `json:"total_scheduling_time"`
+	OptimizationDetails     string                        `json:"optimization_details"`
+	Confidence              float64                       `json:"confidence"`
+}
+
+// ScheduledWorkflowExecution represents a workflow scheduled for execution
+type ScheduledWorkflowExecution struct {
+	WorkflowID              string              `json:"workflow_id"`
+	ScheduledStartTime      time.Time           `json:"scheduled_start_time"`
+	ScheduledExecutionTime  time.Duration       `json:"scheduled_execution_time"`
+	Priority                int                 `json:"priority"`
+	AllocatedResources      *ResourceAllocation `json:"allocated_resources"`
+	Dependencies            []string            `json:"dependencies"`
+	EstimatedCompletionTime time.Time           `json:"estimated_completion_time"`
+}
+
+// ResourceAllocation represents allocated resources for a scheduled workflow
+type ResourceAllocation struct {
+	CPU     float64 `json:"cpu"`
+	Memory  float64 `json:"memory"`
+	Disk    float64 `json:"disk"`
+	Network float64 `json:"network"`
+}
+
+// SystemLoad represents current system load characteristics
+type SystemLoad struct {
+	Level       SystemLoadLevel `json:"level"`
+	CPULoad     float64         `json:"cpu_load"`
+	MemoryLoad  float64         `json:"memory_load"`
+	DiskLoad    float64         `json:"disk_load"`
+	NetworkLoad float64         `json:"network_load"`
+	ActiveTasks int             `json:"active_tasks"`
+	QueueLength int             `json:"queue_length"`
+}
+
+// SystemLoadLevel represents different levels of system load
+type SystemLoadLevel string
+
+const (
+	SystemLoadVeryLow  SystemLoadLevel = "very_low"
+	SystemLoadLow      SystemLoadLevel = "low"
+	SystemLoadMedium   SystemLoadLevel = "medium"
+	SystemLoadHigh     SystemLoadLevel = "high"
+	SystemLoadCritical SystemLoadLevel = "critical"
+)
+
+// SchedulingPrediction represents predicted scheduling optimization
+type SchedulingPrediction struct {
+	PredictedThroughput float64       `json:"predicted_throughput"`
+	PredictedWaitTime   time.Duration `json:"predicted_wait_time"`
+	ConfidenceLevel     float64       `json:"confidence_level"`
+	AccuracyScore       float64       `json:"accuracy_score"`
+	BasedOnExecutions   int           `json:"based_on_executions"`
+	TimeWindow          string        `json:"time_window"`
+}
+
+// PrioritySchedulingResult represents the result of priority-based scheduling
+type PrioritySchedulingResult struct {
+	ScheduledWorkflows  []*ScheduledWorkflowExecution `json:"scheduled_workflows"`
+	PriorityOrdering    []string                      `json:"priority_ordering"`
+	TotalSchedulingTime time.Duration                 `json:"total_scheduling_time"`
+	OptimizationApplied bool                          `json:"optimization_applied"`
+	BusinessSLAMet      bool                          `json:"business_sla_met"`
+}
+
+// SchedulingPerformanceMetrics represents scheduling performance measurements
+type SchedulingPerformanceMetrics struct {
+	ThroughputWPS   float64       `json:"throughput_wps"` // Workflows per second
+	AverageWaitTime time.Duration `json:"average_wait_time"`
+	QueueLength     int           `json:"queue_length"`
+	UtilizationRate float64       `json:"utilization_rate"`
+	SuccessRate     float64       `json:"success_rate"`
+}
+
+// Business Requirements: BR-ORCH-001 - Feedback Loop Types
+
+// ExecutionFeedback represents feedback from workflow execution
+type ExecutionFeedback struct {
+	ExecutionID      string                 `json:"execution_id"`
+	WorkflowID       string                 `json:"workflow_id"`
+	FeedbackType     FeedbackType           `json:"feedback_type"`
+	AccuracyScore    float64                `json:"accuracy_score"`
+	PerformanceScore float64                `json:"performance_score"`
+	QualityScore     float64                `json:"quality_score"`
+	UserSatisfaction float64                `json:"user_satisfaction"`
+	Timestamp        time.Time              `json:"timestamp"`
+	Context          string                 `json:"context"`
+	Metadata         map[string]interface{} `json:"metadata"`
+}
+
+// FeedbackType represents different types of feedback
+type FeedbackType string
+
+const (
+	FeedbackTypePositive    FeedbackType = "positive"
+	FeedbackTypeNegative    FeedbackType = "negative"
+	FeedbackTypePerformance FeedbackType = "performance"
+	FeedbackTypeQuality     FeedbackType = "quality"
+	FeedbackTypeUser        FeedbackType = "user"
+	FeedbackTypeSystem      FeedbackType = "system"
+)
+
+// FeedbackLoopResult represents the result of feedback loop processing
+type FeedbackLoopResult struct {
+	FeedbackProcessed        bool          `json:"feedback_processed"`
+	OptimizationImprovements int           `json:"optimization_improvements"`
+	AccuracyImprovement      float64       `json:"accuracy_improvement"`
+	PerformanceImprovement   float64       `json:"performance_improvement"`
+	LearningRate             float64       `json:"learning_rate"`
+	ProcessingTime           time.Duration `json:"processing_time"`
+	ConfidenceLevel          float64       `json:"confidence_level"`
+}
+
+// PerformanceFeedback represents performance-specific feedback data
+type PerformanceFeedback struct {
+	FeedbackType          FeedbackType  `json:"feedback_type"`
+	SuccessRate           float64       `json:"success_rate"`
+	SampleCount           int           `json:"sample_count"`
+	AverageResponseTime   time.Duration `json:"average_response_time"`
+	ErrorRate             float64       `json:"error_rate"`
+	ThroughputImprovement float64       `json:"throughput_improvement"`
+	ResourceEfficiency    float64       `json:"resource_efficiency"`
+}
+
+// StrategyAdaptationResult represents the result of optimization strategy adaptation
+type StrategyAdaptationResult struct {
+	StrategyAdjustment      float64                `json:"strategy_adjustment"`
+	LearningRate            float64                `json:"learning_rate"`
+	CorrectiveActions       int                    `json:"corrective_actions"`
+	AdaptationEffectiveness float64                `json:"adaptation_effectiveness"`
+	NewStrategyParameters   map[string]interface{} `json:"new_strategy_parameters"`
+	ConfidenceLevel         float64                `json:"confidence_level"`
+}
+
+// FeedbackConvergenceResult represents the result of feedback convergence cycle processing
+type FeedbackConvergenceResult struct {
+	ConvergenceAchieved   bool    `json:"convergence_achieved"`
+	StabilityScore        float64 `json:"stability_score"`
+	ConvergenceRate       float64 `json:"convergence_rate"`
+	CycleNumber           int     `json:"cycle_number"`
+	OptimizationVariance  float64 `json:"optimization_variance"`
+	LearningStabilization float64 `json:"learning_stabilization"`
+}
+
+// RealTimeFeedbackAnalysis represents the result of real-time feedback analysis
+type RealTimeFeedbackAnalysis struct {
+	InsightsGenerated    int                    `json:"insights_generated"`
+	AnalysisAccuracy     float64                `json:"analysis_accuracy"`
+	ResponseTime         float64                `json:"response_time"` // seconds
+	Insights             []*ActionableInsight   `json:"insights"`
+	TrendAnalysis        *FeedbackTrendAnalysis `json:"trend_analysis"`
+	PredictiveIndicators map[string]float64     `json:"predictive_indicators"`
+}
+
+// ActionableInsight represents an actionable insight from feedback analysis
+type ActionableInsight struct {
+	InsightID                string  `json:"insight_id"`
+	ActionableRecommendation string  `json:"actionable_recommendation"`
+	ConfidenceScore          float64 `json:"confidence_score"`
+	ExpectedImpact           float64 `json:"expected_impact"`
+	Priority                 int     `json:"priority"`
+	Category                 string  `json:"category"`
+	ImplementationComplexity string  `json:"implementation_complexity"`
+}
+
+// FeedbackTrendAnalysis represents trend analysis from feedback data
+type FeedbackTrendAnalysis struct {
+	PerformanceTrend    string  `json:"performance_trend"` // improving, declining, stable
+	AccuracyTrend       string  `json:"accuracy_trend"`
+	QualityTrend        string  `json:"quality_trend"`
+	TrendConfidence     float64 `json:"trend_confidence"`
+	PredictedDirection  string  `json:"predicted_direction"`
+	TrendStabilityScore float64 `json:"trend_stability_score"`
+}
+
+// ConflictResolutionResult represents the result of conflicting feedback resolution
+type ConflictResolutionResult struct {
+	ResolutionStrategy      string   `json:"resolution_strategy"`
+	ConfidenceLevel         float64  `json:"confidence_level"`
+	ConflictSeverity        float64  `json:"conflict_severity"`
+	ResolutionEffectiveness float64  `json:"resolution_effectiveness"`
+	RecommendedAction       string   `json:"recommended_action"`
+	AlternativeStrategies   []string `json:"alternative_strategies"`
+}
+
+// HighVolumeFeedbackResult represents the result of high-volume feedback processing
+type HighVolumeFeedbackResult struct {
+	ProcessingThroughput      float64       `json:"processing_throughput"` // items per second
+	AccuracyDegradation       float64       `json:"accuracy_degradation"`
+	ResourceUtilization       float64       `json:"resource_utilization"`
+	ProcessingLatency         time.Duration `json:"processing_latency"`
+	BatchProcessingEfficiency float64       `json:"batch_processing_efficiency"`
+	MemoryUsagePeak           float64       `json:"memory_usage_peak"`
+}
+
+// OptimizationAccuracyMetrics represents optimization accuracy measurement
+type OptimizationAccuracyMetrics struct {
+	AccuracyScore   float64 `json:"accuracy_score"`
+	ConfidenceLevel float64 `json:"confidence_level"`
+	SampleCount     int     `json:"sample_count"`
+	PrecisionScore  float64 `json:"precision_score"`
+	RecallScore     float64 `json:"recall_score"`
+	F1Score         float64 `json:"f1_score"`
 }

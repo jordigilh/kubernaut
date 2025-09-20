@@ -23,9 +23,10 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA embeddings TO vector_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA similarity_search TO vector_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA action_patterns TO vector_user;
 
--- Create the main action_patterns table (matching the application schema)
+-- Create the main action_patterns table (matching the Go ActionPattern struct)
 CREATE TABLE IF NOT EXISTS action_patterns (
     id VARCHAR(255) PRIMARY KEY,
+    description TEXT,  -- Added: matches ActionPattern.Description
     action_type VARCHAR(100) NOT NULL,
     alert_name VARCHAR(255) NOT NULL,
     alert_severity VARCHAR(50) NOT NULL,
@@ -36,8 +37,11 @@ CREATE TABLE IF NOT EXISTS action_patterns (
     action_parameters JSONB DEFAULT '{}',
     context_labels JSONB DEFAULT '{}',
     metadata JSONB DEFAULT '{}',
-    effectiveness_data JSONB DEFAULT '{"score": 0.0, "executions": 0, "successes": 0}',
-    embedding vector(384),
+    effectiveness_data JSONB DEFAULT '{"score": 0.0, "success_count": 0, "failure_count": 0}',  -- Fixed: match Go struct
+    pre_conditions JSONB DEFAULT '{}',  -- Added: missing column causing the error
+    post_conditions JSONB DEFAULT '{}', -- Added: commonly expected field
+    tags TEXT[] DEFAULT '{}',  -- Added: commonly used for pattern categorization
+    embedding vector(1536),  -- Updated: match controlled embedding generator dimension
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

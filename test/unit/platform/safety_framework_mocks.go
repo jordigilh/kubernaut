@@ -11,6 +11,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
+// TODO-MOCK-MIGRATION: Replace with generated mock from pkg/testutil/mocks/factory.go
+// DEPRECATED: Use mocks.NewMockFactory().CreateSafetyValidator() instead
 // MockSafetyValidator implements validation interfaces for safety framework testing
 type MockSafetyValidator struct {
 	logger *logrus.Logger

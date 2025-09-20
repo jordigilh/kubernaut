@@ -95,7 +95,7 @@ var _ = Describe("Investigation Status Race Prevention", func() {
 			// Act: Start investigation
 			investigation, err := coordinator.StartInvestigation(ctx, request)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(investigation).ToNot(BeNil())
+			Expect(investigation.Status).To(Equal("active"), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Investigation must maintain active status for race condition validation")
 			Expect(investigation.Status).To(Equal("active"))
 
 			// Business Validation: Status should be atomically manageable

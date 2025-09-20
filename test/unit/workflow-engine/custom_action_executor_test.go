@@ -142,7 +142,7 @@ var _ = Describe("Custom Action Executor - Enhanced Context Integration Testing"
 			// Verify that logging action completed with context
 			// In a real implementation, message enrichment would be verified through log output
 			Expect(stepContext.Variables["step_id"]).To(Equal("test-step-wait"), "Should have access to step context")
-			Expect(result.Data).ToNot(BeNil(), "Should return result data")
+			Expect(result.Success).To(BeTrue(), "BR-WF-001-SUCCESS-RATE: Custom action execution must return successful result for workflow completion")
 		})
 
 		It("should handle different log levels correctly", func() {

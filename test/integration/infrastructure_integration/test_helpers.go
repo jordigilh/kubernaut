@@ -164,11 +164,17 @@ func (tc *VectorTestContext) InitializeVectorServices() {
 
 	tc.EmbeddingService, err = tc.Factory.CreateEmbeddingService()
 	Expect(err).ToNot(HaveOccurred(), "Failed to create embedding service")
-	Expect(tc.EmbeddingService).ToNot(BeNil())
+	// BR-DATABASE-001-A: Validate embedding service through creation success
+	Expect(tc.EmbeddingService).ToNot(BeNil(), "BR-DATABASE-001-A: Infrastructure must maintain active embedding services")
 
 	tc.VectorDB, err = tc.Factory.CreateVectorDatabase()
 	Expect(err).ToNot(HaveOccurred(), "Failed to create vector database")
-	Expect(tc.VectorDB).ToNot(BeNil())
+	// BR-DATABASE-001-A: Validate vector database through creation success and health check
+	Expect(tc.VectorDB).ToNot(BeNil(), "BR-DATABASE-001-A: Infrastructure must maintain active vector database connections")
+
+	// Additional validation - check if vector database is healthy
+	err = tc.VectorDB.IsHealthy(tc.Context)
+	Expect(err).ToNot(HaveOccurred(), "BR-DATABASE-001-A: Vector database should be healthy and operational")
 }
 
 // CreateTestPatterns generates standard test patterns for consistent testing

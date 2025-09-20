@@ -57,8 +57,7 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 				toolset, err := generator.Generate(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(toolset).ToNot(BeNil())
-				Expect(toolset.Name).To(Equal("prometheus-monitoring-prometheus-server"))
+				Expect(toolset.Name).To(Equal("prometheus-monitoring-prometheus-server"), "BR-AI-001-CONFIDENCE: Prometheus toolset generation must provide functional service identifier for AI confidence requirements")
 				Expect(toolset.ServiceType).To(Equal("prometheus"))
 				Expect(toolset.Description).To(ContainSubstring("prometheus-server"))
 				Expect(toolset.Version).To(Equal("1.0.0"))
@@ -129,7 +128,7 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 				toolset, err := generator.Generate(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(toolset.Tools).ToNot(BeEmpty())
+				Expect(len(toolset.Tools)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: HolmesGPT toolset generators must provide tools for AI confidence requirements")
 
 				// Check for specific tools
 				toolNames := make([]string, len(toolset.Tools))
@@ -167,7 +166,7 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 					}
 				}
 
-				Expect(queryTool).ToNot(BeNil())
+				Expect(queryTool.Name).To(Equal("prometheus_query"), "BR-AI-001-CONFIDENCE: Query tool generation must provide functional Prometheus query capability for AI confidence requirements")
 				Expect(queryTool.Parameters).To(HaveLen(1))
 				Expect(queryTool.Parameters[0].Name).To(Equal("query"))
 				Expect(queryTool.Parameters[0].Required).To(BeTrue())
@@ -256,9 +255,8 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 				toolset, err := generator.Generate(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(toolset).ToNot(BeNil())
+				Expect(toolset.ServiceType).To(Equal("grafana"), "BR-AI-001-CONFIDENCE: Grafana toolset generation must provide functional service type for AI confidence requirements")
 				Expect(toolset.Name).To(Equal("grafana-monitoring-grafana"))
-				Expect(toolset.ServiceType).To(Equal("grafana"))
 				Expect(toolset.Priority).To(Equal(70))
 				Expect(toolset.Enabled).To(BeTrue())
 			})
@@ -383,9 +381,8 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 				toolset, err := generator.Generate(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(toolset).ToNot(BeNil())
+				Expect(toolset.ServiceType).To(Equal("jaeger"), "BR-AI-001-CONFIDENCE: Jaeger toolset generation must provide functional service type for AI confidence requirements")
 				Expect(toolset.Name).To(Equal("jaeger-observability-jaeger-query"))
-				Expect(toolset.ServiceType).To(Equal("jaeger"))
 				Expect(toolset.Priority).To(Equal(60))
 			})
 
@@ -434,8 +431,8 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 					}
 				}
 
-				Expect(tracesTool).ToNot(BeNil())
-				Expect(tracesTool.Parameters).ToNot(BeEmpty())
+				Expect(tracesTool.Name).To(Equal("jaeger_traces"), "BR-AI-001-CONFIDENCE: Traces tool generation must provide functional tracing capability for AI confidence requirements")
+				Expect(len(tracesTool.Parameters)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: HolmesGPT toolset generators must provide tool parameters for AI confidence requirements")
 
 				// Check required service parameter
 				var serviceParam *holmesgpt.ToolParameter
@@ -446,7 +443,7 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 					}
 				}
 
-				Expect(serviceParam).ToNot(BeNil())
+				Expect(serviceParam.Name).To(Equal("service"), "BR-AI-001-CONFIDENCE: Service parameter generation must provide functional service identification for AI confidence requirements")
 				Expect(serviceParam.Required).To(BeTrue())
 				Expect(serviceParam.Type).To(Equal("string"))
 			})
@@ -486,9 +483,8 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 				toolset, err := generator.Generate(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(toolset).ToNot(BeNil())
+				Expect(toolset.ServiceType).To(Equal("elasticsearch"), "BR-AI-001-CONFIDENCE: Elasticsearch toolset generation must provide functional service type for AI confidence requirements")
 				Expect(toolset.Name).To(Equal("elasticsearch-logging-elasticsearch"))
-				Expect(toolset.ServiceType).To(Equal("elasticsearch"))
 				Expect(toolset.Priority).To(Equal(50))
 			})
 
@@ -576,9 +572,8 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 				toolset, err := generator.Generate(ctx, service)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(toolset).ToNot(BeNil())
+				Expect(toolset.ServiceType).To(Equal("vector-database"), "BR-AI-001-CONFIDENCE: Vector database toolset generation must provide functional service type for AI confidence requirements")
 				Expect(toolset.Name).To(Equal("vector-database-ai-vector-db"))
-				Expect(toolset.ServiceType).To(Equal("vector-database"))
 				Expect(toolset.Priority).To(Equal(40))
 			})
 
@@ -747,7 +742,7 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 					}
 				}
 
-				Expect(queryLogsTool).ToNot(BeNil())
+				Expect(queryLogsTool.Name).To(Equal("query_logs"), "BR-AI-001-CONFIDENCE: Query logs tool generation must provide functional log querying capability for AI confidence requirements")
 				Expect(queryLogsTool.Parameters).To(HaveLen(2)) // query and limit
 
 				// Check query parameter
@@ -759,7 +754,7 @@ var _ = Describe("ToolsetGenerators - Implementation Correctness Testing", func(
 					}
 				}
 
-				Expect(queryParam).ToNot(BeNil())
+				Expect(queryParam.Name).To(Equal("query"), "BR-AI-001-CONFIDENCE: Query parameter generation must provide functional query specification for AI confidence requirements")
 				Expect(queryParam.Required).To(BeTrue())
 			})
 

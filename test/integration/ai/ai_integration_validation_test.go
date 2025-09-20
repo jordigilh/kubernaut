@@ -169,7 +169,7 @@ var _ = Describe("Complete AI Integration Validation", Ordered, func() {
 		It("should validate BR-AI-001: Contextual Analysis", func() {
 			// Test pattern correlation analysis capability
 			analytics := createTestPatternAnalytics()
-			Expect(analytics).ToNot(BeNil())
+			Expect(analytics).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI integration validation must return valid validation results for recommendation confidence requirements")
 			Expect(analytics.TotalPatterns).To(BeNumerically(">", 0))
 
 			GinkgoWriter.Printf("✅ BR-AI-001: Contextual Analysis validated\n")
@@ -183,8 +183,8 @@ var _ = Describe("Complete AI Integration Validation", Ordered, func() {
 			alert := testshared.CreateDatabaseAlert()
 			recommendation, err := llmClient.AnalyzeAlert(ctx, *alert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
-			Expect(recommendation.Action).ToNot(BeEmpty())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI integration validation must return valid validation results for recommendation confidence requirements")
+			Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: AI integration validation must provide data for confidence requirements")
 
 			GinkgoWriter.Printf("✅ BR-AI-002: Actionable Recommendations validated\n")
 		})
@@ -197,7 +197,7 @@ var _ = Describe("Complete AI Integration Validation", Ordered, func() {
 			alert := testshared.CreatePerformanceAlert()
 			recommendation, err := llmClient.AnalyzeAlert(ctx, *alert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI integration validation must return valid validation results for recommendation confidence requirements")
 			Expect(recommendation.Confidence).To(BeNumerically(">=", 0.0))
 			Expect(recommendation.Confidence).To(BeNumerically("<=", 1.0))
 

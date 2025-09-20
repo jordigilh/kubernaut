@@ -29,6 +29,7 @@ var _ = Describe("LLM Integration Layer - Business Requirements Testing", func()
 		logger.SetLevel(logrus.WarnLevel)
 		ctx = context.Background()
 
+		// MOCK-MIGRATION: Use factory pattern for LLM client creation
 		llmClient = mocks.NewMockLLMClient()
 		enhancedClient = mocks.NewMockLLMClient()
 	})
@@ -568,7 +569,9 @@ var _ = Describe("LLM Integration Layer - Business Requirements Testing", func()
 				// Use LLM client to analyze cost optimization strategies
 				response, err := llmClient.AnalyzeAlert(ctx, *alert)
 				Expect(err).ToNot(HaveOccurred(), "LLM cost analysis must succeed for business ROI")
-				Expect(response).ToNot(BeNil())
+				roiScore, exists := response.Metadata["roi_score"]
+				Expect(exists).To(BeTrue(), "ROI score should be available in metadata")
+				Expect(roiScore).To(BeNumerically(">=", 0), "BR-AI-001-CONFIDENCE: LLM integration must return measurable ROI scores for AI confidence requirements")
 
 				currentMonthlyCost := scenario.CurrentCost
 				totalCurrentCost += currentMonthlyCost
@@ -694,7 +697,9 @@ var _ = Describe("LLM Integration Layer - Business Requirements Testing", func()
 					// Use LLM client for response quality analysis
 					response, err := llmClient.AnalyzeAlert(ctx, *alert)
 					Expect(err).ToNot(HaveOccurred(), "Quality assessment must succeed")
-					Expect(response).ToNot(BeNil())
+					roiScore, exists := response.Metadata["roi_score"]
+					Expect(exists).To(BeTrue(), "ROI score should be available in metadata")
+					Expect(roiScore).To(BeNumerically(">=", 0), "BR-AI-001-CONFIDENCE: LLM integration must return measurable ROI scores for AI confidence requirements")
 
 					// Business validation: Quality assessment accuracy ≥90%
 					assessedQuality := response.Confidence
@@ -1271,48 +1276,3 @@ func getModelCapabilities(model string) []string {
 }
 
 // Helper functions for new business requirements testing
-
-func validateContextOptimizationStrategy(strategy string, complexity string) bool {
-	expectedStrategies := map[string]string{
-		"simple":   "aggressive_optimization",
-		"moderate": "balanced_optimization",
-		"complex":  "conservative_optimization",
-		"critical": "full_context_preservation",
-	}
-	return expectedStrategies[complexity] == strategy
-}
-
-func calculateExpectedTokenReduction(complexity string, baseTokens int) int {
-	reductionRates := map[string]float64{
-		"simple":   0.75, // 75% reduction
-		"moderate": 0.40, // 40% reduction
-		"complex":  0.20, // 20% reduction
-		"critical": 0.05, // 5% reduction
-	}
-	reduction := reductionRates[complexity]
-	return int(float64(baseTokens) * (1.0 - reduction))
-}
-
-func validateAdequacyRequirements(investigationType string, contexts []string) bool {
-	requiredContexts := map[string][]string{
-		"root_cause_analysis":      {"metrics", "logs", "events"},
-		"performance_optimization": {"metrics", "resources"},
-		"security_investigation":   {"logs", "events", "network"},
-		"basic_troubleshooting":    {"basic_info"},
-	}
-
-	required := requiredContexts[investigationType]
-	for _, req := range required {
-		found := false
-		for _, available := range contexts {
-			if available == req {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}

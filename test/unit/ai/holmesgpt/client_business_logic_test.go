@@ -43,10 +43,10 @@ var _ = Describe("HolmesGPT Client - Business Requirements Validation", func() {
 
 				response, err := client.Investigate(ctx, criticalAlert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response).ToNot(BeNil())
+				Expect(response.StrategyInsights.ConfidenceLevel).To(BeNumerically(">=", 0.8), "BR-AI-001-CONFIDENCE: HolmesGPT investigation must return high confidence scores for reliable AI decision making")
 
 				// BR-INS-007: Strategy recommendations must be contextually relevant
-				Expect(response.StrategyInsights).ToNot(BeNil())
+				Expect(len(response.StrategyInsights.RecommendedStrategies)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Strategy insights must provide measurable strategy recommendations for business decision making")
 				Expect(len(response.StrategyInsights.RecommendedStrategies)).To(BeNumerically(">=", 1))
 
 				// Business requirement: Critical alerts should prioritize fast, reliable strategies
@@ -95,8 +95,8 @@ var _ = Describe("HolmesGPT Client - Business Requirements Validation", func() {
 				criticalStrategies := criticalResponse.StrategyInsights.RecommendedStrategies
 
 				// Business validation: Strategies should be contextually different
-				Expect(warningStrategies).ToNot(BeEmpty())
-				Expect(criticalStrategies).ToNot(BeEmpty())
+				Expect(len(warningStrategies)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Warning alert strategies must be provided for recommendation confidence")
+				Expect(len(criticalStrategies)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Critical alert strategies must be provided for recommendation confidence")
 
 				// Business requirement: Critical alerts should have more aggressive strategies
 				if len(criticalStrategies) > 0 && len(warningStrategies) > 0 {
@@ -133,7 +133,7 @@ var _ = Describe("HolmesGPT Client - Business Requirements Validation", func() {
 
 				// Business requirement: High-revenue services should have premium strategies
 				strategies := response.StrategyInsights.RecommendedStrategies
-				Expect(strategies).ToNot(BeEmpty())
+				Expect(len(strategies)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: High-revenue services must receive strategy recommendations")
 
 				hasHighSuccessRateStrategy := false
 				for _, strategy := range strategies {
@@ -188,7 +188,7 @@ var _ = Describe("HolmesGPT Client - Business Requirements Validation", func() {
 
 				// Business requirement: Context should influence strategy selection
 				strategies := response.StrategyInsights.RecommendedStrategies
-				Expect(strategies).ToNot(BeEmpty())
+				Expect(len(strategies)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Context-aware strategies must be provided for AI recommendation confidence")
 
 				// Database-related alerts should have database-appropriate strategies
 				hasDbRelatedStrategy := false
@@ -285,8 +285,8 @@ var _ = Describe("HolmesGPT Client - Business Requirements Validation", func() {
 				highImpactStrategies := highImpactResponse.StrategyInsights.RecommendedStrategies
 				lowImpactStrategies := lowImpactResponse.StrategyInsights.RecommendedStrategies
 
-				Expect(highImpactStrategies).ToNot(BeEmpty())
-				Expect(lowImpactStrategies).ToNot(BeEmpty())
+				Expect(len(highImpactStrategies)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: High-impact scenarios must provide strategy recommendations")
+				Expect(len(lowImpactStrategies)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Low-impact scenarios must provide strategy recommendations")
 
 				// Business requirement: High-impact alerts should justify higher ROI
 				if len(highImpactStrategies) > 0 && len(lowImpactStrategies) > 0 {
@@ -326,7 +326,7 @@ var _ = Describe("HolmesGPT Client - Business Requirements Validation", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				strategies := response.StrategyInsights.RecommendedStrategies
-				Expect(strategies).ToNot(BeEmpty())
+				Expect(len(strategies)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Context-aware strategies must be provided for AI recommendation confidence")
 
 				// BR-INS-007: Cost-benefit analysis should be specific to business context
 				for _, strategy := range strategies {
@@ -378,7 +378,7 @@ var _ = Describe("HolmesGPT Client - Business Requirements Validation", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// BR-HAPI-011: Historical patterns must be contextually relevant
-				Expect(response.Patterns).ToNot(BeEmpty())
+				Expect(len(response.Patterns)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: Historical pattern analysis must detect patterns for AI confidence requirements")
 
 				// Business requirement: Patterns should relate to alert characteristics
 				relevantPatternFound := false

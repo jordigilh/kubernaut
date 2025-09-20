@@ -108,15 +108,15 @@ var _ = Describe("PostgreSQL Vector Database Integration", Ordered, func() {
 
 		// Create factory and services
 		factory = vector.NewVectorDatabaseFactory(vectorConfig, db, logger)
-		Expect(factory).ToNot(BeNil())
+		Expect(factory).ToNot(BeNil(), "BR-DATABASE-001-A: Vector database factory must be created for database utilization")
 
 		embeddingService, err = factory.CreateEmbeddingService()
 		Expect(err).ToNot(HaveOccurred())
-		Expect(embeddingService).ToNot(BeNil())
+		Expect(embeddingService).ToNot(BeNil(), "BR-DATABASE-001-A: Embedding service must be operational for database functionality")
 
 		vectorDB, err = factory.CreateVectorDatabase()
 		Expect(err).ToNot(HaveOccurred())
-		Expect(vectorDB).ToNot(BeNil())
+		Expect(vectorDB).ToNot(BeNil(), "BR-DATABASE-001-A: Vector database instance must be available for operations")
 
 		logger.Info("PostgreSQL vector database integration test suite setup completed")
 	})
@@ -154,7 +154,7 @@ var _ = Describe("PostgreSQL Vector Database Integration", Ordered, func() {
 			var version string
 			err := db.QueryRow("SELECT extversion FROM pg_extension WHERE extname = 'vector'").Scan(&version)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(version).ToNot(BeEmpty())
+			Expect(version).To(BeNumerically(">=", 1), "BR-DATABASE-001-A: PostgreSQL integration must provide data for database utilization requirements")
 
 			logger.WithField("pgvector_version", version).Info("pgvector extension verified")
 		})
@@ -201,7 +201,7 @@ var _ = Describe("PostgreSQL Vector Database Integration", Ordered, func() {
 			var embeddingStr string
 			err = db.QueryRow("SELECT embedding FROM action_patterns WHERE id = $1", pattern.ID).Scan(&embeddingStr)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(embeddingStr).ToNot(BeEmpty())
+			Expect(embeddingStr).To(BeNumerically(">=", 1), "BR-DATABASE-001-A: PostgreSQL integration must provide data for database utilization requirements")
 		})
 
 		It("should update existing patterns (upsert functionality)", func() {
@@ -279,7 +279,7 @@ var _ = Describe("PostgreSQL Vector Database Integration", Ordered, func() {
 
 			By("verifying similarity scores are valid")
 			for _, similar := range similarPatterns {
-				Expect(similar.Pattern).ToNot(BeNil())
+				Expect(similar.Pattern).ToNot(BeNil(), "BR-DATABASE-001-B: Pattern similarity results must include valid pattern data for health validation")
 				Expect(similar.Similarity).To(BeNumerically(">=", 0.0))
 				Expect(similar.Similarity).To(BeNumerically("<=", 1.0))
 				Expect(similar.Rank).To(BeNumerically(">", 0))
@@ -404,7 +404,7 @@ var _ = Describe("PostgreSQL Vector Database Integration", Ordered, func() {
 		It("should generate comprehensive pattern analytics", func() {
 			analytics, err := vectorDB.GetPatternAnalytics(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(analytics).ToNot(BeNil())
+			Expect(analytics).ToNot(BeNil(), "BR-DATABASE-001-B: Pattern analytics must be available for database health monitoring")
 
 			By("verifying basic counts")
 			// BR-TEST-ISOLATION-01: Verify analytics includes at least our patterns (may include others due to isolation)
@@ -429,7 +429,7 @@ var _ = Describe("PostgreSQL Vector Database Integration", Ordered, func() {
 			if len(analytics.TopPerformingPatterns) > 0 {
 				By("verifying top patterns have effectiveness data")
 				for _, pattern := range analytics.TopPerformingPatterns {
-					Expect(pattern.EffectivenessData).ToNot(BeNil())
+					Expect(pattern.EffectivenessData).ToNot(BeNil(), "BR-DATABASE-001-B: Top performing patterns must include effectiveness data for performance validation")
 					Expect(pattern.EffectivenessData.Score).To(BeNumerically(">", 0))
 				}
 			}

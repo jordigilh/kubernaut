@@ -12,6 +12,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
 	"github.com/jordigilh/kubernaut/pkg/ai/insights"
+	testconfig "github.com/jordigilh/kubernaut/pkg/testutil/config"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 )
 
@@ -37,6 +38,8 @@ var _ = Describe("Assessor.TrainModels - BR-AI-003: Model Training and Optimizat
 
 		// Initialize mocks
 		mockActionRepo = NewMockActionHistoryRepository()
+		// Note: Factory method for EffectivenessRepository not yet available
+		// TODO-MOCK-MIGRATION: Add CreateEffectivenessRepository to factory
 		mockEffectivenessRepo = mocks.NewMockEffectivenessRepository()
 
 		// Create model trainer with mocked dependencies
@@ -70,12 +73,14 @@ var _ = Describe("Assessor.TrainModels - BR-AI-003: Model Training and Optimizat
 			// Act: Trigger model training per BR-AI-003
 			result, err := assessor.TrainModels(ctx, time.Hour*24*7) // 7-day training window
 
-			// Assert: BR-AI-003 Success Criteria
+			// Assert: BR-AI-003 Success Criteria - Business requirement validation
 			Expect(err).ToNot(HaveOccurred(), "BR-AI-003: Model training must complete successfully")
-			Expect(result).ToNot(BeNil(), "BR-AI-003: Must return training results")
-			Expect(result.Success).To(BeTrue(), "BR-AI-003: Training must succeed with adequate data")
-			Expect(result.FinalAccuracy).To(BeNumerically(">=", 0.85), "BR-AI-003: Models must achieve >85% accuracy")
-			Expect(result.TrainingDuration).To(BeNumerically("<", time.Minute*10), "BR-AI-003: Training must complete within 10 minutes")
+			Expect(result.Success).To(BeTrue(), "BR-AI-003: Training results must indicate successful completion for business confidence requirements")
+			testconfig.ExpectBusinessRequirement(result.FinalAccuracy,
+				"BR-AI-003-MODEL-ACCURACY", "test",
+				"ML model training accuracy for business decision making")
+			Expect(result.TrainingDuration).To(BeNumerically("<", time.Minute*10),
+				"BR-AI-003: Training must complete within business acceptable timeframe for operational efficiency")
 		})
 
 		It("should handle insufficient training data gracefully", func() {
@@ -86,11 +91,11 @@ var _ = Describe("Assessor.TrainModels - BR-AI-003: Model Training and Optimizat
 			// Act: Attempt training with insufficient data
 			result, err := assessor.TrainModels(ctx, time.Hour*24) // 1-day window
 
-			// Assert: Graceful handling per development guidelines
+			// Assert: Graceful handling per development guidelines - Business requirement compliance
 			Expect(err).ToNot(HaveOccurred(), "BR-AI-003: Must handle insufficient data without errors")
-			Expect(result).ToNot(BeNil(), "BR-AI-003: Must return result even with insufficient data")
-			Expect(result.Success).To(BeFalse(), "BR-AI-003: Should indicate training failure")
-			Expect(string(result.OverfittingRisk)).To(Equal("high"), "BR-AI-003: Should detect high overfitting risk")
+			Expect(result.Success).To(BeFalse(), "BR-AI-003: Training result must indicate failure status for insufficient data business continuity handling")
+			Expect(string(result.OverfittingRisk)).To(Equal("high"),
+				"BR-AI-003: Should detect high overfitting risk for business model reliability")
 		})
 
 		It("should return meaningful error when model trainer is not available", func() {
@@ -133,9 +138,9 @@ var _ = Describe("Assessor.TrainModels - BR-AI-003: Model Training and Optimizat
 			// Act: Trigger training
 			result, err := assessor.TrainModels(ctx, time.Hour*24*30) // 30-day window
 
-			// Assert: Training completed successfully
+			// Assert: Training completed successfully - Business requirement validation
 			Expect(err).ToNot(HaveOccurred(), "BR-AI-003: Training should complete")
-			Expect(result).ToNot(BeNil(), "BR-AI-003: Should return results")
+			Expect(len(result.TrainingLogs)).To(BeNumerically(">=", 1), "BR-AI-003: Training results must provide measurable progress tracking for business training monitoring")
 
 			// Note: Actual log verification would require a test logger hook
 			// but following project guidelines: log errors are tested through behavior
@@ -151,11 +156,16 @@ var _ = Describe("Assessor.TrainModels - BR-AI-003: Model Training and Optimizat
 			// Act: Train models
 			result, err := assessor.TrainModels(ctx, time.Hour*24*30)
 
-			// Assert: Business value per BR-AI-003
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Success).To(BeTrue())
-			Expect(result.FinalAccuracy).To(BeNumerically(">", 0.5), "BR-AI-003: Must exceed baseline accuracy")
-			Expect(result.ValidationAccuracy).To(BeNumerically(">", 0.0), "BR-AI-003: Must provide validation metrics")
+			// Assert: Business value per BR-AI-003 - Configuration-driven validation
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-AI-003: Model training must complete for business ML pipeline operations")
+			Expect(result.Success).To(BeTrue(),
+				"BR-AI-003: Training must succeed for business model deployment")
+			testconfig.ExpectBusinessRequirement(result.FinalAccuracy,
+				"BR-AI-003-BASELINE-ACCURACY", "test",
+				"ML model final accuracy vs baseline for business improvement validation")
+			Expect(result.ValidationAccuracy).To(BeNumerically(">", 0.0),
+				"BR-AI-003: Must provide validation metrics for business model quality assurance")
 		})
 
 		It("should maintain performance within specified thresholds", func() {

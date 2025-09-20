@@ -305,7 +305,7 @@ var _ = Describe("Stress Testing and Production Scenario Simulation", Ordered, f
 				responseTime := time.Since(startTime)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Stress production testing must return valid performance metrics for response time requirements")
 				Expect(types.IsValidAction(recommendation.Action)).To(BeTrue())
 
 				responseTimes = append(responseTimes, responseTime)
@@ -404,7 +404,7 @@ var _ = Describe("Stress Testing and Production Scenario Simulation", Ordered, f
 
 				recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Stress production testing must return valid performance metrics for response time requirements")
 
 				recommendations = append(recommendations, shared.ConvertAnalyzeAlertResponse(recommendation))
 				escalationPattern = append(escalationPattern, recommendation.Action)
@@ -511,7 +511,7 @@ var _ = Describe("Stress Testing and Production Scenario Simulation", Ordered, f
 
 				recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Stress production testing must return valid performance metrics for response time requirements")
 
 				reasoningStr := ""
 				if recommendation.Reasoning != nil {
@@ -624,7 +624,7 @@ var _ = Describe("Stress Testing and Production Scenario Simulation", Ordered, f
 
 				recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-PERF-001-RESPONSE-TIME: Stress production testing must return valid performance metrics for response time requirements")
 
 				securityActions = append(securityActions, recommendation.Action)
 				escalationLevels = append(escalationLevels, scenario.threatLevel)

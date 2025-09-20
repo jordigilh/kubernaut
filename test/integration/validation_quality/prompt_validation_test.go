@@ -140,7 +140,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 
 			recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-SF-001-RISK-SCORE: Prompt validation must return valid safety validation for risk assessment requirements")
 
 			// Should recommend escalation due to failure pattern
 			Expect(recommendation.Action).To(ContainSubstring("escalate"))
@@ -197,8 +197,8 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 					}).Info("Malformed input gracefully handled with error")
 				} else {
 					// Or return a valid recommendation
-					Expect(recommendation).ToNot(BeNil())
-					Expect(recommendation.Action).ToNot(BeEmpty())
+					Expect(recommendation).ToNot(BeNil(), "BR-SF-001-RISK-SCORE: Prompt validation must return valid safety validation for risk assessment requirements")
+					Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-SF-001-RISK-SCORE: Prompt validation must provide data for risk assessment requirements")
 					logger.WithFields(logrus.Fields{
 						"test_case": i,
 						"action":    recommendation.Action,
@@ -227,7 +227,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 			for i := 0; i < numTests; i++ {
 				recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-SF-001-RISK-SCORE: Prompt validation must return valid safety validation for risk assessment requirements")
 				recommendations = append(recommendations, shared.ConvertAnalyzeAlertResponse(recommendation))
 			}
 
@@ -289,8 +289,8 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 			for _, alert := range exhaustionScenarios {
 				recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
-				Expect(recommendation.Action).ToNot(BeEmpty())
+				Expect(recommendation).ToNot(BeNil(), "BR-SF-001-RISK-SCORE: Prompt validation must return valid safety validation for risk assessment requirements")
+				Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-SF-001-RISK-SCORE: Prompt validation must provide data for risk assessment requirements")
 
 				// Should be high confidence for resource exhaustion
 				Expect(recommendation.Confidence).To(BeNumerically(">=", 0.7))
@@ -345,7 +345,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 				// Guideline #1: Reuse existing type conversion helper
 				analyzeResponse, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(analyzeResponse).ToNot(BeNil())
+				Expect(analyzeResponse).ToNot(BeNil(), "BR-SF-001-RISK-SCORE: Prompt validation must return valid safety validation for risk assessment requirements")
 				recommendation := shared.ConvertAnalyzeAlertResponse(analyzeResponse)
 				cascadeRecommendations = append(cascadeRecommendations, recommendation)
 
@@ -359,7 +359,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 			// Verify that recommendations are sensible
 			Expect(len(cascadeRecommendations)).To(Equal(3))
 			for i, rec := range cascadeRecommendations {
-				Expect(rec.Action).ToNot(BeEmpty())
+				Expect(rec.Action).To(BeNumerically(">=", 1), "BR-SF-001-RISK-SCORE: Prompt validation must provide data for risk assessment requirements")
 				Expect(rec.Confidence).To(BeNumerically(">", 0.0))
 				Expect(rec.Confidence).To(BeNumerically("<=", 1.0))
 				logger.WithFields(logrus.Fields{

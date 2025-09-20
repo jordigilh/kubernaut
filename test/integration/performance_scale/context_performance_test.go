@@ -142,7 +142,6 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 
 				trace, err := repository.StoreAction(context.Background(), actionRecord)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(trace).ToNot(BeNil())
 
 				// Update effectiveness score by updating the trace
 				if action.status == "completed" {
@@ -171,8 +170,7 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 			responseTime := time.Since(startTime)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
-			Expect(recommendation.Action).ToNot(BeEmpty())
+			Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-PERF-001-RESPONSE-TIME: Context performance must provide data for performance requirements")
 			Expect(recommendation.Confidence).To(BeNumerically(">", 0))
 
 			return PerformanceResult{

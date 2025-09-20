@@ -18,10 +18,10 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
-
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/testutil/config"
 	"github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
@@ -95,7 +95,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("First occurrence - no historical context")
 			firstRecommendation, err := client.AnalyzeAlert(context.Background(), oomAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(firstRecommendation).ToNot(BeNil())
+			Expect(firstRecommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for alert analysis")
 
 			logger.WithFields(logrus.Fields{
 				"action":     firstRecommendation.Action,
@@ -160,7 +160,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("Second occurrence - with failed scaling history")
 			secondRecommendation, err := client.AnalyzeAlert(context.Background(), oomAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(secondRecommendation).ToNot(BeNil())
+			Expect(secondRecommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for recurring alert analysis")
 
 			logger.WithFields(logrus.Fields{
 				"action":     secondRecommendation.Action,
@@ -209,7 +209,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("Analyzing security alert with poor containment history")
 			recommendation, err := client.AnalyzeAlert(context.Background(), securityAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for end-to-end workflow")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recommendation.Action,
@@ -261,7 +261,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("Analyzing alert with oscillation risk")
 			recommendation, err := client.AnalyzeAlert(context.Background(), memoryAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for end-to-end workflow")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recommendation.Action,
@@ -278,7 +278,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			}))
 			// Since repository is nil, oscillation context may not be available
 			// Just verify the reasoning is present
-			Expect(recommendation.Reasoning.Summary).ToNot(BeEmpty())
+			Expect(len(recommendation.Reasoning.Summary)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: End-to-end alert processing must provide reasoning summary for confidence")
 		})
 	})
 
@@ -358,7 +358,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("Analyzing storage alert with effectiveness history")
 			recommendation, err := client.AnalyzeAlert(context.Background(), storageAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for end-to-end workflow")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recommendation.Action,
@@ -381,7 +381,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			// Effectiveness check - handle both string and struct reasoning
 			if helper.GetRepository() == nil {
 				// Without database, effectiveness info won't be in reasoning
-				Expect(recommendation.Reasoning.Summary).ToNot(BeEmpty())
+				Expect(len(recommendation.Reasoning.Summary)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Alert analysis must provide reasoning summary for confidence requirements")
 			} else {
 				Expect(recommendation.Reasoning.Summary).To(ContainSubstring("effectiveness"))
 			}
@@ -421,7 +421,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("Analyzing network alert with cascading failure risk")
 			recommendation, err := client.AnalyzeAlert(context.Background(), networkAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for end-to-end workflow")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recommendation.Action,
@@ -443,7 +443,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			}
 			// Without cascading failure history, "cascading" won't be in reasoning
 			if helper.GetRepository() == nil {
-				Expect(recommendation.Reasoning.Summary).ToNot(BeEmpty())
+				Expect(len(recommendation.Reasoning.Summary)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Repository-independent analysis must provide reasoning for confidence")
 			} else {
 				Expect(recommendation.Reasoning.Summary).To(ContainSubstring("cascading"))
 			}
@@ -542,7 +542,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 			recommendation, err := client.AnalyzeAlert(context.Background(), currentAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for end-to-end workflow")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recommendation.Action,
@@ -593,7 +593,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("Analyzing deployment alert with pod failure context")
 			recommendation, err := client.AnalyzeAlert(context.Background(), deploymentAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for end-to-end workflow")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recommendation.Action,
@@ -636,7 +636,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			By("Analyzing business-critical alert")
 			recommendation, err := client.AnalyzeAlert(context.Background(), businessHoursAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
+			Expect(recommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: AI must provide valid recommendation for end-to-end workflow")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recommendation.Action,
@@ -721,10 +721,16 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			analysisTime := time.Since(start)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recommendation).ToNot(BeNil())
 
-			// Should complete within reasonable time even with large context
-			Expect(analysisTime).To(BeNumerically("<", 60*time.Second))
+			// BR-AI-002: Deterministic business requirement validation
+			config.ExpectBusinessRequirement(recommendation.Confidence, "BR-AI-002-RECOMMENDATION-CONFIDENCE", "test", "AI recommendation confidence for end-to-end workflow")
+
+			// BR-AI-002: Action validation time requirement
+			config.ExpectBusinessRequirement(analysisTime, "BR-AI-002-ACTION-VALIDATION-TIME", "test", "AI analysis completion time")
+
+			// BR-AI-002: Essential action fields must be present for business operations
+			Expect(recommendation.Action).ToNot(BeEmpty(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Action field must contain valid business action")
+			Expect(recommendation.Parameters).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Parameters must be provided for action execution")
 
 			logger.WithFields(logrus.Fields{
 				"action":        recommendation.Action,
@@ -732,10 +738,6 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				"analysis_time": analysisTime,
 				"reasoning":     recommendation.Reasoning,
 			}).Info("Large context analysis completed")
-
-			// Should handle large context gracefully and still make reasonable decisions
-			Expect(recommendation.Action).ToNot(BeEmpty())
-			Expect(recommendation.Confidence).To(BeNumerically(">", 0.0))
 		})
 
 		It("should monitor context size metrics throughout analysis", func() {
@@ -800,7 +802,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			// Fetch metrics from the test server
 			metricsData, err := fetchMetricsFromServer("http://localhost:9999/metrics")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(metricsData).ToNot(BeEmpty())
+			Expect(len(metricsData)).To(BeNumerically(">=", 1), "BR-MON-001-ALERT-THRESHOLD: Context size metrics must provide monitoring data for alert thresholds")
 
 			By("Parsing and validating context size metrics")
 			// Validate that context size metrics were recorded
@@ -869,8 +871,8 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 					}).Info("SLM provided fallback response during degradation")
 
 					// Verify fallback response is reasonable
-					Expect(normalRecommendation).ToNot(BeNil())
-					Expect(normalRecommendation.Action).ToNot(BeEmpty())
+					Expect(normalRecommendation).ToNot(BeNil(), "BR-SF-001-RISK-SCORE: Fallback recommendation must be provided to maintain system safety during failures")
+					Expect(len(normalRecommendation.Action)).To(BeNumerically(">=", 1), "BR-SF-001-RISK-SCORE: Fallback recommendations must provide actionable steps for risk assessment")
 
 					// Confidence might be lower during degradation
 					if normalRecommendation.Confidence < 0.5 {
@@ -909,8 +911,8 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 				recoveredRecommendation, err := client.AnalyzeAlert(context.Background(), recurringAlert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recoveredRecommendation).ToNot(BeNil())
-				Expect(recoveredRecommendation.Action).ToNot(BeEmpty())
+				Expect(recoveredRecommendation).ToNot(BeNil(), "BR-DATABASE-002-RECOVERY-TIME: System must provide valid recommendations after database recovery")
+				Expect(len(recoveredRecommendation.Action)).To(BeNumerically(">=", 1), "BR-DATABASE-002-RECOVERY-TIME: Post-recovery recommendations must provide actionable steps for recovery validation")
 
 				logger.WithFields(logrus.Fields{
 					"action":     recoveredRecommendation.Action,
@@ -924,7 +926,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				// Process the same alert again to verify learning wasn't completely disrupted
 				finalRecommendation, err := client.AnalyzeAlert(context.Background(), recurringAlert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(finalRecommendation).ToNot(BeNil())
+				Expect(finalRecommendation).ToNot(BeNil(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Final workflow recommendation must be provided for end-to-end completion")
 
 				logger.WithFields(logrus.Fields{
 					"action":           finalRecommendation.Action,
@@ -982,8 +984,8 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 						successCount++
 
 						// Verify response quality during crisis
-						Expect(recommendation).ToNot(BeNil())
-						Expect(recommendation.Action).ToNot(BeEmpty())
+						Expect(recommendation).ToNot(BeNil(), "BR-SF-001-RISK-SCORE: Crisis response recommendations must be provided to ensure system safety")
+						Expect(len(recommendation.Action)).To(BeNumerically(">=", 1), "BR-SF-001-RISK-SCORE: Crisis recommendations must provide actionable steps for safety assurance")
 					}
 
 					// Small delay between attempts
