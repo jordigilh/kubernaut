@@ -157,7 +157,7 @@ check_prerequisites() {
     fi
 
     # Check HolmesGPT submodule
-    local holmesgpt_source="${PROJECT_ROOT}/vendor/holmesgpt"
+    local holmesgpt_source="${PROJECT_ROOT}/dependencies/holmesgpt"
     if [[ ! -d "$holmesgpt_source" ]] || [[ ! -f "$holmesgpt_source/README.md" ]]; then
         log_error "HolmesGPT source not found. Initialize submodule:"
         log_error "  git submodule update --init --recursive"
@@ -174,13 +174,13 @@ init_holmesgpt_source() {
     cd "$PROJECT_ROOT"
 
     # Initialize submodule if not already done
-    if [[ ! -f "vendor/holmesgpt/README.md" ]]; then
+    if [[ ! -f "dependencies/holmesgpt/README.md" ]]; then
         log_info "Initializing HolmesGPT submodule..."
-        git submodule update --init --recursive vendor/holmesgpt
+        git submodule update --init --recursive dependencies/holmesgpt
     fi
 
     # Get latest stable version
-    cd vendor/holmesgpt
+    cd dependencies/holmesgpt
     local current_branch
     current_branch=$(git branch --show-current)
 

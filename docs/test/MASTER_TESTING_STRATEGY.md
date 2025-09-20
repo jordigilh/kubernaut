@@ -57,7 +57,7 @@ Describe("BR-VDB-001: Embedding Generation Algorithms", func() {
 
 ---
 
-### **[Integration Test Coverage Plan](./integration/INTEGRATION_TEST_COVERAGE_PLAN.md)**
+### **[Integration Test Coverage Extension Plan](./integration/INTEGRATION_TEST_COVERAGE_EXTENSION_PLAN.md)**
 **Focus**: Cross-component behavior and data flow validation
 **Scope**: 55-75 business requirements
 **Timeline**: 6-10 weeks

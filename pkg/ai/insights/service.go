@@ -14,28 +14,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// Stub implementation for business requirement testing
-// This enables build success while business requirements are being implemented
-
-type InsightsService interface {
-	GenerateInsights() error
-}
-
 // EffectivenessRepository interface for storing effectiveness assessment results
 type EffectivenessRepository interface {
 	StoreEffectivenessResult(ctx context.Context, result *EffectivenessResult) error
 	GetStoredResults() []*EffectivenessResult
-}
-
-type InsightsServiceImpl struct{}
-
-func NewInsightsService() *InsightsServiceImpl {
-	return &InsightsServiceImpl{}
-}
-
-func (s *InsightsServiceImpl) GenerateInsights() error {
-	// Stub implementation
-	return nil
 }
 
 // Note: AnalyticsEngine interface moved to pkg/shared/types/analytics.go to resolve import cycles

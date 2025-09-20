@@ -196,8 +196,7 @@ var _ = Describe("ToolsetTemplateEngine - Implementation Correctness Testing", f
 				config, err := engine.GenerateToolsetConfig("prometheus", variables)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(config).ToNot(BeNil())
-				Expect(config.Name).To(Equal("prometheus-monitoring-prometheus-server"))
+				Expect(config.Name).To(Equal("prometheus-monitoring-prometheus-server"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset template engine must return templates with valid identifiers for AI confidence requirements")
 				Expect(config.ServiceType).To(Equal("prometheus"))
 				Expect(config.Description).To(ContainSubstring("Prometheus tools for prometheus-server"))
 				Expect(config.Endpoints).To(HaveKeyWithValue("query", "http://prometheus:9090/api/v1/query"))
@@ -221,8 +220,7 @@ var _ = Describe("ToolsetTemplateEngine - Implementation Correctness Testing", f
 				config, err := engine.GenerateToolsetConfig("unknown-type", variables)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(config).ToNot(BeNil())
-				Expect(config.Name).To(Equal("unknown-type-test-unknown-service"))
+				Expect(config.Name).To(Equal("unknown-type-test-unknown-service"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset template engine must return templates with valid identifiers for AI confidence requirements")
 				Expect(config.ServiceType).To(Equal("unknown-type"))
 				Expect(config.Description).To(ContainSubstring("Unknown-Type tools for unknown-service"))
 			})
@@ -237,8 +235,7 @@ var _ = Describe("ToolsetTemplateEngine - Implementation Correctness Testing", f
 				config, err := engine.GenerateToolsetConfig("minimal", variables)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(config).ToNot(BeNil())
-				Expect(config.Name).To(Equal("minimal-default-minimal-service"))
+				Expect(config.Name).To(Equal("minimal-default-minimal-service"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset template engine must return templates with valid identifiers for AI confidence requirements")
 				Expect(config.ServiceType).To(Equal("minimal"))
 				Expect(config.Endpoints).To(BeNil())
 				Expect(config.Capabilities).To(BeNil())
@@ -405,7 +402,7 @@ var _ = Describe("ToolsetTemplateEngine - Implementation Correctness Testing", f
 
 				result, err := engine.RenderTemplate("large-template", variables)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeEmpty())
+				Expect(len(result)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: HolmesGPT template engine must generate templates for AI confidence requirements")
 				Expect(result).To(ContainSubstring("test-large"))
 			})
 

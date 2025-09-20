@@ -92,6 +92,8 @@ type KubernetesConfig struct {
 	Context        string `yaml:"context"`
 	Namespace      string `yaml:"namespace"`
 	ServiceAccount string `yaml:"service_account"`
+	ClientType     string `yaml:"client_type"`     // "real", "fake", "auto" - determines client type
+	UseFakeClient  bool   `yaml:"use_fake_client"` // Direct override for fake client (for testing)
 }
 
 type ActionsConfig struct {
@@ -246,6 +248,8 @@ func Load(configFile string) (*Config, error) {
 		Kubernetes: KubernetesConfig{
 			Namespace:      "default",
 			ServiceAccount: "prometheus-alerts-slm",
+			ClientType:     "auto", // Automatically determine based on environment
+			UseFakeClient:  false,  // Default to real client unless overridden
 		},
 		Actions: ActionsConfig{
 			DryRun:         false,
@@ -442,6 +446,12 @@ func loadFromEnv(config *Config) error {
 	}
 	if namespace := os.Getenv("KUBE_NAMESPACE"); namespace != "" {
 		config.Kubernetes.Namespace = namespace
+	}
+	if clientType := os.Getenv("KUBE_CLIENT_TYPE"); clientType != "" {
+		config.Kubernetes.ClientType = clientType
+	}
+	if useFake := os.Getenv("KUBE_USE_FAKE_CLIENT"); useFake != "" {
+		config.Kubernetes.UseFakeClient = (useFake == "true" || useFake == "1")
 	}
 
 	// Application Configuration

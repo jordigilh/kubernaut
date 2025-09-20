@@ -1,0 +1,104 @@
+---
+globs: "*_test.go,test/**/*"
+description: "Testing strategy and patterns for kubernaut's three-tier approach"
+---
+
+# Testing Strategy for Kubernaut
+
+## Three-Tier Testing Approach
+Kubernaut implements a comprehensive testing strategy with **87% overall confidence**:
+
+### Unit Tests (35% - 60-80 BRs)
+**Location**: [test/unit/](mdc:test/unit/)
+**Purpose**: Pure algorithmic/mathematical logic validation
+**Confidence**: 80-85%
+**Execution**: `make test`
+
+```go
+// Example: Pure mathematical algorithms
+Describe("BR-VDB-001: Embedding Generation Algorithms", func() {
+    It("should produce consistent embeddings for identical content", func() {
+        // Tests mathematical computation accuracy
+        // No external dependencies required
+        // Fast execution (<10ms)
+    })
+})
+```
+
+### Integration Tests (40% - 55-75 BRs)
+**Location**: [test/integration/](mdc:test/integration/)
+**Purpose**: Cross-component behavior and data flow validation
+**Confidence**: 80-85%
+**Execution**: `make test-integration-kind` (Kind cluster) or `make test-integration-kind-ci` (CI with mocked LLM)
+
+```go
+// Example: Cross-component behavior with real dependencies
+Describe("BR-VDB-AI-001: Vector Search Quality with Real Embeddings", func() {
+    It("should achieve >90% relevance accuracy with real vector database", func() {
+        // Tests actual vector search quality
+        // Uses real vector database and embeddings
+        // Validates component interaction effectiveness
+    })
+})
+```
+
+### E2E Tests (25% - 30-45 BRs)
+**Location**: [test/e2e/](mdc:test/e2e/)
+**Purpose**: Complete business workflow and user journey validation
+**Confidence**: 90-95%
+**Execution**: `make test-e2e-ocp` (OpenShift) or `make test-e2e-kind` (Kind cluster)
+
+## Testing Framework
+- **BDD Framework**: Ginkgo/Gomega for behavior-driven development (MANDATORY per [00-project-guidelines.mdc](mdc:.cursor/rules/00-project-guidelines.mdc))
+- **TDD Workflow**: Test-Driven Development is REQUIRED - write tests first, then implementation
+- **Business Requirements**: ALL tests must map to specific business requirements (BR-XXX-XXX format)
+- **Test Organization**: Follow package structure with `_test.go` suffix
+- **Mock Strategy**: Use [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go) for consistent mocks
+- **Test Data**: Use [pkg/testutil/test_data_factory.go](mdc:pkg/testutil/test_data_factory.go) for fixture generation
+
+## Test Environment Setup
+### Development Environment
+```bash
+make bootstrap-dev     # Setup complete environment
+make test-integration-dev  # Run tests
+make cleanup-dev       # Clean up when done
+```
+
+### CI/CD Environment
+```bash
+make test-ci          # Run CI test suite with mocked LLM
+```
+
+## Testing Best Practices
+1. **Business Outcome Focus**: Test business requirements, not implementation details (MANDATORY)
+2. **Business Requirement Mapping**: All tests MUST reference specific BR-XXX-XXX requirements
+3. **TDD Compliance**: Follow mandatory Test-Driven Development workflow
+4. **Isolation**: Each test should be independent and repeatable
+5. **Clear Naming**: Use descriptive test names that reflect business requirements
+6. **Realistic Data**: Use realistic test data that mirrors production scenarios
+7. **Error Scenarios**: Test both happy path and error conditions
+8. **Performance**: Include performance assertions for critical paths
+
+## Testing Anti-Patterns to AVOID
+- **Null-Testing**: Weak assertions (not nil, > 0, empty checks) - use business-meaningful validations
+- **Implementation Testing**: Testing how code works instead of what business value it delivers
+- **Skip() Usage**: Never use Skip() to avoid test failures - fix tests properly
+- **Local Mocks**: Create reusable mocks in [pkg/testutil/mocks/](mdc:pkg/testutil/mocks/) instead
+
+## Infrastructure Requirements
+- **Kind Cluster**: For local development and CI testing
+- **PostgreSQL**: Real database for integration tests
+- **Vector Database**: Separate PostgreSQL instance with pgvector
+- **LLM Service**: Local AI model at 192.168.1.169:8080 or mocked for CI
+- **Redis**: For caching integration tests
+
+## Test Execution Strategy
+- **Unit**: Run frequently during development
+- **Integration**: Run before commits and in CI
+- **E2E**: Run before releases and for major features
+
+## Confidence Targets
+- **Unit Tests**: 80-85% confidence for algorithmic logic
+- **Integration Tests**: 80-85% confidence for component interactions
+- **E2E Tests**: 90-95% confidence for complete workflows
+- **Overall System**: 87% confidence through three-tier coverage

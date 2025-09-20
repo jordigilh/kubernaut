@@ -16,6 +16,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/testutil/config"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
@@ -127,22 +128,18 @@ var _ = Describe("System Integration Testing", Ordered, func() {
 					}
 					totalLatency += result.TotalLatency
 
-					// **Business Requirement Validation** - Following Guideline #22: Business outcome assertions
+					// **Business Requirement Validation** - Following Guideline #30: Business outcome assertions
 					if result.Success {
-						// BR-AI-002: Actionable Recommendations - Validate meaningful recommendations
-						Expect(result.LLMRecommendation).ToNot(BeNil())
+						// BR-AI-002: Actionable Recommendations - Validate business requirement thresholds
+						config.ExpectBusinessRequirement(result.LLMRecommendation.Confidence, "BR-AI-002-RECOMMENDATION-CONFIDENCE", "test", "AI system integration recommendation confidence")
 						Expect(result.LLMRecommendation.Action).ToNot(BeEmpty(),
 							"BR-AI-002: Should provide actionable recommendation")
-						Expect(result.LLMRecommendation.Confidence).To(BeNumerically(">=", 0.5),
-							"BR-AI-002: Should provide reasonable confidence level (≥50%)")
 
-						// BR-AI-001: Contextual Analysis - Validate meaningful workflow generation
-						Expect(result.WorkflowTemplate).ToNot(BeNil())
+						// BR-AI-001: Contextual Analysis - Validate workflow step count meets business requirements
 						Expect(len(result.WorkflowTemplate.Steps)).To(BeNumerically(">", 0),
 							"BR-AI-001: Should generate contextual workflow with actionable steps")
 
-						// BR-AI-003: Structured Analysis - Validate pattern discovery
-						Expect(result.PatternResult).ToNot(BeNil())
+						// BR-AI-003: Structured Analysis - Validate pattern count meets business requirements
 						Expect(len(result.PatternResult.Patterns)).To(BeNumerically(">", 0),
 							"BR-AI-003: Should discover structured patterns for analysis")
 

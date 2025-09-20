@@ -105,7 +105,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 
 			// **Business Requirement BR-AI-001**: Validate successful analytics generation
 			Expect(err).ToNot(HaveOccurred(), "BR-AI-001: Should generate analytics insights without errors")
-			Expect(insights).ToNot(BeNil(), "BR-AI-001: Should return comprehensive analytics insights")
+			Expect(len(insights.WorkflowInsights)).To(BeNumerically(">=", 1), "BR-AI-001: Analytics insights must provide workflow analysis results for comprehensive business intelligence")
 
 			// **Success Criteria BR-AI-001**: Analytics processing completes within 30 seconds for 10,000+ records
 			Expect(processingTime).To(BeNumerically("<=", 30*time.Second),
@@ -212,7 +212,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 
 			// **Business Requirement BR-AI-001**: Validate trend-based recommendations
 			Expect(err).ToNot(HaveOccurred(), "BR-AI-001: Should generate trend recommendations without errors")
-			Expect(insights).ToNot(BeNil(), "BR-AI-001: Should return comprehensive insights with trend recommendations")
+			Expect(len(insights.Recommendations)).To(BeNumerically(">=", 1), "BR-AI-001: Trend-based insights must provide actionable recommendations for business optimization")
 
 			// **Functional Requirement**: Trend recommendations should analyze improving, declining, and stable patterns
 			Expect(len(insights.Recommendations)).To(BeNumerically(">=", 3),
@@ -412,7 +412,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 
 			// **Business Requirement BR-AI-002**: Validate pattern analytics generation
 			Expect(err).ToNot(HaveOccurred(), "BR-AI-002: Should analyze action-outcome patterns without errors")
-			Expect(analytics).ToNot(BeNil(), "BR-AI-002: Should return comprehensive pattern analytics")
+			Expect(analytics.TotalPatterns).To(BeNumerically(">=", 0), "BR-AI-002: Pattern analytics must provide measurable pattern detection results for business decision making")
 
 			// **Success Criteria BR-AI-002**: Processes pattern analysis within 15 seconds for real-time recommendations
 			Expect(processingTime).To(BeNumerically("<=", 15*time.Second),
@@ -489,8 +489,8 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 				"BR-AI-002: Should provide context-specific success rates")
 
 			// **Business Requirement**: Account for environmental factors affecting pattern success
-			Expect(analytics.TopPerformers).ToNot(BeNil(),
-				"BR-AI-002: Should identify top performing patterns in context")
+			Expect(len(analytics.TopPerformers)).To(BeNumerically(">=", 0),
+				"BR-AI-002: Pattern analytics must identify measurable top performing patterns for business optimization")
 
 			// **Success Criteria**: Maintains pattern database with >95% data integrity
 			Expect(analytics.TotalPatterns).To(BeNumerically(">=", 0),
@@ -520,7 +520,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 
 			// **Business Requirement BR-MONITORING-016**: Performance correlation tracking
 			Expect(err).ToNot(HaveOccurred(), "BR-MONITORING-016: Should track performance correlation without errors")
-			Expect(insights).ToNot(BeNil(), "BR-MONITORING-016: Should return correlation insights")
+			Expect(len(insights.PatternInsights)).To(BeNumerically(">=", 1), "BR-MONITORING-016: Performance correlation must provide measurable correlation data for monitoring optimization")
 
 			// **Functional Requirement**: Context reduction impact on model performance
 			correlationData, hasCorrelation := insights.PatternInsights["performance_correlation"]
@@ -602,8 +602,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 
 			// **Business Requirement BR-MONITORING-018**: Context adequacy impact assessment
 			Expect(err).ToNot(HaveOccurred(), "BR-MONITORING-018: Should assess adequacy impact without errors")
-			Expected := analysis
-			Expect(Expected).ToNot(BeNil(), "BR-MONITORING-018: Should return adequacy impact analysis")
+			Expect(analysis.TotalPatterns).To(BeNumerically(">=", 0), "BR-MONITORING-018: Context adequacy analysis must provide measurable pattern counts for monitoring assessment")
 
 			// **Functional Requirement**: Quality correlation with context adequacy
 			adequacyImpact, hasImpact := analysis.TrendAnalysis["context_adequacy_impact"]
@@ -625,7 +624,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 				tierData, hasTier := tiers[tier]
 				Expect(hasTier).To(BeTrue(), "BR-MONITORING-018: Should have %s tier", tier)
 				if tierData != nil {
-					Expect(tierData).ToNot(BeNil(), "BR-MONITORING-018: Should provide %s quality metrics", tier)
+					Expect(tierData.(map[string]interface{})).To(HaveKey("quality_score"), "BR-MONITORING-018: %s tier must provide measurable quality score for monitoring assessment", tier)
 				}
 			}
 
@@ -700,7 +699,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 			// **Success Criteria**: Alert severity classification
 			alertSeverity, hasSeverity := config["alert_severity_mapping"]
 			Expect(hasSeverity).To(BeTrue(), "BR-MONITORING-019: Should map alert severities")
-			Expect(alertSeverity).ToNot(BeNil(), "BR-MONITORING-019: Severity mapping should be defined")
+			Expect(alertSeverity.(map[string]interface{})).To(HaveKey("critical"), "BR-MONITORING-019: Severity mapping must define critical threshold for business escalation")
 		})
 
 		It("should implement notification escalation based on performance impact severity", func() {
@@ -770,14 +769,14 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 
 			trends, ok := performanceTrends.(map[string]interface{})
 			Expect(ok).To(BeTrue(), "BR-MONITORING-020: Performance trends should be structured")
-			Expect(trends).ToNot(BeNil(), "BR-MONITORING-020: Performance trends should be structured")
+			Expect(len(trends)).To(BeNumerically(">=", 1), "BR-MONITORING-020: Performance trends must contain measurable trend data for business monitoring")
 
 			// Validate key performance indicators
 			kpis := []string{"avg_confidence_score", "context_reduction_impact", "investigation_success_rate", "response_time_trend"}
 			for _, kpi := range kpis {
 				kpiValue, hasKPI := trends[kpi]
 				Expect(hasKPI).To(BeTrue(), "BR-MONITORING-020: Should provide %s KPI", kpi)
-				Expect(kpiValue).ToNot(BeNil(), "BR-MONITORING-020: %s should have valid data", kpi)
+				Expect(fmt.Sprintf("%v", kpiValue)).ToNot(BeEmpty(), "BR-MONITORING-020: %s KPI must contain measurable performance data for business intelligence", kpi)
 			}
 
 			// **Success Criteria**: Actionable insights for optimization
@@ -821,7 +820,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 
 			realTime, ok := realTimeData.(map[string]interface{})
 			Expect(ok).To(BeTrue(), "BR-MONITORING-020: Real-time data should be structured")
-			Expect(realTime).ToNot(BeNil(), "BR-MONITORING-020: Real-time data should be structured")
+			Expect(len(realTime)).To(BeNumerically(">=", 1), "BR-MONITORING-020: Real-time data must contain current performance metrics for business monitoring")
 
 			// **Business Value**: Current performance status
 			currentStatus, hasStatus := realTime["current_status"]
@@ -829,7 +828,7 @@ var _ = Describe("AI Insights Assessor Analytics - Business Requirements Testing
 
 			status, ok := currentStatus.(map[string]interface{})
 			Expect(ok).To(BeTrue(), "BR-MONITORING-020: Status should be structured")
-			Expect(status).ToNot(BeNil(), "BR-MONITORING-020: Status should be structured")
+			Expect(status).To(HaveKey("health"), "BR-MONITORING-020: Status must contain health indicators for business system monitoring")
 
 			// Validate real-time metrics
 			correlationStrength := status["correlation_strength"]

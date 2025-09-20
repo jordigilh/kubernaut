@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"time"
@@ -50,19 +51,19 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 		It("should create factory with valid configuration", func() {
 			factory = vector.NewVectorDatabaseFactory(baseConfig, mockDB, logger)
 
-			Expect(factory).ToNot(BeNil(), "Should create factory successfully")
+			Expect(func() { _, _ = factory.CreateVectorDatabase() }).ToNot(Panic(), "BR-DATABASE-001-A: Vector database factory must provide functional database creation for storage requirements")
 		})
 
 		It("should create factory with nil database", func() {
 			factory = vector.NewVectorDatabaseFactory(baseConfig, nil, logger)
 
-			Expect(factory).ToNot(BeNil(), "Should create factory even with nil database")
+			Expect(func() { _, _ = factory.CreateVectorDatabase() }).ToNot(Panic(), "BR-DATABASE-001-A: Vector database factory must remain functional with nil database for resilient operations")
 		})
 
 		It("should create factory with nil configuration", func() {
 			factory = vector.NewVectorDatabaseFactory(nil, mockDB, logger)
 
-			Expect(factory).ToNot(BeNil(), "Should create factory even with nil config")
+			Expect(func() { _, _ = factory.CreateVectorDatabase() }).ToNot(Panic(), "BR-DATABASE-001-A: Vector database factory must provide default configuration handling for operational resilience")
 		})
 	})
 
@@ -195,7 +196,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 		It("should create memory database successfully", func() {
 			db, err := factory.CreateVectorDatabase()
 			Expect(err).ToNot(HaveOccurred(), "Should create memory database without error")
-			Expect(db).ToNot(BeNil(), "Should return valid database instance")
+			Expect(db.IsHealthy(context.Background())).To(Succeed(), "BR-DATABASE-001-A: Memory database must be healthy for vector storage operations")
 		})
 
 		It("should create memory database for nil configuration", func() {
@@ -203,7 +204,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			db, err := factory.CreateVectorDatabase()
 			Expect(err).ToNot(HaveOccurred(), "Should create memory database for nil config")
-			Expect(db).ToNot(BeNil(), "Should return valid database instance")
+			Expect(db.IsHealthy(context.Background())).To(Succeed(), "BR-DATABASE-001-A: Memory database must be healthy with default configuration")
 		})
 
 		It("should create memory database for disabled configuration", func() {
@@ -211,7 +212,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			db, err := factory.CreateVectorDatabase()
 			Expect(err).ToNot(HaveOccurred(), "Should create memory database for disabled config")
-			Expect(db).ToNot(BeNil(), "Should return valid database instance")
+			Expect(db.IsHealthy(context.Background())).To(Succeed(), "BR-DATABASE-001-A: Memory database must be connected even when disabled for fallback operations")
 		})
 
 		It("should create memory database for empty backend", func() {
@@ -219,7 +220,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			db, err := factory.CreateVectorDatabase()
 			Expect(err).ToNot(HaveOccurred(), "Should create memory database for empty backend")
-			Expect(db).ToNot(BeNil(), "Should return valid database instance")
+			Expect(db.IsHealthy(context.Background())).To(Succeed(), "BR-DATABASE-001-A: Memory database must be connected with empty backend using defaults")
 		})
 	})
 
@@ -231,7 +232,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 		It("should create local embedding service by default", func() {
 			embeddingService, err := factory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should create local embedding service without error")
-			Expect(embeddingService).ToNot(BeNil(), "Should return valid embedding service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(BeNumerically(">", 0), "BR-DATABASE-001-A: Local embedding service must provide valid dimensions for vector operations")
 			Expect(embeddingService.GetEmbeddingDimension()).To(Equal(384), "Should use configured dimension")
 		})
 
@@ -260,7 +261,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			embeddingService, err := factory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should create local service for nil config")
-			Expect(embeddingService).ToNot(BeNil(), "Should return valid service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(BeNumerically(">", 0), "BR-DATABASE-001-A: Local embedding service must provide valid dimensions with default configuration")
 		})
 
 		It("should create hybrid embedding service", func() {
@@ -270,7 +271,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			embeddingService, err := testFactory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should create hybrid embedding service")
-			Expect(embeddingService).ToNot(BeNil(), "Should return valid hybrid service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(BeNumerically(">", 0), "BR-DATABASE-001-A: Hybrid embedding service must provide valid dimensions for multi-backend operations")
 		})
 
 		It("should reject unsupported embedding service", func() {
@@ -319,7 +320,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			embeddingService, err := testFactory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should create OpenAI service with API key")
-			Expect(embeddingService).ToNot(BeNil(), "Should return valid service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(Equal(1536), "BR-DATABASE-001-A: OpenAI embedding service must provide standard dimensions for external API operations")
 		})
 
 		It("should reject OpenAI service without API key", func() {
@@ -341,7 +342,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			embeddingService, err := testFactory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should create HuggingFace service")
-			Expect(embeddingService).ToNot(BeNil(), "Should return valid service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(Equal(768), "BR-DATABASE-001-A: HuggingFace embedding service must provide model dimensions for model-based operations")
 		})
 
 		It("should create HuggingFace service without API key", func() {
@@ -352,7 +353,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			embeddingService, err := testFactory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should create HuggingFace service without API key")
-			Expect(embeddingService).ToNot(BeNil(), "Should work without API key")
+			Expect(embeddingService.GetEmbeddingDimension()).To(Equal(768), "BR-DATABASE-001-A: HuggingFace embedding service must provide model dimensions without API key for local operations")
 		})
 	})
 
@@ -366,7 +367,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			embeddingService, err := factory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should create service without cache")
-			Expect(embeddingService).ToNot(BeNil(), "Should return valid service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(BeNumerically(">", 0), "BR-DATABASE-001-A: Embedding service must provide valid dimensions without cache for direct operations")
 		})
 
 		It("should create memory cache when enabled", func() {
@@ -376,7 +377,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			embeddingService, err := factory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should create service with memory cache")
-			Expect(embeddingService).ToNot(BeNil(), "Should return valid cached service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(BeNumerically(">", 0), "BR-DATABASE-001-A: Cached embedding service must provide valid dimensions for optimized operations")
 		})
 
 		It("should continue without cache on cache creation failure", func() {
@@ -385,7 +386,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			embeddingService, err := factory.CreateEmbeddingService()
 			Expect(err).ToNot(HaveOccurred(), "Should continue without cache on creation failure")
-			Expect(embeddingService).ToNot(BeNil(), "Should return valid non-cached service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(BeNumerically(">", 0), "BR-DATABASE-001-A: Embedding service must provide valid dimensions without cache as fallback for cache failures")
 		})
 	})
 
@@ -399,12 +400,12 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			extractor := factory.CreatePatternExtractor(embeddingService)
-			Expect(extractor).ToNot(BeNil(), "Should create pattern extractor successfully")
+			Expect(func() { _, _ = extractor.ExtractPattern(context.Background(), nil) }).ToNot(Panic(), "BR-DATABASE-001-A: Pattern extractor must provide functional pattern analysis for vector operations")
 		})
 
 		It("should create pattern extractor with nil embedding service", func() {
 			extractor := factory.CreatePatternExtractor(nil)
-			Expect(extractor).ToNot(BeNil(), "Should handle nil embedding service gracefully")
+			Expect(func() { _, _ = extractor.ExtractPattern(context.Background(), nil) }).ToNot(Panic(), "BR-DATABASE-001-A: Pattern extractor must remain functional with nil embedding service for resilient operations")
 		})
 	})
 
@@ -479,7 +480,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 			// Should succeed by falling back to main DB connection
 			db, err := testFactory.CreateVectorDatabase()
 			Expect(err).ToNot(HaveOccurred(), "Should gracefully fallback to main DB connection")
-			Expect(db).ToNot(BeNil(), "Should return valid database instance")
+			Expect(db.IsHealthy(context.Background())).To(Succeed(), "BR-DATABASE-001-A: Database must be connected using main DB connection as fallback")
 		})
 	})
 
@@ -530,7 +531,7 @@ var _ = Describe("Vector Database Factory Unit Tests", func() {
 
 			db, err := factory.CreateVectorDatabase()
 			Expect(err).ToNot(HaveOccurred(), "Should work without environment variables")
-			Expect(db).ToNot(BeNil(), "Should return valid database")
+			Expect(db.IsHealthy(context.Background())).To(Succeed(), "BR-DATABASE-001-A: Database must be connected using default configuration without environment variables")
 		})
 	})
 })

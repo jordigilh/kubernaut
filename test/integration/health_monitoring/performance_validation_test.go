@@ -118,7 +118,7 @@ var _ = Describe("Health Monitoring Performance Validation", func() {
 			duration := time.Since(startTime)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(probeResult).ToNot(BeNil())
+			Expect(probeResult).ToNot(BeNil(), "BR-MON-001-UPTIME: Liveness probe must return valid result for uptime monitoring")
 			Expect(duration).To(BeNumerically("<", 5*time.Second),
 				"BR-PERF-022: Liveness probe must complete within 5 seconds")
 
@@ -132,7 +132,7 @@ var _ = Describe("Health Monitoring Performance Validation", func() {
 			duration := time.Since(startTime)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(probeResult).ToNot(BeNil())
+			Expect(probeResult).ToNot(BeNil(), "BR-MON-001-UPTIME: Readiness probe must return valid result for system readiness monitoring")
 			Expect(duration).To(BeNumerically("<", 5*time.Second),
 				"BR-PERF-022: Readiness probe must complete within 5 seconds")
 
@@ -149,7 +149,7 @@ var _ = Describe("Health Monitoring Performance Validation", func() {
 			duration := time.Since(startTime)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(probeResult).ToNot(BeNil())
+			Expect(probeResult).ToNot(BeNil(), "BR-MON-001-UPTIME: Startup probe must return valid result for system initialization monitoring")
 			Expect(duration).To(BeNumerically("<", 5*time.Second),
 				"Should handle slower LLM responses within limits")
 
@@ -314,7 +314,7 @@ var _ = Describe("Health Monitoring Performance Validation", func() {
 			duration := time.Since(startTime)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(healthStatus).ToNot(BeNil())
+			Expect(healthStatus).ToNot(BeNil(), "BR-MON-001-ALERT-THRESHOLD: Health status must be available for monitoring and alerting")
 			Expect(healthStatus.IsHealthy).To(BeFalse())
 
 			// Even during failures, health checks should complete reasonably quickly

@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -220,9 +219,9 @@ func (f *TestDataFactory) CreateIncreaseResourcesRecommendation() *types.ActionR
 // CreateStandardLLMConfig creates a standard LLM configuration
 func (f *TestDataFactory) CreateStandardLLMConfig() config.LLMConfig {
 	return config.LLMConfig{
-		Provider:    "localai",
-		Endpoint:    "http://localhost:8080",
-		Model:       "granite-3.0-8b-instruct",
+		Provider:    "ramalama",
+		Endpoint:    "http://192.168.1.169:8080",
+		Model:       "oss-gpt:20b",
 		Temperature: 0.1,
 		MaxTokens:   2048,
 		Timeout:     30 * time.Second,
@@ -483,11 +482,6 @@ func generateUniqueID(prefix string) string {
 	return prefix + "-" + uuid.New().String()
 }
 
-// generateTestID creates a deterministic test ID with sequence number for reproducible tests
-func generateTestID(prefix string, sequence int) string {
-	return fmt.Sprintf("%s-%d", prefix, sequence)
-}
-
 // ID generation convenience functions using the consolidated approach
 func generateConditionID() string { return generateUniqueID("test-condition") }
 func generatePatternID() string   { return generateUniqueID("test-pattern") }
@@ -502,14 +496,4 @@ func validateStringWithDefault(value, defaultValue string) string {
 		return defaultValue
 	}
 	return value
-}
-
-func validateConfidenceScore(confidence float64) float64 {
-	if confidence < 0.0 {
-		return 0.0
-	}
-	if confidence > 1.0 {
-		return 1.0
-	}
-	return confidence
 }

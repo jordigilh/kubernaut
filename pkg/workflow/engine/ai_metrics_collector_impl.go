@@ -393,10 +393,49 @@ func (amc *DefaultAIMetricsCollector) collectPatternMetrics(ctx context.Context,
 		return fmt.Errorf("execution cannot be nil for pattern metrics collection")
 	}
 
-	// Extract execution-specific pattern metrics based on workflow characteristics
-	workflowComplexity := float64(len(execution.Steps))
-	if workflowComplexity > 0 {
-		metrics["pattern_similarity_count"] = workflowComplexity * 0.1 // Base pattern count on step complexity
+	// BR-AI-003: Generate vector representation for ML-based pattern matching
+	executionVector := amc.executionToVector(execution)
+
+	// Store execution vector in vector database for similarity search
+	vectorMetadata := map[string]interface{}{
+		"execution_id": execution.ID,
+		"workflow_id":  execution.WorkflowID,
+		"timestamp":    execution.StartTime,
+		"success":      execution.IsSuccessful(),
+		"step_count":   len(execution.Steps),
+	}
+
+	// Create an ActionPattern to store the execution vector
+	executionPattern := &vector.ActionPattern{
+		ID:         execution.ID,
+		ActionType: "workflow_execution",
+		AlertName:  "execution_pattern",
+		Embedding:  executionVector,
+		Metadata:   vectorMetadata,
+	}
+
+	if err := amc.vectorDB.StoreActionPattern(ctx, executionPattern); err != nil {
+		amc.log.WithError(err).Warn("Failed to store execution vector")
+	} else {
+		amc.log.WithField("execution_id", execution.ID).Debug("Stored execution vector for pattern matching")
+	}
+
+	// Search for similar executions using the vector
+	similarPatterns, err := amc.vectorDB.SearchByVector(ctx, executionVector, 5, 0.7)
+	if err != nil {
+		amc.log.WithError(err).Warn("Failed to search for similar executions")
+	} else {
+		// Calculate pattern similarity metrics
+		if len(similarPatterns) > 0 {
+			totalSimilarity := 0.0
+			for _, pattern := range similarPatterns {
+				if pattern.EffectivenessData != nil {
+					totalSimilarity += pattern.EffectivenessData.Score
+				}
+			}
+			metrics["pattern_similarity_avg"] = totalSimilarity / float64(len(similarPatterns))
+			metrics["pattern_similarity_count"] = float64(len(similarPatterns))
+		}
 	}
 
 	// Calculate pattern confidence based on execution state and step success rate

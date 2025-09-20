@@ -1,0 +1,121 @@
+apiVersion: v1
+baseDomain: kubernaut.io
+metadata:
+  name: ocp418-baremetal
+  namespace: openshift-cluster-api
+compute:
+- architecture: amd64
+  hyperthreading: Enabled
+  name: worker
+  platform:
+    baremetal: {}
+  replicas: 3
+controlPlane:
+  architecture: amd64
+  hyperthreading: Enabled
+  name: master
+  platform:
+    baremetal: {}
+  replicas: 3
+networking:
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  machineNetwork:
+  - cidr: 192.168.122.0/24
+  networkType: OVNKubernetes
+  serviceNetwork:
+  - 172.30.0.0/16
+platform:
+  baremetal:
+    apiVIPs:
+    - 192.168.122.100
+    ingressVIPs:
+    - 192.168.122.101
+    provisioningNetworkInterface: enp1s0
+    provisioningNetworkCIDR: 172.22.0.0/24
+    provisioningDHCPRange: 172.22.0.10,172.22.0.100
+    provisioningBridge: provisioning
+    externalBridge: baremetal
+    bootstrapProvisioningIP: 172.22.0.3
+    clusterProvisioningIP: 172.22.0.4
+    hosts:
+    - name: master-0
+      role: master
+      bmc:
+        address: ipmi://192.168.122.10
+        username: admin
+        password: password
+        disableCertificateVerification: true
+      bootMACAddress: aa:bb:cc:dd:ee:f0
+      rootDeviceHints:
+        deviceName: "/dev/sda"
+    - name: master-1
+      role: master
+      bmc:
+        address: ipmi://192.168.122.11
+        username: admin
+        password: password
+        disableCertificateVerification: true
+      bootMACAddress: aa:bb:cc:dd:ee:f1
+      rootDeviceHints:
+        deviceName: "/dev/sda"
+    - name: master-2
+      role: master
+      bmc:
+        address: ipmi://192.168.122.12
+        username: admin
+        password: password
+        disableCertificateVerification: true
+      bootMACAddress: aa:bb:cc:dd:ee:f2
+      rootDeviceHints:
+        deviceName: "/dev/sda"
+    - name: worker-0
+      role: worker
+      bmc:
+        address: ipmi://192.168.122.13
+        username: admin
+        password: password
+        disableCertificateVerification: true
+      bootMACAddress: aa:bb:cc:dd:ee:f3
+      rootDeviceHints:
+        deviceName: "/dev/sda"
+    - name: worker-1
+      role: worker
+      bmc:
+        address: ipmi://192.168.122.14
+        username: admin
+        password: password
+        disableCertificateVerification: true
+      bootMACAddress: aa:bb:cc:dd:ee:f4
+      rootDeviceHints:
+        deviceName: "/dev/sda"
+    - name: worker-2
+      role: worker
+      bmc:
+        address: ipmi://192.168.122.15
+        username: admin
+        password: password
+        disableCertificateVerification: true
+      bootMACAddress: aa:bb:cc:dd:ee:f5
+      rootDeviceHints:
+        deviceName: "/dev/sda"
+pullSecret: |
+  {"auths":{"cloud.openshift.com":{"auth":"<base64-encoded-auth>","email":"your-email@kubernaut.io"},"quay.io":{"auth":"<base64-encoded-auth>","email":"your-email@kubernaut.io"},"registry.redhat.io":{"auth":"<base64-encoded-auth>","email":"your-email@kubernaut.io"}}}
+sshKey: |
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC... your-ssh-public-key
+additionalTrustBundle: |
+  -----BEGIN CERTIFICATE-----
+  MIIDITCCAgmgAwIBAgIIBoGqWcKBzTswDQYJKoZIhvcNAQELBQAwFTETMBEGA1UE
+  AxMKdGVzdC1zaWduZXIwHhcNMjQwMzE1MTQzMzQ5WhcNMjQwNDE0MTQzMzQ5WjAV
+  MRMwEQYDVQQDEwp0ZXN0LXNpZ25lcjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC
+  AQoCggEBAMQyuYXjc7F8MvRKxJVUlOa+6VmGFLSoZBElI2YQTx4jqCpOzQYYJKrD
+  ... (Certificate content - replace with your CA certificate if needed)
+  -----END CERTIFICATE-----
+imageContentSources:
+- mirrors:
+  - registry.kubernaut.io:5000/ocp4/openshift4
+  source: quay.io/openshift-release-dev/ocp-release
+- mirrors:
+  - registry.kubernaut.io:5000/ocp4/openshift4
+  source: quay.io/openshift-release-dev/ocp-v4.0-art-dev

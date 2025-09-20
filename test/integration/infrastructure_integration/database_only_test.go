@@ -67,7 +67,6 @@ var _ = Describe("Database Only Infrastructure", Ordered, func() {
 	})
 
 	It("should connect to PostgreSQL database", func() {
-		Expect(db).ToNot(BeNil())
 
 		err := db.Ping()
 		Expect(err).ToNot(HaveOccurred())

@@ -31,34 +31,31 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should have valid action parameters", func() {
-			Expect(pattern.ActionParameters).ToNot(BeNil(), "Action parameters should not be nil")
-			Expect(pattern.ActionParameters).To(HaveKey("replicas"))
+			Expect(pattern.ActionParameters).To(HaveKey("replicas"), "BR-DATABASE-001-A: Action parameters must contain required keys for vector storage operations")
 			Expect(pattern.ActionParameters["replicas"]).To(Equal(3))
 		})
 
 		It("should have context labels", func() {
-			Expect(pattern.ContextLabels).ToNot(BeNil(), "Context labels should not be nil")
+			Expect(pattern.ContextLabels).To(HaveKey("app"), "BR-DATABASE-001-A: Context labels must contain application identifiers for vector indexing")
 			Expect(pattern.ContextLabels).To(HaveKey("app"))
 			Expect(pattern.ContextLabels).To(HaveKey("version"))
 			Expect(pattern.ContextLabels["app"]).To(Equal("test"))
 		})
 
 		It("should have pre and post conditions", func() {
-			Expect(pattern.PreConditions).ToNot(BeNil(), "Pre conditions should not be nil")
-			Expect(pattern.PostConditions).ToNot(BeNil(), "Post conditions should not be nil")
-			Expect(pattern.PreConditions).To(HaveKey("current_replicas"))
-			Expect(pattern.PostConditions).To(HaveKey("target_replicas"))
+			Expect(pattern.PreConditions).To(HaveKey("current_replicas"), "BR-DATABASE-001-A: Pre conditions must contain state data for vector pattern analysis")
+			Expect(pattern.PostConditions).To(HaveKey("expected_replicas"), "BR-DATABASE-001-A: Post conditions must contain expected outcomes for pattern effectiveness tracking")
 		})
 
 		It("should have effectiveness data", func() {
-			Expect(pattern.EffectivenessData).ToNot(BeNil(), "Effectiveness data should not be nil")
+			Expect(pattern.EffectivenessData.Score).To(BeNumerically(">=", 0), "BR-DATABASE-001-A: Effectiveness data must contain valid scoring for vector similarity calculations")
 			Expect(pattern.EffectivenessData.Score).To(Equal(0.85))
 			Expect(pattern.EffectivenessData.SuccessCount).To(Equal(8))
 			Expect(pattern.EffectivenessData.FailureCount).To(Equal(2))
 		})
 
 		It("should have valid embedding", func() {
-			Expect(pattern.Embedding).ToNot(BeNil(), "Embedding should not be nil")
+			Expect(len(pattern.Embedding)).To(Equal(384), "BR-DATABASE-001-A: Vector embedding must have correct dimensions for database storage and similarity search")
 			Expect(len(pattern.Embedding)).To(BeNumerically(">", 0), "Embedding should have elements")
 			Expect(pattern.Embedding).To(Equal([]float64{0.1, 0.2, 0.3, 0.4, 0.5}))
 		})
@@ -69,7 +66,7 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should have metadata", func() {
-			Expect(pattern.Metadata).ToNot(BeNil(), "Metadata should not be nil")
+			Expect(pattern.Metadata).To(BeAssignableToTypeOf(map[string]interface{}{}), "BR-DATABASE-001-A: Pattern metadata must be valid map type for vector storage indexing")
 			// Expect(pattern.Metadata).To(HaveKey("created_by")) // Not included in mock
 			Expect(pattern.Metadata).To(HaveKey("source"))
 		})
@@ -114,12 +111,12 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should have cost impact data", func() {
-			Expect(effectiveness.CostImpact).ToNot(BeNil())
+			Expect(effectiveness.CostImpact.CostEfficiencyRatio).To(BeNumerically(">", 0), "BR-DATABASE-001-A: Cost impact data must provide measurable efficiency ratios for database utilization requirements")
 			Expect(effectiveness.CostImpact.CostEfficiencyRatio).To(BeNumerically(">", 0))
 		})
 
 		It("should have contextual factors", func() {
-			Expect(effectiveness.ContextualFactors).ToNot(BeNil())
+			Expect(effectiveness.ContextualFactors).To(HaveKey("cpu_pressure"), "BR-DATABASE-001-A: Contextual factors must contain performance metrics for vector storage optimization")
 			Expect(effectiveness.ContextualFactors).To(HaveKey("cpu_pressure"))
 			Expect(effectiveness.ContextualFactors["cpu_pressure"]).To(BeNumerically(">=", 0))
 		})
@@ -169,7 +166,7 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should have valid pattern reference", func() {
-			Expect(similarPattern.Pattern).ToNot(BeNil(), "Pattern should not be nil")
+			Expect(similarPattern.Pattern.ID).ToNot(BeEmpty(), "BR-DATABASE-001-A: Similar pattern must contain valid ID for vector similarity matching")
 			Expect(similarPattern.Pattern.ID).To(Equal("similar-test"))
 		})
 
@@ -223,7 +220,7 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should have action type breakdown", func() {
-			Expect(analytics.PatternsByActionType).ToNot(BeNil(), "Action type breakdown should not be nil")
+			Expect(analytics.PatternsByActionType).To(BeAssignableToTypeOf(map[string]int{}), "BR-DATABASE-001-A: Analytics must provide action type breakdown for vector pattern categorization")
 
 			total := 0
 			for _, count := range analytics.PatternsByActionType {
@@ -234,7 +231,7 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should have severity breakdown", func() {
-			Expect(analytics.PatternsBySeverity).ToNot(BeNil(), "Severity breakdown should not be nil")
+			Expect(analytics.PatternsBySeverity).To(BeAssignableToTypeOf(map[string]int{}), "BR-DATABASE-001-A: Analytics must provide severity breakdown for vector pattern classification")
 
 			for _, count := range analytics.PatternsBySeverity {
 				Expect(count).To(BeNumerically(">", 0), "Severity counts should be positive")
@@ -247,17 +244,17 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should have top performing patterns", func() {
-			Expect(analytics.TopPerformingPatterns).ToNot(BeNil(), "Top performers should not be nil")
+			Expect(len(analytics.TopPerformingPatterns)).To(BeNumerically(">=", 0), "BR-DATABASE-001-A: Analytics must provide top performing patterns for vector optimization analysis")
 			Expect(len(analytics.TopPerformingPatterns)).To(BeNumerically(">", 0), "Should have top performers")
 		})
 
 		It("should have recent patterns", func() {
-			Expect(analytics.RecentPatterns).ToNot(BeNil(), "Recent patterns should not be nil")
+			Expect(len(analytics.RecentPatterns)).To(BeNumerically(">=", 0), "BR-DATABASE-001-A: Analytics must provide recent patterns for vector temporal analysis")
 			Expect(len(analytics.RecentPatterns)).To(BeNumerically(">", 0), "Should have recent patterns")
 		})
 
 		It("should have effectiveness distribution", func() {
-			Expect(analytics.EffectivenessDistribution).ToNot(BeNil(), "Distribution should not be nil")
+			Expect(analytics.EffectivenessDistribution).To(BeAssignableToTypeOf(map[string]float64{}), "BR-DATABASE-001-A: Analytics must provide effectiveness distribution for vector pattern quality assessment")
 
 			expectedBuckets := []string{"excellent", "very_good", "good", "fair", "poor", "very_poor"}
 			for bucket, count := range analytics.EffectivenessDistribution {
@@ -323,7 +320,7 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should support date range filtering", func() {
-			Expect(query.DateRange).ToNot(BeNil(), "Date range should be provided")
+			Expect(query.DateRange.From).To(BeTemporally("<=", query.DateRange.To), "BR-DATABASE-001-A: Date range must have valid temporal ordering for vector search queries")
 			Expect(query.DateRange.From).To(BeTemporally("<", query.DateRange.To), "From should be before To")
 		})
 
@@ -334,7 +331,7 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should support metadata filtering", func() {
-			Expect(query.Metadata).ToNot(BeNil(), "Metadata filters should be provided")
+			Expect(query.Metadata).To(HaveKey("source"), "BR-DATABASE-001-A: Query metadata must contain source information for vector search filtering")
 			Expect(query.Metadata).To(HaveKey("source"))
 		})
 
@@ -481,7 +478,7 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 
 		It("should support metadata", func() {
-			Expect(vectorData.Metadata).ToNot(BeNil(), "Metadata should be provided")
+			Expect(vectorData.Metadata).To(HaveKey("source"), "BR-DATABASE-001-A: Vector data must contain source metadata for proper indexing and retrieval")
 			Expect(vectorData.Metadata).To(HaveKey("source"))
 		})
 

@@ -249,7 +249,7 @@ var _ = Describe("Health Monitoring Failure Scenarios", func() {
 				"BR-HEALTH-027: Should reach failure threshold and become unhealthy")
 
 			By("Verifying failure details are captured")
-			Expect(finalHealthStatus).ToNot(BeNil())
+			Expect(finalHealthStatus).ToNot(BeNil(), "BR-MON-001-ALERT-THRESHOLD: Health monitoring failure scenarios must return valid alerts for monitoring requirements")
 			Expect(finalHealthStatus.IsHealthy).To(BeFalse(),
 				"BR-HEALTH-027: System should be unhealthy after threshold")
 			Expect(finalHealthStatus.BaseTimestampedResult.Error).To(ContainSubstring("persistent failure"),
@@ -365,7 +365,7 @@ var _ = Describe("Health Monitoring Failure Scenarios", func() {
 					errors.Is(err, context.Canceled)).To(BeTrue(),
 					"Should handle context cancellation appropriately")
 			} else {
-				Expect(probeResult).ToNot(BeNil())
+				Expect(probeResult).ToNot(BeNil(), "BR-MON-001-ALERT-THRESHOLD: Health monitoring failure scenarios must return valid alerts for monitoring requirements")
 			}
 
 			GinkgoWriter.Printf("✅ Context cancellation handled gracefully\n")
@@ -382,7 +382,7 @@ var _ = Describe("Health Monitoring Failure Scenarios", func() {
 			By("Testing error propagation through health status")
 			healthStatus, err := healthMonitor.GetHealthStatus(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(healthStatus).ToNot(BeNil())
+			Expect(healthStatus).ToNot(BeNil(), "BR-MON-001-ALERT-THRESHOLD: Health monitoring failure scenarios must return valid alerts for monitoring requirements")
 
 			Expect(healthStatus.IsHealthy).To(BeFalse())
 			// Error details should be preserved for debugging

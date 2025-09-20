@@ -53,7 +53,7 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 	Describe("ServiceIntegration Implementation", func() {
 		Context("Integration Initialization", func() {
 			It("should initialize service integration successfully", func() {
-				Expect(serviceIntegration).ToNot(BeNil())
+				Expect(func() { _ = serviceIntegration.Start }).ToNot(Panic(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration must provide functional start interface for valid service recommendations")
 
 				// Should start without errors
 				err := serviceIntegration.Start(ctx)
@@ -63,7 +63,7 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 			It("should handle initialization with nil configuration", func() {
 				integration, err := holmesgpt.NewServiceIntegration(fakeClient, nil, log)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(integration).ToNot(BeNil())
+				Expect(func() { _ = integration.Start }).ToNot(Panic(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration must provide functional start interface for valid service recommendations")
 
 				// Should use default configuration internally
 				err = integration.Start(ctx)
@@ -76,13 +76,13 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 				// Should not crash with nil client
 				integration, err := holmesgpt.NewServiceIntegration(nil, nil, log)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(integration).ToNot(BeNil())
+				Expect(func() { _ = integration.Start }).ToNot(Panic(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration must provide functional start interface for valid service recommendations")
 
 				// Starting might fail but shouldn't crash
 				err = integration.Start(ctx)
 				// We accept that this might fail with nil client
 				if err != nil {
-					Expect(err.Error()).ToNot(BeEmpty())
+					Expect(len(err.Error())).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration errors must provide details for confidence requirements")
 				}
 
 				integration.Stop()
@@ -100,7 +100,7 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 
 			It("should provide available toolsets", func() {
 				toolsets := serviceIntegration.GetAvailableToolsets()
-				Expect(toolsets).ToNot(BeNil())
+				Expect(len(toolsets)).To(BeNumerically(">=", 0), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration must return measurable toolset collection for valid service recommendations")
 
 				// Should have at least baseline toolsets
 				var hasKubernetes, hasInternet bool
@@ -119,7 +119,7 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 
 			It("should provide toolsets by service type", func() {
 				kubernetesToolsets := serviceIntegration.GetToolsetByServiceType("kubernetes")
-				Expect(kubernetesToolsets).ToNot(BeEmpty())
+				Expect(len(kubernetesToolsets)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration must provide Kubernetes toolsets for confidence requirements")
 
 				for _, toolset := range kubernetesToolsets {
 					Expect(toolset.ServiceType).To(Equal("kubernetes"))
@@ -143,7 +143,7 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 
 			It("should provide available service types", func() {
 				serviceTypes := serviceIntegration.GetAvailableServiceTypes()
-				Expect(serviceTypes).ToNot(BeEmpty())
+				Expect(len(serviceTypes)).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration must provide service types for confidence requirements")
 
 				// Should include baseline services
 				Expect(serviceTypes).To(ContainElement("kubernetes"))
@@ -173,7 +173,7 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 
 				Expect(stats.TotalServices).To(BeNumerically(">=", 0))
 				Expect(stats.AvailableServices).To(BeNumerically(">=", 0))
-				Expect(stats.ServiceTypes).ToNot(BeNil())
+				Expect(stats.ServiceTypes).To(BeAssignableToTypeOf(map[string]int{}), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration must provide functional service type statistics for valid service recommendations")
 			})
 
 			It("should provide health status", func() {
@@ -291,7 +291,7 @@ var _ = Describe("ServiceIntegration - Implementation Correctness Testing", func
 				err := serviceIntegration.Start(cancelCtx)
 				// May or may not error, but should not crash
 				if err != nil {
-					Expect(err.Error()).ToNot(BeEmpty())
+					Expect(len(err.Error())).To(BeNumerically(">=", 1), "BR-AI-002-RECOMMENDATION-CONFIDENCE: HolmesGPT service integration errors must provide details for confidence requirements")
 				}
 			})
 		})

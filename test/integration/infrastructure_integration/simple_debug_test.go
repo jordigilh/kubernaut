@@ -48,7 +48,7 @@ var _ = Describe("Basic Environment Validation", func() {
 		wd, err := os.Getwd()
 		Expect(err).ToNot(HaveOccurred(), "Should be able to get working directory")
 		fmt.Printf("Test 3: Working directory = %s\n", wd)
-		Expect(wd).ToNot(BeEmpty())
+		Expect(wd).To(BeNumerically(">=", 1), "BR-DATABASE-001-A: Simple debug must provide data for database utilization requirements")
 	})
 
 	It("should have podman available", func() {

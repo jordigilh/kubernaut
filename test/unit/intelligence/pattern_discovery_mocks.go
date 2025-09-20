@@ -12,6 +12,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 )
 
+// TODO-MOCK-MIGRATION: Replace all mock types in this file with generated mocks from pkg/testutil/mocks/factory.go
+// DEPRECATED: Use mocks.NewMockFactory().CreatePatternDiscoveryService() instead
+
 // Use RuntimeWorkflowExecution from types package
 
 // Type aliases and simplified types for testing

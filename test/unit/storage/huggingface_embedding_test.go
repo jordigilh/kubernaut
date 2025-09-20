@@ -158,8 +158,7 @@ var _ = Describe("HuggingFace Embedding Service Unit Tests", func() {
 
 				// Business validations
 				Expect(err).ToNot(HaveOccurred(), "Should generate embedding for K8s terminology")
-				Expect(embedding).ToNot(BeNil(), "Should return non-nil embedding")
-				Expect(len(embedding)).To(Equal(service.GetDimension()), "Should return embedding with correct dimensions")
+				Expect(len(embedding)).To(Equal(service.GetDimension()), "BR-DATABASE-001-A: HuggingFace embedding generation must produce vectors with correct dimensions for database storage operations")
 
 				// Validate semantic meaning preservation
 				hasNonZeroValues := false
@@ -187,7 +186,7 @@ var _ = Describe("HuggingFace Embedding Service Unit Tests", func() {
 						// Acceptable to have limitations with non-English text
 						Skip("Multi-language support limitations acceptable for HuggingFace models")
 					} else {
-						Expect(embedding).ToNot(BeNil(), "Should handle text %d gracefully", i)
+						Expect(len(embedding)).To(BeNumerically(">", 0), "BR-DATABASE-001-A: HuggingFace embedding must generate valid vectors for text %d in multilingual processing", i)
 						Expect(len(embedding)).To(Equal(service.GetDimension()), "Should maintain consistent dimensions")
 					}
 				}
@@ -225,7 +224,7 @@ var _ = Describe("HuggingFace Embedding Service Unit Tests", func() {
 				Expect(embeddings).To(HaveLen(len(alertTexts)), "Should return embedding for each alert")
 
 				for i, embedding := range embeddings {
-					Expect(embedding).ToNot(BeNil(), "Alert embedding %d should not be nil", i)
+					Expect(len(embedding)).To(BeNumerically(">", 0), "BR-DATABASE-001-A: HuggingFace alert embedding %d must generate valid vectors for database storage operations", i)
 					Expect(len(embedding)).To(Equal(service.GetDimension()), "Alert embedding %d should have correct dimensions", i)
 				}
 
@@ -354,7 +353,7 @@ var _ = Describe("HuggingFace Embedding Service Unit Tests", func() {
 				if err != nil {
 					Expect(err.Error()).To(ContainSubstring("length"), "Error should indicate length issue")
 				} else {
-					Expect(embedding).ToNot(BeNil(), "Should handle long input gracefully")
+					Expect(len(embedding)).To(BeNumerically(">", 0), "BR-DATABASE-001-A: HuggingFace embedding must generate valid vectors for long input text processing")
 					Expect(len(embedding)).To(Equal(service.GetDimension()), "Should maintain dimension consistency")
 				}
 			})

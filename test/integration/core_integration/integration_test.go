@@ -250,7 +250,7 @@ var _ = Describe("SLM Integration", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Validate recommendation
-		Expect(recommendation.Action).ToNot(BeEmpty())
+		Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
 
 		validActions := []string{"scale_deployment", "restart_pod", "increase_resources", "notify_only", "collect_diagnostics"}
 		Expect(recommendation.Action).To(BeElementOf(validActions))
@@ -361,7 +361,7 @@ var _ = Describe("Kubernetes Integration", func() {
 	It("should test K8s client interface", func() {
 		// Create k8s client using testenv
 		k8sClient := testEnv.CreateK8sClient(logger)
-		Expect(k8sClient).ToNot(BeNil())
+		Expect(k8sClient).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
 
 		// Create a test namespace directly using the client
 		namespace := &corev1.Namespace{
@@ -512,8 +512,8 @@ var _ = Describe("End-to-End Flow", func() {
 			analyzeResponse, err := slmClient.AnalyzeAlert(ctx, testAlert)
 			Expect(err).ToNot(HaveOccurred())
 			recommendation = shared.ConvertAnalyzeAlertResponse(analyzeResponse)
-			Expect(recommendation).ToNot(BeNil())
-			Expect(recommendation.Action).ToNot(BeEmpty())
+			Expect(recommendation).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
+			Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
 
 			GinkgoWriter.Printf("SLM recommended action: %s (confidence: %.2f)\n",
 				recommendation.Action, recommendation.Confidence)
@@ -610,8 +610,8 @@ var _ = Describe("End-to-End Flow", func() {
 			By("Testing normal operation baseline")
 			baseline, err := client.AnalyzeAlert(context.Background(), testAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(baseline).ToNot(BeNil())
-			Expect(baseline.Action).ToNot(BeEmpty())
+			Expect(baseline).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
+			Expect(baseline.Action).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
 
 			logger.WithFields(logrus.Fields{
 				"action":     baseline.Action,
@@ -648,7 +648,7 @@ var _ = Describe("End-to-End Flow", func() {
 			} else {
 				// If no error, should still get valid response (fallback behavior)
 				logger.Info("SLM service provided fallback response during network failure")
-				Expect(failureResponse).ToNot(BeNil())
+				Expect(failureResponse).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
 
 				// Record successful fallback
 				localErrorMetrics.RecordComponentOperation("slm_client", "analyze_alert", true, time.Since(scenarioExecution.StartTime), shared.NetworkError)
@@ -660,8 +660,8 @@ var _ = Describe("End-to-End Flow", func() {
 
 			recoveryResponse, err := client.AnalyzeAlert(context.Background(), testAlert)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(recoveryResponse).ToNot(BeNil())
-			Expect(recoveryResponse.Action).ToNot(BeEmpty())
+			Expect(recoveryResponse).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
+			Expect(recoveryResponse.Action).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recoveryResponse.Action,
@@ -753,7 +753,7 @@ var _ = Describe("End-to-End Flow", func() {
 			for i := 0; i < 3; i++ {
 				response, err := client.AnalyzeAlert(context.Background(), testAlert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response).ToNot(BeNil())
+				Expect(response).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
 			}
 
 			// Circuit should close after successful calls
@@ -779,7 +779,7 @@ var _ = Describe("End-to-End Flow", func() {
 
 			report, err := testMetrics.GenerateReport()
 			Expect(err).ToNot(HaveOccurred())
-			Expect(report).ToNot(BeNil())
+			Expect(report).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
 
 			// Verify analytics capabilities
 			Expect(report.SystemResilienceScore).To(BeNumerically(">=", 0))

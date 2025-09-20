@@ -1,0 +1,45 @@
+---
+alwaysApply: true
+description: "Project structure and navigation guide for kubernaut"
+---
+
+# Kubernaut Project Structure Guide
+
+## Core Architecture
+The project follows a layered architecture with clear separation of concerns:
+
+- **Main Binaries**: [cmd/](mdc:cmd/) contains multiple binaries
+  - [cmd/prometheus-alerts-slm/](mdc:cmd/prometheus-alerts-slm/) - Main kubernaut service
+  - [cmd/dynamic-toolset-server/](mdc:cmd/dynamic-toolset-server/) - Dynamic toolset server
+
+- **Core Packages**: [pkg/](mdc:pkg/) contains business logic
+  - [pkg/ai/](mdc:pkg/ai/) - AI/ML components including HolmesGPT integration
+  - [pkg/workflow/](mdc:pkg/workflow/) - Workflow engine and orchestration
+  - [pkg/platform/](mdc:pkg/platform/) - Kubernetes and multi-cluster operations
+  - [pkg/storage/](mdc:pkg/storage/) - Vector databases and persistence
+  - [pkg/intelligence/](mdc:pkg/intelligence/) - Pattern recognition and learning
+
+- **Testing**: [test/](mdc:test/) follows three-tier strategy
+  - [test/unit/](mdc:test/unit/) - Pure algorithmic/mathematical logic (35%)
+  - [test/integration/](mdc:test/integration/) - Cross-component scenarios (40%)
+  - [test/e2e/](mdc:test/e2e/) - Complete workflow scenarios (25%)
+
+- **Internal**: [internal/](mdc:internal/) for private packages
+  - [internal/database/](mdc:internal/database/) - Database connections
+  - [internal/config/](mdc:internal/config/) - Configuration management
+
+## Key Entry Points
+- **Main Service**: [cmd/prometheus-alerts-slm/main.go](mdc:cmd/prometheus-alerts-slm/main.go)
+- **Configuration**: [config/](mdc:config/) directory contains YAML configs
+- **Deployment**: [deploy/](mdc:deploy/) for Kubernetes manifests
+- **Documentation**: [docs/](mdc:docs/) comprehensive technical documentation
+
+## Package Dependencies
+- Always import internal packages using full module path: `github.com/jordigilh/kubernaut/pkg/...`
+- Use interfaces defined in [pkg/workflow/engine/interfaces.go](mdc:pkg/workflow/engine/interfaces.go)
+- Follow dependency injection patterns established in [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go)
+
+## Build System
+- Use [Makefile](mdc:Makefile) for all build operations
+- Development workflow: `make bootstrap-dev`, `make test-integration-dev`, `make cleanup-dev`
+- Testing: `make test` (unit), `make test-integration` (integration), `make test-e2e` (end-to-end)

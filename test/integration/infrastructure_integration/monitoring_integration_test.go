@@ -82,7 +82,6 @@ var _ = Describe("Monitoring and Observability Integration", Ordered, func() {
 		var err error
 		testEnv, err = shared.SetupEnvironment()
 		Expect(err).ToNot(HaveOccurred())
-		Expect(testEnv).ToNot(BeNil())
 
 		k8sClient = testEnv.Client
 		ctx = testEnv.Context

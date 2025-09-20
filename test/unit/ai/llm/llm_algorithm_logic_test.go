@@ -13,6 +13,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
+	testconfig "github.com/jordigilh/kubernaut/pkg/testutil/config"
 )
 
 // BR-AI-056-085: AI Reasoning and Calculation Logic Tests (Phase 1 Implementation)
@@ -88,11 +89,15 @@ var _ = Describe("BR-AI-056-085: AI Reasoning and Calculation Logic Tests", func
 					// Test through the algorithm that processes confidence factors
 					alert := map[string]interface{}{"type": "general", "severity": "info"}
 					response, err := llmClient.AnalyzeAlert(ctx, alert)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(err).ToNot(HaveOccurred(),
+						"BR-AI-001: LLM analysis must complete successfully for business workflow continuity")
 
-					// Should handle edge cases gracefully
-					Expect(response.Confidence).To(BeNumerically(">=", 0.0), "Confidence should be non-negative")
-					Expect(response.Confidence).To(BeNumerically("<=", 1.0), "Confidence should not exceed 1.0")
+					// Should handle edge cases gracefully - Business requirement validation
+					testconfig.ExpectBusinessRequirement(response.Confidence,
+						"BR-AI-001-MIN-CONFIDENCE", "test",
+						"LLM confidence score minimum threshold validation")
+					Expect(response.Confidence).To(BeNumerically("<=", 1.0),
+						"BR-AI-001: Confidence must not exceed maximum valid range for business decision making")
 				}
 			})
 
@@ -103,7 +108,8 @@ var _ = Describe("BR-AI-056-085: AI Reasoning and Calculation Logic Tests", func
 				confidences := make([]float64, 10)
 				for i := 0; i < 10; i++ {
 					response, err := llmClient.AnalyzeAlert(ctx, alert)
-					Expect(err).ToNot(HaveOccurred())
+					Expect(err).ToNot(HaveOccurred(),
+						"BR-AI-001: LLM analysis must be reliable for repeated business operations")
 					confidences[i] = response.Confidence
 				}
 
@@ -113,12 +119,17 @@ var _ = Describe("BR-AI-056-085: AI Reasoning and Calculation Logic Tests", func
 					Expect(confidences[i]).To(BeNumerically("~", reference, 0.01), "Confidence calculation should be deterministic within tolerance")
 				}
 
-				// Mathematical properties validation
+				// Mathematical properties validation - Business requirement compliance
 				for _, conf := range confidences {
-					Expect(math.IsNaN(conf)).To(BeFalse(), "Confidence should not be NaN")
-					Expect(math.IsInf(conf, 0)).To(BeFalse(), "Confidence should not be infinite")
-					Expect(conf).To(BeNumerically(">=", 0.0), "Confidence should be non-negative")
-					Expect(conf).To(BeNumerically("<=", 1.0), "Confidence should not exceed 1.0")
+					Expect(math.IsNaN(conf)).To(BeFalse(),
+						"BR-AI-001: Confidence calculations must be valid numbers for business decision making")
+					Expect(math.IsInf(conf, 0)).To(BeFalse(),
+						"BR-AI-001: Confidence calculations must be finite for business operations")
+					testconfig.ExpectBusinessRequirement(conf,
+						"BR-AI-001-MIN-CONFIDENCE", "test",
+						"confidence score minimum validation for repeated operations")
+					Expect(conf).To(BeNumerically("<=", 1.0),
+						"BR-AI-001: Confidence must not exceed maximum valid range for business decisions")
 				}
 			})
 		})
@@ -296,11 +307,11 @@ var _ = Describe("BR-AI-056-085: AI Reasoning and Calculation Logic Tests", func
 				Expect(err).ToNot(HaveOccurred())
 
 				// Validate parameter generation algorithm
-				Expect(response.Parameters).ToNot(BeNil(), "Should generate parameters")
+				Expect(len(response.Parameters)).To(BeNumerically(">=", 3), "BR-AI-001-CONFIDENCE: AI parameter generation algorithm must produce measurable parameter sets for confidence calculation")
 
 				// Check base parameters are always included
-				Expect(response.Parameters["alert_type"]).ToNot(BeNil(), "Should include alert_type")
-				Expect(response.Parameters["severity"]).ToNot(BeNil(), "Should include severity")
+				Expect(response.Parameters["alert_type"].(string)).ToNot(BeEmpty(), "BR-AI-001-CONFIDENCE: AI must generate valid alert_type parameter for confidence-based decision making")
+				Expect(response.Parameters["severity"].(string)).ToNot(BeEmpty(), "BR-AI-001-CONFIDENCE: AI must generate valid severity parameter for confidence-based decision making")
 				Expect(response.Parameters["automated"]).To(Equal(true), "Should mark as automated")
 
 				// If action contains restart, should have restart-specific parameters
@@ -412,8 +423,7 @@ var _ = Describe("BR-AI-056-085: AI Reasoning and Calculation Logic Tests", func
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should process context for better decisions
-				Expect(response.Reasoning).ToNot(BeNil(), "Should provide reasoning")
-				Expect(response.Reasoning.Summary).ToNot(BeEmpty(), "Should provide reasoning summary")
+				Expect(response.Reasoning.Summary).ToNot(BeEmpty(), "BR-AI-001-CONFIDENCE: AI reasoning algorithm must generate measurable reasoning summaries for confidence assessment")
 
 				// Complex contexts should get reasonable confidence from rule-based fallback
 				Expect(response.Confidence).To(BeNumerically(">=", 0.75), "Complex contexts should have reasonable confidence")
@@ -459,7 +469,7 @@ var _ = Describe("BR-AI-056-085: AI Reasoning and Calculation Logic Tests", func
 				duration := time.Since(start)
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response).ToNot(BeNil())
+				Expect(response.Confidence).To(BeNumerically(">=", 0), "BR-AI-001-CONFIDENCE: AI analysis must return measurable confidence values for confidence calculation")
 
 				// Performance requirement: should execute quickly for unit tests
 				Expect(duration).To(BeNumerically("<", 100*time.Millisecond), "Algorithm should execute quickly")
@@ -482,7 +492,9 @@ var _ = Describe("BR-AI-056-085: AI Reasoning and Calculation Logic Tests", func
 
 					response, err := llmClient.AnalyzeAlert(ctx, alert)
 					Expect(err).ToNot(HaveOccurred())
-					Expect(response).ToNot(BeNil())
+					processingTime, exists := response.Metadata["processing_time"]
+					Expect(exists).To(BeTrue(), "Processing time should be available in metadata")
+					Expect(processingTime).To(BeNumerically(">", 0), "BR-AI-001-CONFIDENCE: AI analysis must return measurable processing time for stress testing validation")
 
 					// Should handle various sizes efficiently
 					Expect(response.Action).ToNot(BeEmpty(), "Should process alerts of size %d", len(alertContent))

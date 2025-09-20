@@ -21,6 +21,10 @@ type VectorDatabase interface {
 	// SearchBySemantics performs semantic search for patterns
 	SearchBySemantics(ctx context.Context, query string, limit int) ([]*ActionPattern, error)
 
+	// SearchByVector performs vector similarity search for patterns
+	// Business Requirement: BR-AI-COND-001 - Enhanced vector-based condition evaluation
+	SearchByVector(ctx context.Context, embedding []float64, limit int, threshold float64) ([]*ActionPattern, error)
+
 	// DeletePattern removes a pattern from the vector database
 	DeletePattern(ctx context.Context, patternID string) error
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"testing"
 	"time"
 
 	contextpkg "github.com/jordigilh/kubernaut/pkg/ai/context"
@@ -15,10 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestContextCacheLimits(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Context Cache Limits and Monitoring Suite")
-}
+// TestContextCacheLimits removed - tests are included in the main HolmesGPT suite
 
 var _ = Describe("Context Cache Limits and Monitoring", func() {
 
@@ -286,7 +282,7 @@ var _ = Describe("Context Cache Limits and Monitoring", func() {
 
 			// Access key2 to make it recently used (move to front of LRU)
 			data2 := cache.Get("key2")
-			Expect(data2).ToNot(BeNil(), "key2 should exist before access")
+			Expect(data2.Kubernetes.Namespace).ToNot(BeEmpty(), "BR-AI-001-CONFIDENCE: HolmesGPT context cache must provide valid cached data for AI confidence requirements")
 
 			time.Sleep(time.Millisecond * 10) // Ensure different access times
 
@@ -308,10 +304,10 @@ var _ = Describe("Context Cache Limits and Monitoring", func() {
 			Expect(finalStats.EvictionCount).To(BeNumerically(">", 0), "At least one eviction should have occurred")
 
 			// Recently accessed key2 should still exist
-			Expect(cache.Get("key2")).ToNot(BeNil(), "Recently accessed key2 should remain")
+			Expect(cache.Get("key2").Kubernetes.Namespace).ToNot(BeEmpty(), "BR-AI-001-CONFIDENCE: HolmesGPT context cache must retain recently accessed data for AI confidence requirements")
 
 			// Newly added key4 should exist
-			Expect(cache.Get("key4")).ToNot(BeNil(), "Newly added key4 should exist")
+			Expect(cache.Get("key4").Kubernetes.Namespace).ToNot(BeEmpty(), "BR-AI-001-CONFIDENCE: HolmesGPT context cache must store newly added data for AI confidence requirements")
 
 			// At least one of the older, unaccessed entries should be evicted
 			evictedCount := 0
