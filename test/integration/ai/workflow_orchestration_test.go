@@ -136,7 +136,7 @@ var _ = Describe("Workflow Orchestration Integration Testing", Ordered, func() {
 
 				multiEnvWorkflow, err := workflowBuilder.GenerateWorkflow(ctx, multiEnvObjective)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(multiEnvWorkflow).ToNot(BeNil())
+				Expect(multiEnvWorkflow).ToNot(BeNil(), "BR-WF-001-EXECUTION-TIME: AI workflow orchestration must return valid workflow results for execution time requirements")
 
 				By("Validating multi-environment workflow structure")
 				// Verify sequential execution order
@@ -212,7 +212,7 @@ var _ = Describe("Workflow Orchestration Integration Testing", Ordered, func() {
 
 				constrainedWorkflow, err := workflowBuilder.GenerateWorkflow(ctx, constrainedObjective)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(constrainedWorkflow).ToNot(BeNil())
+				Expect(constrainedWorkflow).ToNot(BeNil(), "BR-WF-001-EXECUTION-TIME: AI workflow orchestration must return valid workflow results for execution time requirements")
 
 				By("Validating constraint-aware workflow structure")
 				// Verify production-specific constraints are included
@@ -305,7 +305,7 @@ var _ = Describe("Workflow Orchestration Integration Testing", Ordered, func() {
 
 				crossTeamWorkflow, err := workflowBuilder.GenerateWorkflow(ctx, crossTeamObjective)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(crossTeamWorkflow).ToNot(BeNil())
+				Expect(crossTeamWorkflow).ToNot(BeNil(), "BR-WF-001-EXECUTION-TIME: AI workflow orchestration must return valid workflow results for execution time requirements")
 
 				By("Validating cross-team workflow structure")
 				// Verify all teams are represented

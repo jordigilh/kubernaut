@@ -36,8 +36,7 @@ var _ = Describe("Local Embedding Service Unit Tests", func() {
 			dimension := 512
 			service := vector.NewLocalEmbeddingService(dimension, logger)
 
-			Expect(service).ToNot(BeNil(), "Should create service successfully")
-			Expect(service.GetEmbeddingDimension()).To(Equal(dimension), "Should use specified dimension")
+			Expect(service.GetEmbeddingDimension()).To(Equal(dimension), "BR-DATABASE-001-A: Embedding service must provide valid dimensions for vector storage operations")
 		})
 
 		It("should use default dimension for invalid input", func() {
@@ -653,8 +652,7 @@ var _ = Describe("Hybrid Embedding Service Unit Tests", func() {
 
 	Context("Service Creation and Configuration", func() {
 		It("should create hybrid service with local and external components", func() {
-			Expect(hybridService).ToNot(BeNil(), "Should create hybrid service successfully")
-			Expect(hybridService.GetEmbeddingDimension()).To(Equal(384), "Should return correct dimension")
+			Expect(hybridService.GetEmbeddingDimension()).To(Equal(384), "BR-DATABASE-001-A: Hybrid embedding service must provide valid dimensions for multi-backend vector storage operations")
 		})
 
 		It("should default to local service initially", func() {

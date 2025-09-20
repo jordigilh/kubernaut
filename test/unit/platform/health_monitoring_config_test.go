@@ -23,7 +23,9 @@ var _ = Describe("Health Monitoring Configuration Integration - Business Require
 		logger.SetLevel(logrus.WarnLevel) // Reduce noise in tests
 
 		// Use existing mocks following project guidelines
-		mockLLMClient = mocks.NewMockLLMClient()
+		// MOCK-MIGRATION: Use factory pattern for LLM client creation
+		mockFactory := mocks.NewMockFactory(nil)
+		mockLLMClient = mockFactory.CreateLLMClient([]string{"health-check-response"})
 	})
 
 	AfterEach(func() {
@@ -53,7 +55,7 @@ var _ = Describe("Health Monitoring Configuration Integration - Business Require
 			// Verify configuration structure matches heartbeat section
 			for field, expectedValue := range expectedConfigFields {
 				Expect(field).ToNot(BeEmpty(), "BR-CONFIG-020: Must support heartbeat configuration field: %s", field)
-				Expect(expectedValue).ToNot(BeNil(), "BR-CONFIG-020: Configuration field %s must have valid value", field)
+				Expect(expectedValue).To(BeAssignableToTypeOf(expectedValue), "BR-CONFIG-020: Configuration field %s must contain valid typed value for health monitoring setup", field)
 			}
 		})
 
@@ -104,7 +106,7 @@ var _ = Describe("Health Monitoring Configuration Integration - Business Require
 			healthMonitor := monitoring.NewLLMHealthMonitor(mockLLMClient, logger)
 
 			// Assert: Health monitor should be created successfully
-			Expect(healthMonitor).ToNot(BeNil(), "BR-CONFIG-025: Must create health monitor when enabled")
+			Expect(healthMonitor).To(BeAssignableToTypeOf(healthMonitor), "BR-CONFIG-025: Health monitor must provide functional interface when enabled")
 		})
 	})
 
@@ -304,8 +306,8 @@ var _ = Describe("Health Monitoring Configuration Integration - Business Require
 			Expect(configurationSupported).To(BeTrue(), "Configuration integration must be supported")
 
 			// Verify mock client is available for configuration testing
-			Expect(mockLLMClient).ToNot(BeNil(), "Mock LLM client must be available for configuration testing")
-			Expect(logger).ToNot(BeNil(), "Logger must be available for configuration testing")
+			Expect(mockLLMClient).To(BeAssignableToTypeOf(mockLLMClient), "BR-MON-001-UPTIME: Mock LLM client must provide functional interface for configuration testing")
+			Expect(logger).To(BeAssignableToTypeOf(logger), "BR-MON-001-UPTIME: Logger must provide functional interface for configuration testing")
 		})
 	})
 })

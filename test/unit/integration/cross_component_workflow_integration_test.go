@@ -17,7 +17,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
 
 func TestCrossComponentWorkflowIntegration(t *testing.T) {
@@ -134,13 +133,9 @@ var _ = Describe("Cross-Component Workflow Integration Testing", func() {
 
 			// Business Validation: AI Analytics Component
 			Expect(err).ToNot(HaveOccurred(), "AI analytics must succeed for intelligent incident resolution")
-			Expect(analyticsInsights).ToNot(BeNil(), "Analytics insights required for intelligent decision making")
+			Expect(len(analyticsInsights.WorkflowInsights)).To(BeNumerically(">=", 1), "BR-AI-001-CONFIDENCE: AI analytics must provide workflow insights for intelligent incident resolution decision making")
 			Expect(analyticsLatency).To(BeNumerically("<", 10*time.Second),
 				"AI analytics must complete within 10 seconds for real-time incident response")
-
-			// Business Impact Validation: Analytics effectiveness
-			Expect(len(analyticsInsights.WorkflowInsights)).To(BeNumerically(">=", 1),
-				"Must identify workflow insights for comprehensive incident understanding")
 
 			By("Phase 2: Vector Database - Semantic similarity matching for pattern discovery")
 
@@ -180,23 +175,16 @@ var _ = Describe("Cross-Component Workflow Integration Testing", func() {
 
 			anomalyResult, err := anomalyDetector.DetectPerformanceAnomaly(ctx, "payment-service", incidentMetrics)
 			Expect(err).ToNot(HaveOccurred(), "Anomaly detection must succeed for intelligent diagnosis")
-			Expect(anomalyResult).ToNot(BeNil(), "Anomaly analysis required for intelligent response")
-			Expect(anomalyResult.Severity).To(Equal("high"),
-				"Must correctly classify high-severity anomaly for appropriate response")
+			Expect(anomalyResult.Severity).To(Equal("high"), "BR-AI-001-CONFIDENCE: Anomaly detection must provide accurate severity classification for intelligent response orchestration")
 
 			By("Advanced Workflow Execution - Parallel remediation steps with business impact optimization")
 
 			// Execute workflow with business impact tracking
 			executionStart := time.Now()
-			execution := &engine.RuntimeWorkflowExecution{}
 			executionLatency := time.Since(executionStart)
 
 			// Business Validation: Workflow Execution
-			Expect(execution).ToNot(BeNil(), "Execution results required for business impact assessment")
-
-			// BUSINESS CRITICAL: Resolution time under 5 minutes for high-impact incidents
-			Expect(executionLatency).To(BeNumerically("<", 5*time.Minute),
-				"High-impact incidents must resolve within 5 minutes to minimize business loss")
+			Expect(executionLatency).To(BeNumerically("<", 5*time.Minute), "BR-WF-001-SUCCESS-RATE: Cross-component workflow execution must complete within business-critical timeframes for impact assessment")
 
 			By("Business Impact Assessment - Measuring end-to-end business value")
 

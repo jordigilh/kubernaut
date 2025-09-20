@@ -3,6 +3,7 @@ package mocks
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,8 +39,8 @@ func NewMockClient() *MockClient {
 			Status:          "completed",
 			AlertName:       "mock_alert",
 			Namespace:       "mock_namespace",
-			Summary:         "Mock investigation analysis: The alert indicates potential resource exhaustion. Consider scaling deployment or optimizing resource usage.",
-			RootCause:       "Resource exhaustion detected",
+			Summary:         "Mock investigation analysis: The alert indicates potential memory resource exhaustion. Consider scaling deployment or optimizing resource usage. Database connection pool may require optimization.",
+			RootCause:       "Resource exhaustion detected in memory subsystem",
 			Recommendations: []holmesgpt.Recommendation{
 				{
 					Title:       "Scale Deployment",
@@ -48,6 +49,31 @@ func NewMockClient() *MockClient {
 					Priority:    "high",
 					Confidence:  0.85,
 				},
+			},
+			StrategyInsights: &holmesgpt.StrategyInsights{
+				RecommendedStrategies: []holmesgpt.StrategyRecommendation{
+					{
+						StrategyName:          "horizontal_scaling",
+						ExpectedSuccessRate:   0.88,
+						EstimatedCost:         150,
+						TimeToResolve:         15 * time.Minute,
+						BusinessJustification: "Scale deployment horizontally to distribute load and improve performance",
+						ROI:                   0.85,
+					},
+					{
+						StrategyName:          "memory_optimization",
+						ExpectedSuccessRate:   0.75,
+						EstimatedCost:         75,
+						TimeToResolve:         10 * time.Minute,
+						BusinessJustification: "Optimize memory usage patterns to reduce resource consumption",
+						ROI:                   0.70,
+					},
+				},
+				HistoricalSuccessRate: 0.87,
+				EstimatedROI:          0.82,
+				TimeToResolution:      15 * time.Minute,
+				BusinessImpact:        "High impact optimization potential for deployment scaling",
+				ConfidenceLevel:       0.85,
 			},
 			ContextUsed: map[string]interface{}{
 				"mock":             "investigation_response",
@@ -207,6 +233,81 @@ func (m *MockClient) GetHistoricalPatterns(ctx context.Context, req *holmesgpt.P
 		TotalPatterns:   1,
 		ConfidenceLevel: 0.85,
 	}, nil
+}
+
+// IdentifyPotentialStrategies implements holmesgpt.Client interface
+func (m *MockClient) IdentifyPotentialStrategies(alertContext types.AlertContext) []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Return context-aware strategies based on alert content
+	strategies := []string{}
+
+	// Add strategies based on alert name and labels
+	if strings.Contains(strings.ToLower(alertContext.Name), "cpu") ||
+		strings.Contains(strings.ToLower(alertContext.Labels["resource_type"]), "cpu") {
+		strategies = append(strategies, "horizontal_scaling", "cpu_optimization", "load_balancing")
+	}
+
+	if strings.Contains(strings.ToLower(alertContext.Name), "memory") ||
+		strings.Contains(strings.ToLower(alertContext.Labels["resource_type"]), "memory") {
+		strategies = append(strategies, "memory_scaling", "memory_optimization", "garbage_collection_tuning")
+	}
+
+	if strings.Contains(strings.ToLower(alertContext.Name), "database") ||
+		strings.Contains(strings.ToLower(alertContext.Labels["component"]), "database") {
+		strategies = append(strategies, "connection_pool_optimization", "query_optimization", "database_scaling")
+	}
+
+	if alertContext.Severity == "critical" {
+		strategies = append(strategies, "immediate_scaling", "emergency_rollback")
+	}
+
+	// Always provide at least basic strategies
+	if len(strategies) == 0 {
+		strategies = []string{"horizontal_scaling", "resource_optimization", "monitoring_enhancement"}
+	}
+
+	return strategies
+}
+
+// GetRelevantHistoricalPatterns implements holmesgpt.Client interface
+func (m *MockClient) GetRelevantHistoricalPatterns(alertContext types.AlertContext) map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return map[string]interface{}{
+		"rolling_deployment": 0.85,
+		"canary_deployment":  0.78,
+		"blue_green":         0.82,
+		"scaling_strategy":   0.90,
+	}
+}
+
+// AnalyzeCostImpactFactors implements holmesgpt.Client interface
+func (m *MockClient) AnalyzeCostImpactFactors(alertContext types.AlertContext) map[string]interface{} {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return map[string]interface{}{
+		"optimization_potential": 0.75,
+		"cost_reduction":         0.60,
+		"resource_efficiency":    0.82,
+		"scaling_cost":           150.0,
+	}
+}
+
+// GetSuccessRateIndicators implements holmesgpt.Client interface
+func (m *MockClient) GetSuccessRateIndicators(alertContext types.AlertContext) map[string]float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return map[string]float64{
+		"historical_success": 0.88,
+		"confidence_level":   0.85,
+		"pattern_match":      0.92,
+		"risk_assessment":    0.15,
+	}
 }
 
 // Additional helper methods for test scenarios
