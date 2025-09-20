@@ -40,9 +40,8 @@ type IntegrationMockEmbeddingService struct {
 	replicationFactor int
 
 	// Monitoring
-	metrics ServiceMetrics
-	alerts  []ServiceAlert
-	mutex   sync.RWMutex
+	alerts []ServiceAlert
+	mutex  sync.RWMutex
 }
 
 // ServiceType identifies different types of embedding services for testing

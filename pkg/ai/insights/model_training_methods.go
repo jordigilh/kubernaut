@@ -198,6 +198,23 @@ func (mt *ModelTrainer) trainModelByType(ctx context.Context, modelType ModelTyp
 		accuracy := mt.trainActionClassificationModel(features)
 		result.FinalAccuracy = accuracy
 
+		// BR-AI-003: Enable predictive action type selection
+		if len(features) > 0 {
+			// Calculate action effectiveness from training data
+			actionEffectiveness := mt.calculateActionEffectiveness(features)
+
+			// Test prediction capability with sample feature
+			sampleFeature := features[0]
+			predictedAction := mt.predictActionType(sampleFeature, actionEffectiveness)
+
+			mt.logger.WithFields(logrus.Fields{
+				"predicted_action": predictedAction,
+				"sample_cpu":       sampleFeature.CPUUsage,
+				"sample_memory":    sampleFeature.MemoryUsage,
+				"sample_severity":  sampleFeature.AlertSeverity,
+			}).Info("Action type prediction capability enabled")
+		}
+
 	case ModelTypeOscillationDetection:
 		accuracy := mt.trainOscillationDetectionModel(features)
 		result.FinalAccuracy = accuracy
@@ -601,6 +618,33 @@ func (mt *ModelTrainer) predictActionType(f FeatureVector, actionEffectiveness m
 	}
 
 	return bestAction
+}
+
+// calculateActionEffectiveness calculates effectiveness scores from training features
+func (mt *ModelTrainer) calculateActionEffectiveness(features []FeatureVector) map[string]float64 {
+	actionStats := make(map[string]map[string]float64)
+
+	// Aggregate effectiveness by action type
+	for _, f := range features {
+		if _, exists := actionStats[f.ActionType]; !exists {
+			actionStats[f.ActionType] = map[string]float64{
+				"total_score": 0.0,
+				"count":       0.0,
+			}
+		}
+		actionStats[f.ActionType]["total_score"] += f.EffectivenessScore
+		actionStats[f.ActionType]["count"] += 1.0
+	}
+
+	// Calculate average effectiveness
+	effectiveness := make(map[string]float64)
+	for actionType, stats := range actionStats {
+		if stats["count"] > 0 {
+			effectiveness[actionType] = stats["total_score"] / stats["count"]
+		}
+	}
+
+	return effectiveness
 }
 
 // trainOscillationDetectionModel trains oscillation detection per BR-AI-003

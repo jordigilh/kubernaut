@@ -66,11 +66,11 @@ var _ = Describe("New Actions Integration Suite", Ordered, func() {
 	Context("with isolated state", func() {
 		It("should have no global state coupling", func() {
 			// Test implementation using scoped variables
-			Expect(client).ToNot(BeNil())
-			Expect(logger).ToNot(BeNil())
+			Expect(client).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration new actions must return valid workflow results for success rate requirements")
+			Expect(logger).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration new actions must return valid workflow results for success rate requirements")
 			// Verify client and logger are properly initialized
-			Expect(client).ToNot(BeNil())
-			Expect(logger).ToNot(BeNil())
+			Expect(client).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration new actions must return valid workflow results for success rate requirements")
+			Expect(logger).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration new actions must return valid workflow results for success rate requirements")
 		})
 	})
 })

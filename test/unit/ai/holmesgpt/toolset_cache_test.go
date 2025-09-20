@@ -39,8 +39,7 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 				cache.SetToolset(toolset)
 				retrieved := cache.GetToolset("prometheus-monitoring-prometheus")
 
-				Expect(retrieved).ToNot(BeNil())
-				Expect(retrieved.Name).To(Equal("prometheus-monitoring-prometheus"))
+				Expect(retrieved.Name).To(Equal("prometheus-monitoring-prometheus"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must return functional cached components with correct identifiers for AI confidence requirements")
 				Expect(retrieved.ServiceType).To(Equal("prometheus"))
 				Expect(retrieved.Priority).To(Equal(80))
 			})
@@ -89,7 +88,7 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 
 				// Access existing toolset (hit)
 				retrieved := cache.GetToolset("existing-toolset")
-				Expect(retrieved).ToNot(BeNil())
+				Expect(retrieved.Name).To(Equal("existing-toolset"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must return functional cached components with correct identifiers for AI confidence requirements")
 
 				stats := cache.GetStats()
 				Expect(stats.HitCount).To(Equal(initialHits + 1))
@@ -315,7 +314,7 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 				}
 
 				cache.SetToolset(toolset)
-				Expect(cache.GetToolset("to-be-removed")).ToNot(BeNil())
+				Expect(cache.GetToolset("to-be-removed").ServiceType).To(Equal("test"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must return functional cached components with correct service types for AI confidence requirements")
 
 				cache.RemoveToolset("to-be-removed")
 				Expect(cache.GetToolset("to-be-removed")).To(BeNil())
@@ -327,7 +326,7 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 
 				// Cache should still be functional
 				cache.SetToolset(&holmesgpt.ToolsetConfig{Name: "test", ServiceType: "test"})
-				Expect(cache.GetToolset("test")).ToNot(BeNil())
+				Expect(cache.GetToolset("test").ServiceType).To(Equal("test"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must return functional cached components with correct service types for AI confidence requirements")
 			})
 
 			It("should update toolset enabled status", func() {
@@ -396,8 +395,8 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 				time.Sleep(20 * time.Millisecond)
 
 				// Baseline toolsets should still be retrievable
-				Expect(shortCache.GetToolset("kubernetes")).ToNot(BeNil())
-				Expect(shortCache.GetToolset("internet")).ToNot(BeNil())
+				Expect(shortCache.GetToolset("kubernetes").ServiceType).To(Equal("kubernetes"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must return functional baseline toolsets with correct service types for AI confidence requirements")
+				Expect(shortCache.GetToolset("internet").ServiceType).To(Equal("internet"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must return functional baseline toolsets with correct service types for AI confidence requirements")
 			})
 
 			It("should expire non-baseline toolsets after TTL", func() {
@@ -414,7 +413,7 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 
 				// Should exist immediately after storing
 				retrieved := shortCache.GetToolset("expiring-toolset")
-				Expect(retrieved).ToNot(BeNil())
+				Expect(retrieved.Name).To(Equal("expiring-toolset"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must return functional cached components with correct identifiers before TTL expiration for AI confidence requirements")
 
 				// Wait for TTL to expire
 				time.Sleep(100 * time.Millisecond) // Double the TTL to ensure expiration
@@ -468,8 +467,7 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 				// Business Validation: Cache should remain functional for basic operations after stop
 				cache.SetToolset(&holmesgpt.ToolsetConfig{Name: "after-stop", ServiceType: "test"})
 				retrieved := cache.GetToolset("after-stop")
-				Expect(retrieved).ToNot(BeNil())
-				Expect(retrieved.Name).To(Equal("after-stop"))
+				Expect(retrieved.Name).To(Equal("after-stop"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must remain functional after stop with correct cached component identifiers for AI confidence requirements")
 			})
 
 			It("should properly manage goroutine lifecycle during concurrent operations", func() {
@@ -502,7 +500,7 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 				// Business Validation: Cache should remain functional after concurrent stop
 				cache.SetToolset(&holmesgpt.ToolsetConfig{Name: "post-concurrent", ServiceType: "test"})
 				retrieved := cache.GetToolset("post-concurrent")
-				Expect(retrieved).ToNot(BeNil())
+				Expect(retrieved.ServiceType).To(Equal("test"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must remain functional after concurrent operations with correct service types for AI confidence requirements")
 			})
 
 			It("should handle stop being called on already stopped cache", func() {
@@ -516,7 +514,7 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 				// Business Validation: Cache should remain functional
 				cache.SetToolset(&holmesgpt.ToolsetConfig{Name: "multi-stop-test", ServiceType: "test"})
 				retrieved := cache.GetToolset("multi-stop-test")
-				Expect(retrieved).ToNot(BeNil())
+				Expect(retrieved.ServiceType).To(Equal("test"), "BR-AI-001-CONFIDENCE: HolmesGPT toolset cache must remain functional after multiple stop operations with correct service types for AI confidence requirements")
 			})
 		})
 	})

@@ -19,6 +19,7 @@ type MockVectorDatabase struct {
 	findSimilarCalls         []FindSimilarPatternsCall
 	updateEffectivenessCalls []UpdatePatternEffectivenessCall
 	searchSemanticsCalls     []SearchBySemanticsCall
+	searchVectorCalls        []SearchByVectorCall
 	deleteCalls              []DeletePatternCall
 	analyticsCalls           []GetPatternAnalyticsCall
 	healthCheckCalls         []IsHealthyCall
@@ -30,6 +31,8 @@ type MockVectorDatabase struct {
 	updateEffectivenessError error
 	searchSemanticsResult    []*vector.ActionPattern
 	searchSemanticsError     error
+	searchVectorResult       []*vector.ActionPattern
+	searchVectorError        error
 	deleteError              error
 	analyticsResult          *vector.PatternAnalytics
 	analyticsError           error
@@ -57,6 +60,12 @@ type SearchBySemanticsCall struct {
 	Limit int
 }
 
+type SearchByVectorCall struct {
+	Embedding []float64
+	Limit     int
+	Threshold float64
+}
+
 type DeletePatternCall struct {
 	PatternID string
 }
@@ -77,6 +86,7 @@ func NewMockVectorDatabase() *MockVectorDatabase {
 		findSimilarCalls:         []FindSimilarPatternsCall{},
 		updateEffectivenessCalls: []UpdatePatternEffectivenessCall{},
 		searchSemanticsCalls:     []SearchBySemanticsCall{},
+		searchVectorCalls:        []SearchByVectorCall{},
 		deleteCalls:              []DeletePatternCall{},
 		analyticsCalls:           []GetPatternAnalyticsCall{},
 		healthCheckCalls:         []IsHealthyCall{},
@@ -88,6 +98,8 @@ func NewMockVectorDatabase() *MockVectorDatabase {
 		updateEffectivenessError: nil,
 		searchSemanticsResult:    []*vector.ActionPattern{},
 		searchSemanticsError:     nil,
+		searchVectorResult:       []*vector.ActionPattern{},
+		searchVectorError:        nil,
 		deleteError:              nil,
 		analyticsResult:          &vector.PatternAnalytics{},
 		analyticsError:           nil,
@@ -112,6 +124,11 @@ func (m *MockVectorDatabase) SetUpdateEffectivenessError(err error) {
 func (m *MockVectorDatabase) SetSearchSemanticsResult(patterns []*vector.ActionPattern, err error) {
 	m.searchSemanticsResult = patterns
 	m.searchSemanticsError = err
+}
+
+func (m *MockVectorDatabase) SetSearchVectorResult(patterns []*vector.ActionPattern, err error) {
+	m.searchVectorResult = patterns
+	m.searchVectorError = err
 }
 
 func (m *MockVectorDatabase) SetDeleteError(err error) {
@@ -229,6 +246,23 @@ func (m *MockVectorDatabase) SearchBySemantics(ctx context.Context, query string
 	}
 
 	return m.searchSemanticsResult, nil
+}
+
+func (m *MockVectorDatabase) SearchByVector(ctx context.Context, embedding []float64, limit int, threshold float64) ([]*vector.ActionPattern, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	m.searchVectorCalls = append(m.searchVectorCalls, SearchByVectorCall{
+		Embedding: embedding,
+		Limit:     limit,
+		Threshold: threshold,
+	})
+
+	if m.searchVectorError != nil {
+		return nil, m.searchVectorError
+	}
+
+	return m.searchVectorResult, nil
 }
 
 func (m *MockVectorDatabase) DeletePattern(ctx context.Context, patternID string) error {

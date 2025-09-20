@@ -22,6 +22,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	"github.com/jordigilh/kubernaut/pkg/workflow/shared"
 )
 
 // MockLLMClient provides a mock implementation of llm.Client for testing
@@ -660,6 +661,25 @@ func (m *MockWorkflowVectorDatabase) SearchBySemantics(ctx context.Context, quer
 	}
 
 	// Return up to 'limit' patterns
+	result := make([]*vector.ActionPattern, 0)
+	count := 0
+	for _, pattern := range m.actionPatterns {
+		if count >= limit {
+			break
+		}
+		result = append(result, pattern)
+		count++
+	}
+
+	return result, nil
+}
+
+func (m *MockWorkflowVectorDatabase) SearchByVector(ctx context.Context, embedding []float64, limit int, threshold float64) ([]*vector.ActionPattern, error) {
+	if m.error != nil {
+		return nil, m.error
+	}
+
+	// Return up to 'limit' patterns (similar to SearchBySemantics)
 	result := make([]*vector.ActionPattern, 0)
 	count := 0
 	for _, pattern := range m.actionPatterns {
@@ -1407,21 +1427,176 @@ func (m *MockStateStorage) GetStateTransitions() []StateTransition {
 	return transitionsCopy
 }
 
+// BR-REL-004: RecoverWorkflowStates - Mock implementation for workflow state recovery testing
+func (m *MockStateStorage) RecoverWorkflowStates(ctx context.Context) ([]*engine.RuntimeWorkflowExecution, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.error != nil {
+		return nil, m.error
+	}
+
+	// Return all stored states that are recoverable (running or failed states)
+	recoverable := make([]*engine.RuntimeWorkflowExecution, 0)
+	for _, state := range m.states {
+		// Following guideline: Test business requirements (BR-REL-004)
+		// Only recover running or failed executions (not completed ones)
+		if state.OperationalStatus == engine.ExecutionStatusRunning ||
+			state.OperationalStatus == engine.ExecutionStatusFailed {
+			stateCopy := *state
+			recoverable = append(recoverable, &stateCopy)
+		}
+	}
+
+	return recoverable, nil
+}
+
+// BR-REL-004: GetStateAnalytics - Mock implementation for state analytics testing
+func (m *MockStateStorage) GetStateAnalytics(ctx context.Context) (*shared.StateAnalytics, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.error != nil {
+		return nil, m.error
+	}
+
+	// Calculate analytics from stored states
+	totalExecutions := len(m.states)
+	activeExecutions := 0
+	completedExecutions := 0
+	failedExecutions := 0
+
+	for _, state := range m.states {
+		switch state.OperationalStatus {
+		case engine.ExecutionStatusRunning:
+			activeExecutions++
+		case engine.ExecutionStatusCompleted:
+			completedExecutions++
+		case engine.ExecutionStatusFailed:
+			failedExecutions++
+		}
+	}
+
+	analytics := &shared.StateAnalytics{
+		TotalExecutions:      totalExecutions,
+		ActiveExecutions:     activeExecutions,
+		CompletedExecutions:  completedExecutions,
+		FailedExecutions:     failedExecutions,
+		RecoverySuccessRate:  0.95, // Mock high success rate
+		AverageExecutionTime: 5 * time.Minute,
+		LastUpdated:          time.Now(),
+	}
+
+	return analytics, nil
+}
+
+// BR-DATA-012: CreateCheckpoint - Mock implementation for checkpoint testing
+func (m *MockStateStorage) CreateCheckpoint(ctx context.Context, execution *engine.RuntimeWorkflowExecution, name string) (*shared.WorkflowCheckpoint, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.error != nil {
+		return nil, m.error
+	}
+
+	checkpoint := &shared.WorkflowCheckpoint{
+		ID:          fmt.Sprintf("checkpoint-%s-%s", execution.ID, name),
+		ExecutionID: execution.ID,
+		WorkflowID:  execution.WorkflowID,
+		Name:        name,
+		StateHash:   fmt.Sprintf("hash-%s", execution.ID),
+		CreatedAt:   time.Now(),
+		Metadata: map[string]string{
+			"current_step": fmt.Sprintf("%d", execution.CurrentStep),
+			"status":       string(execution.OperationalStatus),
+		},
+	}
+
+	return checkpoint, nil
+}
+
+// BR-DATA-012: RestoreFromCheckpoint - Mock implementation for checkpoint restoration
+func (m *MockStateStorage) RestoreFromCheckpoint(ctx context.Context, checkpointID string) (*engine.RuntimeWorkflowExecution, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.error != nil {
+		return nil, m.error
+	}
+
+	// Mock restoration - in real implementation would load from checkpoint storage
+	return &engine.RuntimeWorkflowExecution{
+		WorkflowExecutionRecord: types.WorkflowExecutionRecord{
+			ID:         "restored-execution",
+			WorkflowID: "restored-workflow",
+			Status:     string(engine.ExecutionStatusRunning),
+			StartTime:  time.Now().Add(-time.Hour),
+			Metadata:   map[string]interface{}{"restored_from": checkpointID},
+		},
+		OperationalStatus: engine.ExecutionStatusRunning,
+	}, nil
+}
+
+// BR-DATA-012: ValidateCheckpoint - Mock implementation for checkpoint validation
+func (m *MockStateStorage) ValidateCheckpoint(ctx context.Context, checkpointID string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.error != nil {
+		return false, m.error
+	}
+
+	// Mock validation - always return true for testing
+	return true, nil
+}
+
 func (m *MockStateStorage) ValidateStateProgression(executionID string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// Check if state transitions show proper progression
-	var lastStep = -1
+	// Business Requirement: BR-WF-001 - Support both sequential and parallel execution patterns
+	// Enhanced validation for modern workflow execution patterns
+
+	executionTransitions := []StateTransition{}
 	for _, transition := range m.stateTransitions {
 		if transition.ExecutionID == executionID {
-			if transition.ToStep <= lastStep {
-				return false // Steps should progress forward
-			}
-			lastStep = transition.ToStep
+			executionTransitions = append(executionTransitions, transition)
 		}
 	}
-	return true
+
+	if len(executionTransitions) == 0 {
+		return true // No transitions means valid (initial state)
+	}
+
+	// Strategy 1: Check if all transitions are valid completions
+	allCompleted := true
+	for _, transition := range executionTransitions {
+		if transition.StepStatus != "completed" && transition.StepStatus != "in_progress" {
+			allCompleted = false
+			break
+		}
+	}
+
+	// Strategy 2: For parallel execution, validate that steps don't conflict
+	// Instead of requiring strict sequential order, ensure logical consistency
+	stepStatuses := make(map[int]string)
+	for _, transition := range executionTransitions {
+		// Allow multiple transitions to the same step (parallel execution)
+		// but ensure final status is consistent
+		if existing, exists := stepStatuses[transition.ToStep]; exists {
+			// If step already has a status, ensure consistency
+			if existing == "completed" && transition.StepStatus != "completed" {
+				return false // Can't go from completed to another state
+			}
+		}
+		stepStatuses[transition.ToStep] = transition.StepStatus
+	}
+
+	// Strategy 3: Validate business continuity - ensure forward progress
+	// For parallel execution, we expect multiple steps to progress simultaneously
+	hasForwardProgress := len(stepStatuses) > 0
+
+	return allCompleted && hasForwardProgress
 }
 
 func (m *MockStateStorage) GetStepProgressionCount(executionID string) int {

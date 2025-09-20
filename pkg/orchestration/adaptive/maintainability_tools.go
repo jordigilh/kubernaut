@@ -1,4 +1,4 @@
-package orchestration
+package adaptive
 
 import (
 	"bufio"

@@ -6,11 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/internal/actionhistory"
 	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/ai/holmesgpt"
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
-
 	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
+	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
+	"github.com/jordigilh/kubernaut/pkg/platform/monitoring"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/sirupsen/logrus"
@@ -220,9 +222,9 @@ func (asi *AIServiceIntegrator) GetServiceStatus(ctx context.Context) (*AIServic
 
 // Enhanced workflow engine constructor that uses AI service integration
 func NewDefaultWorkflowEngineWithAIIntegration(
-	k8sClient interface{}, // Using interface{} to avoid import issues for now
-	actionRepo interface{}, // ActionHistory repository
-	monitoringClients interface{}, // Monitoring clients
+	k8sClient k8s.Client,
+	actionRepo actionhistory.Repository,
+	monitoringClients *monitoring.MonitoringClients,
 	stateStorage StateStorage,
 	executionRepo ExecutionRepository,
 	config *WorkflowEngineConfig,
@@ -254,14 +256,33 @@ func NewDefaultWorkflowEngineWithAIIntegration(
 		}
 	}
 
+	// Create vector database using production factory pattern
+	// Following development guideline: integrate with existing code
+	var vectorDB vector.VectorDatabase
+	if aiConfig != nil && aiConfig.VectorDB.Enabled {
+		vectorFactory := vector.NewVectorDatabaseFactory(&aiConfig.VectorDB, nil, log)
+		createdVectorDB, err := vectorFactory.CreateVectorDatabase()
+		if err != nil {
+			log.WithError(err).Warn("Failed to create vector database, using memory fallback")
+			vectorDB = vector.NewMemoryVectorDatabase(log)
+		} else {
+			vectorDB = createdVectorDB
+			log.WithField("backend", aiConfig.VectorDB.Backend).Info("Vector database created successfully")
+		}
+	} else {
+		// Graceful fallback when no config is available or vector DB is disabled
+		log.Info("Vector database disabled or no config provided, using memory fallback")
+		vectorDB = vector.NewMemoryVectorDatabase(log)
+	}
+
 	// Create AI service integrator with available context sources
 	// Following development guideline: integrate with existing code
 	integrator := NewAIServiceIntegrator(
 		aiConfig,
 		llmClient,
 		holmesClient,
-		nil, // Vector DB will be added in Phase 1C
-		nil, // Metrics client will be enhanced
+		vectorDB, // Real vector database instead of nil
+		nil,      // Metrics client will be enhanced
 		log,
 	)
 
@@ -318,12 +339,39 @@ func NewDefaultWorkflowEngineWithAIIntegration(
 		}
 	}
 
-	// Create the enhanced workflow engine with AI integration
-	// Note: This would need to be integrated with the actual workflow engine constructor
-	// For now, providing the pattern for integration
+	// Create AI condition evaluator based on service availability
+	// Business Requirement: BR-AI-COND-001 - Use real AI condition evaluator instead of nil
+	// Following development guideline: integrate with existing code (use factory pattern)
+	aiConditionEvaluator := NewDefaultAIConditionEvaluator(
+		llmClient,
+		holmesClient,
+		integrator.vectorDB,
+		log,
+	)
 
-	log.Info("Workflow engine created with AI service integration")
-	return nil, fmt.Errorf("integration with actual workflow engine constructor needed - see ai_service_integration.go for pattern")
+	// Create the enhanced workflow engine with AI integration
+	// Following development guideline: integrate with existing code (use NewDefaultWorkflowEngine)
+	workflowEngine := NewDefaultWorkflowEngine(
+		k8sClient,
+		actionRepo,
+		monitoringClients,
+		stateStorage,
+		executionRepo,
+		config,
+		log,
+	)
+
+	// Set the AI condition evaluator to enable AI-enhanced workflow features
+	workflowEngine.SetAIConditionEvaluator(aiConditionEvaluator)
+
+	log.WithFields(logrus.Fields{
+		"ai_integration_enabled":     true,
+		"llm_client_available":       llmClient != nil,
+		"holmesgpt_client_available": holmesClient != nil,
+		"vector_db_available":        integrator.vectorDB != nil,
+	}).Info("Workflow engine created with AI service integration")
+
+	return workflowEngine, nil
 }
 
 // InvestigateAlert performs hybrid AI investigation using the priority-based fallback strategy

@@ -192,6 +192,57 @@ func (evda *ExternalVectorDatabaseAdapter) SearchBySemantics(ctx context.Context
 	return patterns, nil
 }
 
+// SearchByVector performs vector similarity search for patterns
+// Business Requirement: BR-AI-COND-001 - Enhanced vector-based condition evaluation
+func (evda *ExternalVectorDatabaseAdapter) SearchByVector(ctx context.Context, embedding []float64, limit int, threshold float64) ([]*ActionPattern, error) {
+	// Use the external database's Query method for vector similarity search
+	results, err := evda.external.Query(ctx, embedding, limit, nil)
+	if err != nil {
+		return nil, fmt.Errorf("external vector database query failed: %w", err)
+	}
+
+	var patterns []*ActionPattern
+	for _, result := range results {
+		// Filter by similarity threshold (result.Score represents similarity)
+		if float64(result.Score) < threshold {
+			continue
+		}
+
+		// Convert back to ActionPattern
+		pattern := &ActionPattern{
+			ID: result.ID,
+		}
+
+		if metadata := result.Metadata; metadata != nil {
+			if actionType, ok := metadata["action_type"].(string); ok {
+				pattern.ActionType = actionType
+			}
+			if alertName, ok := metadata["alert_name"].(string); ok {
+				pattern.AlertName = alertName
+			}
+			if alertSeverity, ok := metadata["alert_severity"].(string); ok {
+				pattern.AlertSeverity = alertSeverity
+			}
+			if namespace, ok := metadata["namespace"].(string); ok {
+				pattern.Namespace = namespace
+			}
+			if resourceType, ok := metadata["resource_type"].(string); ok {
+				pattern.ResourceType = resourceType
+			}
+			// Add effectiveness data if available
+			if effectivenessScore, ok := metadata["effectiveness_score"].(float64); ok {
+				pattern.EffectivenessData = &EffectivenessData{
+					Score: effectivenessScore,
+				}
+			}
+		}
+
+		patterns = append(patterns, pattern)
+	}
+
+	return patterns, nil
+}
+
 // DeletePattern removes a pattern from the vector database
 func (evda *ExternalVectorDatabaseAdapter) DeletePattern(ctx context.Context, patternID string) error {
 	return evda.external.Delete(ctx, []string{patternID})

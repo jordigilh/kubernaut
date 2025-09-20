@@ -1,0 +1,189 @@
+---
+globs: "pkg/platform/**/*,pkg/workflow/**/*,cmd/**/*"
+description: "Kubernetes operations and safety patterns for kubernaut"
+---
+
+# Kubernetes Operations and Safety for Kubernaut
+
+## Core Safety Principles
+Kubernaut implements **25+ production-ready Kubernetes operations** with comprehensive safety mechanisms:
+
+### Safety-First Architecture
+1. **Validation Before Action**: Always validate resources exist and are in expected state
+2. **Dry-Run Support**: Use Kubernetes dry-run mode whenever possible
+3. **Rollback Capability**: Ensure all operations can be safely reversed
+4. **Timeout Enforcement**: All operations have explicit timeouts
+5. **RBAC Compliance**: Respect Kubernetes role-based access controls
+
+## Kubernetes Client Pattern
+### Unified Client Usage
+**Location**: [pkg/platform/k8s/client.go](mdc:pkg/platform/k8s/client.go)
+
+```go
+// Always use the shared client
+k8sClient := k8s.NewClient(config.Kubernetes)
+defer k8sClient.Close()
+
+// Implement safety validation
+if err := k8sClient.ValidateAccess(ctx, namespace, resource); err != nil {
+    return fmt.Errorf("insufficient permissions: %w", err)
+}
+```
+
+### Client Configuration
+- Use in-cluster config for pod deployment
+- Support kubeconfig for local development
+- Implement connection pooling and retry logic
+- Handle API server rate limiting gracefully
+
+## Supported Remediation Actions
+### Scaling & Resource Management
+- `scale_deployment` - Horizontal scaling with replica validation
+- `increase_resources` - Vertical scaling with resource limits
+- `update_hpa` - HPA modifications with safety bounds
+- `scale_statefulset` - StatefulSet scaling with proper ordering
+
+### Pod & Application Lifecycle
+- `restart_pod` - Safe pod restart with readiness checks
+- `rollback_deployment` - Rollback with revision validation
+- `quarantine_pod` - Pod isolation for investigation
+- `migrate_workload` - Workload migration with validation
+
+### Node Operations
+- `drain_node` - Graceful draining with timeout
+- `cordon_node` - Mark unschedulable with confirmation
+- `restart_daemonset` - DaemonSet restart with rolling update
+
+## Safety Validation Framework
+### Pre-Action Validation
+```go
+type SafetyValidator interface {
+    ValidateAction(ctx context.Context, action ActionType, params map[string]interface{}) error
+    CheckPrerequisites(ctx context.Context, resource ResourceSpec) error
+    ValidatePermissions(ctx context.Context, namespace, resource string) error
+}
+```
+
+### Validation Checks
+1. **Resource Existence**: Confirm target resources exist
+2. **Resource State**: Validate current state matches expectations
+3. **Dependencies**: Check for dependent resources
+4. **Permissions**: Verify RBAC permissions
+5. **Impact Assessment**: Evaluate potential blast radius
+
+## Action Execution Patterns
+### Executor Implementation
+**Location**: [pkg/platform/executor/executor.go](mdc:pkg/platform/executor/executor.go)
+
+```go
+func (e *Executor) ExecuteAction(ctx context.Context, action Action) error {
+    // 1. Safety validation
+    if err := e.validator.ValidateAction(ctx, action); err != nil {
+        return fmt.Errorf("safety validation failed: %w", err)
+    }
+
+    // 2. Dry-run execution
+    if !action.Force {
+        if err := e.executeDryRun(ctx, action); err != nil {
+            return fmt.Errorf("dry-run failed: %w", err)
+        }
+    }
+
+    // 3. Actual execution with monitoring
+    return e.executeWithMonitoring(ctx, action)
+}
+```
+
+## Error Handling and Recovery
+### Kubernetes API Errors
+- Handle transient network errors with exponential backoff
+- Retry on API server unavailability
+- Gracefully handle resource version conflicts
+- Log detailed error context for troubleshooting
+
+### Operation Recovery
+- Implement checkpoint-based recovery for long operations
+- Store operation state for resumption after failure
+- Provide clear rollback procedures for each action type
+- Monitor operation progress with health checks
+
+## Multi-Cluster Operations
+### Cluster Management
+**Location**: [pkg/platform/multicluster/](mdc:pkg/platform/multicluster/)
+- Support for multiple Kubernetes clusters
+- Cluster discovery and health monitoring
+- Cross-cluster workload management
+- Federated configuration management
+
+### Service Discovery
+**Location**: [pkg/platform/k8s/service_discovery.go](mdc:pkg/platform/k8s/service_discovery.go)
+- Automatic service discovery across clusters
+- Health checking and failover mechanisms
+- Load balancing for multi-cluster deployments
+
+## RBAC and Security
+### Required Permissions
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-operator
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "events", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+```
+
+### Security Best Practices
+- Use service accounts with minimal required permissions
+- Implement secret rotation for API credentials
+- Validate all input parameters to prevent injection attacks
+- Audit all administrative actions with detailed logging
+
+## Monitoring and Observability
+### Resource Monitoring
+- Track resource utilization before and after actions
+- Monitor application health post-action
+- Alert on unexpected resource state changes
+- Collect metrics on action success/failure rates
+
+### Performance Metrics
+- Measure action execution times
+- Track API server response times
+- Monitor resource consumption during operations
+- Generate reports on operational effectiveness
+
+## Testing Kubernetes Operations
+### Integration Testing
+- Use Kind clusters for local testing: `make setup-kind`
+- Test against real Kubernetes API servers
+- Validate RBAC configurations in test environments
+- Include chaos testing for resilience validation
+
+### Safety Testing
+- Test dry-run functionality for all operations
+- Validate rollback procedures under various scenarios
+- Test permission boundaries and access controls
+- Simulate API server failures and network partitions
+
+## Development Workflow
+### Local Development
+```bash
+# Setup Kind cluster for testing
+make setup-kind
+
+# Build and load test image
+make build-test-image
+
+# Run Kubernetes integration tests
+make test-integration-kind
+```
+
+### Production Deployment
+- Deploy via Kustomize: `kubectl apply -k deploy/`
+- Use Helm charts for complex deployments (planned)
+- Implement operator pattern for lifecycle management
+- Support for GitOps deployment workflows
