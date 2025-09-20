@@ -103,7 +103,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 			It("should require API key for service creation", func() {
 				// Test business requirement: API key is mandatory
 				service := vector.NewOpenAIEmbeddingService("", nil, testSuite.Context.Logger)
-				Expect(service).ToNot(BeNil(), "Service should be created even with empty key for error handling")
+				Expect(service.GetDimension()).To(Equal(1536), "BR-DATABASE-001-A: Embedding service must provide standard OpenAI embedding dimensions for database storage operations")
 
 				// Business validation: Service should fail when attempting to generate embeddings without API key
 				// This will be tested in the actual API call scenarios
@@ -235,8 +235,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 
 				// Business validations
 				Expect(err).ToNot(HaveOccurred(), "Should generate embedding without error")
-				Expect(embedding).ToNot(BeNil(), "Should return non-nil embedding")
-				Expect(len(embedding)).To(Equal(service.GetDimension()), "Should return embedding with correct dimensions")
+				Expect(len(embedding)).To(Equal(service.GetDimension()), "BR-DATABASE-001-A: Embedding generation must produce vectors with correct dimensions for database storage operations")
 
 				// Validate embedding quality - should not be all zeros
 				hasNonZeroValues := false
@@ -259,8 +258,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 					Expect(err.Error()).To(ContainSubstring("empty"), "Error should indicate empty input issue")
 				} else {
 					// If no error, should return valid embedding structure
-					Expect(embedding).ToNot(BeNil(), "Should return valid embedding structure")
-					Expect(len(embedding)).To(Equal(service.GetDimension()), "Should maintain consistent dimensions")
+					Expect(len(embedding)).To(Equal(service.GetDimension()), "BR-DATABASE-001-A: Embedding structure must contain valid vector data with correct dimensions for database storage operations")
 				}
 			})
 
@@ -274,7 +272,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 
 				// Business validations
 				Expect(err).ToNot(HaveOccurred(), "Should handle large text without error")
-				Expect(embedding).ToNot(BeNil(), "Should return valid embedding for large text")
+				Expect(len(embedding)).To(Equal(service.GetDimension()), "BR-DATABASE-001-A: Large text embedding generation must produce vectors with correct dimensions for database storage operations")
 				Expect(duration).To(BeNumerically("<", 30*time.Second), "Should complete within reasonable time")
 			})
 		})
@@ -297,8 +295,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 				Expect(embeddings).To(HaveLen(len(texts)), "Should return embedding for each input text")
 
 				for i, embedding := range embeddings {
-					Expect(embedding).ToNot(BeNil(), "Embedding %d should not be nil", i)
-					Expect(len(embedding)).To(Equal(service.GetDimension()), "Embedding %d should have correct dimensions", i)
+					Expect(len(embedding)).To(Equal(service.GetDimension()), "BR-DATABASE-001-A: Batch embedding %d must contain valid vector data with correct dimensions for database storage operations", i)
 				}
 
 				// Validate uniqueness - different texts should produce different embeddings
@@ -383,7 +380,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 
 				// Business validation: Should succeed despite cache issues
 				Expect(err).ToNot(HaveOccurred(), "Should fallback to API when cache fails")
-				Expect(embedding).ToNot(BeNil(), "Should return valid embedding despite cache failure")
+				Expect(len(embedding)).To(Equal(service.GetDimension()), "BR-DATABASE-001-A: Cache fallback embedding generation must produce vectors with correct dimensions for database storage operations")
 			})
 		})
 
@@ -460,7 +457,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 
 			// Business validations
 			Expect(err).ToNot(HaveOccurred(), "Factory should create embedding service successfully")
-			Expect(embeddingService).ToNot(BeNil(), "Factory should return non-nil embedding service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(Equal(1536), "BR-DATABASE-001-A: Factory must create embedding service with functional OpenAI dimensions for database storage operations")
 
 			// Validate that it's the correct type (through interface methods)
 			dimension := embeddingService.GetEmbeddingDimension()
@@ -498,7 +495,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 
 			// Business validations
 			Expect(err).ToNot(HaveOccurred(), "Factory should create cached embedding service successfully")
-			Expect(embeddingService).ToNot(BeNil(), "Factory should return non-nil cached embedding service")
+			Expect(embeddingService.GetEmbeddingDimension()).To(Equal(1536), "BR-DATABASE-001-A: Factory must create cached embedding service with functional OpenAI dimensions for database storage operations")
 
 			// Validate that it's properly configured
 			dimension := embeddingService.GetEmbeddingDimension()

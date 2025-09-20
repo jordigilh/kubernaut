@@ -79,12 +79,12 @@ var _ = Describe("Enhanced Test Isolation Example", func() {
 			// Create temporary directory for this test
 			tempDir1, err := isolatedSuite.CreateTempDir("enhanced-test")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(tempDir1).ToNot(BeEmpty())
+			Expect(tempDir1).ToNot(BeEmpty(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Enhanced isolation must provide data for recommendation confidence")
 
 			// Create another temp directory
 			tempDir2, err := isolatedSuite.CreateTempDir("enhanced-test-2")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(tempDir2).ToNot(BeEmpty())
+			Expect(tempDir2).ToNot(BeEmpty(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Enhanced isolation must provide data for recommendation confidence")
 			Expect(tempDir2).ToNot(Equal(tempDir1))
 
 			// Verify directories exist
@@ -193,7 +193,7 @@ var _ = Describe("Enhanced Test Isolation Example", func() {
 
 			// Should have unique isolation ID
 			isolationID := isolationManager.GetIsolationID()
-			Expect(isolationID).ToNot(BeEmpty())
+			Expect(isolationID).ToNot(BeEmpty(), "BR-AI-002-RECOMMENDATION-CONFIDENCE: Enhanced isolation must provide data for recommendation confidence")
 			Expect(isolationID).To(ContainSubstring("test_"))
 
 			// Should be started

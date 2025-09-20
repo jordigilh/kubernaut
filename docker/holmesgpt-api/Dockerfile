@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir \
     safety>=3.0.0
 
 # Copy HolmesGPT source for scanning
-COPY --chown=1001:0 vendor/holmesgpt /src/holmesgpt/
+COPY --chown=1001:0 dependencies/holmesgpt /src/holmesgpt/
 COPY --chown=1001:0 docker/holmesgpt-api/security-check.py /src/
 
 # Run security scans

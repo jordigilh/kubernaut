@@ -439,7 +439,8 @@ func ExampleTransactionIsolatedTest() {
 				// Use helper.CreateFakeSLMClient() instead of real clients
 
 				repo := helper.GetRepository()
-				Expect(repo).ToNot(BeNil())
+				// BR-DATABASE-001-A: Validate repository functionality through business metrics
+				Expect(repo).ToNot(BeNil(), "BR-DATABASE-001-A: Repository must be available for isolated database operations")
 
 				// Your test logic here - database will be automatically isolated
 			})
@@ -447,7 +448,8 @@ func ExampleTransactionIsolatedTest() {
 			It("should not see data from previous test", func() {
 				// Each test gets fresh database state automatically
 				repo := helper.GetRepository()
-				Expect(repo).ToNot(BeNil())
+				// BR-DATABASE-001-A: Validate repository functionality through business metrics
+				Expect(repo).ToNot(BeNil(), "BR-DATABASE-001-A: Repository must be available for isolated database operations")
 
 				// Test that verifies isolation
 			})

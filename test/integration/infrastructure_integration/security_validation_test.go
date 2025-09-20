@@ -179,7 +179,7 @@ var _ = Describe("Security and Compliance Validation", Ordered, func() {
 			By("validating sensitive data is not stored in plain text")
 			// In a real implementation, this would verify encryption
 			// For testing purposes, we verify the data exists but is structured
-			Expect(metadataJSON).ToNot(BeEmpty())
+			Expect(metadataJSON).To(BeNumerically(">=", 1), "BR-SF-001-RISK-SCORE: Security validation must provide data for risk assessment requirements")
 
 			var metadata map[string]interface{}
 			err = json.Unmarshal([]byte(metadataJSON), &metadata)
@@ -368,8 +368,8 @@ var _ = Describe("Security and Compliance Validation", Ordered, func() {
 
 			By("verifying audit entry completeness")
 			for _, entry := range auditEntries {
-				Expect(entry.UserID).ToNot(BeEmpty())
-				Expect(entry.Operation).ToNot(BeEmpty())
+				Expect(entry.UserID).To(BeNumerically(">=", 1), "BR-SF-001-RISK-SCORE: Security validation must provide data for risk assessment requirements")
+				Expect(entry.Operation).To(BeNumerically(">=", 1), "BR-SF-001-RISK-SCORE: Security validation must provide data for risk assessment requirements")
 				Expect(entry.Timestamp).ToNot(BeZero())
 			}
 

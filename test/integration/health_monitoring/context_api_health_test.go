@@ -160,7 +160,9 @@ var _ = Describe("Context API Health Monitoring Integration", func() {
 			err = json.Unmarshal(body, &depsResponse)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(depsResponse["dependencies"]).ToNot(BeNil())
+			deps, ok := depsResponse["dependencies"].(int)
+			Expect(ok).To(BeTrue())
+			Expect(deps).To(Equal(1))
 
 			GinkgoWriter.Printf("✅ Dependencies endpoint properly integrated: %s\n", string(body))
 		})

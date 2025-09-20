@@ -559,26 +559,4 @@ func generateMockID(prefix string) string {
 }
 
 // ID generation convenience functions using the consolidated approach
-func generateMockActionID() string     { return generateMockID("mock-action") }
-func generateMockTraceID() string      { return generateMockID("mock-trace") }
-func generateMockPatternID() string    { return generateMockID("mock-pattern") }
-func generateMockResourceID() string   { return generateMockID("mock-resource") }
-func generateMockValidationID() string { return generateMockID("mock-validation") }
-
-// Validation helpers - following development guidelines: strengthen assertions and reuse code
-func validateMockConfidence(confidence float64) float64 {
-	if confidence < 0.0 {
-		return 0.0
-	}
-	if confidence > 1.0 {
-		return 1.0
-	}
-	return confidence
-}
-
-func validateMockError(errorMsg string) error {
-	if errorMsg == "" {
-		return nil
-	}
-	return fmt.Errorf(errorMsg)
-}
+func generateMockActionID() string { return generateMockID("mock-action") }

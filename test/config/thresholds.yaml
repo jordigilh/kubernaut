@@ -1,0 +1,142 @@
+# Business Requirement Thresholds Configuration
+# Following project guidelines: configuration-driven business requirement validation
+# Business Requirements: Support all BR-XXX-### requirements through configurable thresholds
+
+business_requirements:
+  database:
+    BR-DATABASE-001-A:
+      utilization_threshold: 0.8
+      max_open_connections: 10
+      max_idle_connections: 5
+    BR-DATABASE-001-B:
+      health_score_threshold: 0.7
+      healthy_score: 1.0
+      degraded_score: 0.85
+      failure_rate_threshold: 0.1
+      wait_time_threshold: "50ms"
+    BR-DATABASE-002:
+      exhaustion_recovery_time: "200ms"
+      recovery_health_threshold: 0.7
+
+  performance:
+    BR-PERF-001:
+      max_response_time: "2s"
+      min_throughput: 1000
+      latency_percentile_95: "1.5s"
+      latency_percentile_99: "1.8s"
+      accuracy_threshold: 0.9
+      error_rate_threshold: 0.05
+
+  monitoring:
+    BR-MON-001:
+      alert_threshold: 0.95
+      metrics_collection_interval: "100ms"
+      health_check_interval: "30s"
+      uptime_requirement: 0.999
+
+  ai:
+    BR-AI-001:
+      min_confidence_score: 0.5
+      max_analysis_time: "10s"
+      workflow_generation_time: "20s"
+      accuracy_threshold: 0.8
+    BR-AI-002:
+      recommendation_confidence: 0.7
+      action_validation_time: "5s"
+      min_success_rate: 0.85
+
+  workflow:
+    BR-WF-001:
+      max_execution_time: "300s"
+      min_success_rate: 0.9
+      resource_efficiency_threshold: 0.75
+    BR-WF-002:
+      parallel_execution_threshold: 3
+      max_concurrent_workflows: 10
+      queue_depth_limit: 50
+
+  safety:
+    BR-SF-001:
+      max_risk_score: 0.3
+      approval_threshold: 0.5
+      auto_approval_limit: 0.2
+    BR-SF-002:
+      rollback_time_limit: "60s"
+      validation_timeout: "30s"
+      safety_check_interval: "10s"
+
+# Environment-specific overrides
+environments:
+  test:
+    database:
+      BR-DATABASE-001-B:
+        wait_time_threshold: "100ms"  # More relaxed for testing
+        failure_rate_threshold: 0.15  # Allow higher failure rate in tests
+    performance:
+      BR-PERF-001:
+        max_response_time: "5s"  # More relaxed for test environment
+        error_rate_threshold: 0.1
+    ai:
+      BR-AI-001:
+        min_confidence_score: 0.3  # Lower threshold for testing
+        max_analysis_time: "20s"   # More time allowed in tests
+
+  development:
+    database:
+      BR-DATABASE-001-B:
+        wait_time_threshold: "75ms"
+        failure_rate_threshold: 0.12
+    performance:
+      BR-PERF-001:
+        max_response_time: "3s"
+        error_rate_threshold: 0.08
+    ai:
+      BR-AI-001:
+        min_confidence_score: 0.4
+        max_analysis_time: "15s"
+
+  staging:
+    database:
+      BR-DATABASE-001-B:
+        wait_time_threshold: "60ms"
+        failure_rate_threshold: 0.08
+    performance:
+      BR-PERF-001:
+        max_response_time: "2.5s"
+        error_rate_threshold: 0.06
+    ai:
+      BR-AI-001:
+        min_confidence_score: 0.45
+        max_analysis_time: "12s"
+
+  production:
+    database:
+      BR-DATABASE-001-B:
+        wait_time_threshold: "30ms"  # Strict production requirements
+        failure_rate_threshold: 0.05  # Very low failure tolerance
+    performance:
+      BR-PERF-001:
+        max_response_time: "1s"    # Strict production SLA
+        error_rate_threshold: 0.02  # Very low error tolerance
+        accuracy_threshold: 0.95   # Higher accuracy requirement
+    ai:
+      BR-AI-001:
+        min_confidence_score: 0.6   # Higher confidence in production
+        max_analysis_time: "8s"     # Faster response required
+      BR-AI-002:
+        recommendation_confidence: 0.8  # Higher recommendation confidence
+        min_success_rate: 0.95          # Higher success rate requirement
+    workflow:
+      BR-WF-001:
+        max_execution_time: "180s"      # Faster execution required
+        min_success_rate: 0.95          # Higher success rate
+        resource_efficiency_threshold: 0.85  # Better efficiency required
+    safety:
+      BR-SF-001:
+        max_risk_score: 0.2             # Lower risk tolerance
+        approval_threshold: 0.3         # Lower approval threshold
+        auto_approval_limit: 0.1        # Very conservative auto-approval
+      BR-SF-002:
+        rollback_time_limit: "30s"      # Faster rollback required
+        validation_timeout: "15s"       # Faster validation required
+        safety_check_interval: "5s"     # More frequent safety checks

@@ -226,6 +226,67 @@ func (db *MemoryVectorDatabase) SearchBySemantics(ctx context.Context, query str
 	return matches, nil
 }
 
+// SearchByVector performs vector similarity search for patterns
+// Business Requirement: BR-AI-COND-001 - Enhanced vector-based condition evaluation
+func (db *MemoryVectorDatabase) SearchByVector(ctx context.Context, embedding []float64, limit int, threshold float64) ([]*ActionPattern, error) {
+	db.mutex.RLock()
+	defer db.mutex.RUnlock()
+
+	if len(embedding) == 0 {
+		return nil, fmt.Errorf("embedding vector cannot be empty for vector search")
+	}
+
+	var matches []*ActionPattern
+
+	for _, pattern := range db.patterns {
+		if len(pattern.Embedding) == 0 {
+			continue // Skip patterns without embeddings
+		}
+
+		// Calculate cosine similarity
+		similarity := sharedmath.CosineSimilarity(embedding, pattern.Embedding)
+		if similarity >= threshold {
+			matches = append(matches, pattern)
+		}
+	}
+
+	// Sort by similarity descending (using effectiveness as secondary sort)
+	sort.Slice(matches, func(i, j int) bool {
+		// Primary sort: by similarity (we need to recalculate for sorting)
+		simI := sharedmath.CosineSimilarity(embedding, matches[i].Embedding)
+		simJ := sharedmath.CosineSimilarity(embedding, matches[j].Embedding)
+
+		if simI != simJ {
+			return simI > simJ
+		}
+
+		// Secondary sort: by effectiveness score
+		scoreI := 0.0
+		scoreJ := 0.0
+		if matches[i].EffectivenessData != nil {
+			scoreI = matches[i].EffectivenessData.Score
+		}
+		if matches[j].EffectivenessData != nil {
+			scoreJ = matches[j].EffectivenessData.Score
+		}
+		return scoreI > scoreJ
+	})
+
+	// Apply limit
+	if limit > 0 && len(matches) > limit {
+		matches = matches[:limit]
+	}
+
+	db.log.WithFields(logrus.Fields{
+		"embedding_dim":  len(embedding),
+		"found_patterns": len(matches),
+		"limit":          limit,
+		"threshold":      threshold,
+	}).Debug("Performed vector similarity search")
+
+	return matches, nil
+}
+
 // DeletePattern removes a pattern from the vector database
 func (db *MemoryVectorDatabase) DeletePattern(ctx context.Context, patternID string) error {
 	db.mutex.Lock()

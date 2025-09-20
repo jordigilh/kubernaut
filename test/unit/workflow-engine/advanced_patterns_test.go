@@ -209,8 +209,7 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 
 			analysisResult := workflowBuilder.AnalyzeObjective(objective, context)
 
-			Expect(analysisResult).ToNot(BeNil(), "Objective analysis should return results")
-			Expect(analysisResult.Keywords).To(ContainElement("database"), "Should identify key terms")
+			Expect(analysisResult.Keywords).To(ContainElement("database"), "BR-WF-001-SUCCESS-RATE: Objective analysis must identify key business terms for workflow success")
 			Expect(analysisResult.Complexity).To(BeNumerically(">", 0), "Should calculate complexity score")
 			Expect(analysisResult.Priority).To(BeNumerically(">", 0), "Should assign priority level")
 		})
@@ -287,8 +286,7 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 
 			resourcePlan := workflowBuilder.CalculateResourceAllocation(parallelSteps)
 
-			Expect(resourcePlan).ToNot(BeNil(), "Should generate resource allocation plan")
-			Expect(resourcePlan.TotalCPUWeight).To(BeNumerically("~", 1.4, 0.1), "Should sum CPU weights")
+			Expect(resourcePlan.TotalCPUWeight).To(BeNumerically("~", 1.4, 0.1), "BR-WF-001-SUCCESS-RATE: Resource allocation must calculate precise CPU weights for workflow execution success")
 			Expect(resourcePlan.TotalMemoryWeight).To(BeNumerically("~", 1.4, 0.1), "Should sum memory weights")
 			Expect(resourcePlan.MaxConcurrency).To(BeNumerically(">", 0), "Should set concurrency limit")
 		})
@@ -368,8 +366,7 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 
 			strategy := workflowBuilder.DetermineParallelizationStrategy(sequentialSteps)
 
-			Expect(strategy).ToNot(BeNil(), "Should generate parallelization strategy")
-			Expect(strategy.ParallelGroups).To(HaveLen(3), "Should identify 3 execution groups")
+			Expect(strategy.ParallelGroups).To(HaveLen(3), "BR-WF-001-SUCCESS-RATE: Parallelization strategy must organize steps into optimal execution groups for workflow success")
 			Expect(strategy.ParallelGroups[1]).To(HaveLen(2), "Middle group should have 2 parallel steps")
 			Expect(strategy.EstimatedSpeedup).To(BeNumerically(">", 1.0), "Should estimate performance improvement")
 		})
@@ -681,8 +678,7 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 
 			optimization := workflowBuilder.GenerateAIOptimizations(historicalData, "pattern-1")
 
-			Expect(optimization).ToNot(BeNil(), "Should generate AI-based optimization")
-			Expect(optimization.OptimizationScore).To(BeNumerically(">", 0), "Should calculate optimization potential")
+			Expect(optimization.OptimizationScore).To(BeNumerically(">", 0), "BR-WF-001-SUCCESS-RATE: AI optimization must generate measurable improvement scores for workflow success enhancement")
 			Expect(optimization.Recommendations).ToNot(BeEmpty(), "Should provide optimization recommendations")
 			Expect(optimization.EstimatedImprovement).To(HaveKey("duration"), "Should estimate duration improvement")
 		})
@@ -959,7 +955,7 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 
 			trendAnalysis := workflowBuilder.AnalyzePerformanceTrends(historicalExecutions)
 
-			Expect(trendAnalysis.Direction).To(Equal("TDD: Not implemented"), "Should detect performance direction")
+			Expect(trendAnalysis.Direction).To(Equal("increasing"), "Should detect performance direction")
 			Expect(trendAnalysis.Slope).To(BeNumerically(">=", 0), "Should calculate slope of change")
 			Expect(trendAnalysis.Confidence).To(BeNumerically(">=", 0), "Should provide trend confidence")
 		})

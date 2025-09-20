@@ -31,7 +31,7 @@ A comprehensive integration test plan that validates **Milestone 1 production re
 docs/test/integration/
 ├── README.md                               ✅ Complete Test Plan Overview
 ├── ENVIRONMENT_SETUP.md                   ✅ Kind + Docker Bootstrap Guide
-├── BUSINESS_REQUIREMENTS_MAPPING.md       ✅ BR-to-Test Traceability
+├── INTEGRATION_TEST_COVERAGE_EXTENSION_PLAN.md       ✅ Comprehensive Integration Test Plan
 ├── TEST_EXECUTION_GUIDE.md               ✅ Hybrid Testing Procedures
 ├── INTEGRATION_TEST_SUMMARY.md           ✅ This Summary Document
 └── test_suites/

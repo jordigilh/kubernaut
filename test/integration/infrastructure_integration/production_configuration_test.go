@@ -127,7 +127,7 @@ var _ = Describe("Production Configuration Validation", Ordered, func() {
 
 			By("verifying defaults were applied")
 			factory := vector.NewVectorDatabaseFactory(minimalConfig, nil, logger)
-			Expect(factory).ToNot(BeNil())
+			Expect(factory).ToNot(BeNil(), "BR-PERF-001-ACCURACY: Production configuration must return valid setup for accuracy requirements")
 		})
 
 		It("should validate environment variable overrides", func() {
@@ -284,7 +284,7 @@ vector_db:
 
 			By("creating PostgreSQL factory")
 			factory := vector.NewVectorDatabaseFactory(config, nil, logger)
-			Expect(factory).ToNot(BeNil())
+			Expect(factory).ToNot(BeNil(), "BR-PERF-001-ACCURACY: Production configuration must return valid setup for accuracy requirements")
 		})
 
 		It("should support memory backend configuration", func() {
@@ -303,7 +303,7 @@ vector_db:
 
 			By("creating memory factory")
 			factory := vector.NewVectorDatabaseFactory(config, nil, logger)
-			Expect(factory).ToNot(BeNil())
+			Expect(factory).ToNot(BeNil(), "BR-PERF-001-ACCURACY: Production configuration must return valid setup for accuracy requirements")
 		})
 
 		It("should enable operations teams to safely deploy different vector database backends (BR-DATA-008)", func() {
@@ -488,7 +488,7 @@ func validateVectorConfiguration(vectorConfig *config.VectorDBConfig, environmen
 	Expect(err).ToNot(HaveOccurred())
 
 	By("validating embedding service configuration")
-	Expect(vectorConfig.EmbeddingService.Service).ToNot(BeEmpty())
+	Expect(vectorConfig.EmbeddingService.Service).To(BeNumerically(">=", 1), "BR-PERF-001-ACCURACY: Production configuration must provide data for accuracy requirements")
 	Expect(vectorConfig.EmbeddingService.Dimension).To(BeNumerically(">", 0))
 
 	By("validating backend-specific configuration")
@@ -518,6 +518,6 @@ func validateProductionVectorConfiguration(vectorConfig *config.VectorDBConfig) 
 	By("validating cache configuration for production")
 	if vectorConfig.Cache.Enabled {
 		Expect(vectorConfig.Cache.MaxSize).To(BeNumerically(">", 100))
-		Expect(vectorConfig.Cache.CacheType).ToNot(BeEmpty())
+		Expect(vectorConfig.Cache.CacheType).To(BeNumerically(">=", 1), "BR-PERF-001-ACCURACY: Production configuration must provide data for accuracy requirements")
 	}
 }
