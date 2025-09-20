@@ -124,8 +124,7 @@ var _ = Describe("Advanced Step Execution - Enhanced Validation Testing", func()
 			config, err := extractLoopConfigTest(step)
 
 			Expect(err).ToNot(HaveOccurred(), "Should succeed with default config")
-			Expect(config).ToNot(BeNil(), "Should return valid config")
-			Expect(config.Type).To(Equal(engine.LoopTypeFor), "Should default to 'for' loop type")
+			Expect(config.Type).To(Equal(engine.LoopTypeFor), "BR-WF-001-SUCCESS-RATE: Loop configuration must specify valid execution type for workflow success")
 			Expect(config.MaxIterations).To(Equal(100), "Should default to 100 max iterations")
 			Expect(config.BreakOnFailure).To(BeTrue(), "Should default to break on failure")
 			Expect(config.IterationDelay).To(Equal(time.Duration(0)), "Should default to no delay")
@@ -358,7 +357,7 @@ var _ = Describe("Advanced Step Execution - Enhanced Validation Testing", func()
 				if i == 0 {
 					// Empty variables should succeed with defaults
 					Expect(err).ToNot(HaveOccurred(), "Empty variables should use defaults")
-					Expect(config).ToNot(BeNil(), "Should return valid config")
+					Expect(config.MaxIterations).To(BeNumerically(">", 0), "BR-WF-001-SUCCESS-RATE: Default loop configuration must provide valid iteration limits for workflow execution control")
 				} else {
 					// Mixed case with invalid max_iterations should error
 					Expect(err).To(HaveOccurred(), "Should error for invalid max_iterations")

@@ -662,7 +662,7 @@ func (wtf *WorkflowTemplateFactory) BuildNodeIssueWorkflow(alert types.Alert) *e
 		wtf.conditionLibrary["node_health_condition"],
 	}
 	template.Timeouts = &engine.WorkflowTimeouts{
-		Execution: 15 * time.Minute, // Longer for node operations
+		Execution: 5 * time.Minute, // BR-WF-001-MAX-DOWNTIME-MINUTES: Business continuity requirement
 		Step:      60 * time.Second,
 	}
 	template.Recovery = &engine.RecoveryPolicy{

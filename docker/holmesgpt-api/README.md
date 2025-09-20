@@ -39,7 +39,7 @@ HolmesGPT API Server Container
 make holmesgpt-api-init
 
 # Or manually:
-git submodule update --init --recursive vendor/holmesgpt
+git submodule update --init --recursive dependencies/holmesgpt
 ```
 
 ### 2. Build Container
@@ -98,7 +98,7 @@ scripts/
 ├── build-holmesgpt-api.sh    # Multi-architecture build script
 └── release-holmesgpt-api.sh  # Version management and release
 
-vendor/
+dependencies/
 └── holmesgpt/                # HolmesGPT source (git submodule)
 ```
 

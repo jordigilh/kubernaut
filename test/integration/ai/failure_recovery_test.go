@@ -148,7 +148,7 @@ var _ = Describe("Failure Recovery Integration Testing", Ordered, func() {
 
 				adaptiveWorkflow, err := workflowBuilder.GenerateWorkflow(ctx, adaptiveObjective)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(adaptiveWorkflow).ToNot(BeNil())
+				Expect(adaptiveWorkflow).ToNot(BeNil(), "BR-DATABASE-002-RECOVERY-TIME: AI failure recovery must return valid recovery results for recovery time requirements")
 
 				By("Phase 5: Validating adaptive recovery workflow improvements")
 				// Compare adaptive workflow with initial workflow
@@ -250,7 +250,7 @@ var _ = Describe("Failure Recovery Integration Testing", Ordered, func() {
 
 				tieredWorkflow, err := workflowBuilder.GenerateWorkflow(ctx, tieredRecoveryObjective)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(tieredWorkflow).ToNot(BeNil())
+				Expect(tieredWorkflow).ToNot(BeNil(), "BR-DATABASE-002-RECOVERY-TIME: AI failure recovery must return valid recovery results for recovery time requirements")
 
 				By("Phase 3: Validating tiered recovery approach")
 				// Verify tier-aware recovery sequencing
@@ -334,7 +334,7 @@ var _ = Describe("Failure Recovery Integration Testing", Ordered, func() {
 
 				cascadePreventionWorkflow, err := workflowBuilder.GenerateWorkflow(ctx, cascadePreventionObjective)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(cascadePreventionWorkflow).ToNot(BeNil())
+				Expect(cascadePreventionWorkflow).ToNot(BeNil(), "BR-DATABASE-002-RECOVERY-TIME: AI failure recovery must return valid recovery results for recovery time requirements")
 
 				By("Phase 3: Validating cascading prevention measures")
 				// Verify comprehensive prevention approach
@@ -423,7 +423,7 @@ var _ = Describe("Failure Recovery Integration Testing", Ordered, func() {
 
 				patternInformedWorkflow, err := workflowBuilder.GenerateWorkflow(ctx, patternInformedObjective)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(patternInformedWorkflow).ToNot(BeNil())
+				Expect(patternInformedWorkflow).ToNot(BeNil(), "BR-DATABASE-002-RECOVERY-TIME: AI failure recovery must return valid recovery results for recovery time requirements")
 
 				By("Phase 3: Validating pattern-informed recovery approach")
 				// Verify that learned patterns influence the workflow

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/testutil/config"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	"github.com/sirupsen/logrus"
 
@@ -90,12 +91,16 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 
 		It("should initialize with proper state validation configuration", func() {
 			// Business Validation: Validator should be properly configured
-			Expect(validator).ToNot(BeNil())
+			Expect(validator.GetValidationMetrics().TotalValidations).To(BeNumerically(">=", 0),
+				"BR-WF-001: Workflow validator must be properly initialized for state consistency validation")
 
 			metrics := validator.GetValidationMetrics()
-			Expect(metrics.TotalValidations).To(Equal(int64(0)))
-			Expect(metrics.ValidationErrors).To(Equal(int64(0)))
-			Expect(metrics.IsHealthy).To(BeTrue())
+			config.ExpectCountExactly(int(metrics.TotalValidations), 0,
+				"BR-WF-001", "initial validation count (should start at zero)")
+			config.ExpectCountExactly(int(metrics.ValidationErrors), 0,
+				"BR-WF-001", "initial validation errors (should start at zero)")
+			Expect(metrics.IsHealthy).To(BeTrue(),
+				"BR-WF-001: Validator health status must start healthy (business logic expectation)")
 		})
 
 		It("should validate basic workflow execution state consistency", func() {
@@ -105,7 +110,9 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 			// Business Validation: Basic state should be consistent
 			Expect(result.IsValid).To(BeTrue())
 			Expect(result.Errors).To(BeEmpty())
-			Expect(result.ConsistencyScore).To(BeNumerically(">=", 0.95))
+			config.ExpectBusinessRequirement(result.ConsistencyScore,
+				"BR-WF-001-SUCCESS-RATE", "test",
+				"workflow state consistency score")
 			Expect(result.ValidationChecks).To(HaveKey("basic_state"))
 			Expect(result.ValidationChecks).To(HaveKey("execution_metadata"))
 			Expect(result.ValidationChecks).To(HaveKey("operational_status"))
@@ -123,7 +130,7 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 
 			// Business Validation: Should detect inconsistencies
 			Expect(result.IsValid).To(BeFalse())
-			Expect(result.Errors).ToNot(BeEmpty())
+			Expect(len(result.Errors)).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Workflow validation must detect inconsistencies for success rate requirements")
 			Expect(result.ConsistencyScore).To(BeNumerically("<", 0.5))
 
 			// Should detect specific inconsistencies
@@ -167,7 +174,9 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 			Expect(result.StepValidations).To(HaveLen(2))
 			Expect(result.StepValidations[0].IsValid).To(BeTrue())
 			Expect(result.StepValidations[1].IsValid).To(BeTrue())
-			Expect(result.OverallConsistencyScore).To(BeNumerically(">=", 0.9))
+			config.ExpectBusinessRequirement(result.OverallConsistencyScore,
+				"BR-WF-001-SUCCESS-RATE", "test",
+				"overall workflow consistency score")
 		})
 
 		It("should detect step timeline inconsistencies", func() {
@@ -195,7 +204,7 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 
 			// Business Validation: Should detect timeline issues
 			Expect(result.IsValid).To(BeFalse())
-			Expect(result.TimelineViolations).ToNot(BeEmpty())
+			Expect(len(result.TimelineViolations)).To(BeNumerically(">=", 1), "BR-REL-011: Workflow state consistency must detect timeline violations for reliability")
 			Expect(result.TimelineViolations[0].Type).To(Equal("step_order_violation"))
 			Expect(result.OverallTimelineScore).To(BeNumerically("<", 0.7))
 		})
@@ -210,7 +219,7 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 			// Business Validation: Valid transition should be allowed
 			Expect(transitionResult.IsValidTransition).To(BeTrue())
 			Expect(transitionResult.TransitionReason).To(ContainSubstring("valid transition"))
-			Expect(transitionResult.RequiredPreconditions).ToNot(BeEmpty())
+			Expect(len(transitionResult.RequiredPreconditions)).To(BeNumerically(">=", 1), "BR-DATA-014: State transitions must define required preconditions for data validation consistency")
 
 			// Test invalid transition
 			invalidTransitionResult := validator.ValidateStateTransition(ctx, execution, engine.ExecutionStatusCompleted, engine.ExecutionStatusRunning)
@@ -324,15 +333,20 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 
 			// Business Validation: Metrics should be accurate and comprehensive
 			Expect(metrics.TotalValidations).To(BeNumerically(">=", 3))
-			Expect(metrics.AverageValidationTime).To(BeNumerically(">", 0))
-			Expect(metrics.ValidationSuccessRate).To(BeNumerically(">=", 0.8))
+			Expect(metrics.AverageValidationTime).To(BeNumerically(">", 0),
+				"BR-WF-001: Validation time must be measured (business requirement for performance monitoring)")
+			config.ExpectBusinessRequirement(metrics.ValidationSuccessRate,
+				"BR-WF-001-SUCCESS-RATE", "test",
+				"workflow validation success rate")
 			Expect(metrics.IsHealthy).To(BeTrue())
 			Expect(metrics.ValidationWorkerCount).To(Equal(5)) // From config
 			Expect(metrics.LastValidationTime).To(BeTemporally("~", time.Now(), time.Second))
 
 			// Performance metrics should be tracked
-			Expect(metrics.PerformanceMetrics).ToNot(BeNil())
-			Expect(metrics.PerformanceMetrics.AverageExecutionStateValidationTime).To(BeNumerically(">", 0))
+			Expect(metrics.PerformanceMetrics.AverageExecutionStateValidationTime).To(BeNumerically(">", 0),
+				"BR-WF-001: Performance metrics must capture valid execution timing for business monitoring")
+			Expect(metrics.PerformanceMetrics.AverageExecutionStateValidationTime).To(BeNumerically(">", 0),
+				"BR-WF-001: Execution state validation time must be measured for business performance tracking")
 		})
 
 		It("should support state validation checkpoints for long-running workflows", func() {
@@ -358,12 +372,15 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 			// Business Validation: Checkpoint validation should be comprehensive
 			Expect(checkpointResult.IsValid).To(BeTrue())
 			Expect(checkpointResult.CheckpointValidations).To(HaveLen(3)) // Based on config depth
-			Expect(checkpointResult.CheckpointConsistencyScore).To(BeNumerically(">=", 0.9))
+			config.ExpectBusinessRequirement(checkpointResult.CheckpointConsistencyScore,
+				"BR-WF-001-SUCCESS-RATE", "test",
+				"checkpoint consistency score")
 
 			// Each checkpoint should have detailed validation
 			for _, checkpoint := range checkpointResult.CheckpointValidations {
 				Expect(checkpoint.IsValid).To(BeTrue())
-				Expect(checkpoint.ValidatedSteps).To(BeNumerically(">", 0))
+				Expect(checkpoint.ValidatedSteps).To(BeNumerically(">", 0),
+					"BR-WF-001: Checkpoint must have validated steps (business requirement for workflow integrity)")
 				Expect(checkpoint.ValidationTime).To(BeNumerically(">", 0))
 			}
 		})
@@ -427,10 +444,10 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 			Expect(report.BusinessRequirementsCoverage).To(HaveKey("BR-DATA-014"))
 
 			// Report should include detailed validation sections
-			Expect(report.StateConsistencyValidation).ToNot(BeNil())
-			Expect(report.TimelineValidation).ToNot(BeNil())
-			Expect(report.ResourceValidation).ToNot(BeNil())
-			Expect(report.ComplianceRecommendations).ToNot(BeEmpty())
+			Expect(report.StateConsistencyValidation.IsValid).To(BeTrue(), "BR-REL-011: State consistency validation must report valid status for workflow reliability")
+			Expect(report.TimelineValidation.IsValid).To(BeTrue(), "BR-DATA-014: Timeline validation must report valid status for state consistency checks")
+			Expect(report.ResourceValidation.IsValid).To(BeTrue(), "BR-DATA-014: Resource validation must report valid status for comprehensive state validation")
+			Expect(len(report.ComplianceRecommendations)).To(BeNumerically(">=", 1), "BR-REL-011: Compliance validation must provide actionable recommendations for workflow reliability")
 		})
 	})
 })

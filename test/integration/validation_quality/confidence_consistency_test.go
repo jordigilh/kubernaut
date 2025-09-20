@@ -137,7 +137,7 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 			for _, scenario := range clearCutScenarios {
 				recommendation, err := client.AnalyzeAlert(context.Background(), scenario.alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Confidence consistency validation must return valid confidence metrics for AI requirements")
 
 				// Validate high confidence for clear scenarios
 				Expect(recommendation.Confidence).To(BeNumerically(">=", scenario.minConfidence),
@@ -211,7 +211,7 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 			for _, scenario := range ambiguousScenarios {
 				recommendation, err := client.AnalyzeAlert(context.Background(), scenario.alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Confidence consistency validation must return valid confidence metrics for AI requirements")
 
 				// Should have moderate confidence for ambiguous cases
 				Expect(recommendation.Confidence).To(BeNumerically(">=", scenario.minConfidence),
@@ -292,7 +292,7 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 			for i, alert := range variations {
 				recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Confidence consistency validation must return valid confidence metrics for AI requirements")
 
 				recommendations = append(recommendations, shared.ConvertAnalyzeAlertResponse(recommendation))
 				actions = append(actions, recommendation.Action)
@@ -398,7 +398,7 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 			for _, variation := range significantVariations {
 				recommendation, err := client.AnalyzeAlert(context.Background(), variation.alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Confidence consistency validation must return valid confidence metrics for AI requirements")
 
 				results = append(results, struct {
 					name       string
@@ -472,7 +472,7 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 			for i := 0; i < iterations; i++ {
 				recommendation, err := client.AnalyzeAlert(context.Background(), alert)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(recommendation).ToNot(BeNil())
+				Expect(recommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: Confidence consistency validation must return valid confidence metrics for AI requirements")
 
 				actions = append(actions, recommendation.Action)
 				confidences = append(confidences, recommendation.Confidence)

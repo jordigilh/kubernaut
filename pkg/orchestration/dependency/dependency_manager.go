@@ -1,8 +1,9 @@
-package orchestration
+package dependency
 
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -86,10 +87,14 @@ type FallbackProvider interface {
 
 // FallbackMetrics contains metrics about fallback usage
 type FallbackMetrics struct {
-	TotalFallbacks      int64     `json:"total_fallbacks"`
-	SuccessfulFallbacks int64     `json:"successful_fallbacks"`
-	FailedFallbacks     int64     `json:"failed_fallbacks"`
-	LastFallback        time.Time `json:"last_fallback"`
+	TotalOperations      int64     `json:"total_operations"`
+	SuccessfulOperations int64     `json:"successful_operations"`
+	FailedOperations     int64     `json:"failed_operations"`
+	FallbacksProvided    int64     `json:"fallbacks_provided"`
+	TotalFallbacks       int64     `json:"total_fallbacks"`
+	SuccessfulFallbacks  int64     `json:"successful_fallbacks"`
+	FailedFallbacks      int64     `json:"failed_fallbacks"`
+	LastFallback         time.Time `json:"last_fallback"`
 }
 
 // DependencyConfig configures dependency management behavior
@@ -113,14 +118,16 @@ type DependencyHealthChecker struct {
 
 // CircuitBreaker implements circuit breaker pattern for dependencies
 type CircuitBreaker struct {
-	name             string
-	failureThreshold float64
-	resetTimeout     time.Duration
-	state            CircuitState
-	failures         int64
-	requests         int64
-	lastFailureTime  time.Time
-	mu               sync.RWMutex
+	name                string
+	failureThreshold    float64
+	resetTimeout        time.Duration
+	state               CircuitState
+	failures            int64
+	requests            int64
+	lastFailureTime     time.Time
+	lastSuccessTime     time.Time
+	consecutiveFailures int64
+	mu                  sync.RWMutex
 }
 
 // CircuitState represents circuit breaker states
@@ -231,7 +238,7 @@ func (psd *PatternStoreDependency) getConnectionStatus() ConnectionStatus {
 
 // InMemoryVectorFallback provides in-memory fallback for vector operations
 type InMemoryVectorFallback struct {
-	storage map[string]*VectorEntry
+	vectors map[string]*VectorEntry
 	mu      sync.RWMutex
 	metrics *FallbackMetrics
 	log     *logrus.Logger
@@ -245,9 +252,16 @@ type VectorEntry struct {
 	Created  time.Time              `json:"created"`
 }
 
+// VectorSearchResult represents a search result from vector database
+type VectorSearchResult struct {
+	ID         string                 `json:"id"`
+	Similarity float64                `json:"similarity"`
+	Metadata   map[string]interface{} `json:"metadata"`
+}
+
 // InMemoryPatternFallback provides in-memory fallback for pattern storage
 type InMemoryPatternFallback struct {
-	patterns map[string]*types.DiscoveredPattern
+	patterns map[string]map[string]interface{}
 	mu       sync.RWMutex
 	metrics  *FallbackMetrics
 	log      *logrus.Logger
@@ -263,48 +277,55 @@ func (impf *InMemoryPatternFallback) ProvideFallback(ctx context.Context, operat
 	impf.mu.Lock()
 	defer impf.mu.Unlock()
 
-	impf.metrics.TotalFallbacks++
+	impf.metrics.TotalOperations++
+	impf.metrics.FallbacksProvided++
 	impf.metrics.LastFallback = time.Now()
 
 	switch operation {
-	case "store":
-		pattern := params["pattern"].(*types.DiscoveredPattern)
-		impf.patterns[pattern.ID] = pattern
-		impf.metrics.SuccessfulFallbacks++
-		return nil, nil
+	case "store_pattern":
+		pattern := params["pattern"].(map[string]interface{})
+		id := pattern["id"].(string)
+		impf.patterns[id] = pattern
+		impf.metrics.SuccessfulOperations++
+		return "stored", nil
 
-	case "get":
-		filters := params["filters"].(map[string]interface{})
-		patterns := make([]*types.DiscoveredPattern, 0)
+	case "get_patterns_by_type":
+		patternType := params["type"].(string)
+		orderBy, hasOrder := params["order_by"].(string)
 
-		// Simple filtering - in practice would be more sophisticated
-		limit := 100
-		if l, ok := filters["limit"]; ok {
-			if limitInt, ok := l.(int); ok {
-				limit = limitInt
-			}
-		}
+		var matchingPatterns []map[string]interface{}
 
-		count := 0
 		for _, pattern := range impf.patterns {
-			if count >= limit {
-				break
+			if pattern["type"] == patternType {
+				matchingPatterns = append(matchingPatterns, pattern)
 			}
-			patterns = append(patterns, pattern)
-			count++
 		}
 
-		impf.metrics.SuccessfulFallbacks++
-		return patterns, nil
+		// Sort by success rate if requested
+		if hasOrder && orderBy == "success_rate" {
+			// Simple sorting by success rate (descending)
+			for i := 0; i < len(matchingPatterns); i++ {
+				for j := i + 1; j < len(matchingPatterns); j++ {
+					rate1 := matchingPatterns[i]["success_rate"].(float64)
+					rate2 := matchingPatterns[j]["success_rate"].(float64)
+					if rate1 < rate2 {
+						matchingPatterns[i], matchingPatterns[j] = matchingPatterns[j], matchingPatterns[i]
+					}
+				}
+			}
+		}
+
+		impf.metrics.SuccessfulOperations++
+		return matchingPatterns, nil
 
 	case "delete":
 		patternID := params["pattern_id"].(string)
 		delete(impf.patterns, patternID)
-		impf.metrics.SuccessfulFallbacks++
+		impf.metrics.SuccessfulOperations++
 		return nil, nil
 
 	default:
-		impf.metrics.FailedFallbacks++
+		impf.metrics.FailedOperations++
 		return nil, fmt.Errorf("unsupported operation: %s", operation)
 	}
 }
@@ -336,7 +357,9 @@ func NewDependencyManager(config *DependencyConfig, log *logrus.Logger) *Depende
 	}
 
 	dm.healthCheck = NewDependencyHealthChecker(dm, log)
-	dm.initializeFallbacks()
+
+	// Note: Fallbacks are not auto-initialized to allow for custom registration in tests
+	// Call InitializeFallbacks() manually if needed
 
 	return dm
 }
@@ -371,6 +394,23 @@ func (dm *DependencyManager) GetDependency(name string) (Dependency, error) {
 	}
 
 	return dependency, nil
+}
+
+// RegisterFallback registers a fallback provider
+func (dm *DependencyManager) RegisterFallback(name string, fallback FallbackProvider) error {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	if _, exists := dm.fallbacks[name]; exists {
+		return fmt.Errorf("fallback '%s' already registered", name)
+	}
+
+	dm.fallbacks[name] = fallback
+	dm.log.WithFields(logrus.Fields{
+		"name": name,
+	}).Info("Fallback provider registered")
+
+	return nil
 }
 
 // GetVectorDB returns the vector database with fallback capability
@@ -411,6 +451,7 @@ func (dm *DependencyManager) GetHealthReport() *DependencyHealthReport {
 		DependencyStatus:    make(map[string]*DependencyHealthStatus),
 		OverallHealthy:      true,
 		FallbacksActive:     make([]string, 0),
+		FallbacksAvailable:  make([]string, 0),
 	}
 
 	for name, dependency := range dm.dependencies {
@@ -424,8 +465,10 @@ func (dm *DependencyManager) GetHealthReport() *DependencyHealthReport {
 		}
 	}
 
-	// Check for active fallbacks
+	// Check for active fallbacks and populate available fallbacks
 	for name, fallback := range dm.fallbacks {
+		report.FallbacksAvailable = append(report.FallbacksAvailable, name)
+
 		metrics := fallback.GetFallbackMetrics()
 		if metrics.TotalFallbacks > 0 && time.Since(metrics.LastFallback) < time.Hour {
 			report.FallbacksActive = append(report.FallbacksActive, name)
@@ -433,6 +476,11 @@ func (dm *DependencyManager) GetHealthReport() *DependencyHealthReport {
 	}
 
 	return report
+}
+
+// InitializeFallbacks initializes default fallback providers
+func (dm *DependencyManager) InitializeFallbacks() {
+	dm.initializeFallbacks()
 }
 
 // Private methods
@@ -444,7 +492,7 @@ func (dm *DependencyManager) initializeFallbacks() {
 
 	// Initialize in-memory vector fallback
 	vectorFallback := &InMemoryVectorFallback{
-		storage: make(map[string]*VectorEntry),
+		vectors: make(map[string]*VectorEntry),
 		metrics: &FallbackMetrics{},
 		log:     dm.log,
 	}
@@ -452,7 +500,7 @@ func (dm *DependencyManager) initializeFallbacks() {
 
 	// Initialize in-memory pattern fallback
 	patternFallback := &InMemoryPatternFallback{
-		patterns: make(map[string]*types.DiscoveredPattern),
+		patterns: make(map[string]map[string]interface{}),
 		metrics:  &FallbackMetrics{},
 		log:      dm.log,
 	}
@@ -549,14 +597,21 @@ func (imvf *InMemoryVectorFallback) ProvideFallback(ctx context.Context, operati
 	imvf.mu.Lock()
 	defer imvf.mu.Unlock()
 
-	imvf.metrics.TotalFallbacks++
+	imvf.metrics.TotalOperations++
+	imvf.metrics.FallbacksProvided++
 	imvf.metrics.LastFallback = time.Now()
 
 	switch operation {
 	case "store":
 		id := params["id"].(string)
 		vector := params["vector"].([]float64)
-		metadata := params["metadata"].(map[string]interface{})
+
+		var metadata map[string]interface{}
+		if m, ok := params["metadata"]; ok && m != nil {
+			metadata = m.(map[string]interface{})
+		} else {
+			metadata = make(map[string]interface{})
+		}
 
 		entry := &VectorEntry{
 			ID:       id,
@@ -564,20 +619,20 @@ func (imvf *InMemoryVectorFallback) ProvideFallback(ctx context.Context, operati
 			Metadata: metadata,
 			Created:  time.Now(),
 		}
-		imvf.storage[id] = entry
-		imvf.metrics.SuccessfulFallbacks++
-		return nil, nil
+		imvf.vectors[id] = entry
+		imvf.metrics.SuccessfulOperations++
+		return "stored", nil
 
 	case "search":
 		queryVector := params["vector"].([]float64)
 		limit := params["limit"].(int)
 
 		results := imvf.searchSimilar(queryVector, limit)
-		imvf.metrics.SuccessfulFallbacks++
+		imvf.metrics.SuccessfulOperations++
 		return results, nil
 
 	default:
-		imvf.metrics.FailedFallbacks++
+		imvf.metrics.FailedOperations++
 		return nil, fmt.Errorf("unsupported operation: %s", operation)
 	}
 }
@@ -588,15 +643,15 @@ func (imvf *InMemoryVectorFallback) GetFallbackMetrics() *FallbackMetrics {
 	return imvf.metrics
 }
 
-func (imvf *InMemoryVectorFallback) searchSimilar(queryVector []float64, limit int) []*engine.VectorSearchResult {
-	results := make([]*engine.VectorSearchResult, 0)
+func (imvf *InMemoryVectorFallback) searchSimilar(queryVector []float64, limit int) []VectorSearchResult {
+	results := make([]VectorSearchResult, 0)
 
-	for id, entry := range imvf.storage {
+	for id, entry := range imvf.vectors {
 		similarity := imvf.calculateSimilarity(queryVector, entry.Vector)
-		results = append(results, &engine.VectorSearchResult{
-			ID:       id,
-			Score:    similarity,
-			Metadata: entry.Metadata,
+		results = append(results, VectorSearchResult{
+			ID:         id,
+			Similarity: similarity,
+			Metadata:   entry.Metadata,
 		})
 	}
 
@@ -628,7 +683,44 @@ func (imvf *InMemoryVectorFallback) calculateSimilarity(a, b []float64) float64 
 		return 0.0
 	}
 
-	return dot / (normA * normB)
+	// Cosine similarity: dot product / (sqrt(normA) * sqrt(normB))
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+}
+
+// Business Contract Methods for Fallback Testing
+// Following guideline: Define business contracts to enable test compilation
+
+// NewInMemoryVectorFallback creates a new in-memory vector fallback provider
+func NewInMemoryVectorFallback(log *logrus.Logger) *InMemoryVectorFallback {
+	return &InMemoryVectorFallback{
+		vectors: make(map[string]*VectorEntry),
+		log:     log,
+		metrics: &FallbackMetrics{},
+	}
+}
+
+// CalculateSimilarity exposes similarity calculation for testing
+func (imvf *InMemoryVectorFallback) CalculateSimilarity(a, b []float64) float64 {
+	return imvf.calculateSimilarity(a, b)
+}
+
+// GetMetrics returns fallback metrics for testing
+func (imvf *InMemoryVectorFallback) GetMetrics() *FallbackMetrics {
+	return imvf.GetFallbackMetrics()
+}
+
+// NewInMemoryPatternFallback creates a new in-memory pattern fallback provider
+func NewInMemoryPatternFallback(log *logrus.Logger) *InMemoryPatternFallback {
+	return &InMemoryPatternFallback{
+		patterns: make(map[string]map[string]interface{}),
+		log:      log,
+		metrics:  &FallbackMetrics{},
+	}
+}
+
+// GetMetrics returns fallback metrics for testing
+func (impf *InMemoryPatternFallback) GetMetrics() *FallbackMetrics {
+	return impf.GetFallbackMetrics()
 }
 
 // ManagedVectorDB provides vector database operations with fallback
@@ -805,6 +897,7 @@ type DependencyHealthReport struct {
 	DependencyStatus    map[string]*DependencyHealthStatus `json:"dependency_status"`
 	OverallHealthy      bool                               `json:"overall_healthy"`
 	FallbacksActive     []string                           `json:"fallbacks_active"`
+	FallbacksAvailable  []string                           `json:"fallbacks_available"`
 }
 
 // CircuitBreaker implementation
@@ -822,32 +915,106 @@ func (cb *CircuitBreaker) Call(fn func() error) error {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	cb.requests++
-
+	// Check if circuit is open and if we should attempt recovery
 	if cb.state == CircuitStateOpen {
 		if time.Since(cb.lastFailureTime) < cb.resetTimeout {
 			return fmt.Errorf("circuit breaker is open")
 		}
+		// Transition to half-open to test recovery
 		cb.state = CircuitStateHalfOpen
 	}
 
+	// Execute the function
+	cb.requests++
 	err := fn()
+
 	if err != nil {
+		// Handle failure
 		cb.failures++
+		cb.consecutiveFailures++
 		cb.lastFailureTime = time.Now()
 
-		if cb.state == CircuitStateHalfOpen || float64(cb.failures)/float64(cb.requests) >= cb.failureThreshold {
+		// In half-open state, any failure reopens the circuit
+		if cb.state == CircuitStateHalfOpen {
 			cb.state = CircuitStateOpen
+			return err
 		}
+
+		// In closed state, check if we should open the circuit
+		// Only evaluate threshold if we have enough requests (minimum 5 for statistical significance)
+		if cb.requests >= 5 {
+			failureRate := float64(cb.failures) / float64(cb.requests)
+			if failureRate >= cb.failureThreshold {
+				cb.state = CircuitStateOpen
+			}
+		}
+
 		return err
 	}
 
+	// Handle success
+	cb.lastSuccessTime = time.Now()
+	cb.consecutiveFailures = 0
+
+	// In half-open state, we need to see if we should close the circuit
+	// For now, keep it simple: one success in half-open moves to closed
 	if cb.state == CircuitStateHalfOpen {
 		cb.state = CircuitStateClosed
 		cb.failures = 0
+		cb.requests = 1 // Reset to count from this successful request
 	}
 
 	return nil
+}
+
+// Business Contract Methods for Circuit Breaker Testing
+// Following guideline: Define business contracts to enable test compilation
+
+// GetState returns the current circuit breaker state
+func (cb *CircuitBreaker) GetState() CircuitState {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+	return cb.state
+}
+
+// GetName returns the circuit breaker name
+func (cb *CircuitBreaker) GetName() string {
+	return cb.name
+}
+
+// GetFailureThreshold returns the failure threshold
+func (cb *CircuitBreaker) GetFailureThreshold() float64 {
+	return cb.failureThreshold
+}
+
+// GetResetTimeout returns the reset timeout duration
+func (cb *CircuitBreaker) GetResetTimeout() time.Duration {
+	return cb.resetTimeout
+}
+
+// GetFailureRate returns the current failure rate
+func (cb *CircuitBreaker) GetFailureRate() float64 {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+
+	if cb.requests == 0 {
+		return 0.0
+	}
+	return float64(cb.failures) / float64(cb.requests)
+}
+
+// GetFailures returns the current failure count
+func (cb *CircuitBreaker) GetFailures() int64 {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+	return cb.failures
+}
+
+// GetRequests returns the current request count
+func (cb *CircuitBreaker) GetRequests() int64 {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+	return cb.requests
 }
 
 // DependencyHealthChecker implementation

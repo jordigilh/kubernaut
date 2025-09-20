@@ -65,7 +65,9 @@ var _ = Describe("Enhanced Business Metrics Validation for Phase 1 & 2 Business 
 
 			By("Validating basic functionality meets business requirements")
 			Expect(err).ToNot(HaveOccurred(), "Analytics generation must succeed for business ROI analysis")
-			Expect(insights).ToNot(BeNil(), "Analytics insights must be available for business value calculation")
+			roiPercentage, exists := insights.Metadata["roi_percentage"]
+			Expect(exists).To(BeTrue(), "ROI percentage should be available in metadata")
+			Expect(roiPercentage).To(BeNumerically(">=", 0), "BR-AI-005: Analytics insights must provide measurable ROI percentage for business value calculation")
 			Expect(processingTime).To(BeNumerically("<", 30*time.Second),
 				"BR-AI-001: Processing must complete within 30-second business requirement")
 
@@ -147,7 +149,13 @@ var _ = Describe("Enhanced Business Metrics Validation for Phase 1 & 2 Business 
 
 				insights, err := assessor.GetAnalyticsInsights(ctx, 7*24*time.Hour)
 				Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Analytics must succeed for %s context", context))
-				Expect(insights).ToNot(BeNil(), fmt.Sprintf("Analytics insights must be available for %s context", context))
+				costBenefit, exists := insights.Metadata["cost_benefit"]
+				Expect(exists).To(BeTrue(), "Cost benefit should be available in metadata")
+				if costBenefitMap, ok := costBenefit.(map[string]interface{}); ok {
+					netValue, netExists := costBenefitMap["net_value"]
+					Expect(netExists).To(BeTrue(), "Net value should be available in cost benefit data")
+					Expect(netValue).To(BeNumerically("~", 0.0, 1000000.0), fmt.Sprintf("BR-AI-005: Analytics insights must provide measurable cost-benefit data for %s context", context))
+				}
 
 				// Enhanced Cost-Benefit Analysis per Context
 				contextCostBenefit := calculateContextCostBenefit(insights, context)

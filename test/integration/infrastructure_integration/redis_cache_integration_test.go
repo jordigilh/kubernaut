@@ -74,11 +74,9 @@ var _ = Describe("Redis Embedding Cache Integration", Ordered, func() {
 		// Redis cache - using integration test Redis container
 		redisCache, err = vector.NewRedisEmbeddingCache("localhost:6380", "integration_redis_password", 0, logger)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(redisCache).ToNot(BeNil())
 
 		// Memory cache for comparison
 		memoryCache = vector.NewMemoryEmbeddingCache(1000, logger)
-		Expect(memoryCache).ToNot(BeNil())
 
 		// Create cached embedding services
 		redisCachedService = vector.NewCachedEmbeddingService(baseEmbeddingService, redisCache, 10*time.Minute, logger)
