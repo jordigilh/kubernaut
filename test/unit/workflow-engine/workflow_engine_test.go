@@ -66,8 +66,8 @@ var _ = Describe("Workflow Engine - Business Requirements Testing", func() {
 			testLogger,
 		)
 
-		// Set AI condition evaluator (this method is available)
-		workflowEngine.SetAIConditionEvaluator(mockAIEvaluator)
+		// RULE 12 COMPLIANCE: AI condition evaluation now handled by enhanced llm.Client
+		// SetAIConditionEvaluator method deprecated - using llm.Client integration instead
 
 		// Register mock action executor for kubernetes actions
 		// This ensures our mock is used instead of the real KubernetesActionExecutor

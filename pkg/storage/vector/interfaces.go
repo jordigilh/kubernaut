@@ -182,9 +182,5 @@ type DateRange struct {
 	To   time.Time `json:"to"`
 }
 
-// VectorSearchResult represents the result of a vector search
-// Unified with new search result system for consistency
-type VectorSearchResult = UnifiedSearchResultSet
-
-// PatternSearchResult represents pattern-specific search results
-type PatternSearchResult = UnifiedSearchResult
+// VectorSearchResult and PatternSearchResult aliases removed
+// Use UnifiedSearchResultSet and UnifiedSearchResult directly

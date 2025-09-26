@@ -46,8 +46,16 @@ var _ = Describe("BR-BOOTSTRAP-ENVIRONMENT-001: Complete Bootstrap Environment V
 	BeforeEach(func() {
 		ctx = context.Background()
 
+		// Create validator test suite from standard test suite
+		validatorSuite := &validator.TestSuite{
+			DB:              suite.DB,
+			VectorDB:        suite.VectorDB,
+			LLMClient:       suite.LLMClient,
+			WorkflowBuilder: suite.WorkflowBuilder,
+		}
+
 		// Create bootstrap environment validator for integration testing
-		bootstrapValidator = validator.NewBootstrapEnvironmentValidator(suite, logger)
+		bootstrapValidator = validator.NewBootstrapEnvironmentValidator(validatorSuite, logger)
 		Expect(bootstrapValidator).ToNot(BeNil(), "Bootstrap environment validator should be created successfully")
 	})
 

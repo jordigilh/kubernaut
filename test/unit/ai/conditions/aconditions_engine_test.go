@@ -62,7 +62,7 @@ var _ = Describe("AI Conditions Engine - Business Requirements Testing", func() 
 			}
 
 			// Setup mock to return complex condition evaluation
-			conditionEvaluator.SetConditionResult(&conditions.ConditionResult{
+			conditionEvaluator.SetConditionResult(&conditions.EvaluationResult{
 				Result:     true,
 				Confidence: 0.92,
 				Reasoning:  "CPU usage (85.5%) exceeds 80% threshold AND memory usage (75.2%) exceeds 70% threshold, satisfying first logical clause",
@@ -129,7 +129,7 @@ var _ = Describe("AI Conditions Engine - Business Requirements Testing", func() 
 			}
 
 			// Setup mock for natural language processing
-			conditionEvaluator.SetConditionResult(&conditions.ConditionResult{
+			conditionEvaluator.SetConditionResult(&conditions.EvaluationResult{
 				Result:     true,
 				Confidence: 0.88,
 				Reasoning:  "Detected memory pressure for 7 minutes (exceeds 5-minute threshold) and response time degradation for 6 minutes, matching natural language condition criteria",
@@ -202,7 +202,7 @@ var _ = Describe("AI Conditions Engine - Business Requirements Testing", func() 
 			}
 
 			// Setup mock for temporal evaluation
-			conditionEvaluator.SetConditionResult(&conditions.ConditionResult{
+			conditionEvaluator.SetConditionResult(&conditions.EvaluationResult{
 				Result:     true,
 				Confidence: 0.94,
 				Reasoning:  "Memory usage increased from 62.0% to 78.5% over 30 minutes, representing a 26.6% increase (exceeds 20% threshold)",
@@ -276,7 +276,7 @@ var _ = Describe("AI Conditions Engine - Business Requirements Testing", func() 
 			}
 
 			// Setup mock with detailed confidence breakdown
-			conditionEvaluator.SetConditionResult(&conditions.ConditionResult{
+			conditionEvaluator.SetConditionResult(&conditions.EvaluationResult{
 				Result:     true,
 				Confidence: 0.89,
 				Reasoning:  "High confidence based on excellent data quality (92%), good metric freshness (88%), and sufficient sample size (150 points)",
@@ -353,7 +353,7 @@ var _ = Describe("AI Conditions Engine - Business Requirements Testing", func() 
 			}
 
 			// Setup mock with learning integration
-			conditionEvaluator.SetConditionResult(&conditions.ConditionResult{
+			conditionEvaluator.SetConditionResult(&conditions.EvaluationResult{
 				Result:     true,
 				Confidence: 0.91,
 				Reasoning:  "Error rate (8%) exceeds learned dynamic threshold (5%), adjusted from historical accuracy of 82%",
@@ -433,7 +433,7 @@ var _ = Describe("AI Conditions Engine - Business Requirements Testing", func() 
 			}
 
 			// Setup mock with accuracy tracking
-			conditionEvaluator.SetConditionResult(&conditions.ConditionResult{
+			conditionEvaluator.SetConditionResult(&conditions.EvaluationResult{
 				Result:     true,
 				Confidence: 0.93,
 				Reasoning:  "Response time (1200ms) exceeds SLA threshold (1000ms) with high accuracy confidence",

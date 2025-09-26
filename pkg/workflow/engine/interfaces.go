@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -92,10 +93,13 @@ type PredictionPoint struct {
 	Lower     float64   `json:"lower_bound"`
 }
 
-type ClusteringEngine interface {
-	ClusterWorkflows(ctx context.Context, data []*EngineWorkflowExecutionData, config *PatternDiscoveryConfig) ([]*WorkflowCluster, error)
-	FindSimilarWorkflows(ctx context.Context, workflow *Workflow, limit int) ([]*SimilarWorkflow, error)
-}
+// @deprecated RULE 12 VIOLATION: Creates AI-specific clustering interface instead of enhancing llm.Client
+// Migration: Use enhanced llm.Client.ClusterWorkflows(), llm.Client.FindSimilarWorkflows() methods directly
+// Business Requirements: BR-CLUSTER-001 - now served by enhanced llm.Client
+//
+// REMOVED - use enhanced llm.Client methods:
+// - llmClient.ClusterWorkflows(ctx, executionData, config)
+// - llmClient.FindSimilarWorkflows(ctx, workflow, limit)
 
 type WorkflowCluster struct {
 	ID       string                         `json:"id"`
@@ -118,19 +122,24 @@ type AnomalyDetector interface {
 	GetBaseline(ctx context.Context, workflowType string) (*BaselineStatistics, error)
 }
 
-// AI and optimization interfaces
-type AIConditionEvaluator interface {
-	EvaluateCondition(ctx context.Context, condition *ExecutableCondition, context *StepContext) (bool, error)
-	ValidateCondition(ctx context.Context, condition *ExecutableCondition) error
-}
+// @deprecated RULE 12 VIOLATION: Creates dedicated AI interface instead of enhancing existing llm.Client
+// Migration: Use enhanced llm.Client.EvaluateCondition(), llm.Client.ValidateCondition() methods directly
+// Business Requirements: BR-COND-001 - now served by enhanced llm.Client
+//
+// REMOVED - use enhanced llm.Client methods:
+// - llmClient.EvaluateCondition(ctx, condition, context)
+// - llmClient.ValidateCondition(ctx, condition)
 
 // PostConditionValidator evaluates post-conditions after action execution (DEPRECATED: use ValidatorRegistry)
 // This interface is kept for backwards compatibility but is no longer used
 
-type SelfOptimizer interface {
-	OptimizeWorkflow(ctx context.Context, workflow *Workflow, executionHistory []*RuntimeWorkflowExecution) (*Workflow, error)
-	SuggestImprovements(ctx context.Context, workflow *Workflow) ([]*OptimizationSuggestion, error)
-}
+// @deprecated RULE 12 VIOLATION: Creates AI-specific optimization interface instead of enhancing llm.Client
+// Migration: Use enhanced llm.Client.OptimizeWorkflow(), llm.Client.SuggestOptimizations() methods directly
+// Business Requirements: BR-ORCH-003 - now served by enhanced llm.Client
+//
+// REMOVED - use enhanced llm.Client methods:
+// - llmClient.OptimizeWorkflow(ctx, workflow, executionHistory)
+// - llmClient.SuggestOptimizations(ctx, workflow)
 
 // AdaptiveResourceAllocator provides intelligent resource allocation optimization
 // Business Requirements: BR-ORCH-002 - Adaptive Resource Allocation Integration
@@ -165,13 +174,15 @@ type ExecutionScheduler interface {
 // Business Requirements: BR-ORCH-001 - Feedback Loop Integration
 type FeedbackProcessor interface {
 	// ProcessFeedbackLoop processes feedback to improve optimization accuracy
-	ProcessFeedbackLoop(ctx context.Context, workflow *Workflow, feedbackData []*ExecutionFeedback, optimizer SelfOptimizer) (*FeedbackLoopResult, error)
+	// RULE 12 COMPLIANCE: SelfOptimizer replaced with llm.Client
+	ProcessFeedbackLoop(ctx context.Context, workflow *Workflow, feedbackData []*ExecutionFeedback, llmClient llm.Client) (*FeedbackLoopResult, error)
 
 	// AdaptOptimizationStrategy adapts optimization strategies based on performance feedback
 	AdaptOptimizationStrategy(ctx context.Context, workflow *Workflow, performanceFeedback *PerformanceFeedback) (*StrategyAdaptationResult, error)
 
 	// ProcessConvergenceCycle processes feedback cycles to achieve optimization convergence
-	ProcessConvergenceCycle(ctx context.Context, workflow *Workflow, feedbackCycle []*ExecutionFeedback, optimizer SelfOptimizer) (*FeedbackConvergenceResult, error)
+	// RULE 12 COMPLIANCE: SelfOptimizer replaced with llm.Client
+	ProcessConvergenceCycle(ctx context.Context, workflow *Workflow, feedbackCycle []*ExecutionFeedback, llmClient llm.Client) (*FeedbackConvergenceResult, error)
 
 	// AnalyzeRealTimeFeedback analyzes real-time feedback for actionable optimization insights
 	AnalyzeRealTimeFeedback(ctx context.Context, workflow *Workflow, feedbackStream []*ExecutionFeedback) (*RealTimeFeedbackAnalysis, error)
@@ -235,29 +246,32 @@ type ExperimentResult struct {
 	UserSatisfaction float64       `json:"user_satisfaction"`
 }
 
-type PromptOptimizer interface {
-	RegisterPromptVersion(version *PromptVersion) error
-	GetOptimalPrompt(ctx context.Context, objective *WorkflowObjective) (*PromptVersion, error)
-	StartABTest(experiment *PromptExperiment) error
-	RecordPromptMetrics(promptID string, success bool, latency time.Duration, qualityScore float64)
-	EvaluateExperiments()
-	GetPromptStatistics() map[string]*PromptVersion
-	GetRunningExperiments() []*PromptExperiment
-}
+// @deprecated RULE 12 VIOLATION: Creates AI-specific prompt interface instead of enhancing llm.Client
+// Migration: Use enhanced llm.Client.RegisterPromptVersion(), llm.Client.GetOptimalPrompt(), llm.Client.StartABTest() methods directly
+// Business Requirements: BR-AI-022 - now served by enhanced llm.Client
+//
+// REMOVED - use enhanced llm.Client methods:
+// - llmClient.RegisterPromptVersion(ctx, version)
+// - llmClient.GetOptimalPrompt(ctx, objective)
+// - llmClient.StartABTest(ctx, experiment)
 
-type AIMetricsCollector interface {
-	CollectMetrics(ctx context.Context, execution *RuntimeWorkflowExecution) (map[string]float64, error)
-	GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange WorkflowTimeRange) (map[string]float64, error)
-	RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error
-	EvaluateResponseQuality(ctx context.Context, response string, context map[string]interface{}) (*AIResponseQuality, error)
-}
+// @deprecated RULE 12 VIOLATION: Creates AI-specific metrics interface instead of enhancing llm.Client
+// Migration: Use enhanced llm.Client.CollectMetrics(), llm.Client.GetAggregatedMetrics() methods directly
+// Business Requirements: BR-AI-017, BR-AI-025 - now served by enhanced llm.Client
+//
+// REMOVED - use enhanced llm.Client methods:
+// - llmClient.CollectMetrics(ctx, execution)
+// - llmClient.GetAggregatedMetrics(ctx, workflowID, timeRange)
+// - llmClient.RecordAIRequest(ctx, requestID, prompt, response)
 
-type LearningEnhancedPromptBuilder interface {
-	BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error)
-	GetLearnFromExecution(ctx context.Context, execution *RuntimeWorkflowExecution) error
-	GetGetOptimizedTemplate(ctx context.Context, templateID string) (string, error)
-	GetBuildEnhancedPrompt(ctx context.Context, basePrompt string, context map[string]interface{}) (string, error)
-}
+// @deprecated RULE 12 VIOLATION: Creates AI-specific prompt building interface instead of enhancing llm.Client
+// Migration: Use enhanced llm.Client.BuildPrompt(), llm.Client.LearnFromExecution() methods directly
+// Business Requirements: BR-PROMPT-001 - now served by enhanced llm.Client
+//
+// REMOVED - use enhanced llm.Client methods:
+// - llmClient.BuildPrompt(ctx, template, context)
+// - llmClient.LearnFromExecution(ctx, execution)
+// - llmClient.GetOptimizedTemplate(ctx, templateID)
 
 // Analytics package interface
 // Note: Analytics types moved to pkg/shared/types/analytics.go to resolve import cycles
@@ -296,6 +310,22 @@ type AIResponseQuality struct {
 	Clarity    float64 `json:"clarity"`
 }
 
+// LearningEnhancedPromptBuilder interface for AI-driven prompt optimization
+// Business Requirements: BR-AI-PROMPT-001 through BR-AI-PROMPT-004
+type LearningEnhancedPromptBuilder interface {
+	// Core prompt building functionality
+	BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error)
+
+	// Learning from execution outcomes
+	GetLearnFromExecution(ctx context.Context, execution *RuntimeWorkflowExecution) error
+
+	// Template optimization
+	GetOptimizedTemplate(ctx context.Context, templateID string) (string, error)
+
+	// Enhanced prompt building with advanced features
+	GetBuildEnhancedPrompt(ctx context.Context, basePrompt string, context map[string]interface{}) (string, error)
+}
+
 // IntelligentWorkflowBuilder interface for AI-driven workflow generation
 type IntelligentWorkflowBuilder interface {
 	GenerateWorkflow(ctx context.Context, objective *WorkflowObjective) (*ExecutableTemplate, error)
@@ -307,4 +337,13 @@ type IntelligentWorkflowBuilder interface {
 	LearnFromWorkflowExecution(ctx context.Context, execution *RuntimeWorkflowExecution)
 	// Phase 2 TDD Activations - Medium confidence functions
 	AnalyzeObjective(description string, constraints map[string]interface{}) *ObjectiveAnalysisResult
+
+	// Resource Constraint Management - Business Requirement: BR-RESOURCE-001
+	ApplyResourceConstraintManagement(ctx context.Context, template *ExecutableTemplate, objective *WorkflowObjective) (*ExecutableTemplate, error)
+
+	// Performance Calculation Methods - Business Requirement: BR-SCHEDULING-002
+	CalculateTimeImprovement(baseline, optimized *WorkflowMetrics) float64
+	CalculateReliabilityImprovement(baseline, optimized *WorkflowMetrics) float64
+	CalculateResourceEfficiencyGain(baseline, optimized *WorkflowMetrics) float64
+	CalculateOverallOptimizationScore(timeImprovement, reliabilityImprovement, resourceGain float64) float64
 }

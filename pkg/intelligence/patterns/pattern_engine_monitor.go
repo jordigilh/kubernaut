@@ -1015,9 +1015,10 @@ func (pem *PatternEngineMonitor) checkTimeSeriesEngineHealth() HealthLevel {
 	return HealthLevelHealthy
 }
 
+// RULE 12 COMPLIANCE: Updated to check enhanced llm.Client instead of deprecated clusteringEngine
 func (pem *PatternEngineMonitor) checkClusteringEngineHealth() HealthLevel {
-	if pem.engine.clusteringEngine == nil {
-		pem.addHealthIssue("clustering_engine", HealthLevelCritical, "Clustering Engine is not initialized")
+	if pem.engine.llmClient == nil {
+		pem.addHealthIssue("llm_client", HealthLevelCritical, "Enhanced LLM Client is not initialized")
 		return HealthLevelCritical
 	}
 

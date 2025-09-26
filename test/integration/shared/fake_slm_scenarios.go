@@ -48,7 +48,7 @@ var PredefinedScenarios = map[string]RealisticScenario{
 }
 
 // ConfigureForScenario applies a realistic testing scenario to the fake client
-func (f *FakeSLMClient) ConfigureForScenario(scenario RealisticScenario) {
+func (f *TestSLMClient) ConfigureForScenario(scenario RealisticScenario) {
 	// Set confidence patterns based on scenario
 	f.responseVariation = 1.0 - scenario.ConsistencyLevel
 
@@ -74,7 +74,7 @@ func (f *FakeSLMClient) ConfigureForScenario(scenario RealisticScenario) {
 }
 
 // EnableNetworkSimulation turns on network condition simulation
-func (f *FakeSLMClient) EnableNetworkSimulation(latencyMin, latencyMax time.Duration, failureRate, timeoutRate float64) {
+func (f *TestSLMClient) EnableNetworkSimulation(latencyMin, latencyMax time.Duration, failureRate, timeoutRate float64) {
 	f.networkSimulation = NetworkSimulation{
 		Enabled:     true,
 		LatencyMin:  latencyMin,
@@ -86,12 +86,12 @@ func (f *FakeSLMClient) EnableNetworkSimulation(latencyMin, latencyMax time.Dura
 }
 
 // DisableNetworkSimulation turns off network simulation for fast testing
-func (f *FakeSLMClient) DisableNetworkSimulation() {
+func (f *TestSLMClient) DisableNetworkSimulation() {
 	f.networkSimulation.Enabled = false
 }
 
 // SetModelAvailability configures which models are available for testing
-func (f *FakeSLMClient) SetModelAvailability(modelName string, available bool) {
+func (f *TestSLMClient) SetModelAvailability(modelName string, available bool) {
 	if f.modelAvailability == nil {
 		f.modelAvailability = make(map[string]bool)
 	}
@@ -99,7 +99,7 @@ func (f *FakeSLMClient) SetModelAvailability(modelName string, available bool) {
 }
 
 // EnableMemory turns on/off the client's memory of previous interactions
-func (f *FakeSLMClient) EnableMemory(enabled bool) {
+func (f *TestSLMClient) EnableMemory(enabled bool) {
 	f.memoryEnabled = enabled
 	if !enabled {
 		f.previousAlerts = make(map[string]time.Time)
@@ -107,7 +107,7 @@ func (f *FakeSLMClient) EnableMemory(enabled bool) {
 }
 
 // SetResponseVariation sets how much responses should vary (0.0 = consistent, 1.0 = highly variable)
-func (f *FakeSLMClient) SetResponseVariation(variation float64) {
+func (f *TestSLMClient) SetResponseVariation(variation float64) {
 	if variation < 0.0 {
 		variation = 0.0
 	}

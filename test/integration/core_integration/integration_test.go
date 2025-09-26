@@ -416,7 +416,7 @@ var _ = Describe("End-to-End Flow", func() {
 		if os.Getenv("SKIP_INTEGRATION") == "" {
 			// Configuration no longer needed for fake client
 
-			slmClient = shared.NewFakeSLMClient()
+			slmClient = shared.NewTestSLMClient()
 			Expect(slmClient.IsHealthy()).To(BeTrue())
 		}
 
@@ -588,7 +588,7 @@ var _ = Describe("End-to-End Flow", func() {
 			}
 
 			// Create fake SLM client with error injection capabilities
-			client := shared.NewFakeSLMClient()
+			client := shared.NewTestSLMClient()
 
 			// Enable error injection for testing resilience scenarios
 			client.SetErrorInjectionEnabled(true)
@@ -682,7 +682,7 @@ var _ = Describe("End-to-End Flow", func() {
 				Skip("Integration tests skipped")
 			}
 
-			client := shared.NewFakeSLMClient()
+			client := shared.NewTestSLMClient()
 
 			// Enable error injection for testing resilience scenarios
 			client.SetErrorInjectionEnabled(true)

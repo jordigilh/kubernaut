@@ -121,14 +121,9 @@ var _ = Describe("Complete AI Integration Validation", Ordered, func() {
 			suite := hooks.GetSuite()
 			vectorDB := suite.VectorDB
 
-			// Create configured AI metrics collector
-			aiMetrics := engine.NewConfiguredAIMetricsCollector(
-				cfg, llmClient, vectorDB, nil, logger)
-			Expect(aiMetrics).ToNot(BeNil(), "AI metrics collector should be created")
-
-			// Test metrics collection (allowing for both success and expected failure)
+			// Test metrics collection using direct LLM client methods (RULE 12 compliant)
 			testExecution := createTestWorkflowExecution()
-			metrics, err := aiMetrics.CollectMetrics(ctx, testExecution)
+			metrics, err := llmClient.CollectMetrics(ctx, testExecution)
 
 			if err != nil {
 				GinkgoWriter.Printf("⚠️ AI metrics collection failed as expected (fallback mode): %v\n", err)
@@ -138,8 +133,8 @@ var _ = Describe("Complete AI Integration Validation", Ordered, func() {
 			}
 
 			// Create configured prompt builder
-			promptBuilder := engine.NewConfiguredLearningEnhancedPromptBuilder(
-				cfg, llmClient, vectorDB, suite.ExecutionRepo, logger)
+			promptBuilder := engine.NewDefaultLearningEnhancedPromptBuilder(
+				llmClient, vectorDB, suite.ExecutionRepo, logger)
 			Expect(promptBuilder).ToNot(BeNil(), "Prompt builder should be created")
 
 			GinkgoWriter.Printf("🏗️ AI components configuration successful\n")

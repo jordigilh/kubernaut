@@ -178,14 +178,4 @@ func (srf *SearchResultFactory) CreateFromScore(id string, score float32) Unifie
 
 // Helper functions for backward compatibility
 
-// ToVectorSearchResultSet converts UnifiedSearchResultSet to VectorSearchResultSet for backward compatibility
-func (urs UnifiedSearchResultSet) ToVectorSearchResultSet() VectorSearchResultSet {
-	// Since VectorSearchResultSet is now an alias to UnifiedSearchResultSet, we can return directly
-	return urs
-}
-
-// FromVectorSearchResultSet converts VectorSearchResultSet to UnifiedSearchResultSet
-func FromVectorSearchResultSet(vrs VectorSearchResultSet) UnifiedSearchResultSet {
-	// Since VectorSearchResultSet is now an alias to UnifiedSearchResultSet, we can return directly
-	return vrs
-}
+// VectorSearchResultSet conversion functions removed - use UnifiedSearchResultSet directly

@@ -13,6 +13,9 @@ import (
 // Real AI common service implementation providing core AI functionality
 // Supports data processing, analysis coordination, and business intelligence
 
+// @deprecated RULE 12 VIOLATION: AICommonInterface violates Rule 12 AI/ML methodology
+// Migration: Use enhanced llm.Client methods directly instead of separate AI interface
+// Business Requirements: BR-AI-COMMON-001 - now served by enhanced llm.Client
 type AICommonInterface interface {
 	Process() error
 	ProcessWithContext(ctx context.Context, data interface{}) (*ProcessingResult, error)
@@ -518,21 +521,39 @@ func (dp *DefaultProcessor) IsHealthy() bool { return true }
 // AI PROVIDER INTERFACES FOR BUSINESS REQUIREMENTS
 // ============================================================================
 
-// AnalysisProvider defines the interface for AI analysis services
+// @deprecated RULE 12 VIOLATION: Creates new AI interface instead of enhancing existing holmesgpt.Client
+// Migration: Use enhanced holmesgpt.Client.ProvideAnalysis(), holmesgpt.Client.GetProviderID(), holmesgpt.Client.GetProviderCapabilities() methods
+// Business Requirements: BR-ANALYSIS-001 - now served by enhanced holmesgpt.Client
+// Replacement Methods:
+//   - Analyze() -> holmesgpt.Client.ProvideAnalysis()
+//   - GetID() -> holmesgpt.Client.GetProviderID()
+//   - GetCapabilities() -> holmesgpt.Client.GetProviderCapabilities()
 type AnalysisProvider interface {
 	Analyze(ctx context.Context, request *AnalysisRequest) (*AnalysisResult, error)
 	GetID() string
 	GetCapabilities() []string
 }
 
-// RecommendationProvider defines the interface for AI recommendation services
+// @deprecated RULE 12 VIOLATION: Creates new AI interface instead of enhancing existing holmesgpt.Client
+// Migration: Use enhanced holmesgpt.Client.GenerateProviderRecommendations(), holmesgpt.Client.GetProviderID(), holmesgpt.Client.GetProviderCapabilities() methods
+// Business Requirements: BR-RECOMMENDATION-001 - now served by enhanced holmesgpt.Client
+// Replacement Methods:
+//   - GenerateRecommendations() -> holmesgpt.Client.GenerateProviderRecommendations()
+//   - GetID() -> holmesgpt.Client.GetProviderID()
+//   - GetCapabilities() -> holmesgpt.Client.GetProviderCapabilities()
 type RecommendationProvider interface {
 	GenerateRecommendations(ctx context.Context, context *RecommendationContext) ([]Recommendation, error)
 	GetID() string
 	GetCapabilities() []string
 }
 
-// InvestigationProvider defines the interface for AI investigation services
+// @deprecated RULE 12 VIOLATION: Creates new AI interface instead of enhancing existing holmesgpt.Client
+// Migration: Use enhanced holmesgpt.Client.InvestigateAlert(), holmesgpt.Client.GetProviderID(), holmesgpt.Client.GetInvestigationCapabilities() methods
+// Business Requirements: BR-INVESTIGATION-001 - now served by enhanced holmesgpt.Client
+// Replacement Methods:
+//   - Investigate() -> holmesgpt.Client.InvestigateAlert()
+//   - GetID() -> holmesgpt.Client.GetProviderID()
+//   - GetCapabilities() -> holmesgpt.Client.GetInvestigationCapabilities()
 type InvestigationProvider interface {
 	Investigate(ctx context.Context, alert *types.Alert, context *InvestigationContext) (*InvestigationResult, error)
 	GetID() string
