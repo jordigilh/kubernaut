@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -238,56 +237,6 @@ func (sd *ServiceDiscovery) GetServicesByType(serviceType string) []*DetectedSer
 // GetEventChannel returns the service event channel for real-time updates
 func (sd *ServiceDiscovery) GetEventChannel() <-chan ServiceEvent {
 	return sd.eventChannel
-}
-
-// trackEventMetrics records event processing metrics in a thread-safe manner
-// Business Requirement: BR-HOLMES-029 - Service discovery metrics and monitoring
-func (sd *ServiceDiscovery) trackEventMetrics(eventType string, processingTime time.Duration, successful bool) {
-	sd.metricsMutex.Lock()
-	defer sd.metricsMutex.Unlock()
-
-	start := time.Now()
-	defer func() {
-		// Track the time it takes to update metrics (should be minimal)
-		metricUpdateTime := time.Since(start)
-		if metricUpdateTime > 100*time.Microsecond {
-			sd.log.WithField("metric_update_time", metricUpdateTime).Warn("Slow metrics update detected")
-		}
-	}()
-
-	// Update total counters using atomic operations where possible
-	atomic.AddInt64(&sd.eventMetrics.TotalEventsProcessed, 1)
-
-	if successful {
-		atomic.AddInt64(&sd.eventMetrics.SuccessfulEvents, 1)
-
-		// Update event type counts
-		sd.eventMetrics.EventTypeCounts[eventType]++
-
-		// Track processing latency
-		if processingTime > sd.eventMetrics.MaxProcessingTime {
-			sd.eventMetrics.MaxProcessingTime = processingTime
-		}
-
-		// Keep recent latencies for average calculation (circular buffer)
-		if len(sd.eventMetrics.ProcessingLatencies) >= 100 {
-			// Remove oldest entry
-			sd.eventMetrics.ProcessingLatencies = sd.eventMetrics.ProcessingLatencies[1:]
-		}
-		sd.eventMetrics.ProcessingLatencies = append(sd.eventMetrics.ProcessingLatencies, processingTime)
-
-		sd.eventMetrics.LastEventTimestamp = time.Now()
-	}
-}
-
-// trackDroppedEvent records when an event is dropped due to channel being full
-// Business Requirement: BR-HOLMES-029 - Event drop monitoring
-func (sd *ServiceDiscovery) trackDroppedEvent(eventType string) {
-	atomic.AddInt64(&sd.eventMetrics.DroppedEvents, 1)
-	sd.log.WithFields(logrus.Fields{
-		"event_type":    eventType,
-		"total_dropped": atomic.LoadInt64(&sd.eventMetrics.DroppedEvents),
-	}).Warn("Service discovery event dropped due to full channel")
 }
 
 // GetEventMetrics returns structured event processing metrics

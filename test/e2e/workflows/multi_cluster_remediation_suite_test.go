@@ -1,0 +1,20 @@
+//go:build e2e
+
+package workflows
+
+import (
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+// BR-E2E-002: Multi-cluster Remediation Scenario Testing (LitmusChaos Integration)
+// Business Impact: Validates autonomous remediation capabilities across multiple clusters under chaos conditions
+// Stakeholder Value: Operations teams can trust multi-cluster automation during infrastructure failures
+// Success Metrics: Controlled instability injection and recovery, multi-cluster coordinated actions successful
+func TestMultiClusterRemediationWorkflows(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Multi-cluster Remediation E2E Workflow Tests Suite")
+}
+

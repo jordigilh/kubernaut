@@ -384,7 +384,7 @@ Current sophisticated scenarios that GoMock cannot easily replicate:
 ```go
 // Keep sophisticated fakes for integration tests
 func TestComplexIntegrationScenario() {
-    fakeSLM := shared.NewFakeSLMClient() // Keep existing
+    testSLM := shared.NewTestSLMClient() // Updated to use TestSLMClient
     // ... complex scenario testing
 }
 

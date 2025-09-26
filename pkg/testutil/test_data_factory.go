@@ -424,7 +424,7 @@ func (f *TestDataFactory) CreateStandardActionTrace() actionhistory.ResourceActi
 		ID:         123,
 		ActionID:   generateTraceID(),
 		ActionType: "scale",
-		ActionParameters: actionhistory.JSONMap{
+		ActionParameters: actionhistory.JSONData{
 			"replicas": 3,
 		},
 		ActionTimestamp: time.Now(),
@@ -443,7 +443,7 @@ func (f *TestDataFactory) CreateMultipleActionTraces() []actionhistory.ResourceA
 			ID:               1,
 			ActionID:         "trace-1",
 			ActionType:       "scale",
-			ActionParameters: actionhistory.JSONMap{"replicas": 5},
+			ActionParameters: actionhistory.JSONData{"replicas": 5},
 			ActionTimestamp:  baseTime,
 			ExecutionStatus:  "completed",
 			ModelUsed:        "test-model",
@@ -453,7 +453,7 @@ func (f *TestDataFactory) CreateMultipleActionTraces() []actionhistory.ResourceA
 			ID:               2,
 			ActionID:         "trace-2",
 			ActionType:       "restart",
-			ActionParameters: actionhistory.JSONMap{"force": true},
+			ActionParameters: actionhistory.JSONData{"force": true},
 			ActionTimestamp:  baseTime.Add(10 * time.Minute),
 			ExecutionStatus:  "completed",
 			ModelUsed:        "test-model",
@@ -463,7 +463,7 @@ func (f *TestDataFactory) CreateMultipleActionTraces() []actionhistory.ResourceA
 			ID:               3,
 			ActionID:         "trace-3",
 			ActionType:       "update_resources",
-			ActionParameters: actionhistory.JSONMap{"memory": "2Gi"},
+			ActionParameters: actionhistory.JSONData{"memory": "2Gi"},
 			ActionTimestamp:  baseTime.Add(20 * time.Minute),
 			ExecutionStatus:  "failed",
 			ModelUsed:        "test-model",
@@ -488,7 +488,6 @@ func generatePatternID() string   { return generateUniqueID("test-pattern") }
 func generateExecutionID() string { return generateUniqueID("test-execution") }
 func generateStepID() string      { return generateUniqueID("test-step") }
 func generateTraceID() string     { return generateUniqueID("test-trace") }
-func generateActionID() string    { return generateUniqueID("test-action") }
 
 // Validation helpers - following development guidelines: strengthen assertions and reuse code
 func validateStringWithDefault(value, defaultValue string) string {

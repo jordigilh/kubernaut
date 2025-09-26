@@ -1,0 +1,329 @@
+---
+alwaysApply: true
+description: "Project structure and navigation guide for kubernaut"
+---
+
+# Kubernaut Project Structure Guide
+
+## Core Architecture
+The project follows a layered architecture with clear separation of concerns:
+
+- **Main Binaries**: [cmd/](mdc:cmd/) contains multiple binaries
+  - [cmd/kubernaut/](mdc:cmd/kubernaut/) - Main kubernaut service
+  - [cmd/dynamic-toolset-server/](mdc:cmd/dynamic-toolset-server/) - Dynamic toolset server
+
+- **Core Packages**: [pkg/](mdc:pkg/) contains business logic
+  - [pkg/ai/](mdc:pkg/ai/) - AI/ML components including HolmesGPT integration
+  - [pkg/workflow/](mdc:pkg/workflow/) - Workflow engine and orchestration
+  - [pkg/platform/](mdc:pkg/platform/) - Kubernetes and multi-cluster operations
+  - [pkg/storage/](mdc:pkg/storage/) - Vector databases and persistence
+  - [pkg/intelligence/](mdc:pkg/intelligence/) - Pattern recognition and learning
+
+- **Testing**: [test/](mdc:test/) follows three-tier strategy
+  - [test/unit/](mdc:test/unit/) - Pure algorithmic/mathematical logic (35%)
+  - [test/integration/](mdc:test/integration/) - Cross-component scenarios (40%)
+  - [test/e2e/](mdc:test/e2e/) - Complete workflow scenarios (25%)
+
+- **Internal**: [internal/](mdc:internal/) for private packages
+  - [internal/database/](mdc:internal/database/) - Database connections
+  - [internal/config/](mdc:internal/config/) - Configuration management
+
+## Key Entry Points
+- **Main Service**: [cmd/kubernaut/main.go](mdc:cmd/kubernaut/main.go)
+- **Configuration**: [config/](mdc:config/) directory contains YAML configs
+- **Deployment**: [deploy/](mdc:deploy/) for Kubernetes manifests
+- **Documentation**: [docs/](mdc:docs/) comprehensive technical documentation
+
+## Package Dependencies
+- Always import internal packages using full module path: `github.com/jordigilh/kubernaut/pkg/...`
+- Use interfaces defined in [pkg/workflow/engine/interfaces.go](mdc:pkg/workflow/engine/interfaces.go)
+- Follow dependency injection patterns established in [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go)
+
+## 🔗 **INTEGRATION TIMING SPECIFICATIONS - CRYSTAL CLEAR**
+
+### **TIMING 1: Component Creation Decision Point**
+**MANDATORY QUESTION**: Before creating ANY new component in pkg/
+
+```bash
+#!/bin/bash
+# component-creation-decision.sh - Run before creating new components
+COMPONENT_NAME="$1"
+PACKAGE_PATH="$2"  # e.g., pkg/ai/, pkg/workflow/
+
+echo "🤔 Component Creation Decision: $COMPONENT_NAME in $PACKAGE_PATH"
+
+# Check existing components in package
+EXISTING_SIMILAR=$(find "$PACKAGE_PATH" -name "*.go" -exec grep -l "$COMPONENT_NAME\|$(echo $COMPONENT_NAME | sed 's/[A-Z]/[a-z]/g')" {} \; | wc -l)
+
+if [ "$EXISTING_SIMILAR" -gt 0 ]; then
+    echo "⚠️  FOUND SIMILAR: $EXISTING_SIMILAR existing components"
+    echo "📁 Files:"
+    find "$PACKAGE_PATH" -name "*.go" -exec grep -l "$COMPONENT_NAME\|$(echo $COMPONENT_NAME | sed 's/[A-Z]/[a-z]/g')" {} \;
+    echo ""
+    echo "❓ DECISION REQUIRED:"
+    echo "1. Enhance existing component (PREFERRED)"
+    echo "2. Create new component (requires justification)"
+    read -p "Choose option (1/2): " choice
+
+    if [ "$choice" = "1" ]; then
+        echo "✅ DECISION: Enhance existing component"
+        echo "📋 NEXT: Follow TDD enhancement workflow"
+    else
+        echo "⚠️  DECISION: Create new component"
+        echo "📋 REQUIRED: Document business justification"
+        read -p "Business requirement (BR-XXX-XXX): " br_requirement
+        echo "📝 Documented: $br_requirement"
+    fi
+else
+    echo "✅ NO SIMILAR: New component justified"
+fi
+```
+
+### **TIMING 2: Integration During TDD Phases**
+
+#### **INTEGRATION PHASE: During GREEN (Not REFACTOR)**
+**MANDATORY**: All business components must be integrated during GREEN phase
+
+```bash
+#!/bin/bash
+# integration-timing-validation.sh
+TDD_PHASE="$1"  # red, green, refactor
+COMPONENT_NAME="$2"
+
+echo "📋 Integration Timing Validation: $TDD_PHASE phase for $COMPONENT_NAME"
+
+case $TDD_PHASE in
+    "green")
+        echo "🟢 GREEN PHASE: Integration REQUIRED"
+        # Check component is used in main applications
+        MAIN_USAGE=$(grep -r "$COMPONENT_NAME" cmd/ --include="*.go" | wc -l)
+
+        if [ "$MAIN_USAGE" -eq 0 ]; then
+            echo "❌ INTEGRATION VIOLATION: Component not integrated in GREEN phase"
+            echo "🔧 REQUIRED: Add to cmd/kubernaut/main.go or cmd/dynamic-toolset-server/main.go"
+            echo ""
+            echo "Example integration:"
+            echo "// In main.go:"
+            echo "$COMPONENT_NAME := $(echo $COMPONENT_NAME | sed 's/^./\L&/')New$COMPONENT_NAME(config, logger)"
+            echo "app.Set$COMPONENT_NAME($COMPONENT_NAME)"
+            exit 1
+        fi
+
+        echo "✅ Integration verified: $COMPONENT_NAME found in $MAIN_USAGE main app files"
+        ;;
+    "refactor")
+        echo "🔵 REFACTOR PHASE: Integration PRESERVED"
+        # Ensure integration is maintained during refactor
+        MAIN_USAGE=$(grep -r "$COMPONENT_NAME" cmd/ --include="*.go" | wc -l)
+
+        if [ "$MAIN_USAGE" -eq 0 ]; then
+            echo "❌ INTEGRATION LOST: Component integration broken during REFACTOR"
+            echo "🔧 CRITICAL: Restore integration in main applications"
+            exit 1
+        fi
+
+        echo "✅ Integration preserved during REFACTOR"
+        ;;
+    *)
+        echo "ℹ️  $TDD_PHASE phase: Integration check not required"
+        ;;
+esac
+```
+
+### **TIMING 3: Package Structure Integration Points**
+
+#### **AI Components Integration**
+**Package**: `pkg/ai/` → **Integration Point**: `cmd/*/main.go`
+```go
+// Integration pattern for AI components
+func main() {
+    // AI client integration
+    llmConfig := config.LLM
+    llmClient := llm.NewClient(llmConfig)
+
+    // Integrate with workflow engine
+    workflowEngine.SetLLMClient(llmClient)
+
+    // Integrate with processors
+    processor := processor.New(llmClient, other deps...)
+}
+```
+
+#### **Workflow Components Integration**
+**Package**: `pkg/workflow/` → **Integration Point**: `cmd/*/main.go`
+```go
+// Integration pattern for workflow components
+func main() {
+    // Workflow engine integration
+    engine := workflow.NewEngine(config.Workflow)
+
+    // Integrate with API server
+    apiServer.SetWorkflowEngine(engine)
+
+    // Integrate with alert processor
+    alertProcessor.SetWorkflowEngine(engine)
+}
+```
+
+#### **Platform Components Integration**
+**Package**: `pkg/platform/` → **Integration Point**: `cmd/*/main.go`
+```go
+// Integration pattern for platform components
+func main() {
+    // Kubernetes client integration
+    k8sClient := k8s.NewClient(config.Kubernetes)
+
+    // Integrate with executor
+    executor := executor.New(k8sClient)
+
+    // Integrate with workflow engine
+    workflowEngine.SetExecutor(executor)
+}
+```
+
+### **TIMING 4: Configuration Integration Timing**
+
+#### **Development Configuration (Immediate)**
+```yaml
+# config/development.yaml - Integration during development
+llm:
+  endpoint: "http://localhost:8080"  # Local development
+  provider: "ollama"
+  model: "llama2"
+
+holmesgpt:
+  endpoint: "http://localhost:3000"  # Local HolmesGPT
+  llm_base_url: "http://localhost:8080"
+```
+
+#### **Production Configuration (Deployment)**
+```yaml
+# config/production.yaml - Integration for deployment
+llm:
+  endpoint: "${LLM_ENDPOINT}"  # Environment variable
+  provider: "${LLM_PROVIDER}"
+  model: "${LLM_MODEL}"
+
+holmesgpt:
+  endpoint: "${HOLMESGPT_ENDPOINT}"
+  llm_base_url: "${HOLMESGPT_LLM_BASE_URL}"
+```
+
+### **TIMING 5: Integration Validation Checkpoints**
+
+#### **PRE-COMMIT INTEGRATION CHECK**
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit - Integration timing validation
+
+echo "🔗 Validating integration timing compliance..."
+
+# Check if new business components are properly integrated
+NEW_COMPONENTS=$(git diff --name-only --cached | grep "pkg/.*\.go" | grep -v "_test.go")
+
+for component_file in $NEW_COMPONENTS; do
+    # Extract component names from file
+    COMPONENT_NAMES=$(grep -o "type [A-Z][a-zA-Z]*" "$component_file" | cut -d' ' -f2)
+
+    for component_name in $COMPONENT_NAMES; do
+        # Check if component is integrated in main applications
+        MAIN_USAGE=$(grep -r "$component_name" cmd/ --include="*.go" | wc -l)
+
+        if [ "$MAIN_USAGE" -eq 0 ]; then
+            echo "❌ INTEGRATION TIMING VIOLATION: $component_name not integrated"
+            echo "📁 File: $component_file"
+            echo "🔧 Required: Integrate in cmd/ before commit"
+            exit 1
+        fi
+    done
+done
+
+echo "✅ Integration timing validation passed"
+```
+
+### **INTEGRATION ANTI-PATTERNS TO AVOID**
+
+#### **❌ ANTI-PATTERN 1: Delayed Integration**
+```go
+// WRONG: Creating component without immediate integration
+type AdvancedAnalyzer struct { // ❌ Created but not integrated
+    sophisticated features...
+}
+// Component exists but not used in main.go
+
+// CORRECT: Integration during GREEN phase
+type AdvancedAnalyzer struct {
+    features...
+}
+// IMMEDIATELY add to main.go:
+// analyzer := NewAdvancedAnalyzer()
+// processor.SetAnalyzer(analyzer)
+```
+
+#### **❌ ANTI-PATTERN 2: REFACTOR Phase Integration**
+```go
+// WRONG: Adding integration during REFACTOR
+func (a *Analyzer) EnhancedMethod() {
+    // sophisticated refactor implementation
+}
+// THEN adding to main.go ❌ TOO LATE
+
+// CORRECT: Integration exists in GREEN, preserved in REFACTOR
+// main.go already has: analyzer.EnhancedMethod()
+// REFACTOR just enhances the method implementation
+```
+
+#### **❌ ANTI-PATTERN 3: Test-Only Integration**
+```go
+// WRONG: Component only used in tests
+func TestAnalyzer(t *testing.T) {
+    analyzer := NewAnalyzer() // ❌ Only used here
+}
+// No usage in cmd/
+
+// CORRECT: Component used in main AND tests
+// main.go: analyzer := NewAnalyzer()
+// test: analyzer := NewAnalyzer() // Same component
+```
+
+## Build System
+- Use [Makefile](mdc:Makefile) for all build operations
+- Development workflow: `make bootstrap-dev`, `make test-integration-dev`, `make cleanup-dev`
+- Testing: `make test` (unit), `make test-integration` (integration), `make test-e2e` (end-to-end)
+
+## LLM Integration Setup
+For development with local LLM integration, use the optimal ramalama configuration:
+
+```bash
+# Optimal ramalama command for kubernaut development
+ramalama serve --ctx-size 8192 --threads 20 --ngl 999 --temp 0.1 --webui off --runtime-args="-c 8192 --mlock --no-mmap" hf://ggml-org/gpt-oss-20b-GGUF
+```
+
+**Key Parameters:**
+- `--ctx-size 8192`: Sufficient context for 4,491+ token prompts (1.8x safety margin)
+- `--threads 20 --ngl 999`: GPU acceleration and multi-threading
+- `--temp 0.1`: Consistent, focused responses for production use
+- `--runtime-args="-c 8192 --mlock --no-mmap"`: Optimized memory management
+
+**Default Configuration:**
+By default, kubernaut uses direct connections:
+- LLM Endpoint: `http://192.168.1.169:8080`
+- HolmesGPT LLM: `http://192.168.1.169:8080`
+- HolmesGPT Service: `http://localhost:3000`
+
+**SSH Tunnel Setup (for Cursor IDE only):**
+If using Cursor IDE (which has network restrictions), create SSH tunnel:
+```bash
+ssh -L 8080:localhost:8080 user@remote-host
+```
+
+Then override endpoints with environment variables (Cursor sessions only):
+```bash
+export LLM_ENDPOINT=http://localhost:8080
+export HOLMESGPT_LLM_BASE_URL=http://localhost:8080
+export LLM_MODEL=ggml-org/gpt-oss-20b-GGUF
+export LLM_PROVIDER=ramalama
+export HOLMESGPT_ENDPOINT=http://localhost:3000
+```
+
+**Important:** Environment variable overrides are for development convenience only. The default configuration in scripts and docker-compose remains `http://192.168.1.169:8080` for production consistency.

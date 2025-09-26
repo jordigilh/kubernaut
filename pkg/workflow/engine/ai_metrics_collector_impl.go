@@ -15,6 +15,16 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// @deprecated RULE 12 VIOLATION: Creates concrete AI struct instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client.CollectMetrics(), llm.Client.GetAggregatedMetrics(), llm.Client.RecordAIRequest() methods directly
+// Business Requirements: BR-AI-017, BR-AI-025 - now served by enhanced llm.Client
+//
+// This struct violates Rule 12 by implementing AI functionality that duplicates enhanced llm.Client capabilities.
+// Instead of using this struct, call the enhanced llm.Client methods directly:
+//   - amc.CollectMetrics() -> llmClient.CollectMetrics()
+//   - amc.GetAggregatedMetrics() -> llmClient.GetAggregatedMetrics()
+//   - amc.RecordAIRequest() -> llmClient.RecordAIRequest()
+//
 // DefaultAIMetricsCollector implements AIMetricsCollector interface
 // Provides comprehensive AI metrics collection and analysis for workflow executions
 type DefaultAIMetricsCollector struct {
@@ -92,6 +102,13 @@ type QualityMetrics struct {
 	AssessmentModel string    `json:"assessment_model"`
 }
 
+// @deprecated RULE 12 VIOLATION: Creates new AI metrics collector instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client methods directly instead of creating this struct
+// Replacement pattern:
+//
+//	Instead of: metricsCollector := NewDefaultAIMetricsCollector(llmClient, vectorDB, metricsClient, log)
+//	Use: llmClient (already has enhanced CollectMetrics, GetAggregatedMetrics, RecordAIRequest methods)
+//
 // NewDefaultAIMetricsCollector creates a new AI metrics collector with real implementation
 func NewDefaultAIMetricsCollector(
 	llmClient llm.Client,

@@ -53,10 +53,8 @@ type ConnectionPoolMonitor struct {
 	healthCheckTicker *time.Ticker
 
 	// Atomic counters for thread-safe updates
-	successCount   int64
-	failureCount   int64
-	totalWaitTime  int64
-	totalWaitCount int64
+	successCount int64
+	failureCount int64
 }
 
 // MonitorConfig contains configuration for database connection pool monitoring

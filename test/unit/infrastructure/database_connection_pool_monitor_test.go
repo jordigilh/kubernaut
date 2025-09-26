@@ -123,7 +123,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 				monitor.Stop()
 			}
 			if db != nil {
-				db.Close()
+				_ = db.Close()
 			}
 			cancel()
 		})
@@ -215,7 +215,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 			connectionsMutex.Lock()
 			for _, conn := range connections {
 				if conn != nil {
-					conn.Close()
+					_ = conn.Close()
 				}
 			}
 			connectionsMutex.Unlock()
@@ -455,7 +455,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 
 			// Cleanup
 			for _, conn := range connections {
-				conn.Close()
+				_ = conn.Close()
 			}
 		})
 	})
@@ -495,7 +495,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 				monitor.Stop()
 			}
 			if db != nil {
-				db.Close()
+				_ = db.Close()
 			}
 			cancel()
 		})
@@ -524,7 +524,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 
 			// Act: Release connections to simulate recovery
 			for _, conn := range connections {
-				conn.Close()
+				_ = conn.Close()
 			}
 
 			time.Sleep(200 * time.Millisecond) // Allow metrics to update after recovery
@@ -573,7 +573,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 				monitor.Stop()
 			}
 			if db != nil {
-				db.Close()
+				_ = db.Close()
 			}
 			cancel()
 		})
@@ -606,7 +606,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 
 			// Cleanup connections
 			for _, conn := range connections {
-				conn.Close()
+				_ = conn.Close()
 			}
 		})
 	})
@@ -646,7 +646,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 				monitor.Stop()
 			}
 			if db != nil {
-				db.Close()
+				_ = db.Close()
 			}
 			cancel()
 		})
@@ -746,7 +746,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 				monitor.Stop()
 			}
 			if db != nil {
-				db.Close()
+				_ = db.Close()
 			}
 			cancel()
 		})
@@ -778,7 +778,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 
 			// Cleanup connections
 			for _, conn := range connections {
-				conn.Close()
+				_ = conn.Close()
 			}
 		})
 
@@ -811,7 +811,7 @@ var _ = Describe("Database Connection Pool Monitor", func() {
 
 			// Cleanup connections
 			for _, conn := range connections {
-				conn.Close()
+				_ = conn.Close()
 			}
 		})
 	})

@@ -15,9 +15,7 @@ type Range struct {
 	Max float64 `json:"max"`
 }
 
-// ResourceUsage is an alias for the shared ResourceUsageData type
-// to maintain backward compatibility while consolidating duplicated types
-type ResourceUsage = sharedtypes.ResourceUsageData
+// ResourceUsage alias removed - use sharedtypes.ResourceUsageData directly
 
 // PatternTimeRange represents a time range for pattern analysis
 type PatternTimeRange struct {

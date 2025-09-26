@@ -38,7 +38,7 @@ type VectorData struct {
 
 // ExternalVectorSearchResult represents a search result from external vector databases
 // Now uses embedded BaseSearchResult for consistency
-type ExternalVectorSearchResult = BaseSearchResult
+// ExternalVectorSearchResult alias removed - use BaseSearchResult directly
 
 // ExternalEmbeddingGenerator creates embeddings for external services
 type ExternalEmbeddingGenerator interface {

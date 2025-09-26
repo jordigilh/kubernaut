@@ -62,7 +62,7 @@ var _ = Describe("Prompt Validation and Edge Case Testing", Ordered, func() {
 
 	createSLMClient := func() llm.Client {
 		// Use fake client to eliminate external dependencies
-		return shared.NewFakeSLMClient()
+		return shared.NewTestSLMClient()
 	}
 
 	Context("Critical Decision Boundary Testing", func() {

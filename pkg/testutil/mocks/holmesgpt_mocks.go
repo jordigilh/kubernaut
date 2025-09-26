@@ -343,6 +343,140 @@ func (m *MockClient) CreateMockInvestigationForAlert(alert types.Alert) *holmesg
 	}
 }
 
+// Additional methods required by holmesgpt.Client interface
+
+// ParseAlertForStrategies implements Phase 2 TDD activation
+func (m *MockClient) ParseAlertForStrategies(alert interface{}) types.AlertContext {
+	return types.AlertContext{
+		ID:          "mock-alert-1",
+		Name:        "MockAlert",
+		Description: "Mock alert for strategy testing",
+		Severity:    "high",
+		Labels:      map[string]string{"mock": "true"},
+		Annotations: map[string]string{"source": "mock"},
+	}
+}
+
+// GenerateStrategyOrientedInvestigation implements Phase 2 TDD activation
+func (m *MockClient) GenerateStrategyOrientedInvestigation(alertContext types.AlertContext) string {
+	return fmt.Sprintf("Mock strategy investigation for alert %s with severity %s", alertContext.Name, alertContext.Severity)
+}
+
+// Enhanced AI Provider Methods (BR-ANALYSIS-001, BR-RECOMMENDATION-001, BR-INVESTIGATION-001)
+
+// ProvideAnalysis implements AnalysisProvider replacement
+func (m *MockClient) ProvideAnalysis(ctx context.Context, request interface{}) (interface{}, error) {
+	return map[string]interface{}{
+		"analysis_id": "mock-analysis-1",
+		"confidence":  0.85,
+		"findings":    []string{"Mock finding 1", "Mock finding 2"},
+		"status":      "completed",
+		"provider":    "holmesgpt-mock",
+	}, nil
+}
+
+// GetProviderCapabilities implements AnalysisProvider replacement
+func (m *MockClient) GetProviderCapabilities(ctx context.Context) ([]string, error) {
+	return []string{
+		"analysis",
+		"investigation",
+		"recommendation",
+		"pattern_detection",
+		"root_cause_analysis",
+		"historical_correlation",
+	}, nil
+}
+
+// GetProviderID implements AnalysisProvider replacement
+func (m *MockClient) GetProviderID(ctx context.Context) (string, error) {
+	return "holmesgpt-mock-provider", nil
+}
+
+// GenerateProviderRecommendations implements RecommendationProvider replacement
+func (m *MockClient) GenerateProviderRecommendations(ctx context.Context, context interface{}) ([]interface{}, error) {
+	return []interface{}{
+		map[string]interface{}{
+			"recommendation_id": "mock-rec-1",
+			"title":             "Mock Recommendation",
+			"description":       "Mock recommendation description",
+			"priority":          "high",
+			"confidence":        0.9,
+		},
+	}, nil
+}
+
+// ValidateRecommendationContext implements RecommendationProvider replacement
+func (m *MockClient) ValidateRecommendationContext(ctx context.Context, context interface{}) (bool, error) {
+	return true, nil
+}
+
+// PrioritizeRecommendations implements RecommendationProvider replacement
+func (m *MockClient) PrioritizeRecommendations(ctx context.Context, recommendations []interface{}) ([]interface{}, error) {
+	return recommendations, nil
+}
+
+// InvestigateAlert implements InvestigationProvider replacement
+func (m *MockClient) InvestigateAlert(ctx context.Context, alert *types.Alert, context interface{}) (interface{}, error) {
+	return map[string]interface{}{
+		"investigation_id": "mock-inv-1",
+		"alert_name":       alert.Name,
+		"findings":         []string{"Mock investigation finding"},
+		"root_cause":       "Mock root cause",
+		"confidence":       0.88,
+	}, nil
+}
+
+// GetInvestigationCapabilities implements InvestigationProvider replacement
+func (m *MockClient) GetInvestigationCapabilities(ctx context.Context) ([]string, error) {
+	return []string{
+		"alert_investigation",
+		"root_cause_analysis",
+		"pattern_correlation",
+		"historical_analysis",
+		"deep_investigation",
+		"performance_analysis",
+	}, nil
+}
+
+// PerformDeepInvestigation implements InvestigationProvider replacement
+func (m *MockClient) PerformDeepInvestigation(ctx context.Context, alert *types.Alert, depth string) (interface{}, error) {
+	return map[string]interface{}{
+		"investigation_id": "mock-deep-inv-1",
+		"depth":            depth,
+		"alert_name":       alert.Name,
+		"deep_findings": []interface{}{
+			map[string]interface{}{
+				"category":   "resource_exhaustion",
+				"severity":   "high",
+				"confidence": 0.9,
+				"evidence":   []string{"mock_evidence_1", "mock_evidence_2"},
+			},
+		},
+		"root_causes": []string{"mock_root_cause_1", "mock_root_cause_2"},
+		"confidence":  0.88,
+	}, nil
+}
+
+// ValidateProviderHealth implements provider service management
+func (m *MockClient) ValidateProviderHealth(ctx context.Context) (interface{}, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return map[string]interface{}{
+		"healthy":              m.healthy,
+		"provider":             "holmesgpt-mock",
+		"analysis_ready":       true,
+		"investigation_ready":  true,
+		"recommendation_ready": true,
+	}, nil
+}
+
+// ConfigureProviderServices implements provider service management - THIS WAS THE MISSING METHOD!
+func (m *MockClient) ConfigureProviderServices(ctx context.Context, config interface{}) error {
+	// Mock implementation - just log that configuration was received
+	return nil
+}
+
 // MockDynamicToolsetManager provides a mock implementation for DynamicToolsetManager
 // Following project guideline: reuse existing mock patterns
 type MockDynamicToolsetManager struct {

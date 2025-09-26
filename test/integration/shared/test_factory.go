@@ -18,37 +18,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// MockAIMetricsCollector provides a test implementation of engine.AIMetricsCollector
-type MockAIMetricsCollector struct{}
+// @deprecated RULE 12 VIOLATION: MockAIMetricsCollector removed - using enhanced llm.Client methods directly
+// Migration: Use enhanced llm.Client methods in tests
 
-func (m *MockAIMetricsCollector) CollectMetrics(ctx context.Context, execution *engine.RuntimeWorkflowExecution) (map[string]float64, error) {
-	return map[string]float64{
-		"execution_time": execution.Duration.Seconds(),
-		"step_count":     float64(len(execution.Steps)),
-		"success_rate":   execution.GetSuccessRate(),
-	}, nil
-}
-
-func (m *MockAIMetricsCollector) GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange engine.WorkflowTimeRange) (map[string]float64, error) {
-	return map[string]float64{
-		"average_execution_time": 120.0,
-		"total_executions":       50.0,
-		"overall_success_rate":   0.85,
-	}, nil
-}
-
-func (m *MockAIMetricsCollector) RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error {
-	return nil
-}
-
-func (m *MockAIMetricsCollector) EvaluateResponseQuality(ctx context.Context, response string, context map[string]interface{}) (*engine.AIResponseQuality, error) {
-	return &engine.AIResponseQuality{
-		Score:      0.85,
-		Confidence: 0.9,
-		Relevance:  0.8,
-		Clarity:    0.85,
-	}, nil
-}
+// @deprecated RULE 12 VIOLATION: Removed MockAIMetricsCollector methods - using enhanced llm.Client methods directly
 
 // AnalyticsEngineAdapter adapts insights.AnalyticsEngineImpl to types.AnalyticsEngine
 type AnalyticsEngineAdapter struct {
@@ -175,18 +148,18 @@ func CreatePatternStoreForTesting(logger *logrus.Logger) engine.PatternStore {
 
 // StandardTestSuite provides common test setup for all integration tests
 type StandardTestSuite struct {
-	SuiteName        string
-	Logger           *logrus.Logger
-	Ctx              context.Context
-	StateManager     *ComprehensiveStateManager
-	TestEnv          *testenv.TestEnvironment
-	DB               *sql.DB
-	LLMClient        llm.Client
-	VectorDB         vector.VectorDatabase
-	AnalyticsEngine  types.AnalyticsEngine
-	MetricsCollector engine.AIMetricsCollector
-	ExecutionRepo    engine.ExecutionRepository
-	WorkflowBuilder  *engine.DefaultIntelligentWorkflowBuilder
+	SuiteName       string
+	Logger          *logrus.Logger
+	Ctx             context.Context
+	StateManager    *ComprehensiveStateManager
+	TestEnv         *testenv.TestEnvironment
+	DB              *sql.DB
+	LLMClient       llm.Client
+	VectorDB        vector.VectorDatabase
+	AnalyticsEngine types.AnalyticsEngine
+	// RULE 12 COMPLIANCE: Removed AIMetricsCollector - using enhanced llm.Client methods directly
+	ExecutionRepo   engine.ExecutionRepository
+	WorkflowBuilder *engine.DefaultIntelligentWorkflowBuilder
 
 	// Configuration options
 	config *TestSuiteConfig
@@ -357,7 +330,7 @@ func (s *StandardTestSuite) setupLLMClient() error {
 		s.LLMClient = NewSLMClient()
 	} else {
 		// Use mock client for faster tests
-		s.LLMClient = NewFakeSLMClient()
+		s.LLMClient = NewTestSLMClient()
 	}
 
 	if !s.LLMClient.IsHealthy() {
@@ -392,23 +365,27 @@ func (s *StandardTestSuite) setupWorkflowComponents() error {
 		s.AnalyticsEngine = &AnalyticsEngineAdapter{engine: insightsEngine}
 	}
 
-	// Setup metrics collector
-	s.MetricsCollector = &MockAIMetricsCollector{}
+	// RULE 12 COMPLIANCE: Removed AIMetricsCollector - using enhanced llm.Client methods directly
 
 	// Setup execution repository
 	s.ExecutionRepo = engine.NewInMemoryExecutionRepository(s.Logger)
 
-	// Setup workflow builder using interface types
+	// Setup workflow builder using interface types with config pattern
 	patternStoreAdapter := &PatternStoreAdapter{store: patternStore}
-	s.WorkflowBuilder = engine.NewIntelligentWorkflowBuilder(
-		s.LLMClient,
-		s.VectorDB,
-		s.AnalyticsEngine,
-		s.MetricsCollector,
-		patternStoreAdapter,
-		s.ExecutionRepo,
-		s.Logger,
-	)
+	config := &engine.IntelligentWorkflowBuilderConfig{
+		LLMClient:       s.LLMClient,
+		VectorDB:        s.VectorDB,
+		AnalyticsEngine: s.AnalyticsEngine,
+		PatternStore:    patternStoreAdapter,
+		ExecutionRepo:   s.ExecutionRepo,
+		Logger:          s.Logger,
+	}
+
+	var err error
+	s.WorkflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+	if err != nil {
+		return fmt.Errorf("failed to create workflow builder: %w", err)
+	}
 
 	return nil
 }

@@ -2,6 +2,7 @@ package holmesgpt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -18,6 +19,7 @@ type ServiceIntegrationInterface interface {
 	GetServiceDiscoveryStats() ServiceDiscoveryStats
 	RefreshToolsets(ctx context.Context) error
 	GetHealthStatus() ServiceIntegrationHealth
+	CheckKubernetesConnectivity(ctx context.Context) error
 }
 
 // ServiceIntegration provides integration between dynamic toolset manager and HolmesGPT API
@@ -280,4 +282,89 @@ type ServiceIntegrationHealth struct {
 	DiscoveredServices      int       `json:"discovered_services"`
 	AvailableServices       int       `json:"available_services"`
 	LastUpdate              time.Time `json:"last_update"`
+}
+
+// CheckKubernetesConnectivity validates Kubernetes cluster connectivity
+// TDD REFACTOR: Enhanced with comprehensive connectivity validation and Kubernetes Safety patterns
+// Business Requirement: BR-SERVICE-INTEGRATION-003 - Kubernetes connectivity validation
+func (si *ServiceIntegration) CheckKubernetesConnectivity(ctx context.Context) error {
+	si.log.WithFields(logrus.Fields{
+		"operation": "kubernetes_connectivity_check",
+		"component": "service_integration",
+	}).Debug("Starting comprehensive Kubernetes connectivity validation")
+
+	// Phase 1: Service Discovery Connectivity (existing infrastructure)
+	services := si.serviceDiscovery.GetDiscoveredServices()
+
+	if len(services) == 0 {
+		si.log.Error("No Kubernetes services discovered - cluster connectivity may be impaired")
+		return fmt.Errorf("no Kubernetes services discovered - cluster connectivity may be impaired")
+	}
+
+	// Phase 2: Service Health Validation (leverage existing health checks)
+	healthyServices := 0
+	unhealthyServices := 0
+	connectivityIssues := []string{}
+
+	for _, service := range services {
+		if service.Available {
+			healthyServices++
+		} else {
+			unhealthyServices++
+			if service.HealthStatus.ErrorMessage != "" {
+				connectivityIssues = append(connectivityIssues,
+					fmt.Sprintf("Service %s/%s: %s", service.Namespace, service.Name, service.HealthStatus.ErrorMessage))
+			}
+		}
+	}
+
+	// Phase 3: Connectivity Assessment following Kubernetes Safety patterns
+	totalServices := len(services)
+	healthPercentage := float64(healthyServices) / float64(totalServices) * 100
+
+	si.log.WithFields(logrus.Fields{
+		"total_services":     totalServices,
+		"healthy_services":   healthyServices,
+		"unhealthy_services": unhealthyServices,
+		"health_percentage":  healthPercentage,
+	}).Info("Kubernetes connectivity assessment completed")
+
+	// Phase 4: Safety Threshold Validation (following Kubernetes Safety patterns)
+	// Require at least 70% of services to be healthy for good connectivity
+	const healthThreshold = 70.0
+
+	if healthPercentage < healthThreshold {
+		errorMsg := fmt.Sprintf("Kubernetes connectivity degraded: only %.1f%% of services healthy (threshold: %.1f%%)",
+			healthPercentage, healthThreshold)
+
+		if len(connectivityIssues) > 0 {
+			errorMsg += fmt.Sprintf(". Issues: %v", connectivityIssues)
+		}
+
+		si.log.WithFields(logrus.Fields{
+			"health_percentage": healthPercentage,
+			"threshold":         healthThreshold,
+			"issues":            connectivityIssues,
+		}).Warn("Kubernetes connectivity below safety threshold")
+
+		return errors.New(errorMsg)
+	}
+
+	// Phase 5: Toolset Manager Connectivity (validate integration layer)
+	toolsetStats := si.dynamicToolsetManager.GetToolsetStats()
+	if toolsetStats.TotalToolsets == 0 {
+		si.log.Warn("No toolsets available - dynamic toolset manager connectivity may be impaired")
+		return fmt.Errorf("dynamic toolset manager has no available toolsets - integration connectivity impaired")
+	}
+
+	// Success: Comprehensive connectivity validated
+	si.log.WithFields(logrus.Fields{
+		"health_percentage":   healthPercentage,
+		"healthy_services":    healthyServices,
+		"total_toolsets":      toolsetStats.TotalToolsets,
+		"enabled_toolsets":    toolsetStats.EnabledCount,
+		"connectivity_status": "optimal",
+	}).Info("Kubernetes connectivity validation successful - all systems operational")
+
+	return nil
 }

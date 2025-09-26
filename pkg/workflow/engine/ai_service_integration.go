@@ -129,57 +129,19 @@ func (asi *AIServiceIntegrator) DetectAndConfigure(ctx context.Context) (*AIServ
 	return status, nil
 }
 
-// CreateConfiguredAIMetricsCollector creates an AI metrics collector based on service availability
-func (asi *AIServiceIntegrator) CreateConfiguredAIMetricsCollector(ctx context.Context) AIMetricsCollector {
-	// Business Requirement: Use real implementation when services are available, fail-fast otherwise
+// @deprecated RULE 12 VIOLATION: Creates AIMetricsCollector instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client methods directly:
+// - llmClient.CollectMetrics(ctx, execution)
+// - llmClient.GetAggregatedMetrics(ctx, workflowID, timeRange)
+// - llmClient.RecordAIRequest(ctx, requestID, prompt, response)
+// Business Requirements: BR-AI-017, BR-AI-025 - now served by enhanced llm.Client
 
-	status, err := asi.DetectAndConfigure(ctx)
-	if err != nil {
-		asi.log.WithError(err).Warn("Failed to detect AI services, using fail-fast implementation")
-		return &FailFastAIMetricsCollector{}
-	}
-
-	// Use real implementation if LLM is available
-	if status.LLMAvailable && asi.llmClient != nil {
-		asi.log.Info("Creating real AI metrics collector with LLM integration")
-		return NewRealAIMetricsCollector(
-			asi.llmClient,
-			asi.vectorDB,
-			asi.metricsClient,
-			asi.log,
-		)
-	}
-
-	// Use fail-fast implementation with informative logging
-	asi.log.WithField("endpoint", asi.config.SLM.Endpoint).Warn("LLM service unavailable, using fail-fast AI metrics collector")
-	return &FailFastAIMetricsCollector{}
-}
-
-// CreateConfiguredLearningEnhancedPromptBuilder creates a prompt builder based on service availability
-func (asi *AIServiceIntegrator) CreateConfiguredLearningEnhancedPromptBuilder(ctx context.Context, executionRepo ExecutionRepository) LearningEnhancedPromptBuilder {
-	// Business Requirement: Use real implementation when services are available, fail-fast otherwise
-
-	status, err := asi.DetectAndConfigure(ctx)
-	if err != nil {
-		asi.log.WithError(err).Warn("Failed to detect AI services, using fail-fast implementation")
-		return &FailFastLearningEnhancedPromptBuilder{}
-	}
-
-	// Use real implementation if LLM is available
-	if status.LLMAvailable && asi.llmClient != nil {
-		asi.log.Info("Creating real learning-enhanced prompt builder with LLM integration")
-		return NewRealLearningEnhancedPromptBuilder(
-			asi.llmClient,
-			asi.vectorDB,
-			executionRepo,
-			asi.log,
-		)
-	}
-
-	// Use fail-fast implementation with informative logging
-	asi.log.WithField("endpoint", asi.config.SLM.Endpoint).Warn("LLM service unavailable, using fail-fast prompt builder")
-	return &FailFastLearningEnhancedPromptBuilder{}
-}
+// @deprecated RULE 12 VIOLATION: Creates LearningEnhancedPromptBuilder instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client methods directly:
+// - llmClient.BuildPrompt(ctx, template, context)
+// - llmClient.LearnFromExecution(ctx, execution)
+// - llmClient.GetOptimizedTemplate(ctx, templateID)
+// Business Requirements: BR-PROMPT-001 - now served by enhanced llm.Client
 
 // TestLLMConnectivity performs a test request to verify LLM integration
 func (asi *AIServiceIntegrator) TestLLMConnectivity(ctx context.Context) error {
@@ -339,15 +301,8 @@ func NewDefaultWorkflowEngineWithAIIntegration(
 		}
 	}
 
-	// Create AI condition evaluator based on service availability
-	// Business Requirement: BR-AI-COND-001 - Use real AI condition evaluator instead of nil
-	// Following development guideline: integrate with existing code (use factory pattern)
-	aiConditionEvaluator := NewDefaultAIConditionEvaluator(
-		llmClient,
-		holmesClient,
-		integrator.vectorDB,
-		log,
-	)
+	// RULE 12 COMPLIANCE: Removed AIConditionEvaluator creation - using enhanced llm.Client directly
+	// Business Requirement: BR-AI-COND-001 - now served by enhanced llm.Client methods
 
 	// Create the enhanced workflow engine with AI integration
 	// Following development guideline: integrate with existing code (use NewDefaultWorkflowEngine)
@@ -361,8 +316,25 @@ func NewDefaultWorkflowEngineWithAIIntegration(
 		log,
 	)
 
-	// Set the AI condition evaluator to enable AI-enhanced workflow features
-	workflowEngine.SetAIConditionEvaluator(aiConditionEvaluator)
+	// RULE 12 COMPLIANCE: Set enhanced llm.Client instead of deprecated AIConditionEvaluator
+	if llmClient != nil {
+		workflowEngine.SetLLMClient(llmClient)
+	}
+
+	// Create and set learning enhanced prompt builder
+	// Business Requirements: BR-AI-PROMPT-001 through BR-AI-PROMPT-004
+	if llmClient != nil && vectorDB != nil && executionRepo != nil {
+		promptBuilder := NewDefaultLearningEnhancedPromptBuilder(
+			llmClient,
+			vectorDB,
+			executionRepo,
+			log,
+		)
+		workflowEngine.SetPromptBuilder(promptBuilder)
+		log.Info("✅ Learning Enhanced Prompt Builder integrated successfully")
+	} else {
+		log.Warn("Learning Enhanced Prompt Builder not created - missing dependencies (LLM client, vector DB, or execution repo)")
+	}
 
 	log.WithFields(logrus.Fields{
 		"ai_integration_enabled":     true,
@@ -750,7 +722,7 @@ func (asi *AIServiceIntegrator) generateContextSummary(enrichedAlert types.Alert
 		contextParts = append(contextParts, fmt.Sprintf("Context Enrichment: Enhanced at %s with historical and metrics data", enrichmentTime))
 	}
 
-	return fmt.Sprintf("- %s", fmt.Sprintf(strings.Join(contextParts, "\n- ")))
+	return fmt.Sprintf("- %s", strings.Join(contextParts, "\n- "))
 }
 
 // GatherCurrentMetricsContext reuses existing MetricsClient pattern from ai_insights_impl.go

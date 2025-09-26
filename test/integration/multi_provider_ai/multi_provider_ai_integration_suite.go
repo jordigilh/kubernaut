@@ -6,8 +6,6 @@ package multi_provider_ai
 import (
 	"context"
 	"fmt"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -15,13 +13,19 @@ import (
 	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/testutil/hybrid"
 )
 
 // MultiProviderAIIntegrationSuite provides comprehensive integration testing infrastructure
 // for Multi-Provider AI Decision integration scenarios
 //
 // Business Requirements Supported:
-// - BR-AI-PROVIDER-001 to BR-AI-PROVIDER-012: Multi-provider failover, response fusion, and decision quality
+// - BR-AI-PROVIDER-001: Primary provider success scenarios
+// - BR-AI-PROVIDER-002: Provider failover mechanisms
+// - BR-AI-PROVIDER-003: Response quality validation
+// - BR-AI-PROVIDER-004: Provider health monitoring
+// - BR-AI-PROVIDER-005: Multi-provider response fusion
+// - BR-AI-PROVIDER-006: Provider performance benchmarking
 //
 // Following project guidelines:
 // - Reuse existing LLM client implementations
@@ -93,11 +97,11 @@ func (s *MultiProviderAIIntegrationSuite) initializeProviderClients() error {
 	s.PrimaryLLMClient = ramallamaClient
 	s.ProviderClients["ramalama"] = ramallamaClient
 
-	// Mock other providers for controlled testing
-	// Following user decision: Mock other providers for now, focus on ramalama
-	s.ProviderClients["openai"] = NewMockLLMClient("openai", s.Logger)
-	s.ProviderClients["huggingface"] = NewMockLLMClient("huggingface", s.Logger)
-	s.ProviderClients["ollama"] = NewMockLLMClient("ollama", s.Logger)
+	// Mock other providers for controlled testing using existing infrastructure
+	// Following project guidelines: REUSE existing mock infrastructure
+	s.ProviderClients["openai"] = hybrid.CreateLLMClient(s.Logger)
+	s.ProviderClients["huggingface"] = hybrid.CreateLLMClient(s.Logger)
+	s.ProviderClients["ollama"] = hybrid.CreateLLMClient(s.Logger)
 
 	// Set fallback to first available mock for controlled scenarios
 	s.FallbackLLMClient = s.ProviderClients["openai"]
@@ -242,99 +246,5 @@ func (s *MultiProviderAIIntegrationSuite) Cleanup() {
 	s.Logger.Info("Cleaning up Multi-Provider AI Integration Suite")
 }
 
-// MockLLMClient implements llm.Client interface for controlled testing
-type MockLLMClient struct {
-	providerName string
-	logger       *logrus.Logger
-	mu           sync.RWMutex
-}
-
-// NewMockLLMClient creates a new mock LLM client
-func NewMockLLMClient(providerName string, logger *logrus.Logger) *MockLLMClient {
-	return &MockLLMClient{
-		providerName: providerName,
-		logger:       logger,
-	}
-}
-
-// GenerateResponse implements llm.Client interface
-func (m *MockLLMClient) GenerateResponse(prompt string) (string, error) {
-	m.logger.WithField("provider", m.providerName).Info("Mock LLM generating response")
-	return fmt.Sprintf("Mock response from %s provider", m.providerName), nil
-}
-
-// ChatCompletion implements llm.Client interface
-func (m *MockLLMClient) ChatCompletion(ctx context.Context, prompt string) (string, error) {
-	return m.GenerateResponse(prompt)
-}
-
-// AnalyzeAlert implements llm.Client interface
-func (m *MockLLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*llm.AnalyzeAlertResponse, error) {
-	// Convert interface{} to types.Alert for processing
-	var alertName string
-	if typedAlert, ok := alert.(types.Alert); ok {
-		alertName = typedAlert.Name
-	} else {
-		alertName = "unknown"
-	}
-
-	m.logger.WithFields(logrus.Fields{
-		"provider":   m.providerName,
-		"alert_name": alertName,
-	}).Info("Mock LLM analyzing alert")
-
-	// Return predictable mock response for controlled testing
-	return &llm.AnalyzeAlertResponse{
-		Action:     "mock_action_" + strings.ToLower(alertName),
-		Confidence: 0.7, // Standard mock confidence
-		Parameters: map[string]interface{}{
-			"provider": m.providerName,
-			"mock":     true,
-		},
-	}, nil
-}
-
-// IsHealthy implements llm.Client interface
-func (m *MockLLMClient) IsHealthy() bool {
-	return true // Mocks are always healthy
-}
-
-// LivenessCheck implements llm.Client interface for health monitoring
-func (m *MockLLMClient) LivenessCheck(ctx context.Context) error {
-	return nil // Mock is always alive
-}
-
-// ReadinessCheck implements llm.Client interface for health monitoring
-func (m *MockLLMClient) ReadinessCheck(ctx context.Context) error {
-	return nil // Mock is always ready
-}
-
-// GetEndpoint implements llm.Client interface
-func (m *MockLLMClient) GetEndpoint() string {
-	return "mock://" + m.providerName
-}
-
-// GetModel implements llm.Client interface
-func (m *MockLLMClient) GetModel() string {
-	return "mock-model-" + m.providerName
-}
-
-// GetMinParameterCount implements llm.Client interface
-func (m *MockLLMClient) GetMinParameterCount() int64 {
-	return 1000000 // 1M parameters for mock
-}
-
-// GenerateWorkflow implements llm.Client interface
-func (m *MockLLMClient) GenerateWorkflow(ctx context.Context, objective *llm.WorkflowObjective) (*llm.WorkflowGenerationResult, error) {
-	// Return a simple mock workflow result using correct structure
-	return &llm.WorkflowGenerationResult{
-		WorkflowID:  "mock-workflow-" + m.providerName,
-		Success:     true,
-		GeneratedAt: "2024-01-01T00:00:00Z",
-		StepCount:   1,
-		Name:        "Mock Workflow - " + m.providerName,
-		Description: "Mock workflow generated by " + m.providerName + " provider",
-		Confidence:  0.8,
-		Reasoning:   "Mock workflow reasoning from " + m.providerName,
-	}, nil
-}
+// This file provides the MultiProviderAIIntegrationSuite infrastructure.
+// Actual tests are implemented in provider_failover_integration_test.go to avoid duplication.

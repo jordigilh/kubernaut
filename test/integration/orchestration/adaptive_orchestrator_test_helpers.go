@@ -10,6 +10,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	adaptive "github.com/jordigilh/kubernaut/pkg/orchestration/adaptive"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
@@ -18,28 +19,133 @@ import (
 // Business Contract Helper Functions Implementation
 // Following guideline: Define business contracts to enable test compilation
 
-// createFailingSelfOptimizer creates a Self Optimizer that always fails for resilience testing
-func createFailingSelfOptimizer(workflowBuilder engine.IntelligentWorkflowBuilder, logger *logrus.Logger) engine.SelfOptimizer {
-	// Business Contract: Failing Self Optimizer for resilience testing
-	return &FailingSelfOptimizer{
-		workflowBuilder: workflowBuilder,
-		logger:          logger,
+// createFailingLLMClient creates an LLM client that always fails for resilience testing
+// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+func createFailingLLMClient(logger *logrus.Logger) llm.Client {
+	// Business Contract: Failing LLM Client for resilience testing
+	return &FailingLLMClient{
+		logger: logger,
 	}
 }
 
-// FailingSelfOptimizer implements SelfOptimizer but always fails for testing
-type FailingSelfOptimizer struct {
-	workflowBuilder engine.IntelligentWorkflowBuilder
-	logger          *logrus.Logger
+// FailingLLMClient implements llm.Client but always fails for testing
+// RULE 12 COMPLIANCE: Replaces deprecated FailingSelfOptimizer
+type FailingLLMClient struct {
+	logger *logrus.Logger
 }
 
-func (f *FailingSelfOptimizer) OptimizeWorkflow(ctx context.Context, workflow *engine.Workflow, executionHistory []*engine.RuntimeWorkflowExecution) (*engine.Workflow, error) {
-	f.logger.Debug("FailingSelfOptimizer: Simulating optimization failure for resilience testing")
-	return nil, fmt.Errorf("simulated Self Optimizer failure for resilience testing")
+// Implement the minimal required methods for testing
+func (f *FailingLLMClient) GenerateResponse(prompt string) (string, error) {
+	return "", fmt.Errorf("simulated LLM client failure")
 }
 
-func (f *FailingSelfOptimizer) SuggestImprovements(ctx context.Context, workflow *engine.Workflow) ([]*engine.OptimizationSuggestion, error) {
-	return nil, fmt.Errorf("simulated Self Optimizer failure for resilience testing")
+func (f *FailingLLMClient) ChatCompletion(ctx context.Context, prompt string) (string, error) {
+	return "", fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*llm.AnalyzeAlertResponse, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) GenerateWorkflow(ctx context.Context, objective *llm.WorkflowObjective) (*llm.WorkflowGenerationResult, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) IsHealthy() bool {
+	return false
+}
+
+func (f *FailingLLMClient) LivenessCheck(ctx context.Context) error {
+	return fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) ReadinessCheck(ctx context.Context) error {
+	return fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) GetEndpoint() string {
+	return "failing-test-endpoint"
+}
+
+func (f *FailingLLMClient) GetModel() string {
+	return "failing-test-model"
+}
+
+func (f *FailingLLMClient) GetMinParameterCount() int64 {
+	return 0
+}
+
+func (f *FailingLLMClient) EvaluateCondition(ctx context.Context, condition interface{}, context interface{}) (bool, error) {
+	return false, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) ValidateCondition(ctx context.Context, condition interface{}) error {
+	return fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) CollectMetrics(ctx context.Context, execution interface{}) (map[string]float64, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange interface{}) (map[string]float64, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error {
+	return fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) RegisterPromptVersion(ctx context.Context, version interface{}) error {
+	return fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) GetOptimalPrompt(ctx context.Context, objective interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) StartABTest(ctx context.Context, experiment interface{}) error {
+	return fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) OptimizeWorkflow(ctx context.Context, workflow interface{}, executionHistory interface{}) (interface{}, error) {
+	f.logger.Debug("FailingLLMClient: Simulating optimization failure for resilience testing")
+	return nil, fmt.Errorf("simulated LLM client failure for resilience testing")
+}
+
+func (f *FailingLLMClient) SuggestOptimizations(ctx context.Context, workflow interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("simulated LLM client failure for resilience testing")
+}
+
+func (f *FailingLLMClient) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {
+	return "", fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) LearnFromExecution(ctx context.Context, execution interface{}) error {
+	return fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) GetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
+	return "", fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) AnalyzePatterns(ctx context.Context, executionData []interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) PredictEffectiveness(ctx context.Context, workflow interface{}) (float64, error) {
+	return 0, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) ClusterWorkflows(ctx context.Context, executionData []interface{}, config map[string]interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) AnalyzeTrends(ctx context.Context, executionData []interface{}, timeRange interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
+}
+
+func (f *FailingLLMClient) DetectAnomalies(ctx context.Context, executionData []interface{}) (interface{}, error) {
+	return nil, fmt.Errorf("simulated LLM client failure")
 }
 
 // createTestWorkflowTemplate creates a test workflow template for integration testing

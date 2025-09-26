@@ -1,0 +1,213 @@
+# E2E Test Scenarios Configuration
+# BR-E2E-004: Comprehensive remediation scenario definitions for end-to-end testing
+
+test_scenarios:
+  # Basic remediation scenarios
+  - name: "high-cpu-remediation"
+    description: "Tests automatic scaling response to high CPU usage"
+    category: "resource-management"
+    priority: "high"
+    estimated_duration: "10m"
+    environment_requirements:
+      namespaces: ["high-cpu-test"]
+      workloads:
+        - name: "cpu-intensive-app"
+          replicas: 2
+          resources:
+            cpu: "100m"
+            memory: "128Mi"
+    alert_simulation:
+      type: "high_cpu"
+      severity: "high"
+      threshold: "80%"
+    expected_actions:
+      - "scale_up"
+      - "validate_resources"
+      - "monitor_performance"
+    success_criteria:
+      cpu_utilization_after: "<70%"
+      response_time: "<300s"
+      no_service_disruption: true
+
+  - name: "memory-pressure-remediation"
+    description: "Tests memory optimization and scaling workflows"
+    category: "resource-management"
+    priority: "high"
+    estimated_duration: "8m"
+    environment_requirements:
+      namespaces: ["memory-test"]
+      workloads:
+        - name: "memory-intensive-app"
+          replicas: 1
+          resources:
+            cpu: "50m"
+            memory: "256Mi"
+    alert_simulation:
+      type: "high_memory"
+      severity: "high"
+      threshold: "85%"
+    expected_actions:
+      - "scale_up"
+      - "memory_optimization"
+      - "investigate_memory_leak"
+    success_criteria:
+      memory_utilization_after: "<75%"
+      response_time: "<240s"
+      no_oom_kills: true
+
+  - name: "pod-crashloop-remediation"
+    description: "Tests automatic recovery from pod crash loops"
+    category: "stability"
+    priority: "critical"
+    estimated_duration: "12m"
+    environment_requirements:
+      namespaces: ["crashloop-test"]
+      workloads:
+        - name: "failing-app"
+          replicas: 1
+          simulate_failures: true
+    alert_simulation:
+      type: "pod_crash_loop"
+      severity: "critical"
+      restart_count: ">5"
+    expected_actions:
+      - "investigate_logs"
+      - "rollback_deployment"
+      - "check_configuration"
+    success_criteria:
+      pod_stability: true
+      restart_count_after: "<2"
+      response_time: "<600s"
+
+  - name: "service-down-remediation"
+    description: "Tests service recovery and health restoration"
+    category: "availability"
+    priority: "critical"
+    estimated_duration: "6m"
+    environment_requirements:
+      namespaces: ["service-test"]
+      workloads:
+        - name: "test-service"
+          replicas: 2
+          type: "deployment"
+    alert_simulation:
+      type: "service_down"
+      severity: "critical"
+      health_check_failures: ">3"
+    expected_actions:
+      - "restart_service"
+      - "health_check"
+      - "investigate_dependencies"
+    success_criteria:
+      service_availability: "100%"
+      recovery_time: "<120s"
+      no_data_loss: true
+
+  # Advanced scenarios with chaos engineering
+  - name: "resilience-under-chaos"
+    description: "Tests system resilience during chaos conditions"
+    category: "chaos-engineering"
+    priority: "medium"
+    estimated_duration: "15m"
+    environment_requirements:
+      namespaces: ["chaos-test"]
+      chaos_experiments:
+        - "pod-delete-experiment"
+        - "network-latency-experiment"
+    alert_simulation:
+      type: "multiple_alerts"
+      severity: "high"
+      chaos_induced: true
+    expected_actions:
+      - "isolate_affected_components"
+      - "reroute_traffic"
+      - "scale_healthy_instances"
+    success_criteria:
+      system_availability: ">95%"
+      max_recovery_time: "<300s"
+      no_cascading_failures: true
+
+  - name: "multi-cluster-coordination"
+    description: "Tests cross-cluster remediation coordination"
+    category: "multi-cluster"
+    priority: "medium"
+    estimated_duration: "20m"
+    environment_requirements:
+      clusters: ["primary", "secondary"]
+      namespaces: ["multi-cluster-test"]
+    alert_simulation:
+      type: "cluster_resource_exhaustion"
+      severity: "high"
+      affected_cluster: "primary"
+    expected_actions:
+      - "failover_to_secondary"
+      - "redistribute_workloads"
+      - "maintain_data_consistency"
+    success_criteria:
+      zero_downtime_failover: true
+      data_consistency: true
+      response_time: "<600s"
+
+  # Performance and scalability scenarios
+  - name: "high-load-performance"
+    description: "Tests system performance under high alert load"
+    category: "performance"
+    priority: "medium"
+    estimated_duration: "25m"
+    environment_requirements:
+      namespaces: ["performance-test"]
+      alert_generation_rate: "10/minute"
+    alert_simulation:
+      type: "high_volume_alerts"
+      count: "50+"
+      concurrent: true
+    expected_actions:
+      - "batch_processing"
+      - "prioritize_critical_alerts"
+      - "scale_processing_capacity"
+    success_criteria:
+      processing_latency: "<5s"
+      throughput: ">10 alerts/s"
+      no_dropped_alerts: true
+
+  - name: "ai-decision-validation"
+    description: "Tests AI decision-making accuracy under various conditions"
+    category: "ai-validation"
+    priority: "high"
+    estimated_duration: "18m"
+    environment_requirements:
+      namespaces: ["ai-test"]
+      ai_backend: "real_llm"
+    alert_simulation:
+      type: "complex_scenarios"
+      variety: "high"
+      edge_cases: true
+    expected_actions:
+      - "analyze_alert_context"
+      - "generate_appropriate_workflow"
+      - "validate_ai_recommendations"
+    success_criteria:
+      ai_accuracy: ">90%"
+      appropriate_actions: true
+      safety_compliance: "100%"
+
+# Global test configuration
+global_config:
+  parallel_execution: false
+  cleanup_between_scenarios: true
+  continue_on_failure: false
+  timeout_per_scenario: "30m"
+
+# Monitoring and reporting
+monitoring:
+  collect_metrics: true
+  generate_reports: true
+  performance_benchmarking: true
+  business_outcome_tracking: true
+
+# Success thresholds
+success_thresholds:
+  overall_success_rate: ">95%"
+  critical_scenario_success: "100%"
+  performance_degradation: "<10%"
+  business_outcome_achievement: ">90%"

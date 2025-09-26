@@ -15,17 +15,17 @@ import (
 	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
-	sharedTypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 )
 
 // DefaultIntelligentWorkflowBuilder implements the IntelligentWorkflowBuilder interface
 // This is a real implementation that replaces the stub interface
 type DefaultIntelligentWorkflowBuilder struct {
-	llmClient        llm.Client
-	vectorDB         vector.VectorDatabase
-	analyticsEngine  sharedTypes.AnalyticsEngine
-	metricsCollector AIMetricsCollector
+	llmClient       llm.Client
+	vectorDB        vector.VectorDatabase
+	analyticsEngine types.AnalyticsEngine
+	// RULE 12 COMPLIANCE: Removed AIMetricsCollector - using enhanced llm.Client methods directly
 	patternStore     PatternStore
 	executionRepo    ExecutionRepository
 	templateFactory  *TemplateFactory
@@ -67,21 +67,43 @@ type StepHandler interface {
 	OptimizeStep(step *ExecutableWorkflowStep, metrics *ExecutionMetrics) (*ExecutableWorkflowStep, error)
 }
 
-// NewIntelligentWorkflowBuilder creates a new intelligent workflow builder
-func NewIntelligentWorkflowBuilder(
-	slmClient llm.Client,
-	vectorDB vector.VectorDatabase,
-	analyticsEngine sharedTypes.AnalyticsEngine,
-	metricsCollector AIMetricsCollector,
-	patternStore PatternStore,
-	executionRepo ExecutionRepository,
-	log *logrus.Logger,
-) *DefaultIntelligentWorkflowBuilder {
+// IntelligentWorkflowBuilderConfig contains all dependencies for creating an intelligent workflow builder
+// This config pattern prevents constructor parameter evolution issues and improves maintainability
+type IntelligentWorkflowBuilderConfig struct {
+	LLMClient       llm.Client            `json:"-" yaml:"-"` // AI client for workflow generation
+	VectorDB        vector.VectorDatabase `json:"-" yaml:"-"` // Vector database for pattern storage
+	AnalyticsEngine types.AnalyticsEngine `json:"-" yaml:"-"` // Analytics engine for metrics
+	PatternStore    PatternStore          `json:"-" yaml:"-"` // Pattern storage interface
+	ExecutionRepo   ExecutionRepository   `json:"-" yaml:"-"` // Execution repository for history
+	Logger          *logrus.Logger        `json:"-" yaml:"-"` // Logger instance
+}
+
+// Validate ensures all required dependencies are provided
+func (c *IntelligentWorkflowBuilderConfig) Validate() error {
+	if c.Logger == nil {
+		return fmt.Errorf("logger is required")
+	}
+	// Note: Other dependencies are optional and can be nil for graceful degradation
+	return nil
+}
+
+// NewIntelligentWorkflowBuilder creates a new intelligent workflow builder using config pattern
+// RULE 12 COMPLIANCE: Removed AIMetricsCollector parameter - using enhanced llm.Client methods directly
+func NewIntelligentWorkflowBuilder(config *IntelligentWorkflowBuilderConfig) (*DefaultIntelligentWorkflowBuilder, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	log := config.Logger
 	if log == nil {
 		log = logrus.New()
 	}
 
-	config := &WorkflowBuilderConfig{
+	builderConfig := &WorkflowBuilderConfig{
 		MaxWorkflowSteps:      20,
 		DefaultStepTimeout:    5 * time.Minute,
 		MaxRetries:            3,
@@ -98,24 +120,53 @@ func NewIntelligentWorkflowBuilder(
 	}
 
 	builder := &DefaultIntelligentWorkflowBuilder{
-		llmClient:        slmClient,
-		vectorDB:         vectorDB,
-		analyticsEngine:  analyticsEngine,
-		metricsCollector: metricsCollector,
-		patternStore:     patternStore,
-		executionRepo:    executionRepo,
+		llmClient:       config.LLMClient,
+		vectorDB:        config.VectorDB,
+		analyticsEngine: config.AnalyticsEngine,
+		// RULE 12 COMPLIANCE: Removed metricsCollector - using enhanced llm.Client methods directly
+		patternStore:     config.PatternStore,
+		executionRepo:    config.ExecutionRepo,
 		templateFactory:  &TemplateFactory{templates: make(map[string]*ExecutableTemplate)},
 		validator:        nil, // Will be set by caller
 		simulator:        NewWorkflowSimulator(nil, log),
 		workflowEngine:   nil, // Will be created when needed for real execution
 		log:              log,
-		config:           config,
+		config:           builderConfig,
 		stepTypeHandlers: make(map[StepType]StepHandler),
 		patternMatcher:   nil, // Will be implemented later
 	}
 
 	// Register step type handlers
 	builder.registerStepHandlers()
+
+	return builder, nil
+}
+
+// NewIntelligentWorkflowBuilderLegacy creates a new intelligent workflow builder using legacy parameter pattern
+// DEPRECATED: Use NewIntelligentWorkflowBuilder with IntelligentWorkflowBuilderConfig instead
+// This function is provided for backward compatibility during migration
+func NewIntelligentWorkflowBuilderLegacy(
+	slmClient llm.Client,
+	vectorDB vector.VectorDatabase,
+	analyticsEngine types.AnalyticsEngine,
+	patternStore PatternStore,
+	executionRepo ExecutionRepository,
+	log *logrus.Logger,
+) *DefaultIntelligentWorkflowBuilder {
+	config := &IntelligentWorkflowBuilderConfig{
+		LLMClient:       slmClient,
+		VectorDB:        vectorDB,
+		AnalyticsEngine: analyticsEngine,
+		PatternStore:    patternStore,
+		ExecutionRepo:   executionRepo,
+		Logger:          log,
+	}
+
+	builder, err := NewIntelligentWorkflowBuilder(config)
+	if err != nil {
+		// For backward compatibility, panic on error (matches old behavior)
+		panic(fmt.Sprintf("failed to create workflow builder: %v", err))
+	}
 
 	return builder
 }
@@ -270,7 +321,7 @@ func (b *DefaultIntelligentWorkflowBuilder) GenerateWorkflow(ctx context.Context
 		successRate := b.calculateSuccessRate(historicalExecutions)
 		optimizedTemplate.Metadata["success_rate"] = successRate
 
-	b.log.WithFields(logrus.Fields{
+		b.log.WithFields(logrus.Fields{
 			"success_rate":        successRate,
 			"executions_analyzed": len(historicalExecutions),
 		}).Debug("Added success rate analytics to workflow")
@@ -994,11 +1045,11 @@ func (b *DefaultIntelligentWorkflowBuilder) EnhanceWithAI(template *ExecutableTe
 // Business Requirement: BR-AI-001 - AI recommendations generation
 func (b *DefaultIntelligentWorkflowBuilder) GenerateAIRecommendations(ctx context.Context, workflow *Workflow, executions []*WorkflowExecution) *AIRecommendations {
 	b.log.WithFields(logrus.Fields{
-		"workflow_id":      workflow.ID,
-		"execution_count":  len(executions),
-		"business_req":     "BR-AI-001",
+		"workflow_id":     workflow.ID,
+		"execution_count": len(executions),
+		"business_req":    "BR-AI-001",
 	}).Debug("Generating AI-powered workflow recommendations")
-	
+
 	if workflow.Template == nil {
 		return &AIRecommendations{
 			WorkflowID:         workflow.ID,
@@ -1010,28 +1061,28 @@ func (b *DefaultIntelligentWorkflowBuilder) GenerateAIRecommendations(ctx contex
 			Metadata:           make(map[string]interface{}),
 		}
 	}
-	
+
 	// Analyze execution patterns for AI recommendations
 	recommendations := b.analyzeExecutionsForAIRecommendations(executions, workflow.Template)
-	
+
 	// Generate performance-based AI recommendations
 	performanceRecommendations := b.generatePerformanceBasedAIRecommendations(workflow.Template, executions)
 	recommendations = append(recommendations, performanceRecommendations...)
-	
+
 	// Generate resource optimization AI recommendations
 	resourceRecommendations := b.generateResourceOptimizationAIRecommendations(workflow.Template, executions)
 	recommendations = append(recommendations, resourceRecommendations...)
-	
+
 	// Generate failure prevention AI recommendations
 	failurePreventionRecommendations := b.generateFailurePreventionAIRecommendations(executions)
 	recommendations = append(recommendations, failurePreventionRecommendations...)
-	
+
 	// Calculate overall confidence using existing AI optimization functions
 	overallConfidence := b.calculateAIRecommendationConfidence(recommendations, executions)
-	
+
 	// Generate metadata
 	metadata := b.generateAIRecommendationMetadata(workflow.Template, executions, recommendations)
-	
+
 	aiRecommendations := &AIRecommendations{
 		WorkflowID:         workflow.ID,
 		RecommendationType: "comprehensive",
@@ -1041,14 +1092,14 @@ func (b *DefaultIntelligentWorkflowBuilder) GenerateAIRecommendations(ctx contex
 		ModelVersion:       "v2.1",
 		Metadata:           metadata,
 	}
-	
+
 	b.log.WithFields(logrus.Fields{
 		"workflow_id":          workflow.ID,
 		"recommendation_count": len(recommendations),
 		"confidence":           overallConfidence,
 		"business_req":         "BR-AI-001",
 	}).Debug("AI recommendations generation completed")
-	
+
 	return aiRecommendations
 }
 
@@ -1061,38 +1112,38 @@ func (b *DefaultIntelligentWorkflowBuilder) ApplyAIOptimizations(ctx context.Con
 		"confidence":        params.Confidence,
 		"business_req":      "BR-AI-002",
 	}).Debug("Applying AI-driven optimizations to workflow template")
-	
+
 	optimizedTemplate := b.deepCopyTemplate(template)
 	if optimizedTemplate == nil {
 		b.log.Error("Failed to copy template for AI optimization")
 		return template
 	}
-	
+
 	// Apply performance optimizations
 	if contains(params.TargetMetrics, "execution_time") {
 		b.applyAIPerformanceOptimizations(optimizedTemplate, params)
 	}
-	
+
 	// Apply success rate optimizations
 	if contains(params.TargetMetrics, "success_rate") {
 		b.applyAISuccessRateOptimizations(optimizedTemplate, params)
 	}
-	
+
 	// Apply resource usage optimizations
 	if contains(params.TargetMetrics, "resource_usage") {
 		b.applyAIResourceOptimizations(optimizedTemplate, params)
 	}
-	
+
 	// Apply learning-based optimizations using existing AI functions
-	if params.LearningData != nil && len(params.LearningData) > 0 {
+	if len(params.LearningData) > 0 {
 		b.applyAILearningOptimizations(optimizedTemplate, params)
 	}
-	
+
 	// Apply constraint-based optimizations
-	if params.Constraints != nil && len(params.Constraints) > 0 {
+	if len(params.Constraints) > 0 {
 		b.applyAIConstraintOptimizations(optimizedTemplate, params)
 	}
-	
+
 	// Add AI optimization metadata to all steps
 	for _, step := range optimizedTemplate.Steps {
 		if step.Variables == nil {
@@ -1103,13 +1154,13 @@ func (b *DefaultIntelligentWorkflowBuilder) ApplyAIOptimizations(ctx context.Con
 		step.Variables["ai_confidence"] = params.Confidence
 		step.Variables["model_version"] = params.ModelVersion
 	}
-	
+
 	b.log.WithFields(logrus.Fields{
 		"template_id":  optimizedTemplate.ID,
 		"step_count":   len(optimizedTemplate.Steps),
 		"business_req": "BR-AI-002",
 	}).Debug("AI optimization application completed")
-	
+
 	return optimizedTemplate
 }
 
@@ -1117,45 +1168,45 @@ func (b *DefaultIntelligentWorkflowBuilder) ApplyAIOptimizations(ctx context.Con
 // Business Requirement: BR-AI-003 - Machine learning enhancement
 func (b *DefaultIntelligentWorkflowBuilder) EnhanceWithMachineLearning(ctx context.Context, template *ExecutableTemplate, mlContext *MachineLearningContext) *ExecutableTemplate {
 	b.log.WithFields(logrus.Fields{
-		"template_id":     template.ID,
-		"model_type":      mlContext.ModelType,
-		"model_accuracy":  mlContext.ModelAccuracy,
-		"business_req":    "BR-AI-003",
+		"template_id":    template.ID,
+		"model_type":     mlContext.ModelType,
+		"model_accuracy": mlContext.ModelAccuracy,
+		"business_req":   "BR-AI-003",
 	}).Debug("Enhancing workflow with machine learning capabilities")
-	
+
 	mlEnhancedTemplate := b.deepCopyTemplate(template)
 	if mlEnhancedTemplate == nil {
 		b.log.Error("Failed to copy template for ML enhancement")
 		return template
 	}
-	
+
 	// Apply neural network enhancements
 	if mlContext.ModelType == "neural_network" {
 		b.applyNeuralNetworkEnhancements(mlEnhancedTemplate, mlContext)
 	}
-	
+
 	// Apply feature-based enhancements
 	if len(mlContext.FeatureSet) > 0 {
 		b.applyFeatureBasedEnhancements(mlEnhancedTemplate, mlContext)
 	}
-	
+
 	// Apply training data insights
 	if len(mlContext.TrainingData) > 0 {
 		b.applyTrainingDataInsights(mlEnhancedTemplate, mlContext)
 	}
-	
+
 	// Apply hyperparameter optimizations
-	if mlContext.Hyperparameters != nil && len(mlContext.Hyperparameters) > 0 {
+	if len(mlContext.Hyperparameters) > 0 {
 		b.applyHyperparameterOptimizations(mlEnhancedTemplate, mlContext)
 	}
-	
+
 	// Apply model accuracy-based optimizations
 	if mlContext.ModelAccuracy > 0.8 {
 		b.applyHighAccuracyOptimizations(mlEnhancedTemplate, mlContext)
 	} else if mlContext.ModelAccuracy < 0.6 {
 		b.applyLowAccuracyMitigations(mlEnhancedTemplate, mlContext)
 	}
-	
+
 	// Add ML enhancement metadata to all steps
 	for _, step := range mlEnhancedTemplate.Steps {
 		if step.Variables == nil {
@@ -1167,13 +1218,13 @@ func (b *DefaultIntelligentWorkflowBuilder) EnhanceWithMachineLearning(ctx conte
 		step.Variables["learning_rate"] = mlContext.LearningRate
 		step.Variables["epochs"] = mlContext.Epochs
 	}
-	
+
 	b.log.WithFields(logrus.Fields{
 		"template_id":  mlEnhancedTemplate.ID,
 		"step_count":   len(mlEnhancedTemplate.Steps),
 		"business_req": "BR-AI-003",
 	}).Debug("Machine learning enhancement completed")
-	
+
 	return mlEnhancedTemplate
 }
 
@@ -2111,11 +2162,11 @@ func absFloat(x float64) float64 {
 // analyzeExecutionsForAIRecommendations analyzes executions for AI recommendations
 func (b *DefaultIntelligentWorkflowBuilder) analyzeExecutionsForAIRecommendations(executions []*WorkflowExecution, template *ExecutableTemplate) []AIRecommendation {
 	recommendations := make([]AIRecommendation, 0)
-	
+
 	if len(executions) == 0 {
 		return recommendations
 	}
-	
+
 	// Analyze execution success patterns
 	successCount := 0
 	for _, exec := range executions {
@@ -2123,7 +2174,7 @@ func (b *DefaultIntelligentWorkflowBuilder) analyzeExecutionsForAIRecommendation
 			successCount++
 		}
 	}
-	
+
 	successRate := float64(successCount) / float64(len(executions))
 	if successRate < 0.8 {
 		recommendations = append(recommendations, AIRecommendation{
@@ -2139,19 +2190,19 @@ func (b *DefaultIntelligentWorkflowBuilder) analyzeExecutionsForAIRecommendation
 			},
 		})
 	}
-	
+
 	// Analyze execution duration patterns
 	if len(executions) > 1 {
 		totalDuration := time.Duration(0)
 		validDurations := 0
-		
+
 		for _, exec := range executions {
 			if exec.Duration > 0 {
 				totalDuration += exec.Duration
 				validDurations++
 			}
 		}
-		
+
 		if validDurations > 0 {
 			avgDuration := totalDuration / time.Duration(validDurations)
 			if avgDuration > 30*time.Minute {
@@ -2170,14 +2221,14 @@ func (b *DefaultIntelligentWorkflowBuilder) analyzeExecutionsForAIRecommendation
 			}
 		}
 	}
-	
+
 	return recommendations
 }
 
 // generatePerformanceBasedAIRecommendations generates performance-based AI recommendations
 func (b *DefaultIntelligentWorkflowBuilder) generatePerformanceBasedAIRecommendations(template *ExecutableTemplate, executions []*WorkflowExecution) []AIRecommendation {
 	recommendations := make([]AIRecommendation, 0)
-	
+
 	// Analyze step count for complexity recommendations
 	stepCount := len(template.Steps)
 	if stepCount > 15 {
@@ -2194,7 +2245,7 @@ func (b *DefaultIntelligentWorkflowBuilder) generatePerformanceBasedAIRecommenda
 			},
 		})
 	}
-	
+
 	// Analyze timeout configurations
 	longTimeoutSteps := 0
 	for _, step := range template.Steps {
@@ -2202,7 +2253,7 @@ func (b *DefaultIntelligentWorkflowBuilder) generatePerformanceBasedAIRecommenda
 			longTimeoutSteps++
 		}
 	}
-	
+
 	if longTimeoutSteps > 0 {
 		recommendations = append(recommendations, AIRecommendation{
 			ID:          generateValidationID(),
@@ -2217,14 +2268,14 @@ func (b *DefaultIntelligentWorkflowBuilder) generatePerformanceBasedAIRecommenda
 			},
 		})
 	}
-	
+
 	return recommendations
 }
 
 // generateResourceOptimizationAIRecommendations generates resource optimization AI recommendations
 func (b *DefaultIntelligentWorkflowBuilder) generateResourceOptimizationAIRecommendations(template *ExecutableTemplate, executions []*WorkflowExecution) []AIRecommendation {
 	recommendations := make([]AIRecommendation, 0)
-	
+
 	// Analyze action types for resource requirements
 	actionTypes := make(map[string]int)
 	for _, step := range template.Steps {
@@ -2232,7 +2283,7 @@ func (b *DefaultIntelligentWorkflowBuilder) generateResourceOptimizationAIRecomm
 			actionTypes[step.Action.Type]++
 		}
 	}
-	
+
 	// Check for resource-intensive actions
 	resourceIntensiveActions := []string{"scale_deployment", "increase_resources", "restart_daemonset"}
 	intensiveCount := 0
@@ -2241,7 +2292,7 @@ func (b *DefaultIntelligentWorkflowBuilder) generateResourceOptimizationAIRecomm
 			intensiveCount += count
 		}
 	}
-	
+
 	if intensiveCount > 3 {
 		recommendations = append(recommendations, AIRecommendation{
 			ID:          generateValidationID(),
@@ -2256,18 +2307,18 @@ func (b *DefaultIntelligentWorkflowBuilder) generateResourceOptimizationAIRecomm
 			},
 		})
 	}
-	
+
 	return recommendations
 }
 
 // generateFailurePreventionAIRecommendations generates failure prevention AI recommendations
 func (b *DefaultIntelligentWorkflowBuilder) generateFailurePreventionAIRecommendations(executions []*WorkflowExecution) []AIRecommendation {
 	recommendations := make([]AIRecommendation, 0)
-	
+
 	if len(executions) == 0 {
 		return recommendations
 	}
-	
+
 	// Analyze failure patterns
 	failureCount := 0
 	for _, exec := range executions {
@@ -2275,10 +2326,10 @@ func (b *DefaultIntelligentWorkflowBuilder) generateFailurePreventionAIRecommend
 			failureCount++
 		}
 	}
-	
+
 	if failureCount > 0 {
 		failureRate := float64(failureCount) / float64(len(executions))
-		
+
 		if failureRate > 0.2 {
 			recommendations = append(recommendations, AIRecommendation{
 				ID:          generateValidationID(),
@@ -2295,7 +2346,7 @@ func (b *DefaultIntelligentWorkflowBuilder) generateFailurePreventionAIRecommend
 			})
 		}
 	}
-	
+
 	return recommendations
 }
 
@@ -2304,36 +2355,36 @@ func (b *DefaultIntelligentWorkflowBuilder) calculateAIRecommendationConfidence(
 	if len(recommendations) == 0 {
 		return 0.0
 	}
-	
+
 	totalConfidence := 0.0
 	for _, recommendation := range recommendations {
 		totalConfidence += recommendation.Confidence
 	}
-	
+
 	avgConfidence := totalConfidence / float64(len(recommendations))
-	
+
 	// Adjust confidence based on execution history
 	if len(executions) > 10 {
 		avgConfidence *= 1.1 // Boost confidence with more data
 	} else if len(executions) < 3 {
 		avgConfidence *= 0.8 // Reduce confidence with limited data
 	}
-	
+
 	if avgConfidence > 1.0 {
 		avgConfidence = 1.0
 	}
-	
+
 	return avgConfidence
 }
 
 // generateAIRecommendationMetadata generates metadata for AI recommendations
 func (b *DefaultIntelligentWorkflowBuilder) generateAIRecommendationMetadata(template *ExecutableTemplate, executions []*WorkflowExecution, recommendations []AIRecommendation) map[string]interface{} {
 	metadata := make(map[string]interface{})
-	
+
 	metadata["template_step_count"] = len(template.Steps)
 	metadata["execution_history_count"] = len(executions)
 	metadata["recommendation_count"] = len(recommendations)
-	
+
 	// Categorize recommendations
 	priorities := make(map[string]int)
 	types := make(map[string]int)
@@ -2343,7 +2394,7 @@ func (b *DefaultIntelligentWorkflowBuilder) generateAIRecommendationMetadata(tem
 	}
 	metadata["recommendation_priorities"] = priorities
 	metadata["recommendation_types"] = types
-	
+
 	return metadata
 }
 
@@ -2356,7 +2407,7 @@ func (b *DefaultIntelligentWorkflowBuilder) applyAIPerformanceOptimizations(temp
 		if step.Timeout > 30*time.Minute {
 			step.Timeout = 20 * time.Minute // AI-recommended timeout
 		}
-		
+
 		if step.Variables == nil {
 			step.Variables = make(map[string]interface{})
 		}
@@ -2375,7 +2426,7 @@ func (b *DefaultIntelligentWorkflowBuilder) applyAISuccessRateOptimizations(temp
 				Backoff:    BackoffTypeExponential,
 			}
 		}
-		
+
 		if step.Variables == nil {
 			step.Variables = make(map[string]interface{})
 		}
@@ -3380,7 +3431,7 @@ func (b *DefaultIntelligentWorkflowBuilder) shouldApplyAIEnhancement(template *E
 	if len(template.Steps) == 0 {
 		return false // No steps to enhance
 	}
-	
+
 	// Apply if template has metadata indicating AI enhancement requirements
 	if template.Metadata != nil {
 		if _, hasAIEnhancement := template.Metadata["ai_enhancement"]; hasAIEnhancement {
@@ -3396,12 +3447,12 @@ func (b *DefaultIntelligentWorkflowBuilder) shouldApplyAIEnhancement(template *E
 			return true
 		}
 	}
-	
+
 	// Apply if template has complex workflows that benefit from AI enhancement
 	if len(template.Steps) > 5 {
 		return true
 	}
-	
+
 	// Apply if template has action steps that can benefit from AI optimization
 	actionStepCount := 0
 	for _, step := range template.Steps {
@@ -3409,12 +3460,12 @@ func (b *DefaultIntelligentWorkflowBuilder) shouldApplyAIEnhancement(template *E
 			actionStepCount++
 		}
 	}
-	
+
 	// Apply if we have multiple action steps (can benefit from AI optimization)
 	if actionStepCount >= 3 {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -3444,7 +3495,9 @@ func (b *DefaultIntelligentWorkflowBuilder) OptimizeWorkflowStructure(ctx contex
 	resourcePlan := b.CalculateResourceAllocation(optimized.Steps)
 	if resourcePlan != nil {
 		// Apply resource plan to optimize step allocation
-		b.applyResourcePlanToSteps(optimized.Steps, resourcePlan)
+		if err := b.applyResourcePlanToSteps(optimized.Steps, resourcePlan); err != nil {
+			b.log.WithError(err).Warn("Failed to apply resource plan to steps")
+		}
 		b.log.WithFields(logrus.Fields{
 			"cpu_weight":       resourcePlan.TotalCPUWeight,
 			"memory_weight":    resourcePlan.TotalMemoryWeight,
@@ -3457,7 +3510,9 @@ func (b *DefaultIntelligentWorkflowBuilder) OptimizeWorkflowStructure(ctx contex
 	if len(optimized.Steps) > 1 {
 		parallelizationStrategy := b.DetermineParallelizationStrategy(optimized.Steps)
 		if parallelizationStrategy != nil {
-			b.applyParallelizationStrategy(optimized.Steps, parallelizationStrategy)
+			if err := b.applyParallelizationStrategy(optimized.Steps, parallelizationStrategy); err != nil {
+				b.log.WithError(err).Warn("Failed to apply parallelization strategy")
+			}
 			b.log.WithFields(logrus.Fields{
 				"parallel_groups": len(parallelizationStrategy.ParallelGroups),
 				"speedup":         parallelizationStrategy.EstimatedSpeedup,
@@ -3471,7 +3526,9 @@ func (b *DefaultIntelligentWorkflowBuilder) OptimizeWorkflowStructure(ctx contex
 	if !safetyCheck.IsSafe {
 		b.log.WithField("risk_factors", len(safetyCheck.RiskFactors)).Warn("Safety risks detected, applying safety recommendations")
 		safetyRecommendations := b.GenerateSafetyRecommendations(&Workflow{Template: optimized})
-		b.applySafetyRecommendations(optimized, safetyRecommendations)
+		if err := b.applySafetyRecommendations(optimized, safetyRecommendations); err != nil {
+			b.log.WithError(err).Warn("Failed to apply safety recommendations")
+		}
 	}
 
 	// Phase 6: Validate optimization results
@@ -3496,7 +3553,7 @@ func (b *DefaultIntelligentWorkflowBuilder) OptimizeWorkflowStructure(ctx contex
 			// Calculate resource efficiency improvement
 			resourceEfficiency := b.calculateResourceEfficiency(resourceOptimized, optimized)
 
-	b.log.WithFields(logrus.Fields{
+			b.log.WithFields(logrus.Fields{
 				"resource_efficiency": resourceEfficiency,
 				"business_req":        "BR-RESOURCE-001",
 			}).Info("Applied comprehensive resource constraint management")
@@ -3748,17 +3805,17 @@ func (b *DefaultIntelligentWorkflowBuilder) OptimizeWorkflowStructure(ctx contex
 	// Integrate previously unused AI enhancement functions
 	if b.shouldApplyAIEnhancement(optimized) {
 		b.log.Info("Applying AI enhancement optimization")
-		
+
 		// Generate AI recommendations for optimization
 		workflow := &Workflow{
 			BaseVersionedEntity: optimized.BaseVersionedEntity,
 			Template:            optimized,
 		}
-		
+
 		// Get execution history for AI recommendations (mock for now)
 		executionHistory := []*WorkflowExecution{}
 		aiRecommendations := b.GenerateAIRecommendations(ctx, workflow, executionHistory)
-		
+
 		// Apply AI optimizations based on template metadata
 		if optimized.Metadata != nil {
 			if aiOptType, exists := optimized.Metadata["ai_optimization"]; exists && aiOptType == true {
@@ -3774,7 +3831,7 @@ func (b *DefaultIntelligentWorkflowBuilder) OptimizeWorkflowStructure(ctx contex
 				}
 				optimized = b.ApplyAIOptimizations(ctx, optimized, aiOptimizationParams)
 			}
-			
+
 			if mlEnabled, exists := optimized.Metadata["machine_learning"]; exists && mlEnabled == true {
 				mlContext := &MachineLearningContext{
 					ModelType:       "neural_network",
@@ -3788,13 +3845,13 @@ func (b *DefaultIntelligentWorkflowBuilder) OptimizeWorkflowStructure(ctx contex
 				optimized = b.EnhanceWithMachineLearning(ctx, optimized, mlContext)
 			}
 		}
-		
+
 		// Add AI enhancement metadata
 		optimized.Metadata["ai_enhanced"] = true
 		optimized.Metadata["ai_recommendations_count"] = len(aiRecommendations.Recommendations)
 		optimized.Metadata["ai_confidence"] = aiRecommendations.Confidence
 		optimized.Metadata["ai_model_version"] = aiRecommendations.ModelVersion
-		
+
 		b.log.WithFields(logrus.Fields{
 			"ai_recommendations_count": len(aiRecommendations.Recommendations),
 			"ai_confidence":            aiRecommendations.Confidence,
@@ -4940,14 +4997,6 @@ func (b *DefaultIntelligentWorkflowBuilder) areDependenciesResolved(step *Execut
 	return true
 }
 
-func (b *DefaultIntelligentWorkflowBuilder) getStepNames(steps []*ExecutableWorkflowStep) []string {
-	names := make([]string, len(steps))
-	for i, step := range steps {
-		names[i] = step.Name
-	}
-	return names
-}
-
 func (b *DefaultIntelligentWorkflowBuilder) optimizeBottleneck(template *ExecutableTemplate, bottleneck *Bottleneck) {
 	// Find and optimize the specific bottleneck step
 	for _, step := range template.Steps {
@@ -5145,8 +5194,8 @@ func (b *DefaultIntelligentWorkflowBuilder) ApplyWorkflowPattern(ctx context.Con
 
 	// Create base template from pattern
 	template := &ExecutableTemplate{
-		BaseVersionedEntity: sharedTypes.BaseVersionedEntity{
-			BaseEntity: sharedTypes.BaseEntity{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
 				ID:          generateWorkflowID(),
 				Name:        fmt.Sprintf("%s (Pattern-Based)", pattern.Name),
 				Description: fmt.Sprintf("Generated from pattern %s with %d executions", pattern.ID, pattern.ExecutionCount),
@@ -6014,7 +6063,7 @@ func (b *DefaultIntelligentWorkflowBuilder) LearnFromWorkflowExecution(ctx conte
 
 func (b *DefaultIntelligentWorkflowBuilder) buildWorkflowContext(objective *WorkflowObjective) *WorkflowContext {
 	context := &WorkflowContext{
-		BaseContext: sharedTypes.BaseContext{
+		BaseContext: types.BaseContext{
 			Environment: "production", // Default, should come from objective
 			Timestamp:   time.Now(),
 		},
@@ -6368,7 +6417,7 @@ func (b *DefaultIntelligentWorkflowBuilder) applyEnvironmentSafety(template *Exe
 func (b *DefaultIntelligentWorkflowBuilder) addProductionSafetyValidation(template *ExecutableTemplate) {
 	// Add pre-execution safety check
 	safetyStep := &ExecutableWorkflowStep{
-		BaseEntity: sharedTypes.BaseEntity{
+		BaseEntity: types.BaseEntity{
 			ID:   "production-safety-check",
 			Name: "Production Safety Validation",
 		},
@@ -6806,7 +6855,7 @@ func (b *DefaultIntelligentWorkflowBuilder) extractStepsFromCluster(executions [
 	for _, step := range templateExecution.Steps {
 		// Create a pattern step based on the template step
 		patternStep := &ExecutableWorkflowStep{
-			BaseEntity: sharedTypes.BaseEntity{
+			BaseEntity: types.BaseEntity{
 				ID:          step.StepID,
 				Name:        fmt.Sprintf("Step %s", step.StepID),
 				Description: fmt.Sprintf("Pattern step extracted from %d executions", len(executions)),
@@ -7050,7 +7099,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createParallelExecutionStep(steps []
 
 	// Create a parallel execution step
 	parallelStep := &ExecutableWorkflowStep{
-		BaseEntity: sharedTypes.BaseEntity{
+		BaseEntity: types.BaseEntity{
 			ID:          fmt.Sprintf("parallel-group-%d", time.Now().UnixNano()),
 			Name:        fmt.Sprintf("Parallel Group (%d steps)", len(steps)),
 			Description: fmt.Sprintf("Parallel execution of %d independent steps", len(steps)),
@@ -7766,8 +7815,8 @@ func (b *DefaultIntelligentWorkflowBuilder) convertAIResultToTemplate(aiResult *
 
 	// Create executable template
 	template := &ExecutableTemplate{
-		BaseVersionedEntity: sharedTypes.BaseVersionedEntity{
-			BaseEntity: sharedTypes.BaseEntity{
+		BaseVersionedEntity: types.BaseVersionedEntity{
+			BaseEntity: types.BaseEntity{
 				ID:          aiResult.WorkflowID,
 				Name:        aiResult.Name,
 				Description: aiResult.Description,
@@ -7833,7 +7882,7 @@ func (b *DefaultIntelligentWorkflowBuilder) convertAIStepToExecutableStep(aiStep
 
 	// Create executable step
 	execStep := &ExecutableWorkflowStep{
-		BaseEntity: sharedTypes.BaseEntity{
+		BaseEntity: types.BaseEntity{
 			ID:          uuid.New().String(), // Generate ID since AIGeneratedStep doesn't have one
 			Name:        aiStep.Name,
 			Description: fmt.Sprintf("AI-generated %s step", aiStep.Type),
@@ -9332,6 +9381,8 @@ func (b *DefaultIntelligentWorkflowBuilder) calculateSuccessRateSimilarity(rate1
 // Helper methods for objective analysis
 
 // extractKeywordsFromObjective extracts relevant keywords from objective text
+//
+//nolint:unused // Planned feature: objective keyword analysis for AI enhancement
 func (b *DefaultIntelligentWorkflowBuilder) extractKeywordsFromObjective(objective string) []string {
 	objective = strings.ToLower(objective)
 	var keywords []string
@@ -9356,6 +9407,7 @@ func (b *DefaultIntelligentWorkflowBuilder) extractKeywordsFromObjective(objecti
 
 // identifyActionTypesFromObjective implementation moved to intelligent_workflow_builder_helpers.go
 // to avoid duplication and maintain single source of truth
+// nolint:unused
 func (b *DefaultIntelligentWorkflowBuilder) identifyActionTypesFromObjectiveOLD(objective string, context map[string]interface{}) []string {
 	objective = strings.ToLower(objective)
 	var actionTypes []string
@@ -9389,52 +9441,12 @@ func (b *DefaultIntelligentWorkflowBuilder) identifyActionTypesFromObjectiveOLD(
 	return actionTypes
 }
 
-// calculateObjectiveComplexity calculates complexity score based on objective and context
-func (b *DefaultIntelligentWorkflowBuilder) calculateObjectiveComplexity(objective string, context map[string]interface{}) float64 {
-	complexity := 0.0
-
-	// Base complexity from objective length and keywords
-	if len(objective) > 100 {
-		complexity += 0.3
-	} else if len(objective) > 50 {
-		complexity += 0.2
-	} else {
-		complexity += 0.1
-	}
-
-	// Complexity from environment
-	if env, ok := context["environment"].(string); ok {
-		switch env {
-		case "production":
-			complexity += 0.4
-		case "staging":
-			complexity += 0.2
-		default:
-			complexity += 0.1
-		}
-	}
-
-	// Complexity from severity
-	if severity, ok := context["severity"].(string); ok {
-		switch severity {
-		case "high":
-			complexity += 0.3
-		case "medium":
-			complexity += 0.2
-		default:
-			complexity += 0.1
-		}
-	}
-
-	// Cap at 1.0
-	if complexity > 1.0 {
-		complexity = 1.0
-	}
-
-	return complexity
-}
+// Note: calculateObjectiveComplexity implementation moved to intelligent_workflow_builder_helpers.go
+// to avoid duplication and maintain single source of truth
 
 // calculateObjectivePriority calculates priority score based on context
+//
+//nolint:unused // Planned feature: intelligent objective prioritization
 func (b *DefaultIntelligentWorkflowBuilder) calculateObjectivePriority(context map[string]interface{}) float64 {
 	priority := 0.5 // Default medium priority
 
@@ -9492,29 +9504,8 @@ func (b *DefaultIntelligentWorkflowBuilder) assessObjectiveRiskLevel(objective s
 	return "low"
 }
 
-// generateObjectiveRecommendation generates recommendations based on analysis
-func (b *DefaultIntelligentWorkflowBuilder) generateObjectiveRecommendation(objective string, complexity float64, riskLevel string) string {
-	recommendations := []string{}
-
-	if complexity > 0.7 {
-		recommendations = append(recommendations, "Consider breaking down into smaller steps")
-	}
-
-	if riskLevel == "high" {
-		recommendations = append(recommendations, "Implement comprehensive safety checks")
-		recommendations = append(recommendations, "Plan rollback procedures")
-	}
-
-	if strings.Contains(strings.ToLower(objective), "production") {
-		recommendations = append(recommendations, "Schedule during maintenance window")
-	}
-
-	if len(recommendations) == 0 {
-		recommendations = append(recommendations, "Proceed with standard workflow execution")
-	}
-
-	return strings.Join(recommendations, "; ")
-}
+// Note: generateObjectiveRecommendation implementation moved to intelligent_workflow_builder_helpers.go
+// to avoid duplication and maintain single source of truth
 
 // Helper methods for step generation
 
@@ -9527,7 +9518,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createStepFromActionType(actionType 
 	switch actionType {
 	case "database_action":
 		return &ExecutableWorkflowStep{
-			BaseEntity: sharedTypes.BaseEntity{
+			BaseEntity: types.BaseEntity{
 				ID:   stepID,
 				Name: stepName,
 			},
@@ -9537,7 +9528,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createStepFromActionType(actionType 
 		}
 	case "backup_action":
 		return &ExecutableWorkflowStep{
-			BaseEntity: sharedTypes.BaseEntity{
+			BaseEntity: types.BaseEntity{
 				ID:   stepID,
 				Name: stepName,
 			},
@@ -9547,7 +9538,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createStepFromActionType(actionType 
 		}
 	case "restore_action":
 		return &ExecutableWorkflowStep{
-			BaseEntity: sharedTypes.BaseEntity{
+			BaseEntity: types.BaseEntity{
 				ID:   stepID,
 				Name: stepName,
 			},
@@ -9557,7 +9548,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createStepFromActionType(actionType 
 		}
 	case "urgent_action":
 		return &ExecutableWorkflowStep{
-			BaseEntity: sharedTypes.BaseEntity{
+			BaseEntity: types.BaseEntity{
 				ID:   stepID,
 				Name: stepName,
 			},
@@ -9567,7 +9558,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createStepFromActionType(actionType 
 		}
 	default:
 		return &ExecutableWorkflowStep{
-			BaseEntity: sharedTypes.BaseEntity{
+			BaseEntity: types.BaseEntity{
 				ID:   stepID,
 				Name: stepName,
 			},
@@ -9584,7 +9575,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createStepFromKeyword(keyword string
 	stepName := fmt.Sprintf("Step %d: Handle %s", index+1, keyword)
 
 	return &ExecutableWorkflowStep{
-		BaseEntity: sharedTypes.BaseEntity{
+		BaseEntity: types.BaseEntity{
 			ID:   stepID,
 			Name: stepName,
 		},
@@ -9617,7 +9608,7 @@ func (b *DefaultIntelligentWorkflowBuilder) calculateStepTimeout(actionType stri
 // createDefaultStep creates a default workflow step
 func (b *DefaultIntelligentWorkflowBuilder) createDefaultStep() *ExecutableWorkflowStep {
 	return &ExecutableWorkflowStep{
-		BaseEntity: sharedTypes.BaseEntity{
+		BaseEntity: types.BaseEntity{
 			ID:   "step_0",
 			Name: "Default Action Step",
 		},
@@ -9630,7 +9621,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createDefaultStep() *ExecutableWorkf
 // createMonitoringStep creates a monitoring step
 func (b *DefaultIntelligentWorkflowBuilder) createMonitoringStep(index int) *ExecutableWorkflowStep {
 	return &ExecutableWorkflowStep{
-		BaseEntity: sharedTypes.BaseEntity{
+		BaseEntity: types.BaseEntity{
 			ID:   fmt.Sprintf("monitor_%d", index),
 			Name: fmt.Sprintf("Monitor Step %d", index+1),
 		},
@@ -9643,7 +9634,7 @@ func (b *DefaultIntelligentWorkflowBuilder) createMonitoringStep(index int) *Exe
 // createSafetyValidationStep creates a safety validation step
 func (b *DefaultIntelligentWorkflowBuilder) createSafetyValidationStep(index int) *ExecutableWorkflowStep {
 	return &ExecutableWorkflowStep{
-		BaseEntity: sharedTypes.BaseEntity{
+		BaseEntity: types.BaseEntity{
 			ID:   fmt.Sprintf("safety_%d", index),
 			Name: fmt.Sprintf("Safety Validation %d", index+1),
 		},
@@ -9744,14 +9735,6 @@ func (b *DefaultIntelligentWorkflowBuilder) calculateMemoryWeight(step *Executab
 }
 
 // getStepPriority extracts priority from step variables
-func (b *DefaultIntelligentWorkflowBuilder) getStepPriority(step *ExecutableWorkflowStep) int {
-	if step.Variables != nil {
-		if priority, ok := step.Variables["priority"].(int); ok {
-			return priority
-		}
-	}
-	return 5 // Default medium priority
-}
 
 // calculateOptimalConcurrency calculates optimal concurrency level
 func (b *DefaultIntelligentWorkflowBuilder) calculateOptimalConcurrency(totalCPU, totalMemory float64, stepCount int) int {
@@ -10400,7 +10383,9 @@ func (b *DefaultIntelligentWorkflowBuilder) isRiskLevelAcceptable(riskLevel, max
 	return riskLevels[riskLevel] <= riskLevels[maxRiskLevel]
 }
 
-func (b *DefaultIntelligentWorkflowBuilder) calculateTimeImprovement(before, after *WorkflowMetrics) float64 {
+// CalculateTimeImprovement calculates time improvement between baseline and optimized metrics
+// Business Requirement: BR-SCHEDULING-002 - Performance improvement calculation for business analytics
+func (b *DefaultIntelligentWorkflowBuilder) CalculateTimeImprovement(before, after *WorkflowMetrics) float64 {
 	if before.AverageExecutionTime == 0 {
 		return 0.0
 	}
@@ -10412,17 +10397,23 @@ func (b *DefaultIntelligentWorkflowBuilder) calculatePatternConfidenceForLearnin
 	return 0.85 // Default confidence for learning
 }
 
-func (b *DefaultIntelligentWorkflowBuilder) calculateReliabilityImprovement(before, after *WorkflowMetrics) float64 {
+// CalculateReliabilityImprovement calculates reliability improvement between baseline and optimized metrics
+// Business Requirement: BR-SCHEDULING-002 - Performance improvement calculation for business analytics
+func (b *DefaultIntelligentWorkflowBuilder) CalculateReliabilityImprovement(before, after *WorkflowMetrics) float64 {
 	return after.SuccessRate - before.SuccessRate
 }
 
-func (b *DefaultIntelligentWorkflowBuilder) calculateResourceEfficiencyGain(before, after *WorkflowMetrics) float64 {
+// CalculateResourceEfficiencyGain calculates resource efficiency gain between baseline and optimized metrics
+// Business Requirement: BR-SCHEDULING-002 - Performance improvement calculation for business analytics
+func (b *DefaultIntelligentWorkflowBuilder) CalculateResourceEfficiencyGain(before, after *WorkflowMetrics) float64 {
 	// Resource efficiency gain = reduction in resource utilization
 	// Lower utilization for same work = efficiency gain
 	return before.ResourceUtilization - after.ResourceUtilization
 }
 
-func (b *DefaultIntelligentWorkflowBuilder) calculateOverallOptimizationScore(timeImprovement, reliabilityImprovement, resourceGain float64) float64 {
+// CalculateOverallOptimizationScore calculates overall optimization score from individual improvements
+// Business Requirement: BR-SCHEDULING-002 - Performance improvement calculation for business analytics
+func (b *DefaultIntelligentWorkflowBuilder) CalculateOverallOptimizationScore(timeImprovement, reliabilityImprovement, resourceGain float64) float64 {
 	return (timeImprovement*0.5 + reliabilityImprovement*0.3 + resourceGain*0.2)
 }
 
@@ -10947,7 +10938,7 @@ func CreateTestVectorDatabase(log *logrus.Logger) vector.VectorDatabase {
 // CreateTestAnalyticsEngine creates a test analytics engine for workflow builder testing
 // Business Requirement: Testing Strategy - Supports mandatory TDD workflow
 // Alignment: Essential for analytics integration testing per business requirements
-func CreateTestAnalyticsEngine(log *logrus.Logger) sharedTypes.AnalyticsEngine {
+func CreateTestAnalyticsEngine(log *logrus.Logger) types.AnalyticsEngine {
 	// Return a basic analytics engine implementation
 	// In a full implementation, this would return a proper test analytics engine
 	return nil // Graceful handling - workflow builder can handle nil analytics engine
@@ -10960,4 +10951,231 @@ func CreateTestPatternStore(log *logrus.Logger) PatternStore {
 	// Return nil for graceful handling - workflow builder can handle nil pattern store
 	// In a full implementation, this would return a proper test pattern store
 	return nil
+}
+
+// AddValidationSteps adds validation steps to a workflow template
+// TDD REFACTOR: Enhanced with Kubernetes Safety patterns and comprehensive validation
+// Business Requirement: BR-WF-GEN-001-VALIDATION - Workflow validation enhancement
+func (b *DefaultIntelligentWorkflowBuilder) AddValidationSteps(template *ExecutableTemplate) {
+	if template == nil {
+		return
+	}
+
+	// Pre-execution safety validation (Kubernetes Safety pattern)
+	validationStep := &ExecutableWorkflowStep{}
+	validationStep.ID = uuid.New().String()
+	validationStep.Name = "Pre-execution Safety Validation"
+	validationStep.Description = "Validates workflow prerequisites and Kubernetes safety conditions"
+	validationStep.CreatedAt = time.Now()
+	validationStep.UpdatedAt = time.Now()
+	validationStep.Type = StepTypeAction
+	validationStep.Action = &StepAction{
+		Type: "validate",
+		Parameters: map[string]interface{}{
+			"validation_type":    "pre_execution",
+			"safety_checks":      true,
+			"rbac_validation":    true,
+			"resource_existence": true,
+			"dry_run_support":    true,
+		},
+	}
+	validationStep.Timeout = b.config.DefaultStepTimeout
+
+	// Insert validation step at the beginning
+	template.Steps = append([]*ExecutableWorkflowStep{validationStep}, template.Steps...)
+}
+
+// GetAvailableActionTypes returns the list of available action types
+// TDD REFACTOR: Enhanced with complete action set per Kubernetes Safety patterns
+// Business Requirement: BR-WF-GEN-001 - Workflow generation with valid actions
+func (b *DefaultIntelligentWorkflowBuilder) GetAvailableActionTypes() []string {
+	// Complete set of supported actions following Kubernetes Safety patterns
+	return []string{
+		// Core Kubernetes actions
+		"scale",    // Horizontal scaling with replica validation
+		"restart",  // Safe pod restart with readiness checks
+		"update",   // Resource updates with rollback capability
+		"rollback", // Rollback with revision validation
+
+		// Node operations
+		"drain",  // Graceful draining with timeout
+		"cordon", // Mark unschedulable with confirmation
+
+		// Safety and monitoring
+		"validate",   // Pre-execution validation
+		"monitor",    // Monitoring and health checks
+		"quarantine", // Pod isolation for investigation
+
+		// Notification and alerting
+		"notify", // Alert notifications
+		"log",    // Structured logging
+
+		// Resource management
+		"migrate", // Workload migration with validation
+		"backup",  // Resource backup operations
+		"cleanup", // Safe resource cleanup
+	}
+}
+
+// ShouldHaveRetryPolicy determines if a workflow step should have retry policy
+// TDD REFACTOR: Enhanced with intelligent retry policy logic per Technical Implementation Standards
+// Business Requirement: BR-WF-GEN-002 - Intelligent retry policy assignment
+func (b *DefaultIntelligentWorkflowBuilder) ShouldHaveRetryPolicy(step *ExecutableWorkflowStep) bool {
+	if step == nil || step.Action == nil {
+		return false
+	}
+
+	// Actions that require retry policies (critical operations)
+	criticalActions := map[string]bool{
+		"scale":   true, // Scaling operations can be transient
+		"restart": true, // Restart operations may fail due to timing
+		"update":  true, // Updates can fail due to resource conflicts
+		"migrate": true, // Migration operations are complex
+		"backup":  true, // Backup operations can be interrupted
+		"drain":   true, // Node draining can timeout
+	}
+
+	// Actions that should NOT have retry policies (safety-critical)
+	noRetryActions := map[string]bool{
+		"quarantine": true, // Quarantine should be immediate
+		"cordon":     true, // Cordoning should be immediate
+		"cleanup":    true, // Cleanup operations should not retry
+	}
+
+	actionType := step.Action.Type
+
+	// Explicitly no retry for safety-critical actions
+	if noRetryActions[actionType] {
+		return false
+	}
+
+	// Require retry for critical actions
+	if criticalActions[actionType] {
+		return true
+	}
+
+	// For other actions, check if they involve external resources
+	// Actions with external targets should have retry policies
+	if target, exists := step.Action.Parameters["target"]; exists {
+		if targetStr, ok := target.(string); ok && targetStr != "" {
+			return true
+		}
+	}
+
+	// Actions with network operations should have retry policies
+	if endpoint, exists := step.Action.Parameters["endpoint"]; exists {
+		if endpointStr, ok := endpoint.(string); ok && endpointStr != "" {
+			return true
+		}
+	}
+
+	// Default: monitoring and validation actions don't need retry
+	return false
+}
+
+// GenerateFallbackWorkflowResponse generates a fallback workflow when primary generation fails
+// TDD REFACTOR: Enhanced with AI Safety patterns and comprehensive fallback logic
+// Business Requirement: BR-WF-GEN-003 - Fallback workflow generation for reliability
+func (b *DefaultIntelligentWorkflowBuilder) GenerateFallbackWorkflowResponse(response string) *ExecutableTemplate {
+	b.log.WithFields(logrus.Fields{
+		"response_length": len(response),
+		"fallback_mode":   true,
+	}).Info("Generating enhanced fallback workflow")
+
+	// Create safe fallback template with AI safety patterns
+	template := &ExecutableTemplate{}
+	template.ID = uuid.New().String()
+	template.Name = fmt.Sprintf("Fallback Workflow - %s", time.Now().Format("15:04:05"))
+	template.Description = "AI-safe fallback workflow with monitoring and validation"
+	template.CreatedAt = time.Now()
+	template.UpdatedAt = time.Now()
+	template.Variables = map[string]interface{}{
+		"fallback_mode":     true,
+		"original_response": response,
+		"safety_level":      "high",
+		"ai_generated":      false, // Fallback is rule-based, not AI-generated
+	}
+
+	// Add metadata for AI safety tracking
+	template.Metadata = map[string]interface{}{
+		"fallback_reason":   "primary_generation_failed",
+		"safety_validated":  true,
+		"ai_confidence":     0.0, // No AI confidence for fallback
+		"generation_method": "rule_based_fallback",
+		"created_by":        "intelligent_workflow_builder",
+	}
+
+	steps := []*ExecutableWorkflowStep{}
+
+	// 1. Safety validation step (always first)
+	validationStep := &ExecutableWorkflowStep{}
+	validationStep.ID = uuid.New().String()
+	validationStep.Name = "Fallback Safety Validation"
+	validationStep.Description = "Validates safe execution context for fallback workflow"
+	validationStep.CreatedAt = time.Now()
+	validationStep.UpdatedAt = time.Now()
+	validationStep.Type = StepTypeAction
+	validationStep.Action = &StepAction{
+		Type: "validate",
+		Parameters: map[string]interface{}{
+			"validation_type": "fallback_safety",
+			"safe_mode":       true,
+			"dry_run":         true,
+		},
+	}
+	validationStep.Timeout = 30 * time.Second
+	steps = append(steps, validationStep)
+
+	// 2. Monitoring step (safe observation)
+	monitorStep := &ExecutableWorkflowStep{}
+	monitorStep.ID = uuid.New().String()
+	monitorStep.Name = "Safe Monitoring"
+	monitorStep.Description = "Monitor system state without making changes"
+	monitorStep.CreatedAt = time.Now()
+	monitorStep.UpdatedAt = time.Now()
+	monitorStep.Type = StepTypeAction
+	monitorStep.Action = &StepAction{
+		Type: "monitor",
+		Parameters: map[string]interface{}{
+			"monitor_type":    "passive",
+			"duration":        "5m",
+			"safe_mode":       true,
+			"collect_metrics": true,
+			"alert_on_change": false, // Passive monitoring only
+		},
+	}
+	monitorStep.Timeout = 6 * time.Minute
+	steps = append(steps, monitorStep)
+
+	// 3. Notification step (inform operators)
+	notifyStep := &ExecutableWorkflowStep{}
+	notifyStep.ID = uuid.New().String()
+	notifyStep.Name = "Fallback Notification"
+	notifyStep.Description = "Notify operators about fallback workflow execution"
+	notifyStep.CreatedAt = time.Now()
+	notifyStep.UpdatedAt = time.Now()
+	notifyStep.Type = StepTypeAction
+	notifyStep.Action = &StepAction{
+		Type: "notify",
+		Parameters: map[string]interface{}{
+			"notification_type": "fallback_executed",
+			"severity":          "info",
+			"message":           "Fallback workflow executed due to primary generation failure",
+			"include_context":   true,
+		},
+	}
+	notifyStep.Timeout = 30 * time.Second
+	steps = append(steps, notifyStep)
+
+	template.Steps = steps
+
+	// Add safe timeouts following AI/ML Guidelines
+	template.Timeouts = &WorkflowTimeouts{
+		Execution: 10 * time.Minute, // Conservative timeout for fallback
+		Step:      5 * time.Minute,  // Per-step timeout
+		Condition: 30 * time.Second, // Quick condition evaluation
+		Recovery:  2 * time.Minute,  // Recovery timeout
+	}
+
+	return template
 }
