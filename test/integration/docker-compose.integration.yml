@@ -128,14 +128,14 @@ services:
   # HolmesGPT API for integration testing
   holmesgpt-api:
     build:
-      context: ../../docker/holmesgpt-api
-      dockerfile: Containerfile
+      context: ../../
+      dockerfile: docker/holmesgpt-api/Containerfile
     container_name: kubernaut-holmesgpt-api
     environment:
       # LLM Configuration for direct ramalama connection
       HOLMESGPT_LLM_PROVIDER: ramalama
       HOLMESGPT_LLM_MODEL: hf://ggml-org/gpt-oss-20b-GGUF
-      HOLMESGPT_LLM_BASE_URL: http://192.168.1.169:8080
+      HOLMESGPT_LLM_BASE_URL: http://host.containers.internal:8010
       # Context API configuration for tools and history (service discovery)
       KUBERNAUT_CONTEXT_API_URL: http://context-api:8091
       KUBERNAUT_CONTEXT_API_TIMEOUT: 30

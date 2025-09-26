@@ -21,60 +21,19 @@ package ai
 //
 // =============================================================================
 
-import (
-	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
-	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
-	"github.com/sirupsen/logrus"
-)
+// No imports needed - all functions have been removed
+// Use direct imports from testshared package in your test files
 
-// DEPRECATED: Use testshared.NewStandardPatternExtractor instead
-type SimplePatternExtractor = testshared.StandardPatternExtractor
+// REMOVED: Deprecated type aliases and functions
+// Following project guidelines: Use direct imports instead of type aliases
+//
+// Use testshared.NewStandardPatternExtractor(logger) directly
+// Use testshared.NewStandardPatternStore(logger) directly
+// Use testshared.NewStandardMLAnalyzer(logger) directly
+// Use testshared.NewStandardTimeSeriesAnalyzer(logger) directly
+// Use testshared.NewStandardClusteringEngine(logger) directly
+// Use testshared.NewStandardAnomalyDetector(logger) directly
 
-func NewSimplePatternExtractor(logger *logrus.Logger) *testshared.StandardPatternExtractor {
-	return testshared.NewStandardPatternExtractor(logger)
-}
-
-// DEPRECATED: Use testshared.NewStandardPatternStore instead
-type SimplePatternStore = testshared.StandardPatternStore
-
-func NewSimplePatternStore() *testshared.StandardPatternStore {
-	return testshared.NewStandardPatternStore(logrus.New())
-}
-
-// DEPRECATED: Use testshared.NewStandardMLAnalyzer instead
-type SimpleMLAnalyzer = testshared.StandardMLAnalyzer
-
-func NewSimpleMLAnalyzer() *testshared.StandardMLAnalyzer {
-	return testshared.NewStandardMLAnalyzer(logrus.New())
-}
-
-// DEPRECATED: Use testshared.NewStandardTimeSeriesAnalyzer instead
-type SimpleTimeSeriesAnalyzer = testshared.StandardTimeSeriesAnalyzer
-
-func NewSimpleTimeSeriesAnalyzer() *testshared.StandardTimeSeriesAnalyzer {
-	return testshared.NewStandardTimeSeriesAnalyzer(logrus.New())
-}
-
-// DEPRECATED: Use testshared.NewStandardClusteringEngine instead
-type SimpleClusteringEngine = testshared.StandardClusteringEngine
-
-func NewSimpleClusteringEngine() *testshared.StandardClusteringEngine {
-	return testshared.NewStandardClusteringEngine(logrus.New())
-}
-
-// DEPRECATED: Use testshared.NewStandardAnomalyDetector instead
-type SimpleAnomalyDetector = testshared.StandardAnomalyDetector
-
-func NewSimpleAnomalyDetector() *testshared.StandardAnomalyDetector {
-	return testshared.NewStandardAnomalyDetector(logrus.New())
-}
-
-// DEPRECATED: Use testshared.CreateStandardPatternEngine instead
-func CreateBasicPatternEngine(logger *logrus.Logger) *patterns.PatternDiscoveryEngine {
-	return testshared.CreateStandardPatternEngine(logger)
-}
-
-// DEPRECATED: Use testshared.CreatePerformancePatternEngine instead
-func CreatePerformancePatternEngine(logger *logrus.Logger) *patterns.PatternDiscoveryEngine {
-	return testshared.CreatePerformancePatternEngine(logger)
-}
+// REMOVED: Additional deprecated functions
+// Use testshared.CreateStandardPatternEngine(logger) directly
+// Use testshared.CreatePerformancePatternEngine(logger) directly

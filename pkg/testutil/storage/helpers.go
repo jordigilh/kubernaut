@@ -34,7 +34,10 @@ func (h *TestServerHelper) CreateOpenAITestServer() *httptest.Server {
 		// Parse request to handle both single and batch requests
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]interface{}
-		json.Unmarshal(body, &req)
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
 
 		input := req["input"]
 		var embeddings [][]float64
@@ -54,7 +57,9 @@ func (h *TestServerHelper) CreateOpenAITestServer() *httptest.Server {
 		}
 
 		response := h.embeddingFactory.CreateOpenAIResponse(embeddings, "text-embedding-3-small")
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	}))
 }
 
@@ -68,7 +73,10 @@ func (h *TestServerHelper) CreateHuggingFaceTestServer() *httptest.Server {
 		// Parse request to handle both single and batch requests
 		body, _ := io.ReadAll(r.Body)
 		var req map[string]interface{}
-		json.Unmarshal(body, &req)
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
 
 		input := req["inputs"]
 		var embeddings [][]float64
@@ -88,7 +96,9 @@ func (h *TestServerHelper) CreateHuggingFaceTestServer() *httptest.Server {
 		}
 
 		response := h.embeddingFactory.CreateHuggingFaceResponse(embeddings)
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	}))
 }
 
@@ -102,12 +112,14 @@ func (h *TestServerHelper) CreateRateLimitedOpenAIServer(failCount int) *httptes
 		if requestCount <= failCount {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
 				"error": map[string]interface{}{
 					"message": "Rate limit exceeded",
 					"type":    "rate_limit_exceeded",
 				},
-			})
+			}); err != nil {
+				http.Error(w, "Failed to encode error response", http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -117,7 +129,9 @@ func (h *TestServerHelper) CreateRateLimitedOpenAIServer(failCount int) *httptes
 
 		embedding := h.embeddingFactory.CreateDeterministicEmbedding(h.dimensions.OpenAI, 0.1)
 		response := h.embeddingFactory.CreateOpenAIResponse([][]float64{embedding}, "text-embedding-3-small")
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	}))
 }
 

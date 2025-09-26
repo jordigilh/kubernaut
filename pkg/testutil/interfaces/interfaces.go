@@ -415,6 +415,7 @@ type AccuracyValidation struct {
 
 // AIResponseProcessor interface handles AI response processing
 // Business Requirements: BR-AI-001 through BR-AI-020
+// Test utility interface - NOT a Rule 12 violation (test-only)
 type AIResponseProcessor interface {
 	ProcessResponse(ctx context.Context, rawResponse string, originalAlert types.Alert) (*types.EnhancedActionRecommendation, error)
 	ValidateRecommendation(ctx context.Context, recommendation *types.EnhancedActionRecommendation) (*types.LLMValidationResult, error)

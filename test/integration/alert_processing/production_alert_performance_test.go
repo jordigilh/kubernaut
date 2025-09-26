@@ -33,15 +33,15 @@ type AlertProcessingPerformanceValidator struct {
 
 // AlertProcessingMetrics tracks performance metrics for business requirement validation
 type AlertProcessingMetrics struct {
-	TotalAlerts           int
-	SuccessfulAlerts      int
-	FailedAlerts          int
-	TotalProcessingTime   time.Duration
-	ResponseTimes         []time.Duration
-	ConcurrentSuccessRate float64
+	TotalAlerts            int
+	SuccessfulAlerts       int
+	FailedAlerts           int
+	TotalProcessingTime    time.Duration
+	ResponseTimes          []time.Duration
+	ConcurrentSuccessRate  float64
 	AvailabilityPercentage float64
-	ErrorsByType         map[string]int
-	mu                   sync.RWMutex
+	ErrorsByType           map[string]int
+	mu                     sync.RWMutex
 }
 
 // NewAlertProcessingPerformanceValidator creates a validator for Phase 1 alert processing performance requirements
@@ -65,7 +65,7 @@ func (v *AlertProcessingPerformanceValidator) ValidateUptimeRequirement(ctx cont
 
 	// Initialize LLM client if not already set
 	if v.llmClient == nil {
-		v.llmClient = shared.NewFakeSLMClient()
+		v.llmClient = shared.NewTestSLMClient()
 	}
 
 	// Track uptime metrics
@@ -123,10 +123,10 @@ func (v *AlertProcessingPerformanceValidator) ValidateUptimeRequirement(ctx cont
 
 	v.logger.WithFields(logrus.Fields{
 		"availability_percentage": availabilityPercentage,
-		"total_downtime": totalDowntime,
+		"total_downtime":          totalDowntime,
 		"max_acceptable_downtime": maxAcceptableDowntime,
-		"service_interruptions": serviceInterruptions,
-		"alerts_processed": alertCount,
+		"service_interruptions":   serviceInterruptions,
+		"alerts_processed":        alertCount,
 	}).Info("Uptime validation completed")
 
 	return &UptimeValidationResult{
@@ -142,12 +142,12 @@ func (v *AlertProcessingPerformanceValidator) ValidateUptimeRequirement(ctx cont
 func (v *AlertProcessingPerformanceValidator) ValidateResponseTimeRequirement(ctx context.Context, alertsPerMinute int, duration time.Duration) (*ResponseTimeValidationResult, error) {
 	v.logger.WithFields(logrus.Fields{
 		"alerts_per_minute": alertsPerMinute,
-		"duration": duration,
+		"duration":          duration,
 	}).Info("Starting response time validation for alert processing")
 
 	// Initialize LLM client if not already set
 	if v.llmClient == nil {
-		v.llmClient = shared.NewFakeSLMClient()
+		v.llmClient = shared.NewTestSLMClient()
 	}
 
 	// Calculate total alerts to process
@@ -232,19 +232,19 @@ func (v *AlertProcessingPerformanceValidator) ValidateResponseTimeRequirement(ct
 	meetsRequirement := percentile95ResponseTime < 5*time.Second
 
 	v.logger.WithFields(logrus.Fields{
-		"alerts_processed": alertsProcessed,
-		"actual_alerts_per_minute": actualAlertsPerMinute,
-		"average_response_time": averageResponseTime,
+		"alerts_processed":            alertsProcessed,
+		"actual_alerts_per_minute":    actualAlertsPerMinute,
+		"average_response_time":       averageResponseTime,
 		"percentile_95_response_time": percentile95ResponseTime,
-		"meets_requirement": meetsRequirement,
+		"meets_requirement":           meetsRequirement,
 	}).Info("Response time validation completed")
 
 	return &ResponseTimeValidationResult{
 		Percentile95ResponseTime: percentile95ResponseTime,
-		AverageResponseTime:     averageResponseTime,
-		MeetsRequirement:        meetsRequirement,
-		AlertsProcessed:         alertsProcessed,
-		AlertsPerMinuteActual:   actualAlertsPerMinute,
+		AverageResponseTime:      averageResponseTime,
+		MeetsRequirement:         meetsRequirement,
+		AlertsProcessed:          alertsProcessed,
+		AlertsPerMinuteActual:    actualAlertsPerMinute,
 		ResponseTimeDistribution: responseTimeDistribution,
 	}, nil
 }
@@ -255,7 +255,7 @@ func (v *AlertProcessingPerformanceValidator) ValidateConcurrentProcessingRequir
 
 	// Initialize LLM client if not already set
 	if v.llmClient == nil {
-		v.llmClient = shared.NewFakeSLMClient()
+		v.llmClient = shared.NewTestSLMClient()
 	}
 
 	// Generate test alerts for concurrent processing
@@ -328,52 +328,52 @@ func (v *AlertProcessingPerformanceValidator) ValidateConcurrentProcessingRequir
 
 	v.logger.WithFields(logrus.Fields{
 		"concurrent_requests_handled": concurrentRequests,
-		"successful_requests": successfulRequests,
-		"failed_requests": failedRequests,
-		"success_rate": successRate,
-		"error_rate": errorRate,
-		"average_latency": averageLatency,
-		"baseline_latency": baselineLatency,
-		"degradation_percentage": degradationPercentage,
-		"total_execution_time": totalExecutionTime,
-		"meets_requirement": meetsRequirement,
+		"successful_requests":         successfulRequests,
+		"failed_requests":             failedRequests,
+		"success_rate":                successRate,
+		"error_rate":                  errorRate,
+		"average_latency":             averageLatency,
+		"baseline_latency":            baselineLatency,
+		"degradation_percentage":      degradationPercentage,
+		"total_execution_time":        totalExecutionTime,
+		"meets_requirement":           meetsRequirement,
 	}).Info("Concurrent processing validation completed")
 
 	return &ConcurrentProcessingValidationResult{
 		ConcurrentRequestsHandled: concurrentRequests,
-		SuccessRate:              successRate,
-		MeetsRequirement:         meetsRequirement,
+		SuccessRate:               successRate,
+		MeetsRequirement:          meetsRequirement,
 		AverageLatencyDegradation: averageLatencyDegradation,
-		ErrorRate:                errorRate,
-		ThroughputMaintained:     throughputMaintained,
+		ErrorRate:                 errorRate,
+		ThroughputMaintained:      throughputMaintained,
 	}, nil
 }
 
 // Business contract types for TDD
 type UptimeValidationResult struct {
-	AvailabilityPercentage   float64
-	TotalDowntime           time.Duration
-	MeetsRequirement        bool  // Must be true for BR-PA-001 compliance
-	ServiceInterruptions    int
-	MaxAcceptableDowntime   time.Duration // 8.64s per day for 99.9%
+	AvailabilityPercentage float64
+	TotalDowntime          time.Duration
+	MeetsRequirement       bool // Must be true for BR-PA-001 compliance
+	ServiceInterruptions   int
+	MaxAcceptableDowntime  time.Duration // 8.64s per day for 99.9%
 }
 
 type ResponseTimeValidationResult struct {
 	Percentile95ResponseTime time.Duration
-	AverageResponseTime     time.Duration
-	MeetsRequirement        bool  // Must be true for BR-PA-003 compliance
-	AlertsProcessed         int
-	AlertsPerMinuteActual   int
+	AverageResponseTime      time.Duration
+	MeetsRequirement         bool // Must be true for BR-PA-003 compliance
+	AlertsProcessed          int
+	AlertsPerMinuteActual    int
 	ResponseTimeDistribution map[string]int // buckets: <1s, 1-2s, 2-5s, >5s
 }
 
 type ConcurrentProcessingValidationResult struct {
 	ConcurrentRequestsHandled int
-	SuccessRate              float64
-	MeetsRequirement         bool  // Must be true for BR-PA-004 compliance
+	SuccessRate               float64
+	MeetsRequirement          bool // Must be true for BR-PA-004 compliance
 	AverageLatencyDegradation time.Duration
-	ErrorRate                float64
-	ThroughputMaintained     bool
+	ErrorRate                 float64
+	ThroughputMaintained      bool
 }
 
 var _ = Describe("Phase 1: Alert Processing Performance - Critical Production Readiness", Ordered, func() {
@@ -430,7 +430,7 @@ var _ = Describe("Phase 1: Alert Processing Performance - Critical Production Re
 	Context("BR-PA-003: Response Time Requirement (<5s for 1000 alerts/min)", func() {
 		It("should process 1000 alerts per minute with 95th percentile <5 seconds", func() {
 			By("Processing alerts at 1000/min rate and measuring response times")
-			alertsPerMinute := 100 // Reduced for integration test
+			alertsPerMinute := 100           // Reduced for integration test
 			testDuration := 30 * time.Second // Reduced for integration test
 
 			result, err := validator.ValidateResponseTimeRequirement(ctx, alertsPerMinute, testDuration)
@@ -563,9 +563,9 @@ func (v *AlertProcessingPerformanceValidator) generateTestAlerts(count int) []ty
 			Namespace:   namespace,
 			Resource:    fmt.Sprintf("resource-%d", i+1),
 			Labels: map[string]string{
-				"alertname":  alertType,
-				"severity":   severity,
-				"test_id":    fmt.Sprintf("perf-test-%d", i+1),
+				"alertname": alertType,
+				"severity":  severity,
+				"test_id":   fmt.Sprintf("perf-test-%d", i+1),
 			},
 			Annotations: map[string]string{
 				"description": fmt.Sprintf("Performance test alert %d", i+1),

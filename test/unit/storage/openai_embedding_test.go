@@ -74,7 +74,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 					"total_tokens":  10,
 				},
 			}
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}))
 
 		// Create service with test server URL using configurable constructor
@@ -126,12 +126,12 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 					retryCount++
 					if retryCount < 3 {
 						w.WriteHeader(http.StatusTooManyRequests)
-						w.Write([]byte(`{"error": "Rate limit exceeded"}`))
+						_, _ = w.Write([]byte(`{"error": "Rate limit exceeded"}`))
 						return
 					}
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusOK)
-					w.Write([]byte(`{
+					_, _ = w.Write([]byte(`{
 						"object": "list",
 						"data": [{"object": "embedding", "embedding": [0.1, 0.2, 0.3], "index": 0}],
 						"model": "text-embedding-3-small",
@@ -173,7 +173,7 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 				testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					failureCount++
 					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte(`{"error": "Internal server error"}`))
+					_, _ = w.Write([]byte(`{"error": "Internal server error"}`))
 				}))
 
 				// Create service with limited retries
@@ -432,8 +432,8 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 		It("should be properly instantiated through factory", func() {
 			// Business requirement: Seamless integration with existing architecture
 			// Test environment variable requirement
-			os.Setenv("OPENAI_API_KEY", "test-key-for-factory")
-			defer os.Unsetenv("OPENAI_API_KEY")
+			_ = os.Setenv("OPENAI_API_KEY", "test-key-for-factory")
+			defer func() { _ = os.Unsetenv("OPENAI_API_KEY") }()
 
 			// Create test vector database configuration
 			vectorConfig := &config.VectorDBConfig{
@@ -468,8 +468,8 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 
 		It("should work with caching layer when configured", func() {
 			// Business requirement: Integration with caching infrastructure
-			os.Setenv("OPENAI_API_KEY", "test-key-for-caching")
-			defer os.Unsetenv("OPENAI_API_KEY")
+			_ = os.Setenv("OPENAI_API_KEY", "test-key-for-caching")
+			defer func() { _ = os.Unsetenv("OPENAI_API_KEY") }()
 
 			// Create test vector database configuration with caching enabled
 			vectorConfig := &config.VectorDBConfig{

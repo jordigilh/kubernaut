@@ -1,0 +1,350 @@
+---
+globs: "*.go,pkg/ai/**/*,pkg/workflow/**/*,pkg/intelligence/**/*"
+description: "Technical implementation standards: Go patterns, AI/ML integration, and system architecture"
+---
+# Technical Implementation Standards
+
+## 🔧 **Go Coding Standards**
+
+### Code Organization
+- **Business Names**: Use descriptive names reflecting business domain (`EffectivenessAssessor`, `WorkflowEngine`)
+- **Business Requirements**: Every component MUST serve documented business requirement (BR-XXX-XXX)
+- **Package Cohesion**: Group related functionality following DDD principles
+- **Interface Design**: Implement interfaces over concrete types for testability
+- **Unique Names**: Avoid duplicating structure names - use unique, business-aligned identifiers
+
+### Error Handling
+```go
+// Always wrap errors with context
+return fmt.Errorf("operation description: %w", err)
+
+// Use structured error types
+return &internal.BusinessError{
+    Operation: "workflow execution",
+    Cause:     err,
+    Context:   map[string]interface{}{"workflowID": id},
+}
+
+// Log with structured fields
+logger.WithError(err).WithField("operation", "validate").Error("validation failed")
+```
+
+### Context and Cancellation
+```go
+// Always accept context as first parameter
+func ProcessWorkflow(ctx context.Context, workflow *Workflow) error
+
+// Respect context cancellation
+for {
+    select {
+    case <-ctx.Done():
+        return ctx.Err()
+    default:
+        // Continue processing
+    }
+}
+
+// Use context for request-scoped values
+traceID := ctx.Value("traceID").(string)
+```
+
+### Type System Guidelines
+- **MANDATORY**: Avoid using `any` or `interface{}` unless absolutely necessary
+- **ALWAYS**: Use structured field values with specific types
+- **AVOID**: Local type definitions to resolve import cycles
+- **USE**: Shared types from `pkg/shared/types/` package instead
+- **PREFER**: Strongly-typed interfaces that reflect business domain concepts
+
+## 🤖 **AI/ML Integration Architecture**
+
+### Supported AI Providers
+| Provider | Use Case | Integration Path |
+|----------|----------|------------------|
+| **HolmesGPT** | Primary AI service | `pkg/ai/holmesgpt/client.go` |
+| **OpenAI** | GPT-3.5, GPT-4 models | Direct API integration |
+| **Anthropic** | Claude models | API client |
+| **Azure OpenAI** | Enterprise deployment | Azure SDK |
+| **AWS Bedrock** | Amazon AI service | AWS SDK |
+| **Ollama** | Local LLM deployment | Local API |
+| **Ramalama** | Local model serving | Local API |
+
+### HolmesGPT Integration Pattern
+```go
+// Use the unified HolmesGPT client
+holmesClient := holmesgpt.NewClient(config.HolmesGPT)
+response, err := holmesClient.AnalyzeAlert(ctx, alertData)
+if err != nil {
+    return fmt.Errorf("HolmesGPT analysis failed: %w", err)
+}
+```
+
+### AI Response Processing Pipeline
+1. **Structure Validation**: Ensure response matches expected schema
+2. **Confidence Scoring**: Evaluate AI recommendation confidence
+3. **Safety Validation**: Check recommendations against safety policies
+4. **Business Rule Validation**: Ensure recommendations align with business logic
+
+### Confidence Thresholds
+```go
+type ConfidenceLevel struct {
+    High   float64 // >0.8 - Execute automatically
+    Medium float64 // 0.5-0.8 - Require approval
+    Low    float64 // <0.5 - Log only, no action
+}
+```
+
+### AI Safety and Reliability
+```go
+// Circuit breaker for AI service calls
+breaker := circuitbreaker.New(&Config{
+    Timeout:     30 * time.Second,
+    MaxRequests: 100,
+    Interval:    60 * time.Second,
+})
+```
+
+#### Fallback Strategies
+1. **Primary**: HolmesGPT with full context
+2. **Secondary**: Direct LLM provider with reduced context
+3. **Fallback**: Rule-based decision making
+4. **Emergency**: Safe default actions only
+
+## 🗄️ **System Architecture Patterns**
+
+### Database Access
+```go
+// PostgreSQL with connection pooling
+db := postgresql.NewPool(config.Database)
+
+// Prepared statements
+stmt, err := db.Prepare("SELECT * FROM workflows WHERE id = $1")
+
+// Transaction management
+tx, err := db.Begin()
+defer tx.Rollback() // Will be ignored if committed
+// ... operations
+tx.Commit()
+
+// Vector database operations
+vectorDB := vector.NewClient(config.VectorDB)
+embeddings, err := vectorDB.SimilaritySearch(ctx, query, limit)
+```
+
+### Kubernetes Client Patterns
+```go
+// Use shared client
+k8sClient := k8s.NewClient(config.Kubernetes)
+defer k8sClient.Close()
+
+// Safety checks before destructive operations
+if err := k8sClient.ValidateAccess(ctx, namespace, resource); err != nil {
+    return fmt.Errorf("insufficient permissions: %w", err)
+}
+
+// Dry-run validation
+if err := k8sClient.DryRun(ctx, operation); err != nil {
+    return fmt.Errorf("dry-run failed: %w", err)
+}
+```
+
+### Concurrency Patterns
+```go
+// Worker pools with resource limits
+pool := workerpool.New(maxWorkers)
+
+// Circuit breakers for external services
+breaker := circuitbreaker.New(failureThreshold)
+
+// sync.Once for expensive initialization
+var once sync.Once
+once.Do(func() { initializeExpensiveResource() })
+
+// Prefer channels over shared memory
+results := make(chan ProcessingResult, bufferSize)
+```
+
+## 🧠 **Workflow Engine AI Integration**
+
+### Intelligent Workflow Builder
+**Location**: `pkg/workflow/engine/intelligent_workflow_builder_impl.go`
+- AI-generated multi-step remediation workflows
+- Dynamic template generation based on alert patterns
+- Learning from historical workflow effectiveness
+
+### AI Condition Evaluator
+**Location**: `pkg/workflow/engine/ai_condition_evaluator_impl.go`
+- Intelligent step condition evaluation
+- Context-aware decision making
+- Pattern recognition for workflow branching
+
+### Context Enrichment
+- **Kubernetes Context**: Real-time cluster data from `pkg/platform/k8s/client.go`
+- **Historical Context**: Action patterns from PostgreSQL via `pkg/ai/context/`
+- **Vector Context**: Similarity search from vector database
+
+## 🔍 **Vector Database and Learning**
+
+### Embedding Generation
+**Location**: `pkg/ai/embedding/pipeline.go`
+- Support for multiple embedding models (OpenAI, HuggingFace)
+- Consistent embedding generation for similarity search
+- Caching for performance optimization
+
+### Pattern Discovery
+**Location**: `pkg/intelligence/patterns/pattern_discovery_engine.go`
+- Identify recurring alert patterns
+- Discover correlation between actions and outcomes
+- Generate insights for proactive maintenance
+
+### Effectiveness Assessment
+**Location**: `pkg/ai/insights/assessor.go`
+- Track action outcomes and effectiveness
+- Learn from successful and failed interventions
+- Adjust confidence scores based on historical performance
+
+## 🧪 **Testing Patterns**
+
+### Testing Strategy - Defense-in-Depth
+- **MANDATORY**: Follow TDD methodology from [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc)
+- **Framework**: Use Ginkgo/Gomega BDD testing
+- **Pyramid Strategy**: 70%+ unit, <20% integration, <10% e2e (per [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc))
+- **Business Outcomes**: Validate business results, not implementation details
+- **Requirements**: All tests must reference specific business requirements (BR-XXX-XXX)
+- **Real Business Logic**: Use actual business components in unit tests with external mocks only
+
+### Mock Usage Decision Matrix - Defense-in-Depth Strategy
+| Component Type | Action | Reason |
+|---------------|--------|--------|
+| **External AI APIs** | Always mock in unit tests | Reliability, cost control, speed |
+| **External Databases** | Always mock in unit tests | Speed, isolation, reproducibility |
+| **Business Logic** | **NEVER mock** - use real components | Unit tests validate actual business logic |
+| **Kubernetes APIs** | Always mock in unit tests | Safety, reproducibility, speed |
+| **Network Services** | Always mock in unit tests | Reliability, speed, error simulation |
+| **File System** | Always mock in unit tests | Isolation, reproducibility |
+
+### What NOT to Mock in Unit Tests
+| Business Component | Use Real Implementation | Reason |
+|-------------------|-------------------------|--------|
+| **Workflow Engine** | Real business logic | Core business functionality |
+| **Safety Framework** | Real business logic | Critical business rules |
+| **Analytics Engine** | Real business logic | Business calculation logic |
+| **Pattern Discovery** | Real business logic | Business intelligence |
+| **Effectiveness Assessor** | Real business logic | Business metrics |
+
+### AI Testing Patterns
+```go
+// Use mock AI services for unit tests
+mockAI := testutil.NewMockAIClient()
+mockAI.SetResponse("expected response")
+
+// Integration testing with real AI when available
+if !config.UseMockLLM {
+    realAIClient := holmesgpt.NewClient(config.HolmesGPT)
+}
+
+// Error simulation
+mockAI.SetError(errors.New("AI service unavailable"))
+```
+
+## ⚙️ **Configuration Management**
+
+### Configuration Pattern
+```go
+// YAML configuration files
+type Config struct {
+    Database    DatabaseConfig    `yaml:"database"`
+    AI          AIConfig         `yaml:"ai"`
+    Kubernetes  K8sConfig        `yaml:"kubernetes"`
+}
+
+// Environment variable overrides
+func LoadConfig() (*Config, error) {
+    config := &Config{}
+
+    // Load from YAML
+    if err := yaml.Unmarshal(configData, config); err != nil {
+        return nil, err
+    }
+
+    // Override with environment variables
+    if endpoint := os.Getenv("LLM_ENDPOINT"); endpoint != "" {
+        config.AI.Endpoint = endpoint
+    }
+
+    // Validation
+    return config.Validate()
+}
+```
+
+## 📊 **Performance and Monitoring**
+
+### Performance Optimization
+```go
+// Caching strategy
+cache := redis.NewClient(config.Redis)
+embeddings := cache.GetEmbeddings(query)
+if embeddings == nil {
+    embeddings = generateEmbeddings(query)
+    cache.SetEmbeddings(query, embeddings, ttl)
+}
+
+// Batch processing
+alerts := collectAlertsForBatch(batchSize)
+responses := aiClient.AnalyzeBatch(ctx, alerts)
+```
+
+### Monitoring Patterns
+```go
+// Metrics collection
+metrics.Counter("ai_requests_total").WithLabelValues(provider).Inc()
+metrics.Histogram("ai_response_duration").Observe(duration.Seconds())
+
+// Health checks
+func (c *AIClient) HealthCheck(ctx context.Context) error {
+    _, err := c.Ping(ctx)
+    return err
+}
+```
+
+## 🚨 **Anti-Patterns - FORBIDDEN**
+
+### Code Organization Anti-Patterns
+```go
+// ❌ WRONG: Generic/vague naming
+type Manager struct{}
+type Service struct{}
+
+// ✅ CORRECT: Business-domain naming
+type WorkflowEngine struct{}
+type EffectivenessAssessor struct{}
+```
+
+### Error Handling Anti-Patterns
+```go
+// ❌ WRONG: Ignoring errors
+result, _ := riskyOperation()
+
+// ✅ CORRECT: Proper error handling
+result, err := riskyOperation()
+if err != nil {
+    return fmt.Errorf("operation failed: %w", err)
+}
+```
+
+### AI Integration Anti-Patterns
+```go
+// ❌ WRONG: Hardcoded AI endpoints
+client := ai.NewClient("http://localhost:8080")
+
+// ✅ CORRECT: Configurable endpoints
+client := ai.NewClient(config.AI.Endpoint)
+```
+
+## 🔗 **Integration Points**
+
+**Enforces**: [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) principles
+**Supports**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) testing framework
+**Integrates**: [05-kubernetes-safety.mdc](mdc:.cursor/rules/05-kubernetes-safety.mdc) safety patterns
+**Guides**: All technical implementation following business requirements
+
+**Priority**: ESSENTIAL - foundational patterns for all technical implementation

@@ -2437,14 +2437,15 @@ func (a *Assessor) generatePerformanceCorrelation(ctx context.Context, timeWindo
 
 					// Calculate effectiveness from execution status and duration
 					effectiveness := 0.5 // base effectiveness
-					if trace.ExecutionStatus == "completed" {
+					switch trace.ExecutionStatus {
+					case "completed":
 						effectiveness = 0.9 - (reduction * 0.4) // inverse correlation
 						if trace.ExecutionDurationMs != nil && *trace.ExecutionDurationMs > 0 {
 							// Factor in duration (shorter is better)
 							durationFactor := math.Min(1.0, 30000.0/float64(*trace.ExecutionDurationMs))
 							effectiveness *= durationFactor
 						}
-					} else if trace.ExecutionStatus == "failed" {
+					case "failed":
 						effectiveness = 0.3
 					}
 
@@ -2486,10 +2487,10 @@ func (a *Assessor) generatePerformanceCorrelation(ctx context.Context, timeWindo
 
 			// Add to context levels summary
 			contextLevels = append(contextLevels, map[string]interface{}{
-				"reduction_level":    reductionValue,
-				"avg_effectiveness":  avgEffectiveness,
-				"sample_count":       len(effectivenessData),
-				"effectiveness_std":  a.calculateStandardDeviation(effectivenessData),
+				"reduction_level":   reductionValue,
+				"avg_effectiveness": avgEffectiveness,
+				"sample_count":      len(effectivenessData),
+				"effectiveness_std": a.calculateStandardDeviation(effectivenessData),
 			})
 		}
 	}
@@ -2503,8 +2504,8 @@ func (a *Assessor) generatePerformanceCorrelation(ctx context.Context, timeWindo
 	return map[string]interface{}{
 		"context_reduction_levels": contextLevels,
 		"correlation_coefficient":  correlationCoeff,
-		"total_samples":           len(traces),
-		"analysis_period":         timeWindow.String(),
+		"total_samples":            len(traces),
+		"analysis_period":          timeWindow.String(),
 	}, nil
 }
 
@@ -2526,8 +2527,8 @@ func (a *Assessor) generatePerformanceDegradation(ctx context.Context, timeWindo
 
 	if len(traces) < minDataPointsForStats {
 		return map[string]interface{}{
-			"insufficient_data":    true,
-			"threshold_breaches":   []map[string]interface{}{},
+			"insufficient_data":  true,
+			"threshold_breaches": []map[string]interface{}{},
 		}, nil
 	}
 
@@ -2566,7 +2567,7 @@ func (a *Assessor) generatePerformanceDegradation(ctx context.Context, timeWindo
 			avgDuration := totalDuration / float64(len(segment))
 
 			// Combine success rate and duration for effectiveness score
-			effectiveness := successRate * 0.7 + (1.0 - math.Min(1.0, avgDuration/30000.0)) * 0.3
+			effectiveness := successRate*0.7 + (1.0-math.Min(1.0, avgDuration/30000.0))*0.3
 			segmentEffectiveness[i] = effectiveness
 		}
 	}
@@ -2595,17 +2596,17 @@ func (a *Assessor) generatePerformanceDegradation(ctx context.Context, timeWindo
 			degradation := previousEffectiveness - currentEffectiveness
 			if degradation > degradationThreshold {
 				severity = "high"
-				impactScore = math.Min(1.0, impactScore + degradation)
+				impactScore = math.Min(1.0, impactScore+degradation)
 			}
 
 			breach := map[string]interface{}{
-				"timestamp":      startTime.Add(time.Duration(i) * segmentDuration),
-				"segment":        i,
-				"effectiveness":  currentEffectiveness,
-				"threshold":      effectivenessThreshold,
-				"severity":       severity,
-				"impact_score":   impactScore,
-				"degradation":    degradation,
+				"timestamp":     startTime.Add(time.Duration(i) * segmentDuration),
+				"segment":       i,
+				"effectiveness": currentEffectiveness,
+				"threshold":     effectivenessThreshold,
+				"severity":      severity,
+				"impact_score":  impactScore,
+				"degradation":   degradation,
 			}
 
 			thresholdBreaches = append(thresholdBreaches, breach)
@@ -2613,11 +2614,11 @@ func (a *Assessor) generatePerformanceDegradation(ctx context.Context, timeWindo
 	}
 
 	return map[string]interface{}{
-		"threshold_breaches":     thresholdBreaches,
-		"segment_effectiveness":  segmentEffectiveness,
-		"analysis_segments":      segmentCount,
+		"threshold_breaches":      thresholdBreaches,
+		"segment_effectiveness":   segmentEffectiveness,
+		"analysis_segments":       segmentCount,
 		"effectiveness_threshold": effectivenessThreshold,
-		"total_breaches":         len(thresholdBreaches),
+		"total_breaches":          len(thresholdBreaches),
 	}, nil
 }
 
@@ -2652,7 +2653,7 @@ func (a *Assessor) calculatePearsonCorrelation(x, y []float64) float64 {
 		return 0.0
 	}
 
-	return numerator / math.Sqrt(denomX * denomY)
+	return numerator / math.Sqrt(denomX*denomY)
 }
 
 // calculateStandardDeviation calculates standard deviation for a slice of float64
@@ -2714,8 +2715,8 @@ func (a *Assessor) AssessContextAdequacyImpact(ctx context.Context, contextLevel
 
 	// Calculate context adequacy metrics
 	contextMetrics := map[string]interface{}{
-		"context_level":           contextLevel,
-		"assessment_timestamp":    time.Now(),
+		"context_level":          contextLevel,
+		"assessment_timestamp":   time.Now(),
 		"sample_size":            len(traces),
 		"adequacy_score":         0.0,
 		"performance_impact":     0.0,
@@ -2755,7 +2756,7 @@ func (a *Assessor) AssessContextAdequacyImpact(ctx context.Context, contextLevel
 	avgEffectiveness := totalEffectiveness / float64(len(traces))
 
 	// Calculate adequacy score based on context level and performance correlation
-	adequacyScore := contextLevel * 0.4 + avgEffectiveness * 0.6
+	adequacyScore := contextLevel*0.4 + avgEffectiveness*0.6
 
 	// Calculate performance impact (higher context should yield better performance)
 	performanceImpact := 0.0
@@ -2764,7 +2765,7 @@ func (a *Assessor) AssessContextAdequacyImpact(ctx context.Context, contextLevel
 	}
 
 	// Calculate optimization potential
-	optimizationPotential := math.Max(0.0, 1.0 - adequacyScore)
+	optimizationPotential := math.Max(0.0, 1.0-adequacyScore)
 
 	// Generate recommendations based on assessment
 	recommendations := []string{}
@@ -2846,12 +2847,12 @@ func (a *Assessor) ConfigureAdaptiveAlerts(ctx context.Context, performanceThres
 	// Analyze historical performance patterns
 	alertConfig := map[string]interface{}{
 		"configuration_timestamp": time.Now(),
-		"input_thresholds":       performanceThresholds,
-		"calibrated_thresholds":  map[string]float64{},
-		"alert_rules":           []map[string]interface{}{},
-		"sensitivity_levels":    map[string]string{},
-		"sample_size":           len(traces),
-		"recommendations":       []string{},
+		"input_thresholds":        performanceThresholds,
+		"calibrated_thresholds":   map[string]float64{},
+		"alert_rules":             []map[string]interface{}{},
+		"sensitivity_levels":      map[string]string{},
+		"sample_size":             len(traces),
+		"recommendations":         []string{},
 	}
 
 	if len(traces) == 0 {
@@ -2914,11 +2915,11 @@ func (a *Assessor) ConfigureAdaptiveAlerts(ctx context.Context, performanceThres
 
 			// If performance is historically volatile (high std dev), make threshold more sensitive
 			if stdDev > 0.15 {
-				adaptiveThreshold = math.Max(0.1, baseThreshold - (stdDev * 0.5))
+				adaptiveThreshold = math.Max(0.1, baseThreshold-(stdDev*0.5))
 				sensitivityLevels[metric] = "high"
 			} else if stdDev < 0.05 {
 				// If performance is stable, allow slightly lower threshold
-				adaptiveThreshold = math.Min(0.9, baseThreshold + 0.1)
+				adaptiveThreshold = math.Min(0.9, baseThreshold+0.1)
 				sensitivityLevels[metric] = "low"
 			} else {
 				sensitivityLevels[metric] = "medium"
@@ -2928,14 +2929,14 @@ func (a *Assessor) ConfigureAdaptiveAlerts(ctx context.Context, performanceThres
 
 			// Create alert rule
 			alertRule := map[string]interface{}{
-				"metric":              metric,
-				"threshold":           adaptiveThreshold,
-				"original_threshold":  baseThreshold,
-				"historical_mean":     mean,
-				"historical_std_dev":  stdDev,
-				"sensitivity":         sensitivityLevels[metric],
-				"evaluation_window":   "5m",
-				"alert_frequency":     "every 1m",
+				"metric":             metric,
+				"threshold":          adaptiveThreshold,
+				"original_threshold": baseThreshold,
+				"historical_mean":    mean,
+				"historical_std_dev": stdDev,
+				"sensitivity":        sensitivityLevels[metric],
+				"evaluation_window":  "5m",
+				"alert_frequency":    "every 1m",
 				"severity":           a.determineSeverity(adaptiveThreshold, mean),
 			}
 
@@ -2990,9 +2991,9 @@ func (a *Assessor) ConfigureAdaptiveAlerts(ctx context.Context, performanceThres
 	alertConfig["recommendations"] = recommendations
 
 	a.logger.WithFields(logrus.Fields{
-		"business_requirement":  "BR-MONITORING-019",
-		"calibrated_metrics":    len(calibratedThresholds),
-		"alert_rules_created":   len(alertRules),
+		"business_requirement":     "BR-MONITORING-019",
+		"calibrated_metrics":       len(calibratedThresholds),
+		"alert_rules_created":      len(alertRules),
 		"high_sensitivity_metrics": highSensitivityCount,
 	}).Info("Adaptive alert configuration completed")
 
@@ -3030,16 +3031,16 @@ func (a *Assessor) GeneratePerformanceCorrelationDashboard(ctx context.Context, 
 	// Generate dashboard configuration
 	dashboard := map[string]interface{}{
 		"dashboard_metadata": map[string]interface{}{
-			"title":              "Performance Correlation Dashboard",
-			"generated_at":       time.Now(),
-			"time_window":        timeWindow.String(),
-			"data_points":        len(traces),
-			"refresh_interval":   "30s",
+			"title":            "Performance Correlation Dashboard",
+			"generated_at":     time.Now(),
+			"time_window":      timeWindow.String(),
+			"data_points":      len(traces),
+			"refresh_interval": "30s",
 		},
-		"panels":      []map[string]interface{}{},
+		"panels":       []map[string]interface{}{},
 		"correlations": map[string]interface{}{},
-		"insights":    []string{},
-		"metrics":     map[string]interface{}{},
+		"insights":     []string{},
+		"metrics":      map[string]interface{}{},
 	}
 
 	if len(traces) == 0 {
@@ -3183,8 +3184,8 @@ func (a *Assessor) generateContextCorrelationPanel(traces []actionhistory.Resour
 func (a *Assessor) generateSeverityCorrelationPanel(traces []actionhistory.ResourceActionTrace) map[string]interface{} {
 	// Group by alert severity
 	severityData := make(map[string]struct {
-		totalDuration   float64
-		count          int
+		totalDuration    float64
+		count            int
 		avgEffectiveness float64
 	})
 
@@ -3312,10 +3313,10 @@ func (a *Assessor) generateCorrelationInsights(correlations map[string]interface
 
 func (a *Assessor) generateDashboardMetrics(traces []actionhistory.ResourceActionTrace, correlations map[string]interface{}) map[string]interface{} {
 	metrics := map[string]interface{}{
-		"total_actions":    len(traces),
-		"unique_types":     0,
+		"total_actions":     len(traces),
+		"unique_types":      0,
 		"avg_effectiveness": 0.0,
-		"success_rate":     0.0,
+		"success_rate":      0.0,
 	}
 
 	if len(traces) == 0 {

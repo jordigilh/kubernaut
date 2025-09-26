@@ -93,9 +93,9 @@ func (h *DatabaseIsolationHelper) GetDatabase() interface{} {
 	return h.dbUtils.GetDatabase()
 }
 
-// CreateFakeSLMClient creates a fake SLM client (no external dependencies)
-func (h *DatabaseIsolationHelper) CreateFakeSLMClient() llm.Client {
-	return NewFakeSLMClient()
+// CreateTestSLMClient creates a test SLM client (no external dependencies)
+func (h *DatabaseIsolationHelper) CreateTestSLMClient() llm.Client {
+	return NewTestSLMClient()
 }
 
 // CreateBasicSLMClient creates a basic SLM client using test configuration
@@ -103,8 +103,8 @@ func (h *DatabaseIsolationHelper) CreateBasicSLMClient() (llm.Client, error) {
 	// Configuration no longer needed for fake client
 
 	// Use fake client to eliminate external dependencies - this method should not be used
-	// Use CreateFakeSLMClient() instead for isolated testing
-	return NewFakeSLMClient(), nil
+	// Use CreateTestSLMClient() instead for isolated testing
+	return NewTestSLMClient(), nil
 }
 
 // GetTestConfig returns the test configuration
@@ -436,7 +436,7 @@ func ExampleTransactionIsolatedTest() {
 		Context("when testing database operations", func() {
 			It("should have clean database state", func() {
 				// Use helper.GetRepository() instead of shared database
-				// Use helper.CreateFakeSLMClient() instead of real clients
+				// Use helper.CreateTestSLMClient() instead of real clients
 
 				repo := helper.GetRepository()
 				// BR-DATABASE-001-A: Validate repository functionality through business metrics
@@ -490,12 +490,12 @@ func (m *TestFileMigrator) MigrationExamples() {
 	// Example 2: Replace real client usage
 	fmt.Println("BEFORE (real clients):")
 	fmt.Println(`
-	slmClient := NewFakeSLMClient()
+	slmClient := NewTestSLMClient()
 	`)
 
 	fmt.Println("AFTER (fake clients):")
 	fmt.Println(`
-	slmClient := helper.CreateFakeSLMClient()
+	slmClient := helper.CreateTestSLMClient()
 	// Configure fake responses as needed
 	`)
 
