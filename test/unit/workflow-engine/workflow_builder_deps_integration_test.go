@@ -102,20 +102,21 @@ var _ = Describe("Workflow Builder Dependencies Integration - Business Requireme
 			llmClient, _ := engine.CreateTestLLMClient(logger)
 			vectorDB := engine.CreateTestVectorDatabase(logger)
 			analyticsEngine := engine.CreateTestAnalyticsEngine(logger)
-			metricsCollector := engine.NewAIMetricsCollector()
 			patternStore := engine.CreateTestPatternStore(logger)
 			executionRepo := engine.NewMemoryExecutionRepository(logger)
 
-			// Create workflow builder with standard pattern
-			builder := engine.NewIntelligentWorkflowBuilder(
-				llmClient,
-				vectorDB,
-				analyticsEngine,
-				metricsCollector,
-				patternStore,
-				executionRepo,
-				logger,
-			)
+			// Create workflow builder with new config pattern
+			config := &engine.IntelligentWorkflowBuilderConfig{
+				LLMClient:       llmClient,
+				VectorDB:        vectorDB,
+				AnalyticsEngine: analyticsEngine,
+				PatternStore:    patternStore,
+				ExecutionRepo:   executionRepo,
+				Logger:          logger,
+			}
+
+			builder, err := engine.NewIntelligentWorkflowBuilder(config)
+			Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 
 			// Enhance with only k8s client (no action repo)
 			workflowBuilder, err := engine.EnhanceWorkflowBuilderWithDependencies(
@@ -167,20 +168,23 @@ func createWorkflowBuilderWithDependencies(
 	llmClient, _ := engine.CreateTestLLMClient(logger)
 	vectorDB := engine.CreateTestVectorDatabase(logger)
 	analyticsEngine := engine.CreateTestAnalyticsEngine(logger)
-	metricsCollector := engine.NewAIMetricsCollector()
 	patternStore := engine.CreateTestPatternStore(logger)
 	executionRepo := engine.NewMemoryExecutionRepository(logger)
 
-	// Create workflow builder with standard pattern
-	builder := engine.NewIntelligentWorkflowBuilder(
-		llmClient,
-		vectorDB,
-		analyticsEngine,
-		metricsCollector,
-		patternStore,
-		executionRepo,
-		logger,
-	)
+	// Create workflow builder with new config pattern
+	config := &engine.IntelligentWorkflowBuilderConfig{
+		LLMClient:       llmClient,
+		VectorDB:        vectorDB,
+		AnalyticsEngine: analyticsEngine,
+		PatternStore:    patternStore,
+		ExecutionRepo:   executionRepo,
+		Logger:          logger,
+	}
+
+	builder, err := engine.NewIntelligentWorkflowBuilder(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create workflow builder: %w", err)
+	}
 
 	// Inject real dependencies using the enhanced pattern
 	// Business Requirement: BR-WB-DEPS-001 - Provide real dependencies

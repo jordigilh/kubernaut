@@ -1,0 +1,136 @@
+# Chaos Engineering Experiments Configuration for E2E Testing
+# BR-E2E-002: LitmusChaos experiment definitions for controlled instability injection
+
+chaos_experiments:
+  # Pod-level chaos experiments
+  - name: "pod-delete-experiment"
+    type: "pod-delete"
+    description: "Deletes random pods to test recovery capabilities"
+    target_selector:
+      app: "kubernaut"
+    namespace: "kubernaut-e2e"
+    duration: "2m"
+    parameters:
+      force: false
+      interval: "30s"
+
+  - name: "pod-cpu-hog-experiment"
+    type: "pod-cpu-hog"
+    description: "Consumes CPU resources to test resource management"
+    target_selector:
+      component: "test-workload"
+    namespace: "kubernaut-e2e"
+    duration: "3m"
+    parameters:
+      cpu_cores: "1"
+      cpu_load: "100"
+
+  - name: "pod-memory-hog-experiment"
+    type: "pod-memory-hog"
+    description: "Consumes memory resources to test memory management"
+    target_selector:
+      component: "test-workload"
+    namespace: "kubernaut-e2e"
+    duration: "3m"
+    parameters:
+      memory_consumption: "256M"
+
+  # Node-level chaos experiments
+  - name: "node-cpu-hog-experiment"
+    type: "node-cpu-hog"
+    description: "Stresses node CPU to test node-level recovery"
+    target_selector:
+      kubernetes.io/os: "linux"
+    namespace: "kubernaut-e2e"
+    duration: "2m"
+    parameters:
+      cpu_cores: "2"
+      cpu_load: "80"
+
+  - name: "node-memory-hog-experiment"
+    type: "node-memory-hog"
+    description: "Stresses node memory to test memory pressure handling"
+    target_selector:
+      kubernetes.io/os: "linux"
+    namespace: "kubernaut-e2e"
+    duration: "2m"
+    parameters:
+      memory_consumption: "512M"
+
+  # Network chaos experiments
+  - name: "network-partition-experiment"
+    type: "network-partition"
+    description: "Simulates network partitions between services"
+    target_selector:
+      app: "kubernaut"
+    namespace: "kubernaut-e2e"
+    duration: "90s"
+    parameters:
+      destination_ips: "192.168.1.0/24"
+
+  - name: "network-latency-experiment"
+    type: "network-latency"
+    description: "Introduces network latency to test timeout handling"
+    target_selector:
+      app: "kubernaut"
+    namespace: "kubernaut-e2e"
+    duration: "90s"
+    parameters:
+      latency: "2000ms"
+      jitter: "500ms"
+
+  # Application-level chaos experiments
+  - name: "container-kill-experiment"
+    type: "container-kill"
+    description: "Kills specific containers to test restart policies"
+    target_selector:
+      app: "kubernaut"
+    namespace: "kubernaut-e2e"
+    duration: "60s"
+    parameters:
+      target_container: "main"
+      signal: "SIGKILL"
+
+  - name: "disk-fill-experiment"
+    type: "disk-fill"
+    description: "Fills disk space to test storage monitoring"
+    target_selector:
+      component: "test-workload"
+    namespace: "kubernaut-e2e"
+    duration: "90s"
+    parameters:
+      fill_percentage: "80"
+      target_path: "/tmp"
+
+# Chaos experiment scheduling
+scheduling:
+  enabled: true
+  mode: "sequential"  # "sequential" or "parallel"
+  interval_between_experiments: "30s"
+  max_concurrent_experiments: 2
+
+# Safety constraints
+safety:
+  enable_safety_checks: true
+  max_experiment_duration: "5m"
+  resource_limits:
+    cpu: "2"
+    memory: "1Gi"
+  forbidden_namespaces:
+    - "kube-system"
+    - "openshift-system"
+    - "default"
+
+# Monitoring and observability
+monitoring:
+  enable_metrics_collection: true
+  metrics_interval: "10s"
+  enable_event_logging: true
+  chaos_dashboard_enabled: true
+
+# Recovery settings
+recovery:
+  auto_recovery_enabled: true
+  recovery_timeout: "2m"
+  cleanup_after_experiment: true
+  verify_system_health: true

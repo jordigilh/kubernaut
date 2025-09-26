@@ -715,9 +715,9 @@ func calculateContinuousImprovementValue(improvements []float64, scenario *Adapt
 	}
 
 	// Use scenario parameter to apply context-specific multipliers - Following project guideline: use parameters properly
-	var scenarioMultiplier float64 = 1.0
-	var baseCostPerImprovement float64 = 1000.0 // Default $1000 per improvement
-	var investmentBase float64 = 10000.0        // Default $10K investment
+	scenarioMultiplier := 1.0
+	baseCostPerImprovement := 1000.0 // Default $1000 per improvement
+	investmentBase := 10000.0        // Default $10K investment
 
 	if scenario != nil {
 		// Apply scenario-specific adjustments

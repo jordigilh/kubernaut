@@ -8,7 +8,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 
 	// Guideline #14: Exception for test utilities - dot import acceptable for test assertion APIs
-	. "github.com/onsi/gomega" //nolint:revive
+	. "github.com/onsi/gomega" //nolint:staticcheck
 )
 
 // Minimal interfaces to avoid import cycles - assertions only need these methods
@@ -291,7 +291,8 @@ func (a *IntelligenceAssertions) assertStableTrend(data []map[string]interface{}
 	variance := 0.0
 	for _, point := range data {
 		value := point["value"].(float64)
-		variance += math.Pow(value-mean, 2)
+		diff := value - mean
+		variance += diff * diff
 	}
 	variance /= float64(len(data))
 

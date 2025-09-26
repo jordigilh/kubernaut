@@ -174,6 +174,8 @@ func (mcs *MonitoringClientSet) HealthCheckAll(ctx context.Context) error {
 	// This is a simple client that records metrics to Prometheus
 	if infraClient, ok := mcs.GetInfrastructureMetricsClient(); ok && infraClient != nil {
 		// Client exists and is ready - no additional health check needed
+		// Note: Infrastructure client availability confirmed
+		_ = infraClient // Acknowledge we're checking the client
 	}
 
 	if len(healthErrors) > 0 {

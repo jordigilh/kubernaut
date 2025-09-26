@@ -46,11 +46,11 @@ var _ = Describe("Circuit Breaker", func() {
 				case "/success":
 					atomic.AddInt64(&successCount, 1)
 					w.WriteHeader(http.StatusOK)
-					w.Write([]byte("success"))
+					_, _ = w.Write([]byte("success"))
 				case "/failure":
 					atomic.AddInt64(&failureCount, 1)
 					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte("error"))
+					_, _ = w.Write([]byte("error"))
 				case "/slow":
 					time.Sleep(200 * time.Millisecond) // Slower than request timeout
 					w.WriteHeader(http.StatusOK)
@@ -105,7 +105,12 @@ var _ = Describe("Circuit Breaker", func() {
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
-				resp.Body.Close()
+				defer func() {
+					if closeErr := resp.Body.Close(); closeErr != nil {
+						// Log error in test context but don't fail the test
+						GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+					}
+				}()
 			}
 
 			// Business Validation: Should remain in closed state with good metrics
@@ -128,7 +133,9 @@ var _ = Describe("Circuit Breaker", func() {
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
-				resp.Body.Close()
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+				}
 			}
 
 			// Business Validation: Circuit should be open after threshold failures
@@ -156,7 +163,9 @@ var _ = Describe("Circuit Breaker", func() {
 				} else {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(resp.StatusCode).To(Equal(http.StatusOK))
-					resp.Body.Close()
+					if closeErr := resp.Body.Close(); closeErr != nil {
+						GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+					}
 					successfulRequests++
 				}
 			}
@@ -178,7 +187,9 @@ var _ = Describe("Circuit Breaker", func() {
 
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+				}
 			}
 
 			Expect(circuitBreaker.GetState()).To(Equal(infrahttp.StateOpen))
@@ -192,7 +203,9 @@ var _ = Describe("Circuit Breaker", func() {
 
 			resp, err := circuitBreaker.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+			}
 
 			// Business Validation: Should be in half-open state
 			Expect(circuitBreaker.GetState()).To(Equal(infrahttp.StateHalfOpen))
@@ -206,7 +219,9 @@ var _ = Describe("Circuit Breaker", func() {
 				Expect(err).ToNot(HaveOccurred())
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+				}
 			}
 
 			// Wait for recovery and make successful request to get to half-open
@@ -215,7 +230,9 @@ var _ = Describe("Circuit Breaker", func() {
 			Expect(err).ToNot(HaveOccurred())
 			resp, err := circuitBreaker.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
+			if closeErr := resp.Body.Close(); closeErr != nil {
+				GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+			}
 
 			Expect(circuitBreaker.GetState()).To(Equal(infrahttp.StateHalfOpen))
 
@@ -225,7 +242,9 @@ var _ = Describe("Circuit Breaker", func() {
 				Expect(err).ToNot(HaveOccurred())
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+				}
 			}
 
 			// Business Validation: Circuit should be closed after successful recovery
@@ -287,7 +306,9 @@ var _ = Describe("Circuit Breaker", func() {
 							}
 						} else {
 							atomic.AddInt64(&successfulRequests, 1)
-							resp.Body.Close()
+							if closeErr := resp.Body.Close(); closeErr != nil {
+								GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+							}
 						}
 
 						time.Sleep(time.Microsecond * 50) // Small delay to prevent overwhelming
@@ -335,7 +356,9 @@ var _ = Describe("Circuit Breaker", func() {
 				Expect(err).ToNot(HaveOccurred())
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+				}
 			}
 
 			for i := 0; i < failureCount; i++ {
@@ -343,7 +366,9 @@ var _ = Describe("Circuit Breaker", func() {
 				Expect(err).ToNot(HaveOccurred())
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+				}
 			}
 
 			// Business Validation: Health score should reflect success rate
@@ -362,7 +387,9 @@ var _ = Describe("Circuit Breaker", func() {
 				Expect(err).ToNot(HaveOccurred())
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+				}
 			}
 
 			Expect(circuitBreaker.GetState()).To(Equal(infrahttp.StateOpen))
@@ -397,7 +424,9 @@ var _ = Describe("Circuit Breaker", func() {
 				resp, err := circuitBreaker.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(op.expected))
-				resp.Body.Close()
+				if closeErr := resp.Body.Close(); closeErr != nil {
+					GinkgoWriter.Printf("Warning: failed to close response body: %v\n", closeErr)
+				}
 			}
 
 			// Business Validation: Metrics should be accurate

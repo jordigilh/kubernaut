@@ -42,6 +42,8 @@ func ExpectErrorPattern(err error, pattern string) {
 	gomega.Expect(ValidateErrorPattern(err, pattern)).To(gomega.BeTrue())
 }
 
+// ErrorCategory and constants are defined in error_standards.go
+
 // ExpectErrorCategory verifies error belongs to expected category
 func ExpectErrorCategory(err error, expectedCategory ErrorCategory) {
 	gomega.Expect(err).To(gomega.HaveOccurred())

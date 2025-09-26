@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o prometheus-alerts-slm ./cmd/prometheus-alerts-slm
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kubernaut ./cmd/dynamic-toolset-server
 
 # Runtime stage
 FROM alpine:latest
@@ -32,14 +32,14 @@ RUN addgroup -g 1001 appgroup && adduser -u 1001 -G appgroup -s /bin/sh -D appus
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/prometheus-alerts-slm .
+COPY --from=builder /app/kubernaut .
 
 # Copy configuration files
 COPY --from=builder /app/config ./config
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/tmp && \
-    chown -R appuser:appgroup /app
+  chown -R appuser:appgroup /app
 
 # Switch to non-root user
 USER appuser
@@ -52,4 +52,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
 EXPOSE 8080 9090
 
 # Run the application
-CMD ["./prometheus-alerts-slm"]
+CMD ["./kubernaut"]

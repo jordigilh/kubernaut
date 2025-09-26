@@ -271,8 +271,8 @@ func (lepb *DefaultLearningEnhancedPromptBuilder) GetLearnFromExecution(ctx cont
 	return nil
 }
 
-// GetGetOptimizedTemplate retrieves an optimized version of a template
-func (lepb *DefaultLearningEnhancedPromptBuilder) GetGetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
+// GetOptimizedTemplate retrieves an optimized version of a template
+func (lepb *DefaultLearningEnhancedPromptBuilder) GetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
 	lepb.log.WithField("template_id", templateID).Debug("Retrieving optimized template")
 
 	lepb.templateStore.mutex.RLock()
@@ -1388,7 +1388,7 @@ func (lepb *DefaultLearningEnhancedPromptBuilder) formatContext(context map[stri
 	result := "{\n"
 
 	// Sort keys for consistent output
-	keys := make([]string, 0, len(context))
+	var keys []string
 	for key := range context {
 		keys = append(keys, key)
 	}

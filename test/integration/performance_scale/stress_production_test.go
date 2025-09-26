@@ -23,7 +23,7 @@ import (
 var _ = Describe("Stress Testing and Production Scenario Simulation", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		testUtils  *shared.IntegrationTestUtils
+		testUtils  *shared.DatabaseIntegrationTestUtils
 		repository actionhistory.Repository
 		testConfig shared.IntegrationConfig
 	)

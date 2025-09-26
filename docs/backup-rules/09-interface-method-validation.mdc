@@ -1,0 +1,691 @@
+---
+description: "Interface and method validation before code generation"
+globs: "*_test.go,test/**/*"
+---
+# Interface and Method Validation Mandate - ENHANCED
+
+## 🔍 **MANDATORY: Interface and Method Validation Before Code Generation**
+
+### Critical Validation Process - ENHANCED
+**MANDATORY**: Before generating ANY test code that calls methods or uses types:
+
+1. **Interface Verification**: Use `codebase_search` to verify actual interface definitions
+2. **Method Existence Check**: Confirm all called methods exist with EXACT signatures
+3. **Type Validation**: Verify all referenced types and struct fields exist
+4. **Import Validation**: Ensure all imported packages and types are available
+5. **🆕 COMPILATION VERIFICATION**: MANDATORY compilation check after interface usage
+6. **🆕 TYPE COMPATIBILITY CHECK**: Verify parameter and return type compatibility
+
+### 🆕 **MANDATORY CODE GENERATION HALT PROTOCOL - ENHANCED**
+**BEFORE generating ANY line of code:**
+
+1. **MANDATORY SEARCH**: Run `codebase_search "existing [ComponentType] real implementations"` first, then `codebase_search "existing [ComponentType] mock implementations"`
+2. **MANDATORY VERIFICATION**: If real business logic exists, PREFER it over mocks; if using mocks, use existing ones
+3. **🆕 BUILD ERROR PREVENTION**: Check for common build error patterns
+4. **🆕 IMPORT CONSISTENCY**: Verify all imports exist and are properly used
+5. **VIOLATION RESPONSE**: If attempting to create duplicate mocks, IMMEDIATELY STOP and use existing
+
+**ENFORCEMENT TRIGGER WORDS**:
+- Creating any type with "Mock" in name → TRIGGER validation
+- Using `NewMock*` → TRIGGER existing pattern search
+- Implementing interfaces → TRIGGER interface validation
+
+**VIOLATION AUTO-DETECTION - ENHANCED**:
+```bash
+# If you find yourself typing any of these, STOP:
+type Mock* struct          # ❌ VIOLATION: Check existing mocks first
+func NewMock*             # ❌ VIOLATION: Use existing patterns
+*Mock struct {            # ❌ VIOLATION: Reuse existing mocks
+logrus.New()              # ❌ VIOLATION: Use existing mocks.NewMockLogger()
+mockLogger                # ❌ VIOLATION: Check variable declaration
+import.*logrus.*\n.*not   # ❌ VIOLATION: Unused import detected
+```
+
+**🆕 COMMON BUILD ERROR PATTERNS TO PREVENT**:
+```bash
+# These patterns MUST trigger immediate validation:
+mockLogger.*without.*var  # ❌ Undefined variable usage
+import.*unused           # ❌ Unused import statements
+mocks\..*without.*import  # ❌ Mock usage without import
+NewMock.*duplicate       # ❌ Duplicate mock creation
+```
+
+### 🎯 **BUSINESS LOGIC PREFERENCE PROTOCOL - NEW**
+
+**MANDATORY DECISION TREE** before using ANY interface:
+
+1. **FIRST**: Search for real business implementations
+   ```bash
+   codebase_search "existing [ComponentType] implementations in pkg/"
+   ```
+
+2. **PREFER REAL BUSINESS LOGIC** if available:
+   ```go
+   // ✅ PREFERRED: Use real business components
+   workflowEngine := engine.NewIntelligentWorkflowBuilder(realDeps...)
+   safetyFramework := platform.NewSafetyFramework(realConfig)
+   ```
+
+3. **EVALUATE MOCK NECESSITY**: Only if:
+   - **External dependency** (K8s, databases, APIs) unavailable
+   - **Error simulation** required for specific test scenario
+   - **Performance** requirements (<10ms execution)
+   - **Component isolation** explicitly needed
+
+4. **IF MOCKS REQUIRED**: Use existing patterns
+   ```bash
+   codebase_search "existing [ComponentType] mock implementations"
+   ```
+
+**ENFORCEMENT**: This protocol is MANDATORY for ALL interface usage to ensure business logic integration compliance.
+
+### Pre-Generation Checklist - ENHANCED
+Before writing test code:
+- [ ] **🆕 BUSINESS LOGIC FIRST**: Search for real implementations: `codebase_search "existing [ComponentType] implementations"`
+- [ ] **🆕 EVALUATE MOCK NECESSITY**: Justify why mock needed instead of real business logic
+- [ ] Search for actual interface definition: `codebase_search` "interface InterfaceName"
+- [ ] Verify method signatures: `grep` "func.*MethodName" in relevant packages
+- [ ] 🆕 **VALIDATE EXACT SIGNATURES**: Check parameter types and return types match
+- [ ] Confirm struct fields: `grep` "FieldName.*type" in struct definitions
+- [ ] Validate imports: Check package existence and exported types
+- [ ] 🆕 **MANDATORY COMPILATION CHECK**: Run `go build` after any interface usage
+- [ ] 🆕 **LINT VALIDATION**: Run linter to catch type mismatches
+
+### Code Generation Rules - ENHANCED
+- **NEVER** assume method names or signatures
+- **ALWAYS** verify interface vs concrete type usage
+- **MANDATORY** use `read_file` to check actual implementations before referencing
+- **REQUIRED** validate all struct fields before using in literals
+- **🆕 MANDATORY**: Verify method parameter and return types match exactly
+- **🆕 MANDATORY**: Test compilation immediately after interface method calls
+- **🆕 MANDATORY**: Use constructor functions when available (e.g., `NewWorkflow`)
+
+### Validation Commands - ENHANCED
+```bash
+# Verify interface definition
+codebase_search "type InterfaceName interface"
+
+# Check method existence AND signature
+grep -A 5 "func.*MethodName" pkg/
+
+# 🆕 VALIDATE EXACT METHOD SIGNATURE
+grep -A 1 "func.*MethodName.*(" pkg/ | head -10
+
+# Validate struct fields
+grep -A 20 "type StructName struct" pkg/
+
+# 🆕 MANDATORY COMPILATION CHECK
+go build ./path/to/test/file.go
+
+# 🆕 MANDATORY LINT CHECK
+golangci-lint run ./path/to/test/file.go
+```
+
+### 🆕 **TYPE COMPATIBILITY VALIDATION**
+Before using any interface method:
+
+1. **Parameter Type Check**: Ensure all parameters match expected types
+2. **Return Type Check**: Verify return types are compatible with usage
+3. **Constructor Usage**: Use proper constructor functions when available
+4. **Type Conversion**: Apply necessary type conversions explicitly
+
+### Error Prevention - ENHANCED
+- Use concrete types when available, interfaces when appropriate
+- Call `read_file` on interface definitions before generating code
+- Verify method signatures match actual implementations
+- **🆕 MANDATORY**: Test compilation after each significant code generation
+- **🆕 MANDATORY**: Validate type compatibility before method calls
+- **🆕 MANDATORY**: Use constructor functions for complex types
+
+### 🆕 **COMPILATION VERIFICATION MANDATE - ENHANCED**
+**CRITICAL**: After ANY interface method usage:
+
+1. **Immediate Compilation Check**: Run `go build` on the modified file
+2. **Lint Validation**: Run linter to catch type issues
+3. **🆕 PRE-COMMIT VALIDATION**: Use pre-commit hook to prevent violations
+4. **Error Triage**: Fix ALL compilation/lint errors before proceeding
+5. **Documentation**: Document any type conversions or constructor usage
+
+### 🆕 **AUTOMATED BUILD ERROR PREVENTION - ENHANCED**
+**MANDATORY TOOLS INTEGRATION**:
+
+1. **Pre-Commit Hook Installation**:
+   ```bash
+   # Install the enhanced pre-commit hook
+   ./scripts/install-pre-commit.sh
+   ```
+
+2. **Continuous Validation**:
+   ```bash
+   # Run validation before any commit
+   ./scripts/cursor-rule-validator.sh
+   ```
+
+3. **Real-Time Compilation Checks**:
+   ```bash
+   # Validate specific test file
+   go build ./path/to/test_file.go
+   ```
+
+### 🚨 **MANDATORY PRE-CODE-GENERATION PROTOCOL - NEW**
+**BEFORE writing ANY test code, MUST execute this checklist:**
+
+#### **Step 1: Interface Discovery (MANDATORY)**
+```bash
+# Search for existing implementations FIRST
+codebase_search "existing [ComponentType] real implementations in pkg/"
+codebase_search "existing [ComponentType] mock implementations in testutil"
+```
+
+#### **Step 2: Constructor Validation (MANDATORY)**
+```bash
+# Validate actual constructor signatures
+codebase_search "[ComponentType].New* function signature"
+grep -A 3 "func New.*[ComponentType]" pkg/
+```
+
+#### **Step 3: Import Requirements (MANDATORY)**
+```bash
+# Validate required imports exist
+find pkg/ -name "*.go" -exec grep -l "net/http\|io\|strings" {} \;
+```
+
+#### **Step 4: Mock Pattern Discovery (MANDATORY)**
+```bash
+# Check existing mock patterns before creating new ones
+find pkg/testutil/mocks/ -name "*mock*.go" | head -5
+grep -r "NewMock.*Client" pkg/testutil/
+```
+
+### 🚨 **MANDATORY POST-CODE-GENERATION PROTOCOL - NEW**
+**AFTER writing ANY test code, MUST execute this validation:**
+
+#### **Step 1: Immediate Compilation (MANDATORY)**
+```bash
+# MUST pass before proceeding
+go build ./test/path/to/new_test_file.go
+```
+
+#### **Step 2: Lint Validation (MANDATORY)**
+```bash
+# MUST have zero errors before proceeding
+golangci-lint run ./test/path/to/new_test_file.go
+```
+
+#### **Step 3: Import Validation (MANDATORY)**
+```bash
+# Check for unused imports
+go mod tidy && go build ./test/path/to/package/
+```
+
+#### **Step 4: Interface Compatibility (MANDATORY)**
+```bash
+# Verify interface usage compiles
+go test -c ./test/path/to/new_test_file.go
+```
+
+### 🛑 **VIOLATION PREVENTION TRIGGERS - NEW**
+**These patterns MUST trigger immediate protocol execution:**
+
+```go
+// TRIGGER: Mock creation → Execute Mock Pattern Discovery Protocol
+type Mock*Client struct
+func NewMock*Client()
+
+// TRIGGER: Interface usage → Execute Interface Discovery Protocol
+client.SomeMethod(
+interface.AnotherMethod(
+
+// TRIGGER: Import statements → Execute Import Requirements Protocol
+import (
+    "net/http"
+    "io"
+
+// TRIGGER: Constructor calls → Execute Constructor Validation Protocol
+NewClient(
+New*Service(
+```
+
+### 🔒 **ENFORCEMENT MECHANISM - NEW**
+**Rule 09 violations result in:**
+
+1. **IMMEDIATE HALT**: All development stops until fixed
+2. **MANDATORY DELETION**: Broken files must be deleted and recreated properly
+3. **PROTOCOL RE-EXECUTION**: Full pre/post-generation protocols must be followed
+4. **DOCUMENTATION**: Violation cause and prevention must be documented
+
+### 🚨 **ENHANCED VIOLATION PREVENTION MATRIX - NEW**
+**Comprehensive prevention for common violation patterns:**
+
+#### **Pattern 1: Undefined Mock Types**
+```bash
+# VIOLATION TRIGGER: Using undefined mock types
+mockHTTPClient *mocks.MockHTTPClient  # ❌ UNDEFINED
+
+# PREVENTION PROTOCOL:
+codebase_search "MockHTTPClient interface definition"
+find pkg/testutil/mocks/ -name "*http*" -o -name "*client*"
+grep -r "HTTPClient" pkg/testutil/mocks/
+
+# CORRECT APPROACH: Use existing patterns
+mockClient := mocks.NewMockClient()  # ✅ EXISTING PATTERN
+```
+
+#### **Pattern 2: Missing Import Statements**
+```bash
+# VIOLATION TRIGGER: Using packages without imports
+http.StatusOK    # ❌ UNDEFINED: http not imported
+io.ReadAll()     # ❌ UNDEFINED: io not imported
+strings.Contains # ❌ UNDEFINED: strings not imported
+
+# PREVENTION PROTOCOL:
+grep -r "net/http" pkg/ | head -5  # Validate import patterns
+grep -r "io" pkg/ | head -5        # Check existing usage
+grep -r "strings" pkg/ | head -5   # Verify import needs
+
+# CORRECT APPROACH: Add required imports
+import (
+    "io"
+    "net/http"
+    "strings"
+)
+```
+
+#### **Pattern 3: Incorrect Constructor Signatures**
+```bash
+# VIOLATION TRIGGER: Wrong constructor parameters
+holmesgpt.NewClient(endpoint)  # ❌ MISSING PARAMETERS
+
+# PREVENTION PROTOCOL:
+codebase_search "holmesgpt.NewClient function signature"
+grep -A 5 "func NewClient" pkg/ai/holmesgpt/client.go
+
+# CORRECT APPROACH: Use actual signature
+holmesgpt.NewClient(endpoint, apiKey, logger)  # ✅ CORRECT SIGNATURE
+```
+
+#### **Pattern 4: Incompatible Type Usage**
+```bash
+# VIOLATION TRIGGER: Type mismatches
+mockLogger *mocks.MockLogger = testCtx.Logger  # ❌ TYPE MISMATCH
+
+# PREVENTION PROTOCOL:
+codebase_search "testCtx.Logger type definition"
+grep -A 3 "Logger.*logrus" pkg/testutil/
+
+# CORRECT APPROACH: Use compatible types
+mockLogger := testCtx.Logger  # ✅ COMPATIBLE TYPE (*logrus.Logger)
+```
+
+### 🛡️ **AUTOMATED PREVENTION CHECKLIST - NEW**
+**Execute BEFORE any test file creation:**
+
+#### **Checklist A: Interface Validation**
+- [ ] `codebase_search "existing [ComponentType] interface definition"`
+- [ ] `grep -A 10 "type.*Interface.*interface" pkg/`
+- [ ] Verify all methods exist with exact signatures
+- [ ] Confirm parameter and return types match
+
+#### **Checklist B: Mock Validation**
+- [ ] `find pkg/testutil/mocks/ -name "*[component]*"`
+- [ ] `grep -r "NewMock.*[Component]" pkg/testutil/`
+- [ ] Use existing mocks, avoid creating duplicates
+- [ ] Validate mock constructor signatures
+
+#### **Checklist C: Import Validation**
+- [ ] `grep -r "net/http\|io\|strings" pkg/ | head -3`
+- [ ] Add all required imports to test file
+- [ ] Verify import paths are correct
+- [ ] Check for unused imports
+
+#### **Checklist D: Constructor Validation**
+- [ ] `codebase_search "[Component].New* function signature"`
+- [ ] `grep -A 5 "func New.*[Component]" pkg/`
+- [ ] Verify parameter types and count
+- [ ] Confirm return types (interface vs concrete)
+
+### 🔧 **MANDATORY VALIDATION COMMANDS - NEW**
+**Execute these commands for EVERY test file:**
+
+```bash
+# Step 1: Pre-Generation Interface Discovery
+codebase_search "holmesgpt Client interface methods"
+codebase_search "existing HTTP client mock patterns"
+
+# Step 2: Constructor Signature Validation
+grep -A 3 "func NewClient" pkg/ai/holmesgpt/client.go
+grep -r "NewMockClient" pkg/testutil/mocks/
+
+# Step 3: Import Requirements Check
+find pkg/ -name "*.go" -exec grep -l "net/http" {} \; | head -3
+find pkg/ -name "*.go" -exec grep -l "\"io\"" {} \; | head -3
+
+# Step 4: Type Compatibility Verification
+codebase_search "testutil.StandardTestContext Logger type"
+grep -A 5 "Logger.*logrus" pkg/testutil/
+
+# Step 5: MANDATORY Compilation Check
+go build ./test/path/to/new_file.go
+
+# Step 6: MANDATORY Lint Validation
+golangci-lint run ./test/path/to/new_file.go
+```
+
+### ⚡ **REAL-TIME VIOLATION DETECTION - NEW**
+**Immediate alerts for violation patterns:**
+
+```bash
+# Pattern Detection Script (auto-execute during development)
+#!/bin/bash
+
+# Detect undefined mock usage
+if grep -q "mocks\.Mock.*Client.*\*mocks\.Mock" "$1"; then
+    echo "❌ VIOLATION: Undefined mock type detected"
+    echo "🔧 FIX: Run 'find pkg/testutil/mocks/ -name \"*client*\"'"
+    exit 1
+fi
+
+# Detect missing imports
+if grep -q "http\." "$1" && ! grep -q "net/http" "$1"; then
+    echo "❌ VIOLATION: http package used without import"
+    echo "🔧 FIX: Add 'import \"net/http\"'"
+    exit 1
+fi
+
+# Detect wrong constructor usage
+if grep -q "NewClient(" "$1"; then
+    expected_params=$(grep -A 1 "func NewClient" pkg/ai/holmesgpt/client.go | grep -o "([^)]*)")
+    echo "✅ VALIDATION: Verify NewClient signature: $expected_params"
+fi
+
+echo "✅ No immediate violations detected"
+```
+
+### 🆕 **BUILD ERROR RESPONSE PROTOCOL**
+When build errors occur:
+
+1. **IMMEDIATE HALT**: Stop all development until errors resolved
+2. **ROOT CAUSE ANALYSIS**: Identify if caused by:
+   - Undefined variables (mockLogger without declaration)
+   - Unused imports (logrus without usage)
+   - Missing imports (mocks.* without import)
+   - Duplicate mock creation (instead of reusing existing)
+3. **SYSTEMATIC FIX**: Apply appropriate pattern from existing codebase
+4. **VALIDATION**: Run compilation and cursor validation checks
+5. **PREVENTION**: Ensure pre-commit hook is installed and active
+
+### Business Impact - ENHANCED
+- **Prevents compilation failures** that block business operations
+- **Ensures code quality** meets executive standards
+- **Maintains system reliability** for business continuity
+- **Reduces technical debt** and development delays
+- **🆕 Eliminates interface-related bugs** in production systems
+- **🆕 Ensures type safety** for business-critical operations
+
+### Integration with Other Rules - ENHANCED
+This rule complements and ENFORCES:
+- [00-project-guidelines.mdc](mdc:.cursor/rules/00-project-guidelines.mdc) - **MANDATORY** no compilation errors
+- [02-go-coding-standards.mdc](mdc:.cursor/rules/02-go-coding-standards.mdc) - Type system guidelines
+- [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework requirements
+
+**🆕 ENFORCEMENT PRIORITY**: This rule is MANDATORY and violations result in immediate remediation requirement.
+
+### 🆕 **REAL-TIME ANTI-PATTERN DETECTION**
+
+## ⚡ **REAL-TIME VIOLATION PREVENTION - MANDATORY**
+
+### **TYPING TRIGGERS - IMMEDIATE INTERVENTION**
+
+#### **Trigger 1: Creating New Types**
+**Pattern Detection**: About to type `type SomethingOptimizer struct` or `type SomethingEngine struct`
+**IMMEDIATE ACTION**:
+```bash
+# AUTO-EXECUTE: Before allowing type creation
+echo "🛑 NEW TYPE DETECTED: About to create sophisticated business type"
+echo "🔍 MANDATORY CHECK: Searching for existing implementations..."
+grep -r "Optimizer\|Engine\|Analyzer" pkg/ --include="*.go" | grep -v "_test.go"
+echo "❓ QUESTION: Why not enhance existing implementation instead?"
+read -p "Proceed with new type creation? (y/N): " confirm
+[ "$confirm" != "y" ] && exit 1
+```
+
+#### **Trigger 2: REFACTOR Phase Start**
+**Pattern Detection**: User mentions "refactor" or "REFACTOR phase"
+**IMMEDIATE ACTION**:
+```bash
+# AUTO-EXECUTE: Before allowing REFACTOR activities
+echo "🔄 REFACTOR PHASE DETECTED"
+echo "📋 MANDATORY REMINDER: REFACTOR = enhance existing code, not create new code"
+echo "🔍 CURRENT TEST TARGET: Identify exact method under test..."
+grep -r "func.*Context.*error" pkg/ --include="*.go" | grep -v "_test.go"
+echo "❓ QUESTION: Which EXISTING method will you enhance?"
+echo "🚨 RULE: No new types, no new methods, no new files during REFACTOR"
+```
+
+#### **Trigger 3: Sophisticated Implementation**
+**Pattern Detection**: Adding ML, algorithms, caching, or complex logic
+**IMMEDIATE ACTION**:
+```bash
+# AUTO-EXECUTE: When sophisticated patterns detected
+echo "🧠 SOPHISTICATED LOGIC DETECTED"
+echo "🔗 INTEGRATION CHECK: Where will this sophisticated code be used?"
+grep -r "AnalyzeContext\|OptimizeContext" cmd/ pkg/workflow/ --include="*.go"
+echo "❓ QUESTION: Is this enhancing existing integrated code or creating orphan code?"
+echo "🚨 RULE: Sophisticated code MUST enhance existing main application workflows"
+```
+
+### **IDE INTEGRATION - PREVENT VIOLATIONS IN REAL-TIME**
+```json
+// .vscode/settings.json - Add these snippets
+{
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true,
+        "source.validateIntegration": true
+    },
+    "go.buildOnSave": "off",  // Prevent auto-build until validation passes
+    "go.lintOnSave": "off",   // Prevent auto-lint until validation passes
+
+    // Custom validation triggers
+    "files.associations": {
+        "pre-commit": "shellscript",
+        "integration-check-*": "shellscript"
+    }
+}
+```
+
+### **PRE-COMMIT HOOK - COMPREHENSIVE VALIDATION**
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit - Comprehensive rule validation
+set -e
+
+echo "🚨 Running comprehensive rule validation..."
+
+# Rule 00: Integration validation
+./scripts/run-integration-validation.sh
+
+# Rule 03: REFACTOR phase validation
+./scripts/validate-refactor-compliance.sh
+
+# Rule 07: Business code integration
+./scripts/validate-business-integration.sh
+
+# Rule 09: Interface validation
+./scripts/validate-interface-usage.sh
+
+echo "✅ All rule validations passed - commit allowed"
+```
+
+**IMMEDIATE VIOLATION TRIGGERS**:
+```go
+// These patterns MUST trigger immediate rule violation alert:
+context.Background()      // ❌ REUSABILITY VIOLATION: Check for existing context patterns
+logrus.New()             // ❌ REUSABILITY VIOLATION: Check for existing logger patterns
+SetLevel(                // ❌ REUSABILITY VIOLATION: Check for existing setup patterns
+&MockSomething{}         // ❌ REUSABILITY VIOLATION: Check for existing mock factories
+ToNot(Panic())           // ❌ PANIC-ONLY TESTING: Check 03-testing-strategy.mdc
+```
+
+**MANDATORY REPLACEMENT PROCESS**:
+1. **DETECT**: Any violation pattern → IMMEDIATE STOP
+2. **SEARCH**: Run `codebase_search` for existing implementations
+3. **REPLACE**: Use existing reusable patterns
+4. **VALIDATE**: Run compilation and lint checks
+
+### 🆕 **VIOLATION RESPONSE PROTOCOL**
+If interface validation fails:
+
+1. **STOP**: Halt all development until fixed
+2. **TRIAGE**: Identify exact interface/method/type issue
+3. **FIX**: Apply proper interface usage with type compatibility
+4. **VERIFY**: Run compilation and lint checks
+5. **DOCUMENT**: Record the fix for future reference
+
+### 🆕 **COMMON INTERFACE VALIDATION PATTERNS**
+
+#### Pattern 1: Method Signature Validation
+```bash
+# WRONG: Assuming method exists
+Expect(vectorDB.Health()).To(Equal("healthy"))
+
+# RIGHT: Validate actual method signature first
+codebase_search "IsHealthy.*context.Context.*error"
+# Then use correct signature:
+Expect(vectorDB.IsHealthy(ctx)).ToNot(HaveOccurred())
+```
+
+#### Pattern 2: Type Compatibility Validation
+```bash
+# WRONG: Assuming type compatibility
+suggestions, err := optimizer.SuggestImprovements(ctx, template)
+
+# RIGHT: Validate types and use constructors
+codebase_search "SuggestImprovements.*Workflow"
+# Then create proper type:
+workflow := engine.NewWorkflow("id", template)
+suggestions, err := optimizer.SuggestImprovements(ctx, workflow)
+```
+
+#### Pattern 3: Gomega Matcher Validation
+```bash
+# WRONG: Mixing incompatible matchers
+Expect(items).To(HaveLen(BeNumerically(">=", 1)))
+
+# RIGHT: Use appropriate matcher for type
+Expect(len(items)).To(BeNumerically(">=", 1))
+# OR
+Expect(items).To(HaveLen(1))
+```
+
+### 🎯 **COMPREHENSIVE PREVENTION WORKFLOW - NEW**
+**Complete workflow to prevent ALL Rule 09 violations:**
+
+#### **Phase 1: Pre-Development Analysis**
+```bash
+# 1. Component Discovery
+codebase_search "existing [ComponentName] implementations in pkg/"
+codebase_search "existing [ComponentName] mock patterns in testutil"
+
+# 2. Interface Analysis
+codebase_search "[ComponentName] interface definition and methods"
+grep -A 15 "type.*[ComponentName].*interface" pkg/
+
+# 3. Constructor Analysis
+codebase_search "[ComponentName] constructor function signatures"
+grep -A 5 "func New.*[ComponentName]" pkg/
+
+# 4. Dependency Analysis
+codebase_search "[ComponentName] dependencies and imports"
+```
+
+#### **Phase 2: Test Design Validation**
+```bash
+# 1. Mock Necessity Evaluation
+# Ask: Can this be unit tested with real business logic + external mocks?
+# If YES: Use real business logic, mock only external dependencies
+# If NO: Justify why mocks are required
+
+# 2. Existing Pattern Discovery
+find pkg/testutil/mocks/ -name "*[component]*" -o -name "*client*"
+grep -r "NewMock.*[Component]" pkg/testutil/
+
+# 3. Import Requirements Planning
+grep -r "net/http\|io\|strings\|context" pkg/ | head -5
+```
+
+#### **Phase 3: Code Generation with Validation**
+```bash
+# 1. Write minimal test structure first
+# 2. Add imports based on actual usage patterns
+# 3. Use existing mock patterns, avoid creating new ones
+# 4. Follow actual constructor signatures
+
+# MANDATORY: After each significant addition
+go build ./test/path/to/file.go
+golangci-lint run ./test/path/to/file.go
+```
+
+#### **Phase 4: Post-Generation Verification**
+```bash
+# 1. Full Compilation Check
+go build ./test/path/to/file.go
+
+# 2. Lint Validation
+golangci-lint run ./test/path/to/file.go
+
+# 3. Import Optimization
+go mod tidy && go build ./test/path/to/package/
+
+# 4. Interface Compatibility
+go test -c ./test/path/to/file.go
+
+# 5. Business Logic Integration Check
+grep -q "github.com/jordigilh/kubernaut/pkg/" ./test/path/to/file.go
+```
+
+### 📋 **VIOLATION PREVENTION CHECKLIST - ENHANCED**
+**Complete checklist for zero-violation development:**
+
+#### **Before Writing ANY Code:**
+- [ ] **Component Research**: Searched for existing implementations
+- [ ] **Interface Validation**: Verified actual interface definitions
+- [ ] **Mock Assessment**: Evaluated mock necessity vs real business logic
+- [ ] **Pattern Discovery**: Found existing mock patterns to reuse
+- [ ] **Constructor Validation**: Confirmed actual function signatures
+- [ ] **Import Planning**: Identified required imports from existing usage
+
+#### **During Code Writing:**
+- [ ] **Incremental Validation**: Build check after each major addition
+- [ ] **Import Consistency**: Add imports as needed, verify they exist
+- [ ] **Type Compatibility**: Ensure parameter/return type matches
+- [ ] **Pattern Reuse**: Use existing patterns, avoid duplication
+
+#### **After Code Completion:**
+- [ ] **Compilation Success**: `go build` passes with zero errors
+- [ ] **Lint Compliance**: `golangci-lint` shows zero issues
+- [ ] **Import Optimization**: No unused imports detected
+- [ ] **Interface Compatibility**: Test compilation succeeds
+- [ ] **Business Integration**: Real business logic properly integrated
+
+### 🚨 **EMERGENCY VIOLATION RESPONSE - NEW**
+**If Rule 09 violation occurs despite prevention:**
+
+#### **Immediate Response (0-5 minutes):**
+1. **HALT**: Stop all development immediately
+2. **DELETE**: Remove broken file completely
+3. **ANALYZE**: Identify which prevention step was skipped
+4. **DOCUMENT**: Record violation cause for future prevention
+
+#### **Systematic Recovery (5-15 minutes):**
+1. **RESTART**: Begin with Phase 1 Pre-Development Analysis
+2. **VALIDATE**: Execute complete prevention workflow
+3. **VERIFY**: Ensure all checklist items completed
+4. **TEST**: Confirm zero compilation/lint errors
+
+#### **Prevention Enhancement (15-30 minutes):**
+1. **IDENTIFY**: Determine why prevention failed
+2. **ENHANCE**: Add specific prevention for this violation type
+3. **UPDATE**: Modify Rule 09 with new prevention measures
+4. **VALIDATE**: Test enhanced prevention on similar scenarios
+
+**Priority**: This rule is MANDATORY and must be followed before any code generation to prevent compilation failures and maintain code quality standards.

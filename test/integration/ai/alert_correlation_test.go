@@ -24,10 +24,10 @@ func TestAlertCorrelationIntegration(t *testing.T) {
 	RunSpecs(t, "Alert Correlation Integration Suite")
 }
 
-// testSLMClientAdapter adapts shared.FakeSLMClient to implement llm.Client interface
+// testSLMClientAdapter adapts shared.TestSLMClient to implement llm.Client interface
 // Following development guidelines: reuse existing code and integrate properly
 type testSLMClientAdapter struct {
-	fakeClient *shared.FakeSLMClient
+	fakeClient *shared.TestSLMClient
 }
 
 // AnalyzeAlert adapts the interface between types.Alert -> llm.AnalyzeAlertResponse
@@ -197,13 +197,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 		return dbHelper.GetRepository()
 	}
 
-	createSLMClient := func() llm.Client {
-		// Use fake SLM client with adapter to match llm.Client interface
-		// Following development guidelines: reuse existing code and integrate properly
-		fakeClient := shared.NewFakeSLMClient()
-		return &testSLMClientAdapter{fakeClient: fakeClient}
-	}
-
+	llmClient := shared.NewTestSLMClient()
 	simulateAlertHistory := func(alertName, resource, action string, timestamp time.Time, effectiveness float64) {
 		actionRecord := &actionhistory.ActionRecord{
 			ResourceReference: actionhistory.ResourceReference{
@@ -244,7 +238,6 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 		It("should prioritize node-level issues over pod-level symptoms", func() {
 			// Validates BR-AI-004: System must correctly correlate node-level root causes
 			// with pod-level symptoms and prioritize infrastructure remediation
-			client := createSLMClient()
 
 			// Scenario: Node network issues causing pod crashes
 			// First: Process the symptom alert (pod crash) - following development guidelines: reuse code
@@ -262,7 +255,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 					"exit_code":   "1",
 				})
 
-			podRecommendation, err := client.AnalyzeAlert(context.Background(), podCrashAlert)
+			podRecommendation, err := llmClient.AnalyzeAlert(context.Background(), podCrashAlert)
 			// Following development guidelines: ensure all errors are logged and captured
 			Expect(err).ToNot(HaveOccurred(), "Pod crash alert analysis should not fail: %v", err)
 			Expect(podRecommendation).ToNot(BeNil(), "Pod crash alert must generate a recommendation")
@@ -294,7 +287,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			nodeRecommendation, err := client.AnalyzeAlert(context.Background(), nodeNetworkAlert)
+			nodeRecommendation, err := llmClient.AnalyzeAlert(context.Background(), nodeNetworkAlert)
 			// Following development guidelines: ensure all errors are logged
 			Expect(err).ToNot(HaveOccurred(), "Node network alert analysis failed: %v", err)
 			Expect(nodeRecommendation).ToNot(BeNil(), "Node network alert must generate recommendation")
@@ -333,7 +326,6 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 		})
 
 		It("should handle storage-related cascading failures appropriately", func() {
-			client := createSLMClient()
 
 			// Scenario: Storage full -> Database pod issues -> Application failures
 
@@ -345,7 +337,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 			storageAlert.Annotations["time_to_full"] = "24m"
 			storageAlert.Labels["pvc"] = "postgres-storage-pvc"
 
-			storageRecommendation, err := client.AnalyzeAlert(context.Background(), storageAlert)
+			storageRecommendation, err := llmClient.AnalyzeAlert(context.Background(), storageAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(storageRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid storage analysis for confidence requirements")
 
@@ -370,7 +362,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			dbRecommendation, err := client.AnalyzeAlert(context.Background(), dbConnectionAlert)
+			dbRecommendation, err := llmClient.AnalyzeAlert(context.Background(), dbConnectionAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(dbRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid database analysis for confidence requirements")
 
@@ -395,7 +387,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			appRecommendation, err := client.AnalyzeAlert(context.Background(), appDegradationAlert)
+			appRecommendation, err := llmClient.AnalyzeAlert(context.Background(), appDegradationAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(appRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid application analysis for confidence requirements")
 
@@ -436,7 +428,6 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 	Context("Application-Level Correlation Scenarios", func() {
 		It("should handle memory leak causing multiple related alerts", func() {
-			client := createSLMClient()
 
 			// Scenario: Memory leak in application causing multiple symptoms
 
@@ -461,7 +452,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			memoryRecommendation, err := client.AnalyzeAlert(context.Background(), memoryAlert)
+			memoryRecommendation, err := llmClient.AnalyzeAlert(context.Background(), memoryAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(memoryRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -486,7 +477,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			oomRecommendation, err := client.AnalyzeAlert(context.Background(), oomAlert)
+			oomRecommendation, err := llmClient.AnalyzeAlert(context.Background(), oomAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(oomRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -510,7 +501,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			performanceRecommendation, err := client.AnalyzeAlert(context.Background(), performanceAlert)
+			performanceRecommendation, err := llmClient.AnalyzeAlert(context.Background(), performanceAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(performanceRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -560,7 +551,6 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 		})
 
 		It("should handle deployment-related cascading failures", func() {
-			client := createSLMClient()
 
 			// Simulate previous successful rollbacks for this service
 			simulateAlertHistory("DeploymentFailure", "frontend-service", "rollback_deployment",
@@ -593,7 +583,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			deploymentRecommendation, err := client.AnalyzeAlert(context.Background(), deploymentAlert)
+			deploymentRecommendation, err := llmClient.AnalyzeAlert(context.Background(), deploymentAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(deploymentRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -618,7 +608,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			serviceRecommendation, err := client.AnalyzeAlert(context.Background(), serviceAlert)
+			serviceRecommendation, err := llmClient.AnalyzeAlert(context.Background(), serviceAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(serviceRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -642,7 +632,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			lbRecommendation, err := client.AnalyzeAlert(context.Background(), lbAlert)
+			lbRecommendation, err := llmClient.AnalyzeAlert(context.Background(), lbAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(lbRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -688,7 +678,6 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 	Context("Cross-Namespace Correlation Scenarios", func() {
 		It("should handle database issues affecting multiple application namespaces", func() {
-			client := createSLMClient()
 
 			// Scenario: Database in 'database' namespace affecting apps in multiple namespaces
 
@@ -713,7 +702,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			dbRecommendation, err := client.AnalyzeAlert(context.Background(), dbAlert)
+			dbRecommendation, err := llmClient.AnalyzeAlert(context.Background(), dbAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(dbRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -738,7 +727,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			userServiceRecommendation, err := client.AnalyzeAlert(context.Background(), userServiceAlert)
+			userServiceRecommendation, err := llmClient.AnalyzeAlert(context.Background(), userServiceAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(userServiceRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -763,7 +752,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			orderServiceRecommendation, err := client.AnalyzeAlert(context.Background(), orderServiceAlert)
+			orderServiceRecommendation, err := llmClient.AnalyzeAlert(context.Background(), orderServiceAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(orderServiceRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -811,7 +800,6 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 
 	Context("Temporal Correlation Scenarios", func() {
 		It("should handle alerts triggered in rapid succession with causal relationships", func() {
-			client := createSLMClient()
 
 			// Scenario: Network partition causing sequential failures
 
@@ -835,7 +823,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			networkRecommendation, err := client.AnalyzeAlert(context.Background(), networkAlert)
+			networkRecommendation, err := llmClient.AnalyzeAlert(context.Background(), networkAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(networkRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -860,7 +848,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			schedulingRecommendation, err := client.AnalyzeAlert(context.Background(), schedulingAlert)
+			schedulingRecommendation, err := llmClient.AnalyzeAlert(context.Background(), schedulingAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(schedulingRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 
@@ -884,7 +872,7 @@ var _ = Describe("Alert Correlation and Root Cause Analysis", Ordered, func() {
 				},
 			}
 
-			serviceDiscoveryRecommendation, err := client.AnalyzeAlert(context.Background(), serviceDiscoveryAlert)
+			serviceDiscoveryRecommendation, err := llmClient.AnalyzeAlert(context.Background(), serviceDiscoveryAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(serviceDiscoveryRecommendation).ToNot(BeNil(), "BR-AI-001-CONFIDENCE: AI alert correlation must return valid analysis response for confidence requirements")
 

@@ -23,7 +23,7 @@ func TestEnhancedAssessor(t *testing.T) {
 
 var _ = Describe("Enhanced AI Effectiveness Assessor - Business Requirements Testing", func() {
 	var (
-		assessor          *insights.EnhancedAssessor
+		assessor          *insights.Assessor
 		mockRepo          *mocks.MockEffectivenessRepository
 		mockAlertClient   *mocks.MockAlertClient
 		mockMetricsClient *mocks.MockMetricsClient
@@ -52,8 +52,8 @@ var _ = Describe("Enhanced AI Effectiveness Assessor - Business Requirements Tes
 		mockRepo.SetConfidenceScore("update_config", "clear_error_pattern", 0.7)
 		mockRepo.SetConfidenceScore("horizontal_scaling", "load_fluctuation", 0.6)
 
-		// Create enhanced assessor with mocked dependencies
-		assessor = insights.NewEnhancedAssessor(
+		// Create assessor with mocked dependencies
+		assessor = insights.NewAssessor(
 			mockRepo, // actionHistoryRepo - mockRepo implements both interfaces
 			mockRepo, // effectivenessRepo - same mock for both
 			mockAlertClient,

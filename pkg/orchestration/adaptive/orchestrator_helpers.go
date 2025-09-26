@@ -976,7 +976,7 @@ func (dao *DefaultAdaptiveOrchestrator) executeStepWithAdaptation(ctx context.Co
 	adaptedStep := dao.applyStrategyToStep(step, strategy)
 
 	// Use step context to enhance execution
-	if stepContext.PreviousSteps != nil && len(stepContext.PreviousSteps) > 0 {
+	if len(stepContext.PreviousSteps) > 0 {
 		// Adjust strategy based on previous step results
 		lastResult := stepContext.PreviousSteps[len(stepContext.PreviousSteps)-1]
 		if !lastResult.Success {
@@ -1346,9 +1346,10 @@ func (dao *DefaultAdaptiveOrchestrator) calculateWorkflowExecutionMetrics(execut
 
 	// Calculate step-level success/failure rates
 	for _, step := range execution.Steps {
-		if step.Status == engine.ExecutionStatusCompleted {
+		switch step.Status {
+		case engine.ExecutionStatusCompleted:
 			successCount++
-		} else if step.Status == engine.ExecutionStatusFailed {
+		case engine.ExecutionStatusFailed:
 			failureCount++
 		}
 	}
@@ -1815,7 +1816,7 @@ func (dao *DefaultAdaptiveOrchestrator) extractPatternInsightRecommendations(pat
 				rec.Parameters["cluster"] = context.Cluster
 
 				// Include historical success patterns for this context
-				if context.History != nil && len(context.History) > 0 {
+				if len(context.History) > 0 {
 					rec.Parameters["historical_success_count"] = len(context.History)
 				}
 
@@ -2032,42 +2033,6 @@ func (dao *DefaultAdaptiveOrchestrator) getPreviousStepResults(execution *engine
 	return results
 }
 
-func (dao *DefaultAdaptiveOrchestrator) handleStepFailure(ctx context.Context, execution *engine.RuntimeWorkflowExecution, step *engine.ExecutableWorkflowStep, stepIndex int, err error) bool {
-	// Check for context cancellation
-	select {
-	case <-ctx.Done():
-		return false
-	default:
-	}
-
-	if step.RetryPolicy == nil || step.RetryPolicy.MaxRetries == 0 {
-		return false
-	}
-
-	stepExecution := execution.Steps[stepIndex]
-	if stepExecution.RetryCount >= step.RetryPolicy.MaxRetries {
-		return false
-	}
-
-	// Wait before retrying
-	if step.RetryPolicy.Delay > 0 {
-		time.Sleep(step.RetryPolicy.Delay)
-	}
-
-	stepExecution.RetryCount++
-	stepExecution.Status = engine.ExecutionStatusPending
-
-	dao.log.WithFields(logrus.Fields{
-		"execution_id": execution.ID,
-		"step_id":      step.ID,
-		"retry_count":  stepExecution.RetryCount,
-		"max_retries":  step.RetryPolicy.MaxRetries,
-	}).Info("Retrying failed step")
-
-	// The step will be retried in the main execution loop
-	return true
-}
-
 // Utility functions
 
 // getWorkflowExecutions gets all executions for a given workflow ID
@@ -2085,5 +2050,5 @@ func (dao *DefaultAdaptiveOrchestrator) getWorkflowExecutions(workflowID string)
 }
 
 func generateLearningID() string {
-	return "learning-" + strings.Replace(uuid.New().String(), "-", "", -1)[:16]
+	return "learning-" + strings.ReplaceAll(uuid.New().String(), "-", "")[:16]
 }

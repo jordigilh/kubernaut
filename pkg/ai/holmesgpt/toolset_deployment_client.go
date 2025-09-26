@@ -292,7 +292,11 @@ func (c *ToolsetDeploymentClientImpl) DeployToolset(ctx context.Context, toolset
 			Error:   "NETWORK_ERROR",
 		}, fmt.Errorf("failed to deploy toolset: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.WithError(err).Debug("Failed to close response body")
+		}
+	}()
 
 	// Read response
 	body, err := io.ReadAll(resp.Body)
@@ -359,7 +363,11 @@ func (c *ToolsetDeploymentClientImpl) DiscoverToolsets(ctx context.Context) ([]T
 		c.logger.WithError(err).Error("BR-HOLMES-003: Failed to discover toolsets")
 		return nil, fmt.Errorf("failed to discover toolsets: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.WithError(err).Debug("Failed to close response body")
+		}
+	}()
 
 	var result struct {
 		Toolsets []ToolsetInfo `json:"toolsets"`
@@ -397,7 +405,11 @@ func (c *ToolsetDeploymentClientImpl) GetToolsetDetails(ctx context.Context, too
 		c.logger.WithError(err).Error("BR-HOLMES-003: Failed to retrieve toolset details")
 		return nil, fmt.Errorf("failed to retrieve toolset details: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.WithError(err).Debug("Failed to close response body")
+		}
+	}()
 
 	var details DetailedToolsetInfo
 	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
@@ -433,7 +445,11 @@ func (c *ToolsetDeploymentClientImpl) GetToolsetDocumentation(ctx context.Contex
 		c.logger.WithError(err).Error("BR-HOLMES-004: Failed to retrieve toolset documentation")
 		return nil, fmt.Errorf("failed to retrieve documentation: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.WithError(err).Debug("Failed to close response body")
+		}
+	}()
 
 	var docs ToolsetDocumentation
 	if err := json.NewDecoder(resp.Body).Decode(&docs); err != nil {
@@ -478,7 +494,11 @@ func (c *ToolsetDeploymentClientImpl) ValidateToolChain(ctx context.Context, cha
 		c.logger.WithError(err).Error("BR-HOLMES-005: Failed to validate tool chain")
 		return nil, fmt.Errorf("failed to validate tool chain: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			c.logger.WithError(err).Debug("Failed to close response body")
+		}
+	}()
 
 	var validation ToolChainValidationResponse
 	if err := json.NewDecoder(resp.Body).Decode(&validation); err != nil {

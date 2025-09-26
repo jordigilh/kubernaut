@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
@@ -24,7 +25,7 @@ var _ = Describe("BR-ORCH-001: Feedback Loop Integration", Ordered, func() {
 		ctx                 context.Context
 		suite               *testshared.StandardTestSuite
 		realWorkflowBuilder engine.IntelligentWorkflowBuilder
-		selfOptimizer       engine.SelfOptimizer
+		llmClient           llm.Client // RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
 		feedbackProcessor   engine.FeedbackProcessor // Business Contract: Need this interface
 		logger              *logrus.Logger
 	)
@@ -53,25 +54,24 @@ var _ = Describe("BR-ORCH-001: Feedback Loop Integration", Ordered, func() {
 		// Validate test environment is healthy before each test
 		Expect(suite.VectorDB).ToNot(BeNil(), "Vector database should be available for feedback loop processing")
 
-		// Create real workflow builder with all dependencies (no mocks)
-		realWorkflowBuilder = engine.NewIntelligentWorkflowBuilder(
-			suite.LLMClient,        // Real LLM client for AI-driven workflow generation
-			suite.VectorDB,         // Real vector database for pattern storage and retrieval
-			suite.AnalyticsEngine,  // Real analytics engine from test suite
-			suite.MetricsCollector, // Real AI metrics collector from test suite
-			testshared.CreatePatternStoreForTesting(suite.Logger), // Real pattern store
-			suite.ExecutionRepo, // Real execution repository from test suite
-			suite.Logger,        // Real logger for operational visibility
-		)
+		// Create real workflow builder with all dependencies using new config pattern (no mocks)
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       suite.LLMClient,        // Real LLM client for AI-driven workflow generation
+			VectorDB:        suite.VectorDB,         // Real vector database for pattern storage and retrieval
+			AnalyticsEngine: suite.AnalyticsEngine,  // Real analytics engine from test suite
+			PatternStore:    testshared.CreatePatternStoreForTesting(suite.Logger), // Real pattern store
+			ExecutionRepo:   suite.ExecutionRepo, // Real execution repository from test suite
+			Logger:          suite.Logger,        // Real logger for operational visibility
+		}
+		
+		var err error
+		realWorkflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 		Expect(realWorkflowBuilder).ToNot(BeNil())
 
-		// Create self optimizer with real workflow builder integration
-		selfOptimizer = engine.NewDefaultSelfOptimizer(
-			realWorkflowBuilder, // Real component integration - no mocks
-			engine.DefaultSelfOptimizerConfig(),
-			logger,
-		)
-		Expect(selfOptimizer).ToNot(BeNil())
+		// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+		llmClient = suite.LLMClient
+		Expect(llmClient).ToNot(BeNil(), "Enhanced LLM client should be available for workflow optimization")
 
 		// Create feedback processor - Business Contract: Real component needed
 		feedbackProcessor = createFeedbackProcessor(suite.VectorDB, suite.AnalyticsEngine, logger)
@@ -95,7 +95,8 @@ var _ = Describe("BR-ORCH-001: Feedback Loop Integration", Ordered, func() {
 
 			// Measure baseline optimization accuracy before feedback
 			// Business Contract: measureOptimizationAccuracy method needed
-			baselineAccuracy := measureOptimizationAccuracy(ctx, feedbackTargetWorkflow, selfOptimizer, initialExecutionHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+			baselineAccuracy := measureOptimizationAccuracy(ctx, feedbackTargetWorkflow, llmClient, initialExecutionHistory)
 			Expect(baselineAccuracy.AccuracyScore).To(BeNumerically(">", 0), "Baseline optimization accuracy should be measurable")
 			Expect(baselineAccuracy.ConfidenceLevel).To(BeNumerically(">", 0), "Baseline confidence should be measurable")
 			logger.WithFields(logrus.Fields{
@@ -110,7 +111,8 @@ var _ = Describe("BR-ORCH-001: Feedback Loop Integration", Ordered, func() {
 
 			// Process feedback through the feedback loop
 			// Business Contract: FeedbackProcessor.ProcessFeedbackLoop method
-			feedbackResult, err := feedbackProcessor.ProcessFeedbackLoop(ctx, feedbackTargetWorkflow, feedbackData, selfOptimizer)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+			feedbackResult, err := feedbackProcessor.ProcessFeedbackLoop(ctx, feedbackTargetWorkflow, feedbackData, llmClient)
 			Expect(err).ToNot(HaveOccurred(), "Feedback loop processing should complete successfully")
 			Expect(feedbackResult).ToNot(BeNil())
 
@@ -119,7 +121,8 @@ var _ = Describe("BR-ORCH-001: Feedback Loop Integration", Ordered, func() {
 			Expect(feedbackResult.OptimizationImprovements).To(BeNumerically(">", 0), "Should provide measurable optimization improvements")
 
 			// Measure improved optimization accuracy after feedback processing
-			improvedAccuracy := measureOptimizationAccuracy(ctx, feedbackTargetWorkflow, selfOptimizer, initialExecutionHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+			improvedAccuracy := measureOptimizationAccuracy(ctx, feedbackTargetWorkflow, llmClient, initialExecutionHistory)
 			logger.WithFields(logrus.Fields{
 				"improved_accuracy":   improvedAccuracy.AccuracyScore,
 				"improved_confidence": improvedAccuracy.ConfidenceLevel,
@@ -191,7 +194,8 @@ var _ = Describe("BR-ORCH-001: Feedback Loop Integration", Ordered, func() {
 			// Process feedback cycles sequentially to test convergence
 			for i, feedbackCycle := range feedbackCycles {
 				// Business Contract: FeedbackProcessor.ProcessConvergenceCycle method
-				convergenceResult, err := feedbackProcessor.ProcessConvergenceCycle(ctx, testWorkflow, feedbackCycle, selfOptimizer)
+				// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+				convergenceResult, err := feedbackProcessor.ProcessConvergenceCycle(ctx, testWorkflow, feedbackCycle, llmClient)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(convergenceResult).ToNot(BeNil())
 				convergenceResults[i] = convergenceResult
@@ -494,8 +498,9 @@ func createConflictingFeedbackScenario(ctx context.Context, builder engine.Intel
 	return feedback
 }
 
-func measureOptimizationAccuracy(ctx context.Context, workflow *engine.Workflow, optimizer engine.SelfOptimizer, history []*engine.RuntimeWorkflowExecution) *engine.OptimizationAccuracyMetrics {
+func measureOptimizationAccuracy(ctx context.Context, workflow *engine.Workflow, llmClient llm.Client, history []*engine.RuntimeWorkflowExecution) *engine.OptimizationAccuracyMetrics {
 	// Business Contract: Measure optimization accuracy for comparison
+	// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
 	panic("IMPLEMENTATION NEEDED: measureOptimizationAccuracy - Business Contract for optimization accuracy measurement")
 }
 

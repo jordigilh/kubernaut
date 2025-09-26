@@ -68,7 +68,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 			// Configuration no longer needed for fake client
 
 			// Use fake client to eliminate external dependencies
-			slmClient := shared.NewFakeSLMClient()
+			slmClient := shared.NewTestSLMClient()
 			return slmClient
 		}
 
@@ -274,7 +274,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 	createSLMClient := func(contextSize int) llm.Client {
 		// Configuration no longer needed for fake client
 		// Use fake client to eliminate external dependencies
-		return shared.NewFakeSLMClient()
+		return shared.NewTestSLMClient()
 	}
 
 	Context("Decision Consistency Validation", func() {
@@ -620,7 +620,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 				// Test production-level error scenarios with SLA requirements
 
 				By("Setting up production-level error injection")
-				fakeClient := shared.NewFakeSLMClient()
+				fakeClient := shared.NewTestSLMClient()
 
 				// Use predefined service degradation scenario for production testing
 				degradationScenario := shared.PredefinedErrorScenarios["slm_service_degradation"]
@@ -701,7 +701,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 
 			It("should handle cascading failures in production environment", func() {
 				By("Simulating multi-component cascade failure")
-				fakeClient := shared.NewFakeSLMClient()
+				fakeClient := shared.NewTestSLMClient()
 
 				// Use predefined multi-service cascade scenario
 				cascadeScenario := shared.PredefinedErrorScenarios["multi_service_cascade"]
@@ -827,7 +827,7 @@ var _ = Describe("Production Readiness Test Suite", Ordered, func() {
 
 			It("should demonstrate production-grade recovery capabilities", func() {
 				By("Testing full system recovery after major outage")
-				fakeClient := shared.NewFakeSLMClient()
+				fakeClient := shared.NewTestSLMClient()
 
 				// Use predefined system failure scenario
 				outageScenario := shared.PredefinedErrorScenarios["system_failure"]

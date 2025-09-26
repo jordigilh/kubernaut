@@ -20,7 +20,7 @@ import (
 var _ = Describe("Context Size Performance Tests", Ordered, func() {
 	var (
 		logger     *logrus.Logger
-		testUtils  *shared.IntegrationTestUtils
+		testUtils  *shared.DatabaseIntegrationTestUtils
 		repository actionhistory.Repository
 		testConfig shared.IntegrationConfig
 	)
@@ -161,7 +161,7 @@ var _ = Describe("Context Size Performance Tests", Ordered, func() {
 			// Configuration no longer needed for fake client
 
 			// Create fake SLM client to eliminate external dependencies
-			slmClient := shared.NewFakeSLMClient()
+			slmClient := shared.NewTestSLMClient()
 
 			alert := createTestAlert()
 

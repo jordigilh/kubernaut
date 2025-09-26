@@ -33,7 +33,14 @@ var _ = Describe("Advanced Analytics Integration - TDD Implementation", func() {
 		mockVectorDB = mocks.NewMockVectorDatabase()
 
 		// Create builder with mock dependencies
-		builder = engine.NewIntelligentWorkflowBuilder(nil, mockVectorDB, nil, nil, nil, nil, log)
+		// RULE 12 COMPLIANCE: Updated constructor to use config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			VectorDB: mockVectorDB,
+			Logger:   log,
+		}
+		var err error
+		builder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred())
 
 		// Create test template for advanced analytics
 		template = &engine.ExecutableTemplate{

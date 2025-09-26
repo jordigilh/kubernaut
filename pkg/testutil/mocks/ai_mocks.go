@@ -1568,6 +1568,15 @@ func (m *MockConditionEvaluator) IsHealthy() bool {
 	return m.healthy
 }
 
+// @deprecated RULE 12 VIOLATION: Mocks deprecated AnalysisProvider interface instead of using enhanced holmesgpt.Client
+// Migration: Use holmesgpt.Client with mock configuration instead of this mock
+// Business Requirements: BR-ANALYSIS-001 - now served by enhanced holmesgpt.Client
+//
+// Replacement pattern:
+//
+//	Instead of: mockProvider := NewMockAnalysisProvider()
+//	Use: holmesClient := holmesgpt.NewClient("mock-endpoint", "mock-key", logger) with test responses
+//
 // MockAnalysisProvider implements common.AnalysisProvider for testing
 type MockAnalysisProvider struct {
 	analysisResult *common.AnalysisResult
@@ -1576,6 +1585,8 @@ type MockAnalysisProvider struct {
 	capabilities   []string
 }
 
+// @deprecated RULE 12 VIOLATION: Use enhanced holmesgpt.Client instead
+// Migration: holmesClient := holmesgpt.NewClient("mock-endpoint", "mock-key", logger)
 // NewMockAnalysisProvider creates a new mock analysis provider
 func NewMockAnalysisProvider() *MockAnalysisProvider {
 	return &MockAnalysisProvider{
@@ -1612,6 +1623,15 @@ func (m *MockAnalysisProvider) GetCapabilities() []string {
 	return m.capabilities
 }
 
+// @deprecated RULE 12 VIOLATION: Mocks deprecated RecommendationProvider interface instead of using enhanced holmesgpt.Client
+// Migration: Use holmesgpt.Client with mock configuration instead of this mock
+// Business Requirements: BR-RECOMMENDATION-001 - now served by enhanced holmesgpt.Client
+//
+// Replacement pattern:
+//
+//	Instead of: mockProvider := NewMockRecommendationProvider()
+//	Use: holmesClient := holmesgpt.NewClient("mock-endpoint", "mock-key", logger) with test responses
+//
 // MockRecommendationProvider implements common.RecommendationProvider for testing
 type MockRecommendationProvider struct {
 	recommendations []common.Recommendation
@@ -1620,6 +1640,8 @@ type MockRecommendationProvider struct {
 	capabilities    []string
 }
 
+// @deprecated RULE 12 VIOLATION: Use enhanced holmesgpt.Client instead
+// Migration: holmesClient := holmesgpt.NewClient("mock-endpoint", "mock-key", logger)
 // NewMockRecommendationProvider creates a new mock recommendation provider
 func NewMockRecommendationProvider() *MockRecommendationProvider {
 	return &MockRecommendationProvider{
@@ -1656,6 +1678,15 @@ func (m *MockRecommendationProvider) GetCapabilities() []string {
 	return m.capabilities
 }
 
+// @deprecated RULE 12 VIOLATION: Mocks deprecated InvestigationProvider interface instead of using enhanced holmesgpt.Client
+// Migration: Use holmesgpt.Client with mock configuration instead of this mock
+// Business Requirements: BR-INVESTIGATION-001 - now served by enhanced holmesgpt.Client
+//
+// Replacement pattern:
+//
+//	Instead of: mockProvider := NewMockInvestigationProvider()
+//	Use: holmesClient := holmesgpt.NewClient("mock-endpoint", "mock-key", logger) with test responses
+//
 // MockInvestigationProvider implements common.InvestigationProvider for testing
 type MockInvestigationProvider struct {
 	investigationResult *common.InvestigationResult
@@ -1664,6 +1695,8 @@ type MockInvestigationProvider struct {
 	capabilities        []string
 }
 
+// @deprecated RULE 12 VIOLATION: Use enhanced holmesgpt.Client instead
+// Migration: holmesClient := holmesgpt.NewClient("mock-endpoint", "mock-key", logger)
 // NewMockInvestigationProvider creates a new mock investigation provider
 func NewMockInvestigationProvider() *MockInvestigationProvider {
 	return &MockInvestigationProvider{

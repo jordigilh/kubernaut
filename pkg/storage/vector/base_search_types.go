@@ -10,10 +10,10 @@ type BaseSearchResult struct {
 
 // VectorSearchResultSet represents a complete set of search results
 // Maintained for backward compatibility, but unified with UnifiedSearchResultSet
-type VectorSearchResultSet = UnifiedSearchResultSet
+// VectorSearchResultSet alias removed - use UnifiedSearchResultSet directly
 
 // PatternSearchResultSet represents pattern-specific search results
 type PatternSearchResultSet struct {
-	UnifiedSearchResultSet                   // Embedded unified search results
-	Patterns               []*SimilarPattern `json:"patterns"` // Pattern-specific results
+	UnifiedSearchResultSet                        // Embedded unified search results
+	Patterns               []*UnifiedSearchResult `json:"patterns"` // Pattern-specific results
 }

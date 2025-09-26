@@ -772,6 +772,97 @@ func (f *FallbackLLMClient) ReadinessCheck(ctx context.Context) error {
 	return nil
 }
 
+// Enhanced AI methods for Rule 12 compliance - fallback implementations
+func (f *FallbackLLMClient) EvaluateCondition(ctx context.Context, condition interface{}, context interface{}) (bool, error) {
+	f.log.Warn("Using fallback condition evaluation - returning false")
+	return false, nil
+}
+
+func (f *FallbackLLMClient) ValidateCondition(ctx context.Context, condition interface{}) error {
+	f.log.Warn("Using fallback condition validation - returning nil")
+	return nil
+}
+
+func (f *FallbackLLMClient) CollectMetrics(ctx context.Context, execution interface{}) (map[string]float64, error) {
+	f.log.Warn("Using fallback metrics collection - returning empty metrics")
+	return make(map[string]float64), nil
+}
+
+func (f *FallbackLLMClient) GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange interface{}) (map[string]float64, error) {
+	f.log.Warn("Using fallback aggregated metrics - returning empty metrics")
+	return make(map[string]float64), nil
+}
+
+func (f *FallbackLLMClient) RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error {
+	f.log.Warn("Using fallback AI request recording - no-op")
+	return nil
+}
+
+func (f *FallbackLLMClient) RegisterPromptVersion(ctx context.Context, version interface{}) error {
+	f.log.Warn("Using fallback prompt version registration - no-op")
+	return nil
+}
+
+func (f *FallbackLLMClient) GetOptimalPrompt(ctx context.Context, objective interface{}) (interface{}, error) {
+	f.log.Warn("Using fallback optimal prompt - returning nil")
+	return nil, nil
+}
+
+func (f *FallbackLLMClient) StartABTest(ctx context.Context, experiment interface{}) error {
+	f.log.Warn("Using fallback A/B test - no-op")
+	return nil
+}
+
+func (f *FallbackLLMClient) OptimizeWorkflow(ctx context.Context, workflow interface{}, executionHistory interface{}) (interface{}, error) {
+	f.log.Warn("Using fallback workflow optimization - returning nil")
+	return nil, nil
+}
+
+func (f *FallbackLLMClient) SuggestOptimizations(ctx context.Context, workflow interface{}) (interface{}, error) {
+	f.log.Warn("Using fallback optimization suggestions - returning nil")
+	return nil, nil
+}
+
+func (f *FallbackLLMClient) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {
+	f.log.Warn("Using fallback prompt building - returning template")
+	return template, nil
+}
+
+func (f *FallbackLLMClient) LearnFromExecution(ctx context.Context, execution interface{}) error {
+	f.log.Warn("Using fallback execution learning - no-op")
+	return nil
+}
+
+func (f *FallbackLLMClient) GetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
+	f.log.Warn("Using fallback template optimization - returning templateID")
+	return templateID, nil
+}
+
+func (f *FallbackLLMClient) AnalyzePatterns(ctx context.Context, executionData []interface{}) (interface{}, error) {
+	f.log.Warn("Using fallback pattern analysis - returning nil")
+	return nil, nil
+}
+
+func (f *FallbackLLMClient) PredictEffectiveness(ctx context.Context, workflow interface{}) (float64, error) {
+	f.log.Warn("Using fallback effectiveness prediction - returning 0.5")
+	return 0.5, nil
+}
+
+func (f *FallbackLLMClient) ClusterWorkflows(ctx context.Context, executionData []interface{}, config map[string]interface{}) (interface{}, error) {
+	f.log.Warn("Using fallback workflow clustering - returning nil")
+	return nil, nil
+}
+
+func (f *FallbackLLMClient) AnalyzeTrends(ctx context.Context, executionData []interface{}, timeRange interface{}) (interface{}, error) {
+	f.log.Warn("Using fallback trend analysis - returning nil")
+	return nil, nil
+}
+
+func (f *FallbackLLMClient) DetectAnomalies(ctx context.Context, executionData []interface{}) (interface{}, error) {
+	f.log.Warn("Using fallback anomaly detection - returning nil")
+	return nil, nil
+}
+
 // NewFallbackEnhancedLLMClient creates a fallback enhanced LLM client
 // Business Requirement: AI Safety and Reliability - Circuit breaker pattern implementation
 // Alignment: Critical for production resilience with enhanced AI capabilities

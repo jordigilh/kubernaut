@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 )
 
 // Business Requirements: BR-WF-541, BR-ORCH-001, BR-ORCH-004, BR-ORK-002
@@ -16,10 +18,11 @@ type ResilientWorkflowEngine struct {
 	defaultEngine *DefaultWorkflowEngine
 
 	// Business requirement components
-	failureHandler      FailureHandler        // BR-ORCH-004: Learning from execution failures
-	healthChecker       WorkflowHealthChecker // BR-ORCH-011: Operational visibility
-	optimizationEngine  OptimizationEngine    // BR-ORCH-001: Self-optimization
-	statisticsCollector StatisticsCollector   // BR-ORK-003: Performance trend analysis
+	failureHandler FailureHandler        // BR-ORCH-004: Learning from execution failures
+	healthChecker  WorkflowHealthChecker // BR-ORCH-011: Operational visibility
+	// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated OptimizationEngine
+	llmClient           llm.Client          // BR-ORCH-001: Self-optimization via enhanced AI client
+	statisticsCollector StatisticsCollector // BR-ORK-003: Performance trend analysis
 
 	// BR-WF-541: Parallel execution configuration
 	maxPartialFailures int     // <10% workflow termination rate
@@ -91,6 +94,9 @@ type WorkflowHealthChecker interface {
 
 // OptimizationEngine handles self-optimization capabilities
 // BR-ORCH-001: MUST continuously optimize with ≥80% confidence, ≥15% performance gains
+// @deprecated RULE 12 VIOLATION: OptimizationEngine interface violates Rule 12 AI/ML methodology
+// Migration: Use enhanced llm.Client.OptimizeWorkflow(), llm.Client.SuggestOptimizations() methods directly
+// Business Requirements: BR-ORCH-001 - now served by enhanced llm.Client
 type OptimizationEngine interface {
 	OptimizeOrchestrationStrategies(ctx context.Context, workflow *Workflow,
 		history []*RuntimeWorkflowExecution) (*OptimizationResult, error)
@@ -192,6 +198,7 @@ type LearningMetrics struct {
 	LearningAccuracy        float64   `json:"learning_accuracy"`
 	LastLearningUpdate      time.Time `json:"last_learning_update"`
 	AdaptationEffectiveness float64   `json:"adaptation_effectiveness"`
+	ImprovementTrend        string    `json:"improvement_trend"` // "improving", "declining", "stable"
 }
 
 // AdaptiveRetryStrategy represents learned retry patterns (BR-ORCH-004)

@@ -855,9 +855,10 @@ func (coord *AIOrchestrationCoordinator) calculatePriority(alert *AlertData, com
 		}
 
 		// Namespace-based priority (production environments)
-		if alert.Namespace == "production" || alert.Namespace == "prod" {
+		switch alert.Namespace {
+		case "production", "prod":
 			basePriority += 2
-		} else if alert.Namespace == "staging" || alert.Namespace == "stage" {
+		case "staging", "stage":
 			basePriority += 1
 		}
 	}

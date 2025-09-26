@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
@@ -24,7 +25,7 @@ var _ = Describe("BR-ORCH-002: Adaptive Resource Allocation Integration", Ordere
 		ctx                 context.Context
 		suite               *testshared.StandardTestSuite
 		realWorkflowBuilder engine.IntelligentWorkflowBuilder
-		selfOptimizer       engine.SelfOptimizer
+		llmClient           llm.Client // RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
 		resourceAllocator   engine.AdaptiveResourceAllocator // Business Contract: Need this interface
 		logger              *logrus.Logger
 	)
@@ -53,25 +54,24 @@ var _ = Describe("BR-ORCH-002: Adaptive Resource Allocation Integration", Ordere
 		// Validate test environment is healthy before each test
 		Expect(suite.VectorDB).ToNot(BeNil(), "Vector database should be available for resource allocation")
 
-		// Create real workflow builder with all dependencies (no mocks)
-		realWorkflowBuilder = engine.NewIntelligentWorkflowBuilder(
-			suite.LLMClient,        // Real LLM client for AI-driven workflow generation
-			suite.VectorDB,         // Real vector database for pattern storage and retrieval
-			suite.AnalyticsEngine,  // Real analytics engine from test suite
-			suite.MetricsCollector, // Real AI metrics collector from test suite
-			testshared.CreatePatternStoreForTesting(suite.Logger), // Real pattern store
-			suite.ExecutionRepo, // Real execution repository from test suite
-			suite.Logger,        // Real logger for operational visibility
-		)
+		// Create real workflow builder with all dependencies (no mocks) using config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       suite.LLMClient,                                       // Real LLM client for AI-driven workflow generation
+			VectorDB:        suite.VectorDB,                                        // Real vector database for pattern storage and retrieval
+			AnalyticsEngine: suite.AnalyticsEngine,                                 // Real analytics engine from test suite
+			PatternStore:    testshared.CreatePatternStoreForTesting(suite.Logger), // Real pattern store
+			ExecutionRepo:   suite.ExecutionRepo,                                   // Real execution repository from test suite
+			Logger:          suite.Logger,                                          // Real logger for operational visibility
+		}
+
+		var err error
+		realWorkflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 		Expect(realWorkflowBuilder).ToNot(BeNil())
 
-		// Create self optimizer with real workflow builder integration
-		selfOptimizer = engine.NewDefaultSelfOptimizer(
-			realWorkflowBuilder, // Real component integration - no mocks
-			engine.DefaultSelfOptimizerConfig(),
-			logger,
-		)
-		Expect(selfOptimizer).ToNot(BeNil())
+		// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+		llmClient = suite.LLMClient
+		Expect(llmClient).ToNot(BeNil(), "Enhanced LLM client should be available for workflow optimization")
 
 		// Create adaptive resource allocator - Business Contract: Real component needed
 		resourceAllocator = createAdaptiveResourceAllocator(suite.VectorDB, suite.AnalyticsEngine, logger)

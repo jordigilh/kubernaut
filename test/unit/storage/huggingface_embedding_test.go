@@ -19,6 +19,7 @@ import (
 
 // checkExternalAPIAvailability implements graceful degradation for external API issues
 // Following project guidelines: reuse test framework code, avoid duplication
+// nolint:unused
 func checkExternalAPIAvailability(err error) {
 	if err != nil && (strings.Contains(err.Error(), "Invalid credentials") ||
 		strings.Contains(err.Error(), "401") ||
@@ -62,7 +63,7 @@ var _ = Describe("HuggingFace Embedding Service Unit Tests", func() {
 			// Parse request to handle batch vs single requests
 			body, _ := io.ReadAll(r.Body)
 			var req map[string]interface{}
-			json.Unmarshal(body, &req)
+			_ = json.Unmarshal(body, &req)
 
 			input := req["inputs"]
 			var response [][]float64
@@ -82,7 +83,7 @@ var _ = Describe("HuggingFace Embedding Service Unit Tests", func() {
 				response = [][]float64{{0.1, 0.2, 0.3, 0.4}}
 			}
 
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		}))
 
 		// Create service with test server URL

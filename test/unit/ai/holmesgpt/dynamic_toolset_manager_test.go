@@ -2,6 +2,7 @@ package holmesgpt_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -439,7 +440,8 @@ var _ = Describe("DynamicToolsetManager", func() {
 	})
 })
 
-// Test event handler to verify event handling functionality
+// TestEventHandler verifies event handling functionality
+// Business Requirement: BR-HOLMES-022 - Service-specific toolset configurations
 type TestEventHandler struct {
 	addedEvents   []*holmesgpt.ToolsetConfig
 	updatedEvents []*holmesgpt.ToolsetConfig
@@ -448,24 +450,42 @@ type TestEventHandler struct {
 
 func NewTestEventHandler() *TestEventHandler {
 	return &TestEventHandler{
-		addedEvents:   make([]*holmesgpt.ToolsetConfig, 0),
-		updatedEvents: make([]*holmesgpt.ToolsetConfig, 0),
-		removedEvents: make([]*holmesgpt.ToolsetConfig, 0),
+		addedEvents:   []*holmesgpt.ToolsetConfig{},
+		updatedEvents: []*holmesgpt.ToolsetConfig{},
+		removedEvents: []*holmesgpt.ToolsetConfig{},
 	}
 }
 
-func (teh *TestEventHandler) OnToolsetAdded(config *holmesgpt.ToolsetConfig) error {
-	teh.addedEvents = append(teh.addedEvents, config)
+func (h *TestEventHandler) OnToolsetAdded(config *holmesgpt.ToolsetConfig) error {
+	if config == nil {
+		return fmt.Errorf("toolset config cannot be nil")
+	}
+	if config.Name == "" {
+		return fmt.Errorf("toolset config must have a name")
+	}
+	h.addedEvents = append(h.addedEvents, config)
 	return nil
 }
 
-func (teh *TestEventHandler) OnToolsetUpdated(config *holmesgpt.ToolsetConfig) error {
-	teh.updatedEvents = append(teh.updatedEvents, config)
+func (h *TestEventHandler) OnToolsetUpdated(config *holmesgpt.ToolsetConfig) error {
+	if config == nil {
+		return fmt.Errorf("toolset config cannot be nil")
+	}
+	if config.Name == "" {
+		return fmt.Errorf("toolset config must have a name")
+	}
+	h.updatedEvents = append(h.updatedEvents, config)
 	return nil
 }
 
-func (teh *TestEventHandler) OnToolsetRemoved(config *holmesgpt.ToolsetConfig) error {
-	teh.removedEvents = append(teh.removedEvents, config)
+func (h *TestEventHandler) OnToolsetRemoved(config *holmesgpt.ToolsetConfig) error {
+	if config == nil {
+		return fmt.Errorf("toolset config cannot be nil")
+	}
+	if config.Name == "" {
+		return fmt.Errorf("toolset config must have a name")
+	}
+	h.removedEvents = append(h.removedEvents, config)
 	return nil
 }
 

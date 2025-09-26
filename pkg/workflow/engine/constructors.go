@@ -6,11 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jordigilh/kubernaut/internal/config"
-	"github.com/jordigilh/kubernaut/pkg/ai/llm"
-	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/sirupsen/logrus"
 )
 
@@ -84,107 +80,34 @@ func NewEnhancedPatternConfig() *EnhancedPatternConfig {
 	}
 }
 
-// Interface constructor functions
-func NewPromptOptimizer() PromptOptimizer {
-	return NewRealPromptOptimizer(nil, logrus.StandardLogger())
-}
+// RULE 12 COMPLIANCE: All deprecated AI constructor functions removed
+// All AI functionality now consolidated in enhanced llm.Client
+// Business Requirements: BR-AI-017, BR-AI-022, BR-AI-025, BR-PROMPT-001 - served by enhanced llm.Client
 
-// Stub implementations for other interfaces
+// @deprecated RULE 12 VIOLATION: Creates AIMetricsCollector instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client methods directly - no separate collector needed
+// Business Requirements: BR-AI-017, BR-AI-025 - now served by enhanced llm.Client
 
-// Constructor functions that return intelligent implementations based on service availability
-func NewAIMetricsCollector() AIMetricsCollector {
-	// Return real implementation with working dependencies
-	log := logrus.New()
-	log.SetLevel(logrus.WarnLevel) // Reduce noise for fallback scenarios
+// @deprecated RULE 12 VIOLATION: Creates LearningEnhancedPromptBuilder instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client methods directly - no separate builder needed
+// Business Requirements: BR-PROMPT-001 - now served by enhanced llm.Client
 
-	// Create actual working dependencies instead of nil
-	llmClient, _ := llm.NewClient(config.LLMConfig{}, log) // Will use fallback mode safely
-	vectorDB := vector.NewMemoryVectorDatabase(log)        // In-memory vector DB for basic functionality
-	// Note: metricsClient can be nil - the implementation handles this gracefully
+// @deprecated RULE 12 VIOLATION: Creates AIMetricsCollector instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client methods directly - no separate collector needed
+// Business Requirements: BR-AI-017, BR-AI-025 - now served by enhanced llm.Client
 
-	return NewDefaultAIMetricsCollector(llmClient, vectorDB, nil, log)
-}
-
-func NewLearningEnhancedPromptBuilder() LearningEnhancedPromptBuilder {
-	// Return real implementation with working dependencies
-	log := logrus.New()
-	log.SetLevel(logrus.WarnLevel) // Reduce noise for fallback scenarios
-
-	// Create actual working dependencies instead of nil
-	llmClient, _ := llm.NewClient(config.LLMConfig{}, log) // Will use fallback mode safely
-	vectorDB := vector.NewMemoryVectorDatabase(log)        // In-memory vector DB for basic functionality
-	executionRepo := NewMemoryExecutionRepository(log)     // In-memory execution repository
-
-	return NewDefaultLearningEnhancedPromptBuilder(llmClient, vectorDB, executionRepo, log)
-}
-
-// NewConfiguredAIMetricsCollector creates an AI metrics collector with intelligent service detection
-func NewConfiguredAIMetricsCollector(
-	cfg *config.Config,
-	llmClient llm.Client,
-	vectorDB vector.VectorDatabase,
-	metricsClient *metrics.Client,
-	log *logrus.Logger,
-) AIMetricsCollector {
-	if cfg == nil || log == nil {
-		log.Warn("Invalid configuration for AI metrics collector, using fail-fast implementation")
-		return &FailFastAIMetricsCollector{}
-	}
-
-	// Create AI service integrator
-	integrator := NewAIServiceIntegrator(cfg, llmClient, nil, vectorDB, metricsClient, log)
-
-	// Use intelligent detection to create appropriate implementation
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	return integrator.CreateConfiguredAIMetricsCollector(ctx)
-}
-
-// NewConfiguredLearningEnhancedPromptBuilder creates a prompt builder with intelligent service detection
-func NewConfiguredLearningEnhancedPromptBuilder(
-	cfg *config.Config,
-	llmClient llm.Client,
-	vectorDB vector.VectorDatabase,
-	executionRepo ExecutionRepository,
-	log *logrus.Logger,
-) LearningEnhancedPromptBuilder {
-	if cfg == nil || log == nil {
-		log.Warn("Invalid configuration for prompt builder, using fail-fast implementation")
-		return &FailFastLearningEnhancedPromptBuilder{}
-	}
-
-	// Create AI service integrator
-	integrator := NewAIServiceIntegrator(cfg, llmClient, nil, vectorDB, nil, log)
-
-	// Use intelligent detection to create appropriate implementation
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	return integrator.CreateConfiguredLearningEnhancedPromptBuilder(ctx, executionRepo)
-}
-
-// NewRealAIMetricsCollector creates a real AI metrics collector with service dependencies
-func NewRealAIMetricsCollector(
-	llmClient llm.Client,
-	vectorDB vector.VectorDatabase,
-	metricsClient *metrics.Client, // Concrete type for type safety
-	log *logrus.Logger,
-) AIMetricsCollector {
-	return NewDefaultAIMetricsCollector(llmClient, vectorDB, metricsClient, log)
-}
-
-// NewRealLearningEnhancedPromptBuilder creates a real learning-enhanced prompt builder
-func NewRealLearningEnhancedPromptBuilder(
-	llmClient llm.Client,
-	vectorDB vector.VectorDatabase,
-	executionRepo ExecutionRepository,
-	log *logrus.Logger,
-) LearningEnhancedPromptBuilder {
-	return NewDefaultLearningEnhancedPromptBuilder(llmClient, vectorDB, executionRepo, log)
-}
+// @deprecated RULE 12 VIOLATION: Creates LearningEnhancedPromptBuilder instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client methods directly - no separate builder needed
+// Business Requirements: BR-PROMPT-001 - now served by enhanced llm.Client
 
 // Fail-fast implementations that replace misleading stubs
+// @deprecated RULE 12 VIOLATION: Creates fallback AI metrics collector instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client.CollectMetrics(), llm.Client.GetAggregatedMetrics(), llm.Client.RecordAIRequest() methods directly
+// Business Requirements: BR-AI-017, BR-AI-025 - now served by enhanced llm.Client
+//
+// This struct violates Rule 12 by implementing AI metrics collection fallback that should use enhanced llm.Client capabilities.
+// Instead of using this struct, call the enhanced llm.Client methods directly (they have proper fallback logic built-in).
+//
 // These provide clear error messages instead of returning fake data that creates false confidence
 type FailFastAIMetricsCollector struct{}
 
@@ -214,7 +137,7 @@ func (f *FailFastLearningEnhancedPromptBuilder) GetLearnFromExecution(ctx contex
 	return fmt.Errorf("execution-based learning not implemented - implement this interface to enable workflow learning capabilities")
 }
 
-func (f *FailFastLearningEnhancedPromptBuilder) GetGetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
+func (f *FailFastLearningEnhancedPromptBuilder) GetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
 	return "", fmt.Errorf("template optimization not implemented - implement this interface to enable template optimization")
 }
 
@@ -222,6 +145,16 @@ func (f *FailFastLearningEnhancedPromptBuilder) GetBuildEnhancedPrompt(ctx conte
 	return "", fmt.Errorf("enhanced prompt building not implemented - implement this interface to enable context-aware prompt enhancement")
 }
 
+// @deprecated RULE 12 VIOLATION: Creates concrete AI prompt optimizer instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client.RegisterPromptVersion(), llm.Client.GetOptimalPrompt(), llm.Client.StartABTest() methods directly
+// Business Requirements: BR-AI-022 - now served by enhanced llm.Client
+//
+// This struct violates Rule 12 by implementing AI prompt optimization that duplicates enhanced llm.Client capabilities.
+// Instead of using this struct, call the enhanced llm.Client methods directly:
+//   - rpo.RegisterPromptVersion() -> llmClient.RegisterPromptVersion()
+//   - rpo.GetOptimalPrompt() -> llmClient.GetOptimalPrompt()
+//   - rpo.StartABTest() -> llmClient.StartABTest()
+//
 // Real PromptOptimizer implementation
 type RealPromptOptimizer struct {
 	versions     map[string]*PromptVersion
@@ -242,6 +175,12 @@ type PromptOptimizerConfig struct {
 	MaxConcurrentTests  int           `yaml:"max_concurrent_tests"`
 }
 
+// @deprecated RULE 12 VIOLATION: Creates new AI prompt optimizer instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client methods directly instead of creating this struct
+// Replacement pattern:
+//
+//	Instead of: optimizer := NewRealPromptOptimizer(config, log)
+//	Use: llmClient (already has enhanced RegisterPromptVersion, GetOptimalPrompt, StartABTest methods)
 func NewRealPromptOptimizer(config *PromptOptimizerConfig, log *logrus.Logger) *RealPromptOptimizer {
 	if config == nil {
 		config = &PromptOptimizerConfig{

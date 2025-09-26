@@ -11,6 +11,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 )
 
@@ -242,11 +243,12 @@ var _ = Describe("Pattern Discovery Engine - API-Focused Business Requirements T
 			// **Business Requirement**: Validate emergent pattern characteristics
 			// Engine should identify patterns that show system layer interactions
 			// Note: Working with mock directly since engine doesn't expose internal components
-			mockVectorDB.SetSimilarityResults([]*SimilarityResult{
+			mockVectorDB.SetSimilarityResults([]*vector.UnifiedSearchResult{
 				{
-					Similarity: 0.88, // High similarity indicating emergent pattern
-					Rank:       1,
-					// Pattern field would contain actual pattern data
+					Score: 0.88, // High similarity indicating emergent pattern
+					Rank:  1,
+					ID:    "emergent-pattern-1",
+					// Metadata field would contain actual pattern data
 				},
 			})
 

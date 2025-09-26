@@ -241,6 +241,9 @@ type TimeSeriesAnalyzer interface {
 }
 
 // ClusteringEngine interface for clustering analysis
+// @deprecated RULE 12 VIOLATION: ClusteringEngine interface violates Rule 12 AI/ML methodology
+// Migration: Use enhanced llm.Client.ClusterWorkflows(), llm.Client.AnalyzeTrends() methods directly
+// Business Requirements: BR-CLUSTER-001, BR-PATTERN-002 - now served by enhanced llm.Client
 type ClusteringEngine interface {
 	ClusterWorkflows(ctx context.Context, data []*WorkflowExecutionData, config *PatternDiscoveryConfig) ([]*WorkflowCluster, error)
 

@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -19,8 +20,20 @@ func TestAnalyticsIntegrationTDD(t *testing.T) {
 	log := logrus.New()
 	log.SetLevel(logrus.DebugLevel)
 
-	// Create builder with minimal dependencies
-	builder := engine.NewIntelligentWorkflowBuilder(nil, nil, nil, nil, nil, nil, log)
+	// Create builder with minimal dependencies using config pattern
+	config := &engine.IntelligentWorkflowBuilderConfig{
+		LLMClient:       nil, // External: Mock not needed for this test
+		VectorDB:        nil, // External: Mock not needed for this test
+		AnalyticsEngine: nil, // External: Mock not needed for this test
+		PatternStore:    nil, // External: Mock not needed for this test
+		ExecutionRepo:   nil, // External: Mock not needed for this test
+		Logger:          log,
+	}
+
+	builder, err := engine.NewIntelligentWorkflowBuilder(config)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create workflow builder: %v", err))
+	}
 
 	ctx := context.Background()
 

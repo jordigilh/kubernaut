@@ -34,16 +34,19 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 		// Following project guideline #13: only integrate existing functionality
 
 		// Following project guideline #13: integration with existing code
-		// Using nil for components that don't have proper business contracts yet
-		workflowBuilder = engine.NewIntelligentWorkflowBuilder(
-			mockLLMClient,
-			mockVectorDB,
-			nil, // Analytics engine - will be set to nil for now
-			nil, // Metrics collector - will be set to nil for now
-			nil, // Pattern store - will be set to nil for now
-			nil, // Execution repository - will be set to nil for now
-			logger,
-		)
+		// Using new config pattern to avoid constructor parameter evolution issues
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       mockLLMClient,
+			VectorDB:        mockVectorDB,
+			AnalyticsEngine: nil, // Analytics engine - will be set to nil for now
+			PatternStore:    nil, // Pattern store - will be set to nil for now
+			ExecutionRepo:   nil, // Execution repository - will be set to nil for now
+			Logger:          logger,
+		}
+		
+		var err error
+		workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 	})
 
 	Describe("BR-WF-ADV-001: Advanced Pattern Matching Algorithms", func() {
@@ -236,31 +239,102 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 		})
 
 		It("should optimize step ordering based on dependencies", func() {
-			unorderedSteps := []*engine.ExecutableWorkflowStep{
-				{
-					BaseEntity:   types.BaseEntity{ID: "step3", Name: "Analyze Results"},
-					Dependencies: []string{"step1", "step2"},
-					Type:         engine.StepTypeAction,
+			// BR-ORCH-004: Step ordering optimization using template-based approach
+			// Create template with unordered steps that have dependencies
+			unorderedTemplate := &engine.ExecutableTemplate{
+				BaseVersionedEntity: types.BaseVersionedEntity{
+					BaseEntity: types.BaseEntity{
+						ID:   "unordered-template-test",
+						Name: "Unordered Dependency Test Template",
+					},
+					Version: "1.0.0",
 				},
-				{
-					BaseEntity:   types.BaseEntity{ID: "step1", Name: "Check Status"},
-					Dependencies: []string{},
-					Type:         engine.StepTypeAction,
-				},
-				{
-					BaseEntity:   types.BaseEntity{ID: "step2", Name: "Gather Logs"},
-					Dependencies: []string{"step1"},
-					Type:         engine.StepTypeAction,
+				Steps: []*engine.ExecutableWorkflowStep{
+					{
+						BaseEntity:   types.BaseEntity{ID: "step3", Name: "Analyze Results"},
+						Dependencies: []string{"step1", "step2"},
+						Type:         engine.StepTypeAction,
+						Action: &engine.StepAction{
+							Type: "analyze",
+						},
+					},
+					{
+						BaseEntity:   types.BaseEntity{ID: "step1", Name: "Check Status"},
+						Dependencies: []string{},
+						Type:         engine.StepTypeAction,
+						Action: &engine.StepAction{
+							Type: "check",
+						},
+					},
+					{
+						BaseEntity:   types.BaseEntity{ID: "step2", Name: "Gather Logs"},
+						Dependencies: []string{"step1"},
+						Type:         engine.StepTypeAction,
+						Action: &engine.StepAction{
+							Type: "gather",
+						},
+					},
 				},
 			}
 
-			orderedSteps, err := workflowBuilder.OptimizeStepOrdering(unorderedSteps)
+			// Call business logic method with correct signature
+			optimizedTemplate, err := workflowBuilder.OptimizeStepOrdering(unorderedTemplate)
 
 			Expect(err).ToNot(HaveOccurred(), "Step ordering should not fail")
-			Expect(orderedSteps).To(HaveLen(3), "Should preserve all steps")
-			Expect(orderedSteps[0].ID).To(Equal("step1"), "Step with no dependencies should be first")
-			Expect(orderedSteps[1].ID).To(Equal("step2"), "Step depending on step1 should be second")
-			Expect(orderedSteps[2].ID).To(Equal("step3"), "Step with most dependencies should be last")
+			Expect(optimizedTemplate).ToNot(BeNil(), "Should return optimized template")
+			Expect(optimizedTemplate.Steps).To(HaveLen(3), "Should preserve all steps")
+
+			// Verify dependency-based ordering: step1 → step2 → step3
+			Expect(optimizedTemplate.Steps[0].ID).To(Equal("step1"), "Step with no dependencies should be first")
+			Expect(optimizedTemplate.Steps[1].ID).To(Equal("step2"), "Step depending on step1 should be second")
+			Expect(optimizedTemplate.Steps[2].ID).To(Equal("step3"), "Step with most dependencies should be last")
+
+			// Verify template metadata indicates dependency sorting was applied
+			Expect(optimizedTemplate.Metadata).ToNot(BeNil(), "Should have optimization metadata")
+			Expect(optimizedTemplate.Metadata["dependency_sorted"]).To(Equal(true), "Should indicate dependency sorting was applied")
+
+			// REFACTOR: Enhanced validation for business requirements
+			// Verify template identity is preserved during optimization
+			Expect(optimizedTemplate.ID).To(Equal(unorderedTemplate.ID), "Template ID should be preserved")
+			Expect(optimizedTemplate.Name).To(Equal(unorderedTemplate.Name), "Template name should be preserved")
+
+			// Verify all original steps are preserved with correct actions
+			stepIDs := make([]string, len(optimizedTemplate.Steps))
+			stepActions := make(map[string]string)
+			for i, step := range optimizedTemplate.Steps {
+				stepIDs[i] = step.ID
+				stepActions[step.ID] = step.Action.Type
+			}
+			Expect(stepIDs).To(ConsistOf("step1", "step2", "step3"), "All step IDs should be preserved")
+			Expect(stepActions["step1"]).To(Equal("check"), "Step1 action should be preserved")
+			Expect(stepActions["step2"]).To(Equal("gather"), "Step2 action should be preserved")
+			Expect(stepActions["step3"]).To(Equal("analyze"), "Step3 action should be preserved")
+
+			// Verify dependency satisfaction after optimization
+			for _, step := range optimizedTemplate.Steps {
+				if len(step.Dependencies) > 0 {
+					stepIndex := -1
+					for i, s := range optimizedTemplate.Steps {
+						if s.ID == step.ID {
+							stepIndex = i
+							break
+						}
+					}
+
+					// All dependencies should appear before this step
+					for _, depID := range step.Dependencies {
+						depIndex := -1
+						for i, s := range optimizedTemplate.Steps {
+							if s.ID == depID {
+								depIndex = i
+								break
+							}
+						}
+						Expect(depIndex).To(BeNumerically("<", stepIndex),
+							fmt.Sprintf("Dependency %s should come before %s", depID, step.ID))
+					}
+				}
+			}
 		})
 	})
 
@@ -797,26 +871,231 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 		})
 
 		It("should calculate optimization impact metrics", func() {
-			beforeOptimization := &engine.WorkflowMetrics{
-				AverageExecutionTime: 5 * time.Minute,
-				SuccessRate:          0.85,
-				ResourceUtilization:  0.9,
-				FailureRate:          0.15,
+			// BR-ORCH-006: Optimization impact calculation using template-based approach
+			// Create original template with suboptimal configuration
+			originalTemplate := &engine.ExecutableTemplate{
+				BaseVersionedEntity: types.BaseVersionedEntity{
+					BaseEntity: types.BaseEntity{
+						ID:   "original-template-test",
+						Name: "Original Template for Impact Testing",
+					},
+					Version: "1.0.0",
+				},
+				Steps: []*engine.ExecutableWorkflowStep{
+					{
+						BaseEntity: types.BaseEntity{ID: "step1", Name: "Validation Step"},
+						Type:       engine.StepTypeAction,
+						Timeout:    3 * time.Minute,
+						Action: &engine.StepAction{
+							Type: "validate",
+						},
+					},
+					{
+						BaseEntity: types.BaseEntity{ID: "step2", Name: "Processing Step"},
+						Type:       engine.StepTypeAction,
+						Timeout:    4 * time.Minute,
+						Action: &engine.StepAction{
+							Type: "process",
+						},
+					},
+					{
+						BaseEntity: types.BaseEntity{ID: "step3", Name: "Cleanup Step"},
+						Type:       engine.StepTypeAction,
+						Timeout:    2 * time.Minute,
+						Action: &engine.StepAction{
+							Type: "cleanup",
+						},
+					},
+				},
 			}
 
-			afterOptimization := &engine.WorkflowMetrics{
-				AverageExecutionTime: 3 * time.Minute,
-				SuccessRate:          0.92,
-				ResourceUtilization:  0.7,
-				FailureRate:          0.08,
+			// Create optimized template with merged steps and reduced complexity
+			optimizedTemplate := &engine.ExecutableTemplate{
+				BaseVersionedEntity: types.BaseVersionedEntity{
+					BaseEntity: types.BaseEntity{
+						ID:   "optimized-template-test",
+						Name: "Optimized Template for Impact Testing",
+					},
+					Version: "1.1.0",
+				},
+				Steps: []*engine.ExecutableWorkflowStep{
+					{
+						BaseEntity: types.BaseEntity{ID: "combined-step", Name: "Combined Validation and Processing"},
+						Type:       engine.StepTypeAction,
+						Timeout:    5 * time.Minute, // Reduced from 7 minutes total
+						Action: &engine.StepAction{
+							Type: "validate_and_process",
+						},
+						Metadata: map[string]interface{}{
+							"resource_optimized": true,
+							"parallel":           true,
+						},
+					},
+				},
 			}
 
-			impact := workflowBuilder.CalculateOptimizationImpact(beforeOptimization, afterOptimization)
+			// Create performance analysis required by business logic
+			performanceAnalysis := &engine.PerformanceAnalysis{
+				WorkflowID:    originalTemplate.ID,
+				ExecutionTime: 9 * time.Minute, // Original execution time
+				Bottlenecks: []*engine.Bottleneck{
+					{
+						Type:   engine.BottleneckTypeLogical,
+						Impact: 0.3,
+					},
+				},
+				Optimizations:  []*engine.OptimizationCandidate{},
+				Effectiveness:  0.75,
+				CostEfficiency: 0.6,
+				ResourceUsage: &engine.ResourceUsageMetrics{
+					CPUUsage:    0.8,
+					MemoryUsage: 0.9,
+				},
+				Recommendations: []*engine.OptimizationSuggestion{},
+				AnalyzedAt:      time.Now(),
+			}
 
-			Expect(impact.TimeImprovement).To(BeNumerically("~", 0.4, 0.01), "Should calculate 40% time improvement")
-			Expect(impact.ReliabilityImprovement).To(BeNumerically(">", 0), "Should show reliability improvement")
-			Expect(impact.ResourceEfficiencyGain).To(BeNumerically(">", 0), "Should show resource efficiency gain")
-			Expect(impact.OverallScore).To(BeNumerically(">", 0), "Should calculate overall improvement score")
+			// Call business logic method with correct signature (3 parameters)
+			impact := workflowBuilder.CalculateOptimizationImpact(originalTemplate, optimizedTemplate, performanceAnalysis)
+
+			Expect(impact).ToNot(BeNil(), "Should return optimization impact")
+			Expect(impact.ExecutionTimeImprovement).To(BeNumerically(">=", 0), "Should show execution time improvement")
+			Expect(impact.ResourceEfficiencyGain).To(BeNumerically(">=", 0), "Should show resource efficiency gain")
+			Expect(impact.StepReduction).To(BeNumerically(">", 0), "Should show step reduction (3 steps → 1 step)")
+			Expect(impact.OverallImpact).To(BeNumerically(">=", 0), "Should calculate overall improvement score")
+
+			// REFACTOR: Enhanced impact validation for business requirements
+			// Verify step reduction calculation accuracy (3 → 1 = 67% reduction)
+			expectedStepReduction := float64(len(originalTemplate.Steps)-len(optimizedTemplate.Steps)) / float64(len(originalTemplate.Steps))
+			Expect(impact.StepReduction).To(BeNumerically("~", expectedStepReduction, 0.01),
+				fmt.Sprintf("Step reduction should be %.2f for %d→%d steps", expectedStepReduction, len(originalTemplate.Steps), len(optimizedTemplate.Steps)))
+
+			// Verify impact considers performance analysis data
+			Expect(impact.ExecutionTimeImprovement).To(BeNumerically(">", 0), "Should show positive execution time improvement based on analysis")
+
+			// Verify optimization metadata influence on impact calculation
+			Expect(impact.ResourceEfficiencyGain).To(BeNumerically(">", 0), "Should show resource efficiency gain from optimized metadata")
+
+			// Verify overall impact is reasonable combination of individual factors
+			calculatedOverall := (impact.ExecutionTimeImprovement + impact.ResourceEfficiencyGain + impact.StepReduction) / 3.0
+			Expect(impact.OverallImpact).To(BeNumerically("~", calculatedOverall, 0.1),
+				"Overall impact should be average of individual improvements")
+
+			// Business requirement validation: BR-ORCH-006 compliance
+			Expect(impact.ExecutionTimeImprovement).To(BeNumerically("<=", 1.0), "Execution time improvement should not exceed 100%")
+			Expect(impact.ResourceEfficiencyGain).To(BeNumerically("<=", 1.0), "Resource efficiency gain should be reasonable")
+			Expect(impact.StepReduction).To(BeNumerically("<=", 1.0), "Step reduction should not exceed 100%")
+		})
+
+		// REFACTOR: Add comprehensive edge case testing
+		It("should handle edge cases in step ordering optimization", func() {
+			// BR-ORCH-004: Test edge cases for step ordering optimization
+
+			// Test Case 1: Template with no dependencies (should maintain original order)
+			noDepsTemplate := &engine.ExecutableTemplate{
+				BaseVersionedEntity: types.BaseVersionedEntity{
+					BaseEntity: types.BaseEntity{
+						ID:   "no-deps-template",
+						Name: "No Dependencies Template",
+					},
+					Version: "1.0.0",
+				},
+				Steps: []*engine.ExecutableWorkflowStep{
+					{
+						BaseEntity:   types.BaseEntity{ID: "action1", Name: "Action 1"},
+						Dependencies: []string{},
+						Type:         engine.StepTypeAction,
+						Action:       &engine.StepAction{Type: "action1"},
+					},
+					{
+						BaseEntity:   types.BaseEntity{ID: "action2", Name: "Action 2"},
+						Dependencies: []string{},
+						Type:         engine.StepTypeAction,
+						Action:       &engine.StepAction{Type: "action2"},
+					},
+				},
+			}
+
+			optimizedNoDeps, err := workflowBuilder.OptimizeStepOrdering(noDepsTemplate)
+			Expect(err).ToNot(HaveOccurred(), "No dependencies optimization should succeed")
+			Expect(optimizedNoDeps.Metadata).ToNot(ContainElement("dependency_sorted"), "Should not apply dependency sorting when no dependencies exist")
+
+			// Test Case 2: Single step template
+			singleStepTemplate := &engine.ExecutableTemplate{
+				BaseVersionedEntity: types.BaseVersionedEntity{
+					BaseEntity: types.BaseEntity{
+						ID:   "single-step-template",
+						Name: "Single Step Template",
+					},
+					Version: "1.0.0",
+				},
+				Steps: []*engine.ExecutableWorkflowStep{
+					{
+						BaseEntity: types.BaseEntity{ID: "only-step", Name: "Only Step"},
+						Type:       engine.StepTypeAction,
+						Action:     &engine.StepAction{Type: "only"},
+					},
+				},
+			}
+
+			optimizedSingle, err := workflowBuilder.OptimizeStepOrdering(singleStepTemplate)
+			Expect(err).ToNot(HaveOccurred(), "Single step optimization should succeed")
+			Expect(optimizedSingle.Steps).To(HaveLen(1), "Should preserve single step")
+			Expect(optimizedSingle.Steps[0].ID).To(Equal("only-step"), "Should preserve step identity")
+		})
+
+		It("should handle edge cases in optimization impact calculation", func() {
+			// BR-ORCH-006: Test edge cases for optimization impact calculation
+
+			// Test Case 1: No optimization (same template)
+			baseTemplate := &engine.ExecutableTemplate{
+				BaseVersionedEntity: types.BaseVersionedEntity{
+					BaseEntity: types.BaseEntity{
+						ID:   "same-template",
+						Name: "Unchanged Template",
+					},
+					Version: "1.0.0",
+				},
+				Steps: []*engine.ExecutableWorkflowStep{
+					{
+						BaseEntity: types.BaseEntity{ID: "step1", Name: "Step 1"},
+						Type:       engine.StepTypeAction,
+						Action:     &engine.StepAction{Type: "test"},
+					},
+				},
+			}
+
+			baseAnalysis := &engine.PerformanceAnalysis{
+				WorkflowID:      baseTemplate.ID,
+				ExecutionTime:   5 * time.Minute,
+				Bottlenecks:     []*engine.Bottleneck{},
+				Optimizations:   []*engine.OptimizationCandidate{},
+				Effectiveness:   1.0,
+				CostEfficiency:  1.0,
+				ResourceUsage:   &engine.ResourceUsageMetrics{CPUUsage: 0.5, MemoryUsage: 0.5},
+				Recommendations: []*engine.OptimizationSuggestion{},
+				AnalyzedAt:      time.Now(),
+			}
+
+			noOptimizationImpact := workflowBuilder.CalculateOptimizationImpact(baseTemplate, baseTemplate, baseAnalysis)
+			Expect(noOptimizationImpact).ToNot(BeNil(), "Should calculate impact even for no optimization")
+			Expect(noOptimizationImpact.StepReduction).To(Equal(0.0), "Should show zero step reduction for same template")
+
+			// Test Case 2: High-effectiveness workflow (minimal improvement potential)
+			highEffectivenessAnalysis := &engine.PerformanceAnalysis{
+				WorkflowID:      baseTemplate.ID,
+				ExecutionTime:   2 * time.Minute,
+				Bottlenecks:     []*engine.Bottleneck{},
+				Optimizations:   []*engine.OptimizationCandidate{},
+				Effectiveness:   0.95, // Very high effectiveness
+				CostEfficiency:  0.90,
+				ResourceUsage:   &engine.ResourceUsageMetrics{CPUUsage: 0.3, MemoryUsage: 0.2},
+				Recommendations: []*engine.OptimizationSuggestion{},
+				AnalyzedAt:      time.Now(),
+			}
+
+			minimalImpact := workflowBuilder.CalculateOptimizationImpact(baseTemplate, baseTemplate, highEffectivenessAnalysis)
+			Expect(minimalImpact.OverallImpact).To(BeNumerically(">=", 0), "Should show non-negative impact even for high-effectiveness workflows")
 		})
 	})
 

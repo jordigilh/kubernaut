@@ -1,0 +1,413 @@
+---
+globs: "pkg/ai/**/*,pkg/workflow/**/*,pkg/intelligence/**/*,test/**/*ai*"
+description: "AI/ML Development Methodology - TDD workflow and integration patterns"
+---
+
+# Rule 12: AI/ML Development Methodology
+
+## 🎯 **PURPOSE & SCOPE**
+
+This rule resolves conflicts between AI/ML development patterns and TDD methodology by providing crystal clear guidance for developing AI components with proper integration.
+
+**Resolves**: Conflicts between Rule 03 (TDD), Rule 04 (AI/ML), and Rule 07 (Integration)
+
+---
+
+## 🤖 **AI/ML TDD METHODOLOGY - MANDATORY**
+
+### **PHASE 1: AI COMPONENT DISCOVERY (Before TDD)**
+**Duration**: 5-10 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Search for existing AI interfaces: `grep -r "Client.*interface" pkg/ai/`
+2. **MANDATORY**: Check main app AI usage: `grep -r "AI\|LLM\|Holmes" cmd/`
+3. **DECISION POINT**: Enhance existing vs create new AI component
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# ai-component-discovery.sh
+AI_COMPONENT="$1"
+
+echo "🤖 AI COMPONENT DISCOVERY: $AI_COMPONENT"
+
+# Check existing AI interfaces
+EXISTING_AI=$(grep -r "$AI_COMPONENT\|interface.*AI\|LLM.*interface" pkg/ai/ --include="*.go" | grep -v "_test.go" | wc -l)
+MAIN_AI_USAGE=$(grep -r "$AI_COMPONENT\|AI\|LLM" cmd/ --include="*.go" | wc -l)
+
+echo "Existing AI interfaces: $EXISTING_AI"
+echo "Main application AI usage: $MAIN_AI_USAGE"
+
+if [ "$EXISTING_AI" -gt 0 ] && [ "$MAIN_AI_USAGE" -eq 0 ]; then
+    echo "⚠️  WARNING: Existing AI interface but no main app usage"
+    echo "❓ QUESTION: Should you enhance existing AI client instead?"
+fi
+
+echo "✅ AI component discovery complete"
+```
+
+### **PHASE 2: AI TDD RED (Write failing AI tests)**
+**Duration**: 15-20 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Import existing AI interfaces from `pkg/ai/llm.Client` or similar
+2. **MANDATORY**: Call existing AI methods only (e.g., `AnalyzeAlert`, `GenerateWorkflow`)
+3. **FORBIDDEN**: Creating new AI interfaces during RED phase
+4. **VALIDATION**: `go test` shows RED (failing AI tests)
+
+**AI-Specific RED Examples**:
+```go
+// ✅ CORRECT AI RED: Uses existing AI interface
+var _ = Describe("AI Context Optimization", func() {
+    var (
+        llmClient llm.Client  // Existing interface
+        ctx       context.Context
+    )
+
+    BeforeEach(func() {
+        llmClient = testutil.NewMockLLMClient() // Existing factory
+        ctx = context.Background()
+    })
+
+    It("should optimize context using AI analysis", func() {
+        // Call existing AI interface method
+        analysis, err := llmClient.AnalyzeContext(ctx, "test content")
+        Expect(err).ToNot(HaveOccurred())
+        Expect(analysis.Quality).To(BeNumerically(">", 0.8))
+    })
+})
+
+// ❌ WRONG AI RED: Creates new AI interface
+type NewAIOptimizer interface { // ❌ NEW INTERFACE IN RED PHASE
+    OptimizeContent(string) string
+}
+```
+
+### **PHASE 3: AI TDD GREEN (Minimal AI implementation)**
+**Duration**: 20-25 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Implement in existing AI client (e.g., `pkg/ai/llm/client.go`)
+2. **FORBIDDEN**: Creating new AI service files
+3. **PATTERN**: Add method to existing AI interface
+4. **VALIDATION**: All AI tests pass
+
+**AI-Specific GREEN Examples**:
+```go
+// ✅ CORRECT AI GREEN: Enhance existing AI client
+// In pkg/ai/llm/client.go
+type Client interface {
+    // ... existing methods ...
+    AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) // ADD TO EXISTING
+}
+
+func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) {
+    // Minimal implementation to pass tests
+    return &ContextAnalysis{Quality: 0.8}, nil
+}
+
+// ❌ WRONG AI GREEN: Create new AI service
+// optimizer.go  // ❌ NEW FILE
+type ContextOptimizer struct { // ❌ NEW SERVICE
+    // sophisticated AI features...
+}
+```
+
+### **PHASE 4: AI TDD REFACTOR (Enhance AI capabilities)**
+**Duration**: 25-35 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Enhance the SAME AI method that tests call
+2. **ALLOWED**: Add sophisticated AI algorithms, caching, ML models
+3. **FORBIDDEN**: New AI types, new AI files, new AI methods
+4. **VALIDATION**: AI tests remain GREEN + performance improved
+
+**AI-Specific REFACTOR Examples**:
+```go
+// ✅ CORRECT AI REFACTOR: Enhance existing AI method
+func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) {
+    // REFACTOR: Add sophisticated AI capabilities
+
+    // Cache check for performance
+    if cached := c.cache.Get(content); cached != nil {
+        return cached.(*ContextAnalysis), nil
+    }
+
+    // Advanced AI analysis with multiple providers
+    analysis := &ContextAnalysis{}
+
+    // Provider 1: HolmesGPT analysis
+    holmesResponse, err := c.holmesClient.AnalyzeAlert(ctx, content)
+    if err == nil {
+        analysis.Quality = holmesResponse.Confidence
+        analysis.RelevanceScore = holmesResponse.Relevance
+    }
+
+    // Provider 2: Local LLM fallback
+    if analysis.Quality < 0.7 {
+        localResponse, err := c.localLLM.Analyze(ctx, content)
+        if err == nil {
+            analysis.Quality = math.Max(analysis.Quality, localResponse.Confidence)
+        }
+    }
+
+    // Provider 3: Vector similarity
+    vectorSimilarity := c.vectorDB.FindSimilar(content)
+    analysis.OptimizationHints = vectorSimilarity.Recommendations
+
+    // Cache result
+    c.cache.Set(content, analysis)
+
+    return analysis, nil
+}
+
+// ❌ WRONG AI REFACTOR: Create new AI component
+type AdvancedAIOptimizer struct { // ❌ NEW TYPE IN REFACTOR
+    multiProviderLogic...
+}
+```
+
+---
+
+## 🔗 **AI INTEGRATION METHODOLOGY**
+
+### **AI Integration Timing - CRYSTAL CLEAR**
+
+#### **TIMING 1: During GREEN Phase**
+**MANDATORY**: AI methods must be integrated with main application during GREEN phase
+```bash
+# Validate AI integration during GREEN phase
+grep -r "AnalyzeContext\|AI.*Client" cmd/ --include="*.go" | wc -l
+# RULE: Must be > 0 before proceeding to REFACTOR
+```
+
+#### **TIMING 2: Integration Validation Pattern**
+```go
+// MANDATORY: AI clients must be instantiated in main.go
+func main() {
+    // AI client integration
+    llmClient := llm.NewClient(config.LLM)
+
+    // AI client injection into workflow engine
+    workflowEngine.SetLLMClient(llmClient)
+
+    // AI client used in processors
+    processor := processor.New(llmClient, other deps...)
+}
+```
+
+### **AI Mock Usage Guidelines - EXPLICIT DECISION MATRIX**
+
+#### **WHEN TO MOCK AI SERVICES**
+```go
+// ✅ MOCK: External AI API calls
+holmesClient := &MockHolmesGPTClient{}  // External service
+
+// ✅ MOCK: Error simulation for AI
+llmClient.SetError(errors.New("AI unavailable"))  // Error testing
+
+// ✅ MOCK: Performance testing
+llmClient.SetLatency(5 * time.Second)  // Timeout testing
+
+// ❌ DON'T MOCK: Business logic in AI client
+// Test real AI analysis algorithms, not mock responses
+```
+
+#### **WHEN TO USE REAL AI COMPONENTS**
+```go
+// ✅ REAL: AI business logic testing
+analysis, err := realLLMClient.AnalyzeContext(ctx, content)  // Test actual algorithm
+
+// ✅ REAL: AI integration testing
+workflowEngine.SetLLMClient(realLLMClient)  // Test real integration
+
+// ✅ REAL: AI confidence calculation
+confidence := realAIService.CalculateConfidence(data)  // Test real calculation
+```
+
+---
+
+## 🚨 **AI ANTI-PATTERNS TO AVOID**
+
+### **Anti-Pattern 1: AI-Only Testing**
+```go
+// ❌ WRONG: Testing only AI responses without business logic
+It("should get AI response", func() {
+    response := aiClient.Analyze("test")
+    Expect(response).ToNot(BeNil()) // ❌ No business validation
+})
+
+// ✅ CORRECT: Test AI integration with business outcomes
+It("should improve workflow effectiveness using AI analysis", func() {
+    analysis := aiClient.AnalyzeContext(ctx, alertData)
+
+    workflow := workflowEngine.GenerateWorkflow(analysis)
+    Expect(workflow.EstimatedEffectiveness).To(BeNumerically(">", 0.8))
+
+    // Validate business outcome: workflow should resolve alert
+    result := workflowEngine.Execute(workflow)
+    Expect(result.AlertResolved).To(BeTrue())
+})
+```
+
+### **Anti-Pattern 2: Parallel AI Component Creation**
+**REFACTOR NEVER MEANS**: Create new parallel/additional AI code
+**REFACTOR ALWAYS MEANS**: Enhance existing AI implementations only
+
+```go
+// ❌ WRONG: Creating parallel AI components during REFACTOR
+type ContextOptimizer struct {     // ❌ NEW AI COMPONENT
+    advancedFeatures...
+}
+type IntelligentAnalyzer struct {  // ❌ ANOTHER NEW AI COMPONENT
+    mlCapabilities...
+}
+
+// ✅ CORRECT: Enhance existing AI client
+func (c *ClientImpl) AnalyzeContext() {
+    // Add advanced features to existing method
+    // Add intelligent analysis to existing method
+}
+```
+
+### **Anti-Pattern 3: AI Configuration Hardcoding**
+```go
+// ❌ WRONG: Hardcoded AI endpoints
+llmClient := llm.NewClient("http://192.168.1.169:8080") // ❌ HARDCODED
+
+// ✅ CORRECT: Configurable AI endpoints
+llmClient := llm.NewClient(config.LLM.Endpoint) // ✅ CONFIGURABLE
+```
+
+---
+
+## 🤖 **AUTOMATED AI DEVELOPMENT VALIDATION**
+
+### **AI Development Phase Validation**
+```bash
+#!/bin/bash
+# validate-ai-development.sh - MANDATORY for AI components
+
+PHASE="$1"  # red, green, refactor
+
+echo "🤖 Validating AI development phase: $PHASE"
+
+case $PHASE in
+    "red")
+        # Validate RED phase for AI
+        AI_IMPORTS=$(grep -r "pkg/ai/.*Client" test/ --include="*_test.go" | wc -l)
+        if [ "$AI_IMPORTS" -eq 0 ]; then
+            echo "❌ AI RED VIOLATION: No existing AI interface imports"
+            echo "🔧 Required: Import existing AI interfaces like pkg/ai/llm.Client"
+            exit 1
+        fi
+        ;;
+    "green")
+        # Validate GREEN phase for AI
+        NEW_AI_FILES=$(git diff --name-only HEAD~1 | grep "pkg/ai/.*\.go" | grep -v "_test.go" | wc -l)
+        if [ "$NEW_AI_FILES" -gt 1 ]; then
+            echo "❌ AI GREEN VIOLATION: Multiple new AI files created"
+            echo "🔧 Required: Enhance existing AI client only"
+            exit 1
+        fi
+
+        # Check AI integration
+        AI_MAIN_USAGE=$(grep -r "AI\|LLM" cmd/ --include="*.go" | wc -l)
+        if [ "$AI_MAIN_USAGE" -eq 0 ]; then
+            echo "❌ AI INTEGRATION VIOLATION: AI not integrated in main app"
+            echo "🔧 Required: Integrate AI client in cmd/ applications"
+            exit 1
+        fi
+        ;;
+    "refactor")
+        # Validate REFACTOR phase for AI
+        NEW_AI_TYPES=$(git diff HEAD~1 | grep "^+type.*AI\|^+type.*Optimizer" | wc -l)
+        if [ "$NEW_AI_TYPES" -gt 0 ]; then
+            echo "❌ AI REFACTOR VIOLATION: New AI types during REFACTOR"
+            echo "🔧 Required: Enhance existing AI methods only"
+            exit 1
+        fi
+        ;;
+esac
+
+echo "✅ AI development phase $PHASE validation passed"
+```
+
+### **AI Integration Health Check**
+```go
+// Add to main application startup
+func validateAIIntegration() error {
+    // Check AI client is properly integrated
+    if aiClient == nil {
+        return fmt.Errorf("AI client not integrated")
+    }
+
+    // Test AI client health
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    if err := aiClient.HealthCheck(ctx); err != nil {
+        return fmt.Errorf("AI client health check failed: %w", err)
+    }
+
+    // Validate AI client is used in workflow engine
+    if !workflowEngine.HasAIClient() {
+        return fmt.Errorf("AI client not integrated with workflow engine")
+    }
+
+    return nil
+}
+```
+
+---
+
+## 🔗 **INTEGRATION WITH OTHER RULES**
+
+This rule provides AI/ML specific guidance that complements:
+- **Rule 03**: AI-specific TDD workflow phases
+- **Rule 04**: Technical AI integration patterns
+- **Rule 07**: AI component integration requirements
+- **Rule 09**: AI interface validation methodology
+
+### **AI Rule Priority Matrix**
+
+| Scenario | Rule 12 | Rule 03 | Rule 04 | Rule 07 |
+|----------|---------|---------|---------|---------|
+| **AI TDD Workflow** | PRIMARY | Secondary | Reference | Validation |
+| **AI Integration** | PRIMARY | Validation | Reference | Secondary |
+| **AI Mock Usage** | PRIMARY | Framework | - | - |
+| **AI Testing** | PRIMARY | Methodology | Patterns | - |
+
+**Priority**: Rule 12 takes precedence for AI/ML development methodology conflicts.
+
+---
+
+## ⚡ **QUICK REFERENCE - AI DEVELOPMENT CHECKLIST**
+
+### **AI TDD Phases**
+```bash
+# Phase 1: AI Discovery (5-10 min)
+./scripts/ai-component-discovery.sh ComponentName
+
+# Phase 2: AI RED (15-20 min)
+./scripts/validate-ai-development.sh red
+
+# Phase 3: AI GREEN (20-25 min)
+./scripts/validate-ai-development.sh green
+
+# Phase 4: AI REFACTOR (25-35 min)
+./scripts/validate-ai-development.sh refactor
+
+# Phase 5: AI Integration Validation
+./scripts/run-integration-validation.sh
+```
+
+### **AI Development Decision Matrix**
+```
+Question: New AI component needed?
+Answer: Search existing AI interfaces first → Enhance existing → Create new only if justified
+
+Question: How to test AI logic?
+Answer: Mock external APIs → Test real business logic → Validate AI integration
+
+Question: When to integrate AI?
+Answer: During GREEN phase → Before REFACTOR → Validate with main app usage
+```
+
+**This AI/ML development methodology makes it impossible to create orphaned AI components by enforcing integration checkpoints at every phase.**

@@ -108,7 +108,7 @@ var _ = Describe("Circuit Breaker State Management", func() {
 
 			// Force circuit to open state with enough requests for threshold
 			for i := 0; i < 10; i++ {
-				cb.Call(func() error { return fmt.Errorf("failure") })
+				_ = cb.Call(func() error { return fmt.Errorf("failure") })
 			}
 			Expect(cb.GetState()).To(Equal(dependency.CircuitStateOpen))
 
@@ -129,7 +129,7 @@ var _ = Describe("Circuit Breaker State Management", func() {
 
 			// Force to open state
 			for i := 0; i < 10; i++ {
-				cb.Call(func() error { return fmt.Errorf("failure") })
+				_ = cb.Call(func() error { return fmt.Errorf("failure") })
 			}
 			Expect(cb.GetState()).To(Equal(dependency.CircuitStateOpen))
 
@@ -149,7 +149,7 @@ var _ = Describe("Circuit Breaker State Management", func() {
 
 			// Force to open state
 			for i := 0; i < 10; i++ {
-				cb.Call(func() error { return fmt.Errorf("failure") })
+				_ = cb.Call(func() error { return fmt.Errorf("failure") })
 			}
 			Expect(cb.GetState()).To(Equal(dependency.CircuitStateOpen))
 
@@ -170,7 +170,7 @@ var _ = Describe("Circuit Breaker State Management", func() {
 
 			// Force circuit to open
 			for i := 0; i < 10; i++ {
-				cb.Call(func() error { return fmt.Errorf("failure") })
+				_ = cb.Call(func() error { return fmt.Errorf("failure") })
 			}
 			Expect(cb.GetState()).To(Equal(dependency.CircuitStateOpen))
 

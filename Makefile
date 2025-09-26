@@ -714,11 +714,15 @@ integration-test-all: ## Run all integration tests with full service lifecycle m
 	./scripts/run-integration-tests.sh test-all
 
 ##@ Development Environment Management
-.PHONY: bootstrap-dev cleanup-dev test-integration-dev
+.PHONY: bootstrap-dev cleanup-dev test-integration-dev bootstrap-dev-healthcheck
 
 bootstrap-dev: ## Bootstrap complete development environment (all except LLM at 192.168.1.169:8080)
 	@echo "🚀 Bootstrapping development environment..."
 	@./scripts/bootstrap-dev-environment.sh
+
+bootstrap-dev-healthcheck: ## Check health of all integration test dependencies
+	@echo "🔍 Checking integration test dependencies health..."
+	@./scripts/integration-health-check-simple.sh
 
 cleanup-dev: ## Clean up development environment (preserves LLM)
 	@echo "🧹 Cleaning up development environment..."
@@ -779,6 +783,7 @@ dev-help: ## Show development environment help
 	@echo ""
 	@echo "🔧 Environment Management:"
 	@echo "  bootstrap-dev       - Setup complete environment (except LLM)"
+	@echo "  bootstrap-dev-healthcheck - Check health of all dependencies"
 	@echo "  cleanup-dev         - Clean up environment (preserves LLM)"
 	@echo "  dev-setup          - Alias for bootstrap-dev"
 	@echo "  dev-teardown       - Alias for cleanup-dev"

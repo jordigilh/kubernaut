@@ -101,7 +101,7 @@ var _ = Describe("Enhanced Test Isolation Example", func() {
 	Context("Enhanced SLM Client Integration", func() {
 		It("should demonstrate enhanced decision making", func() {
 			// Create enhanced fake SLM client
-			client := NewFakeSLMClient()
+			client := NewTestSLMClient()
 
 			// Verify enhanced decisions are enabled by default
 			Expect(client.useEnhancedDecisions).To(BeTrue())
@@ -139,7 +139,7 @@ var _ = Describe("Enhanced Test Isolation Example", func() {
 		})
 
 		It("should handle security incidents with quarantine action", func() {
-			client := NewFakeSLMClient()
+			client := NewTestSLMClient()
 
 			securityAlert := types.Alert{
 				Name:        "SecurityIncident",
@@ -163,7 +163,7 @@ var _ = Describe("Enhanced Test Isolation Example", func() {
 		})
 
 		It("should handle OOM alerts with resource increase", func() {
-			client := NewFakeSLMClient()
+			client := NewTestSLMClient()
 
 			oomAlert := types.Alert{
 				Name:        "OOMKilled",

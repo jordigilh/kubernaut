@@ -32,8 +32,19 @@ var _ = Describe("Environment Adaptation Integration - TDD Implementation", func
 		// Create mock vector database
 		mockVectorDB = mocks.NewMockVectorDatabase()
 
-		// Create builder with mock dependencies
-		builder = engine.NewIntelligentWorkflowBuilder(nil, mockVectorDB, nil, nil, nil, nil, log)
+		// Create builder with mock dependencies using new config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       nil,
+			VectorDB:        mockVectorDB,
+			AnalyticsEngine: nil,
+			PatternStore:    nil,
+			ExecutionRepo:   nil,
+			Logger:          log,
+		}
+
+		var err error
+		builder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 
 		// Create test objective with environment-specific requirements
 		objective = &engine.WorkflowObjective{

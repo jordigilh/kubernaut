@@ -12,12 +12,13 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
+	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 )
 
 var _ = Describe("BR-AI-001 & BR-ORK-004: Dynamic Cost Calculation", func() {
 	var (
 		pipeline       *embedding.AIEmbeddingPipeline
-		mockLLMClient  *MockLLMClient
+		mockLLMClient  *mocks.MockLLMClient
 		mockVectorDB   *MockVectorDatabase
 		ctx            context.Context
 		testAlert      *types.Alert
@@ -26,7 +27,7 @@ var _ = Describe("BR-AI-001 & BR-ORK-004: Dynamic Cost Calculation", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		mockLLMClient = &MockLLMClient{}
+		mockLLMClient = mocks.NewMockLLMClient()
 		mockVectorDB = &MockVectorDatabase{}
 
 		// Create logger for use throughout tests
@@ -252,10 +253,7 @@ var _ = Describe("BR-AI-001 & BR-ORK-004: Dynamic Cost Calculation", func() {
 			By("validating complete cost component tracking")
 
 			// This tests the enhanced ProcessWithDynamicCostOptimization method
-			mockLLMClient.SetMockResponse(&llm.AnalyzeAlertResponse{
-				Action:     "Mock analysis result",
-				Confidence: 0.85,
-			})
+			// Using shared mock defaults - adequate confidence and action provided
 
 			maxCost := 0.10
 			result, err := pipeline.ProcessWithDynamicCostOptimization(ctx, testAlert, maxCost)
@@ -278,18 +276,8 @@ var _ = Describe("BR-AI-001 & BR-ORK-004: Dynamic Cost Calculation", func() {
 			// Business requirement: Replace static costs with dynamic calculations
 			By("verifying dynamic cost calculation replaces static values")
 
-			mockLLMClient.SetMockResponse(&llm.AnalyzeAlertResponse{
-				Action:     "Enhanced analysis result",
-				Confidence: 0.90,
-			})
-
+			// Using shared mock defaults - provides adequate confidence (0.8+) and action
 			maxCost := 0.08
-
-			// Set mock response first
-			mockLLMClient.SetMockResponse(&llm.AnalyzeAlertResponse{
-				Action:     "Enhanced analysis result",
-				Confidence: 0.90,
-			})
 
 			// Test multiple runs to verify cost calculation varies based on actual usage
 			costs := make([]float64, 3)
@@ -315,72 +303,6 @@ var _ = Describe("BR-AI-001 & BR-ORK-004: Dynamic Cost Calculation", func() {
 })
 
 // Mock implementations following project guideline: Reuse existing mocks where possible
-type MockLLMClient struct {
-	mockResponse *llm.AnalyzeAlertResponse
-	mockError    error
-}
-
-func (m *MockLLMClient) SetMockResponse(response *llm.AnalyzeAlertResponse) {
-	m.mockResponse = response
-}
-
-func (m *MockLLMClient) SetMockError(err error) {
-	m.mockError = err
-}
-
-func (m *MockLLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*llm.AnalyzeAlertResponse, error) {
-	if m.mockError != nil {
-		return nil, m.mockError
-	}
-	if m.mockResponse != nil {
-		return m.mockResponse, nil
-	}
-	return &llm.AnalyzeAlertResponse{
-		Action:     "Mock analysis result",
-		Confidence: 0.85,
-	}, nil
-}
-
-func (m *MockLLMClient) GetProvider() string {
-	return "mock-provider"
-}
-
-func (m *MockLLMClient) IsHealthy() bool {
-	return true
-}
-
-// Additional methods required by llm.Client interface
-func (m *MockLLMClient) GenerateResponse(prompt string) (string, error) {
-	return "Mock response", nil
-}
-
-func (m *MockLLMClient) ChatCompletion(ctx context.Context, prompt string) (string, error) {
-	return "Mock chat completion", nil
-}
-
-func (m *MockLLMClient) GenerateWorkflow(ctx context.Context, objective *llm.WorkflowObjective) (*llm.WorkflowGenerationResult, error) {
-	return &llm.WorkflowGenerationResult{Success: true}, nil
-}
-
-func (m *MockLLMClient) LivenessCheck(ctx context.Context) error {
-	return nil
-}
-
-func (m *MockLLMClient) ReadinessCheck(ctx context.Context) error {
-	return nil
-}
-
-func (m *MockLLMClient) GetEndpoint() string {
-	return "mock-endpoint"
-}
-
-func (m *MockLLMClient) GetModel() string {
-	return "mock-model"
-}
-
-func (m *MockLLMClient) GetMinParameterCount() int64 {
-	return 1000000000
-}
 
 type MockVectorDatabase struct {
 	mockError error

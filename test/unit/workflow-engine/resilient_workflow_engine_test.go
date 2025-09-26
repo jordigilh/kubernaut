@@ -233,7 +233,7 @@ var _ = Describe("Resilient Workflow Engine - Business Requirements Testing", fu
 				"optimization confidence should be ≥80%")
 
 			// Validate ≥15% performance gains requirement (using Performance.ExecutionTime)
-			var performanceGain float64 = 0.18 // Default for mock (18% > 15% requirement)
+			performanceGain := 0.18 // Default for mock (18% > 15% requirement)
 			if optimizationResult.Performance != nil {
 				performanceGain = optimizationResult.Performance.ExecutionTime
 			}

@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
@@ -21,7 +22,7 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test (Simpli
 		hooks           *testshared.TestLifecycleHooks
 		ctx             context.Context
 		suite           *testshared.StandardTestSuite
-		selfOptimizer   engine.SelfOptimizer
+		llmClient       llm.Client // RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
 		workflowBuilder engine.IntelligentWorkflowBuilder
 		logger          *logrus.Logger
 	)
@@ -41,26 +42,25 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test (Simpli
 		Expect(suite.VectorDB).ToNot(BeNil(), "Vector database should be available")
 		Expect(suite.LLMClient).ToNot(BeNil(), "LLM client should be available")
 
-		// Create workflow builder with real dependencies
+		// Create workflow builder with real dependencies using config pattern
 		patternStore := testshared.CreatePatternStoreForTesting(suite.Logger)
-		workflowBuilder = engine.NewIntelligentWorkflowBuilder(
-			suite.LLMClient,
-			suite.VectorDB,
-			suite.AnalyticsEngine,
-			suite.MetricsCollector,
-			patternStore,
-			suite.ExecutionRepo,
-			suite.Logger,
-		)
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       suite.LLMClient,
+			VectorDB:        suite.VectorDB,
+			AnalyticsEngine: suite.AnalyticsEngine,
+			PatternStore:    patternStore,
+			ExecutionRepo:   suite.ExecutionRepo,
+			Logger:          suite.Logger,
+		}
+
+		var err error
+		workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 		Expect(workflowBuilder).ToNot(BeNil())
 
-		// Create self optimizer with real workflow builder integration
-		selfOptimizer = engine.NewDefaultSelfOptimizer(
-			workflowBuilder,
-			engine.DefaultSelfOptimizerConfig(),
-			logger,
-		)
-		Expect(selfOptimizer).ToNot(BeNil())
+		// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+		llmClient = suite.LLMClient
+		Expect(llmClient).ToNot(BeNil(), "Enhanced LLM client should be available for workflow optimization")
 	})
 
 	AfterAll(func() {
@@ -91,10 +91,21 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test (Simpli
 			executionHistory := generateSimpleExecutionHistory(originalWorkflow.ID, 10)
 			Expect(executionHistory).To(HaveLen(10), "Should have sufficient execution history")
 
-			By("performing self-optimization with real vector database pattern analysis")
+			By("performing workflow optimization using enhanced LLM client with real vector database pattern analysis")
 			optimizationStartTime := time.Now()
-			optimizedWorkflow, err := selfOptimizer.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() instead of deprecated SelfOptimizer
+			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
 			optimizationDuration := time.Since(optimizationStartTime)
+			
+			// Extract optimized workflow from LLM result
+			var optimizedWorkflow *engine.Workflow
+			if optimizationResult != nil {
+				if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+					if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+						optimizedWorkflow = optimizedWf.(*engine.Workflow)
+					}
+				}
+			}
 
 			Expect(err).ToNot(HaveOccurred(), "Self optimization should succeed")
 			Expect(optimizedWorkflow).ToNot(BeNil(), "Should return optimized workflow")
@@ -114,8 +125,17 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test (Simpli
 			}
 
 			By("generating optimization suggestions with business impact analysis")
-			suggestions, err := selfOptimizer.SuggestImprovements(ctx, originalWorkflow)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() instead of deprecated SelfOptimizer
+			suggestionResult, err := llmClient.SuggestOptimizations(ctx, originalWorkflow)
 			Expect(err).ToNot(HaveOccurred(), "Should generate optimization suggestions")
+			
+			// Extract suggestions from LLM result
+			var suggestions []map[string]interface{}
+			if suggestionResult != nil {
+				if suggestionSlice, ok := suggestionResult.([]map[string]interface{}); ok {
+					suggestions = suggestionSlice
+				}
+			}
 			Expect(len(suggestions)).To(BeNumerically(">=", 0), "Should provide optimization suggestions (may be empty for simple workflow)")
 
 			By("validating vector database integration for pattern storage")
@@ -153,7 +173,18 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test (Simpli
 			Expect(minimalHistory).To(HaveLen(2))
 
 			By("attempting optimization with limited data")
-			optimizedWorkflow, err := selfOptimizer.OptimizeWorkflow(ctx, challengingWorkflow, minimalHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for challenging scenarios
+			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, challengingWorkflow, minimalHistory)
+			
+			// Extract optimized workflow from LLM result
+			var optimizedWorkflow *engine.Workflow
+			if optimizationResult != nil {
+				if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+					if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+						optimizedWorkflow = optimizedWf.(*engine.Workflow)
+					}
+				}
+			}
 
 			// Should either succeed with graceful degradation or fail gracefully
 			if err != nil {
@@ -207,8 +238,19 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test (Simpli
 			Expect(timeoutCount).To(BeNumerically(">=", 3), "Should have timeout-prone executions")
 
 			By("performing optimization focused on business metrics")
-			optimizedWorkflow, err := selfOptimizer.OptimizeWorkflow(ctx, inefficientWorkflow, problematicHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for business metrics optimization
+			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, inefficientWorkflow, problematicHistory)
 			Expect(err).ToNot(HaveOccurred())
+			
+			// Extract optimized workflow from LLM result
+			var optimizedWorkflow *engine.Workflow
+			if optimizationResult != nil {
+				if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+					if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+						optimizedWorkflow = optimizedWf.(*engine.Workflow)
+					}
+				}
+			}
 			Expect(optimizedWorkflow).ToNot(BeNil())
 
 			By("measuring business impact of optimization")
@@ -226,8 +268,17 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test (Simpli
 			Expect(originalReliability).To(BeNumerically("<=", 1), "Reliability should be valid percentage")
 
 			By("validating optimization suggestions provide actionable insights")
-			suggestions, err := selfOptimizer.SuggestImprovements(ctx, inefficientWorkflow)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() for actionable insights
+			suggestionResult, err := llmClient.SuggestOptimizations(ctx, inefficientWorkflow)
 			Expect(err).ToNot(HaveOccurred())
+			
+			// Extract suggestions from LLM result
+			var suggestions []map[string]interface{}
+			if suggestionResult != nil {
+				if suggestionSlice, ok := suggestionResult.([]map[string]interface{}); ok {
+					suggestions = suggestionSlice
+				}
+			}
 			// For simple workflows, suggestions may be empty, so we just verify the call works
 			Expect(len(suggestions)).To(BeNumerically(">=", 0), "Should provide suggestions (may be empty)")
 		})

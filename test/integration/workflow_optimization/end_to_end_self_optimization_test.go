@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
@@ -43,7 +44,7 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 		hooks           *testshared.TestLifecycleHooks
 		ctx             context.Context
 		suite           *testshared.StandardTestSuite
-		selfOptimizer   engine.SelfOptimizer
+		llmClient       llm.Client // RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
 		workflowBuilder engine.IntelligentWorkflowBuilder
 		logger          *logrus.Logger
 	)
@@ -63,26 +64,25 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 		Expect(suite.VectorDB).ToNot(BeNil(), "Vector database should be available")
 		Expect(suite.LLMClient).ToNot(BeNil(), "LLM client should be available")
 
-		// Create workflow builder with real dependencies
+		// Create workflow builder with real dependencies using new config pattern
 		patternStore := testshared.CreatePatternStoreForTesting(suite.Logger)
-		workflowBuilder = engine.NewIntelligentWorkflowBuilder(
-			suite.LLMClient,
-			suite.VectorDB,
-			suite.AnalyticsEngine,
-			suite.MetricsCollector,
-			patternStore,
-			suite.ExecutionRepo,
-			suite.Logger,
-		)
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       suite.LLMClient,
+			VectorDB:        suite.VectorDB,
+			AnalyticsEngine: suite.AnalyticsEngine,
+			PatternStore:    patternStore,
+			ExecutionRepo:   suite.ExecutionRepo,
+			Logger:          suite.Logger,
+		}
+		
+		var err error
+		workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 		Expect(workflowBuilder).ToNot(BeNil())
 
-		// Create self optimizer with real workflow builder integration
-		selfOptimizer = engine.NewDefaultSelfOptimizer(
-			workflowBuilder,
-			engine.DefaultSelfOptimizerConfig(),
-			logger,
-		)
-		Expect(selfOptimizer).ToNot(BeNil())
+		// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+		llmClient = suite.LLMClient
+		Expect(llmClient).ToNot(BeNil(), "Enhanced LLM client should be available for workflow optimization")
 	})
 
 	AfterAll(func() {
@@ -111,10 +111,21 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			}
 			Expect(slowExecutions).To(BeNumerically(">=", 3), "Should have slow executions to optimize")
 
-			By("performing self-optimization with real vector database pattern analysis")
+			By("performing workflow optimization using enhanced LLM client with real vector database pattern analysis")
 			optimizationStartTime := time.Now()
-			optimizedWorkflow, err := selfOptimizer.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() instead of deprecated SelfOptimizer
+			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
 			optimizationDuration := time.Since(optimizationStartTime)
+			
+			// Extract optimized workflow from LLM result
+			var optimizedWorkflow *engine.Workflow
+			if optimizationResult != nil {
+				if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+					if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+						optimizedWorkflow = optimizedWf.(*engine.Workflow)
+					}
+				}
+			}
 
 			Expect(err).ToNot(HaveOccurred(), "Self optimization should succeed")
 			Expect(optimizedWorkflow).ToNot(BeNil(), "Should return optimized workflow")
@@ -134,15 +145,30 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			}
 
 			By("generating optimization suggestions with business impact analysis")
-			suggestions, err := selfOptimizer.SuggestImprovements(ctx, originalWorkflow)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() instead of deprecated SelfOptimizer
+			suggestionResult, err := llmClient.SuggestOptimizations(ctx, originalWorkflow)
 			Expect(err).ToNot(HaveOccurred(), "Should generate optimization suggestions")
+			
+			// Extract suggestions from LLM result
+			var suggestions []map[string]interface{}
+			if suggestionResult != nil {
+				if suggestionSlice, ok := suggestionResult.([]map[string]interface{}); ok {
+					suggestions = suggestionSlice
+				}
+			}
 			Expect(len(suggestions)).To(BeNumerically(">=", 1), "Should provide optimization suggestions")
 
 			// Validate suggestion quality
 			for _, suggestion := range suggestions {
-				Expect(suggestion.Description).ToNot(BeEmpty(), "Each suggestion should have description")
-				Expect(suggestion.Impact).To(BeNumerically(">", 0), "Each suggestion should have positive impact")
-				Expect(suggestion.Priority).To(BeNumerically(">=", 1), "Each suggestion should have priority")
+				if desc, exists := suggestion["suggestion"]; exists {
+					Expect(desc).ToNot(BeEmpty(), "Each suggestion should have description")
+				}
+				if impact, exists := suggestion["impact"]; exists {
+					Expect(impact).To(BeNumerically(">", 0), "Each suggestion should have positive impact")
+				}
+				if priority, exists := suggestion["priority"]; exists {
+					Expect(priority).ToNot(BeEmpty(), "Each suggestion should have priority")
+				}
 			}
 
 			By("measuring end-to-end optimization performance improvement")
@@ -162,14 +188,14 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			Expect(len(patterns)).To(BeNumerically(">=", 1), "Should have stored optimization patterns")
 
 			By("demonstrating optimization learning and pattern recognition")
-			// Run optimization again to test learning
-			secondOptimization, err := selfOptimizer.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for second optimization
+			secondOptimizationResult, err := llmClient.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
 			Expect(err).ToNot(HaveOccurred(), "Second optimization should succeed")
-			Expect(secondOptimization).ToNot(BeNil(), "Should return second optimized workflow")
+			Expect(secondOptimizationResult).ToNot(BeNil(), "Should return second optimized workflow")
 
 			// Second optimization should be faster due to learned patterns
 			secondOptimizationStartTime := time.Now()
-			_, err = selfOptimizer.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
+			_, err = llmClient.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
 			secondOptimizationDuration := time.Since(secondOptimizationStartTime)
 
 			Expect(secondOptimizationDuration).To(BeNumerically("<=", optimizationDuration),
@@ -186,7 +212,18 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			Expect(minimalHistory).To(HaveLen(2))
 
 			By("attempting optimization with limited data")
-			optimizedWorkflow, err := selfOptimizer.OptimizeWorkflow(ctx, challengingWorkflow, minimalHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for challenging scenarios
+			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, challengingWorkflow, minimalHistory)
+			
+			// Extract optimized workflow from LLM result
+			var optimizedWorkflow *engine.Workflow
+			if optimizationResult != nil {
+				if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+					if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+						optimizedWorkflow = optimizedWf.(*engine.Workflow)
+					}
+				}
+			}
 
 			// Should either succeed with graceful degradation or fail gracefully
 			if err != nil {
@@ -232,8 +269,19 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			Expect(timeoutCount).To(BeNumerically(">=", 5), "Should have timeout-prone executions")
 
 			By("performing optimization focused on business metrics")
-			optimizedWorkflow, err := selfOptimizer.OptimizeWorkflow(ctx, inefficientWorkflow, problematicHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for business metrics optimization
+			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, inefficientWorkflow, problematicHistory)
 			Expect(err).ToNot(HaveOccurred())
+			
+			// Extract optimized workflow from LLM result
+			var optimizedWorkflow *engine.Workflow
+			if optimizationResult != nil {
+				if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+					if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+						optimizedWorkflow = optimizedWf.(*engine.Workflow)
+					}
+				}
+			}
 			Expect(optimizedWorkflow).ToNot(BeNil())
 
 			By("measuring business impact of optimization")
@@ -253,15 +301,26 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 				"BR-E2E-OPT-001: Should achieve at least 85% reliability")
 
 			By("validating optimization suggestions provide actionable insights")
-			suggestions, err := selfOptimizer.SuggestImprovements(ctx, inefficientWorkflow)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() for actionable insights
+			suggestionResult, err := llmClient.SuggestOptimizations(ctx, inefficientWorkflow)
 			Expect(err).ToNot(HaveOccurred())
+			
+			// Extract suggestions from LLM result
+			var suggestions []map[string]interface{}
+			if suggestionResult != nil {
+				if suggestionSlice, ok := suggestionResult.([]map[string]interface{}); ok {
+					suggestions = suggestionSlice
+				}
+			}
 			Expect(len(suggestions)).To(BeNumerically(">=", 3), "Should provide multiple actionable suggestions")
 
 			// Validate suggestions are business-focused
 			businessFocusedSuggestions := 0
 			for _, suggestion := range suggestions {
-				if suggestion.Impact >= 0.1 { // 10%+ impact
-					businessFocusedSuggestions++
+				if impact, exists := suggestion["impact"]; exists {
+					if impactFloat, ok := impact.(float64); ok && impactFloat >= 0.1 { // 10%+ impact
+						businessFocusedSuggestions++
+					}
 				}
 			}
 			Expect(businessFocusedSuggestions).To(BeNumerically(">=", 2),

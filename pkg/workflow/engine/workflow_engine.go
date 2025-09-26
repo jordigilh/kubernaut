@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/platform/k8s"
 	"github.com/jordigilh/kubernaut/pkg/platform/monitoring"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -31,8 +32,12 @@ type DefaultWorkflowEngine struct {
 	// Execution repository
 	executionRepo ExecutionRepository
 
-	// AI condition evaluator
-	aiConditionEvaluator AIConditionEvaluator
+	// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of AIConditionEvaluator
+	llmClient llm.Client
+
+	// Learning Enhanced Prompt Builder for AI-driven prompt optimization
+	// Business Requirement: BR-AI-PROMPT-001 through BR-AI-PROMPT-004
+	promptBuilder LearningEnhancedPromptBuilder
 
 	// Expression engine for advanced condition evaluation
 	expressionEngine *ExpressionEngine
@@ -98,15 +103,15 @@ func NewDefaultWorkflowEngine(
 	}
 
 	engine := &DefaultWorkflowEngine{
-		k8sClient:             k8sClient,
-		actionRepo:            actionRepo,
-		monitoringClients:     monitoringClients,
-		stateStorage:          stateStorage,
-		executionRepo:         executionRepo,
-		config:                config,
-		log:                   log,
-		actionExecutors:       make(map[string]ActionExecutor),
-		aiConditionEvaluator:  nil,                   // Will be set via SetAIConditionEvaluator
+		k8sClient:         k8sClient,
+		actionRepo:        actionRepo,
+		monitoringClients: monitoringClients,
+		stateStorage:      stateStorage,
+		executionRepo:     executionRepo,
+		config:            config,
+		log:               log,
+		actionExecutors:   make(map[string]ActionExecutor),
+		// RULE 12 COMPLIANCE: Removed aiConditionEvaluator - using enhanced llm.Client methods directly
 		expressionEngine:      NewExpressionEngine(), // Initialize expression engine for advanced condition evaluation
 		postConditionRegistry: NewValidatorRegistry(log),
 	}
@@ -184,25 +189,26 @@ func NewWorkflowEngineWithConfig(
 	return defaultEngine, nil
 }
 
-// NewDefaultWorkflowEngineWithAI creates a new workflow engine with AI condition evaluator
-func NewDefaultWorkflowEngineWithAI(
-	k8sClient k8s.Client,
-	actionRepo actionhistory.Repository,
-	monitoringClients *monitoring.MonitoringClients,
-	stateStorage StateStorage,
-	executionRepo ExecutionRepository,
-	aiConditionEvaluator AIConditionEvaluator,
-	config *WorkflowEngineConfig,
-	log *logrus.Logger,
-) *DefaultWorkflowEngine {
-	engine := NewDefaultWorkflowEngine(k8sClient, actionRepo, monitoringClients, stateStorage, executionRepo, config, log)
-	engine.aiConditionEvaluator = aiConditionEvaluator
-	return engine
+// @deprecated RULE 12 VIOLATION: Uses AIConditionEvaluator instead of enhanced llm.Client
+// Migration: Use enhanced llm.Client.EvaluateCondition() methods directly
+// Business Requirements: BR-COND-001 - now served by enhanced llm.Client
+
+// SetLLMClient sets the LLM client for AI-enhanced condition evaluation
+// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated AIConditionEvaluator
+func (dwe *DefaultWorkflowEngine) SetLLMClient(client llm.Client) {
+	dwe.llmClient = client
 }
 
-// SetAIConditionEvaluator sets the AI condition evaluator for the workflow engine
-func (dwe *DefaultWorkflowEngine) SetAIConditionEvaluator(evaluator AIConditionEvaluator) {
-	dwe.aiConditionEvaluator = evaluator
+// SetPromptBuilder sets the learning enhanced prompt builder for AI-driven prompt optimization
+// Business Requirements: BR-AI-PROMPT-001 through BR-AI-PROMPT-004
+func (dwe *DefaultWorkflowEngine) SetPromptBuilder(builder LearningEnhancedPromptBuilder) {
+	dwe.promptBuilder = builder
+}
+
+// GetPromptBuilder returns the learning enhanced prompt builder
+// Business Requirements: BR-AI-PROMPT-001 through BR-AI-PROMPT-004
+func (dwe *DefaultWorkflowEngine) GetPromptBuilder() LearningEnhancedPromptBuilder {
+	return dwe.promptBuilder
 }
 
 // SetMetricsCollector sets the metrics collector for subflow monitoring (BR-WF-ADV-628)
@@ -936,9 +942,9 @@ func (dwe *DefaultWorkflowEngine) executeSequential(ctx context.Context, step *E
 }
 
 func (dwe *DefaultWorkflowEngine) evaluateMetricCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
-	// Use AI condition evaluator if available, otherwise fallback to basic logic
-	if dwe.aiConditionEvaluator != nil {
-		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
+	// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated AIConditionEvaluator
+	if dwe.llmClient != nil {
+		return dwe.llmClient.EvaluateCondition(ctx, condition, stepContext)
 	}
 
 	// Fallback to basic metric evaluation
@@ -947,9 +953,9 @@ func (dwe *DefaultWorkflowEngine) evaluateMetricCondition(ctx context.Context, c
 }
 
 func (dwe *DefaultWorkflowEngine) evaluateResourceCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
-	// Use AI condition evaluator if available, otherwise fallback to basic logic
-	if dwe.aiConditionEvaluator != nil {
-		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
+	// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated AIConditionEvaluator
+	if dwe.llmClient != nil {
+		return dwe.llmClient.EvaluateCondition(ctx, condition, stepContext)
 	}
 
 	// Fallback to basic resource evaluation
@@ -958,9 +964,9 @@ func (dwe *DefaultWorkflowEngine) evaluateResourceCondition(ctx context.Context,
 }
 
 func (dwe *DefaultWorkflowEngine) evaluateTimeCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
-	// Use AI condition evaluator if available, otherwise fallback to basic logic
-	if dwe.aiConditionEvaluator != nil {
-		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
+	// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated AIConditionEvaluator
+	if dwe.llmClient != nil {
+		return dwe.llmClient.EvaluateCondition(ctx, condition, stepContext)
 	}
 
 	// Fallback to basic time evaluation
@@ -981,10 +987,10 @@ func (dwe *DefaultWorkflowEngine) evaluateExpressionCondition(ctx context.Contex
 		return dwe.EvaluateConditionWithExpressionEngine(ctx, condition, stepContext, stepResult)
 	}
 
-	// Strategy 2: Use AI condition evaluator if available
-	if dwe.aiConditionEvaluator != nil {
-		dwe.log.Debug("Using AI condition evaluator for expression evaluation")
-		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
+	// Strategy 2: Use enhanced llm.Client for AI condition evaluation
+	if dwe.llmClient != nil {
+		dwe.log.Debug("Using enhanced llm.Client for expression evaluation")
+		return dwe.llmClient.EvaluateCondition(ctx, condition, stepContext)
 	}
 
 	// Strategy 3: Fallback to basic expression evaluation
@@ -993,9 +999,9 @@ func (dwe *DefaultWorkflowEngine) evaluateExpressionCondition(ctx context.Contex
 }
 
 func (dwe *DefaultWorkflowEngine) evaluateCustomCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error) {
-	// Use AI condition evaluator if available, otherwise fallback to basic logic
-	if dwe.aiConditionEvaluator != nil {
-		return dwe.aiConditionEvaluator.EvaluateCondition(ctx, condition, stepContext)
+	// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated AIConditionEvaluator
+	if dwe.llmClient != nil {
+		return dwe.llmClient.EvaluateCondition(ctx, condition, stepContext)
 	}
 
 	// Fallback to basic custom evaluation
@@ -1003,7 +1009,7 @@ func (dwe *DefaultWorkflowEngine) evaluateCustomCondition(ctx context.Context, c
 	return dwe.basicCustomEvaluation(condition, stepContext), nil
 }
 
-func (dwe *DefaultWorkflowEngine) validateCondition(ctx context.Context, rule *ValidationRule, stepContext *StepContext) bool {
+func (dwe *DefaultWorkflowEngine) validateCondition(ctx context.Context, rule *PreConditionRule, stepContext *StepContext) bool {
 	// Check for context cancellation
 	select {
 	case <-ctx.Done():
@@ -1012,10 +1018,10 @@ func (dwe *DefaultWorkflowEngine) validateCondition(ctx context.Context, rule *V
 	}
 
 	// Enhanced validation with context awareness
-	if rule.Expression == "always_true" {
+	if rule.Condition == "always_true" {
 		return true
 	}
-	if rule.Expression == "always_false" {
+	if rule.Condition == "always_false" {
 		return false
 	}
 
@@ -1023,17 +1029,17 @@ func (dwe *DefaultWorkflowEngine) validateCondition(ctx context.Context, rule *V
 	if stepContext != nil && stepContext.Variables != nil {
 		// Context-aware validation based on step variables
 		if environment, ok := stepContext.Variables["environment"].(string); ok {
-			if rule.Expression == "production_only" && environment != "production" {
+			if rule.Condition == "production_only" && environment != "production" {
 				return false
 			}
-			if rule.Expression == "non_production_only" && environment == "production" {
+			if rule.Condition == "non_production_only" && environment == "production" {
 				return false
 			}
 		}
 
 		// Priority-based validation
 		if priority, ok := stepContext.Variables["priority"].(int); ok {
-			if rule.Expression == "high_priority_only" && priority < 8 {
+			if rule.Condition == "high_priority_only" && priority < 8 {
 				return false
 			}
 		}

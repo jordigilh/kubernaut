@@ -191,7 +191,7 @@ func createTrainingTraces(count int, successRate float64) []actionhistory.Resour
 
 	for i := 0; i < count; i++ {
 		effectiveness := 0.5 // Default neutral
-		status := "failed"
+		status := "failed"   //nolint:ineffassign
 
 		// Create predictable patterns that the ML algorithm can learn
 		// Pattern 1: restart_pod + critical alerts = high effectiveness (95%)

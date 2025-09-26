@@ -1,0 +1,222 @@
+# Makefile Updates for New Integration Test Structure
+# Patch file for updating Makefile to support business domain testing
+
+# Add new business domain test targets
+.PHONY: test-business-intelligence test-ai-capabilities test-workflow-automation
+.PHONY: test-platform-operations test-data-management test-integration-services
+.PHONY: test-security-compliance test-performance-reliability test-development-validation
+.PHONY: test-end-to-end-scenarios
+
+# Business Intelligence Domain Testing
+test-business-intelligence: envsetup ## Run business intelligence integration tests
+	@echo "🧠 Running Business Intelligence integration tests..."
+	go test -v -tags=integration ./test/integration/business_intelligence/... -timeout=30m
+
+test-bi-analytics: envsetup ## Run analytics-specific tests
+	@echo "📊 Running Analytics integration tests..."
+	go test -v -tags=integration ./test/integration/business_intelligence/analytics/... -timeout=15m
+
+test-bi-metrics: envsetup ## Run metrics-specific tests
+	@echo "📈 Running Metrics integration tests..."
+	go test -v -tags=integration ./test/integration/business_intelligence/metrics/... -timeout=15m
+
+# AI Capabilities Domain Testing
+test-ai-capabilities: envsetup ## Run AI capabilities integration tests
+	@echo "🤖 Running AI Capabilities integration tests..."
+	go test -v -tags=integration ./test/integration/ai_capabilities/... -timeout=45m
+
+test-ai-llm: envsetup ## Run LLM integration tests
+	@echo "🧠 Running LLM integration tests..."
+	go test -v -tags=integration ./test/integration/ai_capabilities/llm_integration/... -timeout=20m
+
+test-ai-decision: envsetup ## Run AI decision making tests
+	@echo "🎯 Running AI Decision Making integration tests..."
+	go test -v -tags=integration ./test/integration/ai_capabilities/decision_making/... -timeout=15m
+
+test-ai-multi-provider: envsetup ## Run multi-provider AI tests
+	@echo "🔄 Running Multi-Provider AI integration tests..."
+	go test -v -tags=integration ./test/integration/ai_capabilities/multi_provider/... -timeout=20m
+
+# Workflow Automation Domain Testing
+test-workflow-automation: envsetup ## Run workflow automation integration tests
+	@echo "⚡ Running Workflow Automation integration tests..."
+	go test -v -tags=integration ./test/integration/workflow_automation/... -timeout=45m
+
+test-workflow-orchestration: envsetup ## Run orchestration tests
+	@echo "🎼 Running Orchestration integration tests..."
+	go test -v -tags=integration ./test/integration/workflow_automation/orchestration/... -timeout=15m
+
+test-workflow-execution: envsetup ## Run execution tests
+	@echo "▶️  Running Execution integration tests..."
+	go test -v -tags=integration ./test/integration/workflow_automation/execution/... -timeout=15m
+
+test-workflow-optimization: envsetup ## Run optimization tests
+	@echo "⚡ Running Optimization integration tests..."
+	go test -v -tags=integration ./test/integration/workflow_automation/optimization/... -timeout=20m
+
+# Platform Operations Domain Testing
+test-platform-operations: envsetup ## Run platform operations integration tests
+	@echo "🏗️  Running Platform Operations integration tests..."
+	go test -v -tags=integration ./test/integration/platform_operations/... -timeout=45m
+
+test-platform-kubernetes: envsetup ## Run Kubernetes tests
+	@echo "☸️  Running Kubernetes integration tests..."
+	go test -v -tags=integration ./test/integration/platform_operations/kubernetes/... -timeout=20m
+
+test-platform-multicluster: envsetup ## Run multicluster tests
+	@echo "🌐 Running Multicluster integration tests..."
+	go test -v -tags=integration ./test/integration/platform_operations/multicluster/... -timeout=15m
+
+test-platform-monitoring: envsetup ## Run monitoring tests
+	@echo "📊 Running Monitoring integration tests..."
+	go test -v -tags=integration ./test/integration/platform_operations/monitoring/... -timeout=15m
+
+# Data Management Domain Testing
+test-data-management: envsetup ## Run data management integration tests
+	@echo "💾 Running Data Management integration tests..."
+	go test -v -tags=integration ./test/integration/data_management/... -timeout=30m
+
+test-data-vector: envsetup ## Run vector storage tests
+	@echo "🔍 Running Vector Storage integration tests..."
+	go test -v -tags=integration ./test/integration/data_management/vector_storage/... -timeout=15m
+
+test-data-traditional: envsetup ## Run traditional database tests
+	@echo "🗄️  Running Traditional Database integration tests..."
+	go test -v -tags=integration ./test/integration/data_management/traditional_db/... -timeout=15m
+
+# Integration Services Domain Testing
+test-integration-services: envsetup ## Run integration services tests
+	@echo "🔗 Running Integration Services integration tests..."
+	go test -v -tags=integration ./test/integration/integration_services/... -timeout=30m
+
+test-external-apis: envsetup ## Run external API tests
+	@echo "🌐 Running External API integration tests..."
+	go test -v -tags=integration ./test/integration/integration_services/external_apis/... -timeout=15m
+
+# Security Compliance Domain Testing
+test-security-compliance: envsetup ## Run security compliance tests
+	@echo "🔒 Running Security Compliance integration tests..."
+	go test -v -tags=integration ./test/integration/security_compliance/... -timeout=30m
+
+# Performance Reliability Domain Testing
+test-performance-reliability: envsetup ## Run performance reliability tests
+	@echo "⚡ Running Performance Reliability integration tests..."
+	go test -v -tags=integration ./test/integration/performance_reliability/... -timeout=60m
+
+test-load-testing: envsetup ## Run load testing tests
+	@echo "📈 Running Load Testing integration tests..."
+	go test -v -tags=integration ./test/integration/performance_reliability/load_testing/... -timeout=30m
+
+test-stress-testing: envsetup ## Run stress testing tests
+	@echo "💪 Running Stress Testing integration tests..."
+	go test -v -tags=integration ./test/integration/performance_reliability/stress_testing/... -timeout=30m
+
+# Development Validation Domain Testing
+test-development-validation: envsetup ## Run development validation tests
+	@echo "🛠️  Running Development Validation integration tests..."
+	go test -v -tags=integration ./test/integration/development_validation/... -timeout=30m
+
+test-tdd-verification: envsetup ## Run TDD verification tests
+	@echo "✅ Running TDD Verification integration tests..."
+	go test -v -tags=integration ./test/integration/development_validation/tdd_verification/... -timeout=20m
+
+# End-to-End Scenarios Domain Testing
+test-end-to-end-scenarios: envsetup ## Run end-to-end scenario tests
+	@echo "🎭 Running End-to-End Scenarios integration tests..."
+	go test -v -tags=integration ./test/integration/end_to_end_scenarios/... -timeout=60m
+
+test-alert-to-resolution: envsetup ## Run alert-to-resolution tests
+	@echo "🚨 Running Alert-to-Resolution integration tests..."
+	go test -v -tags=integration ./test/integration/end_to_end_scenarios/alert_to_resolution/... -timeout=30m
+
+# Business Domain Test Suites (grouped execution)
+test-all-business-domains: envsetup ## Run all business domain tests
+	@echo "🌟 Running ALL Business Domain integration tests..."
+	@$(MAKE) test-business-intelligence
+	@$(MAKE) test-ai-capabilities
+	@$(MAKE) test-workflow-automation
+	@$(MAKE) test-platform-operations
+	@$(MAKE) test-data-management
+	@$(MAKE) test-integration-services
+	@$(MAKE) test-security-compliance
+	@$(MAKE) test-performance-reliability
+	@$(MAKE) test-development-validation
+	@$(MAKE) test-end-to-end-scenarios
+
+# Critical Business Path Testing (high-priority domains)
+test-critical-business: envsetup ## Run critical business path tests
+	@echo "🎯 Running Critical Business Path integration tests..."
+	@$(MAKE) test-ai-capabilities
+	@$(MAKE) test-workflow-automation
+	@$(MAKE) test-platform-operations
+	@$(MAKE) test-end-to-end-scenarios
+
+# Development Workflow Testing (developer-focused)
+test-dev-workflow: envsetup ## Run development workflow tests
+	@echo "👨‍💻 Running Development Workflow integration tests..."
+	@$(MAKE) test-development-validation
+	@$(MAKE) test-security-compliance
+	@$(MAKE) test-data-management
+
+# Performance Testing Suite
+test-performance-suite: envsetup ## Run comprehensive performance tests
+	@echo "🏃 Running Performance Test Suite..."
+	@$(MAKE) test-performance-reliability
+	@$(MAKE) test-ai-capabilities
+	@$(MAKE) test-data-management
+
+# Update main integration test target to use new structure
+test-integration-restructured: envsetup ## Run integration tests with new structure
+	@echo "🏗️  Running integration tests with new business domain structure..."
+	@echo "📊 Business Intelligence Domain..."
+	@$(MAKE) test-business-intelligence || echo "⚠️  Business Intelligence tests failed"
+	@echo "🤖 AI Capabilities Domain..."
+	@$(MAKE) test-ai-capabilities || echo "⚠️  AI Capabilities tests failed"
+	@echo "⚡ Workflow Automation Domain..."
+	@$(MAKE) test-workflow-automation || echo "⚠️  Workflow Automation tests failed"
+	@echo "🏗️  Platform Operations Domain..."
+	@$(MAKE) test-platform-operations || echo "⚠️  Platform Operations tests failed"
+	@echo "💾 Data Management Domain..."
+	@$(MAKE) test-data-management || echo "⚠️  Data Management tests failed"
+	@echo "🔗 Integration Services Domain..."
+	@$(MAKE) test-integration-services || echo "⚠️  Integration Services tests failed"
+	@echo "🔒 Security Compliance Domain..."
+	@$(MAKE) test-security-compliance || echo "⚠️  Security Compliance tests failed"
+	@echo "⚡ Performance Reliability Domain..."
+	@$(MAKE) test-performance-reliability || echo "⚠️  Performance Reliability tests failed"
+	@echo "🛠️  Development Validation Domain..."
+	@$(MAKE) test-development-validation || echo "⚠️  Development Validation tests failed"
+	@echo "🎭 End-to-End Scenarios Domain..."
+	@$(MAKE) test-end-to-end-scenarios || echo "⚠️  End-to-End Scenarios tests failed"
+	@echo "✅ All business domain integration tests completed"
+
+# Help target updates
+help-integration-restructured: ## Show integration test help for new structure
+	@echo "Integration Test Commands (New Business Domain Structure):"
+	@echo ""
+	@echo "Business Domain Testing:"
+	@echo "  test-business-intelligence    - Business intelligence and analytics"
+	@echo "  test-ai-capabilities          - AI/ML powered features"
+	@echo "  test-workflow-automation      - Automated incident response"
+	@echo "  test-platform-operations      - Kubernetes and infrastructure"
+	@echo "  test-data-management          - Storage and data operations"
+	@echo "  test-integration-services     - External system integration"
+	@echo "  test-security-compliance      - Security and compliance"
+	@echo "  test-performance-reliability  - Performance and reliability"
+	@echo "  test-development-validation   - Development lifecycle support"
+	@echo "  test-end-to-end-scenarios     - Complete business workflows"
+	@echo ""
+	@echo "Grouped Test Execution:"
+	@echo "  test-all-business-domains     - Run all business domain tests"
+	@echo "  test-critical-business        - Run critical business path tests"
+	@echo "  test-dev-workflow            - Run development workflow tests"
+	@echo "  test-performance-suite       - Run comprehensive performance tests"
+	@echo ""
+	@echo "Individual Component Testing:"
+	@echo "  test-ai-llm                  - LLM integration tests"
+	@echo "  test-ai-decision             - AI decision making tests"
+	@echo "  test-workflow-orchestration  - Orchestration tests"
+	@echo "  test-platform-kubernetes     - Kubernetes tests"
+	@echo "  test-data-vector             - Vector storage tests"
+	@echo "  test-load-testing            - Load testing tests"
+	@echo "  test-tdd-verification        - TDD verification tests"
