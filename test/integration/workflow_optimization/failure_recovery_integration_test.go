@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
@@ -21,7 +22,7 @@ var _ = Describe("BR-RESILIENCE-001: Failure Recovery Integration Test", Ordered
 		hooks           *testshared.TestLifecycleHooks
 		ctx             context.Context
 		suite           *testshared.StandardTestSuite
-		selfOptimizer   engine.SelfOptimizer
+		llmClient       llm.Client // RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
 		workflowBuilder engine.IntelligentWorkflowBuilder
 		logger          *logrus.Logger
 	)
@@ -41,26 +42,25 @@ var _ = Describe("BR-RESILIENCE-001: Failure Recovery Integration Test", Ordered
 		Expect(suite.VectorDB).ToNot(BeNil(), "Vector database should be available")
 		Expect(suite.LLMClient).ToNot(BeNil(), "LLM client should be available")
 
-		// Create workflow builder with real dependencies
+		// Create workflow builder with real dependencies using config pattern
 		patternStore := testshared.CreatePatternStoreForTesting(suite.Logger)
-		workflowBuilder = engine.NewIntelligentWorkflowBuilder(
-			suite.LLMClient,
-			suite.VectorDB,
-			suite.AnalyticsEngine,
-			suite.MetricsCollector,
-			patternStore,
-			suite.ExecutionRepo,
-			suite.Logger,
-		)
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       suite.LLMClient,
+			VectorDB:        suite.VectorDB,
+			AnalyticsEngine: suite.AnalyticsEngine,
+			PatternStore:    patternStore,
+			ExecutionRepo:   suite.ExecutionRepo,
+			Logger:          suite.Logger,
+		}
+
+		var err error
+		workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 		Expect(workflowBuilder).ToNot(BeNil())
 
-		// Create self optimizer with real workflow builder integration
-		selfOptimizer = engine.NewDefaultSelfOptimizer(
-			workflowBuilder,
-			engine.DefaultSelfOptimizerConfig(),
-			logger,
-		)
-		Expect(selfOptimizer).ToNot(BeNil())
+		// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+		llmClient = suite.LLMClient
+		Expect(llmClient).ToNot(BeNil(), "Enhanced LLM client should be available for workflow optimization")
 	})
 
 	AfterAll(func() {
@@ -98,8 +98,19 @@ var _ = Describe("BR-RESILIENCE-001: Failure Recovery Integration Test", Ordered
 
 			By("attempting optimization and handling potential failures gracefully")
 			optimizationStartTime := time.Now()
-			optimizedWorkflow, err := selfOptimizer.OptimizeWorkflow(ctx, failureProneWorkflow, failureHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() instead of deprecated SelfOptimizer
+			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, failureProneWorkflow, failureHistory)
 			optimizationDuration := time.Since(optimizationStartTime)
+			
+			// Extract optimized workflow from LLM result
+			var optimizedWorkflow *engine.Workflow
+			if optimizationResult != nil {
+				if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+					if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+						optimizedWorkflow = optimizedWf.(*engine.Workflow)
+					}
+				}
+			}
 
 			// Test should handle both success and failure scenarios gracefully
 			if err != nil {
@@ -129,7 +140,8 @@ var _ = Describe("BR-RESILIENCE-001: Failure Recovery Integration Test", Ordered
 				recoveryStartTime := time.Now()
 
 				// Attempt another optimization to test recovery
-				_, recoveryErr := selfOptimizer.OptimizeWorkflow(ctx, failureProneWorkflow, failureHistory)
+				// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for recovery testing
+				_, recoveryErr := llmClient.OptimizeWorkflow(ctx, failureProneWorkflow, failureHistory)
 				recoveryDuration := time.Since(recoveryStartTime)
 
 				// System should either succeed or fail gracefully
@@ -177,8 +189,19 @@ var _ = Describe("BR-RESILIENCE-001: Failure Recovery Integration Test", Ordered
 			}
 
 			optimizationStartTime := time.Now()
-			optimizedWorkflow, err := selfOptimizer.OptimizeWorkflow(ctx, integrityWorkflow, integrityHistory)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for integrity testing
+			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, integrityWorkflow, integrityHistory)
 			optimizationDuration := time.Since(optimizationStartTime)
+			
+			// Extract optimized workflow from LLM result
+			var optimizedWorkflow *engine.Workflow
+			if optimizationResult != nil {
+				if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+					if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+						optimizedWorkflow = optimizedWf.(*engine.Workflow)
+					}
+				}
+			}
 
 			// Verify data integrity regardless of optimization success/failure
 			By("validating data integrity after optimization attempt")
@@ -216,7 +239,16 @@ var _ = Describe("BR-RESILIENCE-001: Failure Recovery Integration Test", Ordered
 			Expect(dbHealthy).To(BeNil(), "Database should remain healthy and consistent")
 
 			// Test that we can still perform basic operations
-			suggestions, suggestionErr := selfOptimizer.SuggestImprovements(ctx, integrityWorkflow)
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() instead of deprecated SelfOptimizer
+			suggestionResult, suggestionErr := llmClient.SuggestOptimizations(ctx, integrityWorkflow)
+			
+			// Extract suggestions from LLM result
+			var suggestions []map[string]interface{}
+			if suggestionResult != nil {
+				if suggestionSlice, ok := suggestionResult.([]map[string]interface{}); ok {
+					suggestions = suggestionSlice
+				}
+			}
 			if suggestionErr != nil {
 				// Suggestions might fail, but should fail gracefully
 				Expect(suggestionErr.Error()).To(ContainSubstring("BR-"), "Suggestion errors should reference business requirements")
@@ -264,8 +296,19 @@ var _ = Describe("BR-RESILIENCE-001: Failure Recovery Integration Test", Ordered
 			for i := 0; i < 3; i++ {
 				go func(index int) {
 					startTime := time.Now()
-					optimized, err := selfOptimizer.OptimizeWorkflow(ctx, workflows[index], histories[index])
+					// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for concurrent testing
+					optimizationResult, err := llmClient.OptimizeWorkflow(ctx, workflows[index], histories[index])
 					duration := time.Since(startTime)
+					
+					// Extract optimized workflow from LLM result
+					var optimized *engine.Workflow
+					if optimizationResult != nil {
+						if resultMap, ok := optimizationResult.(map[string]interface{}); ok {
+							if optimizedWf, exists := resultMap["optimized_workflow"]; exists {
+								optimized = optimizedWf.(*engine.Workflow)
+							}
+						}
+					}
 
 					results <- OptimizationResult{
 						WorkflowIndex: index,

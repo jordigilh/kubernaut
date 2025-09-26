@@ -42,7 +42,7 @@ var _ = Describe("New Actions Integration Suite", Ordered, func() {
 		}
 
 		// Create fake SLM client to eliminate external dependencies
-		client = shared.NewFakeSLMClient()
+		client = shared.NewTestSLMClient()
 		Expect(client.IsHealthy()).To(BeTrue())
 
 		logger.Info("New actions integration test suite setup completed")

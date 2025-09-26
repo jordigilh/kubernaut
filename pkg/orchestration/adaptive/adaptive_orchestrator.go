@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
@@ -25,8 +26,9 @@ const (
 // failure learning, and predictive scaling for workflow orchestration
 type DefaultAdaptiveOrchestrator struct {
 	// Core dependencies
-	workflowEngine  engine.WorkflowEngine
-	selfOptimizer   engine.SelfOptimizer
+	workflowEngine engine.WorkflowEngine
+	// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
+	llmClient llm.Client
 	vectorDB        vector.VectorDatabase
 	analyticsEngine types.AnalyticsEngine // Following development guidelines: avoid pointer to interface
 	actionRepo      actionhistory.Repository
@@ -92,7 +94,8 @@ type OrchestratorConfig struct {
 // Refactored to use shared constructor utilities to eliminate duplication
 func NewDefaultAdaptiveOrchestrator(
 	workflowEngine engine.WorkflowEngine,
-	selfOptimizer engine.SelfOptimizer,
+	// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
+	llmClient llm.Client,
 	vectorDB vector.VectorDatabase,
 	analyticsEngine types.AnalyticsEngine, // Following development guidelines: interface, not pointer to interface
 	actionRepo actionhistory.Repository,
@@ -124,9 +127,10 @@ func NewDefaultAdaptiveOrchestrator(
 	}
 
 	return &DefaultAdaptiveOrchestrator{
-		workflowEngine:   workflowEngine,
-		selfOptimizer:    selfOptimizer,
-		vectorDB:         vectorDB,
+		workflowEngine: workflowEngine,
+		// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
+		llmClient:       llmClient,
+		vectorDB:        vectorDB,
 		analyticsEngine:  analyticsEngine,
 		actionRepo:       actionRepo,
 		patternExtractor: patternExtractor,
@@ -748,9 +752,10 @@ func (dao *DefaultAdaptiveOrchestrator) calculateExecutionMetrics(execution *eng
 	retryCount := 0
 
 	for _, step := range execution.Steps {
-		if step.Status == engine.ExecutionStatusCompleted {
+		switch step.Status {
+		case engine.ExecutionStatusCompleted:
 			successCount++
-		} else if step.Status == engine.ExecutionStatusFailed {
+		case engine.ExecutionStatusFailed:
 			failureCount++
 		}
 		retryCount += step.RetryCount
@@ -874,35 +879,46 @@ func (dao *DefaultAdaptiveOrchestrator) performOptimizationCycle() {
 		// Only optimize workflows that have sufficient execution history
 		// BR-ORK-003 Requirement 2: Execution Count Tracking
 		if dao.hasMinimumExecutionHistory(workflow.ID, minExecutionsForOptimization) {
-			// CRITICAL FIX: Use Self Optimizer for actual workflow optimization
+			// RULE 12 COMPLIANCE: Use enhanced llm.Client for workflow optimization
 			// Following project guideline: integrate new business logic with existing code
-			if dao.selfOptimizer != nil {
-				// Get execution history for Self Optimizer
+			if dao.llmClient != nil {
+				// Get execution history for optimization
 				executionHistory := dao.getWorkflowExecutionHistory(workflow.ID)
 
-				// Call Self Optimizer - this was the missing integration!
-				optimizedWorkflow, err := dao.selfOptimizer.OptimizeWorkflow(dao.ctx, workflow, executionHistory)
+				// Call enhanced llm.Client optimization methods
+				optimizedWorkflowInterface, err := dao.llmClient.OptimizeWorkflow(dao.ctx, workflow, executionHistory)
 				if err != nil {
 					dao.log.WithError(err).WithField("workflow_id", workflow.ID).
-						Warn("Self Optimizer failed, falling back to legacy optimization")
+						Warn("LLM optimization failed, falling back to legacy optimization")
 					// Fallback to legacy optimization
 					_, fallbackErr := dao.OptimizeWorkflow(dao.ctx, workflow.ID)
 					if fallbackErr != nil {
 						dao.log.WithError(fallbackErr).WithField("workflow_id", workflow.ID).
-							Error("Both Self Optimizer and legacy optimization failed")
+							Error("Both LLM and legacy optimization failed")
 					}
-				} else if optimizedWorkflow != nil {
-					// Apply the optimized workflow
-					err = dao.applyOptimizedWorkflow(workflow.ID, optimizedWorkflow)
-					if err != nil {
-						dao.log.WithError(err).WithField("workflow_id", workflow.ID).
-							Error("Failed to apply optimized workflow")
+				} else if optimizedWorkflowInterface != nil {
+					// RULE 12 COMPLIANCE: Type assert interface{} return to *engine.Workflow
+					if optimizedWorkflow, ok := optimizedWorkflowInterface.(*engine.Workflow); ok {
+						// Apply the optimized workflow
+						err = dao.applyOptimizedWorkflow(workflow.ID, optimizedWorkflow)
+						if err != nil {
+							dao.log.WithError(err).WithField("workflow_id", workflow.ID).
+								Error("Failed to apply optimized workflow")
+						} else {
+							dao.log.WithFields(logrus.Fields{
+								"workflow_id":  workflow.ID,
+								"original_id":  workflow.ID,
+								"optimized_id": optimizedWorkflow.ID,
+							}).Info("Successfully applied LLM optimization")
+						}
 					} else {
-						dao.log.WithFields(logrus.Fields{
-							"workflow_id":  workflow.ID,
-							"original_id":  workflow.ID,
-							"optimized_id": optimizedWorkflow.ID,
-						}).Info("Successfully applied Self Optimizer optimization")
+						dao.log.WithField("workflow_id", workflow.ID).
+							Warn("LLM optimization returned unexpected type, falling back to legacy optimization")
+						_, fallbackErr := dao.OptimizeWorkflow(dao.ctx, workflow.ID)
+						if fallbackErr != nil {
+							dao.log.WithError(fallbackErr).WithField("workflow_id", workflow.ID).
+								Error("Legacy optimization fallback failed")
+						}
 					}
 				}
 			} else {
@@ -988,7 +1004,8 @@ func (dao *DefaultAdaptiveOrchestrator) collectMetrics() {
 	// Count workflows with Self Optimizer optimizations
 	dao.mu.RLock()
 	optimizedWorkflows := 0
-	selfOptimizerAvailable := dao.selfOptimizer != nil
+	// RULE 12 COMPLIANCE: Check enhanced llm.Client availability instead of deprecated SelfOptimizer
+	llmClientAvailable := dao.llmClient != nil
 	for _, workflow := range dao.workflows {
 		if workflow.Template != nil && workflow.Template.Metadata != nil {
 			if _, isOptimized := workflow.Template.Metadata["optimization_source"]; isOptimized {
@@ -1001,9 +1018,9 @@ func (dao *DefaultAdaptiveOrchestrator) collectMetrics() {
 	// Production monitoring metrics for Self Optimizer
 	dao.log.WithFields(logrus.Fields{
 		"running_executions":       runningExecutions,
-		"total_workflows":          len(dao.workflows),
-		"total_executions":         len(dao.executions),
-		"self_optimizer_available": selfOptimizerAvailable,
+		"total_workflows":      len(dao.workflows),
+		"total_executions":     len(dao.executions),
+		"llm_client_available": llmClientAvailable,
 		"optimized_workflows":      optimizedWorkflows,
 		"optimized_executions":     optimizedExecutions,
 		"optimization_rate":        float64(optimizedWorkflows) / float64(len(dao.workflows)),

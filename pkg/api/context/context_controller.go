@@ -521,8 +521,8 @@ func (cc *ContextController) LLMHealthCheck(w http.ResponseWriter, r *http.Reque
 			"accuracy_rate":     healthStatus.HealthMetrics.AccuracyRate,
 		},
 		"probe_results":   healthStatus.ProbeResults,
-		"last_check_time": healthStatus.BaseEntity.UpdatedAt,
-		"monitor_id":      healthStatus.BaseEntity.ID,
+		"last_check_time": healthStatus.UpdatedAt,
+		"monitor_id":      healthStatus.ID,
 	}
 
 	cc.writeJSONResponse(w, statusCode, response)
@@ -811,18 +811,15 @@ func (c *ContextCache) cleanupExpired() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			c.mu.Lock()
-			now := time.Now()
-			for key, entry := range c.data {
-				if now.Sub(entry.Timestamp) > entry.TTL {
-					delete(c.data, key)
-				}
+	for range ticker.C {
+		c.mu.Lock()
+		now := time.Now()
+		for key, entry := range c.data {
+			if now.Sub(entry.Timestamp) > entry.TTL {
+				delete(c.data, key)
 			}
-			c.mu.Unlock()
 		}
+		c.mu.Unlock()
 	}
 }
 

@@ -137,6 +137,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 EXPOSE 8090 9091
 
 # Start the application
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]
 WORKDIR /app/src
 CMD ["python3.11", "main.py"]

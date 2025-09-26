@@ -543,8 +543,11 @@ func (s *IntegrationMockEmbeddingService) processBatchWithScaling(ctx context.Co
 		chunkSize = 10
 	}
 
-	// For simulation, just add a slight processing improvement
+	// For simulation, just add a slight processing improvement based on chunk size
 	scalingImprovement := time.Duration(s.replicationFactor) * time.Millisecond
+	if chunkSize > 50 {
+		scalingImprovement *= 2 // Additional improvement for larger chunks
+	}
 	s.generator.EnableLatencySimulation(s.generator.latencyPerItem - scalingImprovement)
 
 	return s.generator.GenerateBatchEmbeddings(ctx, texts)

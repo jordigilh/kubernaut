@@ -53,11 +53,8 @@ type DatabaseIntegrationTestUtils struct {
 	Logger *logrus.Logger
 }
 
-// IntegrationTestUtils is an alias - this allows external packages to access it
-type IntegrationTestUtils = DatabaseIntegrationTestUtils
-
-// NewIntegrationTestUtils creates a new IntegrationTestUtils for external packages
-func NewIntegrationTestUtils(logger *logrus.Logger) (*IntegrationTestUtils, error) {
+// NewIntegrationTestUtils creates a new DatabaseIntegrationTestUtils for external packages
+func NewIntegrationTestUtils(logger *logrus.Logger) (*DatabaseIntegrationTestUtils, error) {
 	return NewDatabaseIntegrationTestUtils(logger)
 }
 
@@ -146,7 +143,7 @@ func NewDatabaseIntegrationTestUtils(logger *logrus.Logger) (*DatabaseIntegratio
 }
 
 // Close closes database connections and cleans up test environment
-func (d *IntegrationTestUtils) Close() error {
+func (d *DatabaseIntegrationTestUtils) Close() error {
 	var errs []error
 
 	// Close database connection
@@ -540,17 +537,17 @@ func (d *DatabaseIntegrationTestUtils) CreateThrashingPattern(resourceRef action
 }
 
 // getThrashingParameters returns appropriate parameters for thrashing pattern
-func (d *DatabaseIntegrationTestUtils) getThrashingParameters(actionType string, index int) actionhistory.JSONMap {
+func (d *DatabaseIntegrationTestUtils) getThrashingParameters(actionType string, index int) actionhistory.JSONData {
 	switch actionType {
 	case "scale_deployment":
-		return actionhistory.JSONMap{"replicas": float64(2 + index)}
+		return actionhistory.JSONData{"replicas": float64(2 + index)}
 	case "increase_resources":
-		return actionhistory.JSONMap{
+		return actionhistory.JSONData{
 			"memory_limit": "1Gi",
 			"cpu_limit":    "500m",
 		}
 	default:
-		return actionhistory.JSONMap{}
+		return actionhistory.JSONData{}
 	}
 }
 
@@ -892,7 +889,7 @@ func (utils *DatabaseIntegrationTestUtils) CreateBasicSLMClient(testConfig Integ
 	}).Info("Creating basic SLM client")
 
 	// Use fake client to eliminate external dependencies
-	return NewFakeSLMClient(), nil
+	return NewTestSLMClient(), nil
 }
 
 // CreateCascadingFailureHistory creates a history showing patterns that led to cascading failures

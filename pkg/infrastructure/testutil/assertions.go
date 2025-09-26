@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega" //nolint:staticcheck
 )
 
 // InfrastructureAssertions provides standardized assertion helpers for infrastructure tests
@@ -351,7 +351,7 @@ func (a *InfrastructureAssertions) assertStablePattern(data []map[string]interfa
 	mean := sum / float64(len(values))
 	variance := 0.0
 	for _, value := range values {
-		variance += math.Pow(value-mean, 2)
+		variance += (value - mean) * (value - mean)
 	}
 	variance /= float64(len(values))
 	stdDev := math.Sqrt(variance)

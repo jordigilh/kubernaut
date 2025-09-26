@@ -127,8 +127,8 @@ func (m *LLMHealthMonitor) GetHealthStatus(ctx context.Context) (*types.HealthSt
 
 	// Update timestamp using BaseEntity pattern
 	now := time.Now()
-	m.healthStatus.BaseEntity.UpdatedAt = now
-	m.healthStatus.BaseTimestampedResult.EndTime = now
+	m.healthStatus.UpdatedAt = now
+	m.healthStatus.EndTime = now
 
 	// Perform comprehensive health checks to capture detailed error information
 	// BR-HEALTH-001: MUST implement comprehensive health checks for all components
@@ -155,13 +155,13 @@ func (m *LLMHealthMonitor) GetHealthStatus(ctx context.Context) (*types.HealthSt
 	// Update health status with detailed error information
 	if !isHealthy && healthCheckError != nil {
 		m.healthStatus.IsHealthy = false
-		m.healthStatus.BaseTimestampedResult.Success = false
+		m.healthStatus.Success = false
 		// Capture the actual error details for strong business validation
-		m.healthStatus.BaseTimestampedResult.Error = healthCheckError.Error()
+		m.healthStatus.Error = healthCheckError.Error()
 	} else {
 		m.healthStatus.IsHealthy = true
-		m.healthStatus.BaseTimestampedResult.Success = true
-		m.healthStatus.BaseTimestampedResult.Error = ""
+		m.healthStatus.Success = true
+		m.healthStatus.Error = ""
 	}
 
 	// Calculate uptime metrics - BR-HEALTH-016: Must track system availability and uptime metrics
@@ -333,7 +333,7 @@ func (m *LLMHealthMonitor) GetDependencyStatus(ctx context.Context, dependencyNa
 	// Check if we have this dependency tracked
 	if status, exists := m.dependencies[dependencyName]; exists {
 		// Update timestamp
-		status.BaseEntity.UpdatedAt = time.Now()
+		status.UpdatedAt = time.Now()
 		status.LastCheckTime = time.Now()
 		return status, nil
 	}
@@ -463,7 +463,7 @@ func (m *LLMHealthMonitor) performHealthCheck() {
 
 	if isHealthy {
 		m.healthStatus.IsHealthy = true
-		m.healthStatus.BaseTimestampedResult.Success = true
+		m.healthStatus.Success = true
 		m.healthStatus.BaseTimestampedResult.Error = ""
 		m.consecutivePasses++
 		m.consecutiveFailures = 0
@@ -480,7 +480,7 @@ func (m *LLMHealthMonitor) performHealthCheck() {
 		// Only mark as unhealthy after failure threshold
 		if m.consecutiveFailures >= m.failureThreshold {
 			m.healthStatus.IsHealthy = false
-			m.healthStatus.BaseTimestampedResult.Success = false
+			m.healthStatus.Success = false
 			if lastError != nil {
 				m.healthStatus.BaseTimestampedResult.Error = lastError.Error()
 			}

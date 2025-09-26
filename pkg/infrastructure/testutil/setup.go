@@ -8,7 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega" //nolint:staticcheck
 )
 
 // InfrastructureConfig represents basic infrastructure configuration for testing

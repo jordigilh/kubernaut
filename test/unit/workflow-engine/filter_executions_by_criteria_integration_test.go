@@ -30,8 +30,19 @@ var _ = Describe("Pattern Discovery: Filter Executions By Criteria Integration",
 		// Create mock vector database
 		mockVectorDB = mocks.NewMockVectorDatabase()
 
-		// Create builder with mock dependencies
-		builder = engine.NewIntelligentWorkflowBuilder(nil, mockVectorDB, nil, nil, nil, nil, log)
+		// Create builder with mock dependencies using new config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       nil,
+			VectorDB:        mockVectorDB,
+			AnalyticsEngine: nil,
+			PatternStore:    nil,
+			ExecutionRepo:   nil,
+			Logger:          log,
+		}
+
+		var err error
+		builder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 		Expect(builder).NotTo(BeNil())
 	})
 
@@ -161,9 +172,9 @@ var _ = Describe("Pattern Discovery: Filter Executions By Criteria Integration",
 			// Pattern Discovery Engine - Graceful handling of over-restrictive filtering
 
 			criteria := &engine.PatternCriteria{
-				MinSimilarity:     0.99, // Very high similarity requirement
-				MinExecutionCount: 100,  // Very high execution count requirement
-				MinSuccessRate:    0.99, // Very high success rate requirement
+				MinSimilarity:     0.99,          // Very high similarity requirement
+				MinExecutionCount: 100,           // Very high execution count requirement
+				MinSuccessRate:    0.99,          // Very high success rate requirement
 				TimeWindow:        1 * time.Hour, // Very short time window
 				EnvironmentFilter: []string{"non-existent-environment"},
 				ResourceFilter: map[string]string{
