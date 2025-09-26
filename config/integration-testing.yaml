@@ -1,0 +1,131 @@
+# Kubernaut Integration Testing Configuration
+# This configuration is optimized for core services integration testing
+# with real Kubernetes clusters and external services
+
+# Core Service Configuration
+server:
+  webhook_port: "8080"
+  metrics_port: "9090"
+  host: "0.0.0.0"
+
+# Kubernetes Configuration
+kubernetes:
+  kubeconfig: ""  # Uses default kubeconfig location
+  context: "kind-kubernaut-test"  # Kind cluster context
+  timeout: "30s"
+  retry_count: 3
+
+# AI Services Configuration
+ai_services:
+  llm:
+    provider: "ramalama"
+    endpoint: "http://192.168.1.169:8080"  # Default endpoint (override with env var)
+    model: "ggml-org/gpt-oss-20b-GGUF"
+    timeout: "60s"
+    max_tokens: 16000
+    max_context_size: 8192
+    temperature: 0.1
+    retry_count: 3
+
+# HolmesGPT Integration
+holmesgpt:
+  enabled: true
+  endpoint: "http://localhost:3000"  # Containerized HolmesGPT API
+  timeout: "60s"
+  retry_count: 3
+  health_check_interval: "30s"
+  llm_base_url: "http://192.168.1.169:8080"  # Override with env var
+  llm_provider: "ramalama"
+  llm_model: "ggml-org/gpt-oss-20b-GGUF"
+
+# Database Configuration
+database:
+  enabled: true
+  host: "localhost"
+  port: 5433
+  name: "action_history"
+  user: "slm_user"
+  password: "slm_password_dev"
+  ssl_mode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: "1h"
+
+# Vector Database Configuration
+vector_database:
+  enabled: true
+  host: "localhost"
+  port: 5434
+  name: "vector_store"
+  user: "vector_user"
+  password: "vector_password_dev"
+  ssl_mode: "disable"
+  dimension: 1536
+
+# Redis Configuration
+redis:
+  enabled: true
+  host: "localhost"
+  port: 6380
+  password: "integration_redis_password"
+  db: 0
+  pool_size: 10
+
+# Context API Configuration
+context_api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8091
+  timeout: "30s"
+  holmesgpt_integration: true
+
+# Monitoring Configuration
+monitoring:
+  prometheus:
+    enabled: true
+    endpoint: "http://localhost:9091"
+    timeout: "10s"
+
+  alertmanager:
+    enabled: true
+    endpoint: "http://localhost:9094"
+    timeout: "10s"
+
+# Webhook Configuration
+webhook:
+  auth:
+    type: "none"  # Simplified for integration testing
+  timeout: "30s"
+  buffer_size: 1000
+  worker_count: 5
+
+# Actions Configuration
+actions:
+  dry_run: false
+  max_concurrent: 5
+  cooldown_period: "30s"
+  allowed_namespaces: ["default", "e2e-test", "integration-test"]
+  safety_checks:
+    enabled: true
+    require_confirmation: false  # Automated for integration testing
+
+# Logging Configuration
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
+# Security Configuration (relaxed for integration testing)
+security:
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+
+# Performance Configuration
+performance:
+  worker_pool_size: 10
+  request_timeout: "30s"
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 5
+    recovery_timeout: "30s"

@@ -134,42 +134,42 @@ func (fua *FollowUpActions) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, fua)
 }
 
-// JSONMap represents a generic JSON object
-type JSONMap map[string]interface{}
+// JSONData represents a JSON object for database storage
+type JSONData map[string]interface{}
 
-// StringMapToJSONMap converts a map[string]string to JSONMap
-func StringMapToJSONMap(m map[string]string) JSONMap {
+// StringMapToJSONMap converts a map[string]string to map[string]interface{}
+func StringMapToJSONMap(m map[string]string) map[string]interface{} {
 	if m == nil {
 		return nil
 	}
-	result := make(JSONMap)
+	result := make(map[string]interface{})
 	for k, v := range m {
 		result[k] = v
 	}
 	return result
 }
 
-// Value implements driver.Valuer for JSONMap
-func (jm JSONMap) Value() (driver.Value, error) {
-	if len(jm) == 0 {
+// Value implements driver.Valuer for JSONData
+func (jd JSONData) Value() (driver.Value, error) {
+	if len(jd) == 0 {
 		return nil, nil
 	}
-	return json.Marshal(jm)
+	return json.Marshal(jd)
 }
 
-// Scan implements sql.Scanner for JSONMap
-func (jm *JSONMap) Scan(value interface{}) error {
+// Scan implements sql.Scanner for JSONData
+func (jd *JSONData) Scan(value interface{}) error {
 	if value == nil {
-		*jm = nil
+		*jd = nil
 		return nil
 	}
 
 	bytes, ok := value.([]byte)
 	if !ok {
-		return fmt.Errorf("cannot scan %T into JSONMap", value)
+		return fmt.Errorf("cannot scan %T into JSONData", value)
 	}
 
-	return json.Unmarshal(bytes, jm)
+	return json.Unmarshal(bytes, jd)
 }
 
 // EffectivenessCriteria represents the criteria used to assess action effectiveness
@@ -214,8 +214,8 @@ type ResourceActionTrace struct {
 	// Alert context
 	AlertName        string     `json:"alert_name" db:"alert_name"`
 	AlertSeverity    string     `json:"alert_severity" db:"alert_severity"`
-	AlertLabels      JSONMap    `json:"alert_labels" db:"alert_labels"`
-	AlertAnnotations JSONMap    `json:"alert_annotations" db:"alert_annotations"`
+	AlertLabels      JSONData   `json:"alert_labels" db:"alert_labels"`
+	AlertAnnotations JSONData   `json:"alert_annotations" db:"alert_annotations"`
 	AlertFiringTime  *time.Time `json:"alert_firing_time,omitempty" db:"alert_firing_time"`
 
 	// AI model information
@@ -226,17 +226,17 @@ type ResourceActionTrace struct {
 	AlternativeActions ActionAlternatives `json:"alternative_actions" db:"alternative_actions"`
 
 	// Action details
-	ActionType       string  `json:"action_type" db:"action_type"`
-	ActionParameters JSONMap `json:"action_parameters" db:"action_parameters"`
+	ActionType       string   `json:"action_type" db:"action_type"`
+	ActionParameters JSONData `json:"action_parameters" db:"action_parameters"`
 
 	// Resource state
-	ResourceStateBefore JSONMap `json:"resource_state_before" db:"resource_state_before"`
-	ResourceStateAfter  JSONMap `json:"resource_state_after" db:"resource_state_after"`
+	ResourceStateBefore JSONData `json:"resource_state_before" db:"resource_state_before"`
+	ResourceStateAfter  JSONData `json:"resource_state_after" db:"resource_state_after"`
 
 	// Execution tracking
-	ExecutionStatus      string  `json:"execution_status" db:"execution_status"`
-	ExecutionError       *string `json:"execution_error,omitempty" db:"execution_error"`
-	KubernetesOperations JSONMap `json:"kubernetes_operations" db:"kubernetes_operations"`
+	ExecutionStatus      string   `json:"execution_status" db:"execution_status"`
+	ExecutionError       *string  `json:"execution_error,omitempty" db:"execution_error"`
+	KubernetesOperations JSONData `json:"kubernetes_operations" db:"kubernetes_operations"`
 
 	// Effectiveness assessment
 	EffectivenessScore            *float64               `json:"effectiveness_score,omitempty" db:"effectiveness_score"`
@@ -261,13 +261,13 @@ type OscillationPattern struct {
 	Description           *string    `json:"description,omitempty" db:"description"`
 	MinOccurrences        int        `json:"min_occurrences" db:"min_occurrences"`
 	TimeWindowMinutes     int        `json:"time_window_minutes" db:"time_window_minutes"`
-	ActionSequence        JSONMap    `json:"action_sequence" db:"action_sequence"`
-	ThresholdConfig       JSONMap    `json:"threshold_config" db:"threshold_config"`
+	ActionSequence        JSONData   `json:"action_sequence" db:"action_sequence"`
+	ThresholdConfig       JSONData   `json:"threshold_config" db:"threshold_config"`
 	ResourceTypes         []string   `json:"resource_types" db:"resource_types"`
 	Namespaces            []string   `json:"namespaces" db:"namespaces"`
-	LabelSelectors        JSONMap    `json:"label_selectors" db:"label_selectors"`
+	LabelSelectors        JSONData   `json:"label_selectors" db:"label_selectors"`
 	PreventionStrategy    string     `json:"prevention_strategy" db:"prevention_strategy"`
-	PreventionParameters  JSONMap    `json:"prevention_parameters" db:"prevention_parameters"`
+	PreventionParameters  JSONData   `json:"prevention_parameters" db:"prevention_parameters"`
 	AlertingEnabled       bool       `json:"alerting_enabled" db:"alerting_enabled"`
 	AlertSeverity         string     `json:"alert_severity" db:"alert_severity"`
 	AlertChannels         []string   `json:"alert_channels" db:"alert_channels"`
@@ -290,10 +290,10 @@ type OscillationDetection struct {
 	ActionCount          int        `json:"action_count" db:"action_count"`
 	TimeSpanMinutes      int        `json:"time_span_minutes" db:"time_span_minutes"`
 	MatchingActions      []int64    `json:"matching_actions" db:"matching_actions"`
-	PatternEvidence      JSONMap    `json:"pattern_evidence" db:"pattern_evidence"`
+	PatternEvidence      JSONData   `json:"pattern_evidence" db:"pattern_evidence"`
 	PreventionApplied    bool       `json:"prevention_applied" db:"prevention_applied"`
 	PreventionAction     *string    `json:"prevention_action,omitempty" db:"prevention_action"`
-	PreventionDetails    JSONMap    `json:"prevention_details" db:"prevention_details"`
+	PreventionDetails    JSONData   `json:"prevention_details" db:"prevention_details"`
 	PreventionSuccessful *bool      `json:"prevention_successful,omitempty" db:"prevention_successful"`
 	Resolved             bool       `json:"resolved" db:"resolved"`
 	ResolvedAt           *time.Time `json:"resolved_at,omitempty" db:"resolved_at"`

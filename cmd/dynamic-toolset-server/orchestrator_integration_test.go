@@ -85,7 +85,11 @@ var _ = Describe("Adaptive Orchestrator Integration - Business Requirements", fu
 			// Start orchestrator
 			err = orchestrator.Start(ctx)
 			Expect(err).ToNot(HaveOccurred())
-			defer orchestrator.Stop()
+			defer func() {
+				if err := orchestrator.Stop(); err != nil {
+					logger.WithError(err).Error("Failed to stop orchestrator")
+				}
+			}()
 
 			// Act: Create a simple workflow template for testing using constructor
 			template := engine.NewWorkflowTemplate("test-workflow-001", "Test Integration Workflow")

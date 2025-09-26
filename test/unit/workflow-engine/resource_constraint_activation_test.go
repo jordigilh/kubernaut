@@ -29,16 +29,19 @@ var _ = Describe("Resource Constraint Function Activation - TDD Implementation",
 		mockLLMClient = &mocks.MockLLMClient{}
 		mockVectorDB = &mocks.MockVectorDatabase{}
 
-		// Create workflow builder for testing
-		workflowBuilder = engine.NewIntelligentWorkflowBuilder(
-			mockLLMClient,
-			mockVectorDB,
-			nil, // Analytics engine
-			nil, // Metrics collector
-			nil, // Pattern store
-			nil, // Execution repository
-			logger,
-		)
+		// Create workflow builder for testing using new config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       mockLLMClient,
+			VectorDB:        mockVectorDB,
+			AnalyticsEngine: nil, // Analytics engine
+			PatternStore:    nil, // Pattern store
+			ExecutionRepo:   nil, // Execution repository
+			Logger:          logger,
+		}
+
+		var err error
+		workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 	})
 
 	Describe("BR-IWB-014: extractConstraintsFromObjective activation", func() {

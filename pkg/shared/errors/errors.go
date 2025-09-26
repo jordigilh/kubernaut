@@ -9,8 +9,7 @@ import (
 // while delegating to the new enhanced error system in enhanced_errors.go
 // All functionality has been consolidated into the EnhancedError system.
 
-// Backward compatibility type aliases
-type OperationError = EnhancedError
+// Backward compatibility removed - use EnhancedError directly
 
 // All functions are now available through enhanced_errors.go
 // The following functions maintain their original signatures:

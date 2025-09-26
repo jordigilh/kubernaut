@@ -27,8 +27,19 @@ var _ = Describe("Analytics Integration - TDD Implementation", func() {
 		log.SetLevel(logrus.DebugLevel)
 		ctx = context.Background()
 
-		// Create builder with minimal dependencies for testing
-		builder = engine.NewIntelligentWorkflowBuilder(nil, nil, nil, nil, nil, nil, log)
+		// Create builder with minimal dependencies for testing using new config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       nil,
+			VectorDB:        nil,
+			AnalyticsEngine: nil,
+			PatternStore:    nil,
+			ExecutionRepo:   nil,
+			Logger:          log,
+		}
+
+		var err error
+		builder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 
 		// Create test executions with different success states
 		executions = []*engine.RuntimeWorkflowExecution{

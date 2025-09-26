@@ -247,7 +247,7 @@ func (r *PostgreSQLRepository) UpdateActionHistory(ctx context.Context, history 
 func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRecord) (*ResourceActionTrace, error) {
 	// Check if we need to create a new transaction or use existing executor
 	var tx *sql.Tx
-	var executor DatabaseExecutor = r.db
+	executor := r.db //nolint:staticcheck
 	var shouldCommit bool
 
 	if r.txProvider != nil {
@@ -301,8 +301,8 @@ func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRe
 		action.Alert.Name, action.Alert.Severity, StringMapToJSONMap(action.Alert.Labels),
 		StringMapToJSONMap(action.Alert.Annotations), action.Alert.FiringTime,
 		action.ModelUsed, action.RoutingTier, action.Confidence, action.Reasoning,
-		action.AlternativeActions, action.ActionType, JSONMap(action.Parameters),
-		JSONMap(action.ResourceStateBefore),
+		action.AlternativeActions, action.ActionType, JSONData(action.Parameters),
+		JSONData(action.ResourceStateBefore),
 	).Scan(&trace.ID, &trace.CreatedAt, &trace.UpdatedAt)
 
 	if err != nil {
@@ -344,8 +344,8 @@ func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRe
 	trace.ModelReasoning = action.Reasoning
 	trace.AlternativeActions = action.AlternativeActions
 	trace.ActionType = action.ActionType
-	trace.ActionParameters = JSONMap(action.Parameters)
-	trace.ResourceStateBefore = JSONMap(action.ResourceStateBefore)
+	trace.ActionParameters = JSONData(action.Parameters)
+	trace.ResourceStateBefore = JSONData(action.ResourceStateBefore)
 	trace.ExecutionStatus = "pending"
 
 	r.logger.WithFields(logrus.Fields{

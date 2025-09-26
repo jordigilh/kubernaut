@@ -53,26 +53,19 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 	// Database isolation is handled automatically by the helper
 
-	createSLMClient := func() llm.Client {
-		// Use fake SLM client instead of real client to eliminate external dependencies
-		return helper.CreateFakeSLMClient()
-	}
-
 	createSLMClientWithErrorInjection := func(errorScenario shared.ErrorScenario) llm.Client {
-		client := helper.CreateFakeSLMClient()
-		// Cast to fake client for error injection capabilities
-		if fakeClient, ok := client.(*shared.FakeSLMClient); ok {
-			err := fakeClient.TriggerErrorScenario(errorScenario)
-			if err != nil {
-				logger.WithError(err).Warning("Failed to trigger error scenario in SLM client")
-			}
+		client := shared.NewTestSLMClient()
+		// Configure error injection directly since client is already the concrete type
+		err := client.TriggerErrorScenario(errorScenario)
+		if err != nil {
+			logger.WithError(err).Warning("Failed to trigger error scenario in SLM client")
 		}
 		return client
 	}
 
 	Context("Recurring Alert Learning Scenarios", func() {
 		It("should improve decision quality for recurring OOM alerts", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			oomAlert := types.Alert{
 				Name:        "PodOOMKilled",
@@ -176,7 +169,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 		})
 
 		It("should adapt security threat responses based on containment history", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			securityAlert := types.Alert{
 				Name:        "SecurityThreatDetected",
@@ -228,7 +221,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 		})
 
 		It("should prevent oscillation in scaling decisions", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			memoryAlert := types.Alert{
 				Name:        "HighMemoryUsage",
@@ -284,7 +277,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 	Context("Action Effectiveness Learning", func() {
 		It("should prefer actions with higher historical effectiveness", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			storageAlert := types.Alert{
 				Name:        "DiskSpaceHigh",
@@ -388,7 +381,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 		})
 
 		It("should escalate when repeated actions show declining effectiveness", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			networkAlert := types.Alert{
 				Name:        "NetworkConnectivityIssue",
@@ -452,7 +445,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 	Context("Cross-Alert Pattern Recognition", func() {
 		It("should recognize memory leak patterns across multiple alerts", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			resourceRef := actionhistory.ResourceReference{
 				Namespace: "production",
@@ -560,7 +553,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 		})
 
 		It("should correlate deployment and pod alerts", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			deploymentAlert := types.Alert{
 				Name:        "DeploymentReplicasMismatch",
@@ -612,7 +605,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 	Context("Time-Sensitive Decision Making", func() {
 		It("should consider alert timing in decision confidence", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			// Test during business hours vs off-hours
 			businessHoursAlert := types.Alert{
@@ -656,7 +649,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 
 	Context("Context Size and Performance Monitoring", func() {
 		It("should handle large context sizes efficiently", func() {
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			// Create large context scenario
 			resourceRef := actionhistory.ResourceReference{
@@ -745,7 +738,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 			metricsServer := startTestMetricsServer()
 			defer stopTestMetricsServer(metricsServer)
 
-			client := createSLMClient()
+			client := shared.NewTestSLMClient()
 
 			// Create test scenario with varying context sizes
 			alerts := []struct {
@@ -905,7 +898,7 @@ var _ = Describe("End-to-End Recurring Alert Integration", Ordered, func() {
 				time.Sleep(5 * time.Second) // Shortened for test speed
 
 				// Reset error state to simulate recovery
-				if fakeClient, ok := client.(*shared.FakeSLMClient); ok {
+				if fakeClient, ok := client.(*shared.TestSLMClient); ok {
 					fakeClient.ResetErrorState()
 				}
 

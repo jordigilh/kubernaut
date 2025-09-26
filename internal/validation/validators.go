@@ -27,19 +27,16 @@ var (
 	}
 )
 
-// ValidationError and ValidationErrors are aliases for the shared types
-// to maintain backward compatibility while consolidating duplicated types
-type ValidationError = sharedtypes.ValidationResult
-type ValidationErrors = sharedtypes.ValidationErrors
+// ValidationError and ValidationErrors aliases removed - use sharedtypes directly
 
 // NewValidationError creates a validation error using the shared type
-func NewValidationError(field, message string) ValidationError {
+func NewValidationError(field, message string) sharedtypes.ValidationResult {
 	return sharedtypes.NewValidationError(field, message)
 }
 
 // ValidateResourceReference validates a Kubernetes resource reference
 func ValidateResourceReference(ref actionhistory.ResourceReference) error {
-	var errors ValidationErrors
+	var errors sharedtypes.ValidationErrors
 
 	// Validate namespace
 	if ref.Namespace == "" {

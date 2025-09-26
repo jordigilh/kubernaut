@@ -426,6 +426,4 @@ func (ef *ErrorFormatter) getRiskIcon(risk QuickFixRisk) string {
 	}
 }
 
-// Backward compatibility type aliases for existing code
-type PatternEngineError = EnhancedError // For orchestration/execution compatibility
-type AppError = EnhancedError           // For internal/errors compatibility
+// Backward compatibility removed - use EnhancedError directly

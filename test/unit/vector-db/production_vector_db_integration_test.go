@@ -124,8 +124,8 @@ var _ = Describe("Production Vector Database Integration - Business Requirements
 
 			// Arrange: Simulate production environment
 			originalEnv := os.Getenv("ENVIRONMENT")
-			defer os.Setenv("ENVIRONMENT", originalEnv)
-			os.Setenv("ENVIRONMENT", "production")
+			defer func() { _ = os.Setenv("ENVIRONMENT", originalEnv) }()
+			_ = os.Setenv("ENVIRONMENT", "production")
 
 			// Create production-appropriate config
 			prodConfig := &config.VectorDBConfig{

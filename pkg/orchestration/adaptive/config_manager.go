@@ -192,9 +192,10 @@ func (cm *ConfigurationManager) GetConfigurationReport() *ConfigurationReport {
 	warnings := make([]ConfigValidationError, 0)
 
 	for _, err := range cm.validationErrors {
-		if err.Severity == ValidationSeverityError {
+		switch err.Severity {
+		case ValidationSeverityError:
 			errors = append(errors, err)
-		} else if err.Severity == ValidationSeverityWarning {
+		case ValidationSeverityWarning:
 			warnings = append(warnings, err)
 		}
 	}
@@ -526,11 +527,11 @@ func (cm *ConfigurationManager) applyOverridePath(config *patterns.EnhancedPatte
 		switch parts[1] {
 		case "MinExecutionsForPattern":
 			if val, ok := value.(int); ok {
-				config.PatternDiscoveryConfig.MinExecutionsForPattern = val
+				config.MinExecutionsForPattern = val
 			}
 		case "SimilarityThreshold":
 			if val, ok := value.(float64); ok {
-				config.PatternDiscoveryConfig.SimilarityThreshold = val
+				config.SimilarityThreshold = val
 			}
 		}
 	}
@@ -592,7 +593,7 @@ func (cm *ConfigurationManager) checkSecurityIssues() []SecurityIssue {
 	}
 
 	// Check for potential security issues
-	if cm.loadedConfig.PatternDiscoveryConfig.MaxConcurrentAnalysis > 50 {
+	if cm.loadedConfig.MaxConcurrentAnalysis > 50 {
 		issues = append(issues, SecurityIssue{
 			Issue:       "high_concurrency_limit",
 			Severity:    "medium",
@@ -684,9 +685,9 @@ func (cv *ConfigValidator) getFieldValue(config *patterns.EnhancedPatternConfig,
 
 		switch parts[1] {
 		case "MinExecutionsForPattern":
-			return config.PatternDiscoveryConfig.MinExecutionsForPattern
+			return config.MinExecutionsForPattern
 		case "SimilarityThreshold":
-			return config.PatternDiscoveryConfig.SimilarityThreshold
+			return config.SimilarityThreshold
 		case "PredictionConfidence":
 			return config.PatternDiscoveryConfig.PredictionConfidence
 		case "MaxConcurrentAnalysis":

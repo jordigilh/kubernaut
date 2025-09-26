@@ -178,9 +178,9 @@ func (s *VectorAIIntegrationSuite) initializeVectorTables(db *sql.DB) error {
 // initializeEmbeddingGenerator creates real embedding generator
 // Following decisions: Use controlled scenarios, prefer real components
 func (s *VectorAIIntegrationSuite) initializeEmbeddingGenerator() (vector.EmbeddingGenerator, error) {
-	// For controlled test scenarios, use a deterministic embedding generator
+	// For controlled test scenarios, use local embedding generator
 	// that produces consistent, realistic embeddings for test validation
-	return NewControlledEmbeddingGenerator(s.Logger), nil
+	return vector.NewLocalEmbeddingService(384, s.Logger), nil
 }
 
 // initializeRamalamaLLMClient creates real ramalama LLM client

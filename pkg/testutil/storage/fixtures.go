@@ -3,7 +3,7 @@ package storage
 import (
 	"time"
 
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega" //nolint:staticcheck
 )
 
 // BusinessRequirementFixtures provides test fixtures aligned with business requirements
