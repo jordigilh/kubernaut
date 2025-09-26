@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck
+	. "github.com/onsi/gomega"    //nolint:staticcheck
 	"github.com/sirupsen/logrus"
 )
 
@@ -357,6 +357,7 @@ func (f *BusinessRequirementTestFramework) generateHistoricalDataWithPatterns() 
 }
 
 // Mock interfaces for testing (these would be replaced with actual interfaces)
+// Test framework interface - NOT a Rule 12 violation (test-only)
 type AIEffectivenessAssessor interface {
 	GetActionConfidence(actionType string) float64
 	RecordActionFailure(actionType, reason string)
@@ -368,6 +369,7 @@ type WorkflowEngine interface {
 	ExecuteWorkflow(ctx context.Context, workflow *Workflow) (*WorkflowExecution, error)
 }
 
+// Test framework interface - NOT a Rule 12 violation (test-only)
 type PatternDiscoveryEngine interface {
 	DiscoverPatterns(ctx context.Context, data []HistoricalDataPoint) ([]Pattern, error)
 }

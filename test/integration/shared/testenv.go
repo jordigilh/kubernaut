@@ -8,7 +8,6 @@ import (
 )
 
 // Re-export types and functions for compatibility
-type TestEnvironment = testenv.TestEnvironment
 
 var (
 	SetupTestEnvironment = testenv.SetupTestEnvironment

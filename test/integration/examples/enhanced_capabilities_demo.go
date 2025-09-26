@@ -19,7 +19,7 @@ var _ = Describe("Enhanced Capabilities Demonstration", func() {
 	var (
 		isolatedSuite *shared.IsolatedTestSuite
 		logger        *logrus.Logger
-		fakeClient    *shared.FakeSLMClient
+		fakeClient    *shared.TestSLMClient
 	)
 
 	BeforeEach(func() {
@@ -32,7 +32,7 @@ var _ = Describe("Enhanced Capabilities Demonstration", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create enhanced fake SLM client
-		fakeClient = shared.NewFakeSLMClient()
+		fakeClient = shared.NewTestSLMClient()
 		Expect(fakeClient.GetDecisionEngine()).ToNot(BeNil())
 	})
 

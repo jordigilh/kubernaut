@@ -442,7 +442,7 @@ func (m *MockAdaptiveOrchestrator) ExecuteWorkflowWithResourceMonitoring(ctx con
 	}
 
 	// Simulate resource impact based on baseline
-	var cpuDelta, memoryDelta float64 = 0.15, 0.20 // Default deltas
+	cpuDelta, memoryDelta := 0.15, 0.20 // Default deltas
 	if m.resourceBaseline != nil {
 		cpuDelta = 0.15
 		memoryDelta = 0.20

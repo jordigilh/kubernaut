@@ -1,0 +1,199 @@
+---
+alwaysApply: true
+---
+
+#!/bin/bash
+# Pre-commit hook for TDD and integration enforcement
+
+set -e
+
+echo "🔍 Running TDD and Integration Validation..."
+
+# Check for TDD violations
+echo "Checking TDD compliance..."
+MODIFIED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' | grep -v '_test\.go$' || true)
+MODIFIED_TEST_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '_test\.go$' || true)
+
+# Rule 1: Test files must not reference undefined struct fields
+if [ -n "$MODIFIED_TEST_FILES" ]; then
+    echo "Validating test files for type safety..."
+    for test_file in $MODIFIED_TEST_FILES; do
+        echo "Checking: $test_file"
+
+        # Extract struct field references (e.g., object.FieldName)
+        FIELD_REFS=$(grep -n '[a-zA-Z_][a-zA-Z0-9_]*\.[A-Z][a-zA-Z0-9_]*' "$test_file" | grep -v '//' || true)
+
+        if [ -n "$FIELD_REFS" ]; then
+            echo "Found struct field references in $test_file:"
+            echo "$FIELD_REFS"
+
+            # Check if these fields exist in type definitions
+            while IFS= read -r line; do
+                FIELD_REF=$(echo "$line" | grep -o '[a-zA-Z_][a-zA-Z0-9_]*\.[A-Z][a-zA-Z0-9_]*' | head -1)
+                TYPE_NAME=$(echo "$FIELD_REF" | cut -d'.' -f1)
+                FIELD_NAME=$(echo "$FIELD_REF" | cut -d'.' -f2)
+
+                # Look for type definition
+                TYPE_DEF=$(find pkg/ -name "*.go" -exec grep -l "type.*$TYPE_NAME.*struct" {} \; | head -1)
+                if [ -n "$TYPE_DEF" ]; then
+                    # Check if field exists in type definition
+                    FIELD_EXISTS=$(grep -A 20 "type.*$TYPE_NAME.*struct" "$TYPE_DEF" | grep -c "$FIELD_NAME" || echo "0")
+                    if [ "$FIELD_EXISTS" -eq 0 ]; then
+                        echo "❌ ERROR: Field '$FIELD_NAME' not found in type '$TYPE_NAME' (defined in $TYPE_DEF)"
+                        echo "   Referenced in: $test_file"
+                        echo "   🔧 FIX: Add field to type definition or use correct field name"
+                        exit 1
+                    fi
+                else
+                    echo "⚠️  WARNING: Type '$TYPE_NAME' definition not found"
+                fi
+            done <<< "$FIELD_REFS"
+        fi
+    done
+fi
+
+# Rule 2: Business code must be integrated in main applications
+if [ -n "$MODIFIED_GO_FILES" ]; then
+    echo "Checking business code integration..."
+    for go_file in $MODIFIED_GO_FILES; do
+        # Skip if not in pkg/ directory (business logic location)
+        if [[ "$go_file" == pkg/* ]]; then
+            # Extract type definitions
+            TYPE_DEFS=$(grep -n '^type [A-Z][a-zA-Z0-9_]* struct' "$go_file" | cut -d':' -f2 | cut -d' ' -f2 || true)
+
+            for type_name in $TYPE_DEFS; do
+                # Check if type is used in main applications
+                MAIN_USAGE=$(find cmd/ -name "*.go" -exec grep -l "$type_name" {} \; | wc -l)
+                if [ "$MAIN_USAGE" -eq 0 ]; then
+                    echo "❌ ERROR: Business type '$type_name' not integrated in main applications"
+                    echo "   Defined in: $go_file"
+                    echo "   🔧 FIX: Integrate type in cmd/ applications or remove if unused"
+                    exit 1
+                fi
+            done
+        fi
+    done
+fi
+
+# Rule 3: TDD sequence validation
+echo "Checking TDD sequence compliance..."
+if [ -n "$MODIFIED_TEST_FILES" ] && [ -z "$MODIFIED_GO_FILES" ]; then
+    echo "✅ Tests added before implementation (RED phase) - compliant"
+elif [ -n "$MODIFIED_GO_FILES" ] && [ -n "$MODIFIED_TEST_FILES" ]; then
+    echo "✅ Tests and implementation modified together (GREEN/REFACTOR phase) - compliant"
+elif [ -n "$MODIFIED_GO_FILES" ] && [ -z "$MODIFIED_TEST_FILES" ]; then
+    echo "⚠️  WARNING: Implementation without corresponding tests"
+    echo "   🔧 RECOMMENDATION: Add tests for new business logic"
+fi
+
+# Rule 4: Check for empty struct definitions
+echo "Checking for incomplete type definitions..."
+EMPTY_STRUCTS=$(find pkg/ -name "*.go" -exec grep -l "struct{}" {} \; || true)
+if [ -n "$EMPTY_STRUCTS" ]; then
+    echo "❌ ERROR: Empty struct definitions found:"
+    for file in $EMPTY_STRUCTS; do
+        grep -n "struct{}" "$file"
+        echo "   In file: $file"
+    done
+    echo "   🔧 FIX: Complete struct definitions with required fields"
+    exit 1
+fi
+
+echo "✅ All validation checks passed!"#!/bin/bash
+# Pre-commit hook for TDD and integration enforcement
+
+set -e
+
+echo "🔍 Running TDD and Integration Validation..."
+
+# Check for TDD violations
+echo "Checking TDD compliance..."
+MODIFIED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' | grep -v '_test\.go$' || true)
+MODIFIED_TEST_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '_test\.go$' || true)
+
+# Rule 1: Test files must not reference undefined struct fields
+if [ -n "$MODIFIED_TEST_FILES" ]; then
+    echo "Validating test files for type safety..."
+    for test_file in $MODIFIED_TEST_FILES; do
+        echo "Checking: $test_file"
+
+        # Extract struct field references (e.g., object.FieldName)
+        FIELD_REFS=$(grep -n '[a-zA-Z_][a-zA-Z0-9_]*\.[A-Z][a-zA-Z0-9_]*' "$test_file" | grep -v '//' || true)
+
+        if [ -n "$FIELD_REFS" ]; then
+            echo "Found struct field references in $test_file:"
+            echo "$FIELD_REFS"
+
+            # Check if these fields exist in type definitions
+            while IFS= read -r line; do
+                FIELD_REF=$(echo "$line" | grep -o '[a-zA-Z_][a-zA-Z0-9_]*\.[A-Z][a-zA-Z0-9_]*' | head -1)
+                TYPE_NAME=$(echo "$FIELD_REF" | cut -d'.' -f1)
+                FIELD_NAME=$(echo "$FIELD_REF" | cut -d'.' -f2)
+
+                # Look for type definition
+                TYPE_DEF=$(find pkg/ -name "*.go" -exec grep -l "type.*$TYPE_NAME.*struct" {} \; | head -1)
+                if [ -n "$TYPE_DEF" ]; then
+                    # Check if field exists in type definition
+                    FIELD_EXISTS=$(grep -A 20 "type.*$TYPE_NAME.*struct" "$TYPE_DEF" | grep -c "$FIELD_NAME" || echo "0")
+                    if [ "$FIELD_EXISTS" -eq 0 ]; then
+                        echo "❌ ERROR: Field '$FIELD_NAME' not found in type '$TYPE_NAME' (defined in $TYPE_DEF)"
+                        echo "   Referenced in: $test_file"
+                        echo "   🔧 FIX: Add field to type definition or use correct field name"
+                        exit 1
+                    fi
+                else
+                    echo "⚠️  WARNING: Type '$TYPE_NAME' definition not found"
+                fi
+            done <<< "$FIELD_REFS"
+        fi
+    done
+fi
+
+# Rule 2: Business code must be integrated in main applications
+if [ -n "$MODIFIED_GO_FILES" ]; then
+    echo "Checking business code integration..."
+    for go_file in $MODIFIED_GO_FILES; do
+        # Skip if not in pkg/ directory (business logic location)
+        if [[ "$go_file" == pkg/* ]]; then
+            # Extract type definitions
+            TYPE_DEFS=$(grep -n '^type [A-Z][a-zA-Z0-9_]* struct' "$go_file" | cut -d':' -f2 | cut -d' ' -f2 || true)
+
+            for type_name in $TYPE_DEFS; do
+                # Check if type is used in main applications
+                MAIN_USAGE=$(find cmd/ -name "*.go" -exec grep -l "$type_name" {} \; | wc -l)
+                if [ "$MAIN_USAGE" -eq 0 ]; then
+                    echo "❌ ERROR: Business type '$type_name' not integrated in main applications"
+                    echo "   Defined in: $go_file"
+                    echo "   🔧 FIX: Integrate type in cmd/ applications or remove if unused"
+                    exit 1
+                fi
+            done
+        fi
+    done
+fi
+
+# Rule 3: TDD sequence validation
+echo "Checking TDD sequence compliance..."
+if [ -n "$MODIFIED_TEST_FILES" ] && [ -z "$MODIFIED_GO_FILES" ]; then
+    echo "✅ Tests added before implementation (RED phase) - compliant"
+elif [ -n "$MODIFIED_GO_FILES" ] && [ -n "$MODIFIED_TEST_FILES" ]; then
+    echo "✅ Tests and implementation modified together (GREEN/REFACTOR phase) - compliant"
+elif [ -n "$MODIFIED_GO_FILES" ] && [ -z "$MODIFIED_TEST_FILES" ]; then
+    echo "⚠️  WARNING: Implementation without corresponding tests"
+    echo "   🔧 RECOMMENDATION: Add tests for new business logic"
+fi
+
+# Rule 4: Check for empty struct definitions
+echo "Checking for incomplete type definitions..."
+EMPTY_STRUCTS=$(find pkg/ -name "*.go" -exec grep -l "struct{}" {} \; || true)
+if [ -n "$EMPTY_STRUCTS" ]; then
+    echo "❌ ERROR: Empty struct definitions found:"
+    for file in $EMPTY_STRUCTS; do
+        grep -n "struct{}" "$file"
+        echo "   In file: $file"
+    done
+    echo "   🔧 FIX: Complete struct definitions with required fields"
+    exit 1
+fi
+
+echo "✅ All validation checks passed!"

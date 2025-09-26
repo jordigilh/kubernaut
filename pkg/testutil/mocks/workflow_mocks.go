@@ -327,11 +327,11 @@ func (m *MockLLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*l
 	}
 
 	// BR-LLM-013: Business requirement compliance - Calculate confidence based on business scenarios
-	confidence := 0.8 // Default baseline
 	alertStr := fmt.Sprintf("%s %s %s", typedAlert.Name, typedAlert.Severity, typedAlert.Description)
 	alertLower := strings.ToLower(alertStr)
 
 	// Business scenario confidence mapping to meet BR-LLM-013 quality thresholds
+	var confidence float64
 	switch {
 	case strings.Contains(alertLower, "critical") && (strings.Contains(alertLower, "kubernetes") || strings.Contains(alertLower, "crash") || strings.Contains(alertLower, "memory")):
 		// Critical incident diagnosis scenarios require >=0.85 confidence
@@ -555,6 +555,79 @@ func (m *MockLLMClient) GenerateWorkflowFromObjective(ctx context.Context, objec
 	return &engine.AIWorkflowResponse{}, nil
 }
 
+// Enhanced AI methods for Rule 12 compliance - mock implementations
+func (m *MockLLMClient) EvaluateCondition(ctx context.Context, condition interface{}, context interface{}) (bool, error) {
+	return true, m.error // Default to true for test success
+}
+
+func (m *MockLLMClient) ValidateCondition(ctx context.Context, condition interface{}) error {
+	return m.error
+}
+
+func (m *MockLLMClient) CollectMetrics(ctx context.Context, execution interface{}) (map[string]float64, error) {
+	return map[string]float64{"mock_metric": 1.0}, m.error
+}
+
+func (m *MockLLMClient) GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange interface{}) (map[string]float64, error) {
+	return map[string]float64{"aggregate_metric": 0.8}, m.error
+}
+
+func (m *MockLLMClient) RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error {
+	return m.error
+}
+
+func (m *MockLLMClient) RegisterPromptVersion(ctx context.Context, version interface{}) error {
+	return m.error
+}
+
+func (m *MockLLMClient) GetOptimalPrompt(ctx context.Context, objective interface{}) (interface{}, error) {
+	return "mock_prompt", m.error
+}
+
+func (m *MockLLMClient) StartABTest(ctx context.Context, experiment interface{}) error {
+	return m.error
+}
+
+func (m *MockLLMClient) OptimizeWorkflow(ctx context.Context, workflow interface{}, executionHistory interface{}) (interface{}, error) {
+	return workflow, m.error // Return the same workflow for testing
+}
+
+func (m *MockLLMClient) SuggestOptimizations(ctx context.Context, workflow interface{}) (interface{}, error) {
+	return []string{"mock_optimization_1", "mock_optimization_2"}, m.error
+}
+
+func (m *MockLLMClient) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {
+	return template + "_enhanced", m.error
+}
+
+func (m *MockLLMClient) LearnFromExecution(ctx context.Context, execution interface{}) error {
+	return m.error
+}
+
+func (m *MockLLMClient) GetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
+	return templateID + "_optimized", m.error
+}
+
+func (m *MockLLMClient) AnalyzePatterns(ctx context.Context, executionData []interface{}) (interface{}, error) {
+	return map[string]interface{}{"patterns": []string{"pattern1", "pattern2"}}, m.error
+}
+
+func (m *MockLLMClient) PredictEffectiveness(ctx context.Context, workflow interface{}) (float64, error) {
+	return 0.8, m.error
+}
+
+func (m *MockLLMClient) ClusterWorkflows(ctx context.Context, executionData []interface{}, config map[string]interface{}) (interface{}, error) {
+	return []interface{}{}, m.error
+}
+
+func (m *MockLLMClient) AnalyzeTrends(ctx context.Context, executionData []interface{}, timeRange interface{}) (interface{}, error) {
+	return map[string]interface{}{"trend": "upward"}, m.error
+}
+
+func (m *MockLLMClient) DetectAnomalies(ctx context.Context, executionData []interface{}) (interface{}, error) {
+	return []interface{}{}, m.error
+}
+
 // MockWorkflowVectorDatabase provides a mock implementation of vector.VectorDatabase for testing
 type MockWorkflowVectorDatabase struct {
 	actionPatterns []*vector.ActionPattern
@@ -594,11 +667,14 @@ func (m *MockWorkflowVectorDatabase) SearchSimilarPatterns(ctx context.Context, 
 	}
 
 	// Return mock search result
-	similarPatterns := make([]*vector.SimilarPattern, 0)
+	similarPatterns := make([]*vector.UnifiedSearchResult, 0)
 	for _, pattern := range m.actionPatterns {
-		similarPatterns = append(similarPatterns, &vector.SimilarPattern{
-			Pattern:    pattern,
-			Similarity: 0.85,
+		similarPatterns = append(similarPatterns, &vector.UnifiedSearchResult{
+			ID:    pattern.ID,
+			Score: 0.85,
+			Metadata: map[string]interface{}{
+				"pattern": pattern,
+			},
 		})
 	}
 
@@ -611,20 +687,23 @@ func (m *MockWorkflowVectorDatabase) SearchSimilarPatterns(ctx context.Context, 
 	}, nil
 }
 
-func (m *MockWorkflowVectorDatabase) FindSimilarPatterns(ctx context.Context, pattern *vector.ActionPattern, limit int, threshold float64) ([]*vector.SimilarPattern, error) {
+func (m *MockWorkflowVectorDatabase) FindSimilarPatterns(ctx context.Context, pattern *vector.ActionPattern, limit int, threshold float64) ([]*vector.UnifiedSearchResult, error) {
 	if m.error != nil {
 		return nil, m.error
 	}
 
 	// Return similar patterns based on stored patterns
-	similarPatterns := make([]*vector.SimilarPattern, 0)
+	similarPatterns := make([]*vector.UnifiedSearchResult, 0)
 	for _, storedPattern := range m.actionPatterns {
 		if len(similarPatterns) >= limit {
 			break
 		}
-		similarPatterns = append(similarPatterns, &vector.SimilarPattern{
-			Pattern:    storedPattern,
-			Similarity: 0.85,
+		similarPatterns = append(similarPatterns, &vector.UnifiedSearchResult{
+			ID:    storedPattern.ID,
+			Score: 0.85,
+			Metadata: map[string]interface{}{
+				"pattern": storedPattern,
+			},
 		})
 	}
 
@@ -943,6 +1022,54 @@ func (m *WorkflowExecutionRepositoryMock) GetRecentExecutions(ctx context.Contex
 		if exec.StartTime.After(since) {
 			result = append(result, exec)
 			count++
+		}
+	}
+
+	return result, nil
+}
+
+func (m *WorkflowExecutionRepositoryMock) GetExecutionsByPattern(ctx context.Context, patternID string) ([]*engine.RuntimeWorkflowExecution, error) {
+	if m.error != nil {
+		return nil, m.error
+	}
+
+	// Simple pattern matching for testing - filter executions by pattern in metadata
+	result := make([]*engine.RuntimeWorkflowExecution, 0)
+	for _, exec := range m.executions {
+		if exec.Metadata != nil {
+			if pattern, exists := exec.Metadata["pattern_id"]; exists && pattern == patternID {
+				result = append(result, exec)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+func (m *WorkflowExecutionRepositoryMock) GetExecutionsInTimeWindow(ctx context.Context, start, end time.Time) ([]*engine.RuntimeWorkflowExecution, error) {
+	if m.error != nil {
+		return nil, m.error
+	}
+
+	result := make([]*engine.RuntimeWorkflowExecution, 0)
+	for _, exec := range m.executions {
+		if exec.StartTime.After(start) && exec.StartTime.Before(end) {
+			result = append(result, exec)
+		}
+	}
+
+	return result, nil
+}
+
+func (m *WorkflowExecutionRepositoryMock) GetExecutionsByWorkflowID(ctx context.Context, workflowID string) ([]*engine.RuntimeWorkflowExecution, error) {
+	if m.error != nil {
+		return nil, m.error
+	}
+
+	result := make([]*engine.RuntimeWorkflowExecution, 0)
+	for _, exec := range m.executions {
+		if exec.WorkflowID == workflowID {
+			result = append(result, exec)
 		}
 	}
 
@@ -1910,6 +2037,15 @@ func (m *MockActionExecutor) ValidateStepSequence() bool {
 	return true
 }
 
+// @deprecated RULE 12 VIOLATION: Mocks deprecated AIConditionEvaluator interface instead of using enhanced llm.Client
+// Migration: Use enhanced llm.Client.EvaluateCondition(), llm.Client.ValidateCondition() methods directly in tests
+// Business Requirements: BR-COND-001, BR-COND-005 - now served by enhanced llm.Client
+//
+// Replacement pattern:
+//
+//	Instead of: mockEvaluator := NewMockAIConditionEvaluator()
+//	Use: llmClient (already has enhanced EvaluateCondition, ValidateCondition methods) with test responses
+//
 // MockAIConditionEvaluator provides a mock implementation of engine.AIConditionEvaluator for testing
 type MockAIConditionEvaluator struct {
 	mu               sync.RWMutex
@@ -1928,6 +2064,8 @@ type mockDecisionResult struct {
 	err     error
 }
 
+// @deprecated RULE 12 VIOLATION: Use enhanced llm.Client instead
+// Migration: Use llmClient.EvaluateCondition() and llmClient.ValidateCondition() directly
 func NewMockAIConditionEvaluator() *MockAIConditionEvaluator {
 	return &MockAIConditionEvaluator{
 		conditionResults: make(map[string]mockConditionResult),
@@ -2803,5 +2941,21 @@ func (m *MockServiceIntegration) GetToolsetByName(name string) *holmesgpt.Toolse
 			return toolset
 		}
 	}
+	return nil
+}
+
+// CheckKubernetesConnectivity validates Kubernetes cluster connectivity for testing
+// Implements ServiceIntegrationInterface.CheckKubernetesConnectivity
+func (m *MockServiceIntegration) CheckKubernetesConnectivity(ctx context.Context) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// For testing, simulate connectivity check
+	// Return refreshError if set to simulate connection issues
+	if m.refreshError != nil {
+		return fmt.Errorf("kubernetes connectivity check failed: %w", m.refreshError)
+	}
+
+	// Simulate successful connectivity check
 	return nil
 }

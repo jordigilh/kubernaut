@@ -852,7 +852,7 @@ func (v *MultiProviderLLMValidator) executeProviderFailover(ctx context.Context,
 	v.simulateProviderFailureUnsafe(scenario.FromProvider)
 
 	// Test that target provider can handle requests
-	testPrompt := fmt.Sprintf("Failover test: Process this alert - High CPU usage detected. Respond with recommended action.")
+	testPrompt := "Failover test: Process this alert - High CPU usage detected. Respond with recommended action."
 	response, err := toClient.GenerateResponse(testPrompt)
 
 	if err != nil {

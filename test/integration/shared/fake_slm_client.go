@@ -20,7 +20,7 @@ type TestSLMClient struct {
 	responses     map[string]*types.ActionRecommendation
 	chatResponses map[string]string
 	healthStatus  bool
-	callHistory   []FakeSLMCall
+	callHistory   []TestSLMCall
 	latency       time.Duration
 	simulateError bool
 	errorMessage  string
@@ -52,10 +52,9 @@ type TestSLMClient struct {
 	activeScenarios      map[string]bool
 }
 
-// FakeSLMClient is an alias for TestSLMClient to maintain compatibility
-type FakeSLMClient = TestSLMClient
+// REMOVED: FakeSLMClient alias - Use TestSLMClient directly for cleaner code
 
-type FakeSLMCall struct {
+type TestSLMCall struct {
 	Method     string
 	Alert      *types.Alert
 	Prompt     string
@@ -121,7 +120,7 @@ func NewSLMClient() *TestSLMClient {
 		responses:            make(map[string]*types.ActionRecommendation),
 		chatResponses:        make(map[string]string),
 		healthStatus:         true,
-		callHistory:          make([]FakeSLMCall, 0),
+		callHistory:          make([]TestSLMCall, 0),
 		latency:              10 * time.Millisecond, // Default fast response
 		maxCalls:             1000,                  // Default high limit
 		confidencePatterns:   make(map[string]float64),
@@ -171,8 +170,8 @@ func NewSLMClient() *TestSLMClient {
 	return client
 }
 
-// NewFakeSLMClient creates a new FakeSLMClient (alias for TestSLMClient)
-func NewFakeSLMClient() *FakeSLMClient {
+// NewTestSLMClient creates a new TestSLMClient (replaces deprecated NewFakeSLMClient)
+func NewTestSLMClient() *TestSLMClient {
 	return NewSLMClient()
 }
 
@@ -298,7 +297,7 @@ func (f *TestSLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*l
 	}()
 
 	// Record call (will be updated in defer)
-	f.callHistory = append(f.callHistory, FakeSLMCall{
+	f.callHistory = append(f.callHistory, TestSLMCall{
 		Method:    "AnalyzeAlert",
 		Alert:     &typedAlert,
 		Timestamp: startTime,
@@ -424,7 +423,7 @@ func (f *TestSLMClient) ChatCompletion(ctx context.Context, prompt string) (stri
 	}()
 
 	// Record call (will be updated in defer)
-	f.callHistory = append(f.callHistory, FakeSLMCall{
+	f.callHistory = append(f.callHistory, TestSLMCall{
 		Method:    "ChatCompletion",
 		Prompt:    prompt,
 		Timestamp: startTime,
@@ -555,7 +554,7 @@ func (f *TestSLMClient) GenerateWorkflow(ctx context.Context, objective *llm.Wor
 }
 
 // Helper methods for testing
-func (f *TestSLMClient) GetCallHistory() []FakeSLMCall {
+func (f *TestSLMClient) GetCallHistory() []TestSLMCall {
 	return f.callHistory
 }
 
@@ -564,7 +563,7 @@ func (f *TestSLMClient) GetCallCount() int {
 }
 
 func (f *TestSLMClient) ResetCallHistory() {
-	f.callHistory = make([]FakeSLMCall, 0)
+	f.callHistory = make([]TestSLMCall, 0)
 	f.callCount = 0
 }
 
@@ -1022,4 +1021,209 @@ func (f *TestSLMClient) GetModel() string {
 // GetMinParameterCount returns the minimum parameter count for testing
 func (f *TestSLMClient) GetMinParameterCount() int64 {
 	return 8000000000 // 8B parameters for test model
+}
+
+// AnalyzePatterns discovers patterns in execution data using ML
+// BR-ML-001: MUST provide machine learning analytics for pattern discovery
+func (f *TestSLMClient) AnalyzePatterns(ctx context.Context, executionData []interface{}) (interface{}, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+
+	// Simulate pattern analysis
+	return map[string]interface{}{
+		"patterns":   "Test pattern analysis results",
+		"confidence": 0.85,
+		"data_size":  len(executionData),
+		"clusters":   []string{"pattern1", "pattern2", "pattern3"},
+	}, nil
+}
+
+// PredictEffectiveness predicts workflow success probability
+// BR-ML-001: MUST predict workflow effectiveness using ML
+func (f *TestSLMClient) PredictEffectiveness(ctx context.Context, workflow interface{}) (float64, error) {
+	if f.simulateError {
+		return 0.0, errors.New(f.errorMessage)
+	}
+	return 0.85, nil // Default test effectiveness score
+}
+
+// ClusterWorkflows groups similar workflows using AI clustering
+// BR-CLUSTER-001: MUST support workflow clustering and similarity analysis
+func (f *TestSLMClient) ClusterWorkflows(ctx context.Context, executionData []interface{}, config map[string]interface{}) (interface{}, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+
+	return map[string]interface{}{
+		"clusters":      "Test clustering results",
+		"cluster_count": 3,
+		"confidence":    0.80,
+	}, nil
+}
+
+// AnalyzeTrends identifies trends in time series data
+// BR-TIMESERIES-001: MUST provide time series analysis capabilities
+func (f *TestSLMClient) AnalyzeTrends(ctx context.Context, executionData []interface{}, timeRange interface{}) (interface{}, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+
+	return map[string]interface{}{
+		"trends":     "Test trend analysis results",
+		"direction":  "improving",
+		"confidence": 0.75,
+	}, nil
+}
+
+// DetectAnomalies identifies unusual patterns in execution data
+// BR-TIMESERIES-001: MUST detect anomalies in execution patterns
+func (f *TestSLMClient) DetectAnomalies(ctx context.Context, executionData []interface{}) (interface{}, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+
+	return map[string]interface{}{
+		"anomalies":  "Test anomaly detection results",
+		"count":      2,
+		"confidence": 0.70,
+	}, nil
+}
+
+// BuildPrompt creates optimized prompts from templates
+// BR-PROMPT-001: MUST support dynamic prompt building and template optimization
+func (f *TestSLMClient) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {
+	if f.simulateError {
+		return "", errors.New(f.errorMessage)
+	}
+
+	// Simple template substitution for testing
+	prompt := template
+	for key, value := range context {
+		placeholder := fmt.Sprintf("{{%s}}", key)
+		prompt = strings.ReplaceAll(prompt, placeholder, fmt.Sprintf("%v", value))
+	}
+
+	return prompt + "_test_enhanced", nil
+}
+
+// LearnFromExecution updates AI models based on execution feedback
+// BR-PROMPT-001: MUST learn from execution results to improve future prompts
+func (f *TestSLMClient) LearnFromExecution(ctx context.Context, execution interface{}) error {
+	if f.simulateError {
+		return errors.New(f.errorMessage)
+	}
+	return nil // Test implementation - no actual learning
+}
+
+// GetOptimizedTemplate retrieves pre-optimized templates
+// BR-PROMPT-001: MUST provide optimized prompt templates
+func (f *TestSLMClient) GetOptimizedTemplate(ctx context.Context, templateID string) (string, error) {
+	if f.simulateError {
+		return "", errors.New(f.errorMessage)
+	}
+	return templateID + "_test_optimized", nil
+}
+
+// CollectMetrics collects AI metrics from execution
+// BR-AI-017, BR-AI-025: MUST provide comprehensive AI metrics collection and analysis
+func (f *TestSLMClient) CollectMetrics(ctx context.Context, execution interface{}) (map[string]float64, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+
+	return map[string]float64{
+		"test_metric_1":    0.85,
+		"test_metric_2":    0.92,
+		"execution_time":   1.5,
+		"confidence_score": 0.78,
+	}, nil
+}
+
+// GetAggregatedMetrics retrieves aggregated metrics for a workflow
+// BR-AI-017, BR-AI-025: MUST provide comprehensive AI metrics collection and analysis
+func (f *TestSLMClient) GetAggregatedMetrics(ctx context.Context, workflowID string, timeRange interface{}) (map[string]float64, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+
+	return map[string]float64{
+		"avg_execution_time": 2.1,
+		"success_rate":       0.95,
+		"avg_confidence":     0.82,
+		"total_executions":   150.0,
+	}, nil
+}
+
+// RecordAIRequest records AI request for metrics tracking
+// BR-AI-017, BR-AI-025: MUST provide comprehensive AI metrics collection and analysis
+func (f *TestSLMClient) RecordAIRequest(ctx context.Context, requestID string, prompt string, response string) error {
+	if f.simulateError {
+		return errors.New(f.errorMessage)
+	}
+	// Test implementation - just record the call
+	return nil
+}
+
+// RegisterPromptVersion registers a new prompt version
+// BR-AI-022, BR-ORCH-002, BR-ORCH-003: MUST support prompt optimization and A/B testing
+func (f *TestSLMClient) RegisterPromptVersion(ctx context.Context, version interface{}) error {
+	if f.simulateError {
+		return errors.New(f.errorMessage)
+	}
+	return nil
+}
+
+// GetOptimalPrompt retrieves the optimal prompt for an objective
+// BR-AI-022, BR-ORCH-002, BR-ORCH-003: MUST support prompt optimization and A/B testing
+func (f *TestSLMClient) GetOptimalPrompt(ctx context.Context, objective interface{}) (interface{}, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+	return "test_optimal_prompt", nil
+}
+
+// StartABTest starts an A/B test experiment
+// BR-AI-022, BR-ORCH-002, BR-ORCH-003: MUST support prompt optimization and A/B testing
+func (f *TestSLMClient) StartABTest(ctx context.Context, experiment interface{}) error {
+	if f.simulateError {
+		return errors.New(f.errorMessage)
+	}
+	return nil
+}
+
+// OptimizeWorkflow optimizes a workflow using AI
+// BR-ORCH-003: MUST provide workflow optimization and improvement suggestions
+func (f *TestSLMClient) OptimizeWorkflow(ctx context.Context, workflow interface{}, executionHistory interface{}) (interface{}, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+	return workflow, nil // Return the same workflow for testing
+}
+
+// SuggestOptimizations suggests workflow optimizations
+// BR-ORCH-003: MUST provide workflow optimization and improvement suggestions
+func (f *TestSLMClient) SuggestOptimizations(ctx context.Context, workflow interface{}) (interface{}, error) {
+	if f.simulateError {
+		return nil, errors.New(f.errorMessage)
+	}
+	return []string{"test_optimization_1", "test_optimization_2"}, nil
+}
+
+// EvaluateCondition evaluates a condition using AI
+// BR-COND-001: MUST support intelligent condition evaluation with context awareness
+func (f *TestSLMClient) EvaluateCondition(ctx context.Context, condition interface{}, context interface{}) (bool, error) {
+	if f.simulateError {
+		return false, errors.New(f.errorMessage)
+	}
+	return true, nil // Default to true for test success
+}
+
+// ValidateCondition validates a condition
+// BR-COND-001: MUST support intelligent condition evaluation with context awareness
+func (f *TestSLMClient) ValidateCondition(ctx context.Context, condition interface{}) error {
+	if f.simulateError {
+		return errors.New(f.errorMessage)
+	}
+	return nil
 }

@@ -89,7 +89,7 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)
-				json.NewEncoder(w).Encode(response)
+				_ = json.NewEncoder(w).Encode(response)
 			}))
 
 			// Create client pointing to test server
@@ -196,7 +196,7 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(response)
+				_ = json.NewEncoder(w).Encode(response)
 			}))
 
 			client = holmesgpt.NewToolsetDeploymentClient(testServer.URL, logger)
@@ -222,7 +222,7 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 			testServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Validate v0.13.1+ specific features
 				var toolset holmesgpt.ToolsetConfig
-				json.NewDecoder(r.Body).Decode(&toolset)
+				_ = json.NewDecoder(r.Body).Decode(&toolset)
 
 				// BR-EXTERNAL-001: Validate v0.13.1+ framework compatibility
 				Expect(toolset.Version).ToNot(BeEmpty(), "BR-EXTERNAL-001: Must include toolset version for v0.13.1+ compatibility")
@@ -251,7 +251,7 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusCreated)
-				json.NewEncoder(w).Encode(response)
+				_ = json.NewEncoder(w).Encode(response)
 			}))
 
 			client = holmesgpt.NewToolsetDeploymentClient(testServer.URL, logger)
@@ -311,7 +311,7 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 					}
 
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]interface{}{
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
 						"toolsets": toolsets,
 						"total":    len(toolsets),
 					})
@@ -339,7 +339,9 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 					}
 
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(toolset)
+					if err := json.NewEncoder(w).Encode(toolset); err != nil {
+						http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+					}
 				}
 			}))
 
@@ -425,7 +427,9 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 					}
 
 					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(docs)
+					if err := json.NewEncoder(w).Encode(docs); err != nil {
+						http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+					}
 				}
 			}))
 

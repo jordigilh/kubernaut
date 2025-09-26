@@ -1,0 +1,57 @@
+---
+globs: "pkg/ai/**/*,test/**/*ai*"
+description: "AI/ML development with TDD - zero ambiguity"
+---
+
+# AI/ML Development Methodology
+
+## AI TDD Phases
+
+### Discovery Phase (5-10 min)
+**Action**: `./scripts/ai-component-discovery.sh ComponentName`
+**Rule**: Search existing AI interfaces before creating new
+
+### RED Phase (15-20 min)
+**Rule**: Import existing AI interfaces (`pkg/ai/llm.Client`)
+**Forbidden**: Creating new AI interfaces
+**Validation**: `./scripts/validate-ai-development.sh red`
+
+### GREEN Phase (20-25 min)
+**Rule**: Enhance existing AI client (e.g., `ClientImpl`)
+**Integration**: Add to main app (`cmd/*/main.go`)
+**Forbidden**: New AI service files
+**Validation**: `./scripts/validate-ai-development.sh green`
+
+### REFACTOR Phase (25-35 min)
+**Rule**: Enhance same AI methods tests call
+**REFACTOR NEVER MEANS**: Create new parallel/additional AI code
+**Forbidden**: New AI types, files, interfaces
+**Validation**: `./scripts/validate-ai-development.sh refactor`
+
+## Mock Usage for AI
+
+| Component | Action |
+|-----------|--------|
+| **External AI APIs** (HolmesGPT, OpenAI) | MOCK |
+| **AI Business Logic** (analysis algorithms) | REAL |
+| **Error Simulation** | MOCK |
+| **Performance Testing** | MOCK |
+
+## Integration Pattern
+```go
+// cmd/kubernaut/main.go
+llmClient := llm.NewClient(config.LLM)
+workflowEngine.SetLLMClient(llmClient)
+processor := processor.New(llmClient, deps...)
+```
+
+## Anti-Patterns - FORBIDDEN
+- Creating parallel AI components during REFACTOR
+- AI components only used in tests
+- Hardcoded AI endpoints
+- AI-only testing without business validation
+
+## Validation Commands
+- `./scripts/ai-component-discovery.sh ComponentName`
+- `./scripts/validate-ai-development.sh <phase>`
+- `./scripts/run-integration-validation.sh`

@@ -422,13 +422,14 @@ func (s *StandardAnomalyDetector) DetectAnomaly(ctx context.Context, execution *
 
 // CreateStandardPatternEngine creates a pattern engine with standard mocks
 func CreateStandardPatternEngine(logger *logrus.Logger) *patterns.PatternDiscoveryEngine {
+	// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated ClusteringEngine
 	return patterns.NewPatternDiscoveryEngine(
 		NewStandardPatternStore(logger),
 		nil, // Vector DB optional
 		nil, // Execution repo optional
 		NewStandardMLAnalyzer(logger),
 		NewStandardTimeSeriesAnalyzer(logger),
-		NewStandardClusteringEngine(logger),
+		NewTestSLMClient(), // RULE 12 COMPLIANCE: Using enhanced llm.Client
 		NewStandardAnomalyDetector(logger),
 		&patterns.PatternDiscoveryConfig{
 			MinExecutionsForPattern: 3,
@@ -442,13 +443,14 @@ func CreateStandardPatternEngine(logger *logrus.Logger) *patterns.PatternDiscove
 
 // CreatePerformancePatternEngine creates pattern engine optimized for performance tests
 func CreatePerformancePatternEngine(logger *logrus.Logger) *patterns.PatternDiscoveryEngine {
+	// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated ClusteringEngine
 	return patterns.NewPatternDiscoveryEngine(
 		NewStandardPatternStore(logger),
 		nil, // Vector DB optional
 		nil, // Execution repo optional
 		NewStandardMLAnalyzer(logger),
 		NewStandardTimeSeriesAnalyzer(logger),
-		NewStandardClusteringEngine(logger),
+		NewTestSLMClient(), // RULE 12 COMPLIANCE: Using enhanced llm.Client
 		NewStandardAnomalyDetector(logger),
 		&patterns.PatternDiscoveryConfig{
 			MinExecutionsForPattern: 3,
@@ -463,13 +465,14 @@ func CreatePerformancePatternEngine(logger *logrus.Logger) *patterns.PatternDisc
 
 // CreateMinimalPatternEngine creates a minimal pattern engine for fast tests
 func CreateMinimalPatternEngine(logger *logrus.Logger) *patterns.PatternDiscoveryEngine {
+	// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated ClusteringEngine
 	return patterns.NewPatternDiscoveryEngine(
 		NewStandardPatternStore(logger),
 		nil, // Vector DB optional
 		nil, // Execution repo optional
 		NewStandardMLAnalyzer(logger),
 		NewStandardTimeSeriesAnalyzer(logger),
-		NewStandardClusteringEngine(logger),
+		NewTestSLMClient(), // RULE 12 COMPLIANCE: Using enhanced llm.Client
 		NewStandardAnomalyDetector(logger),
 		&patterns.PatternDiscoveryConfig{
 			MinExecutionsForPattern: 1, // Lower threshold for fast tests

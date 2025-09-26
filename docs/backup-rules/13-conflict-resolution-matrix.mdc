@@ -1,0 +1,477 @@
+---
+description: "Conflict resolution matrix and automated detection for kubernaut rules"
+---
+
+# Rule 13: Conflict Resolution Matrix
+
+## 🎯 **PURPOSE & SCOPE**
+
+This rule provides crystal clear guidance for resolving conflicts between different rules and automated detection of conflicting interpretations.
+
+**Prevents**: Rule interpretation conflicts that led to the ContextOptimizer violation
+
+---
+
+## 📊 **RULE PRIORITY MATRIX - CONFLICT RESOLUTION**
+
+### **PRIORITY LEVEL 1: INTEGRATION REQUIREMENTS (Overrides All)**
+**Rules**: 00 (Guidelines), 07 (Integration), 11 (Rhythm)
+**Principle**: Integration ALWAYS takes precedence
+
+#### **Example Conflicts & Resolutions**:
+```bash
+# CONFLICT: AI development speed vs Integration requirement
+# Rule 04: "Implement AI retry logic with exponential backoff"
+# Rule 07: "Integrate all new business code with main code"
+# RESOLUTION: Implement simple retry → Integrate → Enhance in REFACTOR
+
+# CONFLICT: TDD REFACTOR sophistication vs Integration timing
+# Rule 03: "Enhance business logic with sophisticated algorithms"
+# Rule 07: "Integration during GREEN phase, not REFACTOR"
+# RESOLUTION: Basic integration in GREEN → Sophisticated enhancement in REFACTOR
+```
+
+### **PRIORITY LEVEL 2: TDD METHODOLOGY (Controls Development Flow)**
+**Rules**: 03 (TDD), 11 (Rhythm), 12 (AI/ML TDD)
+**Principle**: TDD phases control WHEN other rules apply
+
+#### **Example Conflicts & Resolutions**:
+```bash
+# CONFLICT: AI sophistication vs TDD GREEN minimalism
+# Rule 04: "Validate AI responses with confidence scores"
+# Rule 03: "Minimal implementation in GREEN phase"
+# RESOLUTION: Basic AI response in GREEN → Confidence scoring in REFACTOR
+
+# CONFLICT: Mock usage preferences vs TDD testing focus
+# Rule 02: "Mock external services only"
+# Rule 03: "Test real business components"
+# RESOLUTION: Use Rule 12 AI/ML TDD methodology for AI-specific guidance
+```
+
+### **PRIORITY LEVEL 3: COMPONENT-SPECIFIC GUIDANCE (Technical Implementation)**
+**Rules**: 02 (Go Standards), 04 (AI/ML), 05 (K8s Safety), 12 (AI/ML TDD)
+**Principle**: Technical implementation follows development methodology
+
+#### **Example Conflicts & Resolutions**:
+```bash
+# CONFLICT: AI error handling vs Go error handling
+# Rule 02: "Always wrap errors with context"
+# Rule 04: "Use confidence scores for AI decisions"
+# RESOLUTION: Wrap AI errors with context AND include confidence scores
+
+# CONFLICT: K8s safety vs development speed
+# Rule 05: "Always use dry-run mode for validation"
+# Rule 11: "Phase timing 15-25 minutes"
+# RESOLUTION: Include dry-run in GREEN phase → Optimize in REFACTOR
+```
+
+### **PRIORITY LEVEL 4: QUALITY ASSURANCE (Post-Development)**
+**Rules**: 06 (Documentation), 08 (Anti-patterns), 09 (Interface Validation)
+**Principle**: Quality checks after core development complete
+
+---
+
+## 🤖 **AUTOMATED CONFLICT DETECTION**
+
+### **CONFLICT DETECTOR 1: Integration vs Development Speed**
+```bash
+#!/bin/bash
+# detect-integration-conflicts.sh
+
+echo "🔍 Detecting integration vs development speed conflicts..."
+
+# Check for sophisticated components without integration
+SOPHISTICATED_COMPONENTS=$(grep -r "type.*Optimizer\|type.*Engine\|type.*Analyzer" pkg/ --include="*.go" | grep -v "_test.go")
+INTEGRATED_COMPONENTS=$(grep -r "Optimizer\|Engine\|Analyzer" cmd/ --include="*.go")
+
+if [ ! -z "$SOPHISTICATED_COMPONENTS" ] && [ -z "$INTEGRATED_COMPONENTS" ]; then
+    echo "❌ CONFLICT DETECTED: Sophisticated components without integration"
+    echo "🔧 RESOLUTION: Apply Rule Priority Level 1 - Integration overrides sophistication"
+    echo ""
+    echo "Components found:"
+    echo "$SOPHISTICATED_COMPONENTS"
+    echo ""
+    echo "MANDATORY ACTION: Integrate components in cmd/ before proceeding"
+    exit 1
+fi
+
+echo "✅ No integration conflicts detected"
+```
+
+### **CONFLICT DETECTOR 2: TDD Phase vs Component Creation**
+```bash
+#!/bin/bash
+# detect-tdd-phase-conflicts.sh
+
+TDD_PHASE="$1"  # red, green, refactor
+
+echo "🔍 Detecting TDD phase vs component creation conflicts..."
+
+case $TDD_PHASE in
+    "refactor")
+        # Check for new component creation during REFACTOR
+        NEW_TYPES=$(git diff HEAD~1 | grep "^+type.*struct" | wc -l)
+        NEW_INTERFACES=$(git diff HEAD~1 | grep "^+type.*interface" | wc -l)
+
+        if [ "$NEW_TYPES" -gt 0 ] || [ "$NEW_INTERFACES" -gt 0 ]; then
+            echo "❌ CONFLICT DETECTED: New component creation during REFACTOR phase"
+            echo "🔧 RESOLUTION: Apply Rule Priority Level 2 - TDD methodology controls timing"
+            echo ""
+            echo "REFACTOR RULE: Enhance existing components only"
+            echo "New types detected: $NEW_TYPES"
+            echo "New interfaces detected: $NEW_INTERFACES"
+            echo ""
+            echo "MANDATORY ACTION: Remove new types, enhance existing instead"
+            exit 1
+        fi
+        ;;
+    "green")
+        # Check for sophisticated implementation during GREEN
+        COMPLEX_ALGORITHMS=$(git diff HEAD~1 | grep -c "cache\|optimize\|sophisticated\|advanced\|intelligent")
+        SIMPLE_IMPLEMENTATION=$(git diff HEAD~1 | grep -c "return.*nil\|return.*true\|return.*false")
+
+        if [ "$COMPLEX_ALGORITHMS" -gt 5 ] && [ "$SIMPLE_IMPLEMENTATION" -lt 2 ]; then
+            echo "⚠️  POTENTIAL CONFLICT: Complex implementation during GREEN phase"
+            echo "🔧 RESOLUTION: Apply Rule Priority Level 2 - Minimal GREEN, sophisticated REFACTOR"
+            echo ""
+            echo "Complex patterns detected: $COMPLEX_ALGORITHMS"
+            echo "Simple patterns detected: $SIMPLE_IMPLEMENTATION"
+            echo ""
+            echo "RECOMMENDATION: Simplify GREEN implementation, enhance in REFACTOR"
+        fi
+        ;;
+esac
+
+echo "✅ No TDD phase conflicts detected"
+```
+
+### **CONFLICT DETECTOR 3: Mock Usage Contradictions**
+```bash
+#!/bin/bash
+# detect-mock-conflicts.sh
+
+echo "🔍 Detecting mock usage contradictions..."
+
+# Check for business logic mocking vs real component preference
+BUSINESS_MOCKS=$(grep -r "Mock.*Engine\|Mock.*Calculator\|Mock.*Analyzer" test/ --include="*_test.go" | wc -l)
+BUSINESS_REAL=$(grep -r "engine\.New\|calculator\.New\|analyzer\.New" test/ --include="*_test.go" | wc -l)
+
+if [ "$BUSINESS_MOCKS" -gt "$BUSINESS_REAL" ]; then
+    echo "❌ CONFLICT DETECTED: Over-mocking business logic vs real component preference"
+    echo "🔧 RESOLUTION: Apply Rule Priority Level 2 + Rule 02 mock matrix"
+    echo ""
+    echo "Business mocks: $BUSINESS_MOCKS"
+    echo "Business real: $BUSINESS_REAL"
+    echo ""
+    echo "MANDATORY ACTION: Use real business components, mock external services only"
+    exit 1
+fi
+
+# Check for external service real usage vs mocking preference
+EXTERNAL_REAL=$(grep -r "holmesgpt\.NewClient\|k8s\.NewClient.*real" test/ --include="*_test.go" | wc -l)
+if [ "$EXTERNAL_REAL" -gt 3 ]; then
+    echo "❌ CONFLICT DETECTED: Real external services vs mocking preference"
+    echo "🔧 RESOLUTION: Apply Rule 02 mock matrix - Mock external services"
+    echo ""
+    echo "External real clients: $EXTERNAL_REAL"
+    echo ""
+    echo "MANDATORY ACTION: Mock external services for reliable testing"
+    exit 1
+fi
+
+echo "✅ No mock usage conflicts detected"
+```
+
+---
+
+## 🔧 **CONFLICT RESOLUTION PROCEDURES**
+
+### **PROCEDURE 1: Integration Priority Override**
+When any rule conflicts with integration requirements:
+
+```bash
+#!/bin/bash
+# integration-priority-override.sh
+
+CONFLICTING_RULE="$1"  # e.g., "Rule 04: AI sophistication"
+INTEGRATION_REQUIREMENT="$2"  # e.g., "Component must be integrated in main app"
+
+echo "🚨 CONFLICT RESOLUTION: Integration Priority Override"
+echo "Conflicting rule: $CONFLICTING_RULE"
+echo "Integration requirement: $INTEGRATION_REQUIREMENT"
+echo ""
+
+echo "📋 RESOLUTION STEPS:"
+echo "1. PAUSE: Stop current implementation"
+echo "2. INTEGRATE: Add component to main application"
+echo "3. VALIDATE: Verify integration with ./scripts/run-integration-validation.sh"
+echo "4. RESUME: Continue with original rule implementation"
+echo ""
+
+echo "PRINCIPLE: Integration ALWAYS takes precedence over sophistication"
+```
+
+### **PROCEDURE 2: TDD Phase Control**
+When rules conflict with TDD phase requirements:
+
+```bash
+#!/bin/bash
+# tdd-phase-control.sh
+
+CURRENT_PHASE="$1"  # red, green, refactor
+CONFLICTING_ACTIVITY="$2"  # e.g., "Creating sophisticated AI algorithms"
+
+echo "🚨 CONFLICT RESOLUTION: TDD Phase Control"
+echo "Current phase: $CURRENT_PHASE"
+echo "Conflicting activity: $CONFLICTING_ACTIVITY"
+echo ""
+
+case $CURRENT_PHASE in
+    "green")
+        echo "📋 GREEN PHASE RESOLUTION:"
+        echo "1. SIMPLIFY: Implement minimal version first"
+        echo "2. INTEGRATE: Add to main application"
+        echo "3. VALIDATE: Ensure tests pass"
+        echo "4. DEFER: Move sophistication to REFACTOR phase"
+        ;;
+    "refactor")
+        echo "📋 REFACTOR PHASE RESOLUTION:"
+        echo "1. ENHANCE: Improve existing implementation only"
+        echo "2. PRESERVE: Maintain integration"
+        echo "3. FORBIDDEN: No new types/methods/files"
+        echo "4. VALIDATE: Tests remain GREEN"
+        ;;
+esac
+
+echo ""
+echo "PRINCIPLE: TDD phases control WHEN rules apply"
+```
+
+### **PROCEDURE 3: Component-Specific Override**
+When component-specific rules conflict:
+
+```bash
+#!/bin/bash
+# component-specific-override.sh
+
+COMPONENT_TYPE="$1"  # ai, workflow, platform
+RULE_1="$2"
+RULE_2="$3"
+
+echo "🚨 CONFLICT RESOLUTION: Component-Specific Override"
+echo "Component type: $COMPONENT_TYPE"
+echo "Rule 1: $RULE_1"
+echo "Rule 2: $RULE_2"
+echo ""
+
+case $COMPONENT_TYPE in
+    "ai")
+        echo "📋 AI COMPONENT RESOLUTION:"
+        echo "1. APPLY: Rule 12 (AI/ML TDD) takes precedence"
+        echo "2. FALLBACK: Rule 04 (AI/ML patterns) for technical details"
+        echo "3. VALIDATE: Rule 02 (mock matrix) for testing approach"
+        ;;
+    "workflow")
+        echo "📋 WORKFLOW COMPONENT RESOLUTION:"
+        echo "1. APPLY: Rule 03 (TDD) for development methodology"
+        echo "2. FALLBACK: Rule 02 (Go standards) for implementation"
+        echo "3. VALIDATE: Rule 07 (integration) for main app usage"
+        ;;
+    "platform")
+        echo "📋 PLATFORM COMPONENT RESOLUTION:"
+        echo "1. APPLY: Rule 05 (K8s safety) for safety-critical operations"
+        echo "2. FALLBACK: Rule 03 (TDD) for development methodology"
+        echo "3. VALIDATE: Rule 07 (integration) for main app usage"
+        ;;
+esac
+
+echo ""
+echo "PRINCIPLE: Most specific rule wins, with safety overrides"
+```
+
+---
+
+## 📈 **CONFLICT RESOLUTION DECISION TREE**
+
+### **DECISION TREE: Rule Conflict Resolution**
+```
+🤔 CONFLICT DETECTED
+│
+├─ 🔗 Integration involved?
+│  ├─ YES → Apply Integration Priority (Rules 00/07/11)
+│  │        STOP: Integration overrides all other considerations
+│  │
+│  └─ NO → Continue...
+│
+├─ 🧪 TDD Phase involved?
+│  ├─ YES → Apply TDD Phase Control (Rules 03/11/12)
+│  │        • GREEN: Minimal + Integration
+│  │        • REFACTOR: Enhance existing only
+│  │        STOP: TDD phases control timing
+│  │
+│  └─ NO → Continue...
+│
+├─ 🤖 AI/ML component?
+│  ├─ YES → Apply AI/ML Resolution (Rule 12 → Rule 04 → Rule 02)
+│  │        STOP: Component-specific hierarchy
+│  │
+│  └─ NO → Continue...
+│
+├─ ⚙️ Platform/K8s component?
+│  ├─ YES → Apply Safety Priority (Rule 05 → Rule 03 → Rule 07)
+│  │        STOP: Safety-critical operations prioritized
+│  │
+│  └─ NO → Continue...
+│
+└─ 📝 General conflict
+   └─ Apply Default Priority: Core Rules (00/03/07) → Technical Rules (02/04/05) → Quality Rules (06/08/09)
+```
+
+### **AUTOMATED DECISION TREE IMPLEMENTATION**
+```bash
+#!/bin/bash
+# resolve-rule-conflict.sh - Automated conflict resolution
+
+RULE_1="$1"
+RULE_2="$2"
+CONTEXT="$3"  # integration, tdd-phase, ai-component, platform-component, general
+
+echo "🤔 Resolving conflict between $RULE_1 and $RULE_2 in context: $CONTEXT"
+
+case $CONTEXT in
+    "integration")
+        echo "🔗 INTEGRATION PRIORITY APPLIED"
+        echo "Winner: Integration rules (00/07/11) override $RULE_1 and $RULE_2"
+        echo "Action: Ensure component integration before proceeding"
+        ;;
+    "tdd-phase")
+        echo "🧪 TDD PHASE CONTROL APPLIED"
+        echo "Winner: TDD methodology rules (03/11/12) control timing"
+        echo "Action: Follow TDD phase requirements, defer conflicting activities"
+        ;;
+    "ai-component")
+        echo "🤖 AI/ML COMPONENT RESOLUTION APPLIED"
+        echo "Winner: Rule 12 (AI/ML TDD) → Rule 04 (AI patterns) → Rule 02 (standards)"
+        echo "Action: Use AI-specific development methodology"
+        ;;
+    "platform-component")
+        echo "⚙️ PLATFORM SAFETY RESOLUTION APPLIED"
+        echo "Winner: Rule 05 (K8s safety) → Rule 03 (TDD) → Rule 07 (integration)"
+        echo "Action: Prioritize safety, follow TDD, ensure integration"
+        ;;
+    "general")
+        echo "📝 GENERAL CONFLICT RESOLUTION APPLIED"
+        echo "Winner: Core rules → Technical rules → Quality rules"
+        echo "Action: Apply rule priority matrix"
+        ;;
+    *)
+        echo "❓ UNKNOWN CONTEXT: Manual resolution required"
+        echo "Guidelines: Integration > TDD > Component-specific > Quality"
+        ;;
+esac
+```
+
+---
+
+## 🔍 **CONFLICT PREVENTION STRATEGIES**
+
+### **STRATEGY 1: Pre-Development Conflict Check**
+```bash
+#!/bin/bash
+# pre-development-conflict-check.sh
+
+PLANNED_ACTIVITY="$1"  # e.g., "Create AI context optimizer"
+CURRENT_PHASE="$2"     # red, green, refactor
+
+echo "🔍 Pre-development conflict check: $PLANNED_ACTIVITY in $CURRENT_PHASE"
+
+# Check for potential conflicts
+if [[ "$PLANNED_ACTIVITY" == *"Create"* && "$CURRENT_PHASE" == "refactor" ]]; then
+    echo "⚠️  POTENTIAL CONFLICT: Creating new component during REFACTOR"
+    echo "🔧 PREVENTION: REFACTOR enhances existing, never creates new"
+    echo "RECOMMENDATION: Enhance existing component instead"
+fi
+
+if [[ "$PLANNED_ACTIVITY" == *"AI"* || "$PLANNED_ACTIVITY" == *"ML"* ]]; then
+    echo "🤖 AI/ML COMPONENT DETECTED"
+    echo "📋 APPLY: Rule 12 (AI/ML TDD methodology)"
+    echo "REMINDER: Integration required during GREEN phase"
+fi
+
+if [[ "$PLANNED_ACTIVITY" == *"sophisticated"* && "$CURRENT_PHASE" == "green" ]]; then
+    echo "⚠️  POTENTIAL CONFLICT: Sophisticated implementation during GREEN"
+    echo "🔧 PREVENTION: GREEN is minimal, REFACTOR is sophisticated"
+    echo "RECOMMENDATION: Basic implementation in GREEN, enhance in REFACTOR"
+fi
+
+echo "✅ Pre-development conflict check complete"
+```
+
+### **STRATEGY 2: Real-Time Conflict Monitoring**
+```bash
+#!/bin/bash
+# real-time-conflict-monitor.sh - Run during development
+
+echo "👁️  Real-time conflict monitoring active..."
+
+# Monitor for integration violations
+while true; do
+    sleep 5
+
+    # Check for sophisticated types without integration
+    SOPHISTICATED_UNINTEGRATED=$(comm -23 \
+        <(grep -r "type.*Optimizer\|type.*Engine" pkg/ --include="*.go" | grep -v "_test.go" | cut -d: -f2 | sort) \
+        <(grep -r "Optimizer\|Engine" cmd/ --include="*.go" | cut -d: -f2 | sort))
+
+    if [ ! -z "$SOPHISTICATED_UNINTEGRATED" ]; then
+        echo "🚨 REAL-TIME CONFLICT: Sophisticated component without integration"
+        echo "Component: $SOPHISTICATED_UNINTEGRATED"
+        echo "Action: Integrate in cmd/ immediately"
+
+        # Auto-suggest integration
+        echo "Suggested integration:"
+        echo "// Add to cmd/kubernaut/main.go:"
+        echo "component := NewComponent(config, logger)"
+        echo "app.SetComponent(component)"
+    fi
+done
+```
+
+---
+
+## ⚡ **QUICK REFERENCE: CONFLICT RESOLUTION**
+
+### **Common Conflicts & Fast Resolution**
+```bash
+# CONFLICT: AI sophistication vs TDD GREEN minimalism
+# FAST RESOLUTION: Basic AI in GREEN → Sophisticated in REFACTOR
+
+# CONFLICT: Integration timing vs development speed
+# FAST RESOLUTION: Integration priority → Speed optimization later
+
+# CONFLICT: Mock usage preferences between rules
+# FAST RESOLUTION: Use Rule 02 mock decision matrix
+
+# CONFLICT: TDD REFACTOR scope vs component creation
+# FAST RESOLUTION: REFACTOR enhances existing, never creates new
+
+# CONFLICT: Component-specific patterns vs general standards
+# FAST RESOLUTION: Most specific rule wins (AI → Rule 12, K8s → Rule 05)
+```
+
+### **Emergency Conflict Resolution**
+```bash
+#!/bin/bash
+# emergency-conflict-resolution.sh
+
+echo "🚨 EMERGENCY CONFLICT RESOLUTION"
+echo "1. STOP: Pause all development"
+echo "2. IDENTIFY: Which rules are conflicting?"
+echo "3. APPLY: Rule Priority Matrix (Integration > TDD > Component > Quality)"
+echo "4. VALIDATE: Run ./scripts/run-integration-validation.sh"
+echo "5. RESUME: Continue with resolved approach"
+echo ""
+echo "When in doubt: Integration takes precedence over everything else"
+```
+
+**This conflict resolution matrix makes it impossible for developers to have legitimate disagreements about rule interpretation, providing automated guidance and clear resolution procedures.**

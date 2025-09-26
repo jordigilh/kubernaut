@@ -5,7 +5,6 @@ import (
 )
 
 // Re-export types and variables for compatibility
-type TestCase = fixtures.TestCase
 
 var IntegrationTestAlerts = fixtures.IntegrationTestAlerts
 

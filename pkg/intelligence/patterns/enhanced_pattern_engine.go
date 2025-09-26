@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/sirupsen/logrus"
@@ -67,6 +68,7 @@ type EnhancedPatternAnalysisResult struct {
 }
 
 // NewEnhancedPatternDiscoveryEngine creates an enhanced pattern discovery engine with validation and monitoring
+// RULE 12 COMPLIANCE: Updated constructor to use enhanced llm.Client
 func NewEnhancedPatternDiscoveryEngine(
 	patternStore PatternStore,
 	vectorDB PatternVectorDatabase,
@@ -74,7 +76,7 @@ func NewEnhancedPatternDiscoveryEngine(
 	mlAnalyzer MachineLearningAnalyzer,
 	patternAnalyzer PatternAnalyzer,
 	timeSeriesAnalyzer sharedtypes.TimeSeriesAnalyzer,
-	clusteringEngine sharedtypes.ClusteringEngine,
+	llmClient llm.Client,
 	anomalyDetector sharedtypes.AnomalyDetector,
 	config *EnhancedPatternConfig,
 	log *logrus.Logger,
@@ -108,13 +110,14 @@ func NewEnhancedPatternDiscoveryEngine(
 	}
 
 	// Create the base pattern discovery engine
+	// RULE 12 COMPLIANCE: Using enhanced llm.Client
 	baseEngine := NewPatternDiscoveryEngine(
 		patternStore,
 		vectorDB,
 		executionRepo,
 		mlAnalyzer,
 		timeSeriesAnalyzer,
-		clusteringEngine,
+		llmClient,
 		anomalyDetector,
 		config.PatternDiscoveryConfig,
 		log,

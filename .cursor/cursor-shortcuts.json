@@ -1,0 +1,129 @@
+{
+	"shortcuts": [
+		{
+			"name": "Investigate Build Errors",
+			"trigger": "/investigate-build",
+			"description": "Comprehensive build error analysis with dependency mapping",
+			"command": "Before fixing any 'undefined' errors, use codebase_search and grep to analyze ALL references to the undefined symbol. Show me the complete dependency chain and ask for my approval before implementing any missing types or functions. Follow cursor rules for comprehensive analysis.",
+			"category": "debugging",
+			"tags": [
+				"build",
+				"error",
+				"undefined",
+				"analysis",
+				"debug"
+			]
+		},
+		{
+			"name": "Quick Build Error Fix",
+			"trigger": "/quick-build",
+			"description": "Fast build error investigation for simple cases",
+			"command": "Analyze this build error and show me options before fixing: ",
+			"category": "debugging",
+			"tags": [
+				"build",
+				"error",
+				"quick",
+				"fix"
+			]
+		},
+		{
+			"name": "TDD Build Error",
+			"trigger": "/tdd-build",
+			"description": "Build error investigation following strict TDD methodology",
+			"command": "Investigate this build error following TDD RED-GREEN-REFACTOR methodology. Use codebase_search to analyze all references and ask for approval before implementing missing symbols.",
+			"category": "tdd",
+			"tags": [
+				"build",
+				"error",
+				"tdd",
+				"methodology"
+			]
+		},
+		{
+			"name": "Fix Build Issues",
+			"trigger": "/fix-build",
+			"description": "Systematically fix build errors following TDD methodology with comprehensive validation",
+			"command": "You are tasked with fixing build errors following the mandatory TDD REFACTOR methodology from @00-core-development-methodology.mdc.\n\nCRITICAL: You MUST follow this exact sequence to prevent cascade failures:\n\n## PHASE 1: COMPREHENSIVE BUILD ERROR ANALYSIS (CHECKPOINT D)\n1. **MANDATORY**: Run comprehensive lint check to identify ALL build errors:\n   ```bash\n   golangci-lint run --timeout=10m --max-issues-per-linter=0 --max-same-issues=0\n   ```\n\n2. **MANDATORY**: For EACH undefined symbol, execute CHECKPOINT D analysis:\n   ```bash\n   # HALT: Execute comprehensive symbol analysis\n   codebase_search \"[undefined_symbol] usage patterns and dependencies\"\n   grep -r \"[undefined_symbol]\" . --include=\"*.go\" -n\n   # Find constructor patterns\n   grep -r \"New[SymbolName]\\|Create[SymbolName]\" . --include=\"*.go\"\n   ```\n\n3. **MANDATORY**: Present complete analysis in this format:\n   ```\n   🚨 UNDEFINED SYMBOL ANALYSIS:\n   Symbol: [undefined_symbol]\n   References found: [N files]\n   Dependent infrastructure: [list missing types/functions]\n   Scope: [minimal/medium/extensive]\n\n   OPTIONS:\n   A) Implement complete infrastructure ([X] files affected)\n   B) Create minimal stub (may break [Y] files)\n   C) Alternative approach: [suggest]\n   ```\n\n4. **MANDATORY**: Ask for user approval before ANY implementation.\n\n## PHASE 2: SYSTEMATIC VALIDATION (CHECKPOINTS A, B, C)\n\n### CHECKPOINT A: Type Reference Validation\n**TRIGGER**: About to reference any struct field or type\n**MANDATORY ACTION**:\n```bash\n# HALT: Validate type definition exists\nread_file [target_file]\n# RULE: Verify all imports and type definitions exist before referencing\n```\n\n### CHECKPOINT B: Function Reference Validation\n**TRIGGER**: About to call any function\n**MANDATORY ACTION**:\n```bash\n# HALT: Validate function signature\ngrep -r \"func.*[FunctionName]\" . --include=\"*.go\" -A 3\n# RULE: Verify function exists and signature matches before calling\n```\n\n### CHECKPOINT C: Import Validation\n**TRIGGER**: About to use any package\n**MANDATORY ACTION**:\n```bash\n# HALT: Validate import exists\ngrep -r \"import.*[PackageName]\" [target_file]\n# RULE: Verify import statement exists before using package types\n```\n\n## PHASE 3: TDD REFACTOR COMPLIANCE\n\n### MANDATORY REFACTOR RULES:\n1. **ENHANCE existing code only** - NO new types/methods/files\n2. **REUSE existing functions** - NO duplication across files\n3. **PRESERVE integration** - Main application usage MUST be maintained\n4. **VALIDATE before change** - Use tools to verify before editing\n\n### FORBIDDEN ACTIONS:\n- ❌ Creating new interfaces without business requirement\n- ❌ Duplicating functions across test files\n- ❌ Using `interface{}` instead of proper types\n- ❌ Removing files without dependency analysis\n- ❌ Assuming imports/types exist without validation\n\n## PHASE 4: SYSTEMATIC REMEDIATION\n\n### For Missing Imports:\n1. **VALIDATE**: Check if import should exist: `grep -r \"import.*[package]\" [file]`\n2. **ADD**: Only if missing: Add proper import statement\n3. **VERIFY**: Confirm package is available: `go list [package]`\n\n### For Missing Functions:\n1. **SEARCH**: Find existing equivalent: `codebase_search \"similar [function] implementations\"`\n2. **REUSE**: Use existing function if available\n3. **MINIMAL**: Create only if no alternative exists\n\n### For Type Mismatches:\n1. **READ**: Actual function signature: `grep -r \"func.*[FunctionName]\" . -A 3`\n2. **MATCH**: Update call to match signature exactly\n3. **VALIDATE**: Confirm types are compatible\n\n## PHASE 5: VERIFICATION\n\n### MANDATORY CHECKS:\n1. **Build Validation**: `go build ./...`\n2. **Lint Compliance**: `golangci-lint run --timeout=5m`\n3. **Test Compilation**: `go test -c ./test/...`\n4. **Integration Preserved**: `grep -r \"[ComponentName]\" cmd/ --include=\"*.go\"`\n\n### SUCCESS CRITERIA:\n- ✅ All build errors resolved\n- ✅ No new lint errors introduced\n- ✅ All tests compile successfully\n- ✅ Main application integration preserved\n- ✅ No function duplication across files\n\n## EMERGENCY PROTOCOLS:\n\n### If Cascade Failures Occur:\n1. **STOP** immediately\n2. **RESTORE** any deleted files: `git checkout HEAD -- [file]`\n3. **ANALYZE** full dependency chain before proceeding\n4. **ASK** for user guidance on approach\n\n### If Methodology Violations Detected:\n1. **HALT** current approach\n2. **REPORT** specific violation\n3. **REQUEST** approval for corrective action\n4. **RESTART** from PHASE 1 with proper methodology\n\n## CONFIDENCE ASSESSMENT (REQUIRED):\nAfter completion, provide:\n```\nBuild Fix Confidence: [60-100]%\nMethodology Compliance: ✅/❌ All checkpoints executed\nIntegration Preserved: ✅/❌ Main application usage maintained\nRisk Assessment: [Description of remaining risks]\n```\n\nRemember: The goal is not just to fix build errors, but to do so while maintaining code quality, following TDD methodology, and preventing future cascade failures.",
+			"category": "debugging",
+			"tags": [
+				"build",
+				"error",
+				"fix",
+				"tdd",
+				"methodology",
+				"systematic",
+				"validation"
+			]
+		},
+		{
+			"name": "Quick Build Fix",
+			"trigger": "/fix-build-quick",
+			"description": "Fast build error fix for simple cases with minimal validation",
+			"command": "Fix these build errors quickly but safely:\n1. Run basic lint check to identify errors\n2. Identify undefined symbols and missing imports\n3. Apply minimal fixes (imports, obvious type issues)\n4. Validate build success\n\nSkip comprehensive analysis for simple import/type issues. Ask for approval only if creating new types or functions. Focus on getting the build working with minimal changes.",
+			"category": "debugging",
+			"tags": [
+				"build",
+				"error",
+				"quick",
+				"simple",
+				"fast"
+			]
+		},
+		{
+			"name": "Smart Build Fix",
+			"trigger": "/smart-fix",
+			"description": "Automatically detects build context and applies appropriate fix strategy",
+			"command": "I'll analyze your current context and apply the most appropriate build fix strategy:\n\n- If simple import/type issues: Quick fix approach\n- If undefined symbols: Comprehensive analysis with CHECKPOINT D\n- If test-only issues: TDD-focused approach\n- If main app integration: Full methodology compliance\n- If critical blocking: Emergency fix mode\n\nLet me detect what type of build issues you're facing and recommend the best approach.",
+			"category": "debugging",
+			"tags": [
+				"build",
+				"error",
+				"smart",
+				"adaptive",
+				"context-aware",
+				"automatic"
+			]
+		},
+		{
+			"name": "Fix My Build",
+			"trigger": "/fix-my-build",
+			"description": "Natural language trigger for build fixing",
+			"command": "I'll help you fix your build errors systematically. Let me start by analyzing what's broken and then we'll fix it step by step following TDD methodology. I'll explain each step and ask for your approval before making significant changes.",
+			"category": "debugging",
+			"tags": [
+				"build",
+				"error",
+				"natural",
+				"conversational",
+				"helpful"
+			]
+		},
+		{
+			"name": "Staged Build Fix",
+			"trigger": "/fix-build-staged",
+			"description": "Fix build errors in progressive stages with user control",
+			"command": "Let's fix your build errors in stages with your control:\n\nSTAGE 1: Quick wins (imports, obvious fixes)\nSTAGE 2: Type and function resolution\nSTAGE 3: Complex dependency issues\nSTAGE 4: Integration validation\n\nI'll complete each stage and ask if you want to continue to the next. This gives you control over the complexity level and lets you stop when the build is working.",
+			"category": "debugging",
+			"tags": [
+				"build",
+				"error",
+				"staged",
+				"progressive",
+				"controlled",
+				"incremental"
+			]
+		}
+	],
+	"instructions": {
+		"setup": "To use these shortcuts in Cursor:",
+		"steps": [
+			"1. Copy the command text from any shortcut above",
+			"2. Open Cursor Settings (Cmd/Ctrl + ,)",
+			"3. Go to 'Composer' or 'Custom Instructions' section",
+			"4. Add new instruction with the trigger and command text",
+			"5. Use the trigger (e.g., /investigate-build) in chat to activate"
+		],
+		"alternative": "Or simply copy-paste the command text directly into chat when needed"
+	}
+}

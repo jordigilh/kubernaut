@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega" //nolint:staticcheck
 )
 
 // InternalAssertions provides standardized assertion helpers for internal tests

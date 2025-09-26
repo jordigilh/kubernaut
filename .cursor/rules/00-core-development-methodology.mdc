@@ -1,0 +1,350 @@
+---
+alwaysApply: true
+globs: "**/*,pkg/ai/**/*,test/**/*ai*"
+description: "Core development methodology: principles, TDD phases, and AI-specific patterns"
+---
+# Core Development Methodology
+
+## 🚨 **MANDATORY PRINCIPLES**
+
+### Critical Decision Process
+**MANDATORY**: Ask for input on ALL critical decisions including:
+- Architecture changes and design patterns
+- New dependencies or external integrations
+- Performance trade-offs and optimization decisions
+- Security implementations and access controls
+- Refactoring that affects system complexity
+
+**Format**: Provide recommendation with detailed justification when asking for input.
+
+### Business Requirements Mandate
+**MANDATORY**: Every code change must be backed by at least ONE business requirement (BR-XXX-XXX format).
+- All tests must map to specific business requirements
+- All implementation code must serve documented business needs
+- No speculative or "nice to have" code without business backing
+- Business requirements dictate functionality; technical patterns enable business logic
+
+## 🧪 **TDD Methodology - MANDATORY SEQUENCE**
+
+### TDD Workflow - REQUIRED
+1. **FIRST**: Write unit tests defining business contract (aim for 70%+ coverage)
+2. **SECOND**: Define business interfaces to make tests compile
+3. **NEVER**: Use `Skip()` to avoid test failures
+4. **THEN**: Implement business logic after ALL tests are complete and failing
+5. **FINALLY**: Run tests to validate implementation
+
+### Defense-in-Depth Testing Requirements
+**MANDATORY**: Follow pyramid testing strategy from [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc):
+- **Unit Tests**: 70%+ coverage using real business logic with external mocks only
+- **Integration Tests**: <20% coverage for component interactions requiring infrastructure
+- **E2E Tests**: <10% coverage for critical user journeys only
+
+### Development Phases - SEQUENCE REQUIRED
+
+**Rule**: Follow RED-GREEN-REFACTOR with integration during GREEN
+**Validation**: `./scripts/validate-tdd-completeness.sh "BR-XXX-XXX"`
+
+#### Phase Decision Matrix
+| Phase | Duration | Action | Validation Tool |
+|-------|----------|--------|----------------|
+| **Discovery** | 5-10 min | Search existing components | `codebase_search "existing [Component] implementations"` |
+| **TDD RED** | 10-15 min | Write failing tests | `./scripts/phase2-red-validation.sh` |
+| **TDD GREEN** | 15-20 min | Minimal implementation + integration | `./scripts/phase3-green-validation.sh` |
+| **TDD REFACTOR** | 20-30 min | Enhance existing code only | `./scripts/phase4-refactor-validation.sh` |
+| **Validation** | 5-10 min | Run integration checks | `./scripts/run-integration-validation.sh` |
+
+#### Discovery Phase - MANDATORY
+```bash
+# Component research before creation
+codebase_search "existing [ComponentType] implementations in pkg/"
+grep -r "[Component]" cmd/ pkg/workflow/ --include="*.go"
+
+# Decision point: enhance vs create (requires justification)
+```
+
+#### TDD RED Phase - MANDATORY
+```bash
+# Import existing business interfaces
+# Call existing methods with expected signatures
+# Validation: Tests MUST fail initially
+go test ./path/to/test.go 2>&1 | grep "FAIL" || echo "❌ Tests not failing"
+```
+
+#### TDD GREEN Phase - MANDATORY
+```bash
+# Minimal implementation + MANDATORY integration
+# Component MUST appear in cmd/ applications
+grep -r "NewComponent" cmd/ --include="*.go" || echo "❌ Missing integration"
+```
+
+#### TDD REFACTOR Phase - MANDATORY
+```bash
+# Enhance existing code only (NO new types/methods/files)
+# Integration MUST be preserved
+git diff HEAD~1 | grep "^+type.*struct" && echo "❌ New types forbidden in REFACTOR"
+```
+
+## 🤖 **AI/ML Specific TDD - COMPREHENSIVE METHODOLOGY**
+
+### AI TDD Phases
+
+#### AI Discovery Phase (5-10 min)
+**Action**: `./scripts/ai-component-discovery.sh ComponentName`
+**Rule**: Search existing AI interfaces before creating new
+**Mandatory Checks**:
+```bash
+# Check existing AI interfaces
+grep -r "Client.*interface" pkg/ai/ --include="*.go"
+# Check main app AI usage
+grep -r "AI\|LLM\|Holmes" cmd/ --include="*.go"
+# Decision point: enhance existing vs create new AI component
+```
+
+#### AI RED Phase (15-20 min)
+**Rule**: Import existing AI interfaces (`pkg/ai/llm.Client`)
+**Forbidden**: Creating new AI interfaces
+**Validation**: `./scripts/validate-ai-development.sh red`
+**AI-Specific RED Pattern**:
+```go
+// ✅ CORRECT AI RED: Uses existing AI interface
+var _ = Describe("AI Context Optimization", func() {
+    var (
+        llmClient llm.Client  // Existing interface
+        ctx       context.Context
+    )
+
+    BeforeEach(func() {
+        llmClient = testutil.NewMockLLMClient() // Existing factory
+        ctx = context.Background()
+    })
+
+    It("should optimize context using AI analysis", func() {
+        // Call existing AI interface method
+        analysis, err := llmClient.AnalyzeContext(ctx, "test content")
+        Expect(err).ToNot(HaveOccurred())
+        Expect(analysis.Quality).To(BeNumerically(">", 0.8))
+    })
+})
+```
+
+#### AI GREEN Phase (20-25 min)
+**Rule**: Enhance existing AI client (e.g., `ClientImpl`)
+**Integration**: Add to main app (`cmd/*/main.go`)
+**Forbidden**: New AI service files
+**Validation**: `./scripts/validate-ai-development.sh green`
+**AI-Specific GREEN Pattern**:
+```go
+// ✅ CORRECT AI GREEN: Enhance existing AI client
+// In pkg/ai/llm/client.go
+type Client interface {
+    // ... existing methods ...
+    AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) // ADD TO EXISTING
+}
+
+type ClientImpl struct {
+    // ... existing fields ...
+}
+
+func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) {
+    // Minimal implementation to pass tests
+    return &ContextAnalysis{Quality: 0.8}, nil
+}
+```
+
+#### AI REFACTOR Phase (25-35 min)
+**Rule**: Enhance same AI methods tests call
+**REFACTOR NEVER MEANS**: Create new parallel/additional AI code
+**Forbidden**: New AI types, files, interfaces
+**Validation**: `./scripts/validate-ai-development.sh refactor`
+**AI-Specific REFACTOR Focus**:
+```go
+// ✅ CORRECT AI REFACTOR: Enhance existing method
+func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) {
+    // Enhanced implementation with sophisticated logic
+    tokens := c.tokenizer.Tokenize(content)
+    embeddings := c.embeddingGenerator.Generate(tokens)
+    quality := c.qualityAnalyzer.CalculateQuality(embeddings)
+
+    return &ContextAnalysis{
+        Quality: quality,
+        TokenCount: len(tokens),
+        OptimizationSuggestions: c.generateSuggestions(embeddings),
+    }, nil
+}
+```
+
+### AI Integration Conflict Resolution
+**When AI rules conflict with general TDD**:
+1. **AI Discovery** overrides general component discovery (AI-specific search patterns)
+2. **AI Interface Reuse** overrides new interface creation (use `pkg/ai/llm.Client`)
+3. **AI Client Enhancement** overrides new service creation (enhance existing clients)
+4. **AI REFACTOR** focuses on method enhancement, not structural changes
+
+### AI Integration Pattern
+```go
+// cmd/kubernaut/main.go
+llmClient := llm.NewClient(config.LLM)
+workflowEngine.SetLLMClient(llmClient)
+processor := processor.New(llmClient, deps...)
+```
+
+### AI Mock Usage Decision Matrix
+| Component | Action |
+|-----------|--------|
+| **External AI APIs** (HolmesGPT, OpenAI) | MOCK |
+| **AI Business Logic** (analysis algorithms) | REAL |
+| **Error Simulation** | MOCK |
+| **Performance Testing** | MOCK |
+
+## 💻 **Code Quality Standards**
+
+### Error Handling - MANDATORY
+- **ALWAYS** handle errors, never ignore them
+- **ALWAYS** add log entry for every error
+- Use structured error types from [internal/errors/](mdc:internal/errors/)
+
+### Type System Guidelines
+- **AVOID** using `any` or `interface{}` unless absolutely necessary
+- **ALWAYS** use structured field values with specific types
+- **AVOID** local type definitions to resolve import cycles
+- Use shared types from [pkg/shared/types/](mdc:pkg/shared/types/) instead
+
+### Code Integration Requirements
+- **MANDATORY**: Integrate all new business code with main code
+- Remove any code not backed by business requirements
+- Ensure seamless integration with existing architecture
+
+## 🚨 **MANDATORY REAL-TIME INTEGRATION CHECKPOINTS**
+
+### **CHECKPOINT 1: Before Creating ANY New Type**
+**TRIGGER**: About to type `type NewComponent struct` or `func NewComponent`
+**MANDATORY ACTION**:
+```bash
+# HALT: Run this command BEFORE creating new type
+grep -r "NewComponent\|ComponentName" cmd/ pkg/workflow/ pkg/processor/ pkg/api/
+# RULE: If ZERO results, ask "Why isn't this enhancing existing code?"
+```
+
+### **CHECKPOINT 2: During TDD GREEN Phase**
+**TRIGGER**: Tests are passing (GREEN phase complete)
+**MANDATORY ACTION**:
+```bash
+# HALT: Verify integration BEFORE proceeding to REFACTOR
+find cmd/ -name "*.go" -exec grep -l "YourNewComponent" {} \;
+# RULE: Must show at least ONE main application file, or STOP and integrate
+```
+
+### **CHECKPOINT 3: After ANY Sophisticated Enhancement**
+**TRIGGER**: Adding complex algorithms, ML features, or sophisticated logic
+**MANDATORY ACTION**:
+```bash
+# HALT: Check main app instantiation
+grep -r "New.*Optimizer\|New.*Engine\|New.*Builder" cmd/ --include="*.go"
+# RULE: New sophisticated code MUST appear in main application startup
+```
+
+### **AUTOMATIC VIOLATION DETECTION**
+Add to pre-commit hook:
+```bash
+#!/bin/bash
+# Auto-detect orphaned business code
+SOPHISTICATED_TYPES=$(grep -r "type.*Optimizer\|type.*Engine\|type.*Analyzer" pkg/ --include="*.go" | grep -v "_test.go")
+for type_def in $SOPHISTICATED_TYPES; do
+    TYPE_NAME=$(echo $type_def | grep -o "type [A-Za-z]*" | cut -d' ' -f2)
+    MAIN_USAGE=$(grep -r "$TYPE_NAME" cmd/ --include="*.go" | wc -l)
+    if [ "$MAIN_USAGE" -eq 0 ]; then
+        echo "❌ VIOLATION: Sophisticated type $TYPE_NAME not integrated in main applications"
+        exit 1
+    fi
+done
+```
+
+## 📋 **Anti-Patterns - FORBIDDEN**
+
+### TDD Phase Violations
+- **Discovery Skip**: Creating without searching existing → Use `codebase_search` first
+- **RED Skip**: Implementation without failing tests → Write tests first
+- **GREEN Complexity**: Sophisticated logic in GREEN → Keep minimal, enhance in REFACTOR
+- **REFACTOR Creation**: New types in REFACTOR → Enhance existing only
+- **Integration Delay**: Component not integrated in GREEN → MANDATORY integration
+
+### AI-Specific Anti-Patterns
+- Creating parallel AI components during REFACTOR
+- AI components only used in tests
+- Hardcoded AI endpoints
+- AI-only testing without business validation
+
+### Testing Anti-Patterns
+- **NULL-TESTING**: Weak assertions (not nil, > 0, empty checks)
+- **IMPLEMENTATION TESTING**: Testing how instead of what business outcome
+- **MOCK OVERUSE**: In integration tests - use real components when possible
+
+## 🎯 **Completion Requirements**
+
+### Post-Development Checklist - MANDATORY
+After completing any development task:
+
+1. **Build Validation**: Code builds without errors from changes made
+2. **Lint Compliance**: No new lint errors (unusedparam, unusedfunc, etc.)
+3. **Business Integration**: Provide confidence assessment of business code integration
+4. **Enhancement Proposals**: Suggest improvements with ≥60% confidence level
+
+### Confidence Assessment Format - REQUIRED
+Provide BOTH:
+- **Simple Percentage**: 60-100% confidence rating
+- **Detailed Justification**: Including risks, assumptions, and validation approach
+
+Example:
+```
+Confidence Assessment: 85%
+Justification: Implementation follows established patterns in pkg/workflow/engine/
+and integrates cleanly with existing HolmesGPT client. Risk: Minor performance
+impact on high-alert scenarios. Validation: Unit tests cover 90% of edge cases.
+```
+
+## 🔧 **Validation Commands**
+
+### General Development
+```bash
+# TDD phase validation
+./scripts/phase2-red-validation.sh test_file.go      # RED phase
+./scripts/phase3-green-validation.sh component_name  # GREEN phase
+./scripts/phase4-refactor-validation.sh             # REFACTOR phase
+
+# Business requirements validation
+./scripts/validate-tdd-completeness.sh "BR-XXX-XXX"
+
+# Integration validation
+./scripts/run-integration-validation.sh
+```
+
+### AI-Specific Validation
+```bash
+# AI component discovery
+./scripts/ai-component-discovery.sh ComponentName
+
+# AI development phase validation
+./scripts/validate-ai-development.sh <phase>  # red, green, refactor
+```
+
+## ⚡ **Quick Reference Checklist**
+
+Before any code submission:
+- [ ] Business requirement mapped (BR-XXX-XXX)
+- [ ] TDD workflow followed (tests first, then implementation)
+- [ ] All errors handled and logged
+- [ ] No lint or compilation errors
+- [ ] Code integrated with main business logic
+- [ ] Confidence assessment provided
+- [ ] Critical decisions escalated if needed
+- [ ] AI components follow AI-specific TDD phases (if applicable)
+
+## 🔗 **Integration Points**
+
+This rule establishes mandatory methodology that controls:
+- [01-project-structure.mdc](mdc:.cursor/rules/01-project-structure.mdc) - Architecture navigation
+- [02-technical-implementation.mdc](mdc:.cursor/rules/02-technical-implementation.mdc) - Technical patterns
+- [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework
+- [05-kubernetes-safety.mdc](mdc:.cursor/rules/05-kubernetes-safety.mdc) - Safety patterns
+
+**Priority**: FOUNDATIONAL - all other rules operate within this methodology framework

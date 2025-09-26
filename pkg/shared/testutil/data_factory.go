@@ -16,7 +16,7 @@ func NewSharedTestDataFactory() *SharedTestDataFactory {
 
 // CreateTestError creates a standard test error
 func (f *SharedTestDataFactory) CreateTestError(message string) error {
-	return fmt.Errorf(message)
+	return fmt.Errorf("%s", message)
 }
 
 // CreateTimeoutError creates a timeout error

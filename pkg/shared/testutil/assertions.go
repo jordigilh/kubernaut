@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega" //nolint:staticcheck
 )
 
 // SharedAssertions provides standardized assertion helpers for shared package tests

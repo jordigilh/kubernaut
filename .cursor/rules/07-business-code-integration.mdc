@@ -1,0 +1,196 @@
+---
+alwaysApply: true
+description: "Business code integration patterns and validation requirements for kubernaut"
+---
+# Business Code Integration Standards
+
+## Core Requirement - MANDATORY
+
+**Rule**: ALL business logic MUST be integrated into main application workflows
+**Validation**: `./scripts/run-integration-validation.sh`
+
+## Integration Definition
+
+Business code is **properly integrated** when:
+1. **Main Application Entry**: Code is instantiated and used in main application entry points
+2. **Runtime Execution**: Code executes during normal application workflows (not just tests)
+3. **Dependency Chain**: All dependencies are properly wired in main application
+4. **Interface Implementation**: Interfaces are implemented by real business code (not just mocks)
+5. **Configuration Loading**: Business code configuration is loaded in main application
+6. **Error Integration**: Business code errors are handled in main application flow
+7. **Monitoring Integration**: Business code metrics are exposed in main application
+
+## Integration Validation Matrix
+
+| Integration Aspect | Validation Method | Required Evidence |
+|-------------------|------------------|-------------------|
+| **Main Entry Point** | Code tracing from `cmd/*/main.go` | Direct instantiation or factory usage |
+| **Runtime Path** | Execution flow analysis | Normal workflow execution path |
+| **Dependency Wiring** | Dependency injection validation | All deps available at runtime |
+| **Interface Usage** | Implementation verification | Real implementations in main app |
+| **Configuration** | Config loading verification | Business config loaded in main |
+| **Error Handling** | Error flow analysis | Business errors handled in main |
+| **Monitoring** | Metrics integration check | Business metrics exposed |
+
+## Integration Verification Process
+
+### Step 1: Call Graph Analysis
+```bash
+# Trace business code usage from main applications
+grep -r "YourBusinessCode" cmd/ --include="*.go"
+
+# Verify business code is not test-only
+find pkg/ -name "*.go" -not -name "*_test.go" -exec grep -l "YourBusinessCode" {} \;
+```
+
+### Step 2: Runtime Path Verification
+```go
+// Add integration validation to main application startup
+func validateBusinessIntegration() error {
+    // Verify each business component is properly integrated
+    if businessComponent == nil {
+        return fmt.Errorf("business component not integrated")
+    }
+
+    // Test business component can be invoked
+    if err := businessComponent.HealthCheck(); err != nil {
+        return fmt.Errorf("business component not functional: %w", err)
+    }
+
+    return nil
+}
+```
+
+### Step 3: Dependency Chain Validation
+```go
+// Verify all business code dependencies are available
+func validateDependencyChain() error {
+    requiredDeps := []string{"database", "vectorDB", "llmClient", "k8sClient"}
+
+    for _, dep := range requiredDeps {
+        if !isDependencyAvailable(dep) {
+            return fmt.Errorf("required dependency %s not available for business code", dep)
+        }
+    }
+
+    return nil
+}
+```
+
+## Integration Patterns
+
+### Pattern 1: Direct Main Application Integration
+```go
+// cmd/kubernaut/main.go
+func main() {
+    // Create business components
+    analyticsEngine := insights.NewAnalyticsEngine(deps...)
+    workflowBuilder := engine.NewIntelligentWorkflowBuilder(deps...)
+
+    // Integrate into main application flow
+    processor := processor.New(analyticsEngine, workflowBuilder)
+    server.Start(processor)
+}
+```
+
+### Pattern 2: Factory-Based Integration
+```go
+// cmd/dynamic-toolset-server/main.go
+func createBusinessComponents(config *Config) (*BusinessComponents, error) {
+    components := &BusinessComponents{
+        Analytics:       createAnalyticsEngine(config),
+        WorkflowBuilder: createWorkflowBuilder(config),
+    }
+    return components, components.Validate()
+}
+```
+
+### Pattern 3: Interface-Based Integration
+```go
+// Integration point
+func integrateBusinessLogic(engine WorkflowEngine, config *Config) {
+    analytics := insights.NewAnalyticsEngine(config.Analytics)
+    patterns := intelligence.NewPatternMatcher(config.Patterns)
+
+    engine.SetAnalyticsEngine(analytics)
+    engine.SetPatternMatcher(patterns)
+}
+```
+
+## Anti-Patterns - FORBIDDEN
+
+### Test-Only Business Code
+```go
+// ❌ WRONG: Business code only used in tests
+func TestAnalytics(t *testing.T) {
+    engine := insights.NewAnalyticsEngine() // Only used here!
+}
+
+// ✅ CORRECT: Business code used in main application
+func main() {
+    engine := insights.NewAnalyticsEngine()
+    processor.SetAnalyticsEngine(engine)
+}
+```
+
+### Mock-Only Interfaces
+```go
+// ❌ WRONG: Interface only implemented by mocks
+type BusinessService interface { Process() error }
+type MockBusinessService struct{}  // Only implementation
+
+// ✅ CORRECT: Real implementation used in main
+type RealBusinessService struct{}
+func main() {
+    service := &RealBusinessService{}
+    app.SetBusinessService(service)
+}
+```
+
+## Validation Commands
+
+### Integration Health Check
+```bash
+# Component usage verification
+grep -r "NewAnalyticsEngine\|NewWorkflowBuilder" cmd/ --include="*.go"
+
+# Test-only detection
+BUSINESS_COMPONENTS=$(find pkg/ -name "*.go" -not -name "*_test.go" -exec grep -l "Engine\|Builder\|Analyzer" {} \;)
+MAIN_USAGE=$(grep -r "Engine\|Builder\|Analyzer" cmd/ --include="*.go" | wc -l)
+
+# Integration validation
+./scripts/run-integration-validation.sh
+```
+
+### Runtime Path Verification
+```bash
+# Workflow execution path
+grep -r "AnalyzeContext\|BuildWorkflow" pkg/workflow/ pkg/processor/ --include="*.go"
+
+# Main application startup
+curl http://localhost:8080/health/integration
+```
+
+## Enforcement Protocol
+
+### Integration Failure Response
+1. **STOP**: Halt development until integration fixed
+2. **INTEGRATE**: Add component to main application
+3. **VALIDATE**: Run `./scripts/run-integration-validation.sh`
+4. **DOCUMENT**: Record integration approach
+
+### Continuous Validation
+```bash
+# Pre-commit integration check
+NEW_COMPONENTS=$(git diff --name-only --cached | grep "pkg/.*\.go" | grep -v "_test.go")
+for component in $NEW_COMPONENTS; do
+    MAIN_USAGE=$(grep -r "$(basename $component .go)" cmd/ --include="*.go" | wc -l)
+    [ "$MAIN_USAGE" -eq 0 ] && echo "❌ Integration required for $component" && exit 1
+done
+```
+
+## Integration Points
+
+**Enforces**: [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) integration mandate
+**Supports**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) business requirement testing
+**Priority**: MANDATORY - no business code without main application integration

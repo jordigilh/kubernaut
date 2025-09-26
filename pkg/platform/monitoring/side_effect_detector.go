@@ -452,7 +452,7 @@ func (d *EnhancedSideEffectDetector) categorizeAlertSeverity(alertSeverity strin
 }
 
 // extractNamespaceFromLabels extracts namespace from alert labels
-func extractNamespaceFromLabels(labels actionhistory.JSONMap) string {
+func extractNamespaceFromLabels(labels actionhistory.JSONData) string {
 	if labels == nil {
 		return "default"
 	}

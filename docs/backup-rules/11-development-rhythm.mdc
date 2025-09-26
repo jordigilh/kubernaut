@@ -1,0 +1,391 @@
+---
+description: "Mandatory development rhythm and phase validation for kubernaut"
+---
+
+# Rule 11: Mandatory Development Rhythm
+
+## 🎯 **DEVELOPMENT RHYTHM - CRYSTAL CLEAR SEQUENCE**
+
+### **PURPOSE & SCOPE**
+This rule establishes a mandatory development rhythm that prevents violations by enforcing clear phases with automated validation checkpoints.
+
+**Business Impact**: Prevents orphaned business code and ensures all development follows integration-first principles.
+
+---
+
+## 📋 **MANDATORY DEVELOPMENT PHASES**
+
+### **PHASE 1: DISCOVERY (Before writing ANY code)**
+**Duration**: 5-10 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: `codebase_search "existing [Component] implementations"`
+2. **MANDATORY**: `grep -r "[Component]" cmd/ pkg/workflow/`
+3. **DECISION POINT**: Enhance existing vs create new (requires justification)
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# phase1-discovery-validation.sh
+COMPONENT="$1"
+
+echo "📋 PHASE 1: DISCOVERY VALIDATION"
+echo "🔍 Searching for existing implementations..."
+
+EXISTING=$(grep -r "$COMPONENT" pkg/ --include="*.go" | grep -v "_test.go" | wc -l)
+MAIN_USAGE=$(grep -r "$COMPONENT" cmd/ --include="*.go" | wc -l)
+
+echo "Existing implementations: $EXISTING"
+echo "Main application usage: $MAIN_USAGE"
+
+if [ "$EXISTING" -gt 0 ] && [ "$MAIN_USAGE" -eq 0 ]; then
+    echo "⚠️  WARNING: Existing implementation but no main app usage"
+    echo "❓ QUESTION: Should you enhance existing code instead of creating new?"
+fi
+
+echo "✅ PHASE 1 validation complete"
+```
+
+### **PHASE 2: TDD RED (Write failing tests)**
+**Duration**: 10-15 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Import existing business interfaces only
+2. **MANDATORY**: Call existing methods only
+3. **VALIDATION**: `go test` shows RED (failing tests)
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# phase2-red-validation.sh
+TEST_FILE="$1"
+
+echo "🔴 PHASE 2: TDD RED VALIDATION"
+
+# Check for business logic imports
+BUSINESS_IMPORTS=$(grep "github.com/jordigilh/kubernaut/pkg/" "$TEST_FILE" | wc -l)
+if [ "$BUSINESS_IMPORTS" -eq 0 ]; then
+    echo "❌ RED VIOLATION: No business logic imports found"
+    echo "🔧 Required: Import actual business packages"
+    exit 1
+fi
+
+# Check tests are failing
+go test "$TEST_FILE" 2>&1 | grep -q "FAIL"
+if [ $? -ne 0 ]; then
+    echo "❌ RED VIOLATION: Tests are not failing"
+    echo "🔧 Required: Tests must fail initially (RED phase)"
+    exit 1
+fi
+
+echo "✅ PHASE 2 RED validation complete"
+```
+
+### **PHASE 3: TDD GREEN (Minimal implementation)**
+**Duration**: 15-20 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Implement in existing integrated code
+2. **FORBIDDEN**: Creating new types or files
+3. **VALIDATION**: `go test` shows GREEN (passing tests)
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# phase3-green-validation.sh
+TARGET_DIR="$1"
+
+echo "🟢 PHASE 3: TDD GREEN VALIDATION"
+
+# Check no new types created
+NEW_TYPES=$(git diff --name-only HEAD~1 | xargs grep -l "^type.*struct" | grep -v "_test.go" | wc -l)
+if [ "$NEW_TYPES" -gt 0 ]; then
+    echo "❌ GREEN VIOLATION: New types created during GREEN phase"
+    echo "🔧 Required: Implement in existing code only"
+    exit 1
+fi
+
+# Check tests are passing
+go test "$TARGET_DIR" 2>&1 | grep -q "PASS"
+if [ $? -ne 0 ]; then
+    echo "❌ GREEN VIOLATION: Tests are not passing"
+    echo "🔧 Required: All tests must pass (GREEN phase)"
+    exit 1
+fi
+
+echo "✅ PHASE 3 GREEN validation complete"
+```
+
+### **PHASE 4: TDD REFACTOR (Enhance existing)**
+**Duration**: 20-30 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Enhance the same methods tests are calling
+2. **FORBIDDEN**: New types, new methods, new files
+3. **VALIDATION**: Tests remain GREEN + integration maintained
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# phase4-refactor-validation.sh
+
+echo "🔵 PHASE 4: TDD REFACTOR VALIDATION"
+
+# Check no new types during REFACTOR
+NEW_TYPES=$(git diff --name-only HEAD~1 | xargs grep -l "type.*struct" | grep -v "_test.go")
+if [ ! -z "$NEW_TYPES" ]; then
+    echo "❌ REFACTOR VIOLATION: New types created during REFACTOR phase"
+    echo "Files: $NEW_TYPES"
+    echo "🔧 Required: REFACTOR enhances existing code only"
+    exit 1
+fi
+
+# Check no new methods during REFACTOR
+NEW_METHODS=$(git diff HEAD~1 | grep "^+func " | grep -v "_test.go")
+if [ ! -z "$NEW_METHODS" ]; then
+    echo "❌ REFACTOR VIOLATION: New methods created during REFACTOR phase"
+    echo "🔧 Required: REFACTOR enhances existing methods only"
+    exit 1
+fi
+
+# Check tests still pass
+go test ./... 2>&1 | grep -q "PASS"
+if [ $? -ne 0 ]; then
+    echo "❌ REFACTOR VIOLATION: Tests failing after REFACTOR"
+    echo "🔧 Required: Tests must remain GREEN throughout REFACTOR"
+    exit 1
+fi
+
+echo "✅ PHASE 4 REFACTOR validation complete"
+```
+
+### **PHASE 5: INTEGRATION VERIFICATION (Mandatory checkpoints)**
+**Duration**: 10-15 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: `./scripts/run-integration-validation.sh`
+2. **MANDATORY**: `grep -r "YourEnhancement" cmd/`
+3. **VALIDATION**: Business code used in main applications
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# phase5-integration-validation.sh
+
+echo "🔗 PHASE 5: INTEGRATION VERIFICATION"
+
+# Run comprehensive integration validation
+if ! ./scripts/run-integration-validation.sh; then
+    echo "❌ INTEGRATION VIOLATION: Integration validation failed"
+    exit 1
+fi
+
+# Check all business components are integrated
+SOPHISTICATED_TYPES=$(grep -r "type.*Optimizer\|type.*Engine\|type.*Analyzer" pkg/ --include="*.go" | grep -v "_test.go")
+for type_def in $SOPHISTICATED_TYPES; do
+    TYPE_NAME=$(echo $type_def | grep -o "type [A-Za-z]*" | cut -d' ' -f2)
+    MAIN_USAGE=$(grep -r "$TYPE_NAME" cmd/ --include="*.go" | wc -l)
+    if [ "$MAIN_USAGE" -eq 0 ]; then
+        echo "❌ INTEGRATION VIOLATION: $TYPE_NAME not integrated in main applications"
+        exit 1
+    fi
+done
+
+echo "✅ PHASE 5 INTEGRATION validation complete"
+```
+
+---
+
+## 🚨 **RHYTHM VIOLATION CONSEQUENCES**
+
+### **Violation Types and Responses**
+
+#### **Phase Skipping Violation**
+**Detection**: Attempting to proceed to next phase without validation
+**Response**:
+```bash
+echo "❌ PHASE SKIPPING VIOLATION: Phase validation not completed"
+echo "🔧 Required: Complete current phase validation before proceeding"
+exit 1
+```
+
+#### **Creating Parallel Code Violation**
+**Detection**: New types/methods during REFACTOR phase
+**Response**:
+```bash
+echo "❌ PARALLEL CODE VIOLATION: Creating new code instead of enhancing existing"
+echo "🔧 Required: Enhance existing integrated code only"
+exit 1
+```
+
+#### **Missing Integration Violation**
+**Detection**: Business code not found in main applications
+**Response**:
+```bash
+echo "❌ INTEGRATION VIOLATION: Business code not integrated with main applications"
+echo "🔧 Required: Add integration to cmd/ directories"
+exit 1
+```
+
+---
+
+## 🔄 **AUTOMATED RHYTHM ENFORCEMENT**
+
+### **Pre-Commit Hook Integration**
+```bash
+#!/bin/bash
+# .git/hooks/pre-commit - Rhythm validation
+set -e
+
+echo "🎯 Validating development rhythm compliance..."
+
+# Determine current phase based on git changes
+CURRENT_PHASE=$(./scripts/detect-development-phase.sh)
+
+case $CURRENT_PHASE in
+    "red")
+        ./scripts/phase2-red-validation.sh
+        ;;
+    "green")
+        ./scripts/phase3-green-validation.sh
+        ;;
+    "refactor")
+        ./scripts/phase4-refactor-validation.sh
+        ;;
+    "integration")
+        ./scripts/phase5-integration-validation.sh
+        ;;
+    *)
+        echo "⚠️  Unknown phase: $CURRENT_PHASE"
+        ;;
+esac
+
+echo "✅ Development rhythm validation passed"
+```
+
+### **Phase Detection Logic**
+```bash
+#!/bin/bash
+# detect-development-phase.sh
+set -e
+
+# Detect current development phase based on changes
+if git diff --name-only HEAD~1 | grep -q "_test.go"; then
+    if go test ./... 2>&1 | grep -q "FAIL"; then
+        echo "red"
+    elif go test ./... 2>&1 | grep -q "PASS"; then
+        if git diff HEAD~1 | grep -q "^+.*func.*(" | grep -v "_test.go"; then
+            echo "refactor"
+        else
+            echo "green"
+        fi
+    fi
+elif git diff --name-only HEAD~1 | grep -q "\.go$"; then
+    echo "integration"
+else
+    echo "unknown"
+fi
+```
+
+---
+
+## 📊 **RHYTHM COMPLIANCE TRACKING**
+
+### **Development Metrics**
+```bash
+#!/bin/bash
+# rhythm-compliance-report.sh
+
+echo "📊 Development Rhythm Compliance Report"
+echo "======================================"
+
+TOTAL_COMMITS=$(git rev-list --count HEAD --since="30 days ago")
+VIOLATIONS=$(grep -c "VIOLATION" .git/hooks/pre-commit.log 2>/dev/null || echo "0")
+COMPLIANCE_RATE=$(( (TOTAL_COMMITS - VIOLATIONS) * 100 / TOTAL_COMMITS ))
+
+echo "Total commits (last 30 days): $TOTAL_COMMITS"
+echo "Rhythm violations: $VIOLATIONS"
+echo "Compliance rate: $COMPLIANCE_RATE%"
+
+if [ "$COMPLIANCE_RATE" -lt 95 ]; then
+    echo "⚠️  WARNING: Compliance rate below 95% target"
+    echo "🔧 Recommended: Review rhythm training and automation"
+fi
+```
+
+### **Phase Duration Tracking**
+```bash
+#!/bin/bash
+# track-phase-duration.sh
+PHASE="$1"
+START_TIME="$2"
+
+if [ -z "$START_TIME" ]; then
+    # Start timing
+    echo "$(date +%s)" > "/tmp/phase_${PHASE}_start"
+    echo "⏱️  Starting $PHASE phase timing..."
+else
+    # End timing
+    END_TIME=$(date +%s)
+    DURATION=$((END_TIME - START_TIME))
+    echo "⏱️  $PHASE phase completed in ${DURATION}s"
+
+    # Log for metrics
+    echo "$(date): $PHASE phase: ${DURATION}s" >> .rhythm-metrics.log
+fi
+```
+
+---
+
+## 🎯 **INTEGRATION WITH OTHER RULES**
+
+This rule enforces the rhythm for compliance with:
+- **Rule 00**: Integration checkpoints during development
+- **Rule 03**: Crystal clear TDD phase definitions
+- **Rule 07**: Automated integration validation
+- **Rule 09**: Real-time violation prevention
+
+### **Rule Integration Matrix**
+
+| Phase | Rule 00 | Rule 03 | Rule 07 | Rule 09 |
+|-------|---------|---------|---------|---------|
+| **Discovery** | Checkpoint 1 | RED phase prep | - | Business logic preference |
+| **RED** | - | RED validation | - | Interface validation |
+| **GREEN** | Checkpoint 2 | GREEN validation | - | Compilation checks |
+| **REFACTOR** | Checkpoint 3 | REFACTOR scope | - | Real-time prevention |
+| **Integration** | Auto-detection | Completion verify | Full validation | Final checks |
+
+---
+
+## ⚡ **QUICK REFERENCE**
+
+### **Development Rhythm Checklist**
+```bash
+# Phase 1: Discovery (5-10 min)
+./scripts/phase1-discovery-validation.sh ComponentName
+
+# Phase 2: TDD RED (10-15 min)
+./scripts/phase2-red-validation.sh test_file.go
+
+# Phase 3: TDD GREEN (15-20 min)
+./scripts/phase3-green-validation.sh ./pkg/component/
+
+# Phase 4: TDD REFACTOR (20-30 min)
+./scripts/phase4-refactor-validation.sh
+
+# Phase 5: Integration (10-15 min)
+./scripts/phase5-integration-validation.sh
+```
+
+### **Emergency Rhythm Recovery**
+```bash
+#!/bin/bash
+# emergency-rhythm-recovery.sh
+echo "🚨 Emergency rhythm recovery initiated..."
+
+# Reset to known good state
+git stash
+git reset --hard HEAD~1
+
+# Restart with proper rhythm
+echo "🔄 Restarting development with proper rhythm..."
+echo "📋 Next step: Run Phase 1 discovery validation"
+./scripts/phase1-discovery-validation.sh
+```
+
+**This development rhythm makes rule violations impossible by enforcing validation at each phase transition.**

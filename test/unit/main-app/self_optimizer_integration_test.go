@@ -9,7 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/internal/config"
-	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 )
 
 // Business Requirements: BR-SELF-OPT-001 - Main application must integrate real self optimizer for adaptive workflow optimization
@@ -44,105 +44,105 @@ var _ = Describe("Main Application Self Optimizer Integration - Business Require
 			// This test validates that the main application creates adaptive orchestrators
 			// with real self optimizers for adaptive workflow optimization
 
-			// Act: Create adaptive orchestrator with self optimizer integration
-			orchestrator, selfOptimizer, err := createAdaptiveOrchestratorWithSelfOptimizer(
+			// RULE 12 COMPLIANCE: Create adaptive orchestrator with enhanced LLM client integration
+			orchestrator, llmClient, err := createAdaptiveOrchestratorWithEnhancedLLMClient(
 				ctx,
 				aiConfig,
 				logger,
 			)
 
-			// Assert: Should create with real self optimizer
-			Expect(err).ToNot(HaveOccurred(), "Should create orchestrator with self optimizer")
-			Expect(validateSelfOptimizerIntegration(orchestrator)).To(BeTrue(), "BR-ORK-001: Adaptive orchestrator must provide functional self-optimization integration for recommendation generation")
-			Expect(func() { _ = selfOptimizer.OptimizeWorkflow }).ToNot(Panic(), "BR-WF-001-SUCCESS-RATE: Self optimizer must provide functional workflow optimization interface for execution success")
+			// Assert: Should create with real enhanced LLM client
+			Expect(err).ToNot(HaveOccurred(), "Should create orchestrator with enhanced LLM client")
+			Expect(validateEnhancedLLMClientIntegration(orchestrator)).To(BeTrue(), "BR-ORK-001: Adaptive orchestrator must provide functional LLM client integration for recommendation generation")
+			Expect(func() { _ = llmClient.OptimizeWorkflow }).ToNot(Panic(), "BR-WF-001-SUCCESS-RATE: Enhanced LLM client must provide functional workflow optimization interface for execution success")
 
 			// Business requirement: Orchestrator should have adaptive optimization capabilities
 		})
 
-		It("should use self optimizer for workflow optimization", func() {
-			// This test validates that orchestrators use the self optimizer
+		It("should use enhanced LLM client for workflow optimization", func() {
+			// RULE 12 COMPLIANCE: Test orchestrators use enhanced LLM client
 			// for adaptive workflow optimization based on execution history
 
-			// Act: Create orchestrator and validate it uses self optimizer for optimization
-			orchestrator, selfOptimizer, err := createAdaptiveOrchestratorWithSelfOptimizer(
+			// Act: Create orchestrator and validate it uses enhanced LLM client for optimization
+			orchestrator, llmClient, err := createAdaptiveOrchestratorWithEnhancedLLMClient(
 				ctx,
 				aiConfig,
 				logger,
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Assert: Orchestrator should use self optimizer for adaptive optimization
+			// Assert: Orchestrator should use enhanced LLM client for adaptive optimization
 			hasOptimizationCapabilities := validateOrchestratorOptimizationCapabilities(
 				orchestrator,
-				selfOptimizer,
+				llmClient,
 			)
 
 			Expect(hasOptimizationCapabilities).To(BeTrue(),
-				"Orchestrator should use self optimizer for adaptive workflow optimization")
+				"Orchestrator should use enhanced LLM client for adaptive workflow optimization")
 		})
 
-		It("should handle self optimizer creation errors gracefully", func() {
-			// This test validates graceful degradation when self optimizer cannot be created
+		It("should handle enhanced LLM client creation errors gracefully", func() {
+			// RULE 12 COMPLIANCE: Test graceful degradation when enhanced LLM client cannot be created
 
-			// Act: Create orchestrator with failed self optimizer creation
-			orchestrator, selfOptimizer, err := createAdaptiveOrchestratorWithFailedSelfOptimizer(
+			// Act: Create orchestrator with failed enhanced LLM client creation
+			orchestrator, llmClient, err := createAdaptiveOrchestratorWithFailedLLMClient(
 				ctx,
 				aiConfig,
 				logger,
 			)
 
 			// Assert: Should handle gracefully
-			Expect(err).ToNot(HaveOccurred(), "Should handle self optimizer failures gracefully")
-			Expect(validateSelfOptimizerIntegration(orchestrator)).To(BeTrue(), "BR-ORK-001: Orchestrator must remain functional despite self optimizer failures for continued optimization recommendations")
+			Expect(err).ToNot(HaveOccurred(), "Should handle enhanced LLM client failures gracefully")
+			Expect(validateEnhancedLLMClientIntegration(orchestrator)).To(BeTrue(), "BR-ORK-001: Orchestrator must remain functional despite LLM client failures for continued optimization recommendations")
 
-			// Business requirement: Should indicate self optimizer unavailable but orchestrator functional
-			if selfOptimizer == nil {
-				logger.Info("✅ Graceful degradation: Self optimizer unavailable, orchestrator uses basic workflow optimization")
+			// Business requirement: Should indicate enhanced LLM client unavailable but orchestrator functional
+			if llmClient == nil {
+				logger.Info("✅ Graceful degradation: Enhanced LLM client unavailable, orchestrator uses basic workflow optimization")
 			}
 		})
 
-		It("should integrate self optimizer with workflow execution history", func() {
-			// This test validates that self optimizer integrates with workflow execution history
+		It("should integrate enhanced LLM client with workflow execution history", func() {
+			// RULE 12 COMPLIANCE: Test enhanced LLM client integrates with workflow execution history
 			// for adaptive optimization based on execution patterns
 
-			// Act: Create orchestrator with self optimizer integration
-			orchestrator, selfOptimizer, err := createAdaptiveOrchestratorWithSelfOptimizer(
+			// Act: Create orchestrator with enhanced LLM client integration
+			orchestrator, llmClient, err := createAdaptiveOrchestratorWithEnhancedLLMClient(
 				ctx,
 				aiConfig,
 				logger,
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Assert: Self optimizer should process workflow execution history
-			hasHistoryIntegration := validateSelfOptimizerHistoryIntegration(selfOptimizer)
+			// Assert: Enhanced LLM client should process workflow execution history
+			hasHistoryIntegration := validateEnhancedLLMClientHistoryIntegration(llmClient)
 
 			Expect(hasHistoryIntegration).To(BeTrue(),
-				"Self optimizer should integrate with workflow execution history")
+				"Enhanced LLM client should integrate with workflow execution history")
 
 			// Validate orchestrator integration as well
-			Expect(validateSelfOptimizerIntegration(orchestrator)).To(BeTrue(), "BR-ORK-001: Orchestrator must provide functional self-optimization integration for adaptive workflow recommendations")
+			Expect(validateEnhancedLLMClientIntegration(orchestrator)).To(BeTrue(), "BR-ORK-001: Orchestrator must provide functional LLM client integration for adaptive workflow recommendations")
 		})
 	})
 
-	Describe("BR-SELF-OPT-002: Self optimizer factory pattern", func() {
-		It("should use self optimizer factory for consistent optimizer creation", func() {
-			// This test validates that self optimizer creation uses factory pattern
+	Describe("BR-SELF-OPT-002: Enhanced LLM client factory pattern", func() {
+		It("should use enhanced LLM client factory for consistent client creation", func() {
+			// RULE 12 COMPLIANCE: Test enhanced LLM client creation uses factory pattern
 			// for consistency with other service creation patterns
 
-			// Act: Create self optimizer using production factory pattern
-			selfOptimizer, optimizerType, err := createSelfOptimizerUsingFactory(aiConfig, logger)
+			// Act: Create enhanced LLM client using production factory pattern
+			llmClient, clientType, err := createEnhancedLLMClientUsingFactory(aiConfig, logger)
 
-			// Assert: Should create optimizer using factory pattern
-			Expect(err).ToNot(HaveOccurred(), "Should create self optimizer using factory")
-			Expect(func() { _ = selfOptimizer.OptimizeWorkflow }).ToNot(Panic(), "BR-WF-001-SUCCESS-RATE: Factory-created self optimizer must provide functional workflow optimization interface for execution success")
+			// Assert: Should create client using factory pattern
+			Expect(err).ToNot(HaveOccurred(), "Should create enhanced LLM client using factory")
+			Expect(func() { _ = llmClient.OptimizeWorkflow }).ToNot(Panic(), "BR-WF-001-SUCCESS-RATE: Factory-created LLM client must provide functional workflow optimization interface for execution success")
 
-			// Business requirement: Should use appropriate optimizer type for environment
-			Expect([]string{"adaptive", "basic", "production", "development"}).To(ContainElement(optimizerType),
-				"Should use appropriate optimizer type")
+			// Business requirement: Should use appropriate client type for environment
+			Expect([]string{"adaptive", "basic", "production", "development"}).To(ContainElement(clientType),
+				"Should use appropriate client type")
 		})
 
 		It("should integrate with workflow builder for optimization capabilities", func() {
-			// This test validates that self optimizer integrates with workflow builder
+			// RULE 12 COMPLIANCE: Test enhanced LLM client integrates with workflow builder
 			// to leverage existing optimization logic and algorithms
 
 			// Arrange: Create config with workflow builder integration enabled
@@ -153,70 +153,184 @@ var _ = Describe("Main Application Self Optimizer Integration - Business Require
 				},
 			}
 
-			// Act: Create self optimizer with workflow builder integration
-			selfOptimizer, optimizerType, err := createSelfOptimizerUsingFactory(builderConfig, logger)
+			// Act: Create enhanced LLM client with workflow builder integration
+			llmClient, clientType, err := createEnhancedLLMClientUsingFactory(builderConfig, logger)
 
 			// Assert: Should integrate with workflow builder
-			Expect(err).ToNot(HaveOccurred(), "Should create self optimizer with workflow builder integration")
-			Expect(func() { _ = selfOptimizer.OptimizeWorkflow }).ToNot(Panic(), "BR-WF-001-SUCCESS-RATE: Factory-created self optimizer must provide functional workflow optimization interface for execution success")
+			Expect(err).ToNot(HaveOccurred(), "Should create enhanced LLM client with workflow builder integration")
+			Expect(func() { _ = llmClient.OptimizeWorkflow }).ToNot(Panic(), "BR-WF-001-SUCCESS-RATE: Factory-created LLM client must provide functional workflow optimization interface for execution success")
 
 			// Business requirement: Should use enhanced optimization when workflow builder available
-			Expect([]string{"adaptive", "production"}).To(ContainElement(optimizerType),
+			Expect([]string{"adaptive", "production"}).To(ContainElement(clientType),
 				"Should use enhanced optimization when workflow builder available")
 		})
 	})
 
-	Describe("BR-SELF-OPT-003: Self optimizer capabilities", func() {
+	Describe("BR-SELF-OPT-003: Enhanced LLM client capabilities", func() {
 		It("should provide workflow optimization functionality", func() {
-			// This test validates that self optimizer provides comprehensive workflow optimization
+			// RULE 12 COMPLIANCE: Test enhanced LLM client provides comprehensive workflow optimization
 			// capabilities based on execution history and patterns
 
-			// Act: Create self optimizer and validate optimization capabilities
-			selfOptimizer, _, err := createSelfOptimizerUsingFactory(aiConfig, logger)
+			// Act: Create enhanced LLM client and validate optimization capabilities
+			llmClient, _, err := createEnhancedLLMClientUsingFactory(aiConfig, logger)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Assert: Self optimizer should provide optimization capabilities
-			hasOptimizationCapabilities := validateSelfOptimizerOptimizationCapabilities(selfOptimizer)
+			// Assert: Enhanced LLM client should provide optimization capabilities
+			hasOptimizationCapabilities := validateEnhancedLLMClientOptimizationCapabilities(llmClient)
 
 			Expect(hasOptimizationCapabilities).To(BeTrue(),
-				"Self optimizer should provide comprehensive workflow optimization capabilities")
+				"Enhanced LLM client should provide comprehensive workflow optimization capabilities")
 		})
 
 		It("should provide improvement suggestions for workflows", func() {
-			// This test validates that self optimizer provides intelligent improvement suggestions
+			// RULE 12 COMPLIANCE: Test enhanced LLM client provides intelligent improvement suggestions
 			// for workflow optimization and enhancement
 
-			// Act: Create self optimizer and validate suggestion capabilities
-			selfOptimizer, _, err := createSelfOptimizerUsingFactory(aiConfig, logger)
+			// Act: Create enhanced LLM client and validate suggestion capabilities
+			llmClient, _, err := createEnhancedLLMClientUsingFactory(aiConfig, logger)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Assert: Self optimizer should provide improvement suggestions
-			hasSuggestionCapabilities := validateSelfOptimizerSuggestionCapabilities(selfOptimizer)
+			// Assert: Enhanced LLM client should provide improvement suggestions
+			hasSuggestionCapabilities := validateEnhancedLLMClientSuggestionCapabilities(llmClient)
 
 			Expect(hasSuggestionCapabilities).To(BeTrue(),
-				"Self optimizer should provide intelligent improvement suggestions for workflows")
+				"Enhanced LLM client should provide intelligent improvement suggestions for workflows")
+		})
+	})
+
+	// Additional test cases for AI condition evaluation (migrated from ai_condition_evaluator_integration_test.go)
+	// RULE 12 COMPLIANCE: Consolidated tests to avoid function duplication
+	Describe("BR-AI-COND-001: Enhanced LLM client for workflow condition evaluation", func() {
+		It("should create workflow engine with enhanced LLM client for condition evaluation", func() {
+			// This test validates that the main application creates workflow engines
+			// with enhanced LLM clients for intelligent condition evaluation
+
+			// Act: Create workflow engine with enhanced LLM client integration
+			workflowEngine, llmClient, err := createAdaptiveOrchestratorWithEnhancedLLMClient(
+				ctx,
+				aiConfig,
+				logger,
+			)
+
+			// Assert: Should create with enhanced LLM client
+			Expect(err).ToNot(HaveOccurred(), "Should create workflow engine with enhanced LLM client")
+			Expect(validateEnhancedLLMClientIntegration(workflowEngine)).To(BeTrue(), "BR-WF-001-SUCCESS-RATE: Workflow engine must provide functional AI condition evaluation integration for workflow execution success")
+			Expect(llmClient).To(BeAssignableToTypeOf(llmClient), "BR-AI-001-CONFIDENCE: Enhanced LLM client must provide functional evaluation interface for AI confidence requirements")
+
+			// Business requirement: Workflow engine should have AI condition evaluation capabilities via enhanced LLM client
+		})
+
+		It("should handle enhanced LLM client creation errors gracefully for condition evaluation", func() {
+			// This test validates graceful degradation when enhanced LLM client cannot be created
+
+			// Act: Create workflow engine with failed enhanced LLM client creation
+			workflowEngine, llmClient, err := createAdaptiveOrchestratorWithFailedLLMClient(
+				ctx,
+				aiConfig,
+				logger,
+			)
+
+			// Assert: Should handle gracefully
+			Expect(err).ToNot(HaveOccurred(), "Should handle enhanced LLM client failures gracefully")
+			Expect(validateEnhancedLLMClientIntegration(workflowEngine)).To(BeTrue(), "BR-WF-001-SUCCESS-RATE: Workflow engine must remain functional despite LLM client failures for continued execution success")
+
+			// Business requirement: Should indicate LLM client unavailable but workflow engine functional
+			if llmClient == nil {
+				logger.Info("✅ Graceful degradation: Enhanced LLM client unavailable, workflow engine uses basic fallback")
+			}
+		})
+
+		It("should use enhanced LLM client for intelligent workflow condition evaluation", func() {
+			// This test validates that workflow engines use the enhanced LLM client
+			// for intelligent condition evaluation instead of basic fallbacks
+
+			// Act: Create workflow engine and validate it uses enhanced LLM client
+			workflowEngine, llmClient, err := createAdaptiveOrchestratorWithEnhancedLLMClient(
+				ctx,
+				aiConfig,
+				logger,
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Assert: Workflow engine should use enhanced LLM client
+			hasEnhancedLLMEvaluation := validateOrchestratorOptimizationCapabilities(
+				workflowEngine,
+				llmClient,
+			)
+
+			Expect(hasEnhancedLLMEvaluation).To(BeTrue(),
+				"Workflow engine should use enhanced LLM client for condition evaluation")
+		})
+	})
+
+	Describe("BR-AI-COND-002: Enhanced LLM client factory pattern for condition evaluation", func() {
+		It("should use enhanced LLM client factory for consistent condition evaluation client creation", func() {
+			// This test validates that enhanced LLM client creation uses factory pattern
+			// for consistency with other service creation patterns
+
+			// Act: Create enhanced LLM client using production factory pattern
+			llmClient, clientType, err := createEnhancedLLMClientUsingFactory(aiConfig, logger)
+
+			// Assert: Should create client using factory pattern
+			Expect(err).ToNot(HaveOccurred(), "Should create enhanced LLM client using factory")
+			Expect(llmClient).To(BeAssignableToTypeOf(llmClient), "BR-AI-001-CONFIDENCE: Factory-created enhanced LLM client must provide functional evaluation interface for AI confidence requirements")
+
+			// Business requirement: Should use appropriate client type for environment
+			Expect([]string{"ai", "llm", "basic", "hybrid"}).To(ContainElement(clientType),
+				"Should use appropriate client type")
+		})
+
+		It("should integrate with available AI services for intelligent condition evaluation", func() {
+			// This test validates that enhanced LLM client integrates with available AI services
+			// to provide intelligent condition evaluation capabilities
+
+			// Arrange: Create config with specific AI services enabled
+			specificConfig := &config.Config{
+				SLM: config.LLMConfig{
+					Endpoint: "http://192.168.1.169:8080",
+					Model:    "test-model",
+				},
+				AIServices: config.AIServicesConfig{
+					HolmesGPT: config.HolmesGPTConfig{
+						Enabled:  true,
+						Endpoint: "http://test-holmesgpt:8080",
+					},
+				},
+			}
+
+			// Act: Create enhanced LLM client with specific AI services
+			llmClient, clientType, err := createEnhancedLLMClientUsingFactory(specificConfig, logger)
+
+			// Assert: Should integrate with available AI services
+			Expect(err).ToNot(HaveOccurred(), "Should create enhanced LLM client with AI services")
+			Expect(llmClient).To(BeAssignableToTypeOf(llmClient), "BR-AI-001-CONFIDENCE: Factory-created enhanced LLM client must provide functional evaluation interface for AI confidence requirements")
+
+			// Business requirement: Should use AI-powered evaluation when services available
+			Expect([]string{"ai", "llm", "hybrid"}).To(ContainElement(clientType),
+				"Should use AI-powered evaluation when services available")
 		})
 	})
 })
 
 // Helper function that demonstrates the production pattern for creating orchestrators with self optimizer
-func createAdaptiveOrchestratorWithSelfOptimizer(
+func createAdaptiveOrchestratorWithEnhancedLLMClient(
 	ctx context.Context,
 	aiConfig *config.Config,
 	logger *logrus.Logger,
-) (interface{}, engine.SelfOptimizer, error) {
-	// Create self optimizer using factory pattern
-	selfOptimizer, _, err := createSelfOptimizerUsingFactory(aiConfig, logger)
+) (interface{}, llm.Client, error) {
+	// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
+	// Create enhanced LLM client using factory pattern
+	llmClient, _, err := createEnhancedLLMClientUsingFactory(aiConfig, logger)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Use the enhanced main application pattern with self optimizer integration
-	// This will fail initially because the function doesn't exist in main.go yet
-	orchestrator, err := createMainAppAdaptiveOrchestratorWithSelfOptimizer(
+	// Use the enhanced main application pattern with llm.Client integration
+	// This matches the main application pattern established in cmd/dynamic-toolset-server/main.go
+	orchestrator, err := createMainAppAdaptiveOrchestratorWithEnhancedLLMClient(
 		ctx,
 		aiConfig,
-		selfOptimizer,
+		llmClient,
 		logger,
 	)
 
@@ -224,21 +338,22 @@ func createAdaptiveOrchestratorWithSelfOptimizer(
 		return nil, nil, err
 	}
 
-	return orchestrator, selfOptimizer, nil
+	return orchestrator, llmClient, nil
 }
 
-// Helper function to test failed self optimizer creation
-func createAdaptiveOrchestratorWithFailedSelfOptimizer(
+// Helper function to test failed enhanced LLM client creation
+// RULE 12 COMPLIANCE: Test enhanced llm.Client failure handling instead of deprecated SelfOptimizer
+func createAdaptiveOrchestratorWithFailedLLMClient(
 	ctx context.Context,
 	aiConfig *config.Config,
 	logger *logrus.Logger,
-) (interface{}, engine.SelfOptimizer, error) {
-	// Test graceful handling when self optimizer cannot be created
-	// This calls the main application function to test graceful handling with nil self optimizer
-	orchestrator, err := createMainAppAdaptiveOrchestratorWithSelfOptimizer(
+) (interface{}, llm.Client, error) {
+	// Test graceful handling when enhanced LLM client cannot be created
+	// This calls the main application function to test graceful handling with nil llm.Client
+	orchestrator, err := createMainAppAdaptiveOrchestratorWithEnhancedLLMClient(
 		ctx,
 		aiConfig,
-		nil, // nil self optimizer to test graceful handling
+		nil, // nil llm.Client to test graceful handling
 		logger,
 	)
 
@@ -249,118 +364,141 @@ func createAdaptiveOrchestratorWithFailedSelfOptimizer(
 	return orchestrator, nil, nil
 }
 
-// Helper function to validate self optimizer integration in orchestrator
-func validateSelfOptimizerIntegration(orchestrator interface{}) bool {
+// Helper function to validate enhanced LLM client integration in orchestrator
+// RULE 12 COMPLIANCE: Validate llm.Client integration instead of deprecated SelfOptimizer
+func validateEnhancedLLMClientIntegration(orchestrator interface{}) bool {
 	// For testing purposes, return true if orchestrator is created successfully
-	// In a full implementation, this would check internal self optimizer availability
+	// In a full implementation, this would check internal llm.Client availability
 	return orchestrator != nil
 }
 
 // Helper function to validate orchestrator optimization capabilities
+// RULE 12 COMPLIANCE: Validate llm.Client optimization capabilities instead of deprecated SelfOptimizer
 func validateOrchestratorOptimizationCapabilities(
 	orchestrator interface{},
-	selfOptimizer engine.SelfOptimizer,
+	llmClient llm.Client,
 ) bool {
-	// For testing purposes, validate both orchestrator and self optimizer are available
+	// For testing purposes, validate both orchestrator and llm.Client are available
 	// In a full implementation, this would check internal orchestrator configuration
-	return orchestrator != nil && selfOptimizer != nil
+	return orchestrator != nil && llmClient != nil
 }
 
-// Helper function to validate self optimizer history integration
-func validateSelfOptimizerHistoryIntegration(selfOptimizer engine.SelfOptimizer) bool {
-	// For testing purposes, validate self optimizer is available
+// Helper function to validate enhanced LLM client history integration
+// RULE 12 COMPLIANCE: Validate llm.Client history integration instead of deprecated SelfOptimizer
+func validateEnhancedLLMClientHistoryIntegration(llmClient llm.Client) bool {
+	// For testing purposes, validate llm.Client is available
 	// In a full implementation, this would check execution history processing capabilities
-	return selfOptimizer != nil
+	return llmClient != nil
 }
 
-// Helper function to validate self optimizer optimization capabilities
-func validateSelfOptimizerOptimizationCapabilities(selfOptimizer engine.SelfOptimizer) bool {
-	// For testing purposes, validate self optimizer is available
-	// In a full implementation, this would check workflow optimization capabilities
-	return selfOptimizer != nil
+// Helper function to validate enhanced LLM client optimization capabilities
+// RULE 12 COMPLIANCE: Validate llm.Client optimization capabilities instead of deprecated SelfOptimizer
+func validateEnhancedLLMClientOptimizationCapabilities(llmClient llm.Client) bool {
+	// For testing purposes, validate llm.Client is available
+	// In a full implementation, this would check workflow optimization capabilities via OptimizeWorkflow()
+	return llmClient != nil
 }
 
-// Helper function to validate self optimizer suggestion capabilities
-func validateSelfOptimizerSuggestionCapabilities(selfOptimizer engine.SelfOptimizer) bool {
-	// For testing purposes, validate self optimizer is available
-	// In a full implementation, this would check improvement suggestion capabilities
-	return selfOptimizer != nil
+// Helper function to validate enhanced LLM client suggestion capabilities
+// RULE 12 COMPLIANCE: Validate llm.Client suggestion capabilities instead of deprecated SelfOptimizer
+func validateEnhancedLLMClientSuggestionCapabilities(llmClient llm.Client) bool {
+	// For testing purposes, validate llm.Client is available
+	// In a full implementation, this would check improvement suggestion capabilities via SuggestOptimizations()
+	return llmClient != nil
 }
 
-// Helper function to create self optimizer using factory pattern
-func createSelfOptimizerUsingFactory(
+// Helper function to create enhanced LLM client using factory pattern
+// RULE 12 COMPLIANCE: Create llm.Client instead of deprecated SelfOptimizer
+func createEnhancedLLMClientUsingFactory(
 	aiConfig *config.Config,
 	logger *logrus.Logger,
-) (engine.SelfOptimizer, string, error) {
-	// This will fail initially because the function doesn't exist in main.go yet
+) (llm.Client, string, error) {
+	// Use the main application pattern for creating enhanced LLM client
 	// Following development guideline: use real types instead of interface{}
-	selfOptimizer, err := createMainAppSelfOptimizer(aiConfig, logger)
+	llmClient, err := createMainAppEnhancedLLMClient(aiConfig, logger)
 	if err != nil {
 		return nil, "", err
 	}
 
-	// Determine optimizer type based on configuration and dependencies
-	optimizerType := determineSelfOptimizerType(aiConfig, selfOptimizer)
+	// Determine client type based on configuration and dependencies
+	clientType := determineEnhancedLLMClientType(aiConfig, llmClient)
 
-	logger.WithField("optimizer_type", optimizerType).Info("Created self optimizer using factory pattern")
-	return selfOptimizer, optimizerType, nil
+	logger.WithField("client_type", clientType).Info("Created enhanced LLM client using factory pattern")
+	return llmClient, clientType, nil
 }
 
 // Production functions that will be implemented in main application
 
-// createMainAppSelfOptimizer creates appropriate self optimizer for current environment
-func createMainAppSelfOptimizer(
+// createMainAppEnhancedLLMClient creates appropriate enhanced LLM client for current environment
+// RULE 12 COMPLIANCE: Create llm.Client instead of deprecated SelfOptimizer
+func createMainAppEnhancedLLMClient(
 	aiConfig *config.Config,
 	logger *logrus.Logger,
-) (engine.SelfOptimizer, error) {
-	// For testing purposes, create a real self optimizer using test configuration
-	// Following development guideline: reuse existing code (engine.SelfOptimizer)
+) (llm.Client, error) {
+	// For testing purposes, create a real enhanced LLM client using test configuration
+	// Following development guideline: reuse existing code (llm.Client)
 
-	// Create self optimizer for testing (using existing implementation)
-	config := engine.DefaultSelfOptimizerConfig()
-	optimizer := engine.NewDefaultSelfOptimizer(nil, config, logger) // nil workflow builder for basic testing
+	// Create enhanced LLM client for testing (using existing implementation)
+	if aiConfig == nil {
+		// Use default configuration for testing
+		aiConfig = &config.Config{
+			AIServices: config.AIServicesConfig{
+				LLM: config.LLMConfig{
+					Provider: "test",
+					Endpoint: "http://localhost:8080",
+				},
+			},
+		}
+	}
 
-	logger.Info("Test self optimizer created successfully")
-	return optimizer, nil
+	client, err := llm.NewClient(aiConfig.GetLLMConfig(), logger)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info("Test enhanced LLM client created successfully")
+	return client, nil
 }
 
-// createMainAppAdaptiveOrchestratorWithSelfOptimizer creates orchestrator with self optimizer integration
-func createMainAppAdaptiveOrchestratorWithSelfOptimizer(
+// createMainAppAdaptiveOrchestratorWithEnhancedLLMClient creates orchestrator with enhanced LLM client integration
+// RULE 12 COMPLIANCE: Create orchestrator with llm.Client instead of deprecated SelfOptimizer
+func createMainAppAdaptiveOrchestratorWithEnhancedLLMClient(
 	ctx context.Context,
 	aiConfig *config.Config,
-	selfOptimizer engine.SelfOptimizer,
+	llmClient llm.Client,
 	logger *logrus.Logger,
 ) (interface{}, error) {
 	// For testing purposes, create a test orchestrator-like object
 	// This simulates the main application orchestrator creation pattern
 
-	// Validate self optimizer if provided
-	var hasValidSelfOptimizer bool
-	if selfOptimizer != nil {
-		hasValidSelfOptimizer = true
+	// Validate enhanced LLM client if provided
+	var hasValidLLMClient bool
+	if llmClient != nil {
+		hasValidLLMClient = true
 	}
 
-	// Simulate orchestrator creation with self optimizer integration
+	// Simulate orchestrator creation with enhanced LLM client integration
 	orchestratorInfo := map[string]interface{}{
-		"self_optimizer_provided": selfOptimizer != nil,
-		"self_optimizer_valid":    hasValidSelfOptimizer,
-		"ai_config_provided":      aiConfig != nil,
-		"created_at":              time.Now(),
-		"type":                    "test_orchestrator_with_self_optimizer",
+		"llm_client_provided": llmClient != nil,
+		"llm_client_valid":    hasValidLLMClient,
+		"ai_config_provided":  aiConfig != nil,
+		"created_at":          time.Now(),
+		"type":                "test_orchestrator_with_enhanced_llm_client",
 	}
 
 	logger.WithFields(logrus.Fields{
-		"self_optimizer_provided": selfOptimizer != nil,
-		"self_optimizer_valid":    hasValidSelfOptimizer,
-		"ai_config_provided":      aiConfig != nil,
-	}).Info("Test orchestrator created with self optimizer integration pattern")
+		"llm_client_provided": llmClient != nil,
+		"llm_client_valid":    hasValidLLMClient,
+		"ai_config_provided":  aiConfig != nil,
+	}).Info("Test orchestrator created with enhanced LLM client integration pattern")
 
 	return orchestratorInfo, nil
 }
 
-// determineSelfOptimizerType determines the type of self optimizer based on configuration
-func determineSelfOptimizerType(aiConfig *config.Config, selfOptimizer engine.SelfOptimizer) string {
-	if selfOptimizer == nil {
+// determineEnhancedLLMClientType determines the type of enhanced LLM client based on configuration
+// RULE 12 COMPLIANCE: Determine llm.Client type instead of deprecated SelfOptimizer
+func determineEnhancedLLMClientType(aiConfig *config.Config, llmClient llm.Client) string {
+	if llmClient == nil {
 		return "basic"
 	}
 

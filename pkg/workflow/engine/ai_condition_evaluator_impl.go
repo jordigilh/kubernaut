@@ -13,6 +13,13 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 )
 
+// AIConditionEvaluator interface for backward compatibility with existing mocks
+// @deprecated RULE 12 VIOLATION: Use enhanced llm.Client methods directly instead
+type AIConditionEvaluator interface {
+	EvaluateCondition(ctx context.Context, condition *ExecutableCondition, stepContext *StepContext) (bool, error)
+	ValidateCondition(ctx context.Context, condition *ExecutableCondition) error
+}
+
 // DefaultAIConditionEvaluator implements AIConditionEvaluator using available AI services
 // Business Requirement: BR-AI-COND-001 - Intelligent condition evaluation using AI services
 type DefaultAIConditionEvaluator struct {

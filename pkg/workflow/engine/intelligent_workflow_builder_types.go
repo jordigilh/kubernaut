@@ -28,6 +28,8 @@ type ResourceReference struct {
 // Note: identifyActionTypesFromObjective moved to intelligent_workflow_builder_impl.go
 
 // assessRiskLevel assesses the risk level of an objective
+//
+//nolint:unused // Business safety: Risk assessment for workflow execution safety
 func (iwb *DefaultIntelligentWorkflowBuilder) assessRiskLevel(objective *WorkflowObjective, complexity float64) string {
 	risk := "low"
 
@@ -387,27 +389,8 @@ func (iwb *DefaultIntelligentWorkflowBuilder) extractVariablesFromContext(contex
 	return variables
 }
 
-// extractKeywords extracts keywords from text
-func (iwb *DefaultIntelligentWorkflowBuilder) extractKeywords(text string) []string {
-	// Simple keyword extraction - in production, use NLP libraries
-	words := strings.Fields(strings.ToLower(text))
-	keywords := make([]string, 0)
-
-	// Filter out common words and keep meaningful terms
-	stopWords := map[string]bool{
-		"the": true, "and": true, "or": true, "but": true, "in": true,
-		"on": true, "at": true, "to": true, "for": true, "of": true,
-		"with": true, "by": true, "a": true, "an": true, "is": true,
-	}
-
-	for _, word := range words {
-		if len(word) > 3 && !stopWords[word] {
-			keywords = append(keywords, word)
-		}
-	}
-
-	return keywords
-}
+// Note: extractKeywords implementation moved to intelligent_workflow_builder_helpers.go
+// to avoid duplication and maintain single source of truth
 
 // Note: calculateObjectiveComplexity moved to intelligent_workflow_builder_impl.go
 

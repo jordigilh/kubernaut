@@ -16,7 +16,7 @@ import (
 )
 
 // setupConfidencePatterns configures realistic confidence patterns for different alert types
-func (f *FakeSLMClient) setupConfidencePatterns() {
+func (f *TestSLMClient) setupConfidencePatterns() {
 	f.confidencePatterns = map[string]float64{
 		"OOMKilled":               0.9,  // High confidence for memory issues
 		"HighMemoryUsage":         0.85, // High confidence for known patterns
@@ -57,7 +57,7 @@ func (f *FakeSLMClient) setupConfidencePatterns() {
 }
 
 // generateAlertFingerprint creates a unique fingerprint for an alert
-func (f *FakeSLMClient) generateAlertFingerprint(alert types.Alert) string {
+func (f *TestSLMClient) generateAlertFingerprint(alert types.Alert) string {
 	fingerprint := fmt.Sprintf("%s-%s", alert.Name, alert.Namespace)
 	// Add labels for uniqueness
 	for k, v := range alert.Labels {
@@ -68,7 +68,7 @@ func (f *FakeSLMClient) generateAlertFingerprint(alert types.Alert) string {
 }
 
 // calculateComplexityDelay determines delay based on alert complexity
-func (f *FakeSLMClient) calculateComplexityDelay(alert types.Alert) time.Duration {
+func (f *TestSLMClient) calculateComplexityDelay(alert types.Alert) time.Duration {
 	if !f.complexityDelay {
 		return 0
 	}
@@ -99,7 +99,7 @@ func (f *FakeSLMClient) calculateComplexityDelay(alert types.Alert) time.Duratio
 }
 
 // simulateNetworkConditions applies network simulation effects
-func (f *FakeSLMClient) simulateNetworkConditions() error {
+func (f *TestSLMClient) simulateNetworkConditions() error {
 	if !f.networkSimulation.Enabled {
 		return nil
 	}
@@ -125,7 +125,7 @@ func (f *FakeSLMClient) simulateNetworkConditions() error {
 }
 
 // checkRateLimit verifies if the request should be rate limited
-func (f *FakeSLMClient) checkRateLimit() error {
+func (f *TestSLMClient) checkRateLimit() error {
 	now := time.Now()
 	windowStart := now.Truncate(f.rateLimitWindow)
 
@@ -148,7 +148,7 @@ func (f *FakeSLMClient) checkRateLimit() error {
 }
 
 // getRealisticConfidence calculates a realistic confidence value
-func (f *FakeSLMClient) getRealisticConfidence(alert types.Alert, baseConfidence float64) float64 {
+func (f *TestSLMClient) getRealisticConfidence(alert types.Alert, baseConfidence float64) float64 {
 	confidence := baseConfidence
 
 	// Apply variation
@@ -186,7 +186,7 @@ func (f *FakeSLMClient) getRealisticConfidence(alert types.Alert, baseConfidence
 }
 
 // selectAvailableModel chooses an available model for the request
-func (f *FakeSLMClient) selectAvailableModel() (string, error) {
+func (f *TestSLMClient) selectAvailableModel() (string, error) {
 	availableModels := make([]string, 0)
 	for model, available := range f.modelAvailability {
 		if available {
@@ -203,8 +203,8 @@ func (f *FakeSLMClient) selectAvailableModel() (string, error) {
 }
 
 // recordCall logs a call in the history with detailed information
-func (f *FakeSLMClient) recordCall(method string, alert *types.Alert, prompt string, duration time.Duration, success bool, errorType string, confidence float64, modelUsed string) {
-	call := FakeSLMCall{
+func (f *TestSLMClient) recordCall(method string, alert *types.Alert, prompt string, duration time.Duration, success bool, errorType string, confidence float64, modelUsed string) {
+	call := TestSLMCall{
 		Method:     method,
 		Alert:      alert,
 		Prompt:     prompt,
@@ -221,7 +221,7 @@ func (f *FakeSLMClient) recordCall(method string, alert *types.Alert, prompt str
 }
 
 // EnhancedAnalyzeAlert provides the enhanced implementation with realistic behavior
-func (f *FakeSLMClient) EnhancedAnalyzeAlert(ctx context.Context, alert types.Alert) (*types.ActionRecommendation, error) {
+func (f *TestSLMClient) EnhancedAnalyzeAlert(ctx context.Context, alert types.Alert) (*types.ActionRecommendation, error) {
 	startTime := time.Now()
 	var confidence float64
 	var modelUsed string
@@ -293,7 +293,7 @@ func (f *FakeSLMClient) EnhancedAnalyzeAlert(ctx context.Context, alert types.Al
 }
 
 // generateRealisticAction creates a realistic action based on alert characteristics
-func (f *FakeSLMClient) generateRealisticAction(alert types.Alert) string {
+func (f *TestSLMClient) generateRealisticAction(alert types.Alert) string {
 	// Prioritize actions based on alert type and severity
 	highConfidenceActions := map[string]string{
 		"OOMKilled":               "increase_resources",
@@ -335,7 +335,7 @@ func (f *FakeSLMClient) generateRealisticAction(alert types.Alert) string {
 }
 
 // GetCallStats returns statistics about the client usage
-func (f *FakeSLMClient) GetCallStats() map[string]interface{} {
+func (f *TestSLMClient) GetCallStats() map[string]interface{} {
 	totalCalls := len(f.callHistory)
 	successfulCalls := 0
 	var totalLatency time.Duration
@@ -374,8 +374,8 @@ func (f *FakeSLMClient) GetCallStats() map[string]interface{} {
 }
 
 // ClearHistory resets the call history
-func (f *FakeSLMClient) ClearHistory() {
-	f.callHistory = make([]FakeSLMCall, 0)
+func (f *TestSLMClient) ClearHistory() {
+	f.callHistory = make([]TestSLMCall, 0)
 	f.callCount = 0
 	f.rateLimitCounts = make(map[time.Time]int)
 	if f.memoryEnabled {

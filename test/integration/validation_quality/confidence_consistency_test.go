@@ -53,7 +53,7 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 
 	createSLMClient := func() llm.Client {
 		// Use fake client to eliminate external dependencies
-		return shared.NewFakeSLMClient()
+		return shared.NewTestSLMClient()
 	}
 
 	Context("Confidence Calibration Validation", func() {
@@ -447,7 +447,7 @@ var _ = Describe("Confidence and Consistency Validation Suite", Ordered, func() 
 			// Test with same alert multiple times to verify consistency bounds
 			// Configuration no longer needed for fake client
 
-			client := shared.NewFakeSLMClient()
+			client := shared.NewTestSLMClient()
 
 			alert := types.Alert{
 				Name:        "ConsistencyTest",

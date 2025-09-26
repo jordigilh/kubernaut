@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck
+	. "github.com/onsi/gomega"    //nolint:staticcheck
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/pkg/testutil"

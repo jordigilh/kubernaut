@@ -18,7 +18,7 @@ import (
 // Use RuntimeWorkflowExecution from types package
 
 // Type aliases and simplified types for testing
-type SimilarityResult = vector.SimilarPattern
+// vector.SimilarPattern alias removed - use vector.SimilarPattern directly
 
 // **Business Value Enhancement**: Types for testing business requirements
 // **Testing Principle**: Define types needed for business outcome validation
@@ -437,7 +437,7 @@ func (mps *MockPatternStore) DeletePattern(ctx context.Context, patternID string
 // MockPatternDiscoveryVectorDatabase implements VectorDatabase interface
 type MockPatternDiscoveryVectorDatabase struct {
 	vectorData          map[string][]float64
-	similarityResults   []*SimilarityResult
+	similarityResults   []*vector.UnifiedSearchResult
 	embeddingDimensions int
 	similarityThreshold float64
 }
@@ -445,7 +445,7 @@ type MockPatternDiscoveryVectorDatabase struct {
 func NewMockPatternDiscoveryVectorDatabase() *MockPatternDiscoveryVectorDatabase {
 	return &MockPatternDiscoveryVectorDatabase{
 		vectorData:          make(map[string][]float64),
-		similarityResults:   make([]*SimilarityResult, 0),
+		similarityResults:   make([]*vector.UnifiedSearchResult, 0),
 		embeddingDimensions: 128,
 		similarityThreshold: 0.85,
 	}
@@ -463,7 +463,7 @@ func (mvd *MockPatternDiscoveryVectorDatabase) StoreEmbedding(ctx context.Contex
 	return nil
 }
 
-func (mvd *MockPatternDiscoveryVectorDatabase) FindSimilar(ctx context.Context, embedding []float64, threshold float64, limit int) ([]*SimilarityResult, error) {
+func (mvd *MockPatternDiscoveryVectorDatabase) FindSimilar(ctx context.Context, embedding []float64, threshold float64, limit int) ([]*vector.UnifiedSearchResult, error) {
 	// Check for context cancellation in test mock
 	select {
 	case <-ctx.Done():
@@ -472,12 +472,12 @@ func (mvd *MockPatternDiscoveryVectorDatabase) FindSimilar(ctx context.Context, 
 	}
 
 	// Return predefined similarity results for testing
-	results := make([]*SimilarityResult, 0)
+	results := make([]*vector.UnifiedSearchResult, 0)
 	for i, result := range mvd.similarityResults {
 		if i >= limit {
 			break
 		}
-		if result.Similarity >= threshold {
+		if float64(result.Score) >= threshold {
 			results = append(results, result)
 		}
 	}
@@ -498,7 +498,7 @@ func (mvd *MockPatternDiscoveryVectorDatabase) GetEmbedding(ctx context.Context,
 	return nil, nil
 }
 
-func (mvd *MockPatternDiscoveryVectorDatabase) SetSimilarityResults(results []*SimilarityResult) {
+func (mvd *MockPatternDiscoveryVectorDatabase) SetSimilarityResults(results []*vector.UnifiedSearchResult) {
 	mvd.similarityResults = results
 }
 
@@ -529,7 +529,7 @@ func (mvd *MockPatternDiscoveryVectorDatabase) Update(ctx context.Context, id st
 }
 
 // Search searches for similar vectors (required by VectorDatabase interface)
-func (mvd *MockPatternDiscoveryVectorDatabase) Search(ctx context.Context, queryVector []float64, limit int) (*patterns.UnifiedSearchResultSet, error) {
+func (mvd *MockPatternDiscoveryVectorDatabase) Search(ctx context.Context, queryVector []float64, limit int) (*vector.UnifiedSearchResultSet, error) {
 	// Check for context cancellation in test mock
 	select {
 	case <-ctx.Done():

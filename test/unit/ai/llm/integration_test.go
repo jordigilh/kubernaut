@@ -1089,19 +1089,19 @@ func createModelSpecificResponse(model string, alert *types.Alert) *mocks.Analys
 		switch alertType {
 		case "cpu", "processor":
 			baseResponse.RecommendedAction = "increase_cpu_resources"
-			baseResponse.Reasoning = fmt.Sprintf("%s CPU alert detected: resource scaling recommended", strings.Title(severity))
+			baseResponse.Reasoning = fmt.Sprintf("%s CPU alert detected: resource scaling recommended", toTitleCase(severity))
 		case "memory", "ram":
 			baseResponse.RecommendedAction = "increase_memory_limit"
-			baseResponse.Reasoning = fmt.Sprintf("%s memory alert: limit adjustment required", strings.Title(severity))
+			baseResponse.Reasoning = fmt.Sprintf("%s memory alert: limit adjustment required", toTitleCase(severity))
 		case "disk", "storage":
 			baseResponse.RecommendedAction = "expand_storage"
-			baseResponse.Reasoning = fmt.Sprintf("%s storage alert: capacity expansion needed", strings.Title(severity))
+			baseResponse.Reasoning = fmt.Sprintf("%s storage alert: capacity expansion needed", toTitleCase(severity))
 		case "network", "connectivity":
 			baseResponse.RecommendedAction = "investigate_network"
-			baseResponse.Reasoning = fmt.Sprintf("%s network alert: connectivity analysis required", strings.Title(severity))
+			baseResponse.Reasoning = fmt.Sprintf("%s network alert: connectivity analysis required", toTitleCase(severity))
 		default:
 			baseResponse.RecommendedAction = "investigate_logs"
-			baseResponse.Reasoning = fmt.Sprintf("%s alert for %s: log analysis recommended", strings.Title(severity), alertType)
+			baseResponse.Reasoning = fmt.Sprintf("%s alert for %s: log analysis recommended", toTitleCase(severity), alertType)
 		}
 
 		// Adjust confidence based on alert severity
@@ -1139,7 +1139,7 @@ func createModelSpecificResponse(model string, alert *types.Alert) *mocks.Analys
 	case strings.Contains(model, "gpt-3.5"):
 		baseResponse.ProcessingTime = 2 * time.Second
 		if alert != nil {
-			baseResponse.Reasoning = fmt.Sprintf("%s alert: %s", strings.Title(alert.Name), strings.ToLower(baseResponse.Reasoning))
+			baseResponse.Reasoning = fmt.Sprintf("%s alert: %s", toTitleCase(alert.Name), strings.ToLower(baseResponse.Reasoning))
 		} else {
 			baseResponse.Reasoning = "CPU usage high, scale recommended"
 		}
@@ -1276,3 +1276,17 @@ func getModelCapabilities(model string) []string {
 }
 
 // Helper functions for new business requirements testing
+
+// toTitleCase converts a string to title case without external dependencies
+func toTitleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	words := strings.Fields(s)
+	for i, word := range words {
+		if len(word) > 0 {
+			words[i] = strings.ToUpper(word[:1]) + strings.ToLower(word[1:])
+		}
+	}
+	return strings.Join(words, " ")
+}

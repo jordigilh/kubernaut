@@ -44,7 +44,7 @@ func (s *BusinessTestSuite) LogBusinessOutcome(requirement string, metric interf
 var _ = Describe("AI Effectiveness Assessment - Business Requirements Validation", func() {
 	var (
 		ctx         context.Context
-		assessor    *insights.EnhancedAssessor
+		assessor    *insights.Assessor
 		mockRepo    *mocks.MockActionHistoryRepository
 		mockAlert   *mocks.MockAlertClient
 		mockMetrics *mocks.MockMetricsClient
@@ -63,7 +63,7 @@ var _ = Describe("AI Effectiveness Assessment - Business Requirements Validation
 		mockSideEff = mocks.NewMockSideEffectDetector()
 
 		// Use nil for repositories in business test since we're testing business outcomes, not implementation details
-		assessor = insights.NewEnhancedAssessor(
+		assessor = insights.NewAssessor(
 			nil, // ActionHistoryRepository not needed for business logic validation
 			nil, // EffectivenessRepository not needed for business logic validation
 			mockAlert,

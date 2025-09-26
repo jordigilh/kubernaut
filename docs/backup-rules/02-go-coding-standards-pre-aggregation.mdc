@@ -1,0 +1,68 @@
+---
+globs: "*.go"
+description: "Go coding standards and patterns specific to kubernaut"
+---
+
+# Go Coding Standards for Kubernaut
+
+## Code Organization
+- Use clear, descriptive names that reflect business domain (e.g., `EffectivenessAssessor`, `WorkflowEngine`)
+- **MANDATORY**: Every component must serve a documented business requirement (BR-XXX-XXX)
+- Group related functionality into cohesive packages following DDD principles
+- Implement interfaces over concrete types for testability and flexibility
+- **AVOID** duplicating structure names - use unique, business-aligned names
+
+## Error Handling
+- Always wrap errors with context using `fmt.Errorf("operation description: %w", err)`
+- Use structured error types from [internal/errors/](mdc:internal/errors/) for consistent error categorization
+- Log errors at the appropriate level with structured fields using logrus
+
+## Context and Cancellation
+- Always accept `context.Context` as first parameter for operations that can be cancelled
+- Respect context cancellation in loops and long-running operations
+- Use context for request-scoped values like trace IDs and user information
+
+## Type System Guidelines
+- **MANDATORY**: Avoid using `any` or `interface{}` unless absolutely necessary
+- **ALWAYS** use structured field values with specific types
+- **AVOID** local type definitions to resolve import cycles
+- Use shared types from [pkg/shared/types/](mdc:pkg/shared/types/) package instead
+- Prefer strongly-typed interfaces that reflect business domain concepts
+
+## Testing Patterns
+- **MANDATORY**: Follow Test-Driven Development (TDD) - write tests first per [00-project-guidelines.mdc](mdc:.cursor/rules/00-project-guidelines.mdc)
+- Use Ginkgo/Gomega BDD testing framework as established in [test/](mdc:test/)
+- Follow three-tier testing strategy: unit (pure logic), integration (cross-component), e2e (full workflow)
+- Use mock factories from [pkg/testutil/mock_factory.go](mdc:pkg/testutil/mock_factory.go) for consistent test doubles
+- Test scenarios must validate business outcomes, not implementation details
+- **ALL tests must reference specific business requirements** (BR-XXX-XXX format)
+
+## AI/ML Integration Patterns
+- Use interfaces for AI providers to support multiple LLM backends (OpenAI, Anthropic, Ollama, etc.)
+- Implement retry logic with exponential backoff for AI API calls
+- Always validate AI responses before acting on them
+- Use confidence scores to make decisions about AI recommendations
+
+## Kubernetes Client Patterns
+- Use the shared client from [pkg/platform/k8s/client.go](mdc:pkg/platform/k8s/client.go)
+- Implement safety checks before performing destructive operations
+- Always use dry-run mode when possible for validation
+- Handle Kubernetes API rate limiting gracefully
+
+## Database Access
+- Use connection pooling and prepared statements for PostgreSQL operations
+- Implement proper transaction management for multi-step operations
+- Use separate connections for vector database operations
+- Handle database migrations through [migrations/](mdc:migrations/) directory
+
+## Concurrency
+- Use worker pools for parallel processing with proper resource limits
+- Implement circuit breakers for external service calls
+- Use sync.Once for expensive initialization operations
+- Prefer channels over shared memory for communication between goroutines
+
+## Configuration
+- Use YAML configuration files in [config/](mdc:config/) directory
+- Implement environment variable overrides for deployment flexibility
+- Validate configuration at startup with clear error messages
+- Use defaults that work for local development

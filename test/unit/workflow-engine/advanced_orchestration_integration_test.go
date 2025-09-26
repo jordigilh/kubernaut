@@ -31,8 +31,19 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 		// Create mock vector database
 		mockVectorDB = mocks.NewMockVectorDatabase()
 
-		// Create builder with mock dependencies
-		builder = engine.NewIntelligentWorkflowBuilder(nil, mockVectorDB, nil, nil, nil, nil, log)
+		// Create builder with mock dependencies using new config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       nil, // LLM client - will be set to nil for now
+			VectorDB:        mockVectorDB,
+			AnalyticsEngine: nil, // Analytics engine - will be set to nil for now
+			PatternStore:    nil, // Pattern store - will be set to nil for now
+			ExecutionRepo:   nil, // Execution repository - will be set to nil for now
+			Logger:          log,
+		}
+		
+		var err error
+		builder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 
 		// Create test template for orchestration optimization
 		template = &engine.ExecutableTemplate{
@@ -150,22 +161,21 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 							WorkflowID: workflow.ID,
 							StartTime:  time.Now().Add(-30 * time.Minute),
 							EndTime:    func() *time.Time { t := time.Now().Add(-25 * time.Minute); return &t }(),
-							Duration:   5 * time.Minute,
 						},
 						OperationalStatus: engine.ExecutionStatusCompleted,
 						Steps: []*engine.StepExecution{
 							{
 								StepID:    "step-001",
-								Status:    engine.StepStatusCompleted,
+								Status:    engine.ExecutionStatusCompleted,
 								StartTime: time.Now().Add(-30 * time.Minute),
-								EndTime:   time.Now().Add(-28 * time.Minute),
+								EndTime:   func() *time.Time { t := time.Now().Add(-28 * time.Minute); return &t }(),
 								Duration:  2 * time.Minute,
 							},
 							{
 								StepID:    "step-002",
-								Status:    engine.StepStatusCompleted,
+								Status:    engine.ExecutionStatusCompleted,
 								StartTime: time.Now().Add(-28 * time.Minute),
-								EndTime:   time.Now().Add(-25 * time.Minute),
+								EndTime:   func() *time.Time { t := time.Now().Add(-25 * time.Minute); return &t }(),
 								Duration:  3 * time.Minute,
 							},
 						},
@@ -176,22 +186,22 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 							WorkflowID: workflow.ID,
 							StartTime:  time.Now().Add(-20 * time.Minute),
 							EndTime:    func() *time.Time { t := time.Now().Add(-16 * time.Minute); return &t }(),
-							Duration:   4 * time.Minute,
 						},
+						Duration:          4 * time.Minute,
 						OperationalStatus: engine.ExecutionStatusCompleted,
 						Steps: []*engine.StepExecution{
 							{
 								StepID:    "step-001",
-								Status:    engine.StepStatusCompleted,
+								Status:    engine.ExecutionStatusCompleted,
 								StartTime: time.Now().Add(-20 * time.Minute),
-								EndTime:   time.Now().Add(-18 * time.Minute),
+								EndTime:   func() *time.Time { t := time.Now().Add(-18 * time.Minute); return &t }(),
 								Duration:  2 * time.Minute,
 							},
 							{
 								StepID:    "step-002",
-								Status:    engine.StepStatusCompleted,
+								Status:    engine.ExecutionStatusCompleted,
 								StartTime: time.Now().Add(-18 * time.Minute),
-								EndTime:   time.Now().Add(-16 * time.Minute),
+								EndTime:   func() *time.Time { t := time.Now().Add(-16 * time.Minute); return &t }(),
 								Duration:  2 * time.Minute,
 							},
 						},
@@ -294,8 +304,9 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 					},
 				}
 
-				// Optimize step ordering (this will be integrated into orchestration optimization)
-				optimizedTemplate := builder.OptimizeStepOrdering(unoptimizedTemplate)
+				// Optimize step ordering using correct business logic signature
+				optimizedTemplate, err := builder.OptimizeStepOrdering(unoptimizedTemplate)
+				Expect(err).ToNot(HaveOccurred(), "Step ordering optimization should succeed")
 
 				Expect(optimizedTemplate).NotTo(BeNil())
 				Expect(len(optimizedTemplate.Steps)).To(Equal(len(unoptimizedTemplate.Steps)))
@@ -368,7 +379,7 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 					AnalyzedAt:      time.Now(),
 				}
 
-				// Calculate optimization impact (this will be a new public method)
+				// Calculate optimization impact using correct business logic signature (3 parameters)
 				impact := builder.CalculateOptimizationImpact(originalTemplate, optimizedTemplate, performanceAnalysis)
 
 				Expect(impact).NotTo(BeNil())
@@ -451,8 +462,8 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 						WorkflowExecutionRecord: types.WorkflowExecutionRecord{
 							ID:         "exec-001",
 							WorkflowID: workflow.ID,
-							Duration:   5 * time.Minute,
 						},
+						Duration:          5 * time.Minute,
 						OperationalStatus: engine.ExecutionStatusCompleted,
 					},
 				}
@@ -467,15 +478,22 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 				constrainedTemplate := builder.ApplyOrchestrationConstraints(template, orchestrationConstraints)
 				Expect(constrainedTemplate).NotTo(BeNil())
 
-				// Test OptimizeStepOrdering (will be implemented)
-				orderedTemplate := builder.OptimizeStepOrdering(template)
+				// Test OptimizeStepOrdering with correct business logic signature
+				orderedTemplate, err := builder.OptimizeStepOrdering(template)
+				Expect(err).ToNot(HaveOccurred(), "Step ordering should succeed")
 				Expect(orderedTemplate).NotTo(BeNil())
 
-				// Test CalculateOptimizationImpact (will be implemented)
+				// Test CalculateOptimizationImpact with complete performance analysis
 				performanceAnalysis := &engine.PerformanceAnalysis{
-					WorkflowID:    template.ID,
-					ExecutionTime: 30 * time.Minute,
-					Effectiveness: 0.8,
+					WorkflowID:      template.ID,
+					ExecutionTime:   30 * time.Minute,
+					Bottlenecks:     []*engine.Bottleneck{},
+					Optimizations:   []*engine.OptimizationCandidate{},
+					Effectiveness:   0.8,
+					CostEfficiency:  0.7,
+					ResourceUsage:   &engine.ResourceUsageMetrics{CPUUsage: 0.6, MemoryUsage: 0.5},
+					Recommendations: []*engine.OptimizationSuggestion{},
+					AnalyzedAt:      time.Now(),
 				}
 				impact := builder.CalculateOptimizationImpact(template, template, performanceAnalysis)
 				Expect(impact).NotTo(BeNil())
@@ -621,8 +639,8 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 						WorkflowExecutionRecord: types.WorkflowExecutionRecord{
 							ID:         "exec-001",
 							WorkflowID: workflow.ID,
-							Duration:   5 * time.Minute,
 						},
+						Duration:          5 * time.Minute,
 						OperationalStatus: engine.ExecutionStatusCompleted,
 					},
 				}

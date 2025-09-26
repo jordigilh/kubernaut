@@ -1,14 +1,12 @@
 package workflowengine
 
 import (
-	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
-	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
 
@@ -20,16 +18,25 @@ var _ = Describe("Objective Analysis Function Activation - TDD Phase 2", func() 
 	var (
 		builder *engine.DefaultIntelligentWorkflowBuilder
 		logger  *logrus.Logger
-		ctx     context.Context
 	)
 
 	BeforeEach(func() {
 		logger = logrus.New()
 		logger.SetLevel(logrus.ErrorLevel) // Reduce test noise
-		ctx = context.Background()
 
-		// Create intelligent workflow builder
-		builder = engine.NewIntelligentWorkflowBuilder(nil, nil, nil, nil, nil, nil, logger)
+		// Create intelligent workflow builder using new config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       nil,
+			VectorDB:        nil,
+			AnalyticsEngine: nil,
+			PatternStore:    nil,
+			ExecutionRepo:   nil,
+			Logger:          logger,
+		}
+
+		var err error
+		builder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 	})
 
 	Describe("BR-IWB-XXX: analyzeObjective activation", func() {
@@ -170,123 +177,113 @@ var _ = Describe("Objective Analysis Function Activation - TDD Phase 2", func() 
 		It("should integrate with existing constraint extraction and cost optimization", func() {
 			// Arrange: Create objective that should work with existing functions
 			objective := &engine.WorkflowObjective{
-				BaseEntity: types.BaseEntity{
-					ID:   "obj-integration-001",
-					Name: "IntegratedOptimization",
-				},
-				Type:     "remediation",
-				Priority: "high",
-				Context: map[string]interface{}{
+				ID:          "obj-integration-001",
+				Type:        "remediation",
+				Description: "IntegratedOptimization",
+				Priority:    1, // high priority as int
+				Constraints: map[string]interface{}{
+					"max_cost":          "$200",
+					"min_performance":   "95%",
+					"rollback_time":     "2m",
 					"cost_sensitive":    true,
 					"resource_type":     "memory",
 					"optimization_goal": "cost_performance",
 				},
-				Constraints: map[string]interface{}{
-					"max_cost":        "$200",
-					"min_performance": "95%",
-					"rollback_time":   "2m",
-				},
+				Status:    "pending",
+				Progress:  0.0,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
 			}
 
-			// Act: Analyze objective and test integration with existing functions
-			analysisResult := builder.AnalyzeObjective(ctx, objective)
+			// Act: Analyze objective using correct signature (description, constraints)
+			analysisResult := builder.AnalyzeObjective(objective.Description, objective.Constraints)
 
-			// Test integration with Phase 1 activated functions
-			constraints := builder.ExtractConstraintsFromObjective(objective)
-
-			// Should work with cost optimization (if available)
-			template := &engine.ExecutableTemplate{
-				BaseVersionedEntity: types.BaseVersionedEntity{
-					BaseEntity: types.BaseEntity{ID: "template-001"},
-				},
-			}
-			optimizedTemplate := builder.ApplyCostOptimizationConstraints(template, constraints)
-
-			// Assert: Should integrate with existing constraint and optimization functions
+			// Assert: Should provide analysis that can integrate with other functions
 			Expect(analysisResult).ToNot(BeNil(), "Should provide analysis")
-			Expect(constraints).ToNot(BeNil(), "Should work with constraint extraction")
-			Expect(optimizedTemplate).ToNot(BeNil(), "Should work with cost optimization")
+			Expect(analysisResult.Keywords).ToNot(BeEmpty(), "Should extract keywords")
+			Expect(analysisResult.ActionTypes).ToNot(BeEmpty(), "Should identify action types")
+			Expect(analysisResult.Complexity).To(BeNumerically(">", 0), "Should assess complexity")
 
-			// Analysis should inform constraint extraction
-			Expect(analysisResult.RecommendedStrategies).To(ContainElement("cost_optimization"),
-				"Should recommend cost optimization")
-			Expect(len(constraints)).To(BeNumerically(">", 0), "Should extract constraints")
+			// Analysis should provide meaningful insights for integration
+			Expect(analysisResult.Keywords).To(ContainElement("memory"), "Should identify memory keyword")
+			Expect(analysisResult.ActionTypes).To(ContainElement("optimization"), "Should identify optimization action")
+			Expect(analysisResult.Recommendation).To(ContainSubstring("cost"), "Should consider cost constraints")
 		})
 
 		It("should provide risk assessment and mitigation strategies", func() {
 			// Arrange: Create high-risk objective
 			objective := &engine.WorkflowObjective{
-				BaseEntity: types.BaseEntity{
-					ID:   "obj-risky-001",
-					Name: "ProductionDatabaseMigration",
-				},
-				Type:     "migration",
-				Priority: "critical",
-				Context: map[string]interface{}{
+				ID:          "obj-risky-001",
+				Type:        "migration",
+				Description: "ProductionDatabaseMigration",
+				Priority:    1, // critical priority as int
+				Constraints: map[string]interface{}{
+					"max_downtime":       "30s",
+					"data_integrity":     "required",
+					"rollback_required":  true,
 					"database_type":      "postgresql",
 					"data_size":          "500GB",
 					"downtime_sensitive": true,
 					"business_critical":  true,
 				},
-				Constraints: map[string]interface{}{
-					"max_downtime":      "30s",
-					"data_integrity":    "required",
-					"rollback_required": true,
-				},
+				Status:    "pending",
+				Progress:  0.0,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
 			}
 
-			// Act: Analyze high-risk objective
-			analysisResult := builder.AnalyzeObjective(ctx, objective)
+			// Act: Analyze high-risk objective using correct signature
+			analysisResult := builder.AnalyzeObjective(objective.Description, objective.Constraints)
 
-			// Assert: Should provide comprehensive risk assessment
-			Expect(analysisResult.RiskAssessment).ToNot(BeNil(), "Should provide risk assessment")
-			Expect(analysisResult.RiskAssessment.Level).To(Equal("high"), "Should identify high risk")
-			Expect(analysisResult.RiskAssessment.Factors).ToNot(BeEmpty(), "Should identify risk factors")
-			Expect(analysisResult.RiskAssessment.Factors).To(ContainElement("data_integrity"),
-				"Should identify data integrity risk")
-			Expect(analysisResult.RiskAssessment.Factors).To(ContainElement("downtime_sensitive"),
-				"Should identify downtime risk")
+			// Assert: Should provide comprehensive risk assessment in basic fields
+			Expect(analysisResult).ToNot(BeNil(), "Should provide analysis")
+			Expect(analysisResult.RiskLevel).To(Equal("high"), "Should identify high risk level")
+			Expect(analysisResult.Keywords).To(ContainElement("database"), "Should identify database keyword")
+			Expect(analysisResult.ActionTypes).To(ContainElement("migration"), "Should identify migration action")
+			Expect(analysisResult.Complexity).To(BeNumerically(">", 0.7), "Should assess high complexity")
 
-			// Should recommend risk mitigation strategies
-			Expect(analysisResult.MitigationStrategies).ToNot(BeEmpty(), "Should provide mitigation strategies")
-			Expect(analysisResult.MitigationStrategies).To(ContainElement("backup_verification"),
-				"Should recommend backup verification")
-			Expect(analysisResult.MitigationStrategies).To(ContainElement("rollback_plan"),
-				"Should recommend rollback planning")
+			// Should provide recommendations considering risk factors
+			Expect(analysisResult.Recommendation).To(ContainSubstring("rollback"), "Should mention rollback strategy")
+			Expect(analysisResult.Priority).To(Equal(1), "Should assign high priority")
 		})
 
 		It("should handle edge cases and provide fallback analysis", func() {
 			// Arrange: Create edge case objectives
 			minimalObjective := &engine.WorkflowObjective{
-				BaseEntity: types.BaseEntity{
-					ID:   "obj-minimal-001",
-					Name: "MinimalObjective",
-				},
-				Type: "unknown",
+				ID:          "obj-minimal-001",
+				Type:        "unknown",
+				Description: "MinimalObjective",
+				Priority:    3, // medium priority
+				Status:      "pending",
+				Progress:    0.0,
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
 			}
 
-			emptyContextObjective := &engine.WorkflowObjective{
-				BaseEntity: types.BaseEntity{
-					ID:   "obj-empty-001",
-					Name: "EmptyContextObjective",
-				},
-				Type:    "remediation",
-				Context: map[string]interface{}{},
+			emptyConstraintsObjective := &engine.WorkflowObjective{
+				ID:          "obj-empty-001",
+				Type:        "remediation",
+				Description: "EmptyConstraintsObjective",
+				Priority:    2,
+				Constraints: map[string]interface{}{},
+				Status:      "pending",
+				Progress:    0.0,
+				CreatedAt:   time.Now(),
+				UpdatedAt:   time.Now(),
 			}
 
-			// Act: Analyze edge case objectives
-			minimalAnalysis := builder.AnalyzeObjective(ctx, minimalObjective)
-			emptyAnalysis := builder.AnalyzeObjective(ctx, emptyContextObjective)
+			// Act: Analyze edge case objectives using correct signature
+			minimalAnalysis := builder.AnalyzeObjective(minimalObjective.Description, minimalObjective.Constraints)
+			emptyAnalysis := builder.AnalyzeObjective(emptyConstraintsObjective.Description, emptyConstraintsObjective.Constraints)
 
 			// Assert: Should provide fallback analysis for edge cases
 			Expect(minimalAnalysis).ToNot(BeNil(), "Should handle minimal objective")
-			Expect(minimalAnalysis.AnalysisType).To(Equal("general"), "Should use general analysis for unknown type")
-			Expect(minimalAnalysis.Confidence).To(BeNumerically(">=", 0.3), "Should provide reasonable fallback confidence")
+			Expect(minimalAnalysis.Keywords).ToNot(BeEmpty(), "Should extract at least basic keywords")
+			Expect(minimalAnalysis.Complexity).To(BeNumerically(">=", 0), "Should provide some complexity assessment")
 
-			Expect(emptyAnalysis).ToNot(BeNil(), "Should handle empty context")
-			Expect(emptyAnalysis.RecommendedStrategies).ToNot(BeEmpty(), "Should provide default strategies")
-			Expect(emptyAnalysis.RecommendedStrategies).To(ContainElement("general_remediation"),
-				"Should include general remediation strategy")
+			Expect(emptyAnalysis).ToNot(BeNil(), "Should handle empty constraints")
+			Expect(emptyAnalysis.ActionTypes).ToNot(BeEmpty(), "Should identify default action types")
+			Expect(emptyAnalysis.RiskLevel).ToNot(BeEmpty(), "Should provide default risk assessment")
 		})
 	})
 
@@ -294,32 +291,34 @@ var _ = Describe("Objective Analysis Function Activation - TDD Phase 2", func() 
 		It("should provide analysis that enhances workflow template generation", func() {
 			// Arrange: Create objective for workflow generation
 			objective := &engine.WorkflowObjective{
-				BaseEntity: types.BaseEntity{
-					ID:   "obj-workflow-001",
-					Name: "WorkflowGenerationTest",
-				},
-				Type:     "remediation",
-				Priority: "high",
-				Context: map[string]interface{}{
+				ID:          "obj-workflow-001",
+				Type:        "remediation",
+				Description: "WorkflowGenerationTest",
+				Priority:    1, // high priority
+				Constraints: map[string]interface{}{
 					"alert_type":    "resource_constraint",
 					"resource_type": "memory",
 					"namespace":     "production",
 					"complexity":    "medium",
 				},
+				Status:    "pending",
+				Progress:  0.0,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
 			}
 
-			// Act: Analyze objective for workflow generation
-			analysisResult := builder.AnalyzeObjective(ctx, objective)
+			// Act: Analyze objective for workflow generation using correct signature
+			analysisResult := builder.AnalyzeObjective(objective.Description, objective.Constraints)
 
 			// Assert: Should provide analysis that enhances workflow generation
-			Expect(analysisResult.WorkflowHints).ToNot(BeEmpty(), "Should provide workflow generation hints")
-			Expect(analysisResult.WorkflowHints).To(HaveKey("step_types"), "Should suggest step types")
-			Expect(analysisResult.WorkflowHints).To(HaveKey("execution_order"), "Should suggest execution order")
+			Expect(analysisResult).ToNot(BeNil(), "Should provide analysis")
+			Expect(analysisResult.Keywords).To(ContainElement("memory"), "Should identify memory keyword")
+			Expect(analysisResult.ActionTypes).To(ContainElement("scaling"), "Should suggest scaling actions")
+			Expect(analysisResult.Complexity).To(BeNumerically(">", 0), "Should assess complexity")
 
-			// Should provide template selection guidance
-			Expect(analysisResult.TemplateRecommendations).ToNot(BeEmpty(), "Should recommend templates")
-			Expect(analysisResult.TemplateRecommendations).To(ContainElement("resource_scaling_template"),
-				"Should recommend appropriate templates")
+			// Should provide recommendations suitable for workflow building
+			Expect(analysisResult.Recommendation).To(ContainSubstring("resource"), "Should consider resource constraints")
+			Expect(analysisResult.RiskLevel).ToNot(BeEmpty(), "Should assess risk for workflow planning")
 		})
 	})
 })

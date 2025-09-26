@@ -427,7 +427,7 @@ func (c *PrometheusClient) queryInstantMetricAtTime(ctx context.Context, query s
 	}
 
 	if response.Status != "success" {
-		return 0, fmt.Errorf("Prometheus API returned status: %s", response.Status)
+		return 0, fmt.Errorf("prometheus API returned status: %s", response.Status)
 	}
 
 	if len(response.Data.Result) == 0 {
@@ -476,7 +476,7 @@ func (c *PrometheusClient) queryRangeMetric(ctx context.Context, query string, s
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Prometheus API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("prometheus API returned status %d", resp.StatusCode)
 	}
 
 	var response PrometheusRangeResponse
@@ -485,7 +485,7 @@ func (c *PrometheusClient) queryRangeMetric(ctx context.Context, query string, s
 	}
 
 	if response.Status != "success" {
-		return nil, fmt.Errorf("Prometheus API returned status: %s", response.Status)
+		return nil, fmt.Errorf("prometheus API returned status: %s", response.Status)
 	}
 
 	var points []MetricPoint
@@ -542,7 +542,7 @@ func (c *PrometheusClient) HealthCheck(ctx context.Context) error {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Prometheus health check failed with status %d", resp.StatusCode)
+		return fmt.Errorf("prometheus health check failed with status %d", resp.StatusCode)
 	}
 
 	return nil

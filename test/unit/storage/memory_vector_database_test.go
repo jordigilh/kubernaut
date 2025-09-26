@@ -29,7 +29,7 @@ var _ = Describe("Memory Vector Database Unit Tests", func() {
 
 	Context("Database Creation and Initialization", func() {
 		It("should create database with empty pattern store", func() {
-			Expect(memoryDB).To(HaveLen(BeNumerically(">=", 1)))
+			Expect(memoryDB).ToNot(BeNil())
 
 			count := memoryDB.GetPatternCount()
 			Expect(count).To(Equal(0), "New database should have zero patterns")

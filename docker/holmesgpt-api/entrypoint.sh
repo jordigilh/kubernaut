@@ -52,7 +52,7 @@ validate_environment() {
 
     # Validate LLM provider
     case "${HOLMESGPT_LLM_PROVIDER:-}" in
-        "openai"|"anthropic"|"local_llm"|"azure_openai"|"ollama")
+        "openai"|"anthropic"|"local_llm"|"azure_openai"|"ollama"|"ramalama")
             log_debug "LLM provider ${HOLMESGPT_LLM_PROVIDER} is valid"
             ;;
         "")

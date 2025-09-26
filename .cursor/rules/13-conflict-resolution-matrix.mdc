@@ -1,0 +1,83 @@
+---
+description: "Conflict resolution matrix and automated detection for kubernaut rules"
+---
+# Conflict Resolution Matrix
+
+## Priority Hierarchy - MANDATORY
+
+**Rule**: Apply higher priority rules first when conflicts occur
+**Validation**: `./scripts/resolve-rule-conflict.sh Rule1 Rule2 context`
+
+### Decision Matrix
+| Priority | Rules | Overrides | Tool |
+|----------|-------|-----------|------|
+| **1. Integration** | 00/07/11 | Everything | `./scripts/run-integration-validation.sh` |
+| **2. TDD Methodology** | 03/11/12 | Technical implementation | `./scripts/validate-tdd-completeness.sh` |
+| **3. Component-Specific** | 02/04/05/12 | Quality checks | Component-specific scripts |
+| **4. Quality Assurance** | 06/08/09 | Post-development | Quality validation scripts |
+
+## Common Conflicts Resolution
+
+### Integration vs Speed
+```bash
+# CONFLICT: AI sophistication vs Integration requirement
+# RESOLUTION: Integration wins - implement simple → integrate → enhance in REFACTOR
+./scripts/run-integration-validation.sh  # Ensures integration first
+```
+
+### TDD vs Sophistication
+```bash
+# CONFLICT: Complex algorithms vs TDD GREEN minimalism
+# RESOLUTION: TDD timing controls - minimal GREEN → sophisticated REFACTOR
+./scripts/phase4-refactor-validation.sh  # Validates REFACTOR enhancement only
+```
+
+### AI vs General
+```bash
+# CONFLICT: AI-specific guidance vs general Go patterns
+# RESOLUTION: AI-specific rules win for AI components
+./scripts/validate-ai-development.sh  # AI-specific validation
+```
+
+### Safety vs Speed
+```bash
+# CONFLICT: K8s safety validation vs development speed
+# RESOLUTION: Safety wins - include safety in GREEN phase
+./scripts/validate-k8s-safety.sh  # Mandatory safety checks
+```
+
+## Automated Detection
+
+### Conflict Detection Commands
+```bash
+# Integration conflicts
+grep -r "type.*Optimizer\|Engine\|Analyzer" pkg/ --include="*.go" | grep -v "_test.go"
+grep -r "Optimizer\|Engine\|Analyzer" cmd/ --include="*.go" || echo "CONFLICT: Missing integration"
+
+# TDD phase conflicts
+git diff HEAD~1 | grep "^+type.*struct" && echo "CONFLICT: New types in REFACTOR"
+
+# Mock usage conflicts
+find test/ -name "*_test.go" -exec grep -l "Mock.*Engine" {} \; | wc -l  # Should be minimal
+```
+
+## Enforcement Protocol
+
+### Automatic Resolution
+1. **DETECT**: Run conflict detection on code changes
+2. **APPLY**: Execute highest priority rule guidance
+3. **VALIDATE**: Confirm resolution with appropriate script
+4. **DOCUMENT**: Record resolution for future reference
+
+### Manual Override Process
+```bash
+# When automatic resolution unclear:
+./scripts/resolve-rule-conflict.sh "Rule X guidance" "Rule Y guidance" "specific context"
+# Script applies priority hierarchy and provides specific guidance
+```
+
+## Integration Points
+
+**Prevents**: Rule interpretation conflicts that block development
+**Supports**: All rules by providing clear resolution when guidance conflicts
+**Priority**: CRITICAL - enables rule system to function without ambiguity

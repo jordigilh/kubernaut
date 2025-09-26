@@ -385,7 +385,7 @@ func hashStringToFloat(s string) float64 {
 // Helper functions from effectiveness module (reused here)
 
 // extractNamespaceFromLabels extracts namespace from alert labels
-func extractNamespaceFromLabels(labels actionhistory.JSONMap) string {
+func extractNamespaceFromLabels(labels actionhistory.JSONData) string {
 	if labels == nil {
 		return "default"
 	}
@@ -523,16 +523,16 @@ func extractMetadata(trace *actionhistory.ResourceActionTrace) map[string]interf
 	return metadata
 }
 
-// convertJSONMapToMap converts JSONMap to regular map
-func convertJSONMapToMap(jm actionhistory.JSONMap) map[string]interface{} {
+// convertJSONMapToMap converts JSONData to regular map
+func convertJSONMapToMap(jm actionhistory.JSONData) map[string]interface{} {
 	if jm == nil {
 		return make(map[string]interface{})
 	}
 	return map[string]interface{}(jm)
 }
 
-// convertJSONMapToStringMap converts JSONMap to string map
-func convertJSONMapToStringMap(jm actionhistory.JSONMap) map[string]string {
+// convertJSONMapToStringMap converts JSONData to string map
+func convertJSONMapToStringMap(jm actionhistory.JSONData) map[string]string {
 	result := make(map[string]string)
 	if jm == nil {
 		return result

@@ -68,8 +68,7 @@ type EvaluationResult struct {
 	Reasoning string `json:"reasoning,omitempty"`
 }
 
-// ConditionResult is an alias for EvaluationResult for backward compatibility
-type ConditionResult = EvaluationResult
+// ConditionResult alias removed - use EvaluationResult directly
 
 // For backward compatibility, add Satisfied field support
 func (e *EvaluationResult) SetSatisfied(satisfied bool) {

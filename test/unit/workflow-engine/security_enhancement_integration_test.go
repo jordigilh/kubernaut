@@ -31,8 +31,19 @@ var _ = Describe("Security Enhancement Integration - TDD Implementation", func()
 		// Create mock vector database
 		mockVectorDB = mocks.NewMockVectorDatabase()
 
-		// Create builder with mock dependencies
-		builder = engine.NewIntelligentWorkflowBuilder(nil, mockVectorDB, nil, nil, nil, nil, log)
+		// Create builder with mock dependencies using new config pattern
+		config := &engine.IntelligentWorkflowBuilderConfig{
+			LLMClient:       nil,
+			VectorDB:        mockVectorDB,
+			AnalyticsEngine: nil,
+			PatternStore:    nil,
+			ExecutionRepo:   nil,
+			Logger:          log,
+		}
+
+		var err error
+		builder, err = engine.NewIntelligentWorkflowBuilder(config)
+		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 
 		// Create test template for security enhancement
 		template = &engine.ExecutableTemplate{
@@ -213,19 +224,15 @@ var _ = Describe("Security Enhancement Integration - TDD Implementation", func()
 				// Test safety recommendation generation using existing functions
 				// BR-SEC-005: Safety recommendation generation
 
-				// Generate safety recommendations (existing function)
+				// Generate safety recommendations (existing function returns []string)
 				safetyRecommendations := builder.GenerateSafetyRecommendations(workflow)
 
 				Expect(safetyRecommendations).NotTo(BeNil())
-				Expect(len(safetyRecommendations.Recommendations)).To(BeNumerically(">=", 0))
-				Expect(safetyRecommendations.OverallSafetyScore).To(BeNumerically(">=", 0))
-				Expect(safetyRecommendations.OverallSafetyScore).To(BeNumerically("<=", 1))
+				Expect(len(safetyRecommendations)).To(BeNumerically(">=", 0))
 
-				// Verify recommendations have proper structure
-				for _, recommendation := range safetyRecommendations.Recommendations {
-					Expect(recommendation.Type).NotTo(BeEmpty())
-					Expect(recommendation.Description).NotTo(BeEmpty())
-					Expect(recommendation.Priority).To(BeNumerically(">=", 0))
+				// Verify recommendations are strings with content
+				for _, recommendation := range safetyRecommendations {
+					Expect(recommendation).NotTo(BeEmpty(), "Each safety recommendation should have content")
 				}
 			})
 		})
@@ -498,7 +505,7 @@ var _ = Describe("Security Enhancement Integration - TDD Implementation", func()
 				Expect(securedTemplate.ID).To(Equal(template.ID))
 				Expect(securityReport.WorkflowID).To(Equal(workflow.ID))
 				Expect(safetyEnforcement.CanProceed).To(BeAssignableToTypeOf(true))
-				Expect(safetyRecommendations.OverallSafetyScore).To(BeNumerically(">=", 0))
+				Expect(len(safetyRecommendations)).To(BeNumerically(">=", 0))
 				Expect(safetyCheck.SafetyScore).To(BeNumerically(">=", 0))
 			})
 		})

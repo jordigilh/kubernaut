@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -23,8 +24,20 @@ func TestValidationEnhancementIntegrationTDD(t *testing.T) {
 	// Create mock vector database
 	mockVectorDB := mocks.NewMockVectorDatabase()
 
-	// Create builder with mock dependencies
-	builder := engine.NewIntelligentWorkflowBuilder(nil, mockVectorDB, nil, nil, nil, nil, log)
+	// Create builder with mock dependencies using config pattern
+	config := &engine.IntelligentWorkflowBuilderConfig{
+		LLMClient:       nil,          // External: Mock not needed for this test
+		VectorDB:        mockVectorDB, // External: Mock provided
+		AnalyticsEngine: nil,          // External: Mock not needed for this test
+		PatternStore:    nil,          // External: Mock not needed for this test
+		ExecutionRepo:   nil,          // External: Mock not needed for this test
+		Logger:          log,
+	}
+
+	builder, err := engine.NewIntelligentWorkflowBuilder(config)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create workflow builder: %v", err))
+	}
 
 	ctx := context.Background()
 
