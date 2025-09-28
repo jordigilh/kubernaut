@@ -1,3 +1,6 @@
+//go:build e2e
+// +build e2e
+
 package chaos
 
 import (
@@ -45,20 +48,32 @@ const (
 	ChaosExperimentResourceExhaustion ChaosExperimentType = "resource-exhaustion"
 )
 
+// ChaosParameters defines structured parameters for chaos experiments
+// Following type safety guidelines: avoid interface{} usage
+type ChaosParameters struct {
+	CPUPercentage    *int    `yaml:"cpu_percentage,omitempty" json:"cpu_percentage,omitempty"`
+	MemoryPercentage *int    `yaml:"memory_percentage,omitempty" json:"memory_percentage,omitempty"`
+	NetworkLatency   *string `yaml:"network_latency,omitempty" json:"network_latency,omitempty"`
+	DiskFillSize     *string `yaml:"disk_fill_size,omitempty" json:"disk_fill_size,omitempty"`
+	TargetPods       *int    `yaml:"target_pods,omitempty" json:"target_pods,omitempty"`
+	Force            *bool   `yaml:"force,omitempty" json:"force,omitempty"`
+}
+
 // ChaosExperiment defines a chaos engineering experiment
+// E2E Test Infrastructure: Used for programmatic Litmus chaos experiments
 type ChaosExperiment struct {
-	Name           string                 `yaml:"name"`
-	Type           ChaosExperimentType    `yaml:"type"`
-	TargetSelector map[string]string      `yaml:"target_selector"`
-	Namespace      string                 `yaml:"namespace"`
-	Duration       time.Duration          `yaml:"duration"`
-	Parameters     map[string]interface{} `yaml:"parameters"`
+	Name           string              `yaml:"name" json:"name"`
+	Type           ChaosExperimentType `yaml:"type" json:"type"`
+	TargetSelector map[string]string   `yaml:"target_selector" json:"target_selector"`
+	Namespace      string              `yaml:"namespace" json:"namespace"`
+	Duration       time.Duration       `yaml:"duration" json:"duration"`
+	Parameters     ChaosParameters     `yaml:"parameters" json:"parameters"` // Structured instead of interface{}
 
 	// Execution tracking
-	Status    string    `yaml:"status"`
-	StartTime time.Time `yaml:"start_time"`
-	EndTime   time.Time `yaml:"end_time"`
-	LastError string    `yaml:"last_error,omitempty"`
+	Status    string    `yaml:"status" json:"status"`
+	StartTime time.Time `yaml:"start_time" json:"start_time"`
+	EndTime   time.Time `yaml:"end_time" json:"end_time"`
+	LastError string    `yaml:"last_error,omitempty" json:"last_error,omitempty"`
 }
 
 // ChaosResult contains the result of a chaos experiment

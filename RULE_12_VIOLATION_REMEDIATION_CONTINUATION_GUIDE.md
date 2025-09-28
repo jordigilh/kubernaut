@@ -290,8 +290,8 @@ git diff HEAD~5 | grep "^+type.*AI\|^+type.*Optimizer\|^+type.*Engine" | wc -l
 ### Integration Verification
 ```bash
 # Ensure main applications still build
-go build ./cmd/prometheus-alerts-slm/
-go build ./cmd/dynamic-toolset-server/
+go build ./cmd/kubernaut/
+go build ./cmd/kubernaut/
 ```
 
 ---

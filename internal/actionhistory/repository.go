@@ -298,8 +298,8 @@ func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRe
 	var trace ResourceActionTrace
 	err = executor.QueryRowContext(ctx, insertQuery,
 		actionHistory.ID, actionID, action.CorrelationID, action.Timestamp,
-		action.Alert.Name, action.Alert.Severity, StringMapToJSONMap(action.Alert.Labels),
-		StringMapToJSONMap(action.Alert.Annotations), action.Alert.FiringTime,
+		action.Alert.Name, action.Alert.Severity, JSONData(StringMapToJSONMap(action.Alert.Labels)),
+		JSONData(StringMapToJSONMap(action.Alert.Annotations)), action.Alert.FiringTime,
 		action.ModelUsed, action.RoutingTier, action.Confidence, action.Reasoning,
 		action.AlternativeActions, action.ActionType, JSONData(action.Parameters),
 		JSONData(action.ResourceStateBefore),
@@ -335,8 +335,8 @@ func (r *PostgreSQLRepository) StoreAction(ctx context.Context, action *ActionRe
 	trace.ActionTimestamp = action.Timestamp
 	trace.AlertName = action.Alert.Name
 	trace.AlertSeverity = action.Alert.Severity
-	trace.AlertLabels = StringMapToJSONMap(action.Alert.Labels)
-	trace.AlertAnnotations = StringMapToJSONMap(action.Alert.Annotations)
+	trace.AlertLabels = JSONData(StringMapToJSONMap(action.Alert.Labels))
+	trace.AlertAnnotations = JSONData(StringMapToJSONMap(action.Alert.Annotations))
 	trace.AlertFiringTime = &action.Alert.FiringTime
 	trace.ModelUsed = action.ModelUsed
 	trace.RoutingTier = action.RoutingTier

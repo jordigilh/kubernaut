@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -616,4 +617,10 @@ func createResourceAllocationConstraints() map[string]interface{} {
 		"efficiency_threshold":  0.7, // Minimum 70% efficiency
 		"batch_size_limit":      3,   // Maximum 3 steps per batch
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUresourceUmanagementUunit(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UresourceUmanagementUunit Suite")
 }

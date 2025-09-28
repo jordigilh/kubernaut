@@ -529,6 +529,19 @@ func (e *executor) registerBuiltinActions() error {
 		}
 	}
 
+	// Register test action for unit/integration testing
+	if err := e.registry.Register("test_action", e.executeTestAction); err != nil {
+		return fmt.Errorf("failed to register test_action: %w", err)
+	}
+
+	// Register AI-specific actions for testing
+	if err := e.registry.Register("ai_analyze_alert", e.executeAIAnalyzeAlert); err != nil {
+		return fmt.Errorf("failed to register ai_analyze_alert: %w", err)
+	}
+	if err := e.registry.Register("ai_complex_analysis", e.executeAIComplexAnalysis); err != nil {
+		return fmt.Errorf("failed to register ai_complex_analysis: %w", err)
+	}
+
 	return nil
 }
 
@@ -970,4 +983,101 @@ func (e *executor) executeMigrateWorkload(ctx context.Context, action *types.Act
 	}
 
 	return e.k8sClient.MigrateWorkload(ctx, alert.Namespace, workloadName, targetNode)
+}
+
+// executeTestAction performs a test action for unit/integration testing
+func (e *executor) executeTestAction(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	e.log.WithFields(logrus.Fields{
+		"action":       action.Action,
+		"alert":        alert.Name,
+		"namespace":    alert.Namespace,
+		"worker_id":    action.Parameters["worker_id"],
+		"operation_id": action.Parameters["operation_id"],
+	}).Info("Executing test action")
+
+	// Simulate realistic processing time for concurrency testing
+	processingTime := 10 * time.Millisecond // Default processing time
+	if duration, ok := action.Parameters["processing_time"]; ok {
+		if d, valid := duration.(time.Duration); valid {
+			processingTime = d
+		}
+	}
+
+	// Sleep to simulate work
+	time.Sleep(processingTime)
+
+	if e.config.DryRun {
+		e.log.WithFields(logrus.Fields{
+			"alert":           alert.Name,
+			"action":          action.Action,
+			"processing_time": processingTime,
+		}).Info("DRY RUN: Test action completed successfully")
+		return nil
+	}
+
+	// For non-dry-run mode, just log success (no actual operations)
+	e.log.WithFields(logrus.Fields{
+		"alert":           alert.Name,
+		"action":          action.Action,
+		"processing_time": processingTime,
+	}).Info("Test action completed successfully")
+
+	return nil
+}
+
+// executeAIAnalyzeAlert simulates AI alert analysis for testing
+func (e *executor) executeAIAnalyzeAlert(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	// Default processing time
+	processingTime := 50 * time.Millisecond
+
+	// Check for custom processing time in parameters
+	if processingTimeMs, ok := action.Parameters["processing_time_ms"]; ok {
+		if ms, valid := processingTimeMs.(float64); valid {
+			processingTime = time.Duration(ms) * time.Millisecond
+		}
+	}
+
+	// Simulate AI analysis work
+	time.Sleep(processingTime)
+
+	e.log.WithFields(logrus.Fields{
+		"alert":         alert.Name,
+		"action":        action.Action,
+		"analysis_type": action.Parameters["analysis_type"],
+		"ai_enabled":    action.Parameters["ai_enabled"],
+	}).Info("AI alert analysis completed")
+
+	return nil
+}
+
+// executeAIComplexAnalysis simulates complex AI analysis for testing
+func (e *executor) executeAIComplexAnalysis(ctx context.Context, action *types.ActionRecommendation, alert types.Alert) error {
+	// Default processing time for complex analysis
+	processingTime := 100 * time.Millisecond
+
+	// Check for custom processing time in parameters
+	if processingTimeMs, ok := action.Parameters["processing_time_ms"]; ok {
+		if ms, valid := processingTimeMs.(float64); valid {
+			processingTime = time.Duration(ms) * time.Millisecond
+		}
+	}
+
+	// Check if this should timeout or fail (for testing failure scenarios)
+	if timeoutProne, ok := action.Parameters["timeout_prone"]; ok {
+		if prone, valid := timeoutProne.(bool); valid && prone {
+			// Simulate a timeout scenario by taking longer
+			processingTime = 200 * time.Millisecond
+		}
+	}
+
+	// Simulate complex AI analysis work
+	time.Sleep(processingTime)
+
+	e.log.WithFields(logrus.Fields{
+		"alert":      alert.Name,
+		"action":     action.Action,
+		"complexity": action.Parameters["complexity"],
+	}).Info("Complex AI analysis completed")
+
+	return nil
 }

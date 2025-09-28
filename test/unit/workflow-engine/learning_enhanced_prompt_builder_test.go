@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"strings"
@@ -261,3 +262,9 @@ var _ = Describe("Learning Enhanced Prompt Builder - Business Requirements Testi
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUlearningUenhancedUpromptUbuilder(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UlearningUenhancedUpromptUbuilder Suite")
+}

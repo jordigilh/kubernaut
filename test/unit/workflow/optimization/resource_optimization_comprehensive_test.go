@@ -26,10 +26,10 @@ import (
 var _ = Describe("BR-RESOURCE-OPTIMIZATION-001: Comprehensive Resource Optimization Business Logic", func() {
 	var (
 		// Mock ONLY external dependencies per pyramid principles
-		mockLLMClient     *mocks.MockLLMClient
-		mockVectorDB      *mocks.MockVectorDatabase
-		realAnalytics     types.AnalyticsEngine
-		realMetrics       engine.AIMetricsCollector
+		mockLLMClient *mocks.MockLLMClient
+		mockVectorDB  *mocks.MockVectorDatabase
+		realAnalytics types.AnalyticsEngine
+		// realMetrics       engine.AIMetricsCollector // Unused variable - AIMetricsCollector not defined
 		realPatternStore  engine.PatternStore
 		mockExecutionRepo *mocks.WorkflowExecutionRepositoryMock
 		mockLogger        *logrus.Logger
@@ -48,7 +48,7 @@ var _ = Describe("BR-RESOURCE-OPTIMIZATION-001: Comprehensive Resource Optimizat
 		mockLLMClient = mocks.NewMockLLMClient()
 		mockVectorDB = mocks.NewMockVectorDatabase()
 		realAnalytics = insights.NewAnalyticsEngine()
-		realMetrics = engine.NewConfiguredAIMetricsCollector(nil, mockLLMClient, mockVectorDB, nil, mockLogger)
+		// realMetrics = engine.NewConfiguredAIMetricsCollector(nil, mockLLMClient, mockVectorDB, nil, mockLogger) // Unused variable - AIMetricsCollector not defined
 		// Use REAL pattern discovery engine - PYRAMID APPROACH with shared adapters
 		intelligencePatternStore := patterns.NewInMemoryPatternStore(mockLogger)
 		realMemoryVectorDB := vector.NewMemoryVectorDatabase(mockLogger)
@@ -998,3 +998,5 @@ func (era *executionRepositoryAdapter) GetExecutionsInTimeWindow(ctx context.Con
 
 	return typesExecutions, nil
 }
+
+// TestRunner is handled by resource_optimization_comprehensive_suite_test.go

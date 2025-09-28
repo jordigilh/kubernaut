@@ -36,7 +36,7 @@ From `docs/requirements/01_MAIN_APPLICATIONS.md`:
 cd ~/kubernaut-integration-test
 ./scripts/environment_health_check.sh
 
-# Verify Kubernaut prometheus-alerts-slm is running
+# Verify Kubernaut kubernaut is running
 curl -f http://localhost:8080/health || echo "Prometheus Alerts SLM not ready"
 
 # Verify Kind cluster is available

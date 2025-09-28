@@ -381,7 +381,7 @@ func (c *unifiedClient) RollbackDeployment(ctx context.Context, namespace, name 
 	if deployment.Annotations == nil {
 		deployment.Annotations = make(map[string]string)
 	}
-	deployment.Annotations["prometheus-alerts-slm/rollback-requested"] = time.Now().Format(time.RFC3339)
+	deployment.Annotations["kubernaut/rollback-requested"] = time.Now().Format(time.RFC3339)
 
 	// Update deployment (works with both real and fake clients)
 	_, err = c.clientset.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{})
@@ -528,8 +528,8 @@ func (c *unifiedClient) DrainNode(ctx context.Context, nodeName string) error {
 	if node.Labels == nil {
 		node.Labels = make(map[string]string)
 	}
-	node.Labels["prometheus-alerts-slm/drain-initiated"] = time.Now().Format(time.RFC3339)
-	node.Labels["prometheus-alerts-slm/evicted-pods"] = fmt.Sprintf("%d", len(pods.Items))
+	node.Labels["kubernaut/drain-initiated"] = time.Now().Format(time.RFC3339)
+	node.Labels["kubernaut/evicted-pods"] = fmt.Sprintf("%d", len(pods.Items))
 
 	_, err = c.clientset.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
 	if err != nil {
@@ -620,8 +620,8 @@ func (c *unifiedClient) QuarantinePod(ctx context.Context, namespace, name strin
 	if pod.Labels == nil {
 		pod.Labels = make(map[string]string)
 	}
-	pod.Labels["prometheus-alerts-slm/quarantined"] = "true"
-	pod.Labels["prometheus-alerts-slm/quarantine-time"] = time.Now().Format(time.RFC3339)
+	pod.Labels["kubernaut/quarantined"] = "true"
+	pod.Labels["kubernaut/quarantine-time"] = time.Now().Format(time.RFC3339)
 
 	// Update the pod with quarantine labels
 	_, err = c.clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
@@ -635,18 +635,18 @@ func (c *unifiedClient) QuarantinePod(ctx context.Context, namespace, name strin
 			Name:      fmt.Sprintf("quarantine-%s", name),
 			Namespace: namespace,
 			Labels: map[string]string{
-				"prometheus-alerts-slm/quarantine-policy": "true",
-				"prometheus-alerts-slm/target-pod":        name,
+				"kubernaut/quarantine-policy": "true",
+				"kubernaut/target-pod":        name,
 			},
 			Annotations: map[string]string{
-				"prometheus-alerts-slm/quarantine-reason": "Security incident detected",
-				"prometheus-alerts-slm/quarantine-time":   time.Now().Format(time.RFC3339),
+				"kubernaut/quarantine-reason": "Security incident detected",
+				"kubernaut/quarantine-time":   time.Now().Format(time.RFC3339),
 			},
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"prometheus-alerts-slm/quarantined": "true",
+					"kubernaut/quarantined": "true",
 				},
 			},
 			PolicyTypes: []networkingv1.PolicyType{
@@ -662,7 +662,7 @@ func (c *unifiedClient) QuarantinePod(ctx context.Context, namespace, name strin
 							// Only allow from pods with investigation label
 							PodSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
-									"prometheus-alerts-slm/investigator": "true",
+									"kubernaut/investigator": "true",
 								},
 							},
 						},
@@ -709,7 +709,7 @@ func (c *unifiedClient) QuarantinePod(ctx context.Context, namespace, name strin
 						{
 							PodSelector: &metav1.LabelSelector{
 								MatchLabels: map[string]string{
-									"prometheus-alerts-slm/monitoring": "true",
+									"kubernaut/monitoring": "true",
 								},
 							},
 						},
@@ -839,8 +839,8 @@ func (c *unifiedClient) CleanupStorage(ctx context.Context, namespace, podName, 
 	if pod.Annotations == nil {
 		pod.Annotations = make(map[string]string)
 	}
-	pod.Annotations["prometheus-alerts-slm/cleanup-requested"] = time.Now().Format(time.RFC3339)
-	pod.Annotations["prometheus-alerts-slm/cleanup-path"] = path
+	pod.Annotations["kubernaut/cleanup-requested"] = time.Now().Format(time.RFC3339)
+	pod.Annotations["kubernaut/cleanup-path"] = path
 
 	_, err = c.clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
 	if err != nil {
@@ -876,8 +876,8 @@ func (c *unifiedClient) BackupData(ctx context.Context, namespace, resource, bac
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		pod.Annotations["prometheus-alerts-slm/backup-requested"] = time.Now().Format(time.RFC3339)
-		pod.Annotations["prometheus-alerts-slm/backup-name"] = backupName
+		pod.Annotations["kubernaut/backup-requested"] = time.Now().Format(time.RFC3339)
+		pod.Annotations["kubernaut/backup-name"] = backupName
 
 		_, err = c.clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
 		if err != nil {
@@ -887,8 +887,8 @@ func (c *unifiedClient) BackupData(ctx context.Context, namespace, resource, bac
 		if deployment.Annotations == nil {
 			deployment.Annotations = make(map[string]string)
 		}
-		deployment.Annotations["prometheus-alerts-slm/backup-requested"] = time.Now().Format(time.RFC3339)
-		deployment.Annotations["prometheus-alerts-slm/backup-name"] = backupName
+		deployment.Annotations["kubernaut/backup-requested"] = time.Now().Format(time.RFC3339)
+		deployment.Annotations["kubernaut/backup-name"] = backupName
 
 		_, err = c.clientset.AppsV1().Deployments(namespace).Update(ctx, deployment, metav1.UpdateOptions{})
 		if err != nil {
@@ -925,7 +925,7 @@ func (c *unifiedClient) CompactStorage(ctx context.Context, namespace, resource 
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		pod.Annotations["prometheus-alerts-slm/compact-requested"] = time.Now().Format(time.RFC3339)
+		pod.Annotations["kubernaut/compact-requested"] = time.Now().Format(time.RFC3339)
 
 		_, err = c.clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
 		if err != nil {
@@ -1027,7 +1027,7 @@ func (c *unifiedClient) RestartDaemonSet(ctx context.Context, namespace, name st
 	if daemonSet.Spec.Template.Annotations == nil {
 		daemonSet.Spec.Template.Annotations = make(map[string]string)
 	}
-	daemonSet.Spec.Template.Annotations["prometheus-alerts-slm/restart-time"] = time.Now().Format(time.RFC3339)
+	daemonSet.Spec.Template.Annotations["kubernaut/restart-time"] = time.Now().Format(time.RFC3339)
 
 	_, err = c.clientset.AppsV1().DaemonSets(namespace).Update(ctx, daemonSet, metav1.UpdateOptions{})
 	if err != nil {
@@ -1067,7 +1067,7 @@ func (c *unifiedClient) RotateSecrets(ctx context.Context, namespace, secretName
 	if secret.Annotations == nil {
 		secret.Annotations = make(map[string]string)
 	}
-	secret.Annotations["prometheus-alerts-slm/rotation-requested"] = time.Now().Format(time.RFC3339)
+	secret.Annotations["kubernaut/rotation-requested"] = time.Now().Format(time.RFC3339)
 
 	_, err = c.clientset.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
 	if err != nil {
@@ -1101,8 +1101,8 @@ func (c *unifiedClient) AuditLogs(ctx context.Context, namespace, resource, scop
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		pod.Annotations["prometheus-alerts-slm/audit-requested"] = time.Now().Format(time.RFC3339)
-		pod.Annotations["prometheus-alerts-slm/audit-scope"] = scope
+		pod.Annotations["kubernaut/audit-requested"] = time.Now().Format(time.RFC3339)
+		pod.Annotations["kubernaut/audit-scope"] = scope
 
 		_, err = c.clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
 		if err != nil {
@@ -1153,7 +1153,7 @@ func (c *unifiedClient) UpdateNetworkPolicy(ctx context.Context, namespace, poli
 				Name:      configMapName,
 				Namespace: namespace,
 				Annotations: map[string]string{
-					"prometheus-alerts-slm/network-policy-update": "true",
+					"kubernaut/network-policy-update": "true",
 				},
 			},
 			Data: data,
@@ -1192,7 +1192,7 @@ func (c *unifiedClient) RestartNetwork(ctx context.Context, component string) er
 		if ds.Spec.Template.Annotations == nil {
 			ds.Spec.Template.Annotations = make(map[string]string)
 		}
-		ds.Spec.Template.Annotations["prometheus-alerts-slm/network-restart"] = time.Now().Format(time.RFC3339)
+		ds.Spec.Template.Annotations["kubernaut/network-restart"] = time.Now().Format(time.RFC3339)
 
 		_, err = c.clientset.AppsV1().DaemonSets("kube-system").Update(ctx, &ds, metav1.UpdateOptions{})
 		if err != nil {

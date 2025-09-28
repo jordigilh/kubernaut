@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -368,3 +369,9 @@ var _ = Describe("OptimizationEngine - TDD Implementation (BR-ORCH-001)", func()
 	})
 
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUoptimizationUengineUtdd(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UoptimizationUengineUtdd Suite")
+}

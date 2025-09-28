@@ -1,6 +1,7 @@
 package workflowengine_test
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -567,3 +568,9 @@ var _ = Describe("Advanced Analytics Integration - TDD Implementation", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUanalyticsUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUanalyticsUintegration Suite")
+}

@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/jordigilh/kubernaut/pkg/testutil/enhanced"
+	"github.com/jordigilh/kubernaut/pkg/e2e/cluster"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,7 +29,7 @@ var _ = Describe("BR-DISASTER-RECOVERY-E2E-001: Disaster Recovery and Resilience
 		// Use REAL OCP cluster infrastructure per user requirement
 		realK8sClient kubernetes.Interface
 		realLogger    *logrus.Logger
-		testCluster   *enhanced.TestClusterManager
+		testCluster   *cluster.E2EClusterManager
 		kubernautURL  string
 		contextAPIURL string
 		healthAPIURL  string
@@ -43,8 +43,10 @@ var _ = Describe("BR-DISASTER-RECOVERY-E2E-001: Disaster Recovery and Resilience
 		ctx, cancel = context.WithTimeout(context.Background(), 600*time.Second) // 10 minutes for E2E
 
 		// Setup real OCP cluster infrastructure
-		testCluster = enhanced.NewTestClusterManager()
-		err := testCluster.SetupTestCluster(ctx)
+		var err error
+		testCluster, err = cluster.NewE2EClusterManager("ocp", realLogger)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E cluster manager")
+		err = testCluster.InitializeCluster(ctx, "latest")
 		Expect(err).ToNot(HaveOccurred(), "OCP cluster setup must succeed for E2E testing")
 
 		realK8sClient = testCluster.GetKubernetesClient()
@@ -66,7 +68,7 @@ var _ = Describe("BR-DISASTER-RECOVERY-E2E-001: Disaster Recovery and Resilience
 
 	AfterEach(func() {
 		if testCluster != nil {
-			err := testCluster.CleanupTestCluster(ctx)
+			err := testCluster.Cleanup(ctx)
 			Expect(err).ToNot(HaveOccurred(), "OCP cluster cleanup should succeed")
 		}
 		cancel()

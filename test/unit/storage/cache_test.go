@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -759,3 +760,9 @@ var _ = Describe("Cached Embedding Service Unit Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcache(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Ucache Suite")
+}

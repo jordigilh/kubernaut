@@ -1,6 +1,7 @@
 package k8s_test
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"net/http"
@@ -741,3 +742,9 @@ var _ = Describe("ServiceValidators - Implementation Correctness Testing", func(
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUserviceUvalidators(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UserviceUvalidators Suite")
+}

@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 
+	"github.com/jordigilh/kubernaut/pkg/e2e/chaos"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	"github.com/jordigilh/kubernaut/test/e2e/framework"
 )
@@ -288,12 +289,13 @@ var _ = Describe("BR-E2E-001: Basic Remediation Workflows", func() {
 			Expect(chaosEngine.IsInstalled()).To(BeTrue(), "Chaos engine should be installed")
 
 			// Create a pod deletion chaos experiment
-			experiment := &framework.ChaosExperiment{
+			experiment := &chaos.ChaosExperiment{
 				Name:           "e2e-pod-deletion",
-				Type:           "pod-delete",
+				Type:           chaos.ChaosExperimentPodDelete, // Use typed constant
 				TargetSelector: map[string]string{"app": "test-app"},
 				Namespace:      "kubernaut-e2e",
 				Duration:       1 * time.Minute,
+				Parameters:     chaos.ChaosParameters{}, // Use structured parameters
 			}
 
 			// Run chaos experiment

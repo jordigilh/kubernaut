@@ -209,3 +209,5 @@ var _ = Describe("BR-AI-003: Model Training and Optimization", func() {
 // 3. Provide real implementations of all dependencies
 //
 // Following Cursor Rule: "THEN: Implement business logic after ALL tests are complete and failing"
+
+// TestRunner bootstraps the Ginkgo test suite

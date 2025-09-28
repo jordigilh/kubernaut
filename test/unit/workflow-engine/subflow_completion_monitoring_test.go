@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"errors"
 	"fmt"
@@ -534,4 +535,10 @@ func (m *SubflowMockExecutionRepository) GetExecutionsByPattern(ctx context.Cont
 
 func (m *SubflowMockExecutionRepository) GetExecutionsInTimeWindow(ctx context.Context, start, end time.Time) ([]*engine.RuntimeWorkflowExecution, error) {
 	return nil, nil // Not used in these tests
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsubflowUcompletionUmonitoring(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsubflowUcompletionUmonitoring Suite")
 }

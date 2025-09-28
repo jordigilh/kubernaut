@@ -6,6 +6,7 @@ package platform
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -76,7 +77,7 @@ var _ = Describe("Enhanced Fake Kubernetes Clients - Phase 2 Real Dependencies I
 			enhancedClient = enhanced.NewProductionLikeCluster(&enhanced.ClusterConfig{
 				Scenario:        enhanced.HighLoadProduction,
 				NodeCount:       5,
-				Namespaces:      []string{"monitoring", "apps", "prometheus-alerts-slm"},
+				Namespaces:      []string{"monitoring", "apps", "kubernaut"},
 				WorkloadProfile: enhanced.KubernautOperator,
 				ResourceProfile: enhanced.ProductionResourceLimits,
 			})
@@ -132,13 +133,13 @@ var _ = Describe("Enhanced Fake Kubernetes Clients - Phase 2 Real Dependencies I
 			enhancedClient = enhanced.NewProductionLikeCluster(&enhanced.ClusterConfig{
 				Scenario:        enhanced.HighLoadProduction,
 				NodeCount:       3,
-				Namespaces:      []string{"prometheus-alerts-slm"},
+				Namespaces:      []string{"kubernaut"},
 				WorkloadProfile: enhanced.KubernautOperator,
 				ResourceProfile: enhanced.ProductionResourceLimits,
 			})
 
 			// Validate kubernaut operator deployment
-			deployment, err := enhancedClient.AppsV1().Deployments("prometheus-alerts-slm").Get(ctx, "kubernaut", metav1.GetOptions{})
+			deployment, err := enhancedClient.AppsV1().Deployments("kubernaut").Get(ctx, "kubernaut", metav1.GetOptions{})
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-ENHANCED-K8S-001: Kubernaut deployment should exist")
 			Expect(*deployment.Spec.Replicas).To(Equal(int32(3)),
@@ -154,20 +155,20 @@ var _ = Describe("Enhanced Fake Kubernetes Clients - Phase 2 Real Dependencies I
 				"BR-ENHANCED-K8S-001: Should have realistic resource limits")
 
 			// Validate service exists
-			service, err := enhancedClient.CoreV1().Services("prometheus-alerts-slm").Get(ctx, "kubernaut-service", metav1.GetOptions{})
+			service, err := enhancedClient.CoreV1().Services("kubernaut").Get(ctx, "kubernaut-service", metav1.GetOptions{})
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-ENHANCED-K8S-001: Kubernaut service should exist")
 			Expect(len(service.Spec.Ports)).To(BeNumerically(">", 0),
 				"BR-ENHANCED-K8S-001: Service should have configured ports")
 
 			// Validate HPA exists for scalable components
-			hpas, err := enhancedClient.AutoscalingV2().HorizontalPodAutoscalers("prometheus-alerts-slm").List(ctx, metav1.ListOptions{})
+			hpas, err := enhancedClient.AutoscalingV2().HorizontalPodAutoscalers("kubernaut").List(ctx, metav1.ListOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(hpas.Items)).To(BeNumerically(">", 0),
 				"BR-ENHANCED-K8S-001: Should create HPAs for autoscaling workloads")
 
 			// Validate pods are running
-			pods, err := enhancedClient.CoreV1().Pods("prometheus-alerts-slm").List(ctx, metav1.ListOptions{})
+			pods, err := enhancedClient.CoreV1().Pods("kubernaut").List(ctx, metav1.ListOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			kubernautPods := 0
 			for _, pod := range pods.Items {
@@ -299,14 +300,14 @@ var _ = Describe("Enhanced Fake Kubernetes Clients - Phase 2 Real Dependencies I
 			enhancedClient = enhanced.NewProductionLikeCluster(&enhanced.ClusterConfig{
 				Scenario:        enhanced.HighLoadProduction,
 				NodeCount:       3,
-				Namespaces:      []string{"prometheus-alerts-slm", "monitoring"},
+				Namespaces:      []string{"kubernaut", "monitoring"},
 				WorkloadProfile: enhanced.KubernautOperator,
 				ResourceProfile: enhanced.ProductionResourceLimits,
 			})
 
 			// Create real K8s client wrapper around enhanced fake client
 			k8sConfig := config.KubernetesConfig{
-				Namespace:     "prometheus-alerts-slm",
+				Namespace:     "kubernaut",
 				UseFakeClient: true,
 			}
 			realK8sClient = k8s.NewUnifiedClient(enhancedClient, k8sConfig, logger)
@@ -335,7 +336,7 @@ var _ = Describe("Enhanced Fake Kubernetes Clients - Phase 2 Real Dependencies I
 						ID:   "discovered-pattern-1",
 						Name: "CPU Spike Pattern",
 						Metadata: map[string]interface{}{
-							"namespace": "prometheus-alerts-slm",
+							"namespace": "kubernaut",
 							"resource":  "kubernaut",
 						},
 					},
@@ -361,7 +362,7 @@ var _ = Describe("Enhanced Fake Kubernetes Clients - Phase 2 Real Dependencies I
 				"BR-REAL-MODULES-001: Real analytics should be fast")
 
 			// Test real K8s client operations
-			deployments, err := realK8sClient.GetDeployment(ctx, "prometheus-alerts-slm", "kubernaut")
+			deployments, err := realK8sClient.GetDeployment(ctx, "kubernaut", "kubernaut")
 			Expect(err).ToNot(HaveOccurred(),
 				"BR-REAL-MODULES-001: Real K8s client should access enhanced cluster resources")
 			Expect(deployments).ToNot(BeNil(),
@@ -660,3 +661,9 @@ var _ = Describe("Enhanced Fake Kubernetes Clients - Phase 2 Real Dependencies I
 		}
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUenhancedUfakeUclient(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UenhancedUfakeUclient Suite")
+}

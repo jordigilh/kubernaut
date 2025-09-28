@@ -128,7 +128,7 @@ ai_services:
 ./scripts/run-holmesgpt-local.sh
 
 # 2. Run with local-llm config
-./bin/prometheus-alerts-slm --config config/local-llm.yaml
+./bin/kubernaut --config config/local-llm.yaml
 
 # 3. Test integration
 ./scripts/test-holmesgpt-integration.sh
@@ -140,7 +140,7 @@ ai_services:
 ./scripts/deploy-holmesgpt-e2e.sh
 
 # 2. Use production config
-./bin/prometheus-alerts-slm --config config/production-holmesgpt.yaml
+./bin/kubernaut --config config/production-holmesgpt.yaml
 
 # 3. Run E2E tests
 ./scripts/e2e-test-holmesgpt.sh

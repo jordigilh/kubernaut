@@ -98,20 +98,20 @@ export POSTGRES_PORT="30432"  # PostgreSQL NodePort
 export LLM_ENDPOINT="http://192.168.1.169:8080"
 export REDIS_PASSWORD="integration_redis_password"
 
-# Deploy prometheus-alerts-slm
-cd /path/to/kubernaut/cmd/prometheus-alerts-slm
-go build -o prometheus-alerts-slm main.go
-./prometheus-alerts-slm --config-file=config.yaml &
+# Deploy kubernaut
+cd /path/to/kubernaut/cmd/kubernaut
+go build -o kubernaut main.go
+./kubernaut --config-file=config.yaml &
 
 # Deploy context-api-server
 cd /path/to/kubernaut/cmd/context-api-server
 go build -o context-api-server main.go
 ./context-api-server --port=8081 &
 
-# Deploy dynamic-toolset-server
-cd /path/to/kubernaut/cmd/dynamic-toolset-server
-go build -o dynamic-toolset-server main.go
-./dynamic-toolset-server --port=8082 &
+# Deploy kubernaut
+cd /path/to/kubernaut/cmd/kubernaut
+go build -o kubernaut main.go
+./kubernaut --port=8082 &
 
 # Return to test directory
 cd ~/kubernaut-integration-test

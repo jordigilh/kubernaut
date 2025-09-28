@@ -15,17 +15,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// ChaosExperiment represents a chaos engineering experiment (simplified)
-type ChaosExperiment struct {
-	Name           string            `yaml:"name"`
-	Type           string            `yaml:"type"`
-	TargetSelector map[string]string `yaml:"target_selector"`
-	Namespace      string            `yaml:"namespace"`
-	Duration       time.Duration     `yaml:"duration"`
-}
-
-// MOVED: Mock types moved to types.go to avoid duplication
+// CONSOLIDATED: ChaosExperiment definition moved to pkg/e2e/chaos/chaos_orchestration.go
 // Following project guidelines: REUSE existing code and AVOID duplication
+// Use: chaos.ChaosExperiment for all chaos engineering experiments
 
 // BR-E2E-003: Realistic alert generation system for E2E testing
 // Business Impact: Provides authentic alert scenarios for comprehensive workflow validation

@@ -1,6 +1,7 @@
 package holmesgpt
 
 import (
+	"testing"
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -354,3 +355,9 @@ var _ = Describe("Strategy-Oriented Investigation Function Activation - TDD Phas
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUstrategyUinvestigationUactivation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UstrategyUinvestigationUactivation Suite")
+}

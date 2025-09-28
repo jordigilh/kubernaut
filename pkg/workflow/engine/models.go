@@ -1669,7 +1669,36 @@ type WorkflowRuleValidationResult struct {
 	Timestamp time.Time              `json:"timestamp"`
 }
 
-type ClusterMetrics struct{}
+// ClusterMetrics represents comprehensive cluster performance and health metrics
+// Business Requirement: BR-METRICS-001 - Cluster monitoring and performance tracking
+type ClusterMetrics struct {
+	// Core cluster identification
+	ClusterID   string `json:"cluster_id"`
+	ClusterName string `json:"cluster_name"`
+	
+	// Resource utilization metrics
+	CPUUtilization    float64 `json:"cpu_utilization"`    // Percentage 0-100
+	MemoryUtilization float64 `json:"memory_utilization"` // Percentage 0-100
+	StorageUtilization float64 `json:"storage_utilization"` // Percentage 0-100
+	
+	// Node health metrics
+	TotalNodes     int `json:"total_nodes"`
+	ReadyNodes     int `json:"ready_nodes"`
+	UnreadyNodes   int `json:"unready_nodes"`
+	
+	// Pod metrics
+	TotalPods      int `json:"total_pods"`
+	RunningPods    int `json:"running_pods"`
+	PendingPods    int `json:"pending_pods"`
+	FailedPods     int `json:"failed_pods"`
+	
+	// Network and performance
+	NetworkLatency    time.Duration `json:"network_latency"`
+	APIServerLatency  time.Duration `json:"api_server_latency"`
+	
+	// Timestamp for metrics collection
+	CollectedAt time.Time `json:"collected_at"`
+}
 
 // ValidationType for validation results
 type ValidationType string

@@ -159,7 +159,25 @@ func (dtm *DynamicToolsetManager) Stop() {
 // GetAvailableToolsets returns all currently available toolsets
 // Business Requirement: BR-HOLMES-025 - Toolset configuration API endpoints
 func (dtm *DynamicToolsetManager) GetAvailableToolsets() []*ToolsetConfig {
-	return dtm.configCache.GetAllToolsets()
+	toolsets := dtm.configCache.GetAllToolsets()
+
+	// If no toolsets are cached (e.g., manager not started), return baseline toolsets
+	// This ensures the business logic works correctly in all states
+	if len(toolsets) == 0 {
+		dtm.log.Debug("No cached toolsets found, generating baseline toolsets")
+		baselineToolsets := dtm.generateBaselineToolsets()
+
+		// Cache the baseline toolsets for future calls
+		for _, toolset := range baselineToolsets {
+			if toolset != nil {
+				dtm.configCache.SetToolset(toolset)
+			}
+		}
+
+		return baselineToolsets
+	}
+
+	return toolsets
 }
 
 // GetToolsetByServiceType returns toolsets for a specific service type
@@ -461,6 +479,13 @@ func (dtm *DynamicToolsetManager) generateBaselineToolsets() []*ToolsetConfig {
 				"describe_resources",
 				"get_logs",
 			},
+			ServiceMeta: ServiceMetadata{
+				Namespace:    "kube-system",
+				ServiceName:  "kubernetes",
+				Labels:       map[string]string{"component": "apiserver", "provider": "kubernetes"},
+				Annotations:  map[string]string{"toolset.holmesgpt.io/baseline": "true"},
+				DiscoveredAt: time.Now(),
+			},
 			Tools: []HolmesGPTTool{
 				{
 					Name:        "get_pods",
@@ -506,6 +531,13 @@ func (dtm *DynamicToolsetManager) generateBaselineToolsets() []*ToolsetConfig {
 				"web_search",
 				"documentation_lookup",
 				"api_status_check",
+			},
+			ServiceMeta: ServiceMetadata{
+				Namespace:    "default",
+				ServiceName:  "internet",
+				Labels:       map[string]string{"component": "external", "provider": "internet"},
+				Annotations:  map[string]string{"toolset.holmesgpt.io/baseline": "true"},
+				DiscoveredAt: time.Now(),
 			},
 			Tools: []HolmesGPTTool{
 				{
@@ -587,15 +619,35 @@ func (dtm *DynamicToolsetManager) generateBaselineToolsets() []*ToolsetConfig {
 	baselineNames := []string{"kubernetes", "internet", "prometheus", "grafana"}
 
 	var baselineToolsets []*ToolsetConfig
+
+	// Check if we have any discovered services for dynamically discoverable types
+	discoveredServices := dtm.serviceDiscovery.GetDiscoveredServices()
+	discoveredServiceTypes := make(map[string]bool)
+	for _, service := range discoveredServices {
+		if service.Available {
+			discoveredServiceTypes[service.ServiceType] = true
+		}
+	}
+
 	for _, name := range baselineNames {
-		// Skip baseline for services that can be dynamically discovered
+		// Skip baseline for services that can be dynamically discovered AND are actually discovered
 		// This prevents conflicts between baseline and service-discovered toolsets
-		if dynamicallyDiscoverableServices[name] {
-			dtm.log.WithField("service_type", name).Debug("Skipping baseline toolset for dynamically discoverable service")
+		if dynamicallyDiscoverableServices[name] && discoveredServiceTypes[name] {
+			dtm.log.WithField("service_type", name).Debug("Skipping baseline toolset - service dynamically discovered")
 			continue
 		}
 
 		if template, exists := baselineTemplates[name]; exists {
+			// Add ServiceMeta for dynamically discoverable services that weren't discovered
+			if dynamicallyDiscoverableServices[name] && !discoveredServiceTypes[name] {
+				template.ServiceMeta = ServiceMetadata{
+					Namespace:    "monitoring",
+					ServiceName:  name,
+					Labels:       map[string]string{"component": name, "provider": "baseline"},
+					Annotations:  map[string]string{"toolset.holmesgpt.io/baseline": "true", "toolset.holmesgpt.io/fallback": "true"},
+					DiscoveredAt: time.Now(),
+				}
+			}
 			baselineToolsets = append(baselineToolsets, template)
 		} else {
 			dtm.log.WithField("toolset_name", name).Warn("Baseline toolset template not found")

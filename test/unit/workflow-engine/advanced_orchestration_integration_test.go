@@ -1,6 +1,7 @@
 package workflowengine_test
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -663,3 +664,9 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUorchestrationUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUorchestrationUintegration Suite")
+}

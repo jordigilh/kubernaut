@@ -74,11 +74,24 @@ func (store *InMemoryPatternStore) GetPatterns(ctx context.Context, filters map[
 
 	var result []*shared.DiscoveredPattern
 
+	// Extract limit from filters if present (not used for pattern matching)
+	limit := -1
+	if limitValue, exists := filters["limit"]; exists {
+		if limitInt, ok := limitValue.(int); ok {
+			limit = limitInt
+		}
+	}
+
 	for _, pattern := range store.patterns {
 		if store.matchesFilters(pattern, filters) {
 			// Return copy to prevent external modifications
 			patternCopy := *pattern
 			result = append(result, &patternCopy)
+
+			// Apply limit if specified
+			if limit > 0 && len(result) >= limit {
+				break
+			}
 		}
 	}
 
@@ -86,6 +99,7 @@ func (store *InMemoryPatternStore) GetPatterns(ctx context.Context, filters map[
 		"filters":        filters,
 		"found_patterns": len(result),
 		"total_patterns": len(store.patterns),
+		"limit_applied":  limit,
 	}).Debug("Retrieved patterns from memory")
 
 	return result, nil
@@ -202,6 +216,11 @@ func (store *InMemoryPatternStore) matchesFilters(pattern *shared.DiscoveredPatt
 	}
 
 	for key, value := range filters {
+		// Skip query parameters that are not pattern attributes
+		if key == "limit" {
+			continue
+		}
+
 		switch key {
 		case "type":
 			if stringValue, ok := value.(string); ok && pattern.Type != stringValue {

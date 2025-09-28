@@ -4,6 +4,7 @@
 package optimization
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -276,4 +277,10 @@ func countContextTypes(contextData *aicontext.ContextData) int {
 		count++
 	}
 	return count
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUaiUoptimizationUalgorithms(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUaiUoptimizationUalgorithms Suite")
 }

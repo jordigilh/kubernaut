@@ -14,6 +14,8 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/ai/client"
+	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	contextapi "github.com/jordigilh/kubernaut/pkg/api/context"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
@@ -34,6 +36,10 @@ var _ = Describe("Context API for HolmesGPT Orchestration - Business Requirement
 		testConfig             *config.Config
 		recorder               *httptest.ResponseRecorder
 		ctx                    context.Context
+
+		// TDD GREEN: Add HTTP test infrastructure
+		testAIServer  *httptest.Server
+		httpLLMClient llm.Client
 	)
 
 	BeforeEach(func() {
@@ -41,6 +47,47 @@ var _ = Describe("Context API for HolmesGPT Orchestration - Business Requirement
 		ctx = context.Background()
 		testLogger = logrus.New()
 		testLogger.SetLevel(logrus.WarnLevel) // Reduce test noise
+
+		// TDD REFACTOR: Enhanced test AI Service HTTP server with better error handling
+		testAIServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v1/analyze-alert" && r.Method == "POST" {
+				// REFACTOR: Enhanced response with comprehensive business data
+				response := map[string]interface{}{
+					"action":     "test_action",
+					"confidence": 0.85, // Slightly higher confidence for better test coverage
+					"reasoning": map[string]interface{}{
+						"summary":             "Enhanced HTTP AI Service analysis with microservices architecture",
+						"primary_reason":      "HTTP-based AI Service provides centralized LLM analysis",
+						"historical_context":  "Microservices pattern enables better fault isolation",
+						"oscillation_risk":    "Low risk - HTTP communication provides reliable fallback",
+						"service_integration": "Successfully integrated with Context API Service",
+					},
+					"parameters": map[string]interface{}{
+						"http_communication":    true,
+						"service_type":          "ai-service",
+						"microservices_enabled": true,
+						"fault_isolation":       true,
+						"centralized_llm":       true,
+					},
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-AI-Service-Version", "microservices-v1")
+				if err := json.NewEncoder(w).Encode(response); err != nil {
+					testLogger.WithError(err).Error("Failed to encode AI service response")
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+				return
+			}
+			// REFACTOR: Better error handling for unknown endpoints
+			testLogger.WithFields(logrus.Fields{
+				"path":   r.URL.Path,
+				"method": r.Method,
+			}).Warn("Unknown endpoint requested from test AI service")
+			w.WriteHeader(http.StatusNotFound)
+		}))
+
+		// TDD GREEN: Create HTTP LLM client
+		httpLLMClient = client.NewHTTPLLMClient(testAIServer.URL)
 
 		// Create test configuration using existing patterns
 		testConfig = &config.Config{
@@ -57,10 +104,10 @@ var _ = Describe("Context API for HolmesGPT Orchestration - Business Requirement
 		mockHolmesGPT = mocks.NewMockClient()
 		mockServiceIntegration = mocks.NewMockServiceIntegration()
 
-		// Create AI service integrator using existing patterns
+		// TDD GREEN: Create AI service integrator with HTTP LLM client
 		aiIntegrator = engine.NewAIServiceIntegrator(
 			testConfig,
-			nil,           // LLM client
+			httpLLMClient, // HTTP LLM client instead of nil
 			mockHolmesGPT, // HolmesGPT client - using proper mock
 			nil,           // Vector DB
 			nil,           // Metrics client
@@ -75,15 +122,28 @@ var _ = Describe("Context API for HolmesGPT Orchestration - Business Requirement
 	})
 
 	AfterEach(func() {
+		// TDD REFACTOR: Enhanced cleanup with comprehensive logging
+		if testAIServer != nil {
+			testAIServer.Close()
+			testLogger.Debug("✅ Test AI Service HTTP server closed")
+		}
+
 		// Following guideline: proper cleanup and error handling
 		if mockHolmesGPT != nil {
 			mockHolmesGPT.ClearHistory()
+			testLogger.Debug("✅ Mock HolmesGPT history cleared")
 		}
 		if mockServiceIntegration != nil {
 			mockServiceIntegration.ClearToolsets()
+			testLogger.Debug("✅ Mock service integration toolsets cleared")
 		}
-		// Following guideline: ALWAYS log errors - cleanup completion
-		testLogger.Debug("Test cleanup completed successfully")
+
+		// REFACTOR: Enhanced logging with microservices context
+		testLogger.WithFields(logrus.Fields{
+			"http_llm_client_used":   httpLLMClient != nil,
+			"ai_service_integration": true,
+			"microservices_pattern":  true,
+		}).Debug("✅ Microservices test cleanup completed successfully")
 	})
 
 	Context("BR-AI-011: Intelligent alert investigation using historical patterns", func() {

@@ -4,6 +4,7 @@
 package insights
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -494,3 +495,9 @@ var _ = Describe("BR-ANALYTICS-ENGINE-001: Comprehensive Analytics Engine Busine
 
 // Helper functions for creating mock objects and test data
 // These support REAL business logic testing with various scenarios
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcomprehensiveUanalyticsUengine(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcomprehensiveUanalyticsUengine Suite")
+}

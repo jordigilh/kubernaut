@@ -1,6 +1,7 @@
 package workflowengine_test
 
 import (
+	"testing"
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -188,3 +189,9 @@ var _ = Describe("AI Condition Evaluator Vector Integration", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUaiUconditionUevaluatorUvectorUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UaiUconditionUevaluatorUvectorUintegration Suite")
+}

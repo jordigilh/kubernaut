@@ -77,7 +77,9 @@ class Settings(BaseSettings):
 
     model_config = {
         "env_prefix": "HOLMESGPT_",
-        "case_sensitive": False
+        "case_sensitive": False,
+        "env_file": "../.env",
+        "env_file_encoding": "utf-8"
     }
 
 

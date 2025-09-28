@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-service
+  namespace: kubernaut-integration
+  labels:
+    app: webhook-service
+    component: kubernaut
+    service: webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhook-service
+  template:
+    metadata:
+      labels:
+        app: webhook-service
+        component: kubernaut
+        service: webhook
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9993"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kubernaut-webhook
+      containers:
+      - name: webhook-service
+        image: quay.io/jordigilh/kubernaut-webhook-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9993
+          name: metrics
+        env:
+        - name: CONFIG_FILE
+          value: "/etc/kubernaut/config.yaml"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: POSTGRES_HOST
+          value: "postgresql-service"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: postgresql-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: postgresql-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secret
+              key: POSTGRES_PASSWORD
+        - name: REDIS_HOST
+          value: "redis-service"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: AI_SERVICE_ENDPOINT
+          value: "http://ai-service:8090"
+        - name: HOLMESGPT_ENDPOINT
+          value: "http://holmesgpt-service:8090"
+        - name: PROMETHEUS_ENDPOINT
+          value: "http://prometheus-service:9090"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/kubernaut
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: config
+        configMap:
+          name: kubernaut-config
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service
+  namespace: kubernaut-integration
+  labels:
+    app: webhook-service
+    component: kubernaut
+    service: webhook
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  - port: 9993
+    targetPort: 9993
+    protocol: TCP
+    name: metrics
+  selector:
+    app: webhook-service
+---
+# NodePort service for external access during development
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-nodeport
+  namespace: kubernaut-integration
+  labels:
+    app: webhook-service
+    component: kubernaut
+    service: webhook
+    service-type: external-access
+spec:
+  type: NodePort
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30800
+    protocol: TCP
+    name: http
+  - port: 9993
+    targetPort: 9993
+    nodePort: 30993
+    protocol: TCP
+    name: metrics
+  selector:
+    app: webhook-service

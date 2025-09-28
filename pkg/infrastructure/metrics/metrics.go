@@ -99,6 +99,46 @@ var (
 		Name: "webhook_requests_total",
 		Help: "Total number of webhook requests",
 	}, []string{"status"})
+
+	// AI Service Metrics - Following kubernaut naming convention
+	// BR-AI-005: Metrics collection for AI service monitoring
+
+	// AIRequestsTotal tracks total AI analysis requests processed
+	AIRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "kubernaut_ai_requests_total",
+		Help: "Total AI analysis requests processed",
+	}, []string{"service", "endpoint", "status"})
+
+	// AIAnalysisDuration tracks duration of AI analysis requests (proper histogram)
+	AIAnalysisDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "kubernaut_ai_analysis_duration_seconds",
+		Help:    "Duration of AI analysis requests",
+		Buckets: []float64{0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0}, // AI analysis buckets
+	}, []string{"service", "model"})
+
+	// AILLMRequestsTotal tracks LLM requests made by AI service
+	AILLMRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "kubernaut_ai_llm_requests_total",
+		Help: "Total LLM requests made by AI service",
+	}, []string{"service", "provider", "model", "status"})
+
+	// AIFallbackUsageTotal tracks fallback client usage
+	AIFallbackUsageTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "kubernaut_ai_fallback_usage_total",
+		Help: "Total fallback client usage by AI service",
+	}, []string{"service", "reason"})
+
+	// AIErrorsTotal tracks errors encountered by AI service
+	AIErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "kubernaut_ai_errors_total",
+		Help: "Total errors encountered by AI service",
+	}, []string{"service", "error_type", "endpoint"})
+
+	// AIServiceUp tracks AI service availability (standard service metric)
+	AIServiceUp = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "kubernaut_ai_service_up",
+		Help: "AI service availability status",
+	}, []string{"service"})
 )
 
 // Helper functions for recording metrics
@@ -170,6 +210,43 @@ func DecrementConcurrentActions() {
 // RecordWebhookRequest records a webhook request
 func RecordWebhookRequest(status string) {
 	WebhookRequestsTotal.WithLabelValues(status).Inc()
+}
+
+// AI Service Helper Functions - Following kubernaut patterns
+// BR-AI-005: Standardized AI service metrics recording
+
+// RecordAIRequest records an AI analysis request
+func RecordAIRequest(service, endpoint, status string) {
+	AIRequestsTotal.WithLabelValues(service, endpoint, status).Inc()
+}
+
+// RecordAIAnalysis records AI analysis timing
+func RecordAIAnalysis(service, model string, duration time.Duration) {
+	AIAnalysisDuration.WithLabelValues(service, model).Observe(duration.Seconds())
+}
+
+// RecordAILLMRequest records an LLM request made by AI service
+func RecordAILLMRequest(service, provider, model, status string) {
+	AILLMRequestsTotal.WithLabelValues(service, provider, model, status).Inc()
+}
+
+// RecordAIFallbackUsage records fallback client usage
+func RecordAIFallbackUsage(service, reason string) {
+	AIFallbackUsageTotal.WithLabelValues(service, reason).Inc()
+}
+
+// RecordAIError records an AI service error
+func RecordAIError(service, errorType, endpoint string) {
+	AIErrorsTotal.WithLabelValues(service, errorType, endpoint).Inc()
+}
+
+// SetAIServiceUp sets AI service availability status
+func SetAIServiceUp(service string, up bool) {
+	var value float64
+	if up {
+		value = 1
+	}
+	AIServiceUp.WithLabelValues(service).Set(value)
 }
 
 // Timer is a helper struct for measuring durations

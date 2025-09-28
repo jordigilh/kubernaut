@@ -1,6 +1,7 @@
 package holmesgpt
 
 import (
+	"testing"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -477,3 +478,9 @@ var _ = Describe("HolmesGPT Toolset Deployment Client", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUtoolsetUdeploymentUclient(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UtoolsetUdeploymentUclient Suite")
+}

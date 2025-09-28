@@ -122,7 +122,22 @@ func (a *PatternStoreAdapter) StorePattern(ctx context.Context, pattern *types.D
 
 // GetPattern implements engine.PatternStore interface
 func (a *PatternStoreAdapter) GetPattern(ctx context.Context, patternID string) (*types.DiscoveredPattern, error) {
-	return a.store.GetPattern(ctx, patternID)
+	intelligencePattern, err := a.store.GetPattern(ctx, patternID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert from intelligence/shared.DiscoveredPattern to shared/types.DiscoveredPattern
+	sharedTypesPattern := &types.DiscoveredPattern{
+		ID:          intelligencePattern.ID,
+		Type:        string(intelligencePattern.PatternType),
+		Confidence:  intelligencePattern.Confidence,
+		Support:     0.8, // Default support value for compatibility
+		Description: intelligencePattern.Description,
+		Metadata:    intelligencePattern.Metadata,
+	}
+
+	return sharedTypesPattern, nil
 }
 
 // ListPatterns implements engine.PatternStore interface
@@ -304,14 +319,14 @@ func (s *StandardTestSuite) Cleanup() error {
 func (s *StandardTestSuite) setupDatabase() error {
 	dbHelper := s.StateManager.GetDatabaseHelper()
 	if dbHelper == nil {
-		s.Logger.Warn("Database helper unavailable, tests will run without database functionality")
-		return nil // Graceful degradation
+		s.Logger.Error("Database helper unavailable - integration tests require real database")
+		return fmt.Errorf("database helper not available for integration tests")
 	}
 
 	dbInterface := dbHelper.GetDatabase()
 	if dbInterface == nil {
-		s.Logger.Warn("Database connection unavailable, tests will run without database functionality")
-		return nil // Graceful degradation
+		s.Logger.Error("Database connection unavailable - integration tests require real database")
+		return fmt.Errorf("database connection not available for integration tests")
 	}
 
 	var ok bool

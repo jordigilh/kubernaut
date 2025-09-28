@@ -167,8 +167,8 @@ cleanup_binaries() {
     local generated_files=(
         "main"
         "kubernaut"
-        "dynamic-toolset-server"
-        "prometheus-alerts-slm"
+        "kubernaut"
+        "kubernaut"
         "mcp-server"
         "test-context-performance"
     )

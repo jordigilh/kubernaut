@@ -4,6 +4,7 @@
 package insights
 
 import (
+	"testing"
 	"context"
 	"math"
 	"time"
@@ -322,3 +323,9 @@ func (r *basicActionHistoryRepo) GetActionHistorySummaries(ctx context.Context, 
 // 4. Integrate with existing ModelTrainer functionality
 //
 // Following Cursor Rule: "THEN: Implement business logic after ALL tests are complete and failing"
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUautomatedUtrainingUscheduler(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UautomatedUtrainingUscheduler Suite")
+}

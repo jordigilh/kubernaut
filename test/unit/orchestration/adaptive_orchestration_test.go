@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -983,4 +984,10 @@ func findAdaptationByType(adaptations []*ExecutionAdaptation, adaptationType str
 		}
 	}
 	return nil
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadaptiveUorchestration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadaptiveUorchestration Suite")
 }

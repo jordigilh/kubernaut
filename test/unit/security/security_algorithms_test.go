@@ -1,6 +1,7 @@
 package security_test
 
 import (
+	"testing"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -775,3 +776,9 @@ var _ = Describe("BR-SEC-001-010: Security Algorithm Logic Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsecurityUalgorithms(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsecurityUalgorithms Suite")
+}

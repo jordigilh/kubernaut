@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Configuration
-CONTAINER_NAME="prometheus-alerts-slm-postgres"
+CONTAINER_NAME="kubernaut-postgres"
 DB_NAME="action_history"
 DB_USER="slm_user"
 MIGRATIONS_DIR="$(pwd)/migrations"
@@ -44,18 +44,18 @@ for migration_file in "$MIGRATIONS_DIR"/*.sql; do
         echo "⚠️  No migration files found in $MIGRATIONS_DIR"
         continue
     fi
-    
+
     # Extract version from filename (e.g., 001_initial_schema.sql -> 001)
     version=$(basename "$migration_file" | cut -d'_' -f1)
-    
+
     # Check if migration is already applied
     if echo "$applied_migrations" | grep -q "^$version$"; then
         echo "⏭️  Migration $version already applied, skipping..."
         continue
     fi
-    
+
     echo "🔄 Applying migration: $(basename "$migration_file")"
-    
+
     # Apply migration
     if podman exec -i "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" < "$migration_file"; then
         # Record successful migration
@@ -76,12 +76,12 @@ echo ""
 echo "📊 Database Schema Summary:"
 echo "=========================="
 podman exec "$CONTAINER_NAME" psql -U "$DB_USER" -d "$DB_NAME" -c "
-SELECT 
+SELECT
     schemaname,
     tablename,
     tableowner
-FROM pg_tables 
-WHERE schemaname = 'public' 
+FROM pg_tables
+WHERE schemaname = 'public'
 ORDER BY tablename;"
 
 echo ""

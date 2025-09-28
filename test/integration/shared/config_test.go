@@ -42,7 +42,7 @@ var _ = Describe("Configuration Loading", func() {
 		envHelper = NewEnvironmentIsolationHelper(logger)
 
 		// Capture current state of LLM environment variables
-		envHelper.CaptureEnvironment("LLM_ENDPOINT", "LLM_MODEL", "LLM_PROVIDER")
+		envHelper.CaptureEnvironment("LLM_ENDPOINT", "LLM_MODEL", "LLM_PROVIDER", "USE_MOCK_LLM")
 	})
 
 	AfterEach(func() {
@@ -53,9 +53,10 @@ var _ = Describe("Configuration Loading", func() {
 	Context("with custom environment variables", func() {
 		BeforeEach(func() {
 			envHelper.SetEnvironment(map[string]string{
-				"LLM_ENDPOINT": "http://test:8080",
-				"LLM_MODEL":    "test-model",
-				"LLM_PROVIDER": "ramalama",
+				"LLM_ENDPOINT":  "http://test:8080",
+				"LLM_MODEL":     "test-model",
+				"LLM_PROVIDER":  "ramalama",
+				"USE_MOCK_LLM":  "false", // Disable mock mode for this test
 			})
 		})
 
@@ -71,15 +72,35 @@ var _ = Describe("Configuration Loading", func() {
 	Context("with default environment variables", func() {
 		BeforeEach(func() {
 			envHelper.UnsetEnvironment("LLM_ENDPOINT", "LLM_MODEL", "LLM_PROVIDER")
+			envHelper.SetEnvironment(map[string]string{
+				"USE_MOCK_LLM": "false", // Disable mock mode for this test
+			})
 		})
 
 		It("should load default configuration values", func() {
 			cfg := LoadConfig()
 
-			Expect(cfg.LLMEndpoint).To(Equal("http://192.168.1.169:8080"))
+			Expect(cfg.LLMEndpoint).To(Equal("http://localhost:8010"))
 			Expect(cfg.LLMModel).To(Equal("ggml-org/gpt-oss-20b-GGUF"))
 			// Provider should be auto-detected from endpoint
 			Expect(cfg.LLMProvider).To(Equal("ramalama"))
+		})
+	})
+
+	Context("with mock LLM enabled", func() {
+		BeforeEach(func() {
+			envHelper.SetEnvironment(map[string]string{
+				"USE_MOCK_LLM": "true", // Enable mock mode for this test
+			})
+		})
+
+		It("should load mock configuration values", func() {
+			cfg := LoadConfig()
+
+			Expect(cfg.LLMEndpoint).To(Equal("mock://localhost:8080"))
+			Expect(cfg.LLMModel).To(Equal("mock-model"))
+			Expect(cfg.LLMProvider).To(Equal("mock"))
+			Expect(cfg.UseMockLLM).To(BeTrue())
 		})
 	})
 })

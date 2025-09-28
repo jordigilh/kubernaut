@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/intelligence/ml"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
 	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -632,6 +633,17 @@ func (mml *MockMLAnalyzer) GetModelCount() int {
 
 func (mml *MockMLAnalyzer) GetModels() map[string]*patterns.MLModel {
 	return mml.models
+}
+
+// AnalyzePerformanceMetrics implements ml.MockMLAnalyzer interface
+func (mml *MockMLAnalyzer) AnalyzePerformanceMetrics(ctx context.Context, metrics map[string]float64) (*ml.AnalysisResult, error) {
+	// Stub implementation for testing
+	return &ml.AnalysisResult{
+		ServiceHealth:      "healthy",
+		PerformanceScore:   0.85,
+		BusinessImpact:     "low",
+		RecommendedActions: []string{"monitor", "optimize"},
+	}, nil
 }
 
 func (mml *MockMLAnalyzer) SetPredictionResults(predictions []*shared.WorkflowPrediction) {

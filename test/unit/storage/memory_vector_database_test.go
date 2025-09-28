@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -623,3 +624,9 @@ var _ = Describe("Memory Vector Database Unit Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUmemoryUvectorUdatabase(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UmemoryUvectorUdatabase Suite")
+}

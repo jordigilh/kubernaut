@@ -16,8 +16,8 @@ HolmesGPT Service:
   E2E Testing: ✅ scripts/deploy-holmesgpt-e2e.sh (Kubernetes/Helm)
   Integration Tests: ✅ scripts/test-holmesgpt-integration.sh
 
-Main Kubernaut Service (prometheus-alerts-slm):
-  Application: ✅ cmd/prometheus-alerts-slm/main.go
+Main Kubernaut Service (kubernaut):
+  Application: ✅ cmd/kubernaut/main.go
   Deployment: ❓ Need to verify current HTTP server setup
   Configuration: ✅ config/*.yaml files available
 
@@ -87,7 +87,7 @@ context_api:
 
 ### **Step 2: Main Application Integration** ⭐ **CRITICAL**
 ```go
-// cmd/prometheus-alerts-slm/main.go
+// cmd/kubernaut/main.go
 // Add Context API server startup alongside main service
 
 import (
@@ -137,7 +137,7 @@ echo "  • Main Service: :8080 (webhooks, health)"
 echo "  • Context API: :8091 (HolmesGPT integration)"
 echo "  • Metrics: :9090 (Prometheus)"
 
-go run ./cmd/prometheus-alerts-slm --config "$CONFIG_FILE"
+go run ./cmd/kubernaut --config "$CONFIG_FILE"
 ```
 
 ### **Step 4: Integration Test Updates** 📝 **RECOMMENDED**

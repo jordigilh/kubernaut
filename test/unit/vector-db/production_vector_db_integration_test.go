@@ -1,6 +1,7 @@
 package vectordb
 
 import (
+	"testing"
 	"context"
 	"os"
 	"time"
@@ -203,4 +204,10 @@ func createProductionVectorDatabase(
 	}
 
 	return vectorDB, actualBackend, err
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUproductionUvectorUdbUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UproductionUvectorUdbUintegration Suite")
 }

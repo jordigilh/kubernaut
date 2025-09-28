@@ -4,6 +4,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -735,3 +736,9 @@ var _ = Describe("Safety Compliance & Governance Extensions - Phase 1 Business R
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsafetyUcomplianceUgovernanceUextensions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsafetyUcomplianceUgovernanceUextensions Suite")
+}

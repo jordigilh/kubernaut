@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"testing"
 	"context"
 	"encoding/json"
 	"io"
@@ -361,3 +362,9 @@ var _ = Describe("HuggingFace Embedding Service Unit Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUhuggingfaceUembedding(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UhuggingfaceUembedding Suite")
+}

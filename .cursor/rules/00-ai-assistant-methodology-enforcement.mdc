@@ -2,198 +2,357 @@
 alwaysApply: true
 ---
 
-#!/bin/bash
-# Pre-commit hook for TDD and integration enforcement
+# AI Assistant Behavioral Constraints for TDD Enforcement - COMPREHENSIVE
 
-set -e
+## 🚨 **PRIORITY HIERARCHY**
 
-echo "🔍 Running TDD and Integration Validation..."
+1. **Enhanced 'fix-build' Methodology** (HIGHEST PRIORITY)
+2. **Real-Time Session Enforcement** (HIGH PRIORITY)
+3. **Basic TDD Validation** (MEDIUM PRIORITY)
+4. **Emergency Stop Conditions** (CRITICAL PRIORITY)
 
-# Check for TDD violations
-echo "Checking TDD compliance..."
-MODIFIED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' | grep -v '_test\.go$' || true)
-MODIFIED_TEST_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '_test\.go$' || true)
+---
 
-# Rule 1: Test files must not reference undefined struct fields
-if [ -n "$MODIFIED_TEST_FILES" ]; then
-    echo "Validating test files for type safety..."
-    for test_file in $MODIFIED_TEST_FILES; do
-        echo "Checking: $test_file"
+## 🤖 **MANDATORY AI ASSISTANT PROTOCOL**
 
-        # Extract struct field references (e.g., object.FieldName)
-        FIELD_REFS=$(grep -n '[a-zA-Z_][a-zA-Z0-9_]*\.[A-Z][a-zA-Z0-9_]*' "$test_file" | grep -v '//' || true)
+### **REAL-TIME PREVENTION SYSTEM**
 
-        if [ -n "$FIELD_REFS" ]; then
-            echo "Found struct field references in $test_file:"
-            echo "$FIELD_REFS"
+**CRITICAL PRINCIPLE**: Problems are **PREVENTED DURING THE SESSION** through mandatory AI validation, not caught after commit.
 
-            # Check if these fields exist in type definitions
-            while IFS= read -r line; do
-                FIELD_REF=$(echo "$line" | grep -o '[a-zA-Z_][a-zA-Z0-9_]*\.[A-Z][a-zA-Z0-9_]*' | head -1)
-                TYPE_NAME=$(echo "$FIELD_REF" | cut -d'.' -f1)
-                FIELD_NAME=$(echo "$FIELD_REF" | cut -d'.' -f2)
+**AI must execute validation BEFORE generating any code, not after:**
 
-                # Look for type definition
-                TYPE_DEF=$(find pkg/ -name "*.go" -exec grep -l "type.*$TYPE_NAME.*struct" {} \; | head -1)
-                if [ -n "$TYPE_DEF" ]; then
-                    # Check if field exists in type definition
-                    FIELD_EXISTS=$(grep -A 20 "type.*$TYPE_NAME.*struct" "$TYPE_DEF" | grep -c "$FIELD_NAME" || echo "0")
-                    if [ "$FIELD_EXISTS" -eq 0 ]; then
-                        echo "❌ ERROR: Field '$FIELD_NAME' not found in type '$TYPE_NAME' (defined in $TYPE_DEF)"
-                        echo "   Referenced in: $test_file"
-                        echo "   🔧 FIX: Add field to type definition or use correct field name"
-                        exit 1
-                    fi
-                else
-                    echo "⚠️  WARNING: Type '$TYPE_NAME' definition not found"
-                fi
-            done <<< "$FIELD_REFS"
-        fi
-    done
-fi
+---
 
-# Rule 2: Business code must be integrated in main applications
-if [ -n "$MODIFIED_GO_FILES" ]; then
-    echo "Checking business code integration..."
-    for go_file in $MODIFIED_GO_FILES; do
-        # Skip if not in pkg/ directory (business logic location)
-        if [[ "$go_file" == pkg/* ]]; then
-            # Extract type definitions
-            TYPE_DEFS=$(grep -n '^type [A-Z][a-zA-Z0-9_]* struct' "$go_file" | cut -d':' -f2 | cut -d' ' -f2 || true)
+## 🎯 **ENHANCED 'fix-build' METHODOLOGY - HIGHEST PRIORITY**
 
-            for type_name in $TYPE_DEFS; do
-                # Check if type is used in main applications
-                MAIN_USAGE=$(find cmd/ -name "*.go" -exec grep -l "$type_name" {} \; | wc -l)
-                if [ "$MAIN_USAGE" -eq 0 ]; then
-                    echo "❌ ERROR: Business type '$type_name' not integrated in main applications"
-                    echo "   Defined in: $go_file"
-                    echo "   🔧 FIX: Integrate type in cmd/ applications or remove if unused"
-                    exit 1
-                fi
-            done
-        fi
-    done
-fi
+### **When user invokes `/fix-build` command, AI MUST execute this enhanced methodology:**
 
-# Rule 3: TDD sequence validation
-echo "Checking TDD sequence compliance..."
-if [ -n "$MODIFIED_TEST_FILES" ] && [ -z "$MODIFIED_GO_FILES" ]; then
-    echo "✅ Tests added before implementation (RED phase) - compliant"
-elif [ -n "$MODIFIED_GO_FILES" ] && [ -n "$MODIFIED_TEST_FILES" ]; then
-    echo "✅ Tests and implementation modified together (GREEN/REFACTOR phase) - compliant"
-elif [ -n "$MODIFIED_GO_FILES" ] && [ -z "$MODIFIED_TEST_FILES" ]; then
-    echo "⚠️  WARNING: Implementation without corresponding tests"
-    echo "   🔧 RECOMMENDATION: Add tests for new business logic"
-fi
+```
+🚨 ENHANCED 'fix-build' METHODOLOGY ACTIVE - REAL-TIME SESSION ENFORCEMENT
 
-# Rule 4: Check for empty struct definitions
-echo "Checking for incomplete type definitions..."
-EMPTY_STRUCTS=$(find pkg/ -name "*.go" -exec grep -l "struct{}" {} \; || true)
-if [ -n "$EMPTY_STRUCTS" ]; then
-    echo "❌ ERROR: Empty struct definitions found:"
-    for file in $EMPTY_STRUCTS; do
-        grep -n "struct{}" "$file"
-        echo "   In file: $file"
-    done
-    echo "   🔧 FIX: Complete struct definitions with required fields"
-    exit 1
-fi
+⚠️  CRITICAL: This prevents catastrophic problems DURING the session, not after commit
 
-echo "✅ All validation checks passed!"#!/bin/bash
-# Pre-commit hook for TDD and integration enforcement
+BEFORE PROCEEDING, I MUST COMPLETE THESE MANDATORY VALIDATIONS:
 
-set -e
+PHASE 1: DISCOVERY VALIDATION ⏸️ (BLOCKING - MUST COMPLETE FIRST)
+□ Read actual type definition files (PREVENTS: undefined field references)
+□ Search existing test patterns comprehensively (PREVENTS: duplicate implementations)
+□ Verify current integration patterns (PREVENTS: orphaned business code)
+□ Execute build error analysis (PREVENTS: cascade failures)
 
-echo "🔍 Running TDD and Integration Validation..."
+PHASE 2: DECISION GATE VALIDATION ⏸️ (BLOCKING - MUST COMPLETE SECOND)
+□ Confirm all referenced fields exist in structs (PREVENTS: runtime panics)
+□ Verify testutil dependencies are available (PREVENTS: test compilation failures)
+□ Validate complete dependency chain (PREVENTS: missing imports)
+□ Confirm main application integration patterns (PREVENTS: unused code)
 
-# Check for TDD violations
-echo "Checking TDD compliance..."
-MODIFIED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' | grep -v '_test\.go$' || true)
-MODIFIED_TEST_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '_test\.go$' || true)
+PHASE 3: TESTING STRATEGY VALIDATION ⏸️ (BLOCKING - MUST COMPLETE THIRD)
+□ Use real business logic components (PREVENTS: mock-only implementations)
+□ Mock ONLY external dependencies (PREVENTS: over-mocking)
+□ Map all tests to BR-XXX-XXX requirements (PREVENTS: speculative code)
+□ Follow defense-in-depth testing approach (PREVENTS: inadequate coverage)
 
-# Rule 1: Test files must not reference undefined struct fields
-if [ -n "$MODIFIED_TEST_FILES" ]; then
-    echo "Validating test files for type safety..."
-    for test_file in $MODIFIED_TEST_FILES; do
-        echo "Checking: $test_file"
+🚨 ENFORCEMENT RULE: I cannot proceed to implementation until ALL checkboxes are ✅
+🚨 SESSION SAFETY: Each validation PREVENTS specific catastrophic problems
+🚨 REAL-TIME: Validation happens DURING session, not after commit
+```
 
-        # Extract struct field references (e.g., object.FieldName)
-        FIELD_REFS=$(grep -n '[a-zA-Z_][a-zA-Z0-9_]*\.[A-Z][a-zA-Z0-9_]*' "$test_file" | grep -v '//' || true)
+---
 
-        if [ -n "$FIELD_REFS" ]; then
-            echo "Found struct field references in $test_file:"
-            echo "$FIELD_REFS"
+## 🔍 **CRITICAL DECISION CHECKPOINTS - BLOCKING VALIDATION**
 
-            # Check if these fields exist in type definitions
-            while IFS= read -r line; do
-                FIELD_REF=$(echo "$line" | grep -o '[a-zA-Z_][a-zA-Z0-9_]*\.[A-Z][a-zA-Z0-9_]*' | head -1)
-                TYPE_NAME=$(echo "$FIELD_REF" | cut -d'.' -f1)
-                FIELD_NAME=$(echo "$FIELD_REF" | cut -d'.' -f2)
+**These are BLOCKING checkpoints - AI must STOP and validate:**
 
-                # Look for type definition
-                TYPE_DEF=$(find pkg/ -name "*.go" -exec grep -l "type.*$TYPE_NAME.*struct" {} \; | head -1)
-                if [ -n "$TYPE_DEF" ]; then
-                    # Check if field exists in type definition
-                    FIELD_EXISTS=$(grep -A 20 "type.*$TYPE_NAME.*struct" "$TYPE_DEF" | grep -c "$FIELD_NAME" || echo "0")
-                    if [ "$FIELD_EXISTS" -eq 0 ]; then
-                        echo "❌ ERROR: Field '$FIELD_NAME' not found in type '$TYPE_NAME' (defined in $TYPE_DEF)"
-                        echo "   Referenced in: $test_file"
-                        echo "   🔧 FIX: Add field to type definition or use correct field name"
-                        exit 1
-                    fi
-                else
-                    echo "⚠️  WARNING: Type '$TYPE_NAME' definition not found"
-                fi
-            done <<< "$FIELD_REFS"
-        fi
-    done
-fi
+### **CHECKPOINT A: Type Reference Validation**
+**TRIGGER**: About to reference any struct field (e.g., `object.FieldName`)
+**MANDATORY ACTION**:
+```bash
+# HALT: Validate type definition exists
+grep -r "type.*ObjectType.*struct" pkg/ --include="*.go"
+# RULE: If field not found in type definition, STOP and fix type definition first
+```
 
-# Rule 2: Business code must be integrated in main applications
-if [ -n "$MODIFIED_GO_FILES" ]; then
-    echo "Checking business code integration..."
-    for go_file in $MODIFIED_GO_FILES; do
-        # Skip if not in pkg/ directory (business logic location)
-        if [[ "$go_file" == pkg/* ]]; then
-            # Extract type definitions
-            TYPE_DEFS=$(grep -n '^type [A-Z][a-zA-Z0-9_]* struct' "$go_file" | cut -d':' -f2 | cut -d' ' -f2 || true)
+### **CHECKPOINT B: Test Creation Validation**
+**TRIGGER**: About to create test file with business logic references
+**MANDATORY ACTION**:
+```bash
+# HALT: Search for existing implementations
+codebase_search "existing [ComponentType] implementations"
+# RULE: If creating new types, must follow TDD RED-GREEN-REFACTOR sequence
+```
 
-            for type_name in $TYPE_DEFS; do
-                # Check if type is used in main applications
-                MAIN_USAGE=$(find cmd/ -name "*.go" -exec grep -l "$type_name" {} \; | wc -l)
-                if [ "$MAIN_USAGE" -eq 0 ]; then
-                    echo "❌ ERROR: Business type '$type_name' not integrated in main applications"
-                    echo "   Defined in: $go_file"
-                    echo "   🔧 FIX: Integrate type in cmd/ applications or remove if unused"
-                    exit 1
-                fi
-            done
-        fi
-    done
-fi
+### **CHECKPOINT C: Business Integration Validation**
+**TRIGGER**: Creating new business types or interfaces
+**MANDATORY ACTION**:
+```bash
+# HALT: Check main application integration
+grep -r "NewComponentType" cmd/ --include="*.go"
+# RULE: If ZERO results, integration is required before proceeding
+```
 
-# Rule 3: TDD sequence validation
-echo "Checking TDD sequence compliance..."
-if [ -n "$MODIFIED_TEST_FILES" ] && [ -z "$MODIFIED_GO_FILES" ]; then
-    echo "✅ Tests added before implementation (RED phase) - compliant"
-elif [ -n "$MODIFIED_GO_FILES" ] && [ -n "$MODIFIED_TEST_FILES" ]; then
-    echo "✅ Tests and implementation modified together (GREEN/REFACTOR phase) - compliant"
-elif [ -n "$MODIFIED_GO_FILES" ] && [ -z "$MODIFIED_TEST_FILES" ]; then
-    echo "⚠️  WARNING: Implementation without corresponding tests"
-    echo "   🔧 RECOMMENDATION: Add tests for new business logic"
-fi
+### **CHECKPOINT D: Build Error Investigation**
+**TRIGGER**: User reports build errors or undefined symbols
+**MANDATORY ACTION**:
+```bash
+# HALT: Execute comprehensive symbol analysis
+codebase_search "[undefined_symbol] usage patterns and dependencies"
+grep -r "[undefined_symbol]" . --include="*.go" -n
+# RULE: NO implementation without user approval after complete analysis
+```
+**REQUIRED REPORT FORMAT**:
+```
+🚨 UNDEFINED SYMBOL ANALYSIS:
+Symbol: [undefined_symbol]
+References found: [N files]
+Dependent infrastructure: [list missing types/functions]
+Scope: [minimal/medium/extensive]
 
-# Rule 4: Check for empty struct definitions
-echo "Checking for incomplete type definitions..."
-EMPTY_STRUCTS=$(find pkg/ -name "*.go" -exec grep -l "struct{}" {} \; || true)
-if [ -n "$EMPTY_STRUCTS" ]; then
-    echo "❌ ERROR: Empty struct definitions found:"
-    for file in $EMPTY_STRUCTS; do
-        grep -n "struct{}" "$file"
-        echo "   In file: $file"
-    done
-    echo "   🔧 FIX: Complete struct definitions with required fields"
-    exit 1
-fi
+OPTIONS:
+A) Implement complete infrastructure ([X] files affected)
+B) Create minimal stub (may break [Y] files)  
+C) Alternative approach: [suggest]
 
-echo "✅ All validation checks passed!"
+Which approach should I take?
+```
+
+---
+
+## 🛠️ **MANDATORY TOOL USAGE PATTERN**
+
+**AI must ALWAYS use tools in this sequence for any code generation:**
+
+### **Step 1: Discovery (REQUIRED)**
+```
+codebase_search "existing [ComponentType] implementations"
+# OR
+grep -r "[TypeName]" pkg/ --include="*.go"
+```
+
+### **Step 2: Type Validation (REQUIRED)**
+```
+read_file pkg/path/to/type_definition.go
+# Verify all referenced fields exist in struct definitions
+```
+
+### **Step 3: Integration Check (REQUIRED)**
+```
+grep -r "[NewType]" cmd/ --include="*.go"
+# Verify business code is used in main applications
+```
+
+---
+
+## 🚫 **FORBIDDEN AI ACTIONS - IMMEDIATE FAILURE CONDITIONS**
+
+**NEVER DO THESE:**
+1. **NEVER** reference struct fields without first reading the type definition file
+2. **NEVER** assume testutil types exist - always validate with `read_file` or `grep`
+3. **NEVER** create test code without first using `codebase_search` for existing implementations
+4. **NEVER** generate business types without confirming main application usage
+5. **NEVER** proceed if any validation step fails
+6. **NEVER** implement missing types without full dependency analysis (CHECKPOINT D)
+
+---
+
+## 📋 **MANDATORY VALIDATION SEQUENCE**
+
+**AI must execute these steps IN ORDER before any code generation:**
+
+### **Validation Step 1: Existence Check**
+```bash
+# For struct field references (e.g., node.Name)
+read_file pkg/workflow/engine/workflow_simulator.go
+# RULE: Verify field exists in struct definition before referencing
+
+# For testutil types (e.g., testutil.TDDConversionHelper)
+grep -r "TDDConversionHelper" pkg/testutil/ --include="*.go"
+# RULE: Confirm type exists before using
+```
+
+### **Validation Step 2: Implementation Discovery**
+```bash
+# Before creating new test structures
+codebase_search "existing WorkflowSimulator test patterns"
+# RULE: Enhance existing patterns instead of creating new ones
+```
+
+### **Validation Step 3: Integration Verification**
+```bash
+# For new business types
+grep -r "NewBusinessType" cmd/ --include="*.go"
+# RULE: Business code must be integrated in main applications
+```
+
+### **Validation Step 4: Build Error Analysis (CHECKPOINT D)**
+```bash
+# For any undefined symbol error
+codebase_search "[undefined_symbol] usage patterns across codebase"
+grep -r "[undefined_symbol]" . --include="*.go" -n
+# Find constructor patterns
+grep -r "New[SymbolName]\|Create[SymbolName]" . --include="*.go"
+# Test compilation impact
+go build [dependent_file.go] 2>&1
+# RULE: Present complete analysis before implementation
+```
+
+---
+
+## ✅ **MANDATORY DECISION GATES**
+
+**AI must answer YES to ALL questions before proceeding:**
+
+### **For Type References:**
+- ✅ Have I read the actual type definition file?
+- ✅ Do all referenced fields exist in the struct?
+- ✅ Are there no empty struct{} definitions?
+
+### **For Test Creation:**
+- ✅ Have I searched for existing test patterns?
+- ✅ Am I following TDD RED-GREEN-REFACTOR sequence?
+- ✅ Do all testutil dependencies actually exist?
+
+### **For Business Code:**
+- ✅ Is this integrated into main applications?
+- ✅ Are all interfaces implemented by real code?
+- ✅ Have I verified the complete dependency chain?
+
+### **For Build Error Fixes (CHECKPOINT D):**
+- ✅ Have I analyzed ALL references to the undefined symbol?
+- ✅ Have I mapped the complete dependency chain?
+- ✅ Have I presented options A/B/C to the user?
+- ✅ Have I received explicit approval before implementing?
+
+---
+
+## 🔧 **TOOL CALL ENFORCEMENT**
+
+### **BLOCKING TOOL REQUIREMENTS**
+
+**AI MUST use these tool calls BEFORE any code generation. No exceptions:**
+
+**For ANY struct field reference (object.FieldName):**
+```xml
+<function_calls>
+<invoke name="read_file">
+<parameter name="target_file">pkg/workflow/engine/types.go</parameter>
+</invoke>
+</function_calls>
+```
+
+**For ANY undefined symbol error:**
+```xml
+<function_calls>
+<invoke name="codebase_search">
+<parameter name="query">[symbol_name] usage patterns and dependencies</parameter>
+<parameter name="target_directories">[]</parameter>
+</invoke>
+</function_calls>
+```
+
+---
+
+## 🚨 **REAL-TIME CATASTROPHIC PROBLEM PREVENTION**
+
+**These problems are prevented DURING the session through mandatory validation:**
+
+### **CATASTROPHIC PROBLEMS PREVENTED:**
+1. **Undefined Field References** → PREVENTED by reading type definitions BEFORE referencing fields
+2. **Missing Dependencies** → PREVENTED by validating testutil existence BEFORE using
+3. **Orphaned Business Code** → PREVENTED by confirming main app integration BEFORE implementation
+4. **Build Cascade Failures** → PREVENTED by comprehensive symbol analysis BEFORE fixing
+5. **Mock-Only Implementations** → PREVENTED by validating real business logic usage
+6. **Incomplete TDD Coverage** → PREVENTED by mandatory BR-XXX-XXX mapping
+7. **Integration Gaps** → PREVENTED by main application usage verification
+8. **Type Safety Violations** → PREVENTED by struct field existence validation
+
+### **SESSION-TIME ENFORCEMENT TRIGGERS:**
+Every time AI is about to:
+- Reference `object.FieldName` → **HALT** and validate field exists
+- Use `testutil.TypeName` → **HALT** and confirm type exists
+- Create new business type → **HALT** and verify main app integration
+- Fix undefined symbol → **HALT** and complete dependency analysis
+- Create test → **HALT** and search existing patterns
+- Implement code → **HALT** and confirm TDD sequence compliance
+
+**Result**: Catastrophic problems are **IMPOSSIBLE** because they're prevented during the session through mandatory AI validation.
+
+---
+
+## 📊 **CONFIDENCE ASSESSMENT REQUIREMENTS**
+
+**After any code generation, AI must provide:**
+```
+Validation Confidence: [60-100]%
+Type Safety: ✅/❌ All referenced fields exist in type definitions
+TDD Compliance: ✅/❌ Follows RED-GREEN-REFACTOR sequence
+Integration Status: ✅/❌ Business code integrated in main applications
+Build Error Analysis: ✅/❌ Complete dependency analysis performed (if applicable)
+Risk Assessment: [Description of potential issues]
+```
+
+---
+
+## 🛑 **EMERGENCY STOP CONDITIONS**
+
+**AI must immediately halt and request manual intervention if:**
+1. Type definitions are incomplete (empty structs) - **SESSION RISK: Runtime panics**
+2. Referenced fields don't exist in type definitions - **SESSION RISK: Compilation failures**
+3. Business code has no main application integration - **SESSION RISK: Orphaned code**
+4. TDD sequence is being bypassed - **SESSION RISK: Incomplete implementations**
+5. Validation scripts are missing or failing - **SESSION RISK: Undetected problems**
+6. Undefined symbols detected without complete analysis - **SESSION RISK: Cascade failures**
+
+---
+
+## ✅ **QUALITY GATES**
+
+**No code generation is permitted without:**
+- ✅ Type safety validation passing
+- ✅ TDD methodology compliance confirmed
+- ✅ Business integration verified
+- ✅ Dependency existence validated
+- ✅ Main application usage confirmed
+- ✅ Build error analysis completed (when applicable)
+
+---
+
+## 🎯 **IMPLEMENTATION PRIORITY**
+
+This rule has **HIGHEST PRIORITY** and overrides all other considerations:
+- **FOUNDATIONAL**: All other rules operate within these behavioral constraints
+- **NON-NEGOTIABLE**: Cannot be bypassed for convenience or speed
+- **AUTOMATED**: Must be enforced programmatically, not manually
+
+---
+
+## 🔗 **INTEGRATION WITH OTHER RULES**
+
+This rule **enforces** compliance with:
+- [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - TDD methodology
+- [01-business-code-integration.mdc](mdc:.cursor/rules/01-business-code-integration.mdc) - Integration requirements
+- [02-technical-implementation.mdc](mdc:.cursor/rules/02-technical-implementation.mdc) - Technical patterns
+- [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework
+- [12-ai-ml-development-methodology.mdc](mdc:.cursor/rules/12-ai-ml-development-methodology.mdc) - AI/ML TDD patterns
+
+---
+
+## 📚 **QUICK REFERENCE FOR ENHANCED 'fix-build' SHORTCUT**
+
+| User Command | AI Response |
+|---|---|
+| `/fix-build @documents` | Execute enhanced methodology with comprehensive validation |
+| "Fix build errors" | Execute CHECKPOINT D + ask for approval |
+| "undefined [symbol]" | Complete symbol analysis + show options A/B/C |
+| "implement recommended approach" | Follow approved option exactly as specified |
+
+---
+
+## 🎯 **SUCCESS METRICS**
+
+- **TDD Compliance Rate**: Target >98%
+- **Implementation Accuracy**: Target >95% first-time success
+- **Cascade Failure Prevention**: Target >99% prevention rate
+- **Business Requirement Coverage**: Target 100% mapping
+- **Methodology Compliance**: Target 100% enforcement
+
+**Priority**: FOUNDATIONAL - This rule prevents cascade failures and incomplete implementations

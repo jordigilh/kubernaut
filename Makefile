@@ -1,11 +1,11 @@
-# Makefile for prometheus-alerts-slm
+# Makefile for kubernaut
 
 # Variables
-APP_NAME=prometheus-alerts-slm
+APP_NAME=kubernaut
 VERSION?=latest
 REGISTRY?=quay.io/jordigilh
 IMAGE_NAME=$(REGISTRY)/$(APP_NAME)
-NAMESPACE=prometheus-alerts-slm
+NAMESPACE=kubernaut
 
 # Go variables
 GOOS?=linux
@@ -41,9 +41,71 @@ envsetup: ## Install environment setup dependencies for testing
 	$(eval ENVTEST_PATH := $(shell setup-envtest use --bin-dir ./bin -p path))
 	@echo "Kubernetes test binaries installed to: $(ENVTEST_PATH)"
 
-.PHONY: build
-build: ## Build the application
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/$(APP_NAME) ./cmd/$(APP_NAME)
+##@ Microservices Build - Approved 10-Service Architecture
+.PHONY: build-all-services
+build-all-services: build-gateway-service build-alert-service build-ai-service build-workflow-service build-executor-service build-storage-service build-intelligence-service build-monitor-service build-context-service build-notification-service ## Build all 10 approved microservices
+
+.PHONY: build-microservices
+build-microservices: build-all-services ## Build all microservices (alias for build-all-services)
+
+.PHONY: build-gateway-service
+build-gateway-service: ## Build gateway service (webhook functionality)
+	@echo "🔨 Building gateway service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/gateway-service ./cmd/gateway-service
+
+.PHONY: build-webhook-service
+build-webhook-service: build-gateway-service ## Build webhook service (alias for gateway-service)
+	@echo "🔗 Webhook service is now part of gateway-service"
+
+.PHONY: build-alert-service
+build-alert-service: ## Build alert processor service
+	@echo "🧠 Building alert processor service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/alert-service ./cmd/alert-service
+
+.PHONY: build-workflow-service
+build-workflow-service: ## Build workflow orchestrator service
+	@echo "🎯 Building workflow orchestrator service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/workflow-service ./cmd/workflow-service
+
+.PHONY: build-executor-service
+build-executor-service: ## Build kubernetes executor service
+	@echo "⚡ Building kubernetes executor service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/executor-service ./cmd/executor-service
+
+.PHONY: build-storage-service
+build-storage-service: ## Build data storage service
+	@echo "📊 Building data storage service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/storage-service ./cmd/storage-service
+
+.PHONY: build-intelligence-service
+build-intelligence-service: ## Build intelligence service
+	@echo "🔍 Building intelligence service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/intelligence-service ./cmd/intelligence-service
+
+.PHONY: build-monitor-service
+build-monitor-service: ## Build effectiveness monitor service
+	@echo "📈 Building effectiveness monitor service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/monitor-service ./cmd/monitor-service
+
+.PHONY: build-context-service
+build-context-service: ## Build context API service
+	@echo "🌐 Building context API service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/context-service ./cmd/context-service
+
+.PHONY: build-notification-service
+build-notification-service: ## Build notification service
+	@echo "📢 Building notification service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/notification-service ./cmd/notification-service
+
+.PHONY: build-context-api-service
+build-context-api-service: ## Build context API service (placeholder)
+	@echo "🔨 Building context API service..."
+	@echo "⚠️  Context API service extraction pending - using monolith for now"
+
+.PHONY: build-ai-service
+build-ai-service: ## Build AI service
+	@echo "🤖 Building AI service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/ai-service ./cmd/ai-service
 
 .PHONY: test
 test: ## Run unit tests (Go only) - Auto-discovers all test directories
@@ -117,20 +179,57 @@ fmt-go: ## Format Go code only
 .PHONY: clean
 clean: ## Clean build artifacts (Go only)
 	@echo "Cleaning Go artifacts..."
-	rm -rf bin/prometheus-alerts-slm bin/test-slm
+	rm -rf bin/kubernaut bin/test-slm
 	rm -f coverage.out coverage.html
+	find test/ -name "*.test" -type f -delete 2>/dev/null || true
 
 .PHONY: clean-all
 clean-all: ## Clean all build artifacts including test binaries (Go only)
 	@echo "Cleaning all Go artifacts..."
 	rm -rf bin/
 	rm -f coverage.out coverage.html
+	find test/ -name "*.test" -type f -delete 2>/dev/null || true
 
 ##@ Container
 .PHONY: docker-build
-docker-build: ## Build container image
+docker-build: ## Build monolithic container image
 	docker build -t $(IMAGE_NAME):$(VERSION) .
 	docker tag $(IMAGE_NAME):$(VERSION) $(IMAGE_NAME):latest
+
+##@ Microservices Container Build
+.PHONY: docker-build-microservices
+docker-build-microservices: docker-build-gateway-service docker-build-ai-service ## Build all microservice container images
+
+.PHONY: docker-build-gateway-service
+docker-build-gateway-service: ## Build gateway service container image
+	@echo "🐳 Building gateway service container..."
+	docker build -f docker/gateway-service.Dockerfile -t $(REGISTRY)/kubernaut-gateway-service:$(VERSION) .
+	docker tag $(REGISTRY)/kubernaut-gateway-service:$(VERSION) $(REGISTRY)/kubernaut-gateway-service:latest
+
+.PHONY: docker-build-webhook-service
+docker-build-webhook-service: docker-build-gateway-service ## Build webhook service container image (alias for gateway-service)
+	@echo "🔗 Webhook service is now part of gateway-service"
+
+.PHONY: docker-build-ai-service
+docker-build-ai-service: ## Build AI service container image
+	@echo "🤖 Building AI service container..."
+	docker build -f docker/ai-service.Dockerfile -t $(REGISTRY)/kubernaut-ai-service:$(VERSION) .
+	docker tag $(REGISTRY)/kubernaut-ai-service:$(VERSION) $(REGISTRY)/kubernaut-ai-service:latest
+
+.PHONY: docker-push-microservices
+docker-push-microservices: docker-push-webhook-service docker-push-ai-service ## Push all microservice container images
+
+.PHONY: docker-push-webhook-service
+docker-push-webhook-service: ## Push webhook service container image
+	@echo "📤 Pushing webhook service container..."
+	docker push $(REGISTRY)/kubernaut-webhook-service:$(VERSION)
+	docker push $(REGISTRY)/kubernaut-webhook-service:latest
+
+.PHONY: docker-push-ai-service
+docker-push-ai-service: ## Push AI service container image
+	@echo "🤖 Pushing AI service container..."
+	docker push $(REGISTRY)/kubernaut-ai-service:$(VERSION)
+	docker push $(REGISTRY)/kubernaut-ai-service:latest
 
 .PHONY: docker-push
 docker-push: ## Push container image
@@ -224,7 +323,7 @@ test-integration-kind: envsetup ## Run integration tests with Kind cluster + rea
 	./scripts/setup-kind-cluster.sh
 	@echo "Running integration tests..."
 	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
-	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) \
+	KUBECONFIG=$$(kind get kubeconfig --name=kubernaut-test) \
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) \
 	LLM_ENDPOINT=$(or $(LLM_ENDPOINT),http://192.168.1.169:8080) \
 	LLM_MODEL=$(or $(LLM_MODEL),hf://ggml-org/gpt-oss-20b-GGUF) \
@@ -249,7 +348,7 @@ test-integration-kind-ci: envsetup ## Run integration tests with Kind cluster fo
 	./scripts/setup-kind-cluster.sh
 	@echo "Running CI integration tests with mocked LLM..."
 	$(eval KUBEBUILDER_ASSETS := $(shell pwd)/$(shell setup-envtest use --bin-dir ./bin -p path))
-	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) \
+	KUBECONFIG=$$(kind get kubeconfig --name=kubernaut-test) \
 	KUBEBUILDER_ASSETS=$(KUBEBUILDER_ASSETS) \
 	USE_MOCK_LLM=true \
 	CI=true \
@@ -350,7 +449,7 @@ test-e2e-kind: ## [ALTERNATIVE] Run e2e tests with KinD cluster (limited scenari
 	@echo "Setting up KinD cluster for e2e tests..."
 	./scripts/setup-kind-cluster.sh
 	@echo "Running e2e tests with KinD..."
-	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) USE_KIND=true go test -v -tags=e2e ./test/e2e/... -run TestKindClusterOperations -timeout=90m
+	KUBECONFIG=$$(kind get kubeconfig --name=kubernaut-test) USE_KIND=true go test -v -tags=e2e ./test/e2e/... -run TestKindClusterOperations -timeout=90m
 	@echo "Cleaning up KinD cluster..."
 	./scripts/cleanup-kind-cluster.sh
 
@@ -584,7 +683,7 @@ ssh-e2e-remote: ## SSH to remote host for manual management (helios08)
 
 .PHONY: build-test-image
 build-test-image: build ## Build test container image for KinD
-	kind load docker-image prometheus-alerts-slm:latest --name prometheus-alerts-slm-test || echo "KinD cluster not running"
+	kind load docker-image kubernaut:latest --name kubernaut-test || echo "KinD cluster not running"
 
 .PHONY: setup-kind
 setup-kind: ## Setup KinD cluster for testing
@@ -713,19 +812,90 @@ integration-test-all: ## Run all integration tests with full service lifecycle m
 	@echo "Running all integration tests with service management..."
 	./scripts/run-integration-tests.sh test-all
 
-##@ Development Environment Management
+##@ Development Environment Management (Kind Cluster Primary)
 .PHONY: bootstrap-dev cleanup-dev test-integration-dev bootstrap-dev-healthcheck
+.PHONY: bootstrap-dev-compose cleanup-dev-compose  # Legacy docker-compose support
 
-bootstrap-dev: ## Bootstrap complete development environment (all except LLM at 192.168.1.169:8080)
-	@echo "🚀 Bootstrapping development environment..."
-	@./scripts/bootstrap-dev-environment.sh
+bootstrap-dev: bootstrap-dev-kind ## Bootstrap complete development environment with Kind cluster (PRIMARY METHOD)
+
+bootstrap-external-deps: ## Bootstrap ONLY external dependencies (Kind cluster, PostgreSQL, Redis, Prometheus)
+	@echo "🚀 Bootstrapping external dependencies..."
+	@echo "📋 Components: Kind cluster, PostgreSQL, Redis, Prometheus, AlertManager"
+	@echo "🎯 Strategy: Static infrastructure setup"
+	@echo ""
+	@./scripts/bootstrap-external-deps.sh || { \
+		echo ""; \
+		echo "❌ EXTERNAL DEPENDENCIES BOOTSTRAP FAILED"; \
+		echo "🔧 Check prerequisites and try again"; \
+		echo "💡 Use 'make build-and-deploy' after this succeeds"; \
+		exit 1; \
+	}
+
+build-and-deploy: ## Build and deploy kubernaut components to Kind internal registry
+	@echo "🔨 Building and deploying kubernaut components..."
+	@echo "📋 Components: webhook-service, ai-service, holmesgpt-api"
+	@echo "🎯 Strategy: Build images and deploy to Kind internal registry"
+	@echo ""
+	@echo "⚠️  Prerequisites: External dependencies must be running"
+	@echo "   Run 'make bootstrap-external-deps' first if needed"
+	@echo ""
+	@./scripts/build-and-deploy.sh || { \
+		echo ""; \
+		echo "❌ BUILD AND DEPLOY FAILED"; \
+		echo "🔧 Check that external dependencies are running"; \
+		echo "💡 Run 'make bootstrap-external-deps' first"; \
+		exit 1; \
+	}
+
+bootstrap-dev-kind: ## Bootstrap development environment using Kind cluster (RECOMMENDED)
+	@echo "🚀 Bootstrapping Kind-based development environment..."
+	@echo "📋 Requirements: kind, kubectl, docker/podman, go"
+	@echo "🎯 Strategy: Split workflow - external deps first, then kubernaut components"
+	@echo ""
+	@echo "Phase 1: External dependencies..."
+	@$(MAKE) bootstrap-external-deps || { \
+		echo "❌ External dependencies failed"; \
+		exit 1; \
+	}
+	@echo ""
+	@echo "Phase 2: Kubernaut components..."
+	@$(MAKE) build-and-deploy || { \
+		echo "❌ Build and deploy failed"; \
+		exit 1; \
+	}
+	@echo ""
+	@echo "✅ Complete Kind-based development environment ready!"
+
+bootstrap-dev-compose: ## Bootstrap development environment using docker-compose (DEPRECATED)
+	@echo "⚠️  DEPRECATED: docker-compose bootstrap (use 'make bootstrap-dev-kind' instead)"
+	@echo "🚀 Bootstrapping docker-compose development environment..."
+	@echo "📋 Requirements: podman, podman-compose, go"
+	@echo ""
+	@./scripts/bootstrap-dev-environment.sh || { \
+		echo ""; \
+		echo "❌ COMPOSE BOOTSTRAP FAILED"; \
+		echo "🔧 Ensure prerequisites are installed:"; \
+		echo "   - podman (brew install podman)"; \
+		echo "   - podman-compose (pip install podman-compose)"; \
+		echo "   - podman machine running (podman machine start)"; \
+		echo ""; \
+		echo "💡 Recommended: Use 'make bootstrap-dev-kind' for better production parity"; \
+		exit 1; \
+	}
 
 bootstrap-dev-healthcheck: ## Check health of all integration test dependencies
 	@echo "🔍 Checking integration test dependencies health..."
 	@./scripts/integration-health-check-simple.sh
 
-cleanup-dev: ## Clean up development environment (preserves LLM)
-	@echo "🧹 Cleaning up development environment..."
+cleanup-dev: cleanup-dev-kind ## Clean up development environment (Kind cluster primary)
+
+cleanup-dev-kind: ## Clean up Kind-based development environment (RECOMMENDED)
+	@echo "🧹 Cleaning up Kind development environment..."
+	@./scripts/cleanup-kind-integration.sh
+
+cleanup-dev-compose: ## Clean up docker-compose development environment (DEPRECATED)
+	@echo "⚠️  DEPRECATED: docker-compose cleanup (use 'make cleanup-dev-kind' instead)"
+	@echo "🧹 Cleaning up docker-compose development environment..."
 	@./scripts/cleanup-dev-environment.sh
 
 test-integration-dev: ## Run integration tests (assumes bootstrapped environment)
@@ -771,23 +941,89 @@ dev-status: ## Show status of development environment components
 	@echo "  Run Tests:          make test-integration-dev"
 	@echo "  Cleanup:            make cleanup-dev"
 
-dev-help: ## Show development environment help
-	@echo "Kubernaut Development Environment"
-	@echo "================================"
+##@ Kind Cluster Management
+.PHONY: kind-deploy kind-undeploy kind-status kind-logs kind-port-forward
+
+kind-deploy: ## Deploy kubernaut services to Kind cluster
+	@echo "🚀 Deploying kubernaut services to Kind cluster..."
+	kubectl apply -k deploy/integration/
+	@echo "⏳ Waiting for deployments to be ready..."
+	kubectl wait --for=condition=available --timeout=300s deployment --all -n kubernaut-integration
+	@echo "✅ All services deployed successfully!"
+
+kind-undeploy: ## Remove kubernaut services from Kind cluster
+	@echo "🗑️  Removing kubernaut services from Kind cluster..."
+	kubectl delete -k deploy/integration/ --ignore-not-found=true
+	@echo "✅ Services removed successfully!"
+
+kind-status: ## Show status of Kind cluster and services
+	@echo "📊 Kind Cluster Status"
+	@echo "====================="
 	@echo ""
-	@echo "🚀 Quick Start:"
-	@echo "  1. Start LocalAI with a model at 192.168.1.169:8080"
-	@echo "  2. make bootstrap-dev    # Setup everything else"
+	@echo "🏗️ Cluster Info:"
+	kubectl cluster-info --context kind-kubernaut-integration 2>/dev/null || echo "❌ Kind cluster not found"
+	@echo ""
+	@echo "🔧 Nodes:"
+	kubectl get nodes -o wide 2>/dev/null || echo "❌ Cannot access cluster"
+	@echo ""
+	@echo "📦 Services in kubernaut-integration namespace:"
+	kubectl get pods,svc -n kubernaut-integration 2>/dev/null || echo "❌ Namespace not found"
+	@echo ""
+	@echo "📈 Resource Usage:"
+	kubectl top nodes 2>/dev/null || echo "⚠️  Metrics server not available"
+
+kind-logs: ## Show logs from kubernaut services in Kind cluster
+	@echo "📋 Kubernaut Service Logs"
+	@echo "========================"
+	@echo ""
+	@echo "🔍 Webhook Service:"
+	kubectl logs -l app=webhook-service -n kubernaut-integration --tail=50 --prefix=true 2>/dev/null || echo "❌ Webhook service not found"
+	@echo ""
+	@echo "🤖 AI Service:"
+	kubectl logs -l app=ai-service -n kubernaut-integration --tail=50 --prefix=true 2>/dev/null || echo "❌ AI service not found"
+	@echo ""
+	@echo "🔬 HolmesGPT:"
+	kubectl logs -l app=holmesgpt -n kubernaut-integration --tail=50 --prefix=true 2>/dev/null || echo "❌ HolmesGPT not found"
+
+kind-port-forward: ## Set up port forwarding for Kind cluster services
+	@echo "🔌 Setting up port forwarding for Kind cluster services..."
+	@echo "📋 Access URLs will be:"
+	@echo "  • Webhook Service: http://localhost:30800"
+	@echo "  • Prometheus: http://localhost:30090"
+	@echo "  • AlertManager: http://localhost:30093"
+	@echo "  • PostgreSQL: localhost:30432"
+	@echo ""
+	@echo "🔗 Port forwarding is automatic via NodePort services"
+	@echo "💡 Use 'make kind-status' to verify services are running"
+
+dev-help: ## Show development environment help
+	@echo "Kubernaut Development Environment (Kind Cluster Primary)"
+	@echo "======================================================="
+	@echo ""
+	@echo "🚀 Quick Start (Kind - RECOMMENDED):"
+	@echo "  1. Start your LLM model at 192.168.1.169:8080"
+	@echo "  2. make bootstrap-dev-kind    # Setup Kind cluster + services"
 	@echo "  3. make test-integration-dev  # Run tests"
-	@echo "  4. make cleanup-dev      # Clean up when done"
+	@echo "  4. make cleanup-dev-kind      # Clean up when done"
 	@echo ""
 	@echo "🔧 Environment Management:"
-	@echo "  bootstrap-dev       - Setup complete environment (except LLM)"
+	@echo "  bootstrap-dev-kind      - Setup Kind cluster environment (RECOMMENDED)"
+	@echo "  bootstrap-external-deps - Setup ONLY external dependencies (Kind, DB, monitoring)"
+	@echo "  build-and-deploy        - Build and deploy kubernaut components to Kind internal registry"
+	@echo "  bootstrap-dev-compose   - Setup docker-compose environment (DEPRECATED)"
 	@echo "  bootstrap-dev-healthcheck - Check health of all dependencies"
-	@echo "  cleanup-dev         - Clean up environment (preserves LLM)"
-	@echo "  dev-setup          - Alias for bootstrap-dev"
-	@echo "  dev-teardown       - Alias for cleanup-dev"
-	@echo "  dev-status         - Show status of all services"
+	@echo "  cleanup-dev-kind        - Clean up Kind environment"
+	@echo "  cleanup-dev-compose     - Clean up docker-compose environment"
+	@echo "  dev-setup              - Alias for bootstrap-dev-kind"
+	@echo "  dev-teardown           - Alias for cleanup-dev-kind"
+	@echo "  dev-status             - Show status of all services"
+	@echo ""
+	@echo "🏗️ Kind Cluster Management:"
+	@echo "  kind-deploy            - Deploy services to Kind cluster"
+	@echo "  kind-undeploy          - Remove services from Kind cluster"
+	@echo "  kind-status            - Show Kind cluster and service status"
+	@echo "  kind-logs              - Show logs from kubernaut services"
+	@echo "  kind-port-forward      - Setup port forwarding (info only)"
 	@echo ""
 	@echo "🧪 Testing:"
 	@echo "  test-integration-dev   - Run all integration tests"
@@ -796,17 +1032,23 @@ dev-help: ## Show development environment help
 	@echo "  test-performance-dev  - Run performance tests"
 	@echo "  test-quick-dev        - Run quick tests only"
 	@echo ""
-	@echo "📋 Components Managed:"
-	@echo "  ✓ Kind Kubernetes cluster with Prometheus"
+	@echo "📋 Components Managed (Kind Cluster):"
+	@echo "  ✓ Kind Kubernetes cluster (1 control-plane + 2 workers)"
 	@echo "  ✓ PostgreSQL with pgvector extension"
-	@echo "  ✓ Vector Database (separate PostgreSQL)"
 	@echo "  ✓ Redis cache"
-	@echo "  ✓ Kubernaut application build"
-	@echo "  ✗ LLM model (must be started manually)"
+	@echo "  ✓ Prometheus + AlertManager monitoring"
+	@echo "  ✓ Kubernaut webhook + AI services"
+	@echo "  ✓ HolmesGPT integration"
+	@echo "  ✗ LLM model (external at 192.168.1.169:8080)"
 	@echo ""
 	@echo "⚠️  Prerequisites:"
-	@echo "  - LocalAI running at 192.168.1.169:8080 with a loaded model"
-	@echo "  - podman, kind, kubectl, go installed"
+	@echo "  - LLM running at 192.168.1.169:8080 (ramalama/oss-gpt:20b)"
+	@echo "  - kind, kubectl, docker/podman, go installed"
+	@echo ""
+	@echo "🔄 Migration from docker-compose:"
+	@echo "  - Use 'make bootstrap-dev-compose' for legacy setup"
+	@echo "  - Kind cluster provides better production parity"
+	@echo "  - All services run as Kubernetes resources"
 
 ##@ HolmesGPT REST API
 .PHONY: holmesgpt-api-init

@@ -1,6 +1,7 @@
 package intelligence
 
 import (
+	"testing"
 	"fmt"
 	"math"
 	"time"
@@ -456,3 +457,9 @@ func createBusinessMetadata(count int) []map[string]interface{} {
 }
 
 // End of clustering test helper functions
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUclusteringUengine(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UclusteringUengine Suite")
+}

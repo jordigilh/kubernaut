@@ -6,7 +6,6 @@ package toolsetserver
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -15,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/jordigilh/kubernaut/pkg/testutil/enhanced"
+	"github.com/jordigilh/kubernaut/pkg/e2e/cluster"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,7 +28,7 @@ var _ = Describe("BR-TOOLSET-E2E-001: Dynamic Toolset Server E2E Business Workfl
 		// Use REAL OCP cluster infrastructure per user requirement
 		realK8sClient    kubernetes.Interface
 		realLogger       *logrus.Logger
-		testCluster      *enhanced.TestClusterManager
+		testCluster      *cluster.E2EClusterManager
 		toolsetServerURL string
 		contextAPIURL    string
 		healthAPIURL     string
@@ -43,8 +42,11 @@ var _ = Describe("BR-TOOLSET-E2E-001: Dynamic Toolset Server E2E Business Workfl
 		ctx, cancel = context.WithTimeout(context.Background(), 600*time.Second) // 10 minutes for E2E
 
 		// Setup real OCP cluster infrastructure
-		testCluster = enhanced.NewTestClusterManager()
-		err := testCluster.SetupTestCluster(ctx)
+		var err error
+		testCluster, err = cluster.NewE2EClusterManager("ocp", realLogger)
+		Expect(err).ToNot(HaveOccurred(), "E2E cluster manager creation must succeed")
+
+		err = testCluster.InitializeCluster(ctx, "latest")
 		Expect(err).ToNot(HaveOccurred(), "OCP cluster setup must succeed for E2E testing")
 
 		realK8sClient = testCluster.GetKubernetesClient()
@@ -66,7 +68,7 @@ var _ = Describe("BR-TOOLSET-E2E-001: Dynamic Toolset Server E2E Business Workfl
 
 	AfterEach(func() {
 		if testCluster != nil {
-			err := testCluster.CleanupTestCluster(ctx)
+			err := testCluster.Cleanup(ctx)
 			Expect(err).ToNot(HaveOccurred(), "OCP cluster cleanup should succeed")
 		}
 		cancel()
@@ -78,43 +80,45 @@ var _ = Describe("BR-TOOLSET-E2E-001: Dynamic Toolset Server E2E Business Workfl
 			// Business Impact: End-to-end validation of service discovery → toolset generation → API serving
 
 			// Step 1: Deploy test services in OCP cluster for discovery
-			testServiceManifest := fmt.Sprintf(`
-apiVersion: v1
-kind: Service
-metadata:
-  name: test-app-service
-  namespace: default
-  labels:
-    app: test-application
-    discovery: enabled
-spec:
-  selector:
-    app: test-application
-  ports:
-  - port: 8080
-    targetPort: 8080
-    name: http
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-app-deployment
-  namespace: default
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: test-application
-  template:
-    metadata:
-      labels:
-        app: test-application
-    spec:
-      containers:
-      - name: test-app
-        image: nginx:latest
-        ports:
-        - containerPort: 8080`)
+			// Note: Test service manifest would be deployed here in a real implementation
+			// testServiceManifest := `
+			// apiVersion: v1
+			// kind: Service
+			// metadata:
+			//   name: test-app-service
+			//   namespace: default
+			//   labels:
+			//     app: test-application
+			//     discovery: enabled
+			// spec:
+			//   selector:
+			//     app: test-application
+			//   ports:
+			//   - port: 8080
+			//     targetPort: 8080
+			//     name: http
+			// ---
+			// apiVersion: apps/v1
+			// kind: Deployment
+			// metadata:
+			//   name: test-app-deployment
+			//   namespace: default
+			// spec:
+			//   replicas: 1
+			//   selector:
+			//     matchLabels:
+			//       app: test-application
+			//   template:
+			//     metadata:
+			//       labels:
+			//         app: test-application
+			//     spec:
+			//       containers:
+			//       - name: test-app
+			//         image: nginx:latest
+			//         ports:
+			//         - containerPort: 8080
+			// `
 
 			// Create test service for discovery (TDD RED: will fail until deployment succeeds)
 			// This simulates real services that toolset server should discover
@@ -194,7 +198,7 @@ spec:
 				defer resp.Body.Close()
 
 				// Business Requirement: Context API should return valid responses
-				Expect(resp.StatusCode).To(BeOneOf([]int{http.StatusOK, http.StatusAccepted}),
+				Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusAccepted}),
 					"BR-TOOLSET-E2E-001: Context API endpoint %s must return valid status", endpoint)
 
 				responseBody, err := io.ReadAll(resp.Body)
@@ -242,7 +246,7 @@ spec:
 				defer resp.Body.Close()
 
 				// Business Requirement: Health endpoints should indicate service status
-				Expect(resp.StatusCode).To(BeOneOf([]int{http.StatusOK, http.StatusServiceUnavailable}),
+				Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusServiceUnavailable}),
 					"BR-TOOLSET-E2E-001: Health endpoint %s must provide status for operations teams", endpoint)
 
 				responseBody, err := io.ReadAll(resp.Body)
@@ -284,7 +288,7 @@ spec:
 			defer resp.Body.Close()
 
 			// Business Requirement: Fallback mode should still provide basic functionality
-			Expect(resp.StatusCode).To(BeOneOf([]int{http.StatusOK, http.StatusPartialContent, http.StatusAccepted}),
+			Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusPartialContent, http.StatusAccepted}),
 				"BR-TOOLSET-E2E-002: Fallback mode must provide degraded but functional service")
 
 			responseBody, err := io.ReadAll(resp.Body)

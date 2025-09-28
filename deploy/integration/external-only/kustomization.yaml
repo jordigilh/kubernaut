@@ -1,0 +1,99 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: kubernaut-external-dependencies
+  annotations:
+    description: "External dependencies only for kubernaut integration environment"
+
+# Namespace for all resources
+namespace: kubernaut-integration
+
+# Resources to deploy - EXTERNAL DEPENDENCIES ONLY
+resources:
+  # Namespace (inline definition)
+  - namespace.yaml
+
+  # PostgreSQL database (external dependency)
+  - ../postgresql/configmap.yaml
+  - ../postgresql/secret.yaml
+  - ../postgresql/deployment.yaml
+  - ../postgresql/service.yaml
+
+  # Redis cache (external dependency)
+  - ../redis/deployment.yaml
+  - ../redis/service.yaml
+
+  # Monitoring stack (external dependencies)
+  - ../monitoring/prometheus/rbac.yaml
+  - ../monitoring/prometheus/configmap.yaml
+  - ../monitoring/prometheus/deployment.yaml
+  - ../monitoring/prometheus/service.yaml
+  - ../monitoring/alertmanager/configmap.yaml
+  - ../monitoring/alertmanager/deployment.yaml
+  - ../monitoring/alertmanager/service.yaml
+
+# EXCLUDED - Kubernaut Components (handled by build-and-deploy.sh):
+# - kubernaut/rbac.yaml
+# - kubernaut/configmap.yaml
+# - kubernaut/webhook-service.yaml
+# - kubernaut/ai-service.yaml
+# - holmesgpt/deployment.yaml
+# - holmesgpt/service.yaml
+
+# Common labels applied to all resources
+labels:
+  - pairs:
+      environment: integration
+      managed-by: kubernaut
+      deployment-method: external-only
+      component: external-dependency
+
+# Common annotations
+commonAnnotations:
+  kubernaut.io/environment: integration
+  kubernaut.io/version: latest
+  kubernaut.io/managed-by: kind-cluster
+  kubernaut.io/deployment-type: external-dependencies-only
+
+# Resource transformers - single replicas for development
+replicas:
+  - name: postgresql
+    count: 1
+  - name: redis
+    count: 1
+  - name: prometheus
+    count: 1
+  - name: alertmanager
+    count: 1
+
+# Patches for external-only environment
+patches:
+  - patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/kubernaut.io~1deployment-type
+        value: external-only
+    target:
+      kind: Deployment
+      name: postgresql
+  - patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/kubernaut.io~1deployment-type
+        value: external-only
+    target:
+      kind: Deployment
+      name: redis
+  - patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/kubernaut.io~1deployment-type
+        value: external-only
+    target:
+      kind: Deployment
+      name: prometheus
+  - patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations/kubernaut.io~1deployment-type
+        value: external-only
+    target:
+      kind: Deployment
+      name: alertmanager

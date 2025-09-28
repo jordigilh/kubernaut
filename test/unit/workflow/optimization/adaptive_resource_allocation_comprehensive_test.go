@@ -927,3 +927,5 @@ func (m *mockResourceAllocator) PredictResourceRequirements(ctx context.Context,
 		// Note: PredictionVariance would be available in real implementation
 	}, nil
 }
+
+// TestRunner is handled by adaptive_resource_allocation_comprehensive_suite_test.go

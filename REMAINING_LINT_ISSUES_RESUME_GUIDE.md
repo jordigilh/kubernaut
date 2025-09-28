@@ -336,7 +336,7 @@ golangci-lint run | tail -5      # Check breakdown
 ## 📚 **Context for New Session**
 
 ### **Project Structure**
-- **Main binaries**: `cmd/prometheus-alerts-slm/`, `cmd/dynamic-toolset-server/`
+- **Main binaries**: `cmd/kubernaut/`, `cmd/kubernaut/`
 - **Core packages**: `pkg/ai/`, `pkg/workflow/`, `pkg/platform/`
 - **Testing**: `test/unit/`, `test/integration/`, `test/e2e/`
 

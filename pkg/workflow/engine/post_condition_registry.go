@@ -284,7 +284,13 @@ func (vr *ValidatorRegistry) getConditionPriority(condition *PostCondition) int 
 // Built-in Validators
 
 // SuccessValidator validates action success
-type SuccessValidator struct{}
+// Business Requirement: BR-VALIDATION-001 - Action success validation
+type SuccessValidator struct {
+	Config    map[string]interface{} `json:"config"`
+	Logger    interface{}            `json:"-"`
+	Enabled   bool                   `json:"enabled"`
+	StrictMode bool                  `json:"strict_mode"`
+}
 
 func (sv *SuccessValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
 	return &PostConditionResult{
@@ -307,7 +313,14 @@ func (sv *SuccessValidator) GetType() PostConditionType { return PostConditionSu
 func (sv *SuccessValidator) GetPriority() int           { return 100 }
 
 // ConfidenceValidator validates confidence levels
-type ConfidenceValidator struct{}
+// ConfidenceValidator validates AI confidence levels
+// Business Requirement: BR-AI-CONFIDENCE-001 - AI confidence validation
+type ConfidenceValidator struct {
+	MinConfidence float64                `json:"min_confidence"`
+	Thresholds    map[string]float64     `json:"thresholds"`
+	Config        map[string]interface{} `json:"config"`
+	Enabled       bool                   `json:"enabled"`
+}
 
 func (cv *ConfidenceValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
 	threshold := float64(0.8) // Default threshold
@@ -334,7 +347,15 @@ func (cv *ConfidenceValidator) GetType() PostConditionType { return PostConditio
 func (cv *ConfidenceValidator) GetPriority() int           { return 200 }
 
 // DurationValidator validates execution duration
-type DurationValidator struct{}
+// DurationValidator validates execution duration constraints
+// Business Requirement: BR-PERF-001 - Performance validation
+type DurationValidator struct {
+	MaxDuration   time.Duration          `json:"max_duration"`
+	WarnDuration  time.Duration          `json:"warn_duration"`
+	Timeouts      map[string]time.Duration `json:"timeouts"`
+	Config        map[string]interface{} `json:"config"`
+	Enabled       bool                   `json:"enabled"`
+}
 
 func (dv *DurationValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
 	maxSeconds := float64(300) // Default 5 minutes
@@ -363,7 +384,15 @@ func (dv *DurationValidator) GetType() PostConditionType { return PostConditionD
 func (dv *DurationValidator) GetPriority() int           { return 300 }
 
 // OutputValidator validates output content
-type OutputValidator struct{}
+// OutputValidator validates step output content and format
+// Business Requirement: BR-OUTPUT-001 - Output validation
+type OutputValidator struct {
+	ExpectedSchema map[string]interface{} `json:"expected_schema"`
+	ValidationRules []interface{}         `json:"validation_rules"`
+	Config         map[string]interface{} `json:"config"`
+	StrictMode     bool                   `json:"strict_mode"`
+	Enabled        bool                   `json:"enabled"`
+}
 
 func (ov *OutputValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
 	expectedValue := fmt.Sprintf("%v", condition.Expected)
@@ -401,7 +430,15 @@ func (ov *OutputValidator) GetType() PostConditionType { return PostConditionOut
 func (ov *OutputValidator) GetPriority() int           { return 400 }
 
 // NoErrorsValidator validates absence of errors
-type NoErrorsValidator struct{}
+// NoErrorsValidator validates absence of errors in execution
+// Business Requirement: BR-ERROR-001 - Error validation
+type NoErrorsValidator struct {
+	AllowedErrors  []string               `json:"allowed_errors"`
+	IgnoreWarnings bool                   `json:"ignore_warnings"`
+	Config         map[string]interface{} `json:"config"`
+	StrictMode     bool                   `json:"strict_mode"`
+	Enabled        bool                   `json:"enabled"`
+}
 
 func (nev *NoErrorsValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
 	hasError := result.Error != ""
@@ -477,7 +514,15 @@ func (ev *ExpressionValidator) GetType() PostConditionType { return PostConditio
 func (ev *ExpressionValidator) GetPriority() int           { return 800 }
 
 // MetricValidator validates metrics-based conditions
-type MetricValidator struct{}
+// MetricValidator validates performance and business metrics
+// Business Requirement: BR-METRICS-002 - Metrics validation
+type MetricValidator struct {
+	MetricThresholds map[string]float64     `json:"metric_thresholds"`
+	RequiredMetrics  []string               `json:"required_metrics"`
+	Config          map[string]interface{} `json:"config"`
+	ToleranceLevel  float64                `json:"tolerance_level"`
+	Enabled         bool                   `json:"enabled"`
+}
 
 func (mv *MetricValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
 	// Simplified metric validation - can be extended
@@ -505,7 +550,15 @@ func (mv *MetricValidator) GetType() PostConditionType { return PostConditionMet
 func (mv *MetricValidator) GetPriority() int           { return 600 }
 
 // ResourceValidator validates resource-based conditions
-type ResourceValidator struct{}
+// ResourceValidator validates resource state and availability
+// Business Requirement: BR-RESOURCE-001 - Resource validation
+type ResourceValidator struct {
+	ResourceChecks  map[string]interface{} `json:"resource_checks"`
+	RequiredStates  []string               `json:"required_states"`
+	Config          map[string]interface{} `json:"config"`
+	TimeoutDuration time.Duration          `json:"timeout_duration"`
+	Enabled         bool                   `json:"enabled"`
+}
 
 func (rv *ResourceValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
 	// Simplified resource validation - can be extended

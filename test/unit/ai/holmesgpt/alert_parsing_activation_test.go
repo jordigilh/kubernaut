@@ -1,4 +1,4 @@
-package holmesgpt
+package holmesgpt_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -308,3 +308,6 @@ var _ = Describe("Alert Parsing Function Activation - TDD Phase 2", func() {
 		})
 	})
 })
+
+// Note: Test suite is bootstrapped by holmesgpt_suite_test.go
+// This file only contains Describe blocks that are automatically discovered by Ginkgo

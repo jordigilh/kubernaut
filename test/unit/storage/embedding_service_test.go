@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"math"
@@ -842,3 +843,9 @@ var _ = Describe("Hybrid Embedding Service Unit Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUembeddingUservice(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UembeddingUservice Suite")
+}

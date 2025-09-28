@@ -40,8 +40,8 @@ func LoadConfig() IntegrationConfig {
 		provider = "mock"
 		useMockLLM = true
 	} else {
-		// Local development: use real LLM at ramalama endpoint
-		endpoint = GetEnvOrDefault("LLM_ENDPOINT", "http://192.168.1.169:8080")
+		// Local development: use real LLM via SSH tunnel
+		endpoint = GetEnvOrDefault("LLM_ENDPOINT", "http://localhost:8010")
 		model = GetEnvOrDefault("LLM_MODEL", "ggml-org/gpt-oss-20b-GGUF")
 		provider = GetEnvOrDefault("LLM_PROVIDER", detectProviderFromEndpoint(endpoint))
 		useMockLLM = false

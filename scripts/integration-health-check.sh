@@ -77,14 +77,14 @@ log_verbose() {
 check_postgres() {
     local service_name="PostgreSQL (Action History)"
     log_info "Checking $service_name..."
-    
+
     local health_cmd="PGPASSWORD='$POSTGRES_PASSWORD' psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -c 'SELECT 1;' -t"
-    
+
     if timeout $HEALTH_CHECK_TIMEOUT bash -c "$health_cmd" >/dev/null 2>&1; then
         HEALTH_STATUS["postgres"]="healthy"
         HEALTH_DETAILS["postgres"]="Connected to $POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB"
         log_success "$service_name is healthy"
-        
+
         # Check pgvector extension
         local vector_check="PGPASSWORD='$POSTGRES_PASSWORD' psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -c 'SELECT * FROM pg_extension WHERE extname = '\''vector'\'';' -t"
         if timeout 10 bash -c "$vector_check" | grep -q vector; then
@@ -104,14 +104,14 @@ check_postgres() {
 check_vector_db() {
     local service_name="Vector Database (PostgreSQL)"
     log_info "Checking $service_name..."
-    
+
     local health_cmd="PGPASSWORD='$VECTOR_DB_PASSWORD' psql -h $VECTOR_DB_HOST -p $VECTOR_DB_PORT -U $VECTOR_DB_USER -d $VECTOR_DB_NAME -c 'SELECT 1;' -t"
-    
+
     if timeout $HEALTH_CHECK_TIMEOUT bash -c "$health_cmd" >/dev/null 2>&1; then
         HEALTH_STATUS["vector_db"]="healthy"
         HEALTH_DETAILS["vector_db"]="Connected to $VECTOR_DB_HOST:$VECTOR_DB_PORT/$VECTOR_DB_NAME"
         log_success "$service_name is healthy"
-        
+
         # Check pgvector extension
         local vector_check="PGPASSWORD='$VECTOR_DB_PASSWORD' psql -h $VECTOR_DB_HOST -p $VECTOR_DB_PORT -U $VECTOR_DB_USER -d $VECTOR_DB_NAME -c 'SELECT * FROM pg_extension WHERE extname = '\''vector'\'';' -t"
         if timeout 10 bash -c "$vector_check" | grep -q vector; then
@@ -120,7 +120,7 @@ check_vector_db() {
         else
             log_warning "pgvector extension not found in vector database"
         fi
-        
+
         # Check for embeddings table
         local table_check="PGPASSWORD='$VECTOR_DB_PASSWORD' psql -h $VECTOR_DB_HOST -p $VECTOR_DB_PORT -U $VECTOR_DB_USER -d $VECTOR_DB_NAME -c '\dt' | grep embeddings"
         if timeout 10 bash -c "$table_check" >/dev/null 2>&1; then
@@ -139,13 +139,13 @@ check_vector_db() {
 check_redis() {
     local service_name="Redis Cache"
     log_info "Checking $service_name..."
-    
+
     if command -v redis-cli >/dev/null 2>&1; then
         if timeout $HEALTH_CHECK_TIMEOUT redis-cli -h $REDIS_HOST -p $REDIS_PORT -a "$REDIS_PASSWORD" --no-auth-warning ping | grep -q PONG; then
             HEALTH_STATUS["redis"]="healthy"
             HEALTH_DETAILS["redis"]="Connected to $REDIS_HOST:$REDIS_PORT"
             log_success "$service_name is healthy"
-            
+
             # Get Redis info
             local redis_info=$(timeout 5 redis-cli -h $REDIS_HOST -p $REDIS_PORT -a "$REDIS_PASSWORD" --no-auth-warning info server | grep redis_version)
             if [[ -n "$redis_info" ]]; then
@@ -177,14 +177,14 @@ check_redis() {
 check_context_api() {
     local service_name="Context API (Kubernaut)"
     log_info "Checking $service_name..."
-    
+
     local health_endpoint="$CONTEXT_API_URL/health"
-    
+
     if response=$(timeout $HEALTH_CHECK_TIMEOUT curl -s -f "$health_endpoint" 2>/dev/null); then
         HEALTH_STATUS["context_api"]="healthy"
         HEALTH_DETAILS["context_api"]="Health endpoint accessible at $health_endpoint"
         log_success "$service_name is healthy"
-        
+
         # Parse health response if it's JSON
         if echo "$response" | jq . >/dev/null 2>&1; then
             local status=$(echo "$response" | jq -r '.status // "unknown"')
@@ -209,14 +209,14 @@ check_context_api() {
 check_holmesgpt_api() {
     local service_name="HolmesGPT API"
     log_info "Checking $service_name..."
-    
+
     local health_endpoint="$HOLMESGPT_API_URL/health"
-    
+
     if response=$(timeout $HEALTH_CHECK_TIMEOUT curl -s -f "$health_endpoint" 2>/dev/null); then
         HEALTH_STATUS["holmesgpt_api"]="healthy"
         HEALTH_DETAILS["holmesgpt_api"]="Health endpoint accessible at $health_endpoint"
         log_success "$service_name is healthy"
-        
+
         # Parse health response if it's JSON
         if echo "$response" | jq . >/dev/null 2>&1; then
             local status=$(echo "$response" | jq -r '.status // "unknown"')
@@ -241,7 +241,7 @@ check_holmesgpt_api() {
 check_llm_endpoint() {
     local service_name="LLM Service"
     log_info "Checking $service_name..."
-    
+
     # Try health endpoint first
     local health_endpoint="$LLM_ENDPOINT/health"
     if response=$(timeout $HEALTH_CHECK_TIMEOUT curl -s -f "$health_endpoint" 2>/dev/null); then
@@ -253,11 +253,11 @@ check_llm_endpoint() {
         # Try basic connectivity to LLM endpoint
         local llm_host=$(echo "$LLM_ENDPOINT" | sed 's|http[s]*://||' | cut -d':' -f1)
         local llm_port=$(echo "$LLM_ENDPOINT" | sed 's|http[s]*://||' | cut -d':' -f2 | cut -d'/' -f1)
-        
+
         if [[ "$llm_port" == "$llm_host" ]]; then
             llm_port="80"
         fi
-        
+
         if timeout 5 bash -c "echo > /dev/tcp/$llm_host/$llm_port" 2>/dev/null; then
             HEALTH_STATUS["llm_service"]="partial"
             HEALTH_DETAILS["llm_service"]="Port accessible but health endpoint failed at $LLM_ENDPOINT"
@@ -274,14 +274,14 @@ check_llm_endpoint() {
 check_kubernetes_access() {
     local service_name="Kubernetes Cluster"
     log_info "Checking $service_name..."
-    
+
     if command -v kubectl >/dev/null 2>&1; then
         if timeout $HEALTH_CHECK_TIMEOUT kubectl cluster-info >/dev/null 2>&1; then
             HEALTH_STATUS["kubernetes"]="healthy"
             local cluster_info=$(kubectl config current-context 2>/dev/null || echo "unknown")
             HEALTH_DETAILS["kubernetes"]="Cluster accessible (context: $cluster_info)"
             log_success "$service_name is healthy"
-            
+
             # Check if it's a Kind cluster
             if echo "$cluster_info" | grep -q "kind"; then
                 log_verbose "Kind cluster detected: $cluster_info"
@@ -302,7 +302,7 @@ check_kubernetes_access() {
 check_container_services() {
     local service_name="Container Services"
     log_info "Checking $service_name..."
-    
+
     if command -v podman >/dev/null 2>&1; then
         local containers=$(podman ps --format "{{.Names}}" | grep kubernaut || true)
         if [[ -n "$containers" ]]; then
@@ -310,7 +310,7 @@ check_container_services() {
             HEALTH_STATUS["containers"]="healthy"
             HEALTH_DETAILS["containers"]="$container_count kubernaut containers running"
             log_success "$service_name: $container_count containers running"
-            
+
             if [[ "$VERBOSE" == "true" ]]; then
                 echo "$containers" | while read -r container; do
                     local status=$(podman ps --filter "name=$container" --format "{{.Status}}")
@@ -348,16 +348,16 @@ generate_health_report() {
     echo "Integration Test Dependencies Health Report"
     echo "========================================"
     echo
-    
+
     # Summary table
     printf "%-25s %-12s %s\n" "Service" "Status" "Details"
     printf "%-25s %-12s %s\n" "-------" "------" "-------"
-    
+
     for service in postgres vector_db redis context_api holmesgpt_api llm_service kubernetes containers; do
         if [[ -n "${HEALTH_STATUS[$service]}" ]]; then
             local status="${HEALTH_STATUS[$service]}"
             local details="${HEALTH_DETAILS[$service]}"
-            
+
             case "$status" in
                 "healthy")
                     printf "%-25s ${GREEN}%-12s${NC} %s\n" "$service" "$status" "$details"
@@ -374,9 +374,9 @@ generate_health_report() {
             esac
         fi
     done
-    
+
     echo
-    
+
     # Overall status
     if [[ "$OVERALL_HEALTH" == "true" ]]; then
         log_success "Overall Health: HEALTHY - All critical dependencies are accessible"
@@ -401,7 +401,7 @@ main() {
     echo "🔍 Kubernaut Integration Test Dependencies Health Check"
     echo "======================================================"
     echo
-    
+
     # Run all health checks
     check_postgres
     check_vector_db
@@ -411,7 +411,7 @@ main() {
     check_llm_endpoint
     check_kubernetes_access
     check_container_services
-    
+
     # Generate report
     generate_health_report
 }
@@ -444,13 +444,13 @@ ENVIRONMENT VARIABLES:
 EXAMPLES:
     # Basic health check
     $0
-    
+
     # Verbose output
     $0 --verbose
-    
+
     # Custom LLM endpoint
     $0 --llm-endpoint http://localhost:8010
-    
+
     # With environment variables
     LLM_ENDPOINT=http://localhost:8010 VERBOSE=true $0
 

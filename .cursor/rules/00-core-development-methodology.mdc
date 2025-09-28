@@ -24,14 +24,27 @@ description: "Core development methodology: principles, TDD phases, and AI-speci
 - No speculative or "nice to have" code without business backing
 - Business requirements dictate functionality; technical patterns enable business logic
 
-## 🧪 **TDD Methodology - MANDATORY SEQUENCE**
+## 🧪 **APDC-Enhanced TDD Methodology - MANDATORY SEQUENCE**
 
-### TDD Workflow - REQUIRED
-1. **FIRST**: Write unit tests defining business contract (aim for 70%+ coverage)
-2. **SECOND**: Define business interfaces to make tests compile
-3. **NEVER**: Use `Skip()` to avoid test failures
-4. **THEN**: Implement business logic after ALL tests are complete and failing
-5. **FINALLY**: Run tests to validate implementation
+### Analysis-Plan-Do-Check (APDC) Framework Integration
+**PRINCIPLE**: Systematic development through structured phases that enhance TDD methodology
+
+#### APDC Phase Overview
+| Phase | Duration | Purpose | TDD Integration |
+|-------|----------|---------|-----------------|
+| **Analysis** | 5-15 min | Comprehensive context understanding | Enhances Discovery phase |
+| **Plan** | 10-20 min | Detailed implementation strategy | Structures RED-GREEN-REFACTOR approach |
+| **Do** | Variable | Controlled implementation execution | Executes TDD phases with validation |
+| **Check** | 5-10 min | Comprehensive result validation | Extends TDD validation with business verification |
+
+### Enhanced TDD Workflow - REQUIRED
+1. **ANALYSIS**: Comprehensive context and impact assessment
+2. **PLAN**: Detailed implementation strategy with TDD phase mapping
+3. **DO-RED**: Write unit tests defining business contract (aim for 70%+ coverage)
+4. **DO-GREEN**: Define business interfaces and minimal implementation
+5. **DO-REFACTOR**: Enhance existing code with sophisticated logic
+6. **CHECK**: Comprehensive validation and confidence assessment
+7. **NEVER**: Use `Skip()` to avoid test failures or bypass APDC phases
 
 ### Defense-in-Depth Testing Requirements
 **MANDATORY**: Follow pyramid testing strategy from [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc):
@@ -39,19 +52,106 @@ description: "Core development methodology: principles, TDD phases, and AI-speci
 - **Integration Tests**: <20% coverage for component interactions requiring infrastructure
 - **E2E Tests**: <10% coverage for critical user journeys only
 
-### Development Phases - SEQUENCE REQUIRED
+## 🔍 **APDC Phase Specifications - MANDATORY SEQUENCE**
 
-**Rule**: Follow RED-GREEN-REFACTOR with integration during GREEN
-**Validation**: `./scripts/validate-tdd-completeness.sh "BR-XXX-XXX"`
+### Analysis Phase - COMPREHENSIVE CONTEXT UNDERSTANDING
+**Duration**: 5-15 minutes
+**Purpose**: Systematic evaluation before any implementation
+**Validation**: `./scripts/validate-apdc-analysis.sh [component] [business-requirement]`
 
-#### Phase Decision Matrix
-| Phase | Duration | Action | Validation Tool |
-|-------|----------|--------|----------------|
-| **Discovery** | 5-10 min | Search existing components | `codebase_search "existing [Component] implementations"` |
-| **TDD RED** | 10-15 min | Write failing tests | `./scripts/phase2-red-validation.sh` |
-| **TDD GREEN** | 15-20 min | Minimal implementation + integration | `./scripts/phase3-green-validation.sh` |
-| **TDD REFACTOR** | 20-30 min | Enhance existing code only | `./scripts/phase4-refactor-validation.sh` |
-| **Validation** | 5-10 min | Run integration checks | `./scripts/run-integration-validation.sh` |
+#### Analysis Phase Requirements
+```bash
+# Business requirement alignment analysis
+grep -r "BR-[A-Z]+-[0-9]+" docs/requirements/ --include="*.md"
+codebase_search "business requirement [BR-XXX-XXX] existing implementations"
+
+# Technical impact assessment
+codebase_search "existing [ComponentType] implementations and dependencies"
+grep -r "[ComponentName]" cmd/ pkg/ test/ --include="*.go" -c
+
+# Integration point identification
+grep -r "New[ComponentType]\|Create[ComponentType]" cmd/ --include="*.go"
+
+# Risk and complexity evaluation
+go mod graph | grep [target_package]
+./scripts/analyze-dependency-impact.sh [component]
+```
+
+#### Analysis Deliverables - MANDATORY
+1. **Business Context**: BR-XXX-XXX alignment and business value assessment
+2. **Technical Context**: Existing implementations, dependencies, integration points
+3. **Impact Assessment**: Files affected, cascade effects, performance implications
+4. **Risk Evaluation**: Complexity level, potential breaking changes, mitigation needs
+
+### Plan Phase - DETAILED IMPLEMENTATION STRATEGY
+**Duration**: 10-20 minutes
+**Purpose**: Structured approach to implementation with clear success criteria
+**Validation**: `./scripts/validate-apdc-plan.sh [analysis-results] [implementation-strategy]`
+
+#### Plan Phase Requirements
+```bash
+# TDD phase mapping and timeline estimation
+./scripts/estimate-tdd-phases.sh [component] [complexity]
+
+# Resource and dependency planning
+./scripts/validate-implementation-dependencies.sh [plan]
+
+# Success criteria definition with measurable outcomes
+./scripts/define-success-criteria.sh [business-requirement] [technical-goals]
+
+# Risk mitigation strategy development
+./scripts/create-risk-mitigation-plan.sh [identified-risks]
+```
+
+#### Plan Deliverables - MANDATORY
+1. **Implementation Strategy**: TDD phase breakdown with specific actions
+2. **Timeline Estimation**: Realistic duration for each phase
+3. **Success Criteria**: Measurable outcomes and validation checkpoints
+4. **Risk Mitigation**: Specific strategies for identified risks
+5. **Rollback Plan**: Recovery procedures if implementation fails
+
+### Do Phase - CONTROLLED TDD EXECUTION
+**Duration**: Variable (based on complexity)
+**Purpose**: Systematic implementation following TDD methodology with continuous validation
+**Validation**: Continuous checkpoint validation throughout execution
+
+#### Enhanced TDD Phase Decision Matrix
+| Phase | Duration | Action | APDC Integration | Validation Tool |
+|-------|----------|--------|------------------|----------------|
+| **DO-DISCOVERY** | 5-10 min | Execute planned component research | Analysis-guided search | `codebase_search "existing [Component] implementations"` |
+| **DO-RED** | 10-15 min | Write failing tests per plan | Plan-structured test creation | `./scripts/phase2-red-validation.sh` |
+| **DO-GREEN** | 15-20 min | Minimal implementation + integration | Plan-guided implementation | `./scripts/phase3-green-validation.sh` |
+| **DO-REFACTOR** | 20-30 min | Enhance existing code per plan | Plan-structured enhancement | `./scripts/phase4-refactor-validation.sh` |
+
+### Check Phase - COMPREHENSIVE RESULT VALIDATION
+**Duration**: 5-10 minutes
+**Purpose**: Systematic verification of implementation quality and business alignment
+**Validation**: `./scripts/validate-apdc-results.sh [implementation] [success-criteria]`
+
+#### Check Phase Requirements
+```bash
+# Business requirement fulfillment verification
+./scripts/validate-business-requirement-fulfillment.sh "BR-XXX-XXX" [implementation]
+
+# Integration testing validation
+./scripts/run-integration-validation.sh [component]
+
+# Performance impact assessment
+./scripts/assess-performance-impact.sh [before-metrics] [after-metrics]
+
+# Rule compliance confirmation
+./scripts/validate-rule-compliance.sh [implementation] [affected-rules]
+
+# Confidence assessment generation
+./scripts/generate-confidence-assessment.sh [implementation] [validation-results]
+```
+
+#### Check Deliverables - MANDATORY
+1. **Business Verification**: Confirmation that BR-XXX-XXX requirements are met
+2. **Technical Validation**: Build success, test passage, lint compliance
+3. **Integration Confirmation**: Main application integration verified
+4. **Performance Assessment**: Impact on system performance evaluated
+5. **Confidence Rating**: 60-100% confidence with detailed justification
 
 #### Discovery Phase - MANDATORY
 ```bash
@@ -302,42 +402,99 @@ and integrates cleanly with existing HolmesGPT client. Risk: Minor performance
 impact on high-alert scenarios. Validation: Unit tests cover 90% of edge cases.
 ```
 
-## 🔧 **Validation Commands**
+## 🔧 **APDC-Enhanced Validation Commands**
 
-### General Development
+### APDC Phase Validation
 ```bash
-# TDD phase validation
-./scripts/phase2-red-validation.sh test_file.go      # RED phase
-./scripts/phase3-green-validation.sh component_name  # GREEN phase
-./scripts/phase4-refactor-validation.sh             # REFACTOR phase
+# Analysis phase validation
+./scripts/validate-apdc-analysis.sh [component] [business-requirement]
+./scripts/analyze-dependency-impact.sh [component]
+./scripts/assess-business-alignment.sh "BR-XXX-XXX" [component]
 
-# Business requirements validation
+# Plan phase validation
+./scripts/validate-apdc-plan.sh [analysis-results] [implementation-strategy]
+./scripts/estimate-tdd-phases.sh [component] [complexity]
+./scripts/validate-implementation-dependencies.sh [plan]
+
+# Do phase validation (Enhanced TDD)
+./scripts/phase2-red-validation.sh test_file.go      # DO-RED phase
+./scripts/phase3-green-validation.sh component_name  # DO-GREEN phase
+./scripts/phase4-refactor-validation.sh             # DO-REFACTOR phase
+
+# Check phase validation
+./scripts/validate-apdc-results.sh [implementation] [success-criteria]
+./scripts/validate-business-requirement-fulfillment.sh "BR-XXX-XXX" [implementation]
+./scripts/assess-performance-impact.sh [before-metrics] [after-metrics]
+./scripts/generate-confidence-assessment.sh [implementation] [validation-results]
+```
+
+### Complete APDC Workflow Validation
+```bash
+# Full APDC cycle validation
+./scripts/validate-apdc-cycle.sh [component] "BR-XXX-XXX"
+
+# APDC compliance check
+./scripts/check-apdc-compliance.sh [development-session]
+
+# Business requirements validation (Enhanced)
 ./scripts/validate-tdd-completeness.sh "BR-XXX-XXX"
+./scripts/validate-apdc-business-alignment.sh "BR-XXX-XXX"
 
-# Integration validation
+# Integration validation (Enhanced)
 ./scripts/run-integration-validation.sh
+./scripts/validate-main-app-integration.sh [component]
 ```
 
-### AI-Specific Validation
+### AI-Specific APDC Validation
 ```bash
-# AI component discovery
+# AI component discovery (APDC-enhanced)
 ./scripts/ai-component-discovery.sh ComponentName
+./scripts/validate-ai-apdc-analysis.sh [ai-component] [business-requirement]
 
-# AI development phase validation
+# AI development phase validation (APDC-integrated)
 ./scripts/validate-ai-development.sh <phase>  # red, green, refactor
+./scripts/validate-ai-apdc-cycle.sh [ai-component] "BR-AI-XXX"
 ```
 
-## ⚡ **Quick Reference Checklist**
+## ⚡ **APDC-Enhanced Quick Reference Checklist**
 
-Before any code submission:
-- [ ] Business requirement mapped (BR-XXX-XXX)
-- [ ] TDD workflow followed (tests first, then implementation)
+### Before any code submission - APDC Compliance:
+
+#### Analysis Phase Completion:
+- [ ] Business requirement mapped and analyzed (BR-XXX-XXX)
+- [ ] Technical impact assessment completed
+- [ ] Integration points identified and validated
+- [ ] Risk and complexity evaluation documented
+
+#### Plan Phase Completion:
+- [ ] Implementation strategy defined with TDD phase mapping
+- [ ] Timeline estimation and resource planning completed
+- [ ] Success criteria established with measurable outcomes
+- [ ] Risk mitigation strategies documented
+- [ ] User approval received for implementation plan
+
+#### Do Phase Completion:
+- [ ] APDC-enhanced TDD workflow followed (Analysis → Plan → DO-RED → DO-GREEN → DO-REFACTOR)
+- [ ] All tests written first, then implementation
 - [ ] All errors handled and logged
 - [ ] No lint or compilation errors
 - [ ] Code integrated with main business logic
-- [ ] Confidence assessment provided
+- [ ] Continuous validation checkpoints passed
+
+#### Check Phase Completion:
+- [ ] Business requirement fulfillment verified
+- [ ] Integration testing validation completed
+- [ ] Performance impact assessed
+- [ ] Rule compliance confirmed
+- [ ] Confidence assessment provided (60-100% with justification)
 - [ ] Critical decisions escalated if needed
-- [ ] AI components follow AI-specific TDD phases (if applicable)
+- [ ] AI components follow AI-specific APDC phases (if applicable)
+
+### APDC Methodology Compliance:
+- [ ] All four APDC phases executed in sequence
+- [ ] Phase deliverables completed and documented
+- [ ] Validation tools executed for each phase
+- [ ] Business alignment maintained throughout process
 
 ## 🔗 **Integration Points**
 

@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -284,4 +285,10 @@ func createTestStepResult() *engine.StepResult {
 		Duration: 2 * time.Second,
 		Error:    "",
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUexpressionUengineUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UexpressionUengineUintegration Suite")
 }

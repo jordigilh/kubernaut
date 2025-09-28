@@ -1,0 +1,390 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-service
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+    app.kubernetes.io/part-of: kubernaut
+    microservice: webhook
+spec:
+  replicas: 3  # High availability for external traffic
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 2  # Allow surge for zero-downtime deployments
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: webhook-service
+        app.kubernetes.io/component: webhook-processor
+        microservice: webhook
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: webhook-service
+      containers:
+        - name: webhook-service
+          image: quay.io/jordigilh/kubernaut-webhook-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: webhook
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          env:
+            # Service Configuration
+            - name: LOG_LEVEL
+              value: "info"
+            - name: WEBHOOK_PORT
+              value: "8080"
+            - name: METRICS_PORT
+              value: "9090"
+            - name: HEALTH_PORT
+              value: "8081"
+
+            # Authentication Configuration
+            - name: WEBHOOK_AUTH_TYPE
+              value: "bearer"
+            - name: WEBHOOK_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: webhook-service-secrets
+                  key: auth-token
+
+            # Database Configuration (shared with other services)
+            - name: DB_HOST
+              value: "postgresql-service"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: "kubernaut"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: database-secrets
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database-secrets
+                  key: password
+            - name: DB_SSL_MODE
+              value: "require"
+            - name: DB_MAX_OPEN_CONNS
+              value: "25"
+            - name: DB_MAX_IDLE_CONNS
+              value: "5"
+
+            # Kubernetes Configuration
+            - name: KUBE_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: KUBE_CONTEXT
+              value: ""
+
+            # LLM Service Configuration (microservice communication)
+            - name: LLM_PROVIDER
+              value: "localai"
+            - name: LLM_ENDPOINT
+              value: "http://ai-service:8093"
+            - name: LLM_MODEL
+              value: "granite-3.0-8b-instruct"
+
+            # Action Execution Configuration
+            - name: DRY_RUN
+              value: "false"
+            - name: MAX_CONCURRENT_ACTIONS
+              value: "10"
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 20
+      volumes:
+        - name: config
+          configMap:
+            name: webhook-service-config
+      # Pod anti-affinity for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: webhook-service
+                topologyKey: kubernetes.io/hostname
+      # Topology spread constraints for even distribution
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: webhook-service
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"  # For AWS
+spec:
+  selector:
+    app.kubernetes.io/name: webhook-service
+  ports:
+    - name: webhook
+      port: 8080
+      targetPort: webhook
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+  type: ClusterIP  # Use LoadBalancer for external access
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service-external
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor-external
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+spec:
+  selector:
+    app.kubernetes.io/name: webhook-service
+  ports:
+    - name: webhook
+      port: 443
+      targetPort: webhook
+      protocol: TCP
+    - name: webhook-http
+      port: 80
+      targetPort: webhook
+      protocol: TCP
+  type: LoadBalancer  # External access for AlertManager
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: webhook-service
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: webhook-service
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+rules:
+  # Kubernetes API access for action execution
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Monitoring and metrics
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # Node information for diagnostics
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: webhook-service
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: webhook-service
+subjects:
+  - kind: ServiceAccount
+    name: webhook-service
+    namespace: kubernaut
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webhook-service-config
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+data:
+  service.yaml: |
+    # Webhook Service Configuration
+    service:
+      name: webhook-service
+      version: "1.0.0"
+      environment: production
+
+    # Webhook Processing Configuration
+    webhook:
+      timeout: 30s
+      max_payload_size: 1MB
+      rate_limit: 1000  # requests per minute
+
+    # Alert Processing Configuration
+    alerts:
+      batch_size: 10
+      batch_timeout: 5s
+      max_retries: 3
+
+    # Circuit Breaker Configuration
+    circuit_breaker:
+      failure_threshold: 5
+      recovery_timeout: 30s
+      half_open_max_calls: 3
+
+    # Metrics Configuration
+    metrics:
+      enabled: true
+      path: /metrics
+      port: 9090
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: webhook-service-secrets
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+type: Opaque
+data:
+  # Base64 encoded values - replace with actual secrets
+  auth-token: Y2hhbmdlbWU=  # "changeme" - REPLACE IN PRODUCTION
+
+---
+# Horizontal Pod Autoscaler for webhook service
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: webhook-service-hpa
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: webhook-service
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+
+---
+# Pod Disruption Budget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: webhook-service-pdb
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: webhook-service
+    app.kubernetes.io/component: webhook-processor
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-service

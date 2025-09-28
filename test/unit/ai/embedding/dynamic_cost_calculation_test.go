@@ -365,3 +365,5 @@ func generateContentOfLength(length int) string {
 	}
 	return content
 }
+
+// TestRunner bootstraps the Ginkgo test suite

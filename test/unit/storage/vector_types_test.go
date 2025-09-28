@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -487,3 +488,9 @@ var _ = Describe("Vector Types Unit Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUvectorUtypes(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UvectorUtypes Suite")
+}

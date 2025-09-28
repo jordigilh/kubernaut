@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -314,3 +315,9 @@ var _ = Describe("Enhanced Health Metrics - Business Requirements Testing", func
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestEnhancedHealthMetrics(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Enhanced Health Metrics Suite")
+}

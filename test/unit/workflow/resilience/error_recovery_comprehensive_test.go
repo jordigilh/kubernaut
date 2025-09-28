@@ -4,6 +4,7 @@
 package resilience
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -827,4 +828,10 @@ func applyMockValidationFix(template *engine.ExecutableTemplate, result *engine.
 			}
 		}
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUerrorUrecoveryUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UerrorUrecoveryUcomprehensive Suite")
 }

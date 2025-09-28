@@ -11,8 +11,8 @@ description: "Conflict resolution matrix and automated detection for kubernaut r
 ### Decision Matrix
 | Priority | Rules | Overrides | Tool |
 |----------|-------|-----------|------|
-| **1. Integration** | 00/07/11 | Everything | `./scripts/run-integration-validation.sh` |
-| **2. TDD Methodology** | 03/11/12 | Technical implementation | `./scripts/validate-tdd-completeness.sh` |
+| **1. Integration** | 00/07 | Everything | `./scripts/run-integration-validation.sh` |
+| **2. TDD Methodology** | 03/12 | Technical implementation | `./scripts/validate-tdd-completeness.sh` |
 | **3. Component-Specific** | 02/04/05/12 | Quality checks | Component-specific scripts |
 | **4. Quality Assurance** | 06/08/09 | Post-development | Quality validation scripts |
 
@@ -32,11 +32,25 @@ description: "Conflict resolution matrix and automated detection for kubernaut r
 ./scripts/phase4-refactor-validation.sh  # Validates REFACTOR enhancement only
 ```
 
-### AI vs General
+### AI vs General (Rule 12 vs Others)
 ```bash
 # CONFLICT: AI-specific guidance vs general Go patterns
 # RESOLUTION: AI-specific rules win for AI components
 ./scripts/validate-ai-development.sh  # AI-specific validation
+```
+
+### Testing Strategy vs Anti-Patterns (Rule 03 vs Rule 08)
+```bash
+# CONFLICT: Pyramid testing approach vs anti-pattern detection
+# RESOLUTION: Both apply - pyramid strategy with automated anti-pattern prevention
+./scripts/cursor-rule-validator.sh  # Automated anti-pattern detection
+```
+
+### Interface Validation vs Development Speed (Rule 09)
+```bash
+# CONFLICT: Interface validation requirements vs rapid development
+# RESOLUTION: Validation wins - prevents build errors and technical debt
+./scripts/validate-interface-usage.sh  # Interface validation before code generation
 ```
 
 ### Safety vs Speed
@@ -57,8 +71,14 @@ grep -r "Optimizer\|Engine\|Analyzer" cmd/ --include="*.go" || echo "CONFLICT: M
 # TDD phase conflicts
 git diff HEAD~1 | grep "^+type.*struct" && echo "CONFLICT: New types in REFACTOR"
 
-# Mock usage conflicts
-find test/ -name "*_test.go" -exec grep -l "Mock.*Engine" {} \; | wc -l  # Should be minimal
+# Testing anti-pattern conflicts
+./scripts/cursor-rule-validator.sh || echo "CONFLICT: Anti-pattern violations detected"
+
+# Interface validation conflicts
+find test/ -name "*_test.go" -exec grep -l "Mock.*Engine\|undefined.*interface" {} \; | wc -l
+
+# AI methodology conflicts
+grep -r "Mock.*LLM\|Mock.*AI" test/ --include="*_test.go" | grep -v "pkg/testutil/mocks" | wc -l
 ```
 
 ## Enforcement Protocol

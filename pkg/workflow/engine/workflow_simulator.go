@@ -743,20 +743,59 @@ type ActiveSimulation struct {
 }
 
 // Helper function
-func abs(x int) int {
+func absInt32(x int) int {
 	if x < 0 {
 		return -x
 	}
 	return x
 }
 
-// Stub implementations for undefined mock types
-type MockKubernetesClient struct{}
-type MockActionRepository struct{}
-type MockMetricsClient struct{}
-type ResourceStateModeler struct{}
-type TimeAccelerator struct{}
-type FailureInjector struct{}
+// Mock implementations for workflow simulation testing
+// Business Requirement: BR-SIM-001 - Workflow simulation and testing infrastructure
+
+// MockKubernetesClient simulates Kubernetes API interactions
+type MockKubernetesClient struct {
+	ClusterState map[string]interface{} `json:"cluster_state"`
+	Responses    map[string]interface{} `json:"responses"`
+	Errors       map[string]error       `json:"-"`
+}
+
+// MockActionRepository simulates action storage and retrieval
+type MockActionRepository struct {
+	Actions    map[string]interface{} `json:"actions"`
+	History    []interface{}          `json:"history"`
+	FailOnSave bool                   `json:"fail_on_save"`
+}
+
+// MockMetricsClient simulates metrics collection
+type MockMetricsClient struct {
+	Metrics  map[string]float64 `json:"metrics"`
+	Counters map[string]int64   `json:"counters"`
+	Enabled  bool               `json:"enabled"`
+}
+
+// ResourceStateModeler models resource state changes during simulation
+type ResourceStateModeler struct {
+	ResourceLimits map[string]interface{} `json:"resource_limits"`
+	CurrentState   map[string]interface{} `json:"current_state"`
+	Transitions    []interface{}          `json:"transitions"`
+}
+
+// TimeAccelerator controls simulation time progression
+type TimeAccelerator struct {
+	AccelerationFactor float64                `json:"acceleration_factor"`
+	CurrentTime        time.Time              `json:"current_time"`
+	TimeEvents         []interface{}          `json:"time_events"`
+	Config             map[string]interface{} `json:"config"`
+}
+
+// FailureInjector simulates various failure scenarios
+type FailureInjector struct {
+	Enabled        bool                   `json:"enabled"`
+	FailureRates   map[string]float64     `json:"failure_rates"`
+	ActiveFailures map[string]interface{} `json:"active_failures"`
+	Config         map[string]interface{} `json:"config"`
+}
 
 func NewMockKubernetesClient() *MockKubernetesClient { return &MockKubernetesClient{} }
 func NewMockActionRepository() *MockActionRepository { return &MockActionRepository{} }
@@ -768,15 +807,51 @@ func NewTimeAccelerator(config interface{}) *TimeAccelerator  { return &TimeAcce
 func NewFailureInjector(enabled interface{}) *FailureInjector { return &FailureInjector{} }
 
 // Stub implementations for simulated Kubernetes resources
-type SimulatedNode struct{}
-type SimulatedNamespace struct{}
+// SimulatedNode represents a Kubernetes node in simulation
+type SimulatedNode struct {
+	Name        string                 `json:"name"`
+	Status      string                 `json:"status"`
+	Capacity    map[string]interface{} `json:"capacity"`
+	Allocatable map[string]interface{} `json:"allocatable"`
+	Labels      map[string]string      `json:"labels"`
+	Taints      []interface{}          `json:"taints"`
+}
+
+// SimulatedNamespace represents a Kubernetes namespace in simulation
+type SimulatedNamespace struct {
+	Name        string            `json:"name"`
+	Status      string            `json:"status"`
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
+	CreatedAt   time.Time         `json:"created_at"`
+}
 type SimulatedDeployment struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace"`
 	Replicas  int    `json:"replicas"`
 }
-type SimulatedPod struct{}
-type SimulatedService struct{}
+
+// SimulatedPod represents a Kubernetes pod in simulation
+type SimulatedPod struct {
+	Name      string                 `json:"name"`
+	Namespace string                 `json:"namespace"`
+	Status    string                 `json:"status"`
+	NodeName  string                 `json:"node_name"`
+	Labels    map[string]string      `json:"labels"`
+	Resources map[string]interface{} `json:"resources"`
+	CreatedAt time.Time              `json:"created_at"`
+}
+
+// SimulatedService represents a Kubernetes service in simulation
+type SimulatedService struct {
+	Name      string            `json:"name"`
+	Namespace string            `json:"namespace"`
+	Type      string            `json:"type"`
+	ClusterIP string            `json:"cluster_ip"`
+	Ports     []interface{}     `json:"ports"`
+	Selector  map[string]string `json:"selector"`
+	CreatedAt time.Time         `json:"created_at"`
+}
 
 // Additional stub types for workflow simulation
 type FailureScenario struct {
@@ -788,16 +863,60 @@ type FailureScenario struct {
 	TriggerTime time.Time              `json:"trigger_time"`
 	Parameters  map[string]interface{} `json:"parameters"`
 }
-type LoadProfile struct{}
-type ResourceChange struct{}
-type TriggeredFailure struct{}
+
+// LoadProfile defines load characteristics for simulation
+type LoadProfile struct {
+	Name       string                 `json:"name"`
+	Type       string                 `json:"type"`
+	Intensity  float64                `json:"intensity"`
+	Duration   time.Duration          `json:"duration"`
+	Pattern    string                 `json:"pattern"`
+	Parameters map[string]interface{} `json:"parameters"`
+	StartTime  time.Time              `json:"start_time"`
+}
+
+// ResourceChange represents a change in resource state
+type ResourceChange struct {
+	ResourceType string                 `json:"resource_type"`
+	ResourceName string                 `json:"resource_name"`
+	Namespace    string                 `json:"namespace"`
+	ChangeType   string                 `json:"change_type"`
+	OldState     map[string]interface{} `json:"old_state"`
+	NewState     map[string]interface{} `json:"new_state"`
+	Timestamp    time.Time              `json:"timestamp"`
+}
+
+// TriggeredFailure represents a failure that was triggered during simulation
+type TriggeredFailure struct {
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Target      string                 `json:"target"`
+	Severity    string                 `json:"severity"`
+	Description string                 `json:"description"`
+	TriggeredAt time.Time              `json:"triggered_at"`
+	Duration    time.Duration          `json:"duration"`
+	Parameters  map[string]interface{} `json:"parameters"`
+}
 type SafetyViolation struct {
 	Type        string    `json:"type"`
 	Severity    string    `json:"severity"`
 	Description string    `json:"description"`
 	Timestamp   time.Time `json:"timestamp"`
 }
-type SimulationRecommendation struct{}
+
+// SimulationRecommendation represents recommendations from simulation analysis
+type SimulationRecommendation struct {
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Priority    string                 `json:"priority"`
+	Title       string                 `json:"title"`
+	Description string                 `json:"description"`
+	Rationale   string                 `json:"rationale"`
+	Actions     []interface{}          `json:"actions"`
+	Confidence  float64                `json:"confidence"`
+	GeneratedAt time.Time              `json:"generated_at"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
 type LoadScenario struct {
 	Name               string        `json:"name"`
 	ConcurrentUsers    int           `json:"concurrent_users"`

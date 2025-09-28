@@ -65,11 +65,11 @@ export LOG_LEVEL="${LOG_LEVEL:-$DEFAULT_LOG_LEVEL}"
 
 # Build the application first (following development guidelines)
 echo "🔨 Building application..."
-go build -o bin/prometheus-alerts-slm ./cmd/prometheus-alerts-slm
+go build -o bin/kubernaut ./cmd/kubernaut
 
 # Start the application with proper flags
 echo "▶️  Starting Kubernaut with Context API..."
-exec ./bin/prometheus-alerts-slm \
+exec ./bin/kubernaut \
     --config="$CONFIG_FILE" \
     --log-level="$LOG_LEVEL" \
     $([ "$DRY_RUN" = "true" ] && echo "--dry-run")

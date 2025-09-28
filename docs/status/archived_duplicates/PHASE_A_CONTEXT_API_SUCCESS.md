@@ -21,7 +21,7 @@ type ContextAPIConfig struct {
 
 ### **✅ Main Application Integration Complete**
 ```go
-// cmd/prometheus-alerts-slm/main.go
+// cmd/kubernaut/main.go
 // Context API server startup alongside main service
 if cfg.IsContextAPIEnabled() {
     aiIntegrator = engine.NewAIServiceIntegrator(...)
@@ -117,7 +117,7 @@ HolmesGPT :8090 → [REQUEST] → Context API :8091 → ✅ Dynamic Context
 - **Modified**: `config/production-holmesgpt.yaml` - Added `context_api` section + model update
 
 ### **Application Layer**
-- **Modified**: `cmd/prometheus-alerts-slm/main.go` - Integrated Context API server startup/shutdown
+- **Modified**: `cmd/kubernaut/main.go` - Integrated Context API server startup/shutdown
 
 ### **Development Tools**
 - **Created**: `scripts/run-kubernaut-with-context-api.sh` - Full stack local development script

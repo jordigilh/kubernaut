@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -322,3 +323,9 @@ var _ = Describe("Objective Analysis Function Activation - TDD Phase 2", func() 
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUobjectiveUanalysisUactivation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UobjectiveUanalysisUactivation Suite")
+}

@@ -69,6 +69,8 @@ func (cae *CustomActionExecutor) Execute(ctx context.Context, action *StepAction
 		return cae.webhookAction(ctx, action, stepContext, startTime)
 	case "script":
 		return cae.scriptAction(ctx, action, stepContext, startTime)
+	case "test_action":
+		return cae.testAction(ctx, action, stepContext, startTime)
 	default:
 		return &StepResult{
 			Success: false,
@@ -414,6 +416,73 @@ func (cae *CustomActionExecutor) scriptAction(ctx context.Context, action *StepA
 			"env_vars":    envVars,
 			"action_type": "script",
 			"status":      "executed",
+		},
+		Duration: time.Since(startTime),
+	}, nil
+}
+
+// testAction performs a test action for unit/integration testing
+func (cae *CustomActionExecutor) testAction(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Check for context cancellation
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	// Extract test parameters
+	stepID := "unknown"
+	if stepContext != nil {
+		stepID = stepContext.StepID
+	}
+
+	workerID := 0
+	operationID := 0
+	if action.Parameters != nil {
+		if id, ok := action.Parameters["step_id"].(int); ok {
+			stepID = fmt.Sprintf("test-step-%d", id)
+		}
+		if id, ok := action.Parameters["worker_id"].(int); ok {
+			workerID = id
+		}
+		if id, ok := action.Parameters["operation_id"].(int); ok {
+			operationID = id
+		}
+	}
+
+	cae.log.WithFields(logrus.Fields{
+		"step_id":      stepID,
+		"worker_id":    workerID,
+		"operation_id": operationID,
+		"action_type":  "test_action",
+	}).Info("Executing test action")
+
+	// Simulate realistic processing time for concurrency testing
+	processingTime := 15 * time.Millisecond // Slightly longer default for workflow steps
+	if duration, ok := action.Parameters["processing_time"].(time.Duration); ok {
+		processingTime = duration
+	} else if durationMs, ok := action.Parameters["processing_time_ms"].(int); ok {
+		processingTime = time.Duration(durationMs) * time.Millisecond
+	}
+	time.Sleep(processingTime)
+
+	// Return successful test result
+	return &StepResult{
+		Success: true,
+		Output: map[string]interface{}{
+			"message": fmt.Sprintf("Test action completed successfully for step %s", stepID),
+		},
+		Variables: map[string]interface{}{
+			"test_completed": true,
+			"execution_time": time.Since(startTime),
+		},
+		Data: map[string]interface{}{
+			"step_id":      stepID,
+			"worker_id":    workerID,
+			"operation_id": operationID,
+			"action_type":  "test_action",
+			"status":       "completed",
+			"test_result":  "success",
 		},
 		Duration: time.Since(startTime),
 	}, nil
