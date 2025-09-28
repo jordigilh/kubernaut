@@ -158,7 +158,7 @@ func detectTestType() TestType {
 ✅ test/unit/platform/platform_test.go
    • Scenario: MonitoringStack
    • Resources: Prometheus, Grafana, AlertManager
-   • Namespace: prometheus-alerts-slm
+   • Namespace: kubernaut
 
 ✅ test/unit/platform/safety_validator_real_test.go
    • Scenario: ResourceConstrained
@@ -281,7 +281,7 @@ fakeClientset.AppsV1().Deployments("test-namespace").Create(ctx, deployment, met
 enhancedClientset := enhanced.NewSmartFakeClientset()
 
 // Automatically provides:
-// ✅ Production-like namespaces (prometheus-alerts-slm, monitoring, apps)
+// ✅ Production-like namespaces (kubernaut, monitoring, apps)
 // ✅ Realistic deployments (kubernaut, prometheus, grafana)
 // ✅ Proper resource limits and node configurations
 // ✅ RBAC and service accounts
@@ -300,7 +300,7 @@ fmt.Printf("Selected scenario: %v\n", info)
 //   "scenario": "monitoring_heavy",
 //   "resource_profile": "production_resource_limits",
 //   "node_count": 3,
-//   "namespaces": ["default", "prometheus-alerts-slm", "monitoring"],
+//   "namespaces": ["default", "kubernaut", "monitoring"],
 //   "workload_profile": "monitoring_workload"
 // }
 ```

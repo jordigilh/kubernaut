@@ -6,6 +6,7 @@ package actions
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -24,10 +25,10 @@ import (
 var _ = Describe("BR-WF-CORE-ACTIONS-001: Comprehensive Workflow Core Actions Business Logic", func() {
 	var (
 		// Mock ONLY external dependencies per pyramid principles
-		mockLLMClient     *mocks.MockLLMClient
-		mockVectorDB      *mocks.MockVectorDatabase
-		realAnalytics     types.AnalyticsEngine
-		realMetrics       engine.AIMetricsCollector
+		mockLLMClient *mocks.MockLLMClient
+		mockVectorDB  *mocks.MockVectorDatabase
+		realAnalytics types.AnalyticsEngine
+		// realMetrics       engine.AIMetricsCollector // Removed unused variable
 		mockExecutionRepo *mocks.WorkflowExecutionRepositoryMock
 		mockPatternStore  engine.PatternStore
 		mockLogger        *logrus.Logger
@@ -46,7 +47,7 @@ var _ = Describe("BR-WF-CORE-ACTIONS-001: Comprehensive Workflow Core Actions Bu
 		mockLLMClient = mocks.NewMockLLMClient()
 		mockVectorDB = mocks.NewMockVectorDatabase()
 		realAnalytics = insights.NewAnalyticsEngine()
-		realMetrics = engine.NewConfiguredAIMetricsCollector(nil, mockLLMClient, mockVectorDB, nil, mockLogger)
+		// realMetrics = engine.NewDefaultAIMetricsCollector(mockLLMClient, mockVectorDB, nil, mockLogger) // Removed unused
 
 		// Pattern discovery engine not needed for this test - using pattern store directly
 		mockExecutionRepo = mocks.NewWorkflowExecutionRepositoryMock()
@@ -468,157 +469,6 @@ var _ = Describe("BR-WF-CORE-ACTIONS-001: Comprehensive Workflow Core Actions Bu
 // Helper functions to create test objectives and templates
 // These test REAL business logic with various scenarios
 
-func createCPUHighPriorityObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "cpu-high-priority-obj",
-		Type:        "incident_response",
-		Description: "High priority CPU usage incident response workflow",
-		Priority:    1, // High priority
-		Constraints: map[string]interface{}{
-			"alert_type":      "cpu_high",
-			"severity":        "critical",
-			"environment":     "production",
-			"auto_approve":    false,
-			"customer_impact": "high",
-			"sla_target":      "5m",
-		},
-	}
-}
-
-func createMemoryCriticalObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "memory-critical-obj",
-		Type:        "resource_management",
-		Description: "Critical memory usage management workflow",
-		Priority:    1, // High priority
-		Constraints: map[string]interface{}{
-			"alert_type":          "memory_critical",
-			"severity":            "critical",
-			"threshold":           90.0,
-			"immediate_action":    true,
-			"business_impact":     "critical",
-			"escalation_required": true,
-		},
-	}
-}
-
-func createNetworkConnectivityObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "network-connectivity-obj",
-		Type:        "connectivity_issue",
-		Description: "Network connectivity issue resolution workflow",
-		Priority:    2, // Medium priority
-		Constraints: map[string]interface{}{
-			"alert_type":              "network_down",
-			"severity":                "high",
-			"affected_services":       []string{"api", "database"},
-			"service_impact":          "multiple",
-			"recovery_time_objective": "10m",
-		},
-	}
-}
-
-func createStorageCapacityObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "storage-capacity-obj",
-		Type:        "capacity_management",
-		Description: "Storage capacity management workflow",
-		Priority:    2, // Medium priority
-		Constraints: map[string]interface{}{
-			"alert_type":            "storage_full",
-			"severity":              "high",
-			"threshold":             85.0,
-			"cleanup_enabled":       true,
-			"data_retention_policy": "30d",
-			"backup_required":       true,
-		},
-	}
-}
-
-func createAppPerformanceObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "app-performance-obj",
-		Type:        "performance_optimization",
-		Description: "Application performance optimization workflow",
-		Priority:    2, // Medium priority
-		Constraints: map[string]interface{}{
-			"alert_type":              "performance_degradation",
-			"severity":                "medium",
-			"response_time_threshold": 500.0,
-			"user_experience_impact":  "moderate",
-			"optimization_target":     "response_time",
-		},
-	}
-}
-
-func createSecurityIncidentObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "security-incident-obj",
-		Type:        "security_response",
-		Description: "Security incident response workflow",
-		Priority:    1, // High priority
-		Constraints: map[string]interface{}{
-			"alert_type":            "security_breach",
-			"severity":              "critical",
-			"isolation_required":    true,
-			"audit_trail":           true,
-			"compliance_required":   true,
-			"notification_required": true,
-		},
-	}
-}
-
-func createEmptyObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		// Empty objective - should fail validation
-	}
-}
-
-func createInvalidPriorityObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "invalid-priority-obj",
-		Type:        "test",
-		Description: "Invalid priority test",
-		Priority:    -1, // Invalid negative priority
-		Constraints: map[string]interface{}{
-			"test": true,
-		},
-	}
-}
-
-func createMissingConstraintsObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "missing-constraints-obj",
-		Type:        "test",
-		Description: "Missing constraints test",
-		Priority:    1,
-		// Missing constraints - should fail validation
-	}
-}
-
-func createComplexMultiConstraintObjective() *engine.WorkflowObjective {
-	return &engine.WorkflowObjective{
-		ID:          "complex-multi-constraint-obj",
-		Type:        "complex_incident",
-		Description: "Complex multi-constraint incident response",
-		Priority:    1,
-		Constraints: map[string]interface{}{
-			"alert_type":        "multi_service_failure",
-			"severity":          "critical",
-			"environment":       "production",
-			"approval_required": true,
-			"escalation_policy": "immediate",
-			"affected_services": []string{"api", "database", "cache"},
-			"business_hours":    true,
-			"customer_facing":   true,
-			"revenue_impact":    "high",
-			"customer_count":    10000,
-			"sla_breach_risk":   true,
-			"compliance_impact": "medium",
-		},
-	}
-}
-
 func createBusinessWorkflowTemplate() *engine.ExecutableTemplate {
 	return engine.NewWorkflowTemplate("business-workflow", "Business Workflow Template")
 }
@@ -949,4 +799,10 @@ func createComplexMultiConstraintObjective() *engine.WorkflowObjective {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUcoreUactionsUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUcoreUactionsUcomprehensive Suite")
 }

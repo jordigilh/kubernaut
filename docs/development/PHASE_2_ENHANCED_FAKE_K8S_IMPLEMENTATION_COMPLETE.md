@@ -19,7 +19,7 @@
 enhancedClient := enhanced.NewProductionLikeCluster(&enhanced.ClusterConfig{
     Scenario:        enhanced.HighLoadProduction,
     NodeCount:       5,
-    Namespaces:      []string{"monitoring", "apps", "prometheus-alerts-slm"},
+    Namespaces:      []string{"monitoring", "apps", "kubernaut"},
     WorkloadProfile: enhanced.KubernautOperator,
     ResourceProfile: enhanced.ProductionResourceLimits,
 })
@@ -38,7 +38,7 @@ enhancedClient := enhanced.NewProductionLikeCluster(&enhanced.ClusterConfig{
 **Implementation**: `pkg/testutil/enhanced/workload_patterns.go`
 
 **Workload Profiles Available**:
-- **KubernautOperator**: Real kubernaut components (kubernaut, dynamic-toolset-server, holmesgpt-api, postgres-vector-db)
+- **KubernautOperator**: Real kubernaut components (kubernaut, kubernaut, holmesgpt-api, postgres-vector-db)
 - **MonitoringWorkload**: Complete monitoring stack (prometheus, grafana, alertmanager, node-exporter)
 - **AIMLWorkload**: AI/ML components (llm-inference-server, model-training-job, vector-embeddings-api, jupyter)
 - **HighThroughputServices**: Microservices stack (api-gateway, user-service, order-processing, redis-cache)
@@ -195,7 +195,7 @@ func TestKubernautOperatorSafety(t *testing.T) {
     cluster := enhanced.NewProductionLikeCluster(&enhanced.ClusterConfig{
         Scenario:        enhanced.HighLoadProduction,
         NodeCount:       5,
-        Namespaces:      []string{"prometheus-alerts-slm"},
+        Namespaces:      []string{"kubernaut"},
         WorkloadProfile: enhanced.KubernautOperator,
         ResourceProfile: enhanced.ProductionResourceLimits,
     })
@@ -205,7 +205,7 @@ func TestKubernautOperatorSafety(t *testing.T) {
 
     alert := types.Alert{
         Name: "HighCPUUsage", Severity: "warning",
-        Namespace: "prometheus-alerts-slm", Resource: "kubernaut",
+        Namespace: "kubernaut", Resource: "kubernaut",
     }
 
     // Real safety validation with production-like cluster
@@ -319,7 +319,7 @@ func TestProductionScenario(t *testing.T) {
     cluster := enhanced.NewProductionLikeCluster(&enhanced.ClusterConfig{
         Scenario:        enhanced.HighLoadProduction,
         NodeCount:       5,
-        Namespaces:      []string{"monitoring", "apps", "prometheus-alerts-slm"},
+        Namespaces:      []string{"monitoring", "apps", "kubernaut"},
         WorkloadProfile: enhanced.KubernautOperator,
         ResourceProfile: enhanced.ProductionResourceLimits,
     })

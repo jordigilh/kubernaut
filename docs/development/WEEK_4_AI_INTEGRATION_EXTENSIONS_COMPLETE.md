@@ -55,7 +55,7 @@ Successfully completed Week 4 of the Quality Focus phase, implementing comprehen
 ### Enhanced Fake K8s Client Integration
 - **Scenario**: `HighLoadProduction` with `TestTypeAI` auto-detection
 - **Node Count**: 3 nodes optimized for AI workloads
-- **Namespaces**: `["default", "prometheus-alerts-slm", "workflows"]`
+- **Namespaces**: `["default", "kubernaut", "workflows"]`
 - **Resource Profile**: `GPUAcceleratedNodes` for AI-specific resources
 - **Workload Profile**: `AIMLWorkload` for AI/ML service simulation
 

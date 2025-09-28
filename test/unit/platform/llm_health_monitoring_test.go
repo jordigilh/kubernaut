@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -192,3 +193,9 @@ var _ = Describe("BR-HEALTH-001: LLM Health Monitoring - Business Requirements T
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUllmUhealthUmonitoring(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UllmUhealthUmonitoring Suite")
+}

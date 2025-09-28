@@ -1,6 +1,7 @@
 package api
 
 import (
+	"testing"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -313,3 +314,9 @@ var _ = Describe("Context API Health Monitoring - Business Requirements Testing"
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcontextUhealthUmonitoring(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcontextUhealthUmonitoring Suite")
+}

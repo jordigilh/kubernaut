@@ -477,7 +477,7 @@ var _ = Describe("Monitoring and Observability Integration", Ordered, func() {
 			Expect(decoded.Alerts).To(HaveLen(1), "Expected exactly 1 alert")
 			Expect(decoded.Alerts[0].Labels["alertname"]).To(Equal("IntegrationTestAlert"), "Expected correct alertname")
 			Expect(decoded.Status).To(Equal("firing"), "Expected firing status")
-			Expect(decoded.Receiver).To(Equal("prometheus-alerts-slm"), "Expected correct receiver")
+			Expect(decoded.Receiver).To(Equal("kubernaut"), "Expected correct receiver")
 
 			logger.Info("Webhook alert payload validation successful")
 		})
@@ -814,7 +814,7 @@ func createIntegrationMonitoringAlert() webhook.AlertManagerWebhook {
 		GroupKey:          "integration-monitoring-test",
 		TruncatedAlerts:   0,
 		Status:            "firing",
-		Receiver:          "prometheus-alerts-slm",
+		Receiver:          "kubernaut",
 		GroupLabels:       map[string]string{"alertname": "IntegrationTestAlert"},
 		CommonLabels:      map[string]string{"cluster": "integration-test", "environment": "integration"},
 		CommonAnnotations: map[string]string{"runbook_url": "https://kubernaut.io/runbook"},
@@ -849,7 +849,7 @@ func createCustomIntegrationAlert(alertName, severity, status string) webhook.Al
 		GroupKey:          fmt.Sprintf("integration-%s", alertName),
 		TruncatedAlerts:   0,
 		Status:            status,
-		Receiver:          "prometheus-alerts-slm",
+		Receiver:          "kubernaut",
 		GroupLabels:       map[string]string{"alertname": alertName},
 		CommonLabels:      map[string]string{"cluster": "integration-test", "environment": "integration"},
 		CommonAnnotations: map[string]string{"runbook_url": "https://kubernaut.io/runbook"},

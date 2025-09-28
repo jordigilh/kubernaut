@@ -1,6 +1,7 @@
 package intelligence
 
 import (
+	"testing"
 	"fmt"
 	"time"
 
@@ -249,3 +250,9 @@ func createStatisticalExecutionData(count int) []*sharedtypes.WorkflowExecutionD
 }
 
 // End of statistical validation test helper functions
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUstatisticalUvalidation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UstatisticalUvalidation Suite")
+}

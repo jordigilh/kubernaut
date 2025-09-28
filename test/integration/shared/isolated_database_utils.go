@@ -84,14 +84,12 @@ func NewIsolatedDatabaseTestUtils(logger *logrus.Logger, strategy IsolationStrat
 
 	// Connect to master database
 	if err := utils.connectToMasterDatabase(); err != nil {
+		// Integration tests MUST fail if database is unavailable
+		logger.WithError(err).Error("Failed to connect to database - integration tests require real database")
 		if testConfig.UseContainerDB {
-			// If we're configured to use container DB but can't connect, this is a setup issue
-			logger.WithError(err).Error("Failed to connect to containerized database - check if integration services are running")
-			return nil, fmt.Errorf("containerized database connection failed: %w (try running: scripts/run-integration-tests.sh start-services)", err)
+			return nil, fmt.Errorf("containerized database connection failed: %w (try running: make bootstrap-dev)", err)
 		}
-		// Fallback behavior for non-containerized setup
-		logger.WithError(err).Warn("Failed to connect to database - database tests will be skipped")
-		return nil, fmt.Errorf("database connection unavailable: %w", err)
+		return nil, fmt.Errorf("database connection failed - integration tests require real database: %w", err)
 	}
 
 	// Initialize isolation based on strategy
@@ -587,7 +585,7 @@ func (d *IsolatedDatabaseTestUtils) ConfigureErrorScenario(scenario ErrorScenari
 	}).Info("Configuring database error scenario")
 
 	switch scenario.Category {
-	case DatabaseError:
+	case "database":
 		switch scenario.Name {
 		case "database_connection_loss":
 			return d.SimulateDatabaseError(DBConnectionFailure)
@@ -604,10 +602,10 @@ func (d *IsolatedDatabaseTestUtils) ConfigureErrorScenario(scenario ErrorScenari
 			return d.SimulateDatabaseError(DBConnectionFailure)
 		}
 
-	case TimeoutError:
+	case "timeout":
 		return d.SimulateDatabaseError(DBQueryTimeout)
 
-	case NetworkError:
+	case "network":
 		// Network issues affecting database connectivity
 		return d.SimulateDatabaseError(DBConnectionFailure)
 

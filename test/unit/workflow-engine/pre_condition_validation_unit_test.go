@@ -6,6 +6,7 @@ package workflowengine
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -311,7 +312,7 @@ var _ = Describe("BR-VALID-PRE-001, BR-VALID-PRE-002, BR-VALID-PRE-003: Pre-Cond
 
 			// Test with empty criteria
 			emptyCriteria := &engine.ValidationCriteria{
-				Rules:      []*engine.ValidationRule{},
+				Rules:      []*engine.PreConditionRule{},
 				StrictMode: false,
 				Timeout:    0,
 			}
@@ -363,7 +364,7 @@ var _ = Describe("BR-VALID-PRE-001, BR-VALID-PRE-002, BR-VALID-PRE-003: Pre-Cond
 // These create realistic test data for REAL business logic validation
 
 func createEnvironmentValidationCriteria(environment string, strictMode bool) *engine.ValidationCriteria {
-	rules := []*engine.ValidationRule{
+	rules := []*engine.PreConditionRule{
 		{
 			Name:       "production_environment_check",
 			Expression: "production_only",
@@ -401,7 +402,7 @@ func createEnvironmentStepContext(environment string, priority int) *engine.Step
 
 func createSpecificEnvironmentCriteria(ruleType string) *engine.ValidationCriteria {
 	return &engine.ValidationCriteria{
-		Rules: []*engine.ValidationRule{
+		Rules: []*engine.PreConditionRule{
 			{
 				Name:       fmt.Sprintf("%s_rule", ruleType),
 				Expression: ruleType,
@@ -416,7 +417,7 @@ func createSpecificEnvironmentCriteria(ruleType string) *engine.ValidationCriter
 
 func createPriorityValidationCriteria(priorityRule string, strictMode bool) *engine.ValidationCriteria {
 	return &engine.ValidationCriteria{
-		Rules: []*engine.ValidationRule{
+		Rules: []*engine.PreConditionRule{
 			{
 				Name:       "priority_check",
 				Expression: priorityRule,
@@ -445,7 +446,7 @@ func createPriorityStepContext(environment string, priority int) *engine.StepCon
 
 func createContextAwareValidationCriteria() *engine.ValidationCriteria {
 	return &engine.ValidationCriteria{
-		Rules: []*engine.ValidationRule{
+		Rules: []*engine.PreConditionRule{
 			{
 				Name:       "context_environment_check",
 				Expression: "production_only",
@@ -491,7 +492,7 @@ func createComprehensiveStepContext() *engine.StepContext {
 
 func createTimeoutValidationCriteria(timeout time.Duration) *engine.ValidationCriteria {
 	return &engine.ValidationCriteria{
-		Rules: []*engine.ValidationRule{
+		Rules: []*engine.PreConditionRule{
 			{
 				Name:       "timeout_test_rule",
 				Expression: "always_true",
@@ -506,7 +507,7 @@ func createTimeoutValidationCriteria(timeout time.Duration) *engine.ValidationCr
 
 func createStrictModeValidationCriteria() *engine.ValidationCriteria {
 	return &engine.ValidationCriteria{
-		Rules: []*engine.ValidationRule{
+		Rules: []*engine.PreConditionRule{
 			{
 				Name:       "strict_rule_1",
 				Expression: "always_true",
@@ -541,7 +542,7 @@ func createMixedValidationStepContext() *engine.StepContext {
 
 func createComplexValidationCriteria() *engine.ValidationCriteria {
 	return &engine.ValidationCriteria{
-		Rules: []*engine.ValidationRule{
+		Rules: []*engine.PreConditionRule{
 			{
 				Name:       "complex_environment_check",
 				Expression: "production_only",
@@ -586,4 +587,10 @@ func createComplexStepContext(environment string, priority int) *engine.StepCont
 			"backup_enabled":       true,
 		},
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUpreUconditionUvalidationUunit(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UpreUconditionUvalidationUunit Suite")
 }

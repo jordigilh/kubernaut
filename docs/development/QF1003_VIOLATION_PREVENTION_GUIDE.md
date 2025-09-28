@@ -176,7 +176,7 @@ make lint            # Check all violations including QF1003
 
 ### Files Modified
 - `pkg/orchestration/adaptive/orchestrator_helpers.go` (9 fixes)
-- `cmd/dynamic-toolset-server/main.go` (1 fix)
+- `cmd/kubernaut/main.go` (1 fix)
 
 ## Guidelines for QF1003 Decisions
 

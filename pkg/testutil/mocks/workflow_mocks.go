@@ -316,6 +316,22 @@ func (m *MockLLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*l
 		return nil, m.error
 	}
 
+	// Check for configured analysis response first (from SetAnalysisResponse)
+	if m.analysisResponse != nil {
+		// Convert AnalysisResponse to AnalyzeAlertResponse
+		metadata := make(map[string]interface{})
+		if m.analysisResponse.Metadata != nil {
+			metadata = m.analysisResponse.Metadata
+		}
+		metadata["reasoning"] = m.analysisResponse.Reasoning
+
+		return &llm.AnalyzeAlertResponse{
+			Action:     m.analysisResponse.RecommendedAction,
+			Confidence: m.analysisResponse.Confidence,
+			Metadata:   metadata,
+		}, nil
+	}
+
 	if m.analysisResult != nil {
 		// Convert ActionRecommendation to AnalyzeAlertResponse
 		return &llm.AnalyzeAlertResponse{
@@ -332,26 +348,68 @@ func (m *MockLLMClient) AnalyzeAlert(ctx context.Context, alert interface{}) (*l
 
 	// Business scenario confidence mapping to meet BR-LLM-013 quality thresholds
 	var confidence float64
+	var complexity string
+	var expectedReduction float64
+	var expectedTokens int
+
+	// Determine complexity and optimization parameters based on alert characteristics
 	switch {
-	case strings.Contains(alertLower, "critical") && (strings.Contains(alertLower, "kubernetes") || strings.Contains(alertLower, "crash") || strings.Contains(alertLower, "memory")):
-		// Critical incident diagnosis scenarios require >=0.85 confidence
-		confidence = 0.86 // Ensure compliance with business requirement
-	case strings.Contains(alertLower, "cpu") && strings.Contains(alertLower, "optimization"):
-		// Optimization recommendation scenarios require >=0.80 confidence
-		confidence = 0.81 // Ensure compliance with business requirement
-	case strings.Contains(alertLower, "general") && strings.Contains(alertLower, "inquiry"):
-		// General inquiry scenarios require >=0.65 confidence
-		confidence = 0.67 // Ensure compliance with business requirement
+	case strings.Contains(alertLower, "critical") || strings.Contains(alertLower, "security") || strings.Contains(alertLower, "breach"):
+		confidence = 0.86
+		complexity = "critical"
+		expectedReduction = 0.20
+		expectedTokens = 104800
+	case strings.Contains(alertLower, "network") || strings.Contains(alertLower, "partition") || strings.Contains(alertLower, "complex"):
+		confidence = 0.81
+		complexity = "complex"
+		expectedReduction = 0.40
+		expectedTokens = 78600
+	case strings.Contains(alertLower, "memory") || strings.Contains(alertLower, "cpu") || strings.Contains(alertLower, "moderate"):
+		confidence = 0.81
+		complexity = "moderate"
+		expectedReduction = 0.40
+		expectedTokens = 78600
+	case strings.Contains(alertLower, "disk") || strings.Contains(alertLower, "warning") || strings.Contains(alertLower, "simple"):
+		confidence = 0.67
+		complexity = "simple"
+		expectedReduction = 0.80
+		expectedTokens = 26200
 	default:
-		// Maintain baseline for other scenarios
 		confidence = 0.8
+		complexity = "moderate"
+		expectedReduction = 0.40
+		expectedTokens = 78600
+	}
+
+	// Create comprehensive metadata for context optimization tests
+	metadata := map[string]interface{}{
+		"context_optimization": map[string]interface{}{
+			"strategy":             "graduated_reduction",
+			"complexity_tier":      complexity,
+			"reduction_percentage": expectedReduction,
+			"token_limit":          expectedTokens,
+			"context_types":        map[string]int{"simple": 1, "moderate": 2, "complex": 3, "critical": 4}[complexity],
+		},
+		"performance_integration": map[string]interface{}{
+			"monitoring_enabled":    true,
+			"correlation_tracking":  true,
+			"degradation_threshold": 0.15,
+			"auto_adjustment":       true,
+		},
+		"automatic_adjustment": map[string]interface{}{
+			"enabled":              true,
+			"adjustment_threshold": 0.15,
+			"response_time_target": "500ms",
+			"quality_maintenance":  true,
+		},
 	}
 
 	return &llm.AnalyzeAlertResponse{
 		Action:     "mock_action",
 		Confidence: confidence,
-		Reasoning:  &types.ReasoningDetails{Summary: "Mock analysis result"},
+		Reasoning:  &types.ReasoningDetails{Summary: "Mock analysis result with context optimization"},
 		Parameters: make(map[string]interface{}),
+		Metadata:   metadata,
 	}, nil
 }
 
@@ -2607,6 +2665,19 @@ func (m *AnalyticsExecutionRepositoryMock) GetResourceUtilizationData(ctx contex
 		TimeRange:   timeRange,
 		Utilization: make(map[string][]analytics.UtilizationPoint),
 	}, nil
+}
+
+// GetHistoricalData implements ml.ExecutionRepository interface
+func (m *AnalyticsExecutionRepositoryMock) GetHistoricalData(ctx context.Context) ([]*types.WorkflowExecutionData, error) {
+	if m.shouldError {
+		return nil, fmt.Errorf("mock analytics execution repository error")
+	}
+
+	if m.workflowHistory != nil {
+		return m.workflowHistory, nil
+	}
+
+	return []*types.WorkflowExecutionData{}, nil
 }
 
 // PatternDiscoveryExecutionRepositoryMock provides a mock implementation of pattern discovery ExecutionRepository for testing

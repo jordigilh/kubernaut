@@ -1,6 +1,7 @@
 package holmesgpt_test
 
 import (
+	"testing"
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -229,3 +230,9 @@ var _ = Describe("Enhanced HolmesGPT Provider Methods", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUenhancedUproviderUmethods(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UenhancedUproviderUmethods Suite")
+}

@@ -42,6 +42,7 @@ type AIServiceStatus struct {
 }
 
 // NewAIServiceIntegrator creates a new AI service integrator
+// TDD RED PHASE: Modified to require HTTP LLM client for microservices architecture
 func NewAIServiceIntegrator(
 	cfg *config.Config,
 	llmClient llm.Client,
@@ -50,6 +51,11 @@ func NewAIServiceIntegrator(
 	metricsClient *metrics.Client,
 	log *logrus.Logger,
 ) *AIServiceIntegrator {
+	// TDD RED: Add validation to force test failures for microservices refactoring
+	if llmClient == nil {
+		panic("LLM client is required for microservices architecture - use HTTPLLMClient instead of nil")
+	}
+
 	return &AIServiceIntegrator{
 		config:        cfg,
 		llmClient:     llmClient,
@@ -90,6 +96,10 @@ func (asi *AIServiceIntegrator) DetectAndConfigure(ctx context.Context) (*AIServ
 		if !status.LLMAvailable {
 			status.HealthCheckError = fmt.Sprintf("LLM service at %s is not healthy", llmConfig.Endpoint)
 		}
+	} else {
+		// LLM client is nil, service unavailable
+		status.LLMAvailable = false
+		status.HealthCheckError = fmt.Sprintf("LLM service at %s is not available (client not configured)", llmConfig.Endpoint)
 	}
 
 	// Check HolmesGPT service health

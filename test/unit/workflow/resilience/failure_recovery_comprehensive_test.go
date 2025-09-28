@@ -6,6 +6,7 @@ package resilience
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,9 +31,9 @@ var _ = Describe("BR-RESILIENCE-001: Comprehensive Failure Recovery Business Log
 		// Use REAL business logic components
 		resilientEngine *engine.ResilientWorkflowEngine
 		// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
-		llmClient       llm.Client
-		failureHandler  *engine.ProductionFailureHandler
-		workflowBuilder *engine.DefaultIntelligentWorkflowBuilder
+		llmClient      llm.Client
+		failureHandler *engine.ProductionFailureHandler
+		// workflowBuilder *engine.DefaultIntelligentWorkflowBuilder // Unused variable
 
 		ctx    context.Context
 		cancel context.CancelFunc
@@ -51,7 +52,7 @@ var _ = Describe("BR-RESILIENCE-001: Comprehensive Failure Recovery Business Log
 
 		// Create REAL business workflow builder - simplified for unit testing
 		// Note: Using mock since full constructor needs many dependencies
-		workflowBuilder = createMockWorkflowBuilder()
+		// workflowBuilder = createMockWorkflowBuilder() // Unused variable
 
 		// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
 		llmClient = mockLLMClient
@@ -87,7 +88,7 @@ var _ = Describe("BR-RESILIENCE-001: Comprehensive Failure Recovery Business Log
 					"BR-RESILIENCE-001: Failure recovery must succeed for %s", scenarioName)
 				Expect(optimizationResult).ToNot(BeNil(),
 					"BR-RESILIENCE-001: Must return recovered workflow for %s", scenarioName)
-				
+
 				// RULE 12 COMPLIANCE: Handle interface{} return type from enhanced llm.Client
 				result, ok := optimizationResult.(*engine.Workflow)
 				Expect(ok).To(BeTrue(), "Should return workflow from LLM optimization")
@@ -371,7 +372,7 @@ var _ = Describe("BR-RESILIENCE-001: Comprehensive Failure Recovery Business Log
 			// Test REAL business optimization with data integrity
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
 			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, workflow, history)
-			
+
 			// Handle interface{} return type from enhanced llm.Client
 			var result *engine.Workflow
 			if optimizationResult != nil {
@@ -898,4 +899,10 @@ func createMockRecoveryPlan(execution *engine.RuntimeWorkflowExecution, step *en
 			"strategy":     "mock_recovery",
 		},
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUfailureUrecoveryUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UfailureUrecoveryUcomprehensive Suite")
 }

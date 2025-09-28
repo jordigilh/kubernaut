@@ -2,7 +2,7 @@
   "version": "4",
   "groupKey": "test-group-key",
   "status": "firing",
-  "receiver": "prometheus-alerts-slm",
+  "receiver": "kubernaut",
   "groupLabels": {
     "alertname": "HighMemoryUsage"
   },

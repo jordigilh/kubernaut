@@ -1,6 +1,7 @@
 package workflowengine_test
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -402,3 +403,9 @@ var _ = Describe("Environment Adaptation Integration - TDD Implementation", func
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUenvironmentUadaptationUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UenvironmentUadaptationUintegration Suite")
+}

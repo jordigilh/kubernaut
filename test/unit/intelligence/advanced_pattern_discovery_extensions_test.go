@@ -6,6 +6,7 @@ package intelligence
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -37,7 +38,7 @@ var _ = Describe("Advanced Pattern Discovery Extensions - Week 1 Business Requir
 		realPatternStore     patterns.PatternStore
 
 		// Mock external dependencies only (per rule 03)
-		mockExecutionRepo *mocks.MockExecutionRepository
+		mockExecutionRepo *mocks.PatternDiscoveryExecutionRepositoryMock
 
 		// Test configuration
 		patternConfig *patterns.PatternDiscoveryConfig
@@ -81,7 +82,7 @@ var _ = Describe("Advanced Pattern Discovery Extensions - Week 1 Business Requir
 		realClusteringEngine = clustering.NewClusteringEngine(patternConfig, logger)
 
 		// Mock external dependencies only
-		mockExecutionRepo = mocks.NewMockExecutionRepository()
+		mockExecutionRepo = mocks.NewPatternDiscoveryExecutionRepositoryMock()
 	})
 
 	Context("BR-PD-021: Advanced Machine Learning Pattern Clustering", func() {
@@ -89,8 +90,9 @@ var _ = Describe("Advanced Pattern Discovery Extensions - Week 1 Business Requir
 			// Create diverse execution data for ML clustering
 			mlClusteringData := createMLClusteringExecutionData()
 
-			// Configure mock to return realistic data
-			mockExecutionRepo.SetWorkflowHistory(mlClusteringData)
+			// Configure mock to return realistic data (convert types)
+			runtimeData := convertToRuntimeExecutions(mlClusteringData)
+			mockExecutionRepo.SetExecutionsInTimeWindow(runtimeData)
 
 			// Test real ML analyzer feature extraction
 			features := make([]*shared.WorkflowFeatures, 0)
@@ -139,7 +141,8 @@ var _ = Describe("Advanced Pattern Discovery Extensions - Week 1 Business Requir
 		It("should discover cross-component correlation patterns", func() {
 			// Create cross-component execution data
 			crossComponentData := createCrossComponentExecutionData()
-			mockExecutionRepo.SetWorkflowHistory(crossComponentData)
+			runtimeData := convertToRuntimeExecutions(crossComponentData)
+			mockExecutionRepo.SetExecutionsInTimeWindow(runtimeData)
 
 			// Test real ML analyzer for cross-component pattern discovery
 			correlationPatterns := make([]*shared.DiscoveredPattern, 0)
@@ -200,7 +203,8 @@ var _ = Describe("Advanced Pattern Discovery Extensions - Week 1 Business Requir
 		It("should discover complex temporal correlations using real algorithms", func() {
 			// Create temporal execution data with realistic time patterns
 			temporalData := createTemporalExecutionData()
-			mockExecutionRepo.SetWorkflowHistory(temporalData)
+			runtimeData := convertToRuntimeExecutions(temporalData)
+			mockExecutionRepo.SetExecutionsInTimeWindow(runtimeData)
 
 			// Test real ML analyzer for temporal pattern extraction
 			temporalFeatures := make([]*shared.WorkflowFeatures, 0)
@@ -278,7 +282,8 @@ var _ = Describe("Advanced Pattern Discovery Extensions - Week 1 Business Requir
 		It("should maintain performance under high-volume pattern analysis", func() {
 			// Create high-volume execution data
 			highVolumeData := createHighVolumeExecutionData(500) // 500 execution records
-			mockExecutionRepo.SetWorkflowHistory(highVolumeData)
+			runtimeData := convertToRuntimeExecutions(highVolumeData)
+			mockExecutionRepo.SetExecutionsInTimeWindow(runtimeData)
 
 			// Performance measurement for feature extraction
 			startTime := time.Now()
@@ -660,4 +665,35 @@ func boolToFloat(b bool) float64 {
 		return 1.0
 	}
 	return 0.0
+}
+
+// convertToRuntimeExecutions converts WorkflowExecutionData to RuntimeWorkflowExecution
+func convertToRuntimeExecutions(execData []*sharedtypes.WorkflowExecutionData) []*sharedtypes.RuntimeWorkflowExecution {
+	runtimeExecs := make([]*sharedtypes.RuntimeWorkflowExecution, len(execData))
+	for i, data := range execData {
+		status := "completed"
+		if !data.Success {
+			status = "failed"
+		}
+
+		endTime := data.Timestamp.Add(data.Duration)
+		runtimeExecs[i] = &sharedtypes.RuntimeWorkflowExecution{
+			WorkflowExecutionRecord: sharedtypes.WorkflowExecutionRecord{
+				ID:         data.ExecutionID,
+				WorkflowID: data.WorkflowID,
+				Status:     status,
+				StartTime:  data.Timestamp,
+				EndTime:    &endTime,
+			},
+			Duration: data.Duration,
+			Context:  data.Context,
+		}
+	}
+	return runtimeExecs
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUpatternUdiscoveryUextensions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUpatternUdiscoveryUextensions Suite")
 }

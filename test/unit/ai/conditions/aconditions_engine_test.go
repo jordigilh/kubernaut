@@ -495,3 +495,5 @@ var _ = Describe("AI Conditions Engine - Business Requirements Testing", func() 
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite

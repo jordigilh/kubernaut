@@ -4,6 +4,7 @@
 package math
 
 import (
+	"testing"
 	"math"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -487,3 +488,9 @@ var _ = Describe("BR-MATH-021-040: Advanced Mathematical Algorithm Tests", func(
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUmathematicalUalgorithms(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUmathematicalUalgorithms Suite")
+}

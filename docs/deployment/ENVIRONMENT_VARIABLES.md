@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-This document describes the environment variables used by the prometheus-alerts-slm system for LLM provider configuration.
+This document describes the environment variables used by the kubernaut system for LLM provider configuration.
 
 ## LLM Provider Configuration
 

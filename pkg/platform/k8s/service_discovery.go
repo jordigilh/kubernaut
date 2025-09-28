@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -469,6 +470,9 @@ func (sd *ServiceDiscovery) watchServices(ctx context.Context) {
 
 // watchServicesInNamespace watches services in a specific namespace
 func (sd *ServiceDiscovery) watchServicesInNamespace(ctx context.Context, namespace string) {
+	retryCount := 0
+	maxRetries := 3
+
 	for {
 		select {
 		case <-sd.stopChannel:
@@ -482,11 +486,28 @@ func (sd *ServiceDiscovery) watchServicesInNamespace(ctx context.Context, namesp
 			Watch: true,
 		})
 		if err != nil {
-			sd.log.WithError(err).WithField("namespace", namespace).Error("Failed to start service watch")
-			time.Sleep(30 * time.Second) // Wait before retrying
+			retryCount++
+
+			// Check if this is a permission error
+			if strings.Contains(err.Error(), "asked for the client to provide credentials") ||
+				strings.Contains(err.Error(), "forbidden") ||
+				strings.Contains(err.Error(), "unauthorized") {
+				sd.log.WithError(err).WithField("namespace", namespace).Warn("No permission to watch services in namespace, disabling watch for this namespace")
+				return // Stop trying to watch this namespace
+			}
+
+			// For other errors, retry with backoff
+			if retryCount >= maxRetries {
+				sd.log.WithError(err).WithField("namespace", namespace).Error("Failed to start service watch after max retries, disabling watch for this namespace")
+				return
+			}
+
+			sd.log.WithError(err).WithField("namespace", namespace).WithField("retry", retryCount).Warn("Failed to start service watch, retrying...")
+			time.Sleep(time.Duration(retryCount*30) * time.Second) // Exponential backoff
 			continue
 		}
 
+		retryCount = 0 // Reset retry count on successful watch start
 		sd.handleServiceWatchEvents(ctx, watchInterface, namespace)
 		watchInterface.Stop()
 	}

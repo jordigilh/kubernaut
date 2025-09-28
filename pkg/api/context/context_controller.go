@@ -3,6 +3,7 @@ package context
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -803,7 +804,15 @@ func (c *ContextCache) GetHitRate() float64 {
 	if total == 0 {
 		return 0.0
 	}
-	return float64(c.hitCount) / float64(total)
+
+	hitRate := float64(c.hitCount) / float64(total)
+
+	// Ensure no NaN values that could cause JSON marshaling errors
+	if math.IsNaN(hitRate) || math.IsInf(hitRate, 0) {
+		return 0.0
+	}
+
+	return hitRate
 }
 
 // cleanupExpired removes expired entries

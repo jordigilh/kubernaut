@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -468,4 +469,10 @@ func createResourceOptimizedWorkflows(count int) []*engine.Workflow {
 	}
 
 	return workflows
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUhighUloadUworkflowUextensions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UhighUloadUworkflowUextensions Suite")
 }

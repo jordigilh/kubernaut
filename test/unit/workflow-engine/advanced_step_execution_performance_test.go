@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -652,4 +653,10 @@ func getLoopProgressUpdates(execution *engine.RuntimeWorkflowExecution) []map[st
 		})
 	}
 	return updates
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUstepUexecutionUperformance(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUstepUexecutionUperformance Suite")
 }

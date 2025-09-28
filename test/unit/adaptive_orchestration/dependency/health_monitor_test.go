@@ -318,3 +318,5 @@ var _ = Describe("Dependency Health Monitoring", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"testing"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -505,3 +506,9 @@ var _ = Describe("OpenAI Embedding Service Unit Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUopenaiUembedding(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UopenaiUembedding Suite")
+}

@@ -1,7 +1,7 @@
 //go:build unit
 // +build unit
 
-package holmesgpt
+package holmesgpt_test
 
 import (
 	"context"
@@ -231,6 +231,14 @@ var _ = Describe("BR-SERVICE-INTEGRATION-001: Service Integration Business Logic
 
 	// COMPREHENSIVE edge case testing - Rule 03 compliant
 	Context("BR-SERVICE-INTEGRATION-005: Edge Cases and Boundary Conditions", func() {
+		BeforeEach(func() {
+			err := serviceIntegration.Start(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Wait for initialization to complete
+			time.Sleep(100 * time.Millisecond)
+		})
+
 		It("should handle empty service configurations gracefully", func() {
 			// Test real business logic with minimal data scenarios
 			availableToolsets := serviceIntegration.GetAvailableToolsets()
@@ -270,3 +278,6 @@ var _ = Describe("BR-SERVICE-INTEGRATION-001: Service Integration Business Logic
 		})
 	})
 })
+
+// Note: Test suite is bootstrapped by holmesgpt_suite_test.go
+// This file only contains Describe blocks that are automatically discovered by Ginkgo

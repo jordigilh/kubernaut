@@ -18,26 +18,7 @@ import (
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
-// PatternStoreTestAdapter adapts StandardPatternStore to engine.PatternStore for testing
-type PatternStoreTestAdapter struct {
-	store *testshared.StandardPatternStore
-}
-
-func (a *PatternStoreTestAdapter) StorePattern(ctx context.Context, pattern *types.DiscoveredPattern) error {
-	return a.store.StoreEnginePattern(ctx, pattern)
-}
-
-func (a *PatternStoreTestAdapter) GetPattern(ctx context.Context, patternID string) (*types.DiscoveredPattern, error) {
-	return a.store.GetPattern(ctx, patternID)
-}
-
-func (a *PatternStoreTestAdapter) ListPatterns(ctx context.Context, patternType string) ([]*types.DiscoveredPattern, error) {
-	return a.store.ListPatterns(ctx, patternType)
-}
-
-func (a *PatternStoreTestAdapter) DeletePattern(ctx context.Context, patternID string) error {
-	return a.store.DeletePattern(ctx, patternID)
-}
+// PatternStoreTestAdapter removed - use testshared.CreatePatternStoreForTesting() instead
 
 var _ = Describe("BR-MONITORING-001: Production Monitoring Integration", Ordered, func() {
 	var (

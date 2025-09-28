@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -398,4 +399,10 @@ func createWorkflowWithInvalidParameters() *engine.ExecutableTemplate {
 
 func createMetricsTrackingWorkflowTemplate() *engine.ExecutableTemplate {
 	return engine.NewWorkflowTemplate("metrics-tracking-workflow-test", "Metrics Tracking Test Workflow")
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcomprehensiveUworkflowUengine(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcomprehensiveUworkflowUengine Suite")
 }

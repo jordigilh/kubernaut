@@ -5,6 +5,7 @@ package actions
 
 import (
 	"context"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -761,3 +762,9 @@ var _ = Describe("BR-IV-001, BR-OBJECTIVE-001-010: Enhanced Workflow Validation 
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUvalidationUenhancedUbusinessUlogic(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUvalidationUenhancedUbusinessUlogic Suite")
+}

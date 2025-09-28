@@ -255,3 +255,5 @@ var _ = Describe("Circuit Breaker State Management", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite

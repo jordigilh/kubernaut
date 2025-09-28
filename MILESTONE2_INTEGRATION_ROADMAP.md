@@ -138,7 +138,7 @@ if b.patternStore == nil {
 **Current Issue**:
 - Functions exist but not enabled in production
 - No configuration flags for Milestone 2 features
-- Missing integration in `cmd/dynamic-toolset-server/main.go`
+- Missing integration in `cmd/kubernaut/main.go`
 
 **Root Cause**:
 - No production deployment path
@@ -627,12 +627,12 @@ type Milestone2Config struct {
 
 **Files to Modify**:
 ```
-cmd/dynamic-toolset-server/main.go
+cmd/kubernaut/main.go
 ```
 
 **Integration Implementation**:
 ```go
-// cmd/dynamic-toolset-server/main.go - Add after line 600 (workflow builder creation)
+// cmd/kubernaut/main.go - Add after line 600 (workflow builder creation)
 
 // 5.5. Initialize Milestone 2 Components (if enabled)
 // Business Requirement: BR-MILESTONE2-001 - Advanced pattern discovery and ML optimization

@@ -191,8 +191,8 @@ golangci-lint run --disable-all --enable=unused
 ```
 kubernaut/
 ├── cmd/                       # Main binaries
-│   ├── prometheus-alerts-slm/ # Main service
-│   └── dynamic-toolset-server/# Dynamic toolset server
+│   ├── kubernaut/ # Main service
+│   └── kubernaut/# Dynamic toolset server
 ├── pkg/                       # Business logic
 │   ├── ai/                    # AI/ML components (HolmesGPT integration)
 │   ├── workflow/engine/       # Workflow orchestration (RECENTLY FIXED)

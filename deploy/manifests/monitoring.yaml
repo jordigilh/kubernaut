@@ -1,15 +1,15 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: prometheus-alerts-slm
-  namespace: prometheus-alerts-slm
+  name: kubernaut
+  namespace: kubernaut
   labels:
-    app.kubernetes.io/name: prometheus-alerts-slm
+    app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: monitoring
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: prometheus-alerts-slm
+      app.kubernetes.io/name: kubernaut
   endpoints:
     - port: metrics
       path: /metrics
@@ -21,7 +21,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: localai
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut
   labels:
     app.kubernetes.io/name: localai
     app.kubernetes.io/component: monitoring
@@ -39,24 +39,24 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: prometheus-alerts-slm-rules
-  namespace: prometheus-alerts-slm
+  name: kubernaut-rules
+  namespace: kubernaut
   labels:
-    app.kubernetes.io/name: prometheus-alerts-slm
+    app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: monitoring
 spec:
   groups:
-    - name: prometheus-alerts-slm.rules
+    - name: kubernaut.rules
       rules:
         - alert: AlertProcessorDown
-          expr: up{job="prometheus-alerts-slm"} == 0
+          expr: up{job="kubernaut"} == 0
           for: 5m
           labels:
             severity: critical
           annotations:
             summary: "Prometheus Alerts SLM is down"
             description: "The Prometheus Alerts SLM service has been down for more than 5 minutes."
-        
+
         - alert: LocalAIDown
           expr: up{job="localai"} == 0
           for: 5m
@@ -65,25 +65,25 @@ spec:
           annotations:
             summary: "LocalAI inference service is down"
             description: "The LocalAI service has been down for more than 5 minutes."
-        
+
         - alert: HighAlertProcessingLatency
-          expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="prometheus-alerts-slm"}[5m])) > 30
+          expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="kubernaut"}[5m])) > 30
           for: 2m
           labels:
             severity: warning
           annotations:
             summary: "High alert processing latency"
             description: "95th percentile latency for alert processing is above 30 seconds."
-        
+
         - alert: HighMemoryUsage
-          expr: container_memory_usage_bytes{pod=~"prometheus-alerts-slm-.*"} / container_spec_memory_limit_bytes > 0.8
+          expr: container_memory_usage_bytes{pod=~"kubernaut-.*"} / container_spec_memory_limit_bytes > 0.8
           for: 5m
           labels:
             severity: warning
           annotations:
             summary: "High memory usage"
             description: "Memory usage is above 80% for {{ $labels.pod }}."
-        
+
         - alert: LocalAIHighMemoryUsage
           expr: container_memory_usage_bytes{pod=~"localai-.*"} / container_spec_memory_limit_bytes > 0.9
           for: 5m

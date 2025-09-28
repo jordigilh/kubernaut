@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"sync"
@@ -515,4 +516,10 @@ func createValidationWorkflowTemplate() *engine.ExecutableTemplate {
 
 func createCleanupWorkflowTemplate() *engine.ExecutableTemplate {
 	return engine.NewWorkflowTemplate("cleanup-workflow", "Cleanup Workflow")
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUworkflowUengineUextensions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUworkflowUengineUextensions Suite")
 }

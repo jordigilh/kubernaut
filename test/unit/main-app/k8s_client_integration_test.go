@@ -1,6 +1,7 @@
 package main
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -247,4 +248,10 @@ func createAdaptiveOrchestratorWithK8sClient(
 	}).Info("Test orchestrator created with k8s integration")
 
 	return orchestratorInfo, nil
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUk8sUclientUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Uk8sUclientUintegration Suite")
 }

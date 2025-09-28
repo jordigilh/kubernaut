@@ -97,7 +97,7 @@ discoveredPattern := &shared.DiscoveredPattern{
             ID:   "discovered-pattern-1",
             Name: "CPU Spike Pattern",
             Metadata: map[string]interface{}{
-                "namespace": "prometheus-alerts-slm",
+                "namespace": "kubernaut",
                 "resource":  "kubernaut",
             },
         },
@@ -134,13 +134,13 @@ Expect(analysisTime).To(BeNumerically("<", 100*time.Millisecond))
 ```go
 // Real K8s client operating on enhanced fake cluster
 k8sConfig := config.KubernetesConfig{
-    Namespace:     "prometheus-alerts-slm",
+    Namespace:     "kubernaut",
     UseFakeClient: true,
 }
 realK8sClient = k8s.NewUnifiedClient(enhancedClient, k8sConfig, logger)
 
 // Real K8s operations with production-like data
-deployment, err := realK8sClient.GetDeployment(ctx, "prometheus-alerts-slm", "kubernaut")
+deployment, err := realK8sClient.GetDeployment(ctx, "kubernaut", "kubernaut")
 Expect(err).ToNot(HaveOccurred())
 Expect(deployment).ToNot(BeNil())
 ```

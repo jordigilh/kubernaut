@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"testing"
 	"fmt"
 	"time"
 
@@ -424,3 +425,9 @@ func createTestWorkflowFeatures() *shared.WorkflowFeatures {
 // Feature creators for specific failure patterns
 
 // Helper functions for Data Security and Analytics tests
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUmlUanalyzer(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UmlUanalyzer Suite")
+}

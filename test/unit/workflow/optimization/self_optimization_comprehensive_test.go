@@ -10,31 +10,32 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/ai/insights"
+	// "github.com/jordigilh/kubernaut/pkg/ai/insights" // Unused import
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
-	"github.com/jordigilh/kubernaut/pkg/intelligence/patterns"
+	// "github.com/jordigilh/kubernaut/pkg/intelligence/patterns" // Unused import
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/storage/vector"
+	// "github.com/jordigilh/kubernaut/pkg/storage/vector" // Unused import
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
-	shared "github.com/jordigilh/kubernaut/test/unit/shared"
+
+	// shared "github.com/jordigilh/kubernaut/test/unit/shared" // Unused import
 	"github.com/sirupsen/logrus"
 )
 
 var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Business Logic", func() {
 	var (
 		// Mock ONLY external dependencies per pyramid principles
-		mockLLMClient     *mocks.MockLLMClient
-		mockVectorDB      *mocks.MockVectorDatabase
-		realAnalytics     types.AnalyticsEngine
-		realMetrics       engine.AIMetricsCollector
-		realPatternStore  engine.PatternStore
-		realExecutionRepo engine.ExecutionRepository // REAL business logic per Rule 03
-		mockLogger        *logrus.Logger
+		mockLLMClient *mocks.MockLLMClient
+		// mockVectorDB      *mocks.MockVectorDatabase // Unused variable
+		// realAnalytics     types.AnalyticsEngine // Unused variable
+		// realMetrics       engine.AIMetricsCollector // Unused variable - AIMetricsCollector not defined
+		// realPatternStore  engine.PatternStore // Unused variable
+		// realExecutionRepo engine.ExecutionRepository // REAL business logic per Rule 03 // Unused variable
+		mockLogger *logrus.Logger
 
 		// Use REAL business logic components
-		workflowBuilder *engine.DefaultIntelligentWorkflowBuilder
-		llmClient       llm.Client // RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
+		// workflowBuilder *engine.DefaultIntelligentWorkflowBuilder // Unused variable
+		llmClient llm.Client // RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
 
 		ctx    context.Context
 		cancel context.CancelFunc
@@ -45,44 +46,44 @@ var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Busi
 
 		// Mock external dependencies only
 		mockLLMClient = mocks.NewMockLLMClient()
-		mockVectorDB = mocks.NewMockVectorDatabase()
-		realAnalytics = insights.NewAnalyticsEngine()
-		realMetrics = engine.NewConfiguredAIMetricsCollector(nil, mockLLMClient, mockVectorDB, nil, mockLogger)
+		// mockVectorDB = mocks.NewMockVectorDatabase() // Unused variable
+		// realAnalytics = insights.NewAnalyticsEngine() // Unused variable
+		// realMetrics = engine.NewConfiguredAIMetricsCollector(nil, mockLLMClient, mockVectorDB, nil, mockLogger) // Unused variable - AIMetricsCollector not defined
 		// Use REAL pattern discovery engine - PYRAMID APPROACH with shared adapters
-		intelligencePatternStore := patterns.NewInMemoryPatternStore(mockLogger)
-		realMemoryVectorDB := vector.NewMemoryVectorDatabase(mockLogger)
-		vectorDBAdapter := &shared.PatternVectorDBAdapter{MemoryDB: realMemoryVectorDB}
+		// intelligencePatternStore := patterns.NewInMemoryPatternStore(mockLogger) // Unused variable
+		// realMemoryVectorDB := vector.NewMemoryVectorDatabase(mockLogger) // Unused variable
+		// vectorDBAdapter := &shared.PatternVectorDBAdapter{MemoryDB: realMemoryVectorDB} // Unused variable
 
-		realPatternEngine := patterns.NewPatternDiscoveryEngine(
-			intelligencePatternStore,
-			vectorDBAdapter,
-			nil, // No execution repo - use real business logic from analytics instead
-			nil, nil, nil, nil,
-			&patterns.PatternDiscoveryConfig{},
-			mockLogger,
-		)
+		// realPatternEngine := patterns.NewPatternDiscoveryEngine( // Unused variable
+		// 	intelligencePatternStore,
+		// 	vectorDBAdapter,
+		// 	nil, // No execution repo - use real business logic from analytics instead
+		// 	nil, nil, nil, nil,
+		// 	&patterns.PatternDiscoveryConfig{},
+		// 	mockLogger,
+		// )
 
 		// Use shared adapter to convert PatternDiscoveryEngine to PatternStore interface
-		realPatternStore = &shared.PatternEngineAdapter{Engine: realPatternEngine}
+		// realPatternStore = &shared.PatternEngineAdapter{Engine: realPatternEngine} // Unused variable
 		mockLogger = logrus.New()
 		mockLogger.SetLevel(logrus.ErrorLevel) // Reduce noise in tests
 
 		// Create REAL execution repository per Rule 03
-		realExecutionRepo = engine.NewInMemoryExecutionRepository(mockLogger)
+		// realExecutionRepo = engine.NewInMemoryExecutionRepository(mockLogger) // Unused variable
 
 		// Create REAL workflow builder with mocked external dependencies using new config pattern
-		config := &engine.IntelligentWorkflowBuilderConfig{
-			LLMClient:       mockLLMClient,     // External: Mock
-			VectorDB:        mockVectorDB,      // External: Mock
-			AnalyticsEngine: realAnalytics,     // Business Logic: Real
-			PatternStore:    realPatternStore,  // Business Logic: Real
-			ExecutionRepo:   realExecutionRepo, // REAL: Business execution logic (Rule 03)
-			Logger:          mockLogger,        // External: Mock (logging infrastructure)
-		}
+		// config := &engine.IntelligentWorkflowBuilderConfig{
+		// 	LLMClient:       mockLLMClient,     // External: Mock
+		// 	VectorDB:        mockVectorDB,      // External: Mock
+		// 	AnalyticsEngine: realAnalytics,     // Business Logic: Real
+		// 	PatternStore:    realPatternStore,  // Business Logic: Real
+		// 	ExecutionRepo:   realExecutionRepo, // REAL: Business execution logic (Rule 03)
+		// 	Logger:          mockLogger,        // External: Mock (logging infrastructure)
+		// }
 
-		var err error
-		workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
-		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
+		// var err error
+		// workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
+		// Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 
 		// RULE 12 COMPLIANCE: Use enhanced llm.Client instead of deprecated SelfOptimizer
 		llmClient = mockLLMClient // Use mock LLM client for unit testing
@@ -106,7 +107,7 @@ var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Busi
 			// Test REAL business self-optimization logic
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() instead of deprecated SelfOptimizer
 			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, workflow, executionHistory)
-			
+
 			// Extract optimized workflow from LLM result
 			var optimizedWorkflow *engine.Workflow
 			if optimizationResult != nil {
@@ -132,7 +133,7 @@ var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Busi
 			// Additional validation for real business logic
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() instead of deprecated SelfOptimizer
 			suggestionResult, err := llmClient.SuggestOptimizations(ctx, workflow)
-			
+
 			// Extract suggestions from LLM result
 			var suggestions []map[string]interface{}
 			if suggestionResult != nil {
@@ -150,7 +151,7 @@ var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Busi
 			// Test REAL business optimization analysis
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for second optimization
 			optimizationResult2, err := llmClient.OptimizeWorkflow(ctx, workflow, executionHistory)
-			
+
 			// Extract optimized workflow from second LLM result
 			if optimizationResult2 != nil {
 				if resultMap, ok := optimizationResult2.(map[string]interface{}); ok {
@@ -169,7 +170,7 @@ var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Busi
 			// Verify optimization suggestions were generated
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() for second suggestion
 			suggestionResult2, err := llmClient.SuggestOptimizations(ctx, workflow)
-			
+
 			// Extract suggestions from second LLM result
 			var suggestions2 []map[string]interface{}
 			if suggestionResult2 != nil {
@@ -218,7 +219,7 @@ var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Busi
 				// Test REAL business improvement suggestion generation
 				// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() for cycle suggestions
 				suggestionResult, err := llmClient.SuggestOptimizations(ctx, lastOptimizedWorkflow)
-				
+
 				// Extract suggestions from LLM result
 				var suggestions []map[string]interface{}
 				if suggestionResult != nil {
@@ -253,7 +254,7 @@ var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Busi
 			// Test REAL business suggestion prioritization
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() for prioritization testing
 			suggestionResult, err := llmClient.SuggestOptimizations(ctx, workflow)
-			
+
 			// Extract suggestions from LLM result
 			var suggestions []map[string]interface{}
 			if suggestionResult != nil {
@@ -296,7 +297,7 @@ var _ = Describe("BR-SELF-OPTIMIZATION-001: Comprehensive Self-Optimization Busi
 			// Test REAL business optimization with validation
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for validation testing
 			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
-			
+
 			// Extract optimized workflow from LLM result
 			var optimizedWorkflow *engine.Workflow
 			if optimizationResult != nil {
@@ -659,3 +660,5 @@ var (
 func timePtr(t time.Time) *time.Time {
 	return &t
 }
+
+// TestRunner is handled by self_optimization_comprehensive_suite_test.go

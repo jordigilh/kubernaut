@@ -6,7 +6,7 @@
 - ✅ **Rule 12 Compliance Core Migration**: Successfully migrated main application and critical test files
 - ✅ **Main Test File**: `test/unit/main-app/self_optimizer_integration_test.go` - FULLY MIGRATED to use `llm.Client`
 - ✅ **Integration Test**: `test/integration/orchestration/adaptive_orchestrator_self_optimizer_integration_test.go` - MIGRATED
-- ✅ **Main Application**: `cmd/dynamic-toolset-server/main.go` - ALREADY COMPLIANT (uses `llm.Client`)
+- ✅ **Main Application**: `cmd/kubernaut/main.go` - ALREADY COMPLIANT (uses `llm.Client`)
 - ✅ **Orchestrator**: `pkg/orchestration/adaptive/adaptive_orchestrator.go` - ALREADY COMPLIANT
 - ✅ **Deprecated Implementation**: `pkg/workflow/engine/self_optimizer_impl.go` - DELETED
 - ✅ **Compatibility Stub**: `pkg/workflow/engine/deprecated_stubs.go` - CREATED for backward compatibility
@@ -52,7 +52,7 @@ suggestions, err := llmClient.SuggestOptimizations(ctx, workflow)  // Returns in
 ### **Key Files and Their Status**
 - **✅ MIGRATED**: `test/unit/main-app/self_optimizer_integration_test.go` (511 lines) - Exemplary Rule 12 compliance
 - **✅ MIGRATED**: `test/integration/orchestration/adaptive_orchestrator_self_optimizer_integration_test.go` - Uses `llm.Client`
-- **✅ COMPLIANT**: `cmd/dynamic-toolset-server/main.go` - Main app uses `llm.Client` in orchestrator
+- **✅ COMPLIANT**: `cmd/kubernaut/main.go` - Main app uses `llm.Client` in orchestrator
 - **✅ COMPLIANT**: `pkg/orchestration/adaptive/adaptive_orchestrator.go` - Constructor accepts `llm.Client`
 - **🔄 PENDING**: `test/unit/workflow/optimization/self_optimizer_workflow_builder_comprehensive_test.go` (408 lines) - Currently open in IDE
 - **🗑️ TARGET**: `pkg/workflow/engine/deprecated_stubs.go` (128 lines) - To be removed after migration
@@ -111,7 +111,7 @@ Located in `pkg/workflow/engine/deprecated_stubs.go`:
 
 #### **Priority 4: Already Migrated Files (7 files)**
 - `test/unit/main-app/self_optimizer_integration_test.go` ✅ **ALREADY MIGRATED**
-- `cmd/dynamic-toolset-server/main.go` ✅ **ALREADY COMPLIANT**
+- `cmd/kubernaut/main.go` ✅ **ALREADY COMPLIANT**
 - `pkg/orchestration/adaptive/adaptive_orchestrator.go` ✅ **ALREADY COMPLIANT**
 - `pkg/workflow/engine/interfaces.go` ✅ **ALREADY COMPLIANT**
 - `test/unit/ai/llm/enhanced_ai_client_methods_test.go.bak` ✅ **BACKUP FILE**

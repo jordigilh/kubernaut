@@ -8,10 +8,18 @@ import (
 	"time"
 )
 
-type PatternEvolutionManager struct{}
+type PatternEvolutionManager struct {
+	patternStore  interface{}
+	executionRepo interface{}
+	logger        interface{}
+}
 
 func NewPatternEvolutionManager(patternStore interface{}, executionRepo interface{}, logger interface{}) *PatternEvolutionManager {
-	return &PatternEvolutionManager{}
+	return &PatternEvolutionManager{
+		patternStore:  patternStore,
+		executionRepo: executionRepo,
+		logger:        logger,
+	}
 }
 
 func (p *PatternEvolutionManager) EvaluatePatternObsolescence(ctx context.Context, lifecycle interface{}) (interface{}, error) {
@@ -29,10 +37,18 @@ func (p *PatternEvolutionManager) EvaluatePatternObsolescence(ctx context.Contex
 	return result, nil
 }
 
-type AdaptiveLearningEngine struct{}
+type AdaptiveLearningEngine struct {
+	feedbackCollector interface{}
+	patternStore      interface{}
+	logger            interface{}
+}
 
 func NewAdaptiveLearningEngine(feedbackCollector interface{}, patternStore interface{}, logger interface{}) *AdaptiveLearningEngine {
-	return &AdaptiveLearningEngine{}
+	return &AdaptiveLearningEngine{
+		feedbackCollector: feedbackCollector,
+		patternStore:      patternStore,
+		logger:            logger,
+	}
 }
 
 func (a *AdaptiveLearningEngine) InitializeLearning(ctx context.Context, alertType string, feedbackData interface{}) (interface{}, error) {

@@ -8,8 +8,10 @@ import (
 )
 
 // Common types used across pattern discovery components
+// Business Requirement: BR-PATTERN-007 - Shared types for pattern discovery system
 
 // Range represents a numerical range
+// Business Requirement: BR-PATTERN-008 - Numerical range analysis for pattern boundaries
 type Range struct {
 	Min float64 `json:"min"`
 	Max float64 `json:"max"`

@@ -17,7 +17,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 )
 
+// Pattern Discovery Engine - Core AI/ML pattern discovery system
+// Business Requirement: BR-PATTERN-005 - Intelligent pattern discovery for workflow optimization
+
 // MachineLearningAnalyzer interface defines ML analysis capabilities
+// Business Requirement: BR-PATTERN-006 - Machine learning integration for pattern analysis
 type MachineLearningAnalyzer interface {
 	PredictOutcome(features *shared.WorkflowFeatures, patterns []*shared.DiscoveredPattern) (*shared.WorkflowPrediction, error)
 	UpdateModel(learningData *shared.WorkflowLearningData) error
@@ -903,6 +907,7 @@ type FailureChainAnalysis struct {
 type PatternStore interface {
 	StorePattern(ctx context.Context, pattern *shared.DiscoveredPattern) error
 	GetPatterns(ctx context.Context, filters map[string]interface{}) ([]*shared.DiscoveredPattern, error)
+	GetPattern(ctx context.Context, patternID string) (*shared.DiscoveredPattern, error)
 	UpdatePattern(ctx context.Context, pattern *shared.DiscoveredPattern) error
 	DeletePattern(ctx context.Context, patternID string) error
 }

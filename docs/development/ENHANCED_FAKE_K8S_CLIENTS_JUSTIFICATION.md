@@ -291,7 +291,7 @@ type DeploymentSpec struct {
 cluster := enhanced.NewProductionLikeCluster(&enhanced.ClusterConfig{
     Scenario: "HighLoadProduction",
     NodeCount: 5,
-    Namespaces: []string{"monitoring", "apps", "infrastructure", "prometheus-alerts-slm"},
+    Namespaces: []string{"monitoring", "apps", "infrastructure", "kubernaut"},
     WorkloadProfile: enhanced.HighThroughputWebServices,
     ResourceProfile: enhanced.ProductionResourceLimits,
 })

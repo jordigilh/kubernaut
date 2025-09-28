@@ -553,3 +553,6 @@ var _ = Describe("ToolsetEventHandling", func() {
 		})
 	})
 })
+
+// Note: Test suite is bootstrapped by holmesgpt_suite_test.go
+// This file only contains Describe blocks that are automatically discovered by Ginkgo

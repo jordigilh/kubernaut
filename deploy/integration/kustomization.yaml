@@ -1,0 +1,167 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+metadata:
+  name: kubernaut-integration
+  annotations:
+    description: "Kubernaut integration testing environment"
+
+# Namespace for all resources
+namespace: kubernaut-integration
+
+# Resources to deploy
+resources:
+  # Namespace and RBAC
+  - namespace.yaml
+
+  # PostgreSQL database
+  - postgresql/configmap.yaml
+  - postgresql/secret.yaml
+  - postgresql/deployment.yaml
+  - postgresql/service.yaml
+
+  # Redis cache
+  - redis/deployment.yaml
+  - redis/service.yaml
+
+  # Monitoring stack
+  - monitoring/prometheus/rbac.yaml
+  - monitoring/prometheus/configmap.yaml
+  - monitoring/prometheus/deployment.yaml
+  - monitoring/prometheus/service.yaml
+  - monitoring/alertmanager/configmap.yaml
+  - monitoring/alertmanager/deployment.yaml
+  - monitoring/alertmanager/service.yaml
+
+  # Kubernaut services
+  - kubernaut/rbac.yaml
+  - kubernaut/configmap.yaml
+  - kubernaut/webhook-service.yaml
+  - kubernaut/ai-service.yaml
+
+  # HolmesGPT integration
+  - holmesgpt/deployment.yaml
+  - holmesgpt/service.yaml
+
+# Common labels applied to all resources
+commonLabels:
+  environment: integration
+  managed-by: kubernaut
+  deployment-method: kustomize
+
+# Common annotations
+commonAnnotations:
+  kubernaut.io/environment: integration
+  kubernaut.io/version: latest
+  kubernaut.io/managed-by: kind-cluster
+
+# Images to use (can be overridden)
+images:
+  - name: quay.io/jordigilh/kubernaut-webhook-service
+    newTag: latest
+  - name: quay.io/jordigilh/kubernaut-ai-service
+    newTag: latest
+  - name: quay.io/jordigilh/kubernaut-holmesgpt-api
+    newTag: latest
+
+# Patches for development environment
+patchesStrategicMerge:
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: webhook-service
+      namespace: kubernaut-integration
+    spec:
+      template:
+        spec:
+          containers:
+          - name: webhook-service
+            env:
+            - name: LOG_LEVEL
+              value: "DEBUG"
+            - name: ENVIRONMENT
+              value: "integration"
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "200m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ai-service
+      namespace: kubernaut-integration
+    spec:
+      template:
+        spec:
+          containers:
+          - name: ai-service
+            env:
+            - name: LOG_LEVEL
+              value: "DEBUG"
+            - name: ENVIRONMENT
+              value: "integration"
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "400m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: postgresql
+      namespace: kubernaut-integration
+    spec:
+      template:
+        spec:
+          containers:
+          - name: postgresql
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "300m"
+  - |-
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: holmesgpt
+      namespace: kubernaut-integration
+    spec:
+      template:
+        spec:
+          containers:
+          - name: holmesgpt
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "256Mi"
+                cpu: "400m"
+
+# Resource transformers
+replicas:
+  - name: webhook-service
+    count: 1
+  - name: ai-service
+    count: 1
+  - name: holmesgpt
+    count: 1
+  - name: postgresql
+    count: 1
+  - name: redis
+    count: 1
+  - name: prometheus
+    count: 1
+  - name: alertmanager
+    count: 1

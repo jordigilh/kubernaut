@@ -4,6 +4,7 @@
 package multicluster
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -336,3 +337,9 @@ var _ = Describe("BR-EXEC-032: Cross-Cluster Action Coordination", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcrossUclusterUcoordination(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcrossUclusterUcoordination Suite")
+}

@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"testing"
 	"context"
 	"errors"
 	"strings"
@@ -798,4 +799,10 @@ type OptimizationWeights struct {
 // Helper functions for business logic
 func ContainsExpectedAction(response, expectedAction string) bool {
 	return strings.Contains(strings.ToLower(response), strings.ToLower(expectedAction))
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUmultiUproviderUoptimization(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UmultiUproviderUoptimization Suite")
 }

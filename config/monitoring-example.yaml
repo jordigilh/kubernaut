@@ -2,7 +2,7 @@
 # This configuration demonstrates Phase 1 monitoring integrations
 
 app:
-  name: "prometheus-alerts-slm"
+  name: "kubernaut"
   version: "1.1.0"
 
 server:
@@ -217,7 +217,7 @@ monitoring:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: prometheus-alerts-slm-config
+  name: kubernaut-config
   namespace: monitoring
 data:
   config.yaml: |

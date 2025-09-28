@@ -1,6 +1,7 @@
 package main
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -472,4 +473,10 @@ func determineActionRepositoryType(aiConfig *config.Config, actionRepo actionhis
 	}
 
 	return "development"
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUactionUrepositoryUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UactionUrepositoryUintegration Suite")
 }

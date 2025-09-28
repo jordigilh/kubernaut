@@ -2,13 +2,13 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: prometheus-alerts-slm
-  namespace: prometheus-alerts-slm
+  name: kubernaut
+  namespace: kubernaut
 spec:
   template:
     spec:
       containers:
-        - name: prometheus-alerts-slm
+        - name: kubernaut
           resources:
             requests:
               memory: "512Mi"
@@ -22,7 +22,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: localai
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut
 spec:
   template:
     spec:

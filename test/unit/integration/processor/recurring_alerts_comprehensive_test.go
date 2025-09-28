@@ -5,6 +5,7 @@ package processor
 
 import (
 	"context"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -477,7 +478,7 @@ func createGenericAlert(severity string) types.Alert {
 	}
 }
 
-func createResolvedAlert() types.Alert {
+func createRecurringResolvedAlert() types.Alert {
 	return types.Alert{
 		Name:      "ResolvedAlert",
 		Namespace: "production",
@@ -611,4 +612,10 @@ func initializeTestComponents() {
 		// For unit testing, create a basic executor that satisfies the interface
 		testLogger.WithError(err).Warn("Failed to create real executor, using basic implementation")
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUrecurringUalertsUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UrecurringUalertsUcomprehensive Suite")
 }

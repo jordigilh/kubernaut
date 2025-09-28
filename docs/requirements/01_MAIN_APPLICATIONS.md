@@ -44,7 +44,39 @@ The main applications serve as the primary entry points for Kubernaut's intellig
 - **BR-PA-014**: MUST validate Kubernetes cluster state before executing actions
 - **BR-PA-015**: MUST track action execution status and outcomes
 
-#### 2.1.4 Learning & Effectiveness Assessment
+#### 2.1.4 Remediation Lifecycle Management
+- **BR-REM-001**: MUST define maximum remediation execution time limits based on action complexity
+  - Simple actions (restart pod, scale deployment): 5 minutes maximum
+  - Medium actions (rollback deployment, update resources): 10 minutes maximum
+  - Complex actions (multi-step workflows, database operations): 15 minutes maximum
+- **BR-REM-002**: MUST detect stuck remediation processes through heartbeat monitoring
+- **BR-REM-003**: MUST implement automatic timeout detection for all remediation workflows
+- **BR-REM-004**: MUST provide escalation mechanisms when remediation exceeds time limits
+- **BR-REM-005**: MUST support manual intervention capabilities for stuck remediation processes
+- **BR-REM-006**: MUST implement remediation process health monitoring with configurable heartbeat intervals
+- **BR-REM-007**: MUST track remediation progress milestones and provide status updates
+- **BR-REM-008**: MUST implement circuit breaker patterns for repeatedly failing remediation types
+- **BR-REM-009**: MUST provide remediation cancellation capabilities for operator intervention
+- **BR-REM-010**: MUST log all remediation lifecycle events for audit and analysis
+- **BR-REM-011**: MUST implement progressive escalation (warning → critical → manual intervention)
+- **BR-REM-012**: MUST support remediation deadline extensions for complex scenarios
+- **BR-REM-013**: MUST implement dead letter queue for failed/stuck remediation processes
+- **BR-REM-014**: MUST provide remediation health dashboards for operational visibility
+- **BR-REM-015**: MUST track Mean Time To Remediation (MTTR) and remediation success rates
+
+#### 2.1.5 Stuck Process Detection & Recovery
+- **BR-STUCK-001**: MUST detect remediation processes with no progress updates within 2x expected duration
+- **BR-STUCK-002**: MUST implement automated recovery strategies for common stuck scenarios
+- **BR-STUCK-003**: MUST provide operator notifications when stuck processes are detected
+- **BR-STUCK-004**: MUST implement process resurrection capabilities for terminated remediation workflows
+- **BR-STUCK-005**: MUST support diagnostic data collection for stuck process analysis
+- **BR-STUCK-006**: MUST implement remediation process garbage collection for orphaned workflows
+- **BR-STUCK-007**: MUST provide remediation process dependency tracking to identify blocking conditions
+- **BR-STUCK-008**: MUST implement timeout cascading for dependent remediation steps
+- **BR-STUCK-009**: MUST support remediation process introspection for debugging stuck states
+- **BR-STUCK-010**: MUST implement resource leak detection for stuck remediation processes
+
+#### 2.1.6 Learning & Effectiveness Assessment
 - **BR-PA-016**: MUST continuously assess the effectiveness of executed actions
 - **BR-PA-017**: MUST learn from action outcomes to improve future decisions
 - **BR-PA-018**: MUST store action history for trend analysis
@@ -159,6 +191,18 @@ The main applications serve as the primary entry points for Kubernaut's intellig
 - **BR-PERF-004**: Action execution MUST start within 10 seconds of decision
 - **BR-PERF-005**: Metrics collection MUST not impact request processing by more than 5%
 
+### 7.1.1 Remediation Time Limits
+- **BR-PERF-REM-001**: Simple remediation actions MUST complete within 5 minutes (restart pod, scale deployment)
+- **BR-PERF-REM-002**: Medium complexity actions MUST complete within 10 minutes (rollback, resource updates)
+- **BR-PERF-REM-003**: Complex workflow actions MUST complete within 15 minutes (multi-step operations)
+- **BR-PERF-REM-004**: Remediation timeout detection MUST trigger within 30 seconds of deadline
+- **BR-PERF-REM-005**: Stuck process detection MUST activate within 2x expected completion time
+- **BR-PERF-REM-006**: Remediation progress updates MUST be provided every 30 seconds minimum
+- **BR-PERF-REM-007**: Emergency stop/cancellation MUST complete within 10 seconds
+- **BR-PERF-REM-008**: Remediation health checks MUST complete within 5 seconds
+- **BR-PERF-REM-009**: Escalation notifications MUST be sent within 15 seconds of timeout detection
+- **BR-PERF-REM-010**: Remediation recovery attempts MUST start within 1 minute of failure detection
+
 ### 7.2 Throughput
 - **BR-PERF-006**: MUST handle minimum 100 concurrent alert processing requests
 - **BR-PERF-007**: MUST process minimum 1000 alerts per minute
@@ -190,6 +234,30 @@ The main applications serve as the primary entry points for Kubernaut's intellig
 - **BR-ERR-008**: MUST support graceful degradation when dependent services fail
 - **BR-ERR-009**: MUST implement health-based recovery for application restarts
 - **BR-ERR-010**: MUST provide manual intervention points for critical error scenarios
+
+### 8.3 Remediation Error Handling
+- **BR-ERR-REM-001**: MUST classify remediation failures by type (timeout, resource unavailable, permission denied, network failure)
+- **BR-ERR-REM-002**: MUST implement automatic retry for transient remediation failures with configurable limits
+- **BR-ERR-REM-003**: MUST provide fallback remediation strategies when primary actions fail
+- **BR-ERR-REM-004**: MUST implement remediation rollback when partial execution fails
+- **BR-ERR-REM-005**: MUST escalate to manual intervention when automatic recovery fails
+- **BR-ERR-REM-006**: MUST preserve remediation state for post-mortem analysis
+- **BR-ERR-REM-007**: MUST implement remediation failure correlation across related resources
+- **BR-ERR-REM-008**: MUST provide detailed error context for operator troubleshooting
+- **BR-ERR-REM-009**: MUST track remediation failure patterns for proactive prevention
+- **BR-ERR-REM-010**: MUST implement remediation blacklisting for repeatedly failing resource/action combinations
+
+### 8.4 Timeout & Stuck Process Recovery
+- **BR-ERR-TIMEOUT-001**: MUST implement configurable timeout policies per remediation action type
+- **BR-ERR-TIMEOUT-002**: MUST provide timeout warning notifications before deadline expiration
+- **BR-ERR-TIMEOUT-003**: MUST implement graceful timeout handling with resource cleanup
+- **BR-ERR-TIMEOUT-004**: MUST support timeout extension requests for complex operations
+- **BR-ERR-TIMEOUT-005**: MUST implement emergency termination for runaway remediation processes
+- **BR-ERR-STUCK-001**: MUST detect hung remediation processes through activity monitoring
+- **BR-ERR-STUCK-002**: MUST implement process health diagnostics for stuck detection
+- **BR-ERR-STUCK-003**: MUST provide automated stuck process recovery procedures
+- **BR-ERR-STUCK-004**: MUST implement resource cleanup for abandoned remediation processes
+- **BR-ERR-STUCK-005**: MUST escalate stuck processes to operator attention with detailed diagnostics
 
 ---
 
@@ -226,6 +294,30 @@ The main applications serve as the primary entry points for Kubernaut's intellig
 - **BR-OPS-008**: MUST provide structured logging with correlation IDs
 - **BR-OPS-009**: MUST support log aggregation and centralized monitoring
 - **BR-OPS-010**: MUST implement alerting for critical operational conditions
+
+### 10.2.1 Remediation Process Monitoring
+- **BR-OPS-REM-001**: MUST expose remediation lifecycle metrics (start, progress, completion, failure)
+- **BR-OPS-REM-002**: MUST track remediation execution duration and timeout occurrences
+- **BR-OPS-REM-003**: MUST monitor stuck process detection and recovery rates
+- **BR-OPS-REM-004**: MUST provide real-time dashboards for remediation health status
+- **BR-OPS-REM-005**: MUST implement alerting for remediation timeouts and stuck processes
+- **BR-OPS-REM-006**: MUST track remediation success rates by action type and resource
+- **BR-OPS-REM-007**: MUST monitor remediation queue depths and processing rates
+- **BR-OPS-REM-008**: MUST provide SLA compliance tracking for remediation response times
+- **BR-OPS-REM-009**: MUST implement anomaly detection for unusual remediation patterns
+- **BR-OPS-REM-010**: MUST track operator intervention frequency and response times
+
+### 10.2.2 Process Health Visibility
+- **BR-OPS-HEALTH-001**: MUST provide remediation process status dashboards with real-time updates
+- **BR-OPS-HEALTH-002**: MUST implement process dependency visualization for complex workflows
+- **BR-OPS-HEALTH-003**: MUST track resource utilization during remediation execution
+- **BR-OPS-HEALTH-004**: MUST provide remediation process logs with detailed execution traces
+- **BR-OPS-HEALTH-005**: MUST implement process timeline visualization for debugging
+- **BR-OPS-HEALTH-006**: MUST monitor external service dependencies and their health impact
+- **BR-OPS-HEALTH-007**: MUST provide remediation effectiveness trending and analytics
+- **BR-OPS-HEALTH-008**: MUST implement capacity planning metrics for remediation resources
+- **BR-OPS-HEALTH-009**: MUST track and alert on remediation system resource exhaustion
+- **BR-OPS-HEALTH-010**: MUST provide historical remediation performance baseline comparisons
 
 ### 10.3 Maintenance
 - **BR-OPS-011**: MUST support online configuration updates where possible

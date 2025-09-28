@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -614,4 +615,10 @@ func createSafetyTestActionTrace() *actionhistory.ResourceActionTrace {
 
 func safetyInt32Ptr(i int32) *int32 {
 	return &i
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsafetyUframework(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsafetyUframework Suite")
 }

@@ -27,15 +27,7 @@ const (
 	SwitchToBackupService RecoveryAction = "switch_to_backup"
 )
 
-// ErrorSeverity represents the severity level of errors
-type ErrorSeverity string
-
-const (
-	SeverityLow      ErrorSeverity = "low"
-	SeverityMedium   ErrorSeverity = "medium"
-	SeverityHigh     ErrorSeverity = "high"
-	SeverityCritical ErrorSeverity = "critical"
-)
+// ErrorSeverity is defined in error_standards.go
 
 // Additional error categories for boundary testing
 const (

@@ -17,7 +17,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kubernaut ./cmd/dynamic-toolset-server
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o kubernaut ./cmd/kubernaut
 
 # Runtime stage
 FROM alpine:latest

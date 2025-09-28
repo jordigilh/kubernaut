@@ -1,6 +1,6 @@
 # Database Integration Tests
 
-This document describes the comprehensive database integration tests for the prometheus-alerts-slm project, which test the complete workflow including PostgreSQL database persistence, oscillation detection, and MCP server functionality.
+This document describes the comprehensive database integration tests for the kubernaut project, which test the complete workflow including PostgreSQL database persistence, oscillation detection, and MCP server functionality.
 
 ## Overview
 
@@ -303,10 +303,10 @@ The tests include performance scenarios with larger datasets:
 1. **Database Connection Failures**
    ```bash
    # Check if PostgreSQL container is running
-   podman ps | grep prometheus-alerts-slm-postgres
+   podman ps | grep kubernaut-postgres
 
    # Check container logs
-   podman logs prometheus-alerts-slm-postgres
+   podman logs kubernaut-postgres
 
    # Restart database
    ./scripts/deploy-postgres.sh
@@ -318,7 +318,7 @@ The tests include performance scenarios with larger datasets:
    ls -la migrations/
 
    # Manual migration execution
-   podman exec -it prometheus-alerts-slm-postgres psql -U slm_user -d action_history -f /path/to/migration.sql
+   podman exec -it kubernaut-postgres psql -U slm_user -d action_history -f /path/to/migration.sql
    ```
 
 3. **Test Timeouts**
@@ -424,4 +424,4 @@ When adding new database integration tests:
 - **Sub-tests**: `Context_Specific_Function` (e.g., `Database_Connectivity`)
 - **Test data**: Use descriptive resource names (e.g., `test-mcp-history-app`)
 
-This comprehensive integration test suite ensures that the database functionality works correctly in realistic scenarios and provides confidence in the production deployment of the prometheus-alerts-slm system.
+This comprehensive integration test suite ensures that the database functionality works correctly in realistic scenarios and provides confidence in the production deployment of the kubernaut system.

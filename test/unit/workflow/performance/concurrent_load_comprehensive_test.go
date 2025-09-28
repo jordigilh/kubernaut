@@ -4,6 +4,7 @@
 package performance
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"sync"
@@ -609,4 +610,10 @@ func (m *mockWorkflowBuilder) ApplyResourceConstraintManagement(ctx context.Cont
 func (m *mockWorkflowBuilder) OptimizeWorkflowStructure(ctx context.Context, template *engine.ExecutableTemplate) (*engine.ExecutableTemplate, error) {
 	// Simple structure optimization - metadata would be added to workflow in real implementation
 	return template, nil
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUconcurrentUloadUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UconcurrentUloadUcomprehensive Suite")
 }

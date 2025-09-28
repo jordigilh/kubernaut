@@ -210,6 +210,9 @@ var _ = Describe("Investigation Status Atomic Operations", func() {
 			metrics := &AtomicInvestigationMetrics{}
 			investigations := make([]*holmesgpt.ActiveInvestigation, 100)
 
+			// Add mutex for thread-safe status transitions following Go coding standards
+			var statusMutex sync.Mutex
+
 			// Initialize test investigations
 			for i := range investigations {
 				investigations[i] = &holmesgpt.ActiveInvestigation{
@@ -237,8 +240,9 @@ var _ = Describe("Investigation Status Atomic Operations", func() {
 						invIndex := (workerID*200 + i) % len(investigations)
 						inv := investigations[invIndex]
 
-						// Simulate status transition
+						// Simulate status transition with proper synchronization
 						if workerID%3 == 0 { // Complete some investigations
+							statusMutex.Lock()
 							if inv.Status == "active" {
 								inv.Status = "completed"
 								inv.LastActivity = time.Now()
@@ -246,7 +250,9 @@ var _ = Describe("Investigation Status Atomic Operations", func() {
 								atomic.AddInt64(&metrics.activeCount, -1)
 								atomic.AddInt64(&metrics.completedCount, 1)
 							}
+							statusMutex.Unlock()
 						} else if workerID%5 == 0 { // Fail some investigations
+							statusMutex.Lock()
 							if inv.Status == "active" {
 								inv.Status = "failed"
 								inv.LastActivity = time.Now()
@@ -254,6 +260,7 @@ var _ = Describe("Investigation Status Atomic Operations", func() {
 								atomic.AddInt64(&metrics.activeCount, -1)
 								atomic.AddInt64(&metrics.failedCount, 1)
 							}
+							statusMutex.Unlock()
 						}
 
 						// Verify metrics consistency

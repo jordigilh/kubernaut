@@ -73,6 +73,9 @@ spec:
               listen 8080;
               location /alerts {
                   add_header Content-Type application/json;
+                  if ($request_method = POST) {
+                      return 200 '{"status":"success","message":"Alert received by kubernaut integration test service"}';
+                  }
                   alias /usr/share/nginx/html/alerts.html;
               }
               location /health {

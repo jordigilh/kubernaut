@@ -1,6 +1,7 @@
 package holmesgpt
 
 import (
+	"testing"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
@@ -179,3 +180,9 @@ var _ = Describe("AI Strategy Function Activation - TDD Implementation", func() 
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUstrategyUactivation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UstrategyUactivation Suite")
+}

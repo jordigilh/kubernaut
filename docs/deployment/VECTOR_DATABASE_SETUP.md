@@ -1,6 +1,6 @@
 # Vector Database Setup Guide
 
-This guide explains how to set up and configure the vector database features for AI-driven pattern recognition in prometheus-alerts-slm.
+This guide explains how to set up and configure the vector database features for AI-driven pattern recognition in kubernaut.
 
 ## Overview
 
@@ -66,7 +66,7 @@ Run the application with vector database enabled:
 
 ```bash
 # Start the application
-./prometheus-alerts-slm --config config/production.yaml
+./kubernaut --config config/production.yaml
 
 # Check logs for vector database initialization
 # You should see: "Using PostgreSQL vector database with pgvector"

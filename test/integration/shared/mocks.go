@@ -116,19 +116,10 @@ func (s *StandardPatternStore) StoreEnginePattern(ctx context.Context, pattern *
 	return s.StorePattern(ctx, sharedPattern)
 }
 
-// GetPattern retrieves a single pattern by ID (implements engine.PatternStore interface)
-func (s *StandardPatternStore) GetPattern(ctx context.Context, patternID string) (*sharedtypes.DiscoveredPattern, error) {
-	// Convert from shared.DiscoveredPattern to sharedtypes.DiscoveredPattern
+// GetPattern retrieves a single pattern by ID (implements patterns.PatternStore interface)
+func (s *StandardPatternStore) GetPattern(ctx context.Context, patternID string) (*shared.DiscoveredPattern, error) {
 	if pattern, exists := s.patterns[patternID]; exists {
-		sharedTypesPattern := &sharedtypes.DiscoveredPattern{
-			ID:          pattern.ID,
-			Type:        string(pattern.PatternType),
-			Confidence:  pattern.Confidence,
-			Support:     0.8, // Default support value
-			Description: pattern.Description,
-			Metadata:    pattern.Metadata,
-		}
-		return sharedTypesPattern, nil
+		return pattern, nil
 	}
 	return nil, fmt.Errorf("pattern not found: %s", patternID)
 }

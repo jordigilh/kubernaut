@@ -2,6 +2,7 @@ package intelligence
 
 import (
 	"context"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -1524,3 +1525,9 @@ var _ = Describe("Pattern Discovery Engine - API-Focused Business Requirements T
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestPatternDiscoveryApiFocused(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Pattern Discovery API Focused Suite")
+}

@@ -288,7 +288,7 @@ test-holmesgpt-api-integration: ## Run HolmesGPT API integration tests with Kind
 	make deploy-holmesgpt-api-to-kind
 	@echo "Running integration tests..."
 	cd docker/holmesgpt-api && \
-	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) \
+	KUBECONFIG=$$(kind get kubeconfig --name=kubernaut-test) \
 	HOLMESGPT_API_ENDPOINT=http://localhost:8800 \
 	LLM_ENDPOINT=$${LLM_ENDPOINT:-http://localhost:8080} \
 	LLM_MODEL=$${LLM_MODEL:-granite3.1-dense:8b} \
@@ -310,7 +310,7 @@ test-holmesgpt-api-integration-mock-llm: ## Run HolmesGPT API integration tests 
 	make deploy-holmesgpt-api-to-kind
 	@echo "Running integration tests with mock LLM..."
 	cd docker/holmesgpt-api && \
-	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) \
+	KUBECONFIG=$$(kind get kubeconfig --name=kubernaut-test) \
 	HOLMESGPT_API_ENDPOINT=http://localhost:8800 \
 	USE_MOCK_LLM=true \
 	LLM_PROVIDER=mock \
@@ -325,7 +325,7 @@ test-holmesgpt-api-e2e: integration-services-start ## Run HolmesGPT API E2E test
 	make deploy-holmesgpt-api-to-kind
 	@echo "Running E2E tests..."
 	cd docker/holmesgpt-api && \
-	KUBECONFIG=$$(kind get kubeconfig --name=prometheus-alerts-slm-test) \
+	KUBECONFIG=$$(kind get kubeconfig --name=kubernaut-test) \
 	DB_HOST=localhost DB_PORT=5433 \
 	VECTOR_DB_HOST=localhost VECTOR_DB_PORT=5434 \
 	HOLMESGPT_API_ENDPOINT=http://localhost:8800 \
