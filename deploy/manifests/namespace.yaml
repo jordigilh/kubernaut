@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: prometheus-alerts-slm
+  name: kubernaut
   labels:
-    app.kubernetes.io/name: prometheus-alerts-slm
+    app.kubernetes.io/name: kubernaut
     app.kubernetes.io/part-of: monitoring

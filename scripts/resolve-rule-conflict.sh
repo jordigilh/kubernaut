@@ -36,7 +36,7 @@ case $CONTEXT in
         echo ""
         echo "🔧 IMMEDIATE ACTIONS:"
         echo "- Check cmd/kubernaut/main.go for component instantiation"
-        echo "- Check cmd/dynamic-toolset-server/main.go for component usage"
+        echo "- Check cmd/kubernaut/main.go for component usage"
         echo "- Verify component is wired into main application flow"
         ;;
     "tdd-phase")

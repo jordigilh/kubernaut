@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -124,3 +125,9 @@ var _ = Describe("Workflow Builder AI Integration - Business Requirements", func
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUbuilderUaiUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUbuilderUaiUintegration Suite")
+}

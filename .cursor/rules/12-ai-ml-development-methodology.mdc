@@ -1,0 +1,308 @@
+---
+globs: "pkg/ai/**/*,pkg/workflow/**/*,pkg/intelligence/**/*,test/**/*ai*"
+description: "AI/ML Development Methodology - TDD workflow and integration patterns"
+---
+
+# Rule 12: AI/ML Development Methodology
+
+## 🎯 **PURPOSE & SCOPE**
+
+This rule resolves conflicts between AI/ML development patterns and TDD methodology by providing crystal clear guidance for developing AI components with proper integration.
+
+**Resolves**: Conflicts between Rule 03 (TDD), Rule 04 (AI/ML), and Rule 07 (Integration)
+
+---
+
+## 🤖 **AI/ML TDD METHODOLOGY - MANDATORY**
+
+### **PHASE 1: AI COMPONENT DISCOVERY (Before TDD)**
+**Duration**: 5-10 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Search for existing AI interfaces: `grep -r "Client.*interface" pkg/ai/`
+2. **MANDATORY**: Check main app AI usage: `grep -r "AI\|LLM\|Holmes" cmd/`
+3. **DECISION POINT**: Enhance existing vs create new AI component
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# ai-component-discovery.sh
+AI_COMPONENT="$1"
+
+echo "🤖 AI COMPONENT DISCOVERY: $AI_COMPONENT"
+
+# Check existing AI interfaces
+EXISTING_AI=$(grep -r "$AI_COMPONENT\|interface.*AI\|LLM.*interface" pkg/ai/ --include="*.go" | grep -v "_test.go" | wc -l)
+MAIN_AI_USAGE=$(grep -r "$AI_COMPONENT\|AI\|LLM" cmd/ --include="*.go" | wc -l)
+
+echo "Existing AI interfaces: $EXISTING_AI"
+echo "Main application AI usage: $MAIN_AI_USAGE"
+
+if [ "$EXISTING_AI" -gt 0 ] && [ "$MAIN_AI_USAGE" -eq 0 ]; then
+    echo "⚠️  WARNING: Existing AI interface but no main app usage"
+    echo "❓ QUESTION: Should you enhance existing AI client instead?"
+fi
+
+echo "✅ AI component discovery complete"
+```
+
+### **PHASE 2: AI TDD RED (Write failing AI tests)**
+**Duration**: 15-20 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Import existing AI interfaces (`pkg/ai/llm.Client`)
+2. **FORBIDDEN**: Creating new AI interfaces
+3. **MANDATORY**: Use existing AI mocks from `pkg/testutil/mocks/`
+
+**AI-Specific RED Pattern**:
+```go
+// ✅ CORRECT AI RED: Uses existing AI interface
+var _ = Describe("AI Context Optimization", func() {
+    var (
+        llmClient llm.Client  // Existing interface
+        ctx       context.Context
+    )
+
+    BeforeEach(func() {
+        llmClient = testutil.NewMockLLMClient() // Existing factory
+        ctx = context.Background()
+    })
+
+    It("should optimize context using AI analysis", func() {
+        // Call existing AI interface method
+        analysis, err := llmClient.AnalyzeContext(ctx, "test content")
+        Expect(err).ToNot(HaveOccurred())
+        Expect(analysis.Quality).To(BeNumerically(">", 0.8))
+    })
+})
+```
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# validate-ai-development.sh red
+echo "🔴 AI TDD RED VALIDATION"
+
+# Check for new AI interface creation (FORBIDDEN)
+NEW_AI_INTERFACES=$(git diff --cached | grep "^+.*interface.*AI\|^+.*interface.*LLM" | wc -l)
+if [ "$NEW_AI_INTERFACES" -gt 0 ]; then
+    echo "❌ VIOLATION: New AI interfaces forbidden in RED phase"
+    echo "✅ SOLUTION: Use existing interfaces from pkg/ai/"
+    exit 1
+fi
+
+# Check for existing AI interface usage
+EXISTING_AI_USAGE=$(git diff --cached | grep "llm\.Client\|ai\.Provider" | wc -l)
+if [ "$EXISTING_AI_USAGE" -eq 0 ]; then
+    echo "⚠️  WARNING: No existing AI interface usage detected"
+    echo "💡 RECOMMENDATION: Import and use pkg/ai/llm.Client"
+fi
+
+echo "✅ AI RED validation complete"
+```
+
+### **PHASE 3: AI TDD GREEN (Minimal AI implementation)**
+**Duration**: 20-25 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Enhance existing AI client (e.g., `ClientImpl`)
+2. **MANDATORY**: Add to main app (`cmd/*/main.go`)
+3. **FORBIDDEN**: New AI service files
+
+**AI-Specific GREEN Pattern**:
+```go
+// ✅ CORRECT AI GREEN: Enhance existing AI client
+// In pkg/ai/llm/client.go
+type Client interface {
+    // ... existing methods ...
+    AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) // ADD TO EXISTING
+}
+
+type ClientImpl struct {
+    // ... existing fields ...
+}
+
+func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) {
+    // Minimal implementation to pass tests
+    return &ContextAnalysis{Quality: 0.8}, nil
+}
+```
+
+**Integration Pattern**:
+```go
+// cmd/kubernaut/main.go
+llmClient := llm.NewClient(config.LLM)
+workflowEngine.SetLLMClient(llmClient)
+processor := processor.New(llmClient, deps...)
+```
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# validate-ai-development.sh green
+echo "🟢 AI TDD GREEN VALIDATION"
+
+# Check main app integration
+MAIN_AI_INTEGRATION=$(grep -r "NewClient\|SetLLMClient\|AI.*Client" cmd/ --include="*.go" | wc -l)
+if [ "$MAIN_AI_INTEGRATION" -eq 0 ]; then
+    echo "❌ VIOLATION: AI component not integrated in main application"
+    echo "✅ SOLUTION: Add AI client to cmd/*/main.go"
+    exit 1
+fi
+
+# Check for new AI service files (FORBIDDEN)
+NEW_AI_FILES=$(git diff --cached --name-only | grep "pkg/ai/.*\.go" | grep -v "_test.go" | wc -l)
+EXISTING_AI_FILES=$(find pkg/ai/ -name "*.go" -not -name "*_test.go" | wc -l)
+if [ "$NEW_AI_FILES" -gt "$EXISTING_AI_FILES" ]; then
+    echo "❌ VIOLATION: New AI service files forbidden in GREEN"
+    echo "✅ SOLUTION: Enhance existing AI clients only"
+    exit 1
+fi
+
+echo "✅ AI GREEN validation complete"
+```
+
+### **PHASE 4: AI TDD REFACTOR (Enhance AI methods)**
+**Duration**: 25-35 minutes
+**Mandatory Actions**:
+1. **MANDATORY**: Enhance same AI methods tests call
+2. **REFACTOR NEVER MEANS**: Create new parallel/additional AI code
+3. **FORBIDDEN**: New AI types, files, interfaces
+
+**AI-Specific REFACTOR Focus**:
+```go
+// ✅ CORRECT AI REFACTOR: Enhance existing method
+func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*ContextAnalysis, error) {
+    // Enhanced implementation with sophisticated logic
+    tokens := c.tokenizer.Tokenize(content)
+    embeddings := c.embeddingGenerator.Generate(tokens)
+    quality := c.qualityAnalyzer.CalculateQuality(embeddings)
+
+    return &ContextAnalysis{
+        Quality: quality,
+        TokenCount: len(tokens),
+        OptimizationSuggestions: c.generateSuggestions(embeddings),
+    }, nil
+}
+```
+
+**Validation Commands**:
+```bash
+#!/bin/bash
+# validate-ai-development.sh refactor
+echo "🔄 AI TDD REFACTOR VALIDATION"
+
+# Check for new AI types (FORBIDDEN)
+NEW_AI_TYPES=$(git diff --cached | grep "^+type.*AI\|^+type.*LLM" | wc -l)
+if [ "$NEW_AI_TYPES" -gt 0 ]; then
+    echo "❌ VIOLATION: New AI types forbidden in REFACTOR"
+    echo "✅ SOLUTION: Enhance existing AI methods only"
+    exit 1
+fi
+
+# Verify enhancement of existing methods
+METHOD_ENHANCEMENTS=$(git diff --cached | grep "^+.*func.*AI\|^+.*func.*LLM" | wc -l)
+if [ "$METHOD_ENHANCEMENTS" -eq 0 ]; then
+    echo "⚠️  INFO: No AI method enhancements detected"
+    echo "💡 RECOMMENDATION: Focus on enhancing existing AI method implementations"
+fi
+
+echo "✅ AI REFACTOR validation complete"
+```
+
+---
+
+## 🔄 **AI INTEGRATION CONFLICT RESOLUTION**
+
+### **When AI rules conflict with general TDD**:
+1. **AI Discovery** overrides general component discovery (AI-specific search patterns)
+2. **AI Interface Reuse** overrides new interface creation (use `pkg/ai/llm.Client`)
+3. **AI Client Enhancement** overrides new service creation (enhance existing clients)
+4. **AI REFACTOR** focuses on method enhancement, not structural changes
+
+### **AI Mock Usage Decision Matrix**
+| Component | Action |
+|-----|-----|
+| **External AI APIs** (HolmesGPT, OpenAI) | MOCK |
+| **AI Business Logic** (analysis algorithms) | REAL |
+| **Error Simulation** | MOCK |
+| **Performance Testing** | MOCK |
+
+---
+
+## 🚨 **AI ANTI-PATTERNS - FORBIDDEN**
+
+### **AI Development Anti-Patterns**
+- Creating parallel AI components during REFACTOR
+- AI components only used in tests
+- Hardcoded AI endpoints
+- AI-only testing without business validation
+
+### **AI TDD Violations**
+- **AI Discovery Skip**: Creating AI without searching existing → Use AI-specific discovery first
+- **AI Interface Creation**: New AI interfaces in RED → Use existing `pkg/ai/llm.Client`
+- **AI Service Proliferation**: New AI files in GREEN → Enhance existing clients only
+- **AI Structural Changes**: New AI types in REFACTOR → Enhance methods only
+
+---
+
+## 📋 **AI DEVELOPMENT VALIDATION CHECKLIST**
+
+### **AI Discovery Phase**
+- [ ] Searched existing AI interfaces: `grep -r "Client.*interface" pkg/ai/`
+- [ ] Checked main app AI usage: `grep -r "AI\|LLM\|Holmes" cmd/`
+- [ ] Decision documented: enhance vs create
+
+### **AI RED Phase**
+- [ ] Used existing AI interfaces (`pkg/ai/llm.Client`)
+- [ ] No new AI interfaces created
+- [ ] Used existing AI mocks from `pkg/testutil/mocks/`
+- [ ] Tests fail appropriately
+
+### **AI GREEN Phase**
+- [ ] Enhanced existing AI client implementation
+- [ ] Integrated in main application (`cmd/*/main.go`)
+- [ ] No new AI service files created
+- [ ] Tests pass with minimal implementation
+
+### **AI REFACTOR Phase**
+- [ ] Enhanced existing AI method implementations
+- [ ] No new AI types, files, or interfaces
+- [ ] Focused on algorithmic improvements
+- [ ] Maintained integration with main application
+
+---
+
+## 🎯 **AI INTEGRATION REQUIREMENTS**
+
+### **Mandatory AI Integration Points**
+```go
+// cmd/kubernaut/main.go
+llmClient := llm.NewClient(config.LLM)
+workflowEngine.SetLLMClient(llmClient)
+processor := processor.New(llmClient, deps...)
+```
+
+### **AI Configuration Integration**
+```go
+// config/ai.yaml
+ai:
+  provider: "holmesgpt"
+  endpoint: "http://192.168.1.169:8080"
+  model: "hf://ggml-org/gpt-oss-20b-GGUF"
+  timeout: "30s"
+```
+
+### **AI Error Handling Integration**
+```go
+// Integrate AI errors with main error handling
+if err := aiClient.Analyze(ctx, data); err != nil {
+    return fmt.Errorf("AI analysis failed: %w", err)
+}
+```
+
+---
+
+## 🔗 **INTEGRATION WITH OTHER RULES**
+
+**Enforces**: [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) TDD methodology for AI components
+**Supports**: [04-ai-ml-guidelines.mdc](mdc:.cursor/rules/04-ai-ml-guidelines.mdc) AI service architecture
+**Resolves**: Conflicts between TDD and AI development patterns
+**Priority**: SPECIALIZED - AI-specific TDD methodology that overrides general patterns when developing AI components

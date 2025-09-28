@@ -1,6 +1,7 @@
 package simulator
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -648,3 +649,9 @@ var _ = Describe("BR-SIM-025: Workflow Simulator Business Logic", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUsimulatorUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUsimulatorUcomprehensive Suite")
+}

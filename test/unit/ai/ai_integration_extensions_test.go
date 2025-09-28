@@ -6,6 +6,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -74,7 +75,24 @@ var _ = Describe("AI & Integration Extensions - Week 4 Business Requirements", f
 
 		// Initialize real business components (MANDATORY per rule 03)
 		realVectorDB = vector.NewMemoryVectorDatabase(logger)
-		realAnalyticsEngine = insights.NewAnalyticsEngine()
+
+		// Create analytics assessor for proper dependency injection
+		realAssessor := insights.NewAssessor(
+			nil, // actionHistoryRepo - not needed for unit tests
+			nil, // effectivenessRepo - not needed for unit tests
+			nil, // alertClient - not needed for unit tests
+			nil, // metricsClient - not needed for unit tests
+			nil, // sideEffectDetector - not needed for unit tests
+			logger,
+		)
+
+		// Create analytics engine with proper dependencies
+		realAnalyticsEngine = insights.NewAnalyticsEngineWithDependencies(
+			realAssessor,
+			nil, // workflowAnalyzer - not needed for unit tests
+			logger,
+		)
+
 		realPatternStore = patterns.NewInMemoryPatternStore(logger)
 
 		// Create hybrid LLM client (real or mock based on environment)
@@ -148,9 +166,13 @@ var _ = Describe("AI & Integration Extensions - Week 4 Business Requirements", f
 
 		It("should handle AI service fallback coordination gracefully", func() {
 			// Create AI integrator with limited services for fallback testing
+			// Use mock LLM client that simulates failure for fallback testing
+			mockLLMClient := mocks.NewMockLLMClient()
+			mockLLMClient.SetError("LLM service unavailable")
+
 			limitedIntegrator := engine.NewAIServiceIntegrator(
 				testConfig,
-				nil, // No LLM client
+				mockLLMClient, // Mock LLM client with simulated failure
 				realHolmesGPTClient,
 				realVectorDB,
 				nil,
@@ -594,4 +616,10 @@ func calculateAverageConfidence(results []types.AnalyticsInsights) float64 {
 	}
 
 	return total / float64(len(results))
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUaiUintegrationUextensions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UaiUintegrationUextensions Suite")
 }

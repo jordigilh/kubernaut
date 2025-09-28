@@ -4,6 +4,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -713,4 +714,10 @@ func createHighVolumeSafetyAlerts(count int) []types.Alert {
 	}
 
 	return alerts
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUresourceUconstrainedUsafetyUextensions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UresourceUconstrainedUsafetyUextensions Suite")
 }

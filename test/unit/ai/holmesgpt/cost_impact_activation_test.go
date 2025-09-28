@@ -1,6 +1,7 @@
 package holmesgpt
 
 import (
+	"testing"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
@@ -190,3 +191,9 @@ var _ = Describe("Cost Impact Analysis Function Activation - TDD Phase 1", func(
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcostUimpactUactivation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcostUimpactUactivation Suite")
+}

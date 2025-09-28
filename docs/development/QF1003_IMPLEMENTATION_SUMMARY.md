@@ -64,7 +64,7 @@ default:
 ```
 
 #### Database Type Assertion (1 instance)
-**File**: `cmd/dynamic-toolset-server/main.go`
+**File**: `cmd/kubernaut/main.go`
 
 ```go
 // ❌ Before (Lines 681-688)
@@ -146,7 +146,7 @@ make lint        # Check all violations
 
 ### Files Modified
 - `pkg/orchestration/adaptive/orchestrator_helpers.go` (8 fixes)
-- `cmd/dynamic-toolset-server/main.go` (1 fix)
+- `cmd/kubernaut/main.go` (1 fix)
 - `.golangci.yml` (enhanced configuration)
 - `scripts/pre-commit-hook.sh` (detection rules)
 - `Makefile` (new targets)

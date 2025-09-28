@@ -12,10 +12,17 @@ type AdaptiveOrchestrator interface {
 	ExecuteWorkflow() error
 }
 
-type AdaptiveOrchestratorImpl struct{}
+type AdaptiveOrchestratorImpl struct {
+	// Core orchestration dependencies
+	workflowEngine interface{}
+	logger         interface{}
+}
 
 func NewAdaptiveOrchestrator() *AdaptiveOrchestratorImpl {
-	return &AdaptiveOrchestratorImpl{}
+	return &AdaptiveOrchestratorImpl{
+		workflowEngine: nil, // Will be injected by caller
+		logger:         nil, // Will be injected by caller
+	}
 }
 
 func (o *AdaptiveOrchestratorImpl) ExecuteWorkflow() error {
@@ -29,10 +36,19 @@ type WorkflowExecutionResult struct {
 	StepsCount int
 }
 
-type AdvancedWorkflowEngine struct{}
+type AdvancedWorkflowEngine struct {
+	// Core workflow engine dependencies
+	executionRepo interface{}
+	stateStorage  interface{}
+	logger        interface{}
+}
 
 func NewAdvancedWorkflowEngine() *AdvancedWorkflowEngine {
-	return &AdvancedWorkflowEngine{}
+	return &AdvancedWorkflowEngine{
+		executionRepo: nil, // Will be injected by caller
+		stateStorage:  nil, // Will be injected by caller
+		logger:        nil, // Will be injected by caller
+	}
 }
 
 func (w *AdvancedWorkflowEngine) ExecuteParallelSteps(ctx context.Context, steps interface{}) (*WorkflowExecutionResult, error) {

@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"fmt"
 	"time"
 
@@ -366,3 +367,9 @@ var _ = Describe("Advanced Step Execution - Enhanced Validation Testing", func()
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUstepUexecution(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUstepUexecution Suite")
+}

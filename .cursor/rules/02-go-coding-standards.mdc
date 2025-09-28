@@ -1,8 +1,7 @@
 ---
-globs: "*.go"
 description: "Go coding standards and patterns specific to kubernaut"
+alwaysApply: false
 ---
-
 # Go Coding Standards for Kubernaut
 
 ## Code Organization

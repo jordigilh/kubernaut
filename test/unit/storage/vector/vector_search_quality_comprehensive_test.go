@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -26,8 +27,8 @@ var _ = Describe("BR-VECTOR-SEARCH-QUALITY-001: Comprehensive Vector Search Qual
 		mockLogger *logrus.Logger
 
 		// Use REAL business logic components - PYRAMID APPROACH
-		memoryVectorDB       *vector.MemoryVectorDatabase
-		realEmbeddingService *vector.LocalEmbeddingService
+		memoryVectorDB *vector.MemoryVectorDatabase
+		// realEmbeddingService *vector.LocalEmbeddingService // Unused variable
 
 		ctx    context.Context
 		cancel context.CancelFunc
@@ -42,7 +43,7 @@ var _ = Describe("BR-VECTOR-SEARCH-QUALITY-001: Comprehensive Vector Search Qual
 
 		// Create REAL business vector database and embedding service - PYRAMID APPROACH
 		memoryVectorDB = vector.NewMemoryVectorDatabase(mockLogger)
-		realEmbeddingService = vector.NewLocalEmbeddingService(384, mockLogger)
+		// realEmbeddingService = vector.NewLocalEmbeddingService(384, mockLogger) // Unused variable
 	})
 
 	AfterEach(func() {
@@ -231,9 +232,7 @@ var _ = Describe("BR-VECTOR-SEARCH-QUALITY-001: Comprehensive Vector Search Qual
 	Context("BR-VECTOR-SEARCH-QUALITY-003: Vector Search Performance Business Logic", func() {
 		It("should maintain performance with large datasets", func() {
 			// Test REAL business logic for vector search performance
-			patterns := createLargeDatasetTestData()
-			queryVector := []float64{0.5, 0.5, 0.5, 0.5, 0.5}
-			threshold := 0.6
+			patterns, queryVector, threshold := createLargeDatasetTestData()
 
 			// Store large dataset in REAL business vector database
 			startTime := time.Now()
@@ -725,4 +724,10 @@ func generateRandomEmbedding(dimensions int, seed float64) []float64 {
 		embedding[i] = seed + float64(i)*0.1
 	}
 	return embedding
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUvectorUsearchUqualityUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UvectorUsearchUqualityUcomprehensive Suite")
 }

@@ -15,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/jordigilh/kubernaut/pkg/testutil/enhanced"
+	"github.com/jordigilh/kubernaut/pkg/e2e/cluster"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,7 +29,7 @@ var _ = Describe("BR-CONTINUITY-E2E-001: Business Continuity E2E Workflows", fun
 		// Use REAL OCP cluster infrastructure per user requirement
 		realK8sClient kubernetes.Interface
 		realLogger    *logrus.Logger
-		testCluster   *enhanced.TestClusterManager
+		testCluster   *cluster.E2EClusterManager
 		kubernautURL  string
 		contextAPIURL string
 
@@ -42,8 +42,10 @@ var _ = Describe("BR-CONTINUITY-E2E-001: Business Continuity E2E Workflows", fun
 		ctx, cancel = context.WithTimeout(context.Background(), 600*time.Second) // 10 minutes for E2E
 
 		// Setup real OCP cluster infrastructure
-		testCluster = enhanced.NewTestClusterManager()
-		err := testCluster.SetupTestCluster(ctx)
+		var err error
+		testCluster, err = cluster.NewE2EClusterManager("ocp", realLogger)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E cluster manager")
+		err = testCluster.InitializeCluster(ctx, "latest")
 		Expect(err).ToNot(HaveOccurred(), "OCP cluster setup must succeed for E2E testing")
 
 		realK8sClient = testCluster.GetKubernetesClient()
@@ -63,7 +65,7 @@ var _ = Describe("BR-CONTINUITY-E2E-001: Business Continuity E2E Workflows", fun
 
 	AfterEach(func() {
 		if testCluster != nil {
-			err := testCluster.CleanupTestCluster(ctx)
+			err := testCluster.Cleanup(ctx)
 			Expect(err).ToNot(HaveOccurred(), "OCP cluster cleanup should succeed")
 		}
 		cancel()
@@ -219,7 +221,7 @@ var _ = Describe("BR-CONTINUITY-E2E-001: Business Continuity E2E Workflows", fun
 			defer resp.Body.Close()
 
 			// Business Requirement: Fallback mode should provide degraded but functional service
-			Expect(resp.StatusCode).To(BeOneOf([]int{http.StatusOK, http.StatusAccepted, http.StatusPartialContent}),
+			Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusAccepted, http.StatusPartialContent}),
 				"BR-CONTINUITY-E2E-002: Fallback mode must provide functional business service")
 
 			// Step 2: Verify fallback operation capabilities
@@ -235,7 +237,7 @@ var _ = Describe("BR-CONTINUITY-E2E-001: Business Continuity E2E Workflows", fun
 				defer fallbackHealthResp.Body.Close()
 
 				// Business Requirement: Fallback mode should indicate operational status
-				Expect(fallbackHealthResp.StatusCode).To(BeOneOf([]int{http.StatusOK, http.StatusPartialContent}),
+				Expect(fallbackHealthResp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusPartialContent}),
 					"BR-CONTINUITY-E2E-002: Fallback mode must indicate operational status")
 			}
 

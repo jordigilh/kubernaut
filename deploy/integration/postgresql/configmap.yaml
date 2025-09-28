@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-config
+  namespace: kubernaut-integration
+  labels:
+    app: postgresql
+    component: database
+data:
+  POSTGRES_DB: "action_history"
+  POSTGRES_USER: "slm_user"
+  POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+  # PostgreSQL configuration
+  postgresql.conf: |
+    # PostgreSQL configuration for integration testing
+    max_connections = 100
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    maintenance_work_mem = 64MB
+    checkpoint_completion_target = 0.9
+    wal_buffers = 16MB
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    work_mem = 4MB
+    min_wal_size = 1GB
+    max_wal_size = 4GB
+
+    # Logging configuration
+    log_destination = 'stderr'
+    logging_collector = on
+    log_directory = 'log'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_statement = 'all'
+    log_min_duration_statement = 1000
+
+    # pgvector configuration
+    shared_preload_libraries = 'vector'
+
+  init-vector-db.sql: |
+    -- Initialize vector database extensions
+    CREATE EXTENSION IF NOT EXISTS vector;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    -- Create vector tables for integration testing
+    CREATE TABLE IF NOT EXISTS embeddings (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      content TEXT NOT NULL,
+      embedding vector(1536),
+      metadata JSONB,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    -- Create indexes for vector operations
+    CREATE INDEX IF NOT EXISTS embeddings_embedding_idx ON embeddings
+    USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+    -- Grant permissions
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;

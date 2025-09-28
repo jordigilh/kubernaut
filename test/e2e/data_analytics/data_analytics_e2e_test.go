@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/jordigilh/kubernaut/pkg/testutil/enhanced"
+	"github.com/jordigilh/kubernaut/pkg/e2e/cluster"
 	"github.com/sirupsen/logrus"
 )
 
@@ -30,7 +30,7 @@ var _ = Describe("BR-DATA-ANALYTICS-E2E-001: Data Management and Analytics E2E V
 		// Use REAL OCP cluster infrastructure per user requirement
 		realK8sClient kubernetes.Interface
 		realLogger    *logrus.Logger
-		testCluster   *enhanced.TestClusterManager
+		testCluster   *cluster.E2EClusterManager
 		kubernautURL  string
 		contextAPIURL string
 		healthAPIURL  string
@@ -45,13 +45,17 @@ var _ = Describe("BR-DATA-ANALYTICS-E2E-001: Data Management and Analytics E2E V
 		ctx, cancel = context.WithTimeout(context.Background(), 600*time.Second) // 10 minutes for E2E
 
 		// Setup real OCP cluster infrastructure
-		testCluster = enhanced.NewTestClusterManager()
-		err := testCluster.SetupTestCluster(ctx)
+		realLogger = logrus.New()
+		realLogger.SetLevel(logrus.InfoLevel)
+
+		var err error
+		testCluster, err = cluster.NewE2EClusterManager("ocp", realLogger)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E cluster manager")
+
+		err = testCluster.InitializeCluster(ctx, "latest")
 		Expect(err).ToNot(HaveOccurred(), "OCP cluster setup must succeed for E2E testing")
 
 		realK8sClient = testCluster.GetKubernetesClient()
-		realLogger = logrus.New()
-		realLogger.SetLevel(logrus.InfoLevel)
 
 		// TDD RED: These will fail until data analytics system is deployed
 		kubernautURL = "http://localhost:8080"
@@ -70,7 +74,7 @@ var _ = Describe("BR-DATA-ANALYTICS-E2E-001: Data Management and Analytics E2E V
 
 	AfterEach(func() {
 		if testCluster != nil {
-			err := testCluster.CleanupTestCluster(ctx)
+			err := testCluster.Cleanup(ctx)
 			Expect(err).ToNot(HaveOccurred(), "OCP cluster cleanup should succeed")
 		}
 		cancel()

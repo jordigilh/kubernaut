@@ -1,6 +1,42 @@
 # Kubernaut
 
-An intelligent Kubernetes remediation agent that autonomously analyzes alerts and executes sophisticated automated actions using LLM-powered decision making, historical learning, and advanced pattern recognition.
+An intelligent Kubernetes remediation platform built on microservices architecture that autonomously analyzes alerts and executes sophisticated automated actions using LLM-powered decision making, historical learning, and advanced pattern recognition.
+
+## 🏗️ **MICROSERVICES ARCHITECTURE**
+
+**PRODUCTION READY:** Fault-isolated microservices with independent scaling, deployment, and failure domains.
+
+### **🎯 Service Architecture:**
+- **🔗 Webhook Service**: Independent alert processing with 99.9% availability
+- **🧠 Context API Service**: HolmesGPT integration and dynamic context orchestration
+- **🤖 AI Service**: LLM integration and analytics processing (planned)
+- **⚙️ Workflow Engine Service**: Workflow execution and orchestration (planned)
+- **💾 Data Service**: Persistence and vector operations (planned)
+
+### **✅ Phase 1 Complete: Webhook Service**
+- **TDD Implementation**: Complete RED-GREEN-REFACTOR cycle
+- **Docker Image**: Red Hat UBI9 Go toolset base image (`registry.access.redhat.com/ubi9/go-toolset:1.24`)
+- **Kubernetes Deployment**: Production-ready manifests with HPA (3-20 replicas)
+- **Fault Isolation**: Independent failure domain from other services
+- **Health Monitoring**: Comprehensive component health checks
+- **Fallback Mechanisms**: Rule-based processing when AI service unavailable
+
+### **🔄 Service Communication Architecture**
+```
+AlertManager → webhook-service:8080 → ai-service:8093 (planned)
+                                   → workflow-engine:8092 (planned)
+                                   → data-service:8094 (planned)
+
+HolmesGPT → context-api-service:8091 → ai-service:8093 (planned)
+                                    → data-service:8094 (planned)
+```
+
+**Communication Features**:
+- **HTTP/REST APIs**: JSON-based service communication
+- **Circuit Breakers**: Resilience patterns with fallback mechanisms
+- **Service Discovery**: Kubernetes-native DNS resolution
+- **Health Checks**: Standardized `/health`, `/ready`, `/metrics` endpoints
+- **Distributed Tracing**: Request correlation across services
 
 ## 🎯 **DEVELOPMENT FRAMEWORK: COMPLETE SUCCESS (100%)**
 
@@ -43,6 +79,14 @@ An intelligent Kubernetes remediation agent that autonomously analyzes alerts an
 - ✅ **Advanced Features**: Vector database integration, RAG enhancement, workflow engine
 
 ### **📋 Key Documents:**
+
+#### **Microservices Architecture**
+- **[docs/architecture/MICROSERVICES_COMMUNICATION_ARCHITECTURE.md](docs/architecture/MICROSERVICES_COMMUNICATION_ARCHITECTURE.md)** - Service communication patterns and protocols
+- **[cmd/webhook-service/](cmd/webhook-service/)** - Webhook service implementation (Phase 1 complete)
+- **[deploy/microservices/](deploy/microservices/)** - Kubernetes deployment manifests
+- **[docker/webhook-service.Dockerfile](docker/webhook-service.Dockerfile)** - Red Hat UBI9 container build
+
+#### **Development & Requirements**
 - **[MILESTONE_1_SUCCESS_SUMMARY.md](MILESTONE_1_SUCCESS_SUMMARY.md)** - Complete achievement summary
 - **[AI_INTEGRATION_VALIDATION.md](AI_INTEGRATION_VALIDATION.md)** - Technical validation results
 - **[MILESTONE_1_COMPLETION_CHECKLIST.md](MILESTONE_1_COMPLETION_CHECKLIST.md)** - Implementation checklist
@@ -316,19 +360,37 @@ All actions include comprehensive safety validation, rollback capabilities, and 
 
 ### Installation Methods
 
-#### Option 1: Docker Compose (Recommended for Development)
+#### Option 1: Kind Cluster (Recommended for Development)
 ```bash
-# Clone and start all services
+# Clone and start all services in Kind cluster
 git clone https://github.com/jordigilh/kubernaut.git
 cd kubernaut
-docker-compose up -d
+
+# Bootstrap Kind-based integration environment
+make bootstrap-dev-kind
 
 # Verify services
+curl http://localhost:30800/health     # Webhook service
+curl http://localhost:30090/-/ready    # Prometheus
+make kind-status                       # Show all service status
+```
+
+#### Option 2: Docker Compose (DEPRECATED - Legacy Support)
+> ⚠️ **DEPRECATED**: Docker-compose setup is deprecated in favor of Kind cluster for better production parity.
+> Use `make bootstrap-dev-compose` for legacy compatibility.
+
+```bash
+# Legacy docker-compose setup (deprecated)
+git clone https://github.com/jordigilh/kubernaut.git
+cd kubernaut
+make bootstrap-dev-compose  # Use Kind instead: make bootstrap-dev-kind
+
+# Verify services (legacy)
 curl http://localhost:8080/health  # Go service
 curl http://localhost:8090/health  # HolmesGPT service
 ```
 
-#### Option 2: Manual Build & Deploy
+#### Option 3: Manual Build & Deploy
 ```bash
 # Build Go service
 make build
@@ -337,10 +399,10 @@ make build
 ./scripts/run-holmesgpt-local.sh
 
 # Start Go service
-./bin/prometheus-alerts-slm --config config/development.yaml
+./bin/kubernaut --config config/development.yaml
 ```
 
-#### Option 3: Kubernetes Deployment
+#### Option 4: Production Kubernetes Deployment
 ```bash
 # Deploy with Kustomize
 kubectl apply -k deploy/

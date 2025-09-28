@@ -7,7 +7,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/infrastructure/metrics"
@@ -18,12 +21,15 @@ import (
 
 type Handler interface {
 	HandleAlert(w http.ResponseWriter, r *http.Request)
+	HealthCheck(w http.ResponseWriter, r *http.Request)
 }
 
 type handler struct {
-	processor processor.Processor
-	config    config.WebhookConfig
-	log       *logrus.Logger
+	processor   processor.Processor
+	config      config.WebhookConfig
+	log         *logrus.Logger
+	rateLimiter *rate.Limiter
+	mu          sync.RWMutex
 }
 
 // AlertManagerWebhook represents the AlertManager webhook payload structure
@@ -59,10 +65,15 @@ type WebhookResponse struct {
 }
 
 func NewHandler(processor processor.Processor, cfg config.WebhookConfig, log *logrus.Logger) Handler {
+	// Create rate limiter: 1000 requests per minute with burst of 10 for testing
+	// In production, this would be configurable via config
+	rateLimiter := rate.NewLimiter(rate.Every(time.Minute/1000), 10)
+
 	return &handler{
-		processor: processor,
-		config:    cfg,
-		log:       log,
+		processor:   processor,
+		config:      cfg,
+		log:         log,
+		rateLimiter: rateLimiter,
 	}
 }
 
@@ -75,6 +86,13 @@ func (h *handler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 		"remote_ip":  r.RemoteAddr,
 		"user_agent": r.UserAgent(),
 	}).Debug("Received webhook request")
+
+	// Rate limiting check
+	if !h.rateLimiter.Allow() {
+		h.sendError(w, http.StatusTooManyRequests, "Rate limit exceeded")
+		metrics.RecordWebhookRequest("error")
+		return
+	}
 
 	// Validate HTTP method
 	if r.Method != http.MethodPost {

@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/jordigilh/kubernaut/pkg/testutil/enhanced"
+	"github.com/jordigilh/kubernaut/pkg/e2e/cluster"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,7 +28,7 @@ var _ = Describe("BR-HEALTH-E2E-001: Health Monitoring E2E Business Workflows", 
 		// Use REAL OCP cluster infrastructure per user requirement
 		realK8sClient kubernetes.Interface
 		realLogger    *logrus.Logger
-		testCluster   *enhanced.TestClusterManager
+		testCluster   *cluster.E2EClusterManager
 		healthAPIURL  string
 		metricsURL    string
 
@@ -41,13 +41,17 @@ var _ = Describe("BR-HEALTH-E2E-001: Health Monitoring E2E Business Workflows", 
 		ctx, cancel = context.WithTimeout(context.Background(), 600*time.Second) // 10 minutes for E2E
 
 		// Setup real OCP cluster infrastructure
-		testCluster = enhanced.NewTestClusterManager()
-		err := testCluster.SetupTestCluster(ctx)
-		Expect(err).ToNot(HaveOccurred(), "OCP cluster setup must succeed for E2E testing")
-
-		realK8sClient = testCluster.GetKubernetesClient()
 		realLogger = logrus.New()
 		realLogger.SetLevel(logrus.InfoLevel)
+
+		var err error
+		testCluster, err = cluster.NewE2EClusterManager("ocp", realLogger)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E cluster manager")
+
+		err = testCluster.InitializeCluster(ctx, "latest")
+		Expect(err).ToNot(HaveOccurred(), "OCP cluster initialization must succeed for E2E testing")
+
+		realK8sClient = testCluster.GetKubernetesClient()
 
 		// TDD RED: These will fail until health monitoring is deployed
 		healthAPIURL = "http://localhost:8092"
@@ -62,7 +66,7 @@ var _ = Describe("BR-HEALTH-E2E-001: Health Monitoring E2E Business Workflows", 
 
 	AfterEach(func() {
 		if testCluster != nil {
-			err := testCluster.CleanupTestCluster(ctx)
+			err := testCluster.Cleanup(ctx)
 			Expect(err).ToNot(HaveOccurred(), "OCP cluster cleanup should succeed")
 		}
 		cancel()
@@ -86,7 +90,7 @@ var _ = Describe("BR-HEALTH-E2E-001: Health Monitoring E2E Business Workflows", 
 			defer resp.Body.Close()
 
 			// Business Requirement: Health status should indicate system state
-			Expect(resp.StatusCode).To(BeOneOf([]int{http.StatusOK, http.StatusServiceUnavailable}),
+			Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusServiceUnavailable}),
 				"BR-HEALTH-E2E-001: Health endpoint must provide clear status for operations teams")
 
 			healthBody, err := io.ReadAll(resp.Body)
@@ -137,7 +141,7 @@ var _ = Describe("BR-HEALTH-E2E-001: Health Monitoring E2E Business Workflows", 
 				defer resp.Body.Close()
 
 				// Business Requirement: Should indicate degraded mode when model unavailable
-				Expect(resp.StatusCode).To(BeOneOf([]int{http.StatusOK, http.StatusServiceUnavailable, http.StatusPartialContent}),
+				Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusServiceUnavailable, http.StatusPartialContent}),
 					"BR-HEALTH-E2E-001: LLM health must indicate service state when model unavailable")
 
 				llmHealthBody, err := io.ReadAll(resp.Body)
@@ -189,7 +193,7 @@ var _ = Describe("BR-HEALTH-E2E-001: Health Monitoring E2E Business Workflows", 
 			defer resp.Body.Close()
 
 			// Business Requirement: Dependencies status should be available
-			Expect(resp.StatusCode).To(BeOneOf([]int{http.StatusOK, http.StatusPartialContent, http.StatusServiceUnavailable}),
+			Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusOK, http.StatusPartialContent, http.StatusServiceUnavailable}),
 				"BR-HEALTH-E2E-002: Dependencies health must provide status for business risk assessment")
 
 			depsBody, err := io.ReadAll(resp.Body)

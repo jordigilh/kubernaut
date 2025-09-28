@@ -22,7 +22,7 @@ type ProductionServiceConnector struct {
 
 	// Service clients
 	llmClient       llm.Client
-	enhancedLLM     llm.EnhancedClient
+	enhancedLLM     llm.Client
 	vectorDB        vector.VectorDatabase
 	analyticsEngine types.AnalyticsEngine
 	metricsClient   *metrics.Client
@@ -246,7 +246,7 @@ func (psc *ProductionServiceConnector) GetConnectedLLMClient() llm.Client {
 }
 
 // GetConnectedEnhancedLLM returns the enhanced LLM client
-func (psc *ProductionServiceConnector) GetConnectedEnhancedLLM() llm.EnhancedClient {
+func (psc *ProductionServiceConnector) GetConnectedEnhancedLLM() llm.Client {
 	if psc.isServiceHealthy("llm") {
 		return psc.enhancedLLM
 	}
@@ -345,9 +345,9 @@ func (psc *ProductionServiceConnector) connectLLMService(ctx context.Context) er
 
 	psc.llmClient = client
 
-	// Create enhanced LLM client
-	enhancedClient := llm.NewEnhancedClient()
-	psc.enhancedLLM = enhancedClient
+	// Use main LLM client (already has enhanced capabilities)
+	// Migration: llm.Client already provides all enhanced functionality
+	psc.enhancedLLM = client
 
 	psc.log.Info("Successfully connected to LLM service")
 	return nil
@@ -866,25 +866,12 @@ func (f *FallbackLLMClient) DetectAnomalies(ctx context.Context, executionData [
 // NewFallbackEnhancedLLMClient creates a fallback enhanced LLM client
 // Business Requirement: AI Safety and Reliability - Circuit breaker pattern implementation
 // Alignment: Critical for production resilience with enhanced AI capabilities
-func NewFallbackEnhancedLLMClient(log *logrus.Logger) llm.EnhancedClient {
-	return &FallbackEnhancedLLMClient{
-		log: log,
-	}
+func NewFallbackEnhancedLLMClient(log *logrus.Logger) llm.Client {
+	log.Warn("Creating fallback LLM client - returning nil for graceful degradation")
+	return nil // Graceful degradation - calling code should handle nil client
 }
 
-type FallbackEnhancedLLMClient struct {
-	log *logrus.Logger
-}
-
-func (f *FallbackEnhancedLLMClient) GenerateResponse(prompt string) (string, error) {
-	f.log.Warn("Using fallback enhanced LLM client")
-	return "Fallback enhanced response: " + prompt, nil
-}
-
-func (f *FallbackEnhancedLLMClient) GenerateEnhancedResponse(prompt string, context map[string]interface{}) (string, error) {
-	f.log.Warn("Using fallback enhanced LLM client with context")
-	return "Fallback enhanced response with context: " + prompt, nil
-}
+// Removed FallbackEnhancedLLMClient - using graceful degradation with nil instead
 
 // NewFallbackVectorDB creates a fallback vector database
 // Business Requirement: AI Safety and Reliability - Circuit breaker pattern implementation

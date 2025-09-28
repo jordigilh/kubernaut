@@ -14,7 +14,7 @@ sleep 900  # 15 minutes
 echo "Simulating service restart at $(date)..."
 
 # Simulate brief service unavailability (restart scenario)
-# In real test, this would restart the actual prometheus-alerts-slm service
+# In real test, this would restart the actual kubernaut service
 # For simulation, we'll send a special command or brief network interruption
 
 # Wait for restart to complete (assume 30 seconds max restart time)

@@ -223,7 +223,7 @@ type FilterConfig struct {
 func Load(configFile string) (*Config, error) {
 	config := &Config{
 		App: AppConfig{
-			Name:    "prometheus-alerts-slm",
+			Name:    "kubernaut",
 			Version: "1.0.0",
 		},
 		Server: ServerConfig{
@@ -247,7 +247,7 @@ func Load(configFile string) (*Config, error) {
 		},
 		Kubernetes: KubernetesConfig{
 			Namespace:      "default",
-			ServiceAccount: "prometheus-alerts-slm",
+			ServiceAccount: "kubernaut",
 			ClientType:     "auto", // Automatically determine based on environment
 			UseFakeClient:  false,  // Default to real client unless overridden
 		},

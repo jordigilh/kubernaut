@@ -45,7 +45,7 @@ data:
           description: "Deployment {{ $labels.deployment }} has {{ $value }} ready replicas, expected {{ $labels.spec_replicas }}"
 
       - alert: TestAlertAlwaysFiring
-        expr: up{job="prometheus-alerts-slm"} >= 0
+        expr: up{job="kubernaut"} >= 0
         for: 1s
         labels:
           severity: info

@@ -1,7 +1,7 @@
 //go:build unit
 // +build unit
 
-package holmesgpt
+package holmesgpt_test
 
 import (
 	"context"
@@ -353,3 +353,6 @@ func (m *MockToolsetGenerator) GetServiceType() string {
 func (m *MockToolsetGenerator) GetPriority() int {
 	return m.priority
 }
+
+// Note: Test suite is bootstrapped by holmesgpt_suite_test.go
+// This file only contains Describe blocks that are automatically discovered by Ginkgo

@@ -1,0 +1,219 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernaut-ai-service
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: kubernaut-ai-service
+    app.kubernetes.io/component: ai-processor
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  replicas: 2 # High availability for AI processing
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut-ai-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernaut-ai-service
+        app.kubernetes.io/component: ai-processor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9092"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kubernaut-ai-service
+      containers:
+        - name: ai-service
+          image: quay.io/jordigilh/kubernaut-ai-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: ai-api
+              containerPort: 8093
+              protocol: TCP
+            - name: metrics
+              containerPort: 9092
+              protocol: TCP
+            - name: health
+              containerPort: 8083
+              protocol: TCP
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+            - name: AI_SERVICE_PORT
+              value: "8093"
+            - name: METRICS_PORT
+              value: "9092"
+            - name: HEALTH_PORT
+              value: "8083"
+            # LLM Configuration
+            - name: LLM_PROVIDER
+              value: "localai" # Or "openai", "anthropic", etc.
+            - name: LLM_ENDPOINT
+              value: "http://localai-service:8080" # External LLM service
+            - name: LLM_MODEL
+              value: "granite-3.0-8b-instruct"
+            # Optional: External LLM API keys (if using cloud providers)
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kubernaut-ai-secrets
+                  key: openai-api-key
+                  optional: true
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kubernaut-ai-secrets
+                  key: anthropic-api-key
+                  optional: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30 # Allow more time for AI service startup
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: kubernaut-ai-service
+                topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernaut-ai-service
+  namespace: kubernaut
+  labels:
+    app.kubernetes.io/name: kubernaut-ai-service
+    app.kubernetes.io/component: ai-processor
+spec:
+  selector:
+    app.kubernetes.io/name: kubernaut-ai-service
+  ports:
+    - name: ai-api
+      port: 8093
+      targetPort: ai-api
+      protocol: TCP
+    - name: metrics
+      port: 9092
+      targetPort: metrics
+      protocol: TCP
+    - name: health
+      port: 8083
+      targetPort: health
+      protocol: TCP
+  type: ClusterIP # Internal service for microservice communication
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernaut-ai-service
+  namespace: kubernaut
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-ai-service-role
+  namespace: kubernaut
+rules:
+  # AI service typically doesn't need Kubernetes API access
+  # but may need to read ConfigMaps for model configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernaut-ai-service-rolebinding
+  namespace: kubernaut
+subjects:
+  - kind: ServiceAccount
+    name: kubernaut-ai-service
+    namespace: kubernaut
+roleRef:
+  kind: Role
+  name: kubernaut-ai-service-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kubernaut-ai-service-hpa
+  namespace: kubernaut
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kubernaut-ai-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kubernaut-ai-service-pdb
+  namespace: kubernaut
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut-ai-service

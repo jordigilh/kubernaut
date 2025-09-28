@@ -44,7 +44,7 @@ Successfully completed Week 3 of the Quality Focus phase, implementing comprehen
 ### Enhanced Fake K8s Client Integration
 - **Scenario**: `HighLoadProduction` with `TestTypeWorkflow`
 - **Node Count**: 3 nodes for production-like load distribution
-- **Namespaces**: `["default", "prometheus-alerts-slm", "workflows"]`
+- **Namespaces**: `["default", "kubernaut", "workflows"]`
 - **Resource Profile**: `ProductionResourceLimits` for realistic resource allocation
 - **Workload Profile**: `HighThroughputServices` for production-like services
 

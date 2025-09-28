@@ -1,15 +1,15 @@
 package enhanced
 
 import (
-	"k8s.io/apimachinery/pkg/api/resource"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // Workload pattern implementations based on real kubernaut production deployments
 
 // getKubernautWorkloads returns workload specifications for kubernaut operator components
 func (f *clusterFactory) getKubernautWorkloads() []DeploymentSpec {
-	baseNamespace := "prometheus-alerts-slm"
+	baseNamespace := "kubernaut"
 	if !f.containsNamespace(baseNamespace) && len(f.config.Namespaces) > 0 {
 		baseNamespace = f.config.Namespaces[0]
 	}
@@ -38,7 +38,7 @@ func (f *clusterFactory) getKubernautWorkloads() []DeploymentSpec {
 			AutoScale: true,
 		},
 		{
-			Name:      "dynamic-toolset-server",
+			Name:      "kubernaut",
 			Namespace: baseNamespace,
 			Replicas:  2,
 			Image:     "ghcr.io/jordigilh/kubernaut-toolset:latest",
@@ -53,7 +53,7 @@ func (f *clusterFactory) getKubernautWorkloads() []DeploymentSpec {
 				},
 			},
 			Labels: map[string]string{
-				"app":       "dynamic-toolset-server",
+				"app":       "kubernaut",
 				"component": "api",
 				"tier":      "api-layer",
 			},

@@ -1,11 +1,21 @@
 version: '3.8'
 
-# Podman Compose Configuration for HolmesGPT Local Development
-# Usage:
-#   podman-compose up -d              # Start all services
+# ⚠️ DEPRECATED: Podman Compose Configuration for HolmesGPT Local Development
+#
+# DEPRECATION NOTICE:
+# This docker-compose setup is DEPRECATED in favor of Kind cluster deployment.
+#
+# RECOMMENDED: Use Kind cluster for better production parity:
+#   make bootstrap-dev-kind           # Setup Kind cluster environment
+#   make test-integration-dev         # Run tests
+#   make cleanup-dev-kind            # Clean up
+#
+# LEGACY Usage (deprecated):
+#   make bootstrap-dev-compose        # Use this instead of direct compose commands
 #   podman-compose logs holmesgpt     # View HolmesGPT logs
-#   podman-compose down               # Stop and remove containers
-#   podman-compose pull               # Update images
+#   make cleanup-dev-compose          # Clean up legacy environment
+#
+# Migration: Replace docker-compose usage with Kind cluster commands
 
 services:
   # Ollama service for local LLM hosting
@@ -80,7 +90,7 @@ services:
       dockerfile: Dockerfile.dev  # Development Dockerfile with hot reload
       args:
         - BUILD_MODE=development
-    container_name: dev-prometheus-alerts-slm
+    container_name: dev-kubernaut
     ports:
       - "8080:8080"   # Main application
       - "9993:9993"   # Metrics

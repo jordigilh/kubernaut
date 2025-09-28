@@ -1,6 +1,7 @@
 package k8s_test
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -575,3 +576,9 @@ var _ = Describe("ServiceCache", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUserviceUdiscovery(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UserviceUdiscovery Suite")
+}

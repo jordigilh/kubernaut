@@ -4,6 +4,7 @@
 package multicluster
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -411,3 +412,9 @@ var _ = Describe("BR-EXEC-035: Distributed State Management", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUdistributedUstateUmanagement(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UdistributedUstateUmanagement Suite")
+}

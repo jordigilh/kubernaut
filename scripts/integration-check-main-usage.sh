@@ -14,7 +14,7 @@ MAIN_USAGE=$(grep -r "$COMPONENT_NAME" cmd/ --include="*.go" | wc -l)
 if [ "$MAIN_USAGE" -eq 0 ]; then
     echo "❌ INTEGRATION FAILURE: $COMPONENT_NAME not found in main applications"
     echo "📁 Checked directories: cmd/"
-    echo "🔧 Required: Add instantiation in cmd/kubernaut/main.go or cmd/dynamic-toolset-server/main.go"
+    echo "🔧 Required: Add instantiation in cmd/kubernaut/main.go or cmd/kubernaut/main.go"
     echo ""
     echo "Example integration:"
     echo "// In main.go:"
