@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -215,3 +216,9 @@ var _ = Describe("BR-AI-COND-001: DefaultAIConditionEvaluator Unit Tests", func(
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUaiUconditionUevaluator(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UaiUconditionUevaluator Suite")
+}

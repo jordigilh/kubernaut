@@ -24,7 +24,7 @@ type Notification struct {
 	Level     NotificationLevel `json:"level"`
 	Title     string            `json:"title"`
 	Message   string            `json:"message"`
-	Source    string            `json:"source"`     // e.g., "prometheus-alerts-slm"
+	Source    string            `json:"source"`     // e.g., "kubernaut"
 	Component string            `json:"component"`  // e.g., "executor", "slm"
 	AlertName string            `json:"alert_name"` // Original alert name
 	Namespace string            `json:"namespace"`  // Kubernetes namespace

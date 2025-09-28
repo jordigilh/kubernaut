@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- rbac.yaml
+- configmap.yaml
+- ai-service.yaml
+- webhook-service.yaml
+- holmesgpt-service.yaml
+
+namespace: kubernaut-integration
+
+images:
+- name: kubernaut/ai-service
+  newName: kubernaut/ai-service
+  newTag: latest
+- name: quay.io/jordigilh/kubernaut-webhook-service
+  newName: kubernaut/gateway-service
+  newTag: latest
+- name: kubernaut/holmesgpt-api
+  newName: kubernaut/holmesgpt-api
+  newTag: latest

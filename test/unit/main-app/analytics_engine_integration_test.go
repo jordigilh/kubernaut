@@ -1,6 +1,7 @@
 package main
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -378,4 +379,10 @@ func determineAnalyticsEngineType(aiConfig *config.Config, analyticsEngine types
 	}
 
 	return "development"
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUanalyticsUengineUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UanalyticsUengineUintegration Suite")
 }

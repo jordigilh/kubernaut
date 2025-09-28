@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernaut-webhook
+  namespace: e2e-test
+  labels:
+    app: kubernaut-webhook
+    component: webhook-service
+    environment: test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubernaut-webhook
+  template:
+    metadata:
+      labels:
+        app: kubernaut-webhook
+        component: webhook-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kubernaut
+      containers:
+      - name: webhook-service
+        image: quay.io/jordigilh/kubernaut-webhook-service:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: webhook
+        - containerPort: 9090
+          name: metrics
+        env:
+        # Webhook Configuration
+        - name: WEBHOOK_PORT
+          value: "8080"
+        - name: METRICS_PORT
+          value: "9090"
+        - name: LOG_LEVEL
+          value: "info"
+
+        # Kubernetes Configuration
+        - name: KUBE_CONTEXT
+          value: ""
+        - name: KUBE_NAMESPACE
+          value: "e2e-test"
+        - name: DRY_RUN
+          value: "true"
+
+        # LLM Configuration (optional for webhook)
+        - name: LLM_PROVIDER
+          value: "mock"
+        - name: LLM_ENDPOINT
+          value: "http://localhost:8010"
+        - name: LLM_MODEL
+          value: "test-model"
+
+        # Disable database connectivity for webhook-only operation
+        - name: DISABLE_DATABASE
+          value: "true"
+
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 100m
+          limits:
+            memory: 256Mi
+            cpu: 200m
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernaut-webhook-service
+  namespace: e2e-test
+  labels:
+    app: kubernaut-webhook
+    component: webhook-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: webhook
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+  selector:
+    app: kubernaut-webhook

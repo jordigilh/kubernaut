@@ -6,6 +6,7 @@ package intelligence
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -18,6 +19,45 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 )
+
+// mlAnalyzerAdapter adapts learning.MachineLearningAnalyzer to patterns.MachineLearningAnalyzer
+type mlAnalyzerAdapter struct {
+	analyzer *learning.MachineLearningAnalyzer
+}
+
+func (m *mlAnalyzerAdapter) PredictOutcome(features *shared.WorkflowFeatures, patterns []*shared.DiscoveredPattern) (*shared.WorkflowPrediction, error) {
+	return m.analyzer.PredictOutcome(features, patterns)
+}
+
+func (m *mlAnalyzerAdapter) UpdateModel(learningData *shared.WorkflowLearningData) error {
+	return m.analyzer.UpdateModel(learningData)
+}
+
+func (m *mlAnalyzerAdapter) GetModelCount() int {
+	return m.analyzer.GetModelCount()
+}
+
+func (m *mlAnalyzerAdapter) GetModels() map[string]*patterns.MLModel {
+	learningModels := m.analyzer.GetModels()
+	patternModels := make(map[string]*patterns.MLModel)
+
+	// Convert learning.MLModel to patterns.MLModel
+	for id, learningModel := range learningModels {
+		patternModels[id] = &patterns.MLModel{
+			ID:         learningModel.ID,
+			Type:       learningModel.Type,
+			Version:    learningModel.Version,
+			TrainedAt:  learningModel.TrainedAt,
+			Accuracy:   learningModel.Accuracy,
+			Features:   learningModel.Features,
+			Parameters: learningModel.Parameters,
+			Weights:    learningModel.Weights,
+			Bias:       learningModel.Bias,
+		}
+	}
+
+	return patternModels
+}
 
 // **REUSABILITY COMPLIANCE**: Adapter for existing PatternVectorDatabase interface
 // Following @00-project-guidelines.mdc - REUSE existing mock infrastructure instead of duplicating
@@ -34,7 +74,7 @@ func (p *patternVectorDBAdapter) Store(ctx context.Context, id string, vectorEmb
 	})
 }
 
-func (p *patternVectorDBAdapter) Search(ctx context.Context, searchVector []float64, limit int) (*patterns.UnifiedSearchResultSet, error) {
+func (p *patternVectorDBAdapter) Search(ctx context.Context, searchVector []float64, limit int) (*vector.UnifiedSearchResultSet, error) {
 	// Use existing mock infrastructure with adapter pattern
 	results, err := p.MockVectorDatabase.SearchByVector(ctx, searchVector, limit, 0.8)
 	if err != nil {
@@ -42,9 +82,9 @@ func (p *patternVectorDBAdapter) Search(ctx context.Context, searchVector []floa
 	}
 
 	// Convert to required format using existing patterns
-	unifiedResults := make([]patterns.UnifiedSearchResult, 0)
+	unifiedResults := make([]vector.UnifiedSearchResult, 0)
 	for _, pattern := range results {
-		unifiedResults = append(unifiedResults, patterns.UnifiedSearchResult{
+		unifiedResults = append(unifiedResults, vector.UnifiedSearchResult{
 			ID:        pattern.ID,
 			Score:     0.85, // Mock similarity score
 			Embedding: pattern.Embedding,
@@ -52,7 +92,7 @@ func (p *patternVectorDBAdapter) Search(ctx context.Context, searchVector []floa
 		})
 	}
 
-	return &patterns.UnifiedSearchResultSet{
+	return &vector.UnifiedSearchResultSet{
 		Results:    unifiedResults,
 		TotalCount: len(unifiedResults),
 		SearchTime: time.Millisecond * 10,
@@ -121,14 +161,17 @@ var _ = Describe("Pattern Evolution & Learning Extensions - Phase 1 Business Req
 		mockVectorDB = &patternVectorDBAdapter{existingMockVectorDB}
 
 		// Following cursor rules: Use REAL business logic with existing constructor
+		// Create adapter for ML analyzer to match interface
+		mlAdapter := &mlAnalyzerAdapter{realMLAnalyzer}
+
 		// Following 00-project-guidelines.mdc: INTEGRATE with actual business components
 		engine = patterns.NewPatternDiscoveryEngine(
 			realPatternStore,  // PatternStore - REAL business logic (in-memory)
 			mockVectorDB,      // VectorDatabase - external dependency mock with adapter
 			mockExecutionRepo, // ExecutionRepository - external dependency (mocked)
-			realMLAnalyzer,    // MachineLearningAnalyzer - real business logic (PYRAMID)
+			mlAdapter,         // MachineLearningAnalyzer - real business logic with adapter
 			nil,               // timeSeriesEngine - nil for unit tests per design
-			nil,               // clusteringEngine - nil for unit tests per design
+			nil,               // llmClient - nil for unit tests per design
 			nil,               // anomalyDetector - nil for unit tests per design
 			config,            // PatternDiscoveryConfig - real business configuration
 			mockLogger.Logger, // Logger - mock logger
@@ -594,4 +637,10 @@ func createTestExecution(id, status, environment string) *types.RuntimeWorkflowE
 		WorkflowID:        "test-workflow",
 		OperationalStatus: types.ExecutionStatusCompleted,
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUpatternUevolutionUlearningUextensions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UpatternUevolutionUlearningUextensions Suite")
 }

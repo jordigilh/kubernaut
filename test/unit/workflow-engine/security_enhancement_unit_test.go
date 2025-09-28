@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -775,4 +776,10 @@ func createIntegrationSecurityPolicies() map[string]interface{} {
 		"integration_mode":         true,
 		"comprehensive_validation": true,
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsecurityUenhancementUunit(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsecurityUenhancementUunit Suite")
 }

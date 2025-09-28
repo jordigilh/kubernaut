@@ -742,29 +742,11 @@ type LLMConditionSpec struct {
 	Timeout     string `json:"timeout"`
 }
 
-// @deprecated RULE 12 VIOLATION: Duplicate interface - use main llm.Client interface instead
-// Migration: Use llm.Client interface which already provides GenerateResponse() and enhanced capabilities
-// Business Requirements: All functionality available in main llm.Client interface
-type EnhancedClient interface {
-	GenerateResponse(prompt string) (string, error)
-	GenerateEnhancedResponse(prompt string, context map[string]interface{}) (string, error)
-}
+// Removed deprecated EnhancedClient interface - use main llm.Client interface instead
+// Migration: llm.Client interface already provides GenerateResponse() and enhanced capabilities
 
-// @deprecated RULE 12 VIOLATION: Duplicate implementation - use ClientImpl instead
-type EnhancedClientImpl struct{}
-
-// @deprecated RULE 12 VIOLATION: Use llm.NewClient() instead
-func NewEnhancedClient() *EnhancedClientImpl {
-	return &EnhancedClientImpl{}
-}
-
-func (c *EnhancedClientImpl) GenerateResponse(prompt string) (string, error) {
-	return "Enhanced response for: " + prompt, nil
-}
-
-func (c *EnhancedClientImpl) GenerateEnhancedResponse(prompt string, context map[string]interface{}) (string, error) {
-	return "Enhanced response with context for: " + prompt, nil
-}
+// Removed deprecated EnhancedClientImpl - use ClientImpl instead
+// Migration: Use llm.NewClient() which returns ClientImpl with all enhanced capabilities
 
 // Additional workflow-related types
 type WorkflowGenerationResult struct {

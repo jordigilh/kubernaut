@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -270,3 +271,9 @@ var _ = Describe("Custom Action Executor - Enhanced Context Integration Testing"
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcustomUactionUexecutor(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcustomUactionUexecutor Suite")
+}

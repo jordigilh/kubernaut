@@ -5,6 +5,7 @@ package llm
 
 import (
 	"context"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -193,7 +194,7 @@ var _ = Describe("BR-CONTEXT-OPT-001: Context Optimization Business Logic", func
 				"BR-CONTEXT-OPT-003: Large context optimization must succeed")
 			Expect(executionTime).To(BeNumerically("<", 5*time.Second),
 				"BR-CONTEXT-OPT-003: Must optimize 100K context within 5 seconds")
-			Expect(result.OptimizationMetrics.ProcessingTime).To(BeNumerically("<", 3*time.Second),
+			Expect(result.OptimizationMetrics["ProcessingTime"]).To(BeNumerically("<", 3.0),
 				"BR-CONTEXT-OPT-003: Business logic processing must be under 3 seconds")
 		})
 	})
@@ -252,4 +253,10 @@ func createTestContext(size int) *llm.ContextInput {
 		},
 		RequiredQuality: 0.85,
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcontextUoptimizationUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcontextUoptimizationUcomprehensive Suite")
 }

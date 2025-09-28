@@ -179,6 +179,13 @@ type ActionRecommendation struct {
 	Reasoning  *ReasoningDetails      `json:"reasoning,omitempty"` // Always structured reasoning
 }
 
+// FilterConfig represents alert filtering configuration
+// Following Go coding standards: use shared types instead of internal package imports
+type FilterConfig struct {
+	Name       string              `yaml:"name" json:"name"`
+	Conditions map[string][]string `yaml:"conditions" json:"conditions"`
+}
+
 // ReasoningDetails provides structured reasoning information
 // Consolidated from pkg/infrastructure/types/types.go
 type ReasoningDetails struct {

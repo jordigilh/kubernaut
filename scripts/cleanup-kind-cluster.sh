@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="prometheus-alerts-slm-test"
+CLUSTER_NAME="kubernaut-test"
 REGISTRY_NAME="kind-registry"
 
 # Colors for output

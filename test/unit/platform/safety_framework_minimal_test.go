@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -210,3 +211,9 @@ var _ = Describe("Safety Framework Minimal - Business Requirements Testing", fun
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsafetyUframeworkUminimal(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsafetyUframeworkUminimal Suite")
+}

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the integration of [HolmesGPT](https://github.com/robusta-dev/holmesgpt) with the prometheus-alerts-slm project. HolmesGPT is a 24/7 On-Call AI Agent that solves alerts faster with automatic correlations, investigations, and more.
+This document describes the integration of [HolmesGPT](https://github.com/robusta-dev/holmesgpt) with the kubernaut project. HolmesGPT is a 24/7 On-Call AI Agent that solves alerts faster with automatic correlations, investigations, and more.
 
 ## Architecture
 
@@ -549,7 +549,7 @@ To contribute to the HolmesGPT integration:
 
 ## Conclusion
 
-The HolmesGPT integration provides a powerful enhancement to the prometheus-alerts-slm project, combining sophisticated historical analysis with proven AI investigation capabilities. This integration maintains backward compatibility while providing significant improvements in decision quality, development efficiency, and operational effectiveness.
+The HolmesGPT integration provides a powerful enhancement to the kubernaut project, combining sophisticated historical analysis with proven AI investigation capabilities. This integration maintains backward compatibility while providing significant improvements in decision quality, development efficiency, and operational effectiveness.
 
 For more information, see:
 - [HolmesGPT Documentation](https://holmesgpt.dev/)

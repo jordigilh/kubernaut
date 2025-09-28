@@ -9,8 +9,10 @@ import (
 )
 
 // Common types shared across pattern discovery components
+// Business Requirement: BR-PATTERN-001 - Pattern discovery and analysis for workflow optimization
 
 // LearningMetrics tracks learning performance over time
+// Business Requirement: BR-PATTERN-002 - Learning metrics collection and analysis
 type LearningMetrics struct {
 	TotalAnalyses      int                       `json:"total_analyses"`
 	TotalExecutions    int                       `json:"total_executions"`

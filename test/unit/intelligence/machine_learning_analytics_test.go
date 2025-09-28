@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,7 +15,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/pkg/intelligence/ml"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/pkg/intelligence/shared"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"
 )
 
@@ -41,14 +42,12 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 		mockExecutionRepo *mocks.AnalyticsExecutionRepositoryMock
 		mockMLAnalyzer    *MockMLAnalyzer
 		mockPatternStore  *MockPatternStore
-		commonAssertions  *testutil.CommonAssertions
 	)
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithTimeout(context.Background(), 45*time.Second)
 		logger = logrus.New()
 		logger.SetLevel(logrus.InfoLevel) // Enable info logging for ML metrics
-		commonAssertions = testutil.NewCommonAssertions()
 
 		// Reuse existing mocks from shared testutil/mocks following development guidelines
 		mockExecutionRepo = mocks.NewAnalyticsExecutionRepositoryMock()
@@ -84,7 +83,7 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 			By("Setting up business training dataset with realistic incident scenarios")
 
 			// Business Context: Historical incident data for supervised learning
-			businessTrainingData := []BusinessIncidentCase{
+			businessTrainingData := []ml.BusinessIncidentCase{
 				{
 					IncidentType: "memory_exhaustion",
 					PreIncidentMetrics: map[string]float64{
@@ -99,10 +98,9 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 						"deployment_recent": "false",
 						"traffic_pattern":   "normal",
 					},
-					RemediationAction: "increase_memory_limit",
-					ActualOutcome:     "resolved_successfully",
-					ResolutionTime:    15 * time.Minute,
-					BusinessImpact:    "low", // Resolved quickly
+					ActualOutcome:       "resolved_successfully",
+					ResolutionTime:      15 * time.Minute,
+					BusinessImpactLevel: "low", // Resolved quickly
 				},
 				{
 					IncidentType: "cpu_spike",
@@ -118,10 +116,9 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 						"deployment_recent": "true",
 						"traffic_pattern":   "spike",
 					},
-					RemediationAction: "horizontal_scaling",
-					ActualOutcome:     "resolved_successfully",
-					ResolutionTime:    8 * time.Minute,
-					BusinessImpact:    "medium", // Some service degradation
+					ActualOutcome:       "resolved_successfully",
+					ResolutionTime:      8 * time.Minute,
+					BusinessImpactLevel: "medium", // Some service degradation
 				},
 				{
 					IncidentType: "network_latency",
@@ -137,10 +134,9 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 						"deployment_recent": "false",
 						"traffic_pattern":   "normal",
 					},
-					RemediationAction: "network_optimization",
-					ActualOutcome:     "partially_resolved",
-					ResolutionTime:    35 * time.Minute,
-					BusinessImpact:    "high", // Extended resolution time
+					ActualOutcome:       "partially_resolved",
+					ResolutionTime:      35 * time.Minute,
+					BusinessImpactLevel: "high", // Extended resolution time
 				},
 			}
 
@@ -178,7 +174,7 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 			By("Testing business outcome correlation and prediction reliability")
 
 			// Business Scenario: Predict outcomes for new incident scenarios
-			newIncidentScenarios := []BusinessIncidentCase{
+			newIncidentScenarios := []ml.BusinessIncidentCase{
 				{
 					IncidentType: "memory_exhaustion",
 					PreIncidentMetrics: map[string]float64{
@@ -262,7 +258,7 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 			By("Testing model transparency requirements for business audit and regulatory compliance")
 
 			// Business Context: Model interpretability for business stakeholders
-			interpretabilityTestCase := BusinessIncidentCase{
+			interpretabilityTestCase := ml.BusinessIncidentCase{
 				IncidentType: "resource_contention",
 				PreIncidentMetrics: map[string]float64{
 					"memory_usage_percent":    90.0,
@@ -279,7 +275,7 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 			}
 
 			// Train basic model for interpretability testing
-			basicTrainingData := generateScaledTrainingData([]BusinessIncidentCase{interpretabilityTestCase}, 1000)
+			basicTrainingData := generateScaledTrainingData([]ml.BusinessIncidentCase{interpretabilityTestCase}, 1000)
 			model, err := mlAnalyzer.TrainIncidentPredictionModel(ctx, basicTrainingData)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -351,11 +347,11 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 			By("Setting up baseline business performance patterns for anomaly detection")
 
 			// Business Context: Normal operational performance baselines
-			baselinePerformancePatterns := []BusinessPerformanceBaseline{
+			baselinePerformancePatterns := []ml.BusinessPerformanceBaseline{
 				{
 					ServiceName: "web-api",
 					TimeOfDay:   "peak_hours",
-					BaselineMetrics: map[string]PerformanceRange{
+					BaselineMetrics: map[string]ml.PerformanceRange{
 						"response_time_ms":     {Min: 50, Max: 200, Mean: 120, StdDev: 30},
 						"throughput_rps":       {Min: 800, Max: 1200, Mean: 1000, StdDev: 100},
 						"error_rate_percent":   {Min: 0.1, Max: 2.0, Mean: 0.8, StdDev: 0.4},
@@ -367,7 +363,7 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 				{
 					ServiceName: "background-processor",
 					TimeOfDay:   "off_peak",
-					BaselineMetrics: map[string]PerformanceRange{
+					BaselineMetrics: map[string]ml.PerformanceRange{
 						"response_time_ms":     {Min: 100, Max: 500, Mean: 300, StdDev: 80},
 						"throughput_rps":       {Min: 50, Max: 150, Mean: 100, StdDev: 25},
 						"error_rate_percent":   {Min: 0.5, Max: 3.0, Mean: 1.5, StdDev: 0.6},
@@ -504,11 +500,11 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 			// Business Context: Historical incidents that could have been prevented with early detection
 			preventableIncidentScenarios := []PreventableIncidentScenario{
 				{
-					HistoricalIncident: BusinessIncidentCase{
-						IncidentType:   "service_outage",
-						ActualOutcome:  "service_unavailable",
-						ResolutionTime: 2 * time.Hour,
-						BusinessImpact: "critical", // 2-hour outage
+					HistoricalIncident: ml.BusinessIncidentCase{
+						IncidentType:        "service_outage",
+						ActualOutcome:       "service_unavailable",
+						ResolutionTime:      2 * time.Hour,
+						BusinessImpactLevel: "critical", // 2-hour outage
 					},
 					PreIncidentMetrics: map[string]float64{
 						"response_time_ms":     800.0, // High response time 30 minutes before outage
@@ -521,11 +517,11 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 					BusinessValueSaved:       20000.0, // $20K estimated cost of 2-hour outage
 				},
 				{
-					HistoricalIncident: BusinessIncidentCase{
-						IncidentType:   "performance_degradation",
-						ActualOutcome:  "partially_resolved",
-						ResolutionTime: 45 * time.Minute,
-						BusinessImpact: "medium",
+					HistoricalIncident: ml.BusinessIncidentCase{
+						IncidentType:        "performance_degradation",
+						ActualOutcome:       "partially_resolved",
+						ResolutionTime:      45 * time.Minute,
+						BusinessImpactLevel: "medium",
 					},
 					PreIncidentMetrics: map[string]float64{
 						"response_time_ms":  300.0, // Gradual increase
@@ -623,30 +619,6 @@ var _ = Describe("Business Requirement Validation: Machine Learning Analytics (P
 
 // Business type definitions for Phase 2 Machine Learning Analytics
 
-type BusinessIncidentCase struct {
-	IncidentType       string
-	PreIncidentMetrics map[string]float64
-	EnvironmentFactors map[string]string
-	RemediationAction  string
-	ActualOutcome      string
-	ResolutionTime     time.Duration
-	BusinessImpact     string
-}
-
-type BusinessPerformanceBaseline struct {
-	ServiceName         string
-	TimeOfDay           string
-	BaselineMetrics     map[string]PerformanceRange
-	BusinessCriticality string
-}
-
-type PerformanceRange struct {
-	Min    float64
-	Max    float64
-	Mean   float64
-	StdDev float64
-}
-
 type BusinessDegradationScenario struct {
 	ServiceName            string
 	TimeOfDay              string
@@ -657,7 +629,7 @@ type BusinessDegradationScenario struct {
 }
 
 type PreventableIncidentScenario struct {
-	HistoricalIncident       BusinessIncidentCase
+	HistoricalIncident       ml.BusinessIncidentCase
 	PreIncidentMetrics       map[string]float64
 	EarlyDetectionWindow     time.Duration
 	PreventableWithAction    bool
@@ -667,7 +639,7 @@ type PreventableIncidentScenario struct {
 
 // Business helper functions for Phase 2 ML testing
 
-func setupPhase2BusinessMLData(mockExecutionRepo *MockExecutionRepository, mockPatternStore *MockPatternStore) {
+func setupPhase2BusinessMLData(mockExecutionRepo *mocks.AnalyticsExecutionRepositoryMock, mockPatternStore *MockPatternStore) {
 	// Setup realistic business ML training data following existing mock patterns
 	businessMLPatterns := []MLPattern{
 		{
@@ -685,16 +657,18 @@ func setupPhase2BusinessMLData(mockExecutionRepo *MockExecutionRepository, mockP
 	}
 
 	for _, pattern := range businessMLPatterns {
-		mockPatternStore.StorePattern(pattern.PatternType, pattern)
+		mockPatternStore.StorePattern(context.Background(), &shared.DiscoveredPattern{
+			PatternType: shared.PatternType(pattern.PatternType),
+		})
 	}
 }
 
-func generateScaledTrainingData(baseData []BusinessIncidentCase, targetSize int) []BusinessIncidentCase {
+func generateScaledTrainingData(baseData []ml.BusinessIncidentCase, targetSize int) []ml.BusinessIncidentCase {
 	if len(baseData) == 0 {
-		return []BusinessIncidentCase{}
+		return []ml.BusinessIncidentCase{}
 	}
 
-	scaledData := make([]BusinessIncidentCase, targetSize)
+	scaledData := make([]ml.BusinessIncidentCase, targetSize)
 	baseIndex := 0
 
 	for i := 0; i < targetSize; i++ {
@@ -707,7 +681,7 @@ func generateScaledTrainingData(baseData []BusinessIncidentCase, targetSize int)
 	return scaledData
 }
 
-func generateVariationFromBase(base BusinessIncidentCase, seed int) BusinessIncidentCase {
+func generateVariationFromBase(base ml.BusinessIncidentCase, seed int) ml.BusinessIncidentCase {
 	// Create realistic variations for ML training while maintaining business logic
 	variation := base
 
@@ -721,7 +695,7 @@ func generateVariationFromBase(base BusinessIncidentCase, seed int) BusinessInci
 	return variation
 }
 
-func validatePredictionAgainstBusiness(prediction MLPredictionResult, scenario BusinessIncidentCase) bool {
+func validatePredictionAgainstBusiness(prediction *ml.IncidentPrediction, scenario ml.BusinessIncidentCase) bool {
 	// Business validation logic for ML predictions
 	// This simulates real-world validation of ML predictions against business outcomes
 
@@ -776,4 +750,10 @@ type MLPredictionResult struct {
 type FeatureImportance struct {
 	Name       string
 	Importance float64
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUmachineUlearningUanalytics(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UmachineUlearningUanalytics Suite")
 }

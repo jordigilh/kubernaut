@@ -1,6 +1,7 @@
 package multimodel
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -324,3 +325,9 @@ var _ = Describe("Multi-Model Orchestration Business Logic", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUmultiUmodelUorchestrator(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UmultiUmodelUorchestrator Suite")
+}

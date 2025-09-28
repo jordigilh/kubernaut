@@ -3,6 +3,7 @@ package production
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -73,6 +74,14 @@ type AIValidationResults struct {
 	ValidationDetails      string `json:"validation_details"`
 }
 
+// getEnvOrDefault returns environment variable value or default if not set
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
 // NewProductionAIIntegrator creates a new production AI integrator
 // Business Requirement: BR-PRODUCTION-008 - Real AI service integration for production validation
 func NewProductionAIIntegrator(config *AIIntegrationConfig, logger *logrus.Logger) (*ProductionAIIntegrator, error) {
@@ -83,8 +92,8 @@ func NewProductionAIIntegrator(config *AIIntegrationConfig, logger *logrus.Logge
 
 	if config == nil {
 		config = &AIIntegrationConfig{
-			LLMEndpoint:        "http://192.168.1.169:8080",
-			HolmesGPTEndpoint:  "http://localhost:3000",
+			LLMEndpoint:        getEnvOrDefault("LLM_ENDPOINT", "http://192.168.1.169:8080"),
+			HolmesGPTEndpoint:  getEnvOrDefault("HOLMESGPT_ENDPOINT", "http://localhost:3000"),
 			HealthCheckTimeout: 5 * time.Second,
 			ValidationTimeout:  10 * time.Second,
 			EnableFallback:     true,
@@ -267,21 +276,44 @@ func (pai *ProductionAIIntegrator) validateHolmesGPTService(ctx context.Context,
 	// Performance validation with investigation request
 	responseStart := time.Now()
 
-	// Test investigation capability (simplified for validation)
-	// Note: Investigate method signature may vary - using basic health check validation
-	// investigateReq := &holmesgpt.InvestigateRequest{
-	//	Query: "Investigate test alert for validation",
-	// }
-	// _, err = pai.holmesGPTClient.Investigate(ctx, investigateReq)
+	// Test investigation capability for comprehensive validation
+	investigateReq := &holmesgpt.InvestigateRequest{
+		AlertName:       "validation-test-alert",
+		Namespace:       "default",
+		Labels:          map[string]string{"test": "validation"},
+		Annotations:     map[string]string{"purpose": "service-validation"},
+		Priority:        "low",
+		AsyncProcessing: false,
+		IncludeContext:  true,
+	}
 
-	// For now, skip investigation test and rely on health check
-	err = nil
+	investigateResp, err := pai.holmesGPTClient.Investigate(ctx, investigateReq)
 	holmesResponseTime := time.Since(responseStart)
 	status.PerformanceMetrics.HolmesGPTResponseTime = holmesResponseTime
 
 	if err != nil {
 		pai.logger.WithError(err).Warn("HolmesGPT investigation test failed, but service is healthy")
-		// Don't fail validation if investigation fails but health check passes
+		status.ValidationResults.HolmesGPTValidation = false
+		// Don't fail validation if investigation fails but health check passes - graceful degradation
+	} else {
+		// Validate investigation response quality
+		if investigateResp == nil {
+			pai.logger.Warn("HolmesGPT investigation returned nil response")
+			status.ValidationResults.HolmesGPTValidation = false
+		} else if len(investigateResp.Summary) == 0 {
+			pai.logger.Warn("HolmesGPT investigation returned empty summary")
+			status.ValidationResults.HolmesGPTValidation = false
+		} else if len(investigateResp.Recommendations) == 0 {
+			pai.logger.Warn("HolmesGPT investigation returned no recommendations")
+			status.ValidationResults.HolmesGPTValidation = false
+		} else {
+			pai.logger.WithFields(logrus.Fields{
+				"investigation_id":      investigateResp.InvestigationID,
+				"summary_length":        len(investigateResp.Summary),
+				"recommendations_count": len(investigateResp.Recommendations),
+			}).Info("HolmesGPT investigation validation successful")
+			status.ValidationResults.HolmesGPTValidation = true
+		}
 	}
 
 	// Validate performance targets
@@ -293,7 +325,7 @@ func (pai *ProductionAIIntegrator) validateHolmesGPTService(ctx context.Context,
 	}
 
 	status.HolmesGPTAvailable = true
-	status.ValidationResults.HolmesGPTValidation = true
+	// Note: HolmesGPTValidation is set based on investigation results above
 
 	pai.logger.WithFields(logrus.Fields{
 		"response_time": status.PerformanceMetrics.HolmesGPTResponseTime,
@@ -346,27 +378,46 @@ func (pai *ProductionAIIntegrator) validateCrossServiceIntegration(ctx context.C
 		return fmt.Errorf("LLM response quality insufficient")
 	}
 
-	// Test HolmesGPT integration (simplified for validation)
-
-	// Create investigation request (simplified for validation)
-	// Note: Investigate method signature may vary - using basic validation
-	// investigateReq := &holmesgpt.InvestigateRequest{
-	//	Query: fmt.Sprintf("Investigate cluster performance with %d nodes and %d pods", clusterInfo.NodeCount, clusterInfo.PodCount),
-	// }
-	// _, holmesErr := pai.holmesGPTClient.Investigate(ctx, investigateReq)
-
-	// For now, skip investigation and rely on health check validation
-	var holmesErr error = nil
-	if holmesErr != nil {
-		pai.logger.WithError(holmesErr).Debug("HolmesGPT investigation in cross-service validation had issues, but continuing")
+	// Test HolmesGPT integration with cross-service validation
+	// Create investigation request for cross-service validation
+	investigateReq := &holmesgpt.InvestigateRequest{
+		AlertName:       fmt.Sprintf("cluster-performance-validation-%d", time.Now().Unix()),
+		Namespace:       "kube-system",
+		Labels:          map[string]string{"nodes": fmt.Sprintf("%d", clusterInfo.NodeCount), "pods": fmt.Sprintf("%d", clusterInfo.PodCount)},
+		Annotations:     map[string]string{"scenario": clusterInfo.Scenario, "validation": "cross-service"},
+		Priority:        "medium",
+		AsyncProcessing: false,
+		IncludeContext:  true,
 	}
 
-	status.ValidationResults.ValidationDetails = fmt.Sprintf(
-		"Cross-service validation successful: LLM response %d chars, cluster %d nodes/%d pods",
-		len(llmResponse),
-		clusterInfo.NodeCount,
-		clusterInfo.PodCount,
-	)
+	holmesResp, holmesErr := pai.holmesGPTClient.Investigate(ctx, investigateReq)
+	if holmesErr != nil {
+		pai.logger.WithError(holmesErr).Debug("HolmesGPT investigation in cross-service validation failed")
+		status.ValidationResults.ValidationDetails = fmt.Sprintf("Cross-service validation partial: LLM successful (%d chars), HolmesGPT investigation failed", len(llmResponse))
+		// Don't fail cross-service validation if investigation fails but other validations pass
+	} else {
+		// Validate cross-service investigation results
+		if holmesResp == nil || len(holmesResp.Summary) == 0 {
+			pai.logger.Warn("HolmesGPT cross-service investigation returned insufficient results")
+			status.ValidationResults.ValidationDetails = fmt.Sprintf("Cross-service validation partial: LLM successful (%d chars), HolmesGPT investigation insufficient", len(llmResponse))
+		} else {
+			pai.logger.WithFields(logrus.Fields{
+				"investigation_id": holmesResp.InvestigationID,
+				"summary_length":   len(holmesResp.Summary),
+				"recommendations":  len(holmesResp.Recommendations),
+			}).Info("Cross-service HolmesGPT investigation successful")
+		}
+	}
+
+	// Set final validation details if not already set by investigation results
+	if status.ValidationResults.ValidationDetails == "" {
+		status.ValidationResults.ValidationDetails = fmt.Sprintf(
+			"Cross-service validation successful: LLM response %d chars, cluster %d nodes/%d pods",
+			len(llmResponse),
+			clusterInfo.NodeCount,
+			clusterInfo.PodCount,
+		)
+	}
 
 	pai.logger.WithFields(logrus.Fields{
 		"llm_response_len": len(llmResponse),

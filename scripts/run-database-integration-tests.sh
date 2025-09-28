@@ -8,7 +8,7 @@ set -euo pipefail
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-POSTGRES_CONTAINER="prometheus-alerts-slm-postgres"
+POSTGRES_CONTAINER="kubernaut-postgres"
 DB_NAME="action_history"
 DB_USER="slm_user"
 DB_PASSWORD="slm_password_dev"

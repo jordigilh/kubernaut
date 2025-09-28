@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -316,3 +317,9 @@ var _ = Describe("Health Monitoring Configuration Integration - Business Require
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUhealthUmonitoringUconfig(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UhealthUmonitoringUconfig Suite")
+}

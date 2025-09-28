@@ -5,6 +5,7 @@ package holmesgpt_test
 
 import (
 	"context"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -298,3 +299,9 @@ var _ = Describe("BR-HOLMES-016/017/019/022: HolmesGPT Dynamic Toolset Managemen
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUdynamicUtoolsetUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UdynamicUtoolsetUcomprehensive Suite")
+}

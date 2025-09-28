@@ -659,3 +659,5 @@ var _ = Describe("BR-PA-011: Advanced Optimization Pipeline Business Logic", fun
 		})
 	})
 })
+
+// TestRunner is handled by advanced_optimization_pipeline_comprehensive_suite_test.go

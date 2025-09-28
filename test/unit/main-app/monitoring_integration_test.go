@@ -1,6 +1,7 @@
 package main
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -326,4 +327,10 @@ func createTestOrchestratorWithMonitoring(
 	}).Info("Test orchestrator created with monitoring integration pattern")
 
 	return orchestratorInfo, nil
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUmonitoringUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UmonitoringUintegration Suite")
 }

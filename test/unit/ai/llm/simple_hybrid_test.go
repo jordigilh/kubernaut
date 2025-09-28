@@ -4,6 +4,7 @@
 package llm
 
 import (
+	"testing"
 	"context"
 	"os"
 	"time"
@@ -161,3 +162,9 @@ var _ = Describe("Simple Hybrid LLM Testing", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsimpleUhybrid(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsimpleUhybrid Suite")
+}
