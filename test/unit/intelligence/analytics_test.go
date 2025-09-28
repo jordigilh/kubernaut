@@ -1,6 +1,7 @@
 package intelligence
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -463,4 +464,10 @@ func createMockResourceData(timeRange analytics.TimeRange) *analytics.ResourceUt
 		TimeRange: timeRange,
 		// Note: Minimal mock data structure to avoid compilation errors
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUanalytics(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Uanalytics Suite")
 }

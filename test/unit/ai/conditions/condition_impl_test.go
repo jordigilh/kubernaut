@@ -1039,3 +1039,5 @@ func (a *SLMClientAdapter) IsHealthy() bool {
 	}
 	return false
 }
+
+// TestRunner bootstraps the Ginkgo test suite

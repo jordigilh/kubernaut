@@ -1,6 +1,7 @@
 package main
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -264,4 +265,10 @@ func createMainAppPatternExtractor(aiConfig *config.Config, logger *logrus.Logge
 	}).Info("Pattern extractor created successfully for testing")
 
 	return patternExtractor, nil
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUpatternUextractorUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UpatternUextractorUintegration Suite")
 }

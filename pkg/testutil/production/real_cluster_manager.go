@@ -182,7 +182,7 @@ func (rcm *RealClusterManager) initializeProductionScenarios() error {
 				MinPods:   50,
 			},
 		},
-		NamespaceSetup: []string{"default", "prometheus-alerts-slm", "workflows", "monitoring"},
+		NamespaceSetup: []string{"default", "kubernaut", "workflows", "monitoring"},
 		WorkloadDeployments: []*WorkloadDeployment{
 			{
 				Name:      "high-throughput-service",

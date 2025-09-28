@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -380,3 +381,9 @@ var _ = Describe("AI Metrics Collector - Enhanced Business Logic Testing", func(
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUaiUmetricsUcollector(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UaiUmetricsUcollector Suite")
+}

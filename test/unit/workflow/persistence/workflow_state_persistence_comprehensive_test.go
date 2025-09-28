@@ -4,6 +4,7 @@
 package persistence
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -654,3 +655,9 @@ func createSimilarWorkflow2() *persistence.RuntimeWorkflow {
 var (
 	mockVectorDB *mocks.MockVectorDatabase
 )
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUstateUpersistenceUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUstateUpersistenceUcomprehensive Suite")
+}

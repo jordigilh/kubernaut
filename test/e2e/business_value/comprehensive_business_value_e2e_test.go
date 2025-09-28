@@ -16,9 +16,46 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/jordigilh/kubernaut/pkg/testutil/enhanced"
+	"github.com/jordigilh/kubernaut/pkg/e2e/cluster"
 	"github.com/sirupsen/logrus"
 )
+
+// AlertManager webhook payload types - Following Go coding standards: structured types instead of interface{}
+type AlertLabels struct {
+	Alertname        string `json:"alertname"`
+	Severity         string `json:"severity"`
+	BusinessTier     string `json:"business_tier,omitempty"`
+	ValueMeasurement string `json:"value_measurement,omitempty"`
+	ROIValidation    string `json:"roi_validation,omitempty"`
+}
+
+type AlertAnnotations struct {
+	Description string `json:"description"`
+	Summary     string `json:"summary"`
+	RunbookURL  string `json:"runbook_url,omitempty"`
+}
+
+type Alert struct {
+	Status      string           `json:"status"`
+	Labels      AlertLabels      `json:"labels"`
+	Annotations AlertAnnotations `json:"annotations"`
+	StartsAt    string           `json:"startsAt"`
+}
+
+type AlertManagerPayload struct {
+	Version           string            `json:"version"`
+	Status            string            `json:"status"`
+	Receiver          string            `json:"receiver"`
+	GroupLabels       map[string]string `json:"groupLabels"`
+	CommonLabels      AlertLabels       `json:"commonLabels"`
+	CommonAnnotations AlertAnnotations  `json:"commonAnnotations"`
+	Alerts            []Alert           `json:"alerts"`
+}
+
+type BusinessValueResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
 
 // 🚀 **TDD E2E FINAL: COMPREHENSIVE BUSINESS VALUE VALIDATION**
 // BR-BUSINESS-VALUE-E2E-001: Complete End-to-End Business Value Validation Testing
@@ -30,7 +67,7 @@ var _ = Describe("BR-BUSINESS-VALUE-E2E-001: Comprehensive Business Value E2E Va
 		// Use REAL OCP cluster infrastructure per user requirement
 		realK8sClient kubernetes.Interface
 		realLogger    *logrus.Logger
-		testCluster   *enhanced.TestClusterManager
+		testCluster   *cluster.E2EClusterManager
 		kubernautURL  string
 		contextAPIURL string
 		healthAPIURL  string
@@ -45,8 +82,10 @@ var _ = Describe("BR-BUSINESS-VALUE-E2E-001: Comprehensive Business Value E2E Va
 		ctx, cancel = context.WithTimeout(context.Background(), 600*time.Second) // 10 minutes for E2E
 
 		// Setup real OCP cluster infrastructure
-		testCluster = enhanced.NewTestClusterManager()
-		err := testCluster.SetupTestCluster(ctx)
+		var err error
+		testCluster, err = cluster.NewE2EClusterManager("ocp", realLogger)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E cluster manager")
+		err = testCluster.InitializeCluster(ctx, "latest")
 		Expect(err).ToNot(HaveOccurred(), "OCP cluster setup must succeed for E2E testing")
 
 		realK8sClient = testCluster.GetKubernetesClient()
@@ -70,7 +109,7 @@ var _ = Describe("BR-BUSINESS-VALUE-E2E-001: Comprehensive Business Value E2E Va
 
 	AfterEach(func() {
 		if testCluster != nil {
-			err := testCluster.CleanupTestCluster(ctx)
+			err := testCluster.Cleanup(ctx)
 			Expect(err).ToNot(HaveOccurred(), "OCP cluster cleanup should succeed")
 		}
 		cancel()
@@ -82,41 +121,42 @@ var _ = Describe("BR-BUSINESS-VALUE-E2E-001: Comprehensive Business Value E2E Va
 			// Business Impact: Comprehensive value measurement validates ROI and business justification
 
 			// Step 1: Create comprehensive business value validation alert
-			businessValueAlert := map[string]interface{}{
-				"version":  "4",
-				"status":   "firing",
-				"receiver": "kubernaut-webhook",
-				"groupLabels": map[string]string{
+			// Following Go coding standards: Use structured types instead of interface{}
+			businessValueAlert := AlertManagerPayload{
+				Version:  "4",
+				Status:   "firing",
+				Receiver: "kubernaut-webhook",
+				GroupLabels: map[string]string{
 					"alertname": "ComprehensiveBusinessValueValidation",
 				},
-				"commonLabels": map[string]string{
-					"alertname":         "ComprehensiveBusinessValueValidation",
-					"severity":          "info",
-					"business_tier":     "executive_validation",
-					"value_measurement": "comprehensive",
-					"roi_validation":    "required",
+				CommonLabels: AlertLabels{
+					Alertname:        "ComprehensiveBusinessValueValidation",
+					Severity:         "info",
+					BusinessTier:     "executive_validation",
+					ValueMeasurement: "comprehensive",
+					ROIValidation:    "required",
 				},
-				"commonAnnotations": map[string]string{
-					"description": "Comprehensive business value validation for executive reporting",
-					"summary":     "Complete business value measurement and ROI validation",
-					"runbook_url": "https://wiki.company.com/business/value-measurement",
+				CommonAnnotations: AlertAnnotations{
+					Description: "Comprehensive business value validation for executive reporting",
+					Summary:     "Complete business value measurement and ROI validation",
+					RunbookURL:  "https://wiki.company.com/business/value-measurement",
 				},
-				"alerts": []map[string]interface{}{
+				Alerts: []Alert{
 					{
-						"status": "firing",
-						"labels": map[string]string{
-							"alertname":         "ComprehensiveBusinessValueValidation",
-							"severity":          "info",
-							"business_tier":     "executive_validation",
-							"value_measurement": "comprehensive",
-							"roi_validation":    "required",
+						Status: "firing",
+						Labels: AlertLabels{
+							Alertname:        "ComprehensiveBusinessValueValidation",
+							Severity:         "info",
+							BusinessTier:     "executive_validation",
+							ValueMeasurement: "comprehensive",
+							ROIValidation:    "required",
 						},
-						"annotations": map[string]string{
-							"description": "Comprehensive business value validation for executive reporting",
-							"summary":     "Complete business value measurement and ROI validation",
-							"runbook_url": "https://wiki.company.com/business/value-measurement",
+						Annotations: AlertAnnotations{
+							Description: "Comprehensive business value validation for executive reporting",
+							Summary:     "Complete business value measurement and ROI validation",
+							RunbookURL:  "https://wiki.company.com/business/value-measurement",
 						},
-						"startsAt": time.Now().UTC().Format(time.RFC3339),
+						StartsAt: time.Now().UTC().Format(time.RFC3339),
 					},
 				},
 			}
@@ -146,12 +186,13 @@ var _ = Describe("BR-BUSINESS-VALUE-E2E-001: Comprehensive Business Value E2E Va
 			responseBody, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred(), "Business value response body must be readable")
 
-			var businessValueResponse map[string]interface{}
+			// Following Go coding standards: Use structured types instead of interface{}
+			var businessValueResponse BusinessValueResponse
 			err = json.Unmarshal(responseBody, &businessValueResponse)
 			Expect(err).ToNot(HaveOccurred(), "Business value response must be valid JSON")
 
 			// Business Logic: Response should indicate successful business value processing
-			Expect(businessValueResponse["status"]).To(Equal("success"),
+			Expect(businessValueResponse.Status).To(Equal("success"),
 				"BR-BUSINESS-VALUE-E2E-001: Business value processing must indicate successful validation")
 
 			// Step 3: Validate business value across all system components
@@ -214,7 +255,7 @@ var _ = Describe("BR-BUSINESS-VALUE-E2E-001: Comprehensive Business Value E2E Va
 			}).Info("Comprehensive business value validation completed successfully")
 
 			// Business Outcome: Comprehensive business value demonstrates ROI and justification
-			comprehensiveBusinessValueDelivered := totalBusinessValue >= 75.0 && businessValueResponse["status"] == "success"
+			comprehensiveBusinessValueDelivered := totalBusinessValue >= 75.0 && businessValueResponse.Status == "success"
 			Expect(comprehensiveBusinessValueDelivered).To(BeTrue(),
 				"BR-BUSINESS-VALUE-E2E-001: Comprehensive business value must demonstrate ROI and executive justification")
 		})
@@ -229,21 +270,22 @@ var _ = Describe("BR-BUSINESS-VALUE-E2E-001: Comprehensive Business Value E2E Va
 			operationalExcellenceMetrics := map[string]func() bool{
 				"automation_effectiveness": func() bool {
 					// Test automation effectiveness through webhook processing
-					testAlert := map[string]interface{}{
-						"version":  "4",
-						"status":   "firing",
-						"receiver": "kubernaut-webhook",
-						"alerts": []map[string]interface{}{
+					// Following Go coding standards: Use structured types instead of interface{}
+					testAlert := AlertManagerPayload{
+						Version:  "4",
+						Status:   "firing",
+						Receiver: "kubernaut-webhook",
+						Alerts: []Alert{
 							{
-								"status": "firing",
-								"labels": map[string]string{
-									"alertname": "AutomationEffectivenessTest",
-									"severity":  "info",
+								Status: "firing",
+								Labels: AlertLabels{
+									Alertname: "AutomationEffectivenessTest",
+									Severity:  "info",
 								},
-								"annotations": map[string]string{
-									"description": "Automation effectiveness measurement test",
+								Annotations: AlertAnnotations{
+									Description: "Automation effectiveness measurement test",
 								},
-								"startsAt": time.Now().UTC().Format(time.RFC3339),
+								StartsAt: time.Now().UTC().Format(time.RFC3339),
 							},
 						},
 					}
@@ -325,44 +367,72 @@ var _ = Describe("BR-BUSINESS-VALUE-E2E-001: Comprehensive Business Value E2E Va
 			// Business Impact: ROI demonstration validates investment and enables budget optimization
 
 			// Test ROI and cost optimization indicators
-			roiMetrics := map[string]interface{}{
-				"automation_cost_savings": map[string]interface{}{
-					"manual_process_time":    "4_hours_per_incident",
-					"automated_process_time": "15_minutes_per_incident",
-					"cost_reduction_percent": 93.75, // (4*60-15)/4*60 * 100
-				},
-				"operational_efficiency": map[string]interface{}{
-					"response_time_improvement": "90_percent_faster",
-					"error_reduction":           "85_percent_fewer_errors",
-					"availability_improvement":  "99.9_percent_uptime",
-				},
-				"resource_optimization": map[string]interface{}{
-					"infrastructure_efficiency": "40_percent_better_utilization",
-					"scaling_optimization":      "60_percent_cost_reduction",
-					"maintenance_reduction":     "70_percent_less_manual_work",
-				},
-			}
+			// Following Go coding standards: Use structured types instead of interface{}
+			/*
+				type AutomationCostSavings struct {
+					ManualProcessTime    string  `json:"manual_process_time"`
+					AutomatedProcessTime string  `json:"automated_process_time"`
+					CostReductionPercent float64 `json:"cost_reduction_percent"`
+				}
+
+				type OperationalEfficiency struct {
+					ResponseTimeImprovement string `json:"response_time_improvement"`
+					ErrorReduction          string `json:"error_reduction"`
+					AvailabilityImprovement string `json:"availability_improvement"`
+				}
+
+				type ResourceOptimization struct {
+					InfrastructureEfficiency string `json:"infrastructure_efficiency"`
+					ScalingOptimization      string `json:"scaling_optimization"`
+					MaintenanceReduction     string `json:"maintenance_reduction"`
+				}
+
+				type ROIMetrics struct {
+					AutomationCostSavings AutomationCostSavings `json:"automation_cost_savings"`
+					OperationalEfficiency OperationalEfficiency `json:"operational_efficiency"`
+					ResourceOptimization  ResourceOptimization  `json:"resource_optimization"`
+				}
+
+				roiMetrics := ROIMetrics{
+					AutomationCostSavings: AutomationCostSavings{
+						ManualProcessTime:    "4_hours_per_incident",
+						AutomatedProcessTime: "15_minutes_per_incident",
+						CostReductionPercent: 93.75, // (4*60-15)/4*60 * 100
+					},
+					OperationalEfficiency: OperationalEfficiency{
+						ResponseTimeImprovement: "90_percent_faster",
+						ErrorReduction:          "85_percent_fewer_errors",
+						AvailabilityImprovement: "99.9_percent_uptime",
+					},
+					ResourceOptimization: ResourceOptimization{
+						InfrastructureEfficiency: "40_percent_better_utilization",
+						ScalingOptimization:      "60_percent_cost_reduction",
+						MaintenanceReduction:     "70_percent_less_manual_work",
+					},
+				}
+			*/
 
 			// Validate ROI metrics through system performance
 			roiValidationResults := make(map[string]bool)
 
 			// Test automation cost savings through response time
 			startTime := time.Now()
-			automationTestAlert := map[string]interface{}{
-				"version":  "4",
-				"status":   "firing",
-				"receiver": "kubernaut-webhook",
-				"alerts": []map[string]interface{}{
+			// Following Go coding standards: Use structured types instead of interface{}
+			automationTestAlert := AlertManagerPayload{
+				Version:  "4",
+				Status:   "firing",
+				Receiver: "kubernaut-webhook",
+				Alerts: []Alert{
 					{
-						"status": "firing",
-						"labels": map[string]string{
-							"alertname": "ROIValidationTest",
-							"severity":  "info",
+						Status: "firing",
+						Labels: AlertLabels{
+							Alertname: "ROIValidationTest",
+							Severity:  "info",
 						},
-						"annotations": map[string]string{
-							"description": "ROI and cost optimization validation test",
+						Annotations: AlertAnnotations{
+							Description: "ROI and cost optimization validation test",
 						},
-						"startsAt": time.Now().UTC().Format(time.RFC3339),
+						StartsAt: time.Now().UTC().Format(time.RFC3339),
 					},
 				},
 			}

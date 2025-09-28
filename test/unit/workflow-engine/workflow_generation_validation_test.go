@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -232,3 +233,9 @@ var _ = Describe("Workflow Generation Validation - Unit Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUgenerationUvalidation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUgenerationUvalidation Suite")
+}

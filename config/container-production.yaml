@@ -10,7 +10,7 @@ effectiveness:
     # Container configuration
     holmes_image: "prometheus-alerts-holmesgpt:latest"
     docker_host: "unix:///var/run/docker.sock"
-    network_mode: "prometheus-alerts-slm_holmes-network"
+    network_mode: "kubernaut_holmes-network"
     shared_volume_mount: "/shared"
     working_dir: "/tmp/holmes-container-sessions"
 

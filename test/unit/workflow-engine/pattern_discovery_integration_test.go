@@ -1,6 +1,7 @@
 package workflowengine_test
 
 import (
+	"testing"
 	"context"
 	"fmt"
 
@@ -305,3 +306,9 @@ var _ = Describe("Pattern Discovery Integration - TDD Implementation", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUpatternUdiscoveryUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UpatternUdiscoveryUintegration Suite")
+}

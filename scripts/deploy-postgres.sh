@@ -7,7 +7,7 @@ set -euo pipefail
 
 # Configuration
 POSTGRES_VERSION="16"
-CONTAINER_NAME="prometheus-alerts-slm-postgres"
+CONTAINER_NAME="kubernaut-postgres"
 DB_NAME="action_history"
 DB_USER="slm_user"
 DB_PASSWORD="slm_password_dev"
@@ -70,12 +70,12 @@ while [ $attempt -le $max_attempts ]; do
         echo "✅ PostgreSQL is ready!"
         break
     fi
-    
+
     if [ $attempt -eq $max_attempts ]; then
         echo "❌ PostgreSQL failed to start within expected time"
         exit 1
     fi
-    
+
     echo "⏳ Attempt $attempt/$max_attempts - waiting 2 seconds..."
     sleep 2
     ((attempt++))

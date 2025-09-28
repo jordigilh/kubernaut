@@ -35,3 +35,5 @@ var _ = Describe("BR-WF-VALID-001: Workflow Validation Business Logic", func() {
 		})
 	})
 })
+
+// TestRunner is handled by workflow_validation_suite_test.go

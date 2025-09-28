@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -1289,4 +1290,10 @@ func toTitleCase(s string) string {
 		}
 	}
 	return strings.Join(words, " ")
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestLLMIntegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "LLM Integration Suite")
 }

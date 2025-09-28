@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="prometheus-alerts-slm-test"
+CLUSTER_NAME="kubernaut-test"
 KIND_CONFIG="${KIND_CONFIG:-test/kind/kind-config.yaml}"
 REGISTRY_NAME="kind-registry"
 REGISTRY_PORT="5001"
@@ -182,13 +182,13 @@ deploy_prerequisites() {
         log "Test deployment applied"
     fi
 
-    # Create RBAC for prometheus-alerts-slm
-    kubectl create serviceaccount prometheus-alerts-slm -n e2e-test --dry-run=client -o yaml | kubectl apply -f -
+    # Create RBAC for kubernaut
+    kubectl create serviceaccount kubernaut -n e2e-test --dry-run=client -o yaml | kubectl apply -f -
 
     # Grant necessary permissions for testing
-    kubectl create clusterrolebinding prometheus-alerts-slm-admin \
+    kubectl create clusterrolebinding kubernaut-admin \
         --clusterrole=cluster-admin \
-        --serviceaccount=e2e-test:prometheus-alerts-slm \
+        --serviceaccount=e2e-test:kubernaut \
         --dry-run=client -o yaml | kubectl apply -f -
 
     log "Prerequisites deployed successfully"
@@ -198,8 +198,15 @@ deploy_prerequisites() {
 setup_bootstrap_directory() {
     log "Setting up bootstrap directory for integration testing..."
 
-    # Create bootstrap directory
+    # Remove existing bootstrap directory if it exists
+    if [[ -d "/tmp/kind-bootstrap" ]]; then
+        log "Removing existing bootstrap directory..."
+        rm -rf /tmp/kind-bootstrap
+    fi
+
+    # Create bootstrap directory with proper permissions
     mkdir -p /tmp/kind-bootstrap
+    chmod 755 /tmp/kind-bootstrap
 
     # Create test alert payload for integration testing
     cat > /tmp/kind-bootstrap/test-alert.json << 'EOF'
@@ -227,7 +234,7 @@ EOF
     cat > /tmp/kind-bootstrap/integration-config.yaml << 'EOF'
 # Integration Test Configuration for Kind Cluster
 cluster:
-  name: prometheus-alerts-slm-test
+  name: kubernaut-test
   type: kind
   real_k8s: true
 

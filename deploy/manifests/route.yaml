@@ -2,10 +2,10 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: prometheus-alerts-slm-webhook
-  namespace: prometheus-alerts-slm
+  name: kubernaut-webhook
+  namespace: kubernaut
   labels:
-    app.kubernetes.io/name: prometheus-alerts-slm
+    app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: webhook
   annotations:
     haproxy.router.openshift.io/timeout: "60s"
@@ -14,7 +14,7 @@ spec:
   host: alerts-slm.apps.cluster.kubernaut.io  # Update with your cluster domain
   to:
     kind: Service
-    name: prometheus-alerts-slm-webhook
+    name: kubernaut-webhook
     weight: 100
   port:
     targetPort: http
@@ -28,10 +28,10 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: prometheus-alerts-slm-webhook
-  namespace: prometheus-alerts-slm
+  name: kubernaut-webhook
+  namespace: kubernaut
   labels:
-    app.kubernetes.io/name: prometheus-alerts-slm
+    app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: webhook
   annotations:
     kubernetes.io/ingress.class: "nginx"
@@ -52,6 +52,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: prometheus-alerts-slm-service
+                name: kubernaut-service
                 port:
                   number: 8080

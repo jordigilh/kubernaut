@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -706,3 +707,9 @@ var _ = Describe("Resilient Workflow Engine - Execution Pattern Extensions", fun
 
 	// Note: createHistoricalExecution is already defined at the top of the file
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUresilientUworkflowUexecutionUextensions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UresilientUworkflowUexecutionUextensions Suite")
+}

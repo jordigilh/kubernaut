@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-service
+  namespace: kubernaut-integration
+  labels:
+    app: postgresql
+    component: database
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgresql
+  selector:
+    app: postgresql
+---
+# NodePort service for external access during development
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-nodeport
+  namespace: kubernaut-integration
+  labels:
+    app: postgresql
+    component: database
+    service-type: external-access
+spec:
+  type: NodePort
+  ports:
+  - port: 5432
+    targetPort: 5432
+    nodePort: 30432
+    protocol: TCP
+    name: postgresql
+  selector:
+    app: postgresql

@@ -250,10 +250,8 @@ var _ = Describe("SLM Integration", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		// Validate recommendation
-		Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
-
 		validActions := []string{"scale_deployment", "restart_pod", "increase_resources", "notify_only", "collect_diagnostics"}
-		Expect(recommendation.Action).To(BeElementOf(validActions))
+		Expect(recommendation.Action).To(BeElementOf(validActions), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
 
 		Expect(recommendation.Confidence).To(BeNumerically(">=", 0.0))
 		Expect(recommendation.Confidence).To(BeNumerically("<=", 1.0))
@@ -513,7 +511,8 @@ var _ = Describe("End-to-End Flow", func() {
 			Expect(err).ToNot(HaveOccurred())
 			recommendation = shared.ConvertAnalyzeAlertResponse(analyzeResponse)
 			Expect(recommendation).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
-			Expect(recommendation.Action).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
+			validActions := []string{"scale_deployment", "restart_pod", "increase_resources", "notify_only", "collect_diagnostics"}
+			Expect(recommendation.Action).To(BeElementOf(validActions), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
 
 			GinkgoWriter.Printf("SLM recommended action: %s (confidence: %.2f)\n",
 				recommendation.Action, recommendation.Confidence)
@@ -611,7 +610,8 @@ var _ = Describe("End-to-End Flow", func() {
 			baseline, err := client.AnalyzeAlert(context.Background(), testAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(baseline).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
-			Expect(baseline.Action).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
+			validActions := []string{"scale_deployment", "restart_pod", "increase_resources", "notify_only", "collect_diagnostics"}
+			Expect(baseline.Action).To(BeElementOf(validActions), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
 
 			logger.WithFields(logrus.Fields{
 				"action":     baseline.Action,
@@ -661,7 +661,7 @@ var _ = Describe("End-to-End Flow", func() {
 			recoveryResponse, err := client.AnalyzeAlert(context.Background(), testAlert)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(recoveryResponse).ToNot(BeNil(), "BR-WF-001-SUCCESS-RATE: Core integration must return valid workflow components for success rate requirements")
-			Expect(recoveryResponse.Action).To(BeNumerically(">=", 1), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
+			Expect(recoveryResponse.Action).To(BeElementOf(validActions), "BR-WF-001-SUCCESS-RATE: Core integration must provide data for workflow success rate requirements")
 
 			logger.WithFields(logrus.Fields{
 				"action":     recoveryResponse.Action,

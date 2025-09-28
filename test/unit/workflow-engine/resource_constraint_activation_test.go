@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
@@ -220,3 +221,9 @@ var _ = Describe("Resource Constraint Function Activation - TDD Implementation",
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUresourceUconstraintUactivation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UresourceUconstraintUactivation Suite")
+}

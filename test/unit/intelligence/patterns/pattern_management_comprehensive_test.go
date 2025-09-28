@@ -4,6 +4,7 @@
 package patterns
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -651,4 +652,10 @@ func createEmptyIDPattern() *shared.DiscoveredPattern {
 		PatternType:  shared.PatternTypeAnomaly,
 		DiscoveredAt: time.Now(),
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUpatternUmanagementUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UpatternUmanagementUcomprehensive Suite")
 }

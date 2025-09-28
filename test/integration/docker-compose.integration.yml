@@ -118,7 +118,7 @@ services:
       vector-db-integration:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8091/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8091/api/v1/context/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3

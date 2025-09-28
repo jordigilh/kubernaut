@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -725,4 +726,10 @@ func int32Ptr(i int32) *int32 {
 func parseQuantity(value string) resource.Quantity {
 	quantity, _ := resource.ParseQuantity(value)
 	return quantity
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUactionUexecutor(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UactionUexecutor Suite")
 }

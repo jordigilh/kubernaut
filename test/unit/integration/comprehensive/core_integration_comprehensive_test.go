@@ -4,6 +4,7 @@
 package comprehensive
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"sync"
@@ -540,3 +541,9 @@ func createTestAction() *types.ActionRecommendation {
 }
 
 // Helper functions for mock setup are now inline within tests for clarity (Rule 03: self-contained tests)
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcoreUintegrationUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcoreUintegrationUcomprehensive Suite")
+}

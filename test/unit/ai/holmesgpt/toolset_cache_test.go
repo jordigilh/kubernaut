@@ -1,6 +1,7 @@
 package holmesgpt_test
 
 import (
+	"testing"
 	"fmt"
 	"time"
 
@@ -519,3 +520,9 @@ var _ = Describe("ToolsetConfigCache - Implementation Correctness Testing", func
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUtoolsetUcache(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UtoolsetUcache Suite")
+}

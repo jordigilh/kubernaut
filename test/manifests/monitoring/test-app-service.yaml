@@ -1,29 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: prometheus-alerts-slm-test
+  name: kubernaut-test
   namespace: e2e-test
   labels:
-    app: prometheus-alerts-slm
+    app: kubernaut
     environment: test
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: prometheus-alerts-slm
+      app: kubernaut
   template:
     metadata:
       labels:
-        app: prometheus-alerts-slm
+        app: kubernaut
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
-      serviceAccountName: prometheus-alerts-slm
+      serviceAccountName: kubernaut
       containers:
-      - name: prometheus-alerts-slm
-        image: prometheus-alerts-slm:test
+      - name: kubernaut
+        image: quay.io/jordigilh/kubernaut-webhook-service:latest
         imagePullPolicy: Never
         ports:
         - containerPort: 8080
@@ -66,10 +66,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: prometheus-alerts-slm-service
+  name: kubernaut-service
   namespace: e2e-test
   labels:
-    app: prometheus-alerts-slm
+    app: kubernaut
 spec:
   type: ClusterIP
   ports:
@@ -82,4 +82,4 @@ spec:
     protocol: TCP
     name: metrics
   selector:
-    app: prometheus-alerts-slm
+    app: kubernaut
