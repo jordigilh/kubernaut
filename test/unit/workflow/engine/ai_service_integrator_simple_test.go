@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -228,3 +229,9 @@ var _ = Describe("BR-AI-001,011: Enhanced Existing AI Client Methods (Rule 12 Co
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUaiUserviceUintegratorUsimple(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UaiUserviceUintegratorUsimple Suite")
+}

@@ -1,6 +1,7 @@
 package holmesgpt_test
 
 import (
+	"testing"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -438,3 +439,9 @@ var _ = Describe("ToolsetTemplateEngine - Implementation Correctness Testing", f
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUtoolsetUtemplateUengine(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UtoolsetUtemplateUengine Suite")
+}

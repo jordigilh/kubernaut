@@ -3,7 +3,7 @@
 
 # Example 1: PostgreSQL with pgvector (Recommended for production)
 app:
-  name: "prometheus-alerts-slm"
+  name: "kubernaut"
   version: "1.0.0"
 
 database:
@@ -57,7 +57,7 @@ monitoring:
 
 # Example 2: Development/Testing with Memory Backend
 app:
-  name: "prometheus-alerts-slm-dev"
+  name: "kubernaut-dev"
 
 vectordb:
   enabled: true
@@ -79,7 +79,7 @@ slm:
 
 # Example 3: Disabled Vector Features (Fallback Mode)
 app:
-  name: "prometheus-alerts-slm-basic"
+  name: "kubernaut-basic"
 
 vectordb:
   enabled: false        # Disable vector database features

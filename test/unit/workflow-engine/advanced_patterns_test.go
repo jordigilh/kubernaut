@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"fmt"
 	"time"
 
@@ -1262,3 +1263,9 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUadvancedUpatterns(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UadvancedUpatterns Suite")
+}

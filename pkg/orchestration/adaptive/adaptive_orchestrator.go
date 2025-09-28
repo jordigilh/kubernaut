@@ -28,7 +28,7 @@ type DefaultAdaptiveOrchestrator struct {
 	// Core dependencies
 	workflowEngine engine.WorkflowEngine
 	// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
-	llmClient llm.Client
+	llmClient       llm.Client
 	vectorDB        vector.VectorDatabase
 	analyticsEngine types.AnalyticsEngine // Following development guidelines: avoid pointer to interface
 	actionRepo      actionhistory.Repository
@@ -129,8 +129,8 @@ func NewDefaultAdaptiveOrchestrator(
 	return &DefaultAdaptiveOrchestrator{
 		workflowEngine: workflowEngine,
 		// RULE 12 COMPLIANCE: Using enhanced llm.Client instead of deprecated SelfOptimizer
-		llmClient:       llmClient,
-		vectorDB:        vectorDB,
+		llmClient:        llmClient,
+		vectorDB:         vectorDB,
 		analyticsEngine:  analyticsEngine,
 		actionRepo:       actionRepo,
 		patternExtractor: patternExtractor,
@@ -239,16 +239,29 @@ func (dao *DefaultAdaptiveOrchestrator) ExecuteWorkflow(ctx context.Context, wor
 		return nil, err
 	}
 
+	// RACE CONDITION FIX: Atomic check and reserve for concurrent execution limits
+	// Lock the execution map to prevent race conditions between count check and storage
+	dao.executionMu.Lock()
+
 	// Check if we're at max concurrent executions - following BR-ORCH-002 (adaptive resource allocation)
-	currentCount := dao.getCurrentExecutionCount()
+	currentCount := dao.getCurrentExecutionCountLocked()
+	dao.log.WithFields(logrus.Fields{
+		"workflow_id":    workflowID,
+		"current_count":  currentCount,
+		"max_concurrent": dao.config.MaxConcurrentExecutions,
+		"will_reject":    currentCount >= dao.config.MaxConcurrentExecutions,
+	}).Debug("Checking concurrent execution limit")
+
 	if currentCount >= dao.config.MaxConcurrentExecutions {
+		dao.executionMu.Unlock() // Release lock before returning error
 		err := fmt.Errorf("maximum concurrent executions reached (%d)", dao.config.MaxConcurrentExecutions)
 		// Following development guidelines: ALWAYS log errors with context
 		dao.log.WithError(err).WithFields(logrus.Fields{
-			"workflow_id":    workflowID,
-			"current_count":  currentCount,
-			"max_concurrent": dao.config.MaxConcurrentExecutions,
-		}).Warn("Workflow execution rejected due to concurrent execution limit")
+			"workflow_id":     workflowID,
+			"current_count":   currentCount,
+			"max_concurrent":  dao.config.MaxConcurrentExecutions,
+			"condition_check": fmt.Sprintf("%d >= %d = %t", currentCount, dao.config.MaxConcurrentExecutions, currentCount >= dao.config.MaxConcurrentExecutions),
+		}).Error("CONCURRENCY LIMIT REJECTION: Workflow execution rejected due to concurrent execution limit")
 		return nil, err
 	}
 
@@ -277,7 +290,7 @@ func (dao *DefaultAdaptiveOrchestrator) ExecuteWorkflow(ctx context.Context, wor
 		}
 	}
 
-	dao.executionMu.Lock()
+	// Store execution atomically after count check
 	dao.executions[executionID] = execution
 	dao.executionMu.Unlock()
 
@@ -335,6 +348,15 @@ func (dao *DefaultAdaptiveOrchestrator) CancelWorkflow(ctx context.Context, exec
 
 	dao.log.WithField("execution_id", executionID).Info("Cancelled workflow execution")
 	return nil
+}
+
+// SetMaxConcurrentExecutions updates the maximum concurrent executions limit
+func (dao *DefaultAdaptiveOrchestrator) SetMaxConcurrentExecutions(maxConcurrent int) {
+	dao.mu.Lock()
+	defer dao.mu.Unlock()
+
+	dao.config.MaxConcurrentExecutions = maxConcurrent
+	dao.log.WithField("max_concurrent", maxConcurrent).Info("Updated maximum concurrent executions limit")
 }
 
 // AdaptWorkflow applies adaptation rules to a workflow
@@ -775,10 +797,18 @@ func (dao *DefaultAdaptiveOrchestrator) calculateExecutionMetrics(execution *eng
 func (dao *DefaultAdaptiveOrchestrator) getCurrentExecutionCount() int {
 	dao.executionMu.RLock()
 	defer dao.executionMu.RUnlock()
+	return dao.getCurrentExecutionCountLocked()
+}
 
+// getCurrentExecutionCountLocked returns the current execution count without acquiring locks
+// Must be called with dao.executionMu already held
+func (dao *DefaultAdaptiveOrchestrator) getCurrentExecutionCountLocked() int {
 	count := 0
 	for _, execution := range dao.executions {
-		if execution.Status == string(engine.ExecutionStatusRunning) || execution.Status == string(engine.ExecutionStatusPending) {
+		// Count all active executions (not completed, failed, or cancelled)
+		if execution.Status != string(engine.ExecutionStatusCompleted) &&
+			execution.Status != string(engine.ExecutionStatusFailed) &&
+			execution.Status != string(engine.ExecutionStatusCancelled) {
 			count++
 		}
 	}
@@ -1017,13 +1047,13 @@ func (dao *DefaultAdaptiveOrchestrator) collectMetrics() {
 
 	// Production monitoring metrics for Self Optimizer
 	dao.log.WithFields(logrus.Fields{
-		"running_executions":       runningExecutions,
+		"running_executions":   runningExecutions,
 		"total_workflows":      len(dao.workflows),
 		"total_executions":     len(dao.executions),
 		"llm_client_available": llmClientAvailable,
-		"optimized_workflows":      optimizedWorkflows,
-		"optimized_executions":     optimizedExecutions,
-		"optimization_rate":        float64(optimizedWorkflows) / float64(len(dao.workflows)),
+		"optimized_workflows":  optimizedWorkflows,
+		"optimized_executions": optimizedExecutions,
+		"optimization_rate":    float64(optimizedWorkflows) / float64(len(dao.workflows)),
 	}).Info("Orchestrator metrics with Self Optimizer monitoring")
 }
 

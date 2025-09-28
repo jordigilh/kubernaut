@@ -1093,6 +1093,11 @@ func (dwe *DefaultWorkflowEngine) registerDefaultExecutors() {
 	dwe.actionExecutors["custom"] = customExecutor
 	dwe.actionExecutors["generic"] = customExecutor // Alias
 
+	// Register AI action executors for testing
+	aiExecutor := NewAIActionExecutor(dwe.log)
+	dwe.actionExecutors["ai_analyze_alert"] = aiExecutor
+	dwe.actionExecutors["ai_complex_analysis"] = aiExecutor
+
 	// Log successful registration with supported action counts
 	k8sActions := len(k8sExecutor.GetSupportedActions())
 	monitoringActions := len(monitoringExecutor.GetSupportedActions())
@@ -1117,6 +1122,133 @@ func generateRecoveryPlanID() string {
 
 func generateRecoveryActionID() string {
 	return "action-" + strings.Replace(uuid.New().String(), "-", "", -1)[:12]
+}
+
+// AIActionExecutor implements ActionExecutor for AI-specific operations
+type AIActionExecutor struct {
+	log *logrus.Logger
+}
+
+// NewAIActionExecutor creates a new AI action executor
+func NewAIActionExecutor(log *logrus.Logger) *AIActionExecutor {
+	return &AIActionExecutor{
+		log: log,
+	}
+}
+
+// Execute performs AI operations
+func (aae *AIActionExecutor) Execute(ctx context.Context, action *StepAction, stepContext *StepContext) (*StepResult, error) {
+	logFields := logrus.Fields{
+		"action_type": action.Type,
+		"parameters":  action.Parameters,
+	}
+
+	if stepContext != nil {
+		logFields["step_id"] = stepContext.StepID
+	}
+
+	aae.log.WithFields(logFields).Info("Executing AI action")
+
+	startTime := time.Now()
+
+	switch action.Type {
+	case "ai_analyze_alert":
+		return aae.executeAIAnalyzeAlert(ctx, action, stepContext, startTime)
+	case "ai_complex_analysis":
+		return aae.executeAIComplexAnalysis(ctx, action, stepContext, startTime)
+	default:
+		return &StepResult{
+			Success: false,
+			Error:   fmt.Sprintf("unsupported AI action type: %s", action.Type),
+			Data:    make(map[string]interface{}),
+		}, nil
+	}
+}
+
+// ValidateAction validates an AI action
+func (aae *AIActionExecutor) ValidateAction(action *StepAction) error {
+	// AI actions have minimal validation requirements for testing
+	return nil
+}
+
+// GetActionType returns the action type
+func (aae *AIActionExecutor) GetActionType() string {
+	return "ai"
+}
+
+// executeAIAnalyzeAlert simulates AI alert analysis
+func (aae *AIActionExecutor) executeAIAnalyzeAlert(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Default processing time
+	processingTime := 50 * time.Millisecond
+
+	// Check for custom processing time in parameters
+	if processingTimeMs, ok := action.Parameters["processing_time_ms"]; ok {
+		if ms, valid := processingTimeMs.(float64); valid {
+			processingTime = time.Duration(ms) * time.Millisecond
+		}
+	}
+
+	// Simulate AI analysis work
+	time.Sleep(processingTime)
+
+	return &StepResult{
+		Success: true,
+		Output: map[string]interface{}{
+			"message": "AI alert analysis completed successfully",
+		},
+		Variables: map[string]interface{}{
+			"analysis_completed": true,
+			"ai_confidence":      0.85,
+		},
+		Data: map[string]interface{}{
+			"analysis_type": action.Parameters["analysis_type"],
+			"ai_enabled":    action.Parameters["ai_enabled"],
+			"action_type":   "ai_analyze_alert",
+			"status":        "completed",
+		},
+		Duration: time.Since(startTime),
+	}, nil
+}
+
+// executeAIComplexAnalysis simulates complex AI analysis
+func (aae *AIActionExecutor) executeAIComplexAnalysis(ctx context.Context, action *StepAction, stepContext *StepContext, startTime time.Time) (*StepResult, error) {
+	// Default processing time for complex analysis
+	processingTime := 100 * time.Millisecond
+
+	// Check for custom processing time in parameters
+	if processingTimeMs, ok := action.Parameters["processing_time_ms"]; ok {
+		if ms, valid := processingTimeMs.(float64); valid {
+			processingTime = time.Duration(ms) * time.Millisecond
+		}
+	}
+
+	// Check if this should timeout or fail (for testing failure scenarios)
+	if timeoutProne, ok := action.Parameters["timeout_prone"]; ok {
+		if prone, valid := timeoutProne.(bool); valid && prone {
+			// Simulate a timeout scenario by taking longer
+			processingTime = 200 * time.Millisecond
+		}
+	}
+
+	// Simulate complex AI analysis work
+	time.Sleep(processingTime)
+
+	return &StepResult{
+		Success: true,
+		Output: map[string]interface{}{
+			"message": "Complex AI analysis completed successfully",
+		},
+		Variables: map[string]interface{}{
+			"analysis_completed": true,
+			"complexity_score":   0.92,
+		},
+		Data: map[string]interface{}{
+			"complexity":  action.Parameters["complexity"],
+			"action_type": "ai_complex_analysis",
+			"status":      "completed",
+		},
+		Duration: time.Since(startTime),
+	}, nil
 }
 
 // Basic fallback evaluation methods for when AI is unavailable

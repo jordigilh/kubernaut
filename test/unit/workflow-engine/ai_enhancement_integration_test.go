@@ -1,6 +1,7 @@
 package workflowengine_test
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -652,3 +653,9 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUaiUenhancementUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UaiUenhancementUintegration Suite")
+}

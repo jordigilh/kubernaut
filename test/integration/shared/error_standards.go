@@ -26,6 +26,16 @@ const (
 	SLMError        ErrorCategory = "slm_service"
 )
 
+// ErrorSeverity represents the severity level of errors
+type ErrorSeverity string
+
+const (
+	SeverityLow      ErrorSeverity = "low"
+	SeverityMedium   ErrorSeverity = "medium"
+	SeverityHigh     ErrorSeverity = "high"
+	SeverityCritical ErrorSeverity = "critical"
+)
+
 // StandardizedError provides a comprehensive error structure for consistent testing
 type StandardizedError struct {
 	Category      ErrorCategory

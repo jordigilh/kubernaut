@@ -62,7 +62,7 @@ graph TB
 ### **Architecture**
 ```yaml
 cluster:
-  name: prometheus-alerts-slm-test
+  name: kubernaut-test
   nodes:
     - control-plane: 1 node
     - workers: 2 nodes
@@ -372,7 +372,7 @@ make test-e2e-ocp
 #### **Kind Cluster Issues**
 ```bash
 # Check cluster status
-kubectl cluster-info --context kind-prometheus-alerts-slm-test
+kubectl cluster-info --context kind-kubernaut-test
 
 # Restart cluster
 ./scripts/cleanup-kind-cluster.sh

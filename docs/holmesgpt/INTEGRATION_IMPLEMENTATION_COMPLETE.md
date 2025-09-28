@@ -33,7 +33,7 @@ The critical integration gaps identified in the confidence assessment have been 
 - ✅ **Cross-language data format conversion** (Go ↔ Python)
 
 #### 4. **Main Application Integration - COMPLETE**
-- ✅ **Created complete integration example** (`cmd/dynamic-toolset-server/main.go`)
+- ✅ **Created complete integration example** (`cmd/kubernaut/main.go`)
 - ✅ **Proper component startup sequence** and lifecycle management
 - ✅ **Comprehensive integration testing** with end-to-end validation
 
@@ -136,8 +136,8 @@ go test ./test/unit/platform/k8s/... -v
 ```bash
 # Build and run the complete integration
 cd /Users/jgil/go/src/github.com/jordigilh/kubernaut
-go build -o dynamic-toolset-server ./cmd/dynamic-toolset-server/
-./dynamic-toolset-server
+go build -o kubernaut ./cmd/kubernaut/
+./kubernaut
 ```
 
 **Expected Output:**
@@ -196,7 +196,7 @@ spec:
     spec:
       containers:
       - name: context-api
-        image: kubernaut/dynamic-toolset-server:latest
+        image: kubernaut/kubernaut:latest
         ports:
         - containerPort: 8091
         env:

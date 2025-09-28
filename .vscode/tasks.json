@@ -1,0 +1,52 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Validate TDD Methodology",
+			"type": "shell",
+			"command": "./scripts/validate-tdd-checkpoints.sh",
+			"args": [
+				"${input:componentName}",
+				"discovery"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			},
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Build (with validation)",
+			"type": "shell",
+			"command": "make",
+			"args": [
+				"validate-and-build"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"dependsOn": "Validate TDD Methodology",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			}
+		}
+	],
+	"inputs": [
+		{
+			"id": "componentName",
+			"description": "Component name for validation",
+			"default": "processor",
+			"type": "promptString"
+		}
+	]
+}

@@ -1,6 +1,7 @@
 package mocks
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -302,3 +303,9 @@ var _ = Describe("Enhanced Mock Services Demonstration", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUenhancedUmockUdemonstration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UenhancedUmockUdemonstration Suite")
+}

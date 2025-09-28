@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -1043,4 +1044,10 @@ func createInterruptedExecution(workflowID string, currentStep, totalSteps int) 
 		Steps:       steps,
 		CurrentStep: currentStep,
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUengine(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUengine Suite")
 }

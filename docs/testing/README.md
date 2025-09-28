@@ -12,6 +12,7 @@ This directory contains comprehensive testing strategy and implementation guidan
 | Document | Purpose | When to Use |
 |----------|---------|-------------|
 | **[PYRAMID_TEST_MIGRATION_GUIDE.md](PYRAMID_TEST_MIGRATION_GUIDE.md)** | ⭐ **START HERE** - Complete pyramid strategy migration plan | Planning and implementing pyramid testing approach |
+| **[INTEGRATION_E2E_NO_MOCKS_POLICY.md](INTEGRATION_E2E_NO_MOCKS_POLICY.md)** | 🚨 **MANDATORY** - Zero mocks policy for integration/E2E tests | **REQUIRED READING** - Before writing any integration or E2E tests |
 | **[TESTING_GUIDELINES_TRANSFORMATION_GUIDE.md](TESTING_GUIDELINES_TRANSFORMATION_GUIDE.md)** | Testing transformation best practices | Understanding testing patterns and anti-patterns |
 | **[TESTING_PATTERNS_QUICK_REFERENCE.md](TESTING_PATTERNS_QUICK_REFERENCE.md)** | Quick reference for testing patterns | Daily development reference |
 | **[TESTING_MAINTENANCE_CHECKLIST.md](TESTING_MAINTENANCE_CHECKLIST.md)** | Testing maintenance guidelines | Maintaining test quality and performance |
@@ -25,10 +26,11 @@ This directory contains comprehensive testing strategy and implementation guidan
 - **E2E Tests (10%)**: Essential customer-facing workflows requiring production environments
 
 ### **Key Principles**
-1. **Mock ONLY External Dependencies**: Databases, APIs, K8s, LLM services
-2. **Use 100% Real Business Logic**: All internal pkg/ components
-3. **Maximum Unit Coverage**: Cover ALL business requirements that can be unit tested
-4. **Fast Feedback**: Unit tests <10ms, total suite <15 minutes
+1. **🚨 ZERO MOCKS in Integration/E2E**: See [INTEGRATION_E2E_NO_MOCKS_POLICY.md](INTEGRATION_E2E_NO_MOCKS_POLICY.md)
+2. **Mock ONLY External Dependencies in Unit Tests**: Databases, APIs, K8s, LLM services
+3. **Use 100% Real Business Logic**: All internal pkg/ components in ALL test types
+4. **Maximum Unit Coverage**: Cover ALL business requirements that can be unit tested
+5. **Fast Feedback**: Unit tests <10ms, total suite <15 minutes
 
 ## 🚀 **Implementation Phases**
 

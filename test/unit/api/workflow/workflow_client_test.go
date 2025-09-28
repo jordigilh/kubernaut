@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -260,3 +261,9 @@ var _ = Describe("BR-WORKFLOW-API-001: Unified Workflow API Client", func() {
 })
 
 // TDD GREEN PHASE: Types now implemented in pkg/api/workflow/client.go
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUclient(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUclient Suite")
+}

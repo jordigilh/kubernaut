@@ -13,6 +13,7 @@ import (
 )
 
 // PatternAccuracyTrackerSimple tracks and validates accuracy metrics for discovered patterns
+// Business Requirement: BR-PATTERN-004 - Pattern accuracy tracking and performance validation
 type PatternAccuracyTrackerSimple struct {
 	log                *logrus.Logger
 	config             *PatternDiscoveryConfig

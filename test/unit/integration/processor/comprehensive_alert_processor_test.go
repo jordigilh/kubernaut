@@ -6,6 +6,7 @@ package processor
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -77,13 +78,17 @@ var _ = Describe("BR-AP-PROCESSOR-001: Comprehensive Alert Processor Business Lo
 	BeforeEach(func() {
 		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 
-		// Mock external dependencies only
+		// Mock external dependencies only - ENHANCED for AI integration
 		mockLLMClient = mocks.NewMockLLMClient()
 		workflowMockExecutor := mocks.NewMockActionExecutor()
 		mockExecutor = &executorAdapter{workflowExecutor: workflowMockExecutor}
 		mockActionRepo = mocks.NewMockActionRepository()
 		mockLogger = logrus.New()
 		mockLogger.SetLevel(logrus.ErrorLevel) // Reduce noise in tests
+
+		// ENHANCED: Configure AI client for enhanced integration testing
+		mockLLMClient.SetHealthy(true)
+		mockLLMClient.SetEndpoint("mock://ai-service")
 
 		// Create REAL business logic filter configurations
 		filterConfigs = []config.FilterConfig{
@@ -108,8 +113,9 @@ var _ = Describe("BR-AP-PROCESSOR-001: Comprehensive Alert Processor Business Lo
 		}
 
 		// Create REAL alert processor with mocked external dependencies
+		// ENHANCED: Updated for enhanced AI integration
 		alertProcessor = processor.NewProcessor(
-			mockLLMClient,  // External: Mock
+			mockLLMClient,  // External: Mock (enhanced AI interface)
 			mockExecutor,   // External: Mock
 			filterConfigs,  // Real: Business filter logic
 			mockActionRepo, // External: Mock
@@ -729,4 +735,10 @@ func createAlertWithEmptyFields() types.Alert {
 		Labels:      make(map[string]string),
 		Annotations: make(map[string]string),
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcomprehensiveUalertUprocessor(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcomprehensiveUalertUprocessor Suite")
 }

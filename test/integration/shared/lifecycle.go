@@ -89,13 +89,13 @@ func SetupDatabaseIntegrationTest(suiteName string, opts ...TestOption) *TestLif
 		// Setup the test suite
 		err := hooks.suite.Setup()
 		if err != nil {
-			// For database tests, skip gracefully if database is unavailable
-			Skip(fmt.Sprintf("Skipping database tests - setup failed: %v", err))
+			// Integration tests MUST fail if setup fails
+			Fail(fmt.Sprintf("Integration test setup failed - real environment required: %v", err))
 		}
 
 		// Verify database is available
 		if hooks.suite.DB == nil {
-			Skip("Database unavailable - skipping database integration tests")
+			Fail("Database unavailable - integration tests require real database connection")
 		}
 
 		hooks.logger.WithField("suite", suiteName).Info("Database integration test setup completed")

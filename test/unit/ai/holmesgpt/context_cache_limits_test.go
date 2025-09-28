@@ -1,6 +1,7 @@
 package holmesgpt_test
 
 import (
+	"testing"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -320,3 +321,9 @@ var _ = Describe("Context Cache Limits and Monitoring", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcontextUcacheUlimits(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcontextUcacheUlimits Suite")
+}

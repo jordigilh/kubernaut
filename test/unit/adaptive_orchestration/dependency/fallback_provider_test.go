@@ -418,3 +418,5 @@ var _ = Describe("Fallback Provider Logic", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite

@@ -1,6 +1,7 @@
 package holmesgpt
 
 import (
+	"testing"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
@@ -252,4 +253,10 @@ func calculateSuccessRateVariance(rates map[string]float64) float64 {
 	}
 
 	return varianceSum / float64(len(rates))
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsuccessUrateUactivation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsuccessUrateUactivation Suite")
 }

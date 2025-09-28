@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"sync"
@@ -451,3 +452,9 @@ var _ = Describe("Workflow State Consistency Validation", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUstateUconsistencyUvalidation(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUstateUconsistencyUvalidation Suite")
+}

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"testing"
 	"context"
 	"database/sql"
 	"os"
@@ -543,4 +544,10 @@ func restoreEnvVar(key, value string) {
 	} else {
 		Expect(os.Setenv(key, value)).To(Succeed())
 	}
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUvectorUdatabaseUfactory(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UvectorUdatabaseUfactory Suite")
 }

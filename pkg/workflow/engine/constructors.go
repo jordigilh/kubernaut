@@ -109,7 +109,14 @@ func NewEnhancedPatternConfig() *EnhancedPatternConfig {
 // Instead of using this struct, call the enhanced llm.Client methods directly (they have proper fallback logic built-in).
 //
 // These provide clear error messages instead of returning fake data that creates false confidence
-type FailFastAIMetricsCollector struct{}
+// Business Requirement: BR-AI-METRICS-001 - AI metrics collection and analysis
+type FailFastAIMetricsCollector struct {
+	Enabled     bool                   `json:"enabled"`
+	MetricsDB   interface{}            `json:"-"`
+	Logger      interface{}            `json:"-"`
+	Config      map[string]interface{} `json:"config"`
+	LastRequest time.Time              `json:"last_request"`
+}
 
 func (f *FailFastAIMetricsCollector) CollectMetrics(ctx context.Context, execution *RuntimeWorkflowExecution) (map[string]float64, error) {
 	return nil, fmt.Errorf("AI metrics collection not implemented - implement this interface to enable workflow metrics collection functionality")
@@ -127,7 +134,16 @@ func (f *FailFastAIMetricsCollector) EvaluateResponseQuality(ctx context.Context
 	return nil, fmt.Errorf("AI response quality evaluation not implemented - implement this interface to enable response quality assessment")
 }
 
-type FailFastLearningEnhancedPromptBuilder struct{}
+// FailFastLearningEnhancedPromptBuilder provides learning-enhanced prompt building with fail-fast behavior
+// Business Requirement: BR-AI-PROMPT-001 - Intelligent prompt generation and learning
+type FailFastLearningEnhancedPromptBuilder struct {
+	Enabled         bool                   `json:"enabled"`
+	LearningEngine  interface{}            `json:"-"`
+	TemplateCache   map[string]interface{} `json:"template_cache"`
+	ExecutionHistory []interface{}         `json:"execution_history"`
+	Config          map[string]interface{} `json:"config"`
+	LastUpdate      time.Time              `json:"last_update"`
+}
 
 func (f *FailFastLearningEnhancedPromptBuilder) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {
 	return "", fmt.Errorf("learning-enhanced prompt building not implemented - implement this interface to enable intelligent prompt generation")

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -507,4 +508,10 @@ func determineEnhancedLLMClientType(aiConfig *config.Config, llmClient llm.Clien
 	}
 
 	return "development"
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUselfUoptimizerUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UselfUoptimizerUintegration Suite")
 }

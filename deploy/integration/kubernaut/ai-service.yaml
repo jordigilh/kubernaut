@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+  namespace: kubernaut-integration
+  labels:
+    app: ai-service
+    component: kubernaut
+    service: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+        component: kubernaut
+        service: ai
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9994"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kubernaut-ai
+      containers:
+      - name: ai-service
+        image: kubernaut/ai-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8090
+          name: http
+        - containerPort: 9994
+          name: metrics
+        env:
+        - name: CONFIG_FILE
+          value: "/etc/kubernaut/config.yaml"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: LLM_ENDPOINT
+          value: "http://192.168.1.169:8080"  # External LLM endpoint
+        - name: LLM_PROVIDER
+          value: "ollama"
+        - name: LLM_MODEL
+          value: "hf://ggml-org/gpt-oss-20b-GGUF"
+        - name: POSTGRES_HOST
+          value: "postgresql-service"
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: postgresql-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: postgresql-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-secret
+              key: POSTGRES_PASSWORD
+        - name: REDIS_HOST
+          value: "redis-service"
+        - name: REDIS_PORT
+          value: "6379"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/kubernaut
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "300m"
+          limits:
+            memory: "1Gi"
+            cpu: "800m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8090
+          initialDelaySeconds: 60
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: config
+        configMap:
+          name: kubernaut-config
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+  namespace: kubernaut-integration
+  labels:
+    app: ai-service
+    component: kubernaut
+    service: ai
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8090
+    targetPort: 8090
+    protocol: TCP
+    name: http
+  - port: 9994
+    targetPort: 9994
+    protocol: TCP
+    name: metrics
+  selector:
+    app: ai-service

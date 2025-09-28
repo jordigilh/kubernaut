@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -214,4 +215,10 @@ func validateWorkflowBuilderDependencies(builder *engine.DefaultIntelligentWorkf
 func validateDependencyInjectionSupport(builder *engine.DefaultIntelligentWorkflowBuilder) bool {
 	// Validate that dependency injection is supported
 	return engine.SupportsDependencyInjection(builder)
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUworkflowUbuilderUdepsUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UworkflowUbuilderUdepsUintegration Suite")
 }

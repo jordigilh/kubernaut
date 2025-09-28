@@ -19,7 +19,8 @@ from config import Settings
 logger = structlog.get_logger(__name__)
 
 # Password encryption context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use pbkdf2_sha256 instead of bcrypt to avoid initialization issues
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 # Security scheme for FastAPI
 security = HTTPBearer()

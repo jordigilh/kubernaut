@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -273,3 +274,9 @@ var _ = Describe("Intelligent Workflow Builder - Business Requirements Testing",
 	// Complex AI-powered workflow generation tests removed as they test non-existent functionality
 	// Tests focus on actual implemented workflow structure types and business validation requirements
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUintelligentUworkflowUbuilder(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UintelligentUworkflowUbuilder Suite")
+}

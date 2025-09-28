@@ -2,7 +2,7 @@
 # This configuration enables enterprise AI features using 20B+ parameter models (MINIMUM REQUIREMENT)
 
 app:
-  name: "prometheus-alerts-slm"
+  name: "kubernaut"
   version: "1.0.0"
 
 server:
@@ -97,7 +97,7 @@ slm:
 kubernetes:
   context: ""                      # Use default context
   namespace: "default"
-  service_account: "prometheus-alerts-slm"
+  service_account: "kubernaut"
 
 actions:
   dry_run: false                   # Set to true for testing

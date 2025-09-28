@@ -1,6 +1,7 @@
 package intelligence
 
 import (
+	"testing"
 	"fmt"
 	"runtime"
 	"time"
@@ -342,4 +343,10 @@ func convertToClusteringData(executions []*engine.RuntimeWorkflowExecution) []*e
 	}
 
 	return data
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUperformance(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Uperformance Suite")
 }

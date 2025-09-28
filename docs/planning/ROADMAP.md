@@ -548,7 +548,7 @@ spec:
           type: "httpProbe"
           mode: "Continuous"
           httpProbe/inputs:
-            url: "http://prometheus-alerts-slm:8080/health"
+            url: "http://kubernaut:8080/health"
             expectedResponseCodes: ["200"]
 ```
 
@@ -1146,7 +1146,7 @@ FROM nvidia/cuda:11.8-runtime-ubuntu22.04
 RUN ollama pull {optimal-model-from-comparison}
 
 # Copy application and configuration
-COPY prometheus-alerts-slm /usr/local/bin/
+COPY kubernaut /usr/local/bin/
 COPY scripts/start-production.sh /start.sh
 
 # Multi-instance support

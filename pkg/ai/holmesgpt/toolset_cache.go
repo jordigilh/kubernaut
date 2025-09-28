@@ -99,7 +99,14 @@ func (tcc *ToolsetConfigCache) GetToolsetsByType(serviceType string) []*ToolsetC
 	tcc.mu.RLock()
 	defer tcc.mu.RUnlock()
 
-	var toolsets []*ToolsetConfig
+	// Initialize as empty slice, not nil slice (defensive programming)
+	toolsets := make([]*ToolsetConfig, 0)
+
+	// Return empty slice for invalid service type (defensive programming)
+	if serviceType == "" {
+		return toolsets
+	}
+
 	for _, toolset := range tcc.toolsets {
 		if !tcc.isExpired(toolset) && toolset.ServiceType == serviceType {
 			toolsets = append(toolsets, toolset)

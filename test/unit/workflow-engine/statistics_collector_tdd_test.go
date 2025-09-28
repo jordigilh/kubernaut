@@ -4,6 +4,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -242,4 +243,10 @@ func filterHighPriorityPatterns(patterns []*engine.FailurePattern) []*engine.Fai
 		}
 	}
 	return highPriority
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUstatisticsUcollectorUtdd(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UstatisticsUcollectorUtdd Suite")
 }

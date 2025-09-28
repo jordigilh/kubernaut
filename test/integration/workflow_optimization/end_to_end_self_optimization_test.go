@@ -18,26 +18,7 @@ import (
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
-// PatternStoreTestAdapter adapts StandardPatternStore to engine.PatternStore for testing
-type PatternStoreTestAdapter struct {
-	store *testshared.StandardPatternStore
-}
-
-func (a *PatternStoreTestAdapter) StorePattern(ctx context.Context, pattern *types.DiscoveredPattern) error {
-	return a.store.StoreEnginePattern(ctx, pattern)
-}
-
-func (a *PatternStoreTestAdapter) GetPattern(ctx context.Context, patternID string) (*types.DiscoveredPattern, error) {
-	return a.store.GetPattern(ctx, patternID)
-}
-
-func (a *PatternStoreTestAdapter) ListPatterns(ctx context.Context, patternType string) ([]*types.DiscoveredPattern, error) {
-	return a.store.ListPatterns(ctx, patternType)
-}
-
-func (a *PatternStoreTestAdapter) DeletePattern(ctx context.Context, patternID string) error {
-	return a.store.DeletePattern(ctx, patternID)
-}
+// PatternStoreTestAdapter removed - using testshared.CreatePatternStoreForTesting() instead
 
 var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Ordered, func() {
 	var (
@@ -74,7 +55,7 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			ExecutionRepo:   suite.ExecutionRepo,
 			Logger:          suite.Logger,
 		}
-		
+
 		var err error
 		workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
 		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
@@ -116,7 +97,7 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() instead of deprecated SelfOptimizer
 			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, originalWorkflow, executionHistory)
 			optimizationDuration := time.Since(optimizationStartTime)
-			
+
 			// Extract optimized workflow from LLM result
 			var optimizedWorkflow *engine.Workflow
 			if optimizationResult != nil {
@@ -148,7 +129,7 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() instead of deprecated SelfOptimizer
 			suggestionResult, err := llmClient.SuggestOptimizations(ctx, originalWorkflow)
 			Expect(err).ToNot(HaveOccurred(), "Should generate optimization suggestions")
-			
+
 			// Extract suggestions from LLM result
 			var suggestions []map[string]interface{}
 			if suggestionResult != nil {
@@ -214,7 +195,7 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			By("attempting optimization with limited data")
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for challenging scenarios
 			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, challengingWorkflow, minimalHistory)
-			
+
 			// Extract optimized workflow from LLM result
 			var optimizedWorkflow *engine.Workflow
 			if optimizationResult != nil {
@@ -272,7 +253,7 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.OptimizeWorkflow() for business metrics optimization
 			optimizationResult, err := llmClient.OptimizeWorkflow(ctx, inefficientWorkflow, problematicHistory)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// Extract optimized workflow from LLM result
 			var optimizedWorkflow *engine.Workflow
 			if optimizationResult != nil {
@@ -304,7 +285,7 @@ var _ = Describe("BR-E2E-OPT-001: End-to-End Self Optimization Flow Test", Order
 			// RULE 12 COMPLIANCE: Use enhanced llm.Client.SuggestOptimizations() for actionable insights
 			suggestionResult, err := llmClient.SuggestOptimizations(ctx, inefficientWorkflow)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// Extract suggestions from LLM result
 			var suggestions []map[string]interface{}
 			if suggestionResult != nil {
@@ -701,3 +682,7 @@ func measureWorkflowComplexity(workflow *engine.Workflow) time.Duration {
 
 	return totalComplexity
 }
+
+// Note: Helper functions generateProblematicExecutionHistory, calculateWorkflowCost,
+// and calculateWorkflowReliability are defined in end_to_end_self_optimization_simple_test.go
+// and shared across the package

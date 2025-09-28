@@ -1,52 +1,110 @@
 ---
 globs: "*_test.go,test/**/*"
-description: "Testing strategy and patterns for kubernaut's three-tier approach"
+description: "Testing strategy and patterns for kubernaut's pyramid approach with defense-in-depth"
 ---
 
 # Testing Strategy for Kubernaut
 
-## Three-Tier Testing Approach
-Kubernaut implements a comprehensive testing strategy with **87% overall confidence**:
+## 🚨 **ENHANCED METHODOLOGY INTEGRATION**
 
-### Unit Tests (35% - 60-80 BRs)
+**IMPORTANT**: This testing strategy integrates with the comprehensive AI assistant methodology.
+See [00-ai-assistant-methodology-enforcement.mdc](mdc:.cursor/rules/00-ai-assistant-methodology-enforcement.mdc) for complete validation requirements.
+
+**For '/fix-build' commands**: All testing must follow the enhanced validation approach with comprehensive TDD compliance.
+
+## Pyramid Testing Approach
+Kubernaut implements a **pyramid testing strategy** with **90% overall confidence** through extensive unit test coverage:
+
+### Unit Tests (70%+ - AT LEAST 70% of ALL BRs) - **MAXIMUM COVERAGE FOUNDATION LAYER**
 **Location**: [test/unit/](mdc:test/unit/)
-**Purpose**: Pure algorithmic/mathematical logic validation
-**Confidence**: 80-85%
+**Purpose**: **EXTENSIVE business logic validation covering ALL unit-testable business requirements**
+**Coverage Mandate**: **AT LEAST 70% of total business requirements, extended to 100% of unit-testable BRs**
+**Confidence**: 85-90%
 **Execution**: `make test`
+**Strategy**: **Use real business logic with mocks ONLY for external dependencies - MAXIMIZE unit test coverage**
+
+**CRITICAL EXPANSION PRINCIPLE**: Unit tests should cover **ALL business requirements that can be unit tested with external mock dependencies**, even if some requirements are also tested in integration or e2e testing (defense-in-depth). The 70% minimum is a floor, not a ceiling.
 
 ```go
-// Example: Pure mathematical algorithms
-Describe("BR-VDB-001: Embedding Generation Algorithms", func() {
-    It("should produce consistent embeddings for identical content", func() {
-        // Tests mathematical computation accuracy
-        // No external dependencies required
-        // Fast execution (<10ms)
+// Example: Comprehensive business logic testing with real components
+Describe("BR-WORKFLOW-001: Intelligent Workflow Generation", func() {
+    var (
+        // Mock ONLY external dependencies
+        mockLLMProvider *mocks.MockLLMProvider
+        mockK8sClient   *mocks.MockKubernetesClient
+        mockVectorDB    *mocks.MockVectorDatabase
+
+        // Use REAL business logic components
+        workflowBuilder *engine.IntelligentWorkflowBuilder
+        safetyFramework *platform.SafetyFramework
+        analyticsEngine *insights.AnalyticsEngine
+    )
+
+    BeforeEach(func() {
+        // Mock external/infrastructure dependencies ONLY
+        mockLLMProvider = mocks.NewMockLLMProvider()
+        mockK8sClient = mocks.NewMockKubernetesClient()
+        mockVectorDB = mocks.NewMockVectorDatabase()
+
+        // Create REAL business components
+        safetyFramework = platform.NewSafetyFramework(realConfig)
+        analyticsEngine = insights.NewAnalyticsEngine(realConfig)
+        workflowBuilder = engine.NewIntelligentWorkflowBuilder(
+            mockLLMProvider,    // External: AI service
+            mockK8sClient,      // External: Infrastructure
+            safetyFramework,    // Real: Business safety logic
+            analyticsEngine,    // Real: Business analytics logic
+        )
+    })
+
+    It("should generate workflows with comprehensive business validation", func() {
+        // Test REAL business logic integration and algorithms
+        workflow, err := workflowBuilder.CreateWorkflowFromAlert(ctx, alert)
+
+        // Validate REAL business outcomes and logic
+        Expect(workflow.Template.SafetyValidation).ToNot(BeNil())
+        Expect(safetyFramework.ValidateWorkflow(workflow)).To(Succeed())
+        Expect(analyticsEngine.AssessWorkflowRisk(workflow)).To(BeNumerically("<", 0.3))
     })
 })
 ```
 
-### Integration Tests (40% - 55-75 BRs)
+### Integration Tests (20% - 40-60 BRs) - **INTERACTION LAYER**
 **Location**: [test/integration/](mdc:test/integration/)
-**Purpose**: Cross-component behavior and data flow validation
+**Purpose**: **Cross-component behavior and data flow validation**
 **Confidence**: 80-85%
 **Execution**: `make test-integration-kind` (Kind cluster) or `make test-integration-kind-ci` (CI with mocked LLM)
+**Strategy**: **Focus on component interactions with real business logic**
 
 ```go
-// Example: Cross-component behavior with real dependencies
-Describe("BR-VDB-AI-001: Vector Search Quality with Real Embeddings", func() {
-    It("should achieve >90% relevance accuracy with real vector database", func() {
-        // Tests actual vector search quality
-        // Uses real vector database and embeddings
-        // Validates component interaction effectiveness
+// Example: Cross-component integration with real business logic
+Describe("BR-INTEGRATION-001: Workflow Engine Integration", func() {
+    It("should integrate workflow generation with execution pipeline", func() {
+        // Test real component integration
+        workflow := workflowEngine.CreateWorkflow(ctx, alert)
+        executionResult := executionEngine.ExecuteWorkflow(ctx, workflow)
+
+        // Validate cross-component business outcomes
+        Expect(executionResult.Status).To(Equal("completed"))
+        Expect(executionResult.BusinessMetrics.SuccessRate).To(BeNumerically(">", 0.9))
     })
 })
 ```
 
-### E2E Tests (25% - 30-45 BRs)
+### E2E Tests (10% - 15-25 BRs) - **BUSINESS WORKFLOW LAYER**
 **Location**: [test/e2e/](mdc:test/e2e/)
-**Purpose**: Complete business workflow and user journey validation
+**Purpose**: **Complete end-to-end business workflow validation**
 **Confidence**: 90-95%
 **Execution**: `make test-e2e-ocp` (OpenShift) or `make test-e2e-kind` (Kind cluster)
+**Strategy**: **Complete business scenarios with minimal mocking**
+
+## Defense in Depth Testing Strategy - EXPANDED UNIT COVERAGE WITH PYRAMID APPROACH
+
+### **🛡️ Core Principle: MAXIMUM Unit Coverage with Strategic Multi-Layer Defense**
+
+Kubernaut implements **defense in depth** testing with **EXPANDED unit test foundation** where business functionality is validated comprehensively at the unit level AND strategically at integration/e2e levels for critical scenarios. The expanded pyramid approach ensures **MAXIMUM coverage at the unit level** (70%+ minimum, extending to ALL unit-testable BRs) while maintaining defense layers for scenarios requiring real system integration.
+
+**EXPANSION MANDATE**: Unit tests should cover **EVERY business requirement that can be tested with external mocks**, not just the 70% minimum. This creates a comprehensive foundation layer with strategic overlapping coverage at higher levels.
 
 ## Testing Framework
 - **BDD Framework**: Ginkgo/Gomega for behavior-driven development (MANDATORY per [00-project-guidelines.mdc](mdc:.cursor/rules/00-project-guidelines.mdc))
@@ -97,8 +155,18 @@ make test-ci          # Run CI test suite with mocked LLM
 - **Integration**: Run before commits and in CI
 - **E2E**: Run before releases and for major features
 
+## Mock Usage Decision Matrix
+
+| Component Type | Unit Tests | Integration Tests | E2E Tests |
+|---------------|------------|-------------------|-----------|
+| **External AI APIs** (HolmesGPT, OpenAI) | MOCK | MOCK (CI) / REAL (dev) | REAL |
+| **External Infrastructure** (K8s, DB) | MOCK | REAL | REAL |
+| **Business Logic Components** | REAL | REAL | REAL |
+| **Internal Services** | REAL | REAL | REAL |
+| **Configuration** | REAL | REAL | REAL |
+
 ## Confidence Targets
-- **Unit Tests**: 80-85% confidence for algorithmic logic
+- **Unit Tests**: 85-90% confidence for comprehensive business logic
 - **Integration Tests**: 80-85% confidence for component interactions
 - **E2E Tests**: 90-95% confidence for complete workflows
-- **Overall System**: 87% confidence through three-tier coverage
+- **Overall System**: 90% confidence through pyramid coverage with defense-in-depth
