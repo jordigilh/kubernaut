@@ -32,6 +32,21 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 - **BR-WF-004**: MUST provide workflow state management and persistence
 - **BR-WF-005**: MUST support workflow pause, resume, and cancellation operations
 
+#### 2.1.1.1 Workflow Timeout & Lifecycle Management
+- **BR-WF-TIMEOUT-001**: MUST implement configurable workflow execution timeouts based on complexity
+  - Simple workflows (1-3 steps): 10 minutes maximum
+  - Medium workflows (4-10 steps): 20 minutes maximum
+  - Complex workflows (11+ steps): 45 minutes maximum
+- **BR-WF-TIMEOUT-002**: MUST provide step-level timeout configuration and enforcement
+- **BR-WF-TIMEOUT-003**: MUST implement workflow deadline propagation to all sub-steps
+- **BR-WF-TIMEOUT-004**: MUST support dynamic timeout adjustment based on execution progress
+- **BR-WF-TIMEOUT-005**: MUST implement graceful workflow termination on timeout expiration
+- **BR-WF-LIFECYCLE-001**: MUST track workflow execution phases (queued, running, paused, completed, failed, cancelled)
+- **BR-WF-LIFECYCLE-002**: MUST provide workflow progress reporting with milestone tracking
+- **BR-WF-LIFECYCLE-003**: MUST implement workflow heartbeat monitoring to detect stuck executions
+- **BR-WF-LIFECYCLE-004**: MUST support workflow execution prioritization and scheduling
+- **BR-WF-LIFECYCLE-005**: MUST provide workflow dependency chain visualization and management
+
 #### 2.1.2 Expression Engine
 - **BR-WF-006**: MUST evaluate complex conditional expressions for workflow decisions
 - **BR-WF-007**: MUST support dynamic variable substitution and context injection

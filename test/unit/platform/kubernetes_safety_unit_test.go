@@ -4,6 +4,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -449,3 +450,9 @@ var _ = Describe("BR-SAFE-001 through BR-SAFE-010: Kubernetes Safety Unit Testin
 
 // Helper functions for Kubernetes safety testing
 // These create realistic test data for REAL business logic validation
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUkubernetesUsafetyUunit(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UkubernetesUsafetyUunit Suite")
+}

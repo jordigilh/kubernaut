@@ -198,15 +198,15 @@ func getNamespacesForTestType(testType TestType) []string {
 	case TestTypeSafety:
 		return []string{"default", "kube-system"} // System namespaces for safety testing
 	case TestTypePlatform:
-		return []string{"default", "prometheus-alerts-slm", "monitoring"} // Platform-specific
+		return []string{"default", "kubernaut", "monitoring"} // Platform-specific
 	case TestTypeWorkflow:
-		return []string{"default", "prometheus-alerts-slm", "workflows"} // Workflow-specific
+		return []string{"default", "kubernaut", "workflows"} // Workflow-specific
 	case TestTypeAI:
-		return []string{"default", "ai-ml", "prometheus-alerts-slm"} // AI-specific
+		return []string{"default", "ai-ml", "kubernaut"} // AI-specific
 	case TestTypeIntegration:
-		return []string{"default", "prometheus-alerts-slm", "monitoring", "apps"} // Multi-namespace
+		return []string{"default", "kubernaut", "monitoring", "apps"} // Multi-namespace
 	case TestTypeE2E:
-		return []string{"default", "prometheus-alerts-slm", "monitoring", "apps", "infrastructure"} // Complex
+		return []string{"default", "kubernaut", "monitoring", "apps", "infrastructure"} // Complex
 	default:
 		return []string{"default"} // Safe default
 	}

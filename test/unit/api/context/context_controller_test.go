@@ -1,6 +1,7 @@
 package context
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -423,4 +424,10 @@ func countContextTypes(contextData *contextopt.ContextData) int {
 		count++
 	}
 	return count
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUcontextUcontroller(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UcontextUcontroller Suite")
 }

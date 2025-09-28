@@ -1,6 +1,7 @@
 package holmesgpt_test
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"strings"
@@ -458,3 +459,9 @@ var _ = Describe("HolmesGPT Client - Business Requirements Validation", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUclientUbusinessUlogic(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UclientUbusinessUlogic Suite")
+}

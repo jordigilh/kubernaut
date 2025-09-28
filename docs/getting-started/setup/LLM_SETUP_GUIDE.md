@@ -18,7 +18,7 @@ Use the provided configuration file:
 
 ```bash
 # Run with local LLM configuration
-./prometheus-alerts-slm --config config/local-llm.yaml
+./kubernaut --config config/local-llm.yaml
 ```
 
 ### Option 3: Default with Override
@@ -26,7 +26,7 @@ The system will automatically use your LLM if you set:
 
 ```bash
 export SLM_ENDPOINT=http://192.168.1.169:8080
-./prometheus-alerts-slm  # Uses default config with your endpoint
+./kubernaut  # Uses default config with your endpoint
 ```
 
 ## 🧪 Testing LLM Integration

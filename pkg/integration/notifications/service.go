@@ -28,7 +28,7 @@ func NewNotificationService(logger *logrus.Logger) NotificationService {
 		filters:     make([]NotificationFilter, 0),
 		middleware:  make([]NotificationMiddleware, 0),
 		logger:      logger,
-		defaultTags: []string{"prometheus-alerts-slm"},
+		defaultTags: []string{"kubernaut"},
 	}
 }
 
@@ -78,7 +78,7 @@ func (ns *notificationService) Notify(ctx context.Context, notification Notifica
 		notification.Timestamp = time.Now()
 	}
 	if notification.Source == "" {
-		notification.Source = "prometheus-alerts-slm"
+		notification.Source = "kubernaut"
 	}
 
 	// Add default tags
@@ -343,7 +343,7 @@ func (ns *notificationService) Close() error {
 func (ns *notificationService) buildNotificationFromAlert(alert types.Alert) NotificationBuilder {
 	return NewNotificationBuilder().
 		WithAlert(alert).
-		WithSource("prometheus-alerts-slm")
+		WithSource("kubernaut")
 }
 
 // AddFilter adds a notification filter

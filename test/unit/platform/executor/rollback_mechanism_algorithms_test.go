@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -473,3 +474,9 @@ var _ = Describe("BR-ROLLBACK-001-025: Rollback Mechanism Algorithm Tests", func
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUrollbackUmechanismUalgorithms(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UrollbackUmechanismUalgorithms Suite")
+}

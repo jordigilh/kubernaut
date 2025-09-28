@@ -2,7 +2,7 @@
 
 **Analysis Date**: December 2024
 **Context**: RAG Enhancement for Action History (follows RAG_ENHANCEMENT_ANALYSIS.md)
-**Decision Impact**: Architecture choice for vector search in prometheus-alerts-slm
+**Decision Impact**: Architecture choice for vector search in kubernaut
 
 ## 🎯 **Executive Summary**
 
@@ -963,7 +963,7 @@ decision_tree:
 
 ### **🎯 Implementation Recommendations**
 
-#### **For prometheus-alerts-slm Specifically**
+#### **For kubernaut Specifically**
 
 **Start with pgvector because:**
 1. **Action History Scale**: Initially < 10K actions, growing to ~100K over first year
@@ -1119,7 +1119,7 @@ vector_db_trends:
 
 ## 📋 **Final Recommendation Summary**
 
-### **🎯 For prometheus-alerts-slm: Use pgvector**
+### **🎯 For kubernaut: Use pgvector**
 
 **Rationale:**
 1. **Perfect Scale Match**: Current and projected scale fits pgvector capabilities
@@ -1149,4 +1149,4 @@ recommended_sequence:
 
 ---
 
-*This analysis provides a comprehensive evaluation framework for PostgreSQL pgvector vs dedicated vector databases, specifically tailored for the prometheus-alerts-slm RAG enhancement initiative.*
+*This analysis provides a comprehensive evaluation framework for PostgreSQL pgvector vs dedicated vector databases, specifically tailored for the kubernaut RAG enhancement initiative.*

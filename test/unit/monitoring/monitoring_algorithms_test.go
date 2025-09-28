@@ -1,6 +1,7 @@
 package monitoring_test
 
 import (
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -142,16 +143,16 @@ var _ = Describe("BR-MON-001-015: Monitoring Algorithm Logic Tests", func() {
 
 		It("should apply weights correctly in score calculation", func() {
 			metrics := map[string]float64{
-				"critical_metric":    50.0,
-				"secondary_metric":   90.0,
+				"critical_metric":  50.0,
+				"secondary_metric": 90.0,
 			}
 			weights := map[string]float64{
-				"critical_metric":    3.0, // High weight
-				"secondary_metric":   1.0, // Low weight
+				"critical_metric":  3.0, // High weight
+				"secondary_metric": 1.0, // Low weight
 			}
 			benchmarks := map[string]float64{
-				"critical_metric":    100.0,
-				"secondary_metric":   100.0,
+				"critical_metric":  100.0,
+				"secondary_metric": 100.0,
 			}
 
 			result := monitoring.CalculatePerformanceScore(metrics, weights, benchmarks)
@@ -162,14 +163,14 @@ var _ = Describe("BR-MON-001-015: Monitoring Algorithm Logic Tests", func() {
 
 		It("should identify improvement areas correctly", func() {
 			metrics := map[string]float64{
-				"good_metric":    85.0,
-				"poor_metric1":   60.0, // Below 70
-				"poor_metric2":   50.0, // Below 70
+				"good_metric":  85.0,
+				"poor_metric1": 60.0, // Below 70
+				"poor_metric2": 50.0, // Below 70
 			}
 			benchmarks := map[string]float64{
-				"good_metric":    100.0,
-				"poor_metric1":   100.0,
-				"poor_metric2":   100.0,
+				"good_metric":  100.0,
+				"poor_metric1": 100.0,
+				"poor_metric2": 100.0,
 			}
 
 			result := monitoring.CalculatePerformanceScore(metrics, nil, benchmarks)
@@ -313,7 +314,7 @@ var _ = Describe("BR-MON-001-015: Monitoring Algorithm Logic Tests", func() {
 		It("should detect anomalies using Z-score method", func() {
 			// Normal data with outliers
 			values := []float64{10, 12, 11, 13, 10, 11, 12, 50, 9, 11} // 50 is an outlier
-			sensitivityThreshold := 2.0 // 2 standard deviations
+			sensitivityThreshold := 2.0                                // 2 standard deviations
 
 			result := monitoring.DetectAnomalies(values, sensitivityThreshold)
 
@@ -370,3 +371,9 @@ var _ = Describe("BR-MON-001-015: Monitoring Algorithm Logic Tests", func() {
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestMonitoringAlgorithms(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Monitoring Algorithms Suite")
+}

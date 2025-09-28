@@ -10,30 +10,47 @@
 
 ## Quick Start
 
-### 1. Docker Compose (Development)
+### 1. Kind Cluster (Recommended for Development)
 
 ```bash
-docker-compose up -d
+# Bootstrap complete integration environment
+make bootstrap-dev-kind
 ```
 
 Access:
+- Webhook service: http://localhost:30800
+- Prometheus: http://localhost:30090
+- AlertManager: http://localhost:30093
+- PostgreSQL: localhost:30432
+- External LLM: http://192.168.1.169:8080
+
+### 2. Docker Compose (DEPRECATED - Legacy Development)
+
+> ⚠️ **DEPRECATED**: Use Kind cluster instead for better production parity
+
+```bash
+# Legacy setup (use make bootstrap-dev-kind instead)
+make bootstrap-dev-compose
+```
+
+Access (legacy):
 - Go service: http://localhost:8080
 - HolmesGPT service: http://localhost:8090
-- **NEW**: LocalAI endpoint: http://192.168.1.169:8080 (if configured)
+- LocalAI endpoint: http://192.168.1.169:8080 (if configured)
 
-### 2. Kubernetes (Production)
+### 3. Kubernetes (Production)
 
 ```bash
 # Create namespace
-kubectl create namespace prometheus-alerts-slm
+kubectl create namespace kubernaut
 
 # Create secrets
 kubectl create secret generic holmesgpt-secrets \
   --from-literal=openai-api-key=your_api_key \
-  -n prometheus-alerts-slm
+  -n kubernaut
 
 # Deploy services
-kubectl apply -f k8s/ -n prometheus-alerts-slm
+kubectl apply -f k8s/ -n kubernaut
 ```
 
 ## Configuration
@@ -86,7 +103,7 @@ Prometheus metrics available at:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: prometheus-alerts-slm
+  name: kubernaut
 rules:
 - apiGroups: [""]
   resources: ["pods", "nodes", "services"]
@@ -102,11 +119,11 @@ rules:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: prometheus-alerts-slm-policy
+  name: kubernaut-policy
 spec:
   podSelector:
     matchLabels:
-      app: prometheus-alerts-slm
+      app: kubernaut
   ingress:
   - from:
     - podSelector:
@@ -142,11 +159,11 @@ spec:
 
 ```bash
 # Go service logs (includes HolmesGPT integration)
-kubectl logs -f deployment/prometheus-alerts-slm -n prometheus-alerts-slm
+kubectl logs -f deployment/kubernaut -n kubernaut
 
 # HolmesGPT service logs
-kubectl logs -f deployment/holmesgpt-service -n prometheus-alerts-slm
+kubectl logs -f deployment/holmesgpt-service -n kubernaut
 
 # Filter for errors
-kubectl logs deployment/holmesgpt-service -n prometheus-alerts-slm | grep ERROR
+kubectl logs deployment/holmesgpt-service -n kubernaut | grep ERROR
 ```

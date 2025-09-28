@@ -1,6 +1,7 @@
 package k8s_test
 
 import (
+	"testing"
 	"context"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -755,3 +756,9 @@ var _ = Describe("ServiceDetectors - Implementation Correctness Testing", func()
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUserviceUdetectors(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UserviceUdetectors Suite")
+}

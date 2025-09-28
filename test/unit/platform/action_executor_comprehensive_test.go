@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -616,4 +617,10 @@ func mustParseQuantity(value string) resource.Quantity {
 	quantity, err := resource.ParseQuantity(value)
 	Expect(err).ToNot(HaveOccurred())
 	return quantity
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUactionUexecutorUcomprehensive(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UactionUexecutorUcomprehensive Suite")
 }

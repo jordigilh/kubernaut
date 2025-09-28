@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-integration
+  labels:
+    name: kubernaut-integration
+    purpose: integration-testing
+    managed-by: kubernaut
+    deployment-type: external-only
+  annotations:
+    description: "External dependencies environment for kubernaut services"
+    created-by: "kubernaut-bootstrap-external-deps"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: integration-resource-quota
+  namespace: kubernaut-integration
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "6"
+    limits.memory: 12Gi
+    pods: "20"
+    services: "10"
+    persistentvolumeclaims: "5"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: integration-limit-range
+  namespace: kubernaut-integration
+spec:
+  limits:
+  - default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+    type: Container
+  - default:
+      storage: 1Gi
+    type: PersistentVolumeClaim

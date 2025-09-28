@@ -12,6 +12,7 @@ import (
 )
 
 // PatternConfidenceValidatorSimple provides empirical validation for pattern confidence calculations
+// Business Requirement: BR-PATTERN-003 - Pattern confidence validation and accuracy tracking
 type PatternConfidenceValidatorSimple struct {
 	log               *logrus.Logger
 	config            *PatternDiscoveryConfig

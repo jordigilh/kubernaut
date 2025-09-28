@@ -1,6 +1,7 @@
 package workflowengine
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"time"
@@ -427,4 +428,10 @@ func createOptimizationExecutionHistory(count int) []*engine.RuntimeWorkflowExec
 		executions[i] = execution
 	}
 	return executions
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUresilientUworkflowUengine(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UresilientUworkflowUengine Suite")
 }

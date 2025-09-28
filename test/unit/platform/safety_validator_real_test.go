@@ -4,6 +4,7 @@
 package platform
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -421,4 +422,10 @@ func setupTestClusterResources(ctx context.Context, client *fake.Clientset) {
 // Helper function for int32 pointer
 func testInt32Ptr(i int32) *int32 {
 	return &i
+}
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUsafetyUvalidatorUreal(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UsafetyUvalidatorUreal Suite")
 }

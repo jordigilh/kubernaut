@@ -1,0 +1,324 @@
+# Container and Deployment Standards
+
+## 🐳 **Container Image Standards - MANDATORY**
+
+### Final Service Image Registry
+**MANDATORY**: All final service images MUST use the standardized registry prefix:
+
+```
+quay.io/jordigilh/
+```
+
+### Base Image Strategy
+**IMPORTANT DISTINCTION**:
+- **Base Images**: Use official upstream images (Red Hat UBI, Alpine, etc.)
+- **Final Service Images**: Use `quay.io/jordigilh/` registry
+
+### Image Naming Convention
+**Final Service Images Format**: `quay.io/jordigilh/{service-name}:{version}`
+
+**Examples**:
+```dockerfile
+# ✅ CORRECT: Use official base images for building
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+# OR for Alpine-based services
+FROM golang:1.23-alpine AS builder
+FROM alpine:latest
+
+# Final service images use quay.io/jordigilh/ registry
+# Built image will be: quay.io/jordigilh/webhook-service:v1.0.0
+```
+
+### Base Image Preferences
+**Priority Order**:
+1. **Red Hat UBI** (Universal Base Images) - Preferred for enterprise
+2. **Alpine Linux** - For minimal footprint
+3. **Distroless** - For maximum security
+4. **Official language images** - For build stages only
+
+```dockerfile
+# ✅ PREFERRED: Red Hat UBI for enterprise services
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+# ✅ ACCEPTABLE: Alpine for minimal services
+FROM golang:1.23-alpine AS builder
+FROM alpine:latest
+
+# ❌ AVOID: Random third-party base images
+FROM some-random-registry/custom-image:latest
+```
+
+## 🏗️ **Dockerfile Standards**
+
+### Multi-Stage Build Pattern
+**MANDATORY**: Use multi-stage builds for all services
+
+```dockerfile
+# Build stage - Use official base images
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+
+USER root
+RUN dnf update -y && dnf install -y git ca-certificates && dnf clean all
+USER 1001
+
+WORKDIR /opt/app-root/src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o service-name ./cmd/service-name
+
+# Runtime stage - Use official base images
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+RUN microdnf update -y && microdnf install -y ca-certificates && microdnf clean all
+RUN useradd -r -u 1001 -g root service-user
+
+COPY --from=builder /opt/app-root/src/service-name /usr/local/bin/
+USER 1001
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/service-name"]
+
+# Final image will be pushed as: quay.io/jordigilh/service-name:v1.0.0
+```
+
+### Security Standards
+**MANDATORY**: All containers must follow security best practices
+
+```dockerfile
+# ✅ REQUIRED: Non-root user
+RUN useradd -r -u 1001 -g root service-user
+USER service-user
+
+# ✅ REQUIRED: Minimal attack surface
+FROM quay.io/jordigilh/kubernaut-minimal:latest
+
+# ✅ REQUIRED: Health checks
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD ["/usr/local/bin/service-name", "--health-check"] || exit 1
+
+# ✅ REQUIRED: Proper labels
+LABEL name="kubernaut-service-name" \
+      vendor="Kubernaut" \
+      version="1.0.0" \
+      maintainer="kubernaut-team@example.com"
+```
+
+## 📦 **Image Versioning Strategy**
+
+### Version Tags
+**Format**: Semantic versioning with environment tags
+
+```bash
+# Production releases
+quay.io/jordigilh/webhook-service:v1.2.3
+quay.io/jordigilh/webhook-service:v1.2
+quay.io/jordigilh/webhook-service:v1
+quay.io/jordigilh/webhook-service:latest
+
+# Development builds
+quay.io/jordigilh/webhook-service:dev-abc123f
+quay.io/jordigilh/webhook-service:pr-456
+quay.io/jordigilh/webhook-service:main-latest
+
+# Environment-specific
+quay.io/jordigilh/webhook-service:staging-v1.2.3
+quay.io/jordigilh/webhook-service:prod-v1.2.3
+```
+
+### Build Automation
+**MANDATORY**: Use consistent build process
+
+```yaml
+# .github/workflows/build.yml
+- name: Build and push image
+  run: |
+    IMAGE_TAG="quay.io/jordigilh/${SERVICE_NAME}:${VERSION}"
+    docker build -t ${IMAGE_TAG} .
+    docker push ${IMAGE_TAG}
+```
+
+## 🚀 **Deployment Standards**
+
+### Kubernetes Manifests
+**MANDATORY**: Use standardized image references
+
+```yaml
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-service
+spec:
+  template:
+    spec:
+      containers:
+      - name: webhook-service
+        image: quay.io/jordigilh/webhook-service:v1.2.3
+        imagePullPolicy: IfNotPresent
+```
+
+### Helm Charts
+**MANDATORY**: Parameterize registry in values
+
+```yaml
+# values.yaml
+image:
+  registry: quay.io/jordigilh
+  repository: webhook-service
+  tag: v1.2.3
+  pullPolicy: IfNotPresent
+
+# templates/deployment.yaml
+image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+```
+
+## 🔧 **Development Workflow**
+
+### Local Development
+**Pattern**: Use consistent local image names
+
+```bash
+# Build local development image
+docker build -t quay.io/jordigilh/webhook-service:dev .
+
+# Run locally
+docker run -p 8080:8080 quay.io/jordigilh/webhook-service:dev
+```
+
+### CI/CD Integration
+**MANDATORY**: Standardized pipeline variables
+
+```bash
+# Environment variables
+export REGISTRY="quay.io/jordigilh"
+export SERVICE_NAME="webhook-service"
+export IMAGE_TAG="${REGISTRY}/${SERVICE_NAME}:${VERSION}"
+
+# Build command
+docker build -t ${IMAGE_TAG} -f docker/${SERVICE_NAME}.Dockerfile .
+```
+
+## 📋 **Registry Management**
+
+### Image Scanning
+**MANDATORY**: All images must pass security scanning
+
+```bash
+# Security scan before push
+docker scan quay.io/jordigilh/webhook-service:v1.2.3
+
+# Vulnerability assessment
+trivy image quay.io/jordigilh/webhook-service:v1.2.3
+```
+
+### Image Cleanup
+**Policy**: Automated cleanup of old images
+
+```bash
+# Retention policy: Keep last 10 versions
+# Cleanup images older than 90 days (except latest, stable tags)
+```
+
+## 🔍 **Monitoring and Observability**
+
+### Image Metrics
+**Track**: Image size, build time, vulnerability count
+
+```bash
+# Image size optimization
+docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+
+# Build time tracking
+time docker build -t quay.io/jordigilh/service:tag .
+```
+
+### Runtime Monitoring
+**MANDATORY**: Container runtime observability
+
+```yaml
+# Prometheus metrics
+- name: container_image_info
+  labels:
+    registry: "quay.io/jordigilh"
+    service: "webhook-service"
+    version: "v1.2.3"
+```
+
+## 🚨 **Anti-Patterns - FORBIDDEN**
+
+### Registry Anti-Patterns
+```dockerfile
+# ❌ WRONG: Mixed registries
+FROM docker.io/alpine:latest
+FROM gcr.io/project/base:latest
+FROM registry.redhat.io/ubi8/ubi:latest
+
+# ❌ WRONG: Hardcoded external registries
+FROM nginx:latest
+FROM postgres:13
+FROM redis:alpine
+```
+
+### Security Anti-Patterns
+```dockerfile
+# ❌ WRONG: Running as root
+USER root
+USER 0
+
+# ❌ WRONG: No health checks
+# Missing HEALTHCHECK instruction
+
+# ❌ WRONG: Exposing unnecessary ports
+EXPOSE 22 3306 5432
+```
+
+### Versioning Anti-Patterns
+```bash
+# ❌ WRONG: Inconsistent naming
+quay.io/different-org/webhook:v1.0.0
+docker.io/jordigilh/webhook:latest
+gcr.io/project/webhook-svc:1.0
+
+# ❌ WRONG: No versioning strategy
+quay.io/jordigilh/webhook:random-tag
+quay.io/jordigilh/webhook:build-123
+```
+
+## 📚 **Documentation Requirements**
+
+### Service Documentation
+**MANDATORY**: Each service must document its container usage
+
+```markdown
+# Service Name
+
+## Container Image
+- **Registry**: quay.io/jordigilh/service-name
+- **Latest Version**: v1.2.3
+- **Base Image**: quay.io/jordigilh/kubernaut-runtime:latest
+
+## Build Instructions
+```bash
+docker build -t quay.io/jordigilh/service-name:dev .
+```
+
+## Deployment
+```yaml
+image: quay.io/jordigilh/service-name:v1.2.3
+```
+```
+
+### Registry Documentation
+**Location**: `docs/deployment/CONTAINER_REGISTRY.md`
+**Content**: Registry access, credentials, policies
+
+## 🔗 **Integration Points**
+
+**Enforces**: [05-kubernetes-safety.mdc](mdc:.cursor/rules/05-kubernetes-safety.mdc) deployment safety
+**Supports**: [06-documentation-standards.mdc](mdc:.cursor/rules/06-documentation-standards.mdc) documentation requirements
+**Integrates**: CI/CD pipelines and deployment automation
+
+**Priority**: ESSENTIAL - standardized container strategy for all services

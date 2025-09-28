@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -186,3 +187,9 @@ var _ = Describe("BR-REAL-LLM-CONNECTIVITY-001: LLM Client Creation Business Log
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUllmUclientUbuilder(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UllmUclientUbuilder Suite")
+}

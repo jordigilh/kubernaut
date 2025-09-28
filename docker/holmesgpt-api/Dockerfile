@@ -78,8 +78,8 @@ RUN echo "🔧 Installing REST API dependencies..." && \
     pip install --no-cache-dir -r requirements-api.txt && \
     echo "✅ API dependencies installed"
 
-# Runtime stage: Minimal Red Hat UBI-micro
-FROM registry.access.redhat.com/ubi9-micro:${UBI_VERSION}
+# Runtime stage: Use UBI Python base instead of micro for easier Python runtime
+FROM registry.access.redhat.com/ubi9/python-${PYTHON_VERSION}:latest
 
 # Metadata for Red Hat Container Certification
 LABEL name="holmesgpt-api-server" \
@@ -97,13 +97,9 @@ LABEL name="holmesgpt-api-server" \
       security.level="maximum" \
       architecture="multi-arch"
 
-# Copy Python runtime and dependencies
-COPY --from=api-builder /etc/passwd /etc/passwd
-COPY --from=api-builder /etc/group /etc/group
-COPY --from=api-builder /usr/bin/python3.11 /usr/bin/python3.11
-COPY --from=api-builder /usr/lib64/python3.11 /usr/lib64/python3.11
-COPY --from=api-builder /opt/app-root/lib64/python3.11/site-packages /usr/lib64/python3.11/site-packages
-COPY --from=api-builder /opt/app-root/bin /usr/bin
+# Copy HolmesGPT and API dependencies (Python runtime already available in base image)
+COPY --from=api-builder /opt/app-root/lib64/python3.11/site-packages /opt/app-root/lib64/python3.11/site-packages
+COPY --from=api-builder /opt/app-root/bin /opt/app-root/bin
 
 # Create application structure
 USER root

@@ -1,6 +1,7 @@
 package workflowengine_test
 
 import (
+	"testing"
 	"context"
 	"time"
 
@@ -545,3 +546,9 @@ var _ = Describe("Performance Monitoring Integration - TDD Implementation", func
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUperformanceUmonitoringUintegration(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UperformanceUmonitoringUintegration Suite")
+}

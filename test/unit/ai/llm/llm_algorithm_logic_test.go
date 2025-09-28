@@ -1,6 +1,7 @@
 package llm_test
 
 import (
+	"testing"
 	"context"
 	"fmt"
 	"math"
@@ -503,3 +504,9 @@ var _ = Describe("BR-AI-056-085: AI Reasoning and Calculation Logic Tests", func
 		})
 	})
 })
+
+// TestRunner bootstraps the Ginkgo test suite
+func TestUllmUalgorithmUlogic(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "UllmUalgorithmUlogic Suite")
+}

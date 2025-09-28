@@ -2,11 +2,11 @@
 
 ## 🎯 **Overview**
 
-Successfully implemented **Hybrid Kubernaut E2E Architecture** where:
+Successfully implemented **Hybrid 10-Service Microservices E2E Architecture** where:
 - **OpenShift Cluster**: Runs on remote host (helios08)
 - **HolmesGPT Container**: Custom container image with REST API (deployed in cluster or locally)
-- **Kubernaut**: Runs locally but manages remote cluster
-- **Tests**: Run locally with access to both cluster and HolmesGPT API
+- **Kubernaut Microservices**: 10 services run locally but manage remote cluster
+- **Tests**: Run locally with access to both cluster and microservices APIs
 - **Vector Database**: Runs locally (PostgreSQL)
 
 This architecture provides **enterprise-grade security isolation** while maintaining **development efficiency**.
@@ -26,9 +26,16 @@ This architecture provides **enterprise-grade security isolation** while maintai
 │  │     Custom REST API Image       │         │     - 3 control plane nodes    │ │
 │  │     localhost:8090              │         │     - 3 worker nodes           │ │
 │  │                                 │         │     - ODF Storage              │ │
-│  │  🔧 Kubernaut                   │ ◄────── │     - Local Storage Operator   │ │
-│  │     - Connects to remote cluster│         │                                │ │
-│  │     - Accesses HolmesGPT API    │         │  🚫 Network Isolation          │ │
+│  │  🔗 Gateway Service (8080)       │ ◄────── │     - Local Storage Operator   │ │
+│  │  🧠 Alert Processor (8081)      │         │                                │ │
+│  │  🤖 AI Analysis (8082)          │         │  🚫 Network Isolation          │ │
+│  │  🎯 Workflow Orchestrator (8083)│         │     (Configurable)             │ │
+│  │  ⚡ K8s Executor (8084)         │         │                                │ │
+│  │  📊 Data Storage (8085)         │         │                                │ │
+│  │  🔍 Intelligence (8086)         │         │                                │ │
+│  │  📈 Effectiveness Monitor (8087)│         │                                │ │
+│  │  🌐 Context API (8088)          │         │                                │ │
+│  │  📢 Notifications (8089)        │         │                                │ │
 │  │                                 │         │     (Configurable)             │ │
 │  │  📊 PostgreSQL + pgvector       │         │                                │ │
 │  │     Vector database storage     │         │  📁 kubeconfig                 │ │

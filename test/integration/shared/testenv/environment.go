@@ -132,9 +132,9 @@ func SetupEnvironment() (*TestEnvironment, error) {
 	logrus.Info("Using real Kubernetes cluster (envtest) for integration tests")
 	env, err := SetupTestEnvironment()
 	if err != nil {
-		logrus.WithError(err).Error("Failed to setup real K8s test environment, falling back to fake client")
-		// Fallback to fake client if real environment setup fails
-		return setupFakeK8sEnvironment()
+		logrus.WithError(err).Error("Failed to setup real K8s test environment - integration tests require real environment")
+		// Integration tests MUST fail if real environment is unavailable
+		return nil, fmt.Errorf("integration test environment setup failed: %w", err)
 	}
 
 	return env, nil

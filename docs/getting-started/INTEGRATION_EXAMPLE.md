@@ -10,7 +10,7 @@ export SLM_PROVIDER=localai
 export SLM_MODEL=granite3.1-dense:8b
 
 # Run the application
-./prometheus-alerts-slm
+./kubernaut
 ```
 
 **Expected Output:**
