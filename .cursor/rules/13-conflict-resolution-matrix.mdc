@@ -6,95 +6,110 @@ description: "Conflict resolution matrix and automated detection for kubernaut r
 ## Priority Hierarchy - MANDATORY
 
 **Rule**: Apply higher priority rules first when conflicts occur
-**Validation**: `./scripts/resolve-rule-conflict.sh Rule1 Rule2 context`
+**Prevention**: Use priority hierarchy to avoid conflicts during design phase
 
-### Decision Matrix
-| Priority | Rules | Overrides | Tool |
-|----------|-------|-----------|------|
-| **1. Integration** | 00/07 | Everything | `./scripts/run-integration-validation.sh` |
-| **2. TDD Methodology** | 03/12 | Technical implementation | `./scripts/validate-tdd-completeness.sh` |
-| **3. Component-Specific** | 02/04/05/12 | Quality checks | Component-specific scripts |
-| **4. Quality Assurance** | 06/08/09 | Post-development | Quality validation scripts |
+### Authoritative Rule Hierarchy
+| Priority | Rule | Status | Authority | Scope |
+|----------|------|--------|-----------|-------|
+| **1. FOUNDATIONAL** | 00-core-development-methodology.mdc | FOUNDATIONAL | APDC Framework | All development |
+| **2. MANDATORY** | 00-project-guidelines.mdc | MANDATORY PRINCIPLES | TDD & Business Requirements | All development |
+| **3. BEHAVIORAL** | 00-ai-assistant-behavioral-constraints-consolidated.mdc | AI ASSISTANT CONTROL | AI Assistant Behavior | AI assistant usage |
+| **4. ENFORCEMENT** | 00-ai-assistant-methodology-enforcement.mdc | VALIDATION CONTROL | Methodology Compliance | Development validation |
+| **5. TESTING** | 03-testing-strategy.mdc | AUTHORITATIVE SOURCE | Testing & Mock Strategy | All testing |
+| **6. SPECIALIZED** | 04,05,12,etc | DOMAIN-SPECIFIC | Specialized Implementation | Specific domains |
+| **7. QUALITY** | 06,08,09,10 | VALIDATION | Quality Assurance | Post-development |
+| **8. INTEGRATION** | 07,01,02 | IMPLEMENTATION | Code Integration | Implementation details |
+
+### Rule Precedence When Conflicts Occur
+1. **FOUNDATIONAL (00-core)** overrides everything - APDC methodology is mandatory
+2. **MANDATORY PRINCIPLES (00-project)** override all except foundational
+3. **BEHAVIORAL CONSTRAINTS** override development decisions but not methodology
+4. **TESTING STRATEGY (03)** is authoritative for all testing and mock decisions
+5. **SPECIALIZED RULES** override general implementation but not methodology/testing
+6. **QUALITY RULES** provide validation but don't override implementation decisions
 
 ## Common Conflicts Resolution
 
 ### Integration vs Speed
-```bash
-# CONFLICT: AI sophistication vs Integration requirement
-# RESOLUTION: Integration wins - implement simple → integrate → enhance in REFACTOR
-./scripts/run-integration-validation.sh  # Ensures integration first
-```
+**CONFLICT**: AI sophistication vs Integration requirement
+**RESOLUTION**: Integration wins - implement simple → integrate → enhance in REFACTOR
+**PREVENTION**: Plan integration points during APDC Analysis phase
 
 ### TDD vs Sophistication
-```bash
-# CONFLICT: Complex algorithms vs TDD GREEN minimalism
-# RESOLUTION: TDD timing controls - minimal GREEN → sophisticated REFACTOR
-./scripts/phase4-refactor-validation.sh  # Validates REFACTOR enhancement only
-```
+**CONFLICT**: Complex algorithms vs TDD GREEN minimalism
+**RESOLUTION**: TDD timing controls - minimal GREEN → sophisticated REFACTOR
+**PREVENTION**: Reserve sophisticated logic for REFACTOR phase in APDC Plan
 
 ### AI vs General (Rule 12 vs Others)
-```bash
-# CONFLICT: AI-specific guidance vs general Go patterns
-# RESOLUTION: AI-specific rules win for AI components
-./scripts/validate-ai-development.sh  # AI-specific validation
-```
+**CONFLICT**: AI-specific guidance vs general Go patterns
+**RESOLUTION**: AI-specific rules win for AI components
+**PREVENTION**: Identify AI components during APDC Analysis phase
 
 ### Testing Strategy vs Anti-Patterns (Rule 03 vs Rule 08)
-```bash
-# CONFLICT: Pyramid testing approach vs anti-pattern detection
-# RESOLUTION: Both apply - pyramid strategy with automated anti-pattern prevention
-./scripts/cursor-rule-validator.sh  # Automated anti-pattern detection
-```
+**CONFLICT**: Pyramid testing approach vs anti-pattern detection
+**RESOLUTION**: Both apply - pyramid strategy with anti-pattern prevention
+**PREVENTION**: Design tests following pyramid strategy during APDC Plan phase
 
 ### Interface Validation vs Development Speed (Rule 09)
-```bash
-# CONFLICT: Interface validation requirements vs rapid development
-# RESOLUTION: Validation wins - prevents build errors and technical debt
-./scripts/validate-interface-usage.sh  # Interface validation before code generation
-```
+**CONFLICT**: Interface validation requirements vs rapid development
+**RESOLUTION**: Validation wins - prevents build errors and technical debt
+**PREVENTION**: Verify interface existence during APDC Analysis phase
 
 ### Safety vs Speed
-```bash
-# CONFLICT: K8s safety validation vs development speed
-# RESOLUTION: Safety wins - include safety in GREEN phase
-./scripts/validate-k8s-safety.sh  # Mandatory safety checks
-```
+**CONFLICT**: K8s safety validation vs development speed
+**RESOLUTION**: Safety wins - include safety in GREEN phase
+**PREVENTION**: Consider safety requirements during APDC Analysis and Plan phases
 
-## Automated Detection
+## Prevention-Focused Conflict Resolution
 
-### Conflict Detection Commands
-```bash
-# Integration conflicts
-grep -r "type.*Optimizer\|Engine\|Analyzer" pkg/ --include="*.go" | grep -v "_test.go"
-grep -r "Optimizer\|Engine\|Analyzer" cmd/ --include="*.go" || echo "CONFLICT: Missing integration"
+### Core APDC Prevention Framework
+**Built-in quality through systematic approach:**
 
-# TDD phase conflicts
-git diff HEAD~1 | grep "^+type.*struct" && echo "CONFLICT: New types in REFACTOR"
+**Analysis Prevention**: Start with clear business context and existing code understanding
+**Plan Prevention**: Design integration and success criteria before coding
+**Do Prevention**: Follow TDD phases with mandatory integration in GREEN
+**Check Prevention**: Verify planned outcomes were achieved through implementation
 
-# Testing anti-pattern conflicts
-./scripts/cursor-rule-validator.sh || echo "CONFLICT: Anti-pattern violations detected"
+### Business Requirements Prevention
+**Conflict Prevention**: Use standardized BR-[CATEGORY]-[NUMBER] format during Analysis
+**Integration Prevention**: Plan main application integration during Plan phase
+**Alignment Prevention**: Map all code to documented business requirements
 
-# Interface validation conflicts
-find test/ -name "*_test.go" -exec grep -l "Mock.*Engine\|undefined.*interface" {} \; | wc -l
+### TDD Phase Conflict Prevention
+**RED Prevention**: Write tests first, use existing interfaces
+**GREEN Prevention**: Minimal implementation with mandatory integration
+**REFACTOR Prevention**: Enhance existing code only, no new types
 
-# AI methodology conflicts
-grep -r "Mock.*LLM\|Mock.*AI" test/ --include="*_test.go" | grep -v "pkg/testutil/mocks" | wc -l
-```
+### Prevention-Focused Conflict Avoidance
+**Integration Conflict Prevention**:
+- Plan main application integration during APDC Analysis phase
+- Design component usage before implementation begins
+- Ensure business code serves documented requirements
 
-## Enforcement Protocol
+**TDD Phase Conflict Prevention**:
+- Reserve new type creation for RED phase only
+- Plan enhancement approach during REFACTOR phase
+- Design minimal implementation strategy for GREEN phase
 
-### Automatic Resolution
-1. **DETECT**: Run conflict detection on code changes
-2. **APPLY**: Execute highest priority rule guidance
-3. **VALIDATE**: Confirm resolution with appropriate script
-4. **DOCUMENT**: Record resolution for future reference
+**Testing Strategy Conflict Prevention**:
+- Follow authoritative mock usage matrix from Rule 03
+- Design testing approach following pyramid strategy
+- Plan anti-pattern avoidance during design phase
 
-### Manual Override Process
-```bash
-# When automatic resolution unclear:
-./scripts/resolve-rule-conflict.sh "Rule X guidance" "Rule Y guidance" "specific context"
-# Script applies priority hierarchy and provides specific guidance
-```
+## Prevention Protocol
+
+### Preventive Resolution
+1. **ANALYZE**: Apply rule priority hierarchy during APDC Analysis phase
+2. **PLAN**: Design implementation to avoid conflicts during APDC Plan phase
+3. **IMPLEMENT**: Follow highest priority rule guidance during APDC Do phase
+4. **VERIFY**: Confirm conflict prevention during APDC Check phase
+
+### Manual Resolution Process
+**When conflicts arise during implementation:**
+1. **STOP**: Halt implementation immediately
+2. **HIERARCHY**: Apply rule priority hierarchy (Foundational > Mandatory > Behavioral > etc.)
+3. **REDESIGN**: Modify approach to follow highest priority rule
+4. **CONTINUE**: Proceed with conflict-free implementation
 
 ## Integration Points
 

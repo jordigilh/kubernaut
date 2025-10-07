@@ -18,7 +18,7 @@ description: "Mandatory project guidelines and development principles for kubern
 **Format**: Provide recommendation with detailed justification when asking for input.
 
 ### Business Requirements Mandate
-**MANDATORY**: Every code change must be backed by at least ONE business requirement (BR-XXX-XXX format).
+**MANDATORY**: Every code change must be backed by at least ONE business requirement (BR-[CATEGORY]-[NUMBER] format, e.g., BR-WORKFLOW-001, BR-AI-056).
 - All tests must map to specific business requirements
 - All implementation code must serve documented business needs
 - No speculative or "nice to have" code without business backing
@@ -38,7 +38,7 @@ description: "Mandatory project guidelines and development principles for kubern
 - Reuse existing test framework code and mocks from [pkg/testutil/](mdc:pkg/testutil/)
 - **AVOID** null-testing anti-pattern (not nil, > 0, empty checks)
 - **ENSURE** assertions validate business outcomes, not weak validations
-- Map all tests to business requirements with clear BR-XXX-XXX references
+- Map all tests to business requirements with clear BR-[CATEGORY]-[NUMBER] references
 
 ## 💻 **Code Quality Standards**
 
@@ -138,7 +138,7 @@ This rule establishes mandatory principles that complement:
 ## ⚡ **Quick Reference Checklist**
 
 Before any code submission:
-- [ ] Business requirement mapped (BR-XXX-XXX)
+- [ ] Business requirement mapped (BR-[CATEGORY]-[NUMBER])
 - [ ] TDD workflow followed (tests first, then implementation)
 - [ ] All errors handled and logged
 - [ ] No lint or compilation errors

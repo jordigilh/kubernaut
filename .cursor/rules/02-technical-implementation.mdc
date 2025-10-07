@@ -8,7 +8,7 @@ description: "Technical implementation standards: Go patterns, AI/ML integration
 
 ### Code Organization
 - **Business Names**: Use descriptive names reflecting business domain (`EffectivenessAssessor`, `WorkflowEngine`)
-- **Business Requirements**: Every component MUST serve documented business requirement (BR-XXX-XXX)
+- **Business Requirements**: Every component MUST serve documented business requirement (BR-[CATEGORY]-[NUMBER])
 - **Package Cohesion**: Group related functionality following DDD principles
 - **Interface Design**: Implement interfaces over concrete types for testability
 - **Unique Names**: Avoid duplicating structure names - use unique, business-aligned identifiers
@@ -209,7 +209,7 @@ results := make(chan ProcessingResult, bufferSize)
 - **Framework**: Use Ginkgo/Gomega BDD testing
 - **Pyramid Strategy**: 70%+ unit, <20% integration, <10% e2e (per [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc))
 - **Business Outcomes**: Validate business results, not implementation details
-- **Requirements**: All tests must reference specific business requirements (BR-XXX-XXX)
+- **Requirements**: All tests must reference specific business requirements (BR-[CATEGORY]-[NUMBER])
 - **Real Business Logic**: Use actual business components in unit tests with external mocks only
 
 ### Mock Usage Decision Matrix - Defense-in-Depth Strategy
