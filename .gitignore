@@ -8,3 +8,7 @@ bin/
 mcp-server
 *.log
 dependencies/
+*.bak
+*.bak2
+.trash/*
+*.log

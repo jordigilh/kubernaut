@@ -17,6 +17,32 @@ import (
 )
 
 // MockK8sClient implements k8s.Client interface for testing
+//
+// DEPRECATED: Use sigs.k8s.io/controller-runtime/pkg/client/fake instead.
+// This custom mock will be removed in a future version.
+//
+// Rationale:
+// - Fake K8s client provides compile-time API safety
+// - Detects K8s API deprecations at build time, not runtime
+// - Type-safe CRD handling with schema validation
+// - Standard K8s testing approach (845 lines of custom code eliminated)
+//
+// Migration Example:
+//
+//	import (
+//	    "k8s.io/apimachinery/pkg/runtime"
+//	    "sigs.k8s.io/controller-runtime/pkg/client/fake"
+//	)
+//
+//	scheme := runtime.NewScheme()
+//	_ = corev1.AddToScheme(scheme)
+//	_ = appsv1.AddToScheme(scheme)
+//
+//	fakeClient := fake.NewClientBuilder().
+//	    WithScheme(scheme).
+//	    Build()
+//
+// See: .cursor/rules/03-testing-strategy.mdc for complete guidance.
 type MockK8sClient struct {
 	fakeClientset *fake.Clientset
 

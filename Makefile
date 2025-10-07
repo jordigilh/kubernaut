@@ -43,7 +43,7 @@ envsetup: ## Install environment setup dependencies for testing
 
 ##@ Microservices Build - Approved 10-Service Architecture
 .PHONY: build-all-services
-build-all-services: build-gateway-service build-alert-service build-ai-service build-workflow-service build-executor-service build-storage-service build-intelligence-service build-monitor-service build-context-service build-notification-service ## Build all 10 approved microservices
+build-all-services: build-gateway-service build-alert-service build-ai-analysis build-workflow-service build-executor-service build-storage-service build-intelligence-service build-monitor-service build-context-service build-notification-service ## Build all 10 approved microservices
 
 .PHONY: build-microservices
 build-microservices: build-all-services ## Build all microservices (alias for build-all-services)
@@ -102,10 +102,10 @@ build-context-api-service: ## Build context API service (placeholder)
 	@echo "🔨 Building context API service..."
 	@echo "⚠️  Context API service extraction pending - using monolith for now"
 
-.PHONY: build-ai-service
-build-ai-service: ## Build AI service
+.PHONY: build-ai-analysis
+build-ai-analysis: ## Build AI service
 	@echo "🤖 Building AI service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/ai-service ./cmd/ai-service
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/ai-analysis ./cmd/ai-analysis
 
 .PHONY: test
 test: ## Run unit tests (Go only) - Auto-discovers all test directories
@@ -198,7 +198,7 @@ docker-build: ## Build monolithic container image
 
 ##@ Microservices Container Build
 .PHONY: docker-build-microservices
-docker-build-microservices: docker-build-gateway-service docker-build-ai-service ## Build all microservice container images
+docker-build-microservices: docker-build-gateway-service docker-build-ai-analysis ## Build all microservice container images
 
 .PHONY: docker-build-gateway-service
 docker-build-gateway-service: ## Build gateway service container image
@@ -210,8 +210,8 @@ docker-build-gateway-service: ## Build gateway service container image
 docker-build-webhook-service: docker-build-gateway-service ## Build webhook service container image (alias for gateway-service)
 	@echo "🔗 Webhook service is now part of gateway-service"
 
-.PHONY: docker-build-ai-service
-docker-build-ai-service: ## Build AI service container image
+.PHONY: docker-build-ai-analysis
+docker-build-ai-analysis: ## Build AI service container image
 	@echo "🤖 Building AI service container..."
 	docker build -f docker/ai-service.Dockerfile -t $(REGISTRY)/kubernaut-ai-service:$(VERSION) .
 	docker tag $(REGISTRY)/kubernaut-ai-service:$(VERSION) $(REGISTRY)/kubernaut-ai-service:latest

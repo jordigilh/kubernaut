@@ -11,8 +11,11 @@ import (
 // Business Requirements: BR-WORKFLOW-001 to BR-WORKFLOW-006
 // Single Responsibility: Workflow creation, execution coordination, and monitoring
 type WorkflowService interface {
-	// Core workflow processing
+	// Core workflow processing (legacy - for backward compatibility)
 	ProcessAlert(ctx context.Context, alert types.Alert) (*ExecutionResult, error)
+
+	// MICROSERVICES ARCHITECTURE: Primary method for receiving requests from AI Analysis Service (8082)
+	CreateAndExecuteWorkflow(ctx context.Context, request *WorkflowCreationRequest) (*ExecutionResult, error)
 
 	// BR-WORKFLOW-001: Workflow creation and management
 	CreateWorkflow(ctx context.Context, alert types.Alert) map[string]interface{}
@@ -144,4 +147,12 @@ type RollbackPlan struct {
 	RollbackActions []*types.ActionRecommendation `json:"rollback_actions"`
 	Order           []string                      `json:"order"`
 	EstimatedTime   time.Duration                 `json:"estimated_time"`
+}
+
+// K8sExecutorClient defines the interface for communicating with K8s Executor Service (8084)
+// Per APPROVED_MICROSERVICES_ARCHITECTURE.md: Workflow service sends execution commands to K8s executor
+type K8sExecutorClient interface {
+	ExecuteAction(ctx context.Context, request *K8sExecutorRequest) (*K8sExecutorResponse, error)
+	GetActionStatus(ctx context.Context, actionID string) (*K8sExecutorResponse, error)
+	Health(ctx context.Context) error
 }

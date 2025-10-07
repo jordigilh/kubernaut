@@ -245,53 +245,62 @@ type ProcessingResult struct {
 
 // ValidActions contains all supported action types
 // Consolidated from pkg/infrastructure/types/types.go
+// ValidActions defines the canonical set of 29 predefined action types
+// Source of Truth: docs/design/CANONICAL_ACTION_TYPES.md
+// This list MUST match the actions registered in pkg/platform/executor/executor.go
 var ValidActions = map[string]bool{
-	// Core actions
-	"scale_deployment":      true,
-	"restart_pod":           true,
-	"increase_resources":    true,
-	"notify_only":           true,
-	"rollback_deployment":   true,
-	"expand_pvc":            true,
-	"drain_node":            true,
-	"quarantine_pod":        true,
-	"collect_diagnostics":   true,
-	"cleanup_storage":       true,
-	"backup_data":           true,
-	"compact_storage":       true,
-	"update_network_policy": true,
-	"restart_network":       true,
+	// Core Actions (P0) - 5 actions
+	"scale_deployment":    true,
+	"restart_pod":         true,
+	"increase_resources":  true,
+	"rollback_deployment": true,
+	"expand_pvc":          true,
+
+	// Infrastructure Actions (P1) - 6 actions
+	"drain_node":     true,
+	"cordon_node":    true,
+	"uncordon_node":  true,
+	"taint_node":     true,
+	"untaint_node":   true,
+	"quarantine_pod": true,
+
+	// Storage & Persistence (P2) - 3 actions
+	"cleanup_storage": true,
+	"backup_data":     true,
+	"compact_storage": true,
+
+	// Application Lifecycle (P1) - 3 actions
+	"update_hpa":        true,
+	"restart_daemonset": true,
+	"scale_statefulset": true,
+
+	// Security & Compliance (P2) - 3 actions
 	"rotate_secrets":        true,
 	"audit_logs":            true,
-	"migrate_workload":      true,
+	"update_network_policy": true,
 
-	// Extended actions for enhanced functionality
-	"optimize_resources":       true,
-	"enable_autoscaling":       true,
-	"update_deployment":        true,
-	"patch_resource":           true,
-	"create_resource":          true,
-	"delete_resource":          true,
-	"scale_node_pool":          true,
-	"update_node_labels":       true,
-	"cordon_node":              true,
-	"uncordon_node":            true,
-	"taint_node":               true,
-	"untaint_node":             true,
-	"restart_service":          true,
-	"update_service":           true,
-	"create_configmap":         true,
-	"update_configmap":         true,
-	"create_secret":            true,
-	"update_secret":            true,
-	"enable_monitoring":        true,
-	"disable_monitoring":       true,
-	"update_resource_quota":    true,
-	"create_network_policy":    true,
-	"update_ingress":           true,
-	"create_persistent_volume": true,
-	"resize_persistent_volume": true,
+	// Network & Connectivity (P2) - 2 actions
+	"restart_network":    true,
+	"reset_service_mesh": true,
+
+	// Database & Stateful (P2) - 2 actions
+	"failover_database": true,
+	"repair_database":   true,
+
+	// Monitoring & Observability (P2) - 3 actions
+	"enable_debug_mode":   true,
+	"create_heap_dump":    true,
+	"collect_diagnostics": true,
+
+	// Resource Management (P1) - 2 actions
+	"optimize_resources": true,
+	"migrate_workload":   true,
+
+	// Fallback (P3) - 1 action
+	"notify_only": true,
 }
+
+// Total: 29 canonical action types
 
 // GetValidActionsList returns a slice of valid actions for validation
 // Consolidated from pkg/infrastructure/types/types.go
