@@ -42,6 +42,10 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 - **BR-WF-TIMEOUT-004**: MUST support dynamic timeout adjustment based on execution progress
 - **BR-WF-TIMEOUT-005**: MUST implement graceful workflow termination on timeout expiration
 - **BR-WF-LIFECYCLE-001**: MUST track workflow execution phases (queued, running, paused, completed, failed, cancelled)
+  - **Enhanced**: Correlate workflow phases with alert tracking ID for end-to-end visibility
+  - **Enhanced**: Update alert lifecycle state in Remediation Processor when workflow phases change
+  - **Enhanced**: Maintain bidirectional correlation between alert states and workflow states
+  - **Enhanced**: Support alert-driven workflow prioritization and scheduling
 - **BR-WF-LIFECYCLE-002**: MUST provide workflow progress reporting with milestone tracking
 - **BR-WF-LIFECYCLE-003**: MUST implement workflow heartbeat monitoring to detect stuck executions
 - **BR-WF-LIFECYCLE-004**: MUST support workflow execution prioritization and scheduling
@@ -66,6 +70,10 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 
 #### 2.1.5 Multi-Stage Remediation Processing
 - **BR-WF-017**: MUST process AI-generated JSON workflow responses with primary and secondary actions
+  - **Enhanced**: Inherit alert tracking ID from Remediation Processor (BR-AP-021) for workflow correlation
+  - **Enhanced**: Propagate alert tracking ID to all workflow steps and action executions
+  - **Enhanced**: Maintain alert-to-workflow correlation in workflow metadata
+  - **Enhanced**: Support workflow progress tracking linked to original alert lifecycle
 - **BR-WF-018**: MUST execute conditional action sequences based on primary action outcomes
 - **BR-WF-019**: MUST preserve context across multiple remediation stages
 - **BR-WF-020**: MUST support execution conditions (if_primary_fails, after_primary, parallel_with_primary)
@@ -87,7 +95,30 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 - **BR-WF-028**: MUST support workflow inheritance and composition
 - **BR-WF-029**: MUST maintain workflow execution history and audit trails
 
-### 2.3 Simulation & Testing
+### 2.3 HolmesGPT Investigation Integration (v1)
+
+#### 2.3.1 Investigation-Only Integration
+- **BR-WF-HOLMESGPT-001**: MUST use HolmesGPT for investigation and analysis only - NOT for execution
+- **BR-WF-HOLMESGPT-002**: MUST integrate HolmesGPT investigation results into workflow decision-making
+- **BR-WF-HOLMESGPT-003**: MUST translate HolmesGPT recommendations into executable workflow actions
+- **BR-WF-HOLMESGPT-004**: MUST validate HolmesGPT recommendations before execution using existing action executors
+- **BR-WF-HOLMESGPT-005**: MUST provide execution feedback to HolmesGPT for continuous learning
+
+#### 2.3.2 Failure Investigation & Recovery
+- **BR-WF-INVESTIGATION-001**: MUST use HolmesGPT for step failure root cause analysis
+- **BR-WF-INVESTIGATION-002**: MUST request recovery recommendations from HolmesGPT when steps fail
+- **BR-WF-INVESTIGATION-003**: MUST assess action safety using HolmesGPT before executing recovery actions
+- **BR-WF-INVESTIGATION-004**: MUST analyze execution results with HolmesGPT for pattern learning
+- **BR-WF-INVESTIGATION-005**: MUST maintain investigation context across workflow execution phases
+
+#### 2.3.3 Existing Execution Infrastructure Integration
+- **BR-WF-EXECUTOR-001**: MUST use existing KubernetesActionExecutor for all Kubernetes operations
+- **BR-WF-EXECUTOR-002**: MUST use existing MonitoringActionExecutor for all monitoring operations
+- **BR-WF-EXECUTOR-003**: MUST use existing CustomActionExecutor for notifications and webhooks
+- **BR-WF-EXECUTOR-004**: MUST preserve existing action validation, rollback, and safety mechanisms
+- **BR-WF-EXECUTOR-005**: MUST maintain existing action registry and handler patterns
+
+### 2.4 Simulation & Testing
 - **BR-WF-030**: MUST provide workflow simulation capabilities for testing
 - **BR-WF-031**: MUST support dry-run execution for validation
 - **BR-WF-032**: MUST implement test scenario generation and validation
@@ -266,6 +297,67 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 - **BR-REL-009**: MUST implement circuit breaker patterns for external dependencies
 - **BR-REL-010**: MUST support graceful degradation during partial system failures
 
+### 8.4 Workflow Resilience & Termination Rate Management
+- **BR-WF-541**: MUST maintain workflow termination rate below 10% to ensure business continuity
+  - **v1**: Implement partial success execution mode when workflows can deliver partial business value
+  - **v1**: Provide configurable failure policies (terminate, continue, partial-success, recovery)
+  - **v1**: Track termination rate metrics and alert when approaching 8% threshold
+  - **v1**: Support graceful degradation rather than complete workflow failure
+  - **v1**: Enable recovery execution mode for workflows that can be salvaged
+  - **v1**: Implement learning-based termination adjustment to optimize policy over time
+
+### 8.5 Workflow Health Assessment & Monitoring
+- **BR-WF-HEALTH-001**: MUST implement real-time workflow health scoring based on step completion rates and failure patterns
+  - **v1**: Provide health-based continuation decisions with configurable health thresholds
+  - **v1**: Support learning-based health adjustments from historical execution patterns
+  - **v1**: Generate health recommendations for workflow optimization
+  - **v1**: Track health metrics over time for trend analysis and capacity planning
+  - **v1**: Correlate health status with business impact for prioritization decisions
+
+### 8.6 Learning Framework & Confidence Management
+- **BR-WF-LEARNING-001**: MUST maintain ≥80% confidence threshold for all learning-based decisions
+  - **v1**: Track learning effectiveness metrics including accuracy and adaptation success rates
+  - **v1**: Implement adaptive retry delay calculation based on failure pattern analysis
+  - **v1**: Require minimum 10 execution history before applying learned patterns
+  - **v1**: Provide learning metrics reporting for operational visibility
+  - **v1**: Support learning enablement/disablement for controlled rollout
+  - **v1**: Maintain pattern recognition accuracy ≥75% for reliable decision making
+
+### 8.7 Advanced Recovery Strategy Management
+- **BR-WF-RECOVERY-001**: MUST generate recovery plans for failed workflow steps with multiple recovery options
+  - **v1**: Support recovery execution mode that creates new workflow instances from failed ones
+  - **v1**: Implement alternative execution paths when primary workflow paths fail
+  - **v1**: Provide recovery action types including retry, rollback, skip, and alternative path
+  - **v1**: Validate recovery plan feasibility before execution
+  - **v1**: Track recovery success rates for continuous improvement
+  - **v1**: Support partial recovery for workflows with mixed success/failure states
+
+### 8.8 Critical System Failure Classification
+- **BR-WF-CRITICAL-001**: MUST classify failures by severity (critical, high, medium, low) based on system impact
+  - **v1**: Identify critical system failure patterns that require immediate termination
+  - **v1**: Distinguish between recoverable and non-recoverable failures for appropriate response
+  - **v1**: Provide configurable critical failure patterns for different deployment environments
+  - **v1**: Escalate critical failures to operational monitoring systems
+  - **v1**: Maintain failure classification accuracy through pattern learning
+
+### 8.9 Performance Optimization & Monitoring
+- **BR-WF-PERFORMANCE-001**: MUST achieve ≥15% performance gains through continuous optimization
+  - **v1**: Implement performance trend monitoring with 7-day rolling windows
+  - **v1**: Provide performance baseline tracking for comparison and improvement measurement
+  - **v1**: Optimize workflow execution scheduling based on historical performance data
+  - **v1**: Implement health check intervals of 1 minute for real-time monitoring
+  - **v1**: Track performance metrics including execution time, resource utilization, and throughput
+  - **v1**: Provide performance optimization recommendations based on trend analysis
+
+### 8.10 Advanced Configuration Management
+- **BR-WF-CONFIG-001**: MUST provide configurable resilience parameters including failure thresholds and retry policies
+  - **v1**: Support environment-specific configuration for development, staging, and production
+  - **v1**: Implement configuration validation before applying changes
+  - **v1**: Provide configuration defaults that ensure safe operation
+  - **v1**: Support runtime configuration updates where safe and appropriate
+  - **v1**: Maintain configuration history for rollback and audit purposes
+  - **v1**: Validate configuration consistency across distributed workflow instances
+
 ### 8.3 Data Consistency
 - **BR-REL-011**: MUST maintain workflow state consistency across all operations
 - **BR-REL-012**: MUST implement transactional boundaries for critical operations
@@ -308,6 +400,17 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 - **BR-INT-003**: MUST utilize storage components for workflow persistence
 - **BR-INT-004**: MUST integrate with monitoring systems for execution visibility
 - **BR-INT-005**: MUST coordinate with intelligence components for pattern learning
+- **BR-WF-ALERT-001**: MUST integrate with Remediation Processor tracking system
+  - Receive alert tracking ID from AI Analysis Engine for all alert-driven workflows
+  - Propagate tracking ID to all workflow steps, actions, and sub-workflows
+  - Update Remediation Processor with workflow execution milestones and completion status
+  - Support workflow cancellation based on alert lifecycle state changes
+  - Maintain correlation metadata for audit trail and debugging purposes
+  - **Enhanced for Post-Mortem**: Record workflow decision points, branch selections, and execution paths taken
+  - **Enhanced for Post-Mortem**: Capture step-by-step execution timing, resource usage, and performance metrics
+  - **Enhanced for Post-Mortem**: Log workflow failures, retry attempts, rollback actions, and recovery procedures
+  - **Enhanced for Post-Mortem**: Store conditional logic evaluation results and parameter values used
+  - **Enhanced for Post-Mortem**: Record workflow effectiveness metrics and outcome validation results
 
 ### 10.2 External Integration
 - **BR-INT-006**: MUST support integration with external workflow engines (Tekton, Argo)
@@ -415,6 +518,63 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 - User satisfaction with workflow capabilities exceeds 85%
 - Operational efficiency gains demonstrate clear ROI within 9 months
 - Knowledge accumulation enables increasingly sophisticated automation
+
+---
+
+## 4. Workflow Learning & Optimization (V1 Enhancement)
+
+### 4.1 Feedback-Driven Performance Improvement
+
+#### **BR-WF-LEARN-V1-001: Feedback-Driven Performance Improvement**
+**Business Requirement**: The system MUST implement comprehensive feedback-driven learning mechanisms to continuously improve workflow performance based on execution outcomes and user feedback.
+
+**Functional Requirements**:
+1. **Execution Outcome Analysis** - MUST analyze workflow execution outcomes to identify performance patterns
+2. **User Feedback Integration** - MUST integrate user feedback on workflow effectiveness and quality
+3. **Performance Metrics Tracking** - MUST track detailed performance metrics for all workflow executions
+4. **Continuous Improvement** - MUST implement continuous improvement algorithms based on feedback data
+
+**Success Criteria**:
+- >30% performance improvement through feedback-driven optimization
+- 95% accuracy in execution outcome analysis
+- 90% user feedback integration rate for workflow evaluations
+- Measurable continuous improvement in workflow effectiveness metrics
+
+**Business Value**: Self-improving workflows reduce operational overhead and enhance automation quality
+
+#### **BR-WF-LEARN-V1-002: Quality-Based Learning Optimization**
+**Business Requirement**: The system MUST implement quality-based learning optimization that prioritizes workflow improvements based on business impact and quality metrics.
+
+**Functional Requirements**:
+1. **Quality Assessment** - MUST implement comprehensive quality assessment for workflow executions
+2. **Business Impact Analysis** - MUST analyze business impact of workflow improvements and optimizations
+3. **Priority-Based Learning** - MUST prioritize learning based on business value and quality impact
+4. **Quality Feedback Loop** - MUST provide quality feedback loops for continuous optimization
+
+**Success Criteria**:
+- 90% accuracy in workflow quality assessment
+- 85% correlation between quality improvements and business impact
+- Priority-based learning optimization with measurable business value
+- Continuous quality improvement with feedback loop validation
+
+**Business Value**: Quality-focused learning ensures workflow improvements deliver maximum business value
+
+#### **BR-WF-LEARN-V1-003: Learning Metrics and Analytics**
+**Business Requirement**: The system MUST provide comprehensive learning metrics and analytics to enable data-driven workflow optimization and performance tracking.
+
+**Functional Requirements**:
+1. **Learning Analytics Dashboard** - MUST provide comprehensive analytics dashboard for learning metrics
+2. **Performance Trend Analysis** - MUST analyze performance trends and learning effectiveness over time
+3. **Optimization Impact Measurement** - MUST measure the impact of learning-based optimizations
+4. **Predictive Learning Analytics** - MUST provide predictive analytics for future learning opportunities
+
+**Success Criteria**:
+- Real-time learning analytics with <1 minute update frequency
+- 90% accuracy in performance trend analysis and predictions
+- Complete optimization impact measurement with ROI tracking
+- Predictive learning analytics with 85% accuracy in opportunity identification
+
+**Business Value**: Data-driven learning optimization enables measurable workflow performance improvements
 
 ---
 

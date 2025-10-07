@@ -10,7 +10,13 @@
 ## 1. Purpose & Scope
 
 ### 1.1 Business Purpose
-The AI Context Orchestration components enable intelligent, dynamic context gathering for AI-driven investigations, evolving from static context injection to AI-orchestrated, on-demand context retrieval. This capability allows AI services (particularly HolmesGPT) to fetch precisely the context data needed for each investigation, improving efficiency, accuracy, and resource utilization.
+The AI Context Orchestration components provide **historical and organizational intelligence** for AI-driven investigations. This capability complements HolmesGPT's real-time data gathering toolsets by providing historical patterns, organizational context, and trend analysis that guide investigation strategy and decision-making.
+
+**Critical Architectural Distinction**:
+- **HolmesGPT Toolsets** (kubernetes, prometheus): Real-time operational data (current logs, events, metrics)
+- **Context API Service**: Historical intelligence and organizational context (NOT current/real-time data)
+
+This separation enables efficient dual-source intelligence gathering: HolmesGPT answers "What's happening NOW?" while Context API answers "What happened BEFORE?" and "What's the organizational context?"
 
 ### 1.2 Scope
 - **Dynamic Context Orchestration**: AI-driven context data retrieval based on investigation needs
@@ -37,17 +43,23 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
 
 #### 2.1.1 Intelligent Context Discovery
 - **BR-CONTEXT-001**: MUST enable AI services to dynamically discover available context types for investigation scenarios
+  - **Enhanced**: Include alert tracking ID in all context requests and responses
+  - **Enhanced**: Correlate context enrichment operations with alert tracking for audit trails
+  - **Enhanced**: Maintain context usage history linked to alert tracking IDs
+  - **Enhanced**: Support context effectiveness measurement per alert correlation
 - **BR-CONTEXT-002**: MUST provide context metadata including data freshness, relevance scores, and retrieval costs
 - **BR-CONTEXT-003**: MUST support context dependency resolution for complex investigation workflows
 - **BR-CONTEXT-004**: MUST enable context type prioritization based on investigation goals
 - **BR-CONTEXT-005**: MUST track context usage patterns to optimize future investigations
 
 #### 2.1.2 On-Demand Context Retrieval
-- **BR-CONTEXT-006**: MUST fetch Kubernetes cluster context on-demand based on namespace and resource specifications
+- **BR-CONTEXT-006**: MUST fetch **historical Kubernetes cluster intelligence** on-demand based on namespace and resource specifications (organizational metadata, past patterns - NOT current logs/events)
 - **BR-CONTEXT-007**: MUST retrieve historical action patterns dynamically using alert type and context signatures
-- **BR-CONTEXT-008**: MUST gather real-time metrics context with configurable time windows
+- **BR-CONTEXT-008**: MUST gather **historical metrics trends and patterns** with configurable time windows (trend analysis, anomaly detection - NOT current metric values)
 - **BR-CONTEXT-009**: MUST support parallel context fetching to minimize investigation latency
 - **BR-CONTEXT-010**: MUST provide context caching with intelligent invalidation strategies
+
+**Clarification**: Context API provides historical intelligence. HolmesGPT toolsets (kubernetes, prometheus) gather current/real-time operational data.
 
 #### 2.1.3 Context Quality Assurance
 - **BR-CONTEXT-011**: MUST validate context data freshness and relevance before providing to AI services
@@ -118,7 +130,11 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
 
 #### 3.1.3 Fallback & Resilience
 - **BR-HOLMES-011**: MUST maintain existing static context enrichment as fallback mechanism
+  - **v1**: Static context enrichment when HolmesGPT-API unavailable
+  - **v2**: Enhanced fallback with direct LLM integration
 - **BR-HOLMES-012**: MUST automatically fallback to static enrichment when dynamic orchestration fails
+  - **v1**: Graceful degradation to static context patterns
+  - **v2**: Multi-tier fallback (HolmesGPT → Direct LLM → Static)
 - **BR-HOLMES-013**: MUST provide investigation quality metrics comparing dynamic vs. static approaches
 - **BR-HOLMES-014**: MUST support gradual migration from static to dynamic orchestration
 - **BR-HOLMES-015**: MUST preserve all existing investigation capabilities during transition
@@ -154,11 +170,13 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
 - **BR-API-005**: MUST support content negotiation (JSON, XML, protobuf) based on client preferences
 
 #### 4.1.2 Context Endpoint Specifications
-- **BR-API-006**: MUST provide `/api/v1/context/kubernetes/{namespace}/{resource}` for cluster context
-- **BR-API-007**: MUST provide `/api/v1/context/metrics/{namespace}/{resource}` for performance metrics
-- **BR-API-008**: MUST provide `/api/v1/context/action-history/{alertType}` for historical patterns
-- **BR-API-009**: MUST provide `/api/v1/context/patterns/{signature}` for pattern matching
+- **BR-API-006**: MUST provide `/api/v1/context/kubernetes/{namespace}/{resource}` for **historical cluster intelligence** (organizational metadata, past resource patterns - NOT current logs/events/status)
+- **BR-API-007**: MUST provide `/api/v1/context/metrics/{namespace}/{resource}` for **historical performance trends** (trend analysis, anomaly detection, baseline comparison - NOT current metric values)
+- **BR-API-008**: MUST provide `/api/v1/context/action-history/{alertType}` for historical remediation patterns
+- **BR-API-009**: MUST provide `/api/v1/context/patterns/{signature}` for pattern matching via PGVector similarity search
 - **BR-API-010**: MUST provide `/api/v1/context/health` for service health monitoring
+
+**Clarification**: All endpoints return historical/organizational intelligence from Data Storage Service. HolmesGPT toolsets provide current operational data.
 
 #### 4.1.3 API Quality & Standards
 - **BR-API-011**: MUST implement consistent error response formats across all endpoints
@@ -177,8 +195,15 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
 - **BR-INTEGRATION-001**: MUST integrate seamlessly with existing AIServiceIntegrator patterns
 - **BR-INTEGRATION-002**: MUST reuse existing context enrichment logic through API endpoints
 - **BR-INTEGRATION-003**: MUST maintain compatibility with LLM fallback mechanisms
+  - **v1**: HolmesGPT-API integration with graceful degradation
+  - **v2**: Direct LLM integration fallback support
 - **BR-INTEGRATION-004**: MUST preserve existing business requirement compliance (BR-AI-011, BR-AI-012, BR-AI-013)
 - **BR-INTEGRATION-005**: MUST support hybrid orchestration (both static and dynamic context)
+- **BR-CONTEXT-TRACK-001**: MUST integrate with Remediation Processor tracking system
+  - Receive alert tracking ID from AI Analysis Engine for context operations
+  - Include tracking ID in all HolmesGPT-API context requests and toolset operations
+  - Maintain context enrichment audit trail linked to alert tracking
+  - Support context quality and relevance metrics per alert correlation
 
 #### 5.1.2 Workflow Engine Integration
 - **BR-INTEGRATION-006**: MUST integrate with existing workflow engine orchestration patterns
@@ -507,7 +532,145 @@ The AI Context Orchestration components enable intelligent, dynamic context gath
 
 ---
 
+## 9. Context Optimization (V1 Enhancement)
+
+### 9.1 Priority-Based Context Selection
+
+#### **BR-CONTEXT-OPT-V1-001: Priority-Based Context Selection**
+**Business Requirement**: The system MUST implement intelligent priority-based context selection that optimizes context gathering based on investigation requirements and business priorities.
+
+**Functional Requirements**:
+1. **Priority Scoring** - MUST implement priority scoring algorithms for context data based on relevance and business impact
+2. **Intelligent Selection** - MUST intelligently select the most relevant context data for each investigation
+3. **Resource Optimization** - MUST optimize resource usage by prioritizing high-value context data
+4. **Dynamic Prioritization** - MUST dynamically adjust priorities based on investigation progress and findings
+
+**Success Criteria**:
+- 85% accuracy in priority-based context selection
+- 30% reduction in context gathering time through intelligent prioritization
+- 90% relevance score for selected context data
+- Dynamic prioritization with real-time adjustment capabilities
+
+**Business Value**: Optimized context gathering improves investigation efficiency and reduces resource overhead
+
+#### **BR-CONTEXT-OPT-V1-002: Single-Tier Context Management**
+**Business Requirement**: The system MUST provide optimized single-tier context management specifically designed for HolmesGPT-API integration with streamlined data flow and minimal overhead.
+
+**Functional Requirements**:
+1. **Streamlined Data Flow** - MUST implement streamlined data flow optimized for single AI provider scenarios
+2. **Minimal Overhead** - MUST minimize context management overhead for HolmesGPT-API integration
+3. **Optimized Caching** - MUST implement optimized caching strategies for single-tier context management
+4. **Performance Optimization** - MUST optimize performance for HolmesGPT-API specific context requirements
+
+**Success Criteria**:
+- <500ms context retrieval time for 95% of requests
+- 40% reduction in context management overhead compared to multi-tier approaches
+- 90% cache hit rate for frequently accessed context data
+- Optimized performance specifically for HolmesGPT-API integration patterns
+
+**Business Value**: Streamlined context management enhances HolmesGPT-API performance and reduces operational complexity
+
+#### **BR-CONTEXT-OPT-V1-003: Context Quality Assurance**
+**Business Requirement**: The system MUST implement comprehensive context quality assurance mechanisms to ensure context data meets investigation standards and reliability requirements.
+
+**Functional Requirements**:
+1. **Quality Scoring** - MUST implement quality scoring algorithms for context data
+2. **Data Validation** - MUST validate context data accuracy and completeness
+3. **Quality Monitoring** - MUST continuously monitor context quality metrics
+4. **Quality Improvement** - MUST implement quality improvement mechanisms based on feedback
+
+**Success Criteria**:
+- 90% quality score accuracy for context data
+- 95% data validation success rate
+- Real-time quality monitoring with <1 minute update frequency
+- Continuous quality improvement with measurable metrics
+
+**Business Value**: High-quality context data improves investigation accuracy and reliability
+
+---
+
+---
+
+## 15. Architectural Clarification & Updates (January 2025)
+
+### 15.1 Context API vs. HolmesGPT Toolsets - Clear Separation
+
+**Architectural Update**: Following HolmesGPT integration architecture design, Context API role has been clarified to focus exclusively on historical and organizational intelligence, complementing (not duplicating) HolmesGPT's real-time data gathering capabilities.
+
+### 15.2 Dual-Source Intelligence Gathering Model
+
+| Data Source | Purpose | Answers | Data Examples | Technology |
+|-------------|---------|---------|---------------|------------|
+| **HolmesGPT Toolsets** | Real-time operational data | "What's happening NOW?" | Current pod logs, live CPU/memory metrics, current K8s events, kubectl describe output | HolmesGPT SDK (kubernetes, prometheus toolsets) |
+| **Context API Service** | Historical & organizational intelligence | "What happened BEFORE?" + "What's the organizational context?" | Past remediation actions, historical metric trends, similar alert patterns, business priority, SLA requirements | PostgreSQL + PGVector |
+
+### 15.3 Updated Business Requirement Interpretations
+
+**Clarified Requirements**:
+- **BR-CONTEXT-006**: "Kubernetes cluster context" = Historical cluster intelligence (NOT current logs/events)
+- **BR-CONTEXT-008**: "Real-time metrics context" = Historical trends delivered in real-time (NOT current Prometheus scrapes)
+- **BR-API-006**: Cluster context endpoint = Organizational metadata, past patterns
+- **BR-API-007**: Performance metrics endpoint = Historical trends, anomaly detection (NOT current values)
+
+**Unchanged Requirements** (already accurate):
+- **BR-CONTEXT-007**: Historical action patterns ✅
+- **BR-API-008**: Action history ✅
+- **BR-API-009**: Pattern matching ✅
+
+### 15.4 Data Source Clarification
+
+**Context API Data Sources**:
+- ✅ **Primary**: Data Storage Service (PostgreSQL for historical data, PGVector for similarity search)
+- ❌ **NOT**: Direct Kubernetes API access (HolmesGPT kubernetes toolset handles this)
+- ❌ **NOT**: Direct Prometheus queries (HolmesGPT prometheus toolset handles this)
+
+**HolmesGPT Toolsets Data Sources**:
+- ✅ **kubernetes toolset**: Direct Kubernetes API access (logs, events, describe)
+- ✅ **prometheus toolset**: Direct Prometheus API access (current metrics)
+- ✅ **grafana toolset**: Direct Grafana API access (dashboards)
+
+### 15.5 Integration Pattern
+
+**Investigation Flow**:
+```
+1. AIAnalysis Service → HolmesGPT API (investigation request)
+2. HolmesGPT API → Context API (fetch historical intelligence)
+   Returns: Action history, pattern analysis, organizational context, metric trends
+3. HolmesGPT API → HolmesGPT SDK (investigation with toolsets)
+   - kubernetes toolset: Fetches current logs, events, resource status
+   - prometheus toolset: Queries current metrics
+   - Combined with historical context from step 2
+4. HolmesGPT API → AIAnalysis Service (investigation results)
+   Returns: Comprehensive analysis (real-time data + historical intelligence)
+```
+
+### 15.6 Performance Impact
+
+**Clarified Performance Benefits**:
+- **40-60% investigation improvement**: From targeted historical context (not full database dumps)
+- **50-70% payload reduction**: Compressed historical trends vs. raw time-series data
+- **15-25% accuracy improvement**: Historical patterns guide investigation strategy
+
+**Note**: HolmesGPT toolsets fetch real-time data directly (not through Context API), ensuring fresh operational data.
+
+### 15.7 Migration Impact
+
+**No Breaking Changes**: This is a clarification of existing architecture, not a change:
+- Context API was always intended to provide historical intelligence
+- HolmesGPT toolsets were always intended to fetch real-time data
+- Original BR requirements used ambiguous language ("real-time metrics context") which has now been clarified
+
+**Updated Documents**:
+- ✅ `10_AI_CONTEXT_ORCHESTRATION.md` (this document) - BR-CONTEXT-006, BR-CONTEXT-008, BR-API-006, BR-API-007 clarified
+- ✅ `08-holmesgpt-api.md` (stateless service spec) - Already reflects correct architecture
+- ✅ `REMAINING_SERVICES_PLAN.md` (service planning) - Context API description updated
+
+---
+
 **Document Approval**:
 - Technical Architect: _________________ Date: _______
 - Product Owner: _________________ Date: _______
 - Engineering Manager: _________________ Date: _______
+
+**Document Version**: 1.1 (Updated January 2025 - Architectural Clarification)
+**Previous Version**: 1.0 (January 2025 - Original)
