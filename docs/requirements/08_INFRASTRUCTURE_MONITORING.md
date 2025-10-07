@@ -218,6 +218,10 @@ The Infrastructure & Monitoring layer provides comprehensive observability, metr
 
 #### 7.1.3 Alert Lifecycle
 - **BR-ALERT-011**: MUST track alert lifecycle from creation to resolution
+  - **Enhanced**: Integrate with Remediation Processor tracking system (BR-AP-021) for unified lifecycle view
+  - **Enhanced**: Correlate system-level alert metrics with Remediation Processor tracking IDs
+  - **Enhanced**: Avoid duplicate alert lifecycle tracking - defer to Remediation Processor ownership
+  - **Enhanced**: Focus on system performance metrics and infrastructure health monitoring
 - **BR-ALERT-012**: MUST provide alert acknowledgment and assignment
 - **BR-ALERT-013**: MUST implement alert resolution tracking and validation
 - **BR-ALERT-014**: MUST support alert annotation and collaboration
@@ -301,6 +305,12 @@ The Infrastructure & Monitoring layer provides comprehensive observability, metr
 - **BR-INT-003**: MUST integrate with storage systems for metrics persistence
 - **BR-INT-004**: MUST coordinate with platform layer for infrastructure monitoring
 - **BR-INT-005**: MUST integrate with workflow engine for execution monitoring
+- **BR-MON-TRACK-001**: MUST integrate with Remediation Processor tracking for system metrics
+  - Correlate system performance metrics with alert tracking IDs for impact analysis
+  - Track infrastructure health changes during alert processing and remediation
+  - Provide alert processing performance metrics linked to tracking IDs
+  - Support system resource utilization analysis per alert correlation
+  - Maintain infrastructure change history linked to alert-driven actions
 
 ### 11.2 External Integration
 - **BR-INT-006**: MUST integrate with Prometheus ecosystem
