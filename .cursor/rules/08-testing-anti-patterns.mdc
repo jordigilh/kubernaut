@@ -12,7 +12,7 @@ Run these checks before ANY test commit:
 
 ```bash
 # Run comprehensive cursor rule validation
-./scripts/cursor-rule-validator.sh
+# Prevention through APDC methodology and design patterns
 
 # Individual pattern checks:
 # 1. NULL-TESTING DETECTION
@@ -46,7 +46,7 @@ done
 # .git/hooks/pre-commit (MANDATORY)
 
 # Run cursor rule validation
-./scripts/cursor-rule-validator.sh
+# Prevention through APDC methodology and design patterns
 if [ $? -ne 0 ]; then
     echo "❌ Cursor rule violations detected. Commit blocked."
     exit 1
@@ -155,6 +155,8 @@ grep -r "logrus\.New()\|context\.With\|os\.Set\|time\.Now()" test/ --include="*_
 ### **ANTI-PATTERN 4: MOCK OVERUSE**
 
 **Definition**: Mocking business logic instead of external dependencies
+
+**AUTHORITY**: See comprehensive mock usage matrix in [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc#mock-usage-decision-matrix---authoritative-source) for correct mock usage patterns.
 
 **❌ VIOLATION EXAMPLES**:
 ```go
@@ -279,7 +281,7 @@ cat > .git/hooks/pre-commit << 'EOF'
 echo "🔍 Running cursor rule validation..."
 
 # Run cursor rule validator
-./scripts/cursor-rule-validator.sh
+# Prevention through APDC methodology and design patterns
 if [ $? -ne 0 ]; then
     echo "❌ Cursor rule violations detected. Commit blocked."
     echo "🔧 Fix violations and try again."
