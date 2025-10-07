@@ -99,7 +99,7 @@ Store architectural decisions in [docs/adr/](mdc:docs/adr/) following this forma
 
 ### Test Case Documentation
 ```go
-var _ = Describe("BR-PA-008: AI Effectiveness Assessment", func() {
+var _ = Describe("BR-AI-008: AI Effectiveness Assessment", func() {
     // Business Requirement: The system shall assess the effectiveness
     // of executed actions and adjust future recommendations accordingly.
 

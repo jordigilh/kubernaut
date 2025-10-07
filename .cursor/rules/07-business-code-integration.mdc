@@ -7,7 +7,7 @@ description: "Business code integration patterns and validation requirements for
 ## Core Requirement - MANDATORY
 
 **Rule**: ALL business logic MUST be integrated into main application workflows
-**Validation**: `./scripts/run-integration-validation.sh`
+**Prevention**: Design integration points during APDC Analysis and Plan phases
 
 ## Integration Definition
 
@@ -32,15 +32,73 @@ Business code is **properly integrated** when:
 | **Error Handling** | Error flow analysis | Business errors handled in main |
 | **Monitoring** | Metrics integration check | Business metrics exposed |
 
-## Integration Verification Process
+## 🚫 **IRONCLAD INTEGRATION VERIFICATION PROCESS**
 
-### Step 1: Call Graph Analysis
+### **MANDATORY INTEGRATION VALIDATION - BLOCKING REQUIREMENTS**
+
+**🚫 BLOCKING REQUIREMENT - BEFORE ANY BUSINESS CODE CREATION**:
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[BusinessComponentType]</parameter>
+<parameter name="path">cmd/</parameter>
+<parameter name="output_mode">content</parameter>
+<parameter name="-n">true</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Task">
+<parameter name="subagent_type">general-purpose</parameter>
+<parameter name="description">Main application integration analysis</parameter>
+<parameter name="prompt">Analyze main applications in cmd/ directory to understand integration patterns. Find how similar business components are instantiated, configured, and wired into the application flow.</parameter>
+</invoke>
+</function_calls>
+
+```
+✅ INTEGRATION VERIFICATION CHECKPOINT:
+- [ ] Main application search executed ✅/❌
+- [ ] Integration patterns identified and documented ✅/❌
+- [ ] Similar component usage patterns discovered ✅/❌
+- [ ] Integration plan developed for cmd/ applications ✅/❌
+- [ ] Runtime execution path verified ✅/❌
+
+❌ STOP: Cannot create business code until ALL checkboxes are ✅
+```
+
+**🚫 MANDATORY INTEGRATION EVIDENCE - POST-IMPLEMENTATION**:
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[ImplementedBusinessComponent]</parameter>
+<parameter name="path">cmd/</parameter>
+<parameter name="output_mode">files_with_matches</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">New[BusinessComponent]|Create[BusinessComponent]</parameter>
+<parameter name="path">cmd/</parameter>
+<parameter name="output_mode">content</parameter>
+</invoke>
+</function_calls>
+
+```
+✅ INTEGRATION EVIDENCE CHECKPOINT:
+- [ ] Component appears in main applications ✅/❌
+- [ ] Component instantiation confirmed ✅/❌
+- [ ] Runtime execution path verified ✅/❌
+- [ ] No orphaned business code ✅/❌
+
+❌ VIOLATION: If ANY checkbox is ❌ → "🚨 ORPHANED BUSINESS CODE VIOLATION: All business code MUST be integrated in main applications - DEVELOPMENT STOPPED"
+```
+
+### Step 1: Call Graph Analysis (Tool-Enforced)
 ```bash
-# Trace business code usage from main applications
-grep -r "YourBusinessCode" cmd/ --include="*.go"
-
-# Verify business code is not test-only
-find pkg/ -name "*.go" -not -name "*_test.go" -exec grep -l "YourBusinessCode" {} \;
+# MANDATORY: Execute these validation commands
+grep -r "[BusinessComponentType]" cmd/ --include="*.go"
+find pkg/ -name "*.go" -not -name "*_test.go" -exec grep -l "[BusinessComponentType]" {} \;
 ```
 
 ### Step 2: Runtime Path Verification
@@ -147,47 +205,36 @@ func main() {
 }
 ```
 
-## Validation Commands
+## Prevention-Focused Integration
 
-### Integration Health Check
-```bash
-# Component usage verification
-grep -r "NewAnalyticsEngine\|NewWorkflowBuilder" cmd/ --include="*.go"
+### Integration Verification Through APDC
+**Prevention-focused approach**:
+1. **APDC Analysis**: Search for existing components and usage patterns
+2. **APDC Plan**: Design integration points before implementation begins
+3. **APDC Do-GREEN**: Integrate component during GREEN phase (mandatory)
+4. **APDC Check**: Verify integration success through main app validation
 
-# Test-only detection
-BUSINESS_COMPONENTS=$(find pkg/ -name "*.go" -not -name "*_test.go" -exec grep -l "Engine\|Builder\|Analyzer" {} \;)
-MAIN_USAGE=$(grep -r "Engine\|Builder\|Analyzer" cmd/ --include="*.go" | wc -l)
-
-# Integration validation
-./scripts/run-integration-validation.sh
-```
-
-### Runtime Path Verification
-```bash
-# Workflow execution path
-grep -r "AnalyzeContext\|BuildWorkflow" pkg/workflow/ pkg/processor/ --include="*.go"
-
-# Main application startup
-curl http://localhost:8080/health/integration
-```
+### Integration Success Indicators
+**Built-in quality indicators**:
+- ✅ Component instantiated in main application entry points
+- ✅ Runtime execution path confirmed in normal workflows
+- ✅ Dependency chain properly wired in main application
+- ✅ Business errors handled in main application flow
 
 ## Enforcement Protocol
 
 ### Integration Failure Response
 1. **STOP**: Halt development until integration fixed
 2. **INTEGRATE**: Add component to main application
-3. **VALIDATE**: Run `./scripts/run-integration-validation.sh`
+3. **VERIFY**: Confirm integration through APDC Check phase validation
 4. **DOCUMENT**: Record integration approach
 
-### Continuous Validation
-```bash
-# Pre-commit integration check
-NEW_COMPONENTS=$(git diff --name-only --cached | grep "pkg/.*\.go" | grep -v "_test.go")
-for component in $NEW_COMPONENTS; do
-    MAIN_USAGE=$(grep -r "$(basename $component .go)" cmd/ --include="*.go" | wc -l)
-    [ "$MAIN_USAGE" -eq 0 ] && echo "❌ Integration required for $component" && exit 1
-done
-```
+### Continuous Prevention
+**Prevention through APDC methodology**:
+- **Analysis Phase**: Identify integration points before coding
+- **Plan Phase**: Design component usage in main applications
+- **Do-GREEN Phase**: Mandatory integration during minimal implementation
+- **Check Phase**: Verify integration success before completion
 
 ## Integration Points
 

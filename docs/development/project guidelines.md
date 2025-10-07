@@ -1,5 +1,37 @@
 ALWAYS follow these principles:
 
+## 🚀 **APDC Development Methodology**
+
+**NEW**: Kubernaut now uses **Analysis-Plan-Do-Check (APDC)** methodology for systematic development.
+
+### **When to Use APDC:**
+- Complex feature development (multiple components)
+- Significant refactoring (architectural changes)
+- New component creation (business logic)
+- Build error fixing (systematic remediation)
+- AI/ML component development
+
+### **APDC Quick Reference:**
+- **Analysis** (5-15 min): Context + business requirements + rule assessment
+- **Plan** (10-20 min): Strategy + TDD mapping + user approval
+- **Do** (Variable): Checkpoints + implementation + continuous validation
+- **Check** (5-10 min): Validation + rule triage + confidence assessment
+
+### **APDC Commands:**
+```bash
+/analyze [component]     # Analysis phase
+/plan [analysis]         # Planning phase
+/do [plan]              # Implementation phase
+/check [results]        # Validation phase
+/apdc-full              # Complete workflow
+/fix-build-apdc         # APDC build fixing
+/refactor-apdc          # APDC refactoring
+```
+
+📖 **[Complete APDC Guide](methodology/APDC_FRAMEWORK.md)** - Comprehensive methodology documentation
+
+---
+
 Common principles:
 
 * Ask for input for critical decissions, do not make assumptions if they are not backed up by existing code or defined as requirements. Provide preference with justification.

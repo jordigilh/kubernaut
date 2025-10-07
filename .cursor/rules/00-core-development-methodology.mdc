@@ -18,11 +18,39 @@ description: "Core development methodology: principles, TDD phases, and AI-speci
 **Format**: Provide recommendation with detailed justification when asking for input.
 
 ### Business Requirements Mandate
-**MANDATORY**: Every code change must be backed by at least ONE business requirement (BR-XXX-XXX format).
+**MANDATORY**: Every code change must be backed by at least ONE business requirement (BR-[CATEGORY]-[NUMBER] format, e.g., BR-WORKFLOW-001, BR-AI-056).
 - All tests must map to specific business requirements
 - All implementation code must serve documented business needs
 - No speculative or "nice to have" code without business backing
 - Business requirements dictate functionality; technical patterns enable business logic
+
+### Standard Business Requirement Categories
+**Format**: `BR-[CATEGORY]-[NUMBER]` where NUMBER is zero-padded 3 digits (001, 002, etc.)
+
+| Category | Purpose | Examples |
+|----------|---------|----------|
+| **WORKFLOW** | Core workflow orchestration and automation | BR-WORKFLOW-001, BR-WORKFLOW-002 |
+| **AI** | AI/ML functionality and intelligence features | BR-AI-001, BR-AI-056 |
+| **INTEGRATION** | Cross-component and external service integration | BR-INTEGRATION-001, BR-INTEGRATION-002 |
+| **SECURITY** | Security features and access controls | BR-SECURITY-001, BR-SECURITY-002 |
+| **PLATFORM** | Kubernetes and infrastructure platform features | BR-PLATFORM-001, BR-PLATFORM-002 |
+| **API** | API endpoints and external interfaces | BR-API-001, BR-API-002 |
+| **STORAGE** | Data persistence and storage features | BR-STORAGE-001, BR-STORAGE-002 |
+| **MONITORING** | Observability, metrics, and monitoring | BR-MONITORING-001, BR-MONITORING-002 |
+| **SAFETY** | Safety frameworks and validation | BR-SAFETY-001, BR-SAFETY-002 |
+| **PERFORMANCE** | Performance optimization and scalability | BR-PERFORMANCE-001, BR-PERFORMANCE-002 |
+
+### Business Requirement Validation
+```bash
+# Validate BR format
+# Business requirement validation during APDC Analysis phase
+
+# Check BR category is valid
+echo "BR-WORKFLOW-001" | grep -E "^BR-(WORKFLOW|AI|INTEGRATION|SECURITY|PLATFORM|API|STORAGE|MONITORING|SAFETY|PERFORMANCE)-[0-9]{3}$"
+
+# Verify BR documentation exists
+find docs/requirements/ -name "*BR-[CATEGORY]-[NUMBER]*" -type f
+```
 
 ## 🧪 **APDC-Enhanced TDD Methodology - MANDATORY SEQUENCE**
 
@@ -57,58 +85,122 @@ description: "Core development methodology: principles, TDD phases, and AI-speci
 ### Analysis Phase - COMPREHENSIVE CONTEXT UNDERSTANDING
 **Duration**: 5-15 minutes
 **Purpose**: Systematic evaluation before any implementation
-**Validation**: `./scripts/validate-apdc-analysis.sh [component] [business-requirement]`
+**Prevention**: Systematic evaluation checklist before implementation
 
-#### Analysis Phase Requirements
-```bash
-# Business requirement alignment analysis
-grep -r "BR-[A-Z]+-[0-9]+" docs/requirements/ --include="*.md"
-codebase_search "business requirement [BR-XXX-XXX] existing implementations"
+## 🚫 **IRONCLAD ANALYSIS PHASE - BLOCKING REQUIREMENTS**
 
-# Technical impact assessment
-codebase_search "existing [ComponentType] implementations and dependencies"
-grep -r "[ComponentName]" cmd/ pkg/ test/ --include="*.go" -c
+#### **MANDATORY ANALYSIS QUESTIONS (ALL REQUIRED)**:
+1. **Business Context** - Does this solve a documented business requirement (BR-[CATEGORY]-[NUMBER])?
+2. **Technical Context** - What existing implementations already solve similar problems?
+3. **Integration Context** - How will this integrate with existing main applications?
+4. **Complexity Assessment** - Is this the simplest approach that meets the business need?
 
-# Integration point identification
-grep -r "New[ComponentType]\|Create[ComponentType]" cmd/ --include="*.go"
+#### **🚫 BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE ANY CODE**:
 
-# Risk and complexity evaluation
-go mod graph | grep [target_package]
-./scripts/analyze-dependency-impact.sh [component]
+<function_calls>
+<invoke name="Task">
+<parameter name="subagent_type">general-purpose</parameter>
+<parameter name="description">Comprehensive existing implementation analysis</parameter>
+<parameter name="prompt">Search the entire codebase for existing implementations similar to [USER_REQUIREMENT]. Find components in pkg/, integration patterns in cmd/, and established approaches.</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[ComponentType]</parameter>
+<parameter name="path">pkg/</parameter>
+<parameter name="output_mode">files_with_matches</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[ComponentType]</parameter>
+<parameter name="path">cmd/</parameter>
+<parameter name="output_mode">content</parameter>
+</invoke>
+</function_calls>
+
+```
+✅ ANALYSIS PHASE CHECKPOINT:
+- [ ] Business requirement (BR-XXX-XXX) identified and validated ✅/❌
+- [ ] Existing implementation search executed ✅/❌
+- [ ] Technical context fully documented ✅/❌
+- [ ] Integration patterns discovered ✅/❌
+- [ ] Complexity assessment completed ✅/❌
+
+❌ STOP: Cannot proceed to PLAN phase until ALL checkboxes are ✅
 ```
 
-#### Analysis Deliverables - MANDATORY
-1. **Business Context**: BR-XXX-XXX alignment and business value assessment
-2. **Technical Context**: Existing implementations, dependencies, integration points
+**🚫 MANDATORY USER APPROVAL GATE - ANALYSIS PHASE:**
+```
+🎯 ANALYSIS PHASE SUMMARY:
+Business Requirement: [BR-XXX-XXX with justification]
+Existing Solutions: [N components found with file paths]
+Integration Points: [M main app patterns discovered]
+Complexity Level: [SIMPLE/MEDIUM/COMPLEX with evidence]
+Recommended Approach: [enhance existing/create new with justification]
+
+❓ **MANDATORY APPROVAL**: Do you approve this analysis and approach? (YES/NO)
+```
+
+#### Analysis Deliverables - MANDATORY (Tool-Verified)
+1. **Business Context**: BR-[CATEGORY]-[NUMBER] alignment and business value assessment
+2. **Technical Context**: Existing implementations, dependencies, integration points (from tool execution)
 3. **Impact Assessment**: Files affected, cascade effects, performance implications
 4. **Risk Evaluation**: Complexity level, potential breaking changes, mitigation needs
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 ANALYSIS PHASE VIOLATION: Implementation attempted without complete analysis - DEVELOPMENT STOPPED"
+If NO user approval → "🚨 ANALYSIS APPROVAL VIOLATION: Plan phase attempted without user approval - DEVELOPMENT STOPPED"
 
 ### Plan Phase - DETAILED IMPLEMENTATION STRATEGY
 **Duration**: 10-20 minutes
 **Purpose**: Structured approach to implementation with clear success criteria
-**Validation**: `./scripts/validate-apdc-plan.sh [analysis-results] [implementation-strategy]`
+**Prevention**: Strategic planning before implementation to avoid rework
 
-#### Plan Phase Requirements
-```bash
-# TDD phase mapping and timeline estimation
-./scripts/estimate-tdd-phases.sh [component] [complexity]
+## 🚫 **IRONCLAD PLAN PHASE - BLOCKING REQUIREMENTS**
 
-# Resource and dependency planning
-./scripts/validate-implementation-dependencies.sh [plan]
+#### **MANDATORY PLAN ELEMENTS (ALL REQUIRED)**:
+1. **TDD Strategy** - Which interfaces will you enhance vs create? Where will tests live?
+2. **Integration Plan** - Which main app files will instantiate your component?
+3. **Success Definition** - What business outcome proves this works?
+4. **Risk Mitigation** - What's the simplest implementation that could work?
+5. **Timeline** - RED (10-15min) → GREEN (15-20min) → REFACTOR (20-30min)
 
-# Success criteria definition with measurable outcomes
-./scripts/define-success-criteria.sh [business-requirement] [technical-goals]
+```
+✅ PLAN PHASE CHECKPOINT:
+- [ ] TDD strategy defined with specific interfaces ✅/❌
+- [ ] Integration plan specifies exact cmd/ files ✅/❌
+- [ ] Success criteria are measurable and testable ✅/❌
+- [ ] Risk mitigation strategies documented ✅/❌
+- [ ] Timeline realistic with phase breakdown ✅/❌
 
-# Risk mitigation strategy development
-./scripts/create-risk-mitigation-plan.sh [identified-risks]
+❌ STOP: Cannot proceed to DO phase until ALL checkboxes are ✅
 ```
 
-#### Plan Deliverables - MANDATORY
+**🚫 MANDATORY USER APPROVAL GATE - PLAN PHASE:**
+```
+🎯 PLAN PHASE SUMMARY:
+TDD Strategy: [enhance [ExistingInterface] vs create new, tests in [TestLocation]]
+Integration Plan: [specific files: cmd/app1/main.go, cmd/app2/main.go]
+Success Definition: [BR-XXX-XXX outcome: specific measurable behavior]
+Risk Mitigation: [identified risks with specific mitigation strategies]
+Timeline: [RED: Xmin → GREEN: Ymin → REFACTOR: Zmin]
+
+❓ **MANDATORY APPROVAL**: Do you approve this implementation plan? (YES/NO)
+```
+
+#### Plan Deliverables - MANDATORY (User-Approved)
 1. **Implementation Strategy**: TDD phase breakdown with specific actions
 2. **Timeline Estimation**: Realistic duration for each phase
 3. **Success Criteria**: Measurable outcomes and validation checkpoints
 4. **Risk Mitigation**: Specific strategies for identified risks
 5. **Rollback Plan**: Recovery procedures if implementation fails
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 PLAN PHASE VIOLATION: DO phase attempted without complete planning - DEVELOPMENT STOPPED"
+If NO user approval → "🚨 PLAN APPROVAL VIOLATION: DO phase attempted without user approval - DEVELOPMENT STOPPED"
 
 ### Do Phase - CONTROLLED TDD EXECUTION
 **Duration**: Variable (based on complexity)
@@ -119,35 +211,26 @@ go mod graph | grep [target_package]
 | Phase | Duration | Action | APDC Integration | Validation Tool |
 |-------|----------|--------|------------------|----------------|
 | **DO-DISCOVERY** | 5-10 min | Execute planned component research | Analysis-guided search | `codebase_search "existing [Component] implementations"` |
-| **DO-RED** | 10-15 min | Write failing tests per plan | Plan-structured test creation | `./scripts/phase2-red-validation.sh` |
-| **DO-GREEN** | 15-20 min | Minimal implementation + integration | Plan-guided implementation | `./scripts/phase3-green-validation.sh` |
-| **DO-REFACTOR** | 20-30 min | Enhance existing code per plan | Plan-structured enhancement | `./scripts/phase4-refactor-validation.sh` |
+| **DO-RED** | 10-15 min | Write failing tests per plan | Plan-structured test creation | Built-in validation through TDD |
+| **DO-GREEN** | 15-20 min | Minimal implementation + integration | Plan-guided implementation | Built-in validation through integration |
+| **DO-REFACTOR** | 20-30 min | Enhance existing code per plan | Plan-structured enhancement | Built-in validation through enhancement |
 
 ### Check Phase - COMPREHENSIVE RESULT VALIDATION
 **Duration**: 5-10 minutes
 **Purpose**: Systematic verification of implementation quality and business alignment
-**Validation**: `./scripts/validate-apdc-results.sh [implementation] [success-criteria]`
+**Prevention**: Built-in quality through systematic implementation approach
 
-#### Check Phase Requirements
-```bash
-# Business requirement fulfillment verification
-./scripts/validate-business-requirement-fulfillment.sh "BR-XXX-XXX" [implementation]
+#### Check Phase - BUILT-IN QUALITY VERIFICATION
+**Verify quality was built-in during implementation:**
 
-# Integration testing validation
-./scripts/run-integration-validation.sh [component]
-
-# Performance impact assessment
-./scripts/assess-performance-impact.sh [before-metrics] [after-metrics]
-
-# Rule compliance confirmation
-./scripts/validate-rule-compliance.sh [implementation] [affected-rules]
-
-# Confidence assessment generation
-./scripts/generate-confidence-assessment.sh [implementation] [validation-results]
-```
+1. **Business Alignment** - Does the implementation solve the planned BR-[CATEGORY]-[NUMBER]?
+2. **Integration Success** - Is the component instantiated in the planned main app files?
+3. **Test Coverage** - Do tests validate the business behavior, not just technical function?
+4. **Simplicity** - Is this the simplest implementation that meets the business need?
+5. **Documentation** - Is the business purpose clear to future developers?
 
 #### Check Deliverables - MANDATORY
-1. **Business Verification**: Confirmation that BR-XXX-XXX requirements are met
+1. **Business Verification**: Confirmation that BR-[CATEGORY]-[NUMBER] requirements are met
 2. **Technical Validation**: Build success, test passage, lint compliance
 3. **Integration Confirmation**: Main application integration verified
 4. **Performance Assessment**: Impact on system performance evaluated
@@ -181,7 +264,7 @@ grep -r "NewComponent" cmd/ --include="*.go" || echo "❌ Missing integration"
 ```bash
 # Enhance existing code only (NO new types/methods/files)
 # Integration MUST be preserved
-git diff HEAD~1 | grep "^+type.*struct" && echo "❌ New types forbidden in REFACTOR"
+git diff --cached | grep "^+type.*struct" && echo "❌ New types forbidden in REFACTOR"
 ```
 
 ## 🤖 **AI/ML Specific TDD - COMPREHENSIVE METHODOLOGY**
@@ -189,7 +272,7 @@ git diff HEAD~1 | grep "^+type.*struct" && echo "❌ New types forbidden in REFA
 ### AI TDD Phases
 
 #### AI Discovery Phase (5-10 min)
-**Action**: `./scripts/ai-component-discovery.sh ComponentName`
+**Action**: Use APDC Analysis phase discovery patterns
 **Rule**: Search existing AI interfaces before creating new
 **Mandatory Checks**:
 ```bash
@@ -203,7 +286,7 @@ grep -r "AI\|LLM\|Holmes" cmd/ --include="*.go"
 #### AI RED Phase (15-20 min)
 **Rule**: Import existing AI interfaces (`pkg/ai/llm.Client`)
 **Forbidden**: Creating new AI interfaces
-**Validation**: `./scripts/validate-ai-development.sh red`
+**Validation**: Built-in through TDD RED phase design
 **AI-Specific RED Pattern**:
 ```go
 // ✅ CORRECT AI RED: Uses existing AI interface
@@ -231,7 +314,7 @@ var _ = Describe("AI Context Optimization", func() {
 **Rule**: Enhance existing AI client (e.g., `ClientImpl`)
 **Integration**: Add to main app (`cmd/*/main.go`)
 **Forbidden**: New AI service files
-**Validation**: `./scripts/validate-ai-development.sh green`
+**Validation**: Built-in through GREEN phase integration requirement
 **AI-Specific GREEN Pattern**:
 ```go
 // ✅ CORRECT AI GREEN: Enhance existing AI client
@@ -255,7 +338,7 @@ func (c *ClientImpl) AnalyzeContext(ctx context.Context, content string) (*Conte
 **Rule**: Enhance same AI methods tests call
 **REFACTOR NEVER MEANS**: Create new parallel/additional AI code
 **Forbidden**: New AI types, files, interfaces
-**Validation**: `./scripts/validate-ai-development.sh refactor`
+**Validation**: Built-in through REFACTOR phase enhancement focus
 **AI-Specific REFACTOR Focus**:
 ```go
 // ✅ CORRECT AI REFACTOR: Enhance existing method
@@ -404,64 +487,36 @@ impact on high-alert scenarios. Validation: Unit tests cover 90% of edge cases.
 
 ## 🔧 **APDC-Enhanced Validation Commands**
 
-### APDC Phase Validation
-```bash
-# Analysis phase validation
-./scripts/validate-apdc-analysis.sh [component] [business-requirement]
-./scripts/analyze-dependency-impact.sh [component]
-./scripts/assess-business-alignment.sh "BR-XXX-XXX" [component]
+### APDC Prevention Framework
+**Built-in quality through systematic approach:**
 
-# Plan phase validation
-./scripts/validate-apdc-plan.sh [analysis-results] [implementation-strategy]
-./scripts/estimate-tdd-phases.sh [component] [complexity]
-./scripts/validate-implementation-dependencies.sh [plan]
+**Analysis Prevention**: Start with clear business context and existing code understanding
+**Plan Prevention**: Design integration and success criteria before coding
+**Do Prevention**: Follow TDD phases with mandatory integration in GREEN
+**Check Prevention**: Verify planned outcomes were achieved through implementation
 
-# Do phase validation (Enhanced TDD)
-./scripts/phase2-red-validation.sh test_file.go      # DO-RED phase
-./scripts/phase3-green-validation.sh component_name  # DO-GREEN phase
-./scripts/phase4-refactor-validation.sh             # DO-REFACTOR phase
+### APDC Success Indicators
+**Quality indicators built into the development process:**
 
-# Check phase validation
-./scripts/validate-apdc-results.sh [implementation] [success-criteria]
-./scripts/validate-business-requirement-fulfillment.sh "BR-XXX-XXX" [implementation]
-./scripts/assess-performance-impact.sh [before-metrics] [after-metrics]
-./scripts/generate-confidence-assessment.sh [implementation] [validation-results]
-```
+**Analysis Success**: Clear business requirement mapped, existing solutions understood
+**Plan Success**: Integration points identified, TDD phases planned with realistic timeline
+**Do Success**: Tests written first, component integrated in GREEN, sophisticated logic in REFACTOR
+**Check Success**: Business requirement solved, code integrated, quality built-in
 
-### Complete APDC Workflow Validation
-```bash
-# Full APDC cycle validation
-./scripts/validate-apdc-cycle.sh [component] "BR-XXX-XXX"
+### AI-Specific APDC Prevention
+**AI development prevention through APDC integration:**
 
-# APDC compliance check
-./scripts/check-apdc-compliance.sh [development-session]
-
-# Business requirements validation (Enhanced)
-./scripts/validate-tdd-completeness.sh "BR-XXX-XXX"
-./scripts/validate-apdc-business-alignment.sh "BR-XXX-XXX"
-
-# Integration validation (Enhanced)
-./scripts/run-integration-validation.sh
-./scripts/validate-main-app-integration.sh [component]
-```
-
-### AI-Specific APDC Validation
-```bash
-# AI component discovery (APDC-enhanced)
-./scripts/ai-component-discovery.sh ComponentName
-./scripts/validate-ai-apdc-analysis.sh [ai-component] [business-requirement]
-
-# AI development phase validation (APDC-integrated)
-./scripts/validate-ai-development.sh <phase>  # red, green, refactor
-./scripts/validate-ai-apdc-cycle.sh [ai-component] "BR-AI-XXX"
-```
+**AI Analysis**: Search existing AI interfaces before planning new ones
+**AI Plan**: Plan to enhance existing AI clients rather than create new ones
+**AI Do**: Follow TDD with existing interface reuse and main app integration
+**AI Check**: Verify AI business value delivered through existing interface patterns
 
 ## ⚡ **APDC-Enhanced Quick Reference Checklist**
 
 ### Before any code submission - APDC Compliance:
 
 #### Analysis Phase Completion:
-- [ ] Business requirement mapped and analyzed (BR-XXX-XXX)
+- [ ] Business requirement mapped and analyzed (BR-[CATEGORY]-[NUMBER])
 - [ ] Technical impact assessment completed
 - [ ] Integration points identified and validated
 - [ ] Risk and complexity evaluation documented
@@ -504,4 +559,6 @@ This rule establishes mandatory methodology that controls:
 - [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework
 - [05-kubernetes-safety.mdc](mdc:.cursor/rules/05-kubernetes-safety.mdc) - Safety patterns
 
-**Priority**: FOUNDATIONAL - all other rules operate within this methodology framework
+**PRIORITY LEVEL**: 1 - FOUNDATIONAL (per [13-conflict-resolution-matrix.mdc](mdc:.cursor/rules/13-conflict-resolution-matrix.mdc))
+
+**Authority**: APDC methodology framework - all other rules operate within this structure
