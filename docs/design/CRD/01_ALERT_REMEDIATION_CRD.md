@@ -2,9 +2,29 @@
 
 **Document Version**: 1.0
 **Date**: January 2025
-**Status**: **APPROVED** - Ready for Implementation
+**Status**: **REFERENCE ONLY** - Superseded by CRD_SCHEMAS.md
 **CRD Type**: Central Coordination Controller
 **Priority**: **CRITICAL** - Core orchestration component
+
+---
+
+## ⚠️ DEPRECATION NOTICES
+
+### **1. Authoritative Source**
+
+This document is **REFERENCE ONLY**. The authoritative CRD definitions are in:
+- **[CRD_SCHEMAS.md](../../architecture/CRD_SCHEMAS.md)** - Authoritative OpenAPI v3 schemas
+- **[V1 Source of Truth Hierarchy](../../V1_SOURCE_OF_TRUTH_HIERARCHY.md)** - Documentation authority
+
+### **2. Naming Convention**
+
+This document uses **deprecated "Alert" prefix naming**:
+- `AlertRemediation` CRD → **`RemediationOrchestration`** (current name)
+- `AlertProcessing` → **`RemediationProcessing`** (current name)
+
+**Why Deprecated**: Kubernaut processes multiple signal types (alerts, events, alarms), not just alerts.
+
+**Migration**: [ADR-015: Alert to Signal Naming Migration](../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
 
 ---
 
