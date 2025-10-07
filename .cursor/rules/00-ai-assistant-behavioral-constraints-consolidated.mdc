@@ -23,55 +23,157 @@ alwaysApply: true
 
 #### **CHECKPOINT A: Type Reference Validation**
 **TRIGGER**: About to reference any struct field (e.g., `object.FieldName`)
-**MANDATORY ACTION**:
-```bash
-# HALT: Validate type definition exists
-grep -r "type.*ObjectType.*struct" pkg/ --include="*.go"
-# RULE: If field not found in type definition, STOP and fix type definition first
+
+🚫 **BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE PROCEEDING**:
+
+<function_calls>
+<invoke name="Read">
+<parameter name="file_path">[TYPE_DEFINITION_FILE_PATH]</parameter>
+</invoke>
+</function_calls>
+
 ```
+✅ TYPE VALIDATION CHECKPOINT:
+- [ ] Type definition file read ✅/❌
+- [ ] Target field exists in struct definition ✅/❌
+- [ ] No empty struct{} definitions ✅/❌
+- [ ] No assumptions made about field existence ✅/❌
+
+❌ STOP: Cannot proceed until ALL checkboxes are ✅
+```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 CHECKPOINT A VIOLATION: Type reference attempted without validation - DEVELOPMENT STOPPED"
 
 #### **CHECKPOINT B: Test Creation Validation**
 **TRIGGER**: About to create test file with business logic references
-**MANDATORY ACTION**:
-```bash
-# HALT: Search for existing implementations
-codebase_search "existing [ComponentType] implementations"
-# RULE: If creating new types, must follow TDD RED-GREEN-REFACTOR sequence
+
+🚫 **BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE PROCEEDING**:
+
+<function_calls>
+<invoke name="Task">
+<parameter name="subagent_type">general-purpose</parameter>
+<parameter name="description">Search for existing implementations</parameter>
+<parameter name="prompt">Search the entire codebase for existing implementations of [ComponentType]. Provide specific file paths, implementation details, and integration patterns found.</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[ComponentType]</parameter>
+<parameter name="path">pkg/</parameter>
+<parameter name="output_mode">files_with_matches</parameter>
+</invoke>
+</function_calls>
+
 ```
+✅ TEST CREATION CHECKPOINT:
+- [ ] Existing implementation search executed ✅/❌
+- [ ] Similar components discovered and documented ✅/❌
+- [ ] TDD RED-GREEN-REFACTOR sequence planned ✅/❌
+- [ ] Business requirement (BR-XXX-XXX) identified ✅/❌
+
+❌ STOP: Cannot proceed until ALL checkboxes are ✅
+```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 CHECKPOINT B VIOLATION: Test creation attempted without existing implementation analysis - DEVELOPMENT STOPPED"
 
 #### **CHECKPOINT C: Business Integration Validation**
 **TRIGGER**: Creating new business types or interfaces
-**MANDATORY ACTION**:
-```bash
-# HALT: Check main application integration
-grep -r "NewComponentType" cmd/ --include="*.go"
-# RULE: If ZERO results, integration is required before proceeding
+
+🚫 **BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE PROCEEDING**:
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[NewComponentType]</parameter>
+<parameter name="path">cmd/</parameter>
+<parameter name="output_mode">content</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[ComponentType]</parameter>
+<parameter name="path">cmd/</parameter>
+<parameter name="output_mode">files_with_matches</parameter>
+</invoke>
+</function_calls>
+
 ```
+✅ BUSINESS INTEGRATION CHECKPOINT:
+- [ ] Main application search executed ✅/❌
+- [ ] Integration points identified and documented ✅/❌
+- [ ] Component usage patterns discovered ✅/❌
+- [ ] Main app integration planned ✅/❌
+
+❌ STOP: Cannot proceed until ALL checkboxes are ✅
+```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 CHECKPOINT C VIOLATION: Business component creation attempted without main app integration validation - DEVELOPMENT STOPPED"
+
+**INTEGRATION MANDATE**:
+If NO integration points found → "🚨 ORPHANED BUSINESS CODE VIOLATION: All business code MUST be integrated in main applications (cmd/) - DEVELOPMENT STOPPED"
 
 #### **CHECKPOINT D: Build Error Investigation**
 **TRIGGER**: User reports build errors or undefined symbols
-**MANDATORY ACTION**:
-```bash
-# HALT: Execute comprehensive symbol analysis
-codebase_search "[undefined_symbol] usage patterns and dependencies"
-grep -r "[undefined_symbol]" . --include="*.go" -n
-# RULE: NO implementation without user approval after complete analysis
+
+🚫 **BLOCKING REQUIREMENT - AI MUST EXECUTE BEFORE PROCEEDING**:
+
+<function_calls>
+<invoke name="Grep">
+<parameter name="pattern">[EXACT_UNDEFINED_SYMBOL]</parameter>
+<parameter name="path">.</parameter>
+<parameter name="output_mode">content</parameter>
+<parameter name="-n">true</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Task">
+<parameter name="subagent_type">general-purpose</parameter>
+<parameter name="description">Comprehensive dependency analysis</parameter>
+<parameter name="prompt">Analyze the complete dependency chain for [UNDEFINED_SYMBOL]. Find all files that reference this symbol, identify missing infrastructure, and determine the scope of implementation needed.</parameter>
+</invoke>
+</function_calls>
+
+<function_calls>
+<invoke name="Bash">
+<parameter name="command">go build [AFFECTED_FILE] 2>&1</parameter>
+<parameter name="description">Test compilation impact</parameter>
+</invoke>
+</function_calls>
+
 ```
-**REQUIRED REPORT FORMAT**:
+✅ BUILD ERROR INVESTIGATION CHECKPOINT:
+- [ ] Symbol analysis tools executed ✅/❌
+- [ ] Complete dependency chain mapped ✅/❌
+- [ ] Impact assessment performed ✅/❌
+- [ ] Options A/B/C analysis completed ✅/❌
+
+❌ STOP: Cannot proceed until ALL checkboxes are ✅
 ```
-🚨 UNDEFINED SYMBOL ANALYSIS:
+
+**🚫 MANDATORY USER APPROVAL GATE:**
+```
+🚨 COMPREHENSIVE UNDEFINED SYMBOL ANALYSIS:
 Symbol: [undefined_symbol]
-References found: [N files]
-Dependent infrastructure: [list missing types/functions]
-Scope: [minimal/medium/extensive]
+References found: [N files with specific paths]
+Dependent infrastructure: [list missing types/functions with details]
+Scope: [minimal/medium/extensive with evidence]
 
-OPTIONS:
-A) Implement complete infrastructure ([X] files affected)
-B) Create minimal stub (may break [Y] files)
-C) Alternative approach: [suggest]
+OPTIONS (Evidence-Based):
+A) Implement complete infrastructure ([X] files affected, [Y] types needed)
+B) Create minimal stub ([Z] files affected, may break [W] dependent files)
+C) Alternative approach: [evidence-based alternative with justification]
 
-Which approach should I take?
+🚫 MANDATORY USER DECISION REQUIRED: Which approach should I take? (A/B/C)
 ```
+
+**RULE VIOLATION DETECTION**:
+If ANY checkbox is ❌ → "🚨 CHECKPOINT D VIOLATION: Build error resolution attempted without comprehensive analysis - DEVELOPMENT STOPPED"
+If NO user approval → "🚨 APPROVAL VIOLATION: Implementation attempted without explicit user approval - DEVELOPMENT STOPPED"
 
 ### **MANDATORY TOOL USAGE PATTERN**
 
@@ -245,19 +347,22 @@ Risk Assessment: [Description of potential issues]
 
 ## **IMPLEMENTATION PRIORITY**
 
-This rule has **HIGHEST PRIORITY** and overrides all other considerations:
-- **FOUNDATIONAL**: All other rules operate within these behavioral constraints
+**PRIORITY LEVEL**: 3 - BEHAVIORAL (per [13-conflict-resolution-matrix.mdc](mdc:.cursor/rules/13-conflict-resolution-matrix.mdc))
+
+This rule controls AI assistant behavior and has authority over development decisions:
+- **BEHAVIORAL CONTROL**: Governs AI assistant behavior within APDC methodology framework
 - **NON-NEGOTIABLE**: Cannot be bypassed for convenience or speed
 - **AUTOMATED**: Must be enforced programmatically, not manually
+- **SCOPE**: AI assistant usage - does not override APDC methodology or testing strategy
 
 ## **Integration with Existing Rules**
 
 This rule **enforces** compliance with:
 - [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - TDD methodology
-- [01-business-code-integration.mdc](mdc:.cursor/rules/01-business-code-integration.mdc) - Integration requirements
+- [07-business-code-integration.mdc](mdc:.cursor/rules/07-business-code-integration.mdc) - Integration requirements
 - [02-technical-implementation.mdc](mdc:.cursor/rules/02-technical-implementation.mdc) - Technical patterns
 - [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework
-- [07-build-error-investigation.mdc](mdc:.cursor/rules/07-build-error-investigation.mdc) - Build error protocol (INTEGRATED)
+- [build-error-protocol.md](mdc:.cursor/build-error-protocol.md) - Build error protocol (INTEGRATED)
 
 ## **Quick Reference for Build Error Investigation**
 

@@ -15,6 +15,7 @@ Kubernaut has successfully transformed from a stub-heavy development system to a
 ### 🚀 **Getting Started**
 New to Kubernaut? Start here for quick setup and integration examples.
 
+- **[APDC Quick Reference](development/methodology/APDC_QUICK_REFERENCE.md)** - 🆕 Essential APDC methodology commands and concepts
 - **[Quick Reference Card](getting-started/QUICK_REFERENCE_CARD.md)** - Essential commands and concepts
 - **[Integration Example](getting-started/INTEGRATION_EXAMPLE.md)** - Step-by-step integration walkthrough
 - **Setup Guides**:
@@ -46,7 +47,8 @@ Production deployment and operational configuration.
 ### 👨‍💻 **Development**
 Resources for contributors and developers extending Kubernaut.
 
-- **[Development Guidelines](development/development_guidelines.md)** - Code standards and practices
+- **[APDC Development Methodology](development/methodology/APDC_FRAMEWORK.md)** - 🆕 Systematic Analysis-Plan-Do-Check development framework
+- **[Development Guidelines](development/project%20guidelines.md)** - Code standards and practices with APDC integration
 - **[Testing Framework](TESTING_FRAMEWORK.md)** - Comprehensive testing approach
 - **[E2E Testing Plan](development/E2E_TESTING_PLAN.md)** - End-to-end testing strategy
 - **Business Requirements**:
@@ -103,6 +105,26 @@ Comprehensive business requirements for Phase 2 development.
   - **[Shared Utilities](requirements/09_SHARED_UTILITIES_COMMON.md)**
 - **[Phase 2 Business Requirements](requirements/PHASE_2_BUSINESS_REQUIREMENTS.md)** - Detailed Phase 2 requirements
 - **[Phase 2 Implementation Roadmap](requirements/PHASE_2_IMPLEMENTATION_ROADMAP.md)** - Implementation planning
+- **Requirements Enhancements**:
+  - **[Alert Tracking Enhancement](requirements/enhancements/ALERT_TRACKING.md)** - End-to-end alert tracking capabilities
+  - **[Post-Mortem Tracking](requirements/enhancements/POST_MORTEM_TRACKING.md)** - LLM-generated post-mortem reports
+  - **[Workflow Engine Enhancement](requirements/enhancements/WORKFLOW_ENGINE.md)** - Resilient workflow engine capabilities
+  - **[HolmesGPT Investigation Separation](requirements/enhancements/HOLMESGPT_INVESTIGATION_SEPARATION.md)** - Investigation vs execution separation
+  - **[AI Context Orchestration](requirements/enhancements/AI_CONTEXT_ORCHESTRATION.md)** - Dynamic context management enhancements
+
+### 📊 **Analysis & Research**
+Comprehensive analysis documents and research findings.
+
+- **Source Code Analysis**:
+  - **[Source Code Business Logic Analysis](analysis/SOURCE_CODE_BUSINESS_LOGIC.md)** - Business logic mapping and coverage
+  - **[Unmapped Code V1/V2 Analysis](analysis/UNMAPPED_CODE_V1_V2.md)** - Feature classification and integration readiness
+  - **[Unmapped Code Test Coverage](analysis/UNMAPPED_CODE_TEST_COVERAGE.md)** - Test coverage analysis for unmapped features
+- **Requirements Analysis**:
+  - **[Unmapped Code Business Requirements](analysis/UNMAPPED_CODE_BUSINESS_REQUIREMENTS.md)** - New BRs derived from existing code
+  - **[Unmapped Code BR Validation](analysis/UNMAPPED_CODE_BR_VALIDATION.md)** - BR validation and mapping analysis
+- **Integration Analysis**:
+  - **[V1 Integration Readiness](analysis/V1_INTEGRATION_READINESS.md)** - V1 integration assessment and recommendations
+  - **[Architecture Document Updates](analysis/ARCHITECTURE_DOCUMENT_UPDATE.md)** - Architecture evolution analysis
 
 ### 🔬 **Specialized Topics**
 Advanced technical topics and deep-dive analysis.
