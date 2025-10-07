@@ -10,14 +10,15 @@
 ## 1. Purpose & Scope
 
 ### 1.1 Business Purpose
-The Security & Access Control layer provides comprehensive authentication, authorization, role-based access control (RBAC), and secure secrets management to ensure that all Kubernaut operations are performed by authorized entities with appropriate permissions, maintaining enterprise-grade security and compliance standards.
+The Security & Access Control layer provides comprehensive authentication, authorization, role-based access control (RBAC), and secure secrets management to ensure that all Kubernaut operations are performed by authorized entities with appropriate permissions, maintaining security and compliance standards.
 
 ### 1.2 Scope
+- **v1**: OAuth2 authentication via Kubernetes API server (simplified security model)
+- **v2**: Enterprise identity provider integration (LDAP, SAML, SSO) - deferred for complexity reduction
 - **Role-Based Access Control (RBAC)**: User and service authentication with fine-grained permissions
 - **Secrets Management**: Secure storage, retrieval, and rotation of sensitive configuration
 - **Access Control**: Authorization enforcement across all system components
 - **Security Auditing**: Comprehensive security event logging and compliance
-- **Authentication**: Multi-factor and enterprise authentication integration
 
 ---
 
@@ -27,9 +28,15 @@ The Security & Access Control layer provides comprehensive authentication, autho
 
 #### 2.1.1 User & Service Authentication
 - **BR-RBAC-001**: MUST authenticate users and service accounts before granting access
-- **BR-RBAC-002**: MUST support multiple authentication methods (API keys, tokens, certificates)
-- **BR-RBAC-003**: MUST integrate with enterprise identity providers (LDAP, Active Directory, SAML)
-- **BR-RBAC-004**: MUST implement multi-factor authentication for administrative operations
+- **BR-RBAC-002**: MUST support authentication methods
+  - **v1**: OAuth2 via Kubernetes API server (service accounts, tokens)
+  - **v2**: Multiple methods (API keys, certificates, enterprise providers)
+- **BR-RBAC-003**: MUST integrate with identity providers
+  - **v1**: Kubernetes API server OAuth2 integration
+  - **v2**: Enterprise identity providers (LDAP, Active Directory, SAML)
+- **BR-RBAC-004**: MUST implement authentication for administrative operations
+  - **v1**: Kubernetes RBAC-based authentication
+  - **v2**: Multi-factor authentication for enhanced security
 - **BR-RBAC-005**: MUST provide secure session management with configurable timeouts
 
 #### 2.1.2 Permission Management
