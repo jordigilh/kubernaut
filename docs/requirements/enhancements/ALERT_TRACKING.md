@@ -7,6 +7,14 @@
 
 ---
 
+## ℹ️ TERMINOLOGY NOTE
+
+This document uses "alert" terminology to refer specifically to **Prometheus alerts** (a specific signal type). This is semantically correct within the context of the multi-signal architecture.
+
+**Multi-Signal Context**: While Kubernaut supports multiple signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch alarms), this enhancement specifically addresses Prometheus alert tracking. For the broader signal processing architecture, see [ADR-015: Alert to Signal Naming Migration](../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md).
+
+---
+
 ## 🎯 **Enhancement Overview**
 
 Instead of creating a new gateway-level tracking requirement that would conflict with existing responsibilities, we enhanced existing business requirements to provide comprehensive alert tracking from reception to resolution.
