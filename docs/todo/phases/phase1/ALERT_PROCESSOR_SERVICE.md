@@ -1,5 +1,25 @@
 # 🚨 **ALERT PROCESSOR SERVICE DEVELOPMENT GUIDE**
 
+## 📋 HISTORICAL PLANNING DOCUMENT
+
+**Status**: ✅ Phase 1 Complete
+**Purpose**: Historical record of Phase 1 planning
+**Current Status**: Superseded by implemented services
+
+### **⚠️ TERMINOLOGY NOTICE**
+
+This document uses "Alert" prefix naming, which has been deprecated in favor of "Signal" terminology:
+- **Alert Processor Service** → **Signal Processor Service**
+- **Alert Processing** → **Signal Processing**
+
+**Why Deprecated**: Kubernaut now processes multiple signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch alarms), not just alerts.
+
+**Migration**: [ADR-015: Alert to Signal Naming Migration](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
+
+**For Current Implementation**: See [docs/services/crd-controllers/](../../../services/crd-controllers/) for active service documentation.
+
+---
+
 **Service**: Alert Processor Service
 **Port**: 8081
 **Image**: quay.io/jordigilh/alert-service
