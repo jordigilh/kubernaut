@@ -1,9 +1,24 @@
-# Kubernaut - 10-Service Microservices Architecture Implementation
+# ⚠️ **DEPRECATED** - Kubernaut - 10-Service Microservices Architecture Implementation
 
 **Document Version**: 2.0
 **Date**: September 28, 2025
-**Status**: **APPROVED** - Aligned with Official Architecture Specification
+**Status**: **DEPRECATED** - Implementation Completed, Document Obsolete
 **Implementation**: Production Ready - 10-Service Microservices
+
+---
+
+## 🚨 **DEPRECATION NOTICE**
+
+**This document is DEPRECATED and should not be used for current development.**
+
+- **Reason**: Webhook/Processor service separation has been completed
+- **Replacement**: See current V1 architecture in [KUBERNAUT_ARCHITECTURE_OVERVIEW.md](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)
+- **Current Status**: V1 implementation with 10 services is active
+- **Last Updated**: January 2025
+
+**⚠️ Do not use this information for architectural decisions.**
+
+---
 
 ---
 

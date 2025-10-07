@@ -1,158 +1,259 @@
 # Kubernaut Architecture Documentation
 
-**Document Version**: 1.0
-**Date**: September 27, 2025
-**Status**: **APPROVED** - Official Architecture Documentation Index
+**Document Version**: 4.0
+**Date**: January 2025
+**Status**: V1 Implementation Focus (10 Services)
 
 ---
 
-## 📚 **DOCUMENTATION OVERVIEW**
+## 🎯 **Architecture Navigation Guide**
 
-This directory contains the **approved architecture documentation** for Kubernaut's microservices implementation. All documents reflect the **officially approved** 10-service architecture that follows the **Single Responsibility Principle**.
-
----
-
-## 🎯 **CORE ARCHITECTURE DOCUMENTS**
-
-### **📋 [APPROVED_MICROSERVICES_ARCHITECTURE.md](./APPROVED_MICROSERVICES_ARCHITECTURE.md)**
-**Status**: ✅ **APPROVED** - Official Architecture Specification
-**Purpose**: Comprehensive microservices architecture specification
-**Contents**:
-- 10-service microservices overview with SRP compliance
-- Complete service specifications and responsibilities
-- Business requirements mapping (1,500+ BRs)
-- External system integrations
-- Security, monitoring, and operational excellence
-- Implementation roadmap and validation
-
-### **🔗 [SERVICE_CONNECTIVITY_SPECIFICATION.md](./SERVICE_CONNECTIVITY_SPECIFICATION.md)**
-**Status**: ✅ **APPROVED** - Official Service Integration Specification
-**Purpose**: Detailed service connectivity and integration patterns
-**Contents**:
-- Service-to-service connectivity matrix with business justifications
-- External system integration specifications
-- API standards and communication patterns
-- Data flow patterns and dependency graphs
-- Resilience patterns and implementation standards
+This directory contains the complete architectural blueprint for Kubernaut, an intelligent Kubernetes remediation platform. The documentation is organized into logical groups that tell the story of how Kubernaut transforms alerts into intelligent actions.
 
 ---
 
-## 🚀 **DEPLOYMENT DOCUMENTATION**
+## 📚 **FOUNDATIONAL ARCHITECTURE**
 
-### **📦 [../deployment/MICROSERVICES_DEPLOYMENT_GUIDE.md](../deployment/MICROSERVICES_DEPLOYMENT_GUIDE.md)**
-**Status**: ✅ **APPROVED** - Official Deployment Guide
-**Purpose**: Comprehensive deployment instructions for all 10 services
-**Contents**:
-- Complete Kubernetes deployment manifests
-- Infrastructure setup (PostgreSQL, PGVector, monitoring)
-- Service configurations and secrets management
-- Scaling, monitoring, and disaster recovery procedures
-- Production-ready deployment automation
+### **The Core Story: From Vision to Implementation**
 
-### **🐳 [../deployment/CONTAINER_REGISTRY.md](../deployment/CONTAINER_REGISTRY.md)**
-**Status**: ✅ **UPDATED** - Container Registry Standards
-**Purpose**: Container image standards and registry configuration
-**Contents**:
-- Updated service image registry (`quay.io/jordigilh/`)
-- Base image strategy (Red Hat UBI, Alpine)
-- Build and deployment procedures
-- Image versioning and tagging standards
+Start your journey with these foundational documents that establish Kubernaut's architectural vision and translate it into concrete implementation plans:
 
----
+#### **🏗️ System Foundation**
+1. **[KUBERNAUT_ARCHITECTURE_OVERVIEW.md](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)** ✅ **AUTHORITATIVE**
+   - **Purpose**: High-level system design and architectural principles
+   - **Audience**: Architects, technical leads, stakeholders
+   - **Key Content**: V1 system architecture with 10 core services, investigation vs execution separation
+   - **Read Time**: 10 minutes
 
-## 🏗️ **ARCHITECTURE PRINCIPLES**
+2. **[APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)** ✅ **AUTHORITATIVE**
+   - **Purpose**: Detailed microservices decomposition and service boundaries
+   - **Audience**: Developers, DevOps engineers, system architects
+   - **Key Content**: 10 V1 services with single responsibility principle, V2 roadmap (5 additional services)
+   - **Read Time**: 20 minutes
 
-### **Single Responsibility Principle (SRP)**
-Every service in the architecture has **exactly one responsibility**:
+#### **🔧 Service Specifications**
+3. **[KUBERNAUT_SERVICE_CATALOG.md](KUBERNAUT_SERVICE_CATALOG.md)** ✅ **AUTHORITATIVE**
+   - **Purpose**: Comprehensive service specifications and API contracts
+   - **Audience**: Developers, integration engineers
+   - **Key Content**: Service responsibilities, endpoints, dependencies, performance requirements
+   - **Read Time**: 25 minutes
 
-| Service | Single Responsibility |
-|---------|----------------------|
-| **🔗 Gateway** | HTTP Gateway & Security Only |
-| **🧠 Alert Processor** | Alert Processing Logic Only |
-| **🤖 AI Analysis** | AI Analysis & Decision Making Only |
-| **🎯 Workflow Orchestrator** | Workflow Execution Only |
-| **⚡ K8s Executor** | Kubernetes Operations Only |
-| **📊 Data Storage** | Data Persistence Only |
-| **🔍 Intelligence** | Pattern Discovery Only |
-| **📈 Effectiveness Monitor** | Effectiveness Assessment Only |
-| **🌐 Context API** | Context Orchestration Only |
-| **📢 Notifications** | Multi-Channel Notifications Only |
-
-### **Business-Driven Design**
-- **Complete BR Coverage**: All 1,500+ business requirements mapped to services
-- **Justified Connectivity**: Every service connection serves a specific business purpose
-- **External Integration**: Proper integration with all required external systems
-- **Operational Excellence**: Built-in monitoring, security, and reliability
+#### **🚀 Implementation Strategy**
+4. **[KUBERNAUT_IMPLEMENTATION_ROADMAP.md](KUBERNAUT_IMPLEMENTATION_ROADMAP.md)** ✅ **AUTHORITATIVE**
+   - **Purpose**: V1/V2 development strategy and timeline
+   - **Audience**: Project managers, technical leads, stakeholders
+   - **Key Content**: V1 foundation (3-4 weeks), V2 enhancements (6-8 weeks), risk assessment
+   - **Read Time**: 15 minutes
 
 ---
 
-## 🔄 **SERVICE FLOW OVERVIEW**
+## 🔄 **SERVICE INTEGRATION & COMMUNICATION**
 
-```
-External Alert → Gateway → Alert Processor → AI Analysis → Workflow Orchestrator
-                                                              ↓
-Notifications ← Context API ← Effectiveness Monitor ← Intelligence ← Data Storage ← K8s Executor
-```
+### **The Integration Story: How Services Work Together**
 
-### **Key Integration Points**
-- **Entry Point**: Gateway Service (Prometheus/Grafana webhooks)
-- **Intelligence Core**: AI Analysis Service (OpenAI, Anthropic, Azure)
-- **Action Execution**: K8s Executor Service (Multi-cluster operations)
-- **Learning Engine**: Intelligence Service (Pattern discovery)
-- **External AI**: Context API Service (HolmesGPT integration)
-- **Communication**: Notification Service (Slack, Teams, PagerDuty)
+These documents detail how Kubernaut's services communicate and integrate to create a cohesive intelligent system:
 
----
+#### **🌐 Communication Architecture**
+5. **[MICROSERVICES_COMMUNICATION_ARCHITECTURE.md](MICROSERVICES_COMMUNICATION_ARCHITECTURE.md)**
+   - **Purpose**: Inter-service communication patterns and protocols
+   - **Audience**: Developers, network engineers, DevOps
+   - **Key Content**: HTTP/REST communication, service discovery, port assignments
+   - **Connects To**: Service Catalog (service definitions) → Communication patterns
+   - **Read Time**: 12 minutes
 
-## 📋 **IMPLEMENTATION STATUS**
+6. **[SERVICE_CONNECTIVITY_SPECIFICATION.md](SERVICE_CONNECTIVITY_SPECIFICATION.md)**
+   - **Purpose**: Detailed connectivity requirements and network topology
+   - **Audience**: Network engineers, security teams, DevOps
+   - **Key Content**: Network policies, security boundaries, connectivity matrix
+   - **Connects To**: Communication Architecture → Security implementation
+   - **Read Time**: 10 minutes
 
-### **Architecture Approval**
-- ✅ **Design Approved**: September 27, 2025
-- ✅ **SRP Compliance**: 100% validated
-- ✅ **Business Requirements**: Complete coverage
-- ✅ **External Integrations**: All requirements addressed
-- ✅ **Documentation**: Comprehensive and approved
+#### **🔄 Workflow Orchestration**
+7. **[WORKFLOW_ENGINE_ORCHESTRATION_ARCHITECTURE.md](WORKFLOW_ENGINE_ORCHESTRATION_ARCHITECTURE.md)**
+   - **Purpose**: Workflow engine design and orchestration patterns
+   - **Audience**: Developers, workflow designers
+   - **Key Content**: Workflow execution, state management, error handling
+   - **Connects To**: Service Catalog (Workflow Engine) → Detailed implementation
+   - **Read Time**: 18 minutes
 
-### **Next Steps**
-1. **Service Implementation**: Begin development following TDD methodology
-2. **Infrastructure Setup**: Deploy PostgreSQL, monitoring, and base infrastructure
-3. **Phased Rollout**: Implement services in dependency order
-4. **Integration Testing**: Validate service connectivity and data flow
-5. **Production Deployment**: Deploy to production with monitoring and alerting
-
----
-
-## 🛡️ **COMPLIANCE & STANDARDS**
-
-### **Development Standards**
-- **TDD Methodology**: Test-driven development for all services
-- **Go Coding Standards**: Following established patterns and conventions
-- **Security First**: Built-in security, authentication, and authorization
-- **Observability**: Comprehensive monitoring, logging, and tracing
-
-### **Operational Standards**
-- **Container Standards**: Standardized base images and registry
-- **Kubernetes Native**: Cloud-native deployment and scaling
-- **High Availability**: Multi-replica deployments with auto-scaling
-- **Disaster Recovery**: Backup, recovery, and business continuity
+8. **[RESILIENT_WORKFLOW_AI_SEQUENCE_DIAGRAM.md](RESILIENT_WORKFLOW_AI_SEQUENCE_DIAGRAM.md)**
+   - **Purpose**: Visual representation of AI-driven workflow sequences
+   - **Audience**: Developers, system architects
+   - **Key Content**: End-to-end flow diagrams, failure scenarios, recovery patterns
+   - **Connects To**: Workflow Orchestration → Visual representation
+   - **Read Time**: 8 minutes
 
 ---
 
-## 📞 **SUPPORT & MAINTENANCE**
+## 🤖 **AI & INTELLIGENCE ARCHITECTURE**
 
-### **Architecture Questions**
-For questions about the architecture design, service responsibilities, or connectivity patterns, refer to the detailed specifications in this directory.
+### **The Intelligence Story: From Data to Decisions**
 
-### **Deployment Issues**
-For deployment-related questions, consult the deployment guide and container registry documentation.
+These documents describe how Kubernaut transforms raw alert data into intelligent remediation actions through AI and machine learning:
 
-### **Development Guidelines**
-Follow the established TDD methodology and coding standards documented in the project rules.
+#### **🧠 AI Integration**
+9. **[HOLMESGPT_REST_API_ARCHITECTURE.md](HOLMESGPT_REST_API_ARCHITECTURE.md)**
+   - **Purpose**: HolmesGPT integration architecture and API specifications
+   - **Audience**: AI engineers, integration developers
+   - **Key Content**: HolmesGPT-API integration, investigation workflows, AI toolset patterns
+   - **Connects To**: Architecture Overview (AI integration) → Detailed implementation
+   - **Read Time**: 15 minutes
+
+10. **[AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md](AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)**
+    - **Purpose**: Dynamic context gathering and AI-driven investigations
+    - **Audience**: AI engineers, context developers
+    - **Key Content**: Context API design, historical intelligence, vector similarity search
+    - **Connects To**: HolmesGPT API → Context enhancement
+    - **Read Time**: 22 minutes
+
+#### **🔍 Pattern Discovery & Intelligence**
+11. **[INTELLIGENCE_PATTERN_DISCOVERY_ARCHITECTURE.md](INTELLIGENCE_PATTERN_DISCOVERY_ARCHITECTURE.md)**
+    - **Purpose**: ML-driven pattern recognition and learning systems
+    - **Audience**: ML engineers, data scientists
+    - **Key Content**: Pattern discovery algorithms, effectiveness tracking, continuous learning
+    - **Connects To**: AI Context Orchestration → Advanced analytics
+    - **Read Time**: 20 minutes
+
+#### **🔧 Dynamic Toolset Management**
+12. **[DYNAMIC_TOOLSET_CONFIGURATION_ARCHITECTURE.md](DYNAMIC_TOOLSET_CONFIGURATION_ARCHITECTURE.md)**
+    - **Purpose**: Dynamic toolset discovery and configuration for AI agents
+    - **Audience**: AI engineers, toolset developers
+    - **Key Content**: Toolset discovery, dynamic configuration, AI agent integration
+    - **Connects To**: HolmesGPT API → Toolset management
+    - **Read Time**: 16 minutes
+
+## 💾 **DATA & STORAGE ARCHITECTURE**
+
+### **The Data Story: Persistence, Performance, and Intelligence**
+
+These documents detail how Kubernaut stores, retrieves, and leverages data for intelligent decision-making:
+
+#### **📊 Storage Systems**
+13. **[STORAGE_DATA_MANAGEMENT_ARCHITECTURE.md](STORAGE_DATA_MANAGEMENT_ARCHITECTURE.md)**
+    - **Purpose**: Comprehensive data storage and management strategy
+    - **Audience**: Database engineers, data architects
+    - **Key Content**: PostgreSQL design, vector databases, data lifecycle management
+    - **Connects To**: Service Catalog (Data Storage Service) → Detailed design
+    - **Read Time**: 18 minutes
 
 ---
 
-**Architecture Status**: ✅ **APPROVED AND READY FOR IMPLEMENTATION**
-**Documentation Confidence**: **100%**
-**Implementation Readiness**: ✅ **PRODUCTION READY**
+## 🔒 **OPERATIONAL & RELIABILITY ARCHITECTURE**
 
-This architecture represents the official, approved design for Kubernaut's microservices implementation, ensuring proper separation of concerns, complete business requirements coverage, and operational excellence.
+### **The Operations Story: Monitoring, Resilience, and Production Readiness**
+
+These documents ensure Kubernaut operates reliably and securely in production environments:
+
+#### **📊 Monitoring & Observability**
+14. **[PRODUCTION_MONITORING.md](PRODUCTION_MONITORING.md)**
+    - **Purpose**: Production monitoring, metrics, and observability strategy
+    - **Audience**: DevOps engineers, SRE teams, operations
+    - **Key Content**: Metrics collection, alerting, dashboards, SLA monitoring
+    - **Connects To**: Service Catalog → Operational requirements
+    - **Read Time**: 14 minutes
+
+15. **[HEARTBEAT_MONITORING_DESIGN.md](HEARTBEAT_MONITORING_DESIGN.md)**
+    - **Purpose**: Service health monitoring and heartbeat mechanisms
+    - **Audience**: DevOps engineers, monitoring teams
+    - **Key Content**: Health check design, heartbeat protocols, failure detection
+    - **Connects To**: Production Monitoring → Health monitoring implementation
+    - **Read Time**: 12 minutes
+
+#### **🛡️ Resilience & Reliability**
+16. **[RESILIENCE_PATTERNS.md](RESILIENCE_PATTERNS.md)**
+    - **Purpose**: System resilience patterns and failure recovery strategies
+    - **Audience**: System architects, reliability engineers
+    - **Key Content**: Circuit breakers, retry patterns, graceful degradation
+    - **Connects To**: Microservices Architecture → Reliability implementation
+    - **Read Time**: 16 minutes
+
+---
+
+## 📋 **ARCHITECTURE DECISIONS**
+
+### **The Decision Story: Why We Built It This Way**
+
+#### **🎯 Formal Decision Records**
+17. **[decisions/](decisions/)** - Architecture Decision Records (ADRs)
+    - **[ADR-003-KIND-INTEGRATION-ENVIRONMENT.md](decisions/ADR-003-KIND-INTEGRATION-ENVIRONMENT.md)**
+      - **Purpose**: Decision rationale for KIND integration environment
+      - **Audience**: Developers, DevOps engineers
+      - **Key Content**: Integration testing strategy, environment setup decisions
+      - **Read Time**: 8 minutes
+
+---
+
+## 🗺️ **ARCHITECTURE READING PATHS**
+
+### **For New Team Members**
+1. Start: [Architecture Overview](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)
+2. Then: [Approved Microservices Architecture](APPROVED_MICROSERVICES_ARCHITECTURE.md)
+3. Deep Dive: [Service Catalog](KUBERNAUT_SERVICE_CATALOG.md)
+4. Implementation: [Implementation Roadmap](KUBERNAUT_IMPLEMENTATION_ROADMAP.md)
+
+### **For Developers Building Services**
+1. Start: [Service Catalog](KUBERNAUT_SERVICE_CATALOG.md)
+2. Integration: [Microservices Communication](MICROSERVICES_COMMUNICATION_ARCHITECTURE.md)
+3. Specific Service: Choose relevant architecture document
+4. Operations: [Production Monitoring](PRODUCTION_MONITORING.md)
+
+### **For AI/ML Engineers**
+1. Start: [HolmesGPT REST API](HOLMESGPT_REST_API_ARCHITECTURE.md)
+2. Context: [AI Context Orchestration](AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)
+3. Intelligence: [Intelligence Pattern Discovery](INTELLIGENCE_PATTERN_DISCOVERY_ARCHITECTURE.md)
+4. Toolsets: [Dynamic Toolset Configuration](DYNAMIC_TOOLSET_CONFIGURATION_ARCHITECTURE.md)
+
+### **For DevOps/SRE Teams**
+1. Start: [Production Monitoring](PRODUCTION_MONITORING.md)
+2. Health: [Heartbeat Monitoring Design](HEARTBEAT_MONITORING_DESIGN.md)
+3. Resilience: [Resilience Patterns](RESILIENCE_PATTERNS.md)
+4. Network: [Service Connectivity Specification](SERVICE_CONNECTIVITY_SPECIFICATION.md)
+
+---
+
+## 📊 **DOCUMENTATION GOVERNANCE**
+
+### **Authoritative Documents (Single Source of Truth)**
+These 4 documents are the **ONLY** authoritative sources for architecture decisions:
+
+1. **[KUBERNAUT_ARCHITECTURE_OVERVIEW.md](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)** - V1 system design
+2. **[KUBERNAUT_SERVICE_CATALOG.md](KUBERNAUT_SERVICE_CATALOG.md)** - V1 service specifications
+3. **[KUBERNAUT_IMPLEMENTATION_ROADMAP.md](KUBERNAUT_IMPLEMENTATION_ROADMAP.md)** - V1/V2 strategy
+4. **[APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)** - V1 implementation specification
+
+### **Document Status Legend**
+- ✅ **CURRENT** - Use for development decisions
+- ⚠️ **DEPRECATED** - Historical reference only, do not use
+- 🔄 **DRAFT** - Work in progress, not for production use
+
+### **Architecture Standards**
+- **Port Assignments**: Context API (8091), HolmesGPT-API (8090) - standardized
+- **Service Count**: V1 = 10 services, V2 = 15 services (5 additional)
+- **Architecture Version**: V1 is current implementation, V2 is future roadmap
+
+### **Related Documentation Directories**
+- **Implementation**: [`../implementation/`](../implementation/) - Implementation-specific details and patterns
+- **Strategic**: [`../strategic/`](../strategic/) - Strategic analysis and technology decisions
+- **Concepts**: [`../concepts/`](../concepts/) - Conceptual clarifications and process flows
+- **Deprecated**: [`../deprecated/architecture/`](../deprecated/architecture/) - Historical documents (14 files)
+
+---
+
+## 🎯 **QUICK REFERENCE**
+
+### **V1 Architecture Metrics**
+- **Services**: 10 core microservices with single responsibility
+- **Timeline**: 3-4 weeks to production (95% confidence)
+- **AI Integration**: HolmesGPT-API as primary investigation service
+- **Performance**: <5s alert processing, 99.9% availability target
+- **Business Value**: 40-60% faster MTTR, 20% operational cost reduction
+
+### **Document Maintenance**
+- All architecture changes must update the 4 authoritative documents
+- New documents require approval and integration with existing structure
+- Deprecated documents moved to [`../deprecated/architecture/`](../deprecated/architecture/)
+- Regular reviews ensure documentation accuracy and relevance
+
+---
+
+*This comprehensive architecture documentation provides the complete blueprint for understanding, developing, and deploying Kubernaut's V1 intelligent Kubernetes remediation platform. Each document serves a specific purpose in the overall architectural narrative, from high-level vision to detailed implementation guidance.*
