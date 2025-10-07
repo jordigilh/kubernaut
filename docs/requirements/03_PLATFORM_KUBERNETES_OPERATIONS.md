@@ -13,7 +13,9 @@
 The Platform & Kubernetes Operations layer provides comprehensive Kubernetes cluster management capabilities, enabling safe and intelligent execution of 25+ remediation actions with integrated monitoring, validation, and safety mechanisms.
 
 ### 1.2 Scope
-- **Kubernetes Client**: Unified API client for comprehensive cluster operations
+- **v1**: Single-cluster operations for simplified authentication and authorization
+- **v2**: Multi-cluster coordination and management (deferred for complexity reduction)
+- **Kubernetes Client**: Unified API client for cluster operations
 - **Action Executor**: Intelligent execution engine for remediation actions
 - **Monitoring Integration**: Real-time monitoring and metrics collection
 - **Safety & Validation**: Comprehensive safety mechanisms and state validation
@@ -25,11 +27,19 @@ The Platform & Kubernetes Operations layer provides comprehensive Kubernetes clu
 ### 2.1 Business Capabilities
 
 #### 2.1.1 Cluster Connectivity
-- **BR-K8S-001**: MUST support connections to multiple Kubernetes clusters simultaneously
+- **BR-K8S-001**: MUST support connections to Kubernetes clusters
+  - **v1**: Single cluster connection for simplified authentication
+  - **v2**: Multiple clusters simultaneously (deferred for complexity reduction)
 - **BR-K8S-002**: MUST handle cluster authentication via kubeconfig, service accounts, or OIDC
-- **BR-K8S-003**: MUST support cluster discovery and auto-configuration
+  - **v1**: Single cluster authentication (kubeconfig or service account)
+  - **v2**: Multi-cluster authentication and credential management
+- **BR-K8S-003**: MUST support cluster discovery and configuration
+  - **v1**: Single cluster configuration
+  - **v2**: Auto-discovery across multiple clusters
 - **BR-K8S-004**: MUST implement connection health monitoring and automatic reconnection
 - **BR-K8S-005**: MUST support both in-cluster and external cluster connections
+  - **v1**: Primary focus on in-cluster deployment
+  - **v2**: External multi-cluster management
 
 #### 2.1.2 API Operations
 - **BR-K8S-006**: MUST provide comprehensive coverage of Kubernetes API resources

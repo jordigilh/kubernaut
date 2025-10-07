@@ -10,7 +10,9 @@
 ## 1. Purpose & Scope
 
 ### 1.1 Business Purpose
-Create a standalone REST API server that wraps the HolmesGPT Python SDK to provide HTTP endpoints for AI-powered investigation capabilities, replacing the current sidecar CLI approach with a proper microservice architecture that enables seamless integration with Kubernaut and external systems.
+Create a standalone REST API server that wraps the HolmesGPT Python SDK to provide HTTP endpoints for **AI-powered investigation and analysis capabilities only**. HolmesGPT is designed for intelligent inquiry, root cause analysis, and recommendation generation - **NOT for executing infrastructure changes**. This replaces the current sidecar CLI approach with a proper microservice architecture that enables seamless integration with Kubernaut's existing execution infrastructure.
+
+**🔍 INVESTIGATION ONLY**: HolmesGPT provides intelligent analysis and recommendations. All infrastructure execution is handled by Kubernaut's proven execution infrastructure (Kubernetes Action Executor, Monitoring Action Executor, etc.).
 
 ### 1.2 Current Architecture Gap
 The existing HolmesGPT integration uses a CLI sidecar container that:
@@ -28,21 +30,24 @@ graph TB
         B1 --> C1[sleep infinity]
     end
 
-    subgraph "Target (REST API Server)"
-        A2[Kubernaut App] -->|HTTP POST| B2[HolmesGPT API Server]
-        B2 --> C2[Python SDK]
-        C2 --> D2[Investigation Results]
+    subgraph "Target (REST API Server - Investigation Only)"
+        A2[Kubernaut Workflow Engine] -->|HTTP POST| B2[HolmesGPT API Server]
+        B2 --> C2[Python SDK Investigation]
+        C2 --> D2[Analysis & Recommendations]
         B2 --> E2[Health/Metrics Endpoints]
+        A2 -->|Execute Actions| F2[Existing Action Executors]
+        F2 --> G2[Kubernetes/Monitoring/Custom]
     end
 ```
 
 ### 1.4 Scope
-- **HolmesGPT SDK Wrapper**: Python-based REST API server using HolmesGPT SDK
-- **Container Image**: Standalone, multi-architecture container
-- **API Endpoints**: RESTful HTTP interface matching documented expectations
-- **Health & Observability**: Metrics, health checks, logging
-- **Configuration Management**: Environment-based and file-based configuration
-- **Security**: Authentication, authorization, rate limiting
+- **🔍 Investigation Only**: HolmesGPT SDK wrapper for analysis, root cause identification, and recommendation generation
+- **❌ No Execution**: Does NOT execute infrastructure changes - that's handled by existing Kubernaut executors
+- **Container Image**: Standalone, multi-architecture container for investigation services
+- **API Endpoints**: RESTful HTTP interface for investigation and analysis operations
+- **Health & Observability**: Metrics, health checks, logging for investigation services
+- **Configuration Management**: Environment-based and file-based configuration for investigation parameters
+- **Security**: Authentication, authorization, rate limiting for investigation access
 
 ---
 
@@ -54,7 +59,7 @@ graph TB
 - **BR-HAPI-001**: MUST provide `/api/v1/investigate` POST endpoint for alert investigation
 - **BR-HAPI-002**: MUST accept alert context (name, namespace, labels, annotations)
 - **BR-HAPI-003**: MUST support investigation priority levels (low, medium, high, critical)
-- **BR-HAPI-004**: MUST return structured investigation results with recommended actions
+- **BR-HAPI-004**: MUST return structured investigation results with actionable recommendations (for execution by Kubernaut's action executors)
 - **BR-HAPI-005**: MUST support asynchronous investigation with job tracking
 
 #### 2.1.2 Interactive Chat
@@ -70,6 +75,36 @@ graph TB
 - **BR-HAPI-013**: MUST provide context validation and enrichment
 - **BR-HAPI-014**: MUST cache context data for improved performance
 - **BR-HAPI-015**: MUST support parallel context gathering from multiple sources
+
+#### 2.1.4 Enhanced Investigation Capabilities (v1)
+- **BR-HAPI-INVESTIGATION-001**: MUST provide detailed failure analysis with root cause identification
+- **BR-HAPI-INVESTIGATION-002**: MUST generate specific, actionable recommendations for Kubernaut's action executors
+- **BR-HAPI-INVESTIGATION-003**: MUST assess action safety and risk before recommendations are executed by other systems
+- **BR-HAPI-INVESTIGATION-004**: MUST analyze execution results and provide feedback for continuous improvement
+- **BR-HAPI-INVESTIGATION-005**: MUST NOT execute infrastructure changes - investigation and analysis only
+
+#### 2.1.5 Recovery Analysis & Recommendations (v1)
+- **BR-HAPI-RECOVERY-001**: MUST provide `/api/v1/recovery/analyze` POST endpoint for recovery strategy analysis
+- **BR-HAPI-RECOVERY-002**: MUST generate detailed recovery recommendations based on investigation results
+- **BR-HAPI-RECOVERY-003**: MUST provide step-by-step recovery instructions with safety validations
+- **BR-HAPI-RECOVERY-004**: MUST support multiple recovery strategies (immediate, gradual, rollback)
+- **BR-HAPI-RECOVERY-005**: MUST include risk assessment for each recommended recovery action
+- **BR-HAPI-RECOVERY-006**: MUST provide recovery time estimates and resource impact analysis
+
+#### 2.1.6 Action Safety Analysis (v1)
+- **BR-HAPI-SAFETY-001**: MUST provide `/api/v1/safety/analyze` POST endpoint for action safety assessment
+- **BR-HAPI-SAFETY-002**: MUST validate proposed action safety before execution by Kubernaut executors
+- **BR-HAPI-SAFETY-003**: MUST check for potential conflicts with running workloads
+- **BR-HAPI-SAFETY-004**: MUST assess action impact on system stability
+- **BR-HAPI-SAFETY-005**: MUST provide safety recommendations and warnings
+- **BR-HAPI-SAFETY-006**: MUST support dry-run analysis without actual execution
+
+#### 2.1.7 Post-Execution Analysis (v1)
+- **BR-HAPI-POSTEXEC-001**: MUST provide `/api/v1/execution/analyze` POST endpoint for execution result analysis
+- **BR-HAPI-POSTEXEC-002**: MUST analyze execution results and outcomes
+- **BR-HAPI-POSTEXEC-003**: MUST provide feedback on action effectiveness
+- **BR-HAPI-POSTEXEC-004**: MUST identify patterns for future improvement
+- **BR-HAPI-POSTEXEC-005**: MUST support learning from execution outcomes
 
 ### 2.2 Management Endpoints
 
@@ -600,7 +635,64 @@ GET /docs
 
 ---
 
-## 12. Success Criteria
+## 12. Strategy Analysis & Historical Patterns (V1 Enhancement)
+
+### 12.1 Historical Pattern Analysis
+
+#### **BR-HAPI-STRATEGY-V1-001: Historical Pattern Analysis**
+**Business Requirement**: The system MUST provide comprehensive historical pattern analysis capabilities to identify successful investigation and remediation strategies based on historical data.
+
+**Functional Requirements**:
+1. **Pattern Discovery** - MUST discover patterns in historical investigation and remediation data
+2. **Success Rate Analysis** - MUST analyze success rates of different investigation strategies
+3. **Strategy Effectiveness** - MUST evaluate effectiveness of different remediation strategies over time
+4. **Historical Correlation** - MUST correlate historical patterns with current investigation scenarios
+
+**Success Criteria**:
+- >80% accuracy in historical pattern identification
+- 90% success rate correlation between historical and current scenarios
+- Comprehensive pattern analysis covering 6+ months of historical data
+- Statistical significance validation (p-value ≤ 0.05) for pattern correlations
+
+**Business Value**: Historical pattern analysis improves investigation quality by 40% through proven strategy identification
+
+#### **BR-HAPI-STRATEGY-V1-002: Strategy Identification and Optimization**
+**Business Requirement**: The system MUST provide intelligent strategy identification and optimization that recommends optimal investigation and remediation strategies based on historical success patterns.
+
+**Functional Requirements**:
+1. **Strategy Recommendation** - MUST recommend optimal strategies based on historical success patterns
+2. **ROI Analysis** - MUST provide ROI analysis for different strategy options
+3. **Optimization Algorithms** - MUST implement optimization algorithms for strategy selection
+4. **Continuous Learning** - MUST continuously learn and improve strategy recommendations
+
+**Success Criteria**:
+- >80% historical success rate for recommended strategies
+- 90% accuracy in ROI analysis for strategy options
+- 25% improvement in strategy effectiveness through optimization
+- Continuous learning with measurable improvement in recommendation quality
+
+**Business Value**: Optimized strategy selection reduces investigation time by 30-40% and improves success rates
+
+#### **BR-HAPI-STRATEGY-V1-003: Investigation Enhancement Integration**
+**Business Requirement**: The system MUST integrate strategy analysis and historical patterns into the investigation process to enhance investigation quality and effectiveness.
+
+**Functional Requirements**:
+1. **Real-Time Integration** - MUST integrate strategy analysis into real-time investigation workflows
+2. **Context-Aware Recommendations** - MUST provide context-aware strategy recommendations
+3. **Quality Enhancement** - MUST enhance investigation quality through historical pattern integration
+4. **Feedback Integration** - MUST integrate investigation feedback to improve strategy recommendations
+
+**Success Criteria**:
+- Real-time strategy integration with <2 second response time
+- 90% accuracy in context-aware strategy recommendations
+- 40% improvement in investigation quality through pattern integration
+- Continuous feedback integration with measurable improvement metrics
+
+**Business Value**: Enhanced investigation quality and effectiveness through intelligent strategy integration
+
+---
+
+## 13. Success Criteria
 
 ### 12.1 Functional Requirements
 - ✅ All documented endpoints (`/health`, `/docs`, `/api/v1/*`) are functional

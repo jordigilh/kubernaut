@@ -169,7 +169,7 @@ Each business requirements document follows a consistent structure:
 
 ### [06_INTEGRATION_LAYER.md](./06_INTEGRATION_LAYER.md)
 **Module**: Integration Layer (`pkg/integration/`)
-**Components**: Webhook Handler, Alert Processor, Notification System
+**Components**: Webhook Handler, Remediation Processor, Notification System
 **Requirements**: 120 business requirements
 
 **Key Capabilities**:
