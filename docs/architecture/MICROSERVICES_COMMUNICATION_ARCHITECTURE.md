@@ -17,31 +17,33 @@ This document defines the communication patterns and protocols between Kubernaut
 
 ### 2.1 Approved 10-Service Architecture
 
+**Service Specifications**: For detailed service descriptions, business requirements, and API specifications, see [Service Catalog](KUBERNAUT_SERVICE_CATALOG.md). This section focuses on communication-specific details: ports, dependencies, and external connections.
+
 ```yaml
 Services:
   gateway-service:
-    Purpose: HTTP Gateway & Security Only
+    # Purpose: See Service Catalog for detailed specifications
     Port: 8080 (HTTP), 9080 (metrics), 8180 (health)
     Image: quay.io/jordigilh/gateway-service:v1.0.0
     Dependencies: [alert-service]
     External: [Prometheus, Grafana]
 
   alert-service:
-    Purpose: Alert Processing Logic Only
+    # Purpose: See Service Catalog for detailed specifications
     Port: 8081 (HTTP), 9081 (metrics), 8181 (health)
     Image: quay.io/jordigilh/alert-service:v1.0.0
     Dependencies: [ai-service]
     External: [None - internal only]
 
   ai-service:
-    Purpose: AI Analysis & Decision Making Only
+    # Purpose: See Service Catalog for detailed specifications
     Port: 8082 (HTTP), 9082 (metrics), 8182 (health)
     Image: quay.io/jordigilh/ai-service:v1.0.0
     Dependencies: [workflow-service]
     External: [OpenAI, Anthropic, Azure, AWS, Ollama]
 
   workflow-service:
-    Purpose: Workflow Execution Only
+    # Purpose: See Service Catalog for detailed specifications
     Port: 8083 (HTTP), 9083 (metrics), 8183 (health)
     Image: quay.io/jordigilh/workflow-service:v1.0.0
     Dependencies: [executor-service]
@@ -77,7 +79,7 @@ Services:
 
   context-service:
     Purpose: Context Orchestration Only
-    Port: 8088 (HTTP), 9088 (metrics), 8188 (health)
+    Port: 8091 (HTTP), 9091 (metrics), 8191 (health)
     Image: quay.io/jordigilh/context-service:v1.0.0
     Dependencies: [notification-service]
     External: [HolmesGPT, External AI]

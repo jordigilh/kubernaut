@@ -1,15 +1,42 @@
 # Dynamic Toolset Configuration Architecture
 
-**Document Version**: 1.0
+**Document Version**: 2.0
 **Date**: January 2025
-**Status**: Architecture Design Specification
+**Status**: Architecture Design Specification - **APPROVED**
 **Module**: Dynamic Toolset Configuration (`pkg/ai/holmesgpt/`, `pkg/platform/k8s/`, `pkg/api/context/`)
+**Update**: File-based ConfigMap polling with reconciliation
 
 ---
 
 ## 1. Overview
 
 The Dynamic Toolset Configuration architecture enables automatic discovery and configuration of HolmesGPT toolsets based on services deployed in the Kubernetes cluster. This eliminates manual toolset configuration and ensures HolmesGPT investigations leverage all available observability and monitoring tools.
+
+### Architecture Update (v2.0)
+
+**Key Changes**:
+1. ✅ **File-Based ConfigMap Polling**: HolmesGPT-API uses file system monitoring instead of Kubernetes API watch
+2. ✅ **ConfigMap Ownership & Reconciliation**: Dynamic Toolset Service watches and reconciles ConfigMap to protect against drift/deletion
+3. ✅ **Manual Overrides Preserved**: Admin edits in `overrides` section are preserved during reconciliation
+
+**Rationale**:
+- **HolmesGPT-API (Consumer)**: File-based polling is simpler, more efficient, requires no RBAC permissions
+- **Dynamic Toolset Service (Owner)**: Watch-based reconciliation protects ConfigMap integrity and detects drift
+- **Total Update Latency**: 60-120s (acceptable for infrequent toolset changes)
+
+**Architecture Pattern**:
+```
+Dynamic Toolset Service (Owner)
+    ↓ Discovers services
+    ↓ Writes ConfigMap
+    ↓ Watches for drift/deletion
+    ↓ Reconciles to desired state
+ConfigMap (kubernaut-toolset-config)
+    ↓ Kubernetes kubelet syncs (~60s)
+Mounted File (/etc/kubernaut/toolsets/)
+    ↓ File polling (~60s)
+HolmesGPT-API (Consumer)
+```
 
 ## 2. High-Level Architecture
 
@@ -498,16 +525,261 @@ type DetectedService struct {
     HealthStatus ServiceHealthStatus    `json:"health_status"`
     LastChecked  time.Time             `json:"last_checked"`
 }
+
+// V1 Label-Based Service Discovery Implementation
+func (sd *ServiceDiscovery) DiscoverMonitoringServices(ctx context.Context) ([]DetectedService, error) {
+    var discovered []DetectedService
+
+    // Discover Prometheus using standard labels
+    prometheusServices, err := sd.discoverPrometheus(ctx)
+    if err != nil {
+        sd.logger.WithError(err).Warn("Failed to discover Prometheus services")
+    } else {
+        discovered = append(discovered, prometheusServices...)
+    }
+
+    // Discover Grafana using standard labels
+    grafanaServices, err := sd.discoverGrafana(ctx)
+    if err != nil {
+        sd.logger.WithError(err).Warn("Failed to discover Grafana services")
+    } else {
+        discovered = append(discovered, grafanaServices...)
+    }
+
+    sd.logger.WithField("services", len(discovered)).Info("Service discovery completed")
+    return discovered, nil
+}
+
+// discoverPrometheus discovers Prometheus instances via Service labels
+func (sd *ServiceDiscovery) discoverPrometheus(ctx context.Context) ([]DetectedService, error) {
+    var services []DetectedService
+
+    // Standard label selectors for Prometheus
+    labelSelectors := []string{
+        "app.kubernetes.io/name=prometheus",      // Helm/Kustomize standard
+        "app=prometheus",                         // Legacy label
+        "app.kubernetes.io/component=prometheus", // Component-based
+    }
+
+    for _, selector := range labelSelectors {
+        svcList, err := sd.client.CoreV1().Services("").List(ctx, metav1.ListOptions{
+            LabelSelector: selector,
+        })
+        if err != nil {
+            continue
+        }
+
+        for _, svc := range svcList.Items {
+            // Extract service endpoint (typically port 9090)
+            endpoint := sd.buildServiceEndpoint(&svc, 9090)
+
+            // Optional: Get deployment for version info
+            version := sd.getPrometheusVersion(ctx, svc.Namespace, svc.Name)
+
+            // Validate Prometheus endpoint
+            healthy := sd.validatePrometheusHealth(ctx, endpoint)
+
+            detected := DetectedService{
+                Name:        svc.Name,
+                Namespace:   svc.Namespace,
+                ServiceType: "prometheus",
+                Endpoints: []ServiceEndpoint{
+                    {
+                        URL:  endpoint,
+                        Type: "query",
+                        Port: 9090,
+                    },
+                },
+                Labels:       svc.Labels,
+                Annotations:  svc.Annotations,
+                Available:    healthy,
+                HealthStatus: sd.getHealthStatus(healthy),
+                LastChecked:  time.Now(),
+            }
+
+            if version != "" {
+                detected.Annotations["version"] = version
+            }
+
+            services = append(services, detected)
+            sd.logger.WithFields(logrus.Fields{
+                "name":      svc.Name,
+                "namespace": svc.Namespace,
+                "endpoint":  endpoint,
+                "healthy":   healthy,
+            }).Info("Discovered Prometheus service")
+        }
+    }
+
+    return services, nil
+}
+
+// discoverGrafana discovers Grafana instances via Service labels
+func (sd *ServiceDiscovery) discoverGrafana(ctx context.Context) ([]DetectedService, error) {
+    var services []DetectedService
+
+    // Standard label selectors for Grafana
+    labelSelectors := []string{
+        "app.kubernetes.io/name=grafana",      // Helm/Kustomize standard
+        "app=grafana",                         // Legacy label
+    }
+
+    for _, selector := range labelSelectors {
+        svcList, err := sd.client.CoreV1().Services("").List(ctx, metav1.ListOptions{
+            LabelSelector: selector,
+        })
+        if err != nil {
+            continue
+        }
+
+        for _, svc := range svcList.Items {
+            // Extract service endpoint (typically port 3000)
+            endpoint := sd.buildServiceEndpoint(&svc, 3000)
+
+            // Validate Grafana endpoint
+            healthy := sd.validateGrafanaHealth(ctx, endpoint)
+
+            detected := DetectedService{
+                Name:        svc.Name,
+                Namespace:   svc.Namespace,
+                ServiceType: "grafana",
+                Endpoints: []ServiceEndpoint{
+                    {
+                        URL:  endpoint,
+                        Type: "dashboard",
+                        Port: 3000,
+                    },
+                },
+                Labels:       svc.Labels,
+                Annotations:  svc.Annotations,
+                Available:    healthy,
+                HealthStatus: sd.getHealthStatus(healthy),
+                LastChecked:  time.Now(),
+            }
+
+            services = append(services, detected)
+            sd.logger.WithFields(logrus.Fields{
+                "name":      svc.Name,
+                "namespace": svc.Namespace,
+                "endpoint":  endpoint,
+                "healthy":   healthy,
+            }).Info("Discovered Grafana service")
+        }
+    }
+
+    return services, nil
+}
+
+// buildServiceEndpoint constructs service endpoint URL
+func (sd *ServiceDiscovery) buildServiceEndpoint(svc *corev1.Service, defaultPort int) string {
+    // Use cluster-internal DNS name
+    return fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
+        svc.Name, svc.Namespace, defaultPort)
+}
+
+// getPrometheusVersion extracts Prometheus version from Deployment (optional metadata)
+func (sd *ServiceDiscovery) getPrometheusVersion(ctx context.Context, namespace, serviceName string) string {
+    // Try to find deployment with same name
+    deployment, err := sd.client.AppsV1().Deployments(namespace).Get(
+        ctx, serviceName, metav1.GetOptions{},
+    )
+    if err != nil {
+        return ""
+    }
+
+    // Extract version from container image
+    if len(deployment.Spec.Template.Spec.Containers) > 0 {
+        image := deployment.Spec.Template.Spec.Containers[0].Image
+        // Parse version from image tag (e.g., "prom/prometheus:v2.45.0")
+        parts := strings.Split(image, ":")
+        if len(parts) == 2 {
+            return parts[1]
+        }
+    }
+
+    return ""
+}
+
+// validatePrometheusHealth checks Prometheus /api/v1/status/buildinfo
+func (sd *ServiceDiscovery) validatePrometheusHealth(ctx context.Context, endpoint string) bool {
+    healthURL := fmt.Sprintf("%s/api/v1/status/buildinfo", endpoint)
+
+    client := &http.Client{Timeout: 2 * time.Second}
+    resp, err := client.Get(healthURL)
+    if err != nil {
+        return false
+    }
+    defer resp.Body.Close()
+
+    return resp.StatusCode == http.StatusOK
+}
+
+// validateGrafanaHealth checks Grafana /api/health
+func (sd *ServiceDiscovery) validateGrafanaHealth(ctx context.Context, endpoint string) bool {
+    healthURL := fmt.Sprintf("%s/api/health", endpoint)
+
+    client := &http.Client{Timeout: 2 * time.Second}
+    resp, err := client.Get(healthURL)
+    if err != nil {
+        return false
+    }
+    defer resp.Body.Close()
+
+    return resp.StatusCode == http.StatusOK
+}
 ```
 
-### 6.2 Dynamic Toolset Manager (`pkg/ai/holmesgpt/dynamic_toolset_manager.go`)
+**V1 Service Discovery Strategy**:
+- ✅ **Label-based discovery** using standard Kubernetes Service labels
+- ✅ **Multiple label patterns** (Helm standard + legacy)
+- ✅ **Cluster-internal DNS** for service endpoints
+- ✅ **Health validation** via HTTP endpoints
+- ✅ **Optional version metadata** from Deployments (read-only)
+- ✅ **No Prometheus Operator dependency** (works with any Prometheus deployment)
+
+**Standard Labels Recognized**:
+| Service | Primary Label | Alternative Labels |
+|---------|--------------|-------------------|
+| **Prometheus** | `app.kubernetes.io/name=prometheus` | `app=prometheus`, `app.kubernetes.io/component=prometheus` |
+| **Grafana** | `app.kubernetes.io/name=grafana` | `app=grafana` |
+
+**V2 Enhancements** (Future):
+- ServiceMonitor-based discovery for Prometheus Operator environments
+- Custom service annotations for toolset configuration hints
+- Multi-cluster service federation
+
+```
+
+### 6.2 Dynamic Toolset Manager with ConfigMap Reconciliation (`pkg/ai/holmesgpt/dynamic_toolset_manager.go`)
 
 ```go
+import (
+    "context"
+    "time"
+
+    corev1 "k8s.io/api/core/v1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/watch"
+    "k8s.io/client-go/kubernetes"
+    "sigs.k8s.io/yaml"
+)
+
 type DynamicToolsetManager struct {
+    // Kubernetes client for ConfigMap management
+    client           kubernetes.Interface
+    namespace        string
+    configMapName    string
+
+    // Service discovery
     serviceDiscovery *ServiceDiscovery
     templateEngine   *ToolsetTemplateEngine
     configCache      *ToolsetConfigCache
     generators       map[string]ToolsetGenerator
+
+    // Desired state (from service discovery)
+    desiredToolsets  []ToolsetConfig
+    lastReconcile    time.Time
+
     logger           *logrus.Logger
 }
 
@@ -523,113 +795,522 @@ type ToolsetConfig struct {
     Priority      int                   `json:"priority"`
     Enabled       bool                  `json:"enabled"`
 }
+
+type ToolsetsConfig struct {
+    Discovered []ToolsetConfig        `yaml:"discovered"`
+    Overrides  map[string]interface{} `yaml:"overrides"`
+}
+
+// StartReconciliation starts the ConfigMap reconciliation controller
+func (m *DynamicToolsetManager) StartReconciliation(ctx context.Context) error {
+    m.logger.Info("Starting ConfigMap reconciliation controller")
+
+    // Initial reconciliation
+    if err := m.reconcileConfigMap(ctx); err != nil {
+        return fmt.Errorf("initial reconciliation failed: %w", err)
+    }
+
+    // Start watching ConfigMap for drift detection
+    go m.watchConfigMap(ctx)
+
+    // Periodic reconciliation as safety net (every 5 minutes)
+    go m.periodicReconciliation(ctx, 5*time.Minute)
+
+    return nil
+}
+
+// watchConfigMap watches for ConfigMap changes and reconciles on drift/deletion
+func (m *DynamicToolsetManager) watchConfigMap(ctx context.Context) {
+    for {
+        watcher, err := m.client.CoreV1().ConfigMaps(m.namespace).Watch(ctx, metav1.ListOptions{
+            FieldSelector: fmt.Sprintf("metadata.name=%s", m.configMapName),
+            Watch:         true,
+        })
+        if err != nil {
+            m.logger.WithError(err).Error("Failed to start ConfigMap watch, retrying...")
+            time.Sleep(5 * time.Second)
+            continue
+        }
+
+        m.logger.Info("Started ConfigMap watch for drift detection")
+
+        for event := range watcher.ResultChan() {
+            switch event.Type {
+            case watch.Added, watch.Modified:
+                cm := event.Object.(*corev1.ConfigMap)
+                m.logger.WithFields(logrus.Fields{
+                    "event":    event.Type,
+                    "revision": cm.ResourceVersion,
+                }).Debug("ConfigMap event detected")
+
+                // Verify ConfigMap matches desired state, reconcile if drift detected
+                if err := m.verifyAndReconcile(ctx, cm); err != nil {
+                    m.logger.WithError(err).Error("Failed to verify ConfigMap")
+                }
+
+            case watch.Deleted:
+                m.logger.Warn("ConfigMap deleted, recreating immediately...")
+                if err := m.reconcileConfigMap(ctx); err != nil {
+                    m.logger.WithError(err).Error("Failed to recreate ConfigMap")
+                }
+
+            case watch.Error:
+                m.logger.Error("Watch error, restarting watch...")
+                watcher.Stop()
+            }
+        }
+
+        m.logger.Warn("ConfigMap watch stopped, restarting...")
+        time.Sleep(5 * time.Second)
+    }
+}
+
+// verifyAndReconcile verifies ConfigMap content and reconciles if drift detected
+func (m *DynamicToolsetManager) verifyAndReconcile(ctx context.Context, cm *corev1.ConfigMap) error {
+    currentContent, exists := cm.Data["toolsets.yaml"]
+    if !exists {
+        m.logger.Warn("ConfigMap missing toolsets.yaml, reconciling...")
+        return m.reconcileConfigMap(ctx)
+    }
+
+    var currentConfig ToolsetsConfig
+    if err := yaml.Unmarshal([]byte(currentContent), &currentConfig); err != nil {
+        m.logger.WithError(err).Warn("ConfigMap has invalid YAML, reconciling...")
+        return m.reconcileConfigMap(ctx)
+    }
+
+    // Check if discovered toolsets match desired state
+    if !m.toolsetsMatch(currentConfig.Discovered, m.desiredToolsets) {
+        m.logger.Warn("ConfigMap drift detected in discovered section, reconciling...")
+        return m.reconcileConfigMap(ctx)
+    }
+
+    m.logger.Debug("ConfigMap verified, no drift detected")
+    return nil
+}
+
+// reconcileConfigMap reconciles ConfigMap to desired state (preserves manual overrides)
+func (m *DynamicToolsetManager) reconcileConfigMap(ctx context.Context) error {
+    m.logger.Info("Reconciling ConfigMap to desired state")
+
+    // Get current ConfigMap to preserve manual overrides
+    existingCM, err := m.client.CoreV1().ConfigMaps(m.namespace).Get(
+        ctx, m.configMapName, metav1.GetOptions{},
+    )
+
+    var overrides map[string]interface{}
+    if err == nil {
+        if content, exists := existingCM.Data["toolsets.yaml"]; exists {
+            var config ToolsetsConfig
+            if err := yaml.Unmarshal([]byte(content), &config); err == nil {
+                overrides = config.Overrides
+                m.logger.Info("Preserving existing manual overrides")
+            }
+        }
+    }
+
+    // Build desired ConfigMap content
+    desiredConfig := ToolsetsConfig{
+        Discovered: m.desiredToolsets,
+        Overrides:  overrides, // Preserve admin edits
+    }
+
+    contentYAML, err := yaml.Marshal(desiredConfig)
+    if err != nil {
+        return fmt.Errorf("failed to marshal toolsets config: %w", err)
+    }
+
+    desiredCM := &corev1.ConfigMap{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      m.configMapName,
+            Namespace: m.namespace,
+            Annotations: map[string]string{
+                "kubernaut.io/managed-by":  "dynamic-toolset-service",
+                "kubernaut.io/last-update": time.Now().Format(time.RFC3339),
+                "kubernaut.io/reconciled":  "true",
+            },
+        },
+        Data: map[string]string{
+            "toolsets.yaml": string(contentYAML),
+        },
+    }
+
+    // Create or update ConfigMap
+    if err == nil {
+        desiredCM.ResourceVersion = existingCM.ResourceVersion
+        _, err = m.client.CoreV1().ConfigMaps(m.namespace).Update(ctx, desiredCM, metav1.UpdateOptions{})
+        if err != nil {
+            return fmt.Errorf("failed to update ConfigMap: %w", err)
+        }
+        m.logger.Info("ConfigMap reconciled (updated)")
+    } else {
+        _, err = m.client.CoreV1().ConfigMaps(m.namespace).Create(ctx, desiredCM, metav1.CreateOptions{})
+        if err != nil {
+            return fmt.Errorf("failed to create ConfigMap: %w", err)
+        }
+        m.logger.Info("ConfigMap reconciled (created)")
+    }
+
+    m.lastReconcile = time.Now()
+    return nil
+}
+
+// periodicReconciliation performs periodic reconciliation as safety net
+func (m *DynamicToolsetManager) periodicReconciliation(ctx context.Context, interval time.Duration) {
+    ticker := time.NewTicker(interval)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            m.logger.Debug("Periodic reconciliation check")
+            if err := m.reconcileConfigMap(ctx); err != nil {
+                m.logger.WithError(err).Error("Periodic reconciliation failed")
+            }
+        }
+    }
+}
+
+// UpdateDesiredState updates desired toolset state (called after service discovery)
+func (m *DynamicToolsetManager) UpdateDesiredState(ctx context.Context, toolsets []ToolsetConfig) error {
+    m.logger.WithField("toolsets", len(toolsets)).Info("Updating desired toolset state")
+    m.desiredToolsets = toolsets
+    return m.reconcileConfigMap(ctx)
+}
+
+// toolsetsMatch checks if current toolsets match desired state
+func (m *DynamicToolsetManager) toolsetsMatch(current, desired []ToolsetConfig) bool {
+    if len(current) != len(desired) {
+        return false
+    }
+
+    currentMap := make(map[string]ToolsetConfig)
+    for _, t := range current {
+        currentMap[t.Name] = t
+    }
+
+    for _, desired := range desired {
+        current, exists := currentMap[desired.Name]
+        if !exists || current.Endpoint != desired.Endpoint ||
+           current.Enabled != desired.Enabled || current.Priority != desired.Priority {
+            return false
+        }
+    }
+
+    return true
+}
 ```
 
-### 6.3 HolmesGPT Integration (`docker/holmesgpt-api/src/services/dynamic_toolset_service.py`)
+### 6.3 HolmesGPT-API File-Based ConfigMap Polling (`docker/holmesgpt-api/src/services/toolset_config_service.py`)
 
 ```python
-class DynamicToolsetService:
-    """Dynamic toolset configuration based on cluster services"""
+import os
+import yaml
+import hashlib
+import threading
+import time
+from pathlib import Path
+from typing import List, Dict
+import logging
 
-    def __init__(self, k8s_client, context_api_client):
-        self.k8s_client = k8s_client
-        self.context_api = context_api_client
-        self.toolset_cache = {}
-        self.last_discovery = None
+logger = logging.getLogger(__name__)
 
-    async def discover_and_configure_toolsets(self) -> List[Toolset]:
-        """Discover services and generate dynamic toolset configuration"""
+class ToolsetConfigService:
+    """Polls mounted ConfigMap file for toolset configuration changes"""
 
-    async def handle_service_change_event(self, event: ServiceChangeEvent):
-        """Handle real-time service changes"""
+    DEFAULT_POLL_INTERVAL = 60  # seconds (APPROVED)
+    MIN_POLL_INTERVAL = 30
+    MAX_POLL_INTERVAL = 300
 
-    async def validate_toolset_availability(self, toolset: Toolset) -> bool:
-        """Validate toolset service availability"""
+    def __init__(self,
+                 config_file_path: str = "/etc/kubernaut/toolsets/toolsets.yaml",
+                 poll_interval: int = None):
+
+        self.config_file_path = Path(config_file_path)
+        self.poll_interval = self._load_poll_interval(poll_interval)
+
+        self.current_toolsets = []
+        self.file_checksum = None
+        self.last_modified = None
+        self.active_sessions = {}
+        self.pending_reload = False
+        self.reload_lock = threading.Lock()
+
+        # Initial load
+        self._load_initial_config()
+
+        # Start polling thread
+        self.polling_thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self.polling_thread.start()
+
+        logger.info(
+            f"Started file-based ConfigMap polling: "
+            f"path={self.config_file_path}, interval={self.poll_interval}s"
+        )
+
+    def _poll_loop(self):
+        """Background thread that polls mounted ConfigMap file periodically"""
+        while True:
+            try:
+                self._check_file_changes()
+            except Exception as e:
+                logger.error(f"Error polling ConfigMap file: {e}", exc_info=True)
+
+            time.sleep(self.poll_interval)
+
+    def _check_file_changes(self):
+        """Check if mounted ConfigMap file has changed"""
+        if not self.config_file_path.exists():
+            logger.warning(f"ConfigMap file not found: {self.config_file_path}")
+            return
+
+        # Check file modification time
+        stat = self.config_file_path.stat()
+        current_mtime = stat.st_mtime
+
+        if self.last_modified is not None and current_mtime == self.last_modified:
+            return  # File unchanged
+
+        logger.info(f"ConfigMap file change detected (mtime: {current_mtime})")
+
+        # Read and verify content
+        with open(self.config_file_path, 'r') as f:
+            content = f.read()
+
+        # Calculate checksum (kubelet uses atomic updates via symlinks)
+        new_checksum = hashlib.sha256(content.encode()).hexdigest()
+
+        if new_checksum != self.file_checksum:
+            logger.info(f"ConfigMap content changed (checksum: {new_checksum[:8]}...)")
+            new_toolsets = self._parse_toolset_config(content)
+            self._reload_toolsets(new_toolsets)
+            self.file_checksum = new_checksum
+            self.last_modified = current_mtime
+        else:
+            # mtime changed but content same (atomic update)
+            self.last_modified = current_mtime
+
+    def _parse_toolset_config(self, yaml_content: str) -> List[Dict]:
+        """Parse toolsets.yaml from mounted ConfigMap file"""
+        try:
+            config = yaml.safe_load(yaml_content)
+            discovered = config.get('discovered', [])
+            overrides = config.get('overrides', {})
+
+            # Apply overrides
+            toolsets = []
+            for toolset in discovered:
+                name = toolset['name']
+                if name in overrides:
+                    toolset.update(overrides[name])
+
+                if toolset.get('enabled', True):
+                    toolsets.append(toolset)
+
+            logger.info(f"Parsed {len(toolsets)} enabled toolsets: {[t['name'] for t in toolsets]}")
+            return toolsets
+        except Exception as e:
+            logger.error(f"Error parsing toolsets.yaml: {e}", exc_info=True)
+            return self.current_toolsets
+
+    def _reload_toolsets(self, new_toolsets: List[Dict]):
+        """Reload HolmesGPT toolsets with graceful handling"""
+        with self.reload_lock:
+            if self._has_active_sessions():
+                logger.info("Active sessions detected, queueing reload")
+                self.pending_reload = True
+                self.pending_toolsets = new_toolsets
+            else:
+                logger.info(f"Reloading toolsets: {[t['name'] for t in new_toolsets]}")
+                self._apply_toolset_config(new_toolsets)
+                self.current_toolsets = new_toolsets
+                self.pending_reload = False
+
+    def _apply_toolset_config(self, toolsets: List[Dict]):
+        """Apply toolset configuration to HolmesGPT client"""
+        from holmes import Client
+
+        toolset_names = [t['name'] for t in toolsets]
+
+        global holmes_client
+        holmes_client = Client(
+            api_key=os.getenv('LLM_API_KEY'),
+            toolsets=toolset_names
+        )
+
+        logger.info(f"HolmesGPT client reinitialized with toolsets: {toolset_names}")
+
+    def register_session(self, session_id: str):
+        """Register an active investigation session"""
+        self.active_sessions[session_id] = time.time()
+
+    def unregister_session(self, session_id: str):
+        """Unregister a completed investigation session"""
+        if session_id in self.active_sessions:
+            del self.active_sessions[session_id]
+
+            if self.pending_reload and not self._has_active_sessions():
+                logger.info("Last session completed, applying pending reload")
+                self._reload_toolsets(self.pending_toolsets)
 ```
 
 ## 7. Configuration Examples
 
-### 7.1 Service Detection Configuration
+### 7.1 ConfigMap & Deployment Configuration
 
 ```yaml
-# config/dynamic-toolset-discovery.yaml
-service_discovery:
+# ConfigMap: kubernaut-toolset-config (managed by Dynamic Toolset Service)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernaut-toolset-config
+  namespace: kubernaut-system
+  annotations:
+    kubernaut.io/managed-by: "dynamic-toolset-service"
+    kubernaut.io/last-update: "2025-01-15T10:30:00Z"
+    kubernaut.io/reconciled: "true"
+    kubernaut.io/warning: |
+      CAUTION: The 'discovered' section is managed by dynamic-toolset-service.
+      Manual changes will be reconciled back to discovered state.
+      Use 'overrides' section for manual configuration.
+data:
+  toolsets.yaml: |
+    # MANAGED SECTION - Automatically updated by Dynamic Toolset Service
+    # DO NOT manually edit this section - changes will be reconciled
+    discovered:
+      - name: kubernetes
   enabled: true
-  discovery_interval: "5m"
-  cache_ttl: "10m"
+        priority: 100
+        capabilities: ["logs", "events", "describe"]
 
-  # Well-known service patterns
-  prometheus:
+      - name: prometheus
     enabled: true
-    selectors:
-      - app.kubernetes.io/name: prometheus
-      - app: prometheus
-    service_names: ["prometheus", "prometheus-server"]
-    required_ports: [9090]
-    health_check:
-      endpoint: "/api/v1/status/buildinfo"
-      timeout: "2s"
+        priority: 90
+        endpoint: "http://prometheus.monitoring.svc.cluster.local:9090"
+        capabilities: ["metrics", "promql", "alerts"]
 
-  grafana:
+      - name: grafana
     enabled: true
-    selectors:
-      - app.kubernetes.io/name: grafana
-    service_names: ["grafana"]
-    required_ports: [3000]
-    health_check:
-      endpoint: "/api/health"
-      timeout: "2s"
+        priority: 80
+        endpoint: "http://grafana.monitoring.svc.cluster.local:3000"
+        capabilities: ["dashboards", "panels", "visualizations"]
 
-  jaeger:
-    enabled: true
-    selectors:
-      - app.kubernetes.io/name: jaeger
-    service_names: ["jaeger-query"]
-    required_ports: [16686]
-    health_check:
-      endpoint: "/api/services"
-      timeout: "2s"
+    # MANUAL OVERRIDES SECTION - Admin-editable (preserved during reconciliation)
+    overrides:
+      # Example: Disable Prometheus toolset manually
+      # prometheus:
+      #   enabled: false
 
-  # Custom service detection
-  custom:
-    enabled: true
-    annotation_key: "kubernaut.io/toolset"
-    endpoints_key: "kubernaut.io/endpoints"
-    capabilities_key: "kubernaut.io/capabilities"
+      # Example: Override Grafana endpoint
+      # grafana:
+      #   endpoint: "http://custom-grafana.monitoring.svc:3000"
+---
+# HolmesGPT-API Deployment (mounts ConfigMap as file)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: holmesgpt-api
+  template:
+    metadata:
+      labels:
+        app: holmesgpt-api
+    spec:
+      containers:
+      - name: holmesgpt-api
+        image: holmesgpt-api:v1.0.0
+        env:
+        # File-based polling configuration
+        - name: TOOLSET_POLL_INTERVAL
+          value: "60"  # seconds (APPROVED DEFAULT)
+        - name: TOOLSET_CONFIG_PATH
+          value: "/etc/kubernaut/toolsets/toolsets.yaml"
+        - name: LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: llm-credentials
+              key: api-key
+
+        # Mount ConfigMap as volume
+        volumeMounts:
+        - name: toolset-config
+          mountPath: /etc/kubernaut/toolsets
+          readOnly: true
+
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+      volumes:
+      - name: toolset-config
+        configMap:
+          name: kubernaut-toolset-config
+          defaultMode: 0644
 ```
 
-### 7.2 Generated Toolset Example
+### 7.2 Reconciliation Scenarios
 
-```yaml
-# Generated toolset configuration for detected Prometheus
-name: "prometheus"
-service_type: "prometheus"
-description: "Prometheus metrics analysis tools for monitoring.prometheus.svc.cluster.local"
-version: "1.0.0"
-endpoints:
-  query: "http://prometheus.monitoring.svc.cluster.local:9090/api/v1/query"
-  query_range: "http://prometheus.monitoring.svc.cluster.local:9090/api/v1/query_range"
-  targets: "http://prometheus.monitoring.svc.cluster.local:9090/api/v1/targets"
-capabilities:
-  - "query_metrics"
-  - "alert_rules"
-  - "time_series"
-  - "resource_usage_analysis"
-  - "threshold_analysis"
-tools:
-  - name: "prometheus_query"
-    description: "Execute PromQL queries against Prometheus"
-    command: "curl -s '${endpoints.query}?query=${query}'"
-  - name: "prometheus_range_query"
-    description: "Execute range queries for time series data"
-    command: "curl -s '${endpoints.query_range}?query=${query}&start=${start}&end=${end}'"
-health_check:
-  endpoint: "/api/v1/status/buildinfo"
-  interval: "30s"
-  timeout: "2s"
-  retries: 3
-priority: 80
-enabled: true
+#### Scenario 1: Admin Accidentally Deletes ConfigMap
+
+```bash
+# 1. Admin deletes ConfigMap
+kubectl delete configmap kubernaut-toolset-config -n kubernaut-system
+
+# 2. Dynamic Toolset Service watch detects deletion immediately
+# Log: "ConfigMap deleted, recreating immediately..."
+
+# 3. ConfigMap recreated within seconds
+# Log: "ConfigMap reconciled (created)"
+
+# 4. Kubernetes kubelet syncs to HolmesGPT-API volume (~60s)
+# 5. HolmesGPT-API detects file change, reloads toolsets (~60s)
+
+# Total recovery time: ~60-120s
+```
+
+#### Scenario 2: Admin Manually Edits Discovered Section
+
+```bash
+# 1. Admin edits ConfigMap
+kubectl edit configmap kubernaut-toolset-config -n kubernaut-system
+# Changes prometheus endpoint in discovered section
+
+# 2. Dynamic Toolset Service watch detects modification
+# Log: "ConfigMap drift detected in discovered section, reconciling..."
+
+# 3. ConfigMap reconciled back to desired state
+# Log: "Preserving existing manual overrides"
+# Log: "ConfigMap reconciled (updated)"
+
+# Result: Discovered section restored, overrides preserved
+```
+
+#### Scenario 3: Service Discovery Finds New Service
+
+```bash
+# 1. Admin deploys Grafana
+kubectl apply -f grafana-deployment.yaml -n monitoring
+
+# 2. Dynamic Toolset Service discovers Grafana (~5min discovery interval)
+# Log: "Discovered service: grafana"
+
+# 3. UpdateDesiredState() called, immediate reconciliation triggered
+# Log: "Updating desired toolset state"
+# Log: "ConfigMap reconciled (updated)"
+
+# 4. HolmesGPT-API detects file change, reloads toolsets (~60-120s)
+# Log: "Reloading toolsets: ['kubernetes', 'prometheus', 'grafana']"
 ```
 
 ## 8. Operational Characteristics
@@ -670,30 +1351,99 @@ metrics:
 
 ### 9.1 RBAC Requirements
 
+#### Dynamic Toolset Service (Owner - Requires RBAC)
+
 ```yaml
-# Required Kubernetes RBAC for service discovery
+# V1 RBAC: Minimal permissions using standard Kubernetes resources
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kubernaut-service-discovery
+  name: kubernaut-dynamic-toolset-manager-v1
 rules:
+# Core service discovery (label-based)
 - apiGroups: [""]
   resources: ["services", "endpoints"]
   verbs: ["get", "list", "watch"]
+
+# Service metadata (optional: version info, health checks)
 - apiGroups: ["apps"]
   resources: ["deployments", "statefulsets"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["monitoring.coreos.com"]
-  resources: ["servicemonitors"]
-  verbs: ["get", "list"]
+  verbs: ["get", "list"]  # Read-only, no watch needed
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubernaut-configmap-manager
+  namespace: kubernaut-system
+rules:
+# ConfigMap ownership and reconciliation
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["kubernaut-toolset-config"]
+  verbs: ["get", "create", "update", "delete", "watch"]
 ```
 
-### 9.2 Service Access Control
+**V1 Simplifications**:
+- ✅ **No Prometheus Operator dependency** (removed `monitoring.coreos.com/servicemonitors`)
+- ✅ **Label-based discovery** using standard Kubernetes Services
+- ✅ **Read-only deployment access** for metadata (version, health) - no watch
+- ✅ **Broader compatibility** with any Kubernetes cluster
+
+**V2 Enhancements** (Future):
+- ServiceMonitor support for Prometheus Operator environments (optional feature flag)
+- Custom resource discovery patterns
+- Advanced service annotation-based configuration
+
+#### HolmesGPT-API (Consumer - No RBAC Needed)
+
+**File-Based Polling**: HolmesGPT-API requires **NO Kubernetes RBAC permissions**
+
+✅ Only needs:
+- Read access to mounted ConfigMap volume (provided by pod security context)
+- Standard file system permissions
+
+**Contrast with API-Based Approach** (not used):
+```yaml
+# NOT NEEDED - File-based polling doesn't use Kubernetes API
+# This is shown for reference only
+#
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: Role
+# metadata:
+#   name: holmesgpt-api-configmap-reader
+#   namespace: kubernaut-system
+# rules:
+# - apiGroups: [""]
+#   resources: ["configmaps"]
+#   resourceNames: ["kubernaut-toolset-config"]
+#   verbs: ["get", "watch"]  # NOT NEEDED with file-based approach
+```
+
+**Security Benefits of File-Based Approach**:
+- ✅ No cluster-wide permissions needed for HolmesGPT-API
+- ✅ Reduced attack surface (no API access from HolmesGPT-API)
+- ✅ Simpler security audit
+- ✅ ConfigMap ownership enforced by Dynamic Toolset Service
+
+### 9.2 ConfigMap Ownership & Protection
+
+**Ownership Model**:
+- **Owner**: Dynamic Toolset Service (watches and reconciles)
+- **Consumer**: HolmesGPT-API (file-based polling)
+- **Protection**: Drift detection and automatic reconciliation
+
+**Reconciliation Benefits**:
+- ✅ Accidental deletion → Immediate recreation
+- ✅ Manual edits to discovered section → Reconciled back
+- ✅ Manual overrides → Preserved during reconciliation
+- ✅ Drift detection → Logged and corrected
+
+### 9.3 Service Access Control
 
 - **Network Policies**: Restrict service discovery traffic
 - **Service Authentication**: Validate service identity before configuration
 - **Endpoint Validation**: Sanitize discovered service endpoints
-- **Configuration Signing**: Sign toolset configurations for integrity
+- **ConfigMap Annotations**: Mark managed sections with warnings
 
 ---
 
