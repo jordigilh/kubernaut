@@ -7,6 +7,37 @@
 
 ---
 
+## ⚠️ TERMINOLOGY EVOLUTION NOTICE
+
+**HISTORICAL CONTEXT**: This document uses **"Alert"** terminology extensively, reflecting the project's initial focus on Prometheus alerts. Kubernaut has evolved to support **multiple signal types** beyond just alerts.
+
+### **Multi-Signal Architecture**
+
+Kubernaut now processes:
+- ✅ Prometheus Alerts (original focus)
+- ✅ Kubernetes Events
+- ✅ AWS CloudWatch Alarms  
+- ✅ Custom Webhooks
+- ✅ Future Signal Sources
+
+### **Current Terminology Standards**
+
+| Historical Term | Current Term | Migration Status |
+|----------------|--------------|------------------|
+| Alert Event | Signal Event | ADR-015 Phase 1 |
+| Alert Gateway Service | Signal Gateway Service | ADR-015 Phase 1 |
+| Alert Processor Service | Signal Processor Service | ADR-015 Phase 1 |
+| Alert Context | Signal Context | ADR-015 Phase 1 |
+
+**References**:
+- [ADR-015: Alert to Signal Naming Migration](../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
+- [Signal Type Definitions Design](../development/SIGNAL_TYPE_DEFINITIONS_DESIGN.md)
+- [V1 Source of Truth Hierarchy](../V1_SOURCE_OF_TRUTH_HIERARCHY.md)
+
+**⚠️ For Implementation**: Use Signal-prefixed types and interfaces as defined in `pkg/signal/`.
+
+---
+
 ## 🎯 **EXECUTIVE SUMMARY**
 
 In Kubernaut architecture, **"alert"** refers to different concepts depending on the context. This document clarifies the distinction between **alert events**, **alert services**, and **alert data flows** to eliminate confusion in architectural discussions.

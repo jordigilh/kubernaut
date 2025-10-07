@@ -1,5 +1,36 @@
 # Alert Processing Flow Architecture
 
+## ⚠️ TERMINOLOGY EVOLUTION NOTICE
+
+**HISTORICAL CONTEXT**: This document uses **"Alert"** terminology extensively, reflecting the project's initial focus on Prometheus alerts. Kubernaut has evolved to support **multiple signal types** beyond just alerts.
+
+### **Multi-Signal Architecture**
+
+Kubernaut now processes:
+- ✅ Prometheus Alerts (original focus)
+- ✅ Kubernetes Events
+- ✅ AWS CloudWatch Alarms
+- ✅ Custom Webhooks
+- ✅ Future Signal Sources
+
+### **Current Terminology Standards**
+
+| Historical Term | Current Term | Migration Status |
+|----------------|--------------|------------------|
+| Alert Processing | Signal Processing | ADR-015 Phase 1 |
+| Alert Service | Signal Processor Service | ADR-015 Phase 1 |
+| Alert Context | Signal Context | ADR-015 Phase 1 |
+| Alert Metrics | Signal Processing Metrics | ADR-015 Phase 1 |
+
+**References**:
+- [ADR-015: Alert to Signal Naming Migration](../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
+- [Signal Type Definitions Design](../development/SIGNAL_TYPE_DEFINITIONS_DESIGN.md)
+- [V1 Source of Truth Hierarchy](../V1_SOURCE_OF_TRUTH_HIERARCHY.md)
+
+**⚠️ For Implementation**: Use Signal-prefixed types and interfaces as defined in `pkg/signal/`.
+
+---
+
 ## Overview
 
 This document describes the complete end-to-end alert processing flow in the Kubernaut system, from initial alert ingestion through AI-powered analysis to Kubernetes action execution and monitoring feedback loops.

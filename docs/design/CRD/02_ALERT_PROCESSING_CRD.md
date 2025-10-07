@@ -2,9 +2,29 @@
 
 **Document Version**: 1.0
 **Date**: January 2025
-**Status**: **APPROVED** - Ready for Implementation
-**CRD Type**: Alert Processor Service Controller
-**Priority**: **CRITICAL** - Core alert processing component
+**Status**: **REFERENCE ONLY** - Superseded by CRD_SCHEMAS.md
+**CRD Type**: Signal Processor Service Controller
+**Priority**: **CRITICAL** - Core signal processing component
+
+---
+
+## ⚠️ DEPRECATION NOTICES
+
+### **1. Authoritative Source**
+
+This document is **REFERENCE ONLY**. The authoritative CRD definitions are in:
+- **[CRD_SCHEMAS.md](../../architecture/CRD_SCHEMAS.md)** - Authoritative OpenAPI v3 schemas
+- **[V1 Source of Truth Hierarchy](../../V1_SOURCE_OF_TRUTH_HIERARCHY.md)** - Documentation authority
+
+### **2. Naming Convention**
+
+This document uses **deprecated "Alert" prefix naming**:
+- `AlertProcessing` CRD → **`RemediationProcessing`** (current name)
+- Alert-specific terminology → Signal-agnostic terminology
+
+**Why Deprecated**: Kubernaut processes multiple signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch alarms), not just alerts.
+
+**Migration**: [ADR-015: Alert to Signal Naming Migration](../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
 
 ---
 
