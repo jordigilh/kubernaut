@@ -6,7 +6,14 @@ description: "AI/ML components and integration patterns for kubernaut"
 # AI/ML Guidelines for Kubernaut
 
 ## AI Service Architecture
-Kubernaut integrates multiple AI providers through a unified interface pattern:
+Kubernaut integrates multiple AI providers through a unified interface pattern following strict interface reuse principles.
+
+**CRITICAL**: Follow AI development methodology in [12-ai-ml-development-methodology.mdc](mdc:.cursor/rules/12-ai-ml-development-methodology.mdc) for TDD and interface management.
+
+### Interface Reuse Principles - MANDATORY
+- **FORBIDDEN**: Creating new AI interfaces - use existing `pkg/ai/llm.Client`
+- **MANDATORY**: Enhance existing AI clients rather than creating new ones
+- **INTEGRATION**: All AI components must integrate with main applications (`cmd/*/main.go`)
 
 ### Supported AI Providers
 - **HolmesGPT**: Primary AI service via [pkg/ai/holmesgpt/client.go](mdc:pkg/ai/holmesgpt/client.go)
@@ -18,13 +25,16 @@ Kubernaut integrates multiple AI providers through a unified interface pattern:
 - **Ramalama**: Local model serving
 
 ## HolmesGPT Integration Patterns
-### Client Usage
+### Client Usage - ENHANCE EXISTING INTERFACES
 ```go
-// Use the unified HolmesGPT client
-holmesClient := holmesgpt.NewClient(config.HolmesGPT)
-response, err := holmesClient.AnalyzeAlert(ctx, alertData)
+// ✅ CORRECT: Use existing unified interface
+import "pkg/ai/llm"
+
+// Use existing LLM client interface
+llmClient := llm.NewClient(config.LLM)
+response, err := llmClient.AnalyzeAlert(ctx, alertData)
 if err != nil {
-    return fmt.Errorf("HolmesGPT analysis failed: %w", err)
+    return fmt.Errorf("AI analysis failed: %w", err)
 }
 ```
 
@@ -112,16 +122,20 @@ breaker := circuitbreaker.New(&Config{
 - Generate insights for proactive maintenance
 
 ## AI Testing Patterns
-### Mock Strategies
-- Use [pkg/testutil/mocks/ai_mocks.go](mdc:pkg/testutil/mocks/ai_mocks.go) for unit tests
-- Support configurable responses for different test scenarios
-- Include error simulation and timeout testing
+### Mock Strategy - REFERENCE AUTHORITATIVE SOURCE
+**AUTHORITY**: Follow the comprehensive mock usage matrix in [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc#mock-usage-decision-matrix---authoritative-source)
+
+### AI-Specific Implementation
+- **Unit Tests**: Use [pkg/testutil/mocks/ai_mocks.go](mdc:pkg/testutil/mocks/ai_mocks.go) for external AI APIs
+- **Test Scenarios**: Support configurable responses for different test scenarios
+- **Error Testing**: Include error simulation and timeout testing with mocks
+- **Business Logic**: Always test real AI analysis algorithms and business logic
 
 ### Integration Testing
-- Test against real AI services when available
-- Use mock LLM for CI/CD reliability: `USE_MOCK_LLM=true`
-- Validate AI response quality and consistency
-- Test fallback mechanisms under various failure conditions
+- **Development**: Test against real AI services when available
+- **CI/CD**: Use mock LLM for reliability: `USE_MOCK_LLM=true`
+- **Quality Validation**: Test AI response quality and consistency with real components
+- **Fallback Testing**: Test fallback mechanisms under various failure conditions
 
 ## Performance Optimization
 ### Caching Strategy

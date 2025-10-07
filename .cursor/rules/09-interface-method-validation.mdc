@@ -224,7 +224,7 @@ fi
 fswatch test/ | while read file; do
     if [[ "$file" == *_test.go ]]; then
         echo "🔍 Checking $file for interface violations..."
-        ./scripts/validate-interface-usage.sh "$file"
+        # Prevention through interface verification during APDC Analysis phase "$file"
     fi
 done
 ```
@@ -244,7 +244,7 @@ for test_file in $MODIFIED_TESTS; do
     INTERFACES_USED=$(grep -o "[A-Z][a-zA-Z]*Engine\|[A-Z][a-zA-Z]*Client\|[A-Z][a-zA-Z]*Service" "$test_file" | sort -u)
 
     for interface_name in $INTERFACES_USED; do
-        ./scripts/validate-interface-usage.sh "$interface_name" "$test_file"
+        # Prevention through interface verification during APDC Analysis phase "$interface_name" "$test_file"
         if [ $? -ne 0 ]; then
             echo "❌ Interface validation failed for $interface_name in $test_file"
             exit 1

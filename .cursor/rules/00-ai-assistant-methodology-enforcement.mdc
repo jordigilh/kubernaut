@@ -6,9 +6,12 @@ alwaysApply: true
 
 ## 🚨 **PRIORITY HIERARCHY**
 
-1. **Enhanced 'fix-build' Methodology** (HIGHEST PRIORITY)
-2. **Real-Time Session Enforcement** (HIGH PRIORITY)
-3. **Basic TDD Validation** (MEDIUM PRIORITY)
+**PRIORITY LEVEL**: 4 - ENFORCEMENT (per [13-conflict-resolution-matrix.mdc](mdc:.cursor/rules/13-conflict-resolution-matrix.mdc))
+
+**Enforcement Priorities Within This Rule**:
+1. **Enhanced 'fix-build' Methodology** (PRIMARY ENFORCEMENT)
+2. **Real-Time Session Enforcement** (SECONDARY ENFORCEMENT)
+3. **Basic TDD Validation** (BASELINE ENFORCEMENT)
 4. **Emergency Stop Conditions** (CRITICAL PRIORITY)
 
 ---
@@ -23,7 +26,7 @@ alwaysApply: true
 
 ---
 
-## 🎯 **ENHANCED 'fix-build' METHODOLOGY - HIGHEST PRIORITY**
+## 🎯 **ENHANCED 'fix-build' METHODOLOGY - PRIMARY ENFORCEMENT**
 
 ### **When user invokes `/fix-build` command, AI MUST execute this enhanced methodology:**
 
@@ -49,7 +52,7 @@ PHASE 2: DECISION GATE VALIDATION ⏸️ (BLOCKING - MUST COMPLETE SECOND)
 PHASE 3: TESTING STRATEGY VALIDATION ⏸️ (BLOCKING - MUST COMPLETE THIRD)
 □ Use real business logic components (PREVENTS: mock-only implementations)
 □ Mock ONLY external dependencies (PREVENTS: over-mocking)
-□ Map all tests to BR-XXX-XXX requirements (PREVENTS: speculative code)
+□ Map all tests to BR-[CATEGORY]-[NUMBER] requirements (PREVENTS: speculative code)
 □ Follow defense-in-depth testing approach (PREVENTS: inadequate coverage)
 
 🚨 ENFORCEMENT RULE: I cannot proceed to implementation until ALL checkboxes are ✅
@@ -261,7 +264,7 @@ go build [dependent_file.go] 2>&1
 3. **Orphaned Business Code** → PREVENTED by confirming main app integration BEFORE implementation
 4. **Build Cascade Failures** → PREVENTED by comprehensive symbol analysis BEFORE fixing
 5. **Mock-Only Implementations** → PREVENTED by validating real business logic usage
-6. **Incomplete TDD Coverage** → PREVENTED by mandatory BR-XXX-XXX mapping
+6. **Incomplete TDD Coverage** → PREVENTED by mandatory BR-[CATEGORY]-[NUMBER] mapping
 7. **Integration Gaps** → PREVENTED by main application usage verification
 8. **Type Safety Violations** → PREVENTED by struct field existence validation
 
@@ -318,9 +321,12 @@ Risk Assessment: [Description of potential issues]
 
 ## 🎯 **IMPLEMENTATION PRIORITY**
 
-This rule has **HIGHEST PRIORITY** and overrides all other considerations:
-- **FOUNDATIONAL**: All other rules operate within these behavioral constraints
+**PRIORITY LEVEL**: 4 - ENFORCEMENT (per [13-conflict-resolution-matrix.mdc](mdc:.cursor/rules/13-conflict-resolution-matrix.mdc))
+
+This rule enforces methodology compliance within the established hierarchy:
+- **ENFORCEMENT CONTROL**: Validates compliance with APDC methodology and testing strategy
 - **NON-NEGOTIABLE**: Cannot be bypassed for convenience or speed
+- **SCOPE**: Development validation - operates within APDC framework and testing strategy authority
 - **AUTOMATED**: Must be enforced programmatically, not manually
 
 ---
@@ -329,7 +335,7 @@ This rule has **HIGHEST PRIORITY** and overrides all other considerations:
 
 This rule **enforces** compliance with:
 - [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - TDD methodology
-- [01-business-code-integration.mdc](mdc:.cursor/rules/01-business-code-integration.mdc) - Integration requirements
+- [07-business-code-integration.mdc](mdc:.cursor/rules/07-business-code-integration.mdc) - Integration requirements
 - [02-technical-implementation.mdc](mdc:.cursor/rules/02-technical-implementation.mdc) - Technical patterns
 - [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing framework
 - [12-ai-ml-development-methodology.mdc](mdc:.cursor/rules/12-ai-ml-development-methodology.mdc) - AI/ML TDD patterns
