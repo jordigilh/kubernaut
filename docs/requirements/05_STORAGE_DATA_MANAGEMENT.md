@@ -10,33 +10,36 @@
 ## 1. Purpose & Scope
 
 ### 1.1 Business Purpose
-The Storage & Data Management layer provides comprehensive data persistence, retrieval, and management capabilities supporting AI-driven decision making, pattern recognition, historical analysis, and operational intelligence through vector databases, caching systems, and traditional data storage.
+The Storage & Data Management layer provides comprehensive data persistence, retrieval, and management capabilities supporting AI-driven decision making, pattern recognition, historical analysis, and operational intelligence through traditional data storage, caching systems, and future vector database capabilities.
 
 ### 1.2 Scope
-- **Vector Database**: Similarity search and embeddings management for AI capabilities
-- **Cache Management**: High-performance caching for improved system responsiveness
-- **Action History Management**: Comprehensive tracking of all remediation actions
+- **v1**: Core data persistence (PostgreSQL) for action history and operational data
+- **v1**: High-performance caching for improved system responsiveness
+- **v1**: Comprehensive tracking of all remediation actions
+- **v2**: Vector Database capabilities (pending evaluation) - similarity search and embeddings management
 - **Database Operations**: Core database connectivity and operations management
 
 ---
 
-## 2. Vector Database
+## 2. Vector Database (v2 - Pending Evaluation)
 
-### 2.1 Business Capabilities
+**Status**: Deferred to Version 2 pending business value evaluation and technical assessment
 
-#### 2.1.1 Vector Storage & Retrieval
-- **BR-VDB-001**: MUST store high-dimensional vector embeddings with associated metadata
-- **BR-VDB-002**: MUST support efficient similarity search with configurable algorithms
-- **BR-VDB-003**: MUST provide vector upsert operations (insert or update)
-- **BR-VDB-004**: MUST support vector deletion and cleanup operations
-- **BR-VDB-005**: MUST maintain vector-metadata consistency and integrity
+### 2.1 Business Capabilities (v2)
 
-#### 2.1.2 Embedding Services
-- **BR-VDB-006**: MUST generate embeddings from text using multiple embedding models
-- **BR-VDB-007**: MUST support caching of embeddings to reduce computation costs
-- **BR-VDB-008**: MUST provide embedding quality validation and scoring
-- **BR-VDB-009**: MUST support batch embedding generation for efficiency
-- **BR-VDB-010**: MUST implement embedding versioning for model upgrades
+#### 2.1.1 Vector Storage & Retrieval (v2)
+- **BR-VDB-001**: MUST store high-dimensional vector embeddings with associated metadata (v2)
+- **BR-VDB-002**: MUST support efficient similarity search with configurable algorithms (v2)
+- **BR-VDB-003**: MUST provide vector upsert operations (insert or update) (v2)
+- **BR-VDB-004**: MUST support vector deletion and cleanup operations (v2)
+- **BR-VDB-005**: MUST maintain vector-metadata consistency and integrity (v2)
+
+#### 2.1.2 Embedding Services (v2)
+- **BR-VDB-006**: MUST generate embeddings from text using multiple embedding models (v2)
+- **BR-VDB-007**: MUST support caching of embeddings to reduce computation costs (v2)
+- **BR-VDB-008**: MUST provide embedding quality validation and scoring (v2)
+- **BR-VDB-009**: MUST support batch embedding generation for efficiency (v2)
+- **BR-VDB-010**: MUST implement embedding versioning for model upgrades (v2)
 
 #### 2.1.3 Pattern Extraction
 - **BR-VDB-011**: MUST extract meaningful patterns from structured and unstructured data
@@ -59,12 +62,18 @@ The Storage & Data Management layer provides comprehensive data persistence, ret
 - **BR-VDB-024**: MUST support database sharding for horizontal scalability
 - **BR-VDB-025**: MUST provide database migration and upgrade capabilities
 
-### 2.3 Performance Optimization
-- **BR-VDB-026**: MUST implement vector indexing for fast similarity search
-- **BR-VDB-027**: MUST support query optimization and execution planning
-- **BR-VDB-028**: MUST provide compression for efficient vector storage
-- **BR-VDB-029**: MUST implement incremental indexing for real-time updates
-- **BR-VDB-030**: MUST support parallel processing for batch operations
+### 2.3 Performance Optimization (v2)
+- **BR-VDB-026**: MUST implement vector indexing for fast similarity search (v2)
+- **BR-VDB-027**: MUST support query optimization and execution planning (v2)
+- **BR-VDB-028**: MUST provide compression for efficient vector storage (v2)
+- **BR-VDB-029**: MUST implement incremental indexing for real-time updates (v2)
+- **BR-VDB-030**: MUST support parallel processing for batch operations (v2)
+
+**Note**: All vector database requirements (BR-VDB-001 to BR-VDB-030) are deferred to Version 2 pending:
+- Business value assessment of vector similarity search capabilities
+- Technical evaluation of external vector database providers (Pinecone, Weaviate)
+- Cost-benefit analysis of embedding services vs. current HolmesGPT capabilities
+- Integration complexity assessment with existing PostgreSQL infrastructure
 
 ---
 
@@ -109,6 +118,17 @@ The Storage & Data Management layer provides comprehensive data persistence, ret
 #### 4.1.1 Action Tracking
 - **BR-HIST-001**: MUST record comprehensive history of all remediation actions
 - **BR-HIST-002**: MUST capture action context including alert details and cluster state
+  - Store alert tracking ID from Remediation Processor (BR-AP-021) for end-to-end correlation
+  - Capture complete alert lifecycle state transitions and timestamps
+  - **Enhanced for Post-Mortem**: Store AI decision rationale, confidence scores, and context data used
+  - **Enhanced for Post-Mortem**: Record performance metrics, error conditions, and recovery actions
+  - **Enhanced for Post-Mortem**: Capture human interventions, manual overrides, and operator decisions
+  - **Enhanced for Post-Mortem**: Store business impact assessment and affected resource inventory
+  - **Enhanced for Post-Mortem**: Record resolution validation results and effectiveness metrics
+  - **Enhanced for Post-Mortem**: Maintain timeline correlation between all events and decisions
+  - Maintain correlation between gateway receipt, processor tracking, and action execution
+  - Support audit trail queries linking alerts to all subsequent actions taken
+  - **Enhanced for Post-Mortem**: Enable comprehensive incident reconstruction for analysis
 - **BR-HIST-003**: MUST track action outcomes and effectiveness measurements
 - **BR-HIST-004**: MUST maintain temporal relationships between related actions
 - **BR-HIST-005**: MUST support action correlation and pattern analysis
@@ -385,6 +405,120 @@ The Storage & Data Management layer provides comprehensive data persistence, ret
 - Data governance ensures compliance with all regulatory requirements
 - User satisfaction with data access and performance exceeds 90%
 - Storage infrastructure demonstrates clear ROI through efficiency gains
+
+---
+
+## 15. Local Vector Operations (V1 Enhancement)
+
+### 15.1 Local Embedding Generation
+
+#### **BR-VECTOR-V1-001: Local Embedding Generation**
+**Business Requirement**: The system MUST provide comprehensive local embedding generation capabilities using multiple embedding techniques to support similarity search and pattern matching without external dependencies.
+
+**Functional Requirements**:
+1. **Multi-Technique Embedding** - MUST support multiple embedding generation techniques (TF-IDF, Word2Vec, sentence transformers)
+2. **Local Processing** - MUST generate embeddings locally without external API dependencies
+3. **Embedding Optimization** - MUST optimize embedding generation for performance and accuracy
+4. **Embedding Storage** - MUST efficiently store and manage generated embeddings
+
+**Success Criteria**:
+- Support for 3+ embedding generation techniques
+- Local embedding generation with no external API dependencies
+- 384-dimensional embeddings with normalized magnitude
+- <1 second embedding generation time for typical text inputs
+
+**Business Value**: Local embedding generation eliminates external dependencies and reduces operational costs
+
+#### **BR-VECTOR-V1-002: Similarity Search and Pattern Matching**
+**Business Requirement**: The system MUST provide high-performance similarity search and pattern matching capabilities using local vector operations to support intelligent pattern discovery and analysis.
+
+**Functional Requirements**:
+1. **Similarity Search** - MUST implement efficient similarity search algorithms for vector data
+2. **Pattern Matching** - MUST provide pattern matching capabilities based on vector similarity
+3. **Relevance Scoring** - MUST implement relevance scoring for search results
+4. **Performance Optimization** - MUST optimize search performance for large vector datasets
+
+**Success Criteria**:
+- >90% relevance accuracy in similarity search results
+- <100ms search response time for datasets with 10,000+ patterns
+- Support for cosine similarity, euclidean distance, and dot product metrics
+- Scalable search performance with linear complexity
+
+**Business Value**: High-performance pattern matching enables intelligent analysis and decision making
+
+#### **BR-VECTOR-V1-003: Memory and PostgreSQL Integration**
+**Business Requirement**: The system MUST provide seamless integration between in-memory vector operations and PostgreSQL persistence with automatic failover and data consistency.
+
+**Functional Requirements**:
+1. **Dual Storage** - MUST support both in-memory and PostgreSQL vector storage
+2. **Automatic Failover** - MUST provide automatic failover between memory and PostgreSQL storage
+3. **Data Consistency** - MUST ensure data consistency between memory and persistent storage
+4. **Performance Optimization** - MUST optimize performance for both storage types
+
+**Success Criteria**:
+- <1 second failover time between memory and PostgreSQL storage
+- 100% data consistency between storage types
+- 90% performance retention during failover scenarios
+- Automatic recovery and synchronization capabilities
+
+**Business Value**: Reliable vector operations with high availability and data consistency
+
+---
+
+## 16. External Vector Database Integration (V2 Advanced)
+
+### 16.1 Multi-Provider Vector Database Support
+
+#### **BR-EXTERNAL-VECTOR-001: Multi-Provider Vector Database Integration**
+**Business Requirement**: The system MUST provide comprehensive integration with external vector database providers (Pinecone, Weaviate, Chroma) to support enterprise-scale vector operations and advanced similarity search capabilities.
+
+**Functional Requirements**:
+1. **Multi-Provider Support** - MUST support integration with multiple external vector database providers
+2. **Provider Abstraction** - MUST provide abstraction layer for seamless provider switching
+3. **Failover Management** - MUST implement automatic failover between providers
+4. **Performance Optimization** - MUST optimize performance for each provider's capabilities
+
+**Success Criteria**:
+- Support for 3+ external vector database providers
+- <1 second failover time between providers
+- 99.9% reliability for external vector operations
+- Provider-specific performance optimization
+
+**Business Value**: Enterprise-scale vector operations with provider flexibility and reliability
+
+#### **BR-EXTERNAL-VECTOR-002: Advanced Embedding Models**
+**Business Requirement**: The system MUST integrate with advanced embedding models (OpenAI, Cohere, HuggingFace) to provide state-of-the-art embedding quality and domain-specific optimization.
+
+**Functional Requirements**:
+1. **Model Integration** - MUST integrate with multiple advanced embedding model providers
+2. **Quality Optimization** - MUST optimize embedding quality for specific use cases
+3. **Model Management** - MUST provide comprehensive model lifecycle management
+4. **Performance Monitoring** - MUST monitor embedding model performance and quality
+
+**Success Criteria**:
+- 20% improvement in embedding quality compared to local models
+- Support for 5+ advanced embedding models
+- Complete model lifecycle management with versioning
+- Real-time performance monitoring and quality assessment
+
+**Business Value**: Superior embedding quality enables more accurate pattern recognition and analysis
+
+#### **BR-EXTERNAL-VECTOR-003: Enterprise Scalability**
+**Business Requirement**: The system MUST provide enterprise-scale vector operations supporting millions of vectors with high-performance search capabilities and enterprise reliability requirements.
+
+**Functional Requirements**:
+1. **Scale Support** - MUST support 10M+ vectors with consistent performance
+2. **High-Performance Search** - MUST maintain <100ms search times at enterprise scale
+3. **Enterprise Reliability** - MUST provide 99.9% reliability for enterprise operations
+4. **Resource Management** - MUST efficiently manage resources at enterprise scale
+
+**Success Criteria**:
+- Support for 10M+ vectors with linear scalability
+- <100ms search response time at enterprise scale
+- 99.9% reliability for all vector operations
+- Efficient resource utilization with cost optimization
+
+**Business Value**: Enterprise-scale capabilities enable large-scale pattern recognition and analysis
 
 ---
 
