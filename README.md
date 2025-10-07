@@ -639,6 +639,26 @@ make format
 
 ## Documentation
 
+### 🎯 For Developers - Start Here
+
+**NEW DEVELOPERS**: Before diving into the code, review these essential documents to understand the project structure and authoritative sources:
+
+- ⭐ **[V1 Source of Truth Hierarchy](docs/V1_SOURCE_OF_TRUTH_HIERARCHY.md)** - **START HERE**
+  - Defines authoritative documentation for V1 implementation
+  - 3-tier hierarchy: Architecture → Services → Design
+  - Eliminates ambiguity about which documents to trust
+  - **Essential reading before contributing**
+
+- 📊 **[V1 Documentation Triage Report](docs/analysis/V1_DOCUMENTATION_TRIAGE_REPORT.md)**
+  - Quality assessment: 95% (EXCELLENT)
+  - 239 files analyzed, 201 cross-references validated
+  - Zero critical issues, production-ready for V1
+
+- 🔄 **[ADR-015: Alert to Signal Naming Migration](docs/architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)**
+  - Critical naming convention change
+  - Multi-signal architecture (alerts, events, alarms)
+  - 5-phase migration strategy with backward compatibility
+
 ### Technical Documentation
 - **[Architecture Guide](docs/ARCHITECTURE.md)**: Detailed system architecture and design decisions
 - **[Deployment Guide](docs/DEPLOYMENT.md)**: Production deployment strategies and configurations
