@@ -59,7 +59,7 @@ The root README.md has **13 broken file references** and **multiple terminology 
 | 612 | "Alert Ingestion" | Deprecated | "Signal Ingestion" |
 | 613 | "alert investigations" | Deprecated | "signal investigations" |
 
-**Evidence**: 
+**Evidence**:
 - Line 3: Intro correctly mentions "multiple signal types"
 - Lines 204-245: "Multi-Signal Data Flow" section uses correct terminology
 - Lines 141-202: System Architecture diagram uses "Alert Processor" (inconsistent)
@@ -108,8 +108,8 @@ AlertManager → webhook-service:8080 → ai-service:8093 (planned)
 
 **V1 Architecture** (per [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)):
 ```
-Signal Source → Gateway Service (RemediationRequest CRD) → 
-RemediationProcessor → AIAnalysis → WorkflowExecution → KubernetesExecutor → 
+Signal Source → Gateway Service (RemediationRequest CRD) →
+RemediationProcessor → AIAnalysis → WorkflowExecution → KubernetesExecutor →
 RemediationOrchestrator
 ```
 
