@@ -362,6 +362,12 @@ flowchart TD
 **AIAnalysis Integration Test Examples**:
 - Complete CRD reconciliation loop with real K8s API
 - HolmesGPT API integration with real AI service (dev environment)
+- **EnrichmentData consumption from RemediationProcessing (DD-001: Alternative 2 - BR-WF-RECOVERY-011)**:
+  - 📋 **Design Decision**: [DD-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2) - AIAnalysis reads from spec only
+  - Verify AIAnalysis reads enrichment from `spec.enrichmentData` (NO API calls)
+  - Validate all contexts available: monitoring + business + recovery (if recovery attempt)
+  - Confirm fresh contexts for recovery attempts (not stale from initial attempt)
+  - Test prompt enrichment with all available contexts
 - Child CRD creation (AIAnalysis → AIApprovalRequest)
 - Approval workflow coordination across multiple CRDs
 - Status watch patterns and phase transitions in real cluster

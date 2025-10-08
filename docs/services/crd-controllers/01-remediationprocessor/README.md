@@ -83,12 +83,15 @@
 | Service | Relationship | Purpose |
 |---------|--------------|---------|
 | **Gateway Service** | Upstream | Creates RemediationRequest CRD (duplicate detection already done) |
-| **RemediationRequest Controller** | Parent | Creates RemediationProcessing CRD, watches for completion |
-| **AIAnalysis Service** | Downstream | Receives enriched alert data for HolmesGPT analysis |
-| **Context Service** | External | Provides Kubernetes context enrichment |
+| **RemediationRequest Controller** | Parent | Creates RemediationProcessing CRD (initial & recovery), watches for completion |
+| **AIAnalysis Service** | Downstream | Receives complete enrichment data (monitoring + business + recovery) |
+| **Context Service** | External | Provides Kubernetes context enrichment (monitoring + business contexts) |
+| **Context API** | External | Provides recovery context (ONLY for recovery attempts - DD-001: Alternative 2) |
 | **Data Storage Service** | External | Persists audit trail for compliance |
 
 **Coordination Pattern**: CRD-based (no HTTP calls between controllers)
+**Recovery Pattern**: RemediationProcessing enriches with FRESH contexts (DD-001: Alternative 2)
+**Design Decision**: [DD-001](../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
 
 ---
 
@@ -98,10 +101,14 @@
 |----------|-------|-------------|
 | **Primary** | BR-AP-001 to BR-AP-050 | Alert processing and enrichment logic |
 | **Environment** | BR-AP-051 to BR-AP-053 | Environment classification (production/staging/dev) |
+| **Enrichment** | BR-AP-060 to BR-AP-062 | Alert enrichment, correlation, timeout handling |
+| **Recovery** | BR-WF-RECOVERY-011 | Recovery context enrichment from Context API (DD-001: Alternative 2) |
 | **Tracking** | BR-AP-021 | Alert lifecycle state tracking |
-| **Deduplication** | BR-WH-008, BR-AP-060/005/006 | Gateway Service responsibility (NOT Remediation Processor) |
+| **Deduplication** | BR-WH-008 | Gateway Service responsibility (NOT Remediation Processor) |
 
-**Note**: Duplicate alert handling is a Gateway Service responsibility. Remediation Processor receives only non-duplicate alerts.
+**Notes**:
+- Duplicate alert handling is a Gateway Service responsibility
+- Recovery enrichment provides FRESH monitoring + business + recovery contexts (DD-001: Alternative 2)
 
 ---
 
@@ -109,10 +116,11 @@
 
 | Decision | Choice | Rationale | Document |
 |----------|--------|-----------|----------|
-| **Processing Model** | Single-phase synchronous | Fast operations (~3s), no multi-phase complexity | [Reconciliation Phases](./reconciliation-phases.md) |
+| **Processing Model** | Single-phase synchronous | Fast operations (4-7s), no multi-phase complexity | [Reconciliation Phases](./reconciliation-phases.md) |
 | **State Management** | CRD-based with watch | Watch-based coordination, no HTTP polling | [Controller Implementation](./controller-implementation.md) |
-| **Enrichment** | Context Service only (V1) | Single provider sufficient for MVP | [Overview](./overview.md) |
-| **Degraded Mode** | Alert labels fallback | Continue processing when Context Service unavailable | [Reconciliation Phases](./reconciliation-phases.md) |
+| **Enrichment** | Dual providers (V1) | Context Service (always) + Context API (recovery only) | [Overview](./overview.md) |
+| **Recovery Enrichment** | Alternative 2 pattern | RP queries Context API for temporal consistency | [Reconciliation Phases](./reconciliation-phases.md) |
+| **Degraded Mode** | Multi-level fallback | Alert labels + minimal recovery context fallback | [Reconciliation Phases](./reconciliation-phases.md) |
 | **Duplicate Detection** | Gateway Service | Already handled upstream (BR-WH-008) | [Overview](./overview.md#deduplication) |
 | **Owner Reference** | RemediationRequest owns this | Cascade deletion with 24h retention | [Finalizers & Lifecycle](./finalizers-lifecycle.md) |
 | **Secret Handling** | Never log verbatim | Sanitize all secrets before storage/logging | [Security Configuration](./security-configuration.md) |
@@ -157,13 +165,17 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 | Metric | Target | Business Impact |
 |--------|--------|----------------|
-| **Enrichment** | <2s | Fast context gathering |
-| **Classification** | <500ms | Quick environment detection |
-| **Total Processing** | <5s | Rapid remediation start |
+| **Enrichment (Initial)** | 3-4s | Fast context gathering (monitoring + business) |
+| **Enrichment (Recovery)** | 5-7s | Complete enrichment (monitoring + business + recovery) |
+| **Classification** | 1-2s | Quick environment detection |
+| **Total Processing (Initial)** | 4-7s | Rapid remediation start |
+| **Total Processing (Recovery)** | 6-9s | Complete recovery context (Alternative 2) |
 | **Accuracy** | >99% for production | Correct priority routing |
 | **Degraded Mode** | <5% of alerts | Most alerts fully enriched |
+| **Context API Availability** | >99.5% | Recovery context success rate |
 
 **Monitoring**: See [Metrics & SLOs](./metrics-slos.md) for Prometheus metrics and Grafana dashboards.
+**Key**: Recovery enrichment includes FRESH monitoring + business + recovery contexts (Alternative 2)
 
 ---
 
@@ -171,14 +183,18 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 **Don't**:
 - ❌ Poll Context Service (use single HTTP call per enrichment)
+- ❌ Query Context API for non-recovery attempts (only when `isRecoveryAttempt = true`)
 - ❌ Create AIAnalysis CRD directly (RemediationRequest does this)
 - ❌ Log secrets verbatim (sanitize all sensitive data)
 - ❌ Skip owner reference (needed for cascade deletion)
+- ❌ Fail recovery if Context API unavailable (use fallback context)
 
 **Do**:
 - ✅ Use degraded mode for Context Service failures
+- ✅ Build fallback recovery context from `failedWorkflowRef` if Context API fails
+- ✅ Capture ALL contexts at same timestamp (temporal consistency - Alternative 2)
 - ✅ Emit Kubernetes events for visibility
-- ✅ Implement phase timeouts (5 min default)
+- ✅ Implement phase timeouts (5s for enrichment, 2s for classification)
 - ✅ Cache environment classification (5 min TTL)
 
 **See**: Each document's "Common Pitfalls" section for detailed guidance.
