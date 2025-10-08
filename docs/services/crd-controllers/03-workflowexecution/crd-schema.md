@@ -504,3 +504,245 @@ func init() {
 
 ---
 
+## Complete Example: WorkflowExecution with Dependencies
+
+**Business Requirements**: BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033
+
+This example demonstrates a multi-step workflow with dependencies from AIAnalysis recommendations, showing both the AIAnalysis output and the resulting WorkflowExecution CRD.
+
+### AIAnalysis Recommendations (Source)
+
+```yaml
+# AIAnalysis CRD status (upstream)
+status:
+  phase: completed
+  recommendations:
+  - id: "rec-001"
+    action: "scale-deployment"
+    targetResource:
+      kind: Deployment
+      name: payment-api
+      namespace: production
+    parameters:
+      replicas: 5
+    effectivenessProbability: 0.92
+    riskLevel: low
+    dependencies: []  # No dependencies - executes first
+    
+  - id: "rec-002"
+    action: "restart-pods"
+    targetResource:
+      kind: Pod
+      namespace: production
+      labelSelector: "app=payment-api"
+    parameters:
+      gracePeriodSeconds: 30
+    effectivenessProbability: 0.88
+    riskLevel: medium
+    dependencies: ["rec-001"]  # Waits for scale to complete
+    
+  - id: "rec-003"
+    action: "increase-memory-limit"
+    targetResource:
+      kind: Deployment
+      name: payment-api
+      namespace: production
+    parameters:
+      newMemoryLimit: "2Gi"
+    effectivenessProbability: 0.85
+    riskLevel: low
+    dependencies: ["rec-001"]  # Also waits for scale
+    
+  # rec-002 and rec-003 can execute IN PARALLEL after rec-001
+    
+  - id: "rec-004"
+    action: "verify-deployment"
+    targetResource:
+      kind: Deployment
+      name: payment-api
+      namespace: production
+    parameters:
+      healthCheckEndpoint: "/health"
+    effectivenessProbability: 0.95
+    riskLevel: low
+    dependencies: ["rec-002", "rec-003"]  # Waits for BOTH
+```
+
+### WorkflowExecution CRD (Generated)
+
+```yaml
+apiVersion: workflow.kubernaut.io/v1
+kind: WorkflowExecution
+metadata:
+  name: payment-api-workflow-abc123
+  namespace: production
+  ownerReferences:
+  - apiVersion: remediation.kubernaut.io/v1
+    kind: RemediationRequest
+    name: payment-api-remediation
+    uid: xyz789
+    controller: true
+spec:
+  remediationRequestRef:
+    name: payment-api-remediation
+    namespace: production
+  
+  workflowDefinition:
+    name: "ai-generated-workflow"
+    version: "v1"
+    steps:
+      # Step 1: No dependencies - executes first
+      - stepNumber: 1
+        name: "scale-deployment"
+        action: "scale-deployment"
+        targetCluster: "production-cluster"
+        parameters:
+          deployment:
+            name: payment-api
+            namespace: production
+            replicas: 5
+        criticalStep: false
+        maxRetries: 3
+        timeout: "5m"
+        dependsOn: []  # ✅ Empty - no dependencies
+        
+      # Step 2: Depends on step 1 (rec-001 → step 1)
+      - stepNumber: 2
+        name: "restart-pods"
+        action: "restart-pods"
+        targetCluster: "production-cluster"
+        parameters:
+          podSelector:
+            namespace: production
+            labelSelector: "app=payment-api"
+          gracePeriodSeconds: 30
+        criticalStep: true
+        maxRetries: 2
+        timeout: "5m"
+        dependsOn: [1]  # ✅ rec-001 mapped to step 1
+        
+      # Step 3: Also depends on step 1 (rec-001 → step 1)
+      - stepNumber: 3
+        name: "increase-memory-limit"
+        action: "patch-resource"
+        targetCluster: "production-cluster"
+        parameters:
+          patchResource:
+            kind: Deployment
+            name: payment-api
+            namespace: production
+            patch:
+              spec:
+                template:
+                  spec:
+                    containers:
+                    - name: api
+                      resources:
+                        limits:
+                          memory: "2Gi"
+        criticalStep: false
+        maxRetries: 3
+        timeout: "5m"
+        dependsOn: [1]  # ✅ rec-001 mapped to step 1
+        
+      # Steps 2 and 3 execute IN PARALLEL (both depend only on step 1)
+      
+      # Step 4: Depends on steps 2 AND 3 (rec-002 → step 2, rec-003 → step 3)
+      - stepNumber: 4
+        name: "verify-deployment"
+        action: "verify-health"
+        targetCluster: "production-cluster"
+        parameters:
+          verifyHealth:
+            kind: Deployment
+            name: payment-api
+            namespace: production
+            healthCheckEndpoint: "/health"
+        criticalStep: false
+        maxRetries: 5
+        timeout: "2m"
+        dependsOn: [2, 3]  # ✅ rec-002 → step 2, rec-003 → step 3
+        
+    aiRecommendations:
+      source: "holmesgpt"
+      count: 4
+      
+  executionStrategy:
+    approvalRequired: false
+    dryRunFirst: true
+    rollbackStrategy: "automatic"
+    maxRetries: 3
+    safetyChecks:
+    - type: "rbac-check"
+      enabled: true
+    - type: "resource-availability"
+      enabled: true
+      
+status:
+  phase: "executing"
+  totalSteps: 4
+  currentStep: 2
+  
+  # Execution plan determined from dependencies
+  executionPlan:
+    strategy: "parallel-with-dependencies"
+    estimatedDuration: "15m"
+    rollbackStrategy: "automatic"
+    batches:
+    - batchNumber: 1
+      steps: [1]  # Step 1 executes alone
+    - batchNumber: 2
+      steps: [2, 3]  # Steps 2 and 3 execute IN PARALLEL
+    - batchNumber: 3
+      steps: [4]  # Step 4 executes after 2 and 3 complete
+    
+  stepStatuses:
+  - stepNumber: 1
+    phase: "completed"
+    executionTime: "2m30s"
+    kubernetesExecutionRef:
+      name: payment-api-workflow-abc123-step-1
+      
+  - stepNumber: 2
+    phase: "running"
+    startTime: "2025-10-08T10:05:00Z"
+    kubernetesExecutionRef:
+      name: payment-api-workflow-abc123-step-2
+      
+  - stepNumber: 3
+    phase: "running"
+    startTime: "2025-10-08T10:05:00Z"
+    kubernetesExecutionRef:
+      name: payment-api-workflow-abc123-step-3
+      
+  - stepNumber: 4
+    phase: "pending"
+    # Waiting for steps 2 and 3 to complete
+    
+  message: "Executing steps 2 and 3 in parallel (batch 2 of 3)"
+```
+
+### Execution Flow (Determined by Dependencies)
+
+```
+Batch 1 (Sequential):
+  Step 1: scale-deployment
+    ↓ completes
+Batch 2 (Parallel):
+  Step 2: restart-pods      ⟋ both start simultaneously
+  Step 3: increase-memory   ⟍ both depend only on step 1
+    ↓ both complete
+Batch 3 (Sequential):
+  Step 4: verify-deployment
+    ↓ waits for steps 2 AND 3
+```
+
+**Key Points**:
+- ✅ AIAnalysis uses `recommendation.id` (string) and `dependencies []string`
+- ✅ WorkflowExecution uses `step.StepNumber` (int) and `dependsOn []int`
+- ✅ `buildWorkflowFromRecommendations()` maps IDs → step numbers
+- ✅ WorkflowExecution identifies parallel opportunities (steps 2 and 3)
+- ✅ Execution plan shows 3 batches with parallelization in batch 2
+
+---
+
