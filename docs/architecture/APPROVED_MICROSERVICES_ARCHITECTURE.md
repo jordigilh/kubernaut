@@ -244,20 +244,15 @@ sequenceDiagram
     RP->>AI: Create RemediationProcessing CRD
     RP->>ORCH: Update status: Processing
 
-    Note over AI,CTX: Phase 3: AI Analysis & Investigation
+    Note over AI,HGP: Phase 3: AI Analysis & Investigation
     ORCH->>AI: Watch RemediationProcessing CRD
     AI->>AI: Reconcile: Analyze signal
-    AI->>CTX: GET /context/historical
-    CTX->>ST: Query action history
-    CTX-->>AI: Historical context
     AI->>HGP: POST /investigate
-
-    Note over HGP,K8S: HolmesGPT Investigation (see detailed diagram)
-    HGP->>K8S: Query cluster state
-    K8S-->>HGP: Cluster data
-    HGP->>HGP: AI analysis
+    
+    Note over HGP: AI Investigation (see detailed diagram)
+    HGP->>HGP: LLM-driven investigation<br/>(tools: K8s, Context API)
+    
     HGP-->>AI: Investigation results + recommendations
-
     AI->>AI: Validate recommendations
     AI->>WF: Create AIAnalysis CRD
     AI->>ORCH: Update status: Analyzed
@@ -325,7 +320,7 @@ sequenceDiagram
     LLM->>LLM: Decide which tools to use
     LLM-->>HGP: Tool calls requested<br/>(e.g., get_similar_incidents, get_pods, get_logs)
     deactivate LLM
-    
+
     Note over HGP,CTX: Step 3: Execute LLM-Requested Tools
     HGP->>CTX: Execute tool: get_similar_incidents({description})
     CTX->>ST: Query similar incidents
@@ -337,7 +332,7 @@ sequenceDiagram
     K8S-->>HGP: Pod list
     HGP->>K8S: Execute tool: kubectl logs {pod_name}
     K8S-->>HGP: Pod logs
-    
+
     Note over HGP,LLM: Step 4: Final AI Analysis with Tool Results
     HGP->>LLM: POST /v1/chat/completions<br/>(tool results)
     activate LLM
@@ -354,7 +349,7 @@ sequenceDiagram
     HGP->>ST: Store investigation results
     HGP-->>AI: Investigation complete<br/>(root cause + actions)
     deactivate HGP
-    
+
     Note over AI,AI: Step 6: Decision Making
     AI->>AI: Validate against policies
     AI->>AI: Select remediation actions
