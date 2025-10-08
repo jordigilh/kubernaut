@@ -48,11 +48,17 @@
 
 - [ ] **Reconciliation RED**: Write tests for each phase (fail - no phase logic yet)
 - [ ] **Reconciliation GREEN**: Implement minimal phase logic (tests pass)
-  - [ ] **Investigating**: HolmesGPT investigation, root cause identification (BR-AI-011, BR-AI-012)
+  - [ ] **Investigating**: Read enrichment data from spec (Alternative 2), HolmesGPT investigation, root cause identification (BR-AI-011, BR-AI-012)
+    - [ ] **Read EnrichmentData from spec** (NO API calls - Alternative 2)
+    - [ ] **Extract monitoring context** (FRESH for recovery!)
+    - [ ] **Extract business context** (FRESH for recovery!)
+    - [ ] **Extract recovery context** (if isRecoveryAttempt = true)
   - [ ] **Analyzing**: Contextual analysis, confidence scoring, validation (BR-AI-001, BR-AI-002, BR-AI-003)
   - [ ] **Recommending**: Recommendation generation, ranking, historical success rate (BR-AI-006, BR-AI-007, BR-AI-008)
   - [ ] **Completed**: WorkflowExecution creation, investigation report (BR-AI-014)
 - [ ] **Reconciliation REFACTOR**: Enhance with sophisticated algorithms
+  - [ ] **Enhanced prompt engineering** (include all contexts from EnrichmentData)
+  - [ ] **Recovery-specific prompts** (leverage historical failure context - BR-WF-RECOVERY-011)
   - [ ] Add Rego-based policy evaluation for auto-approval (BR-AI-030)
   - [ ] Implement optimized requeue strategy (phase-specific intervals)
   - [ ] Add selective embedding for large payloads (BR-AI-027)
