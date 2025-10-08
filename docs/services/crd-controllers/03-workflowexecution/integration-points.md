@@ -46,6 +46,94 @@ func (r *RemediationRequestReconciler) reconcileWorkflowExecution(
 
     return nil
 }
+
+// buildWorkflowFromRecommendations converts AI recommendations to workflow definition
+// Business Requirements: BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033
+func buildWorkflowFromRecommendations(
+    recommendations []aiv1.Recommendation,
+) workflowexecutionv1.WorkflowDefinition {
+    // Step 1: Create mapping from recommendation ID (string) to step number (int)
+    // This enables conversion from AIAnalysis dependencies to WorkflowExecution dependencies
+    idToStepNumber := make(map[string]int)
+    for i, rec := range recommendations {
+        idToStepNumber[rec.ID] = i + 1  // Step numbers are 1-based
+    }
+    
+    // Step 2: Build workflow steps with dependency mapping
+    steps := []workflowexecutionv1.WorkflowStep{}
+    for i, rec := range recommendations {
+        // Map dependencies from recommendation IDs (strings) to step numbers (ints)
+        dependsOn := []int{}
+        for _, depID := range rec.Dependencies {
+            if stepNum, exists := idToStepNumber[depID]; exists {
+                dependsOn = append(dependsOn, stepNum)
+            } else {
+                // This should never happen if AIAnalysis validation (BR-AI-051) worked correctly
+                log.Warn("Invalid dependency reference", "recID", rec.ID, "depID", depID)
+            }
+        }
+        
+        step := workflowexecutionv1.WorkflowStep{
+            StepNumber:   i + 1,
+            Name:         rec.Action,
+            Action:       rec.Action,
+            TargetCluster: extractTargetCluster(rec.TargetResource),
+            Parameters:   convertParameters(rec.Parameters),
+            DependsOn:    dependsOn,  // ✅ Mapped from recommendation.dependencies
+            CriticalStep: rec.RiskLevel == "high", // High-risk actions trigger rollback
+            MaxRetries:   determineRetries(rec.EffectivenessProbability),
+            Timeout:      "5m",  // Default timeout
+        }
+        steps = append(steps, step)
+    }
+    
+    return workflowexecutionv1.WorkflowDefinition{
+        Name:    "ai-generated-workflow",
+        Version: "v1",
+        Steps:   steps,
+        AIRecommendations: &workflowexecutionv1.AIRecommendations{
+            Source: "holmesgpt",
+            Count:  len(recommendations),
+        },
+    }
+}
+```
+
+**Key Dependency Mapping**:
+- **AIAnalysis Output**: `recommendation.id` (string), `recommendation.dependencies` ([]string)
+- **WorkflowExecution Input**: `step.StepNumber` (int), `step.DependsOn` ([]int)
+- **Mapping Function**: Creates `idToStepNumber` map for conversion
+- **Validation**: AIAnalysis pre-validates dependencies (BR-AI-051), invalid references logged as warnings
+
+**Example Dependency Mapping**:
+```yaml
+# AIAnalysis recommendations
+recommendations:
+- id: "rec-001"
+  action: "scale-deployment"
+  dependencies: []  # No dependencies
+
+- id: "rec-002"
+  action: "restart-pods"
+  dependencies: ["rec-001"]  # Depends on rec-001
+
+- id: "rec-003"
+  action: "verify-health"
+  dependencies: ["rec-002"]  # Depends on rec-002
+
+# Converts to WorkflowExecution steps
+steps:
+- stepNumber: 1
+  name: "scale-deployment"
+  dependsOn: []  # Empty
+
+- stepNumber: 2
+  name: "restart-pods"
+  dependsOn: [1]  # rec-001 mapped to step 1
+
+- stepNumber: 3
+  name: "verify-health"
+  dependsOn: [2]  # rec-002 mapped to step 2
 ```
 
 ### 2. Downstream Integration: Executor Service via KubernetesExecution CRDs
