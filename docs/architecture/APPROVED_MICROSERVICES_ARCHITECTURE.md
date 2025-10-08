@@ -35,12 +35,17 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 | **🤖 AI Analysis** | AI Analysis & Decision Making (HolmesGPT-Only) | BR-AI-001 to BR-AI-050 | HolmesGPT-API |
 | **🎯 Workflow Execution** | Workflow Execution | BR-WF-001 to BR-WF-165 | None (internal only) |
 | **⚡ K8s Executor** | Kubernetes Operations | BR-EX-001 to BR-EX-155 | Kubernetes Clusters |
+| **🎛️ Remediation Orchestrator** | End-to-End Remediation Lifecycle Management | BR-ORCH-001 to BR-ORCH-050 | None (internal only) |
 | **📊 Data Storage** | Data Persistence & Local Vector DB | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | PostgreSQL, Local Vector |
 | **🌐 Context API** | Context Orchestration (HolmesGPT-Optimized) | BR-CTX-001 to BR-CTX-180 | None (internal only) |
 | **🔍 HolmesGPT API** | AI Investigation Wrapper | BR-HAPI-001 to BR-HAPI-185 | HolmesGPT Python SDK |
 | **🧩 Dynamic Toolset** | HolmesGPT Toolset Configuration | BR-TOOLSET-001 to BR-TOOLSET-020 | HolmesGPT API |
 | **📈 Effectiveness Monitor** | Performance Assessment (Graceful Degradation) | BR-INS-001 to BR-INS-010 | None (internal only) |
 | **📢 Notifications** | Multi-Channel Notifications | BR-NOTIF-001 to BR-NOTIF-120 | Slack, Teams, Email, PagerDuty |
+
+**Service Breakdown**:
+- **CRD Controllers** (5): Remediation Processor, AI Analysis, Workflow Execution, K8s Executor, Remediation Orchestrator
+- **Stateless Services** (7): Gateway, Data Storage, Context API, HolmesGPT API, Dynamic Toolset, Effectiveness Monitor, Notifications
 
 **Note**: Oscillation detection (preventing remediation loops) is a capability of the Effectiveness Monitor service (queries PostgreSQL action_history table), not a separate service. External infrastructure monitoring (Prometheus, Grafana, Jaeger) are external systems, not Kubernaut microservices.
 
@@ -75,6 +80,7 @@ flowchart TB
         AI[🤖 AI Analysis<br/>8080]
         WF[🎯 Workflow<br/>8080]
         EX[⚡ Executor<br/>8080]
+        ORCH[🎛️ Orchestrator<br/>8080]
     end
 
     subgraph INVESTIGATION["🔍 AI Investigation"]
@@ -91,6 +97,12 @@ flowchart TB
 
     %% Main flow
     SIG --> GW --> RP --> AI --> WF --> EX --> K8S
+    
+    %% Orchestration (monitors all CRDs)
+    ORCH -.->|monitors lifecycle| RP
+    ORCH -.->|monitors lifecycle| AI
+    ORCH -.->|monitors lifecycle| WF
+    ORCH -.->|monitors lifecycle| EX
 
     %% Investigation flow
     AI <-.-> HGP
@@ -122,6 +134,7 @@ flowchart TB
     style AI fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
     style WF fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
     style EX fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style ORCH fill:#ffcdd2,stroke:#c62828,stroke-width:2px,color:#000
     style HGP fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
     style CTX fill:#ffe0b2,stroke:#f57c00,stroke-width:2px,color:#000
     style DTS fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
@@ -145,6 +158,7 @@ flowchart TB
 - 🔵 **Blue boxes**: Core processing (Gateway, Processor, Workflow, Notifications)
 - 🟣 **Purple boxes**: AI investigation (AI Analysis, HolmesGPT, Dynamic Toolset)
 - 🟢 **Green boxes**: Execution (K8s Executor)
+- 🔴 **Red box**: Lifecycle orchestration (Remediation Orchestrator)
 - 🟠 **Orange boxes**: Data & support (Storage, Context API, Effectiveness Monitor)
 - ⚪ **Gray boxes**: External systems (NOT kubernaut services)
 
