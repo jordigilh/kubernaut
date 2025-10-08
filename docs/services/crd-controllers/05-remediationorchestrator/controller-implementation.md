@@ -192,6 +192,76 @@ func (r *RemediationRequestReconciler) orchestratePhase(
         } else if workflowExecution.Status.Phase == "failed" {
             return r.handleFailure(ctx, remediation, "workflow_execution", "Workflow execution failed")
         }
+
+    case "recovering":
+        // ========================================
+        // ALTERNATIVE 2: Watch RemediationProcessing (recovery) completion
+        // 📋 Design Decision: DD-001 | ✅ Approved Design
+        // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+        // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Version 1.2)
+        // ========================================
+        //
+        // Remediation Orchestrator waits for RemediationProcessing Controller to:
+        // 1. Enrich with FRESH monitoring context
+        // 2. Enrich with FRESH business context
+        // 3. Enrich with recovery context from Context API
+        // Then creates AIAnalysis CRD with complete enrichment data
+
+        // Get current RemediationProcessing (recovery attempt)
+        var recoveryRP processingv1.RemediationProcessing
+        if err := r.Get(ctx, client.ObjectKey{
+            Name:      remediation.Status.CurrentProcessingRef.Name,
+            Namespace: remediation.Namespace,
+        }, &recoveryRP); err != nil {
+            return ctrl.Result{}, err
+        }
+
+        // Check timeout
+        if r.isPhaseTimedOut(&recoveryRP, remediation.Spec.TimeoutConfig) {
+            return r.handleTimeout(ctx, remediation, "recovery_processing")
+        }
+
+        if recoveryRP.Status.Phase == "completed" {
+            // RemediationProcessing (recovery) enrichment completed
+            // Create AIAnalysis with ALL contexts (monitoring + business + recovery)
+
+            log := ctrl.LoggerFrom(ctx)
+            log.Info("Recovery RemediationProcessing completed - creating AIAnalysis",
+                "remediationProcessing", recoveryRP.Name,
+                "attemptNumber", recoveryRP.Spec.RecoveryAttemptNumber,
+                "monitoringContextQuality", func() string {
+                    if recoveryRP.Status.EnrichmentResults != nil &&
+                       recoveryRP.Status.EnrichmentResults.KubernetesContext != nil {
+                        return "available"
+                    }
+                    return "unavailable"
+                }(),
+                "recoveryContextQuality", func() string {
+                    if recoveryRP.Status.EnrichmentResults != nil &&
+                       recoveryRP.Status.EnrichmentResults.RecoveryContext != nil {
+                        return recoveryRP.Status.EnrichmentResults.RecoveryContext.ContextQuality
+                    }
+                    return "unavailable"
+                }())
+
+            // Create AIAnalysis with enriched recovery context
+            if err := r.createAIAnalysis(ctx, remediation, &recoveryRP); err != nil {
+                return ctrl.Result{}, err
+            }
+
+            // Transition to analyzing phase (normal flow continues)
+            remediation.Status.OverallPhase = "analyzing"
+            return ctrl.Result{}, r.Status().Update(ctx, remediation)
+
+        } else if recoveryRP.Status.Phase == "failed" {
+            // Recovery enrichment failed - escalate to manual review
+            log.Warn("Recovery RemediationProcessing failed - escalating to manual review",
+                "remediationProcessing", recoveryRP.Name,
+                "attemptNumber", remediation.Status.RecoveryAttempts)
+
+            return r.escalateToManualReview(ctx, remediation,
+                fmt.Sprintf("recovery_processing_failed_attempt_%d", remediation.Status.RecoveryAttempts))
+        }
     }
 
     // Requeue to check progress
@@ -278,6 +348,706 @@ func (r *RemediationRequestReconciler) finalizeRemediation(
 
 const remediationFinalizerName = "kubernaut.io/remediation-retention"
 ```
+
+---
+
+## 🔄 **Recovery Evaluation Logic**
+
+**Status**: ✅ Phase 1 Critical Fix (C7) - Updated for Option B
+**Reference**: [`docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
+**Design Decision**: [`OPTION_B_IMPLEMENTATION_SUMMARY.md`](../../../architecture/OPTION_B_IMPLEMENTATION_SUMMARY.md)
+**Business Requirements**: BR-WF-RECOVERY-001 through BR-WF-RECOVERY-011
+
+### Overview
+
+When a WorkflowExecution fails, the Remediation Orchestrator:
+1. Evaluates whether recovery is viable (prevents infinite loops)
+2. **Queries Context API** for historical context
+3. **Embeds historical context** in new AIAnalysis CRD spec
+4. Creates AIAnalysis CRD with self-contained data
+
+**Key Responsibility**: Context API integration happens HERE, not in AIAnalysis controller (Option B design).
+
+**For detailed Context API integration**: See [`OPTION_B_CONTEXT_API_INTEGRATION.md`](./OPTION_B_CONTEXT_API_INTEGRATION.md)
+
+### Controller Setup with WorkflowExecution Watch
+
+```go
+func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
+    return ctrl.NewControllerManagedBy(mgr).
+        For(&remediationv1.RemediationRequest{}).
+        Owns(&processingv1.RemediationProcessing{}).
+        Owns(&aiv1.AIAnalysis{}).
+        Owns(&workflowv1.WorkflowExecution{}).  // CRITICAL: Watch for workflow failures
+        Owns(&executorv1.KubernetesExecution{}).
+        Complete(r)
+}
+```
+
+### Enhanced Reconciliation with Failure Detection
+
+```go
+func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    log := ctrl.LoggerFrom(ctx)
+
+    var remediation remediationv1.RemediationRequest
+    if err := r.Get(ctx, req.NamespacedName, &remediation); err != nil {
+        return ctrl.Result{}, client.IgnoreNotFound(err)
+    }
+
+    // Handle finalizer...
+
+    // Initialize if new...
+
+    // Handle terminal states...
+
+    // ========================================
+    // NEW: Check for workflow failure and evaluate recovery
+    // ========================================
+    if remediation.Status.CurrentWorkflowExecutionRef != nil &&
+       remediation.Status.OverallPhase == "executing" {
+
+        var workflow workflowv1.WorkflowExecution
+        if err := r.Get(ctx, client.ObjectKey{
+            Name:      *remediation.Status.CurrentWorkflowExecutionRef,
+            Namespace: remediation.Namespace,
+        }, &workflow); err == nil {
+
+            // Workflow failure detected
+            if workflow.Status.Phase == "failed" {
+                log.Info("Workflow failure detected",
+                    "workflow", workflow.Name,
+                    "failedStep", *workflow.Status.FailedStep,
+                    "errorType", *workflow.Status.ErrorType,
+                    "failureReason", *workflow.Status.FailureReason)
+
+                // Evaluate recovery viability (BR-WF-RECOVERY-010)
+                canRecover, reason := r.evaluateRecoveryViability(ctx, &remediation, &workflow)
+
+                if canRecover {
+                    // Transition to recovering phase and create new AIAnalysis
+                    log.Info("Recovery viability evaluation passed - initiating recovery",
+                        "recoveryAttempt", remediation.Status.RecoveryAttempts+1)
+                    return r.initiateRecovery(ctx, &remediation, &workflow)
+                } else {
+                    // Escalate to manual review
+                    log.Warn("Recovery viability evaluation failed - escalating to manual review",
+                        "reason", reason,
+                        "attempts", remediation.Status.RecoveryAttempts)
+                    return r.escalateToManualReview(ctx, &remediation, reason)
+                }
+            }
+        }
+    }
+
+    // Continue with normal phase orchestration...
+    return r.orchestratePhase(ctx, &remediation)
+}
+```
+
+### Recovery Viability Evaluation (BR-WF-RECOVERY-010)
+
+This is the core decision logic that prevents infinite recovery loops:
+
+```go
+// evaluateRecoveryViability determines if recovery attempt is viable
+// Returns (canRecover bool, reason string)
+func (r *RemediationRequestReconciler) evaluateRecoveryViability(
+    ctx context.Context,
+    remediation *remediationv1.RemediationRequest,
+    failedWorkflow *workflowv1.WorkflowExecution,
+) (bool, string) {
+
+    log := ctrl.LoggerFrom(ctx)
+
+    // ========================================
+    // CHECK 1: Recovery attempts limit (BR-WF-RECOVERY-001)
+    // ========================================
+    maxAttempts := remediation.Status.MaxRecoveryAttempts
+    if maxAttempts == 0 {
+        maxAttempts = 3  // Default max attempts
+    }
+
+    if remediation.Status.RecoveryAttempts >= maxAttempts {
+        log.Info("Recovery attempts limit exceeded",
+            "attempts", remediation.Status.RecoveryAttempts,
+            "max", maxAttempts)
+
+        r.metricsRecorder.RecordRecoveryViabilityDenied("max_attempts_exceeded")
+        return false, "max_recovery_attempts_exceeded"
+    }
+
+    // ========================================
+    // CHECK 2: Repeated failure pattern detection (BR-WF-RECOVERY-003)
+    // ========================================
+    if r.hasRepeatedFailurePattern(remediation, failedWorkflow) {
+        log.Info("Repeated failure pattern detected - same strategy failing consistently")
+
+        r.metricsRecorder.RecordRecoveryViabilityDenied("repeated_failure_pattern")
+        return false, "repeated_failure_pattern"
+    }
+
+    // ========================================
+    // CHECK 3: Termination rate check (BR-WF-RECOVERY-005)
+    // ========================================
+    terminationRate, err := r.calculateTerminationRate(ctx)
+    if err != nil {
+        log.Error(err, "Failed to calculate termination rate, proceeding with recovery")
+    } else if terminationRate >= 0.10 {  // BR-WF-541: <10% termination rate
+        log.Warn("System-wide termination rate exceeded threshold",
+            "rate", terminationRate,
+            "threshold", 0.10)
+
+        r.metricsRecorder.RecordRecoveryViabilityDenied("termination_rate_exceeded")
+        return false, "termination_rate_exceeded"
+    }
+
+    // All checks passed
+    log.Info("Recovery viability evaluation passed",
+        "recoveryAttempt", remediation.Status.RecoveryAttempts+1,
+        "terminationRate", terminationRate)
+
+    r.metricsRecorder.RecordRecoveryViabilityAllowed()
+    return true, ""
+}
+```
+
+### Pattern Detection Logic (BR-WF-RECOVERY-003)
+
+```go
+// hasRepeatedFailurePattern detects if the same failure signature occurs twice
+func (r *RemediationRequestReconciler) hasRepeatedFailurePattern(
+    remediation *remediationv1.RemediationRequest,
+    failedWorkflow *workflowv1.WorkflowExecution,
+) bool {
+
+    // Create failure signature from current failure
+    currentSignature := failureSignature{
+        Action:    *failedWorkflow.Status.FailedAction,
+        ErrorType: *failedWorkflow.Status.ErrorType,
+        Step:      *failedWorkflow.Status.FailedStep,
+    }
+
+    // Count how many times this signature has occurred
+    count := 0
+    for _, ref := range remediation.Status.WorkflowExecutionRefs {
+        if ref.Outcome == "failed" &&
+           ref.FailedStep != nil &&
+           ref.FailureReason != nil {
+
+            // Check if signature matches
+            if *ref.FailedStep == currentSignature.Step &&
+               containsErrorType(*ref.FailureReason, currentSignature.ErrorType) {
+                count++
+            }
+        }
+    }
+
+    // If this signature has already occurred once, that's a repeated pattern
+    return count >= 1
+}
+
+type failureSignature struct {
+    Action    string  // "scale-deployment"
+    ErrorType string  // "timeout", "permission_denied", etc.
+    Step      int     // Step number that failed
+}
+
+func containsErrorType(failureReason, errorType string) bool {
+    return strings.Contains(strings.ToLower(failureReason), strings.ToLower(errorType))
+}
+```
+
+### Termination Rate Calculation (BR-WF-RECOVERY-005)
+
+```go
+// calculateTerminationRate computes system-wide workflow termination rate
+// Returns (rate float64, error)
+func (r *RemediationRequestReconciler) calculateTerminationRate(
+    ctx context.Context,
+) (float64, error) {
+
+    // Query all RemediationRequests in last 1 hour
+    oneHourAgo := metav1.Time{Time: time.Now().Add(-1 * time.Hour)}
+
+    var remediations remediationv1.RemediationRequestList
+    if err := r.List(ctx, &remediations); err != nil {
+        return 0, fmt.Errorf("failed to list remediation requests: %w", err)
+    }
+
+    totalWorkflows := 0
+    failedWorkflows := 0
+
+    for _, remediation := range remediations.Items {
+        // Only count remediations from last hour
+        if remediation.Status.StartTime.Before(&oneHourAgo) {
+            continue
+        }
+
+        // Count all workflow execution attempts
+        for _, ref := range remediation.Status.WorkflowExecutionRefs {
+            totalWorkflows++
+            if ref.Outcome == "failed" {
+                failedWorkflows++
+            }
+        }
+    }
+
+    if totalWorkflows == 0 {
+        return 0.0, nil
+    }
+
+    rate := float64(failedWorkflows) / float64(totalWorkflows)
+
+    // Update Prometheus metric
+    r.metricsRecorder.UpdateTerminationRate(rate)
+
+    return rate, nil
+}
+```
+
+### Recovery Initiation (BR-WF-RECOVERY-008, BR-WF-RECOVERY-009)
+
+**Implementation Note**: This function now includes Context API integration (Option B). For detailed Context API client implementation, see [`OPTION_B_CONTEXT_API_INTEGRATION.md`](./OPTION_B_CONTEXT_API_INTEGRATION.md).
+
+```go
+// ========================================
+// initiateRecovery - Recovery Coordination (Alternative 2)
+// 📋 Design Decision: DD-001 | ✅ Approved Design | Confidence: 95%
+// See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+// ========================================
+//
+// Creates new RemediationProcessing CRD for recovery attempt.
+// RemediationProcessing Controller will enrich with FRESH contexts:
+// - Monitoring context (current cluster state)
+// - Business context (current ownership/runbooks)
+// - Recovery context (historical failures from Context API)
+//
+// WHY Alternative 2?
+// - ✅ Fresh contexts: Recovery gets CURRENT data, not stale from initial attempt
+// - ✅ Temporal consistency: All contexts captured at same timestamp
+// - ✅ Immutable audit trail: Each RemediationProcessing CRD is complete snapshot
+func (r *RemediationRequestReconciler) initiateRecovery(
+    ctx context.Context,
+    remediation *remediationv1.RemediationRequest,
+    failedWorkflow *workflowv1.WorkflowExecution,
+) (ctrl.Result, error) {
+
+    log := ctrl.LoggerFrom(ctx)
+
+    // ========================================
+    // ALTERNATIVE 2 DESIGN: Create NEW RemediationProcessing CRD
+    // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Version 1.2)
+    // See: BR-WF-RECOVERY-011
+    // ========================================
+
+    // ========================================
+    // PHASE TRANSITION: executing → recovering (BR-WF-RECOVERY-009)
+    // ========================================
+    remediation.Status.OverallPhase = "recovering"
+    remediation.Status.RecoveryAttempts++
+    remediation.Status.LastFailureTime = &metav1.Time{Time: time.Now()}
+
+    // Create descriptive recovery reason
+    reason := fmt.Sprintf("workflow_%s_step_%d",
+        *failedWorkflow.Status.ErrorType,
+        *failedWorkflow.Status.FailedStep)
+    remediation.Status.RecoveryReason = &reason
+
+    log.Info("Transitioning to recovering phase",
+        "recoveryAttempt", remediation.Status.RecoveryAttempts,
+        "maxAttempts", remediation.Status.MaxRecoveryAttempts,
+        "recoveryReason", reason)
+
+    // ========================================
+    // GET ORIGINAL RemediationProcessing (to copy signal data)
+    // ========================================
+    var originalRP processingv1.RemediationProcessing
+    if err := r.Get(ctx, client.ObjectKey{
+        Name:      remediation.Status.RemediationProcessingRefs[0].Name, // First ref is always original
+        Namespace: remediation.Namespace,
+    }, &originalRP); err != nil {
+        return ctrl.Result{}, fmt.Errorf("failed to get original RemediationProcessing: %w", err)
+    }
+
+    // ========================================
+    // CREATE NEW RemediationProcessing CRD FOR RECOVERY (Alternative 2)
+    // ========================================
+    recoveryRP := &processingv1.RemediationProcessing{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("%s-recovery-%d", remediation.Name, remediation.Status.RecoveryAttempts),
+            Namespace: remediation.Namespace,
+            Labels: map[string]string{
+                "remediation-request": remediation.Name,
+                "type":                "recovery",
+                "attempt":             strconv.Itoa(remediation.Status.RecoveryAttempts),
+            },
+            OwnerReferences: []metav1.OwnerReference{
+                *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
+            },
+        },
+        Spec: processingv1.RemediationProcessingSpec{
+            // Copy signal data from original RemediationProcessing
+            Alert:                     originalRP.Spec.Alert,
+            EnrichmentConfig:          originalRP.Spec.EnrichmentConfig,
+            EnvironmentClassification: originalRP.Spec.EnvironmentClassification,
+            RemediationRequestRef:     originalRP.Spec.RemediationRequestRef,
+
+            // RECOVERY-SPECIFIC FIELDS (Alternative 2)
+            IsRecoveryAttempt:     true,
+            RecoveryAttemptNumber: remediation.Status.RecoveryAttempts,
+            FailedWorkflowRef:     &corev1.LocalObjectReference{Name: failedWorkflow.Name},
+            FailedStep:            failedWorkflow.Status.FailedStep,
+            FailureReason:         failedWorkflow.Status.FailureReason,
+            OriginalProcessingRef: &corev1.LocalObjectReference{Name: originalRP.Name},
+        },
+    }
+
+    if err := r.Create(ctx, recoveryRP); err != nil {
+        return ctrl.Result{}, fmt.Errorf("failed to create recovery RemediationProcessing: %w", err)
+    }
+
+    log.Info("Recovery RemediationProcessing created",
+        "remediationProcessing", recoveryRP.Name,
+        "willEnrich", "monitoring + business + recovery context (Context API)")
+
+    // ========================================
+    // UPDATE REFS ARRAYS (BR-WF-RECOVERY-006)
+    // ========================================
+
+    // Add new RemediationProcessing reference
+    remediation.Status.RemediationProcessingRefs = append(
+        remediation.Status.RemediationProcessingRefs,
+        remediationv1.RemediationProcessingReference{
+            Name:          recoveryRP.Name,
+            Namespace:     recoveryRP.Namespace,
+            Type:          "recovery",
+            AttemptNumber: remediation.Status.RecoveryAttempts,
+            Phase:         "enriching",
+            CreatedAt:     metav1.Now(),
+        },
+    )
+
+    // Set current processing ref (RR will watch for its completion)
+    remediation.Status.CurrentProcessingRef = &corev1.LocalObjectReference{Name: recoveryRP.Name}
+
+    // Add failed workflow with detailed outcome
+    remediation.Status.WorkflowExecutionRefs = append(
+        remediation.Status.WorkflowExecutionRefs,
+        remediationv1.WorkflowExecutionReferenceWithOutcome{
+            Name:           failedWorkflow.Name,
+            Namespace:      failedWorkflow.Namespace,
+            Outcome:        "failed",
+            FailedStep:     failedWorkflow.Status.FailedStep,
+            FailureReason:  failedWorkflow.Status.FailureReason,
+            CompletionTime: failedWorkflow.Status.CompletionTime,
+            AttemptNumber:  remediation.Status.RecoveryAttempts,
+        },
+    )
+
+    // Clear current workflow ref (new one will be created after AIAnalysis completes)
+    remediation.Status.CurrentWorkflowExecutionRef = nil
+
+    // Update status
+    if err := r.Status().Update(ctx, remediation); err != nil {
+        return ctrl.Result{}, err
+    }
+
+    // Emit event for visibility
+    r.Recorder.Event(remediation, corev1.EventTypeNormal, "RecoveryInitiated",
+        fmt.Sprintf("Recovery attempt %d/%d initiated - RemediationProcessing will enrich with fresh context",
+            remediation.Status.RecoveryAttempts,
+            remediation.Status.MaxRecoveryAttempts,
+            *failedWorkflow.Status.FailedStep))
+
+    // Record metrics
+    r.metricsRecorder.RecordRecoveryAttempt(remediation.Status.RecoveryAttempts)
+
+    return ctrl.Result{}, nil
+}
+
+func copyAIAnalysisRefs(refs []remediationv1.AIAnalysisReference) []corev1.LocalObjectReference {
+    result := make([]corev1.LocalObjectReference, len(refs))
+    for i, ref := range refs {
+        result[i] = corev1.LocalObjectReference{Name: ref.Name}
+    }
+    return result
+}
+```
+
+### Escalation to Manual Review (BR-WF-RECOVERY-004)
+
+```go
+// escalateToManualReview transitions to failed state and notifies operations team
+func (r *RemediationRequestReconciler) escalateToManualReview(
+    ctx context.Context,
+    remediation *remediationv1.RemediationRequest,
+    reason string,
+) (ctrl.Result, error) {
+
+    log := ctrl.LoggerFrom(ctx)
+
+    log.Warn("Escalating to manual review",
+        "reason", reason,
+        "recoveryAttempts", remediation.Status.RecoveryAttempts,
+        "workflowFailures", len(remediation.Status.WorkflowExecutionRefs))
+
+    // Update status to terminal failed state
+    remediation.Status.OverallPhase = "failed"
+    remediation.Status.EscalatedToManualReview = true
+    failurePhase := "recovery_evaluation"
+    remediation.Status.FailurePhase = &failurePhase
+    remediation.Status.FailureReason = &reason
+    remediation.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+    remediation.Status.RetentionExpiryTime = &metav1.Time{Time: time.Now().Add(24 * time.Hour)}
+
+    // Update status
+    if err := r.Status().Update(ctx, remediation); err != nil {
+        return ctrl.Result{}, err
+    }
+
+    // Send notification to operations team
+    if err := r.NotificationClient.SendManualReviewAlert(ctx, ManualReviewAlert{
+        RemediationRequestID:  remediation.Name,
+        EscalationReason:      reason,
+        RecoveryAttempts:      remediation.Status.RecoveryAttempts,
+        LastFailureTime:       remediation.Status.LastFailureTime,
+        WorkflowFailureHistory: buildFailureHistory(remediation.Status.WorkflowExecutionRefs),
+        AlertContext:          buildAlertContextSummary(&remediation.Spec),
+        Priority:              "high",  // Manual review is always high priority
+    }); err != nil {
+        log.Error(err, "Failed to send manual review notification")
+        // Don't return error - escalation already recorded in status
+    }
+
+    // Emit event for visibility
+    r.Recorder.Event(remediation, corev1.EventTypeWarning, "EscalatedToManualReview",
+        fmt.Sprintf("Escalated to manual review: %s (attempts: %d)",
+            reason, remediation.Status.RecoveryAttempts))
+
+    // Record metrics
+    r.metricsRecorder.RecordManualReviewEscalation(reason)
+
+    // Record audit
+    if err := r.recordAudit(ctx, remediation); err != nil {
+        log.Error(err, "Failed to record audit for manual review escalation")
+    }
+
+    return ctrl.Result{}, nil
+}
+
+type ManualReviewAlert struct {
+    RemediationRequestID   string
+    EscalationReason       string
+    RecoveryAttempts       int
+    LastFailureTime        *metav1.Time
+    WorkflowFailureHistory []WorkflowFailureSummary
+    AlertContext           AlertContextSummary
+    Priority               string
+}
+
+type WorkflowFailureSummary struct {
+    WorkflowName   string
+    AttemptNumber  int
+    FailedStep     int
+    FailureReason  string
+    CompletionTime metav1.Time
+}
+
+type AlertContextSummary struct {
+    AlertName   string
+    Severity    string
+    Environment string
+    Namespace   string
+    Resource    string
+}
+
+func buildFailureHistory(refs []remediationv1.WorkflowExecutionReferenceWithOutcome) []WorkflowFailureSummary {
+    history := make([]WorkflowFailureSummary, 0, len(refs))
+    for _, ref := range refs {
+        if ref.Outcome == "failed" {
+            history = append(history, WorkflowFailureSummary{
+                WorkflowName:   ref.Name,
+                AttemptNumber:  ref.AttemptNumber,
+                FailedStep:     *ref.FailedStep,
+                FailureReason:  *ref.FailureReason,
+                CompletionTime: *ref.CompletionTime,
+            })
+        }
+    }
+    return history
+}
+
+func buildAlertContextSummary(spec *remediationv1.RemediationRequestSpec) AlertContextSummary {
+    // Extract key alert context fields for notification
+    return AlertContextSummary{
+        AlertName:   spec.AlertName,
+        Severity:    spec.Severity,
+        Environment: spec.Environment,
+        // Additional fields extracted from ProviderData...
+    }
+}
+```
+
+### Metrics Collection
+
+```go
+// MetricsRecorder interface for recovery metrics
+type MetricsRecorder interface {
+    RecordRecoveryViabilityAllowed()
+    RecordRecoveryViabilityDenied(reason string)
+    RecordRecoveryAttempt(attemptNumber int)
+    RecordManualReviewEscalation(reason string)
+    UpdateTerminationRate(rate float64)
+}
+
+// Prometheus metrics
+var (
+    recoveryViabilityEvaluations = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "kubernaut_recovery_viability_evaluations_total",
+            Help: "Total recovery viability evaluations",
+        },
+        []string{"outcome", "reason"},  // outcome: allowed/denied
+    )
+
+    recoveryAttemptsTotal = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "kubernaut_recovery_attempts_total",
+            Help: "Total recovery attempts",
+        },
+        []string{"attempt_number"},  // 1, 2, 3
+    )
+
+    manualReviewEscalations = prometheus.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "kubernaut_manual_review_escalations_total",
+            Help: "Total escalations to manual review",
+        },
+        []string{"reason"},  // max_attempts_exceeded, repeated_failure_pattern, termination_rate_exceeded
+    )
+
+    workflowTerminationRate = prometheus.NewGauge(
+        prometheus.GaugeOpts{
+            Name: "kubernaut_workflow_termination_rate",
+            Help: "Current workflow termination rate (failed/total in last hour)",
+        },
+    )
+)
+```
+
+### Testing Strategy
+
+```go
+func TestRecoveryViabilityEvaluation_MaxAttemptsExceeded(t *testing.T) {
+    remediation := &remediationv1.RemediationRequest{
+        Status: remediationv1.RemediationRequestStatus{
+            RecoveryAttempts:    3,
+            MaxRecoveryAttempts: 3,
+        },
+    }
+
+    reconciler := &RemediationRequestReconciler{}
+    canRecover, reason := reconciler.evaluateRecoveryViability(context.Background(), remediation, nil)
+
+    assert.False(t, canRecover)
+    assert.Equal(t, "max_recovery_attempts_exceeded", reason)
+}
+
+func TestRecoveryViabilityEvaluation_RepeatedPattern(t *testing.T) {
+    remediation := &remediationv1.RemediationRequest{
+        Status: remediationv1.RemediationRequestStatus{
+            RecoveryAttempts:    1,
+            MaxRecoveryAttempts: 3,
+            WorkflowExecutionRefs: []remediationv1.WorkflowExecutionReferenceWithOutcome{
+                {
+                    Outcome:       "failed",
+                    FailedStep:    ptr.To(3),
+                    FailureReason: ptr.To("timeout: operation timed out"),
+                },
+            },
+        },
+    }
+
+    failedWorkflow := &workflowv1.WorkflowExecution{
+        Status: workflowv1.WorkflowExecutionStatus{
+            FailedStep:    ptr.To(3),
+            FailedAction:  ptr.To("scale-deployment"),
+            ErrorType:     ptr.To("timeout"),
+            FailureReason: ptr.To("timeout: operation timed out"),
+        },
+    }
+
+    reconciler := &RemediationRequestReconciler{}
+    canRecover, reason := reconciler.evaluateRecoveryViability(context.Background(), remediation, failedWorkflow)
+
+    assert.False(t, canRecover)
+    assert.Equal(t, "repeated_failure_pattern", reason)
+}
+
+func TestRecoveryInitiation_Success(t *testing.T) {
+    remediation := &remediationv1.RemediationRequest{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      "rr-001",
+            Namespace: "default",
+        },
+        Status: remediationv1.RemediationRequestStatus{
+            OverallPhase:        "executing",
+            RecoveryAttempts:    0,
+            MaxRecoveryAttempts: 3,
+            AIAnalysisRefs: []remediationv1.AIAnalysisReference{
+                {Name: "ai-001", Namespace: "default"},
+            },
+        },
+    }
+
+    failedWorkflow := &workflowv1.WorkflowExecution{
+        ObjectMeta: metav1.ObjectMeta{Name: "workflow-001"},
+        Status: workflowv1.WorkflowExecutionStatus{
+            Phase:         "failed",
+            FailedStep:    ptr.To(3),
+            FailedAction:  ptr.To("scale-deployment"),
+            ErrorType:     ptr.To("timeout"),
+            FailureReason: ptr.To("Operation timed out"),
+        },
+    }
+
+    fakeClient := fake.NewClientBuilder().WithObjects(remediation).Build()
+    reconciler := &RemediationRequestReconciler{Client: fakeClient}
+
+    result, err := reconciler.initiateRecovery(context.Background(), remediation, failedWorkflow)
+
+    assert.NoError(t, err)
+    assert.Equal(t, ctrl.Result{}, result)
+    assert.Equal(t, "recovering", remediation.Status.OverallPhase)
+    assert.Equal(t, 1, remediation.Status.RecoveryAttempts)
+    assert.Len(t, remediation.Status.AIAnalysisRefs, 2)  // Initial + recovery
+    assert.Len(t, remediation.Status.WorkflowExecutionRefs, 1)
+}
+```
+
+### Implementation Checklist
+
+- [ ] Add WorkflowExecution watch in SetupWithManager
+- [ ] Implement evaluateRecoveryViability with all 3 checks
+- [ ] Implement hasRepeatedFailurePattern logic
+- [ ] Implement calculateTerminationRate logic
+- [ ] Implement initiateRecovery CRD creation
+- [ ] Implement escalateToManualReview notification
+- [ ] Add metrics collection for all recovery events
+- [ ] Write unit tests for viability evaluation
+- [ ] Write integration tests for recovery flow
+- [ ] Add monitoring dashboard for recovery metrics
+- [ ] Document escalation procedures for operations team
+- [ ] Implement NotificationClient for manual review alerts
+
+### Related Documentation
+
+- **Architecture**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
+- **Business Requirements**: BR-WF-RECOVERY-001 through 011 in `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md`
+- **CRD Schema**: [`crd-schema.md`](./crd-schema.md) (Recovery tracking fields)
+- **WorkflowExecution**: `docs/services/crd-controllers/03-workflowexecution/controller-implementation.md` (Failure detection)
+- **AIAnalysis**: `docs/services/crd-controllers/02-aianalysis/controller-implementation.md` (Context API integration)
 
 ---
 
