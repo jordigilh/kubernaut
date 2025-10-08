@@ -21,8 +21,8 @@ Update all documentation files with "ALERT" prefix naming to align with the proj
 |-----------|----------------|-----------------|----------|
 | `docs/concepts/ALERT_PROCESSING_FLOW.md` | Active concept doc | Add deprecation notice | HIGH |
 | `docs/concepts/ALERT_CONCEPTS_CLARIFICATION.md` | Active concept doc | Add deprecation notice | HIGH |
-| `docs/design/CRD/01_ALERT_REMEDIATION_CRD.md` | Reference only | Enhance deprecation notice | MEDIUM |
-| `docs/design/CRD/02_ALERT_PROCESSING_CRD.md` | Reference only | Enhance deprecation notice | MEDIUM |
+| `docs/design/CRD/01_REMEDIATION_REQUEST_CRD.md` (was `01_ALERT_REMEDIATION_CRD.md`) | Reference only | Enhance deprecation notice | MEDIUM |
+| `docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md` (was `02_ALERT_PROCESSING_CRD.md`) | Reference only | Enhance deprecation notice | MEDIUM |
 | `docs/requirements/enhancements/ALERT_TRACKING.md` | Enhancement request | Review and update | MEDIUM |
 | `docs/todo/phases/phase1/ALERT_PROCESSOR_SERVICE.md` | Phase 1 plan | Mark as historical | LOW |
 | `docs/architecture/PROMETHEUS_ALERTRULES.md` | Prometheus-specific | No action needed | N/A |

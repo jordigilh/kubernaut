@@ -16,7 +16,7 @@
 Kubernaut now processes:
 - ✅ Prometheus Alerts (original focus)
 - ✅ Kubernetes Events
-- ✅ AWS CloudWatch Alarms  
+- ✅ AWS CloudWatch Alarms
 - ✅ Custom Webhooks
 - ✅ Future Signal Sources
 

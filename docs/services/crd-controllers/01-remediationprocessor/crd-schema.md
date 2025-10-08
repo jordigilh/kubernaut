@@ -1,8 +1,8 @@
 ## CRD Schema Specification
 
-**Full Schema**: See [docs/design/CRD/02_ALERT_PROCESSING_CRD.md](../../design/CRD/02_ALERT_PROCESSING_CRD.md)
+**Full Schema**: See [docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md](../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 
-**Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `02_ALERT_PROCESSING_CRD.md`.
+**Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `02_REMEDIATION_PROCESSING_CRD.md`.
 
 **Location**: `api/remediationprocessing/v1/alertprocessing_types.go`
 
