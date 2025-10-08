@@ -430,7 +430,7 @@ Unlike traditional automation tools (HPA, VPA, ArgoCD) that react to symptoms, k
 
 ### For Technical Evaluation
 
-1. **Review detailed scenarios**: See [KUBERNAUT_VALUE_SCENARIOS.md](KUBERNAUT_VALUE_SCENARIOS.md) for 6 in-depth technical scenarios
+1. **Review detailed scenarios**: See [TECHNICAL_SCENARIOS.md](TECHNICAL_SCENARIOS.md) for 6 in-depth technical scenarios
 2. **Architecture deep-dive**: Review [KUBERNAUT_ARCHITECTURE_OVERVIEW.md](architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md)
 3. **Proof of concept**: Deploy V1 in staging environment (3-4 weeks)
 4. **Integration planning**: Design GitOps PR workflows for your environment
@@ -463,7 +463,7 @@ Unlike traditional automation tools (HPA, VPA, ArgoCD) that react to symptoms, k
 **Document Version**: 1.0
 **Last Updated**: October 2025
 **Related Documents**:
-- [KUBERNAUT_VALUE_SCENARIOS.md](KUBERNAUT_VALUE_SCENARIOS.md) - Detailed technical scenarios
+- [TECHNICAL_SCENARIOS.md](TECHNICAL_SCENARIOS.md) - Detailed technical scenarios
 - [KUBERNAUT_ARCHITECTURE_OVERVIEW.md](architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md) - System architecture
 - [00_REQUIREMENTS_OVERVIEW.md](requirements/00_REQUIREMENTS_OVERVIEW.md) - Complete business requirements
 - [17_GITOPS_PR_CREATION.md](requirements/17_GITOPS_PR_CREATION.md) - GitOps integration details

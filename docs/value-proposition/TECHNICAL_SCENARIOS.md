@@ -46,7 +46,7 @@ This document presents **6 real-world scenarios** where kubernaut provides measu
 - Helm/Kustomize users: Kubernaut generates plain YAML changes, apply to Helm/Kustomize manually
 - Multi-model validation: HolmesGPT provides high-quality single-model analysis (sufficient for 90% of cases)
 
-**For detailed V1/V2 capability breakdown, see**: [KUBERNAUT_VERSION_CAPABILITY_MATRIX.md](KUBERNAUT_VERSION_CAPABILITY_MATRIX.md)
+**For detailed V1/V2 capability breakdown, see**: [V1_VS_V2_CAPABILITIES.md](V1_VS_V2_CAPABILITIES.md)
 
 ---
 

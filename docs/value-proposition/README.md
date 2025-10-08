@@ -10,9 +10,9 @@
 
 | Document | Purpose | Audience | Read Time |
 |----------|---------|----------|-----------|
-| **[KUBERNAUT_VALUE_SUMMARY.md](KUBERNAUT_VALUE_SUMMARY.md)** | Executive overview and ROI justification | Decision-makers, managers | 10-15 min |
-| **[KUBERNAUT_VALUE_SCENARIOS.md](KUBERNAUT_VALUE_SCENARIOS.md)** | Detailed technical scenarios with step-by-step workflows | SRE teams, platform engineers | 45-60 min |
-| **[KUBERNAUT_VERSION_CAPABILITY_MATRIX.md](KUBERNAUT_VERSION_CAPABILITY_MATRIX.md)** | V1 vs V2+ capability breakdown (which scenarios work in V1) | Technical leads, architects | 15-20 min |
+| **[EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md)** | Executive overview and ROI justification | Decision-makers, managers | 10-15 min |
+| **[TECHNICAL_SCENARIOS.md](TECHNICAL_SCENARIOS.md)** | Detailed technical scenarios with step-by-step workflows | SRE teams, platform engineers | 45-60 min |
+| **[V1_VS_V2_CAPABILITIES.md](V1_VS_V2_CAPABILITIES.md)** | V1 vs V2+ capability breakdown (which scenarios work in V1) | Technical leads, architects | 15-20 min |
 | **This README** | Navigation guide | All audiences | 5 min |
 
 ---
@@ -21,7 +21,7 @@
 
 ### For V1 vs V2 Capability Assessment (15-20 minutes)
 
-**Start here**: [KUBERNAUT_VERSION_CAPABILITY_MATRIX.md](KUBERNAUT_VERSION_CAPABILITY_MATRIX.md)
+**Start here**: [V1_VS_V2_CAPABILITIES.md](V1_VS_V2_CAPABILITIES.md)
 
 **What you'll learn**:
 - Which capabilities are available in V1 (current - 3-4 weeks) vs V2+ (future - 6-8 weeks)
@@ -41,7 +41,7 @@
 
 ### For Executive Review (10-15 minutes)
 
-**Start here**: [KUBERNAUT_VALUE_SUMMARY.md](KUBERNAUT_VALUE_SUMMARY.md)
+**Start here**: [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md)
 
 **What you'll learn**:
 - What kubernaut is and why it's different from HPA/VPA/ArgoCD
@@ -61,9 +61,9 @@
 
 ### For Technical Deep-Dive (45-60 minutes)
 
-**Start here**: [KUBERNAUT_VALUE_SCENARIOS.md](KUBERNAUT_VALUE_SCENARIOS.md)
+**Start here**: [TECHNICAL_SCENARIOS.md](TECHNICAL_SCENARIOS.md)
 
-**Note**: All 6 scenarios are **85-100% achievable in V1** (see [Version Capability Matrix](KUBERNAUT_VERSION_CAPABILITY_MATRIX.md) for details)
+**Note**: All 6 scenarios are **85-100% achievable in V1** (see [Version Capability Matrix](V1_VS_V2_CAPABILITIES.md) for details)
 
 **What you'll learn**:
 - **6 detailed scenarios** with complete technical workflows:
@@ -272,7 +272,7 @@ labels: ["kubernaut", "remediation", "memory-leak", "production", "critical"]
 │  └─ Read: Scenario 5 (Database Deadlock)
 │
 ├─ Building business case?
-│  └─ Read: KUBERNAUT_VALUE_SUMMARY.md (ROI section)
+│  └─ Read: EXECUTIVE_SUMMARY.md (ROI section)
 │
 └─ Technical architecture evaluation?
    └─ Read: architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md
@@ -289,19 +289,19 @@ labels: ["kubernaut", "remediation", "memory-leak", "production", "critical"]
 4. Evaluate: How kubernaut fits with existing HPA/VPA/ArgoCD
 
 ### For Platform Engineers
-1. Read: KUBERNAUT_VALUE_SUMMARY.md (Architecture section)
+1. Read: EXECUTIVE_SUMMARY.md (Architecture section)
 2. Review: KUBERNAUT_ARCHITECTURE_OVERVIEW.md (full architecture)
 3. Read: Scenario 3 (Configuration Drift) - GitOps integration details
 4. Plan: Integration with existing CI/CD and GitOps workflows
 
 ### For Engineering Managers
-1. Read: KUBERNAUT_VALUE_SUMMARY.md (complete overview)
+1. Read: EXECUTIVE_SUMMARY.md (complete overview)
 2. Focus: ROI calculation and annual business impact
 3. Review: Implementation timeline (3-4 weeks V1)
 4. Consider: Pilot program approach (8-week controlled rollout)
 
 ### For Technical Leadership
-1. Read: KUBERNAUT_VALUE_SUMMARY.md (executive summary)
+1. Read: EXECUTIVE_SUMMARY.md (executive summary)
 2. Review: Comparative analysis (kubernaut vs existing automation)
 3. Focus: "The Kubernaut Gap" - what existing tools can't do
 4. Evaluate: Strategic fit with platform engineering roadmap
@@ -313,22 +313,22 @@ labels: ["kubernaut", "remediation", "memory-leak", "production", "critical"]
 ### Common Questions Answered in Documents
 
 **Q: How does kubernaut work with HPA/VPA?**
-→ See: KUBERNAUT_VALUE_SUMMARY.md > "Handling Existing Automation"
+→ See: EXECUTIVE_SUMMARY.md > "Handling Existing Automation"
 
 **Q: What about GitOps best practices?**
-→ See: KUBERNAUT_VALUE_SUMMARY.md > "GitOps Integration: Working with ArgoCD"
+→ See: EXECUTIVE_SUMMARY.md > "GitOps Integration: Working with ArgoCD"
 
 **Q: How safe is automated remediation?**
-→ See: KUBERNAUT_VALUE_SUMMARY.md > "Safety & Approval Workflows"
+→ See: EXECUTIVE_SUMMARY.md > "Safety & Approval Workflows"
 
 **Q: What's the implementation timeline?**
-→ See: KUBERNAUT_VALUE_SUMMARY.md > "Implementation Timeline"
+→ See: EXECUTIVE_SUMMARY.md > "Implementation Timeline"
 
 **Q: How do I build a business case?**
-→ See: KUBERNAUT_VALUE_SUMMARY.md > "ROI Calculation"
+→ See: EXECUTIVE_SUMMARY.md > "ROI Calculation"
 
 **Q: Can I see detailed technical workflows?**
-→ See: KUBERNAUT_VALUE_SCENARIOS.md > Any of 6 scenarios
+→ See: TECHNICAL_SCENARIOS.md > Any of 6 scenarios
 
 ---
 
@@ -337,20 +337,20 @@ labels: ["kubernaut", "remediation", "memory-leak", "production", "critical"]
 ### For Quick Evaluation (30 minutes)
 
 1. **This README** (5 min) - orientation
-2. **KUBERNAUT_VALUE_SUMMARY.md** (15 min) - overview + ROI
-3. **Pick 1 scenario** from KUBERNAUT_VALUE_SCENARIOS.md (10 min) - technical depth
+2. **EXECUTIVE_SUMMARY.md** (15 min) - overview + ROI
+3. **Pick 1 scenario** from TECHNICAL_SCENARIOS.md (10 min) - technical depth
 
 ### For Comprehensive Evaluation (90 minutes)
 
 1. **This README** (5 min) - orientation
-2. **KUBERNAUT_VALUE_SUMMARY.md** (20 min) - complete overview
-3. **KUBERNAUT_VALUE_SCENARIOS.md** (60 min) - all 6 scenarios
+2. **EXECUTIVE_SUMMARY.md** (20 min) - complete overview
+3. **TECHNICAL_SCENARIOS.md** (60 min) - all 6 scenarios
 4. **KUBERNAUT_ARCHITECTURE_OVERVIEW.md** (30 min) - architecture deep-dive
 
 ### For Business Case Development (2 hours)
 
-1. **KUBERNAUT_VALUE_SUMMARY.md** (30 min) - complete overview
-2. **KUBERNAUT_VALUE_SCENARIOS.md** (60 min) - all scenarios for impact evidence
+1. **EXECUTIVE_SUMMARY.md** (30 min) - complete overview
+2. **TECHNICAL_SCENARIOS.md** (60 min) - all scenarios for impact evidence
 3. **Customize ROI calculation** (30 min) - use your incident costs and SLA data
 4. **Draft pilot program proposal** (30 min) - 8-week rollout plan
 
@@ -359,7 +359,7 @@ labels: ["kubernaut", "remediation", "memory-leak", "production", "critical"]
 ## 📝 Related Documentation
 
 ### Version Planning (⭐ Start Here for V1 vs V2)
-- **[KUBERNAUT_VERSION_CAPABILITY_MATRIX.md](KUBERNAUT_VERSION_CAPABILITY_MATRIX.md)** - V1 vs V2+ capability breakdown, V1 readiness assessment (85-100% for all scenarios)
+- **[V1_VS_V2_CAPABILITIES.md](V1_VS_V2_CAPABILITIES.md)** - V1 vs V2+ capability breakdown, V1 readiness assessment (85-100% for all scenarios)
 
 ### Architecture & Design
 - [KUBERNAUT_ARCHITECTURE_OVERVIEW.md](architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md) - System architecture (V1: 12 services, V2: +4 services)
