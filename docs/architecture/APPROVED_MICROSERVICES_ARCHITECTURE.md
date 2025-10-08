@@ -220,8 +220,6 @@ sequenceDiagram
     participant GW as Gateway<br/>Service
     participant RP as Remediation<br/>Processor
     participant AI as AI Analysis<br/>Service
-    participant HGP as HolmesGPT<br/>API
-    participant CTX as Context<br/>API
     participant WF as Workflow<br/>Execution
     participant EX as K8s<br/>Executor
     participant K8S as Kubernetes<br/>Cluster
@@ -244,15 +242,10 @@ sequenceDiagram
     RP->>AI: Create RemediationProcessing CRD
     RP->>ORCH: Update status: Processing
 
-    Note over AI,HGP: Phase 3: AI Analysis & Investigation
+    Note over AI,ORCH: Phase 3: AI Analysis & Investigation<br/>(expanded in next diagram)
     ORCH->>AI: Watch RemediationProcessing CRD
     AI->>AI: Reconcile: Analyze signal
-    AI->>HGP: POST /investigate
-    
-    Note over HGP: AI Investigation (see detailed diagram)
-    HGP->>HGP: LLM-driven investigation<br/>(tools: K8s, Context API)
-    
-    HGP-->>AI: Investigation results + recommendations
+    AI->>AI: HolmesGPT investigation
     AI->>AI: Validate recommendations
     AI->>WF: Create AIAnalysis CRD
     AI->>ORCH: Update status: Analyzed
