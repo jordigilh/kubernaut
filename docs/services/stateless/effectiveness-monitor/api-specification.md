@@ -3,14 +3,14 @@
 **Version**: v1.0
 **Last Updated**: October 6, 2025
 **Service Type**: Stateless HTTP API Service (Assessment & Analysis)
-**HTTP Port**: 8087
+**HTTP Port**: 8080
 **Metrics Port**: 9090
 
 ---
 
 ## 📋 API Overview
 
-**Base URL**: `http://effectiveness-monitor-service.prometheus-alerts-slm.svc.cluster.local:8087`
+**Base URL**: `http://effectiveness-monitor-service.prometheus-alerts-slm.svc.cluster.local:8080`
 
 **Authentication**:
 - **API endpoints** (`/api/v1/assess/*`): Kubernetes TokenReviewer (Bearer token required)
@@ -550,7 +550,7 @@ type InsufficientDataResponse struct {
 ### **Example 1: Request Assessment (Week 13+)**
 
 ```bash
-curl -X POST http://effectiveness-monitor-service:8087/api/v1/assess/effectiveness \
+curl -X POST http://effectiveness-monitor-service:8080/api/v1/assess/effectiveness \
   -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIs..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -576,7 +576,7 @@ curl -X POST http://effectiveness-monitor-service:8087/api/v1/assess/effectivene
 ### **Example 2: Check Data Availability (Week 5)**
 
 ```bash
-curl -X GET http://effectiveness-monitor-service:8087/api/v1/assess/data-availability \
+curl -X GET http://effectiveness-monitor-service:8080/api/v1/assess/data-availability \
   -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIs..."
 ```
 
@@ -594,7 +594,7 @@ curl -X GET http://effectiveness-monitor-service:8087/api/v1/assess/data-availab
 ### **Example 3: Batch Assessment (Week 13+)**
 
 ```bash
-curl -X POST http://effectiveness-monitor-service:8087/api/v1/assess/batch \
+curl -X POST http://effectiveness-monitor-service:8080/api/v1/assess/batch \
   -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIs..." \
   -H "Content-Type: application/json" \
   -d '{

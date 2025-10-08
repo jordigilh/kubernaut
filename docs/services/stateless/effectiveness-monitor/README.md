@@ -1,10 +1,10 @@
 # Effectiveness Monitor Service - Documentation Hub
 
-**Service Name**: Effectiveness Monitor Service  
-**Port**: 8087 (REST API + Health), 9090 (Metrics)  
-**Docker Image**: `quay.io/jordigilh/monitor-service`  
-**V1 Status**: ✅ **INCLUDED IN V1** (Graceful Degradation Mode)  
-**Type**: Stateless HTTP API Service  
+**Service Name**: Effectiveness Monitor Service
+**Port**: 8080 (REST API + Health), 9090 (Metrics)
+**Docker Image**: `quay.io/jordigilh/monitor-service`
+**V1 Status**: ✅ **INCLUDED IN V1** (Graceful Degradation Mode)
+**Type**: Stateless HTTP API Service
 **Last Updated**: October 6, 2025
 
 ---
@@ -45,7 +45,7 @@ Without effectiveness monitoring, Kubernaut would be "flying blind" - executing 
 ### **Service Position in V1**
 
 ```
-K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8087)
+K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8080)
                                              ↑
 External Prometheus (9090) ──────────────────┘
                                              ↓
@@ -150,7 +150,7 @@ Effectiveness assessment requires 8-10 weeks of remediation data for high-confid
 
 ## 🔌 **API Endpoints**
 
-### **Assessment Endpoints** (Port 8087)
+### **Assessment Endpoints** (Port 8080)
 
 ```yaml
 POST /api/v1/assess/effectiveness
@@ -195,7 +195,7 @@ GET /api/v1/insights/patterns
     }
 ```
 
-### **Health Endpoints** (Port 8087)
+### **Health Endpoints** (Port 8080)
 
 ```yaml
 GET /health
@@ -397,7 +397,7 @@ logger.Info("Effectiveness assessment completed",
 
 ---
 
-**Document Maintainer**: Kubernaut Documentation Team  
-**Last Updated**: October 6, 2025  
+**Document Maintainer**: Kubernaut Documentation Team
+**Last Updated**: October 6, 2025
 **Status**: ✅ Documentation Hub Complete
 
