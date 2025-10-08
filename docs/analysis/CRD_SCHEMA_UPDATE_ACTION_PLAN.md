@@ -48,7 +48,7 @@ RemediationProcessing has **all 18 required fields**:
 ```go
 type RemediationRequestSpec struct {
     // ... existing fields ...
-    
+
     // ✅ ADD: Structured signal metadata (no payload parsing needed)
     SignalLabels      map[string]string `json:"signalLabels,omitempty"`
     SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
@@ -273,7 +273,7 @@ func (s *Server) createRemediationRequestCRD(
         // ... existing metadata ...
         Spec: remediationv1.RemediationRequestSpec{
             // ... existing fields ...
-            
+
             // ✅ ADD: Structured signal metadata
             SignalLabels:      extractLabels(signal.RawPayload),
             SignalAnnotations: extractAnnotations(signal.RawPayload),

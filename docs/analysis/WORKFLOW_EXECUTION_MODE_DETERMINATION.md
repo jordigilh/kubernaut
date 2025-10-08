@@ -26,7 +26,7 @@ The WorkflowExecution Controller analyzes step dependencies and **automatically 
 
 ### **Step 1.1: HolmesGPT Generates Remediation Steps**
 
-**Controller**: AIAnalysis  
+**Controller**: AIAnalysis
 **Source**: HolmesGPT AI Analysis
 
 **AI Output Example**:
@@ -67,7 +67,7 @@ The WorkflowExecution Controller analyzes step dependencies and **automatically 
 
 ### **Step 1.2: RemediationOrchestrator Creates WorkflowExecution CRD**
 
-**Controller**: RemediationOrchestrator  
+**Controller**: RemediationOrchestrator
 **Action**: Copy AI recommendations → WorkflowExecution.spec
 
 **WorkflowExecution CRD Created**:
@@ -107,8 +107,8 @@ spec:
 
 ### **Step 2.1: WorkflowExecution Controller Analyzes Dependencies**
 
-**Controller**: WorkflowExecution Reconciler  
-**Phase**: `planning`  
+**Controller**: WorkflowExecution Reconciler
+**Phase**: `planning`
 **Business Requirements**: BR-WF-010, BR-WF-011
 
 **Planning Logic**:
@@ -118,29 +118,29 @@ func (r *WorkflowExecutionReconciler) handlePlanningPhase(
     workflow *workflowv1.WorkflowExecution,
 ) (ctrl.Result, error) {
     steps := workflow.Spec.WorkflowDefinition.Steps
-    
+
     // Step 1: Build dependency graph
     graph, err := r.buildDependencyGraph(steps)
     if err != nil {
         return r.transitionToFailed(ctx, workflow, "dependency_resolution_failed", err)
     }
-    
+
     // Step 2: Calculate execution order (topological sort)
     // This determines which steps can run in parallel
     executionOrder, err := r.calculateExecutionOrder(graph)
     if err != nil {
         return r.transitionToFailed(ctx, workflow, "execution_order_failed", err)
     }
-    
+
     // Step 3: Determine execution strategy based on dependency analysis
     strategy := r.determineExecutionStrategy(executionOrder)
-    
+
     // Update status with execution plan
     workflow.Status.ExecutionPlan = &workflowv1.ExecutionPlan{
         Strategy:       strategy,  // "sequential", "parallel", or "sequential-with-parallel"
         ExecutionOrder: executionOrder,
     }
-    
+
     workflow.Status.Phase = "validating"
     return ctrl.Result{}, r.Status().Update(ctx, workflow)
 }
@@ -150,7 +150,7 @@ func (r *WorkflowExecutionReconciler) handlePlanningPhase(
 
 ### **Step 2.2: Build Dependency Graph**
 
-**Function**: `buildDependencyGraph()`  
+**Function**: `buildDependencyGraph()`
 **Algorithm**: Create directed acyclic graph (DAG) from step dependencies
 
 **Example Graph**:
@@ -180,24 +180,24 @@ Analysis:
 ```go
 func (dwe *DefaultWorkflowEngine) buildDependencyGraph(steps []*ExecutableWorkflowStep) (*DependencyGraph, error) {
     graph := NewDependencyGraph()
-    
+
     for _, step := range steps {
         node := &GraphNode{
             StepName:     step.Name,
             Action:       step.Action,
             Dependencies: step.Dependencies,
         }
-        
+
         if err := graph.AddNode(node); err != nil {
             return nil, fmt.Errorf("failed to add node %s: %w", step.Name, err)
         }
     }
-    
+
     // Detect circular dependencies
     if graph.HasCycle() {
         return nil, fmt.Errorf("circular dependency detected in workflow")
     }
-    
+
     return graph, nil
 }
 ```
@@ -206,7 +206,7 @@ func (dwe *DefaultWorkflowEngine) buildDependencyGraph(steps []*ExecutableWorkfl
 
 ### **Step 2.3: Calculate Execution Order (Topological Sort)**
 
-**Function**: `calculateExecutionOrder()`  
+**Function**: `calculateExecutionOrder()`
 **Algorithm**: Topological sort with batching for parallelization
 
 **Execution Order Calculation**:
@@ -215,33 +215,33 @@ func (r *WorkflowExecutionReconciler) calculateExecutionOrder(
     graph *DependencyGraph,
 ) ([]ExecutionBatch, error) {
     order := []ExecutionBatch{}
-    
+
     // Topological sort: repeatedly extract nodes with no dependencies
     for !graph.IsEmpty() {
         batch := ExecutionBatch{
             Steps:    []string{},
             Parallel: false,  // Will be set to true if multiple steps in batch
         }
-        
+
         // Find all nodes with no unmet dependencies (ready to execute)
         readyNodes := graph.GetReadyNodes()
-        
+
         if len(readyNodes) == 0 {
             return nil, fmt.Errorf("circular dependency detected")
         }
-        
+
         // All ready nodes can execute in parallel
         for _, node := range readyNodes {
             batch.Steps = append(batch.Steps, node.StepName)
             graph.RemoveNode(node.StepName)
         }
-        
+
         // Mark as parallel if multiple steps
         batch.Parallel = len(batch.Steps) > 1
-        
+
         order = append(order, batch)
     }
-    
+
     return order, nil
 }
 ```
@@ -264,7 +264,7 @@ executionOrder:
 
 ### **Step 2.4: Determine Execution Strategy**
 
-**Function**: `determineExecutionStrategy()`  
+**Function**: `determineExecutionStrategy()`
 **Logic**: Classify overall workflow execution pattern
 
 **Strategy Classification**:
@@ -274,7 +274,7 @@ func (r *WorkflowExecutionReconciler) determineExecutionStrategy(
 ) string {
     hasParallel := false
     hasSequential := false
-    
+
     for _, batch := range executionOrder {
         if batch.Parallel && len(batch.Steps) > 1 {
             hasParallel = true
@@ -283,7 +283,7 @@ func (r *WorkflowExecutionReconciler) determineExecutionStrategy(
             hasSequential = true
         }
     }
-    
+
     // Classify strategy
     if hasParallel && hasSequential {
         return "sequential-with-parallel"  // Mixed: some steps parallel, some sequential
@@ -310,8 +310,8 @@ func (r *WorkflowExecutionReconciler) determineExecutionStrategy(
 
 ### **Step 3.1: Can Steps Execute in Parallel?**
 
-**Function**: `canExecuteInParallel()`  
-**Source**: `pkg/workflow/engine/workflow_engine.go:1773-1817`  
+**Function**: `canExecuteInParallel()`
+**Source**: `pkg/workflow/engine/workflow_engine.go:1773-1817`
 **Business Requirement**: BR-WF-001 (100% correctness for step dependencies)
 
 **Validation Logic**:
@@ -320,13 +320,13 @@ func (dwe *DefaultWorkflowEngine) canExecuteInParallel(steps []*ExecutableWorkfl
     if len(steps) <= 1 {
         return false  // Single step cannot be "parallel"
     }
-    
+
     // Build map of step IDs in this batch
     stepIDs := make(map[string]bool)
     for _, step := range steps {
         stepIDs[step.ID] = true
     }
-    
+
     // Check 1: No inter-step dependencies within batch
     for _, step := range steps {
         for _, depID := range step.Dependencies {
@@ -340,7 +340,7 @@ func (dwe *DefaultWorkflowEngine) canExecuteInParallel(steps []*ExecutableWorkfl
             }
         }
     }
-    
+
     // Check 2: No explicit sequential execution requirement
     for _, step := range steps {
         if step.Metadata != nil {
@@ -354,9 +354,9 @@ func (dwe *DefaultWorkflowEngine) canExecuteInParallel(steps []*ExecutableWorkfl
             }
         }
     }
-    
+
     // All checks passed - steps can execute in parallel
-    log.Debug("Steps validated for parallel execution", 
+    log.Debug("Steps validated for parallel execution",
         "parallel_candidates", len(steps))
     return true
 }
@@ -373,7 +373,7 @@ func (dwe *DefaultWorkflowEngine) canExecuteInParallel(steps []*ExecutableWorkfl
 
 ### **Step 4.1: Execute Batches in Order**
 
-**Controller**: WorkflowExecution Reconciler  
+**Controller**: WorkflowExecution Reconciler
 **Phase**: `executing`
 
 **Execution Logic**:
@@ -383,34 +383,34 @@ func (r *WorkflowExecutionReconciler) handleExecutingPhase(
     workflow *workflowv1.WorkflowExecution,
 ) (ctrl.Result, error) {
     executionPlan := workflow.Status.ExecutionPlan
-    
+
     // Get next batch to execute
     nextBatch := r.getNextExecutionBatch(workflow, executionPlan)
-    
+
     if nextBatch == nil {
         // All batches complete
         workflow.Status.Phase = "monitoring"
         return ctrl.Result{}, r.Status().Update(ctx, workflow)
     }
-    
+
     // Create KubernetesExecution CRDs for all steps in batch
     if nextBatch.Parallel {
         // PARALLEL: Create all KubernetesExecution CRDs at once
         log.Info("Executing parallel batch",
             "batch_number", nextBatch.BatchNumber,
             "step_count", len(nextBatch.Steps))
-        
+
         for _, stepName := range nextBatch.Steps {
             step := r.getStepByName(workflow, stepName)
             ke := r.buildKubernetesExecution(workflow, step)
-            
+
             // Create KubernetesExecution CRD
             if err := r.Create(ctx, ke); err != nil {
                 return ctrl.Result{}, fmt.Errorf(
-                    "failed to create KubernetesExecution for step %s: %w", 
+                    "failed to create KubernetesExecution for step %s: %w",
                     stepName, err)
             }
-            
+
             log.Info("Created parallel step execution",
                 "step", stepName,
                 "batch", nextBatch.BatchNumber)
@@ -420,16 +420,16 @@ func (r *WorkflowExecutionReconciler) handleExecutingPhase(
         log.Info("Executing sequential step",
             "step", nextBatch.Steps[0],
             "batch_number", nextBatch.BatchNumber)
-        
+
         step := r.getStepByName(workflow, nextBatch.Steps[0])
         ke := r.buildKubernetesExecution(workflow, step)
-        
+
         if err := r.Create(ctx, ke); err != nil {
             return ctrl.Result{}, fmt.Errorf(
                 "failed to create KubernetesExecution: %w", err)
         }
     }
-    
+
     // Update status and requeue
     return ctrl.Result{RequeueAfter: 5 * time.Second}, r.Status().Update(ctx, workflow)
 }

@@ -528,7 +528,7 @@ status:
     effectivenessProbability: 0.92
     riskLevel: low
     dependencies: []  # No dependencies - executes first
-    
+
   - id: "rec-002"
     action: "restart-pods"
     targetResource:
@@ -540,7 +540,7 @@ status:
     effectivenessProbability: 0.88
     riskLevel: medium
     dependencies: ["rec-001"]  # Waits for scale to complete
-    
+
   - id: "rec-003"
     action: "increase-memory-limit"
     targetResource:
@@ -552,9 +552,9 @@ status:
     effectivenessProbability: 0.85
     riskLevel: low
     dependencies: ["rec-001"]  # Also waits for scale
-    
+
   # rec-002 and rec-003 can execute IN PARALLEL after rec-001
-    
+
   - id: "rec-004"
     action: "verify-deployment"
     targetResource:
@@ -586,7 +586,7 @@ spec:
   remediationRequestRef:
     name: payment-api-remediation
     namespace: production
-  
+
   workflowDefinition:
     name: "ai-generated-workflow"
     version: "v1"
@@ -605,7 +605,7 @@ spec:
         maxRetries: 3
         timeout: "5m"
         dependsOn: []  # ✅ Empty - no dependencies
-        
+
       # Step 2: Depends on step 1 (rec-001 → step 1)
       - stepNumber: 2
         name: "restart-pods"
@@ -620,7 +620,7 @@ spec:
         maxRetries: 2
         timeout: "5m"
         dependsOn: [1]  # ✅ rec-001 mapped to step 1
-        
+
       # Step 3: Also depends on step 1 (rec-001 → step 1)
       - stepNumber: 3
         name: "increase-memory-limit"
@@ -644,9 +644,9 @@ spec:
         maxRetries: 3
         timeout: "5m"
         dependsOn: [1]  # ✅ rec-001 mapped to step 1
-        
+
       # Steps 2 and 3 execute IN PARALLEL (both depend only on step 1)
-      
+
       # Step 4: Depends on steps 2 AND 3 (rec-002 → step 2, rec-003 → step 3)
       - stepNumber: 4
         name: "verify-deployment"
@@ -662,11 +662,11 @@ spec:
         maxRetries: 5
         timeout: "2m"
         dependsOn: [2, 3]  # ✅ rec-002 → step 2, rec-003 → step 3
-        
+
     aiRecommendations:
       source: "holmesgpt"
       count: 4
-      
+
   executionStrategy:
     approvalRequired: false
     dryRunFirst: true
@@ -677,12 +677,12 @@ spec:
       enabled: true
     - type: "resource-availability"
       enabled: true
-      
+
 status:
   phase: "executing"
   totalSteps: 4
   currentStep: 2
-  
+
   # Execution plan determined from dependencies
   executionPlan:
     strategy: "parallel-with-dependencies"
@@ -695,30 +695,30 @@ status:
       steps: [2, 3]  # Steps 2 and 3 execute IN PARALLEL
     - batchNumber: 3
       steps: [4]  # Step 4 executes after 2 and 3 complete
-    
+
   stepStatuses:
   - stepNumber: 1
     phase: "completed"
     executionTime: "2m30s"
     kubernetesExecutionRef:
       name: payment-api-workflow-abc123-step-1
-      
+
   - stepNumber: 2
     phase: "running"
     startTime: "2025-10-08T10:05:00Z"
     kubernetesExecutionRef:
       name: payment-api-workflow-abc123-step-2
-      
+
   - stepNumber: 3
     phase: "running"
     startTime: "2025-10-08T10:05:00Z"
     kubernetesExecutionRef:
       name: payment-api-workflow-abc123-step-3
-      
+
   - stepNumber: 4
     phase: "pending"
     # Waiting for steps 2 and 3 to complete
-    
+
   message: "Executing steps 2 and 3 in parallel (batch 2 of 3)"
 ```
 

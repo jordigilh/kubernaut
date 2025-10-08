@@ -1,8 +1,8 @@
 # CRD Data Flow Triage - REVISED: Self-Contained CRD Pattern
 
-**Date**: October 8, 2025  
-**Purpose**: Triage RemediationProcessing CRD to ensure it contains all data needed for self-contained operation  
-**Scope**: Gateway Service → RemediationRequest → RemediationProcessing CRD  
+**Date**: October 8, 2025
+**Purpose**: Triage RemediationProcessing CRD to ensure it contains all data needed for self-contained operation
+**Scope**: Gateway Service → RemediationRequest → RemediationProcessing CRD
 **Architecture Pattern**: **Self-Contained CRDs** (no cross-CRD reads during reconciliation)
 
 ---
@@ -143,83 +143,83 @@ type RemediationProcessingSpec struct {
     // PARENT REFERENCE (Always Required)
     // ========================================
     RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-    
+
     // ========================================
     // SIGNAL IDENTIFICATION (From Gateway)
     // ========================================
-    
+
     // Core identifiers
     SignalFingerprint string `json:"signalFingerprint"` // ✅ HIGH - Correlation
     SignalName        string `json:"signalName"`        // ✅ HIGH - Human context
     Severity          string `json:"severity"`          // ✅ HIGH - Validation
-    
+
     // ========================================
     // RESOURCE TARGETING (From Gateway)
     // ========================================
-    
+
     // Target resource for enrichment
     TargetResource ResourceIdentifier `json:"targetResource"` // ✅ CRITICAL
-    
+
     // Provider-specific context (Kubernetes URLs, etc.)
     ProviderData json.RawMessage `json:"providerData"` // ✅ CRITICAL
-    
+
     // ========================================
     // SIGNAL METADATA (From Gateway)
     // ========================================
-    
+
     // Alert labels and annotations (for classification)
     Labels      map[string]string `json:"labels"`      // ✅ HIGH
     Annotations map[string]string `json:"annotations"` // ✅ HIGH
-    
+
     // Temporal data
     FiringTime   metav1.Time `json:"firingTime"`   // ✅ MEDIUM - Timeout handling
     ReceivedTime metav1.Time `json:"receivedTime"` // ✅ MEDIUM - Latency tracking
-    
+
     // ========================================
     // BUSINESS CONTEXT (From Gateway)
     // ========================================
-    
+
     // Gateway-assigned priority (Rego policy)
     Priority string `json:"priority"` // ✅ MEDIUM - Business criticality (P0/P1/P2)
-    
+
     // Gateway-assigned environment (may be overridden by RemediationProcessor)
     EnvironmentHint string `json:"environmentHint,omitempty"` // ⚠️ MEDIUM - Input for classification
-    
+
     // ========================================
     // CORRELATION CONTEXT (From Gateway)
     // ========================================
-    
+
     // Deduplication context for correlation (BR-AP-061)
     Deduplication DeduplicationContext `json:"deduplication"` // ✅ MEDIUM
-    
+
     // Storm detection context
     IsStorm          bool `json:"isStorm,omitempty"`          // ✅ MEDIUM - Enrichment depth
     StormAlertCount  int  `json:"stormAlertCount,omitempty"`  // ✅ LOW - Prioritization
-    
+
     // ========================================
     // SIGNAL CLASSIFICATION (From Gateway)
     // ========================================
-    
+
     // Signal type (for adaptive behavior)
     SignalType string `json:"signalType"` // ⚠️ LOW - prometheus/kubernetes-event
-    
+
     // Target platform type (V1: always kubernetes)
     TargetType string `json:"targetType"` // ⚠️ LOW - kubernetes/aws/azure
-    
+
     // ========================================
     // FALLBACK DATA (From Gateway)
     // ========================================
-    
+
     // Original payload for degraded mode fallback
     OriginalPayload []byte `json:"originalPayload,omitempty"` // ⚠️ LOW - Degraded mode
-    
+
     // ========================================
     // PROCESSING CONFIGURATION
     // ========================================
-    
+
     // Enrichment configuration
     EnrichmentConfig EnrichmentConfig `json:"enrichmentConfig,omitempty"`
-    
+
     // Environment classification configuration
     EnvironmentClassification EnvironmentClassificationConfig `json:"environmentClassification,omitempty"`
 }
@@ -321,7 +321,7 @@ type KubernetesProviderData struct {
 // RemediationRequestSpec (ENHANCED)
 type RemediationRequestSpec struct {
     // ... existing fields ...
-    
+
     // ✅ ADD: Signal labels and annotations as top-level fields
     SignalLabels      map[string]string `json:"signalLabels,omitempty"`
     SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
@@ -341,7 +341,7 @@ type RemediationRequestSpec struct {
 func (r *RemediationRequestReconciler) createRemediationProcessing(remReq *RemediationRequest) {
     // Parse originalPayload to extract labels/annotations
     labels, annotations := parsePrometheusPayload(remReq.Spec.OriginalPayload)
-    
+
     remProc := &RemediationProcessing{
         Spec: RemediationProcessingSpec{
             Labels:      labels,
@@ -434,17 +434,17 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
     ctx context.Context,
     remReq *remediationv1.RemediationRequest,
 ) (*remediationprocessingv1.RemediationProcessing, error) {
-    
+
     // Parse provider data to extract target resource
     var k8sData KubernetesProviderData
     if err := json.Unmarshal(remReq.Spec.ProviderData, &k8sData); err != nil {
         return nil, fmt.Errorf("failed to parse provider data: %w", err)
     }
-    
+
     // Parse original payload for labels/annotations
     // (IF Gateway doesn't expose them as top-level fields)
     labels, annotations := parseSignalLabels(remReq.Spec.OriginalPayload)
-    
+
     remProc := &remediationprocessingv1.RemediationProcessing{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-processing", remReq.Name),
@@ -459,14 +459,14 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
                 Name:      remReq.Name,
                 Namespace: remReq.Namespace,
             },
-            
+
             // ========================================
             // SIGNAL IDENTIFICATION (HIGH PRIORITY)
             // ========================================
             SignalFingerprint: remReq.Spec.SignalFingerprint,
             SignalName:        remReq.Spec.SignalName,
             Severity:         remReq.Spec.Severity,
-            
+
             // ========================================
             // RESOURCE TARGETING (CRITICAL)
             // ========================================
@@ -476,7 +476,7 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
                 Namespace: k8sData.Resource.Namespace,
             },
             ProviderData: remReq.Spec.ProviderData, // Full JSON for URLs
-            
+
             // ========================================
             // SIGNAL METADATA (HIGH PRIORITY)
             // ========================================
@@ -484,13 +484,13 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
             Annotations:  annotations,
             FiringTime:   remReq.Spec.FiringTime,
             ReceivedTime: remReq.Spec.ReceivedTime,
-            
+
             // ========================================
             // BUSINESS CONTEXT (MEDIUM PRIORITY)
             // ========================================
             Priority:        remReq.Spec.Priority,
             EnvironmentHint: remReq.Spec.Environment, // Gateway's classification as hint
-            
+
             // ========================================
             // CORRELATION CONTEXT (MEDIUM PRIORITY)
             // ========================================
@@ -501,18 +501,18 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
             },
             IsStorm:         remReq.Spec.IsStorm,
             StormAlertCount: remReq.Spec.StormAlertCount,
-            
+
             // ========================================
             // SIGNAL CLASSIFICATION (LOW PRIORITY)
             // ========================================
             SignalType: remReq.Spec.SignalType,
             TargetType: remReq.Spec.TargetType,
-            
+
             // ========================================
             // FALLBACK DATA (LOW PRIORITY)
             // ========================================
             OriginalPayload: remReq.Spec.OriginalPayload,
-            
+
             // ========================================
             // PROCESSING CONFIGURATION
             // ========================================
@@ -527,7 +527,7 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
             },
         },
     }
-    
+
     return remProc, r.Create(ctx, remProc)
 }
 
@@ -555,7 +555,7 @@ func determineEnrichmentDepth(remReq *remediationv1.RemediationRequest) string {
 ```go
 type RemediationRequestSpec struct {
     // ... existing fields ...
-    
+
     // ✅ ADD: Alert labels and annotations (HIGH PRIORITY)
     SignalLabels      map[string]string `json:"signalLabels,omitempty"`
     SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
@@ -574,38 +574,38 @@ type RemediationRequestSpec struct {
 ```go
 type RemediationProcessingSpec struct {
     // ✅ ADD: All fields from "RECOMMENDED SPEC" above
-    
+
     // Core identification
     SignalFingerprint string
     SignalName        string
     Severity         string
-    
+
     // Resource targeting (CRITICAL)
     TargetResource ResourceIdentifier
     ProviderData   json.RawMessage
-    
+
     // Signal metadata
     Labels       map[string]string
     Annotations  map[string]string
     FiringTime   metav1.Time
     ReceivedTime metav1.Time
-    
+
     // Business context
     Priority        string
     EnvironmentHint string
-    
+
     // Correlation context
     Deduplication DeduplicationContext
     IsStorm         bool
     StormAlertCount int
-    
+
     // Signal classification
     SignalType string
     TargetType string
-    
+
     // Fallback data
     OriginalPayload []byte
-    
+
     // ✅ KEEP: Configuration fields
     EnrichmentConfig              EnrichmentConfig
     EnvironmentClassification     EnvironmentClassificationConfig

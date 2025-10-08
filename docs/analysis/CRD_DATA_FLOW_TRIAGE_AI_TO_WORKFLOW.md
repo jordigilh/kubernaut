@@ -1,8 +1,8 @@
 # CRD Data Flow Triage: AIAnalysis → WorkflowExecution
 
-**Date**: October 8, 2025  
-**Purpose**: Triage AIAnalysis CRD status to ensure it provides all data WorkflowExecution needs  
-**Scope**: RemediationOrchestrator creates WorkflowExecution with data snapshot from AIAnalysis.status  
+**Date**: October 8, 2025
+**Purpose**: Triage AIAnalysis CRD status to ensure it provides all data WorkflowExecution needs
+**Scope**: RemediationOrchestrator creates WorkflowExecution with data snapshot from AIAnalysis.status
 **Architecture Pattern**: **Self-Contained CRDs** (no cross-CRD reads during reconciliation)
 
 ---
@@ -52,13 +52,13 @@ WorkflowExecution.spec expects:
 type WorkflowExecutionSpec struct {
     // Parent reference (for audit/lineage only)
     RemediationRequestRef corev1.ObjectReference `json:"alertRemediationRef"`
-    
+
     // CRITICAL: Workflow definition with steps
     WorkflowDefinition WorkflowDefinition `json:"workflowDefinition"`
-    
+
     // Execution configuration
     ExecutionStrategy ExecutionStrategy `json:"executionStrategy"`
-    
+
     // Optional: Runtime optimization
     AdaptiveOrchestration AdaptiveOrchestrationConfig `json:"adaptiveOrchestration,omitempty"`
 }
@@ -100,7 +100,7 @@ From `docs/services/crd-controllers/02-aianalysis/crd-schema.md`:
 ```yaml
 status:
   phase: completed
-  
+
   # Recommendations with dependencies (BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033)
   recommendations:
   - id: "rec-001"  # ✅ Unique identifier for dependency mapping
@@ -228,12 +228,12 @@ func (r *RemediationOrchestratorReconciler) createWorkflowExecution(
     remReq *remediationv1.RemediationRequest,
     aiAnalysis *aianalysisv1.AIAnalysis,
 ) error {
-    
+
     // Validate AIAnalysis status has recommendations
     if len(aiAnalysis.Status.Recommendations) == 0 {
         return fmt.Errorf("AIAnalysis has no recommendations")
     }
-    
+
     workflowExec := &workflowexecutionv1.WorkflowExecution{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-workflow", remReq.Name),
@@ -247,12 +247,12 @@ func (r *RemediationOrchestratorReconciler) createWorkflowExecution(
                 Name:      remReq.Name,
                 Namespace: remReq.Namespace,
             },
-            
+
             // ✅ BUILD workflow from AI recommendations
             WorkflowDefinition: buildWorkflowFromRecommendations(
                 aiAnalysis.Status.Recommendations,
             ),
-            
+
             ExecutionStrategy: workflowexecutionv1.ExecutionStrategy{
                 ApprovalRequired: false, // Already approved at AIAnalysis level
                 DryRunFirst:      true,  // Safety-first
@@ -260,7 +260,7 @@ func (r *RemediationOrchestratorReconciler) createWorkflowExecution(
             },
         },
     }
-    
+
     return r.Create(ctx, workflowExec)
 }
 
@@ -269,13 +269,13 @@ func (r *RemediationOrchestratorReconciler) createWorkflowExecution(
 func buildWorkflowFromRecommendations(
     recommendations []aianalysisv1.Recommendation,
 ) workflowexecutionv1.WorkflowDefinition {
-    
+
     // Step 1: Create mapping from recommendation ID (string) to step number (int)
     idToStepNumber := make(map[string]int)
     for i, rec := range recommendations {
         idToStepNumber[rec.ID] = i + 1  // Step numbers are 1-based
     }
-    
+
     // Step 2: Build workflow steps with dependency mapping
     steps := []workflowexecutionv1.WorkflowStep{}
     for i, rec := range recommendations {
@@ -286,36 +286,36 @@ func buildWorkflowFromRecommendations(
                 dependsOn = append(dependsOn, stepNum)
             }
         }
-        
+
         step := workflowexecutionv1.WorkflowStep{
             StepNumber:   i + 1,
             Name:         rec.Action,
             Action:       rec.Action,
-            
+
             // ⚠️ INFERRED: targetCluster from namespace
             TargetCluster: inferClusterFromNamespace(rec.TargetResource.Namespace),
-            
+
             // ✅ DIRECT COPY: parameters
             Parameters:   convertParameters(rec.Parameters),
-            
+
             // ✅ DERIVED: criticalStep from riskLevel
             CriticalStep: rec.RiskLevel == "high",
-            
+
             // ✅ DERIVED: maxRetries from effectivenessProbability
             MaxRetries:   determineRetries(rec.EffectivenessProbability),
-            
+
             // ⚠️ DEFAULT: timeout (not in AIAnalysis)
             Timeout:      getDefaultTimeout(rec.Action),
-            
+
             // ✅ MAPPED: dependencies
             DependsOn:    dependsOn,
-            
+
             // ⚠️ NULL: rollbackSpec (not in AIAnalysis)
             // WorkflowExecution controller will generate automatic rollback
         }
         steps = append(steps, step)
     }
-    
+
     return workflowexecutionv1.WorkflowDefinition{
         Name:    "ai-generated-workflow",
         Version: "v1",
@@ -356,7 +356,7 @@ func getDefaultTimeout(action string) string {
         "cordon-node":             "1m",
         "drain-node":              "10m",
     }
-    
+
     if timeout, exists := timeouts[action]; exists {
         return timeout
     }
@@ -379,7 +379,7 @@ func calculateAverageConfidence(recommendations []aianalysisv1.Recommendation) f
     if len(recommendations) == 0 {
         return 0.0
     }
-    
+
     sum := 0.0
     for _, rec := range recommendations {
         sum += rec.EffectivenessProbability
@@ -410,15 +410,15 @@ status:
   - id: "rec-001"
     action: "scale-deployment"
     dependencies: []  # No dependencies
-    
+
   - id: "rec-002"
     action: "restart-pods"
     dependencies: ["rec-001"]  # String ID
-    
+
   - id: "rec-003"
     action: "increase-memory-limit"
     dependencies: ["rec-001"]  # String ID
-    
+
   - id: "rec-004"
     action: "verify-deployment"
     dependencies: ["rec-002", "rec-003"]  # Multiple string IDs
@@ -433,15 +433,15 @@ spec:
     - stepNumber: 1
       action: "scale-deployment"
       dependsOn: []  # No dependencies (empty array)
-      
+
     - stepNumber: 2
       action: "restart-pods"
       dependsOn: [1]  # rec-001 → step 1 (integer)
-      
+
     - stepNumber: 3
       action: "increase-memory-limit"
       dependsOn: [1]  # rec-001 → step 1 (integer)
-      
+
     - stepNumber: 4
       action: "verify-deployment"
       dependsOn: [2, 3]  # rec-002 → step 2, rec-003 → step 3 (integers)
@@ -475,7 +475,7 @@ type Recommendation struct {
     SupportingEvidence       []string               `json:"supportingEvidence,omitempty"`
     Constraints              Constraints            `json:"constraints,omitempty"`
     Dependencies             []string               `json:"dependencies,omitempty"`
-    
+
     // ✅ ADD (P2 - Enhancement): Estimated execution duration
     // Used by WorkflowExecution for progress estimation
     EstimatedDuration        string                 `json:"estimatedDuration,omitempty"` // e.g., "2m30s"
@@ -506,7 +506,7 @@ type Recommendation struct {
     Constraints              Constraints            `json:"constraints,omitempty"`
     Dependencies             []string               `json:"dependencies,omitempty"`
     EstimatedDuration        string                 `json:"estimatedDuration,omitempty"`
-    
+
     // ✅ ADD (P2 - Enhancement): AI-suggested rollback action
     // Used by WorkflowExecution for intelligent rollback
     RollbackAction           *RollbackRecommendation `json:"rollbackAction,omitempty"`
