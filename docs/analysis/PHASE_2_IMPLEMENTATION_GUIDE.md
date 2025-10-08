@@ -1,9 +1,9 @@
 # Phase 2 (P1) Implementation Guide: High Priority Enhancements
 
-**Date**: October 8, 2025  
-**Status**: ✅ **APPROVED** - Ready for planning  
-**Estimated Time**: 3 hours  
-**Priority**: HIGH PRIORITY (Recommended for V1)  
+**Date**: October 8, 2025
+**Status**: ✅ **APPROVED** - Ready for planning
+**Estimated Time**: 3 hours
+**Priority**: HIGH PRIORITY (Recommended for V1)
 **Dependencies**: Phase 1 (P0) must be implemented first
 
 ---
@@ -37,9 +37,9 @@ type EnrichmentResults struct {
     OriginalSignal    *OriginalSignal    `json:"originalSignal"`
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
-    
+
     // ❌ MISSING: Monitoring context for signal correlation
-    
+
     EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
 }
 ```
@@ -50,10 +50,10 @@ type EnrichmentResults struct {
     OriginalSignal    *OriginalSignal    `json:"originalSignal"`
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
-    
+
     // ✅ ADD: Monitoring context for correlation
     MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
-    
+
     EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
 }
 
@@ -61,13 +61,13 @@ type EnrichmentResults struct {
 type MonitoringContext struct {
     // Related signals for correlation (e.g., multiple alerts from same pod)
     RelatedSignals []RelatedSignal `json:"relatedSignals,omitempty"`
-    
+
     // Recent metric samples for analysis (optional in V1, populated if available)
     Metrics []MetricSample `json:"metrics,omitempty"`
-    
+
     // Recent log entries for investigation (optional in V1, populated if available)
     Logs []LogEntry `json:"logs,omitempty"`
-    
+
     // Context quality score (0.0-1.0)
     ContextQuality float64 `json:"contextQuality,omitempty"`
 }
@@ -78,10 +78,10 @@ type RelatedSignal struct {
     Fingerprint string `json:"fingerprint"`
     Name        string `json:"name"`
     Severity    string `json:"severity"`
-    
+
     // Temporal context
     FiringTime metav1.Time `json:"firingTime"`
-    
+
     // Correlation metadata
     Labels      map[string]string `json:"labels,omitempty"`
     CorrelationScore float64      `json:"correlationScore,omitempty"` // 0.0-1.0
@@ -92,11 +92,11 @@ type MetricSample struct {
     // Metric identification
     Name      string            `json:"name"`
     Labels    map[string]string `json:"labels,omitempty"`
-    
+
     // Metric value and timestamp
     Value     float64     `json:"value"`
     Timestamp metav1.Time `json:"timestamp"`
-    
+
     // Metric metadata
     Unit        string `json:"unit,omitempty"` // e.g., "bytes", "percent", "count"
     Description string `json:"description,omitempty"`
@@ -107,11 +107,11 @@ type LogEntry struct {
     // Log identification
     Source    string      `json:"source"` // e.g., "pod/payment-api-abc123"
     Timestamp metav1.Time `json:"timestamp"`
-    
+
     // Log content
     Level   string `json:"level"`   // e.g., "ERROR", "WARN", "INFO"
     Message string `json:"message"` // Log message content
-    
+
     // Structured fields (optional)
     Fields map[string]string `json:"fields,omitempty"`
 }
@@ -135,7 +135,7 @@ package remediationprocessing
 import (
     "context"
     "time"
-    
+
     remediationprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
     remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -152,10 +152,10 @@ func (r *RemediationProcessingReconciler) findRelatedSignals(
     ctx context.Context,
     remProcessing *remediationprocessingv1.RemediationProcessing,
 ) ([]remediationprocessingv1.RelatedSignal, error) {
-    
+
     // Query RemediationRequest CRDs for correlation
     var remRequests remediationv1.RemediationRequestList
-    err := r.List(ctx, &remRequests, 
+    err := r.List(ctx, &remRequests,
         client.InNamespace(remProcessing.Namespace),
         client.MatchingLabels{
             "kubernaut.io/target-namespace": remProcessing.Spec.TargetResource.Namespace,
@@ -164,31 +164,31 @@ func (r *RemediationProcessingReconciler) findRelatedSignals(
     if err != nil {
         return nil, err
     }
-    
+
     relatedSignals := []remediationprocessingv1.RelatedSignal{}
     currentTime := time.Now()
     correlationWindow := 15 * time.Minute
-    
+
     for _, remReq := range remRequests.Items {
         // Skip self
         if remReq.Spec.SignalFingerprint == remProcessing.Spec.SignalFingerprint {
             continue
         }
-        
+
         // Check temporal correlation (within 15 minutes)
         firingTime := remReq.Spec.FiringTime.Time
         if currentTime.Sub(firingTime) > correlationWindow {
             continue
         }
-        
+
         // Check resource correlation (same target)
         if !isSameTarget(remReq, remProcessing) {
             continue
         }
-        
+
         // Calculate correlation score (based on label similarity)
         score := calculateCorrelationScore(remReq.Spec.SignalLabels, remProcessing.Spec.SignalLabels)
-        
+
         relatedSignals = append(relatedSignals, remediationprocessingv1.RelatedSignal{
             Fingerprint:      remReq.Spec.SignalFingerprint,
             Name:             remReq.Spec.SignalName,
@@ -198,7 +198,7 @@ func (r *RemediationProcessingReconciler) findRelatedSignals(
             CorrelationScore: score,
         })
     }
-    
+
     return relatedSignals, nil
 }
 
@@ -206,18 +206,18 @@ func isSameTarget(remReq *remediationv1.RemediationRequest, remProcessing *remed
     // Extract target from remReq provider data
     // Compare with remProcessing.Spec.TargetResource
     // For V1: Simple namespace + resource kind/name match
-    
+
     targetNamespace := remReq.Spec.SignalLabels["namespace"]
     if targetNamespace != remProcessing.Spec.TargetResource.Namespace {
         return false
     }
-    
+
     // Check if targeting same resource (e.g., same pod name)
     targetName := remReq.Spec.SignalLabels["pod"]
     if targetName == "" {
         targetName = remReq.Spec.SignalLabels["deployment"]
     }
-    
+
     return targetName == remProcessing.Spec.TargetResource.Name
 }
 
@@ -225,11 +225,11 @@ func calculateCorrelationScore(labels1, labels2 map[string]string) float64 {
     if len(labels1) == 0 || len(labels2) == 0 {
         return 0.0
     }
-    
+
     // Calculate Jaccard similarity: intersection / union
     intersection := 0
     union := len(labels1)
-    
+
     for key, val1 := range labels1 {
         if val2, exists := labels2[key]; exists {
             if val1 == val2 {
@@ -239,18 +239,18 @@ func calculateCorrelationScore(labels1, labels2 map[string]string) float64 {
             union++
         }
     }
-    
+
     // Add labels only in labels2
     for key := range labels2 {
         if _, exists := labels1[key]; !exists {
             union++
         }
     }
-    
+
     if union == 0 {
         return 0.0
     }
-    
+
     return float64(intersection) / float64(union)
 }
 ```
@@ -264,7 +264,7 @@ package remediationprocessing
 
 import (
     "context"
-    
+
     remediationprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
 )
 
@@ -305,7 +305,7 @@ func (p *PrometheusMetricsCollector) CollectMetrics(ctx context.Context, target 
     // - container_memory_usage_bytes{pod="payment-api-abc123"}
     // - container_cpu_usage_seconds{pod="payment-api-abc123"}
     // - kube_pod_status_phase{pod="payment-api-abc123"}
-    
+
     // For V1: Not implemented
     return []remediationprocessingv1.MetricSample{}, nil
 }
@@ -320,7 +320,7 @@ package remediationprocessing
 
 import (
     "context"
-    
+
     remediationprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
 )
 
@@ -347,7 +347,7 @@ type KubernetesLogCollector struct {
 func (k *KubernetesLogCollector) CollectLogs(ctx context.Context, target ResourceTarget, timeWindow TimeWindow, maxLines int) ([]remediationprocessingv1.LogEntry, error) {
     // V2: Query Kubernetes API for pod logs
     // Use: kubectl logs <pod> --since-time=<start> --tail=<maxLines>
-    
+
     // For V1: Not implemented
     return []remediationprocessingv1.LogEntry{}, nil
 }
@@ -362,9 +362,9 @@ func (r *RemediationProcessingReconciler) enrichSignal(
     ctx context.Context,
     remProcessing *remediationprocessingv1.RemediationProcessing,
 ) error {
-    
+
     // ... existing enrichment logic ...
-    
+
     // ✅ ADD: Build monitoring context
     monitoringContext, err := r.buildMonitoringContext(ctx, remProcessing)
     if err != nil {
@@ -374,10 +374,10 @@ func (r *RemediationProcessingReconciler) enrichSignal(
             ContextQuality: 0.0,
         }
     }
-    
+
     // ✅ ADD: Populate monitoring context in status
     remProcessing.Status.EnrichmentResults.MonitoringContext = monitoringContext
-    
+
     return r.Status().Update(ctx, remProcessing)
 }
 
@@ -385,13 +385,13 @@ func (r *RemediationProcessingReconciler) buildMonitoringContext(
     ctx context.Context,
     remProcessing *remediationprocessingv1.RemediationProcessing,
 ) (*remediationprocessingv1.MonitoringContext, error) {
-    
+
     // Find related signals (REQUIRED)
     relatedSignals, err := r.findRelatedSignals(ctx, remProcessing)
     if err != nil {
         return nil, err
     }
-    
+
     // Collect metrics (OPTIONAL in V1)
     target := ResourceTarget{
         Namespace: remProcessing.Spec.TargetResource.Namespace,
@@ -403,13 +403,13 @@ func (r *RemediationProcessingReconciler) buildMonitoringContext(
         End:   time.Now(),
     }
     metrics, _ := r.metricsCollector.CollectMetrics(ctx, target, timeWindow)
-    
+
     // Collect logs (OPTIONAL in V1)
     logs, _ := r.logCollector.CollectLogs(ctx, target, timeWindow, 50) // Last 50 lines
-    
+
     // Calculate context quality
     quality := calculateContextQuality(relatedSignals, metrics, logs)
-    
+
     return &remediationprocessingv1.MonitoringContext{
         RelatedSignals: relatedSignals,
         Metrics:        metrics,
@@ -423,22 +423,22 @@ func calculateContextQuality(relatedSignals []remediationprocessingv1.RelatedSig
     // - Related signals: 0.5 weight
     // - Metrics: 0.3 weight
     // - Logs: 0.2 weight
-    
+
     signalScore := 0.0
     if len(relatedSignals) > 0 {
         signalScore = 1.0
     }
-    
+
     metricScore := 0.0
     if len(metrics) > 0 {
         metricScore = 1.0
     }
-    
+
     logScore := 0.0
     if len(logs) > 0 {
         logScore = 1.0
     }
-    
+
     return (signalScore * 0.5) + (metricScore * 0.3) + (logScore * 0.2)
 }
 ```
@@ -474,9 +474,9 @@ type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
     MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
-    
+
     // ❌ MISSING: Business context for approval policies
-    
+
     EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
 }
 ```
@@ -488,10 +488,10 @@ type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
     MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
-    
+
     // ✅ ADD: Business context for approval policies
     BusinessContext *BusinessContext `json:"businessContext,omitempty"`
-    
+
     EnrichmentQuality float64 `json:"enrichmentQuality,omitempty"`
 }
 
@@ -500,15 +500,15 @@ type BusinessContext struct {
     // Service ownership
     ServiceOwner string `json:"serviceOwner,omitempty"` // e.g., "payments-team"
     ContactInfo  string `json:"contactInfo,omitempty"`  // e.g., "payments-team@company.com"
-    
+
     // Business criticality
     Criticality string `json:"criticality,omitempty"` // e.g., "P0", "P1", "P2", "P3"
     SLA         string `json:"sla,omitempty"`         // e.g., "5m", "15m", "30m", "1h"
-    
+
     // Cost and project metadata
     CostCenter  string `json:"costCenter,omitempty"`  // e.g., "payments-org"
     ProjectName string `json:"projectName,omitempty"` // e.g., "checkout-v2"
-    
+
     // Business impact
     ImpactLevel string `json:"impactLevel,omitempty"` // e.g., "critical", "high", "medium", "low"
 }
@@ -531,7 +531,7 @@ package remediationprocessing
 
 import (
     "context"
-    
+
     remediationprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
     corev1 "k8s.io/api/core/v1"
     "sigs.k8s.io/controller-runtime/pkg/client"
@@ -546,30 +546,30 @@ func (r *RemediationProcessingReconciler) extractBusinessContext(
     ctx context.Context,
     namespace string,
 ) (*remediationprocessingv1.BusinessContext, error) {
-    
+
     // Fetch namespace
     var ns corev1.Namespace
     err := r.Get(ctx, client.ObjectKey{Name: namespace}, &ns)
     if err != nil {
         return nil, err
     }
-    
+
     businessCtx := &remediationprocessingv1.BusinessContext{
         // Extract from namespace labels
         ServiceOwner: ns.Labels["kubernaut.io/owner"],
         Criticality:  ns.Labels["kubernaut.io/criticality"],
         CostCenter:   ns.Labels["kubernaut.io/cost-center"],
         ProjectName:  ns.Labels["kubernaut.io/project"],
-        
+
         // Extract from namespace annotations
         ContactInfo: ns.Annotations["kubernaut.io/contact"],
         SLA:         ns.Annotations["kubernaut.io/sla"],
         ImpactLevel: ns.Annotations["kubernaut.io/impact-level"],
     }
-    
+
     // Try to load additional metadata from ConfigMap (optional)
     businessCtx = r.enrichFromConfigMap(ctx, namespace, businessCtx)
-    
+
     return businessCtx, nil
 }
 
@@ -578,19 +578,19 @@ func (r *RemediationProcessingReconciler) enrichFromConfigMap(
     namespace string,
     businessCtx *remediationprocessingv1.BusinessContext,
 ) *remediationprocessingv1.BusinessContext {
-    
+
     // Try to fetch kubernaut-business-metadata ConfigMap
     var cm corev1.ConfigMap
     err := r.Get(ctx, client.ObjectKey{
         Name:      "kubernaut-business-metadata",
         Namespace: namespace,
     }, &cm)
-    
+
     if err != nil {
         // ConfigMap not found - use namespace metadata only
         return businessCtx
     }
-    
+
     // Override with ConfigMap data if present
     if owner := cm.Data["owner"]; owner != "" {
         businessCtx.ServiceOwner = owner
@@ -613,7 +613,7 @@ func (r *RemediationProcessingReconciler) enrichFromConfigMap(
     if impact := cm.Data["impact-level"]; impact != "" {
         businessCtx.ImpactLevel = impact
     }
-    
+
     return businessCtx
 }
 ```
@@ -627,9 +627,9 @@ func (r *RemediationProcessingReconciler) enrichSignal(
     ctx context.Context,
     remProcessing *remediationprocessingv1.RemediationProcessing,
 ) error {
-    
+
     // ... existing enrichment logic ...
-    
+
     // ✅ ADD: Extract business context
     businessContext, err := r.extractBusinessContext(ctx, remProcessing.Spec.TargetResource.Namespace)
     if err != nil {
@@ -637,10 +637,10 @@ func (r *RemediationProcessingReconciler) enrichSignal(
         // Non-critical: Continue with empty business context
         businessContext = &remediationprocessingv1.BusinessContext{}
     }
-    
+
     // ✅ ADD: Populate business context in status
     remProcessing.Status.EnrichmentResults.BusinessContext = businessContext
-    
+
     return r.Status().Update(ctx, remProcessing)
 }
 ```
@@ -676,7 +676,7 @@ func TestFindRelatedSignals_SameNamespace(t *testing.T) {
     remReq1 := createRemediationRequest("high-memory", "production", "pod/payment-api-abc")
     remReq2 := createRemediationRequest("high-cpu", "production", "pod/payment-api-abc")
     remReq3 := createRemediationRequest("high-memory", "staging", "pod/payment-api-xyz")
-    
+
     remProcessing := &remediationprocessingv1.RemediationProcessing{
         Spec: remediationprocessingv1.RemediationProcessingSpec{
             SignalFingerprint: "high-memory-fingerprint",
@@ -687,10 +687,10 @@ func TestFindRelatedSignals_SameNamespace(t *testing.T) {
             },
         },
     }
-    
+
     relatedSignals, err := findRelatedSignals(ctx, remProcessing)
     require.NoError(t, err)
-    
+
     // Should find remReq2 (same namespace, same target)
     // Should NOT find remReq1 (self)
     // Should NOT find remReq3 (different namespace)
@@ -708,15 +708,15 @@ func TestCalculateCorrelationScore_JaccardSimilarity(t *testing.T) {
         "namespace": "production",
         "pod":       "payment-api-abc",
     }
-    
+
     labels2 := map[string]string{
         "alertname": "HighCPUUsage",
         "namespace": "production",
         "pod":       "payment-api-abc",
     }
-    
+
     score := calculateCorrelationScore(labels1, labels2)
-    
+
     // Intersection: {namespace: production, pod: payment-api-abc} = 2
     // Union: {alertname, namespace, pod} = 3
     // Jaccard: 2/3 = 0.666...
@@ -744,13 +744,13 @@ func TestExtractBusinessContext_FromNamespaceLabels(t *testing.T) {
             },
         },
     }
-    
+
     k8sClient := fake.NewClientBuilder().WithObjects(ns).Build()
     reconciler := &RemediationProcessingReconciler{Client: k8sClient}
-    
+
     businessCtx, err := reconciler.extractBusinessContext(ctx, "production")
     require.NoError(t, err)
-    
+
     assert.Equal(t, "payments-team", businessCtx.ServiceOwner)
     assert.Equal(t, "P0", businessCtx.Criticality)
     assert.Equal(t, "5m", businessCtx.SLA)
@@ -771,7 +771,7 @@ func TestExtractBusinessContext_ConfigMapOverride(t *testing.T) {
             },
         },
     }
-    
+
     cm := &corev1.ConfigMap{
         ObjectMeta: metav1.ObjectMeta{
             Name:      "kubernaut-business-metadata",
@@ -783,13 +783,13 @@ func TestExtractBusinessContext_ConfigMapOverride(t *testing.T) {
             "criticality": "P1",
         },
     }
-    
+
     k8sClient := fake.NewClientBuilder().WithObjects(ns, cm).Build()
     reconciler := &RemediationProcessingReconciler{Client: k8sClient}
-    
+
     businessCtx, err := reconciler.extractBusinessContext(ctx, "production")
     require.NoError(t, err)
-    
+
     // Should use ConfigMap value (override)
     assert.Equal(t, "new-team", businessCtx.ServiceOwner)
     assert.Equal(t, "P1", businessCtx.Criticality)
@@ -817,27 +817,27 @@ func TestEnrichment_MonitoringAndBusinessContext(t *testing.T) {
         },
     }
     k8sClient.Create(ctx, ns)
-    
+
     // Create related signal (for correlation)
     relatedRemReq := createRemediationRequest("high-cpu", "production", "pod/payment-api-abc")
     k8sClient.Create(ctx, relatedRemReq)
-    
+
     // Create main signal
     remReq := createRemediationRequest("high-memory", "production", "pod/payment-api-abc")
     k8sClient.Create(ctx, remReq)
-    
+
     // Wait for RemediationProcessing to complete enrichment
     waitForPhase(t, remReq.Name, "completed")
-    
+
     // Fetch RemediationProcessing
     remProcessing := getRemediationProcessing(t, remReq.Name)
-    
+
     // Verify MonitoringContext
     assert.NotNil(t, remProcessing.Status.EnrichmentResults.MonitoringContext)
     assert.Equal(t, 1, len(remProcessing.Status.EnrichmentResults.MonitoringContext.RelatedSignals))
-    assert.Equal(t, "high-cpu-fingerprint", 
+    assert.Equal(t, "high-cpu-fingerprint",
                  remProcessing.Status.EnrichmentResults.MonitoringContext.RelatedSignals[0].Fingerprint)
-    
+
     // Verify BusinessContext
     assert.NotNil(t, remProcessing.Status.EnrichmentResults.BusinessContext)
     assert.Equal(t, "payments-team", remProcessing.Status.EnrichmentResults.BusinessContext.ServiceOwner)
@@ -963,19 +963,19 @@ func TestEnrichment_MonitoringAndBusinessContext(t *testing.T) {
 // AIAnalysis controller reads MonitoringContext
 if remProcessing.Status.EnrichmentResults.MonitoringContext != nil {
     monCtx := remProcessing.Status.EnrichmentResults.MonitoringContext
-    
+
     // Include related signals in HolmesGPT prompt
     for _, relSignal := range monCtx.RelatedSignals {
         prompt += fmt.Sprintf("Related signal: %s (severity: %s, correlation: %.2f)\n",
                              relSignal.Name, relSignal.Severity, relSignal.CorrelationScore)
     }
-    
+
     // Include metrics if available
     for _, metric := range monCtx.Metrics {
         prompt += fmt.Sprintf("Metric: %s = %.2f %s\n",
                              metric.Name, metric.Value, metric.Unit)
     }
-    
+
     // Include logs if available
     for _, log := range monCtx.Logs {
         prompt += fmt.Sprintf("Log [%s]: %s\n", log.Level, log.Message)
@@ -988,16 +988,16 @@ if remProcessing.Status.EnrichmentResults.MonitoringContext != nil {
 // AIAnalysis controller reads BusinessContext
 if remProcessing.Status.EnrichmentResults.BusinessContext != nil {
     bizCtx := remProcessing.Status.EnrichmentResults.BusinessContext
-    
+
     // Use for approval policy decisions
     if bizCtx.Criticality == "P0" {
         // Require manual approval for P0 services
         aiAnalysis.Spec.RequiresApproval = true
         aiAnalysis.Spec.ApprovalReason = fmt.Sprintf(
-            "P0 service (owner: %s, SLA: %s)", 
+            "P0 service (owner: %s, SLA: %s)",
             bizCtx.ServiceOwner, bizCtx.SLA)
     }
-    
+
     // Use for notification routing
     if bizCtx.ContactInfo != "" {
         // Notify service owner about AI recommendations
@@ -1008,9 +1008,9 @@ if remProcessing.Status.EnrichmentResults.BusinessContext != nil {
 
 ---
 
-**Status**: ✅ **APPROVED** - Ready for implementation after Phase 1  
-**Estimated Duration**: 3 hours  
-**Priority**: HIGH PRIORITY (Recommended for V1)  
-**Dependencies**: Phase 1 must be complete  
+**Status**: ✅ **APPROVED** - Ready for implementation after Phase 1
+**Estimated Duration**: 3 hours
+**Priority**: HIGH PRIORITY (Recommended for V1)
+**Dependencies**: Phase 1 must be complete
 **Next Action**: Wait for Phase 1 completion, then begin Task 1
 

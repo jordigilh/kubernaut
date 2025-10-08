@@ -1,8 +1,8 @@
 # CRD Data Flow Triage: WorkflowExecution → KubernetesExecutor
 
-**Date**: October 8, 2025  
-**Purpose**: Triage WorkflowExecution CRD to ensure it provides all data KubernetesExecutor needs  
-**Scope**: WorkflowExecution Controller creates KubernetesExecution with data from WorkflowExecution steps  
+**Date**: October 8, 2025
+**Purpose**: Triage WorkflowExecution CRD to ensure it provides all data KubernetesExecutor needs
+**Scope**: WorkflowExecution Controller creates KubernetesExecution with data from WorkflowExecution steps
 **Architecture Pattern**: **Self-Contained CRDs** (no cross-CRD reads during reconciliation)
 
 ---
@@ -47,19 +47,19 @@ KubernetesExecution.spec expects:
 type KubernetesExecutionSpec struct {
     // Parent reference (for audit/lineage only)
     WorkflowExecutionRef corev1.ObjectReference `json:"workflowExecutionRef"`
-    
+
     // Step identification
     StepNumber int `json:"stepNumber"`
-    
+
     // CRITICAL: Action and parameters
     Action     string             `json:"action"`
     Parameters *ActionParameters  `json:"parameters"`
-    
+
     // Optional execution configuration
     TargetCluster string          `json:"targetCluster,omitempty"`
     MaxRetries    int              `json:"maxRetries,omitempty"`
     Timeout       metav1.Duration  `json:"timeout,omitempty"`
-    
+
     // Approval flag (set by approval process)
     ApprovalReceived bool `json:"approvalReceived,omitempty"`
 }
@@ -188,7 +188,7 @@ func (r *WorkflowExecutionReconciler) createKubernetesExecution(
     workflowExec *workflowexecutionv1.WorkflowExecution,
     step workflowexecutionv1.WorkflowStep,
 ) error {
-    
+
     k8sExec := &kubernetesexecutionv1.KubernetesExecution{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-step-%d", workflowExec.Name, step.StepNumber),
@@ -204,30 +204,30 @@ func (r *WorkflowExecutionReconciler) createKubernetesExecution(
                 Namespace: workflowExec.Namespace,
                 UID:       workflowExec.UID,
             },
-            
+
             // ✅ DIRECT COPY: Step identification
             StepNumber: step.StepNumber,
-            
+
             // ✅ DIRECT COPY: Action type
             Action: step.Action,
-            
+
             // ✅ TYPE CONVERSION: Parameters
             Parameters: convertStepParametersToActionParameters(step.Parameters),
-            
+
             // ✅ DIRECT COPY: Target cluster
             TargetCluster: step.TargetCluster,
-            
+
             // ✅ DIRECT COPY WITH DEFAULT: Max retries
             MaxRetries: getMaxRetries(step.MaxRetries),
-            
+
             // ✅ TYPE CONVERSION: Timeout
             Timeout: parseTimeout(step.Timeout),
-            
+
             // ⚠️ WORKFLOW LOGIC: Approval flag
             ApprovalReceived: !workflowExec.Spec.ExecutionStrategy.ApprovalRequired,
         },
     }
-    
+
     return r.Create(ctx, k8sExec)
 }
 
@@ -235,14 +235,14 @@ func (r *WorkflowExecutionReconciler) createKubernetesExecution(
 func convertStepParametersToActionParameters(
     stepParams *workflowexecutionv1.StepParameters,
 ) *kubernetesexecutionv1.ActionParameters {
-    
+
     if stepParams == nil {
         return nil
     }
-    
+
     // Both are discriminated unions - map matching fields
     actionParams := &kubernetesexecutionv1.ActionParameters{}
-    
+
     if stepParams.ScaleDeployment != nil {
         actionParams.ScaleDeployment = &kubernetesexecutionv1.ScaleDeploymentParams{
             Deployment: stepParams.ScaleDeployment.Deployment,
@@ -250,14 +250,14 @@ func convertStepParametersToActionParameters(
             Replicas:   stepParams.ScaleDeployment.Replicas,
         }
     }
-    
+
     if stepParams.RestartDeployment != nil {
         actionParams.RolloutRestart = &kubernetesexecutionv1.RolloutRestartParams{
             Deployment: stepParams.RestartDeployment.Deployment,
             Namespace:  stepParams.RestartDeployment.Namespace,
         }
     }
-    
+
     if stepParams.DeletePod != nil {
         actionParams.DeletePod = &kubernetesexecutionv1.DeletePodParams{
             Pod:                stepParams.DeletePod.PodName,
@@ -265,7 +265,7 @@ func convertStepParametersToActionParameters(
             GracePeriodSeconds: parseGracePeriod(stepParams.DeletePod.GracePeriod),
         }
     }
-    
+
     if stepParams.UpdateConfigMap != nil {
         actionParams.UpdateConfigMap = &kubernetesexecutionv1.UpdateConfigMapParams{
             ConfigMap: stepParams.UpdateConfigMap.Name,
@@ -273,13 +273,13 @@ func convertStepParametersToActionParameters(
             Data:      stepParams.UpdateConfigMap.DataUpdates,
         }
     }
-    
+
     if stepParams.CordonNode != nil {
         actionParams.CordonNode = &kubernetesexecutionv1.CordonNodeParams{
             Node: stepParams.CordonNode.NodeName,
         }
     }
-    
+
     if stepParams.DrainNode != nil {
         actionParams.DrainNode = &kubernetesexecutionv1.DrainNodeParams{
             Node:               stepParams.DrainNode.NodeName,
@@ -288,9 +288,9 @@ func convertStepParametersToActionParameters(
             DeleteLocalData:    stepParams.DrainNode.DeleteLocalData,
         }
     }
-    
+
     // ... additional action types ...
-    
+
     return actionParams
 }
 
@@ -307,12 +307,12 @@ func parseTimeout(timeout string) metav1.Duration {
     if timeout == "" {
         return metav1.Duration{Duration: 5 * time.Minute}  // Default: 5m
     }
-    
+
     duration, err := time.ParseDuration(timeout)
     if err != nil {
         return metav1.Duration{Duration: 5 * time.Minute}  // Fallback
     }
-    
+
     return metav1.Duration{Duration: duration}
 }
 
@@ -321,12 +321,12 @@ func parseGracePeriod(gracePeriod string) *int64 {
     if gracePeriod == "" {
         return nil  // Use default
     }
-    
+
     duration, err := time.ParseDuration(gracePeriod)
     if err != nil {
         return nil
     }
-    
+
     seconds := int64(duration.Seconds())
     return &seconds
 }
@@ -336,12 +336,12 @@ func parseGracePeriodSeconds(gracePeriod string) int64 {
     if gracePeriod == "" {
         return 30  // Default: 30 seconds
     }
-    
+
     duration, err := time.ParseDuration(gracePeriod)
     if err != nil {
         return 30  // Fallback
     }
-    
+
     return int64(duration.Seconds())
 }
 ```
@@ -392,29 +392,29 @@ spec:
     name: payment-api-workflow
     namespace: production
     uid: xyz789
-  
+
   # ✅ DIRECT COPY: Step identification
   stepNumber: 2
-  
+
   # ✅ DIRECT COPY: Action type
   action: "scale-deployment"
-  
+
   # ✅ TYPE CONVERSION: Parameters
   parameters:
     scaleDeployment:
       deployment: "payment-api"
       namespace: "production"
       replicas: 5
-  
+
   # ✅ DIRECT COPY: Target cluster
   targetCluster: "production-cluster"
-  
+
   # ✅ DIRECT COPY: Max retries
   maxRetries: 3
-  
+
   # ✅ TYPE CONVERSION: Timeout (string → metav1.Duration)
   timeout: "5m"
-  
+
   # ⚠️ WORKFLOW LOGIC: Approval flag
   approvalReceived: true  # Already approved at workflow level
 
