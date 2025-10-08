@@ -235,7 +235,7 @@ sequenceDiagram
     GW->>ST: Store signal metadata
     GW->>RP: Create RemediationRequest CRD
     GW-->>SRC: 202 Accepted
-    
+
     Note over RP,ORCH: Phase 2: Signal Processing
     ORCH->>RP: Watch RemediationRequest CRD
     RP->>RP: Reconcile: Enrich signal
@@ -243,7 +243,7 @@ sequenceDiagram
     RP->>ST: Query historical patterns
     RP->>AI: Create RemediationProcessing CRD
     RP->>ORCH: Update status: Processing
-    
+
     Note over AI,CTX: Phase 3: AI Analysis & Investigation
     ORCH->>AI: Watch RemediationProcessing CRD
     AI->>AI: Reconcile: Analyze signal
@@ -251,17 +251,17 @@ sequenceDiagram
     CTX->>ST: Query action history
     CTX-->>AI: Historical context
     AI->>HGP: POST /investigate
-    
+
     Note over HGP,K8S: HolmesGPT Investigation (see detailed diagram)
     HGP->>K8S: Query cluster state
     K8S-->>HGP: Cluster data
     HGP->>HGP: AI analysis
     HGP-->>AI: Investigation results + recommendations
-    
+
     AI->>AI: Validate recommendations
     AI->>WF: Create AIAnalysis CRD
     AI->>ORCH: Update status: Analyzed
-    
+
     Note over WF,EX: Phase 4: Workflow Planning
     ORCH->>WF: Watch AIAnalysis CRD
     WF->>WF: Reconcile: Build workflow
@@ -269,7 +269,7 @@ sequenceDiagram
     WF->>WF: Validate safety constraints
     WF->>EX: Create WorkflowExecution CRD
     WF->>ORCH: Update status: Planned
-    
+
     Note over EX,K8S: Phase 5: Kubernetes Execution
     ORCH->>EX: Watch WorkflowExecution CRD
     EX->>EX: Reconcile: Execute actions
@@ -278,7 +278,7 @@ sequenceDiagram
     EX->>ST: Store execution results
     EX->>EX: Create KubernetesExecution CRD
     EX->>ORCH: Update status: Executed
-    
+
     Note over ORCH,ST: Phase 6: Lifecycle Completion
     ORCH->>ORCH: Monitor all CRD statuses
     ORCH->>ORCH: Update RemediationRequest: Complete
@@ -311,38 +311,43 @@ sequenceDiagram
     Note over AI,ST: Investigation Request
     AI->>HGP: POST /api/v1/investigate
     activate HGP
-    
+
     Note over HGP,DTS: Step 1: Load Investigation Tools
     HGP->>DTS: GET /api/v1/toolsets/current
     DTS->>DTS: Load HolmesGPT toolset config
-    DTS-->>HGP: Toolset definition (kubectl, logs, etc)
-    
-    Note over HGP,CTX: Step 2: Gather Historical Context
-    HGP->>CTX: GET /api/v1/context/investigation/{signal_id}
-    CTX->>ST: Query similar incidents
-    CTX->>ST: Query action effectiveness
-    CTX-->>HGP: Historical intelligence
-    
-    Note over HGP,K8S: Step 3: Cluster State Investigation
-    HGP->>K8S: kubectl get pods -n {namespace}
-    K8S-->>HGP: Pod list
-    HGP->>K8S: kubectl describe pod {pod_name}
-    K8S-->>HGP: Pod details
-    HGP->>K8S: kubectl logs {pod_name} --tail=100
-    K8S-->>HGP: Recent logs
-    HGP->>K8S: kubectl get events -n {namespace}
-    K8S-->>HGP: Recent events
-    
-    Note over HGP,LLM: Step 4: AI Analysis
-    HGP->>HGP: Build investigation prompt
-    HGP->>LLM: POST /v1/chat/completions<br/>(cluster state + context)
+    DTS-->>HGP: Toolset definition<br/>(kubectl, context_api, logs, etc)
+
+    Note over HGP,LLM: Step 2: Initial AI Analysis & Tool Planning
+    HGP->>HGP: Build investigation prompt<br/>(signal + available tools)
+    HGP->>LLM: POST /v1/chat/completions<br/>(with tool definitions)
     activate LLM
-    LLM->>LLM: Analyze symptoms
-    LLM->>LLM: Identify root cause
-    LLM->>LLM: Generate recommendations
-    LLM-->>HGP: Analysis results
+    LLM->>LLM: Analyze signal symptoms
+    LLM->>LLM: Decide which tools to use
+    LLM-->>HGP: Tool calls requested<br/>(e.g., get_similar_incidents, get_pods, get_logs)
     deactivate LLM
     
+    Note over HGP,CTX: Step 3: Execute LLM-Requested Tools
+    HGP->>CTX: Execute tool: get_similar_incidents({description})
+    CTX->>ST: Query similar incidents
+    CTX-->>HGP: Similar incidents + patterns
+    HGP->>CTX: Execute tool: get_success_rate({action_type})
+    CTX->>ST: Query action effectiveness
+    CTX-->>HGP: Historical success rates
+    HGP->>K8S: Execute tool: kubectl get pods -n {namespace}
+    K8S-->>HGP: Pod list
+    HGP->>K8S: Execute tool: kubectl logs {pod_name}
+    K8S-->>HGP: Pod logs
+    
+    Note over HGP,LLM: Step 4: Final AI Analysis with Tool Results
+    HGP->>LLM: POST /v1/chat/completions<br/>(tool results)
+    activate LLM
+    LLM->>LLM: Analyze all tool results
+    LLM->>LLM: Correlate historical + current data
+    LLM->>LLM: Identify root cause
+    LLM->>LLM: Generate recommendations
+    LLM-->>HGP: Investigation results
+    deactivate LLM
+
     Note over HGP,ST: Step 5: Validate & Store
     HGP->>HGP: Validate recommendations
     HGP->>HGP: Apply safety constraints
@@ -358,10 +363,19 @@ sequenceDiagram
 
 **Investigation Capabilities**:
 - **Dynamic Toolsets**: HolmesGPT tools configured via Dynamic Toolset service
-- **Historical Intelligence**: Context API provides similar incident patterns
-- **Multi-Source Data**: Combines cluster state, logs, events, metrics
-- **AI-Powered Analysis**: LLM analyzes symptoms and recommends actions
+- **LLM-Driven Tool Selection**: LLM decides which investigation tools to use based on signal symptoms
+- **Adaptive Context Fetching**: LLM requests specific historical data from Context API as needed
+- **Iterative Investigation**: LLM requests tools → HolmesGPT executes → LLM analyzes results
+- **Multi-Source Data**: Combines historical context, cluster state, logs, events, metrics
+- **AI-Powered Root Cause Analysis**: LLM correlates historical + current data to identify root cause
 - **Safety Validation**: All recommendations validated before execution
+
+**Key Design**: The LLM uses **function calling** to request specific investigation tools dynamically, including:
+- **Kubernetes Tools**: `get_pods`, `get_logs`, `get_events` (current cluster state)
+- **Context API Tools**: `get_similar_incidents`, `get_success_rate`, `get_environment_constraints` (historical intelligence)
+- **Adaptive Strategy**: LLM decides which tools to use and when, rather than pre-fetching all context upfront
+
+This allows the investigation to adapt based on the signal type and initial findings, fetching only the historical context actually needed.
 
 ---
 
