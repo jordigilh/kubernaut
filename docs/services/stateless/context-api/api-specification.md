@@ -13,10 +13,11 @@
 2. [Authentication](#authentication)
 3. [Environment Context API](#environment-context-api)
 4. [Historical Query API](#historical-query-api)
-5. [Success Rate API](#success-rate-api)
-6. [Pattern Matching API](#pattern-matching-api)
-7. [Health & Metrics](#health--metrics)
-8. [Error Responses](#error-responses)
+5. [Recovery Context API](#recovery-context-api) ← **NEW (BR-WF-RECOVERY-011)**
+6. [Success Rate API](#success-rate-api)
+7. [Pattern Matching API](#pattern-matching-api)
+8. [Health & Metrics](#health--metrics)
+9. [Error Responses](#error-responses)
 
 ---
 
@@ -401,6 +402,271 @@ func (h *HistoricalQueryHandler) GetHistoricalPatterns(w http.ResponseWriter, r 
     )
 }
 ```
+
+---
+
+## Recovery Context API
+
+> **📋 Design Decision: DD-001 - Alternative 2**
+> **Consumer**: RemediationProcessing Controller (NOT Remediation Orchestrator)
+> **Status**: ✅ Approved Design | **Confidence**: 95%
+> **See**: [DD-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
+
+### Get Remediation Recovery Context
+
+**Purpose**: Retrieve historical context for workflow failure recovery analysis
+**Business Requirement**: BR-WF-RECOVERY-011
+**Consumer**: RemediationProcessing Controller (DD-001: Alternative 2)
+**Design Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Version 1.2)
+
+#### Overview
+
+When a workflow fails and Remediation Orchestrator creates a recovery RemediationProcessing CRD, the **RemediationProcessing Controller** queries this endpoint to retrieve historical context about previous failures, related alerts, historical patterns, and successful strategies. This context is stored in `RemediationProcessing.status.enrichmentResults.recoveryContext` (Alternative 2 pattern), then copied to AIAnalysis CRD spec by Remediation Orchestrator, enabling the AIAnalysis controller to generate alternative remediation strategies with complete temporal consistency.
+
+#### Request
+
+```http
+GET /api/v1/context/remediation/{remediationRequestId}
+Authorization: Bearer {service_account_token}
+```
+
+**Path Parameters**:
+- `remediationRequestId` (string, required): RemediationRequest CRD name (e.g., "rr-2025-001")
+
+**Example**:
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://context-api.kubernaut-system:8080/api/v1/context/remediation/rr-2025-001
+```
+
+#### Response (200 OK)
+
+```json
+{
+  "remediationRequestId": "rr-2025-001",
+  "currentAttempt": 2,
+  "contextQuality": "complete",
+  "previousFailures": [
+    {
+      "workflowRef": "workflow-001",
+      "attemptNumber": 1,
+      "failedStep": 3,
+      "action": "scale-deployment",
+      "errorType": "timeout",
+      "failureReason": "Operation timed out after 5m",
+      "duration": "5m3s",
+      "clusterState": {
+        "deployment_replicas": 2,
+        "pod_status": "CrashLoopBackOff",
+        "memory_usage": "89%"
+      },
+      "resourceSnapshot": {
+        "deployment_name": "payment-api",
+        "namespace": "production",
+        "current_replicas": 2,
+        "desired_replicas": 5
+      },
+      "timestamp": "2025-10-08T09:55:12Z"
+    }
+  ],
+  "relatedAlerts": [
+    {
+      "alertFingerprint": "alert-fp-456",
+      "alertName": "HighMemoryUsage",
+      "correlation": 0.87,
+      "timestamp": "2025-10-08T09:50:00Z"
+    },
+    {
+      "alertFingerprint": "alert-fp-789",
+      "alertName": "PodCrashLooping",
+      "correlation": 0.92,
+      "timestamp": "2025-10-08T09:52:30Z"
+    }
+  ],
+  "historicalPatterns": [
+    {
+      "pattern": "scale_timeout_on_crashloop",
+      "occurrences": 12,
+      "successRate": 0.25,
+      "averageRecoveryTime": "8m30s"
+    },
+    {
+      "pattern": "memory_pressure_scaling_delay",
+      "occurrences": 8,
+      "successRate": 0.38,
+      "averageRecoveryTime": "6m15s"
+    }
+  ],
+  "successfulStrategies": [
+    {
+      "strategy": "restart_pods_before_scale",
+      "description": "Restart stuck pods before attempting to scale deployment",
+      "successCount": 15,
+      "lastUsed": "2025-10-07T14:23:00Z",
+      "confidence": 0.85
+    },
+    {
+      "strategy": "incremental_scale_with_health_check",
+      "description": "Scale up one replica at a time with health checks between",
+      "successCount": 22,
+      "lastUsed": "2025-10-08T08:10:00Z",
+      "confidence": 0.91
+    }
+  ]
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `remediationRequestId` | string | RemediationRequest CRD name |
+| `currentAttempt` | integer | Current recovery attempt number |
+| `contextQuality` | string | Quality indicator: "complete", "partial", "minimal" |
+| `previousFailures` | array | List of previous workflow failure details |
+| `previousFailures[].workflowRef` | string | Failed WorkflowExecution CRD name |
+| `previousFailures[].attemptNumber` | integer | Recovery attempt number (1, 2, 3) |
+| `previousFailures[].failedStep` | integer | Step index that failed (0-based) |
+| `previousFailures[].action` | string | Action type that failed (e.g., "scale-deployment") |
+| `previousFailures[].errorType` | string | Classified error type ("timeout", "permission_denied", etc.) |
+| `previousFailures[].failureReason` | string | Human-readable failure reason |
+| `previousFailures[].duration` | string | How long the step ran before failing |
+| `previousFailures[].clusterState` | object | Cluster state snapshot at failure time |
+| `previousFailures[].resourceSnapshot` | object | Target resource state at failure time |
+| `previousFailures[].timestamp` | string | ISO 8601 timestamp of failure |
+| `relatedAlerts` | array | Alerts correlated with this remediation |
+| `relatedAlerts[].alertFingerprint` | string | Unique alert identifier |
+| `relatedAlerts[].alertName` | string | Alert name |
+| `relatedAlerts[].correlation` | float | Correlation score (0.0-1.0) |
+| `relatedAlerts[].timestamp` | string | Alert timestamp |
+| `historicalPatterns` | array | Historical failure patterns for this alert type |
+| `historicalPatterns[].pattern` | string | Pattern name |
+| `historicalPatterns[].occurrences` | integer | How many times this pattern occurred |
+| `historicalPatterns[].successRate` | float | Success rate for this pattern (0.0-1.0) |
+| `historicalPatterns[].averageRecoveryTime` | string | Average time to recover |
+| `successfulStrategies` | array | Successful recovery strategies for similar failures |
+| `successfulStrategies[].strategy` | string | Strategy name |
+| `successfulStrategies[].description` | string | Strategy description |
+| `successfulStrategies[].successCount` | integer | Times this strategy succeeded |
+| `successfulStrategies[].lastUsed` | string | Last time strategy was used |
+| `successfulStrategies[].confidence` | float | Confidence score (0.0-1.0) |
+
+#### Context Quality Levels
+
+| Quality | Description | Data Completeness |
+|---------|-------------|-------------------|
+| `complete` | Full historical context available | All fields populated |
+| `partial` | Some historical data available | previousFailures or relatedAlerts missing |
+| `minimal` | Limited context available | Only basic failure info available |
+| `degraded` | Context API failed, fallback data | Built from WorkflowExecutionRefs |
+
+#### Error Responses
+
+**404 Not Found** - RemediationRequest not found:
+```json
+{
+  "error": "RemediationRequest not found",
+  "remediationRequestId": "rr-2025-001",
+  "message": "No remediation request found with ID rr-2025-001"
+}
+```
+
+**503 Service Unavailable** - Context API temporarily unavailable:
+```json
+{
+  "error": "Context API temporarily unavailable",
+  "message": "Vector database connection failed",
+  "fallback": "Use Remediation Orchestrator fallback context"
+}
+```
+
+#### Graceful Degradation (BR-WF-RECOVERY-011)
+
+**Critical Requirement**: If Context API is unavailable, Remediation Orchestrator MUST proceed with fallback context (don't fail).
+
+**Fallback Strategy** (implemented in Remediation Orchestrator):
+1. Extract previous failures from `RemediationRequest.status.workflowExecutionRefs`
+2. Create minimal `HistoricalContext` with `contextQuality: "degraded"`
+3. Embed fallback context in AIAnalysis CRD spec
+4. Log warning and emit event
+5. Continue recovery flow
+
+**Example Fallback Context**:
+```json
+{
+  "contextQuality": "degraded",
+  "previousFailures": [
+    {
+      "workflowRef": "workflow-001",
+      "attemptNumber": 1,
+      "failedStep": 3,
+      "failureReason": "timeout",
+      "timestamp": "2025-10-08T09:55:12Z"
+    }
+  ],
+  "relatedAlerts": [],
+  "historicalPatterns": [],
+  "successfulStrategies": []
+}
+```
+
+#### Usage Example (Remediation Orchestrator)
+
+```go
+// Query Context API and handle graceful degradation
+func (r *RemediationRequestReconciler) getHistoricalContext(
+    ctx context.Context,
+    remediation *RemediationRequest,
+) *HistoricalContext {
+
+    // Attempt to fetch from Context API
+    contextResp, err := r.ContextAPIClient.GetRemediationContext(ctx, remediation.Name)
+
+    if err != nil {
+        // Graceful degradation: build fallback context
+        log.Warn("Context API unavailable, using fallback context",
+            "error", err,
+            "remediationRequest", remediation.Name)
+
+        r.Recorder.Event(remediation, "Warning", "ContextAPIUnavailable",
+            "Using fallback context from WorkflowExecutionRefs")
+
+        return r.buildFallbackContext(remediation)
+    }
+
+    // Success: convert to embeddable format
+    return r.convertToEmbeddableContext(contextResp)
+}
+```
+
+#### Database Queries
+
+Context API executes the following queries to build the response:
+
+1. **Previous Failures**: Query `workflow_executions` table filtered by `remediation_request_id`
+2. **Related Alerts**: Query `alert_correlations` table with semantic search
+3. **Historical Patterns**: Query `failure_patterns` table filtered by `alert_name`
+4. **Successful Strategies**: Query `remediation_strategies` table ordered by `success_count`
+
+**Query Performance**: Target <500ms for 95th percentile
+
+#### Metrics
+
+Context API tracks the following metrics for this endpoint:
+
+```
+context_api_recovery_requests_total{status="success|error"}
+context_api_recovery_request_duration_seconds{quantile="0.5|0.95|0.99"}
+context_api_recovery_context_quality{quality="complete|partial|minimal"}
+context_api_recovery_previous_failures_count (histogram)
+```
+
+#### Related Documentation
+
+- **Design Decision**: [`OPTION_B_IMPLEMENTATION_SUMMARY.md`](../../../architecture/OPTION_B_IMPLEMENTATION_SUMMARY.md)
+- **Remediation Orchestrator Integration**: [`05-remediationorchestrator/OPTION_B_CONTEXT_API_INTEGRATION.md`](../../crd-controllers/05-remediationorchestrator/OPTION_B_CONTEXT_API_INTEGRATION.md)
+- **Business Requirements**: BR-WF-RECOVERY-011 in `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md`
+- **Sequence Diagram**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
 
 ---
 

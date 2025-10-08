@@ -39,6 +39,34 @@ type RemediationProcessingSpec struct {
 
     // EnvironmentClassification config for namespace classification
     EnvironmentClassification EnvironmentClassificationConfig `json:"environmentClassification,omitempty"`
+
+    // ========================================
+    // RECOVERY FIELDS (DD-001: Alternative 2)
+    // 📋 Design Decision: DD-001 | ✅ Approved Design
+    // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+    // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Version 1.2)
+    // See: BR-WF-RECOVERY-011 (Context API integration requirement)
+    // ========================================
+
+    // IsRecoveryAttempt indicates this is a recovery attempt (not initial processing)
+    // When true, RemediationProcessing will enrich with Context API recovery context (BR-WF-RECOVERY-011)
+    IsRecoveryAttempt bool `json:"isRecoveryAttempt,omitempty"`
+
+    // RecoveryAttemptNumber tracks which recovery attempt this is (1, 2, 3)
+    RecoveryAttemptNumber int `json:"recoveryAttemptNumber,omitempty"`
+
+    // FailedWorkflowRef references the WorkflowExecution that failed
+    FailedWorkflowRef *corev1.LocalObjectReference `json:"failedWorkflowRef,omitempty"`
+
+    // FailedStep indicates which workflow step failed (0-based index)
+    FailedStep *int `json:"failedStep,omitempty"`
+
+    // FailureReason contains the human-readable failure reason
+    FailureReason *string `json:"failureReason,omitempty"`
+
+    // OriginalProcessingRef references the initial RemediationProcessing CRD
+    // (for audit trail - links recovery attempts back to original)
+    OriginalProcessingRef *corev1.LocalObjectReference `json:"originalProcessingRef,omitempty"`
 }
 
 // Alert represents the alert data from Prometheus/Grafana
@@ -91,6 +119,12 @@ type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
     EnrichmentQuality float64            `json:"enrichmentQuality,omitempty"` // 0.0-1.0
+
+    // RecoveryContext contains historical failure context from Context API
+    // Only populated when IsRecoveryAttempt = true (BR-WF-RECOVERY-011)
+    // Design Decision: DD-001 - Alternative 2 (RP enriches ALL contexts)
+    // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+    RecoveryContext *RecoveryContext `json:"recoveryContext,omitempty"`
 }
 
 // KubernetesContext contains Kubernetes resource context (~8KB typical size)
@@ -203,6 +237,68 @@ type HistoricalContext struct {
     // Historical success rate
     LastSuccessfulResolution string  `json:"lastSuccessfulResolution,omitempty"`
     ResolutionSuccessRate    float64 `json:"resolutionSuccessRate"` // 0.0-1.0
+}
+
+// RecoveryContext contains historical failure context from Context API
+// Populated by RemediationProcessing Controller when IsRecoveryAttempt = true
+// See: BR-WF-RECOVERY-011, Alternative 2 Design
+type RecoveryContext struct {
+    // Context quality indicator
+    ContextQuality string `json:"contextQuality"` // "complete", "partial", "minimal", "degraded"
+
+    // Previous workflow failures for this remediation
+    PreviousFailures []PreviousFailure `json:"previousFailures,omitempty"`
+
+    // Related alerts correlated with this remediation
+    RelatedAlerts []RelatedAlert `json:"relatedAlerts,omitempty"`
+
+    // Historical failure patterns for this alert type
+    HistoricalPatterns []HistoricalPattern `json:"historicalPatterns,omitempty"`
+
+    // Successful recovery strategies from similar failures
+    SuccessfulStrategies []SuccessfulStrategy `json:"successfulStrategies,omitempty"`
+
+    // When this context was retrieved
+    RetrievedAt metav1.Time `json:"retrievedAt"`
+}
+
+// PreviousFailure describes a previous workflow execution failure
+type PreviousFailure struct {
+    WorkflowRef    string      `json:"workflowRef"`              // Failed WorkflowExecution name
+    AttemptNumber  int         `json:"attemptNumber"`            // 1, 2, 3
+    FailedStep     int         `json:"failedStep"`               // Which step failed (0-based)
+    Action         string      `json:"action"`                   // Action type (e.g., "scale-deployment")
+    ErrorType      string      `json:"errorType"`                // Classified error ("timeout", "permission_denied", etc.)
+    FailureReason  string      `json:"failureReason"`            // Human-readable reason
+    Duration       string      `json:"duration"`                 // How long before failure (e.g., "5m3s")
+    Timestamp      metav1.Time `json:"timestamp"`                // When it failed
+    ClusterState   map[string]string `json:"clusterState,omitempty"`   // Cluster state at failure
+    ResourceSnapshot map[string]string `json:"resourceSnapshot,omitempty"` // Target resource state
+}
+
+// RelatedAlert describes alerts correlated with this remediation
+type RelatedAlert struct {
+    AlertFingerprint string      `json:"alertFingerprint"`  // Unique alert identifier
+    AlertName        string      `json:"alertName"`         // Alert name
+    Correlation      float64     `json:"correlation"`       // Correlation score (0.0-1.0)
+    Timestamp        metav1.Time `json:"timestamp"`         // Alert timestamp
+}
+
+// HistoricalPattern describes failure patterns for this alert type
+type HistoricalPattern struct {
+    Pattern             string  `json:"pattern"`                    // Pattern name (e.g., "scale_timeout_on_crashloop")
+    Occurrences         int     `json:"occurrences"`                // How many times seen
+    SuccessRate         float64 `json:"successRate"`                // Success rate for this pattern (0.0-1.0)
+    AverageRecoveryTime string  `json:"averageRecoveryTime"`        // Average time to recover (e.g., "8m30s")
+}
+
+// SuccessfulStrategy describes successful recovery strategies
+type SuccessfulStrategy struct {
+    Strategy     string      `json:"strategy"`       // Strategy name (e.g., "restart_pods_before_scale")
+    Description  string      `json:"description"`    // Strategy description
+    SuccessCount int         `json:"successCount"`   // Times this strategy succeeded
+    LastUsed     metav1.Time `json:"lastUsed"`       // Last time strategy was used
+    Confidence   float64     `json:"confidence"`     // Confidence score (0.0-1.0)
 }
 
 // EnvironmentClassification result
