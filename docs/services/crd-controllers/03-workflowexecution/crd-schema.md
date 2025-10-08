@@ -136,8 +136,37 @@ type WorkflowExecutionStatus struct {
     FailureReason string `json:"failureReason,omitempty"`
     RollbackReason string `json:"rollbackReason,omitempty"`
 
+    // ========================================
+    // RECOVERY TRACKING FIELDS (Alternative 2)
+    // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md
+    // ========================================
+
+    // FailedStep tracks which workflow step failed (0-based index)
+    // Used by RemediationOrchestrator to create recovery context
+    FailedStep *int `json:"failedStep,omitempty"`
+
+    // FailedAction tracks the action type that failed (e.g., "scale_deployment", "restart_pod")
+    // Helps recovery analysis understand what was attempted
+    FailedAction *string `json:"failedAction,omitempty"`
+
+    // ErrorType classifies the error for recovery decision-making
+    // Values: "timeout", "resource_conflict", "insufficient_permissions", "validation_error"
+    ErrorType *string `json:"errorType,omitempty"`
+
+    // ExecutionSnapshot captures cluster state at failure time
+    // Used as fallback context if Context API unavailable during recovery
+    ExecutionSnapshot *ExecutionSnapshot `json:"executionSnapshot,omitempty"`
+
     // Conditions for status tracking
     Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// ExecutionSnapshot captures workflow state at failure for recovery context
+type ExecutionSnapshot struct {
+    CompletedSteps   []int                  `json:"completedSteps"`   // Successfully completed step indices
+    CurrentStep      int                    `json:"currentStep"`      // Step that failed
+    ClusterState     map[string]interface{} `json:"clusterState"`     // Relevant resource states
+    ResourceSnapshot map[string]interface{} `json:"resourceSnapshot"` // Target resource state before failure
 }
 
 // ExecutionPlan generated during planning phase
