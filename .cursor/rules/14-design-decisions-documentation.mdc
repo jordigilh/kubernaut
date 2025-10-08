@@ -1,0 +1,458 @@
+---
+globs: "docs/**/*,internal/**/*.go,pkg/**/*.go,cmd/**/*.go,*.md"
+description: "Design Decision Documentation (DD-XXX) standards for architectural choices"
+---
+
+# Design Decision Documentation Standards
+
+## 🎯 **Purpose**
+
+This rule ensures **all major architectural decisions** are documented using the DD-XXX format with clear rationale, alternatives considered, and consequences. This provides:
+- Historical context for "why" decisions were made
+- Alternatives considered and rejected
+- Guidance for future design reviews
+- Onboarding support for new developers
+
+**Related Rules**:
+- [06-documentation-standards.mdc](mdc:.cursor/rules/06-documentation-standards.mdc) - General documentation standards
+- [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - APDC methodology (Analysis includes decision documentation)
+
+---
+
+## 📋 **When to Create a Design Decision (DD-XXX)**
+
+### **MANDATORY**: Document These Decisions
+
+Create a DD-XXX entry when making decisions about:
+
+1. **Architecture Patterns**
+   - New CRD interaction patterns
+   - Data flow between controllers
+   - Integration point designs
+   - State management approaches
+
+2. **Technology Choices**
+   - Framework selections (when alternatives exist)
+   - Library adoptions with architectural impact
+   - Infrastructure components (databases, message queues)
+   - Testing framework decisions
+
+3. **Business Logic Patterns**
+   - Error handling strategies
+   - Recovery mechanisms
+   - Validation approaches
+   - Data enrichment patterns
+
+4. **Performance Trade-offs**
+   - Caching strategies
+   - Batch vs. real-time processing
+   - Resource allocation patterns
+   - Optimization approaches
+
+### **NOT REQUIRED**: Skip DD-XXX for These
+
+**Do NOT create DD-XXX for**:
+- Obvious technology choices (Go for K8s controllers, Kubernetes for orchestration)
+- Standard practices (REST APIs, semantic versioning)
+- Tactical implementation details without alternatives
+- Decisions that are easily reversible
+- Changes to deprecated/legacy code
+
+---
+
+## 🚨 **AI ASSISTANT ENFORCEMENT PROTOCOL**
+
+### **BLOCKING REQUIREMENT - BEFORE IMPLEMENTING ARCHITECTURAL DECISIONS**
+
+When user requests or AI proposes a significant architectural change, AI MUST:
+
+#### **CHECKPOINT DD: Design Decision Validation**
+
+**AI MUST execute this validation sequence:**
+
+```
+✅ DESIGN DECISION CHECKPOINT:
+- [ ] Searched for similar architectural patterns (codebase_search executed) ✅/❌
+- [ ] Identified 2-3 alternative approaches ✅/❌
+- [ ] Presented alternatives to user for approval ✅/❌
+- [ ] User approved specific approach ✅/❌
+- [ ] DD-XXX entry created in DESIGN_DECISIONS.md ✅/❌
+- [ ] DD-XXX referenced in implementation docs ✅/❌
+- [ ] DD-XXX referenced in code comments ✅/❌
+
+❌ STOP: Cannot implement architectural change until ALL checkboxes are ✅
+```
+
+#### **Validation Steps**
+
+**Step 1: Discovery (REQUIRED)**
+```bash
+# AI must search for existing patterns
+codebase_search "existing [pattern] implementations"
+grep -r "[ArchitecturalPattern]" docs/architecture/ docs/services/
+```
+
+**Step 2: Alternatives Analysis (REQUIRED)**
+AI must present to user:
+- **Alternative 1**: [Approach A with pros/cons]
+- **Alternative 2**: [Approach B with pros/cons]
+- **Alternative 3**: [Approach C with pros/cons]
+- **Recommendation**: [Preferred approach with confidence %]
+
+**Step 3: User Approval (REQUIRED)**
+Wait for explicit user approval before implementing.
+
+**Step 4: DD-XXX Creation (REQUIRED)**
+Create entry in `docs/architecture/DESIGN_DECISIONS.md` using template below.
+
+**Step 5: Reference in Code (REQUIRED)**
+Add DD-XXX references in:
+- Implementation documentation
+- Code comments for key functions
+- CRD schema comments
+- Controller reconciliation logic
+
+---
+
+## 📝 **DD-XXX Documentation Template**
+
+### **Location**: `docs/architecture/DESIGN_DECISIONS.md`
+
+When creating a new DD-XXX, use this template:
+
+```markdown
+## DD-XXX: [Decision Title]
+
+### Status
+**[Status Emoji] [Status]** (YYYY-MM-DD)
+**Last Reviewed**: YYYY-MM-DD
+**Confidence**: XX%
+
+### Context & Problem
+[What problem are we solving? Why does it matter?]
+
+**Key Requirements**:
+- Requirement 1
+- Requirement 2
+- Requirement 3
+
+### Alternatives Considered
+
+#### Alternative 1: [Approach A]
+**Approach**: [Brief description]
+
+**Pros**:
+- ✅ Benefit 1
+- ✅ Benefit 2
+
+**Cons**:
+- ❌ Trade-off 1
+- ❌ Trade-off 2
+
+**Confidence**: XX% (approved/rejected)
+
+---
+
+#### Alternative 2: [Approach B]
+**Approach**: [Brief description]
+
+**Pros**:
+- ✅ Benefit 1
+- ✅ Benefit 2
+
+**Cons**:
+- ❌ Trade-off 1
+- ❌ Trade-off 2
+
+**Confidence**: XX% (approved/rejected)
+
+---
+
+#### Alternative 3: [Approach C]
+**Approach**: [Brief description]
+
+**Pros**:
+- ✅ Benefit 1
+- ✅ Benefit 2
+
+**Cons**:
+- ❌ Trade-off 1
+- ❌ Trade-off 2
+
+**Confidence**: XX% (approved/rejected)
+
+---
+
+### Decision
+
+**APPROVED: Alternative X** - [Approach Name]
+
+**Rationale**:
+1. **Key Reason 1**: [Explanation]
+2. **Key Reason 2**: [Explanation]
+3. **Key Reason 3**: [Explanation]
+
+**Key Insight**: [Critical insight that drove the decision]
+
+### Implementation
+
+**Primary Implementation Files**:
+- [File 1 path and description]
+- [File 2 path and description]
+- [File 3 path and description]
+
+**Data Flow**:
+1. Step 1 description
+2. Step 2 description
+3. Step 3 description
+
+**Graceful Degradation** (if applicable):
+[How system behaves when components fail]
+
+### Consequences
+
+**Positive**:
+- ✅ Benefit 1
+- ✅ Benefit 2
+- ✅ Benefit 3
+
+**Negative**:
+- ⚠️ Trade-off 1 - **Mitigation**: [How we address this]
+- ⚠️ Trade-off 2 - **Mitigation**: [How we address this]
+
+**Neutral**:
+- 🔄 Impact 1
+- 🔄 Impact 2
+
+### Validation Results
+
+**Confidence Assessment Progression**:
+- Initial assessment: XX% confidence
+- After analysis: XX% confidence
+- After implementation review: XX% confidence
+
+**Key Validation Points**:
+- ✅ Validation 1
+- ✅ Validation 2
+- ✅ Validation 3
+
+### Related Decisions
+- **Supersedes**: [Previous DD-XXX if applicable]
+- **Builds On**: [Related DD-XXX]
+- **Supports**: [Business requirements BR-XXX-XXX]
+
+### Review & Evolution
+
+**When to Revisit**:
+- If [condition 1]
+- If [condition 2]
+- If [condition 3]
+
+**Success Metrics**:
+- Metric 1: Target value
+- Metric 2: Target value
+- Metric 3: Target value
+```
+
+---
+
+## 💻 **Code Comment Standards for DD-XXX References**
+
+### **Format for Go Code Comments**
+
+```go
+// ========================================
+// [Component Name] (DD-XXX)
+// 📋 Design Decision: DD-XXX | ✅ Approved Design | Confidence: XX%
+// See: docs/architecture/DESIGN_DECISIONS.md#dd-xxx-decision-title
+// ========================================
+//
+// [Brief explanation of why this approach was chosen]
+//
+// WHY DD-XXX?
+// - ✅ Key benefit 1
+// - ✅ Key benefit 2
+// - ✅ Key benefit 3
+//
+// [Optional: Trade-offs accepted]
+// ⚠️ Trade-off 1 - Mitigation: [explanation]
+// ========================================
+```
+
+### **Example: Recovery Context Enrichment (DD-001)**
+
+```go
+// ========================================
+// RECOVERY CONTEXT ENRICHMENT (DD-001)
+// 📋 Design Decision: DD-001 | ✅ Approved Design | Confidence: 95%
+// See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+// ========================================
+//
+// RemediationProcessing Controller enriches ALL contexts for recovery attempts.
+//
+// WHY DD-001 (Alternative 2)?
+// - ✅ Temporal consistency: All contexts captured at same timestamp
+// - ✅ Fresh contexts: Recovery gets CURRENT cluster state (not stale)
+// - ✅ Immutable audit trail: Each RemediationProcessing CRD is complete snapshot
+// - ✅ Self-contained CRDs: AIAnalysis reads from spec only (no API calls)
+//
+// ⚠️ Trade-off: ~1 minute recovery initiation time
+//    Mitigation: Better AI decisions worth the time penalty
+// ========================================
+
+if isRecovery {
+    recoveryCtx, err := r.enrichRecoveryContext(ctx, rp)
+    // ... implementation
+}
+```
+
+---
+
+## 📚 **Documentation Reference Standards**
+
+### **In Implementation Documents**
+
+When documenting implementation that follows a design decision, include this header:
+
+```markdown
+### [Feature Name]
+
+---
+
+> **📋 Design Decision Status**
+>
+> **Current Implementation**: **DD-XXX Alternative Y** (Approved Design)
+> **Status**: ✅ **Production-Ready**
+> **Confidence**: XX%
+> **Design Decision**: [DD-XXX](../architecture/DESIGN_DECISIONS.md#dd-xxx-decision-title)
+> **Business Requirement**: BR-XXX-XXX
+>
+> <details>
+> <summary><b>Why DD-XXX?</b> (Click to expand)</summary>
+>
+> - ✅ **Benefit 1**: [Explanation]
+> - ✅ **Benefit 2**: [Explanation]
+> - ✅ **Benefit 3**: [Explanation]
+>
+> **Full Analysis**: See [DESIGN_DECISIONS.md - DD-XXX](../architecture/DESIGN_DECISIONS.md#dd-xxx-decision-title)
+> </details>
+
+---
+```
+
+### **In Business Requirements**
+
+When a BR-XXX-XXX references a design decision:
+
+```markdown
+##### [Requirement Category]
+
+> **📋 Design Decision**: [DD-XXX - Alternative Y](../architecture/DESIGN_DECISIONS.md#dd-xxx-decision-title) | ✅ **Approved Design** | Confidence: XX%
+
+- **BR-XXX-XXX**: MUST [requirement description]
+  - **Rationale**: [Why this is needed]
+  - **Design**: [High-level design approach from DD-XXX]
+```
+
+---
+
+## 🔍 **Quick Reference: When to Document**
+
+| Scenario | Action | DD-XXX Required? |
+|---|---|---|
+| New CRD interaction pattern | ✅ Create DD-XXX | YES |
+| Choosing between 2+ architectural approaches | ✅ Create DD-XXX | YES |
+| Changing existing architectural pattern | ✅ Create DD-XXX | YES |
+| Adding new external service integration | ✅ Create DD-XXX | YES |
+| Refactoring with architectural impact | ✅ Create DD-XXX | YES |
+| Simple bug fix | ❌ No DD-XXX | NO |
+| Adding new function to existing pattern | ❌ No DD-XXX | NO |
+| Configuration change | ❌ No DD-XXX | NO |
+| Test-only changes | ❌ No DD-XXX | NO |
+
+---
+
+## 📊 **Enforcement Metrics**
+
+AI assistant should track:
+- Number of architectural changes without DD-XXX documentation
+- Time between decision and documentation
+- Confidence assessment quality (are alternatives truly considered?)
+
+**Success Criteria**:
+- 100% of architectural changes have DD-XXX documentation
+- DD-XXX created before or during implementation (not after)
+- All DD-XXX entries include 2-3 alternatives with confidence assessments
+
+---
+
+## 🎯 **APDC Integration**
+
+This rule integrates with APDC methodology:
+
+| APDC Phase | DD-XXX Integration |
+|---|---|
+| **Analysis** | Search for similar patterns, identify alternatives |
+| **Plan** | Document alternatives, get user approval, create DD-XXX |
+| **Do** | Reference DD-XXX in code comments and implementation docs |
+| **Check** | Verify DD-XXX documentation complete and accurate |
+
+**Priority**: BEHAVIORAL - Controls AI assistant documentation behavior within APDC framework
+
+---
+
+## 📖 **Examples**
+
+### **Example 1: Existing DD-001**
+
+**Scenario**: Recovery context enrichment decision
+**DD-XXX**: DD-001
+**Referenced In**:
+- `docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md` (design status header)
+- `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md` (BR-WF-RECOVERY-011)
+- `docs/services/crd-controllers/01-remediationprocessor/controller-implementation.md` (code comments)
+- `docs/services/crd-controllers/02-aianalysis/controller-implementation.md` (design status box)
+- `docs/services/crd-controllers/05-remediationorchestrator/controller-implementation.md` (function header)
+
+### **Example 2: Hypothetical DD-002**
+
+**Scenario**: Choosing BDD testing framework (Ginkgo/Gomega vs. standard Go testing)
+**DD-XXX**: DD-002 (to be created)
+**Should Reference In**:
+- `.cursor/rules/03-testing-strategy.mdc` (testing framework rationale)
+- All `*_test.go` files (comment header)
+- `docs/services/*/testing-strategy.md` (framework selection explanation)
+
+---
+
+## ✅ **Compliance Checklist**
+
+Before merging code with architectural changes:
+
+- [ ] **DD-XXX exists** in `docs/architecture/DESIGN_DECISIONS.md`
+- [ ] **2-3 alternatives** documented with pros/cons
+- [ ] **User approval** documented in DD-XXX
+- [ ] **Confidence assessment** provided (XX%)
+- [ ] **Code comments** reference DD-XXX
+- [ ] **Implementation docs** include design decision status box
+- [ ] **Business requirements** (if applicable) link to DD-XXX
+- [ ] **Related decisions** cross-referenced
+
+---
+
+## 🔗 **Integration with Other Rules**
+
+This rule **complements**:
+- [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) - APDC Analysis phase
+- [06-documentation-standards.mdc](mdc:.cursor/rules/06-documentation-standards.mdc) - General documentation
+- [13-conflict-resolution-matrix.mdc](mdc:.cursor/rules/13-conflict-resolution-matrix.mdc) - Priority hierarchy
+
+**Priority**: BEHAVIORAL (Level 4) - Enforces documentation within APDC framework
+
+---
+
+## 📚 **References**
+
+- [Architecture Decision Records (ADR)](https://adr.github.io/) - Industry best practices
+- [DESIGN_DECISIONS.md](mdc:docs/architecture/DESIGN_DECISIONS.md) - Kubernaut DD-XXX index
+- [DD-001 Example](mdc:docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2) - Reference implementation

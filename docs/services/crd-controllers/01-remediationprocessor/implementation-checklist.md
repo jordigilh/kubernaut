@@ -55,11 +55,19 @@
 - [ ] **Logic RED**: Write tests for environment classification with mocked Context Service (fail)
 - [ ] **Logic GREEN**: Integrate business logic to pass tests
   - [ ] Integrate existing environment classification logic from `pkg/processor/environment/`
-  - [ ] Add Context Service HTTP client
+  - [ ] Add Context Service HTTP client (monitoring + business contexts)
+  - [ ] **Add Context API client (Alternative 2 - BR-WF-RECOVERY-011)**
   - [ ] Add status update for RemediationRequest reference
 - [ ] **Logic REFACTOR**: Enhance with sophisticated algorithms
   - [ ] Add degraded mode fallback when Context Service unavailable
+  - [ ] **Add Context API graceful degradation (fallback to failedWorkflowRef)**
   - [ ] Optimize classification heuristics and performance
+- [ ] **Recovery Enrichment (Alternative 2)**:
+  - [ ] **RED**: Write tests for recovery enrichment (isRecoveryAttempt = true)
+  - [ ] **GREEN**: Implement Context API query in `reconcileEnriching()` phase
+  - [ ] **GREEN**: Implement fallback context builder (`buildFallbackRecoveryContext()`)
+  - [ ] **REFACTOR**: Optimize Context API error handling and retry logic
+  - [ ] **Validation**: Verify temporal consistency (all contexts same timestamp)
 - [ ] **Audit Integration**: Integrate audit storage for long-term tracking
 - [ ] **Main App Integration**: Verify RemediationProcessingReconciler instantiated in cmd/remediationprocessor/ (MANDATORY)
 
