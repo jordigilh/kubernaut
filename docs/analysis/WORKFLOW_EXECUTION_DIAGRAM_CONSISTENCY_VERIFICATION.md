@@ -341,63 +341,132 @@ The new diagram **adds value** without contradicting specs:
 
 ---
 
-## 🔍 **POTENTIAL CONCERNS INVESTIGATED**
+## 🔍 **ARCHITECTURAL CORRECTIONS APPLIED**
 
-### **Concern 1: Context API Query in Planning Phase**
+### **Correction 1: Context API Query Removed** ✅ FIXED
 
-**Question**: Does Workflow Execution query Context API directly, or does it receive pre-fetched data?
+**Issue**: Original diagram showed WorkflowExecution querying Context API for historical success rates.
 
-**Investigation**:
-- `overview.md` line 473: "Uses Context API to query action effectiveness"
-- `integration-points.md` lines 1-3: WorkflowExecution service spec doesn't detail Context API integration
-- But: `overview.md` line 407 shows it queries historical success rates
+**Problem**: This could lead to inconsistencies between AI recommendations and Context API state. AI recommendations are authoritative.
 
-**Resolution**: ✅ **ACCEPTABLE** - The diagram shows a reasonable interpretation. Context API query for historical effectiveness is implied by "Historical Intelligence" capability, even if not explicitly detailed in integration-points.md.
+**Fix Applied**:
+```
+BEFORE: WF->>CTX: Query historical success rates for action types
+AFTER:  WFC->>WFC: Parse AI recommendations (AUTHORITATIVE - no Context API query)
+```
 
-**Recommendation**: Consider adding explicit Context API integration to `integration-points.md` for clarity.
+**Rationale**: AI has already incorporated historical intelligence during investigation phase. WorkflowExecution must trust AI recommendations as the single source of truth.
 
----
-
-### **Concern 2: Kubernetes Health Query Post-Execution**
-
-**Question**: Does Workflow Execution query Kubernetes directly for health validation?
-
-**Investigation**:
-- `reconciliation-phases.md` lines 260-280: "Query resource health after workflow completion"
-- This confirms direct Kubernetes queries
-
-**Resolution**: ✅ **VERIFIED** - Diagram correctly shows `WF->>K8S: Query resource health`
+**Status**: ✅ **CORRECTED**
 
 ---
 
-### **Concern 3: RemediationRequest vs RemediationOrchestrator**
+### **Correction 2: Step-Level Validation** ✅ FIXED
 
-**Question**: Should diagram show `RemediationRequest` (CRD) or `RemediationOrchestrator` (controller)?
+**Issue**: Original diagram showed WorkflowExecution directly querying Kubernetes for validation.
 
-**Investigation**:
-- Service spec diagrams use `AR` for RemediationRequest (the CRD)
-- But the **controller** that manages RemediationRequest is RemediationOrchestrator
-- The new diagram uses `ORCH` for RemediationOrchestrator (the controller)
+**Problem**: Each step should contain its own validation logic. WorkflowExecution should rely on step status, not perform direct K8s validation.
 
-**Resolution**: ✅ **CORRECT CHOICE** - Using the controller name is more accurate for showing who performs actions (controllers reconcile, not CRDs)
+**Fix Applied**:
+```
+BEFORE: WF->>K8S: Query resource health (verify remediation worked)
+AFTER:  Each Executor validates expected outcome:
+        EX1->>K8S: Verify: deployment scaled (expected outcome validation)
+        EX2->>K8S: Verify: new pods running (expected outcome validation)
+        EX3->>K8S: Verify: configmap has new values (expected outcome validation)
+```
+
+**Example**: Delete pod operation → Expected outcome: pod does not exist → Executor validates and updates status.
+
+**Workflow Role**: Monitor step status, not validate Kubernetes directly.
+
+**Status**: ✅ **CORRECTED**
 
 ---
 
-## 📝 **MINOR RECOMMENDATIONS**
+### **Correction 3: Controller Names Used** ✅ FIXED
 
-### **1. Add Context API to Integration Points** (Optional Enhancement)
+**Issue**: Original diagram used generic participant names (WF, ORCH) instead of controller names.
+
+**Problem**: Clarity - should explicitly show that these are controllers performing reconciliation.
+
+**Fix Applied**:
+```
+BEFORE: WF (Workflow Execution)
+AFTER:  WFC (WorkflowExecution Controller)
+
+BEFORE: ORCH (Remediation Orchestrator)
+AFTER:  ORCC (RemediationOrchestrator Controller)
+```
+
+**Rationale**: Controllers perform reconciliation actions, not CRDs. Using explicit controller names (WFC, ORCC) makes it clear who is doing what.
+
+**Status**: ✅ **CORRECTED**
+
+---
+
+## 🔑 **KEY ARCHITECTURAL CLARIFICATIONS**
+
+### **Context API (CAPI) Role**
+
+**Context API does NOT**:
+- ❌ Validate Kubernetes resources
+- ❌ Query Kubernetes clusters
+- ❌ Introspect cluster state
+- ❌ Confirm operation success
+
+**Context API DOES**:
+- ✅ Provide historical data (action effectiveness, similar incidents)
+- ✅ Query database for patterns
+- ✅ Serve read-only context to AI Investigation phase
+- ✅ Supply data for AI decision-making
+
+**Important**: Context API is a **data provider**, not a validator. All validation logic is embedded in KubernetesExecution steps.
+
+---
+
+### **Validation Responsibility Chain**
+
+1. **AI Investigation Phase** (AI Analysis Service):
+   - Queries Context API for historical intelligence
+   - Makes recommendations based on data
+
+2. **Workflow Planning Phase** (WorkflowExecution Controller):
+   - Uses AI recommendations as authoritative
+   - Does NOT revalidate against Context API
+   - Does NOT query Kubernetes directly
+
+3. **Step Execution Phase** (KubernetesExecution Controller):
+   - Executes action on Kubernetes
+   - Validates expected outcome (e.g., pod deleted, deployment scaled)
+   - Updates CRD status with validation result
+
+4. **Workflow Completion** (WorkflowExecution Controller):
+   - Monitors step CRD status
+   - Relies on step validation results
+   - Does NOT query Kubernetes directly
+
+**Key Principle**: Each layer trusts the data/status from the previous layer. No redundant validation across services.
+
+---
+
+## 📝 **RECOMMENDATIONS** (Updated)
+
+### **1. Document Validation Responsibility** (HIGH Priority)
+**File**: `docs/services/crd-controllers/03-workflowexecution/overview.md`
+**Add**: Explicit section on "Validation Responsibility Chain"
+**Clarify**: WorkflowExecution does NOT validate Kubernetes, relies on step status
+
+**Priority**: HIGH (Critical architectural principle)
+
+---
+
+### **2. Update Service Integration Points** (MEDIUM Priority)
 **File**: `docs/services/crd-controllers/03-workflowexecution/integration-points.md`
-**Add**: Section documenting Context API queries for historical effectiveness data
+**Remove**: Any references to Context API queries during workflow execution
+**Clarify**: AI recommendations are authoritative, no revalidation
 
-**Priority**: LOW (Nice-to-have for completeness)
-
----
-
-### **2. Update Overview Diagram** (Optional Consistency)
-**File**: `docs/services/crd-controllers/03-workflowexecution/overview.md` lines 87-102
-**Update**: Show Context API interaction (currently not shown)
-
-**Priority**: LOW (Diagram is already comprehensive)
+**Priority**: MEDIUM (Prevents architectural confusion)
 
 ---
 
