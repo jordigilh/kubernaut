@@ -235,37 +235,41 @@ sequenceDiagram
     GW-->>SRC: 202 Accepted
 
     Note over RP,ORCH: Phase 2: Signal Processing
-    ORCH->>RP: Watch RemediationRequest CRD
+    ORCH->>ORCH: Create RemediationProcessing CRD
+    ORCH->>RP: Watch RemediationProcessing CRD
     RP->>RP: Reconcile: Enrich signal
     RP->>RP: Add cluster context
     RP->>ST: Query historical patterns
-    RP->>AI: Create RemediationProcessing CRD
-    RP->>ORCH: Update status: Processing
+    RP->>RP: Update status: Completed
+    RP->>ORCH: Status update triggers watch
 
     Note over AI,ORCH: Phase 3: AI Analysis & Investigation<br/>(expanded in next diagram)
-    ORCH->>AI: Watch RemediationProcessing CRD
+    ORCH->>ORCH: Create AIAnalysis CRD
+    ORCH->>AI: Watch AIAnalysis CRD
     AI->>AI: Reconcile: Analyze signal
     AI->>AI: HolmesGPT investigation
     AI->>AI: Validate recommendations
-    AI->>WF: Create AIAnalysis CRD
-    AI->>ORCH: Update status: Analyzed
+    AI->>AI: Update status: Completed
+    AI->>ORCH: Status update triggers watch
 
     Note over WF,EX: Phase 4: Workflow Planning
-    ORCH->>WF: Watch AIAnalysis CRD
+    ORCH->>ORCH: Create WorkflowExecution CRD
+    ORCH->>WF: Watch WorkflowExecution CRD
     WF->>WF: Reconcile: Build workflow
     WF->>WF: Load action templates
     WF->>WF: Validate safety constraints
-    WF->>EX: Create WorkflowExecution CRD
-    WF->>ORCH: Update status: Planned
+    WF->>WF: Update status: Completed
+    WF->>ORCH: Status update triggers watch
 
     Note over EX,K8S: Phase 5: Kubernetes Execution
-    ORCH->>EX: Watch WorkflowExecution CRD
+    ORCH->>ORCH: Create KubernetesExecution CRD
+    ORCH->>EX: Watch KubernetesExecution CRD
     EX->>EX: Reconcile: Execute actions
     EX->>K8S: Apply remediation<br/>(restart pod/scale/etc)
     K8S-->>EX: Execution result
     EX->>ST: Store execution results
-    EX->>EX: Create KubernetesExecution CRD
-    EX->>ORCH: Update status: Executed
+    EX->>EX: Update status: Completed
+    EX->>ORCH: Status update triggers watch
 
     Note over ORCH,ST: Phase 6: Lifecycle Completion
     ORCH->>ORCH: Monitor all CRD statuses
