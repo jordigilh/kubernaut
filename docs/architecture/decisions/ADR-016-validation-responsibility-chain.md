@@ -6,7 +6,7 @@
 
 **Deciders**: Architecture Team
 
-**Related**: 
+**Related**:
 - [ADR-001: CRD Microservices Architecture](./ADR-001-crd-microservices-architecture.md)
 - [Owner Reference Architecture](./005-owner-reference-architecture.md)
 - [APPROVED_MICROSERVICES_ARCHITECTURE.md](../APPROVED_MICROSERVICES_ARCHITECTURE.md)

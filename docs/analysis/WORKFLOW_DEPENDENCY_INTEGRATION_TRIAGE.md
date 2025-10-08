@@ -1,8 +1,8 @@
 # Workflow Dependency Integration Triage
 
-**Date**: October 8, 2025  
-**Purpose**: Triage if workflow controller and executor require changes for dependency specification feature  
-**Context**: Option A implementation adds dependency fields to AI recommendations  
+**Date**: October 8, 2025
+**Purpose**: Triage if workflow controller and executor require changes for dependency specification feature
+**Context**: Option A implementation adds dependency fields to AI recommendations
 
 ---
 
@@ -126,7 +126,7 @@ func buildWorkflowFromRecommendations(
     for i, rec := range recommendations {
         idToStepNumber[rec.ID] = i + 1  // Step numbers are 1-based
     }
-    
+
     // Step 2: Build workflow steps with mapped dependencies
     steps := []WorkflowStep{}
     for i, rec := range recommendations {
@@ -140,7 +140,7 @@ func buildWorkflowFromRecommendations(
         }
         steps = append(steps, step)
     }
-    
+
     return WorkflowDefinition{
         Name:    "ai-generated-workflow",
         Version: "v1",
@@ -210,7 +210,7 @@ WorkflowExecution performs additional validation for workflow-specific constrain
 
 **Analysis**: KubernetesExecution is at the **step execution level** and doesn't need to know about workflow-level dependencies.
 
-**Why**: 
+**Why**:
 - KubernetesExecution executes **single atomic actions**
 - WorkflowExecution handles **dependency orchestration**
 - By the time KubernetesExecution CRD is created, dependencies are already resolved
@@ -253,12 +253,12 @@ WorkflowExecution performs additional validation for workflow-specific constrain
 
 **Function**: Creates WorkflowExecution CRD from AIAnalysis recommendations
 
-**Current**: 
+**Current**:
 ```go
 WorkflowDefinition: buildWorkflowFromRecommendations(aiAnalysis.Status.Recommendations),
 ```
 
-**Needed**: 
+**Needed**:
 - Document `buildWorkflowFromRecommendations()` function
 - Show how `recommendation.dependencies` maps to `step.DependsOn`
 - Include dependency validation fallback
@@ -277,7 +277,7 @@ func buildWorkflowFromRecommendations(
     for i, rec := range recommendations {
         idToStep[rec.ID] = i + 1
     }
-    
+
     // Build workflow steps with dependency mapping
     steps := []workflowexecutionv1.WorkflowStep{}
     for i, rec := range recommendations {
@@ -287,7 +287,7 @@ func buildWorkflowFromRecommendations(
                 dependsOn = append(dependsOn, stepNum)
             }
         }
-        
+
         step := workflowexecutionv1.WorkflowStep{
             StepNumber: i + 1,
             Name:       rec.Action,
@@ -297,7 +297,7 @@ func buildWorkflowFromRecommendations(
         }
         steps = append(steps, step)
     }
-    
+
     return workflowexecutionv1.WorkflowDefinition{
         Name:    "ai-generated-workflow",
         Version: "v1",
