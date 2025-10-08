@@ -54,23 +54,67 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 
 ## 🔄 **SERVICE FLOW ARCHITECTURE**
 
-### **V1 Core Processing Flow**
+### **V1 Complete Architecture (11 Services)**
 
-This diagram shows the primary signal processing path through Kubernaut's V1 architecture (11 services):
+This diagram shows all V1 services and their interactions:
 
 ```mermaid
-flowchart LR
-    SIG[📊 Signal Sources<br/>Prometheus<br/>K8s Events<br/>CloudWatch] 
+flowchart TB
+    subgraph EXTERNAL["🌐 External Systems"]
+        SIG[📊 Signal Sources<br/>Prometheus, K8s Events<br/>CloudWatch, Webhooks]
+        K8S[☸️ Kubernetes<br/>Clusters]
+        NOTIF_EXT[📧 Notification Channels<br/>Slack, Teams, Email, PagerDuty]
+    end
     
-    SIG --> GW[🔗 Gateway<br/>Port 8080]
-    GW --> RP[🧠 Processor<br/>Port 8081]
-    RP --> AI[🤖 AI Analysis<br/>Port 8082]
-    AI --> WF[🎯 Workflow<br/>Port 8083]
-    WF --> EX[⚡ Executor<br/>Port 8084]
-    EX --> K8S[☸️ Kubernetes<br/>Clusters]
+    subgraph MAIN["🎯 Main Processing Pipeline"]
+        direction LR
+        GW[🔗 Gateway<br/>8080]
+        RP[🧠 Processor<br/>8081]
+        AI[🤖 AI Analysis<br/>8082]
+        WF[🎯 Workflow<br/>8083]
+        EX[⚡ Executor<br/>8084]
+    end
     
-    AI <-.-> HGP[🔍 HolmesGPT<br/>Port 8090]
-    HGP <-.-> CTX[🌐 Context API<br/>Port 8091]
+    subgraph INVESTIGATION["🔍 AI Investigation"]
+        HGP[🔍 HolmesGPT<br/>8090]
+        CTX[🌐 Context API<br/>8091]
+    end
+    
+    subgraph SUPPORT["🔧 Support Services"]
+        ST[📊 Storage<br/>8085<br/>PostgreSQL + Vector]
+        EFF[📈 Effectiveness<br/>Monitor<br/>8087]
+        INF[📊 Infra<br/>Monitor<br/>8094]
+        NOT[📢 Notifications<br/>8089]
+    end
+    
+    %% Main flow
+    SIG --> GW --> RP --> AI --> WF --> EX --> K8S
+    
+    %% Investigation flow
+    AI <-.-> HGP
+    HGP <-.-> CTX
+    
+    %% Storage interactions
+    EX -->|writes results| ST
+    AI -.->|queries patterns| ST
+    EFF -.->|queries history| ST
+    
+    %% Monitoring
+    INF -.->|scrapes metrics| GW
+    INF -.->|scrapes metrics| RP
+    INF -.->|scrapes metrics| AI
+    INF -.->|scrapes metrics| WF
+    INF -.->|scrapes metrics| EX
+    
+    %% Notifications
+    CTX -->|triggers alerts| NOT
+    WF -->|triggers status| NOT
+    NOT --> NOTIF_EXT
+    
+    style EXTERNAL fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px,color:#000
+    style MAIN fill:#e3f2fd,stroke:#1976d2,stroke-width:3px,color:#000
+    style INVESTIGATION fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px,color:#000
+    style SUPPORT fill:#e8f5e9,stroke:#388e3c,stroke-width:3px,color:#000
     
     style GW fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
     style RP fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
@@ -79,83 +123,69 @@ flowchart LR
     style EX fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
     style HGP fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
     style CTX fill:#ffe0b2,stroke:#f57c00,stroke-width:2px,color:#000
-    style SIG fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
-    style K8S fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
-```
-
-### **V1 Support Services Flow**
-
-Support services handle data storage, monitoring, and notifications:
-
-```mermaid
-flowchart LR
-    EX[⚡ Executor<br/>Port 8084] --> ST[📊 Storage<br/>Port 8085<br/>PostgreSQL + Vector]
-    ST --> EFF[📈 Monitor<br/>Port 8087<br/>Effectiveness]
-    EFF --> INF[📊 Infra Monitor<br/>Port 8094<br/>Metrics]
-    INF --> NOT[📢 Notifications<br/>Port 8089]
-    
-    NOT --> EXTERNAL[📧 Slack, Teams<br/>Email, PagerDuty]
-    
-    style EX fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
     style ST fill:#ffe0b2,stroke:#f57c00,stroke-width:2px,color:#000
     style EFF fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
     style INF fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
     style NOT fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
-    style EXTERNAL fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
+    style SIG fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
+    style K8S fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
+    style NOTIF_EXT fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
 ```
 
-### **📖 Architecture Color Legend**
+### **📖 Architecture Legend**
 
-| Color | Service Type | Examples |
-|-------|-------------|----------|
-| 🔵 **Blue** | Core Processing | Gateway, Processor, Workflow, Notifications |
-| 🟣 **Purple** | AI Investigation | AI Analysis, HolmesGPT |
-| 🟢 **Green** | Execution & Monitoring | K8s Executor, Effectiveness Monitor, Infra Monitor |
-| 🟠 **Orange** | Data & Support | Storage, Context API |
-| ⚪ **Gray** | External Systems | Signal Sources, Kubernetes Clusters, Notification Channels |
+**Service Groups**:
+- 🎯 **Main Processing Pipeline** (Blue subgraph): Core signal-to-execution flow
+- 🔍 **AI Investigation** (Purple subgraph): HolmesGPT investigation services
+- 🔧 **Support Services** (Green subgraph): Data, monitoring, and notifications
+- 🌐 **External Systems** (Gray): Signal sources, Kubernetes, notification channels
 
-### **Flow Notation**
+**Service Colors**:
+- 🔵 **Blue boxes**: Core processing (Gateway, Processor, Workflow, Notifications)
+- 🟣 **Purple boxes**: AI investigation (AI Analysis, HolmesGPT)
+- 🟢 **Green boxes**: Execution & monitoring (K8s Executor, Effectiveness Monitor, Infra Monitor)
+- 🟠 **Orange boxes**: Data & support (Storage, Context API)
+- ⚪ **Gray boxes**: External systems
 
-| Symbol | Meaning |
-|--------|---------|
-| `→` | Direct service call (solid arrow) |
-| `<-.->` | Bidirectional investigation flow (dotted arrows) |
+**Arrow Types**:
+- `→` **Solid arrow**: Direct service call or data write (push model)
+- `-.->` **Dotted arrow**: Query/scrape or bidirectional (pull model)
 
 ### **🔄 Service Flow Summary**
 
-**V1 Primary Path**: `Signal Sources → Gateway → Remediation Processor → AI Analysis → Workflow Execution → K8s Executor`
+**V1 Primary Processing Path**:
+```
+Signal Sources → Gateway → Remediation Processor → AI Analysis → Workflow Execution → K8s Executor → Kubernetes
+```
 
-**V2 Enhanced Path**: `Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-Model Orchestration → Workflow Execution → K8s Executor`
+**AI Investigation Loop** (V1):
+```
+AI Analysis ↔ HolmesGPT API ↔ Context API
+```
 
-**Support Path**: `K8s Executor → Data Storage → Intelligence → Effectiveness Monitor → Context API → Notifications`
+**Storage Interactions** (Query Pattern):
+- **K8s Executor** → Storage (writes execution results)
+- **AI Analysis** → Storage (queries historical patterns)
+- **Effectiveness Monitor** → Storage (queries remediation history)
 
-**AI Investigation Path** (V1): `AI Analysis → HolmesGPT API → Context API → HolmesGPT API → AI Analysis`
+**Monitoring Pattern** (Pull Pattern):
+- **Infra Monitor** scrapes metrics from all main services (Gateway, Processor, AI Analysis, Workflow, Executor)
 
-**Vector Database Consumption Paths**:
-- **Intelligence Service**: `Intelligence → Data Storage` (similarity search, pattern clustering)
-- **AI Analysis Service**: `AI Analysis → Data Storage` (historical success rate lookup)
-- **Multi-Model Orchestration**: `Multi-Model Orchestration → Data Storage` (pattern-based weighting)
-- **Effectiveness Monitor**: `Effectiveness Monitor → Data Storage` (trend analysis, temporal patterns)
+**Notification Triggers**:
+- **Context API** → Notifications (alerts and updates)
+- **Workflow Execution** → Notifications (status updates)
 
-**Enterprise Integration Paths**:
-- **Security Flow**: All services authenticate through Security & Access Control Service
-- **Environment Classification**: `Remediation Processor → Environment Classification → AI Analysis` (business priority routing)
-- **Health Monitoring**: `AI Analysis → Enhanced Health Monitoring` (LLM health checks)
-- **Infrastructure Monitoring**: `Multi-Model Orchestration → Infrastructure Monitoring` (metrics collection)
+**V2 Enhanced Path** (Future):
+```
+Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-Model Orchestration → Workflow Execution → K8s Executor
+```
 
-**Database Storage Points**:
-- **Remediation Processor Service**: Stores signal lifecycle data, state tracking, and processing metrics (BR-AP-021 to BR-AP-025)
-- **Data Storage Service**: Stores action history, effectiveness data, and vector embeddings (BR-HIST-001 to BR-HIST-020)
-- **Security Service**: Stores authentication, authorization, and audit data (BR-RBAC-001 to BR-SEC-050)
-
-**Vector Database Business Value Realization**:
-- **Intelligence Service**: Achieves 80% precision/recall in pattern recognition through similarity search
-- **AI Analysis Service**: Improves recommendation accuracy by 25% using historical success patterns
-- **Multi-Model Orchestration**: Enhances ensemble decisions by 95% through pattern-based weighting
-- **Effectiveness Monitor**: Enables seasonal pattern detection and trend analysis for continuous improvement
-- **Cost Optimization**: Realizes 40% cost reduction through intelligent embedding caching and reuse
-
-**External Integrations**: Each service connects to relevant external systems for specialized functionality.
+**Key V1 Architecture Characteristics**:
+- **11 Services**: Complete signal-to-execution pipeline with support services
+- **Clear Separation**: Main processing, AI investigation, and support services are independently grouped
+- **Query-Based Storage**: Services query Storage on-demand (not push-based)
+- **Metrics Collection**: Infra Monitor scrapes metrics from all services (Prometheus pattern)
+- **Event-Driven Notifications**: Multiple services can trigger notifications independently
 
 ---
 
