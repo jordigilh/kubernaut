@@ -548,7 +548,12 @@ flowchart TD
 - Complete CRD reconciliation loop with real K8s API
 - Owner reference cascade behavior (RemediationRequest → RemediationProcessing)
 - Status watch patterns and phase transitions in real cluster
-- Context Service HTTP integration with real service
+- Context Service HTTP integration with real service (monitoring + business contexts)
+- **Context API HTTP integration for recovery attempts (Alternative 2 - BR-WF-RECOVERY-011)**:
+  - Recovery enrichment: `isRecoveryAttempt = true` triggers Context API query
+  - Dual enrichment validation: Both Context Service (monitoring/business) AND Context API (recovery) called
+  - Temporal consistency: All contexts captured at same timestamp
+  - Graceful degradation: Context API unavailable → fallback to `failedWorkflowRef`
 - Child CRD creation (RemediationProcessing → AIAnalysis)
 
 ---
