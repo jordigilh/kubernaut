@@ -423,7 +423,7 @@ sequenceDiagram
 
     Note over WFC,EX3: Phase 3: Steps 2 & 3 - Parallel Execution
     WFC->>WFC: Step 1 completed<br/>Steps 2 & 3 ready (no dependencies)
-    
+
     par Parallel Step Execution
         WFC->>EX2: Create KubernetesExecution CRD<br/>(Step 2: Restart Pods)
         activate EX2

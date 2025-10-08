@@ -56,7 +56,7 @@ k8s.ScaleDeployment("payment-api", "production", 5)
 // BR-EXEC-027: Verify action outcome
 deployment := k8s.GetDeployment("payment-api", "production")
 if deployment.Status.Replicas != 5 {
-    return fmt.Errorf("validation failed: expected 5 replicas, got %d", 
+    return fmt.Errorf("validation failed: expected 5 replicas, got %d",
         deployment.Status.Replicas)
 }
 
@@ -201,7 +201,7 @@ It("should execute kubectl scale and verify result", func() {
     Eventually(func() bool {
         // ... verification logic
     }, "30s", "1s").Should(BeTrue())
-    
+
     // Line 723-725: Verify deployment was actually scaled
     scaledDeployment := &appsv1.Deployment{}
     Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "webapp", Namespace: namespace}, scaledDeployment)).To(Succeed())

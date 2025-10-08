@@ -120,14 +120,14 @@ func (r *AIAnalysisReconciler) validateRecommendationDependencies(
     if err := validateDependencyReferences(recommendations); err != nil {
         return fmt.Errorf("dependency validation failed: %w", err)
     }
-    
+
     // BR-AI-052: Detect circular dependencies
     if err := detectCircularDependencies(recommendations); err != nil {
         log.Error(err, "Circular dependency detected, falling back to sequential execution")
         // Fallback: Convert to sequential order
         recommendations = convertToSequentialOrder(recommendations)
     }
-    
+
     // BR-AI-053: Handle missing dependencies
     for i, rec := range recommendations {
         if rec.Dependencies == nil {
@@ -135,7 +135,7 @@ func (r *AIAnalysisReconciler) validateRecommendationDependencies(
             recommendations[i].Dependencies = []string{}
         }
     }
-    
+
     return nil
 }
 
@@ -145,7 +145,7 @@ func validateDependencyReferences(recommendations []Recommendation) error {
     for _, rec := range recommendations {
         recommendationIDs[rec.ID] = true
     }
-    
+
     for _, rec := range recommendations {
         for _, depID := range rec.Dependencies {
             if !recommendationIDs[depID] {
@@ -156,7 +156,7 @@ func validateDependencyReferences(recommendations []Recommendation) error {
             }
         }
     }
-    
+
     return nil
 }
 
@@ -165,7 +165,7 @@ func detectCircularDependencies(recommendations []Recommendation) error {
     // Build adjacency list
     graph := make(map[string][]string)
     inDegree := make(map[string]int)
-    
+
     for _, rec := range recommendations {
         graph[rec.ID] = rec.Dependencies
         if _, exists := inDegree[rec.ID]; !exists {
@@ -175,7 +175,7 @@ func detectCircularDependencies(recommendations []Recommendation) error {
             inDegree[rec.ID]++
         }
     }
-    
+
     // Topological sort (Kahn's algorithm)
     queue := []string{}
     for id, degree := range inDegree {
@@ -183,13 +183,13 @@ func detectCircularDependencies(recommendations []Recommendation) error {
             queue = append(queue, id)
         }
     }
-    
+
     visited := 0
     for len(queue) > 0 {
         current := queue[0]
         queue = queue[1:]
         visited++
-        
+
         // Remove edges from current node
         for _, neighbor := range graph[current] {
             inDegree[neighbor]--
@@ -198,12 +198,12 @@ func detectCircularDependencies(recommendations []Recommendation) error {
             }
         }
     }
-    
+
     // If not all nodes visited, there's a cycle
     if visited != len(recommendations) {
         return fmt.Errorf("circular dependency detected in recommendation graph")
     }
-    
+
     return nil
 }
 ```
