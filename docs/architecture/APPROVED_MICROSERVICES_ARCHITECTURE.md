@@ -30,8 +30,8 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 ### **V1 Service Portfolio - Current Implementation (11 Services)**
 | Service | Responsibility | Business Requirements | External Connections |
 |---------|---------------|----------------------|---------------------|
-| **🔗 Gateway** | HTTP Gateway & Security | BR-WH-001 to BR-WH-015 | Prometheus, Grafana |
-| **🧠 Remediation Processor** | Alert Processing Logic + Environment Classification | BR-AP-001 to BR-AP-050, BR-ENV-001 to BR-ENV-050 | None (internal only) |
+| **🔗 Gateway** | HTTP Gateway & Security | BR-WH-001 to BR-WH-015 | Multi-Signal Sources |
+| **🧠 Remediation Processor** | Signal Processing Logic + Environment Classification | BR-AP-001 to BR-AP-050, BR-ENV-001 to BR-ENV-050 | None (internal only) |
 | **🤖 AI Analysis** | AI Analysis & Decision Making (HolmesGPT-Only) | BR-AI-001 to BR-AI-050 | HolmesGPT-API |
 | **🎯 Workflow Execution** | Workflow Execution | BR-WF-001 to BR-WF-165 | None (internal only) |
 | **⚡ K8s Executor** | Kubernetes Operations | BR-EX-001 to BR-EX-155 | Kubernetes Clusters |
@@ -59,7 +59,7 @@ flowchart TD
     %% External Systems - Left Side
     subgraph EXT ["🌐 External Systems"]
         direction TB
-        PROM["📊 Monitoring<br/><small>Prometheus, Grafana</small>"]
+        PROM["📊 Signal Sources<br/><small>Prometheus, K8s Events, CloudWatch</small>"]
         AI_EXT["🤖 AI Providers<br/><small>OpenAI, Anthropic, Ollama</small>"]
         K8S["☸️ Kubernetes<br/><small>Multi-Cluster</small>"]
         VDB["🗄️ Vector DBs<br/><small>PGVector, Pinecone</small>"]
@@ -105,13 +105,16 @@ flowchart TD
         INFRA["⚙️ Shared Infrastructure<br/><small>Config, Discovery, Monitoring</small>"]
     end
 
-    %% Main Service Flow (thick arrows)
-    PROM ==>|alerts| GATEWAY
+    %% Main Service Flow V1 (thick arrows)
+    PROM ==>|signals| GATEWAY
     GATEWAY ==>|process| ALERT
     ALERT ==>|analyze| AI
-    AI ==>|ensemble| MULTIMODEL
-    MULTIMODEL ==>|create| WORKFLOW
+    AI ==>|create workflow| WORKFLOW
     WORKFLOW ==>|execute| EXECUTOR
+    
+    %% V2 Enhancement: Multi-Model Orchestration (shown for completeness, not in V1)
+    AI -.->|V2: ensemble| MULTIMODEL
+    MULTIMODEL -.->|V2: optimized workflow| WORKFLOW
 
     %% Support Flow (medium arrows)
     EXECUTOR -->|store| STORAGE
@@ -210,7 +213,7 @@ flowchart TD
 | **Enterprise Services** | Security, monitoring, classification | Pink boxes |
 | **External Systems** | Third-party integrations | Blue boxes |
 | **Infrastructure** | Shared platform components | Orange boxes |
-| **Main Flow** | Primary alert processing path | Thick arrows (=⇒) |
+| **Main Flow** | Primary signal processing path | Thick arrows (=⇒) |
 | **Support Flow** | Secondary processing path | Medium arrows (→) |
 | **Vector DB Consumption** | Vector database similarity search | Medium arrows (→) |
 | **Enterprise Flow** | Security and monitoring integration | Medium arrows (→) |
@@ -221,9 +224,13 @@ flowchart TD
 
 ### **🔄 Service Flow Summary**
 
-**Primary Path**: `Prometheus → Gateway → Remediation Processor → AI Analysis → Multi-Model Orchestration → Workflow Execution → K8s Executor`
+**V1 Primary Path**: `Signal Sources → Gateway → Remediation Processor → AI Analysis → Workflow Execution → K8s Executor`
+
+**V2 Enhanced Path**: `Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-Model Orchestration → Workflow Execution → K8s Executor`
 
 **Support Path**: `K8s Executor → Data Storage → Intelligence → Effectiveness Monitor → Context API → Notifications`
+
+**AI Investigation Path** (V1): `AI Analysis → HolmesGPT API → Context API → HolmesGPT API → AI Analysis`
 
 **Vector Database Consumption Paths**:
 - **Intelligence Service**: `Intelligence → Data Storage` (similarity search, pattern clustering)
@@ -238,7 +245,7 @@ flowchart TD
 - **Infrastructure Monitoring**: `Multi-Model Orchestration → Infrastructure Monitoring` (metrics collection)
 
 **Database Storage Points**:
-- **Remediation Processor Service**: Stores alert lifecycle data, state tracking, and processing metrics (BR-AP-021 to BR-AP-025)
+- **Remediation Processor Service**: Stores signal lifecycle data, state tracking, and processing metrics (BR-AP-021 to BR-AP-025)
 - **Data Storage Service**: Stores action history, effectiveness data, and vector embeddings (BR-HIST-001 to BR-HIST-020)
 - **Security Service**: Stores authentication, authorization, and audit data (BR-RBAC-001 to BR-SEC-050)
 
@@ -686,12 +693,14 @@ flowchart TD
 
 | From Service | To Service | Protocol | Purpose | Business Requirement |
 |--------------|------------|----------|---------|---------------------|
-| **Core Flow** |
-| Gateway | Remediation Processor | HTTP/REST | Route validated alerts | BR-WH-001, BR-AP-001 |
+| **V1 Core Flow** |
+| Gateway | Remediation Processor | HTTP/REST | Route validated signals | BR-WH-001, BR-AP-001 |
 | Remediation Processor | AI Analysis | HTTP/REST | Get AI recommendations | BR-AP-016, BR-AI-001 |
-| AI Analysis | Multi-Model Orchestration | HTTP/REST | Request ensemble decisions | BR-AI-050, BR-ENSEMBLE-001 |
-| Multi-Model Orchestration | Workflow Execution | HTTP/REST | Execute workflows | BR-ENSEMBLE-020, BR-WF-001 |
+| AI Analysis | Workflow Execution | HTTP/REST | Create workflows from AI recommendations | BR-AI-050, BR-WF-001 |
 | Workflow Execution | K8s Executor | HTTP/REST | Execute K8s actions | BR-WF-010, BR-EX-001 |
+| **V2 Enhanced Core Flow** |
+| AI Analysis | Multi-Model Orchestration | HTTP/REST | Request ensemble decisions | BR-AI-050, BR-ENSEMBLE-001 |
+| Multi-Model Orchestration | Workflow Execution | HTTP/REST | Execute optimized workflows | BR-ENSEMBLE-020, BR-WF-001 |
 | **Support Flow** |
 | K8s Executor | Data Storage | HTTP/REST | Store action results | BR-EX-020, BR-STOR-001 |
 | Data Storage | Intelligence | HTTP/REST | Provide historical data | BR-STOR-015, BR-INT-001 |
