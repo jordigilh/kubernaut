@@ -85,7 +85,7 @@ flowchart TB
 
     subgraph SUPPORT["🔧 Support Services"]
         ST[📊 Storage<br/>8080<br/>PostgreSQL + Vector]
-        EFF[📈 Effectiveness<br/>Monitor<br/>8087]
+        EFF[📈 Effectiveness<br/>Monitor<br/>8080]
         NOT[📢 Notifications<br/>8080]
     end
 
@@ -108,7 +108,7 @@ flowchart TB
 
     %% Notifications
     EFF -->|alerts on remediation loops| NOT
-    
+
     %% Note: Context API is read-only and does not trigger notifications
     %% Note: Workflow Execution notification triggers require explicit BR documentation
 
@@ -150,7 +150,6 @@ flowchart TB
 
 **Port Standards**:
 - **8080**: Standard port for ALL services (API + Health endpoints)
-- **8087**: Effectiveness Monitor (documented exception for assessment engine isolation)
 - **9090**: Metrics port for ALL services (not shown in diagram for clarity)
 
 **Arrow Types**:
@@ -195,7 +194,7 @@ Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-M
 
 **Key V1 Architecture Characteristics**:
 - **12 Services**: Complete signal-to-execution pipeline (5 CRD controllers + 7 stateless services)
-- **Port Standardization**: All services use 8080 except Effectiveness Monitor (8087 - assessment engine isolation)
+- **Port Standardization**: All services use 8080 (100% standardization)
 - **Clear Separation**: Main processing, AI investigation, and support services are independently grouped
 - **Query-Based Storage**: Services query Storage on-demand (not push-based)
 - **External Infrastructure**: Prometheus/Grafana are external systems (not kubernaut services)
@@ -430,7 +429,7 @@ Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-M
 
 ### **📈 Effectiveness Monitor Service**
 **Image**: `quay.io/jordigilh/monitor-service`
-**Port**: 8087
+**Port**: 8080
 **Single Responsibility**: Effectiveness Assessment Only
 **V1 Status**: ✅ **INCLUDED IN V1** (Graceful Degradation Mode)
 
@@ -795,7 +794,7 @@ Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-M
 - ✅ Removed fabricated "Infrastructure Monitoring" service (external Prometheus/Grafana, not a Kubernaut service)
 - ✅ Added missing `dynamic-toolset` service (BR-TOOLSET-001 to BR-TOOLSET-020)
 - ✅ Corrected V1 service count: 12 services (5 CRD controllers + 7 stateless services)
-- ✅ Fixed port numbers: All services use 8080 except Effectiveness Monitor (8087 - assessment engine isolation)
+- ✅ Fixed port numbers: All services use 8080 (100% standardization)
 - ✅ Clarified oscillation detection is a query pattern in Effectiveness Monitor, not a separate service
 - ✅ Separated V1 (12 services) from V2 (4 additional services) clearly
 - ✅ Updated all diagrams, tables, and specifications to reflect accurate architecture
@@ -825,7 +824,7 @@ This architecture specification serves as the definitive guide for Kubernaut's m
 - **DOCUMENTED**: Finalizer pattern and owner reference cascade deletion strategy
 
 ### **Version 2.1 (2025-01-02)**
-- **ADDED**: Effectiveness Monitor Service to V1 (Port 8087)
+- **ADDED**: Effectiveness Monitor Service to V1 (Port 8080)
 - **UPDATED**: V1 service count from 10 to 11
 - **UPDATED**: V2 service count from 5 to 4
 - **ADDED**: Graceful degradation strategy for Effectiveness Monitor

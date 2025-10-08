@@ -3,7 +3,7 @@
 **Version**: 1.0
 **Last Updated**: October 6, 2025
 **Service Type**: Stateless HTTP API Service (Assessment & Analysis)
-**Port**: 8087 (REST API + Health), 9090 (Metrics)
+**Port**: 8080 (REST API + Health), 9090 (Metrics)
 
 ---
 
@@ -103,7 +103,7 @@ Following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-
   ```go
   func main() {
       service := effectiveness.NewEffectivenessMonitorService(deps...)
-      http.ListenAndServe(":8087", service.Handler())
+      http.ListenAndServe(":8080", service.Handler())
   }
   ```
 - [ ] Implement graceful degradation check (data weeks < 8)
