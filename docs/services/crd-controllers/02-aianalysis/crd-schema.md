@@ -120,8 +120,10 @@ status:
       confidenceThresholdMet: true
 
   # Recommendations (Phase 3)
+  # Business Requirement: BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033
   recommendations:
-  - action: "increase-memory-limit"
+  - id: "rec-001"  # ✅ NEW: Unique identifier for dependency references
+    action: "increase-memory-limit"
     targetResource:
       kind: Deployment
       name: web-app
@@ -137,6 +139,7 @@ status:
     constraints:
       environmentAllowed: [production, staging]
       rbacRequired: ["apps/deployments:update"]
+    dependencies: []  # ✅ NEW: Empty array = no dependencies, can execute immediately
 
   # Workflow reference (Phase 4)
   workflowExecutionRef:
@@ -155,6 +158,74 @@ status:
     status: "True"
     reason: TopRecommendationSelected
 ```
+
+### Multi-Step Workflow Example with Dependencies
+
+**Business Requirements**: BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033
+
+This example demonstrates how HolmesGPT specifies step dependencies to enable parallel execution optimization:
+
+```yaml
+status:
+  # Multi-step recommendations with dependency graph
+  recommendations:
+  - id: "rec-001"
+    action: "scale-deployment"
+    targetResource:
+      kind: Deployment
+      name: payment-api
+      namespace: production
+    parameters:
+      replicas: 5
+    effectivenessProbability: 0.92
+    dependencies: []  # No dependencies - executes first
+
+  - id: "rec-002"
+    action: "restart-pods"
+    targetResource:
+      kind: Pod
+      namespace: production
+      labelSelector: "app=payment-api"
+    parameters:
+      gracePeriodSeconds: 30
+    effectivenessProbability: 0.88
+    dependencies: ["rec-001"]  # Depends on scale completion
+
+  - id: "rec-003"
+    action: "increase-memory-limit"
+    targetResource:
+      kind: Deployment
+      name: payment-api
+      namespace: production
+    parameters:
+      newMemoryLimit: "2Gi"
+    effectivenessProbability: 0.85
+    dependencies: ["rec-001"]  # Also depends on scale completion
+
+  # rec-002 and rec-003 can execute IN PARALLEL after rec-001 completes
+  # Both depend only on rec-001, no dependency between them
+
+  - id: "rec-004"
+    action: "verify-deployment"
+    targetResource:
+      kind: Deployment
+      name: payment-api
+      namespace: production
+    parameters:
+      healthCheckEndpoint: "/health"
+    effectivenessProbability: 0.95
+    dependencies: ["rec-002", "rec-003"]  # Waits for BOTH to complete
+
+  # Execution order (determined by WorkflowExecution Controller):
+  # Batch 1: rec-001 (sequential)
+  # Batch 2: rec-002, rec-003 (parallel - both depend only on rec-001)
+  # Batch 3: rec-004 (sequential - waits for rec-002 AND rec-003)
+```
+
+**Dependency Validation** (BR-AI-051, BR-AI-052, BR-AI-053):
+- All dependency IDs reference valid recommendations in the list ✅
+- No circular dependencies (acyclic graph) ✅
+- rec-002 and rec-003 identified as parallelizable ✅
 
 ---
 
