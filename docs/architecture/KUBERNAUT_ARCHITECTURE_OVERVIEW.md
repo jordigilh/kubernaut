@@ -31,13 +31,14 @@ Kubernaut is an intelligent Kubernetes remediation platform built on **V1 micros
 ### **Core System Flow**
 ```mermaid
 flowchart LR
-    ALERT[📊 Alert] --> GATEWAY[🔗 Gateway]
+    SIGNAL[📊 Signal<br/><small>Alerts, Events, Alarms</small>] --> GATEWAY[🔗 Gateway]
     GATEWAY --> PROCESSOR[🧠 Processor<br/><small>+ Environment Classification</small>]
     PROCESSOR --> AI[🔍 AI Engine]
     AI --> HGP[🔍 HolmesGPT]
     HGP -.->|Historical Context Needed| CTX[📊 Context API]
     CTX -.->|Historical Intelligence| HGP
-    HGP --> WORKFLOW[🎯 Workflow]
+    HGP -.->|Recommendations| AI
+    AI --> WORKFLOW[🎯 Workflow]
     WORKFLOW --> EXECUTOR[⚡ Executor]
     EXECUTOR --> K8S[☸️ Kubernetes]
 
@@ -53,8 +54,8 @@ flowchart LR
 ### **V1 Service Categories (10 Services)**
 
 #### **🎯 Core Processing (3 services)**
-- **Alert Gateway** (8080): HTTP webhook reception
-- **Remediation Processor** (8081): Lifecycle management, enrichment & environment classification
+- **Gateway Service** (8080): Multi-signal webhook reception (alerts, events, alarms)
+- **Remediation Processor** (8081): Signal lifecycle management, enrichment & environment classification
 - **Workflow Engine** (8083): Orchestration & coordination
 
 #### **🔍 Investigation Services (3 services)**
@@ -120,12 +121,12 @@ flowchart TB
 
 ---
 
-## 📊 **Alert Tracking Flow**
+## 📊 **Signal Tracking Flow**
 
 ### **End-to-End Traceability**
 ```mermaid
 sequenceDiagram
-    participant P as Prometheus
+    participant SRC as Signal Source<br/>(Prometheus, K8s Events)
     participant G as Gateway
     participant AP as Processor
     participant AI as AI Engine
@@ -135,11 +136,11 @@ sequenceDiagram
     participant E as Executor
     participant S as Storage
 
-    P->>G: Alert webhook
+    SRC->>G: Signal webhook
     G->>AP: Forward + correlation metadata
     AP->>AP: Environment classification
     AP->>S: Create tracking ID + environment context
-    AP->>AI: Enriched alert + environment context + tracking ID
+    AP->>AI: Enriched signal + environment context + tracking ID
     AI->>HGP: Investigation request + tracking ID
 
     alt HolmesGPT needs historical context
@@ -148,7 +149,8 @@ sequenceDiagram
         CTX->>HGP: Historical intelligence + tracking ID
     end
 
-    HGP->>W: Recommendations + tracking ID
+    HGP->>AI: Investigation results + recommendations + tracking ID
+    AI->>W: Validated recommendations + tracking ID
     W->>E: Validated actions + tracking ID
     E->>S: Execution results + tracking ID
 
@@ -156,10 +158,10 @@ sequenceDiagram
 ```
 
 ### **Tracking Benefits**
-- **🔍 Complete Visibility**: Track alert from reception to resolution
+- **🔍 Complete Visibility**: Track signal from reception to resolution
 - **📋 Audit Compliance**: Full correlation for debugging and governance
 - **⚡ Performance Monitoring**: Measure end-to-end processing times
-- **🎯 Business Intelligence**: Learn from alert patterns and outcomes
+- **🎯 Business Intelligence**: Learn from signal patterns and outcomes
 
 ---
 
@@ -217,17 +219,17 @@ flowchart LR
 ### **Response Time Requirements**
 | Component | Target | Business Impact |
 |-----------|--------|-----------------|
-| **Alert Gateway** | <50ms forwarding | 99.9% availability |
-| **Alert Processing** | <5s end-to-end | User experience |
+| **Gateway Service** | <50ms forwarding | 99.9% availability |
+| **Signal Processing** | <5s end-to-end | User experience |
 | **AI Analysis** | <10s investigation | Decision quality |
 | **Action Execution** | <30s completion | MTTR improvement |
 
 ### **Scalability Targets**
 | Metric | Target | Justification |
 |--------|--------|---------------|
-| **Concurrent Alerts** | 1,000/minute | Peak load handling |
+| **Concurrent Signals** | 1,000/minute | Peak load handling |
 | **System Availability** | 99.9% uptime | Business continuity |
-| **Alert Tracking** | 100% coverage | Audit compliance |
+| **Signal Tracking** | 100% coverage | Audit compliance |
 | **Execution Success** | >95% rate | Operational reliability |
 
 ---
@@ -262,7 +264,7 @@ flowchart LR
 ### **Technical Excellence**
 - **🔍 85% AI analysis accuracy** for decision quality
 - **⚡ >95% action execution success** for reliability
-- **📊 <5s alert processing time** for user experience
+- **📊 <5s signal processing time** for user experience
 - **🔄 <10% workflow failure rate** for operational stability
 
 ---
