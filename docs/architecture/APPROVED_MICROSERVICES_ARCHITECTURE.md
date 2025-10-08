@@ -67,7 +67,7 @@ flowchart TB
         K8S[☸️ Kubernetes<br/>Clusters]
         PROM[📊 External Infrastructure<br/>Prometheus, Grafana, Jaeger]
     end
-    
+
     subgraph MAIN["🎯 Main Processing Pipeline"]
         direction LR
         GW[🔗 Gateway<br/>8080]
@@ -76,46 +76,47 @@ flowchart TB
         WF[🎯 Workflow<br/>8080]
         EX[⚡ Executor<br/>8080]
     end
-    
+
     subgraph INVESTIGATION["🔍 AI Investigation"]
         HGP[🔍 HolmesGPT<br/>8080]
-        CTX[🌐 Context API<br/>8091]
+        CTX[🌐 Context API<br/>8080]
         DTS[🧩 Dynamic Toolset<br/>8080]
     end
-    
+
     subgraph SUPPORT["🔧 Support Services"]
         ST[📊 Storage<br/>8080<br/>PostgreSQL + Vector]
         EFF[📈 Effectiveness<br/>Monitor<br/>8087]
         NOT[📢 Notifications<br/>8080]
     end
-    
+
     %% Main flow
     SIG --> GW --> RP --> AI --> WF --> EX --> K8S
-    
+
     %% Investigation flow
     AI <-.-> HGP
     HGP <-.-> CTX
     HGP <-.-> DTS
     HGP -.->|queries cluster state| K8S
-    
+
     %% Storage interactions
     EX -->|writes results| ST
     AI -.->|queries patterns| ST
     EFF -.->|queries action history| ST
-    
+
     %% Effectiveness Monitor
     EFF -.->|queries metrics| PROM
-    
+
     %% Notifications
-    CTX -->|triggers alerts| NOT
-    WF -->|triggers status| NOT
     EFF -->|alerts on remediation loops| NOT
     
+    %% Note: Context API is read-only and does not trigger notifications
+    %% Note: Workflow Execution notification triggers require explicit BR documentation
+
     style EXTERNAL fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px,color:#000
     style MAIN fill:#e3f2fd,stroke:#1976d2,stroke-width:3px,color:#000
     style INVESTIGATION fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px,color:#000
     style SUPPORT fill:#e8f5e9,stroke:#388e3c,stroke-width:3px,color:#000
-    
+
     style GW fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
     style RP fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
     style AI fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
@@ -149,8 +150,7 @@ flowchart TB
 
 **Port Standards**:
 - **8080**: Standard port for ALL services (API + Health endpoints)
-- **8091**: Context API (documented exception for historical intelligence isolation)
-- **8087**: Effectiveness Monitor (documented exception for assessment engine)
+- **8087**: Effectiveness Monitor (documented exception for assessment engine isolation)
 - **9090**: Metrics port for ALL services (not shown in diagram for clarity)
 
 **Arrow Types**:
@@ -195,7 +195,7 @@ Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-M
 
 **Key V1 Architecture Characteristics**:
 - **12 Services**: Complete signal-to-execution pipeline (5 CRD controllers + 7 stateless services)
-- **Port Standardization**: All services use 8080 except Context API (8091) and Effectiveness Monitor (8087)
+- **Port Standardization**: All services use 8080 except Effectiveness Monitor (8087 - assessment engine isolation)
 - **Clear Separation**: Main processing, AI investigation, and support services are independently grouped
 - **Query-Based Storage**: Services query Storage on-demand (not push-based)
 - **External Infrastructure**: Prometheus/Grafana are external systems (not kubernaut services)
@@ -208,7 +208,7 @@ Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-M
 
 ### **🔗 Gateway Service**
 **Image**: `quay.io/jordigilh/gateway-service`
-**Port**: 8080
+**Port**: 8080 (API/health), 9090 (metrics)
 **Single Responsibility**: HTTP Gateway & Security Only
 
 **Capabilities**:
@@ -469,7 +469,7 @@ Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-M
 
 ### **🌐 Context API Service**
 **Image**: `quay.io/jordigilh/context-service`
-**Port**: 8091
+**Port**: 8080 (API/health), 9090 (metrics)
 **Single Responsibility**: Context Orchestration Only
 
 **Capabilities**:
@@ -795,7 +795,7 @@ Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-M
 - ✅ Removed fabricated "Infrastructure Monitoring" service (external Prometheus/Grafana, not a Kubernaut service)
 - ✅ Added missing `dynamic-toolset` service (BR-TOOLSET-001 to BR-TOOLSET-020)
 - ✅ Corrected V1 service count: 12 services (5 CRD controllers + 7 stateless services)
-- ✅ Fixed port numbers: All services use 8080 except Context API (8091), Effectiveness Monitor (8087)
+- ✅ Fixed port numbers: All services use 8080 except Effectiveness Monitor (8087 - assessment engine isolation)
 - ✅ Clarified oscillation detection is a query pattern in Effectiveness Monitor, not a separate service
 - ✅ Separated V1 (12 services) from V2 (4 additional services) clearly
 - ✅ Updated all diagrams, tables, and specifications to reflect accurate architecture
