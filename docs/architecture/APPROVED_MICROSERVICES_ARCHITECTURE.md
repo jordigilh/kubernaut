@@ -231,10 +231,11 @@ sequenceDiagram
     GW->>GW: Validate & deduplicate
     GW->>GW: Classify environment
     GW->>ST: Store signal metadata
-    GW->>RP: Create RemediationRequest CRD
+    GW->>ORCH: Create RemediationRequest CRD
     GW-->>SRC: 202 Accepted
 
     Note over RP,ORCH: Phase 2: Signal Processing
+    ORCH->>ORCH: Reconcile RemediationRequest
     ORCH->>ORCH: Create RemediationProcessing CRD
     ORCH->>RP: Watch RemediationProcessing CRD
     RP->>RP: Reconcile: Enrich signal
