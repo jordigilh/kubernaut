@@ -1,12 +1,43 @@
 # Resilient Workflow Engine AI Integration Sequence Diagram (V1)
 
-**Document Version**: 1.0
+**Document Version**: 1.0 (SUPERSEDED)
 **Date**: January 2025
 **Purpose**: V1 sequence diagram showing HolmesGPT-only AI-powered failure handling and recovery interactions
+**Status**: ⚠️ **SUPERSEDED - HISTORICAL REFERENCE ONLY**
 
 ---
 
-## 🎯 **OVERVIEW**
+## ⚠️ **DOCUMENT STATUS: SUPERSEDED**
+
+**This document has been superseded by the approved failure recovery architecture.**
+
+**Please refer to**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](./PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
+
+### **Key Architectural Changes**
+
+The approved recovery flow differs significantly from this document:
+
+1. **Recovery Coordination**: Remediation Orchestrator coordinates recovery (not Workflow Engine internal handling)
+2. **New AIAnalysis CRD**: Recovery creates new AIAnalysis CRD with historical context
+3. **Context API Integration**: AIAnalysis queries Context API for previous failures
+4. **Recovery Loop Prevention**: Max 3 attempts, pattern detection, escalation to manual review
+5. **"recovering" Phase**: RemediationRequest includes dedicated recovery phase
+
+### **When to Use This Document**
+
+- ✅ Historical reference for V1 design evolution
+- ✅ Understanding original HolmesGPT integration patterns
+- ❌ **Do NOT use for implementation** - Use approved sequence diagram instead
+
+---
+
+## 📚 **Historical Context: Original V1 Design**
+
+The content below represents the original V1 design approach before the approved recovery architecture was established. It is preserved for historical reference.
+
+---
+
+## 🎯 **OVERVIEW (Historical)**
 
 This sequence diagram illustrates how the Resilient Workflow Engine integrates with **HolmesGPT-API only** (V1 design) to handle edge cases, failures, and intelligent recovery scenarios. Multi-tier AI analysis (LLM fallback, multi-provider) is deferred to V2.
 
