@@ -8,7 +8,7 @@
 
 ## 🔗 Upstream Clients (Services Calling Context API)
 
-### **1. AI Analysis Service** (Port 8082)
+### **1. AI Analysis Service** (Port 8080)
 
 **Use Case**: Historical context for remediation recommendations
 
@@ -34,7 +34,7 @@ func (a *AIAnalysisService) GetHistoricalContext(alertName, namespace string) (*
 
 ---
 
-### **2. HolmesGPT API Service** (Port 8090)
+### **2. HolmesGPT API Service** (Port 8080)
 
 **Use Case**: Dynamic context for AI investigations
 
