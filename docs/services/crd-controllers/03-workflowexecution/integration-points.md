@@ -58,7 +58,7 @@ func buildWorkflowFromRecommendations(
     for i, rec := range recommendations {
         idToStepNumber[rec.ID] = i + 1  // Step numbers are 1-based
     }
-    
+
     // Step 2: Build workflow steps with dependency mapping
     steps := []workflowexecutionv1.WorkflowStep{}
     for i, rec := range recommendations {
@@ -72,7 +72,7 @@ func buildWorkflowFromRecommendations(
                 log.Warn("Invalid dependency reference", "recID", rec.ID, "depID", depID)
             }
         }
-        
+
         step := workflowexecutionv1.WorkflowStep{
             StepNumber:   i + 1,
             Name:         rec.Action,
@@ -86,7 +86,7 @@ func buildWorkflowFromRecommendations(
         }
         steps = append(steps, step)
     }
-    
+
     return workflowexecutionv1.WorkflowDefinition{
         Name:    "ai-generated-workflow",
         Version: "v1",

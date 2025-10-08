@@ -1,8 +1,8 @@
 # CRD "Alert" Prefix Triage - Signal-Agnostic Naming
 
-**Date**: October 8, 2025  
-**Purpose**: Identify and fix "Alert" prefix usage in CRD schemas for signal-agnostic terminology  
-**Context**: Kubernaut now supports multiple signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch, etc.)  
+**Date**: October 8, 2025
+**Purpose**: Identify and fix "Alert" prefix usage in CRD schemas for signal-agnostic terminology
+**Context**: Kubernaut now supports multiple signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch, etc.)
 **Scope**: CRD schemas and recent triage/action plan documents
 
 ---
@@ -15,7 +15,7 @@
 
 **Reason for Change**: Kubernaut processes multiple signal types:
 - ✅ Prometheus alerts
-- ✅ Kubernetes events  
+- ✅ Kubernetes events
 - ⏸️ AWS CloudWatch alarms (V2)
 - ⏸️ Azure Monitor alerts (V2)
 - ⏸️ Datadog monitors (V2)
@@ -202,8 +202,8 @@ type RemediationRequestSpec struct {
 
 ### **Change 1: CRD_SCHEMAS.md** (Authoritative)
 
-**File**: `docs/architecture/CRD_SCHEMAS.md`  
-**Priority**: **P0 - CRITICAL** (Authoritative schema)  
+**File**: `docs/architecture/CRD_SCHEMAS.md`
+**Priority**: **P0 - CRITICAL** (Authoritative schema)
 **Occurrences**: 7 lines
 
 **Changes**:
@@ -213,10 +213,10 @@ type RemediationRequestSpec struct {
     // Core Signal Identification
     // ❌ AlertFingerprint string `json:"alertFingerprint"`
     // ❌ AlertName string `json:"alertName"`
-    
+
     // ✅ SignalFingerprint string `json:"signalFingerprint"`
     // ✅ SignalName string `json:"signalName"`
-    
+
     // ... other fields remain unchanged ...
 }
 ```
@@ -239,8 +239,8 @@ type RemediationRequestSpec struct {
 
 ### **Change 2: CRD_SCHEMA_UPDATE_ACTION_PLAN.md**
 
-**File**: `docs/analysis/CRD_SCHEMA_UPDATE_ACTION_PLAN.md`  
-**Priority**: **P1 - HIGH** (Recent triage document)  
+**File**: `docs/analysis/CRD_SCHEMA_UPDATE_ACTION_PLAN.md`
+**Priority**: **P1 - HIGH** (Recent triage document)
 **Occurrences**: 19 lines
 
 **Changes**:
@@ -249,7 +249,7 @@ type RemediationRequestSpec struct {
 type RemediationRequestSpec struct {
     // ❌ AlertLabels      map[string]string `json:"alertLabels,omitempty"`
     // ❌ AlertAnnotations map[string]string `json:"alertAnnotations,omitempty"`
-    
+
     // ✅ SignalLabels      map[string]string `json:"signalLabels,omitempty"`
     // ✅ SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
 }
@@ -258,7 +258,7 @@ type RemediationRequestSpec struct {
 type RemediationProcessingSpec struct {
     // ❌ AlertFingerprint string `json:"alertFingerprint"`
     // ❌ AlertName        string `json:"alertName"`
-    
+
     // ✅ SignalFingerprint string `json:"signalFingerprint"`
     // ✅ SignalName        string `json:"signalName"`
 }
@@ -277,8 +277,8 @@ type RemediationProcessingSpec struct {
 
 ### **Change 3: CRD_DATA_FLOW_TRIAGE_REVISED.md**
 
-**File**: `docs/analysis/CRD_DATA_FLOW_TRIAGE_REVISED.md`  
-**Priority**: **P1 - HIGH** (Recent triage document)  
+**File**: `docs/analysis/CRD_DATA_FLOW_TRIAGE_REVISED.md`
+**Priority**: **P1 - HIGH** (Recent triage document)
 **Occurrences**: 20 lines
 
 **Changes**: Same pattern as Change 2 (replace all Alert prefix occurrences).
@@ -483,16 +483,16 @@ Reference: ADR-015 (Alert to Signal Naming Migration)
 
 ## 🎯 **FINAL RECOMMENDATION**
 
-**Status**: ⚠️ **ALERT PREFIX FOUND** - 4 field names need renaming  
-**Action**: Execute search & replace across 3 documents  
-**Priority**: **P0 - HIGH** (Before implementation begins)  
-**Effort**: ~1 hour  
-**Impact**: **LOW** (Documentation only, no code changes yet)  
+**Status**: ⚠️ **ALERT PREFIX FOUND** - 4 field names need renaming
+**Action**: Execute search & replace across 3 documents
+**Priority**: **P0 - HIGH** (Before implementation begins)
+**Effort**: ~1 hour
+**Impact**: **LOW** (Documentation only, no code changes yet)
 
 **Recommendation**: **PROCEED IMMEDIATELY** with renaming to ensure consistency before implementation.
 
 ---
 
-**Triage Complete**: October 8, 2025  
+**Triage Complete**: October 8, 2025
 **Next Step**: Execute Step 1 (Fix authoritative schema)
 
