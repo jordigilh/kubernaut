@@ -97,7 +97,7 @@ flowchart TB
 
     %% Main flow
     SIG --> GW --> RP --> AI --> WF --> EX --> K8S
-    
+
     %% Orchestration (monitors all CRDs)
     ORCH -.->|monitors lifecycle| RP
     ORCH -.->|monitors lifecycle| AI
@@ -205,6 +205,165 @@ AI Analysis ↔ HolmesGPT API ↔ Context API
 ```
 Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-Model Orchestration → Workflow Execution → K8s Executor
 ```
+
+---
+
+## 🔄 **SEQUENCE DIAGRAMS**
+
+### **Happy Path: Signal to Execution (V1)**
+
+This sequence diagram shows the complete flow from signal ingestion to Kubernetes execution:
+
+```mermaid
+sequenceDiagram
+    participant SRC as Signal Source<br/>(Prometheus/K8s Events)
+    participant GW as Gateway<br/>Service
+    participant RP as Remediation<br/>Processor
+    participant AI as AI Analysis<br/>Service
+    participant HGP as HolmesGPT<br/>API
+    participant CTX as Context<br/>API
+    participant WF as Workflow<br/>Execution
+    participant EX as K8s<br/>Executor
+    participant K8S as Kubernetes<br/>Cluster
+    participant ORCH as Remediation<br/>Orchestrator
+    participant ST as Data<br/>Storage
+
+    Note over SRC,ST: Phase 1: Signal Ingestion & Validation
+    SRC->>GW: POST /webhook (signal)
+    GW->>GW: Validate & deduplicate
+    GW->>GW: Classify environment
+    GW->>ST: Store signal metadata
+    GW->>RP: Create RemediationRequest CRD
+    GW-->>SRC: 202 Accepted
+    
+    Note over RP,ORCH: Phase 2: Signal Processing
+    ORCH->>RP: Watch RemediationRequest CRD
+    RP->>RP: Reconcile: Enrich signal
+    RP->>RP: Add cluster context
+    RP->>ST: Query historical patterns
+    RP->>AI: Create RemediationProcessing CRD
+    RP->>ORCH: Update status: Processing
+    
+    Note over AI,CTX: Phase 3: AI Analysis & Investigation
+    ORCH->>AI: Watch RemediationProcessing CRD
+    AI->>AI: Reconcile: Analyze signal
+    AI->>CTX: GET /context/historical
+    CTX->>ST: Query action history
+    CTX-->>AI: Historical context
+    AI->>HGP: POST /investigate
+    
+    Note over HGP,K8S: HolmesGPT Investigation (see detailed diagram)
+    HGP->>K8S: Query cluster state
+    K8S-->>HGP: Cluster data
+    HGP->>HGP: AI analysis
+    HGP-->>AI: Investigation results + recommendations
+    
+    AI->>AI: Validate recommendations
+    AI->>WF: Create AIAnalysis CRD
+    AI->>ORCH: Update status: Analyzed
+    
+    Note over WF,EX: Phase 4: Workflow Planning
+    ORCH->>WF: Watch AIAnalysis CRD
+    WF->>WF: Reconcile: Build workflow
+    WF->>WF: Load action templates
+    WF->>WF: Validate safety constraints
+    WF->>EX: Create WorkflowExecution CRD
+    WF->>ORCH: Update status: Planned
+    
+    Note over EX,K8S: Phase 5: Kubernetes Execution
+    ORCH->>EX: Watch WorkflowExecution CRD
+    EX->>EX: Reconcile: Execute actions
+    EX->>K8S: Apply remediation<br/>(restart pod/scale/etc)
+    K8S-->>EX: Execution result
+    EX->>ST: Store execution results
+    EX->>EX: Create KubernetesExecution CRD
+    EX->>ORCH: Update status: Executed
+    
+    Note over ORCH,ST: Phase 6: Lifecycle Completion
+    ORCH->>ORCH: Monitor all CRD statuses
+    ORCH->>ORCH: Update RemediationRequest: Complete
+    ORCH->>ST: Store final audit trail
+```
+
+**Key Characteristics**:
+- **CRD-Based Communication**: Services communicate via Kubernetes Custom Resources
+- **Event-Driven**: Each controller watches for CRD changes and reconciles
+- **Orchestrated**: RemediationOrchestrator monitors entire lifecycle
+- **Auditable**: All state changes stored in CRDs and Data Storage
+- **Resilient**: Built-in retry and reconciliation loops
+
+---
+
+### **AI Investigation Sequence (Detailed)**
+
+This diagram shows the detailed HolmesGPT investigation flow:
+
+```mermaid
+sequenceDiagram
+    participant AI as AI Analysis<br/>Service
+    participant HGP as HolmesGPT<br/>API Service
+    participant CTX as Context<br/>API
+    participant DTS as Dynamic<br/>Toolset
+    participant K8S as Kubernetes<br/>Cluster
+    participant LLM as LLM Provider<br/>(OpenAI/Anthropic)
+    participant ST as Data<br/>Storage
+
+    Note over AI,ST: Investigation Request
+    AI->>HGP: POST /api/v1/investigate
+    activate HGP
+    
+    Note over HGP,DTS: Step 1: Load Investigation Tools
+    HGP->>DTS: GET /api/v1/toolsets/current
+    DTS->>DTS: Load HolmesGPT toolset config
+    DTS-->>HGP: Toolset definition (kubectl, logs, etc)
+    
+    Note over HGP,CTX: Step 2: Gather Historical Context
+    HGP->>CTX: GET /api/v1/context/investigation/{signal_id}
+    CTX->>ST: Query similar incidents
+    CTX->>ST: Query action effectiveness
+    CTX-->>HGP: Historical intelligence
+    
+    Note over HGP,K8S: Step 3: Cluster State Investigation
+    HGP->>K8S: kubectl get pods -n {namespace}
+    K8S-->>HGP: Pod list
+    HGP->>K8S: kubectl describe pod {pod_name}
+    K8S-->>HGP: Pod details
+    HGP->>K8S: kubectl logs {pod_name} --tail=100
+    K8S-->>HGP: Recent logs
+    HGP->>K8S: kubectl get events -n {namespace}
+    K8S-->>HGP: Recent events
+    
+    Note over HGP,LLM: Step 4: AI Analysis
+    HGP->>HGP: Build investigation prompt
+    HGP->>LLM: POST /v1/chat/completions<br/>(cluster state + context)
+    activate LLM
+    LLM->>LLM: Analyze symptoms
+    LLM->>LLM: Identify root cause
+    LLM->>LLM: Generate recommendations
+    LLM-->>HGP: Analysis results
+    deactivate LLM
+    
+    Note over HGP,ST: Step 5: Validate & Store
+    HGP->>HGP: Validate recommendations
+    HGP->>HGP: Apply safety constraints
+    HGP->>ST: Store investigation results
+    HGP-->>AI: Investigation complete<br/>(root cause + actions)
+    deactivate HGP
+    
+    Note over AI,AI: Step 6: Decision Making
+    AI->>AI: Validate against policies
+    AI->>AI: Select remediation actions
+    AI->>AI: Create AIAnalysis CRD
+```
+
+**Investigation Capabilities**:
+- **Dynamic Toolsets**: HolmesGPT tools configured via Dynamic Toolset service
+- **Historical Intelligence**: Context API provides similar incident patterns
+- **Multi-Source Data**: Combines cluster state, logs, events, metrics
+- **AI-Powered Analysis**: LLM analyzes symptoms and recommends actions
+- **Safety Validation**: All recommendations validated before execution
+
+---
 
 **Key V1 Architecture Characteristics**:
 - **12 Services**: Complete signal-to-execution pipeline (5 CRD controllers + 7 stateless services)
