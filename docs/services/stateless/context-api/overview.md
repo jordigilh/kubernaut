@@ -26,25 +26,55 @@
 
 Context API Service is the **historical intelligence provider** for the Kubernaut intelligent remediation system. It serves as the **knowledge repository** that:
 
-1. **Enriches** signals with historical context and organizational knowledge
-2. **Calculates** success rates for remediation workflows
-3. **Provides** semantic search through past incidents using vector embeddings
-4. **Delivers** environment-specific patterns and best practices
-5. **Serves** as read-only interface to audit trail and remediation history
+1. **Provides recovery context** for workflow failure analysis (BR-WF-RECOVERY-011) ← **PRIMARY USE CASE**
+2. **Enriches** signals with historical context and organizational knowledge
+3. **Calculates** success rates for remediation workflows
+4. **Provides** semantic search through past incidents using vector embeddings
+5. **Delivers** environment-specific patterns and best practices
+6. **Serves** as read-only interface to audit trail and remediation history
 
 ### Why Context API Exists
 
 **Problem**: Without Context API Service, downstream systems would be operating **blind**:
+- **No recovery context** → Cannot generate alternative strategies after workflow failures (BR-WF-RECOVERY-011)
 - **No historical context** → Cannot learn from past remediations
 - **No success rates** → Cannot predict workflow effectiveness
 - **No pattern matching** → Cannot identify similar incidents
 - **No organizational knowledge** → Cannot apply best practices
 
 **Solution**: Context API Service provides **intelligent context** that:
+- ✅ **Enables intelligent failure recovery** through historical context for alternative strategy generation
 - ✅ Reduces false positives by 30-40% through historical pattern matching
 - ✅ Improves remediation success rates by 25-35% through success rate data
 - ✅ Enables AI analysis to identify root causes 50% faster with historical patterns
 - ✅ Provides environment-specific context for safer automated remediations
+
+#### Primary Use Case: Recovery Context (BR-WF-RECOVERY-011)
+
+**Scenario**: A workflow fails during remediation (e.g., scale-deployment times out)
+
+**Without Context API**:
+- ❌ AIAnalysis generates the same strategy again (infinite loop risk)
+- ❌ No awareness of what already failed
+- ❌ No historical patterns to guide alternative approaches
+
+**With Context API** (Alternative 2 Design):
+1. ✅ Remediation Orchestrator creates NEW RemediationProcessing CRD (recovery)
+2. ✅ RemediationProcessing Controller queries Context API endpoint: `/api/v1/context/remediation/{id}`
+3. ✅ Context API returns:
+   - Previous failures (what failed, why, when)
+   - Related alerts (correlation patterns)
+   - Historical patterns (success rates for similar failures)
+   - Successful strategies (proven alternatives)
+4. ✅ RemediationProcessing Controller enriches with:
+   - Fresh monitoring context (current cluster state)
+   - Fresh business context (current ownership)
+   - Recovery context from Context API
+5. ✅ Remediation Orchestrator watches completion, creates AIAnalysis with **all contexts**
+6. ✅ AIAnalysis Controller reads contexts and generates **alternative strategy**
+7. ✅ Recovery succeeds with intelligent, context-aware approach
+
+**Design Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Alternative 2)
 
 ---
 
