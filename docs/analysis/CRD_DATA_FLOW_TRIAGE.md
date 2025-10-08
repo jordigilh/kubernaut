@@ -1,8 +1,8 @@
 # CRD Data Flow Triage: Gateway → RemediationProcessor → RemediationOrchestrator
 
-**Date**: October 8, 2025  
-**Purpose**: Triage CRD structure flow to ensure all information is properly passed through the chain  
-**Scope**: Gateway Service → RemediationProcessor Controller → RemediationOrchestrator  
+**Date**: October 8, 2025
+**Purpose**: Triage CRD structure flow to ensure all information is properly passed through the chain
+**Scope**: Gateway Service → RemediationProcessor Controller → RemediationOrchestrator
 
 ---
 
@@ -24,9 +24,9 @@
 
 ### **Phase 1: Gateway Service → RemediationRequest CRD** ✅ COMPLETE
 
-**CRD Created**: `RemediationRequest`  
-**API Group**: `remediation.kubernaut.io/v1`  
-**Creator**: Gateway Service  
+**CRD Created**: `RemediationRequest`
+**API Group**: `remediation.kubernaut.io/v1`
+**Creator**: Gateway Service
 **Authoritative Schema**: `docs/architecture/CRD_SCHEMAS.md`
 
 #### **Data Collected by Gateway**:
@@ -90,9 +90,9 @@ ProviderData json.RawMessage // Full JSON provider data
 
 ### **Phase 2: RemediationOrchestrator → RemediationProcessing CRD** ❌ DATA LOSS
 
-**CRD Created**: `RemediationProcessing`  
-**API Group**: `remediationprocessing.kubernaut.io/v1`  
-**Creator**: RemediationOrchestrator (RemediationRequest controller)  
+**CRD Created**: `RemediationProcessing`
+**API Group**: `remediationprocessing.kubernaut.io/v1`
+**Creator**: RemediationOrchestrator (RemediationRequest controller)
 **Schema**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
 
 #### **Current RemediationProcessing Spec**:
@@ -101,10 +101,10 @@ ProviderData json.RawMessage // Full JSON provider data
 type RemediationProcessingSpec struct {
     // Parent reference
     RemediationRequestRef corev1.ObjectReference // ✅ PRESENT
-    
+
     // Alert data (OUTDATED STRUCTURE)
     Alert Alert // ❌ SIMPLIFIED - Missing Gateway enrichment
-    
+
     // Config
     EnrichmentConfig              EnrichmentConfig
     EnvironmentClassification     EnvironmentClassificationConfig
@@ -188,9 +188,9 @@ type RemediationProcessingStatusSummary struct {
 
 ### **Phase 4: RemediationOrchestrator → AIAnalysis CRD** ❓ UNKNOWN DATA MAPPING
 
-**CRD Created**: `AIAnalysis`  
-**API Group**: `aianalysis.kubernaut.io/v1`  
-**Creator**: RemediationOrchestrator  
+**CRD Created**: `AIAnalysis`
+**API Group**: `aianalysis.kubernaut.io/v1`
+**Creator**: RemediationOrchestrator
 **Question**: What data from RemediationRequest flows to AIAnalysis?
 
 **Expected Flow**:
@@ -235,9 +235,9 @@ RemediationProcessing.status.enrichmentResults → AIAnalysis.spec (???)
 type RemediationProcessingSpec struct {
     // Parent reference (ONLY reference needed)
     RemediationRequestRef corev1.ObjectReference
-    
+
     // ❌ REMOVE: Alert Alert (duplicates parent data)
-    
+
     // ✅ KEEP: Processing configuration
     EnrichmentConfig              EnrichmentConfig
     EnvironmentClassification     EnvironmentClassificationConfig
@@ -248,14 +248,14 @@ func (r *RemediationProcessorReconciler) Reconcile(ctx context.Context, req reco
     // Step 1: Fetch RemediationProcessing CRD
     remProc := &v1.RemediationProcessing{}
     r.Get(ctx, req.NamespacedName, remProc)
-    
+
     // Step 2: Fetch parent RemediationRequest (source of truth)
     remReq := &remediationv1.RemediationRequest{}
     r.Get(ctx, types.NamespacedName{
         Name:      remProc.Spec.RemediationRequestRef.Name,
         Namespace: remProc.Spec.RemediationRequestRef.Namespace,
     }, remReq)
-    
+
     // Step 3: Read ALL data from parent (no duplication)
     alertFingerprint := remReq.Spec.AlertFingerprint
     priority := remReq.Spec.Priority
@@ -282,12 +282,12 @@ func (r *RemediationProcessorReconciler) Reconcile(ctx context.Context, req reco
 
 **Implication**: HolmesGPT might need to re-fetch Kubernetes context (duplicating RemediationProcessor work)
 
-**Correct Pattern**: 
+**Correct Pattern**:
 ```go
 // RemediationRequest Status - ENHANCED
 type RemediationRequestStatus struct {
     // ... existing fields ...
-    
+
     // ✅ ADD: Full enrichment results from RemediationProcessor
     EnrichmentResults *EnrichmentResults `json:"enrichmentResults,omitempty"`
 }
@@ -377,7 +377,7 @@ type EnrichmentResults struct {
 type RemediationProcessingSpec struct {
     // ONLY parent reference (no data duplication)
     RemediationRequestRef corev1.ObjectReference
-    
+
     // Processing configuration (NOT data)
     EnrichmentConfig              EnrichmentConfig
     EnvironmentClassification     EnvironmentClassificationConfig
@@ -395,14 +395,14 @@ type RemediationProcessingSpec struct {
 func (r *RemediationProcessorReconciler) Reconcile(ctx context.Context, req reconcile.Request) {
     remProc := &v1.RemediationProcessing{}
     r.Get(ctx, req.NamespacedName, remProc)
-    
+
     // Fetch parent for ALL signal data
     remReq := &remediationv1.RemediationRequest{}
     r.Get(ctx, client.ObjectKey{
         Name:      remProc.Spec.RemediationRequestRef.Name,
         Namespace: remProc.Spec.RemediationRequestRef.Namespace,
     }, remReq)
-    
+
     // Access all Gateway-collected data
     priority := remReq.Spec.Priority
     isStorm := remReq.Spec.IsStorm
@@ -453,7 +453,7 @@ func (r *RemediationProcessorReconciler) Reconcile(ctx context.Context, req reco
 // RemediationRequestStatus - ENHANCED
 type RemediationRequestStatus struct {
     // ... existing fields ...
-    
+
     // Full enrichment results from RemediationProcessor
     EnrichmentResults *EnrichmentResults `json:"enrichmentResults,omitempty"`
 }
