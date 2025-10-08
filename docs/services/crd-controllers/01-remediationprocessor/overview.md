@@ -1,20 +1,31 @@
 ## Overview
 
-**Purpose**: Alert enrichment, environment classification, and status aggregation with Kubernetes context integration.
+> **📋 Design Decision: DD-001 - Recovery Context Enrichment**
+> **Alternative 2**: RemediationProcessing enriches ALL contexts (monitoring + business + recovery)
+> **Status**: ✅ Approved Design | **Confidence**: 95%
+> **See**: [DESIGN_DECISIONS.md#dd-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
+
+---
+
+**Purpose**: Alert enrichment, environment classification, and recovery context integration with Kubernetes context enrichment.
 
 **Core Responsibilities**:
 1. Enrich alerts with comprehensive Kubernetes context (pods, deployments, nodes)
-2. Classify environment tier (production, staging, development) with business criticality
-3. Validate alert completeness and readiness for AI analysis
-4. Update status for RemediationRequest controller to trigger next phase
+2. **Enrich recovery attempts with historical failure context from Context API** (DD-001: Alternative 2 - BR-WF-RECOVERY-011)
+3. Classify environment tier (production, staging, development) with business criticality
+4. Validate alert completeness and readiness for AI analysis
+5. Update status for RemediationRequest controller to trigger next phase
 
-**V1 Scope - Enrichment & Classification Only**:
-- Single enrichment provider: Context Service - see [README: Context Service](../../README.md#-9-context-service)
+**V1 Scope - Enrichment, Classification & Recovery Context**:
+- Dual enrichment providers (DD-001):
+  - **Context Service**: Monitoring & business context (always)
+  - **Context API**: Recovery context (ONLY for recovery attempts - Alternative 2)
 - Environment classification with fallback heuristics
 - Basic alert validation
 - **Targeting data ONLY** (namespace, resource kind/name, Kubernetes context ~8KB)
 - **NO log/metric storage in CRD** (HolmesGPT fetches via toolsets dynamically)
-- No multi-source data aggregation
+- **Recovery enrichment with FRESH monitoring + business + recovery contexts** (DD-001: Alternative 2 - BR-WF-RECOVERY-011)
+- No multi-source data aggregation (except recovery Context API)
 
 **Future V2 Enhancements** (Out of Scope):
 - Multi-source context discovery (additional Context Service providers)
@@ -127,7 +138,8 @@ graph TB
     end
 
     subgraph "External Services"
-        CS[Context Service<br/>Port 8080]
+        CS[Context Service<br/>Port 8080<br/>Monitoring + Business]
+        CTXAPI[Context API<br/>Recovery Context<br/>Alternative 2]
         AR[RemediationRequest CRD<br/>Parent]
     end
 
@@ -139,6 +151,7 @@ graph TB
     AR -->|Creates & Owns| AP
     Controller -->|Watches| AP
     Controller -->|Fetch Context| CS
+    Controller -->|Fetch Recovery<br/>Context (if recovery)| CTXAPI
     CS -->|Query| K8S
     Controller -->|Classify Environment| Classifier
     Controller -->|Enrich Alert| Enricher
@@ -151,16 +164,17 @@ graph TB
     style AR fill:#ffe1e1
 ```
 
-### Sequence Diagram - Enrichment Flow
+### Sequence Diagram - Enrichment Flow (Initial & Recovery)
 ```mermaid
 sequenceDiagram
     participant AR as RemediationRequest<br/>Controller
     participant AP as RemediationProcessing<br/>CRD
     participant Ctrl as RemediationProcessing<br/>Reconciler
     participant CS as Context<br/>Service
+    participant CTXAPI as Context<br/>API
     participant K8S as Kubernetes<br/>API
 
-    AR->>AP: Create RemediationProcessing CRD<br/>(with owner reference)
+    AR->>AP: Create RemediationProcessing CRD<br/>(isRecoveryAttempt flag)
     activate AP
     AP-->>Ctrl: Watch triggers reconciliation
     activate Ctrl
@@ -168,50 +182,71 @@ sequenceDiagram
     Note over Ctrl: Phase: Enriching
     Ctrl->>CS: POST /api/v1/context/enrich<br/>(namespace, pod, deployment)
     activate CS
-    CS->>K8S: Get Pod details
-    CS->>K8S: Get Deployment details
-    CS->>K8S: Get Node details
+    CS->>K8S: Get Pod details (FRESH!)
+    CS->>K8S: Get Deployment details (FRESH!)
+    CS->>K8S: Get Node details (FRESH!)
     CS-->>Ctrl: Return enriched context<br/>(~8KB JSON)
     deactivate CS
+
+    alt isRecoveryAttempt = true (Alternative 2)
+        Note over Ctrl: Recovery enrichment
+        Ctrl->>CTXAPI: GET /api/v1/context/remediation/{id}
+        activate CTXAPI
+        CTXAPI-->>Ctrl: Return recovery context<br/>(previous failures, patterns)
+        deactivate CTXAPI
+        Note over Ctrl: ALL contexts captured<br/>at same timestamp!
+    end
 
     Note over Ctrl: Phase: Classifying
     Ctrl->>Ctrl: Classify environment<br/>(prod/staging/dev)
 
-    Note over Ctrl: Phase: Ready
-    Ctrl->>AP: Update Status.Phase = "Ready"<br/>Update Status.EnrichedData
+    Note over Ctrl: Phase: Completed
+    Ctrl->>AP: Update Status.Phase = "completed"<br/>Update Status.EnrichmentResults<br/>(monitoring + business + recovery)
     deactivate Ctrl
     AP-->>AR: Status change triggers parent
     deactivate AP
 
-    Note over AR: Create AIAnalysis CRD
+    Note over AR: Create AIAnalysis CRD<br/>with enrichment data
 ```
 
-### State Machine - Reconciliation Phases
+### State Machine - Reconciliation Phases (Initial & Recovery)
 ```mermaid
 stateDiagram-v2
     [*] --> Pending
     Pending --> Enriching: Reconcile triggered
     Enriching --> Classifying: Context enriched
     Enriching --> Degraded: Context Service unavailable
-    Classifying --> Ready: Environment classified
-    Degraded --> Ready: Fallback to alert labels
-    Ready --> [*]: RemediationRequest proceeds
+    Classifying --> Completed: Environment classified
+    Degraded --> Completed: Fallback to alert labels
+    Completed --> [*]: RemediationRequest proceeds
 
     note right of Enriching
-        Fetch Kubernetes context
-        from Context Service
-        Timeout: 10s
+        ALWAYS:
+        • Fetch monitoring context (FRESH!)
+        • Fetch business context (FRESH!)
+
+        IF isRecoveryAttempt:
+        • Query Context API (Alternative 2)
+        • Fetch recovery context (FRESH!)
+        • All contexts same timestamp!
+
+        Timeout: 5s total
     end note
 
     note right of Classifying
         Analyze namespace, labels
         Classify: prod/staging/dev
-        Timeout: 5s
+        Timeout: 2s
     end note
 
     note right of Degraded
-        Use alert labels as fallback
-        when Context Service fails
+        Context Service unavailable:
+        • Use alert labels as fallback
+
+        Recovery + Context API failed:
+        • Build minimal recovery context
+        • From failedWorkflowRef
+        • ContextQuality = "degraded"
     end note
 ```
 
@@ -443,18 +478,25 @@ Alert enrichment, environment classification, and validation service that bridge
 ```
 Gateway Service → RemediationRequest CRD → RemediationProcessing CRD (this service)
                                        ↓
+           RemediationProcessing enriches (monitoring + business + recovery contexts)
+                                       ↓
                       RemediationProcessing.status.phase = "completed"
                                        ↓
                       RemediationRequest watches status
                                        ↓
-                      RemediationRequest creates AIAnalysis CRD
+            RemediationRequest copies enrichment data → creates AIAnalysis CRD
+                                       ↓
+                   AIAnalysis has ALL contexts (Alternative 2)
 ```
 
 ### V1 Scope Boundaries
 **Included**:
-- Single enrichment provider (Context Service)
+- Dual enrichment providers:
+  - Context Service (monitoring + business contexts)
+  - Context API (recovery context for recovery attempts only - Alternative 2)
 - Environment classification with fallback heuristics
 - Basic alert validation
+- Recovery enrichment with FRESH contexts (BR-WF-RECOVERY-011)
 - Audit trail persistence
 
 **Excluded** (V2):
@@ -466,6 +508,8 @@ Gateway Service → RemediationRequest CRD → RemediationProcessing CRD (this s
 ### Business Requirements Coverage
 - **BR-AP-001 to BR-AP-050**: Alert processing and enrichment logic
 - **BR-AP-051 to BR-AP-053**: Environment classification (integrated)
+- **BR-AP-060 to BR-AP-062**: Alert enrichment, correlation, timeout handling
+- **BR-WF-RECOVERY-011**: Recovery context enrichment from Context API (Alternative 2)
 - **BR-AP-021**: Alert lifecycle state tracking
 - **BR-WH-008**: Duplicate detection (Gateway Service, not Remediation Processor)
 
