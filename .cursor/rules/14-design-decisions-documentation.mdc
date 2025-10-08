@@ -320,7 +320,7 @@ When documenting implementation that follows a design decision, include this hea
 ---
 
 > **📋 Design Decision Status**
-> 
+>
 > **Current Implementation**: **DD-XXX Alternative Y** (Approved Design)
 > **Status**: ✅ **Production-Ready**
 > **Confidence**: XX%

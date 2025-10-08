@@ -187,10 +187,10 @@ func (r *WorkflowExecutionReconciler) reconcileExecuting(
     ctx context.Context,
     wf *workflowexecutionv1.WorkflowExecution,
 ) (ctrl.Result, error) {
-    
+
     // Execute current step
     stepResult, err := r.executeStep(ctx, wf, currentStep)
-    
+
     if err != nil || stepResult.Failed {
         // Record failure details in WorkflowExecution status
         wf.Status.Phase = "failed"
@@ -199,7 +199,7 @@ func (r *WorkflowExecutionReconciler) reconcileExecuting(
         wf.Status.FailedAction = currentStep.Action.Type
         wf.Status.ErrorType = classifyError(err)  // "timeout", "permission_denied", "resource_not_found", etc.
         wf.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-        
+
         // Record detailed execution state for recovery analysis
         wf.Status.ExecutionSnapshot = &workflowexecutionv1.ExecutionSnapshot{
             CompletedSteps: wf.Status.CompletedSteps,
@@ -207,21 +207,21 @@ func (r *WorkflowExecutionReconciler) reconcileExecuting(
             ClusterState:   captureClusterState(ctx, wf),
             ResourceSnapshot: captureResourceSnapshot(ctx, wf),
         }
-        
+
         // Update status - Remediation Orchestrator watches this
         if err := r.Status().Update(ctx, wf); err != nil {
             return ctrl.Result{}, err
         }
-        
+
         // Emit event for visibility
         r.Recorder.Event(wf, corev1.EventTypeWarning, "WorkflowFailed",
             fmt.Sprintf("Workflow failed at step %d: %v", currentStep.Index, err))
-        
+
         // Return with no requeue - WorkflowExecution's job is done
         // Remediation Orchestrator will handle recovery coordination
         return ctrl.Result{}, nil
     }
-    
+
     // Continue with next step...
 }
 ```
@@ -236,7 +236,7 @@ type WorkflowExecutionStatus struct {
     CompletedSteps   int          `json:"completedSteps"`
     TotalSteps       int          `json:"totalSteps"`
     CompletionTime   *metav1.Time `json:"completionTime,omitempty"`
-    
+
     // Enhanced failure tracking for recovery
     FailedStep       *int         `json:"failedStep,omitempty"`       // Which step failed (0-based)
     FailedAction     *string      `json:"failedAction,omitempty"`     // Action type that failed (e.g., "scale-deployment")
@@ -285,7 +285,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
     if err := r.Get(ctx, req.NamespacedName, &remediation); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
-    
+
     // Check if current workflow has failed
     if remediation.Status.CurrentWorkflowExecutionRef != nil {
         var workflow workflowexecutionv1.WorkflowExecution
@@ -293,17 +293,17 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
             Name:      *remediation.Status.CurrentWorkflowExecutionRef,
             Namespace: remediation.Namespace,
         }, &workflow); err == nil {
-            
+
             // Workflow failure detected
             if workflow.Status.Phase == "failed" && remediation.Status.OverallPhase == "executing" {
                 log.Info("Workflow failure detected, evaluating recovery viability",
                     "workflow", workflow.Name,
                     "failedStep", *workflow.Status.FailedStep,
                     "failureReason", *workflow.Status.FailureReason)
-                
+
                 // Evaluate recovery viability (BR-WF-RECOVERY-010)
                 canRecover, reason := r.evaluateRecoveryViability(ctx, &remediation, &workflow)
-                
+
                 if canRecover {
                     // Transition to recovering phase and create new AIAnalysis
                     return r.initiateRecovery(ctx, &remediation, &workflow)
@@ -314,7 +314,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
             }
         }
     }
-    
+
     // Continue with normal reconciliation...
 }
 ```
@@ -360,21 +360,21 @@ func (r *RemediationRequestReconciler) initiateRecovery(
     remediation *remediationv1.RemediationRequest,
     failedWorkflow *workflowexecutionv1.WorkflowExecution,
 ) (ctrl.Result, error) {
-    
+
     log := ctrl.LoggerFrom(ctx)
     log.Info("Initiating recovery",
         "recoveryAttempt", remediation.Status.RecoveryAttempts+1,
         "maxAttempts", remediation.Status.MaxRecoveryAttempts)
-    
+
     // Update RemediationRequest to "recovering" phase
     remediation.Status.OverallPhase = "recovering"
     remediation.Status.RecoveryAttempts++
     remediation.Status.LastFailureTime = &metav1.Time{Time: time.Now()}
-    reason := fmt.Sprintf("workflow_%s_step_%d", 
-        *failedWorkflow.Status.ErrorType, 
+    reason := fmt.Sprintf("workflow_%s_step_%d",
+        *failedWorkflow.Status.ErrorType,
         *failedWorkflow.Status.FailedStep)
     remediation.Status.RecoveryReason = &reason
-    
+
     // Create new AIAnalysis CRD with recovery context
     aiAnalysis := &aianalysisv1.AIAnalysis{
         ObjectMeta: metav1.ObjectMeta{
@@ -388,7 +388,7 @@ func (r *RemediationRequestReconciler) initiateRecovery(
             // Copy signal context from original
             AlertContext:           remediation.Spec.AlertContext,
             RemediationRequestRef:  corev1.LocalObjectReference{Name: remediation.Name},
-            
+
             // NEW: Recovery-specific fields
             IsRecoveryAttempt:      true,
             RecoveryAttemptNumber:  remediation.Status.RecoveryAttempts,
@@ -398,11 +398,11 @@ func (r *RemediationRequestReconciler) initiateRecovery(
             PreviousAIAnalysisRefs: remediation.Status.AIAnalysisRefs,
         },
     }
-    
+
     if err := r.Create(ctx, aiAnalysis); err != nil {
         return ctrl.Result{}, err
     }
-    
+
     // Update refs arrays in RemediationRequest status
     remediation.Status.AIAnalysisRefs = append(
         remediation.Status.AIAnalysisRefs,
@@ -411,7 +411,7 @@ func (r *RemediationRequestReconciler) initiateRecovery(
             Namespace: aiAnalysis.Namespace,
         },
     )
-    
+
     remediation.Status.WorkflowExecutionRefs = append(
         remediation.Status.WorkflowExecutionRefs,
         remediationv1.WorkflowExecutionReferenceWithOutcome{
@@ -424,15 +424,15 @@ func (r *RemediationRequestReconciler) initiateRecovery(
             AttemptNumber:  remediation.Status.RecoveryAttempts,
         },
     )
-    
+
     if err := r.Status().Update(ctx, remediation); err != nil {
         return ctrl.Result{}, err
     }
-    
+
     r.Recorder.Event(remediation, corev1.EventTypeNormal, "RecoveryInitiated",
-        fmt.Sprintf("Recovery attempt %d initiated after workflow failure", 
+        fmt.Sprintf("Recovery attempt %d initiated after workflow failure",
             remediation.Status.RecoveryAttempts))
-    
+
     return ctrl.Result{}, nil
 }
 ```
@@ -488,19 +488,19 @@ func TestWorkflowExecution_FailureDetection(t *testing.T) {
             CompletedSteps: 2,
         },
     }
-    
+
     // Simulate step failure
     err := fmt.Errorf("operation timed out")
     reconciler := &WorkflowExecutionReconciler{}
-    
+
     result, err := reconciler.reconcileExecuting(context.Background(), wf)
-    
+
     // Verify WorkflowExecution updated its own status
     assert.Equal(t, "failed", wf.Status.Phase)
     assert.Equal(t, 2, *wf.Status.FailedStep)
     assert.Equal(t, "timeout", *wf.Status.ErrorType)
     assert.NotNil(t, wf.Status.ExecutionSnapshot)
-    
+
     // Verify NO recovery triggered (that's Remediation Orchestrator's job)
     assert.NoError(t, err)  // No error returned
     assert.Equal(t, ctrl.Result{}, result)  // No requeue
@@ -516,7 +516,7 @@ func TestRemediationOrchestrator_WatchesWorkflowFailure(t *testing.T) {
             MaxRecoveryAttempts: 3,
         },
     }
-    
+
     // Workflow fails
     workflow := &workflowexecutionv1.WorkflowExecution{
         ObjectMeta: metav1.ObjectMeta{Name: "workflow-001"},
@@ -526,12 +526,12 @@ func TestRemediationOrchestrator_WatchesWorkflowFailure(t *testing.T) {
             FailureReason: ptr.To("timeout"),
         },
     }
-    
+
     reconciler := &RemediationRequestReconciler{}
-    
+
     // Remediation Orchestrator reconciles
     result, err := reconciler.Reconcile(context.Background(), ctrl.Request{})
-    
+
     // Verify recovery initiated
     assert.NoError(t, err)
     assert.Equal(t, "recovering", remediation.Status.OverallPhase)
