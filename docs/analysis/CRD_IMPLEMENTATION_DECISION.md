@@ -1,7 +1,7 @@
 # CRD Implementation Decision: Kubebuilder vs Manual Approach
 
-**Date**: October 8, 2025  
-**Status**: 🤔 **DECISION REQUIRED**  
+**Date**: October 8, 2025
+**Status**: 🤔 **DECISION REQUIRED**
 **Impact**: CRITICAL - Affects entire codebase structure
 
 ---
@@ -296,8 +296,8 @@ mkdir -p api/remediationorchestrator/v1
 
 ---
 
-**Status**: 🤔 **AWAITING DECISION**  
-**Recommended**: Option C (Hybrid Approach)  
-**Time to Phase 1**: 1 week with Option C  
+**Status**: 🤔 **AWAITING DECISION**
+**Recommended**: Option C (Hybrid Approach)
+**Time to Phase 1**: 1 week with Option C
 **Impact**: Critical architectural decision
 
