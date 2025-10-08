@@ -1,18 +1,23 @@
 ## Overview
 
-**Purpose**: HolmesGPT-powered alert investigation, root cause analysis, and remediation recommendation generation.
+**Purpose**: HolmesGPT-powered alert investigation, root cause analysis, and remediation recommendation generation with complete enrichment context.
 
 **Core Responsibilities**:
-1. Trigger HolmesGPT investigation for enriched alerts (BR-AI-011)
-2. Perform contextual AI analysis of Kubernetes state (BR-AI-001)
-3. Identify root cause candidates with supporting evidence (BR-AI-012)
-4. Generate ranked remediation recommendations (BR-AI-006, BR-AI-007)
-5. Validate AI responses and detect hallucinations (BR-AI-021, BR-AI-023)
-6. Create WorkflowExecution CRD for approved recommendations
+1. **Read complete enrichment data from RemediationProcessing** (Alternative 2 - monitoring + business + recovery contexts)
+2. Trigger HolmesGPT investigation with enriched contexts (BR-AI-011)
+3. Perform contextual AI analysis of Kubernetes state (BR-AI-001)
+4. Identify root cause candidates with supporting evidence (BR-AI-012)
+5. Generate ranked remediation recommendations (BR-AI-006, BR-AI-007)
+6. **Leverage historical failure context for recovery attempts** (BR-WF-RECOVERY-011 - Alternative 2)
+7. Validate AI responses and detect hallucinations (BR-AI-021, BR-AI-023)
+8. Create WorkflowExecution CRD for approved recommendations
 
 
-**V1 Scope - HolmesGPT Only**:
+**V1 Scope - HolmesGPT with Complete Enrichment**:
 - Single AI provider: HolmesGPT (port 8080)
+- **Data source**: Complete enrichment from RemediationProcessing CRD (Alternative 2)
+- **No API calls during reconciliation** (all contexts in CRD spec)
+- **Fresh contexts for recovery** (monitoring + business + recovery from Context API)
 - No multi-model orchestration
 - No LLM fallback chains
 - Focus on investigation and recommendation
@@ -26,11 +31,11 @@
 
 ## 📊 Visual Architecture
 
-### Architecture Diagram
+### Architecture Diagram (Alternative 2)
 ```mermaid
 graph TB
     subgraph "AI Analysis Service"
-        AIA[AIAnalysis CRD]
+        AIA[AIAnalysis CRD<br/>+ EnrichmentData]
         Controller[AIAnalysisReconciler]
         HolmesAPI[HolmesGPT API Client]
         RegoEngine[Rego Policy Engine]
@@ -43,6 +48,10 @@ graph TB
         Notification[Notification Service<br/>Port 8080]
     end
 
+    subgraph "Data Sources (Alternative 2)"
+        RP[RemediationProcessing CRD<br/>Enrichment Source<br/>monitoring + business + recovery]
+    end
+
     subgraph "Child CRDs"
         Approval[AIApprovalRequest CRD]
     end
@@ -52,9 +61,11 @@ graph TB
         VectorDB[Vector DB<br/>Similarity Search]
     end
 
-    AR -->|Creates & Owns| AIA
+    AR -->|Creates & Owns<br/>+ Copies Enrichment| AIA
+    RP -->|Enrichment Data<br/>Copied to Spec| AIA
     Controller -->|Watches| AIA
-    Controller -->|Investigate Alert| HolmesAPI
+    Controller -->|Read Enrichment<br/>from Spec| AIA
+    Controller -->|Investigate Alert<br/>with ALL contexts| HolmesAPI
     HolmesAPI -->|AI Analysis| HolmesGPT
     Controller -->|Load Policy| CM
     Controller -->|Evaluate Policy| RegoEngine
@@ -70,7 +81,14 @@ graph TB
     style Controller fill:#fff4e1
     style AR fill:#ffe1e1
     style Approval fill:#e1ffe1
+    style RP fill:#ffe1ff
 ```
+
+**Key Changes (Alternative 2)**:
+- ✅ AIAnalysis CRD contains `EnrichmentData` in spec (from RemediationProcessing)
+- ✅ Remediation Orchestrator copies enrichment from RP to AIAnalysis
+- ✅ AIAnalysis Controller reads from spec (NO API calls)
+- ✅ HolmesGPT receives ALL contexts (monitoring + business + recovery)
 
 ### Sequence Diagram - Approval Workflow
 ```mermaid
@@ -104,20 +122,17 @@ sequenceDiagram
     else Manual Approval Required
         Rego-->>Ctrl: MANUAL_APPROVAL_REQUIRED
         Ctrl->>App: Create AIApprovalRequest CRD
-        activate App
         Ctrl-->>App: Watch for approval decision
 
         alt Approved by Operator
             App->>App: Status.Decision = "Approved"
             App-->>Ctrl: Watch triggers reconciliation
             Ctrl->>AIA: Status.ApprovalStatus = "Approved"
-            deactivate App
         else Rejected by Operator
             App->>App: Status.Decision = "Rejected"
             App-->>Ctrl: Watch triggers reconciliation
             Ctrl->>Not: Send escalation notification
             Ctrl->>AIA: Status.ApprovalStatus = "Rejected"
-            deactivate App
         end
     end
 
