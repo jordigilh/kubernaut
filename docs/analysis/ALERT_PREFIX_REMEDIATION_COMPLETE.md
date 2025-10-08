@@ -20,8 +20,8 @@ Successfully updated all documentation files with "ALERT" prefix naming to align
 |------|-------------|--------|
 | `docs/concepts/ALERT_PROCESSING_FLOW.md` | Added terminology evolution notice | ✅ |
 | `docs/concepts/ALERT_CONCEPTS_CLARIFICATION.md` | Added terminology evolution notice | ✅ |
-| `docs/design/CRD/01_REMEDIATION_REQUEST_CRD.md` | Enhanced deprecation notice + renamed | ✅ |
-| `docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md` | Enhanced deprecation notice + renamed | ✅ |
+| `docs/design/CRD/01_ALERT_REMEDIATION_CRD.md` | Enhanced deprecation notice | ✅ |
+| `docs/design/CRD/02_ALERT_PROCESSING_CRD.md` | Enhanced deprecation notice | ✅ |
 | `docs/requirements/enhancements/ALERT_TRACKING.md` | Added terminology context note | ✅ |
 | `docs/todo/phases/phase1/ALERT_PROCESSOR_SERVICE.md` | Added historical notice | ✅ |
 | `docs/test/integration/test_suites/01_alert_processing/README.md` | Created with terminology note | ✅ |

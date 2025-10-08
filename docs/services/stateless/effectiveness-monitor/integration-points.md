@@ -3,7 +3,7 @@
 **Version**: 1.0
 **Last Updated**: October 6, 2025
 **Service Type**: Stateless HTTP API Service (Assessment & Analysis)
-**Port**: 8087 (REST + Health), 9090 (Metrics)
+**Port**: 8080 (REST + Health), 9090 (Metrics)
 
 ---
 
@@ -27,7 +27,7 @@ import (
 )
 
 func (c *ContextAPIService) GetEffectivenessAssessment(ctx context.Context, actionID string) (*EffectivenessData, error) {
-    url := fmt.Sprintf("http://effectiveness-monitor-service:8087/api/v1/assess/effectiveness/%s", actionID)
+    url := fmt.Sprintf("http://effectiveness-monitor-service:8080/api/v1/assess/effectiveness/%s", actionID)
 
     req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
     if err != nil {
@@ -76,7 +76,7 @@ def get_effectiveness_assessment(action_id: str) -> Dict:
     headers = {"Authorization": f"Bearer {get_service_account_token()}"}
 
     response = requests.get(
-        f"http://effectiveness-monitor-service:8087/api/v1/assess/effectiveness/{action_id}",
+        f"http://effectiveness-monitor-service:8080/api/v1/assess/effectiveness/{action_id}",
         headers=headers,
         timeout=10
     )
@@ -344,7 +344,7 @@ func (c *InfrastructureMonitoringClient) GetMetricsAfterAction(ctx context.Conte
           │ (Bearer Token) │ (Bearer Token)
           ▼                ▼
 ┌──────────────────────────────────────────────────┐
-│   Effectiveness Monitor Service (Port 8087)      │
+│   Effectiveness Monitor Service (Port 8080)      │
 │  ┌────────────────────────────────────────────┐ │
 │  │ 1. Authentication (TokenReviewer)          │ │
 │  │ 2. Check Data Availability (8+ weeks?)     │ │

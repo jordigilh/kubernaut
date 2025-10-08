@@ -3,7 +3,7 @@
 **Version**: 1.0
 **Last Updated**: October 6, 2025
 **Service Type**: Stateless HTTP API Service (Assessment & Analysis)
-**Port**: 8087 (REST + Health), 9090 (Metrics)
+**Port**: 8080 (REST + Health), 9090 (Metrics)
 
 ---
 
@@ -199,7 +199,7 @@ spec:
           app: holmesgpt-api-service
     ports:
     - protocol: TCP
-      port: 8087
+      port: 8080
 
   # Allow from Prometheus for metrics
   - from:
@@ -447,7 +447,7 @@ spec:
       - name: effectiveness-monitor
         image: effectiveness-monitor:v1.0.0
         ports:
-        - containerPort: 8087
+        - containerPort: 8080
           name: http
         - containerPort: 9090
           name: metrics

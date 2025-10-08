@@ -1,7 +1,7 @@
 # 📈 **EFFECTIVENESS MONITOR SERVICE DEVELOPMENT GUIDE**
 
 **Service**: Effectiveness Monitor Service
-**Port**: 8087
+**Port**: 8080
 **Image**: quay.io/jordigilh/monitor-service
 **Business Requirements**: BR-INS-001 to BR-INS-010
 **Single Responsibility**: Effectiveness Assessment ONLY
@@ -33,7 +33,7 @@
 
 **Architecture Compliance**:
 - ❌ **Missing HTTP service wrapper** - Need to create `cmd/monitor-service/main.go`
-- ✅ **Port**: 8087 (matches approved spec)
+- ✅ **Port**: 8080 (matches approved spec)
 - ✅ **Image naming**: Will follow approved pattern
 - ✅ **Single responsibility**: Effectiveness assessment only
 - ✅ **Business requirements**: BR-INS-001 to BR-INS-010 extensively implemented
