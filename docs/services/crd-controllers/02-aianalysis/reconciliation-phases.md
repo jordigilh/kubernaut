@@ -105,15 +105,117 @@ status:
 - Incorporate historical success rates from vector DB (BR-AI-008)
 - Apply constraint-based filtering (environment, RBAC) (BR-AI-009)
 - Provide explanations with supporting evidence (BR-AI-010)
+- **Validate recommendation dependencies** (BR-AI-051, BR-AI-052, BR-AI-053)
 - Update `status.recommendations` with ranked actions
 
 **Timeout**: 15 minutes (configurable via annotation)
 
+**Dependency Validation** (BR-AI-051, BR-AI-052, BR-AI-053):
+```go
+// Validate dependencies before transitioning to completed
+func (r *AIAnalysisReconciler) validateRecommendationDependencies(
+    recommendations []Recommendation,
+) error {
+    // BR-AI-051: Validate dependency completeness and correctness
+    if err := validateDependencyReferences(recommendations); err != nil {
+        return fmt.Errorf("dependency validation failed: %w", err)
+    }
+    
+    // BR-AI-052: Detect circular dependencies
+    if err := detectCircularDependencies(recommendations); err != nil {
+        log.Error(err, "Circular dependency detected, falling back to sequential execution")
+        // Fallback: Convert to sequential order
+        recommendations = convertToSequentialOrder(recommendations)
+    }
+    
+    // BR-AI-053: Handle missing dependencies
+    for i, rec := range recommendations {
+        if rec.Dependencies == nil {
+            // Default to empty array (no dependencies)
+            recommendations[i].Dependencies = []string{}
+        }
+    }
+    
+    return nil
+}
+
+// BR-AI-051: Validate all dependency IDs reference valid recommendations
+func validateDependencyReferences(recommendations []Recommendation) error {
+    recommendationIDs := make(map[string]bool)
+    for _, rec := range recommendations {
+        recommendationIDs[rec.ID] = true
+    }
+    
+    for _, rec := range recommendations {
+        for _, depID := range rec.Dependencies {
+            if !recommendationIDs[depID] {
+                return fmt.Errorf("recommendation %s has invalid dependency: %s (not found in recommendations list)", rec.ID, depID)
+            }
+            if depID == rec.ID {
+                return fmt.Errorf("recommendation %s cannot depend on itself", rec.ID)
+            }
+        }
+    }
+    
+    return nil
+}
+
+// BR-AI-052: Detect circular dependencies using topological sort
+func detectCircularDependencies(recommendations []Recommendation) error {
+    // Build adjacency list
+    graph := make(map[string][]string)
+    inDegree := make(map[string]int)
+    
+    for _, rec := range recommendations {
+        graph[rec.ID] = rec.Dependencies
+        if _, exists := inDegree[rec.ID]; !exists {
+            inDegree[rec.ID] = 0
+        }
+        for _, dep := range rec.Dependencies {
+            inDegree[rec.ID]++
+        }
+    }
+    
+    // Topological sort (Kahn's algorithm)
+    queue := []string{}
+    for id, degree := range inDegree {
+        if degree == 0 {
+            queue = append(queue, id)
+        }
+    }
+    
+    visited := 0
+    for len(queue) > 0 {
+        current := queue[0]
+        queue = queue[1:]
+        visited++
+        
+        // Remove edges from current node
+        for _, neighbor := range graph[current] {
+            inDegree[neighbor]--
+            if inDegree[neighbor] == 0 {
+                queue = append(queue, neighbor)
+            }
+        }
+    }
+    
+    // If not all nodes visited, there's a cycle
+    if visited != len(recommendations) {
+        return fmt.Errorf("circular dependency detected in recommendation graph")
+    }
+    
+    return nil
+}
+```
+
 **Transition Criteria**:
 ```go
-if recommendationsGenerated && constraintsApplied {
+if recommendationsGenerated && constraintsApplied && dependenciesValidated {
     phase = "completed"
     createWorkflowExecutionCRD()
+} else if dependencyValidationFailed {
+    // Fallback to sequential execution or retry
+    log.Warn("Dependency validation failed, using fallback strategy")
 }
 ```
 
