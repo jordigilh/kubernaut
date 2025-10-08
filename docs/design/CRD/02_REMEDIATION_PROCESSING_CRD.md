@@ -1,4 +1,4 @@
-# AlertProcessing CRD Design Document
+# RemediationProcessing CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
