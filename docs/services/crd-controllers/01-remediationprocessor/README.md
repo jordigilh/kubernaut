@@ -188,7 +188,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 ## 📞 Support & Documentation
 
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
-- **CRD Design Spec**: [docs/design/CRD/02_ALERT_PROCESSING_CRD.md](../../../design/CRD/02_ALERT_PROCESSING_CRD.md)
+- **CRD Design Spec**: [docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md](../../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)
 - **AI Assistant Rules**: [.cursor/rules/10-ai-assistant-behavioral-constraints.mdc](../../../../.cursor/rules/10-ai-assistant-behavioral-constraints.mdc)
 

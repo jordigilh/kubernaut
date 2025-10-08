@@ -1,8 +1,8 @@
 # V1 Source of Truth Hierarchy
 
-**Version**: 1.0  
-**Date**: October 7, 2025  
-**Status**: ✅ AUTHORITATIVE  
+**Version**: 1.0
+**Date**: October 7, 2025
+**Status**: ✅ AUTHORITATIVE
 **Purpose**: Establish clear documentation hierarchy for V1 implementation to prevent confusion and ensure consistency
 
 ---
@@ -154,8 +154,8 @@ These documents define **data structures and contracts** that implement Tier 1 a
 
 | Document | Purpose | Authority |
 |----------|---------|-----------|
-| **[01_ALERT_REMEDIATION_CRD.md](design/CRD/01_ALERT_REMEDIATION_CRD.md)** | RemediationRequest CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
-| **[02_ALERT_PROCESSING_CRD.md](design/CRD/02_ALERT_PROCESSING_CRD.md)** | RemediationProcessing CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
+| **[01_REMEDIATION_REQUEST_CRD.md](design/CRD/01_REMEDIATION_REQUEST_CRD.md)** | RemediationRequest CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
+| **[02_REMEDIATION_PROCESSING_CRD.md](design/CRD/02_REMEDIATION_PROCESSING_CRD.md)** | RemediationProcessing CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[03_AI_ANALYSIS_CRD.md](design/CRD/03_AI_ANALYSIS_CRD.md)** | AIAnalysis CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[04_WORKFLOW_EXECUTION_CRD.md](design/CRD/04_WORKFLOW_EXECUTION_CRD.md)** | WorkflowExecution CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[05_KUBERNETES_EXECUTION_CRD.md](design/CRD/05_KUBERNETES_EXECUTION_CRD.md)** | KubernetesExecution CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
@@ -199,8 +199,8 @@ Tier 3: CRD/*.md (OpenAPI v3 schemas, validation rules)
 - Both directories have README.md files explaining their superseded status
 
 **Example Warning** from `docs/services/crd-controllers/archive/README.md`:
-> ✅ Superseded by new directory structure  
-> ❌ DO NOT USE for implementation guidance  
+> ✅ Superseded by new directory structure
+> ❌ DO NOT USE for implementation guidance
 > ❌ DO NOT USE for reference material
 
 ---
@@ -387,9 +387,9 @@ Answer: NO - docs/architecture/CRD_SCHEMAS.md is authoritative
 3. Update version and date in header
 4. Communicate changes to team
 
-### **Document Owner**: Architecture Team  
-**Review Frequency**: Quarterly or when major changes occur  
-**Last Review**: October 7, 2025  
+### **Document Owner**: Architecture Team
+**Review Frequency**: Quarterly or when major changes occur
+**Last Review**: October 7, 2025
 **Next Review**: January 7, 2026
 
 ---
@@ -440,9 +440,9 @@ Use this checklist when creating or updating documentation:
 
 ---
 
-**Confidence**: **95%** - High confidence in V1 documentation quality and hierarchy  
-**Maintainability**: **Excellent** - Clear structure, good markers, consistent patterns  
-**Completeness**: **98%** - 239 documents organized, 54 explicitly marked as authoritative  
+**Confidence**: **95%** - High confidence in V1 documentation quality and hierarchy
+**Maintainability**: **Excellent** - Clear structure, good markers, consistent patterns
+**Completeness**: **98%** - 239 documents organized, 54 explicitly marked as authoritative
 **Risk**: **LOW** - No critical issues, minor improvements identified
 
 ---

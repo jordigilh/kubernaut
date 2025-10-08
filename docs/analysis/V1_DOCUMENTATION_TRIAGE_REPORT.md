@@ -1,9 +1,9 @@
 # V1 Documentation Triage Report
 
-**Date**: October 7, 2025  
-**Scope**: docs/architecture/, docs/services/, docs/design/  
-**Files Analyzed**: 239 markdown files  
-**Cross-References Checked**: 201 links  
+**Date**: October 7, 2025
+**Scope**: docs/architecture/, docs/services/, docs/design/
+**Files Analyzed**: 239 markdown files
+**Cross-References Checked**: 201 links
 **Status**: ✅ COMPLETE
 
 ---
@@ -65,7 +65,7 @@
 
 **Example** (from `docs/services/crd-controllers/05-remediationorchestrator/crd-schema.md`):
 ```markdown
-**IMPORTANT**: The authoritative CRD schema is defined in 
+**IMPORTANT**: The authoritative CRD schema is defined in
 `docs/architecture/CRD_SCHEMAS.md`
 
 This document shows how Remediation Orchestrator **consumes** the CRD.
@@ -143,8 +143,8 @@ This document shows how Remediation Orchestrator **consumes** the CRD.
 
 ### **Issue #1: Inconsistent V1 Status Markers** (Priority: LOW)
 
-**Severity**: 🟡 LOW  
-**Impact**: Minor confusion for developers  
+**Severity**: 🟡 LOW
+**Impact**: Minor confusion for developers
 **Confidence**: 90% - Cosmetic issue, no functional impact
 
 **Finding**: Documents use varying status markers for V1:
@@ -175,41 +175,37 @@ Status: ⚠️ DEPRECATED
 Status: ⏳ V2 PLANNED
 ```
 
-**Effort**: 2-3 hours to update 50+ files  
-**Priority**: LOW - Can be done in next maintenance cycle  
+**Effort**: 2-3 hours to update 50+ files
+**Priority**: LOW - Can be done in next maintenance cycle
 **Risk**: NONE - Purely cosmetic
 
 ---
 
 ### **Issue #2: Alert Prefix in CRD Design Files** (Priority: MEDIUM)
 
-**Severity**: 🟠 MEDIUM  
-**Impact**: Naming inconsistency with Alert → Signal migration  
+**Severity**: 🟠 MEDIUM
+**Impact**: Naming inconsistency with Alert → Signal migration
 **Confidence**: 95% - Already addressed by ADR-015
 
-**Finding**: Design files still use "Alert" prefix in filenames:
-- `docs/design/CRD/01_ALERT_REMEDIATION_CRD.md`
-- `docs/design/CRD/02_ALERT_PROCESSING_CRD.md`
+**Finding**: Design files previously used "Alert" prefix in filenames.
 
-**Status**: ✅ Migration already planned in ADR-015 Phase 4 (Documentation Cleanup)
+**Status**: ✅ RESOLVED - Files renamed to align with current architecture
+- `01_ALERT_REMEDIATION_CRD.md` → `01_REMEDIATION_REQUEST_CRD.md`
+- `02_ALERT_PROCESSING_CRD.md` → `02_REMEDIATION_PROCESSING_CRD.md`
 
-**Recommendation**: Rename during Phase 4 of Alert → Signal migration:
-```bash
-# Proposed Renames
-01_ALERT_REMEDIATION_CRD.md → 01_REMEDIATION_REQUEST_CRD.md
-02_ALERT_PROCESSING_CRD.md → 02_REMEDIATION_PROCESSING_CRD.md
-```
+**Resolution Date**: October 7, 2025
+**Resolution**: Files renamed and all cross-references updated per ADR-015
 
-**Effort**: 1 hour (part of existing ADR-015 plan)  
-**Priority**: MEDIUM - Align with ongoing migration  
-**Risk**: LOW - Simple file rename
+**Effort**: 1 hour (completed)
+**Priority**: MEDIUM - Aligned with ongoing migration
+**Risk**: LOW - Simple file rename with git mv
 
 ---
 
 ### **Issue #3: Relative Path Cross-References** (Priority: LOW)
 
-**Severity**: 🟢 INFO  
-**Impact**: None - Links work correctly  
+**Severity**: 🟢 INFO
+**Impact**: None - Links work correctly
 **Confidence**: 85% - Valid pattern, but could be more robust
 
 **Finding**: Most cross-references use relative paths:
@@ -229,8 +225,8 @@ Status: ⏳ V2 PLANNED
 
 **Recommendation**: Keep as-is for now, consider absolute paths in future refactor
 
-**Effort**: 4-5 hours to update 200+ links  
-**Priority**: LOW - No functional issue  
+**Effort**: 4-5 hours to update 200+ links
+**Priority**: LOW - No functional issue
 **Risk**: LOW - Both patterns valid
 
 ---
@@ -347,7 +343,7 @@ Status: ⏳ V2 PLANNED
 6. ✅ **dynamic-toolset/** - 7 docs (complete)
 7. ✅ **effectiveness-monitor/** - 8 docs (complete)
 
-**Total Documents**: 136 service specification documents  
+**Total Documents**: 136 service specification documents
 **Completeness**: 100%
 
 ---
@@ -362,7 +358,7 @@ Status: ⏳ V2 PLANNED
 | **Integration Architectures** | 10 | ✅ 100% complete |
 | **Design Specifications** | 8 | ✅ 100% complete |
 
-**Total Architecture Docs**: 45+  
+**Total Architecture Docs**: 45+
 **Coverage**: 100%
 
 ---
@@ -528,7 +524,7 @@ Status: ⏳ V2 PLANNED
 
 ---
 
-**Triage Performed By**: AI Assistant  
-**Date**: October 7, 2025  
-**Review Status**: ✅ COMPLETE  
+**Triage Performed By**: AI Assistant
+**Date**: October 7, 2025
+**Review Status**: ✅ COMPLETE
 **Next Review**: January 7, 2026
