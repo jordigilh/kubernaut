@@ -31,7 +31,7 @@
 **Service Name**: **Effectiveness Monitor Service**
 **Binary**: `cmd/monitor-service/` (needs to be created)
 **Docker Image**: `quay.io/jordigilh/monitor-service`
-**Port**: 8087
+**Port**: 8080
 **Type**: NEW standalone stateless HTTP API service
 **V1 Status**: ✅ **INCLUDED IN V1** (per architecture document)
 **Documentation Status**: ⚠️ **MISSING** (no docs in `docs/services/`)
@@ -48,7 +48,7 @@
 Support Services:
 ├── Data Storage (8085)        ✅ Documented
 ├── Intelligence (8086)         🔴 V2 (not in V1)
-├── Effectiveness Monitor (8087) ⚠️ MISSING DOCUMENTATION
+├── Effectiveness Monitor (8080) ✅ DOCUMENTED
 ├── Notifications (8089)        ✅ Documented
 ├── HolmesGPT API (8090)       ✅ Documented
 └── Context API (8091)          ✅ Documented
@@ -324,7 +324,7 @@ graph LR
 **Answer**: **NONE** - It requires a **NEW service**
 
 **Service Name**: Effectiveness Monitor Service
-**Port**: 8087
+**Port**: 8080
 **Status**: ✅ V1 service (business logic 98% complete, needs HTTP wrapper)
 **Documentation**: ⚠️ Missing (needs to be created)
 **Next Action**: Create service documentation + HTTP API wrapper
