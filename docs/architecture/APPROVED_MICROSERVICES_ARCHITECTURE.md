@@ -388,80 +388,79 @@ This diagram shows the detailed workflow execution flow with step orchestration 
 
 ```mermaid
 sequenceDiagram
-    participant WF as Workflow<br/>Execution
-    participant CTX as Context<br/>API
+    participant WFC as WorkflowExecution<br/>Controller
     participant ST as Data<br/>Storage
     participant EX1 as K8s Executor<br/>Step 1
     participant EX2 as K8s Executor<br/>Step 2
     participant EX3 as K8s Executor<br/>Step 3
     participant K8S as Kubernetes<br/>Cluster
-    participant ORCH as Remediation<br/>Orchestrator
+    participant ORCC as RemediationOrchestrator<br/>Controller
 
-    Note over WF,ORCH: Workflow Creation
-    ORCH->>WF: Create WorkflowExecution CRD<br/>(with AI recommendations)
-    activate WF
+    Note over WFC,ORCC: Workflow Creation
+    ORCC->>WFC: Create WorkflowExecution CRD<br/>(with AI recommendations)
+    activate WFC
 
-    Note over WF,ST: Phase 1: Planning & Validation
-    WF->>WF: Parse AI recommendations
-    WF->>WF: Build dependency graph
-    WF->>CTX: Query historical success rates<br/>for action types
-    CTX->>ST: Query action history
-    CTX-->>WF: Historical effectiveness data
-    WF->>WF: Validate safety constraints
-    WF->>WF: Calculate execution order<br/>(sequential vs parallel)
+    Note over WFC,ST: Phase 1: Planning & Validation
+    WFC->>WFC: Parse AI recommendations<br/>(AUTHORITATIVE - no Context API query)
+    WFC->>WFC: Build dependency graph
+    WFC->>WFC: Validate safety constraints
+    WFC->>WFC: Calculate execution order<br/>(sequential vs parallel)
 
-    Note over WF,EX1: Phase 2: Step 1 - Sequential Start
-    WF->>WF: Identify ready steps<br/>(no dependencies)
-    WF->>EX1: Create KubernetesExecution CRD<br/>(Step 1: Scale Deployment)
+    Note over WFC,EX1: Phase 2: Step 1 - Sequential Start
+    WFC->>WFC: Identify ready steps<br/>(no dependencies)
+    WFC->>EX1: Create KubernetesExecution CRD<br/>(Step 1: Scale Deployment)
     activate EX1
-    WF->>WF: Watch Step 1 status
+    WFC->>WFC: Watch Step 1 status
     EX1->>EX1: Validate action safety
     EX1->>K8S: Execute: scale deployment<br/>replicas: 2 → 3
     K8S-->>EX1: Scale successful
-    EX1->>EX1: Update status: Completed
+    EX1->>K8S: Verify: deployment scaled<br/>(expected outcome validation)
+    K8S-->>EX1: Validation successful
+    EX1->>EX1: Update status: Completed<br/>(with validation result)
     EX1->>ST: Store execution result
     deactivate EX1
-    EX1-->>WF: Status update triggers watch
+    EX1-->>WFC: Status update triggers watch
 
-    Note over WF,EX3: Phase 3: Steps 2 & 3 - Parallel Execution
-    WF->>WF: Step 1 completed<br/>Steps 2 & 3 ready (no dependencies)
+    Note over WFC,EX3: Phase 3: Steps 2 & 3 - Parallel Execution
+    WFC->>WFC: Step 1 completed<br/>Steps 2 & 3 ready (no dependencies)
     
     par Parallel Step Execution
-        WF->>EX2: Create KubernetesExecution CRD<br/>(Step 2: Restart Pods)
+        WFC->>EX2: Create KubernetesExecution CRD<br/>(Step 2: Restart Pods)
         activate EX2
-        WF->>WF: Watch Step 2 status
+        WFC->>WFC: Watch Step 2 status
         EX2->>EX2: Validate action safety
         EX2->>K8S: Execute: delete pods<br/>(controlled restart)
-        K8S-->>EX2: Pods restarted
-        EX2->>EX2: Update status: Completed
+        K8S-->>EX2: Pods deleted
+        EX2->>K8S: Verify: new pods running<br/>(expected outcome validation)
+        K8S-->>EX2: Validation successful
+        EX2->>EX2: Update status: Completed<br/>(with validation result)
         EX2->>ST: Store execution result
         deactivate EX2
-        EX2-->>WF: Status update triggers watch
+        EX2-->>WFC: Status update triggers watch
     and
-        WF->>EX3: Create KubernetesExecution CRD<br/>(Step 3: Update ConfigMap)
+        WFC->>EX3: Create KubernetesExecution CRD<br/>(Step 3: Update ConfigMap)
         activate EX3
-        WF->>WF: Watch Step 3 status
+        WFC->>WFC: Watch Step 3 status
         EX3->>EX3: Validate action safety
         EX3->>K8S: Execute: patch configmap<br/>(memory limits)
         K8S-->>EX3: ConfigMap updated
-        EX3->>EX3: Update status: Completed
+        EX3->>K8S: Verify: configmap has new values<br/>(expected outcome validation)
+        K8S-->>EX3: Validation successful
+        EX3->>EX3: Update status: Completed<br/>(with validation result)
         EX3->>ST: Store execution result
         deactivate EX3
-        EX3-->>WF: Status update triggers watch
+        EX3-->>WFC: Status update triggers watch
     end
 
-    Note over WF,K8S: Phase 4: Validation & Monitoring
-    WF->>WF: All steps completed
-    WF->>WF: Validate workflow success
-    WF->>K8S: Query resource health<br/>(verify remediation worked)
-    K8S-->>WF: Resource healthy
-    WF->>ST: Store workflow results
-    WF->>WF: Update status: Completed
+    Note over WFC,ST: Phase 4: Workflow Completion
+    WFC->>WFC: All steps completed<br/>(rely on step status)
+    WFC->>ST: Store workflow results
+    WFC->>WFC: Update status: Completed
 
-    Note over WF,ORCH: Phase 5: Completion
-    WF-->>ORCH: Status update triggers watch
-    deactivate WF
-    ORCH->>ORCH: Workflow complete<br/>Update RemediationRequest
+    Note over WFC,ORCC: Phase 5: Orchestrator Notification
+    WFC-->>ORCC: Status update triggers watch
+    deactivate WFC
+    ORCC->>ORCC: Workflow complete<br/>Update RemediationRequest
 ```
 
 **Workflow Orchestration Capabilities**:
@@ -470,8 +469,8 @@ sequenceDiagram
 - **Sequential Execution**: Ensures dependent steps run in correct order
 - **Safety Validation**: Each step validated before execution (dry-run capability)
 - **Watch-Based Coordination**: Monitors KubernetesExecution CRD status for step completion
-- **Historical Intelligence**: Uses Context API to query action effectiveness before execution
-- **Adaptive Orchestration**: Adjusts workflow based on step success/failure patterns
+- **AI Recommendations Authority**: Uses AI recommendations as authoritative source (no Context API revalidation)
+- **Step-Level Validation**: Each executor validates expected outcomes, Workflow relies on step status
 - **Atomic Operations**: Each step is independent KubernetesExecution CRD (isolated failure domain)
 - **Audit Trail**: Complete execution history stored in Data Storage
 
@@ -487,16 +486,16 @@ sequenceDiagram
    - **Non-Blocking**: Workflow doesn't wait, relies on watch events
 
 3. **Safety-First Validation**: Multi-layer safety before execution
-   - Historical effectiveness check (Context API)
+   - AI recommendations as authoritative source (no Context API revalidation)
    - Safety constraint validation (Rego policies)
    - Dry-run capability (optional per step)
-   - Resource existence validation
+   - Expected outcome validation (per-step in Executor)
 
-4. **Adaptive Orchestration**: Runtime workflow adjustment
-   - If step fails → trigger rollback steps
-   - If step succeeds → continue to next dependencies
-   - If effectiveness low → request manual approval
-   - If critical step → wait for validation
+4. **Step-Driven Orchestration**: Workflow relies on step status for decisions
+   - If step status = failed → trigger rollback steps
+   - If step status = completed → continue to next dependencies
+   - Step validation embedded in executor (not workflow-level)
+   - Workflow monitors step status, doesn't validate Kubernetes directly
 
 **Workflow Execution Flow**:
 ```
