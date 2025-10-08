@@ -40,14 +40,17 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 | **🌐 Context API** | Context Orchestration (HolmesGPT-Optimized) | BR-CTX-001 to BR-CTX-180 | None (internal only) |
 | **🔍 HolmesGPT API** | AI Investigation Wrapper | BR-HAPI-001 to BR-HAPI-185 | HolmesGPT Python SDK |
 | **🧩 Dynamic Toolset** | HolmesGPT Toolset Configuration | BR-TOOLSET-001 to BR-TOOLSET-020 | HolmesGPT API |
-| **📈 Effectiveness Monitor** | Performance Assessment (Graceful Degradation) | BR-INS-001 to BR-INS-010 | None (internal only) |
+| **📈 Effectiveness Monitor** | Performance Assessment & Oscillation Detection | BR-INS-001 to BR-INS-010 | None (internal only) |
 | **📢 Notifications** | Multi-Channel Notifications | BR-NOTIF-001 to BR-NOTIF-120 | Slack, Teams, Email, PagerDuty |
 
 **Service Breakdown**:
 - **CRD Controllers** (5): Remediation Processor, AI Analysis, Workflow Execution, K8s Executor, Remediation Orchestrator
 - **Stateless Services** (7): Gateway, Data Storage, Context API, HolmesGPT API, Dynamic Toolset, Effectiveness Monitor, Notifications
 
-**Note**: Oscillation detection (preventing remediation loops) is a capability of the Effectiveness Monitor service (queries PostgreSQL action_history table), not a separate service. External infrastructure monitoring (Prometheus, Grafana, Jaeger) are external systems, not Kubernaut microservices.
+**Important Notes**:
+- **Oscillation detection** (preventing remediation loops) is a capability of the Effectiveness Monitor service (queries PostgreSQL action_history table), not a separate service.
+- **External infrastructure monitoring** (Prometheus, Grafana, Jaeger) are external systems, not Kubernaut microservices.
+- **Package Naming**: Remediation Processor service is currently implemented in `pkg/alertprocessor/` but should be migrated to `pkg/remediationprocessor/` for naming consistency with the service name.
 
 ### **V2 Future Services - Post V1 Implementation (4 Additional Services)**
 | Service | Responsibility | Business Requirements | Timeline |
@@ -98,11 +101,16 @@ flowchart TB
     %% Main flow
     SIG --> GW --> RP --> AI --> WF --> EX --> K8S
 
-    %% Orchestration (monitors all CRDs)
-    ORCH -.->|monitors lifecycle| RP
-    ORCH -.->|monitors lifecycle| AI
-    ORCH -.->|monitors lifecycle| WF
-    ORCH -.->|monitors lifecycle| EX
+    %% Orchestration (creates and monitors all CRDs)
+    GW -->|creates| ORCH
+    ORCH -->|creates & watches| RP
+    ORCH -->|creates & watches| AI
+    ORCH -->|creates & watches| WF
+    ORCH -->|creates & watches| EX
+    RP -.->|status update| ORCH
+    AI -.->|status update| ORCH
+    WF -.->|status update| ORCH
+    EX -.->|status update| ORCH
 
     %% Investigation flow
     AI <-.-> HGP
@@ -121,8 +129,9 @@ flowchart TB
     %% Notifications
     EFF -->|alerts on remediation loops| NOT
 
-    %% Note: Context API is read-only and does not trigger notifications
-    %% Note: Workflow Execution notification triggers require explicit BR documentation
+    %% CRD Creation Pattern (Watch-Based)
+    %% Gateway creates RemediationRequest → ORCH creates all service CRDs
+    %% ORCH watches service CRD status → creates next CRD when previous completes
 
     style EXTERNAL fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px,color:#000
     style MAIN fill:#e3f2fd,stroke:#1976d2,stroke-width:3px,color:#000
@@ -197,9 +206,10 @@ AI Analysis ↔ HolmesGPT API ↔ Context API
 - Triggers alerts to Notifications when remediation loops detected or effectiveness declining
 
 **Notification Triggers**:
-- **Context API** → Notifications (alerts and updates)
-- **Workflow Execution** → Notifications (status updates)
 - **Effectiveness Monitor** → Notifications (loop detection alerts, effectiveness trends)
+- **K8s Executor** → Notifications (execution failures)
+
+**Note**: Context API is read-only and does not trigger notifications. Workflow Execution notification triggers require explicit BR documentation (currently not implemented in V1).
 
 **V2 Enhanced Path** (Future):
 ```
@@ -210,9 +220,9 @@ Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-M
 
 ## 🔄 **SEQUENCE DIAGRAMS**
 
-### **Happy Path: Signal to Execution (V1)**
+### **Signal to Remediation (V1)**
 
-This sequence diagram shows the complete flow from signal ingestion to Kubernetes execution:
+This sequence diagram shows the complete flow from signal ingestion, Kubernetes execution with complete remediation:
 
 ```mermaid
 sequenceDiagram
