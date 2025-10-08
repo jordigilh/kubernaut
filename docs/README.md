@@ -34,6 +34,20 @@ Kubernaut has successfully transformed from a stub-heavy development system to a
 
 > **📖 [Complete Documentation Index](DOCUMENTATION_INDEX.md)** - Comprehensive navigation with cross-references between business requirements, architecture, and implementation
 
+### 📊 **Value Proposition & Business Materials**
+Stakeholder-facing materials demonstrating kubernaut's business value and ROI.
+
+- **[Value Proposition Overview](value-proposition/README.md)** - Navigation guide for decision-makers and technical leads
+- **[Executive Summary](value-proposition/EXECUTIVE_SUMMARY.md)** - ROI justification and quantitative impact (10-15 min read)
+- **[Technical Scenarios](value-proposition/TECHNICAL_SCENARIOS.md)** - 6 detailed use cases with step-by-step workflows (45-60 min read)
+- **[V1 vs V2 Capabilities](value-proposition/V1_VS_V2_CAPABILITIES.md)** - Version planning and capability breakdown (15-20 min read)
+
+**Key Metrics**:
+- **V1 ROI**: 11,300-14,700% return (3-4 week implementation)
+- **MTTR Reduction**: 85-95% (hours → minutes)
+- **Cost Savings**: $215K-$350K annually (10-engineer team)
+- **V1 Readiness**: 93% average across 6 scenarios
+
 ### 🚀 **Getting Started**
 New to Kubernaut? Start here for quick setup and integration examples.
 
@@ -168,6 +182,7 @@ Advanced technical topics and deep-dive analysis.
 
 | I want to... | Go to... |
 |---------------|----------|
+| **See business value & ROI** | [Value Proposition](value-proposition/) |
 | **Get started quickly** | [Getting Started](getting-started/) |
 | **Deploy to production** | [Deployment](deployment/) |
 | **Understand the architecture** | [Architecture](ARCHITECTURE.md) |

@@ -111,7 +111,126 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 - **BR-WF-INVESTIGATION-004**: MUST analyze execution results with HolmesGPT for pattern learning
 - **BR-WF-INVESTIGATION-005**: MUST maintain investigation context across workflow execution phases
 
-#### 2.3.3 Existing Execution Infrastructure Integration
+#### 2.3.3 Recovery Loop Prevention & Coordination
+**Status**: ✅ Phase 1 Critical Fix (C3)
+**Reference**: [`docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
+
+##### Recovery Attempt Limits
+- **BR-WF-RECOVERY-001**: MUST limit recovery attempts to maximum of 3 per RemediationRequest
+  - **Rationale**: Prevents infinite recovery loops and resource exhaustion
+  - **Implementation**: Track `recoveryAttempts` counter in RemediationRequest.status
+  - **Success Criteria**: System escalates to manual review after 3 failed recovery attempts
+  - **Monitoring**: Track `kubernaut_recovery_attempts_total` metric
+
+- **BR-WF-RECOVERY-002**: MUST increment recovery attempt counter each time a new recovery AIAnalysis CRD is created
+  - **Rationale**: Accurate tracking of recovery progression
+  - **Implementation**: Increment in Remediation Orchestrator when creating recovery AIAnalysis
+  - **Success Criteria**: Counter accurately reflects number of recovery workflows executed
+
+##### Pattern Detection & Escalation
+- **BR-WF-RECOVERY-003**: MUST detect repeated failure patterns and escalate to manual review
+  - **Rationale**: Avoid wasting resources on strategies that consistently fail
+  - **Pattern Definition**: Same failure signature (action + error type + step) occurs twice
+  - **Implementation**: Track failure signatures across WorkflowExecutionRefs array
+  - **Success Criteria**: System escalates when identical failure pattern detected twice
+  - **Example**: Two consecutive "scale-deployment timeout at step 3" failures → escalate
+
+- **BR-WF-RECOVERY-004**: MUST escalate to manual review when recovery viability evaluation fails
+  - **Rationale**: Human intervention required when automated recovery is not viable
+  - **Escalation Triggers**:
+    - Max recovery attempts exceeded (BR-WF-RECOVERY-001)
+    - Repeated failure pattern detected (BR-WF-RECOVERY-003)
+    - Termination rate exceeded (BR-WF-RECOVERY-005)
+  - **Implementation**: Set `escalatedToManualReview: true` and send notification
+  - **Success Criteria**: Operations team receives notification within 30 seconds
+
+##### Termination Rate Monitoring
+- **BR-WF-RECOVERY-005**: MUST track system-wide termination rate and prevent recovery when rate exceeds 10% (BR-WF-541)
+  - **Rationale**: System-wide safety mechanism to prevent cascade failures
+  - **Calculation**: `(failedWorkflows / totalWorkflows)` in last 1 hour
+  - **Implementation**: Remediation Orchestrator calculates rate before creating recovery workflow
+  - **Success Criteria**: No new recovery workflows created when termination rate ≥ 10%
+  - **Monitoring**: `kubernaut_workflow_termination_rate` gauge metric
+
+- **BR-WF-RECOVERY-006**: MUST maintain audit trail of all recovery attempts in RemediationRequest.status
+  - **Rationale**: Complete visibility into recovery progression for debugging and analysis
+  - **Required Fields**:
+    - `aiAnalysisRefs[]`: Array of all AIAnalysis CRDs (initial + recovery)
+    - `workflowExecutionRefs[]`: Array with outcomes, failure details, attempt numbers
+    - `recoveryAttempts`: Current counter
+    - `lastFailureTime`: Timestamp of most recent failure
+    - `escalatedToManualReview`: Boolean flag
+  - **Success Criteria**: Complete recovery history available in CRD status
+  - **Related**: See CRD schema in `docs/services/crd-controllers/05-remediationorchestrator/crd-schema.md`
+
+##### Recovery Coordination
+- **BR-WF-RECOVERY-007**: MUST coordinate recovery through Remediation Orchestrator (NOT WorkflowExecution internal handling)
+  - **Rationale**: Separation of concerns - WorkflowExecution detects failures, Remediation Orchestrator coordinates recovery
+  - **Pattern**: WorkflowExecution updates status to "failed" → Remediation Orchestrator watches → creates new AIAnalysis
+  - **Anti-Pattern**: WorkflowExecution directly handling its own recovery
+  - **Success Criteria**: All recovery coordination logic resides in Remediation Orchestrator controller
+
+- **BR-WF-RECOVERY-008**: MUST create new AIAnalysis CRD for each recovery attempt with historical context
+  - **Rationale**: AI needs previous failure information to recommend alternative strategies
+  - **Context Sources**:
+    - Context API: Historical failures, previous workflows, pattern data
+    - Previous WorkflowExecution status: Failed step, error details, execution state
+    - RemediationRequest status: Recovery attempt count, failure history
+  - **Implementation**: AIAnalysis Controller queries Context API during recovery analysis
+  - **Success Criteria**: Recovery AIAnalysis includes previous failure context in AI prompt
+
+- **BR-WF-RECOVERY-009**: MUST transition RemediationRequest to "recovering" phase during recovery coordination
+  - **Rationale**: Clear visibility into recovery state for monitoring and debugging
+  - **Phase Transitions**:
+    - `executing` → (workflow fails) → `recovering` → (new workflow created) → `executing`
+    - `recovering` → (recovery limit reached) → `failed` + escalate
+  - **Implementation**: Remediation Orchestrator updates phase when creating recovery AIAnalysis
+  - **Success Criteria**: "recovering" phase visible in RemediationRequest.status.overallPhase
+
+##### Recovery Viability Evaluation
+- **BR-WF-RECOVERY-010**: MUST evaluate recovery viability before creating new recovery workflow
+  - **Rationale**: Prevent resource waste on unrecoverable scenarios
+  - **Evaluation Criteria** (ALL must pass):
+    1. Recovery attempts < max (BR-WF-RECOVERY-001)
+    2. No repeated failure pattern (BR-WF-RECOVERY-003)
+    3. Termination rate < 10% (BR-WF-RECOVERY-005)
+  - **Implementation**: Remediation Orchestrator `evaluateRecoveryViability()` function
+  - **Success Criteria**: Recovery only attempted when all criteria pass
+  - **Metrics**: Track `kubernaut_recovery_viability_evaluations_total{outcome="allowed|denied|reason"}`
+
+##### Context API Integration
+
+> **📋 Design Decision**: [DD-001 - Alternative 2](../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2) | ✅ **Approved Design** | Confidence: 95%
+
+- **BR-WF-RECOVERY-011**: MUST integrate with Context API for historical recovery context (Alternative 2 - Complete Enrichment)
+  - **Rationale**: AI needs historical data AND fresh monitoring/business context to generate effective alternative strategies
+  - **Design**: **RemediationProcessing Controller enriches ALL contexts** (temporal consistency + immutable audit trail)
+  - **Context Data Required**:
+    - Fresh monitoring context (current cluster state, resource metrics)
+    - Fresh business context (current ownership, runbooks, SLA)
+    - Recovery context from Context API:
+      - Previous workflow execution details
+      - Historical failure patterns for this alert type
+      - Related alerts and correlations
+      - Successful recovery strategies for similar failures
+  - **Implementation Flow (Alternative 2)**:
+    1. **Remediation Orchestrator** creates new RemediationProcessing CRD (recovery)
+    2. **RemediationProcessing Controller** enriches with:
+       - Monitoring context (queries monitoring service - FRESH!)
+       - Business context (queries business context service - FRESH!)
+       - Recovery context (queries Context API `/context/remediation/{id}` - FRESH!)
+    3. **RemediationProcessing Controller** stores ALL contexts in `RemediationProcessing.status.enrichmentResults`
+    4. **Remediation Orchestrator** watches completion, creates AIAnalysis with complete enrichment data
+    5. **AIAnalysis Controller** reads ALL contexts from spec (no API calls needed)
+  - **Graceful Degradation**: If Context API unavailable, RemediationProcessing Controller creates fallback context from `FailedWorkflowRef`
+  - **Success Criteria**:
+    - RemediationProcessing CRDs contain complete enrichment (monitoring + business + recovery)
+    - AIAnalysis CRDs receive ALL contexts from RemediationProcessing
+    - Temporal consistency maintained (all contexts captured at same timestamp)
+    - Immutable audit trail (each RemediationProcessing CRD is separate)
+  - **Reference**: See [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Version 1.2 - Alternative 2)
+
+#### 2.3.4 Existing Execution Infrastructure Integration
 - **BR-WF-EXECUTOR-001**: MUST use existing KubernetesActionExecutor for all Kubernetes operations
 - **BR-WF-EXECUTOR-002**: MUST use existing MonitoringActionExecutor for all monitoring operations
 - **BR-WF-EXECUTOR-003**: MUST use existing CustomActionExecutor for notifications and webhooks
