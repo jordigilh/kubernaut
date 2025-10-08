@@ -211,7 +211,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 ## 📞 Support & Documentation
 
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
-- **CRD Design Spec**: [docs/design/CRD/01_ALERT_REMEDIATION_CRD.md](../../../design/CRD/01_ALERT_REMEDIATION_CRD.md)
+- **CRD Design Spec**: [docs/design/CRD/01_REMEDIATION_REQUEST_CRD.md](../../../design/CRD/01_REMEDIATION_REQUEST_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)
 - **Owner Reference Architecture**: [docs/architecture/decisions/005-owner-reference-architecture.md](../../../architecture/decisions/005-owner-reference-architecture.md)
 

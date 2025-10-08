@@ -1,6 +1,33 @@
 # Kubernaut
 
-An intelligent Kubernetes remediation platform built on microservices architecture that autonomously analyzes alerts and executes sophisticated automated actions using LLM-powered decision making, historical learning, and advanced pattern recognition.
+An intelligent Kubernetes remediation platform built on microservices architecture that autonomously analyzes **multiple signal types** (Prometheus alerts, Kubernetes events, CloudWatch alarms, custom webhooks) and executes sophisticated automated actions using LLM-powered decision making, historical learning, and advanced pattern recognition.
+
+## 📖 **V1 Architecture & Design - START HERE**
+
+**For implementation, always refer to these authoritative V1 documents:**
+
+- ⭐ **[V1 Source of Truth Hierarchy](docs/V1_SOURCE_OF_TRUTH_HIERARCHY.md)** - **ESSENTIAL READING**
+  - 3-tier documentation hierarchy (Architecture → Services → Design)
+  - Identifies which documents are authoritative vs reference
+  - **95% confidence** - Production-ready documentation
+
+- 🏗️ **[Kubernaut Architecture Overview](docs/architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md)**
+  - High-level system design and architectural principles
+  - V1 microservices overview (10 core services)
+  
+- 🏛️ **[Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)**
+  - Detailed microservices decomposition and service boundaries
+  - V1/V2 service roadmap
+
+- 📋 **[Kubernaut Service Catalog](docs/architecture/KUBERNAUT_SERVICE_CATALOG.md)**
+  - Comprehensive service specifications and API contracts
+  - Dependencies for all V1 services
+
+- 📐 **[CRD Schemas](docs/architecture/CRD_SCHEMAS.md)** - **AUTHORITATIVE**
+  - Single source of truth for all CRD field definitions
+  - OpenAPI v3 schemas for RemediationRequest, RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution
+
+**Quality Assurance**: [V1 Documentation Triage Report](docs/analysis/V1_DOCUMENTATION_TRIAGE_REPORT.md) - 239 files analyzed, 0 critical issues
 
 ## 🏗️ **MICROSERVICES ARCHITECTURE**
 
@@ -105,9 +132,11 @@ HolmesGPT → context-api-service:8091 → ai-service:8093 (planned)
 - ✅ **Error Handling**: Consolidated error system using shared error types
 - ✅ **Type Definitions**: Eliminated duplicate types with single source of truth
 
-## Architecture Overview
+## System Architecture Overview
 
-The system implements a sophisticated Go-based architecture with direct HolmesGPT integration for advanced AI capabilities:
+**For detailed architecture, see**: [docs/architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md](docs/architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md) (**Tier 1: AUTHORITATIVE**)
+
+Kubernaut implements a sophisticated multi-signal processing architecture with direct HolmesGPT integration for advanced AI capabilities:
 
 ```mermaid
 graph TB
@@ -172,43 +201,47 @@ graph TB
     style PG fill:#e8f5e8
 ```
 
-## Data Flow & Processing
+## Multi-Signal Data Flow & Processing
 
-The system processes alerts through an intelligent pipeline with AI-enhanced decision making:
+**Architecture Reference**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) (**Tier 1: AUTHORITATIVE**)
+
+The system processes **multiple signal types** through an intelligent pipeline with AI-enhanced decision making:
 
 ```mermaid
 sequenceDiagram
-    participant Prometheus
-    participant Go Service
+    participant SignalSource as Signal Source<br/>(Prometheus, K8s Events, CloudWatch)
+    participant Gateway as Gateway Service
+    participant SignalProcessor as Signal Processor
     participant HolmesGPT
     participant LLM
     participant K8s API
     participant PostgreSQL
 
-    Prometheus->>Go Service: Alert Webhook
-    Go Service->>Go Service: Process & Filter Alert
+    SignalSource->>Gateway: Signal Webhook
+    Gateway->>SignalProcessor: RemediationRequest CRD
+    SignalProcessor->>SignalProcessor: Process & Classify Signal
 
-    note over Go Service,HolmesGPT: Context Enrichment Phase
-    Go Service->>K8s API: Get Pod/Node/Event Data
-    K8s API-->>Go Service: Cluster Context
-    Go Service->>PostgreSQL: Query Action History
-    PostgreSQL-->>Go Service: Historical Patterns
+    note over SignalProcessor,HolmesGPT: Context Enrichment Phase
+    SignalProcessor->>K8s API: Get Pod/Node/Event Data
+    K8s API-->>SignalProcessor: Cluster Context
+    SignalProcessor->>PostgreSQL: Query Action History
+    PostgreSQL-->>SignalProcessor: Historical Patterns
 
-    note over Go Service,LLM: AI Analysis Phase
-    Go Service->>HolmesGPT: Enhanced Alert + Context
+    note over SignalProcessor,LLM: AI Analysis Phase
+    SignalProcessor->>HolmesGPT: Enhanced Signal + Context
     HolmesGPT->>LLM: Structured Prompt
     LLM-->>HolmesGPT: Analysis & Recommendations
-    HolmesGPT-->>Go Service: Action Recommendation
+    HolmesGPT-->>SignalProcessor: Action Recommendation
 
-    note over Go Service,K8s API: Decision & Execution
-    Go Service->>Go Service: Validate & Score Action
-    Go Service->>K8s API: Execute Remediation
-    K8s API-->>Go Service: Execution Result
-    Go Service->>PostgreSQL: Store Action Trace
+    note over SignalProcessor,K8s API: Decision & Execution
+    SignalProcessor->>SignalProcessor: Validate & Score Action
+    SignalProcessor->>K8s API: Execute Remediation
+    K8s API-->>SignalProcessor: Execution Result
+    SignalProcessor->>PostgreSQL: Store Action Trace
 
-    note over Go Service,PostgreSQL: Learning & Assessment
-    Go Service->>Go Service: Schedule Effectiveness Assessment
-    Go Service->>PostgreSQL: Update Effectiveness Score
+    note over SignalProcessor,PostgreSQL: Learning & Assessment
+    SignalProcessor->>SignalProcessor: Schedule Effectiveness Assessment
+    SignalProcessor->>PostgreSQL: Update Effectiveness Score
 ```
 
 ## Feature Status Matrix

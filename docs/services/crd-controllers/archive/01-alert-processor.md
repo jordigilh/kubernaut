@@ -12,7 +12,7 @@
 
 ## 📚 Related Documentation
 
-**CRD Design Specification**: [docs/design/CRD/02_ALERT_PROCESSING_CRD.md](../../design/CRD/02_ALERT_PROCESSING_CRD.md)
+**CRD Design Specification**: [docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md](../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 
 This document provides the detailed CRD schema, controller reconciliation logic, and architectural patterns for the AlertProcessing CRD.
 
@@ -864,9 +864,9 @@ func (r *AlertProcessingReconciler) Reconcile(ctx, req) (ctrl.Result, error) {
 
 ## CRD Schema Specification
 
-**Full Schema**: See [docs/design/CRD/02_ALERT_PROCESSING_CRD.md](../../design/CRD/02_ALERT_PROCESSING_CRD.md)
+**Full Schema**: See [docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md](../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 
-**Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `02_ALERT_PROCESSING_CRD.md`.
+**Note**: The examples below show the conceptual structure. The authoritative OpenAPI v3 schema is defined in `02_REMEDIATION_PROCESSING_CRD.md`.
 
 **Location**: `api/alertprocessor/v1/alertprocessing_types.go`
 

@@ -311,7 +311,7 @@ All field constraints match Kubernetes object specifications:
 ### Reference
 
 For detailed HolmesGPT toolset capabilities and CRD schemas:
-- [RemediationProcessing CRD Schema](../../design/CRD/02_ALERT_PROCESSING_CRD.md)
+- [RemediationProcessing CRD Schema](../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 - [AIAnalysis CRD Schema](../../design/CRD/03_AI_ANALYSIS_CRD.md)
 - [AI Analysis Service Spec - HolmesGPT Toolsets](./02-ai-analysis.md#holmesgpt-toolsets--dynamic-data-fetching)
 - [HolmesGPT Official Documentation](https://github.com/robusta-dev/holmesgpt)
