@@ -92,10 +92,10 @@ type RemediationRequestSpec struct {
 
     // Core Signal Identification
     // Unique fingerprint for deduplication (SHA256 of alert/event key fields)
-    AlertFingerprint string `json:"alertFingerprint"`
+    SignalFingerprint string `json:"signalFingerprint"`
 
     // Human-readable signal name (e.g., "HighMemoryUsage", "CrashLoopBackOff")
-    AlertName string `json:"alertName"`
+    SignalName string `json:"signalName"`
 
     // Signal Classification
     // Severity level: "critical", "warning", "info"
@@ -587,8 +587,8 @@ These fields are **required** regardless of provider:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `alertFingerprint` | string | Unique fingerprint for deduplication |
-| `alertName` | string | Human-readable signal name |
+| `signalFingerprint` | string | Unique fingerprint for deduplication |
+| `signalName` | string | Human-readable signal name |
 | `severity` | string | "critical", "warning", "info" |
 | `environment` | string | "prod", "staging", "dev" |
 | `priority` | string | "P0", "P1", "P2" |
@@ -622,7 +622,7 @@ See provider data schemas above for each `targetType`
 
 | Field | Gateway | RemediationProcessor | AIAnalysis | WorkflowExecution |
 |-------|---------|---------------------|------------|------------------|
-| `alertFingerprint` | ✅ Creates | ✅ Uses for tracking | ✅ Uses for correlation | ✅ Uses for audit |
+| `signalFingerprint` | ✅ Creates | ✅ Uses for tracking | ✅ Uses for correlation | ✅ Uses for audit |
 | `priority` | ✅ Assigns | ❌ N/A | ✅ Uses in Rego | ✅ Uses for ordering |
 | `signalType` | ✅ Detects | ❌ N/A | ✅ Uses in Rego | ✅ Uses for strategy |
 | `targetType` | ✅ Sets | ✅ Uses for routing | ✅ Uses for toolset selection | ✅ Uses for execution |
@@ -647,7 +647,7 @@ See provider data schemas above for each `targetType`
 **Previous Design** (K8s-only, typed):
 ```go
 type RemediationRequestSpec struct {
-    AlertFingerprint string
+    SignalFingerprint string
     Namespace        string              // K8s-specific, typed
     Resource         ResourceIdentifier  // K8s-specific, typed
     AlertmanagerURL  string              // K8s-specific, typed
@@ -658,7 +658,7 @@ type RemediationRequestSpec struct {
 **Current Design** (Multi-provider, Alternative 1):
 ```go
 type RemediationRequestSpec struct {
-    AlertFingerprint string              // Universal
+    SignalFingerprint string              // Universal
     TargetType       string              // NEW: "kubernetes", "aws", "datadog", etc.
     ProviderData     json.RawMessage     // NEW: All provider-specific data
 }
