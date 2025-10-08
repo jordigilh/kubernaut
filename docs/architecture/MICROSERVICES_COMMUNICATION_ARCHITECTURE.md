@@ -72,7 +72,7 @@ Services:
 
   monitor-service:
     Purpose: Effectiveness Assessment Only
-    Port: 8087 (HTTP), 9087 (metrics), 8187 (health)
+    Port: 8080 (HTTP), 9090 (metrics)
     Image: quay.io/jordigilh/monitor-service:v1.0.0
     Dependencies: [context-service]
     External: [None - internal only]

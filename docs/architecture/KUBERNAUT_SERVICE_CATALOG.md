@@ -552,7 +552,7 @@ The following 5 services will be added in V2 to provide advanced capabilities:
 ### **V2 Enhancement Services**
 1. **🧠 Multi-Model Orchestration Service** (8092) - Ensemble AI decision making with OpenAI, Anthropic, Azure OpenAI
 2. **🔍 Intelligence Service** (8086) - Advanced pattern discovery & ML analytics
-3. **📈 Effectiveness Monitor Service** (8087) - Performance assessment & optimization
+3. **📈 Effectiveness Monitor Service** (8080) - Performance assessment & optimization
 4. **🔐 Security & Access Control Service** (8093) - RBAC, authentication & secrets management
 5. **💚 Enhanced Health Monitoring Service** (8096) - LLM health & enterprise monitoring
 

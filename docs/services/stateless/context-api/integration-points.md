@@ -55,7 +55,7 @@ def get_investigation_context(alert_id: str) -> Dict:
 
 ---
 
-### **3. Effectiveness Monitor Service** (Port 8087)
+### **3. Effectiveness Monitor Service** (Port 8080)
 
 **Use Case**: Historical trends for effectiveness assessment
 

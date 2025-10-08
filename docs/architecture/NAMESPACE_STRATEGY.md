@@ -22,7 +22,7 @@ Kubernaut uses a **dual-namespace architecture** to separate concerns between HT
 3. Data Storage (Port 8080)
 4. HolmesGPT API (Port 8080)
 5. Dynamic Toolset (Port 8083)
-6. Effectiveness Monitor (Port 8087)
+6. Effectiveness Monitor (Port 8080)
 7. Notification Service (Port 8088)
 
 **Characteristics**:
@@ -234,7 +234,7 @@ context-api.prometheus-alerts-slm.svc.cluster.local:8082
 data-storage.prometheus-alerts-slm.svc.cluster.local:8080
 holmesgpt-api.prometheus-alerts-slm.svc.cluster.local:8080
 dynamic-toolset.prometheus-alerts-slm.svc.cluster.local:8083
-effectiveness-monitor.prometheus-alerts-slm.svc.cluster.local:8087
+effectiveness-monitor.prometheus-alerts-slm.svc.cluster.local:8080
 notification-service.prometheus-alerts-slm.svc.cluster.local:8088
 ```
 
