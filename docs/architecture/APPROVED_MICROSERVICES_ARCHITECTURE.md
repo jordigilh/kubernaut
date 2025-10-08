@@ -54,173 +54,72 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 
 ## 🔄 **SERVICE FLOW ARCHITECTURE**
 
+### **V1 Core Processing Flow**
+
+This diagram shows the primary signal processing path through Kubernaut's V1 architecture (11 services):
+
 ```mermaid
-flowchart TD
-    %% External Systems - Left Side
-    subgraph EXT ["🌐 External Systems"]
-        direction TB
-        PROM["📊 Signal Sources<br/><small>Prometheus, K8s Events, CloudWatch</small>"]
-        AI_EXT["🤖 AI Providers<br/><small>OpenAI, Anthropic, Ollama</small>"]
-        K8S["☸️ Kubernetes<br/><small>Multi-Cluster</small>"]
-        VDB["🗄️ Vector DBs<br/><small>PGVector, Pinecone</small>"]
-        HOLMES["🔍 HolmesGPT<br/><small>Investigation Tools</small>"]
-        NOTIF_EXT["📢 Notifications<br/><small>Slack, Teams, Email</small>"]
-    end
-
-    %% Core Service Flow - Center
-    subgraph CORE ["🎯 Core Service Flow"]
-        direction TB
-        GATEWAY["🔗 Gateway<br/><small>gateway-service</small>"]
-        ALERT["🧠 Remediation Processor<br/><small>remediationprocessor</small>"]
-        AI["🤖 AI Analysis<br/><small>ai-service</small>"]
-        WORKFLOW["🎯 Workflow Execution<br/><small>workflow-service</small>"]
-        EXECUTOR["⚡ K8s Executor<br/><small>executor-service</small>"]
-    end
-
-    %% Support Services - Right Side
-    subgraph SUPPORT ["🔧 Support Services"]
-        direction TB
-        STORAGE["📊 Data Storage<br/><small>storage-service</small>"]
-        INTEL["🔍 Intelligence<br/><small>intelligence-service</small>"]
-        MONITOR["📈 Effectiveness Monitor<br/><small>monitor-service</small>"]
-        CONTEXT["🌐 Context API<br/><small>context-service</small>"]
-        HOLMESGPT_API["🔍 HolmesGPT API<br/><small>holmesgpt-api-server</small>"]
-        NOTIFICATION["📢 Notifications<br/><small>notification-service</small>"]
-    end
-
-    %% Enterprise Services - Far Right
-    subgraph ENTERPRISE ["🏢 Enterprise Services"]
-        direction TB
-        MULTIMODEL["🧠 Multi-Model Orchestration<br/><small>multimodel-service</small>"]
-        SECURITY["🔐 Security & Access Control<br/><small>security-service</small>"]
-        INFRA_MON["📊 Infrastructure Monitoring<br/><small>infra-monitoring-service</small>"]
-        ENV_CLASS["🏷️ Environment Classification<br/><small>env-classification-service</small>"]
-        HEALTH_MON["💚 Enhanced Health Monitoring<br/><small>health-monitoring-service</small>"]
-    end
-
-    %% Infrastructure - Bottom
-    subgraph INFRA_BOX ["🏗️ Infrastructure"]
-        direction LR
-        POSTGRES[("🗃️ PostgreSQL")]
-        INFRA["⚙️ Shared Infrastructure<br/><small>Config, Discovery, Monitoring</small>"]
-    end
-
-    %% Main Service Flow V1 (thick arrows)
-    PROM ==>|signals| GATEWAY
-    GATEWAY ==>|process| ALERT
-    ALERT ==>|analyze| AI
-    AI ==>|create workflow| WORKFLOW
-    WORKFLOW ==>|execute| EXECUTOR
+flowchart LR
+    SIG[📊 Signal Sources<br/>Prometheus<br/>K8s Events<br/>CloudWatch] 
     
-    %% V2 Enhancement: Multi-Model Orchestration (shown for completeness, not in V1)
-    AI -.->|V2: ensemble| MULTIMODEL
-    MULTIMODEL -.->|V2: optimized workflow| WORKFLOW
-
-    %% Support Flow (medium arrows)
-    EXECUTOR -->|store| STORAGE
-    STORAGE -->|patterns| INTEL
-    INTEL -->|assess| MONITOR
-    MONITOR -->|context| CONTEXT
-    CONTEXT -->|notify| NOTIFICATION
-
-    %% Vector Database Consumption Flows (medium arrows)
-    INTEL -->|similarity search| STORAGE
-    AI -->|historical lookup| STORAGE
-    MULTIMODEL -->|pattern weighting| STORAGE
-    MONITOR -->|trend analysis| STORAGE
-
-    %% AI Investigation Flow (medium arrows)
-    AI -->|investigate| HOLMESGPT_API
-    HOLMESGPT_API -->|get context| CONTEXT
-    CONTEXT -->|context data| HOLMESGPT_API
-    HOLMESGPT_API -->|results| AI
-
-    %% Enterprise Service Flows (medium arrows)
-    ALERT -->|classify| ENV_CLASS
-    ENV_CLASS -->|priority| AI
-    AI -->|health check| HEALTH_MON
-    MULTIMODEL -->|monitor| INFRA_MON
-
-    %% Security Flows (all services authenticate through Security)
-    SECURITY -->|auth| GATEWAY
-    SECURITY -->|auth| ALERT
-    SECURITY -->|auth| AI
-    SECURITY -->|auth| MULTIMODEL
-    SECURITY -->|auth| WORKFLOW
-    SECURITY -->|auth| EXECUTOR
-    SECURITY -->|auth| STORAGE
-    SECURITY -->|auth| INTEL
-    SECURITY -->|auth| MONITOR
-    SECURITY -->|auth| CONTEXT
-    SECURITY -->|auth| HOLMESGPT_API
-    SECURITY -->|auth| NOTIFICATION
-
-    %% External Integrations (dotted lines)
-    AI -.->|API| AI_EXT
-    MULTIMODEL -.->|API| AI_EXT
-    EXECUTOR -.->|API| K8S
-    STORAGE -.->|data| VDB
-    HOLMESGPT_API -.->|SDK| HOLMES
-    NOTIFICATION -.->|channels| NOTIF_EXT
-    SECURITY -.->|identity| AI_EXT
-    ENV_CLASS -.->|API| K8S
-    INFRA_MON -.->|metrics| PROM
-    HEALTH_MON -.->|health| AI_EXT
-
-    %% Database connections (solid lines)
-    ALERT --- POSTGRES
-    STORAGE --- POSTGRES
-    SECURITY --- POSTGRES
-
-    %% Infrastructure connections (thin dotted lines)
-    GATEWAY -.- INFRA
-    ALERT -.- INFRA
-    AI -.- INFRA
-    MULTIMODEL -.- INFRA
-    WORKFLOW -.- INFRA
-    EXECUTOR -.- INFRA
-    STORAGE -.- INFRA
-    INTEL -.- INFRA
-    MONITOR -.- INFRA
-    CONTEXT -.- INFRA
-    HOLMESGPT_API -.- INFRA
-    NOTIFICATION -.- INFRA
-    SECURITY -.- INFRA
-    INFRA_MON -.- INFRA
-    ENV_CLASS -.- INFRA
-    HEALTH_MON -.- INFRA
-
-    %% Styling
-    classDef external fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
-    classDef core fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px,color:#000
-    classDef support fill:#e8f5e8,stroke:#388e3c,stroke-width:2px,color:#000
-    classDef enterprise fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
-    classDef infrastructure fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
-
-    class PROM,AI_EXT,K8S,VDB,HOLMES,NOTIF_EXT external
-    class GATEWAY,ALERT,AI,WORKFLOW,EXECUTOR core
-    class STORAGE,INTEL,MONITOR,CONTEXT,HOLMESGPT_API,NOTIFICATION support
-    class MULTIMODEL,SECURITY,INFRA_MON,ENV_CLASS,HEALTH_MON enterprise
-    class POSTGRES,INFRA infrastructure
+    SIG --> GW[🔗 Gateway<br/>Port 8080]
+    GW --> RP[🧠 Processor<br/>Port 8081]
+    RP --> AI[🤖 AI Analysis<br/>Port 8082]
+    AI --> WF[🎯 Workflow<br/>Port 8083]
+    WF --> EX[⚡ Executor<br/>Port 8084]
+    EX --> K8S[☸️ Kubernetes<br/>Clusters]
+    
+    AI <-.-> HGP[🔍 HolmesGPT<br/>Port 8090]
+    HGP <-.-> CTX[🌐 Context API<br/>Port 8091]
+    
+    style GW fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
+    style RP fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
+    style AI fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
+    style WF fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
+    style EX fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style HGP fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
+    style CTX fill:#ffe0b2,stroke:#f57c00,stroke-width:2px,color:#000
+    style SIG fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
+    style K8S fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
 ```
 
-### **📖 Architecture Legend**
+### **V1 Support Services Flow**
 
-| Element | Meaning | Visual Cue |
-|---------|---------|------------|
-| **Core Services** | Main processing pipeline | Purple boxes with thick borders |
-| **Support Services** | Analytics and auxiliary functions | Green boxes |
-| **Enterprise Services** | Security, monitoring, classification | Pink boxes |
-| **External Systems** | Third-party integrations | Blue boxes |
-| **Infrastructure** | Shared platform components | Orange boxes |
-| **Main Flow** | Primary signal processing path | Thick arrows (=⇒) |
-| **Support Flow** | Secondary processing path | Medium arrows (→) |
-| **Vector DB Consumption** | Vector database similarity search | Medium arrows (→) |
-| **Enterprise Flow** | Security and monitoring integration | Medium arrows (→) |
-| **Security Flow** | Authentication and authorization | Medium arrows (→) |
-| **External APIs** | Third-party service calls | Dotted lines (-.→) |
-| **Database Connections** | Direct database access | Solid lines (---) |
-| **Infrastructure** | Platform connectivity | Thin dotted lines (-.-) |
+Support services handle data storage, monitoring, and notifications:
+
+```mermaid
+flowchart LR
+    EX[⚡ Executor<br/>Port 8084] --> ST[📊 Storage<br/>Port 8085<br/>PostgreSQL + Vector]
+    ST --> EFF[📈 Monitor<br/>Port 8087<br/>Effectiveness]
+    EFF --> INF[📊 Infra Monitor<br/>Port 8094<br/>Metrics]
+    INF --> NOT[📢 Notifications<br/>Port 8089]
+    
+    NOT --> EXTERNAL[📧 Slack, Teams<br/>Email, PagerDuty]
+    
+    style EX fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style ST fill:#ffe0b2,stroke:#f57c00,stroke-width:2px,color:#000
+    style EFF fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style INF fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style NOT fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
+    style EXTERNAL fill:#e0e0e0,stroke:#616161,stroke-width:2px,color:#000
+```
+
+### **📖 Architecture Color Legend**
+
+| Color | Service Type | Examples |
+|-------|-------------|----------|
+| 🔵 **Blue** | Core Processing | Gateway, Processor, Workflow, Notifications |
+| 🟣 **Purple** | AI Investigation | AI Analysis, HolmesGPT |
+| 🟢 **Green** | Execution & Monitoring | K8s Executor, Effectiveness Monitor, Infra Monitor |
+| 🟠 **Orange** | Data & Support | Storage, Context API |
+| ⚪ **Gray** | External Systems | Signal Sources, Kubernetes Clusters, Notification Channels |
+
+### **Flow Notation**
+
+| Symbol | Meaning |
+|--------|---------|
+| `→` | Direct service call (solid arrow) |
+| `<-.->` | Bidirectional investigation flow (dotted arrows) |
 
 ### **🔄 Service Flow Summary**
 
