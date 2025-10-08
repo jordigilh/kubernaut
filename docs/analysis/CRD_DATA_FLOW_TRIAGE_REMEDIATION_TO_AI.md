@@ -195,7 +195,7 @@ type RemediationProcessingStatus struct {
 type EnrichmentResults struct {
     // ✅ ADD: Original signal payload
     OriginalSignal *OriginalSignal `json:"originalSignal"`
-    
+
     // ... existing fields ...
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
@@ -233,10 +233,10 @@ type EnrichmentResults struct {
     OriginalSignal    *OriginalSignal    `json:"originalSignal"`
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
-    
+
     // ✅ ADD: Monitoring context
     MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
-    
+
     EnrichmentQuality float64            `json:"enrichmentQuality,omitempty"`
 }
 
@@ -377,7 +377,7 @@ type EnrichmentResults struct {
     // ✅ ADD: Original signal payload (re-exported from spec)
     // Required by AIAnalysis for HolmesGPT investigation
     OriginalSignal *OriginalSignal `json:"originalSignal"`
-    
+
     // Existing fields
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
@@ -405,10 +405,10 @@ type EnrichmentResults struct {
     OriginalSignal    *OriginalSignal    `json:"originalSignal"`
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
-    
+
     // ✅ ADD: Monitoring context (optional in V1, required in V2)
     MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
-    
+
     EnrichmentQuality float64            `json:"enrichmentQuality,omitempty"`
 }
 
@@ -419,10 +419,10 @@ type EnrichmentResults struct {
 type MonitoringContext struct {
     // Related signals for correlation
     RelatedSignals []RelatedSignal `json:"relatedSignals,omitempty"`
-    
+
     // Metric samples for analysis
     Metrics []MetricSample `json:"metrics,omitempty"`
-    
+
     // Recent log entries for investigation
     Logs []LogEntry `json:"logs,omitempty"`
 }
@@ -463,10 +463,10 @@ type EnrichmentResults struct {
     KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
     HistoricalContext *HistoricalContext `json:"historicalContext,omitempty"`
     MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
-    
+
     // ✅ ADD: Business context (extracted from namespace labels/annotations)
     BusinessContext *BusinessContext `json:"businessContext,omitempty"`
-    
+
     EnrichmentQuality float64            `json:"enrichmentQuality,omitempty"`
 }
 
@@ -534,14 +534,14 @@ func (r *RemediationOrchestratorReconciler) createAIAnalysis(
                 SignalContext: aianalysisv1.SignalContext{
                     // ✅ FROM: remProc.Status.SignalFingerprint
                     Fingerprint: remProc.Status.SignalFingerprint,
-                    
+
                     // ✅ FROM: remProc.Status.Severity
                     Severity: remProc.Status.Severity,
-                    
+
                     // ✅ FROM: remProc.Status.EnvironmentClassification
                     Environment:      remProc.Status.EnvironmentClassification.Environment,
                     BusinessPriority: remProc.Status.EnvironmentClassification.BusinessPriority,
-                    
+
                     // ✅ FROM: remProc.Status.EnrichmentResults
                     EnrichedPayload: aianalysisv1.EnrichedPayload{
                         // ✅ FROM: remProc.Status.EnrichmentResults.OriginalSignal

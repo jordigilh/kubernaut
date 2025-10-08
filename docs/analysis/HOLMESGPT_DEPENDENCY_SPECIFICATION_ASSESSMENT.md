@@ -202,8 +202,8 @@ func (v *MultiStageRemediationValidator) convertInvestigationToWorkflow(
 
 **CRITICAL FINDING**: Test code **assigns** execution order and conditions, but **NOT from HolmesGPT response**!
 
-**Execution Order**: Hardcoded as sequential (1, 2, 3...)  
-**Condition**: Hardcoded as `"if_primary_fails"`  
+**Execution Order**: Hardcoded as sequential (1, 2, 3...)
+**Condition**: Hardcoded as `"if_primary_fails"`
 **Prerequisites**: Empty array `[]`
 
 ---
