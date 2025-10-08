@@ -1,4 +1,4 @@
-package alert
+package remediationprocessor
 
 import (
 	"context"
@@ -7,30 +7,30 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// AlertService defines the interface for alert processing operations
-// Business Requirements: BR-ALERT-001 to BR-ALERT-006
-// Single Responsibility: Alert ingestion, validation, routing, and enrichment
-type AlertService interface {
+// Service defines the interface for remediation processing operations
+// Business Requirements: BR-AP-001 to BR-AP-062 (Alert Processing & Enrichment)
+// Single Responsibility: Signal enrichment, environment classification, and validation
+type Service interface {
 	// Core alert processing
 	ProcessAlert(ctx context.Context, alert types.Alert) (*ProcessResult, error)
 
-	// BR-ALERT-001: Alert validation
+	// BR-AP-001: Signal validation
 	ValidateAlert(alert types.Alert) map[string]interface{}
 
-	// BR-ALERT-002: Alert routing and filtering
+	// BR-AP-002: Signal routing and filtering
 	RouteAlert(ctx context.Context, alert types.Alert) map[string]interface{}
 
-	// BR-ALERT-003: Alert deduplication
-	GetDeduplicationStats() map[string]interface{}
-
-	// BR-ALERT-004: Alert enrichment
+	// BR-AP-060: Signal enrichment with K8s context
 	EnrichAlert(ctx context.Context, alert types.Alert) map[string]interface{}
 
-	// BR-ALERT-005: Alert persistence
+	// BR-AP-061: Signal correlation and deduplication
+	GetDeduplicationStats() map[string]interface{}
+
+	// BR-AP-005: Signal persistence
 	PersistAlert(ctx context.Context, alert types.Alert) map[string]interface{}
 	GetAlertHistory(namespace string, duration time.Duration) map[string]interface{}
 
-	// BR-ALERT-006: Service metrics
+	// BR-AP-006: Service metrics
 	GetAlertMetrics() map[string]interface{}
 
 	// Service health

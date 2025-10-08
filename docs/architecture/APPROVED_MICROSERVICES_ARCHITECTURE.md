@@ -50,7 +50,7 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 **Important Notes**:
 - **Oscillation detection** (preventing remediation loops) is a capability of the Effectiveness Monitor service (queries PostgreSQL action_history table), not a separate service.
 - **External infrastructure monitoring** (Prometheus, Grafana, Jaeger) are external systems, not Kubernaut microservices.
-- **Package Naming**: Remediation Processor service is currently implemented in `pkg/alertprocessor/` but should be migrated to `pkg/remediationprocessor/` for naming consistency with the service name.
+- **Package Naming**: Remediation Processor service is implemented in `pkg/remediationprocessor/` for naming consistency with the service name.
 
 ### **V2 Future Services - Post V1 Implementation (4 Additional Services)**
 | Service | Responsibility | Business Requirements | Timeline |
