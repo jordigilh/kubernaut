@@ -14,7 +14,7 @@ An intelligent Kubernetes remediation platform built on microservices architectu
 - 🏗️ **[Kubernaut Architecture Overview](docs/architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md)**
   - High-level system design and architectural principles
   - V1 microservices overview (10 core services)
-  
+
 - 🏛️ **[Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)**
   - Detailed microservices decomposition and service boundaries
   - V1/V2 service roadmap
@@ -33,37 +33,64 @@ An intelligent Kubernetes remediation platform built on microservices architectu
 
 **PRODUCTION READY:** Fault-isolated microservices with independent scaling, deployment, and failure domains.
 
-### **🎯 Service Architecture:**
-- **🔗 Webhook Service**: Independent alert processing with 99.9% availability
-- **🧠 Context API Service**: HolmesGPT integration and dynamic context orchestration
-- **🤖 AI Service**: LLM integration and analytics processing (planned)
-- **⚙️ Workflow Engine Service**: Workflow execution and orchestration (planned)
-- **💾 Data Service**: Persistence and vector operations (planned)
+### **🎯 V1 Core Services (10 Services):**
 
-### **✅ Phase 1 Complete: Webhook Service**
-- **TDD Implementation**: Complete RED-GREEN-REFACTOR cycle
-- **Docker Image**: Red Hat UBI9 Go toolset base image (`registry.access.redhat.com/ubi9/go-toolset:1.24`)
-- **Kubernetes Deployment**: Production-ready manifests with HPA (3-20 replicas)
-- **Fault Isolation**: Independent failure domain from other services
-- **Health Monitoring**: Comprehensive component health checks
-- **Fallback Mechanisms**: Rule-based processing when AI service unavailable
+**Reference**: [Kubernaut Service Catalog](docs/architecture/KUBERNAUT_SERVICE_CATALOG.md) (**Tier 1: AUTHORITATIVE**)
 
-### **🔄 Service Communication Architecture**
+**CRD Controllers** (5 services):
+- **📥 RemediationProcessor**: Initial signal processing and enrichment
+- **🧠 AIAnalysis**: AI-powered analysis and recommendation generation
+- **⚙️ WorkflowExecution**: Multi-step workflow orchestration
+- **🔧 KubernetesExecutor**: Safe Kubernetes operation execution
+- **🎯 RemediationOrchestrator**: Cross-CRD coordination and lifecycle management
+
+**Stateless Services** (5 services):
+- **🔗 Gateway Service**: Multi-signal webhook ingestion (Prometheus alerts, K8s events, CloudWatch alarms, custom webhooks)
+- **📊 Effectiveness Monitor**: Action outcome assessment and continuous learning
+- **📢 Notification Service**: Multi-channel notification delivery
+- **🧩 Intelligence Pattern Service**: Pattern recognition and similarity matching
+- **[TBD]**: Additional service to be determined
+
+### **✅ V1 Status: Architecture Defined, Implementation In Progress**
+- **Architecture**: CRD-based multi-signal processing with Kubernetes-native communication
+- **Documentation**: 95% quality (239 files analyzed, 0 critical issues)
+- **Design**: Complete service specifications, API contracts, CRD schemas
+- **Implementation Focus**: Following TDD methodology with defense-in-depth testing strategy
+
+### **🔄 V1 Service Communication Architecture**
+
+**Reference**: [Multi-CRD Reconciliation Architecture](docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) (**Tier 1: AUTHORITATIVE**)
+
+**CRD-Based Multi-Signal Flow**:
 ```
-AlertManager → webhook-service:8080 → ai-service:8093 (planned)
-                                   → workflow-engine:8092 (planned)
-                                   → data-service:8094 (planned)
-
-HolmesGPT → context-api-service:8091 → ai-service:8093 (planned)
-                                    → data-service:8094 (planned)
+Signal Sources → Gateway Service → RemediationRequest CRD (created)
+(Prometheus Alerts,       ↓
+ K8s Events,         RemediationProcessor (watches RemediationRequest)
+ CloudWatch Alarms,       ↓
+ Custom Webhooks)    RemediationProcessing CRD (created)
+                          ↓
+                     AIAnalysis (watches RemediationProcessing)
+                          ↓
+                     AIAnalysis CRD (created)
+                          ↓
+                     WorkflowExecution (watches AIAnalysis)
+                          ↓
+                     WorkflowExecution CRD (created)
+                          ↓
+                     KubernetesExecutor (watches WorkflowExecution)
+                          ↓
+                     KubernetesExecution CRD (created)
+                          ↓
+                     RemediationOrchestrator (coordinates all CRDs)
 ```
 
 **Communication Features**:
-- **HTTP/REST APIs**: JSON-based service communication
-- **Circuit Breakers**: Resilience patterns with fallback mechanisms
-- **Service Discovery**: Kubernetes-native DNS resolution
-- **Health Checks**: Standardized `/health`, `/ready`, `/metrics` endpoints
-- **Distributed Tracing**: Request correlation across services
+- **CRD-Based**: Kubernetes-native communication via Custom Resources
+- **Event-Driven**: Controllers watch CRD changes for reconciliation
+- **Resilient**: Built-in retry and reconciliation loops
+- **Scalable**: Horizontal scaling via controller replicas
+- **Observable**: Complete audit trail via CRD status updates
+- **Decoupled**: Services communicate through CRDs, not direct HTTP
 
 ## 🎯 **DEVELOPMENT FRAMEWORK: COMPLETE SUCCESS (100%)**
 
@@ -107,17 +134,23 @@ HolmesGPT → context-api-service:8091 → ai-service:8093 (planned)
 
 ### **📋 Key Documents:**
 
-#### **Microservices Architecture**
-- **[docs/architecture/MICROSERVICES_COMMUNICATION_ARCHITECTURE.md](docs/architecture/MICROSERVICES_COMMUNICATION_ARCHITECTURE.md)** - Service communication patterns and protocols
-- **[cmd/webhook-service/](cmd/webhook-service/)** - Webhook service implementation (Phase 1 complete)
+#### **V1 Architecture (AUTHORITATIVE)**
+- **[V1 Source of Truth Hierarchy](docs/V1_SOURCE_OF_TRUTH_HIERARCHY.md)** - 3-tier documentation hierarchy
+- **[Kubernaut Architecture Overview](docs/architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md)** - High-level system design
+- **[Kubernaut Service Catalog](docs/architecture/KUBERNAUT_SERVICE_CATALOG.md)** - Service specifications and API contracts
+- **[CRD Schemas](docs/architecture/CRD_SCHEMAS.md)** - Authoritative CRD field definitions
+- **[Multi-CRD Reconciliation Architecture](docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)** - CRD-based communication flow
+
+#### **Service Documentation**
+- **[docs/services/crd-controllers/](docs/services/crd-controllers/)** - CRD controller service specifications
+- **[docs/services/stateless/](docs/services/stateless/)** - Stateless service specifications
 - **[deploy/microservices/](deploy/microservices/)** - Kubernetes deployment manifests
-- **[docker/webhook-service.Dockerfile](docker/webhook-service.Dockerfile)** - Red Hat UBI9 container build
+- **[docker/](docker/)** - Service Dockerfiles (gateway, processor, storage, etc.)
 
 #### **Development & Requirements**
-- **[MILESTONE_1_SUCCESS_SUMMARY.md](MILESTONE_1_SUCCESS_SUMMARY.md)** - Complete achievement summary
-- **[AI_INTEGRATION_VALIDATION.md](AI_INTEGRATION_VALIDATION.md)** - Technical validation results
-- **[MILESTONE_1_COMPLETION_CHECKLIST.md](MILESTONE_1_COMPLETION_CHECKLIST.md)** - Implementation checklist
-- **[docs/requirements/](docs/requirements/)** - Phase 2 business requirements for remaining functionality
+- **[docs/requirements/](docs/requirements/)** - Business requirements by category
+- **[docs/development/](docs/development/)** - Development guides and patterns
+- **[docs/architecture/decisions/](docs/architecture/decisions/)** - Architectural Decision Records (ADRs)
 
 ### **✅ PHASE 1 IMPLEMENTATION COMPLETE**
 **Status:** Core business functionality successfully implemented
@@ -638,7 +671,7 @@ rules:
 - **Governance Workflows**: Approval systems for high-risk operations
 - **Advanced Analytics**: Predictive maintenance and capacity planning
 
-For detailed roadmap information, see [ROADMAP.md](docs/ROADMAP.md).
+For detailed service specifications, see [Kubernaut Service Catalog](docs/architecture/KUBERNAUT_SERVICE_CATALOG.md) and [Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md).
 
 ## Contributing
 
@@ -693,20 +726,20 @@ make format
   - 5-phase migration strategy with backward compatibility
 
 ### Technical Documentation
-- **[Architecture Guide](docs/ARCHITECTURE.md)**: Detailed system architecture and design decisions
-- **[Deployment Guide](docs/DEPLOYMENT.md)**: Production deployment strategies and configurations
-- **[HolmesGPT Integration Guide](docs/development/HOLMESGPT_DEPLOYMENT.md)**: Complete deployment guide
-- **[Testing Framework](docs/TESTING_FRAMEWORK.md)**: Comprehensive testing approach and utilities
+- **[Kubernaut Architecture Overview](docs/architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md)**: Detailed system architecture and V1 design
+- **[Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)**: Service boundaries and roadmap
+- **[HolmesGPT Integration Guide](docs/development/HOLMESGPT_DEPLOYMENT.md)**: Complete HolmesGPT deployment guide
+- **[Signal Type Definitions Design](docs/development/SIGNAL_TYPE_DEFINITIONS_DESIGN.md)**: Multi-signal architecture implementation
 
-### Analysis & Planning
-- **[Competitive Analysis](docs/COMPETITIVE_ANALYSIS.md)**: Market positioning and feature comparison
-- **[Vector Database Analysis](docs/VECTOR_DATABASE_ANALYSIS.md)**: Storage architecture decisions
-- **[RAG Enhancement Analysis](docs/RAG_ENHANCEMENT_ANALYSIS.md)**: AI decision enhancement strategies
-- **[Workflow Documentation](docs/WORKFLOWS.md)**: Multi-step remediation orchestration
+### Analysis & Design
+- **[V1 Documentation Triage Report](docs/analysis/V1_DOCUMENTATION_TRIAGE_REPORT.md)**: Documentation quality assessment (95% quality, 0 critical issues)
+- **[Vector Database Selection](docs/VECTOR_DATABASE_SELECTION.md)**: Storage architecture decisions
+- **[Action Parameter Schemas](docs/design/ACTION_PARAMETER_SCHEMAS.md)**: Canonical action type definitions
+- **[Canonical Action Types](docs/design/CANONICAL_ACTION_TYPES.md)**: Complete action type registry
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE) for details.
+Apache License 2.0
 
 ## Support & Community
 
