@@ -1,8 +1,8 @@
 # CRD Schema Update Action Plan - Self-Contained RemediationProcessing
 
-**Date**: October 8, 2025  
-**Purpose**: Action plan for updating CRD schemas to implement self-contained RemediationProcessing pattern  
-**Context**: No backward compatibility constraints - schemas can be freely updated  
+**Date**: October 8, 2025
+**Purpose**: Action plan for updating CRD schemas to implement self-contained RemediationProcessing pattern
+**Context**: No backward compatibility constraints - schemas can be freely updated
 
 ---
 
@@ -19,7 +19,7 @@ Update CRD schemas to ensure RemediationProcessing contains **all data it needs*
 ### **Current State** ❌
 
 RemediationProcessing has minimal data (4 fields):
-- `alertFingerprint`, `severity`
+- `signalFingerprint`, `severity`
 - `namespace` (derived)
 - `labels`, `annotations`
 
@@ -40,8 +40,8 @@ RemediationProcessing has **all 18 required fields**:
 
 ### **Change 1: RemediationRequest Schema** (Gateway Service)
 
-**File**: `docs/architecture/CRD_SCHEMAS.md`  
-**Priority**: **P0 - CRITICAL**  
+**File**: `docs/architecture/CRD_SCHEMAS.md`
+**Priority**: **P0 - CRITICAL**
 **Effort**: 2-3 hours
 
 **Add Top-Level Fields**:
@@ -49,9 +49,9 @@ RemediationProcessing has **all 18 required fields**:
 type RemediationRequestSpec struct {
     // ... existing fields ...
     
-    // ✅ ADD: Structured alert metadata (no payload parsing needed)
-    AlertLabels      map[string]string `json:"alertLabels,omitempty"`
-    AlertAnnotations map[string]string `json:"alertAnnotations,omitempty"`
+    // ✅ ADD: Structured signal metadata (no payload parsing needed)
+    SignalLabels      map[string]string `json:"signalLabels,omitempty"`
+    SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
 }
 ```
 
@@ -63,8 +63,8 @@ type RemediationRequestSpec struct {
 
 ### **Change 2: RemediationProcessing Schema** (RemediationProcessor Service)
 
-**File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`  
-**Priority**: **P0 - CRITICAL**  
+**File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+**Priority**: **P0 - CRITICAL**
 **Effort**: 3-4 hours
 
 **Complete Spec Redesign**:
@@ -74,20 +74,20 @@ type RemediationProcessingSpec struct {
     // PARENT REFERENCE (Always Required)
     // ========================================
     RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-    
+
     // ========================================
     // SIGNAL IDENTIFICATION (HIGH PRIORITY)
     // ========================================
-    AlertFingerprint string `json:"alertFingerprint"` // ✅ Correlation
-    AlertName        string `json:"alertName"`        // ✅ Validation
-    Severity         string `json:"severity"`         // ✅ Classification
-    
+    SignalFingerprint string `json:"signalFingerprint"` // ✅ Correlation
+    SignalName        string `json:"signalName"`        // ✅ Validation
+    Severity          string `json:"severity"`          // ✅ Classification
+
     // ========================================
     // RESOURCE TARGETING (CRITICAL)
     // ========================================
     TargetResource ResourceIdentifier `json:"targetResource"` // ✅ NEW
     ProviderData   json.RawMessage    `json:"providerData"`   // ✅ K8s URLs
-    
+
     // ========================================
     // SIGNAL METADATA (HIGH PRIORITY)
     // ========================================
@@ -95,31 +95,31 @@ type RemediationProcessingSpec struct {
     Annotations  map[string]string `json:"annotations"`  // ✅ NEW
     FiringTime   metav1.Time       `json:"firingTime"`   // ✅ NEW
     ReceivedTime metav1.Time       `json:"receivedTime"` // ✅ NEW
-    
+
     // ========================================
     // BUSINESS CONTEXT (MEDIUM PRIORITY)
     // ========================================
     Priority        string `json:"priority"`        // ✅ NEW - P0/P1/P2
     EnvironmentHint string `json:"environmentHint"` // ✅ NEW - Gateway hint
-    
+
     // ========================================
     // CORRELATION CONTEXT (MEDIUM PRIORITY)
     // ========================================
     Deduplication DeduplicationContext `json:"deduplication"` // ✅ NEW
     IsStorm         bool                `json:"isStorm"`       // ✅ NEW
     StormAlertCount int                 `json:"stormAlertCount"` // ✅ NEW
-    
+
     // ========================================
     // SIGNAL CLASSIFICATION (LOW PRIORITY)
     // ========================================
     SignalType string `json:"signalType"` // ✅ NEW
     TargetType string `json:"targetType"` // ✅ NEW
-    
+
     // ========================================
     // FALLBACK DATA (LOW PRIORITY)
     // ========================================
     OriginalPayload []byte `json:"originalPayload,omitempty"` // ✅ NEW
-    
+
     // ========================================
     // PROCESSING CONFIGURATION (EXISTING)
     // ========================================
@@ -151,8 +151,8 @@ type DeduplicationContext struct {
 
 ### **Change 3: RemediationOrchestrator Mapping Logic** (RemediationOrchestrator Service)
 
-**File**: `docs/services/crd-controllers/05-remediationorchestrator/integration-points.md`  
-**Priority**: **P1 - HIGH**  
+**File**: `docs/services/crd-controllers/05-remediationorchestrator/integration-points.md`
+**Priority**: **P1 - HIGH**
 **Effort**: 2-3 hours
 
 **Document Complete Mapping**:
@@ -161,11 +161,11 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
     ctx context.Context,
     remReq *remediationv1.RemediationRequest,
 ) (*remediationprocessingv1.RemediationProcessing, error) {
-    
+
     // Parse provider data for target resource
     var k8sData KubernetesProviderData
     json.Unmarshal(remReq.Spec.ProviderData, &k8sData)
-    
+
     remProc := &remediationprocessingv1.RemediationProcessing{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-processing", remReq.Name),
@@ -180,16 +180,16 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
                 Name:      remReq.Name,
                 Namespace: remReq.Namespace,
             },
-            
+
             // ========================================
             // COPY ALL 18 FIELDS
             // ========================================
-            
+
             // Signal identification
-            AlertFingerprint: remReq.Spec.AlertFingerprint,
-            AlertName:        remReq.Spec.AlertName,
-            Severity:         remReq.Spec.Severity,
-            
+            SignalFingerprint: remReq.Spec.SignalFingerprint,
+            SignalName:        remReq.Spec.SignalName,
+            Severity:          remReq.Spec.Severity,
+
             // Resource targeting
             TargetResource: remediationprocessingv1.ResourceIdentifier{
                 Kind:      k8sData.Resource.Kind,
@@ -197,17 +197,17 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
                 Namespace: k8sData.Resource.Namespace,
             },
             ProviderData: remReq.Spec.ProviderData,
-            
+
             // Signal metadata
-            Labels:       remReq.Spec.AlertLabels,      // ✅ From new field
-            Annotations:  remReq.Spec.AlertAnnotations, // ✅ From new field
+            Labels:       remReq.Spec.SignalLabels,      // ✅ From new field
+            Annotations:  remReq.Spec.SignalAnnotations, // ✅ From new field
             FiringTime:   remReq.Spec.FiringTime,
             ReceivedTime: remReq.Spec.ReceivedTime,
-            
+
             // Business context
             Priority:        remReq.Spec.Priority,
             EnvironmentHint: remReq.Spec.Environment,
-            
+
             // Correlation context
             Deduplication: remediationprocessingv1.DeduplicationContext{
                 OccurrenceCount: remReq.Spec.Deduplication.OccurrenceCount,
@@ -216,14 +216,14 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
             },
             IsStorm:         remReq.Spec.IsStorm,
             StormAlertCount: remReq.Spec.StormAlertCount,
-            
+
             // Signal classification
             SignalType: remReq.Spec.SignalType,
             TargetType: remReq.Spec.TargetType,
-            
+
             // Fallback data
             OriginalPayload: remReq.Spec.OriginalPayload,
-            
+
             // Configuration
             EnrichmentConfig: remediationprocessingv1.EnrichmentConfig{
                 ContextSources:     []string{"kubernetes"},
@@ -236,7 +236,7 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
             },
         },
     }
-    
+
     return remProc, r.Create(ctx, remProc)
 }
 
@@ -256,8 +256,8 @@ func determineEnrichmentDepth(remReq *remediationv1.RemediationRequest) string {
 
 ### **Change 4: Gateway CRD Integration** (Gateway Service)
 
-**File**: `docs/services/stateless/gateway-service/crd-integration.md`  
-**Priority**: **P1 - HIGH**  
+**File**: `docs/services/stateless/gateway-service/crd-integration.md`
+**Priority**: **P1 - HIGH**
 **Effort**: 1-2 hours
 
 **Update CRD Creation Logic**:
@@ -268,18 +268,18 @@ func (s *Server) createRemediationRequestCRD(
     isStorm bool,
     stormMetadata *processing.StormMetadata,
 ) (*remediationv1.RemediationRequest, error) {
-    
+
     cr := &remediationv1.RemediationRequest{
         // ... existing metadata ...
         Spec: remediationv1.RemediationRequestSpec{
             // ... existing fields ...
             
-            // ✅ ADD: Structured alert metadata
-            AlertLabels:      extractLabels(signal.RawPayload),
-            AlertAnnotations: extractAnnotations(signal.RawPayload),
+            // ✅ ADD: Structured signal metadata
+            SignalLabels:      extractLabels(signal.RawPayload),
+            SignalAnnotations: extractAnnotations(signal.RawPayload),
         },
     }
-    
+
     return cr, s.k8sClient.Create(ctx, cr)
 }
 
@@ -304,13 +304,13 @@ func extractAnnotations(payload []byte) map[string]string {
 
 | RemediationRequest | RemediationProcessing | Priority | Notes |
 |--------------------|----------------------|----------|-------|
-| `alertFingerprint` | `alertFingerprint` | **P0** | Direct copy |
-| `alertName` | `alertName` | **P0** | Direct copy |
+| `signalFingerprint` | `signalFingerprint` | **P0** | Direct copy |
+| `signalName` | `signalName` | **P0** | Direct copy |
 | `severity` | `severity` | **P0** | Direct copy |
 | `providerData` | `providerData` | **P0** | Direct copy (full JSON) |
 | `providerData.resource` | `targetResource` | **P0** | Parsed extraction |
-| `alertLabels` | `labels` | **P0** | Direct copy (NEW field) |
-| `alertAnnotations` | `annotations` | **P0** | Direct copy (NEW field) |
+| `signalLabels` | `labels` | **P0** | Direct copy (NEW field) |
+| `signalAnnotations` | `annotations` | **P0** | Direct copy (NEW field) |
 | `priority` | `priority` | **P1** | Direct copy |
 | `firingTime` | `firingTime` | **P1** | Direct copy |
 | `receivedTime` | `receivedTime` | **P1** | Direct copy |
@@ -334,8 +334,8 @@ func extractAnnotations(payload []byte) map[string]string {
 
 **Day 1-2: Gateway Schema** (Owner: Gateway team)
 - [ ] Update `docs/architecture/CRD_SCHEMAS.md`
-- [ ] Add `alertLabels` field
-- [ ] Add `alertAnnotations` field
+- [ ] Add `signalLabels` field
+- [ ] Add `signalAnnotations` field
 - [ ] Update examples
 
 **Day 3-4: RemediationProcessing Schema** (Owner: RemediationProcessor team)
@@ -387,8 +387,8 @@ func extractAnnotations(payload []byte) map[string]string {
 - [ ] All 18 fields present in RemediationProcessing spec
 - [ ] ResourceIdentifier type defined
 - [ ] DeduplicationContext type defined
-- [ ] alertLabels field in RemediationRequest
-- [ ] alertAnnotations field in RemediationRequest
+- [ ] signalLabels field in RemediationRequest
+- [ ] signalAnnotations field in RemediationRequest
 
 ### **Documentation Validation**:
 - [ ] Mapping logic documented
@@ -464,7 +464,7 @@ func extractAnnotations(payload []byte) map[string]string {
 
 ---
 
-**Action Plan Complete**: October 8, 2025  
-**Next Step**: Execute Phase 1 (Schema Documentation Updates)  
+**Action Plan Complete**: October 8, 2025
+**Next Step**: Execute Phase 1 (Schema Documentation Updates)
 **Owner**: Architecture team to coordinate with service teams
 

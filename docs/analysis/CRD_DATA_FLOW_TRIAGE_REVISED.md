@@ -51,8 +51,8 @@ Based on `docs/services/crd-controllers/01-remediationprocessor/overview.md`:
 ### **What RemediationProcessor NEEDS to Do Its Job**:
 
 #### **1. Core Signal Identification** (For validation and targeting)
-- ✅ `alertFingerprint` - Unique identifier for correlation
-- ✅ `alertName` - Human-readable name
+- ✅ `signalFingerprint` - Unique identifier for correlation
+- ✅ `signalName` - Human-readable name
 - ✅ `severity` - critical/warning/info (for validation)
 
 #### **2. Resource Targeting** (For Kubernetes context enrichment)
@@ -107,8 +107,8 @@ Based on `docs/services/crd-controllers/01-remediationprocessor/overview.md`:
 
 | Gateway Field | RemediationProcessor Needs? | Why? | Priority |
 |---------------|----------------------------|------|----------|
-| `alertFingerprint` | ✅ **YES** | Validation, correlation | **HIGH** |
-| `alertName` | ✅ **YES** | Validation, human context | **HIGH** |
+| `signalFingerprint` | ✅ **YES** | Validation, correlation | **HIGH** |
+| `signalName` | ✅ **YES** | Validation, human context | **HIGH** |
 | `severity` | ✅ **YES** | Validation, classification | **HIGH** |
 | `environment` | ⚠️ **INPUT** | Classification input (may override) | **MEDIUM** |
 | `priority` | ✅ **YES** | Business criticality context | **MEDIUM** |
@@ -149,9 +149,9 @@ type RemediationProcessingSpec struct {
     // ========================================
     
     // Core identifiers
-    AlertFingerprint string `json:"alertFingerprint"` // ✅ HIGH - Correlation
-    AlertName        string `json:"alertName"`        // ✅ HIGH - Human context
-    Severity         string `json:"severity"`         // ✅ HIGH - Validation
+    SignalFingerprint string `json:"signalFingerprint"` // ✅ HIGH - Correlation
+    SignalName        string `json:"signalName"`        // ✅ HIGH - Human context
+    Severity          string `json:"severity"`          // ✅ HIGH - Validation
     
     // ========================================
     // RESOURCE TARGETING (From Gateway)
@@ -256,8 +256,8 @@ type KubernetesProviderData struct {
 
 | RemediationRequest.spec | RemediationProcessing.spec | Mapping |
 |------------------------|---------------------------|---------|
-| `alertFingerprint` | `alertFingerprint` | ✅ Direct copy |
-| `alertName` | `alertName` | ✅ Direct copy |
+| `signalFingerprint` | `signalFingerprint` | ✅ Direct copy |
+| `signalName` | `signalName` | ✅ Direct copy |
 | `severity` | `severity` | ✅ Direct copy |
 | `providerData` | `providerData` | ✅ Direct copy (json.RawMessage) |
 | `labels` (from originalPayload) | `labels` | ⚠️ Parse from payload |
@@ -322,9 +322,9 @@ type KubernetesProviderData struct {
 type RemediationRequestSpec struct {
     // ... existing fields ...
     
-    // ✅ ADD: Alert labels and annotations as top-level fields
-    AlertLabels      map[string]string `json:"alertLabels,omitempty"`
-    AlertAnnotations map[string]string `json:"alertAnnotations,omitempty"`
+    // ✅ ADD: Signal labels and annotations as top-level fields
+    SignalLabels      map[string]string `json:"signalLabels,omitempty"`
+    SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
 }
 ```
 
@@ -443,7 +443,7 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
     
     // Parse original payload for labels/annotations
     // (IF Gateway doesn't expose them as top-level fields)
-    labels, annotations := parseAlertLabels(remReq.Spec.OriginalPayload)
+    labels, annotations := parseSignalLabels(remReq.Spec.OriginalPayload)
     
     remProc := &remediationprocessingv1.RemediationProcessing{
         ObjectMeta: metav1.ObjectMeta{
@@ -463,8 +463,8 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
             // ========================================
             // SIGNAL IDENTIFICATION (HIGH PRIORITY)
             // ========================================
-            AlertFingerprint: remReq.Spec.AlertFingerprint,
-            AlertName:        remReq.Spec.AlertName,
+            SignalFingerprint: remReq.Spec.SignalFingerprint,
+            SignalName:        remReq.Spec.SignalName,
             Severity:         remReq.Spec.Severity,
             
             // ========================================
@@ -557,8 +557,8 @@ type RemediationRequestSpec struct {
     // ... existing fields ...
     
     // ✅ ADD: Alert labels and annotations (HIGH PRIORITY)
-    AlertLabels      map[string]string `json:"alertLabels,omitempty"`
-    AlertAnnotations map[string]string `json:"alertAnnotations,omitempty"`
+    SignalLabels      map[string]string `json:"signalLabels,omitempty"`
+    SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
 }
 ```
 
@@ -576,8 +576,8 @@ type RemediationProcessingSpec struct {
     // ✅ ADD: All fields from "RECOMMENDED SPEC" above
     
     // Core identification
-    AlertFingerprint string
-    AlertName        string
+    SignalFingerprint string
+    SignalName        string
     Severity         string
     
     // Resource targeting (CRITICAL)
@@ -625,8 +625,8 @@ type RemediationProcessingSpec struct {
 ## 🎯 **PRIORITY LEVELS FOR IMPLEMENTATION**
 
 ### **P0 - CRITICAL** (Blocks core functionality):
-1. ✅ `alertFingerprint` - Correlation
-2. ✅ `alertName` - Validation
+1. ✅ `signalFingerprint` - Correlation
+2. ✅ `signalName` - Validation
 3. ✅ `severity` - Classification
 4. ✅ `targetResource` - Enrichment targeting
 5. ✅ `providerData` - Kubernetes context
@@ -659,7 +659,7 @@ type RemediationProcessingSpec struct {
 1. **Add Labels/Annotations to RemediationRequest** (2-3 hours)
    - File: `docs/architecture/CRD_SCHEMAS.md`
    - File: `docs/services/stateless/gateway-service/crd-integration.md`
-   - Action: Add `alertLabels` and `alertAnnotations` fields
+   - Action: Add `signalLabels` and `signalAnnotations` fields
    - Owner: Gateway Service team
 
 2. **Update RemediationProcessing Spec** (3-4 hours)
@@ -724,7 +724,7 @@ type RemediationProcessingSpec struct {
 **Confidence**: **100%** - Self-contained CRD pattern is correct, schema needs enhancement
 
 **Next Steps**:
-1. Add `alertLabels` and `alertAnnotations` to RemediationRequest
+1. Add `signalLabels` and `signalAnnotations` to RemediationRequest
 2. Update RemediationProcessing spec with all recommended fields
 3. Document complete field mapping logic
 4. Create data flow diagram
