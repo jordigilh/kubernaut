@@ -156,6 +156,25 @@ This separation enables efficient dual-source intelligence gathering: HolmesGPT 
 - **BR-HOLMES-029**: MUST provide service discovery metrics and monitoring for operational visibility
 - **BR-HOLMES-030**: MUST support gradual toolset enablement with A/B testing capabilities for new service integrations
 
+#### 3.1.5 Workflow Dependency Specification
+- **BR-HOLMES-031**: MUST include step dependencies in remediation recommendations
+  - **Requirement**: Each recommendation MUST specify which other recommendations must complete before it can execute
+  - **Format**: `dependencies` field containing array of recommendation IDs
+  - **Example**: `{"id": "rec-002", "dependencies": ["rec-001"]}` indicates rec-002 depends on rec-001
+  - **v1**: HolmesGPT-API response includes dependencies array for each recommendation
+  - **Validation**: Dependencies MUST reference valid recommendation IDs within same response
+- **BR-HOLMES-032**: MUST specify execution relationships between remediation steps
+  - **Relationship Types**: Sequential (explicit dependencies), Parallel (empty dependencies array), Conditional (dependency + condition)
+  - **Requirement**: HolmesGPT MUST indicate when steps can execute in parallel (no inter-step dependencies)
+  - **Example**: `[{"id": "rec-002", "dependencies": ["rec-001"]}, {"id": "rec-003", "dependencies": ["rec-001"]}]` indicates rec-002 and rec-003 can run in parallel after rec-001
+  - **Rationale**: Enable WorkflowExecution Controller to optimize execution through parallel step execution
+- **BR-HOLMES-033**: MUST provide dependency graph validation for multi-step workflows
+  - **Validation**: Dependency graph MUST be acyclic (no circular dependencies)
+  - **Detection**: AIAnalysis service MUST detect circular dependencies before workflow creation
+  - **Error Handling**: Reject recommendations with circular dependencies with clear error message
+  - **Example Error**: "Circular dependency detected: rec-001 → rec-002 → rec-003 → rec-001"
+  - **Fallback**: On validation failure, fall back to sequential execution order
+
 ---
 
 ## 4. Context API Integration

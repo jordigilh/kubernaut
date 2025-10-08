@@ -76,6 +76,24 @@ The AI & Machine Learning components provide intelligent decision-making capabil
   - **v1**: Graceful degradation with error handling (HolmesGPT-API unavailable)
   - **v2**: Direct LLM integration fallback with context enrichment
 - **BR-AI-025**: MUST maintain response quality metrics and improvement tracking
+- **BR-AI-051**: MUST validate AI responses for dependency completeness and correctness
+  - **Validation Checks**: All recommendation dependencies MUST reference valid recommendation IDs within the same response
+  - **Completeness**: No missing dependency references (all referenced IDs exist in recommendations list)
+  - **Correctness**: Dependency IDs MUST be unique and correctly formatted
+  - **Error Handling**: Reject response with clear error if dependencies reference non-existent recommendations
+  - **v1**: AIAnalysis service validates HolmesGPT response dependencies
+- **BR-AI-052**: MUST detect circular dependencies in AI recommendation graphs
+  - **Detection Algorithm**: Implement topological sort or cycle detection algorithm
+  - **Validation Timing**: Perform circular dependency detection before WorkflowExecution CRD creation
+  - **Error Response**: Return specific error identifying circular dependency chain (e.g., "rec-001 → rec-002 → rec-003 → rec-001")
+  - **Fallback Strategy**: On circular dependency detection, fall back to sequential execution order
+  - **v1**: AIAnalysis service implements dependency graph cycle detection
+- **BR-AI-053**: MUST handle missing or invalid dependencies with intelligent fallback
+  - **Missing Dependencies**: If dependencies field missing from recommendation, default to empty array (no dependencies)
+  - **Invalid Dependencies**: If dependency references invalid ID, log warning and remove invalid reference
+  - **Fallback Behavior**: Default to sequential execution if dependency validation fails
+  - **Notification**: Notify via Notification Service when dependency validation fails
+  - **Audit Trail**: Log all dependency validation failures with complete context for investigation
 
 ### 2.4 Approval & Policy Management
 - **BR-AI-026**: MUST evaluate AI recommendations against configurable approval policies before execution
@@ -242,6 +260,22 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 - **BR-LLM-018**: MUST implement prompt templates for consistent outputs
 - **BR-LLM-019**: MUST provide prompt version control and A/B testing
 - **BR-LLM-020**: MUST maintain prompt performance analytics
+- **BR-LLM-035**: MUST instruct LLM to generate step dependencies in remediation recommendations
+  - **Prompt Requirement**: Include explicit instructions for LLM to specify dependencies between remediation steps
+  - **Format Specification**: Prompt MUST request `dependencies` array field for each recommendation
+  - **Guidance**: Provide examples in prompt showing proper dependency specification
+  - **Example Instruction**: "For each recommendation, specify 'dependencies': array of recommendation IDs that must complete first"
+  - **v1**: HolmesGPT prompt engineering for dependency specification
+- **BR-LLM-036**: MUST request execution order specification in prompts
+  - **Ordering Guidance**: Prompt MUST instruct LLM to consider execution order and parallelization opportunities
+  - **Parallel Detection**: Prompt MUST guide LLM to identify steps that can execute in parallel
+  - **Example Instruction**: "If multiple steps can execute simultaneously (no dependencies between them), specify empty dependencies array"
+  - **Sequential Guidance**: "If step B requires step A to complete, specify: dependencies: ['step-A-id']"
+- **BR-LLM-037**: MUST define response schema with dependencies field in prompts
+  - **Schema Definition**: Prompt MUST include complete JSON schema with dependencies field
+  - **Required Fields**: id, action, parameters, dependencies (array), confidence, reasoning
+  - **Example Schema**: `{"id": "string", "action": "string", "parameters": {}, "dependencies": ["string"], "confidence": 0.0-1.0, "reasoning": "string"}`
+  - **Validation**: Schema MUST be validated against response before acceptance
 
 #### 5.1.5 Structured Response Generation
 - **BR-LLM-021**: MUST enforce JSON-structured responses from LLM providers for machine actionability
