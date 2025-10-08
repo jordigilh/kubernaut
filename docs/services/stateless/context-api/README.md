@@ -19,7 +19,10 @@
 
 **Provide historical intelligence for informed remediation decisions.**
 
+**Primary Use Case**: **Workflow failure recovery** (BR-WF-RECOVERY-011) - Provide historical context to enable alternative strategy generation after workflow failures.
+
 **Read-only service** that answers:
+- **What failed before and why?** (Recovery context) ← **PRIMARY**
 - What's the environment context?
 - Have we seen similar issues before?
 - What's the success rate of remediation patterns?
@@ -42,6 +45,7 @@
 
 | Endpoint | Method | Purpose | Latency Target |
 |----------|--------|---------|----------------|
+| `/api/v1/context/remediation/{id}` | GET | **Recovery context (BR-WF-RECOVERY-011)** | < 500ms |
 | `/api/v1/context/environment` | GET | Environment classification | < 100ms |
 | `/api/v1/context/patterns` | GET | Historical pattern matching | < 200ms |
 | `/api/v1/context/success-rate` | GET | Success rate calculation | < 150ms |
@@ -73,9 +77,16 @@
 ## 🔗 Integration Points
 
 **Clients** (Services that call Context API):
-1. **Remediation Processor** - Environment classification, historical patterns
-2. **AI Analysis** - Success rate data, semantic search
-3. **Workflow Execution** - Pattern matching for workflow selection
+1. **RemediationProcessing Controller** ← **PRIMARY** - Recovery context for workflow failure analysis (BR-WF-RECOVERY-011)
+2. **Remediation Processor** - Environment classification, historical patterns
+3. **HolmesGPT API** - Dynamic context for AI investigations
+4. **Effectiveness Monitor** - Historical trends for effectiveness assessment
+
+**Design Pattern (Alternative 2)**: RemediationProcessing Controller queries Context API and **stores context in RemediationProcessing.status**. Remediation Orchestrator then creates AIAnalysis with all contexts.
+
+**Key Benefit**: Fresh monitoring + business + recovery context for each recovery attempt (immutable audit trail).
+
+**Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Alternative 2)
 
 ---
 

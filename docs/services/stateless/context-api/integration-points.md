@@ -8,33 +8,169 @@
 
 ## 🔗 Upstream Clients (Services Calling Context API)
 
-### **1. AI Analysis Service** (Port 8080)
+### **1. RemediationProcessing Controller** (Port 8080) ✅ **PRIMARY CONSUMER (Alternative 2)**
 
-**Use Case**: Historical context for remediation recommendations
+**Use Case**: Historical context for workflow failure recovery analysis
+**Business Requirement**: BR-WF-RECOVERY-011
+**Integration Pattern**: Query Context API → Store in RemediationProcessing.status → RR creates AIAnalysis with all contexts
+**Design Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Alternative 2)
+
+#### Recovery Context Integration (Alternative 2)
+
+When a workflow fails, Remediation Orchestrator creates a NEW RemediationProcessing CRD (recovery). The RemediationProcessing Controller enriches it with:
+- **Fresh monitoring context** (current CPU/memory/pod status)
+- **Fresh business context** (current ownership/runbooks)
+- **Recovery context from Context API** (historical failures, patterns, strategies)
+
+Then Remediation Orchestrator watches RemediationProcessing completion and creates AIAnalysis with ALL enriched contexts.
 
 ```go
-// internal/aianalysis/context_client.go
-package aianalysis
+// internal/remediationprocessing/context_client.go
+package remediationprocessing
 
 import (
+    "context"
+    "encoding/json"
     "fmt"
     "net/http"
+
+    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
 )
 
-func (a *AIAnalysisService) GetHistoricalContext(alertName, namespace string) (*ContextData, error) {
-    req, _ := http.NewRequest("GET",
-        fmt.Sprintf("http://context-api-service:8080/api/v1/context/historical?alert=%s&namespace=%s", alertName, namespace),
-        nil)
-    req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.getServiceAccountToken()))
+type ContextAPIClient interface {
+    GetRemediationContext(ctx context.Context, remediationRequestID string) (*ContextAPIResponse, error)
+}
 
-    resp, err := http.DefaultClient.Do(req)
-    // ... handle response
+type ContextAPIClientImpl struct {
+    BaseURL    string
+    HTTPClient *http.Client
+}
+
+func (c *ContextAPIClientImpl) GetRemediationContext(
+    ctx context.Context,
+    remediationRequestID string,
+) (*ContextAPIResponse, error) {
+
+    url := fmt.Sprintf("%s/api/v1/context/remediation/%s", c.BaseURL, remediationRequestID)
+
+    req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create request: %w", err)
+    }
+
+    req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", getServiceAccountToken()))
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.HTTPClient.Do(req)
+    if err != nil {
+        return nil, fmt.Errorf("context API request failed: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("context API returned status %d", resp.StatusCode)
+    }
+
+    var contextResp ContextAPIResponse
+    if err := json.NewDecoder(resp.Body).Decode(&contextResp); err != nil {
+        return nil, fmt.Errorf("failed to decode response: %w", err)
+    }
+
+    return &contextResp, nil
+}
+
+// Usage during recovery enrichment (Alternative 2)
+func (r *RemediationProcessingReconciler) reconcileEnriching(
+    ctx context.Context,
+    rp *processingv1.RemediationProcessing,
+) (ctrl.Result, error) {
+
+    // ALWAYS enrich monitoring + business context (gets FRESH data)
+    enrichmentResults, err := r.ContextService.GetContext(ctx, rp.Spec.Alert)
+    if err != nil {
+        return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+    }
+
+    rp.Status.EnrichmentResults = enrichmentResults
+
+    // IF recovery attempt, ALSO query Context API for recovery context
+    if rp.Spec.IsRecoveryAttempt {
+        recoveryCtx, err := r.enrichRecoveryContext(ctx, rp)
+        if err != nil {
+            // Graceful degradation: use fallback context
+            recoveryCtx = r.buildFallbackRecoveryContext(rp)
+        }
+
+        // Add to enrichment results
+        rp.Status.EnrichmentResults.RecoveryContext = recoveryCtx
+    }
+
+    rp.Status.Phase = "classifying"
+    return ctrl.Result{Requeue: true}, r.Status().Update(ctx, rp)
+}
+
+func (r *RemediationProcessingReconciler) enrichRecoveryContext(
+    ctx context.Context,
+    rp *processingv1.RemediationProcessing,
+) (*processingv1.RecoveryContext, error) {
+
+    // Query Context API
+    contextResp, err := r.ContextAPIClient.GetRemediationContext(
+        ctx,
+        rp.Spec.RemediationRequestRef.Name,
+    )
+
+    if err != nil {
+        return nil, fmt.Errorf("Context API query failed: %w", err)
+    }
+
+    // Convert and store in RemediationProcessing.status
+    return convertToRecoveryContext(contextResp), nil
 }
 ```
 
+#### Complete Recovery Flow (Alternative 2)
+
+```
+1. Workflow fails
+   ↓
+2. Remediation Orchestrator:
+   - Evaluates recovery viability
+   - Creates NEW RemediationProcessing CRD (recovery)
+   - Sets phase: "recovering"
+   ↓
+3. RemediationProcessing Controller:
+   - Enriches monitoring context (FRESH!)
+   - Enriches business context (FRESH!)
+   - Queries Context API for recovery context (FRESH!) ← THIS FILE
+   - Stores ALL in RemediationProcessing.status.enrichmentResults
+   - Sets phase: "completed"
+   ↓
+4. Remediation Orchestrator:
+   - Watches RemediationProcessing completion
+   - Creates AIAnalysis with ALL contexts
+   - Normal flow continues (analyzing → executing)
+```
+
+#### Key Endpoints Used
+
+- **`GET /api/v1/context/remediation/{remediationRequestId}`** - Retrieve historical recovery context
+  - Returns: Previous failures, related alerts, historical patterns, successful strategies
+  - Response format: JSON with `contextQuality` indicator ("complete", "partial", "minimal")
+  - Graceful degradation: If unavailable, RemediationProcessing Controller uses fallback data
+
+#### Integration Benefits (Alternative 2)
+
+✅ **Fresh Monitoring Context**: Recovery attempts see current cluster state (not 10min old)
+✅ **Fresh Business Context**: Current ownership/runbooks (may change between attempts)
+✅ **Fresh Recovery Context**: Latest historical data from Context API
+✅ **Immutable Audit Trail**: Each RemediationProcessing CRD is separate and immutable
+✅ **Consistent Enrichment**: ALL enrichment in one place (RemediationProcessing Controller)
+✅ **Pattern Reuse**: Recovery follows same pattern as initial (watch → enrich → complete)
+
 ---
 
-### **2. HolmesGPT API Service** (Port 8080)
+### **2. HolmesGPT API Service** (Port 8080) 🔵 **SECONDARY CONSUMER**
 
 **Use Case**: Dynamic context for AI investigations
 
