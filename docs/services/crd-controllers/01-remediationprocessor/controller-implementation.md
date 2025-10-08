@@ -46,10 +46,65 @@ const (
 // RemediationProcessingReconciler reconciles an RemediationProcessing object
 type RemediationProcessingReconciler struct {
     client.Client
-    Scheme         *runtime.Scheme
-    Recorder       record.EventRecorder  // Event emission for visibility
-    ContextService ContextService        // Stateless HTTP call to Context Service
-    Classifier     *EnvironmentClassifier // In-process classification
+    Scheme          *runtime.Scheme
+    Recorder        record.EventRecorder     // Event emission for visibility
+    ContextService  ContextService           // Stateless HTTP call to Context Service
+    ContextAPIClient ContextAPIClient        // NEW: Context API client for recovery context (Alternative 2)
+    Classifier      *EnvironmentClassifier   // In-process classification
+}
+
+// ContextAPIClient interface for querying Context API recovery context
+// See: docs/services/stateless/context-api/api-specification.md
+// See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Alternative 2)
+type ContextAPIClient interface {
+    GetRemediationContext(ctx context.Context, remediationRequestID string) (*ContextAPIResponse, error)
+}
+
+// ContextAPIResponse from Context API recovery endpoint
+type ContextAPIResponse struct {
+    RemediationRequestID string                `json:"remediationRequestId"`
+    CurrentAttempt       int                   `json:"currentAttempt"`
+    ContextQuality       string                `json:"contextQuality"`
+    PreviousFailures     []PreviousFailureData `json:"previousFailures"`
+    RelatedAlerts        []RelatedAlertData    `json:"relatedAlerts"`
+    HistoricalPatterns   []HistoricalPatternData `json:"historicalPatterns"`
+    SuccessfulStrategies []SuccessfulStrategyData `json:"successfulStrategies"`
+}
+
+// Context API data structures (mirrors API response)
+type PreviousFailureData struct {
+    WorkflowRef      string            `json:"workflowRef"`
+    AttemptNumber    int               `json:"attemptNumber"`
+    FailedStep       int               `json:"failedStep"`
+    Action           string            `json:"action"`
+    ErrorType        string            `json:"errorType"`
+    FailureReason    string            `json:"failureReason"`
+    Duration         string            `json:"duration"`
+    Timestamp        string            `json:"timestamp"`
+    ClusterState     map[string]string `json:"clusterState"`
+    ResourceSnapshot map[string]string `json:"resourceSnapshot"`
+}
+
+type RelatedAlertData struct {
+    AlertFingerprint string  `json:"alertFingerprint"`
+    AlertName        string  `json:"alertName"`
+    Correlation      float64 `json:"correlation"`
+    Timestamp        string  `json:"timestamp"`
+}
+
+type HistoricalPatternData struct {
+    Pattern             string  `json:"pattern"`
+    Occurrences         int     `json:"occurrences"`
+    SuccessRate         float64 `json:"successRate"`
+    AverageRecoveryTime string  `json:"averageRecoveryTime"`
+}
+
+type SuccessfulStrategyData struct {
+    Strategy     string  `json:"strategy"`
+    Description  string  `json:"description"`
+    SuccessCount int     `json:"successCount"`
+    LastUsed     string  `json:"lastUsed"`
+    Confidence   float64 `json:"confidence"`
 }
 
 // ========================================
@@ -309,9 +364,23 @@ func (r *RemediationProcessingReconciler) getDefaultClassification(ap *processin
 
 func (r *RemediationProcessingReconciler) reconcileEnriching(ctx context.Context, ap *processingv1.RemediationProcessing) (ctrl.Result, error) {
     log := log.FromContext(ctx)
-    log.Info("Enriching alert with context", "fingerprint", ap.Spec.Alert.Fingerprint)
 
-    // Call Context Service (stateless HTTP call)
+    isRecovery := ap.Spec.IsRecoveryAttempt
+    if isRecovery {
+        log.Info("Enriching RECOVERY attempt with context",
+            "fingerprint", ap.Spec.Alert.Fingerprint,
+            "attemptNumber", ap.Spec.RecoveryAttemptNumber,
+            "failedWorkflow", func() string {
+                if ap.Spec.FailedWorkflowRef != nil {
+                    return ap.Spec.FailedWorkflowRef.Name
+                }
+                return "unknown"
+            }())
+    } else {
+        log.Info("Enriching alert with context", "fingerprint", ap.Spec.Alert.Fingerprint)
+    }
+
+    // Call Context Service for monitoring/business enrichment (ALWAYS - gets FRESH data)
     enrichmentResults, err := r.ContextService.GetContext(ctx, ap.Spec.Alert)
     if err != nil {
         log.Error(err, "Failed to get context")
@@ -320,6 +389,51 @@ func (r *RemediationProcessingReconciler) reconcileEnriching(ctx context.Context
 
     // Update status with enrichment results
     ap.Status.EnrichmentResults = enrichmentResults
+
+    // ========================================
+    // RECOVERY CONTEXT ENRICHMENT (Alternative 2)
+    // 📋 Design Decision: DD-001 | ✅ Approved Design | Confidence: 95%
+    // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+    // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Version 1.2)
+    // See: BR-WF-RECOVERY-011
+    //
+    // WHY Alternative 2?
+    // - ✅ Temporal consistency: All contexts (monitoring + business + recovery) at same timestamp
+    // - ✅ Fresh contexts: Recovery gets CURRENT cluster state, not stale from initial attempt
+    // - ✅ Immutable audit trail: Each RemediationProcessing CRD is complete snapshot
+    // - ✅ Self-contained CRDs: AIAnalysis reads from spec only (no API calls)
+    // ========================================
+
+    if isRecovery {
+        log.Info("Recovery attempt detected - querying Context API for historical context",
+            "attemptNumber", ap.Spec.RecoveryAttemptNumber,
+            "remediationRequestID", ap.Spec.RemediationRequestRef.Name)
+
+        // Query Context API for recovery context
+        recoveryCtx, err := r.enrichRecoveryContext(ctx, ap)
+        if err != nil {
+            // Graceful degradation: Use fallback context
+            log.Warn("Context API unavailable, using fallback recovery context",
+                "error", err,
+                "attemptNumber", ap.Spec.RecoveryAttemptNumber)
+
+            r.Recorder.Event(ap, "Warning", "ContextAPIUnavailable",
+                fmt.Sprintf("Context API query failed: %v. Using fallback context from workflow history.", err))
+
+            recoveryCtx = r.buildFallbackRecoveryContext(ap)
+        }
+
+        // Add recovery context to enrichment results
+        ap.Status.EnrichmentResults.RecoveryContext = recoveryCtx
+
+        log.Info("Recovery context enrichment completed",
+            "contextQuality", recoveryCtx.ContextQuality,
+            "previousFailuresCount", len(recoveryCtx.PreviousFailures),
+            "relatedAlertsCount", len(recoveryCtx.RelatedAlerts),
+            "historicalPatternsCount", len(recoveryCtx.HistoricalPatterns),
+            "successfulStrategiesCount", len(recoveryCtx.SuccessfulStrategies))
+    }
+
     ap.Status.Phase = "classifying"
 
     if err := r.Status().Update(ctx, ap); err != nil {
@@ -385,6 +499,142 @@ func (r *RemediationProcessingReconciler) reconcileRouting(ctx context.Context, 
 
     // Terminal state - no requeue
     return ctrl.Result{}, nil
+}
+
+// ========================================
+// RECOVERY CONTEXT ENRICHMENT FUNCTIONS (Alternative 2)
+// 📋 Design Decision: DD-001 | ✅ Approved Design
+// See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
+// ========================================
+
+// enrichRecoveryContext queries Context API for historical failure context
+// See: docs/services/stateless/context-api/api-specification.md (Recovery Context API)
+// See: BR-WF-RECOVERY-011
+func (r *RemediationProcessingReconciler) enrichRecoveryContext(
+    ctx context.Context,
+    ap *processingv1.RemediationProcessing,
+) (*processingv1.RecoveryContext, error) {
+
+    // Query Context API
+    contextResp, err := r.ContextAPIClient.GetRemediationContext(
+        ctx,
+        ap.Spec.RemediationRequestRef.Name,
+    )
+
+    if err != nil {
+        return nil, fmt.Errorf("Context API query failed: %w", err)
+    }
+
+    // Convert Context API response to CRD RecoveryContext format
+    return convertToRecoveryContext(contextResp), nil
+}
+
+// buildFallbackRecoveryContext creates minimal recovery context when Context API unavailable
+// Extracts what we know from the RemediationProcessing spec (graceful degradation)
+func (r *RemediationProcessingReconciler) buildFallbackRecoveryContext(
+    ap *processingv1.RemediationProcessing,
+) *processingv1.RecoveryContext {
+
+    // Build minimal context from what we know
+    var previousFailures []processingv1.PreviousFailure
+
+    if ap.Spec.FailedWorkflowRef != nil && ap.Spec.FailedStep != nil {
+        previousFailures = append(previousFailures, processingv1.PreviousFailure{
+            WorkflowRef:   ap.Spec.FailedWorkflowRef.Name,
+            AttemptNumber: ap.Spec.RecoveryAttemptNumber - 1,
+            FailedStep:    *ap.Spec.FailedStep,
+            FailureReason: func() string {
+                if ap.Spec.FailureReason != nil {
+                    return *ap.Spec.FailureReason
+                }
+                return "unknown"
+            }(),
+            Timestamp: metav1.Now(),
+        })
+    }
+
+    return &processingv1.RecoveryContext{
+        ContextQuality:       "degraded", // Indicates fallback was used
+        PreviousFailures:     previousFailures,
+        RelatedAlerts:        []processingv1.RelatedAlert{},        // Empty - no data available
+        HistoricalPatterns:   []processingv1.HistoricalPattern{},   // Empty - no data available
+        SuccessfulStrategies: []processingv1.SuccessfulStrategy{}, // Empty - no data available
+        RetrievedAt:          metav1.Now(),
+    }
+}
+
+// convertToRecoveryContext converts Context API response to CRD RecoveryContext format
+func convertToRecoveryContext(resp *ContextAPIResponse) *processingv1.RecoveryContext {
+    return &processingv1.RecoveryContext{
+        ContextQuality:       resp.ContextQuality,
+        PreviousFailures:     convertPreviousFailures(resp.PreviousFailures),
+        RelatedAlerts:        convertRelatedAlerts(resp.RelatedAlerts),
+        HistoricalPatterns:   convertHistoricalPatterns(resp.HistoricalPatterns),
+        SuccessfulStrategies: convertSuccessfulStrategies(resp.SuccessfulStrategies),
+        RetrievedAt:          metav1.Now(),
+    }
+}
+
+func convertPreviousFailures(data []PreviousFailureData) []processingv1.PreviousFailure {
+    result := make([]processingv1.PreviousFailure, len(data))
+    for i, f := range data {
+        timestamp, _ := time.Parse(time.RFC3339, f.Timestamp)
+        result[i] = processingv1.PreviousFailure{
+            WorkflowRef:      f.WorkflowRef,
+            AttemptNumber:    f.AttemptNumber,
+            FailedStep:       f.FailedStep,
+            Action:           f.Action,
+            ErrorType:        f.ErrorType,
+            FailureReason:    f.FailureReason,
+            Duration:         f.Duration,
+            Timestamp:        metav1.NewTime(timestamp),
+            ClusterState:     f.ClusterState,
+            ResourceSnapshot: f.ResourceSnapshot,
+        }
+    }
+    return result
+}
+
+func convertRelatedAlerts(data []RelatedAlertData) []processingv1.RelatedAlert {
+    result := make([]processingv1.RelatedAlert, len(data))
+    for i, a := range data {
+        timestamp, _ := time.Parse(time.RFC3339, a.Timestamp)
+        result[i] = processingv1.RelatedAlert{
+            AlertFingerprint: a.AlertFingerprint,
+            AlertName:        a.AlertName,
+            Correlation:      a.Correlation,
+            Timestamp:        metav1.NewTime(timestamp),
+        }
+    }
+    return result
+}
+
+func convertHistoricalPatterns(data []HistoricalPatternData) []processingv1.HistoricalPattern {
+    result := make([]processingv1.HistoricalPattern, len(data))
+    for i, p := range data {
+        result[i] = processingv1.HistoricalPattern{
+            Pattern:             p.Pattern,
+            Occurrences:         p.Occurrences,
+            SuccessRate:         p.SuccessRate,
+            AverageRecoveryTime: p.AverageRecoveryTime,
+        }
+    }
+    return result
+}
+
+func convertSuccessfulStrategies(data []SuccessfulStrategyData) []processingv1.SuccessfulStrategy {
+    result := make([]processingv1.SuccessfulStrategy, len(data))
+    for i, s := range data {
+        lastUsed, _ := time.Parse(time.RFC3339, s.LastUsed)
+        result[i] = processingv1.SuccessfulStrategy{
+            Strategy:     s.Strategy,
+            Description:  s.Description,
+            SuccessCount: s.SuccessCount,
+            LastUsed:     metav1.NewTime(lastUsed),
+            Confidence:   s.Confidence,
+        }
+    }
+    return result
 }
 
 func (r *RemediationProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
