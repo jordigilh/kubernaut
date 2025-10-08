@@ -812,12 +812,204 @@ func (c *ClientImpl) Investigate(
 
 ---
 
+### **Alternative 2 Integration: RemediationProcessing as Primary Data Source**
+
+> **📋 Design Decision: DD-001 - Alternative 2**
+> **Pattern**: AIAnalysis reads complete enrichment from spec (NO API calls)
+> **Status**: ✅ Approved Design | **Confidence**: 95%
+> **See**: [DD-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
+
+**Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Version 1.2 - Alternative 2)
+**Business Requirement**: BR-WF-RECOVERY-011
+
+#### Overview
+
+AIAnalysis CRD receives **complete enrichment data** from RemediationProcessing CRD, including:
+- **Monitoring Context** (FRESH current cluster state)
+- **Business Context** (FRESH ownership/runbooks)
+- **Recovery Context** (Historical failures from Context API - ONLY for recovery attempts)
+
+This data is **copied** into `AIAnalysis.spec.enrichmentData` by Remediation Orchestrator after RemediationProcessing completes.
+
+#### Data Flow (Alternative 2)
+
+```
+RemediationProcessing Enrichment (4-7 seconds)
+   ↓ (monitoring + business + recovery contexts)
+RemediationProcessing.status.enrichmentResults
+   ↓ (watch completion)
+Remediation Orchestrator
+   ↓ (copy enrichment data)
+AIAnalysis.spec.enrichmentData
+   ↓ (NO API CALLS NEEDED!)
+AIAnalysis Controller reads from spec
+   ↓
+HolmesGPT receives ALL contexts in prompt
+```
+
+#### AIAnalysis Spec Structure (Alternative 2)
+
+```go
+// api/ai/v1/aianalysis_types.go
+type AIAnalysisSpec struct {
+    // Parent reference
+    RemediationRequestRef corev1.LocalObjectReference `json:"remediationRequestRef"`
+
+    // NEW: Reference to source RemediationProcessing CRD
+    RemediationProcessingRef *corev1.LocalObjectReference `json:"remediationProcessingRef,omitempty"`
+
+    // Recovery-specific fields
+    IsRecoveryAttempt      bool                         `json:"isRecoveryAttempt,omitempty"`
+    RecoveryAttemptNumber  int                          `json:"recoveryAttemptNumber,omitempty"`
+    FailedWorkflowRef      *corev1.LocalObjectReference `json:"failedWorkflowRef,omitempty"`
+
+    // NEW: Complete enrichment data (Alternative 2)
+    // Copied from RemediationProcessing.status.enrichmentResults
+    EnrichmentData *EnrichmentData `json:"enrichmentData,omitempty"`
+}
+
+// EnrichmentData contains ALL contexts from RemediationProcessing
+type EnrichmentData struct {
+    // FRESH monitoring context
+    MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
+
+    // FRESH business context
+    BusinessContext *BusinessContext `json:"businessContext,omitempty"`
+
+    // Recovery context (ONLY for recovery attempts)
+    RecoveryContext *RecoveryContext `json:"recoveryContext,omitempty"`
+
+    // Metadata
+    EnrichedAt     metav1.Time `json:"enrichedAt"`
+    ContextQuality string      `json:"contextQuality"`  // "complete", "partial", "degraded"
+}
+```
+
+#### Remediation Orchestrator Integration (Alternative 2)
+
+```go
+// In RemediationRequestReconciler (Remediation Orchestrator)
+func (r *RemediationRequestReconciler) createAIAnalysis(
+    ctx context.Context,
+    remediation *remediationv1.RemediationRequest,
+    completedRP *processingv1.RemediationProcessing,
+) error {
+
+    log := ctrl.LoggerFrom(ctx)
+
+    // Create AIAnalysis with enrichment data from RemediationProcessing
+    aiAnalysis := &aianalysisv1.AIAnalysis{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("%s-analysis-%d", remediation.Name, remediation.Status.RecoveryAttempts + 1),
+            Namespace: remediation.Namespace,
+            OwnerReferences: []metav1.OwnerReference{
+                *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
+            },
+        },
+        Spec: aianalysisv1.AIAnalysisSpec{
+            RemediationRequestRef:    corev1.LocalObjectReference{Name: remediation.Name},
+            RemediationProcessingRef: &corev1.LocalObjectReference{Name: completedRP.Name},
+
+            // Recovery fields (if applicable)
+            IsRecoveryAttempt:     completedRP.Spec.IsRecoveryAttempt,
+            RecoveryAttemptNumber: completedRP.Spec.RecoveryAttemptNumber,
+            FailedWorkflowRef:     completedRP.Spec.FailedWorkflowRef,
+
+            // COPY complete enrichment data from RemediationProcessing (Alternative 2)
+            EnrichmentData: convertToEnrichmentData(completedRP.Status.EnrichmentResults),
+        },
+    }
+
+    if completedRP.Spec.IsRecoveryAttempt {
+        log.Info("Creating AIAnalysis for recovery attempt with ALL contexts",
+            "aiAnalysis", aiAnalysis.Name,
+            "attemptNumber", completedRP.Spec.RecoveryAttemptNumber,
+            "contextQuality", completedRP.Status.EnrichmentResults.ContextQuality,
+            "hasRecoveryContext", completedRP.Status.EnrichmentResults.RecoveryContext != nil)
+    }
+
+    return r.Create(ctx, aiAnalysis)
+}
+
+// Convert RemediationProcessing enrichment to AIAnalysis enrichment data
+func convertToEnrichmentData(rpEnrichment *processingv1.EnrichmentResults) *aianalysisv1.EnrichmentData {
+    return &aianalysisv1.EnrichmentData{
+        MonitoringContext: convertMonitoringContext(rpEnrichment.KubernetesContext),
+        BusinessContext:   convertBusinessContext(rpEnrichment.BusinessContext),
+        RecoveryContext:   convertRecoveryContext(rpEnrichment.RecoveryContext),
+        EnrichedAt:        metav1.Now(),
+        ContextQuality:    rpEnrichment.ContextQuality,
+    }
+}
+```
+
+#### AIAnalysis Controller Usage (Alternative 2)
+
+```go
+// In AIAnalysisReconciler.investigatePhase()
+func (p *InvestigatingPhase) Handle(
+    ctx context.Context,
+    aiAnalysis *aianalysisv1.AIAnalysis,
+) (ctrl.Result, error) {
+
+    log := ctrl.LoggerFrom(ctx)
+
+    // Build investigation request with enrichment data
+    req := buildInvestigationRequest(aiAnalysis)
+
+    // Read enrichment data from spec (NO API CALLS!)
+    if aiAnalysis.Spec.EnrichmentData != nil {
+        log.Info("Using enrichment data from RemediationProcessing",
+            "remediationProcessing", aiAnalysis.Spec.RemediationProcessingRef.Name,
+            "contextQuality", aiAnalysis.Spec.EnrichmentData.ContextQuality,
+            "isRecovery", aiAnalysis.Spec.IsRecoveryAttempt)
+
+        // Add ALL contexts to investigation request
+        req.MonitoringContext = aiAnalysis.Spec.EnrichmentData.MonitoringContext
+        req.BusinessContext = aiAnalysis.Spec.EnrichmentData.BusinessContext
+
+        // Recovery context only present for recovery attempts
+        if aiAnalysis.Spec.IsRecoveryAttempt && aiAnalysis.Spec.EnrichmentData.RecoveryContext != nil {
+            req.RecoveryContext = aiAnalysis.Spec.EnrichmentData.RecoveryContext
+            req.IsRecoveryAttempt = true
+        }
+    }
+
+    // Proceed with HolmesGPT investigation (with enriched prompt)
+    result, err := p.Analyzer.Investigate(ctx, req)
+    // ...
+}
+```
+
+#### Key Benefits (Alternative 2)
+
+| Aspect | Option B | Alternative 2 |
+|--------|----------|---------------|
+| **Monitoring Context** | From initial enrichment (stale) | **FRESH** from recovery enrichment ✅ |
+| **Business Context** | From initial enrichment (stale) | **FRESH** from recovery enrichment ✅ |
+| **Recovery Context** | Queried by RR | Queried by RP (temporal consistency) ✅ |
+| **Temporal Consistency** | Mixed timestamps | All contexts same timestamp ✅ |
+| **Audit Trail** | RR logic in recovery flow | Immutable RP CRDs ✅ |
+| **Graceful Degradation** | In RR | In RP (unified enrichment) ✅ |
+| **Architecture** | Split enrichment (RP + RR) | Unified enrichment (RP only) ✅ |
+
+#### Integration Pattern Summary
+
+1. **RemediationProcessing enriches** (monitoring + business + recovery)
+2. **Remediation Orchestrator copies** enrichment to AIAnalysis spec
+3. **AIAnalysis controller reads** from spec (NO API calls)
+4. **HolmesGPT receives** complete enrichment in prompt
+
+✅ **Result**: AIAnalysis has FRESH monitoring + business + recovery contexts, all captured at the same timestamp, with a clear audit trail.
+
+---
+
 ### Dependencies (Data Snapshot)
 
 #### RemediationRequest Creates AIAnalysis (No Watch Needed)
 **Pattern**: Data snapshot at creation time (self-contained CRD)
 **Trigger**: RemediationRequest watches RemediationProcessing completion → creates AIAnalysis with all data
-**Data Copied**: Targeting data snapshot from RemediationProcessing.status (~8-10KB)
+**Data Copied**: Complete enrichment data from RemediationProcessing.status (Alternative 2)
 
 **Why No Watch on RemediationProcessing?**
 - ✅ **Self-Contained**: All targeting data copied into AIAnalysis.spec at creation
