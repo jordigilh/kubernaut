@@ -34,6 +34,19 @@
 - Resolve step prerequisites and conditions
 - Validate dependency chain completeness
 
+**Upstream Validation** (AIAnalysis Service):
+Dependencies are pre-validated by AIAnalysis service before reaching WorkflowExecution:
+- ✅ **BR-AI-051**: All dependency IDs reference valid recommendations (completeness check)
+- ✅ **BR-AI-052**: No circular dependencies in graph (cycle detection via topological sort)
+- ✅ **BR-AI-053**: Missing dependencies defaulted to empty array (graceful handling)
+
+**WorkflowExecution Additional Validation**:
+WorkflowExecution performs workflow-specific validation beyond AIAnalysis checks:
+- Verify step dependencies are within workflow bounds (step numbers are valid)
+- Validate no cross-workflow dependencies (all dependencies are in same workflow)
+- Confirm all referenced steps exist in workflow definition
+- Validate execution order is achievable (no impossible constraints)
+
 **Step 3: Resource Planning** (BR-WF-015)
 - Identify target Kubernetes resources for each step
 - Check resource availability and accessibility
