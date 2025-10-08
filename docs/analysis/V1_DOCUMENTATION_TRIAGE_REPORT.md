@@ -187,18 +187,22 @@ Status: ⏳ V2 PLANNED
 **Impact**: Naming inconsistency with Alert → Signal migration
 **Confidence**: 95% - Already addressed by ADR-015
 
-**Finding**: Design files previously used "Alert" prefix in filenames.
+**Finding**: Design files still use "Alert" prefix in filenames:
+- `docs/design/CRD/01_ALERT_REMEDIATION_CRD.md`
+- `docs/design/CRD/02_ALERT_PROCESSING_CRD.md`
 
-**Status**: ✅ RESOLVED - Files renamed to align with current architecture
-- `01_ALERT_REMEDIATION_CRD.md` → `01_REMEDIATION_REQUEST_CRD.md`
-- `02_ALERT_PROCESSING_CRD.md` → `02_REMEDIATION_PROCESSING_CRD.md`
+**Status**: ✅ Migration already planned in ADR-015 Phase 4 (Documentation Cleanup)
 
-**Resolution Date**: October 7, 2025
-**Resolution**: Files renamed and all cross-references updated per ADR-015
+**Recommendation**: Rename during Phase 4 of Alert → Signal migration:
+```bash
+# Proposed Renames
+01_ALERT_REMEDIATION_CRD.md → 01_REMEDIATION_REQUEST_CRD.md
+02_ALERT_PROCESSING_CRD.md → 02_REMEDIATION_PROCESSING_CRD.md
+```
 
-**Effort**: 1 hour (completed)
-**Priority**: MEDIUM - Aligned with ongoing migration
-**Risk**: LOW - Simple file rename with git mv
+**Effort**: 1 hour (part of existing ADR-015 plan)
+**Priority**: MEDIUM - Align with ongoing migration
+**Risk**: LOW - Simple file rename
 
 ---
 

@@ -183,7 +183,7 @@ graph TB
     subgraph "Kubernaut System"
         subgraph "Go Service Layer"
             WH[Webhook Handler<br/>:8080]
-            PROC[Alert Processor]
+            PROC[Signal Processor]
             EXEC[Action Executor<br/>25+ Actions]
             EFF[Effectiveness<br/>Assessor]
             K8SC[Kubernetes<br/>Client]
@@ -285,7 +285,7 @@ Current implementation status of core capabilities:
 graph TD
     subgraph "✅ IMPLEMENTED FEATURES"
         subgraph "Core Architecture"
-            A1[Go Service Layer<br/>Alert Processing & Execution]
+            A1[Go Service Layer<br/>Signal Processing & Execution]
             A2[HolmesGPT Integration<br/>Direct v0.13.1 Integration]
             A3[Go-Native Architecture<br/>Direct HolmesGPT Communication]
         end
@@ -350,8 +350,8 @@ graph TD
 ## Core Components
 
 ### Go Service Layer (Production-Ready)
-- **Webhook Handler**: Receives Prometheus alerts via HTTP webhooks
-- **Alert Processor**: Filters and processes incoming alerts with contextual analysis
+- **Webhook Handler**: Receives signals from multiple sources (Prometheus alerts, K8s events, CloudWatch alarms, custom webhooks)
+- **Signal Processor**: Processes multiple signal types with contextual analysis and enrichment
 - **Action Executor**: Executes 25+ Kubernetes remediation actions with comprehensive safety checks
 - **Effectiveness Assessor**: Learns from action outcomes and improves decision making over time
 - **Kubernetes Client**: Unified client with comprehensive API coverage for all operations
@@ -636,14 +636,14 @@ rules:
 ### Response Times
 | Operation | Typical | 95th Percentile | Notes |
 |-----------|---------|-----------------|-------|
-| Alert Processing | 1-3s | 5s | Without AI analysis |
+| Signal Processing | 1-3s | 5s | Without AI analysis |
 | AI Decision Making | 2-8s | 15s | Includes LLM inference |
 | Action Execution | 0.5-2s | 5s | Kubernetes API calls |
 | Effectiveness Assessment | 0.1-0.5s | 1s | Database queries |
 
 ### Throughput
-- **Alert Ingestion**: 100+ alerts/minute per Go service instance
-- **Concurrent Processing**: 10-50 simultaneous alert investigations
+- **Signal Ingestion**: 100+ signals/minute per Go service instance (from alerts, events, alarms, webhooks)
+- **Concurrent Processing**: 10-50 simultaneous signal investigations
 - **AI Analysis**: 5-20 requests/minute per HolmesGPT instance (depends on LLM provider)
 
 ### Scalability

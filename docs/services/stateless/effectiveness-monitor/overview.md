@@ -3,7 +3,7 @@
 **Version**: v1.0
 **Last Updated**: October 6, 2025
 **Status**: ✅ Design Complete (100%)
-**Port**: 8087 (REST + Health), 9090 (Metrics)
+**Port**: 8080 (REST + Health), 9090 (Metrics)
 
 ---
 
@@ -80,7 +80,7 @@ Effectiveness Monitor Service is the **intelligent assessment engine** that eval
 │                  Effectiveness Monitor Service                   │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │              HTTP API Layer (Port 8087)                    │ │
+│  │              HTTP API Layer (Port 8080)                    │ │
 │  │  /api/v1/assess/effectiveness/:actionID                    │ │
 │  │  /api/v1/assess/batch                                      │ │
 │  │  /health, /ready                                           │ │
@@ -499,14 +499,14 @@ metrics, err := circuitBreaker.Call(ctx, func(ctx context.Context) (*Environment
 livenessProbe:
   httpGet:
     path: /health
-    port: 8087
+    port: 8080
   initialDelaySeconds: 10
   periodSeconds: 10
 
 readinessProbe:
   httpGet:
     path: /ready
-    port: 8087
+    port: 8080
   initialDelaySeconds: 5
   periodSeconds: 5
 # Ready = "service operational" (even if returning insufficient_data)
@@ -585,7 +585,7 @@ var (
             │
             ▼
 ┌───────────────────────────────────────────────────────────────────┐
-│            Effectiveness Monitor Service (Port 8087)              │
+│            Effectiveness Monitor Service (Port 8080)              │
 │                                                                   │
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │  HTTP API                                                  │ │
