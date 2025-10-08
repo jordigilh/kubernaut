@@ -837,7 +837,7 @@ type EscalationRequest struct {
     RemediationRequestName      string    `json:"remediationRequestName"`
     RemediationRequestNamespace string    `json:"remediationRequestNamespace"`
     EscalatingController        string    `json:"escalatingController"`      // "remediation-orchestrator"
-    
+
     // Alert context (REQUIRED)
     AlertFingerprint string `json:"alertFingerprint"`
     AlertName        string `json:"alertName"`
@@ -845,26 +845,26 @@ type EscalationRequest struct {
     Environment      string `json:"environment"`
     Priority         string `json:"priority"`
     SignalType       string `json:"signalType"`
-    
+
     // Resource context (REQUIRED)
     Namespace string             `json:"namespace"`
     Resource  ResourceIdentifier `json:"resource"`
-    
+
     // Escalation context (REQUIRED)
     EscalationReason  string                 `json:"escalationReason"`
     EscalationPhase   string                 `json:"escalationPhase"`
     EscalationTime    time.Time              `json:"escalationTime"`
     EscalationDetails map[string]interface{} `json:"escalationDetails,omitempty"`
-    
+
     // Temporal context (REQUIRED)
     AlertFiringTime     time.Time `json:"alertFiringTime"`
     AlertReceivedTime   time.Time `json:"alertReceivedTime"`
     RemediationDuration string    `json:"remediationDuration"`
-    
+
     // Notification routing (REQUIRED)
     Channels []string `json:"channels"`
     Urgency  string   `json:"urgency"`
-    
+
     // External links (OPTIONAL)
     AlertmanagerURL string `json:"alertmanagerURL,omitempty"`
     GrafanaURL      string `json:"grafanaURL,omitempty"`
@@ -882,14 +882,14 @@ func (r *RemediationRequestReconciler) sendTimeoutEscalation(
     // Unmarshal K8s provider data
     var k8sData remediationv1.KubernetesProviderData
     json.Unmarshal(remediation.Spec.ProviderData, &k8sData)
-    
+
     payload := notification.EscalationRequest{
         RemediationRequestName:      remediation.Name,
         RemediationRequestNamespace: remediation.Namespace,
         EscalatingController:        "remediation-orchestrator",
         // ... full payload (see active docs)
     }
-    
+
     return r.notificationClient.SendEscalation(ctx, payload)
 }
 ```

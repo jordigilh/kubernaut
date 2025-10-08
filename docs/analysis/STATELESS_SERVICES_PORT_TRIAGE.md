@@ -65,19 +65,17 @@
 
 ---
 
-### **4. Effectiveness Monitor** ✅ **VALID EXCEPTION**
+### **4. Effectiveness Monitor** ✅ **COMPLIANT**
 
-**Port Specification**: 8087 (REST + Health), 9090 (Metrics)
+**Port Specification**: 8080 (REST + Health), 9090 (Metrics)
 
 **Sources**:
-- `overview.md:6`: `**Port**: 8087 (REST + Health), 9090 (Metrics)`
-- `README.md:4`: `**Port**: 8087 (REST API + Health), 9090 (Metrics)`
-- `implementation-checklist.md:6`: `**Port**: 8087 (REST API + Health), 9090 (Metrics)`
-- `integration-points.md:6`: `**Port**: 8087 (REST + Health), 9090 (Metrics)`
+- `overview.md:6`: `**Port**: 8080 (REST + Health), 9090 (Metrics)`
+- `README.md:4`: `**Port**: 8080 (REST API + Health), 9090 (Metrics)`
+- `implementation-checklist.md:6`: `**Port**: 8080 (REST API + Health), 9090 (Metrics)`
+- `integration-points.md:6`: `**Port**: 8080 (REST + Health), 9090 (Metrics)`
 
-**Justification**: Assessment engine isolation - documented exception
-
-**Verdict**: ✅ **VALID EXCEPTION** - Consistently uses 8087, not 8080
+**Verdict**: ✅ **COMPLIANT** - Uses standard 8080/9090
 
 ---
 
@@ -142,7 +140,7 @@ K8s Executor (8084) → Data Storage (8085) → Effectiveness Monitor (8087)
 
 **Should Be**:
 ```
-K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8087)
+K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8080)
                               Context API (8080) → Notifications (8080)
 ```
 
@@ -151,7 +149,7 @@ K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8087)
 |-------------------|----------|-----------|-------|
 | K8s Executor | 8084 | 8080 | ❌ WRONG |
 | Data Storage | 8085 | 8080 | ❌ WRONG |
-| Effectiveness Monitor | 8087 | 8087 | ✅ CORRECT |
+| Effectiveness Monitor | 8087 | 8080 | ❌ WRONG |
 | Context API | 8091 | 8080 | ❌ WRONG |
 | Notifications | 8089 | 8080 | ❌ WRONG |
 
@@ -227,11 +225,11 @@ K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8087)
 ```diff
 - K8s Executor (8084) → Data Storage (8085) → Effectiveness Monitor (8087)
 -                               Context API (8091) → Notifications (8089)
-+ K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8087)
++ K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8080)
 +                               Context API (8080) → Notifications (8080)
 ```
 
-**Rationale**: All services except Effectiveness Monitor use port 8080
+**Rationale**: All services use port 8080 (100% standardization)
 
 ---
 
@@ -260,7 +258,7 @@ K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8087)
 Ensure all `http://context-api-service:8080/` references remain correct (they are)
 Ensure no code examples reference the wrong ports for upstream services
 
-**Rationale**: 
+**Rationale**:
 - AI Analysis is a CRD controller with health on 8080, not 8082
 - HolmesGPT API uses 8080 for API, 8090 is for metrics
 
@@ -284,7 +282,7 @@ Ensure no code examples reference the wrong ports for upstream services
 
 | Aspect | Result | Details |
 |--------|--------|---------|
-| **Service Specs** | ✅ **100% COMPLIANT** | 7/7 services correctly specify 8080/9090 (or 8087 for Effectiveness Monitor) |
+| **Service Specs** | ✅ **100% COMPLIANT** | 7/7 services correctly specify 8080/9090 (100% standardization) |
 | **Cross-References** | ❌ **67% ERRORS** | 2/3 files with cross-service references contain wrong ports |
 | **Overall Accuracy** | ⚠️ **85%** | Service specs perfect, but cross-references need fixes |
 
@@ -294,7 +292,7 @@ Ensure no code examples reference the wrong ports for upstream services
 - Context API: 8080/9090
 - Data Storage: 8080/9090
 - Dynamic Toolset: 8080/9090
-- Effectiveness Monitor: 8087/9090 (valid exception)
+- Effectiveness Monitor: 8080/9090 (now standardized)
 - Gateway Service: 8080/9090
 - HolmesGPT API: 8080/9090
 - Notification Service: 8080/9090
@@ -326,7 +324,7 @@ After corrections, verify:
 1. **Historical Artifacts**: Early architecture used unique ports per service (8081, 8082, etc.) for visual clarity
 2. **Late Standardization**: Port standardization to 8080 happened during architecture refinement
 3. **Incomplete Update**: Some cross-references weren't updated when standardization occurred
-4. **Effectiveness Monitor Exception**: The valid 8087 exception may have caused confusion about other services
+4. **Effectiveness Monitor Exception**: The unjustified 8087 "exception" caused confusion about port standards
 
 **Prevention**:
 - Implement automated port number validation in CI/CD
@@ -340,7 +338,7 @@ After corrections, verify:
 ### **Files Analyzed**: 45+ files across 7 stateless services
 
 **Analysis Method**:
-- Searched for port patterns: 8080, 8087, 8091, 9090
+- Searched for port patterns: 8080, 8091, 9090 (8087 was unjustified exception, now fixed)
 - Validated against standard schema
 - Cross-referenced service specifications
 - Identified inconsistencies in cross-service references
@@ -352,7 +350,7 @@ After corrections, verify:
 ## 🔗 **RELATED DOCUMENTATION**
 
 - **Port Standardization Decision**: Architecture standardized to 8080/9090 for all V1 services
-- **Valid Exceptions**: Effectiveness Monitor (8087) for assessment engine isolation
+- **Valid Exceptions**: None - 100% port standardization achieved
 - **Service README Standard**: `docs/services/README.md` lines 34-48
 
 ---

@@ -60,7 +60,7 @@ func main() {
 
     logger.Info("Effectiveness Monitor Service starting",
         zap.String("version", "v1.0"),
-        zap.Int("port", 8087),
+        zap.Int("port", 8080),
     )
 
     // Initialize service with logger
@@ -554,7 +554,7 @@ func (s *EffectivenessMonitorService) healthHandler(w http.ResponseWriter, r *ht
 livenessProbe:
   httpGet:
     path: /health
-    port: 8087
+    port: 8080
   initialDelaySeconds: 10
   periodSeconds: 10
   timeoutSeconds: 5
@@ -603,7 +603,7 @@ func (s *EffectivenessMonitorService) readinessHandler(w http.ResponseWriter, r 
 readinessProbe:
   httpGet:
     path: /ready
-    port: 8087
+    port: 8080
   initialDelaySeconds: 5
   periodSeconds: 5
   timeoutSeconds: 5

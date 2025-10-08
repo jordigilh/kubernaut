@@ -74,7 +74,7 @@ flowchart LR
 ### **V2 Future Services (5 Additional - Post V1)**
 - **Multi-Model Orchestration** (8092): Ensemble AI decision making
 - **Intelligence** (8086): Advanced pattern discovery & analytics
-- **Effectiveness Monitor** (8087): Assessment & optimization
+- **Effectiveness Monitor** (8080): Assessment & optimization
 - **Security & Access Control** (8093): RBAC, authentication & secrets
 - **Enhanced Health Monitoring** (8096): LLM health & enterprise monitoring
 
