@@ -143,7 +143,204 @@ func (e *Enricher) DegradedModeEnrich(alert Alert) EnrichedAlert {
 }
 ```
 
-### 4. Database Integration: Data Storage Service
+### 4. External Service Integration: Context API (Recovery Enrichment - DD-001: Alternative 2)
+
+> **📋 Design Decision: DD-001 | ✅ Approved Design**
+> **See**: [DD-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
+
+**Integration Pattern**: Conditional synchronous HTTP REST API call (ONLY for recovery attempts)
+**Business Requirement**: BR-WF-RECOVERY-011
+**Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Version 1.2 - Alternative 2)
+
+**When Used**: Only when `spec.isRecoveryAttempt = true`
+
+**Endpoint**: Context API `/api/v1/context/remediation/{remediationRequestId}`
+
+**Purpose**: Retrieve historical failure context to enable AI to generate alternative recovery strategies
+
+**Request**:
+```go
+// GET /api/v1/context/remediation/{remediationRequestId}
+// Query parameter: remediationRequestId from spec.remediationRequestRef.name
+
+type ContextAPIClient interface {
+    GetRemediationContext(ctx context.Context, remediationRequestID string) (*ContextAPIResponse, error)
+}
+```
+
+**Response**:
+```go
+type ContextAPIResponse struct {
+    RemediationRequestID string                    `json:"remediationRequestId"`
+    CurrentAttempt       int                       `json:"currentAttempt"`
+    PreviousFailures     []PreviousFailureDTO      `json:"previousFailures"`
+    RelatedAlerts        []RelatedAlertDTO         `json:"relatedAlerts"`
+    HistoricalPatterns   []HistoricalPatternDTO    `json:"historicalPatterns"`
+    SuccessfulStrategies []SuccessfulStrategyDTO   `json:"successfulStrategies"`
+    ContextQuality       string                    `json:"contextQuality"` // "complete", "partial", "minimal"
+}
+
+type PreviousFailureDTO struct {
+    WorkflowRef      string                 `json:"workflowRef"`
+    AttemptNumber    int                    `json:"attemptNumber"`
+    FailedStep       int                    `json:"failedStep"`
+    Action           string                 `json:"action"`
+    ErrorType        string                 `json:"errorType"`
+    FailureReason    string                 `json:"failureReason"`
+    Duration         string                 `json:"duration"`
+    ClusterState     map[string]interface{} `json:"clusterState"`
+    ResourceSnapshot map[string]interface{} `json:"resourceSnapshot"`
+    Timestamp        time.Time              `json:"timestamp"`
+}
+```
+
+**Integration Flow (Alternative 2)**:
+```go
+// In RemediationProcessingReconciler.reconcileEnriching()
+func (r *RemediationProcessingReconciler) reconcileEnriching(
+    ctx context.Context,
+    rp *processingv1.RemediationProcessing,
+) (ctrl.Result, error) {
+
+    log := ctrl.LoggerFrom(ctx)
+
+    // ALWAYS: Enrich monitoring + business context (gets FRESH data)
+    enrichmentResults, err := r.ContextService.GetContext(ctx, rp.Spec.Alert)
+    if err != nil {
+        return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+    }
+
+    rp.Status.EnrichmentResults = enrichmentResults
+
+    // IF RECOVERY: ALSO query Context API for recovery context (Alternative 2)
+    if rp.Spec.IsRecoveryAttempt {
+        log.Info("Recovery attempt detected - querying Context API for historical context",
+            "attemptNumber", rp.Spec.RecoveryAttemptNumber,
+            "remediationRequestID", rp.Spec.RemediationRequestRef.Name)
+
+        // Query Context API
+        recoveryCtx, err := r.enrichRecoveryContext(ctx, rp)
+        if err != nil {
+            // Graceful degradation: Use fallback context
+            log.Warn("Context API unavailable, using fallback recovery context",
+                "error", err,
+                "attemptNumber", rp.Spec.RecoveryAttemptNumber)
+
+            r.Recorder.Event(rp, "Warning", "ContextAPIUnavailable",
+                fmt.Sprintf("Context API query failed: %v. Using fallback context.", err))
+
+            recoveryCtx = r.buildFallbackRecoveryContext(rp)
+        }
+
+        // Add recovery context to enrichment results
+        rp.Status.EnrichmentResults.RecoveryContext = recoveryCtx
+
+        log.Info("Recovery context enrichment completed",
+            "contextQuality", recoveryCtx.ContextQuality,
+            "previousFailuresCount", len(recoveryCtx.PreviousFailures),
+            "relatedAlertsCount", len(recoveryCtx.RelatedAlerts))
+    }
+
+    rp.Status.Phase = "classifying"
+    return ctrl.Result{Requeue: true}, r.Status().Update(ctx, rp)
+}
+
+// Helper function to query Context API
+func (r *RemediationProcessingReconciler) enrichRecoveryContext(
+    ctx context.Context,
+    rp *processingv1.RemediationProcessing,
+) (*processingv1.RecoveryContext, error) {
+
+    // Query Context API
+    contextResp, err := r.ContextAPIClient.GetRemediationContext(
+        ctx,
+        rp.Spec.RemediationRequestRef.Name,
+    )
+
+    if err != nil {
+        return nil, fmt.Errorf("Context API query failed: %w", err)
+    }
+
+    // Convert DTO to CRD type
+    return convertToRecoveryContext(contextResp), nil
+}
+
+// Graceful degradation fallback
+func (r *RemediationProcessingReconciler) buildFallbackRecoveryContext(
+    rp *processingv1.RemediationProcessing,
+) *processingv1.RecoveryContext {
+
+    return &processingv1.RecoveryContext{
+        ContextQuality: "degraded",
+        PreviousFailures: []processingv1.PreviousFailure{
+            {
+                WorkflowRef:   rp.Spec.FailedWorkflowRef.Name,
+                FailedStep:    *rp.Spec.FailedStep,
+                FailureReason: *rp.Spec.FailureReason,
+                AttemptNumber: rp.Spec.RecoveryAttemptNumber - 1,
+            },
+        },
+        RetrievedAt: metav1.Now(),
+    }
+}
+```
+
+**Key Benefits (Alternative 2)**:
+- ✅ **Temporal Consistency**: Recovery context retrieved at same time as monitoring/business contexts
+- ✅ **Fresh Data**: All contexts (monitoring + business + recovery) captured at same timestamp
+- ✅ **Graceful Degradation**: Falls back to minimal context from `failedWorkflowRef` if API unavailable
+- ✅ **Architectural Consistency**: ALL enrichment happens in RemediationProcessing controller
+- ✅ **Immutable Audit Trail**: Each RemediationProcessing CRD contains complete snapshot
+
+**Graceful Degradation Example**:
+```yaml
+# Context API unavailable - fallback context created
+status:
+  enrichmentResults:
+    recoveryContext:
+      contextQuality: "degraded"
+      previousFailures:
+      - workflowRef: "workflow-001"
+        failedStep: 3
+        failureReason: "timeout"
+        attemptNumber: 1
+      retrievedAt: "2025-01-15T10:00:00Z"
+```
+
+**Success Example**:
+```yaml
+# Context API available - complete recovery context
+status:
+  enrichmentResults:
+    recoveryContext:
+      contextQuality: "complete"
+      previousFailures:
+      - workflowRef: "workflow-001"
+        attemptNumber: 1
+        failedStep: 3
+        action: "scale-deployment"
+        errorType: "timeout"
+        failureReason: "Operation timed out after 5m"
+        duration: "5m 3s"
+        timestamp: "2025-01-15T09:50:00Z"
+      relatedAlerts:
+      - alertFingerprint: "related-123"
+        alertName: "HighMemoryUsage"
+        correlation: 0.85
+      historicalPatterns:
+      - pattern: "scale_timeout_high_memory"
+        occurrences: 12
+        successRate: 0.73
+      successfulStrategies:
+      - strategy: "force-delete-pods-then-scale"
+        confidence: 0.88
+        successCount: 8
+      retrievedAt: "2025-01-15T10:00:00Z"
+```
+
+---
+
+### 5. Database Integration: Data Storage Service
 
 **Integration Pattern**: Audit trail persistence
 
@@ -158,20 +355,24 @@ type RemediationProcessingAudit struct {
     EnrichmentResult    EnrichedAlert              `json:"enrichmentResult"`
     ClassificationResult EnvironmentClassification `json:"classificationResult"`
     DegradedMode        bool                       `json:"degradedMode"`
+    // Alternative 2: Recovery context audit
+    RecoveryContext     *RecoveryContext           `json:"recoveryContext,omitempty"`
+    IsRecoveryAttempt   bool                       `json:"isRecoveryAttempt"`
 }
 ```
 
-### 5. Dependencies Summary
+### 6. Dependencies Summary
 
 **Upstream Services**:
 - **Gateway Service** - Creates RemediationRequest CRD with duplicate detection already performed (BR-WH-008)
-- **RemediationRequest Controller** - Creates RemediationProcessing CRD when workflow starts
+- **RemediationRequest Controller** - Creates RemediationProcessing CRD when workflow starts (initial & recovery)
 
 **Downstream Services**:
 - **RemediationRequest Controller** - Watches RemediationProcessing status and creates AIAnalysis CRD upon completion
 
 **External Services**:
-- **Context Service** - HTTP GET for Kubernetes context enrichment
+- **Context Service** - HTTP GET for Kubernetes context enrichment (monitoring + business contexts)
+- **Context API** - HTTP GET for recovery context enrichment (ONLY for recovery attempts - Alternative 2)
 - **Data Storage Service** - HTTP POST for audit trail persistence
 
 **Database**:

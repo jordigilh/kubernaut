@@ -130,6 +130,29 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 
 ---
 
+## 📊 **Value Proposition & Business Materials**
+
+**Location**: [`value-proposition/`](value-proposition/)
+
+**Purpose**: Sales enablement materials demonstrating kubernaut's differentiated value in GitOps-managed Kubernetes environments with existing automation (HPA, VPA, ArgoCD)
+
+### Documents by Audience
+
+| Document | Audience | Purpose | Read Time |
+|----------|----------|---------|-----------|
+| **[Executive Summary](value-proposition/EXECUTIVE_SUMMARY.md)** | Decision-makers, managers | ROI justification, quantitative impact | 10-15 min |
+| **[Technical Scenarios](value-proposition/TECHNICAL_SCENARIOS.md)** | SRE teams, platform engineers | Step-by-step workflows, detailed use cases | 45-60 min |
+| **[V1 vs V2 Capabilities](value-proposition/V1_VS_V2_CAPABILITIES.md)** | Technical leads, architects | Version planning, capability breakdown | 15-20 min |
+| **[Documentation Update Log](value-proposition/DOCUMENTATION_UPDATE_LOG.md)** | All audiences | Change history, V1/V2 assessment | 5 min |
+
+### Key Metrics
+- **V1 ROI**: 11,300-14,700% return (3-4 week implementation)
+- **MTTR Reduction**: 85-95% (hours → minutes)
+- **Cost Savings**: $215K-$350K annually (10-engineer team)
+- **V1 Readiness**: 93% average across 6 scenarios (85-100% range)
+
+---
+
 ## 📖 **Documentation Guidelines**
 
 - **Business Requirements**: Start with [requirements/00_REQUIREMENTS_OVERVIEW.md](requirements/00_REQUIREMENTS_OVERVIEW.md)
@@ -137,6 +160,7 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 - **Implementation**: Follow [development/project guidelines.md](development/project%20guidelines.md)
 - **Testing**: Reference [TESTING_FRAMEWORK.md](TESTING_FRAMEWORK.md)
 - **Deployment**: Start with [getting-started/](getting-started/)
+- **Value Proposition**: Review [value-proposition/](value-proposition/) for stakeholder materials
 
 ---
 
