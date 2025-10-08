@@ -10,7 +10,7 @@
 
 ### 1. Created New Comprehensive Version Matrix Document
 
-**File**: `KUBERNAUT_VERSION_CAPABILITY_MATRIX.md`
+**File**: `V1_VS_V2_CAPABILITIES.md`
 
 **Content**:
 - Complete V1 vs V2+ capability breakdown for all 6 scenarios
@@ -171,14 +171,14 @@
 ### For V1 Evaluation (Most Common)
 
 **Quick Assessment** (30 min):
-1. Read `KUBERNAUT_VERSION_CAPABILITY_MATRIX.md` (15-20 min)
+1. Read `V1_VS_V2_CAPABILITIES.md` (15-20 min)
 2. Read 1-2 scenarios from `KUBERNAUT_VALUE_SCENARIOS.md` (10 min each)
 3. **Outcome**: Understand V1 is 93% ready, decide if limitations are acceptable
 
 **Detailed Assessment** (90 min):
 1. Read `KUBERNAUT_VALUE_SUMMARY.md` (20 min) - complete overview
 2. Read all 6 scenarios in `KUBERNAUT_VALUE_SCENARIOS.md` (60 min)
-3. Review `KUBERNAUT_VERSION_CAPABILITY_MATRIX.md` (15 min) - detailed breakdown
+3. Review `V1_VS_V2_CAPABILITIES.md` (15 min) - detailed breakdown
 4. **Outcome**: Complete understanding of V1 capabilities and V2 enhancements
 
 ### For V2 Planning
@@ -189,7 +189,7 @@
 - Clear V2 requirements identified (Helm/GitLab/multi-model needs)
 
 **Assessment**:
-1. Review V2 sections in `KUBERNAUT_VERSION_CAPABILITY_MATRIX.md`
+1. Review V2 sections in `V1_VS_V2_CAPABILITIES.md`
 2. Calculate V2 incremental ROI based on your workaround costs
 3. **Decision**: Upgrade if incremental value > $1M/year (typical threshold)
 
@@ -197,7 +197,7 @@
 
 ## Files Modified
 
-1. **NEW**: `KUBERNAUT_VERSION_CAPABILITY_MATRIX.md` (comprehensive V1/V2 breakdown)
+1. **NEW**: `V1_VS_V2_CAPABILITIES.md` (comprehensive V1/V2 breakdown)
 2. **UPDATED**: `KUBERNAUT_VALUE_SCENARIOS.md` (V1 readiness markers on all 6 scenarios)
 3. **UPDATED**: `KUBERNAUT_VALUE_SUMMARY.md` (V1/V2 ROI split, service list, limitations)
 4. **UPDATED**: `VALUE_PROPOSITION_README.md` (V1/V2 navigation, version matrix reference)
