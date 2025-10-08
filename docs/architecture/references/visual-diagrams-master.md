@@ -189,20 +189,17 @@ sequenceDiagram
     else Manual Approval Required
         Rego-->>Ctrl: MANUAL_APPROVAL_REQUIRED
         Ctrl->>App: Create AIApprovalRequest CRD
-        activate App
         Ctrl-->>App: Watch for approval decision
 
         alt Approved by Operator
             App->>App: Status.Decision = "Approved"
             App-->>Ctrl: Watch triggers reconciliation
             Ctrl->>AIA: Status.ApprovalStatus = "Approved"
-            deactivate App
         else Rejected by Operator
             App->>App: Status.Decision = "Rejected"
             App-->>Ctrl: Watch triggers reconciliation
             Ctrl->>Not: Send escalation notification
             Ctrl->>AIA: Status.ApprovalStatus = "Rejected"
-            deactivate App
         end
     end
 
