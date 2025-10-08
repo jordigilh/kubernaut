@@ -45,11 +45,11 @@ Without effectiveness monitoring, Kubernaut would be "flying blind" - executing 
 ### **Service Position in V1**
 
 ```
-K8s Executor (8084) → Data Storage (8085) → Effectiveness Monitor (8087)
+K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8087)
                                              ↑
-Infrastructure Monitoring (8094) ────────────┘
+External Prometheus (9090) ──────────────────┘
                                              ↓
-                              Context API (8091) → Notifications (8089)
+                              Context API (8080) → Notifications (8080)
 ```
 
 **Data Flow**:
@@ -64,9 +64,9 @@ Infrastructure Monitoring (8094) ────────────┘
 
 | Dependency | Port | Purpose | V1 Status |
 |------------|------|---------|-----------|
-| **Data Storage Service** | 8085 | Action history, vector DB, effectiveness storage | ✅ V1 |
-| **Infrastructure Monitoring** | 8094 | Metrics, alerts, side effect detection | ✅ V1 |
-| **Intelligence Service** | 8086 | Advanced pattern discovery (optional) | 🔴 V2 |
+| **Data Storage Service** | 8080 | Action history, vector DB, effectiveness storage | ✅ V1 |
+| **External Prometheus** | 9090 | Metrics scraping, side effect detection | ✅ V1 |
+| **Intelligence Service** | 8080 | Advanced pattern discovery (optional) | 🔴 V2 |
 
 **Result**: ✅ All required dependencies available in V1 (Intelligence Service is optional)
 
