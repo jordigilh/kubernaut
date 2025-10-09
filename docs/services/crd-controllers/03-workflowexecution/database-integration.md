@@ -173,9 +173,9 @@ func calculateEffectivenessScore(workflow *workflowv1.WorkflowExecution) float64
 
     completedSteps := countCompletedSteps(workflow)
     totalSteps := len(workflow.Spec.Steps)
-    
+
     successRate := float64(completedSteps) / float64(totalSteps)
-    
+
     // Penalize for retries and rollbacks
     totalRetries := 0
     for _, step := range workflow.Status.Steps {
@@ -237,14 +237,14 @@ func determineOutcome(workflow *workflowv1.WorkflowExecution) string {
 
 func collectAdaptiveAdjustments(workflow *workflowv1.WorkflowExecution) []storage.AdaptiveAdjustment {
     adjustments := make([]storage.AdaptiveAdjustment, 0)
-    
+
     // Extract adjustments from workflow annotations or status
     if workflow.Annotations != nil {
         if adjustmentsJSON, ok := workflow.Annotations["adaptive-adjustments"]; ok {
             json.Unmarshal([]byte(adjustmentsJSON), &adjustments)
         }
     }
-    
+
     return adjustments
 }
 ```
@@ -304,7 +304,7 @@ func (c *AuditStorageClient) StoreWorkflowExecutionAudit(
 
 **Find most effective workflows:**
 ```sql
-SELECT 
+SELECT
     workflow_name,
     COUNT(*) as execution_count,
     AVG(effectiveness_score) as avg_effectiveness,
@@ -320,7 +320,7 @@ LIMIT 10;
 
 **Identify workflows needing optimization:**
 ```sql
-SELECT 
+SELECT
     workflow_name,
     COUNT(*) as failure_count,
     AVG(steps_failed) as avg_failed_steps,
@@ -336,7 +336,7 @@ ORDER BY failure_count DESC;
 
 **Slowest workflow steps:**
 ```sql
-SELECT 
+SELECT
     workflow_name,
     step_exec->>'action' as action_type,
     COUNT(*) as execution_count,
@@ -352,7 +352,7 @@ LIMIT 20;
 
 **Step retry patterns:**
 ```sql
-SELECT 
+SELECT
     step_exec->>'action' as action_type,
     AVG((step_exec->>'retries_attempted')::int) as avg_retries,
     COUNT(*) as total_executions,
@@ -369,7 +369,7 @@ ORDER BY avg_retries DESC;
 
 **Most common adaptive adjustments:**
 ```sql
-SELECT 
+SELECT
     adj->>'adjustment_type' as adjustment_type,
     adj->>'reason' as reason,
     COUNT(*) as frequency

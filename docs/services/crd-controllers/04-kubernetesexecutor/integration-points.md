@@ -595,7 +595,7 @@ sequenceDiagram
 sequenceDiagram
     participant KE as KubernetesExecution
     participant Job as Kubernetes Job
-    
+
     KE->>Job: Create Job (attempt 1)
     Job-->>KE: Failed
     KE->>Job: Delete failed Job

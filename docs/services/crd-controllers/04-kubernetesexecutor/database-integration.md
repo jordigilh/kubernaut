@@ -56,12 +56,12 @@ func (r *KubernetesExecutionReconciler) persistExecutionAudit(
         StepIndex:         execution.Spec.StepIndex,
         ActionType:        execution.Spec.Action.Type,
         ActionParameters:  execution.Spec.Action.Parameters,
-        
+
         // Target information
         TargetNamespace:   execution.Spec.Action.Target.Namespace,
         TargetResourceKind: execution.Spec.Action.Target.ResourceKind,
         TargetResourceName: execution.Spec.Action.Target.ResourceName,
-        
+
         // Execution results
         Success:           execution.Status.Result.Success,
         Output:            execution.Status.Result.Output,
@@ -69,17 +69,17 @@ func (r *KubernetesExecutionReconciler) persistExecutionAudit(
         StartTime:         execution.Status.Result.StartTime.Time,
         EndTime:           execution.Status.Result.EndTime.Time,
         Duration:          execution.Status.Result.EndTime.Time.Sub(execution.Status.Result.StartTime.Time),
-        
+
         // Job information
         JobName:           job.Name,
         JobPodName:        getPodName(job),
         JobExitCode:       getJobExitCode(job),
         JobResourceUsage:  getResourceUsage(job),
-        
+
         // Retry information
         RetryCount:        execution.Status.RetryCount,
         MaxRetries:        execution.Spec.MaxRetries,
-        
+
         // Metadata
         CreatedAt:         execution.CreationTimestamp.Time,
         CompletedAt:       time.Now(),
@@ -87,7 +87,7 @@ func (r *KubernetesExecutionReconciler) persistExecutionAudit(
     }
 
     if err := r.AuditStorage.StoreKubernetesExecutionAudit(ctx, auditRecord); err != nil {
-        r.Log.Error(err, "Failed to store execution audit", 
+        r.Log.Error(err, "Failed to store execution audit",
             "executionID", execution.Name,
             "actionType", execution.Spec.Action.Type)
         // Don't fail reconciliation, but track metric
@@ -109,20 +109,20 @@ CREATE TABLE kubernetes_execution_audit (
     -- Primary keys
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     execution_id        VARCHAR(255) NOT NULL,
-    
+
     -- Parent references
     workflow_ref        VARCHAR(255) NOT NULL,
     step_index          INTEGER NOT NULL,
-    
+
     -- Action details
     action_type         VARCHAR(100) NOT NULL,
     action_parameters   JSONB,
-    
+
     -- Target resource
     target_namespace    VARCHAR(253),
     target_resource_kind VARCHAR(100),
     target_resource_name VARCHAR(253),
-    
+
     -- Execution results
     success             BOOLEAN NOT NULL,
     output              TEXT,
@@ -130,22 +130,22 @@ CREATE TABLE kubernetes_execution_audit (
     start_time          TIMESTAMP WITH TIME ZONE,
     end_time            TIMESTAMP WITH TIME ZONE,
     duration            INTERVAL,
-    
+
     -- Job information
     job_name            VARCHAR(255),
     job_pod_name        VARCHAR(255),
     job_exit_code       INTEGER,
     job_resource_usage  JSONB,  -- CPU, memory usage
-    
+
     -- Retry information
     retry_count         INTEGER DEFAULT 0,
     max_retries         INTEGER DEFAULT 3,
-    
+
     -- Metadata
     created_at          TIMESTAMP WITH TIME ZONE NOT NULL,
     completed_at        TIMESTAMP WITH TIME ZONE,
     phase               VARCHAR(50),
-    
+
     -- Indexes
     INDEX idx_execution_id (execution_id),
     INDEX idx_workflow_ref (workflow_ref),
@@ -168,20 +168,20 @@ package storage
 type KubernetesExecutionAudit struct {
     ID            string                 `json:"id" db:"id"`
     ExecutionID   string                 `json:"execution_id" db:"execution_id"`
-    
+
     // Parent references
     WorkflowRef   string                 `json:"workflow_ref" db:"workflow_ref"`
     StepIndex     int                    `json:"step_index" db:"step_index"`
-    
+
     // Action details
     ActionType       string            `json:"action_type" db:"action_type"`
     ActionParameters json.RawMessage   `json:"action_parameters" db:"action_parameters"`
-    
+
     // Target resource
     TargetNamespace    string `json:"target_namespace" db:"target_namespace"`
     TargetResourceKind string `json:"target_resource_kind" db:"target_resource_kind"`
     TargetResourceName string `json:"target_resource_name" db:"target_resource_name"`
-    
+
     // Execution results
     Success   bool          `json:"success" db:"success"`
     Output    string        `json:"output" db:"output"`
@@ -189,17 +189,17 @@ type KubernetesExecutionAudit struct {
     StartTime time.Time     `json:"start_time" db:"start_time"`
     EndTime   time.Time     `json:"end_time" db:"end_time"`
     Duration  time.Duration `json:"duration" db:"duration"`
-    
+
     // Job information
     JobName          string              `json:"job_name" db:"job_name"`
     JobPodName       string              `json:"job_pod_name" db:"job_pod_name"`
     JobExitCode      int                 `json:"job_exit_code" db:"job_exit_code"`
     JobResourceUsage *ResourceUsage      `json:"job_resource_usage" db:"job_resource_usage"`
-    
+
     // Retry information
     RetryCount   int `json:"retry_count" db:"retry_count"`
     MaxRetries   int `json:"max_retries" db:"max_retries"`
-    
+
     // Metadata
     CreatedAt   time.Time `json:"created_at" db:"created_at"`
     CompletedAt time.Time `json:"completed_at" db:"completed_at"`
@@ -220,7 +220,7 @@ type ResourceUsage struct {
 
 **Find all executions for a specific workflow:**
 ```sql
-SELECT 
+SELECT
     execution_id,
     action_type,
     target_resource_name,
@@ -234,7 +234,7 @@ ORDER BY step_index;
 
 **Find failed executions with errors:**
 ```sql
-SELECT 
+SELECT
     execution_id,
     action_type,
     target_namespace,
@@ -252,7 +252,7 @@ ORDER BY completed_at DESC;
 
 **Average execution duration by action type:**
 ```sql
-SELECT 
+SELECT
     action_type,
     COUNT(*) as total_executions,
     AVG(duration) as avg_duration,
@@ -268,7 +268,7 @@ ORDER BY avg_duration DESC;
 
 **Find slow executions:**
 ```sql
-SELECT 
+SELECT
     execution_id,
     action_type,
     target_resource_name,
@@ -285,7 +285,7 @@ LIMIT 100;
 
 **Track all actions on production namespace:**
 ```sql
-SELECT 
+SELECT
     execution_id,
     action_type,
     target_resource_kind,
@@ -301,7 +301,7 @@ ORDER BY created_at DESC;
 
 **Find retry patterns (actions requiring multiple attempts):**
 ```sql
-SELECT 
+SELECT
     action_type,
     target_namespace,
     COUNT(*) as total_with_retries,
@@ -315,7 +315,7 @@ ORDER BY total_with_retries DESC;
 
 **Resource usage analysis:**
 ```sql
-SELECT 
+SELECT
     action_type,
     AVG((job_resource_usage->>'cpu_millicores')::bigint) as avg_cpu_millicores,
     AVG((job_resource_usage->>'memory_bytes')::bigint) as avg_memory_bytes,
@@ -364,28 +364,28 @@ func (c *AuditStorageClient) StoreKubernetesExecutionAudit(
     audit *KubernetesExecutionAudit,
 ) error {
     url := fmt.Sprintf("%s/api/v1/audit/kubernetes-execution", c.storageServiceURL)
-    
+
     body, err := json.Marshal(audit)
     if err != nil {
         return fmt.Errorf("failed to marshal audit: %w", err)
     }
-    
+
     req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
     if err != nil {
         return err
     }
     req.Header.Set("Content-Type", "application/json")
-    
+
     resp, err := c.httpClient.Do(req)
     if err != nil {
         return fmt.Errorf("failed to store audit: %w", err)
     }
     defer resp.Body.Close()
-    
+
     if resp.StatusCode != http.StatusCreated {
         return fmt.Errorf("audit storage failed with status: %d", resp.StatusCode)
     }
-    
+
     return nil
 }
 ```
@@ -425,20 +425,20 @@ var (
         Name: "kubernaut_kubernetesexecutor_audit_storage_attempts_total",
         Help: "Total audit storage attempts",
     }, []string{"status"}) // success, error
-    
+
     // Counter: Audit storage failures
     AuditStorageFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
         Name: "kubernaut_kubernetesexecutor_audit_storage_failures_total",
         Help: "Total audit storage failures",
     }, []string{"error_type"}) // timeout, marshal_error, http_error
-    
+
     // Histogram: Audit storage duration
     AuditStorageDuration = promauto.NewHistogram(prometheus.HistogramOpts{
         Name:    "kubernaut_kubernetesexecutor_audit_storage_duration_seconds",
         Help:    "Duration of audit storage operations",
         Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0},
     })
-    
+
     // Gauge: Pending audit records (if using batching)
     PendingAuditRecords = promauto.NewGauge(prometheus.GaugeOpts{
         Name: "kubernaut_kubernetesexecutor_pending_audit_records",
@@ -452,14 +452,14 @@ func (r *KubernetesExecutionReconciler) persistExecutionAudit(...) error {
     defer func() {
         AuditStorageDuration.Observe(time.Since(start).Seconds())
     }()
-    
+
     err := r.AuditStorage.StoreKubernetesExecutionAudit(ctx, auditRecord)
     if err != nil {
         AuditStorageAttemptsTotal.WithLabelValues("error").Inc()
         AuditStorageFailuresTotal.WithLabelValues(classifyError(err)).Inc()
         return err
     }
-    
+
     AuditStorageAttemptsTotal.WithLabelValues("success").Inc()
     return nil
 }
@@ -483,14 +483,14 @@ type BatchedAuditStorage struct {
 func (b *BatchedAuditStorage) Add(audit *KubernetesExecutionAudit) error {
     b.mu.Lock()
     defer b.mu.Unlock()
-    
+
     b.pending = append(b.pending, audit)
     PendingAuditRecords.Set(float64(len(b.pending)))
-    
+
     if len(b.pending) >= b.batchSize {
         return b.flushLocked()
     }
-    
+
     return nil
 }
 
@@ -498,14 +498,14 @@ func (b *BatchedAuditStorage) flushLocked() error {
     if len(b.pending) == 0 {
         return nil
     }
-    
+
     // Send batch to storage service
     err := b.client.StoreBatch(context.Background(), b.pending)
     if err == nil {
         b.pending = b.pending[:0] // Clear batch
         PendingAuditRecords.Set(0)
     }
-    
+
     return err
 }
 ```
@@ -547,17 +547,17 @@ func TestPersistExecutionAudit(t *testing.T) {
     mockStorage := &MockAuditStorage{
         stored: make([]*storage.KubernetesExecutionAudit, 0),
     }
-    
+
     reconciler := &KubernetesExecutionReconciler{
         AuditStorage: mockStorage,
     }
-    
+
     execution := createTestExecution()
     job := createTestJob()
-    
+
     err := reconciler.persistExecutionAudit(context.TODO(), execution, job)
     assert.NoError(t, err)
-    
+
     assert.Equal(t, 1, len(mockStorage.stored))
     assert.Equal(t, execution.Name, mockStorage.stored[0].ExecutionID)
 }
@@ -570,21 +570,21 @@ func TestIntegration_AuditStorage(t *testing.T) {
     // Start test PostgreSQL
     db := startTestDatabase(t)
     defer db.Close()
-    
+
     client := storage.NewAuditStorageClient("http://localhost:8085")
-    
+
     audit := &storage.KubernetesExecutionAudit{
         ExecutionID: "test-exec-1",
         ActionType:  "scale-deployment",
         Success:     true,
     }
-    
+
     err := client.StoreKubernetesExecutionAudit(context.TODO(), audit)
     assert.NoError(t, err)
-    
+
     // Verify in database
     var stored storage.KubernetesExecutionAudit
-    err = db.QueryRow("SELECT * FROM kubernetes_execution_audit WHERE execution_id = $1", 
+    err = db.QueryRow("SELECT * FROM kubernetes_execution_audit WHERE execution_id = $1",
         "test-exec-1").Scan(&stored)
     assert.NoError(t, err)
     assert.Equal(t, "scale-deployment", stored.ActionType)

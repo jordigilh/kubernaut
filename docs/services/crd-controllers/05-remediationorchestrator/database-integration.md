@@ -137,7 +137,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 
     // Track phase transitions
     previousPhase := remediation.Status.Phase
-    
+
     // ... orchestration logic (create downstream CRDs, watch status) ...
 
     // Publish audit on phase change
@@ -339,7 +339,7 @@ func (c *AuditStorageClient) StoreRemediationOrchestrationAudit(
 
 **Find all remediation attempts for a specific alert:**
 ```sql
-SELECT 
+SELECT
     remediation_name,
     overall_phase,
     start_time,
@@ -355,7 +355,7 @@ LIMIT 10;
 
 **Orchestration success rate:**
 ```sql
-SELECT 
+SELECT
     overall_phase,
     COUNT(*) as total,
     COUNT(CASE WHEN overall_phase = 'completed' THEN 1 END) as successful,
@@ -370,7 +370,7 @@ GROUP BY overall_phase;
 
 **Average orchestration duration by phase:**
 ```sql
-SELECT 
+SELECT
     overall_phase,
     COUNT(*) as total_remediations,
     AVG(EXTRACT(EPOCH FROM (completion_time - start_time))) as avg_duration_seconds,
@@ -384,7 +384,7 @@ GROUP BY overall_phase;
 
 **Slowest orchestrations:**
 ```sql
-SELECT 
+SELECT
     remediation_name,
     alert_fingerprint,
     overall_phase,
@@ -403,7 +403,7 @@ LIMIT 20;
 
 **Most common failure phases:**
 ```sql
-SELECT 
+SELECT
     failure_phase,
     COUNT(*) as failure_count,
     COUNT(DISTINCT alert_fingerprint) as unique_alerts_affected,
@@ -417,7 +417,7 @@ ORDER BY failure_count DESC;
 
 **Remediation retry analysis:**
 ```sql
-SELECT 
+SELECT
     alert_fingerprint,
     COUNT(*) as retry_count,
     MAX(created_at) as last_attempt,
