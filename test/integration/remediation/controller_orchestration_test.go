@@ -401,6 +401,12 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 			},
 		}
 		Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
+		
+		// Refetch AIAnalysis to get created object (status is reset on create)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiAnalysis.Name, Namespace: aiAnalysis.Namespace}, aiAnalysis)).To(Succeed())
+		aiAnalysis.Status.Phase = "Completed"
+		aiAnalysis.Status.RecommendedAction = "restart_pod"
+		aiAnalysis.Status.Confidence = 0.95
 		Expect(k8sClient.Status().Update(ctx, aiAnalysis)).To(Succeed())
 
 		// Refetch to get latest resourceVersion (controller may have modified it)
@@ -483,6 +489,10 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 			},
 		}
 		Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
+		
+		// Refetch AIAnalysis to get created object (status is reset on create)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiAnalysis.Name, Namespace: aiAnalysis.Namespace}, aiAnalysis)).To(Succeed())
+		aiAnalysis.Status.Phase = "Analyzing"
 		Expect(k8sClient.Status().Update(ctx, aiAnalysis)).To(Succeed())
 
 		// Refetch to get latest resourceVersion (controller may have modified it)
