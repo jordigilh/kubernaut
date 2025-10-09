@@ -1,0 +1,9 @@
+apiVersion: remediation.kubernaut.io/v1alpha1
+kind: RemediationRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/managed-by: kustomize
+  name: remediationrequest-sample
+spec:
+  # TODO(user): Add fields here

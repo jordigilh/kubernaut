@@ -1,0 +1,9 @@
+## Append samples of your project ##
+resources:
+- remediation_v1alpha1_remediationrequest.yaml
+- remediationprocessing_v1alpha1_remediationprocessing.yaml
+- aianalysis_v1alpha1_aianalysis.yaml
+- workflowexecution_v1alpha1_workflowexecution.yaml
+- kubernetesexecution_v1alpha1_kubernetesexecution.yaml
+- remediationorchestrator_v1alpha1_remediationorchestrator.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
