@@ -200,7 +200,7 @@ func (r *RemediationRequestReconciler) handleFinalizer(
         // 1. Wait for downstream CRDs to finish (status check)
         // 2. Persist audit record to storage service
         // 3. Remove finalizer to allow deletion
-        
+
         if err := r.performCleanup(ctx, remediation); err != nil {
             return err
         }
@@ -267,7 +267,7 @@ spec:
     ports:
     - protocol: TCP
       port: 443  # Kubernetes API Server
-  
+
   # Allow Storage Service (audit persistence)
   - to:
     - podSelector:
@@ -276,7 +276,7 @@ spec:
     ports:
     - protocol: TCP
       port: 8085  # Storage Service HTTP
-  
+
   # Allow DNS resolution
   - to:
     - namespaceSelector:

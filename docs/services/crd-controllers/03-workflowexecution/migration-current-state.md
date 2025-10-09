@@ -92,7 +92,7 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
     // Reuse existing workflow engine for step logic
     workflow := convertCRDToWorkflow(&workflowExec)
-    
+
     // Execute via existing engine (reusable code)
     if err := r.WorkflowEngine.ExecuteWorkflow(ctx, workflow); err != nil {
         return ctrl.Result{}, err
@@ -108,7 +108,7 @@ func convertCRDToWorkflow(workflowExec *workflowv1.WorkflowExecution) *engine.Wo
         Version: workflowExec.Spec.WorkflowVersion,
         Steps:   make([]engine.WorkflowStep, len(workflowExec.Spec.Steps)),
     }
-    
+
     for i, crdStep := range workflowExec.Spec.Steps {
         workflow.Steps[i] = engine.WorkflowStep{
             Name:       crdStep.Name,
@@ -117,7 +117,7 @@ func convertCRDToWorkflow(workflowExec *workflowv1.WorkflowExecution) *engine.Wo
             Timeout:    crdStep.Timeout.Duration,
         }
     }
-    
+
     return workflow
 }
 ```
@@ -203,21 +203,21 @@ func (r *WorkflowExecutionReconciler) loadWorkflowFromAIAnalysis(
 // Fill step parameters from AI analysis (targeting data)
 func fillParametersFromAnalysis(stepTemplate *StepTemplate, analysis *aianalysisv1.AIAnalysis) json.RawMessage {
     params := make(map[string]interface{})
-    
+
     // Extract target resource from AI analysis
     if analysis.Status.TargetResource != nil {
         params["namespace"] = analysis.Status.TargetResource.Namespace
         params["resourceKind"] = analysis.Status.TargetResource.Kind
         params["resourceName"] = analysis.Status.TargetResource.Name
     }
-    
+
     // Add action-specific parameters from template defaults
     for key, paramDef := range stepTemplate.ParameterSchema {
         if paramDef.DefaultValue != nil {
             params[key] = paramDef.DefaultValue
         }
     }
-    
+
     paramsJSON, _ := json.Marshal(params)
     return paramsJSON
 }
@@ -301,7 +301,7 @@ func (r *WorkflowExecutionReconciler) watchStepExecution(
     stepIndex int,
 ) error {
     executionName := fmt.Sprintf("%s-step-%d", workflow.Name, stepIndex)
-    
+
     var execution kubernetesexecutionv1.KubernetesExecution
     if err := r.Get(ctx, client.ObjectKey{
         Name:      executionName,

@@ -22,7 +22,7 @@ Each CRD controller runs as a separate microservice with its own binary:
 - Health/Ready: `0.0.0.0:8080` (`/healthz`, `/readyz`)
 - Metrics: `0.0.0.0:9090` (`/metrics`)
 
-**Naming Convention**: 
+**Naming Convention**:
 - ✅ Directories use **no hyphens** (Go convention for `package main`)
 - ✅ Binaries use **hyphens for readability** (via `-o` flag)
 

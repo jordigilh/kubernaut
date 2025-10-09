@@ -99,10 +99,10 @@ type KubernetesExecutor interface {
     CreateExecutionJob(ctx context.Context, execution *executionv1.KubernetesExecution) (*batchv1.Job, error)
     MonitorJobStatus(ctx context.Context, job *batchv1.Job) (*JobStatus, error)
     CollectJobResult(ctx context.Context, job *batchv1.Job) (*ExecutionResult, error)
-    
+
     // Reuses existing validation logic
     ValidateAction(ctx context.Context, actionType string, parameters json.RawMessage) error
-    
+
     // Reuses existing dry-run logic
     CreateDryRunJob(ctx context.Context, execution *executionv1.KubernetesExecution) (*batchv1.Job, error)
 }
@@ -157,10 +157,10 @@ func (e *KubernetesExecutor) scaleDeployment(ctx context.Context, target Target,
     if err != nil {
         return nil, err
     }
-    
+
     replicas := int32(params["replicas"].(float64))
     deployment.Spec.Replicas = &replicas
-    
+
     _, err = e.clientset.AppsV1().Deployments(target.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
     return &ActionResult{Success: true}, err
 }
@@ -180,7 +180,7 @@ type JobBasedExecutor struct {
 func (e *JobBasedExecutor) CreateExecutionJob(ctx context.Context, execution *executionv1.KubernetesExecution) (*batchv1.Job, error) {
     // Reuse existing command building logic
     command, args := e.buildActionCommand(execution.Spec.Action)
-    
+
     job := &batchv1.Job{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-job", execution.Name),
@@ -212,7 +212,7 @@ func (e *JobBasedExecutor) CreateExecutionJob(ctx context.Context, execution *ex
             BackoffLimit: ptr.To(int32(0)), // Controller handles retries
         },
     }
-    
+
     return job, e.client.Create(ctx, job)
 }
 
@@ -371,7 +371,7 @@ func (e *KubernetesExecutor) Validate(ctx context.Context, action Action) error 
     if action.Target.Namespace == "" {
         return fmt.Errorf("target namespace is required")
     }
-    
+
     // Type-specific validation (inconsistent)
     switch action.Type {
     case "scale-deployment":
@@ -383,7 +383,7 @@ func (e *KubernetesExecutor) Validate(ctx context.Context, action Action) error 
             return fmt.Errorf("replicas must be 0-100")
         }
     }
-    
+
     return nil
 }
 ```
@@ -404,7 +404,7 @@ func (v *ActionValidator) ValidateAction(actionType string, parameters json.RawM
     if !ok {
         return fmt.Errorf("unknown action type: %s", actionType)
     }
-    
+
     // Unmarshal into typed struct
     var params interface{}
     switch actionType {
@@ -414,16 +414,16 @@ func (v *ActionValidator) ValidateAction(actionType string, parameters json.RawM
         params = &RestartPodParams{}
     // ... more types
     }
-    
+
     if err := json.Unmarshal(parameters, params); err != nil {
         return fmt.Errorf("invalid parameters: %w", err)
     }
-    
+
     // Validate using struct tags
     if err := v.validate.Struct(params); err != nil {
         return fmt.Errorf("validation failed: %w", err)
     }
-    
+
     return nil
 }
 
@@ -434,16 +434,16 @@ func (v *ActionValidator) ValidateSafety(ctx context.Context, execution *executi
         "target_namespace": execution.Spec.Action.Target.Namespace,
         "parameters":      execution.Spec.Action.Parameters,
     }
-    
+
     allowed, err := v.regoEngine.Query(ctx, "data.actions.allow", input)
     if err != nil {
         return fmt.Errorf("safety validation failed: %w", err)
     }
-    
+
     if !allowed.(bool) {
         return fmt.Errorf("action blocked by safety policy")
     }
-    
+
     return nil
 }
 ```

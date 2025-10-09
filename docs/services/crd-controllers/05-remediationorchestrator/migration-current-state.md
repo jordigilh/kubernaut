@@ -367,17 +367,17 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // Add error tracking in status
 type RemediationRequestStatus struct {
     Phase string `json:"phase,omitempty"`
-    
+
     // Error tracking
     ErrorMessage string `json:"errorMessage,omitempty"`
     RetryCount   int    `json:"retryCount,omitempty"`
     MaxRetries   int    `json:"maxRetries,omitempty"`
-    
+
     // Phase tracking
     RemediationProcessingRef *CRDReference `json:"remediationProcessingRef,omitempty"`
     AIAnalysisRef            *CRDReference `json:"aiAnalysisRef,omitempty"`
     WorkflowExecutionRef     *CRDReference `json:"workflowExecutionRef,omitempty"`
-    
+
     // Timestamps
     StartedAt   *metav1.Time `json:"startedAt,omitempty"`
     CompletedAt *metav1.Time `json:"completedAt,omitempty"`
