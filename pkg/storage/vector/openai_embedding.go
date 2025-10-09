@@ -51,8 +51,8 @@ type OpenAIConfig struct {
 	BatchSize     int               `yaml:"batch_size" default:"100"`
 	RateLimit     int               `yaml:"rate_limit" default:"60"`
 	Dimensions    int               `yaml:"dimensions" default:"1536"`
-	ModelOptions  map[string]string `yaml:"model_options,omitempty"`  // Additional model-specific options
-	FallbackModel string            `yaml:"fallback_model,omitempty"` // Fallback model if primary fails
+	ModelOptions  map[string]string `yaml:"model_options,omitempty"`       // Additional model-specific options
+	FallbackModel string            `yaml:"fallback_model,omitempty"`      // Fallback model if primary fails
 	ValidateModel bool              `yaml:"validate_model" default:"true"` // Validate model availability on startup
 }
 
@@ -568,10 +568,10 @@ func (oes *OpenAIEmbeddingService) GetTokenUsage() map[string]interface{} {
 	// This would be populated during API calls in a real implementation
 	// For now, return basic usage information
 	return map[string]interface{}{
-		"model":       oes.config.Model,
-		"rate_limit":  oes.config.RateLimit,
-		"batch_size":  oes.config.BatchSize,
-		"dimensions":  oes.config.Dimensions,
-		"validated":   oes.IsModelValidated(),
+		"model":      oes.config.Model,
+		"rate_limit": oes.config.RateLimit,
+		"batch_size": oes.config.BatchSize,
+		"dimensions": oes.config.Dimensions,
+		"validated":  oes.IsModelValidated(),
 	}
 }

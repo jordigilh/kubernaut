@@ -17,8 +17,8 @@ limitations under the License.
 package workflowengine_test
 
 import (
-	"testing"
 	"context"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -57,7 +57,7 @@ var _ = Describe("Advanced Orchestration Integration - TDD Implementation", func
 			ExecutionRepo:   nil, // Execution repository - will be set to nil for now
 			Logger:          log,
 		}
-		
+
 		var err error
 		builder, err = engine.NewIntelligentWorkflowBuilder(config)
 		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")

@@ -17,11 +17,11 @@ limitations under the License.
 package workflowengine
 
 import (
-	"testing"
 	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/types"

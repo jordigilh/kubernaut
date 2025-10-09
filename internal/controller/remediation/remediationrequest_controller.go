@@ -512,7 +512,7 @@ func (r *RemediationRequestReconciler) handleProcessingPhase(
 			Name:      fmt.Sprintf("%s-aianalysis", remediation.Name),
 			Namespace: remediation.Namespace,
 		}
-		
+
 		log.Info("Phase transition: processing → analyzing", "remediation", remediation.Name)
 		return ctrl.Result{}, r.Status().Update(ctx, remediation)
 	}
@@ -552,7 +552,7 @@ func (r *RemediationRequestReconciler) handleAnalyzingPhase(
 			Name:      fmt.Sprintf("%s-workflow", remediation.Name),
 			Namespace: remediation.Namespace,
 		}
-		
+
 		log.Info("Phase transition: analyzing → executing", "remediation", remediation.Name)
 		return ctrl.Result{}, r.Status().Update(ctx, remediation)
 	}
@@ -584,7 +584,7 @@ func (r *RemediationRequestReconciler) handleExecutingPhase(
 		// Update to completed
 		remediation.Status.OverallPhase = "completed"
 		remediation.Status.CompletedAt = &metav1.Time{Time: time.Now()}
-		
+
 		log.Info("Phase transition: executing → completed", "remediation", remediation.Name)
 		return ctrl.Result{}, r.Status().Update(ctx, remediation)
 	}

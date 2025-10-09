@@ -17,9 +17,9 @@ limitations under the License.
 package workflowengine_test
 
 import (
-	"testing"
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,10 +45,10 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 		log = logrus.New()
 		log.SetLevel(logrus.DebugLevel)
 		ctx = context.Background()
-		
+
 		// Create mock vector database
 		mockVectorDB = mocks.NewMockVectorDatabase()
-		
+
 		// Create builder with mock dependencies
 		// RULE 12 COMPLIANCE: Updated constructor to use config pattern
 		config := &engine.IntelligentWorkflowBuilderConfig{
@@ -58,7 +58,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 		var err error
 		builder, err = engine.NewIntelligentWorkflowBuilder(config)
 		Expect(err).ToNot(HaveOccurred())
-		
+
 		// Create test template for AI enhancement
 		template = &engine.ExecutableTemplate{
 			BaseVersionedEntity: types.BaseVersionedEntity{
@@ -66,9 +66,9 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 					ID:   "template-001",
 					Name: "AI Enhancement Template",
 					Metadata: map[string]interface{}{
-						"ai_enhancement":      true,
-						"ai_optimization":     true,
-						"machine_learning":    true,
+						"ai_enhancement":     true,
+						"ai_optimization":    true,
+						"machine_learning":   true,
 						"ai_recommendations": true,
 					},
 				},
@@ -128,7 +128,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 			},
 			Variables: make(map[string]interface{}),
 		}
-		
+
 		// Create workflow from template
 		workflow = &engine.Workflow{
 			BaseVersionedEntity: types.BaseVersionedEntity{
@@ -146,7 +146,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 			It("should generate AI recommendations using previously unused functions", func() {
 				// Test that AI recommendations generation integrates AI functions
 				// BR-AI-001: AI recommendations generation
-				
+
 				// Create execution history for AI recommendations
 				executions := []*engine.WorkflowExecution{
 					{
@@ -170,10 +170,10 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 						},
 					},
 				}
-				
+
 				// Generate AI recommendations (this will be implemented)
 				aiRecommendations := builder.GenerateAIRecommendations(ctx, workflow, executions)
-				
+
 				Expect(aiRecommendations).NotTo(BeNil())
 				Expect(aiRecommendations.WorkflowID).To(Equal(workflow.ID))
 				Expect(aiRecommendations.RecommendationType).NotTo(BeEmpty())
@@ -182,11 +182,11 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 				Expect(len(aiRecommendations.Recommendations)).To(BeNumerically(">=", 0))
 				Expect(aiRecommendations.GeneratedAt).NotTo(BeZero())
 			})
-			
+
 			It("should apply AI optimizations", func() {
 				// Test AI optimization application
 				// BR-AI-002: AI optimization application
-				
+
 				// Create AI optimization parameters
 				optimizationParams := &engine.AIOptimizationParams{
 					OptimizationType: "performance",
@@ -199,14 +199,14 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 						"failure_patterns":    30,
 					},
 				}
-				
+
 				// Apply AI optimizations (this will be implemented)
 				optimizedTemplate := builder.ApplyAIOptimizations(ctx, template, optimizationParams)
-				
+
 				Expect(optimizedTemplate).NotTo(BeNil())
 				Expect(optimizedTemplate.ID).To(Equal(template.ID))
 				Expect(len(optimizedTemplate.Steps)).To(BeNumerically(">=", len(template.Steps)))
-				
+
 				// Verify AI optimizations were applied
 				for _, step := range optimizedTemplate.Steps {
 					if step.Variables != nil {
@@ -217,29 +217,29 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 					}
 				}
 			})
-			
+
 			It("should enhance with machine learning", func() {
 				// Test machine learning enhancement
 				// BR-AI-003: Machine learning enhancement
-				
+
 				// Create machine learning context
 				mlContext := &engine.MachineLearningContext{
-					ModelType:        "neural_network",
-					TrainingData:     []string{"pattern_1", "pattern_2", "pattern_3"},
-					FeatureSet:       []string{"execution_time", "success_rate", "complexity"},
-					LearningRate:     0.01,
-					Epochs:           100,
-					ValidationSplit:  0.2,
-					ModelAccuracy:    0.92,
+					ModelType:       "neural_network",
+					TrainingData:    []string{"pattern_1", "pattern_2", "pattern_3"},
+					FeatureSet:      []string{"execution_time", "success_rate", "complexity"},
+					LearningRate:    0.01,
+					Epochs:          100,
+					ValidationSplit: 0.2,
+					ModelAccuracy:   0.92,
 				}
-				
+
 				// Enhance with machine learning (this will be implemented)
 				mlEnhancedTemplate := builder.EnhanceWithMachineLearning(ctx, template, mlContext)
-				
+
 				Expect(mlEnhancedTemplate).NotTo(BeNil())
 				Expect(mlEnhancedTemplate.ID).To(Equal(template.ID))
 				Expect(len(mlEnhancedTemplate.Steps)).To(BeNumerically(">=", len(template.Steps)))
-				
+
 				// Verify machine learning enhancements were applied
 				for _, step := range mlEnhancedTemplate.Steps {
 					if step.Variables != nil {
@@ -251,32 +251,32 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 				}
 			})
 		})
-		
+
 		Context("when integrating with existing AI functions", func() {
 			It("should leverage existing AI optimization functions", func() {
 				// Test integration with existing GenerateAIOptimizations function
 				// This function is already implemented in the codebase
-				
+
 				executions := []*engine.WorkflowExecution{
 					{
 						WorkflowID: "exec-001",
 						Status:     engine.ExecutionStatusCompleted,
 					},
 				}
-				
+
 				// Generate AI optimizations (existing function)
 				aiOptimizations := builder.GenerateAIOptimizations(executions, "pattern-001")
-				
+
 				Expect(aiOptimizations).NotTo(BeNil())
 				Expect(aiOptimizations.OptimizationScore).To(BeNumerically(">=", 0))
 				Expect(aiOptimizations.OptimizationScore).To(BeNumerically("<=", 1))
 				Expect(len(aiOptimizations.Recommendations)).To(BeNumerically(">=", 0))
 				Expect(aiOptimizations.EstimatedImprovement).NotTo(BeNil())
 			})
-			
+
 			It("should integrate with existing learning functions", func() {
 				// Test integration with existing LearnFromExecutionPattern function
-				
+
 				executionPattern := &engine.ExecutionPattern{
 					PatternID:       "pattern-001",
 					SuccessRate:     0.9,
@@ -286,10 +286,10 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 						"complexity":   "medium",
 					},
 				}
-				
+
 				// Learn from execution pattern (existing function)
 				learningResult := builder.LearnFromExecutionPattern(executionPattern)
-				
+
 				Expect(learningResult).NotTo(BeNil())
 				Expect(learningResult.PatternConfidence).To(BeNumerically(">=", 0))
 				Expect(learningResult.PatternConfidence).To(BeNumerically("<=", 1))
@@ -303,45 +303,45 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 			It("should enhance workflow generation with AI optimization", func() {
 				// Test that AI enhancement is integrated into workflow generation
 				// BR-AI-004: AI integration in workflow generation
-				
+
 				objective := &engine.WorkflowObjective{
 					ID:          "ai-obj-001",
 					Type:        "ai_enhancement",
 					Description: "AI enhancement workflow optimization",
 					Priority:    9,
 					Constraints: map[string]interface{}{
-						"ai_enhancement":      true,
-						"ai_optimization":     true,
-						"machine_learning":    true,
+						"ai_enhancement":     true,
+						"ai_optimization":    true,
+						"machine_learning":   true,
 						"ai_recommendations": true,
 					},
 				}
-				
+
 				template, err := builder.GenerateWorkflow(ctx, objective)
-				
+
 				Expect(err).NotTo(HaveOccurred())
 				Expect(template).NotTo(BeNil())
 				Expect(template.ID).NotTo(BeEmpty())
 				Expect(len(template.Steps)).To(BeNumerically(">", 0))
-				
+
 				// Verify that AI enhancement metadata is present
 				if template.Metadata != nil {
 					// AI enhancement should contribute to workflow metadata
 					Expect(len(template.Metadata)).To(BeNumerically(">=", 0))
 				}
 			})
-			
+
 			It("should apply AI enhancement during workflow structure optimization", func() {
 				// Test that AI enhancement is applied during OptimizeWorkflowStructure
 				// BR-AI-005: AI enhancement in workflow structure optimization
-				
+
 				optimizedTemplate, err := builder.OptimizeWorkflowStructure(ctx, template)
-				
+
 				Expect(err).NotTo(HaveOccurred())
 				Expect(optimizedTemplate).NotTo(BeNil())
 				Expect(optimizedTemplate.ID).NotTo(BeEmpty())
 				Expect(len(optimizedTemplate.Steps)).To(BeNumerically(">", 0))
-				
+
 				// Verify the optimization process includes AI enhancement considerations
 				Expect(optimizedTemplate.Metadata).NotTo(BeNil())
 			})
@@ -353,7 +353,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 			It("should provide comprehensive AI enhancement capabilities", func() {
 				// Test that AI enhancement methods are accessible
 				// BR-AI-006: Public AI enhancement method accessibility
-				
+
 				// Test GenerateAIRecommendations (will be implemented)
 				executions := []*engine.WorkflowExecution{
 					{
@@ -363,7 +363,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 				}
 				aiRecommendations := builder.GenerateAIRecommendations(ctx, workflow, executions)
 				Expect(aiRecommendations).NotTo(BeNil())
-				
+
 				// Test ApplyAIOptimizations (will be implemented)
 				optimizationParams := &engine.AIOptimizationParams{
 					OptimizationType: "performance",
@@ -372,7 +372,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 				}
 				optimizedTemplate := builder.ApplyAIOptimizations(ctx, template, optimizationParams)
 				Expect(optimizedTemplate).NotTo(BeNil())
-				
+
 				// Test EnhanceWithMachineLearning (will be implemented)
 				mlContext := &engine.MachineLearningContext{
 					ModelType:     "neural_network",
@@ -381,7 +381,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 				}
 				mlEnhancedTemplate := builder.EnhanceWithMachineLearning(ctx, template, mlContext)
 				Expect(mlEnhancedTemplate).NotTo(BeNil())
-				
+
 				// Test GenerateAIOptimizations (existing function)
 				aiOptimizations := builder.GenerateAIOptimizations(executions, "pattern-001")
 				Expect(aiOptimizations).NotTo(BeNil())
@@ -414,7 +414,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 						},
 					},
 				}
-				
+
 				minimalWorkflow := &engine.Workflow{
 					BaseVersionedEntity: types.BaseVersionedEntity{
 						BaseEntity: types.BaseEntity{
@@ -423,13 +423,13 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 					},
 					Template: minimalTemplate,
 				}
-				
+
 				aiRecommendations := builder.GenerateAIRecommendations(ctx, minimalWorkflow, []*engine.WorkflowExecution{})
 				Expect(aiRecommendations).NotTo(BeNil())
 				// Should provide minimal AI recommendations
 				Expect(aiRecommendations.WorkflowID).To(Equal(minimalWorkflow.ID))
 			})
-			
+
 			It("should handle workflows with complex AI requirements", func() {
 				// Test AI enhancement with complex AI requirements
 				complexTemplate := &engine.ExecutableTemplate{
@@ -438,12 +438,12 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 							ID:   "complex-template",
 							Name: "Complex AI Template",
 							Metadata: map[string]interface{}{
-								"ai_enhancement":      true,
-								"ai_optimization":     true,
-								"machine_learning":    true,
+								"ai_enhancement":     true,
+								"ai_optimization":    true,
+								"machine_learning":   true,
 								"ai_recommendations": true,
-								"complexity_level":    "high",
-								"ai_models":           []string{"gpt-4", "claude-3", "llama-2"},
+								"complexity_level":   "high",
+								"ai_models":          []string{"gpt-4", "claude-3", "llama-2"},
 							},
 						},
 					},
@@ -481,7 +481,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 						},
 					},
 				}
-				
+
 				complexWorkflow := &engine.Workflow{
 					BaseVersionedEntity: types.BaseVersionedEntity{
 						BaseEntity: types.BaseEntity{
@@ -490,13 +490,13 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 					},
 					Template: complexTemplate,
 				}
-				
+
 				aiRecommendations := builder.GenerateAIRecommendations(ctx, complexWorkflow, []*engine.WorkflowExecution{})
 				Expect(aiRecommendations).NotTo(BeNil())
 				// Should provide comprehensive AI recommendations for complex workflows
 				Expect(aiRecommendations.WorkflowID).To(Equal(complexWorkflow.ID))
 			})
-			
+
 			It("should handle empty workflows gracefully", func() {
 				// Test AI enhancement with empty workflow
 				emptyTemplate := &engine.ExecutableTemplate{
@@ -508,7 +508,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 					},
 					Steps: []*engine.ExecutableWorkflowStep{}, // No steps
 				}
-				
+
 				emptyWorkflow := &engine.Workflow{
 					BaseVersionedEntity: types.BaseVersionedEntity{
 						BaseEntity: types.BaseEntity{
@@ -517,7 +517,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 					},
 					Template: emptyTemplate,
 				}
-				
+
 				aiRecommendations := builder.GenerateAIRecommendations(ctx, emptyWorkflow, []*engine.WorkflowExecution{})
 				Expect(aiRecommendations).NotTo(BeNil())
 				// Should handle empty workflow gracefully
@@ -530,7 +530,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 		Context("BR-AI-001 through BR-AI-006", func() {
 			It("should demonstrate complete AI enhancement integration compliance", func() {
 				// Comprehensive test for all AI enhancement business requirements
-				
+
 				// BR-AI-001: AI recommendations generation
 				executions := []*engine.WorkflowExecution{
 					{
@@ -540,7 +540,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 				}
 				aiRecommendations := builder.GenerateAIRecommendations(ctx, workflow, executions)
 				Expect(aiRecommendations).NotTo(BeNil())
-				
+
 				// BR-AI-002: AI optimization application
 				optimizationParams := &engine.AIOptimizationParams{
 					OptimizationType: "performance",
@@ -549,7 +549,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 				}
 				optimizedTemplate := builder.ApplyAIOptimizations(ctx, template, optimizationParams)
 				Expect(optimizedTemplate).NotTo(BeNil())
-				
+
 				// BR-AI-003: Machine learning enhancement
 				mlContext := &engine.MachineLearningContext{
 					ModelType:     "neural_network",
@@ -558,7 +558,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 				}
 				mlEnhancedTemplate := builder.EnhanceWithMachineLearning(ctx, template, mlContext)
 				Expect(mlEnhancedTemplate).NotTo(BeNil())
-				
+
 				// Verify all AI enhancement capabilities are working
 				Expect(aiRecommendations.WorkflowID).To(Equal(workflow.ID))
 				Expect(optimizedTemplate.ID).To(Equal(template.ID))
@@ -572,27 +572,27 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 			It("should leverage existing AI optimization functions", func() {
 				// Test integration with existing GenerateAIOptimizations function
 				// This function is already implemented in the codebase
-				
+
 				executions := []*engine.WorkflowExecution{
 					{
 						WorkflowID: "exec-001",
 						Status:     engine.ExecutionStatusCompleted,
 					},
 				}
-				
+
 				// The existing function should be accessible and working
 				aiOptimizations := builder.GenerateAIOptimizations(executions, "pattern-001")
 				Expect(aiOptimizations).NotTo(BeNil())
-				
+
 				// Verify that existing AI optimization logic is being used
 				Expect(aiOptimizations.OptimizationScore).To(BeNumerically(">=", 0))
 				Expect(aiOptimizations.OptimizationScore).To(BeNumerically("<=", 1))
 				Expect(len(aiOptimizations.Recommendations)).To(BeNumerically(">=", 0))
 			})
-			
+
 			It("should integrate with existing learning functions", func() {
 				// Test integration with existing learning functions
-				
+
 				objective := &engine.WorkflowObjective{
 					ID:          "ai-learning-obj-001",
 					Type:        "ai_learning_integration",
@@ -603,17 +603,17 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 						"learning_rate":      0.01,
 					},
 				}
-				
+
 				// The existing AI learning integration should be enhanced
 				// with new AI enhancement capabilities
 				template, err := builder.GenerateWorkflow(ctx, objective)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(template).NotTo(BeNil())
-				
+
 				// Verify AI learning integration was applied
 				Expect(template.ID).NotTo(BeEmpty())
 				Expect(len(template.Steps)).To(BeNumerically(">", 0))
-				
+
 				// Check for AI learning metadata
 				if template.Metadata != nil {
 					// AI learning should contribute to workflow metadata
@@ -627,7 +627,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 		Context("when analyzing AI performance characteristics", func() {
 			It("should provide efficient AI processing", func() {
 				// Test that AI enhancement processing is efficient
-				
+
 				// Create large execution history for performance testing
 				largeExecutions := make([]*engine.WorkflowExecution, 50)
 				for i := 0; i < 50; i++ {
@@ -636,21 +636,21 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 						Status:     engine.ExecutionStatusCompleted,
 					}
 				}
-				
+
 				// Measure AI processing time
 				startTime := time.Now()
 				aiRecommendations := builder.GenerateAIRecommendations(ctx, workflow, largeExecutions)
 				processingTime := time.Since(startTime)
-				
+
 				Expect(aiRecommendations).NotTo(BeNil())
 				Expect(processingTime).To(BeNumerically("<", 5*time.Second)) // Should complete within 5 seconds
 			})
-			
+
 			It("should handle concurrent AI requests", func() {
 				// Test concurrent AI processing
-				
+
 				done := make(chan bool, 3)
-				
+
 				// Start multiple concurrent AI requests
 				for i := 0; i < 3; i++ {
 					go func() {
@@ -660,7 +660,7 @@ var _ = Describe("AI Enhancement Integration - TDD Implementation", func() {
 						done <- true
 					}()
 				}
-				
+
 				// Wait for all requests to complete
 				for i := 0; i < 3; i++ {
 					Eventually(done).Should(Receive())

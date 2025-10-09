@@ -17,11 +17,11 @@ limitations under the License.
 package k8s_test
 
 import (
-	"testing"
 	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

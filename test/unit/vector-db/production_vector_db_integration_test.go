@@ -17,9 +17,9 @@ limitations under the License.
 package vectordb
 
 import (
-	"testing"
 	"context"
 	"os"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

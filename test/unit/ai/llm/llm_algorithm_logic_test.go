@@ -17,11 +17,11 @@ limitations under the License.
 package llm_test
 
 import (
-	"testing"
 	"context"
 	"fmt"
 	"math"
 	"strings"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

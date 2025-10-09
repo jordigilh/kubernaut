@@ -17,10 +17,10 @@ limitations under the License.
 package workflowengine
 
 import (
-	"testing"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
+	"testing"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/testutil/mocks"

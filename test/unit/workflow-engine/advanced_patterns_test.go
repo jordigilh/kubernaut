@@ -17,8 +17,8 @@ limitations under the License.
 package workflowengine
 
 import (
-	"testing"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -60,7 +60,7 @@ var _ = Describe("BR-WF-ADV-001-020: Workflow Advanced Patterns Tests", func() {
 			ExecutionRepo:   nil, // Execution repository - will be set to nil for now
 			Logger:          logger,
 		}
-		
+
 		var err error
 		workflowBuilder, err = engine.NewIntelligentWorkflowBuilder(config)
 		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")

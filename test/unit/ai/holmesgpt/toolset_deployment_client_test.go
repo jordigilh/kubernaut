@@ -17,11 +17,11 @@ limitations under the License.
 package holmesgpt
 
 import (
-	"testing"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

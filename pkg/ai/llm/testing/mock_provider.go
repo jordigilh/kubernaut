@@ -89,4 +89,3 @@ func (p *MockProvider) CreateHTTPClient() *http.Client {
 		Timeout: 60 * time.Second,
 	}
 }
-

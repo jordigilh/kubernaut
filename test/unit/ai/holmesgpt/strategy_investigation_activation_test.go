@@ -17,8 +17,8 @@ limitations under the License.
 package holmesgpt
 
 import (
-	"testing"
 	"context"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
