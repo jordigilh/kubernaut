@@ -69,11 +69,11 @@ type AIAnalysisStatus struct {
 
 	// Investigation details
 	// +kubebuilder:validation:MaxLength=253
-	InvestigationID   string `json:"investigationId,omitempty"`   // HolmesGPT investigation ID
+	InvestigationID string `json:"investigationId,omitempty"` // HolmesGPT investigation ID
 	// +kubebuilder:validation:Minimum=0
-	TokensUsed        int    `json:"tokensUsed,omitempty"`        // LLM tokens consumed
+	TokensUsed int `json:"tokensUsed,omitempty"` // LLM tokens consumed
 	// +kubebuilder:validation:Minimum=0
-	InvestigationTime int64  `json:"investigationTime,omitempty"` // Duration in seconds
+	InvestigationTime int64 `json:"investigationTime,omitempty"` // Duration in seconds
 
 	// Conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

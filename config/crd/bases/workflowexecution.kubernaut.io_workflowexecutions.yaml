@@ -142,6 +142,8 @@ spec:
                         type: string
                       overallConfidence:
                         description: Confidence and metadata
+                        maximum: 1
+                        minimum: 0
                         type: number
                       parallelExecutionSuggestions:
                         description: Workflow-level recommendations
@@ -604,6 +606,7 @@ spec:
                 type: array
               currentStep:
                 description: CurrentStep tracks progress
+                minimum: 0
                 type: integer
               errorType:
                 type: string
@@ -615,6 +618,8 @@ spec:
                   rollbacksPerformed:
                     type: integer
                   stepSuccessRate:
+                    maximum: 1
+                    minimum: 0
                     type: number
                   totalDuration:
                     type: string
@@ -648,6 +653,10 @@ spec:
                       type: object
                     type: array
                   strategy:
+                    enum:
+                    - sequential
+                    - parallel
+                    - sequential-with-parallel
                     type: string
                 required:
                 - estimatedDuration
@@ -695,6 +704,14 @@ spec:
                 type: string
               phase:
                 description: Phase tracks current execution stage
+                enum:
+                - planning
+                - validating
+                - executing
+                - monitoring
+                - completed
+                - failed
+                - paused
                 type: string
               planningStartTime:
                 description: Phase timestamps
@@ -861,11 +878,19 @@ spec:
                       - success
                       type: object
                     retriesAttempted:
+                      minimum: 0
                       type: integer
                     startTime:
                       format: date-time
                       type: string
                     status:
+                      enum:
+                      - pending
+                      - executing
+                      - completed
+                      - failed
+                      - rolled_back
+                      - skipped
                       type: string
                     stepNumber:
                       type: integer
@@ -876,6 +901,7 @@ spec:
                   type: object
                 type: array
               totalSteps:
+                minimum: 0
                 type: integer
               validationResults:
                 description: ValidationResults from validation phase

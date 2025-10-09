@@ -95,6 +95,10 @@ spec:
                   SIGNAL CLASSIFICATION (From RemediationRequest)
                   ========================================
                   Environment: "prod", "staging", "dev"
+                enum:
+                - prod
+                - staging
+                - dev
                 type: string
               firingTime:
                 description: |-
@@ -117,6 +121,11 @@ spec:
                 type: string
               priority:
                 description: Priority assigned by Gateway (P0=critical, P1=high, P2=normal)
+                enum:
+                - P0
+                - P1
+                - P2
+                pattern: ^P[0-2]$
                 type: string
               providerData:
                 description: |-
@@ -181,6 +190,10 @@ spec:
                 x-kubernetes-map-type: atomic
               severity:
                 description: 'Severity level: "critical", "warning", "info"'
+                enum:
+                - critical
+                - warning
+                - info
                 type: string
               signalAnnotations:
                 additionalProperties:
@@ -196,6 +209,8 @@ spec:
                   ========================================
                   Core signal identity copied from RemediationRequest
                   Unique fingerprint for deduplication (SHA256 of signal key fields)
+                maxLength: 64
+                pattern: ^[a-f0-9]{64}$
                 type: string
               signalLabels:
                 additionalProperties:
@@ -210,10 +225,12 @@ spec:
               signalName:
                 description: Human-readable signal name (e.g., "HighMemoryUsage",
                   "CrashLoopBackOff")
+                maxLength: 253
                 type: string
               signalSource:
                 description: Adapter that ingested the signal (e.g., "prometheus-adapter",
                   "k8s-event-adapter")
+                maxLength: 63
                 type: string
               signalType:
                 description: 'Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch",
@@ -246,6 +263,12 @@ spec:
               targetType:
                 description: 'Target system type: "kubernetes", "aws", "azure", "gcp",
                   "datadog"'
+                enum:
+                - kubernetes
+                - aws
+                - azure
+                - gcp
+                - datadog
                 type: string
             required:
             - deduplication

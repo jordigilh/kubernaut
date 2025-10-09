@@ -42,12 +42,25 @@ spec:
             properties:
               action:
                 description: Action type (e.g., "scale_deployment", "restart_pod")
+                enum:
+                - scale_deployment
+                - rollout_restart
+                - delete_pod
+                - patch_deployment
+                - cordon_node
+                - drain_node
+                - uncordon_node
+                - update_configmap
+                - update_secret
+                - apply_manifest
                 type: string
               approvalReceived:
                 description: ApprovalReceived flag (set by approval process)
                 type: boolean
               maxRetries:
                 description: MaxRetries for failed executions
+                maximum: 5
+                minimum: 0
                 type: integer
               parameters:
                 description: Parameters for the action (discriminated union based
@@ -71,10 +84,14 @@ spec:
                     properties:
                       gracePeriodSeconds:
                         format: int64
+                        maximum: 3600
+                        minimum: 0
                         type: integer
                       namespace:
+                        maxLength: 63
                         type: string
                       pod:
+                        maxLength: 253
                         type: string
                     required:
                     - namespace
@@ -88,10 +105,13 @@ spec:
                         type: boolean
                       gracePeriodSeconds:
                         format: int64
+                        maximum: 3600
+                        minimum: 0
                         type: integer
                       ignoreDaemonSets:
                         type: boolean
                       node:
+                        maxLength: 253
                         type: string
                     required:
                     - node
@@ -99,12 +119,18 @@ spec:
                   patchDeployment:
                     properties:
                       deployment:
+                        maxLength: 253
                         type: string
                       namespace:
+                        maxLength: 63
                         type: string
                       patch:
                         type: string
                       patchType:
+                        enum:
+                        - strategic
+                        - merge
+                        - json
                         type: string
                     required:
                     - deployment
@@ -126,11 +152,15 @@ spec:
                     description: Action-specific parameter types
                     properties:
                       deployment:
+                        maxLength: 253
                         type: string
                       namespace:
+                        maxLength: 63
                         type: string
                       replicas:
                         format: int32
+                        maximum: 1000
+                        minimum: 0
                         type: integer
                     required:
                     - deployment
@@ -178,6 +208,7 @@ spec:
                 type: object
               stepNumber:
                 description: StepNumber identifies the step within the workflow
+                minimum: 1
                 type: integer
               targetCluster:
                 description: |-
@@ -334,6 +365,7 @@ spec:
                       type: object
                     type: array
                   retriesAttempted:
+                    minimum: 0
                     type: integer
                   startTime:
                     format: date-time
@@ -350,6 +382,14 @@ spec:
                 type: string
               phase:
                 description: Phase tracks current execution stage
+                enum:
+                - validating
+                - validated
+                - waiting_approval
+                - executing
+                - rollback_ready
+                - completed
+                - failed
                 type: string
               rollbackInformation:
                 description: RollbackInformation for potential rollback
