@@ -25,7 +25,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -79,7 +78,7 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 
 		// WHEN: RemediationProcessing CRD exists and is marked as 'completed'
 		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{
-					ObjectMeta: metav1.ObjectMeta{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:      remediationRequest.Name + "-processing",
 				Namespace: namespace,
 				OwnerReferences: []metav1.OwnerReference{
@@ -124,8 +123,7 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		}, timeout, interval).Should(Succeed())
 
 		// AND: AIAnalysis should have correct parent reference
-		Expect(aiAnalysis.Spec.RemediationRequestRef.Name).To(Equal(remediationRequest.Name))
-		Expect(aiAnalysis.Spec.RemediationRequestRef.UID).To(Equal(remediationRequest.UID))
+		Expect(aiAnalysis.Spec.RemediationRequestRef).To(Equal(remediationRequest.Name))
 
 		// AND: AIAnalysis should have self-contained signal context
 		Expect(aiAnalysis.Spec.SignalType).To(Equal("prometheus-alert"))
@@ -317,12 +315,8 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 				Namespace: namespace,
 			},
 			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      remediationRequest.Name,
-					Namespace: remediationRequest.Namespace,
-					UID:       remediationRequest.UID,
-				},
-				SignalType: remediationRequest.Spec.SignalType,
+				RemediationRequestRef: remediationRequest.Name,
+				SignalType:            remediationRequest.Spec.SignalType,
 			},
 			Status: aianalysisv1alpha1.AIAnalysisStatus{
 				Phase:             "Completed",
@@ -391,11 +385,7 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 				Namespace: namespace,
 			},
 			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      remediationRequest.Name,
-					Namespace: remediationRequest.Namespace,
-					UID:       remediationRequest.UID,
-				},
+				RemediationRequestRef: remediationRequest.Name,
 			},
 			Status: aianalysisv1alpha1.AIAnalysisStatus{
 				Phase: "Analyzing", // NOT completed

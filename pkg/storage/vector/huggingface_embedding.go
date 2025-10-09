@@ -52,8 +52,8 @@ type HuggingFaceConfig struct {
 	BatchSize     int               `yaml:"batch_size" default:"50"`
 	RateLimit     int               `yaml:"rate_limit" default:"100"`
 	Dimensions    int               `yaml:"dimensions" default:"384"`
-	ModelOptions  map[string]string `yaml:"model_options,omitempty"`  // Additional model-specific options
-	FallbackModel string            `yaml:"fallback_model,omitempty"` // Fallback model if primary fails
+	ModelOptions  map[string]string `yaml:"model_options,omitempty"`       // Additional model-specific options
+	FallbackModel string            `yaml:"fallback_model,omitempty"`      // Fallback model if primary fails
 	ValidateModel bool              `yaml:"validate_model" default:"true"` // Validate model availability on startup
 }
 

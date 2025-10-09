@@ -199,7 +199,7 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
 }
 
 // ensureOwnerReference sets RemediationRequest as owner for cascade deletion
-func (r *RemediationProcessingReconciler) ensureOwnerReference(ctx context.Context, ap *alertprocessorv1.RemediationProcessing) error {
+func (r *RemediationProcessingReconciler) ensureOwnerReference(ctx context.Context, ap *processingv1.RemediationProcessing) error {
     // Skip if owner reference already set
     if len(ap.OwnerReferences) > 0 {
         return nil
@@ -301,7 +301,7 @@ func (r *RemediationProcessingReconciler) handlePhaseTimeout(ctx context.Context
 }
 
 // determineRequeueStrategy provides optimized requeue based on phase
-func (r *RemediationProcessingReconciler) determineRequeueStrategy(ap *alertprocessorv1.RemediationProcessing) ctrl.Result {
+func (r *RemediationProcessingReconciler) determineRequeueStrategy(ap *processingv1.RemediationProcessing) ctrl.Result {
     switch ap.Status.Phase {
     case "completed":
         // Terminal state - no requeue needed (watch handles updates)
@@ -316,7 +316,7 @@ func (r *RemediationProcessingReconciler) determineRequeueStrategy(ap *alertproc
 }
 
 // reconcileDelete handles cleanup before deletion
-func (r *RemediationProcessingReconciler) reconcileDelete(ctx context.Context, ap *alertprocessorv1.RemediationProcessing) (ctrl.Result, error) {
+func (r *RemediationProcessingReconciler) reconcileDelete(ctx context.Context, ap *processingv1.RemediationProcessing) (ctrl.Result, error) {
     log := log.FromContext(ctx)
 
     if !controllerutil.ContainsFinalizer(ap, alertProcessingFinalizer) {

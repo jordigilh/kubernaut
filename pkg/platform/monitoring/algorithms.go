@@ -24,25 +24,25 @@ import (
 
 // MetricAggregationResult represents the result of metric aggregation calculations
 type MetricAggregationResult struct {
-	Mean     float64 `json:"mean"`
-	Median   float64 `json:"median"`
-	StdDev   float64 `json:"std_dev"`
-	Min      float64 `json:"min"`
-	Max      float64 `json:"max"`
-	Count    int     `json:"count"`
-	Sum      float64 `json:"sum"`
-	P95      float64 `json:"p95"`
-	P99      float64 `json:"p99"`
+	Mean   float64 `json:"mean"`
+	Median float64 `json:"median"`
+	StdDev float64 `json:"std_dev"`
+	Min    float64 `json:"min"`
+	Max    float64 `json:"max"`
+	Count  int     `json:"count"`
+	Sum    float64 `json:"sum"`
+	P95    float64 `json:"p95"`
+	P99    float64 `json:"p99"`
 }
 
 // ThresholdAnalysisResult represents threshold evaluation results
 type ThresholdAnalysisResult struct {
-	IsViolated         bool    `json:"is_violated"`
-	ViolationSeverity  string  `json:"violation_severity"`
-	ViolationLevel     float64 `json:"violation_level"`
-	ThresholdType      string  `json:"threshold_type"`
-	RecommendedAction  string  `json:"recommended_action"`
-	ConfidenceScore    float64 `json:"confidence_score"`
+	IsViolated        bool    `json:"is_violated"`
+	ViolationSeverity string  `json:"violation_severity"`
+	ViolationLevel    float64 `json:"violation_level"`
+	ThresholdType     string  `json:"threshold_type"`
+	RecommendedAction string  `json:"recommended_action"`
+	ConfidenceScore   float64 `json:"confidence_score"`
 }
 
 // PerformanceScoreResult represents performance calculation results
@@ -351,7 +351,7 @@ func DetectAnomalies(values []float64, sensitivityThreshold float64) *AnomalyDet
 	if len(values) < 3 {
 		return &AnomalyDetectionResult{
 			AnomalousIndices: []int{},
-			AnomalyScores:   []float64{},
+			AnomalyScores:    []float64{},
 		}
 	}
 

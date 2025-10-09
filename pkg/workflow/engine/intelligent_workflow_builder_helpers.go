@@ -2446,7 +2446,6 @@ func (iwb *DefaultIntelligentWorkflowBuilder) getParametersFromPattern(pattern *
 	return params
 }
 
-
 func (iwb *DefaultIntelligentWorkflowBuilder) getPreConditionsFromPattern(pattern *WorkflowPattern) map[string]interface{} {
 	preConditions := make(map[string]interface{})
 

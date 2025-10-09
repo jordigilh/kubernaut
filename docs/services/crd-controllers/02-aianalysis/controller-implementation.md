@@ -100,13 +100,18 @@ import (
     "fmt"
     "time"
 
+    corev1 "k8s.io/api/core/v1"
+    apimeta "k8s.io/apimachinery/pkg/api/meta"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/client-go/tools/record"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
     aianalysisv1 "github.com/jordigilh/kubernaut/api/ai/v1"
     processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
 )
 
 const aiAnalysisFinalizer = "aianalysis.kubernaut.io/aianalysis-cleanup"
@@ -210,7 +215,7 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
         For(&aianalysisv1.AIAnalysis{}).                    // Watch own CRD
-        Owns(&workflowv1.WorkflowExecution{}).      // Watch owned WorkflowExecution
+        Owns(&workflowexecutionv1.WorkflowExecution{}).      // Watch owned WorkflowExecution
         // NO Watch on RemediationProcessing - data is self-contained in spec
         Complete(r)
 }
@@ -244,6 +249,8 @@ import (
     "fmt"
     "time"
 
+    apimeta "k8s.io/apimachinery/pkg/api/meta"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -309,7 +316,7 @@ func (p *InvestigatingPhase) Handle(ctx context.Context, aiAnalysis *aianalysisv
     aiAnalysis.Status.PhaseTransitions["analyzing"] = metav1.Now()
 
     // Set condition
-    meta.SetStatusCondition(&aiAnalysis.Status.Conditions, metav1.Condition{
+    apimeta.SetStatusCondition(&aiAnalysis.Status.Conditions, metav1.Condition{
         Type:    "InvestigationComplete",
         Status:  metav1.ConditionTrue,
         Reason:  "RootCauseIdentified",

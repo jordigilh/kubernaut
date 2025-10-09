@@ -32,8 +32,8 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/pbkdf2"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/pbkdf2"
 )
 
 // SecretManager handles encrypted storage and retrieval of sensitive configuration

@@ -17,6 +17,7 @@ import (
     apierrors "k8s.io/apimachinery/pkg/api/errors"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/client-go/tools/record"
     "k8s.io/utils/ptr"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,8 +25,9 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/log"
 
     kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1"
-    workflowv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
+    workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
     "github.com/jordigilh/kubernaut/pkg/kubernetesexecution"
+    "github.com/jordigilh/kubernaut/pkg/storage"
 )
 
 const (

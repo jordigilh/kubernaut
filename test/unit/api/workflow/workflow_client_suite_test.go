@@ -31,4 +31,3 @@ func TestWorkflowClient(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Workflow API Client Unit Tests Suite")
 }
-

@@ -27,5 +27,3 @@ func TestControlledDegradationScenarios(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Controlled Graceful Degradation E2E Test Suite")
 }
-
-

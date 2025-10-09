@@ -153,12 +153,12 @@ func (f *FailFastAIMetricsCollector) EvaluateResponseQuality(ctx context.Context
 // FailFastLearningEnhancedPromptBuilder provides learning-enhanced prompt building with fail-fast behavior
 // Business Requirement: BR-AI-PROMPT-001 - Intelligent prompt generation and learning
 type FailFastLearningEnhancedPromptBuilder struct {
-	Enabled         bool                   `json:"enabled"`
-	LearningEngine  interface{}            `json:"-"`
-	TemplateCache   map[string]interface{} `json:"template_cache"`
-	ExecutionHistory []interface{}         `json:"execution_history"`
-	Config          map[string]interface{} `json:"config"`
-	LastUpdate      time.Time              `json:"last_update"`
+	Enabled          bool                   `json:"enabled"`
+	LearningEngine   interface{}            `json:"-"`
+	TemplateCache    map[string]interface{} `json:"template_cache"`
+	ExecutionHistory []interface{}          `json:"execution_history"`
+	Config           map[string]interface{} `json:"config"`
+	LastUpdate       time.Time              `json:"last_update"`
 }
 
 func (f *FailFastLearningEnhancedPromptBuilder) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {

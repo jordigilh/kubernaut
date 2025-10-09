@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 /*
 Copyright 2025 Jordi Gil.
 
@@ -13,9 +16,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
-//go:build integration
-// +build integration
 
 package shared
 
@@ -69,10 +69,10 @@ var _ = Describe("Configuration Loading", func() {
 	Context("with custom environment variables", func() {
 		BeforeEach(func() {
 			envHelper.SetEnvironment(map[string]string{
-				"LLM_ENDPOINT":  "http://test:8080",
-				"LLM_MODEL":     "test-model",
-				"LLM_PROVIDER":  "ramalama",
-				"USE_MOCK_LLM":  "false", // Disable mock mode for this test
+				"LLM_ENDPOINT": "http://test:8080",
+				"LLM_MODEL":    "test-model",
+				"LLM_PROVIDER": "ramalama",
+				"USE_MOCK_LLM": "false", // Disable mock mode for this test
 			})
 		})
 

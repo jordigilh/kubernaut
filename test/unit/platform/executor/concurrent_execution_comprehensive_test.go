@@ -1,3 +1,6 @@
+//go:build unit
+// +build unit
+
 /*
 Copyright 2025 Jordi Gil.
 
@@ -14,16 +17,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:build unit
-// +build unit
-
 package executor
 
 import (
-	"testing"
 	"context"
 	"fmt"
 	"sync"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -48,7 +48,7 @@ var _ = Describe("BR-CONCURRENT-EXEC-001: Comprehensive Concurrent Execution Bus
 
 		// Use REAL business logic components
 		// asyncExecutor executor.AsyncExecutor // AsyncExecutor not implemented yet
-		syncExecutor  executor.Executor
+		syncExecutor executor.Executor
 
 		ctx    context.Context
 		cancel context.CancelFunc
@@ -66,9 +66,9 @@ var _ = Describe("BR-CONCURRENT-EXEC-001: Comprehensive Concurrent Execution Bus
 
 		// Create REAL business executors with mocked external dependencies
 		config := config.ActionsConfig{
-			MaxConcurrent:  5,                  // Controlled concurrency for testing
+			MaxConcurrent:  5, // Controlled concurrency for testing
 			DryRun:         true,
-			CooldownPeriod: 1 * time.Second,   // Short cooldown for testing
+			CooldownPeriod: 1 * time.Second, // Short cooldown for testing
 		}
 
 		var err error

@@ -17,9 +17,9 @@ limitations under the License.
 package intelligence
 
 import (
-	"testing"
 	"fmt"
 	"runtime"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

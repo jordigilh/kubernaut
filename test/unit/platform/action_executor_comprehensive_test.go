@@ -17,8 +17,8 @@ limitations under the License.
 package platform
 
 import (
-	"testing"
 	"context"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

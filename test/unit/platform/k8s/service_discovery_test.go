@@ -17,9 +17,9 @@ limitations under the License.
 package k8s_test
 
 import (
-	"testing"
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

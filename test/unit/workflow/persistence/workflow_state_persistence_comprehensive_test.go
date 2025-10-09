@@ -1,3 +1,6 @@
+//go:build unit
+// +build unit
+
 /*
 Copyright 2025 Jordi Gil.
 
@@ -14,15 +17,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//go:build unit
-// +build unit
-
 package persistence
 
 import (
-	"testing"
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

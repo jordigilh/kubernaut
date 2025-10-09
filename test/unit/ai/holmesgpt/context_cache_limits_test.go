@@ -17,10 +17,10 @@ limitations under the License.
 package holmesgpt_test
 
 import (
-	"testing"
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	contextpkg "github.com/jordigilh/kubernaut/pkg/ai/context"

@@ -17,8 +17,8 @@ limitations under the License.
 package workflow
 
 import (
-	"testing"
 	"context"
+	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
