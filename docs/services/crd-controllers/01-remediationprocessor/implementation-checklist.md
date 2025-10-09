@@ -101,7 +101,7 @@ controllerutil.SetControllerReference(&alertRemediation, &alertProcessing, schem
 ### 2. Finalizers for Cleanup Coordination
 **Pattern**: Add finalizer before processing, remove after cleanup
 ```go
-const alertProcessingFinalizer = "alertprocessing.kubernaut.io/finalizer"
+const alertProcessingFinalizer = "remediationprocessing.kubernaut.io/finalizer"
 ```
 **Purpose**: Ensure audit data persisted before CRD deletion
 

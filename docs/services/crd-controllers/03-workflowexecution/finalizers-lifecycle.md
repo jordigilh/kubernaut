@@ -153,7 +153,7 @@ func (r *WorkflowExecutionReconciler) recordFinalAudit(
     we *workflowexecutionv1.WorkflowExecution,
 ) error {
     auditRecord := &AuditRecord{
-        AlertFingerprint: we.Spec.AlertContext.Fingerprint,
+        AlertFingerprint: we.Spec.SignalContext.Fingerprint,
         ServiceType:      "WorkflowExecution",
         CRDName:          we.Name,
         Namespace:        we.Namespace,
@@ -378,8 +378,8 @@ func (r *RemediationRequestReconciler) createWorkflowExecution(
                 Namespace: remediation.Namespace,
             },
             Recommendations: recommendations,
-            AlertContext: workflowexecutionv1.AlertContext{
-                Fingerprint: remediation.Spec.AlertFingerprint,
+            AlertContext: workflowexecutionv1.SignalContext{
+                Fingerprint: remediation.Spec.SignalFingerprint,
                 Environment: remediation.Status.Environment,
             },
         },

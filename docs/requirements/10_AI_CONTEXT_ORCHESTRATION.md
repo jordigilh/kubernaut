@@ -191,7 +191,7 @@ This separation enables efficient dual-source intelligence gathering: HolmesGPT 
 #### 4.1.2 Context Endpoint Specifications
 - **BR-API-006**: MUST provide `/api/v1/context/kubernetes/{namespace}/{resource}` for **historical cluster intelligence** (organizational metadata, past resource patterns - NOT current logs/events/status)
 - **BR-API-007**: MUST provide `/api/v1/context/metrics/{namespace}/{resource}` for **historical performance trends** (trend analysis, anomaly detection, baseline comparison - NOT current metric values)
-- **BR-API-008**: MUST provide `/api/v1/context/action-history/{alertType}` for historical remediation patterns
+- **BR-API-008**: MUST provide `/api/v1/context/action-history/{signalType}` for historical remediation patterns
 - **BR-API-009**: MUST provide `/api/v1/context/patterns/{signature}` for pattern matching via PGVector similarity search
 - **BR-API-010**: MUST provide `/api/v1/context/health` for service health monitoring
 

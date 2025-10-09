@@ -28,7 +28,7 @@ func (g *GatewayService) HandleWebhook(ctx context.Context, payload []byte) erro
             Name:      fmt.Sprintf("remediation-%s", requestID),
             Namespace: "kubernaut-system",
             Labels: map[string]string{
-                "alert.fingerprint": alertFingerprint,
+                "signal.fingerprint": alertFingerprint,
                 "alert.severity":    extractSeverity(payload),
                 "alert.environment": extractEnvironment(payload),
             },
@@ -77,7 +77,7 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
             },
             // DATA SNAPSHOT: Copy original alert data
             Alert: processingv1.Alert{
-                Fingerprint: remediation.Spec.AlertFingerprint,
+                Fingerprint: remediation.Spec.SignalFingerprint,
                 Payload:     remediation.Spec.OriginalPayload,
                 Severity:    remediation.Spec.Severity,
             },
@@ -126,28 +126,28 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
                 },
                 // DATA SNAPSHOT: Copy enriched alert context
                 AnalysisRequest: aiv1.AnalysisRequest{
-                    AlertContext: aiv1.AlertContext{
-                        Fingerprint:      alertProcessing.Status.EnrichedAlert.Fingerprint,
-                        Severity:         alertProcessing.Status.EnrichedAlert.Severity,
-                        Environment:      alertProcessing.Status.EnrichedAlert.Environment,
-                        BusinessPriority: alertProcessing.Status.EnrichedAlert.BusinessPriority,
+                    AlertContext: aiv1.SignalContext{
+                        Fingerprint:      alertProcessing.Status.EnrichedSignal.Fingerprint,
+                        Severity:         alertProcessing.Status.EnrichedSignal.Severity,
+                        Environment:      alertProcessing.Status.EnrichedSignal.Environment,
+                        BusinessPriority: alertProcessing.Status.EnrichedSignal.BusinessPriority,
 
                         // Resource targeting for HolmesGPT toolsets (NOT logs/metrics)
-                        Namespace:    alertProcessing.Status.EnrichedAlert.Namespace,
-                        ResourceKind: alertProcessing.Status.EnrichedAlert.ResourceKind,
-                        ResourceName: alertProcessing.Status.EnrichedAlert.ResourceName,
+                        Namespace:    alertProcessing.Status.EnrichedSignal.Namespace,
+                        ResourceKind: alertProcessing.Status.EnrichedSignal.ResourceKind,
+                        ResourceName: alertProcessing.Status.EnrichedSignal.ResourceName,
 
                         // Kubernetes context (small data ~8KB)
-                        KubernetesContext: alertProcessing.Status.EnrichedAlert.KubernetesContext,
+                        KubernetesContext: alertProcessing.Status.EnrichedSignal.KubernetesContext,
                     },
                     AnalysisTypes: []string{"investigation", "root-cause", "recovery-analysis"},
                     InvestigationScope: aiv1.InvestigationScope{
                         TimeWindow: "24h",
                         ResourceScope: []aiv1.ResourceScopeItem{
                             {
-                                Kind:      alertProcessing.Status.EnrichedAlert.ResourceKind,
-                                Namespace: alertProcessing.Status.EnrichedAlert.Namespace,
-                                Name:      alertProcessing.Status.EnrichedAlert.ResourceName,
+                                Kind:      alertProcessing.Status.EnrichedSignal.ResourceKind,
+                                Namespace: alertProcessing.Status.EnrichedSignal.Namespace,
+                                Name:      alertProcessing.Status.EnrichedSignal.ResourceName,
                             },
                         },
                         CorrelationDepth:          "detailed",
@@ -442,7 +442,7 @@ func (r *RemediationRequestReconciler) sendTimeoutEscalation(
         EscalatingController:        "remediation-orchestrator",
 
         // Alert context (from CRD)
-        AlertFingerprint: remediation.Spec.AlertFingerprint,
+        AlertFingerprint: remediation.Spec.SignalFingerprint,
         AlertName:        remediation.Spec.AlertName,
         Severity:         remediation.Spec.Severity,
         Environment:      remediation.Spec.Environment,

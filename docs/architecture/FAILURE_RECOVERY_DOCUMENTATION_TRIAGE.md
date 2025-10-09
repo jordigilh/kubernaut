@@ -50,7 +50,7 @@ Remediation Orchestrator → Watches failure → Creates AIAnalysis CRD #2
 **Current Document Flow** (Lines 67-90):
 ```mermaid
 RWE->>PFH: HandleStepFailure(ctx, step, failure, policy)
-PFH->>HGP: InvestigateAlert(ctx, enrichedAlert)
+PFH->>HGP: InvestigateSignal(ctx, enrichedAlert)
 HGP-->>PFH: InvestigationResult
 ```
 

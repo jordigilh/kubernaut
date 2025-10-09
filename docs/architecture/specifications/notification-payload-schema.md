@@ -308,7 +308,7 @@ func (r *RemediationRequestReconciler) sendTimeoutEscalation(
         EscalatingController:        "central-controller",
 
         // Alert context (from CRD)
-        AlertFingerprint: remediation.Spec.AlertFingerprint,
+        AlertFingerprint: remediation.Spec.SignalFingerprint,
         AlertName:        remediation.Spec.AlertName,
         Severity:         remediation.Spec.Severity,
         Environment:      remediation.Spec.Environment,
@@ -394,7 +394,7 @@ func (r *AIAnalysisReconciler) sendRejectionEscalation(
         EscalatingController:        "ai-analysis",
 
         // Alert context
-        AlertFingerprint: remediation.Spec.AlertFingerprint,
+        AlertFingerprint: remediation.Spec.SignalFingerprint,
         AlertName:        remediation.Spec.AlertName,
         Severity:         remediation.Spec.Severity,
         Environment:      remediation.Spec.Environment,
@@ -466,7 +466,7 @@ func (r *WorkflowExecutionReconciler) sendFailureEscalation(
         EscalatingController:        "workflow-execution",
 
         // Alert context
-        AlertFingerprint: remediation.Spec.AlertFingerprint,
+        AlertFingerprint: remediation.Spec.SignalFingerprint,
         AlertName:        remediation.Spec.AlertName,
         Severity:         remediation.Spec.Severity,
         Environment:      remediation.Spec.Environment,

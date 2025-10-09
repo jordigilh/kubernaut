@@ -272,7 +272,7 @@ func (r *RemediationProcessingReconciler) recordAudit(
     sanitizedPayload := sanitizeAlertPayload(string(ap.Spec.Alert.Payload))
 
     auditRecord := &AuditRecord{
-        AlertFingerprint: ap.Spec.Alert.Fingerprint,
+        AlertFingerprint: ap.Spec.Signal.Fingerprint,
         Payload:          sanitizedPayload,  // Sanitized version
         // ... other fields
     }
@@ -360,7 +360,7 @@ func (r *RemediationProcessingReconciler) enrichAlert(
 ) error {
     // Sanitize before logging
     r.logWithSanitization(log, "Starting alert enrichment",
-        "fingerprint", ap.Spec.Alert.Fingerprint,
+        "fingerprint", ap.Spec.Signal.Fingerprint,
         "payload", string(ap.Spec.Alert.Payload),  // Will be sanitized
     )
 

@@ -179,7 +179,7 @@ func (r *KubernetesExecutionReconciler) recordFinalAudit(
     ke *kubernetesexecutionv1.KubernetesExecution,
 ) error {
     auditRecord := &AuditRecord{
-        AlertFingerprint: ke.Spec.AlertContext.Fingerprint,
+        AlertFingerprint: ke.Spec.SignalContext.Fingerprint,
         ServiceType:      "KubernetesExecution",
         CRDName:          ke.Name,
         Namespace:        ke.Namespace,
@@ -453,7 +453,7 @@ func (r *RemediationRequestReconciler) createKubernetesExecution(
             Action:     workflowStep.Action,
             Parameters: workflowStep.Parameters,
             AlertContext: kubernetesexecutionv1.AlertContext{
-                Fingerprint: remediation.Spec.AlertFingerprint,
+                Fingerprint: remediation.Spec.SignalFingerprint,
                 Environment: remediation.Status.Environment,
             },
         },
