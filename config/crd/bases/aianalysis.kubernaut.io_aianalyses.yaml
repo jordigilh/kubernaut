@@ -42,11 +42,19 @@ spec:
               includeHistory:
                 type: boolean
               llmModel:
+                maxLength: 253
                 type: string
               llmProvider:
                 description: Analysis configuration
+                enum:
+                - openai
+                - anthropic
+                - local
+                - holmesgpt
                 type: string
               maxTokens:
+                maximum: 100000
+                minimum: 1
                 type: integer
               remediationRequestRef:
                 description: Parent reference to RemediationRequest
@@ -144,14 +152,23 @@ spec:
                 type: number
               investigationId:
                 description: Investigation details
+                maxLength: 253
                 type: string
               investigationTime:
                 format: int64
+                minimum: 0
                 type: integer
               message:
                 type: string
               phase:
                 description: Phase tracking
+                enum:
+                - Pending
+                - Investigating
+                - Analyzing
+                - Recommending
+                - Completed
+                - Failed
                 type: string
               reason:
                 type: string
@@ -167,6 +184,7 @@ spec:
                 format: date-time
                 type: string
               tokensUsed:
+                minimum: 0
                 type: integer
             required:
             - phase

@@ -34,9 +34,13 @@ type AIAnalysisSpec struct {
 	SignalContext map[string]string `json:"signalContext"` // Enriched context from RemediationProcessing
 
 	// Analysis configuration
-	LLMProvider    string  `json:"llmProvider"`    // "openai", "anthropic", "local"
-	LLMModel       string  `json:"llmModel"`       // "gpt-4", "claude-3", etc.
-	MaxTokens      int     `json:"maxTokens"`      // Token limit
+	// +kubebuilder:validation:Enum=openai;anthropic;local;holmesgpt
+	LLMProvider string `json:"llmProvider"` // "openai", "anthropic", "local"
+	// +kubebuilder:validation:MaxLength=253
+	LLMModel string `json:"llmModel"` // "gpt-4", "claude-3", etc.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100000
+	MaxTokens int `json:"maxTokens"` // Token limit
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0
 	Temperature    float64 `json:"temperature"`    // 0.0-1.0
@@ -46,7 +50,8 @@ type AIAnalysisSpec struct {
 // AIAnalysisStatus defines the observed state of AIAnalysis.
 type AIAnalysisStatus struct {
 	// Phase tracking
-	Phase   string `json:"phase"`   // "Pending", "Investigating", "Completed", "Failed"
+	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Recommending;Completed;Failed
+	Phase   string `json:"phase"` // "Pending", "Investigating", "Completed", "Failed"
 	Message string `json:"message,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 
@@ -55,7 +60,7 @@ type AIAnalysisStatus struct {
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 
 	// Analysis results
-	RootCause         string  `json:"rootCause,omitempty"`         // Identified root cause
+	RootCause string `json:"rootCause,omitempty"` // Identified root cause
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0
 	Confidence        float64 `json:"confidence,omitempty"`        // 0.0-1.0
@@ -63,8 +68,11 @@ type AIAnalysisStatus struct {
 	RequiresApproval  bool    `json:"requiresApproval"`            // Manual approval needed
 
 	// Investigation details
+	// +kubebuilder:validation:MaxLength=253
 	InvestigationID   string `json:"investigationId,omitempty"`   // HolmesGPT investigation ID
+	// +kubebuilder:validation:Minimum=0
 	TokensUsed        int    `json:"tokensUsed,omitempty"`        // LLM tokens consumed
+	// +kubebuilder:validation:Minimum=0
 	InvestigationTime int64  `json:"investigationTime,omitempty"` // Duration in seconds
 
 	// Conditions
