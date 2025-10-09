@@ -124,14 +124,19 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
 
 		// Update RemediationRequest status to reference RemediationProcessing
-		// Refetch to get latest resourceVersion (controller may have modified it)
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
-		remediationRequest.Status.OverallPhase = "processing"
-		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
-			Name:      remediationProcessing.Name,
-			Namespace: remediationProcessing.Namespace,
-		}
-		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+		// Use Eventually to handle concurrent updates from controller (finalizer)
+		Eventually(func() error {
+			// Refetch to get latest resourceVersion
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest); err != nil {
+				return err
+			}
+			remediationRequest.Status.OverallPhase = "processing"
+			remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
+				Name:      remediationProcessing.Name,
+				Namespace: remediationProcessing.Namespace,
+			}
+			return k8sClient.Status().Update(ctx, remediationRequest)
+		}, timeout, interval).Should(Succeed())
 
 		// THEN: AIAnalysis CRD should be created
 		aiAnalysisName := remediationRequest.Name + "-aianalysis"
@@ -194,7 +199,7 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		// WHEN: We update RemediationProcessing status to 'completed' with enriched context
 		remediationProcessingName := remediationRequest.Name + "-processing"
 		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{}
-		
+
 		// Wait for controller to create RemediationProcessing
 		Eventually(func() error {
 			return k8sClient.Get(ctx, types.NamespacedName{
@@ -202,7 +207,7 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 				Namespace: namespace,
 			}, remediationProcessing)
 		}, timeout, interval).Should(Succeed())
-		
+
 		// Update RemediationProcessing status to 'completed' with enriched context
 		remediationProcessing.Status.Phase = "completed"
 		remediationProcessing.Status.ContextData = map[string]string{
@@ -286,14 +291,20 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
 		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
 
-		// Refetch to get latest resourceVersion (controller may have modified it)
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
-		remediationRequest.Status.OverallPhase = "processing"
-		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
-			Name:      remediationProcessing.Name,
-			Namespace: remediationProcessing.Namespace,
-		}
-		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+		// Update RemediationRequest status to reference RemediationProcessing
+		// Use Eventually to handle concurrent updates from controller (finalizer)
+		Eventually(func() error {
+			// Refetch to get latest resourceVersion
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest); err != nil {
+				return err
+			}
+			remediationRequest.Status.OverallPhase = "processing"
+			remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
+				Name:      remediationProcessing.Name,
+				Namespace: remediationProcessing.Namespace,
+			}
+			return k8sClient.Status().Update(ctx, remediationRequest)
+		}, timeout, interval).Should(Succeed())
 
 		// WHEN: Controller processes the request
 		// THEN: AIAnalysis should NOT be created
@@ -382,7 +393,7 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 			},
 		}
 		Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
-		
+
 		// Refetch AIAnalysis to get created object (status is reset on create)
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiAnalysis.Name, Namespace: aiAnalysis.Namespace}, aiAnalysis)).To(Succeed())
 		aiAnalysis.Status.Phase = "Completed"
@@ -474,7 +485,7 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 			},
 		}
 		Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
-		
+
 		// Refetch AIAnalysis to get created object (status is reset on create)
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiAnalysis.Name, Namespace: aiAnalysis.Namespace}, aiAnalysis)).To(Succeed())
 		aiAnalysis.Status.Phase = "Analyzing"
