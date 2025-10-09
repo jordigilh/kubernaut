@@ -504,6 +504,14 @@ func (r *RemediationRequestReconciler) handleProcessingPhase(
 		return ctrl.Result{}, err
 	}
 
+	// Check for failure
+	if r.IsPhaseInFailedState(processing.Status.Phase) {
+		log.Info("RemediationProcessing failed, transitioning to failed state",
+			"remediation", remediation.Name,
+			"processing", processing.Name)
+		return r.handleFailure(ctx, remediation, "processing", "RemediationProcessing", processing.Status.Phase)
+	}
+
 	// Check if completed
 	if processing.Status.Phase == "completed" {
 		// Create AIAnalysis
@@ -542,6 +550,14 @@ func (r *RemediationRequestReconciler) handleAnalyzingPhase(
 
 	if err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// Check for failure
+	if r.IsPhaseInFailedState(analysis.Status.Phase) {
+		log.Info("AIAnalysis failed, transitioning to failed state",
+			"remediation", remediation.Name,
+			"analysis", analysis.Name)
+		return r.handleFailure(ctx, remediation, "analyzing", "AIAnalysis", analysis.Status.Phase)
 	}
 
 	// Check if completed
@@ -584,6 +600,14 @@ func (r *RemediationRequestReconciler) handleExecutingPhase(
 		return ctrl.Result{}, err
 	}
 
+	// Check for failure
+	if r.IsPhaseInFailedState(workflow.Status.Phase) {
+		log.Info("WorkflowExecution failed, transitioning to failed state",
+			"remediation", remediation.Name,
+			"workflow", workflow.Name)
+		return r.handleFailure(ctx, remediation, "executing", "WorkflowExecution", workflow.Status.Phase)
+	}
+
 	// Check if completed
 	if workflow.Status.Phase == "completed" {
 		// Update to completed
@@ -596,6 +620,91 @@ func (r *RemediationRequestReconciler) handleExecutingPhase(
 
 	// Still executing - requeue
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+}
+
+// ========================================
+// FAILURE HANDLING
+// Phase 2.2: Failure detection and handling
+// ========================================
+
+// IsPhaseInFailedState checks if a child CRD phase indicates failure
+// Supports phases from RemediationProcessing, AIAnalysis, and WorkflowExecution
+func (r *RemediationRequestReconciler) IsPhaseInFailedState(phase string) bool {
+	// Normalize to lowercase for comparison
+	phaseLower := strings.ToLower(phase)
+	return phaseLower == "failed"
+}
+
+// BuildFailureReason constructs a descriptive failure reason
+func (r *RemediationRequestReconciler) BuildFailureReason(
+	currentPhase string,
+	childCRDType string,
+	errorMessage string,
+) string {
+	if errorMessage == "" {
+		return fmt.Sprintf("%s phase failed: %s reported failure", currentPhase, childCRDType)
+	}
+	return fmt.Sprintf("%s phase failed: %s - %s", currentPhase, childCRDType, errorMessage)
+}
+
+// ShouldTransitionToFailed determines if RemediationRequest should transition to failed state
+func (r *RemediationRequestReconciler) ShouldTransitionToFailed(
+	remediation *remediationv1alpha1.RemediationRequest,
+	childFailed bool,
+) bool {
+	// Don't transition if child didn't fail
+	if !childFailed {
+		return false
+	}
+
+	// Don't transition if already in a terminal state
+	if remediation.Status.OverallPhase == "completed" ||
+		remediation.Status.OverallPhase == "failed" {
+		return false
+	}
+
+	// Don't transition if still pending (no child CRD yet)
+	if remediation.Status.OverallPhase == "pending" ||
+		remediation.Status.OverallPhase == "" {
+		return false
+	}
+
+	// Transition to failed for active phases with child failures
+	return true
+}
+
+// handleFailure marks the RemediationRequest as failed with appropriate metadata
+// Business Requirement: BR-ORCHESTRATION-004
+func (r *RemediationRequestReconciler) handleFailure(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+	phase string,
+	childCRDType string,
+	childPhase string,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Build failure reason
+	reason := r.BuildFailureReason(phase, childCRDType, childPhase)
+
+	// Update status to failed
+	remediation.Status.OverallPhase = "failed"
+	remediation.Status.CompletedAt = &metav1.Time{Time: time.Now()}
+
+	log.Info("RemediationRequest marked as failed",
+		"name", remediation.Name,
+		"phase", phase,
+		"reason", reason)
+
+	// TODO Phase 3.1: Emit Kubernetes event
+	// TODO Phase 3.2: Record audit entry
+	// TODO Phase 3.3: Trigger notification/escalation
+
+	if err := r.Status().Update(ctx, remediation); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil // Terminal state, no requeue
 }
 
 // ========================================
