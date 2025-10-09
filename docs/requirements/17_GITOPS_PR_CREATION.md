@@ -313,7 +313,7 @@ data:
   default-pr-template: |
     ## 🤖 Kubernaut AI-Generated Remediation
 
-    **Alert**: {{ .AlertName }}
+    **Alert**: {{ .SignalName }}
     **Environment**: {{ .Environment }}
     **Timestamp**: {{ .Timestamp }}
 

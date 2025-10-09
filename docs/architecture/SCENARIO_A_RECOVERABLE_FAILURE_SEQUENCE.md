@@ -89,7 +89,7 @@ sequenceDiagram
         RO->>AI: Create AIAnalysis CRD
         Note over AI: Spec includes:<br/>• Enriched context<br/>• Signal fingerprint<br/>• Historical data
 
-        AI->>HGP: InvestigateAlert(enriched_context)
+        AI->>HGP: InvestigateSignal(enriched_context)
         Note over HGP: 🔍 INVESTIGATION ONLY<br/>NOT EXECUTION
 
         HGP->>HGP: Analyze with K8s toolset

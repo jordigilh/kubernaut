@@ -386,7 +386,7 @@ func (r *RemediationRequestReconciler) initiateRecovery(
         },
         Spec: aianalysisv1.AIAnalysisSpec{
             // Copy signal context from original
-            AlertContext:           remediation.Spec.AlertContext,
+            SignalContext:          remediation.Spec.SignalContext,
             RemediationRequestRef:  corev1.LocalObjectReference{Name: remediation.Name},
 
             // NEW: Recovery-specific fields

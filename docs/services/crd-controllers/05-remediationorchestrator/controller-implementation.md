@@ -98,29 +98,29 @@ func (r *RemediationRequestReconciler) orchestratePhase(
 
     case "processing":
         // Wait for RemediationProcessing completion, then create AIAnalysis
-        var alertProcessing processingv1.RemediationProcessing
+        var remediationProcessing processingv1.RemediationProcessing
         if err := r.Get(ctx, client.ObjectKey{
             Name:      remediation.Status.RemediationProcessingRef.Name,
             Namespace: remediation.Status.RemediationProcessingRef.Namespace,
-        }, &alertProcessing); err != nil {
+        }, &remediationProcessing); err != nil {
             return ctrl.Result{}, err
         }
 
         // Check timeout
-        if r.isPhaseTimedOut(&alertProcessing, remediation.Spec.TimeoutConfig) {
-            return r.handleTimeout(ctx, remediation, "alert_processing")
+        if r.isPhaseTimedOut(&remediationProcessing, remediation.Spec.TimeoutConfig) {
+            return r.handleTimeout(ctx, remediation, "remediation_processing")
         }
 
-        if alertProcessing.Status.Phase == "completed" {
+        if remediationProcessing.Status.Phase == "completed" {
             if remediation.Status.AIAnalysisRef == nil {
-                if err := r.createAIAnalysis(ctx, remediation, &alertProcessing); err != nil {
+                if err := r.createAIAnalysis(ctx, remediation, &remediationProcessing); err != nil {
                     return ctrl.Result{}, err
                 }
                 remediation.Status.OverallPhase = "analyzing"
                 return ctrl.Result{}, r.Status().Update(ctx, remediation)
             }
-        } else if alertProcessing.Status.Phase == "failed" {
-            return r.handleFailure(ctx, remediation, "alert_processing", "Alert processing failed")
+        } else if remediationProcessing.Status.Phase == "failed" {
+            return r.handleFailure(ctx, remediation, "remediation_processing", "Remediation processing failed")
         }
 
     case "analyzing":
@@ -807,13 +807,13 @@ func (r *RemediationRequestReconciler) escalateToManualReview(
     }
 
     // Send notification to operations team
-    if err := r.NotificationClient.SendManualReviewAlert(ctx, ManualReviewAlert{
+    if err := r.NotificationClient.SendManualReviewNotification(ctx, ManualReviewNotification{
         RemediationRequestID:  remediation.Name,
         EscalationReason:      reason,
         RecoveryAttempts:      remediation.Status.RecoveryAttempts,
         LastFailureTime:       remediation.Status.LastFailureTime,
         WorkflowFailureHistory: buildFailureHistory(remediation.Status.WorkflowExecutionRefs),
-        AlertContext:          buildAlertContextSummary(&remediation.Spec),
+        SignalContext:         buildSignalContextSummary(&remediation.Spec),
         Priority:              "high",  // Manual review is always high priority
     }); err != nil {
         log.Error(err, "Failed to send manual review notification")
@@ -836,13 +836,13 @@ func (r *RemediationRequestReconciler) escalateToManualReview(
     return ctrl.Result{}, nil
 }
 
-type ManualReviewAlert struct {
+type ManualReviewNotification struct {
     RemediationRequestID   string
     EscalationReason       string
     RecoveryAttempts       int
     LastFailureTime        *metav1.Time
     WorkflowFailureHistory []WorkflowFailureSummary
-    AlertContext           AlertContextSummary
+    SignalContext          SignalContextSummary
     Priority               string
 }
 
@@ -854,8 +854,8 @@ type WorkflowFailureSummary struct {
     CompletionTime metav1.Time
 }
 
-type AlertContextSummary struct {
-    AlertName   string
+type SignalContextSummary struct {
+    SignalName  string
     Severity    string
     Environment string
     Namespace   string
@@ -878,10 +878,10 @@ func buildFailureHistory(refs []remediationv1.WorkflowExecutionReferenceWithOutc
     return history
 }
 
-func buildAlertContextSummary(spec *remediationv1.RemediationRequestSpec) AlertContextSummary {
-    // Extract key alert context fields for notification
-    return AlertContextSummary{
-        AlertName:   spec.AlertName,
+func buildSignalContextSummary(spec *remediationv1.RemediationRequestSpec) SignalContextSummary {
+    // Extract key signal context fields for notification
+    return SignalContextSummary{
+        SignalName:  spec.SignalName,
         Severity:    spec.Severity,
         Environment: spec.Environment,
         // Additional fields extracted from ProviderData...

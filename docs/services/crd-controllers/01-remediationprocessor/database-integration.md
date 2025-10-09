@@ -34,7 +34,7 @@ func (r *RemediationProcessingReconciler) reconcileRoutingWithAudit(ctx context.
     // Persist complete alert processing audit trail
     auditRecord := &storage.RemediationProcessingAudit{
         RemediationID:    ap.Spec.RemediationRequestRef.Name,
-        AlertFingerprint: ap.Spec.Alert.Fingerprint,
+        AlertFingerprint: ap.Spec.Signal.Fingerprint,
         ProcessingPhases: []storage.ProcessingPhase{
             {
                 Phase:     "enriching",
@@ -68,7 +68,7 @@ func (r *RemediationProcessingReconciler) reconcileRoutingWithAudit(ctx context.
     }
 
     if err := r.AuditStorage.StoreRemediationProcessingAudit(ctx, auditRecord); err != nil {
-        r.Log.Error(err, "Failed to store alert processing audit", "fingerprint", ap.Spec.Alert.Fingerprint)
+        r.Log.Error(err, "Failed to store alert processing audit", "fingerprint", ap.Spec.Signal.Fingerprint)
         ErrorsTotal.WithLabelValues("audit_storage_failed", "routing").Inc()
         // Don't fail reconciliation, but log for investigation
     }

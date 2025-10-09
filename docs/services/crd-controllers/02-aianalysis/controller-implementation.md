@@ -55,7 +55,7 @@ type Analyzer interface {
 }
 
 type InvestigationRequest struct {
-    AlertContext     *aianalysisv1.AlertContext
+    AlertContext     *aianalysisv1.SignalContext
     Scope            *aianalysisv1.InvestigationScope
     HolmesGPTConfig  *aianalysisv1.HolmesGPTConfig
 }
@@ -80,7 +80,7 @@ type AnalysisResult struct {
 
 type RecommendationRequest struct {
     AnalysisResult   *AnalysisResult
-    AlertContext     *aianalysisv1.AlertContext
+    AlertContext     *aianalysisv1.SignalContext
     ConstraintConfig *ConstraintConfig
 }
 
@@ -280,7 +280,7 @@ func (p *InvestigatingPhase) Handle(ctx context.Context, aiAnalysis *aianalysisv
 
     // Trigger HolmesGPT investigation (BR-AI-011, BR-AI-012)
     investigationReq := analysis.InvestigationRequest{
-        AlertContext:    &aiAnalysis.Spec.AnalysisRequest.AlertContext,
+        AlertContext:    &aiAnalysis.Spec.AnalysisRequest.SignalContext,
         Scope:           &aiAnalysis.Spec.AnalysisRequest.InvestigationScope,
         HolmesGPTConfig: &aiAnalysis.Spec.HolmesGPTConfig,
     }
@@ -597,10 +597,10 @@ CURRENT SITUATION (FRESH DATA):
         aiAnalysis.Spec.RecoveryAttemptNumber,
         enrichmentData.ContextQuality,
         enrichmentData.EnrichedAt.Format(time.RFC3339),
-        aiAnalysis.Spec.AlertContext.AlertName,
-        aiAnalysis.Spec.AlertContext.Severity,
-        aiAnalysis.Spec.AlertContext.TargetResource.Kind,
-        aiAnalysis.Spec.AlertContext.TargetResource.Namespace,
+        aiAnalysis.Spec.SignalContext.AlertName,
+        aiAnalysis.Spec.SignalContext.Severity,
+        aiAnalysis.Spec.SignalContext.TargetResource.Kind,
+        aiAnalysis.Spec.SignalContext.TargetResource.Namespace,
     )
 
     // Add FRESH monitoring context (Alternative 2 benefit!)

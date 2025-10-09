@@ -276,7 +276,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
     Context("BR-AP-030: Routing Decision Phase", func() {
         It("should create AIAnalysis CRD and mark processing complete", func() {
             ap := testutil.NewRemediationProcessingWithPhase("test-routing", "default", "routing")
-            ap.Spec.Alert.Fingerprint = "route-test-456"
+            ap.Spec.Signal.Fingerprint = "route-test-456"
             ap.Status.EnvironmentClassification = processingv1.EnvironmentClassification{
                 Environment:      "production",
                 BusinessPriority: "P0",
@@ -444,8 +444,8 @@ test/e2e/
 var _ = Describe("BR-E2E-AP-001: Complete Alert Processing Workflow", func() {
     It("should process production alert from webhook to AI analysis", func() {
         // Send webhook alert
-        alertPayload := testutil.NewPrometheusAlert("HighMemoryUsage", "production")
-        response := testutil.SendWebhookAlert(gatewayURL, alertPayload)
+        alertPayload := testutil.NewPrometheusSignal("HighMemoryUsage", "production")
+        response := testutil.SendWebhookSignal(gatewayURL, alertPayload)
         Expect(response.StatusCode).To(Equal(200))
 
         // Wait for complete processing pipeline
@@ -600,7 +600,7 @@ mockK8sClient.On("List", ...).Return(complexListMock)
 ```go
 // ✅ READABLE: Clear business logic test
 It("should classify production alert with high confidence", func() {
-    alert := testutil.NewProductionAlert()
+    alert := testutil.NewProductionSignal()
     classification := classifier.Classify(alert)
     Expect(classification.Environment).To(Equal("production"))
     Expect(classification.Confidence).To(BeNumerically(">", 0.8))
@@ -678,7 +678,7 @@ var _ = Describe("BR-AP-020: Environment Classification", func() {
     DescribeTable("Environment classification with distinct behaviors",
         func(namespace string, labels map[string]string, expectedEnv string, expectedPriority string, expectedSLA string, minConfidence float64) {
             // Single test function handles all classification scenarios
-            alert := testutil.NewAlert(namespace, labels)
+            alert := testutil.NewSignal(namespace, labels)
             classification := classifier.Classify(alert)
 
             Expect(classification.Environment).To(Equal(expectedEnv))
@@ -787,7 +787,7 @@ Describe("BR-AP-020: Environment Classification", func() {
 
     DescribeTable("Classification behaviors and boundaries",
         func(namespace string, labels map[string]string, expectedEnv string, expectedPriority string, minConfidence float64, shouldSucceed bool) {
-            alert := testutil.NewAlert(namespace, labels)
+            alert := testutil.NewSignal(namespace, labels)
             classification, err := classifier.Classify(alert)
 
             if shouldSucceed {
