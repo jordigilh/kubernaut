@@ -190,6 +190,12 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		}
 		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
 
+		// Initialize status to "processing" to bypass controller's auto-creation of RemediationProcessing
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
+		remediationRequest.Status.OverallPhase = "processing"
+		remediationRequest.Status.StartTime = &metav1.Time{Time: time.Now()}
+		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+
 		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      remediationRequest.Name + "-processing",
@@ -229,11 +235,19 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			},
 		}
 		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
+		
+		// Refetch RemediationProcessing to set status (status is reset on create)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationProcessing.Name, Namespace: remediationProcessing.Namespace}, remediationProcessing)).To(Succeed())
+		remediationProcessing.Status.Phase = "completed"
+		remediationProcessing.Status.ContextData = map[string]string{
+			"cluster_state":      "degraded",
+			"recent_deployments": "3",
+			"metrics_available":  "true",
+		}
 		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
 
-		// Refetch to get latest resourceVersion (controller may have modified it)
+		// Update RemediationRequest to reference RemediationProcessing
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
-		remediationRequest.Status.OverallPhase = "processing"
 		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
 			Name:      remediationProcessing.Name,
 			Namespace: remediationProcessing.Namespace,
