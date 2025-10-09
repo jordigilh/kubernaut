@@ -40,7 +40,7 @@ Implement the field mapping logic in RemediationOrchestrator controller that cop
 
 **Actual Target**: `internal/controller/remediation/remediationrequest_controller.go`
 
-**Why**: 
+**Why**:
 - `RemediationRequest` controller is the central orchestrator
 - It creates and manages child CRDs (RemediationProcessing, AIAnalysis, etc.)
 - It implements the "Targeting Data Pattern" from service specs

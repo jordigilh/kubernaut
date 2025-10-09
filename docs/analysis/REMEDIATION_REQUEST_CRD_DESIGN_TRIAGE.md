@@ -36,7 +36,7 @@ metadata:
   name: remediationrequests.remediation.kubernaut.io
 ```
 
-**Impact**: 
+**Impact**:
 - CRD name doesn't match actual implementation
 - API group is wrong (`kubernaut.io` vs `remediation.kubernaut.io`)
 - Resource name uses deprecated "alert" prefix
@@ -67,7 +67,7 @@ AlertRemediation  → RemediationRequest  ✅ MIGRATED
 
 **Kubernaut V1 Architecture**: Processes multiple signal types:
 - Prometheus alerts
-- Kubernetes events  
+- Kubernetes events
 - AWS CloudWatch alarms
 - Datadog monitors
 - Custom webhooks
@@ -143,7 +143,7 @@ serviceStatuses:
 ```yaml
 # Actual CRD names in V1:
 RemediationProcessing
-AIAnalysis  
+AIAnalysis
 WorkflowExecution
 KubernetesExecution
 ```
@@ -234,12 +234,12 @@ type RemediationRequestStatus struct {
     OverallPhase string
     StartTime metav1.Time
     CompletionTime *metav1.Time
-    
+
     // CRD References (not nested status)
     RemediationProcessingRef *RemediationProcessingReference
     AIAnalysisRef            *AIAnalysisReference
     WorkflowExecutionRef     *WorkflowExecutionReference
-    
+
     // Lightweight status summaries (not full copies)
     RemediationProcessingStatus *RemediationProcessingStatusSummary
     AIAnalysisStatus            *AIAnalysisStatusSummary
