@@ -48,7 +48,7 @@ var _ = Describe("RemediationRequest Controller - Timeout Helper Functions", fun
 		}
 	})
 
-	Describe("isPhaseTimedOut", func() {
+	Describe("IsPhaseTimedOut", func() {
 		It("should return false when StartTime is nil", func() {
 			remediation := &remediationv1alpha1.RemediationRequest{
 				Status: remediationv1alpha1.RemediationRequestStatus{
@@ -60,158 +60,44 @@ var _ = Describe("RemediationRequest Controller - Timeout Helper Functions", fun
 			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeFalse())
 		})
 
-		It("should detect timeout for pending phase after 30 seconds", func() {
-			now := metav1.Now()
-			oneMinuteAgo := metav1.NewTime(now.Add(-1 * time.Minute))
+		// Table-driven tests for timeout detection
+		DescribeTable("phase timeout detection",
+			func(phase string, elapsed time.Duration, expectedTimeout bool) {
+				now := metav1.Now()
+				startTime := metav1.NewTime(now.Add(-elapsed))
 
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "pending",
-					StartTime:    &oneMinuteAgo,
-				},
-			}
+				remediation := &remediationv1alpha1.RemediationRequest{
+					Status: remediationv1alpha1.RemediationRequestStatus{
+						OverallPhase: phase,
+						StartTime:    &startTime,
+					},
+				}
 
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeTrue())
-		})
+				Expect(reconciler.IsPhaseTimedOut(remediation)).To(Equal(expectedTimeout))
+			},
+			// Pending phase (30 second threshold)
+			Entry("pending phase: TIMEOUT after 1 minute", "pending", 1*time.Minute, true),
+			Entry("pending phase: NO timeout at 10 seconds", "pending", 10*time.Second, false),
 
-		It("should NOT timeout for pending phase within 30 seconds", func() {
-			now := metav1.Now()
-			tenSecondsAgo := metav1.NewTime(now.Add(-10 * time.Second))
+			// Processing phase (5 minute threshold)
+			Entry("processing phase: TIMEOUT after 6 minutes", "processing", 6*time.Minute, true),
+			Entry("processing phase: NO timeout at 2 minutes", "processing", 2*time.Minute, false),
+			Entry("processing phase: TIMEOUT at exactly 5 minutes + 1ms", "processing", 5*time.Minute+time.Millisecond, true),
 
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "pending",
-					StartTime:    &tenSecondsAgo,
-				},
-			}
+			// Analyzing phase (10 minute threshold)
+			Entry("analyzing phase: TIMEOUT after 11 minutes", "analyzing", 11*time.Minute, true),
+			Entry("analyzing phase: NO timeout at 5 minutes", "analyzing", 5*time.Minute, false),
+			Entry("analyzing phase: TIMEOUT at exactly 10 minutes + 1ms", "analyzing", 10*time.Minute+time.Millisecond, true),
 
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeFalse())
-		})
+			// Executing phase (30 minute threshold)
+			Entry("executing phase: TIMEOUT after 35 minutes", "executing", 35*time.Minute, true),
+			Entry("executing phase: NO timeout at 20 minutes", "executing", 20*time.Minute, false),
+			Entry("executing phase: TIMEOUT at exactly 30 minutes + 1ms", "executing", 30*time.Minute+time.Millisecond, true),
 
-		It("should detect timeout for processing phase after 5 minutes", func() {
-			now := metav1.Now()
-			sixMinutesAgo := metav1.NewTime(now.Add(-6 * time.Minute))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "processing",
-					StartTime:    &sixMinutesAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeTrue())
-		})
-
-		It("should NOT timeout for processing phase within 5 minutes", func() {
-			now := metav1.Now()
-			twoMinutesAgo := metav1.NewTime(now.Add(-2 * time.Minute))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "processing",
-					StartTime:    &twoMinutesAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeFalse())
-		})
-
-		It("should detect timeout for analyzing phase after 10 minutes", func() {
-			now := metav1.Now()
-			elevenMinutesAgo := metav1.NewTime(now.Add(-11 * time.Minute))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "analyzing",
-					StartTime:    &elevenMinutesAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeTrue())
-		})
-
-		It("should NOT timeout for analyzing phase within 10 minutes", func() {
-			now := metav1.Now()
-			fiveMinutesAgo := metav1.NewTime(now.Add(-5 * time.Minute))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "analyzing",
-					StartTime:    &fiveMinutesAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeFalse())
-		})
-
-		It("should detect timeout for executing phase after 30 minutes", func() {
-			now := metav1.Now()
-			thirtyFiveMinutesAgo := metav1.NewTime(now.Add(-35 * time.Minute))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "executing",
-					StartTime:    &thirtyFiveMinutesAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeTrue())
-		})
-
-		It("should NOT timeout for executing phase within 30 minutes", func() {
-			now := metav1.Now()
-			twentyMinutesAgo := metav1.NewTime(now.Add(-20 * time.Minute))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "executing",
-					StartTime:    &twentyMinutesAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeFalse())
-		})
-
-		It("should return false for unknown phases", func() {
-			now := metav1.Now()
-			oneHourAgo := metav1.NewTime(now.Add(-1 * time.Hour))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "unknown-phase",
-					StartTime:    &oneHourAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeFalse())
-		})
-
-		It("should return false for completed phase (terminal state)", func() {
-			now := metav1.Now()
-			oneHourAgo := metav1.NewTime(now.Add(-1 * time.Hour))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "completed",
-					StartTime:    &oneHourAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeFalse())
-		})
-
-		It("should return false for failed phase (terminal state)", func() {
-			now := metav1.Now()
-			oneHourAgo := metav1.NewTime(now.Add(-1 * time.Hour))
-
-			remediation := &remediationv1alpha1.RemediationRequest{
-				Status: remediationv1alpha1.RemediationRequestStatus{
-					OverallPhase: "failed",
-					StartTime:    &oneHourAgo,
-				},
-			}
-
-			Expect(reconciler.IsPhaseTimedOut(remediation)).To(BeFalse())
-		})
+			// Edge cases
+			Entry("unknown phase: NO timeout even after 1 hour", "unknown-phase", 1*time.Hour, false),
+			Entry("completed phase: NO timeout (terminal state)", "completed", 1*time.Hour, false),
+			Entry("failed phase: NO timeout (terminal state)", "failed", 1*time.Hour, false),
+		)
 	})
 })
