@@ -82,6 +82,11 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	// Check for timeout before orchestrating
+	if r.IsPhaseTimedOut(&remediationRequest) {
+		return r.handleTimeout(ctx, &remediationRequest)
+	}
+
 	// Orchestrate based on phase
 	return r.orchestratePhase(ctx, &remediationRequest)
 }
@@ -591,4 +596,62 @@ func (r *RemediationRequestReconciler) handleExecutingPhase(
 
 	// Still executing - requeue
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+}
+
+// ========================================
+// TIMEOUT HANDLING
+// Phase 2.1: Timeout detection and handling
+// ========================================
+
+// IsPhaseTimedOut checks if the current phase has exceeded its timeout threshold
+// Timeout thresholds per phase (from reconciliation-phases.md):
+// - pending: 30 seconds
+// - processing: 5 minutes
+// - analyzing: 10 minutes
+// - executing: 30 minutes
+func (r *RemediationRequestReconciler) IsPhaseTimedOut(remediation *remediationv1alpha1.RemediationRequest) bool {
+	if remediation.Status.StartTime == nil {
+		return false
+	}
+
+	elapsed := time.Since(remediation.Status.StartTime.Time)
+
+	switch remediation.Status.OverallPhase {
+	case "pending":
+		return elapsed > 30*time.Second
+	case "processing":
+		return elapsed > 5*time.Minute
+	case "analyzing":
+		return elapsed > 10*time.Minute
+	case "executing":
+		return elapsed > 30*time.Minute
+	default:
+		return false
+	}
+}
+
+// handleTimeout marks the remediation as failed due to timeout
+// Business Requirement: BR-ORCHESTRATION-003 (Timeout Handling)
+func (r *RemediationRequestReconciler) handleTimeout(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Mark as failed with timeout information
+	remediation.Status.OverallPhase = "failed"
+	remediation.Status.CompletedAt = &metav1.Time{Time: time.Now()}
+
+	log.Info("Phase timeout detected",
+		"remediation", remediation.Name,
+		"phase", remediation.Status.OverallPhase,
+		"elapsed", time.Since(remediation.Status.StartTime.Time),
+	)
+
+	if err := r.Status().Update(ctx, remediation); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Terminal state - no requeue
+	return ctrl.Result{}, nil
 }
