@@ -91,8 +91,8 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 				Namespace: namespace,
 				OwnerReferences: []metav1.OwnerReference{
 					{
-						APIVersion: remediationRequest.APIVersion,
-						Kind:       remediationRequest.Kind,
+						APIVersion: "remediation.kubernaut.io/v1alpha1",
+						Kind:       "RemediationRequest",
 						Name:       remediationRequest.Name,
 						UID:        remediationRequest.UID,
 						Controller: func() *bool { b := true; return &b }(),
@@ -124,6 +124,8 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
 
 		// Update RemediationRequest status to reference RemediationProcessing
+		// Refetch to get latest resourceVersion (controller may have modified it)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
 		remediationRequest.Status.OverallPhase = "processing"
 		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
 			Name:      remediationProcessing.Name,
@@ -220,6 +222,8 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
 		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
 
+		// Refetch to get latest resourceVersion (controller may have modified it)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
 		remediationRequest.Status.OverallPhase = "processing"
 		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
 			Name:      remediationProcessing.Name,
@@ -301,6 +305,8 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
 		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
 
+		// Refetch to get latest resourceVersion (controller may have modified it)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
 		remediationRequest.Status.OverallPhase = "processing"
 		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
 			Name:      remediationProcessing.Name,
@@ -397,6 +403,8 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 		Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
 		Expect(k8sClient.Status().Update(ctx, aiAnalysis)).To(Succeed())
 
+		// Refetch to get latest resourceVersion (controller may have modified it)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
 		remediationRequest.Status.OverallPhase = "analyzing"
 		remediationRequest.Status.AIAnalysisRef = &corev1.ObjectReference{
 			Name:      aiAnalysis.Name,
@@ -477,6 +485,8 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 		Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
 		Expect(k8sClient.Status().Update(ctx, aiAnalysis)).To(Succeed())
 
+		// Refetch to get latest resourceVersion (controller may have modified it)
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
 		remediationRequest.Status.OverallPhase = "analyzing"
 		remediationRequest.Status.AIAnalysisRef = &corev1.ObjectReference{
 			Name:      aiAnalysis.Name,
