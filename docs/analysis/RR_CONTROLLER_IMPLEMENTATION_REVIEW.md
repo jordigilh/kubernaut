@@ -1,9 +1,9 @@
 # RemediationRequest Controller Implementation Review
 
-**Date**: 2025-01-10  
-**Reviewer**: AI Assistant  
-**Scope**: Current implementation vs. documented specifications  
-**Controller**: `internal/controller/remediation/remediationrequest_controller.go`  
+**Date**: 2025-01-10
+**Reviewer**: AI Assistant
+**Scope**: Current implementation vs. documented specifications
+**Controller**: `internal/controller/remediation/remediationrequest_controller.go`
 **Main Entry Point**: `cmd/remediationorchestrator/main.go`
 
 ---
