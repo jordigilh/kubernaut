@@ -1,14 +1,61 @@
+# ⛔ DEPRECATED - DO NOT USE FOR IMPLEMENTATION
+
+**Status**: 🚨 **HISTORICAL REFERENCE ONLY**  
+**Deprecated**: January 2025  
+**Confidence**: 100% - This document is severely outdated
+
+---
+
+## 🎯 **FOR CURRENT V1 INFORMATION, SEE:**
+
+### **1. Implementation (Source of Truth)**
+- **[`api/remediation/v1alpha1/remediationrequest_types.go`](../../../api/remediation/v1alpha1/remediationrequest_types.go)** - Actual Go implementation
+
+### **2. Schema Documentation**
+- **[`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md)** - Authoritative schema documentation
+
+### **3. Service Specifications (2,806 lines)**
+- **[`docs/services/crd-controllers/05-remediationorchestrator/`](../../services/crd-controllers/05-remediationorchestrator/)** - Complete service specs
+
+---
+
+## ⚠️ **CRITICAL ISSUES IN THIS DOCUMENT**
+
+**This document is ~60% incorrect for V1. Do NOT use for implementation.**
+
+| Issue | Severity | What's Wrong |
+|-------|----------|--------------|
+| **CRD Name** | ⛔ BLOCKER | `alertremediations.kubernaut.io` → Should be `remediationrequests.remediation.kubernaut.io` |
+| **API Version** | 🟡 MEDIUM | `v1` → Should be `v1alpha1` |
+| **Field Naming** | ⛔ BLOCKER | Uses deprecated "Alert" prefix (`alertFingerprint` → `signalFingerprint`) |
+| **Missing Fields** | 🔴 HIGH | Missing Phase 1 fields: `signalLabels`, `signalAnnotations` |
+| **Service Names** | 🟡 MEDIUM | `alertprocessor` → Should be `RemediationProcessing` |
+| **Architecture** | 🔴 HIGH | Missing self-containment pattern documentation |
+| **Business Reqs** | 🟡 MEDIUM | Wrong BR references (BR-PA-*, BR-WH-* → Should be BR-REM-*) |
+
+**Schema Completeness**: ~40% of V1 fields are missing or incorrect
+
+**See Triage Report**: [`docs/analysis/REMEDIATION_REQUEST_CRD_DESIGN_TRIAGE.md`](../../analysis/REMEDIATION_REQUEST_CRD_DESIGN_TRIAGE.md)
+
+---
+
+## 📜 **ORIGINAL DOCUMENT (OUTDATED) BELOW**
+
+**Warning**: Everything below this line is outdated. See links above for current information.
+
+---
+
 # RemediationRequest CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
-**Status**: **REFERENCE ONLY** - Superseded by CRD_SCHEMAS.md
+**Status**: **DEPRECATED** - See banner above
 **CRD Type**: Central Coordination Controller
 **Priority**: **CRITICAL** - Core orchestration component
 
 ---
 
-## ⚠️ DEPRECATION NOTICES
+## ⚠️ ORIGINAL DEPRECATION NOTICES (ALSO OUTDATED)
 
 ### **1. Authoritative Source**
 
