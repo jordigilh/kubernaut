@@ -38,12 +38,227 @@ spec:
           metadata:
             type: object
           spec:
-            description: RemediationProcessingSpec defines the desired state of RemediationProcessing.
+            description: |-
+              RemediationProcessingSpec defines the desired state of RemediationProcessing.
+              Phase 1 Enhancement: Self-contained CRD pattern - contains all data from RemediationRequest
+              No external CRD reads required during reconciliation (performance, reliability, isolation)
             properties:
-              foo:
-                description: Foo is an example field of RemediationProcessing. Edit
-                  remediationprocessing_types.go to remove/update
+              deduplication:
+                description: |-
+                  ========================================
+                  DEDUPLICATION (From RemediationRequest)
+                  ========================================
+                  Deduplication and correlation context
+                properties:
+                  correlationID:
+                    description: Optional correlation ID for grouping related signals
+                    type: string
+                  firstOccurrence:
+                    description: Timestamp when this signal fingerprint was first
+                      seen
+                    format: date-time
+                    type: string
+                  lastOccurrence:
+                    description: Timestamp when this signal fingerprint was last seen
+                    format: date-time
+                    type: string
+                  occurrenceCount:
+                    description: Total count of occurrences of this signal
+                    type: integer
+                required:
+                - firstOccurrence
+                - lastOccurrence
+                - occurrenceCount
+                type: object
+              enrichmentConfig:
+                description: |-
+                  ========================================
+                  CONFIGURATION (Processor-Specific)
+                  ========================================
+                  Optional enrichment configuration specific to this processing
+                properties:
+                  enableClusterState:
+                    description: Enable cluster state enrichment (Kubernetes API queries)
+                    type: boolean
+                  enableHistorical:
+                    description: Enable historical enrichment (vector DB/time-series
+                      queries)
+                    type: boolean
+                  enableMetrics:
+                    description: Enable metrics enrichment (Prometheus/monitoring
+                      queries)
+                    type: boolean
+                type: object
+              environment:
+                description: |-
+                  ========================================
+                  SIGNAL CLASSIFICATION (From RemediationRequest)
+                  ========================================
+                  Environment: "prod", "staging", "dev"
                 type: string
+              firingTime:
+                description: |-
+                  ========================================
+                  TIMESTAMPS (From RemediationRequest)
+                  ========================================
+                  When the signal first started firing (from upstream source)
+                format: date-time
+                type: string
+              isStorm:
+                description: |-
+                  ========================================
+                  STORM DETECTION (From RemediationRequest)
+                  ========================================
+                  True if this signal is part of a detected alert storm
+                type: boolean
+              originalPayload:
+                description: Complete original webhook payload for debugging and audit
+                format: byte
+                type: string
+              priority:
+                description: Priority assigned by Gateway (P0=critical, P1=high, P2=normal)
+                type: string
+              providerData:
+                description: |-
+                  ========================================
+                  PROVIDER DATA (From RemediationRequest)
+                  ========================================
+                  Provider-specific fields in raw JSON format
+                  Controllers parse this based on targetType/signalType if needed
+                format: byte
+                type: string
+              receivedTime:
+                description: When Gateway received the signal
+                format: date-time
+                type: string
+              remediationRequestRef:
+                description: |-
+                  ========================================
+                  PARENT REFERENCE (Audit/Lineage Only)
+                  ========================================
+                  Reference to parent RemediationRequest CRD for audit trail and lineage
+                  RemediationProcessor does NOT read RemediationRequest - all data is self-contained
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              severity:
+                description: 'Severity level: "critical", "warning", "info"'
+                type: string
+              signalAnnotations:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Signal annotations extracted from provider-specific data
+                  For Prometheus: alert.Annotations (e.g., {"summary": "Memory usage above 90%"})
+                type: object
+              signalFingerprint:
+                description: |-
+                  ========================================
+                  SIGNAL IDENTIFICATION (From RemediationRequest)
+                  ========================================
+                  Core signal identity copied from RemediationRequest
+                  Unique fingerprint for deduplication (SHA256 of signal key fields)
+                type: string
+              signalLabels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  ========================================
+                  SIGNAL METADATA (From RemediationRequest)
+                  ========================================
+                  Signal labels extracted from provider-specific data
+                  For Prometheus: alert.Labels (e.g., {"alertname": "HighMemory", "namespace": "prod"})
+                type: object
+              signalName:
+                description: Human-readable signal name (e.g., "HighMemoryUsage",
+                  "CrashLoopBackOff")
+                type: string
+              signalSource:
+                description: Adapter that ingested the signal (e.g., "prometheus-adapter",
+                  "k8s-event-adapter")
+                type: string
+              signalType:
+                description: 'Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch",
+                  etc.'
+                type: string
+              stormAlertCount:
+                description: Number of alerts in the storm
+                type: integer
+              targetResource:
+                description: |-
+                  ========================================
+                  TARGET RESOURCE (From RemediationRequest)
+                  ========================================
+                  Target resource identification (extracted from providerData by RemediationOrchestrator)
+                properties:
+                  kind:
+                    description: Resource kind (e.g., "Pod", "Deployment", "StatefulSet")
+                    type: string
+                  name:
+                    description: Resource name
+                    type: string
+                  namespace:
+                    description: Resource namespace
+                    type: string
+                required:
+                - kind
+                - name
+                - namespace
+                type: object
+              targetType:
+                description: 'Target system type: "kubernetes", "aws", "azure", "gcp",
+                  "datadog"'
+                type: string
+            required:
+            - deduplication
+            - environment
+            - priority
+            - receivedTime
+            - remediationRequestRef
+            - severity
+            - signalFingerprint
+            - signalName
+            - signalType
+            - targetResource
+            - targetType
             type: object
           status:
             description: RemediationProcessingStatus defines the observed state of
