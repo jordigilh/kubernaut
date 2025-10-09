@@ -11,10 +11,19 @@
 
 This action plan implements the RemediationRequest (RR) controller as the central orchestrator for the multi-CRD remediation architecture. The plan follows the APDC-TDD methodology and implements all features documented in `docs/services/crd-controllers/05-remediationorchestrator/`.
 
-**Scope**: Orchestration logic only - business logic is in dedicated controllers
-**Estimated Effort**: 7 days (3.5 days P0 + 2 days P1 + 1.5 days observability)
-**Testing**: 3.5 days (unit + integration)
+**Scope**: Orchestration logic only - business logic is in dedicated controllers  
+**Estimated Effort**: 7 days (3.5 days P0 + 2 days P1 + 1.5 days observability) **✅ includes TDD tests**  
+**Comprehensive Testing**: 3.5 days (edge cases, integration) **🔍 beyond TDD tests**  
 **Total**: 10.5 days
+
+### ⚠️ **Critical TDD Methodology Note**
+
+**Tests are written FIRST for each feature** (Do-RED phase), NOT after implementation!
+
+- **Weeks 1-2 (Implementation)**: Write test → Implement feature (TDD) → ~30-40 tests
+- **Week 3 (Comprehensive Testing)**: Add edge cases, integration tests → ~10-15 additional tests
+
+**Week 3 is NOT about writing tests for the first time** - it's about comprehensive coverage beyond the core TDD tests written during implementation.
 
 ---
 
