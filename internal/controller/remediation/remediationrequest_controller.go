@@ -36,6 +36,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/controller/remediation/metrics"
 )
 
 // RemediationRequestReconciler reconciles a RemediationRequest object
@@ -395,6 +396,11 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
 	}
 
 	log.Info("Created AIAnalysis CRD", "name", aiAnalysisName)
+
+	// Record metrics
+	metricsRecorder := r.getMetricsRecorder(remediation)
+	metricsRecorder.RecordChildCRDCreation("AIAnalysis")
+
 	return nil
 }
 
@@ -457,6 +463,11 @@ func (r *RemediationRequestReconciler) createWorkflowExecution(
 	}
 
 	log.Info("Created WorkflowExecution CRD", "name", workflowName)
+
+	// Record metrics
+	metricsRecorder := r.getMetricsRecorder(remediation)
+	metricsRecorder.RecordChildCRDCreation("WorkflowExecution")
+
 	return nil
 }
 
@@ -585,6 +596,7 @@ func (r *RemediationRequestReconciler) handleProcessingPhase(
 		}
 
 		// Update phase
+		oldPhase := remediation.Status.OverallPhase
 		remediation.Status.OverallPhase = "analyzing"
 		remediation.Status.AIAnalysisRef = &corev1.ObjectReference{
 			Name:      fmt.Sprintf("%s-aianalysis", remediation.Name),
@@ -592,6 +604,10 @@ func (r *RemediationRequestReconciler) handleProcessingPhase(
 		}
 
 		log.Info("Phase transition: processing → analyzing", "remediation", remediation.Name)
+
+		// Record metrics
+		r.recordPhaseTransition(remediation, oldPhase, "analyzing")
+
 		return ctrl.Result{}, r.Status().Update(ctx, remediation)
 	}
 
@@ -633,6 +649,7 @@ func (r *RemediationRequestReconciler) handleAnalyzingPhase(
 		}
 
 		// Update phase
+		oldPhase := remediation.Status.OverallPhase
 		remediation.Status.OverallPhase = "executing"
 		remediation.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 			Name:      fmt.Sprintf("%s-workflow", remediation.Name),
@@ -640,6 +657,10 @@ func (r *RemediationRequestReconciler) handleAnalyzingPhase(
 		}
 
 		log.Info("Phase transition: analyzing → executing", "remediation", remediation.Name)
+
+		// Record metrics
+		r.recordPhaseTransition(remediation, oldPhase, "executing")
+
 		return ctrl.Result{}, r.Status().Update(ctx, remediation)
 	}
 
@@ -676,10 +697,16 @@ func (r *RemediationRequestReconciler) handleExecutingPhase(
 	// Check if completed
 	if workflow.Status.Phase == "completed" {
 		// Update to completed
+		oldPhase := remediation.Status.OverallPhase
 		remediation.Status.OverallPhase = "completed"
 		remediation.Status.CompletedAt = &metav1.Time{Time: time.Now()}
 
 		log.Info("Phase transition: executing → completed", "remediation", remediation.Name)
+
+		// Record metrics
+		r.recordPhaseTransition(remediation, oldPhase, "completed")
+		r.recordTerminalState(remediation, "completed")
+
 		return ctrl.Result{}, r.Status().Update(ctx, remediation)
 	}
 
@@ -753,6 +780,7 @@ func (r *RemediationRequestReconciler) handleFailure(
 	reason := r.BuildFailureReason(phase, childCRDType, childPhase)
 
 	// Update status to failed
+	oldPhase := remediation.Status.OverallPhase
 	remediation.Status.OverallPhase = "failed"
 	remediation.Status.CompletedAt = &metav1.Time{Time: time.Now()}
 
@@ -761,7 +789,13 @@ func (r *RemediationRequestReconciler) handleFailure(
 		"phase", phase,
 		"reason", reason)
 
-	// TODO Phase 3.1: Emit Kubernetes event
+	// Record metrics
+	metricsRecorder := r.getMetricsRecorder(remediation)
+	metricsRecorder.RecordFailure(phase, childCRDType)
+	r.recordPhaseTransition(remediation, oldPhase, "failed")
+	r.recordTerminalState(remediation, "failed")
+
+	// TODO Phase 3.2: Emit Kubernetes event
 	// TODO Phase 3.2: Record audit entry
 	// TODO Phase 3.3: Trigger notification/escalation
 
@@ -837,6 +871,45 @@ func (r *RemediationRequestReconciler) finalizeRemediationRequest(
 }
 
 // ========================================
+// METRICS HELPERS
+// Phase 3.1: Prometheus metrics integration
+// ========================================
+
+// getMetricsRecorder creates a metrics recorder for the given RemediationRequest
+func (r *RemediationRequestReconciler) getMetricsRecorder(remediation *remediationv1alpha1.RemediationRequest) *metrics.MetricsRecorder {
+	environment := remediation.Spec.Environment
+	return metrics.NewMetricsRecorder(environment)
+}
+
+// recordPhaseTransition records a phase transition metric
+func (r *RemediationRequestReconciler) recordPhaseTransition(
+	remediation *remediationv1alpha1.RemediationRequest,
+	fromPhase, toPhase string,
+) {
+	metricsRecorder := r.getMetricsRecorder(remediation)
+	metricsRecorder.RecordPhaseTransition(fromPhase, toPhase)
+}
+
+// recordTerminalState records metrics for terminal states (completed, failed, timeout)
+func (r *RemediationRequestReconciler) recordTerminalState(
+	remediation *remediationv1alpha1.RemediationRequest,
+	status string,
+) {
+	if remediation.Status.StartTime == nil {
+		return // No start time, can't calculate duration
+	}
+
+	duration := time.Since(remediation.Status.StartTime.Time).Seconds()
+	metricsRecorder := r.getMetricsRecorder(remediation)
+
+	if status == "completed" {
+		metricsRecorder.RecordCompletion(duration)
+	} else {
+		metricsRecorder.RecordTerminalFailure(status, duration)
+	}
+}
+
+// ========================================
 // TIMEOUT HANDLING
 // Phase 2.1: Timeout detection and handling
 // ========================================
@@ -875,16 +948,26 @@ func (r *RemediationRequestReconciler) handleTimeout(
 	remediation *remediationv1alpha1.RemediationRequest,
 ) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-
-	// Mark as failed with timeout information
-	remediation.Status.OverallPhase = "failed"
-	remediation.Status.CompletedAt = &metav1.Time{Time: time.Now()}
+	phase := remediation.Status.OverallPhase
 
 	log.Info("Phase timeout detected",
 		"remediation", remediation.Name,
-		"phase", remediation.Status.OverallPhase,
+		"phase", phase,
 		"elapsed", time.Since(remediation.Status.StartTime.Time),
 	)
+
+	// Record timeout metrics
+	metricsRecorder := r.getMetricsRecorder(remediation)
+	metricsRecorder.RecordTimeout(phase)
+
+	// Mark as failed with timeout information
+	oldPhase := remediation.Status.OverallPhase
+	remediation.Status.OverallPhase = "failed"
+	remediation.Status.CompletedAt = &metav1.Time{Time: time.Now()}
+
+	// Record terminal state metrics
+	r.recordPhaseTransition(remediation, oldPhase, "failed")
+	r.recordTerminalState(remediation, "timeout")
 
 	if err := r.Status().Update(ctx, remediation); err != nil {
 		return ctrl.Result{}, err
