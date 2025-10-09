@@ -190,58 +190,20 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		}
 		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
 
-		// Initialize status to "processing" to bypass controller's auto-creation (with retry for race condition)
-		Eventually(func() error {
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest); err != nil {
-				return err
-			}
-			remediationRequest.Status.OverallPhase = "processing"
-			remediationRequest.Status.StartTime = &metav1.Time{Time: time.Now()}
-			return k8sClient.Status().Update(ctx, remediationRequest)
-		}, time.Second*3, interval).Should(Succeed())
-
-		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      remediationRequest.Name + "-processing",
-				Namespace: namespace,
-				OwnerReferences: []metav1.OwnerReference{
-					{
-						APIVersion: "remediation.kubernaut.io/v1alpha1",
-						Kind:       "RemediationRequest",
-						Name:       remediationRequest.Name,
-						UID:        remediationRequest.UID,
-						Controller: func() *bool { b := true; return &b }(),
-					},
-				},
-			},
-			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
-				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
-				SignalName:        remediationRequest.Spec.SignalName,
-				Severity:          remediationRequest.Spec.Severity,
-				Environment:       remediationRequest.Spec.Environment,
-				Priority:          remediationRequest.Spec.Priority,
-				SignalType:        remediationRequest.Spec.SignalType,
-				TargetType:        remediationRequest.Spec.TargetType,
-				SignalLabels:      remediationRequest.Spec.SignalLabels,
-				ReceivedTime:      now,
-				Deduplication: remediationprocessingv1alpha1.DeduplicationContext{
-					FirstOccurrence: now,
-					LastOccurrence:  now,
-				},
-			},
-			Status: remediationprocessingv1alpha1.RemediationProcessingStatus{
-				Phase: "completed",
-				ContextData: map[string]string{
-					"cluster_state":      "degraded",
-					"recent_deployments": "3",
-					"metrics_available":  "true",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
+		// GIVEN: Controller creates RemediationProcessing in pending phase
+		// WHEN: We update RemediationProcessing status to 'completed' with enriched context
+		remediationProcessingName := remediationRequest.Name + "-processing"
+		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{}
 		
-		// Refetch RemediationProcessing to set status (status is reset on create)
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationProcessing.Name, Namespace: remediationProcessing.Namespace}, remediationProcessing)).To(Succeed())
+		// Wait for controller to create RemediationProcessing
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      remediationProcessingName,
+				Namespace: namespace,
+			}, remediationProcessing)
+		}, timeout, interval).Should(Succeed())
+		
+		// Update RemediationProcessing status to 'completed' with enriched context
 		remediationProcessing.Status.Phase = "completed"
 		remediationProcessing.Status.ContextData = map[string]string{
 			"cluster_state":      "degraded",
@@ -249,14 +211,6 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			"metrics_available":  "true",
 		}
 		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
-
-		// Update RemediationRequest to reference RemediationProcessing
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
-		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
-			Name:      remediationProcessing.Name,
-			Namespace: remediationProcessing.Namespace,
-		}
-		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
 
 		// WHEN: Controller processes the request
 		// THEN: AIAnalysis should include enriched context
