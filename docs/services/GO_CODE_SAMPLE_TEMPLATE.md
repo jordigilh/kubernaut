@@ -377,6 +377,437 @@ var _ = Describe("RemediationRequest Controller", func() {
 
 ---
 
+## Test-Specific Import Patterns
+
+### Test Import Guidelines
+
+**Purpose**: Tests should have complete, copy-paste ready imports to ensure pristine documentation.
+
+**Core Principles**:
+1. **Complete Imports**: All potential dependencies included upfront
+2. **Progressive Disclosure**: TDD phases may not use all imports initially
+3. **HTTP Testing**: Include `net/http` and `net/http/httptest` for service tests
+4. **Time Dependencies**: Include `time` for any temporal operations
+5. **Context Usage**: Always include `context` for concurrent operations
+
+---
+
+### Template 6: Unit Test (Pure Logic)
+
+For testing pure business logic without infrastructure dependencies.
+
+```go
+package processor_test
+
+import (
+    "context"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    "github.com/jordigilh/kubernaut/pkg/processor"
+)
+
+var _ = Describe("Business Logic Calculator", func() {
+    var calculator *processor.Calculator
+
+    BeforeEach(func() {
+        calculator = processor.NewCalculator()
+    })
+
+    Context("Score Calculation", func() {
+        It("should calculate effectiveness score correctly", func() {
+            result := calculator.Calculate(0.85)
+            Expect(result).To(BeNumerically(">", 0.8))
+        })
+    })
+})
+```
+
+**Key Patterns**:
+- Minimal imports for pure logic tests
+- `context` and `time` included for common patterns
+- No infrastructure mocking required
+- Focus on algorithm correctness
+
+---
+
+### Template 7: Integration Test (HTTP Service)
+
+For testing HTTP services with cross-service integration.
+
+```go
+package gateway_test
+
+import (
+    "bytes"
+    "context"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    "github.com/jordigilh/kubernaut/pkg/gateway"
+    "github.com/jordigilh/kubernaut/pkg/testutil"
+)
+
+var _ = Describe("Gateway Service Integration", func() {
+    var (
+        ctx     context.Context
+        service *gateway.Service
+        server  *httptest.Server
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+        service = gateway.NewService()
+        server = httptest.NewServer(http.HandlerFunc(service.HandleWebhook))
+    })
+
+    AfterEach(func() {
+        server.Close()
+    })
+
+    Context("Webhook Ingestion", func() {
+        It("should accept Prometheus alert webhook", func() {
+            payload := testutil.NewPrometheusAlert()
+            body, _ := json.Marshal(payload)
+
+            resp, err := http.Post(server.URL+"/webhook", "application/json", bytes.NewBuffer(body))
+
+            Expect(err).ToNot(HaveOccurred())
+            Expect(resp.StatusCode).To(Equal(http.StatusOK))
+        })
+    })
+})
+```
+
+**Key Patterns**:
+- `bytes` for request body construction
+- `encoding/json` for payload marshaling
+- `net/http` and `net/http/httptest` for HTTP testing
+- `time` for timeout and retry testing
+- `context` for request lifecycle management
+
+---
+
+### Template 8: Integration Test (Database/Storage)
+
+For testing database interactions and storage operations.
+
+```go
+package storage_test
+
+import (
+    "context"
+    "database/sql"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    "github.com/jordigilh/kubernaut/pkg/storage"
+    "github.com/jordigilh/kubernaut/pkg/testutil"
+)
+
+var _ = Describe("PostgreSQL Integration", func() {
+    var (
+        ctx     context.Context
+        db      *sql.DB
+        service *storage.Service
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+        db = testutil.NewTestPostgresDB()
+        service = storage.NewService(db)
+    })
+
+    AfterEach(func() {
+        testutil.CleanupTestDatabase(db)
+    })
+
+    Context("Action History Storage", func() {
+        It("should persist remediation action to database", func() {
+            action := &storage.Action{
+                ID:        "act-123",
+                Type:      "restart-pod",
+                Status:    "success",
+                Timestamp: time.Now(),
+            }
+
+            err := service.SaveAction(ctx, action)
+
+            Expect(err).ToNot(HaveOccurred())
+        })
+    })
+})
+```
+
+**Key Patterns**:
+- `database/sql` for database operations
+- `time` for timestamp operations
+- `context` for query lifecycle
+- Test utilities for database setup/cleanup
+
+---
+
+### Template 9: Controller Integration Test
+
+For testing Kubernetes controllers with fake clients.
+
+```go
+package controller_test
+
+import (
+    "context"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    corev1 "k8s.io/api/core/v1"
+    apierrors "k8s.io/apimachinery/pkg/api/errors"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/apimachinery/pkg/types"
+    ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+    remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1"
+    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    "github.com/jordigilh/kubernaut/internal/controller"
+    "github.com/jordigilh/kubernaut/pkg/testutil"
+)
+
+var _ = Describe("RemediationRequest Controller Integration", func() {
+    var (
+        ctx        context.Context
+        fakeClient client.Client
+        reconciler *controller.RemediationRequestReconciler
+        scheme     *runtime.Scheme
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+        scheme = runtime.NewScheme()
+        _ = remediationv1.AddToScheme(scheme)
+        _ = processingv1.AddToScheme(scheme)
+
+        fakeClient = fake.NewClientBuilder().
+            WithScheme(scheme).
+            Build()
+
+        reconciler = &controller.RemediationRequestReconciler{
+            Client: fakeClient,
+            Scheme: scheme,
+        }
+    })
+
+    Context("CRD Creation", func() {
+        It("should create RemediationProcessing CRD when RemediationRequest is created", func() {
+            rr := testutil.NewRemediationRequest("test-rr", "default")
+            Expect(fakeClient.Create(ctx, rr)).To(Succeed())
+
+            req := ctrl.Request{
+                NamespacedName: types.NamespacedName{
+                    Name:      rr.Name,
+                    Namespace: rr.Namespace,
+                },
+            }
+
+            result, err := reconciler.Reconcile(ctx, req)
+
+            Expect(err).ToNot(HaveOccurred())
+            Expect(result.Requeue).To(BeFalse())
+
+            // Verify RemediationProcessing was created
+            var ap processingv1.RemediationProcessing
+            key := types.NamespacedName{Name: "test-rr-processing", Namespace: "default"}
+            Expect(fakeClient.Get(ctx, key, &ap)).To(Succeed())
+        })
+    })
+})
+```
+
+**Key Patterns**:
+- Full Kubernetes client and runtime imports
+- `fake.NewClientBuilder()` for test client creation
+- `time` for requeue delays
+- `context` for reconciliation lifecycle
+- `types.NamespacedName` for resource lookups
+- `apierrors` for error checking
+
+---
+
+### TDD Progressive Import Disclosure
+
+**Principle**: In TDD methodology, tests are written before implementation exists. Imports should reflect the *complete* interface contract, even if implementation hasn't been written yet.
+
+#### Phase Progression Example
+
+**RED Phase** (Test written, implementation doesn't exist):
+```go
+// test/unit/effectiveness/calculator_test.go
+package effectiveness_test
+
+import (
+    "context"
+    "time"  // ← Included even if not used yet
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    "github.com/jordigilh/kubernaut/pkg/effectiveness"
+)
+
+var _ = Describe("Effectiveness Calculator", func() {
+    It("should calculate score", func() {
+        calculator := effectiveness.NewCalculator()  // DOESN'T EXIST YET
+        score := calculator.Calculate(ctx, data)     // DOESN'T EXIST YET
+        Expect(score).To(BeNumerically(">", 0.0))
+    })
+})
+```
+
+**GREEN Phase** (Minimal implementation):
+```go
+// pkg/effectiveness/calculator.go
+package effectiveness
+
+type Calculator struct{}
+
+func NewCalculator() *Calculator {
+    return &Calculator{}
+}
+
+func (c *Calculator) Calculate(ctx context.Context, data *Data) float64 {
+    return 0.85  // Minimal implementation
+}
+```
+
+**REFACTOR Phase** (Enhanced implementation uses time):
+```go
+// pkg/effectiveness/calculator.go
+package effectiveness
+
+import (
+    "context"
+    "time"  // ← Now actually used
+)
+
+type Calculator struct {
+    cache map[string]cachedResult
+}
+
+type cachedResult struct {
+    score     float64
+    timestamp time.Time  // ← time now used
+}
+
+func (c *Calculator) Calculate(ctx context.Context, data *Data) float64 {
+    // Check cache with TTL
+    if cached, ok := c.cache[data.ID]; ok {
+        if time.Since(cached.timestamp) < 5*time.Minute {
+            return cached.score
+        }
+    }
+    // ... sophisticated calculation
+}
+```
+
+**Key Point**: Test imports included `time` in RED phase even though it wasn't used until REFACTOR phase. This ensures pristine documentation throughout TDD workflow.
+
+---
+
+### HTTP Testing Import Patterns
+
+For services that handle HTTP requests (Gateway, Context API, Notification, Dynamic Toolset):
+
+**Required Imports**:
+- `bytes` - Request body construction
+- `net/http` - HTTP client operations
+- `net/http/httptest` - Test server creation
+- `encoding/json` - Payload marshaling
+- `time` - Timeout and retry testing
+
+**Example Pattern**:
+```go
+import (
+    "bytes"
+    "context"
+    "encoding/json"
+    "net/http"
+    "net/http/httptest"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    "github.com/jordigilh/kubernaut/pkg/gateway"
+)
+```
+
+---
+
+### Mock and Fake Patterns
+
+**Controller Runtime Fake Client**:
+```go
+import (
+    "sigs.k8s.io/controller-runtime/pkg/client/fake"
+)
+
+fakeClient := fake.NewClientBuilder().
+    WithScheme(scheme).
+    WithObjects(existingObjects...).
+    Build()
+```
+
+**HTTP Test Server**:
+```go
+import (
+    "net/http"
+    "net/http/httptest"
+)
+
+server := httptest.NewServer(http.HandlerFunc(handler))
+defer server.Close()
+```
+
+**External Service Mocking**:
+```go
+import (
+    "github.com/jordigilh/kubernaut/pkg/testutil/mocks"
+)
+
+mockAIService := mocks.NewMockAIService()
+mockAIService.SetResponse("analysis-result", &aiResult)
+```
+
+---
+
+### Test Import Checklist
+
+When writing test documentation, ensure:
+
+- [ ] `context` imported for lifecycle management
+- [ ] `time` imported for temporal operations
+- [ ] Ginkgo/Gomega with dot imports (`. "github.com/onsi/ginkgo/v2"`)
+- [ ] HTTP imports (`net/http`, `net/http/httptest`) for service tests
+- [ ] `bytes` and `encoding/json` for payload construction
+- [ ] Fake client imports for controller tests
+- [ ] Test utilities (`pkg/testutil`) imported
+- [ ] All business logic package imports present
+- [ ] No missing imports that would prevent copy-paste execution
+
+---
+
 ## Import Ordering Rules
 
 ### Order of Import Groups
@@ -567,6 +998,7 @@ go build sample.go
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v1.1 | 2025-10-09 | Added test-specific import patterns (Templates 6-9), TDD progressive disclosure, HTTP testing patterns |
 | v1.0 | 2025-10-09 | Initial template creation with standardized patterns |
 
 ---

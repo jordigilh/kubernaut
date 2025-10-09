@@ -59,19 +59,27 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 	// ========================================
 	It("should create AIAnalysis CRD when RemediationProcessing phase is 'completed'", func() {
 		// GIVEN: A RemediationRequest exists
+		now := metav1.Now()
 		remediationRequest := &remediationv1alpha1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-remediation-001",
 				Namespace: namespace,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "abc123def456789012345678901234567890123456789012345678901234",
+				SignalFingerprint: "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
 				SignalName:        "high-cpu-usage",
 				Severity:          "critical",
 				Environment:       "prod",
 				Priority:          "P0",
 				SignalType:        "prometheus-alert",
 				TargetType:        "kubernetes",
+				FiringTime:        now,
+				ReceivedTime:      now,
+				Deduplication: remediationv1alpha1.DeduplicationInfo{
+					IsDuplicate: false,
+					FirstSeen:   now,
+					LastSeen:    now,
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
@@ -93,6 +101,11 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			},
 			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
 				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
+				ReceivedTime:      now,
+				Deduplication: remediationprocessingv1alpha1.DeduplicationContext{
+					FirstOccurrence: now,
+					LastOccurrence:  now,
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
@@ -140,19 +153,27 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 	// ========================================
 	It("should include enriched context from RemediationProcessing in AIAnalysis spec", func() {
 		// GIVEN: A RemediationRequest with RemediationProcessing completed
+		now := metav1.Now()
 		remediationRequest := &remediationv1alpha1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-remediation-002",
 				Namespace: namespace,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "def456789012345678901234567890123456789012345678901234567890",
+				SignalFingerprint: "def0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab",
 				SignalName:        "pod-crashloop",
 				Severity:          "critical",
 				Environment:       "prod",
 				Priority:          "P0",
 				SignalType:        "kubernetes-event",
 				TargetType:        "kubernetes",
+				FiringTime:        now,
+				ReceivedTime:      now,
+				Deduplication: remediationv1alpha1.DeduplicationInfo{
+					IsDuplicate: false,
+					FirstSeen:   now,
+					LastSeen:    now,
+				},
 				SignalLabels: map[string]string{
 					"namespace": "production",
 					"pod":       "api-server-xyz",
@@ -169,6 +190,11 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
 				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
 				SignalLabels:      remediationRequest.Spec.SignalLabels,
+				ReceivedTime:      now,
+				Deduplication: remediationprocessingv1alpha1.DeduplicationContext{
+					FirstOccurrence: now,
+					LastOccurrence:  now,
+				},
 			},
 			Status: remediationprocessingv1alpha1.RemediationProcessingStatus{
 				Phase: "completed",
@@ -212,19 +238,27 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 	// ========================================
 	It("should NOT create AIAnalysis CRD when RemediationProcessing phase is 'enriching'", func() {
 		// GIVEN: A RemediationRequest with RemediationProcessing still enriching
+		now := metav1.Now()
 		remediationRequest := &remediationv1alpha1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-remediation-003",
 				Namespace: namespace,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "ghi789012345678901234567890123456789012345678901234567890123",
+				SignalFingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 				SignalName:        "disk-full",
 				Severity:          "warning",
 				Environment:       "staging",
 				Priority:          "P1",
 				SignalType:        "prometheus-alert",
 				TargetType:        "kubernetes",
+				FiringTime:        now,
+				ReceivedTime:      now,
+				Deduplication: remediationv1alpha1.DeduplicationInfo{
+					IsDuplicate: false,
+					FirstSeen:   now,
+					LastSeen:    now,
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
@@ -236,6 +270,11 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			},
 			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
 				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
+				ReceivedTime:      now,
+				Deduplication: remediationprocessingv1alpha1.DeduplicationContext{
+					FirstOccurrence: now,
+					LastOccurrence:  now,
+				},
 			},
 			Status: remediationprocessingv1alpha1.RemediationProcessingStatus{
 				Phase: "enriching", // NOT completed
@@ -291,19 +330,27 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 	// ========================================
 	It("should create WorkflowExecution CRD when AIAnalysis phase is 'completed'", func() {
 		// GIVEN: A RemediationRequest with completed AIAnalysis
+		now := metav1.Now()
 		remediationRequest := &remediationv1alpha1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-remediation-004",
 				Namespace: namespace,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "jkl012345678901234567890123456789012345678901234567890123456",
+				SignalFingerprint: "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
 				SignalName:        "memory-leak",
 				Severity:          "critical",
 				Environment:       "prod",
 				Priority:          "P0",
 				SignalType:        "prometheus-alert",
 				TargetType:        "kubernetes",
+				FiringTime:        now,
+				ReceivedTime:      now,
+				Deduplication: remediationv1alpha1.DeduplicationInfo{
+					IsDuplicate: false,
+					FirstSeen:   now,
+					LastSeen:    now,
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
@@ -362,19 +409,27 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 	// ========================================
 	It("should NOT create WorkflowExecution CRD when AIAnalysis phase is 'Analyzing'", func() {
 		// GIVEN: A RemediationRequest with AIAnalysis still analyzing
+		now := metav1.Now()
 		remediationRequest := &remediationv1alpha1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-remediation-005",
 				Namespace: namespace,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "mno345678901234567890123456789012345678901234567890123456789",
+				SignalFingerprint: "23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01",
 				SignalName:        "network-latency",
 				Severity:          "warning",
 				Environment:       "staging",
 				Priority:          "P1",
 				SignalType:        "prometheus-alert",
 				TargetType:        "kubernetes",
+				FiringTime:        now,
+				ReceivedTime:      now,
+				Deduplication: remediationv1alpha1.DeduplicationInfo{
+					IsDuplicate: false,
+					FirstSeen:   now,
+					LastSeen:    now,
+				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())

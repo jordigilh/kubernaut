@@ -38,9 +38,14 @@ Following Kubernaut's defense-in-depth testing strategy:
 package gateway_test
 
 import (
+    "bytes"
+    "context"
+    "net/http"
+    "net/http/httptest"
+    "time"
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    "context"
 
     "github.com/jordigilh/kubernaut/pkg/gateway/adapters"
     "github.com/jordigilh/kubernaut/pkg/gateway/processing"
