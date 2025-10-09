@@ -197,7 +197,7 @@ Document likely doesn't explain:
 - Dependency graph analysis for step ordering
 - Topological sort for linearization
 
-**Evidence**: 
+**Evidence**:
 - `docs/analysis/WORKFLOW_EXECUTION_MODE_DETERMINATION.md`
 - `docs/services/crd-controllers/03-workflowexecution/workflow-dependency-resolution.md`
 

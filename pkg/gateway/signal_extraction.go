@@ -245,4 +245,3 @@ func ExtractSignalMetadata(alert *AlertManagerAlert, webhook *AlertManagerWebhoo
 
 	return labels, annotations
 }
-
