@@ -59,6 +59,25 @@
 
 ---
 
+## 🏗️ Implementation Structure
+
+### **Binary Location**
+- **Directory**: `cmd/remediationprocessor/`
+- **Entry Point**: `cmd/remediationprocessor/main.go`
+- **Build Command**: `go build -o bin/remediation-processor ./cmd/remediationprocessor`
+
+### **Controller Location**
+- **Controller**: `internal/controller/remediationprocessing/remediationprocessing_controller.go`
+- **CRD Types**: `api/remediationprocessing/v1alpha1/`
+
+### **Business Logic**
+- **Package**: `pkg/alertprocessor/` (formerly `pkg/remediationprocessing/`)
+- **Tests**: `test/unit/alertprocessor/`
+
+**See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
+
+---
+
 ## 🚀 Quick Start
 
 **For New Developers**:
@@ -203,6 +222,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📞 Support & Documentation
 
+- **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
+- **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
 - **CRD Design Spec**: [docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md](../../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)

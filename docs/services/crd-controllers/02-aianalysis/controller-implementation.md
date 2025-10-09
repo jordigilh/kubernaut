@@ -19,7 +19,7 @@ pkg/ai/analysis/
     ├── response_validator.go  # AI response validation (BR-AI-021)
     └── hallucination_detector.go  # Hallucination detection (BR-AI-023)
 
-cmd/ai-analysis/
+cmd/aianalysis/
 └── main.go                    # Binary entry point
 
 test/unit/ai/analysis/         # Unit tests (70%+ coverage)

@@ -121,7 +121,7 @@ spec:
 ### Implementation Code
 
 ```go
-// cmd/ai-analysis/main.go
+// cmd/aianalysis/main.go
 package main
 
 import (

@@ -711,7 +711,7 @@ spec:
 ### Implementation Code
 
 ```go
-// cmd/workflow-execution/main.go
+// cmd/workflowexecution/main.go
 package main
 
 import (
