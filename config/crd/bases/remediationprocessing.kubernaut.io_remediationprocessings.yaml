@@ -286,6 +286,22 @@ spec:
           status:
             description: RemediationProcessingStatus defines the observed state of
               RemediationProcessing.
+            properties:
+              completedAt:
+                format: date-time
+                type: string
+              contextData:
+                additionalProperties:
+                  type: string
+                description: Enriched context data from processing
+                type: object
+              phase:
+                description: Phase tracking
+                type: string
+              startTime:
+                description: Timestamps
+                format: date-time
+                type: string
             type: object
         type: object
     served: true

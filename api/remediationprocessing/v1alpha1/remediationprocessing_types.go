@@ -174,8 +174,15 @@ type EnrichmentConfiguration struct {
 
 // RemediationProcessingStatus defines the observed state of RemediationProcessing.
 type RemediationProcessingStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Phase tracking
+	Phase string `json:"phase,omitempty"` // "pending", "enriching", "completed", "failed"
+
+	// Enriched context data from processing
+	ContextData map[string]string `json:"contextData,omitempty"`
+
+	// Timestamps
+	StartTime   *metav1.Time `json:"startTime,omitempty"`
+	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 }
 
 // +kubebuilder:object:root=true

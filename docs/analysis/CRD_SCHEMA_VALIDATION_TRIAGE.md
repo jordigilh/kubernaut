@@ -1,7 +1,7 @@
 # CRD Schema Validation Triage
 
-**Date**: 2025-10-09  
-**Status**: 🔍 Triage Complete  
+**Date**: 2025-10-09
+**Status**: 🔍 Triage Complete
 **Priority**: P1 - Important (API-level validation and documentation)
 
 ---
@@ -71,22 +71,22 @@ Fields with specific formats (URLs, durations, etc.)
 type RemediationRequestSpec struct {
     // +kubebuilder:validation:Required
     SignalFingerprint string `json:"signalFingerprint"`
-    
+
     // +kubebuilder:validation:Required
     SignalName string `json:"signalName"`
-    
+
     // +kubebuilder:validation:Required
     Severity string `json:"severity"`
-    
+
     // +kubebuilder:validation:Required
     Environment string `json:"environment"`
-    
+
     // +kubebuilder:validation:Required
     Priority string `json:"priority"`
-    
+
     // +kubebuilder:validation:Required
     SignalType string `json:"signalType"`
-    
+
     // +kubebuilder:validation:Required
     TargetType string `json:"targetType"`
 }
@@ -116,13 +116,13 @@ Same as RemediationRequest for copied fields.
 type RemediationProcessingSpec struct {
     // +kubebuilder:validation:Required
     RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-    
+
     // +kubebuilder:validation:Required
     SignalFingerprint string `json:"signalFingerprint"`
-    
+
     // +kubebuilder:validation:Required
     SignalType string `json:"signalType"`
-    
+
     // +kubebuilder:validation:Required
     TargetType string `json:"targetType"`
 }
@@ -166,13 +166,13 @@ type RemediationProcessingSpec struct {
 type AIAnalysisSpec struct {
     // +kubebuilder:validation:Required
     RemediationRequestRef string `json:"remediationRequestRef"`
-    
+
     // +kubebuilder:validation:Required
     SignalType string `json:"signalType"`
-    
+
     // +kubebuilder:validation:Required
     LLMProvider string `json:"llmProvider"`
-    
+
     // +kubebuilder:validation:Required
     LLMModel string `json:"llmModel"`
 }
@@ -223,10 +223,10 @@ type AIAnalysisSpec struct {
 type WorkflowExecutionSpec struct {
     // +kubebuilder:validation:Required
     RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-    
+
     // +kubebuilder:validation:Required
     WorkflowDefinition WorkflowDefinition `json:"workflowDefinition"`
-    
+
     // +kubebuilder:validation:Required
     ExecutionStrategy ExecutionStrategy `json:"executionStrategy"`
 }
@@ -234,7 +234,7 @@ type WorkflowExecutionSpec struct {
 type WorkflowDefinition struct {
     // +kubebuilder:validation:Required
     Name string `json:"name"`
-    
+
     // +kubebuilder:validation:Required
     // +kubebuilder:validation:MinItems=1
     Steps []WorkflowStep `json:"steps"`
@@ -278,13 +278,13 @@ type WorkflowDefinition struct {
 type KubernetesExecutionSpec struct {
     // +kubebuilder:validation:Required
     WorkflowExecutionRef corev1.ObjectReference `json:"workflowExecutionRef"`
-    
+
     // +kubebuilder:validation:Required
     StepNumber int `json:"stepNumber"`
-    
+
     // +kubebuilder:validation:Required
     Action string `json:"action"`
-    
+
     // +kubebuilder:validation:Required
     Parameters *ActionParameters `json:"parameters"`
 }
@@ -443,7 +443,7 @@ Document validation rules in:
 
 ---
 
-**Status**: ✅ **Triage Complete** - Ready for implementation  
-**Next Step**: Apply Phase 1 (P0) validations to all CRDs  
+**Status**: ✅ **Triage Complete** - Ready for implementation
+**Next Step**: Apply Phase 1 (P0) validations to all CRDs
 **Confidence**: 95% - Comprehensive analysis with clear implementation path
 
