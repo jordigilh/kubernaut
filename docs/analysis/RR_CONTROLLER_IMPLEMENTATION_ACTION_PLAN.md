@@ -12,9 +12,9 @@
 This action plan implements the RemediationRequest (RR) controller as the central orchestrator for the multi-CRD remediation architecture. The plan follows the APDC-TDD methodology and implements all features documented in `docs/services/crd-controllers/05-remediationorchestrator/`.
 
 **Scope**: Orchestration logic only - business logic is in dedicated controllers  
-**Estimated Effort**: 7 days (3.5 days P0 + 2 days P1 + 1.5 days observability) **✅ includes TDD tests**  
+**Estimated Effort**: 7.5 days (4 days P0 + 2 days P1 + 1.5 days observability) **✅ includes TDD tests**  
 **Comprehensive Testing**: 3.5 days (edge cases, integration) **🔍 beyond TDD tests**  
-**Total**: 10.5 days
+**Total**: 11 days
 
 ### ⚠️ **Critical TDD Methodology Note**
 
@@ -29,7 +29,8 @@ This action plan implements the RemediationRequest (RR) controller as the centra
 
 ## 🎯 **Implementation Priorities**
 
-### **P0 - Core Orchestration** (MUST HAVE - 3.5 days)
+### **P0 - Core Orchestration** (MUST HAVE - 4 days)
+- **CRD Type Definitions** (prerequisite - 0.5 day)
 - AIAnalysis CRD creation
 - WorkflowExecution CRD creation
 - Phase progression state machine
@@ -77,9 +78,102 @@ This action plan implements the RemediationRequest (RR) controller as the centra
 
 ---
 
-## 🚀 **Phase 1: Core Orchestration (P0 - 3.5 days)**
+## 🚀 **Phase 1: Core Orchestration (P0 - 4 days)**
 
 ### **Goal**: Enable complete multi-CRD orchestration sequence
+
+### ⚠️ **PREREQUISITE: CRD Type Definitions**
+
+**Current Status**:
+- ✅ Go type scaffolds exist: `api/aianalysis/v1alpha1/`, `api/workflowexecution/v1alpha1/`, `api/kubernetesexecution/v1alpha1/`
+- ❌ Type definitions are empty (only placeholder `Foo string` fields)
+- ✅ **Authoritative schemas** defined in: [`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md)
+
+**Dependency**: Tasks 1.1 and 1.2 cannot map data until Spec/Status fields are defined per authoritative schemas.
+
+---
+
+### Task 1.0: Update CRD Type Definitions (0.5 day)
+
+**APDC Phase**: Analysis → Plan → Do → Check  
+**Reference**: [`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md) (authoritative source)
+
+**Purpose**: Update Go type definitions to match authoritative schemas so Tasks 1.1/1.2 can map data correctly.
+
+**Subtasks**:
+
+1. **Analysis** (15 min)
+   - [ ] Read `docs/architecture/CRD_SCHEMAS.md` for AIAnalysis schema
+   - [ ] Read `docs/architecture/CRD_SCHEMAS.md` for WorkflowExecution schema
+   - [ ] Read `docs/architecture/CRD_SCHEMAS.md` for KubernetesExecution schema
+   - [ ] Identify which Spec/Status fields are needed for Tasks 1.1/1.2
+
+2. **Plan** (15 min)
+   - [ ] Plan AIAnalysis Spec fields (minimum: parent ref, analysis request)
+   - [ ] Plan AIAnalysis Status fields (minimum: phase, recommendations)
+   - [ ] Plan WorkflowExecution Spec fields (minimum: parent ref, workflow definition)
+   - [ ] Plan WorkflowExecution Status fields (minimum: phase, step statuses)
+   - [ ] Plan KubernetesExecution Spec fields (minimum: parent ref, action, parameters)
+
+3. **Do** (1.5 hours)
+   - [ ] Update `api/aianalysis/v1alpha1/aianalysis_types.go`:
+     ```go
+     type AIAnalysisSpec struct {
+         // Parent reference
+         RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+         
+         // Analysis request (self-contained data from RemediationProcessing)
+         AnalysisRequest AnalysisRequest `json:"analysisRequest"`
+         
+         // Additional fields per CRD_SCHEMAS.md
+     }
+     
+     type AIAnalysisStatus struct {
+         Phase string `json:"phase"` // "investigating", "analyzing", "recommending", "completed", "failed"
+         
+         // Recommendations for workflow creation
+         Recommendations []Recommendation `json:"recommendations,omitempty"`
+         
+         // Additional fields per CRD_SCHEMAS.md
+     }
+     ```
+   - [ ] Update `api/workflowexecution/v1alpha1/workflowexecution_types.go`:
+     ```go
+     type WorkflowExecutionSpec struct {
+         // Parent reference
+         RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+         
+         // Workflow definition from AIAnalysis
+         WorkflowDefinition WorkflowDefinition `json:"workflowDefinition"`
+         
+         // Additional fields per CRD_SCHEMAS.md
+     }
+     
+     type WorkflowExecutionStatus struct {
+         Phase string `json:"phase"` // "planning", "validating", "executing", "monitoring", "completed", "failed"
+         
+         // Step execution tracking
+         StepStatuses []StepStatus `json:"stepStatuses,omitempty"`
+         
+         // Additional fields per CRD_SCHEMAS.md
+     }
+     ```
+   - [ ] Update `api/kubernetesexecution/v1alpha1/kubernetesexecution_types.go` (if needed for Phase 1)
+
+4. **Check** (30 min)
+   - [ ] Run `make manifests` to regenerate CRD YAMLs
+   - [ ] Verify no compilation errors: `go build ./api/...`
+   - [ ] Verify generated CRD YAMLs include new fields: `cat config/crd/bases/*.yaml`
+
+**Acceptance Criteria**:
+- ✅ AIAnalysis Spec/Status have required fields for data mapping
+- ✅ WorkflowExecution Spec/Status have required fields for data mapping
+- ✅ CRD manifests regenerated with new fields
+- ✅ Code compiles without errors
+
+**Note**: This task updates the **minimum fields** needed for Tasks 1.1/1.2. Full schema implementation happens incrementally as each controller is implemented.
+
+---
 
 ### Task 1.1: AIAnalysis CRD Creation (0.5 day)
 
@@ -826,7 +920,11 @@ For EVERY task:
 
 ### Week 1: Core Orchestration (P0) - WITH TDD
 
-**Day 1**: AIAnalysis + WorkflowExecution CRD Creation
+**Day 1**: CRD Type Definitions + AIAnalysis CRD Creation
+- Task 1.0 (Update CRD type definitions)
+  - ✅ Update `api/aianalysis/v1alpha1/aianalysis_types.go` per authoritative schemas
+  - ✅ Update `api/workflowexecution/v1alpha1/workflowexecution_types.go` per authoritative schemas
+  - ✅ Run `make manifests` to regenerate CRD YAMLs
 - Task 1.1 (AIAnalysis creation)
   - ✅ Write test FIRST: `TestReconcile_CreateAIAnalysisAfterProcessingCompletes`
   - ✅ Implement to make test pass
@@ -850,7 +948,7 @@ For EVERY task:
   - ✅ Write test FIRST: `TestReconcile_StatusUpdates`
   - ✅ Implement status logic to make test pass
 
-**Week 1 Test Count**: ~15-20 tests (written during implementation)
+**Week 1 Test Count**: ~15-20 tests (written during implementation) + CRD type definitions
 
 ---
 
