@@ -834,7 +834,7 @@ spec:
 ### Implementation Code
 
 ```go
-// cmd/remediation-orchestrator/main.go
+// cmd/remediationorchestrator/main.go
 package main
 
 import (

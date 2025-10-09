@@ -135,7 +135,7 @@
 **Action**: Create new binary entry point
 
 ```go
-// cmd/ai-analysis/main.go
+// cmd/aianalysis/main.go
 package main
 
 import (

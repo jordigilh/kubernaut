@@ -545,7 +545,7 @@ spec:
 ### Implementation Code
 
 ```go
-// cmd/remediation-processor/main.go
+// cmd/remediationprocessor/main.go
 package main
 
 import (

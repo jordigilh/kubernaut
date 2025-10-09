@@ -62,6 +62,25 @@
 
 ---
 
+## 🏗️ Implementation Structure
+
+### **Binary Location**
+- **Directory**: `cmd/remediationorchestrator/`
+- **Entry Point**: `cmd/remediationorchestrator/main.go`
+- **Build Command**: `go build -o bin/remediation-orchestrator ./cmd/remediationorchestrator`
+
+### **Controller Location**
+- **Controller**: `internal/controller/remediation/remediationrequest_controller.go`
+- **CRD Types**: `api/remediation/v1alpha1/`
+
+### **Business Logic**
+- **Package**: `pkg/remediationorchestrator/`
+- **Tests**: `test/unit/remediationorchestrator/`
+
+**See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
+
+---
+
 ## 🚀 Quick Start
 
 **For New Developers**:
@@ -210,6 +229,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📞 Support & Documentation
 
+- **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
+- **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
 - **CRD Design Spec**: [docs/design/CRD/01_REMEDIATION_REQUEST_CRD.md](../../../design/CRD/01_REMEDIATION_REQUEST_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)

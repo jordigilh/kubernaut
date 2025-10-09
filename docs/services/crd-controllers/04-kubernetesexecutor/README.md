@@ -63,6 +63,25 @@
 
 ---
 
+## 🏗️ Implementation Structure
+
+### **Binary Location**
+- **Directory**: `cmd/kubernetesexecutor/`
+- **Entry Point**: `cmd/kubernetesexecutor/main.go`
+- **Build Command**: `go build -o bin/kubernetes-executor ./cmd/kubernetesexecutor`
+
+### **Controller Location**
+- **Controller**: `internal/controller/kubernetesexecution/kubernetesexecution_controller.go`
+- **CRD Types**: `api/kubernetesexecution/v1alpha1/`
+
+### **Business Logic**
+- **Package**: `pkg/kubernetesexecutor/`
+- **Tests**: `test/unit/kubernetesexecutor/`
+
+**See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
+
+---
+
 ## 🚀 Quick Start
 
 **For New Developers**:
@@ -211,6 +230,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📞 Support & Documentation
 
+- **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
+- **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
 - **CRD Design Spec**: [docs/design/CRD/08_KUBERNETES_EXECUTION_CRD.md](../../../design/CRD/08_KUBERNETES_EXECUTION_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)

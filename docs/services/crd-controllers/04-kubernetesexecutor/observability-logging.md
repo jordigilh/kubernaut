@@ -775,7 +775,7 @@ spec:
 ### Implementation Code
 
 ```go
-// cmd/kubernetes-executor/main.go
+// cmd/kubernetesexecutor/main.go
 package main
 
 import (

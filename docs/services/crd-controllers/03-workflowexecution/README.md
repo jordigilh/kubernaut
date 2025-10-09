@@ -58,6 +58,25 @@
 
 ---
 
+## 🏗️ Implementation Structure
+
+### **Binary Location**
+- **Directory**: `cmd/workflowexecution/`
+- **Entry Point**: `cmd/workflowexecution/main.go`
+- **Build Command**: `go build -o bin/workflow-execution ./cmd/workflowexecution`
+
+### **Controller Location**
+- **Controller**: `internal/controller/workflowexecution/workflowexecution_controller.go`
+- **CRD Types**: `api/workflowexecution/v1alpha1/`
+
+### **Business Logic**
+- **Package**: `pkg/workflowexecution/`
+- **Tests**: `test/unit/workflowexecution/`
+
+**See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
+
+---
+
 ## 🚀 Quick Start
 
 **For New Developers**:
@@ -178,6 +197,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📞 Support & Documentation
 
+- **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
+- **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
 - **CRD Design Spec**: [docs/design/CRD/06_WORKFLOW_EXECUTION_CRD.md](../../../design/CRD/06_WORKFLOW_EXECUTION_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)

@@ -27,3 +27,16 @@
 - **Usage**: `log := ctrl.Log.WithName("kubernetesexecutor")`
 
 ---
+
+### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
+
+- [ ] **Verify cmd/ structure**: Check [cmd/README.md](../../../../cmd/README.md)
+- [ ] **Create service directory**: `mkdir -p cmd/kubernetesexecutor` (no hyphens - Go convention)
+- [ ] **Copy main.go template**: From `cmd/remediationorchestrator/main.go`
+- [ ] **Update package imports**: Change to service-specific controller (KubernetesExecutionReconciler)
+- [ ] **Verify build**: `go build -o bin/kubernetes-executor ./cmd/kubernetesexecutor` (binary can have hyphens)
+- [ ] **Reference documentation**: [cmd/ directory guide](../../../../cmd/README.md)
+
+**Note**: Directory names use Go convention (no hyphens), binaries can use hyphens for readability.
+
+---
