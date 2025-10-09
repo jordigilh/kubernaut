@@ -101,6 +101,12 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			},
 			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
 				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
+				SignalName:        remediationRequest.Spec.SignalName,
+				Severity:          remediationRequest.Spec.Severity,
+				Environment:       remediationRequest.Spec.Environment,
+				Priority:          remediationRequest.Spec.Priority,
+				SignalType:        remediationRequest.Spec.SignalType,
+				TargetType:        remediationRequest.Spec.TargetType,
 				ReceivedTime:      now,
 				Deduplication: remediationprocessingv1alpha1.DeduplicationContext{
 					FirstOccurrence: now,
@@ -160,7 +166,7 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 				Namespace: namespace,
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
-				SignalFingerprint: "def0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab",
+				SignalFingerprint: "def0123456789abcdef0123456789abcdef0123456789abcdef01234567896ab",
 				SignalName:        "pod-crashloop",
 				Severity:          "critical",
 				Environment:       "prod",
@@ -189,6 +195,12 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			},
 			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
 				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
+				SignalName:        remediationRequest.Spec.SignalName,
+				Severity:          remediationRequest.Spec.Severity,
+				Environment:       remediationRequest.Spec.Environment,
+				Priority:          remediationRequest.Spec.Priority,
+				SignalType:        remediationRequest.Spec.SignalType,
+				TargetType:        remediationRequest.Spec.TargetType,
 				SignalLabels:      remediationRequest.Spec.SignalLabels,
 				ReceivedTime:      now,
 				Deduplication: remediationprocessingv1alpha1.DeduplicationContext{
@@ -270,6 +282,12 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			},
 			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
 				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
+				SignalName:        remediationRequest.Spec.SignalName,
+				Severity:          remediationRequest.Spec.Severity,
+				Environment:       remediationRequest.Spec.Environment,
+				Priority:          remediationRequest.Spec.Priority,
+				SignalType:        remediationRequest.Spec.SignalType,
+				TargetType:        remediationRequest.Spec.TargetType,
 				ReceivedTime:      now,
 				Deduplication: remediationprocessingv1alpha1.DeduplicationContext{
 					FirstOccurrence: now,
@@ -364,6 +382,11 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 			Spec: aianalysisv1alpha1.AIAnalysisSpec{
 				RemediationRequestRef: remediationRequest.Name,
 				SignalType:            remediationRequest.Spec.SignalType,
+				SignalContext:         map[string]string{"test": "data"},
+				LLMProvider:           "holmesgpt",
+				LLMModel:              "gpt-4",
+				MaxTokens:             4000,
+				Temperature:           0.7,
 			},
 			Status: aianalysisv1alpha1.AIAnalysisStatus{
 				Phase:             "Completed",
@@ -441,6 +464,11 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 			},
 			Spec: aianalysisv1alpha1.AIAnalysisSpec{
 				RemediationRequestRef: remediationRequest.Name,
+				SignalContext:         map[string]string{"test": "data"},
+				LLMProvider:           "holmesgpt",
+				LLMModel:              "gpt-4",
+				MaxTokens:             4000,
+				Temperature:           0.7,
 			},
 			Status: aianalysisv1alpha1.AIAnalysisStatus{
 				Phase: "Analyzing", // NOT completed
