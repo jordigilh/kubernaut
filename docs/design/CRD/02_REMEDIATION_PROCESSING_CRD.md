@@ -1,14 +1,61 @@
+# ⛔ DEPRECATED - DO NOT USE FOR IMPLEMENTATION
+
+**Status**: 🚨 **HISTORICAL REFERENCE ONLY**  
+**Deprecated**: January 2025  
+**Confidence**: 100% - This document is ~70% incorrect
+
+---
+
+## 🎯 **FOR CURRENT V1 INFORMATION, SEE:**
+
+### **1. Implementation (Source of Truth)**
+- **[`api/remediationprocessing/v1alpha1/remediationprocessing_types.go`](../../../api/remediationprocessing/v1alpha1/remediationprocessing_types.go)** - Actual Go implementation
+
+### **2. Schema Documentation**
+- **[`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md)** - Authoritative schema documentation
+
+### **3. Service Specifications (~2,000 lines)**
+- **[`docs/services/crd-controllers/01-remediationprocessor/`](../../services/crd-controllers/01-remediationprocessor/)** - Complete service specs
+
+---
+
+## ⚠️ **CRITICAL ISSUES IN THIS DOCUMENT**
+
+**This document is ~70% incorrect for V1. Missing 18 Phase 1 fields!**
+
+| Issue | Severity | What's Wrong |
+|-------|----------|--------------|
+| **CRD Name** | ⛔ BLOCKER | `alertprocessings.alertprocessor.kubernaut.io` → Should be `remediationprocessings.remediationprocessing.kubernaut.io` |
+| **API Version** | 🟡 MEDIUM | `v1` → Should be `v1alpha1` |
+| **Parent Reference** | 🔴 HIGH | `alertRemediationRef` → Should be `remediationRequestRef` |
+| **Missing Fields** | 🔴 HIGH | Missing 18 Phase 1 self-contained fields (signalLabels, signalAnnotations, targetResource, etc.) |
+| **Field Naming** | ⛔ BLOCKER | Uses deprecated "Alert" prefix (`AlertProcessing`, `alertRemediationRef`) |
+| **Business Reqs** | 🟡 MEDIUM | Wrong BR references (BR-AP-*, BR-ENV-* → Should be BR-PROC-*) |
+| **Self-Containment** | 🔴 HIGH | Missing core V1 pattern - RemediationProcessing must be self-contained |
+
+**Schema Completeness**: ~30% of V1 fields present
+
+**Phase 1 Priority**: This CRD needs 18 new fields for self-containment (Task 2)
+
+---
+
+## 📜 **ORIGINAL DOCUMENT (OUTDATED) BELOW**
+
+**Warning**: Everything below this line is outdated. See links above for current information.
+
+---
+
 # RemediationProcessing CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
-**Status**: **REFERENCE ONLY** - Superseded by CRD_SCHEMAS.md
+**Status**: **DEPRECATED** - See banner above
 **CRD Type**: Signal Processor Service Controller
 **Priority**: **CRITICAL** - Core signal processing component
 
 ---
 
-## ⚠️ DEPRECATION NOTICES
+## ⚠️ ORIGINAL DEPRECATION NOTICES (ALSO OUTDATED)
 
 ### **1. Authoritative Source**
 
