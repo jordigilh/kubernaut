@@ -409,14 +409,18 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 		aiAnalysis.Status.Confidence = 0.95
 		Expect(k8sClient.Status().Update(ctx, aiAnalysis)).To(Succeed())
 
-		// Refetch to get latest resourceVersion (controller may have modified it)
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
-		remediationRequest.Status.OverallPhase = "analyzing"
-		remediationRequest.Status.AIAnalysisRef = &corev1.ObjectReference{
-			Name:      aiAnalysis.Name,
-			Namespace: aiAnalysis.Namespace,
-		}
-		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+		// Refetch and update status with retry (controller is also reconciling)
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest); err != nil {
+				return err
+			}
+			remediationRequest.Status.OverallPhase = "analyzing"
+			remediationRequest.Status.AIAnalysisRef = &corev1.ObjectReference{
+				Name:      aiAnalysis.Name,
+				Namespace: aiAnalysis.Namespace,
+			}
+			return k8sClient.Status().Update(ctx, remediationRequest)
+		}, time.Second*3, interval).Should(Succeed())
 
 		// THEN: WorkflowExecution CRD should be created
 		workflowName := remediationRequest.Name + "-workflow"
@@ -495,14 +499,18 @@ var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CR
 		aiAnalysis.Status.Phase = "Analyzing"
 		Expect(k8sClient.Status().Update(ctx, aiAnalysis)).To(Succeed())
 
-		// Refetch to get latest resourceVersion (controller may have modified it)
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
-		remediationRequest.Status.OverallPhase = "analyzing"
-		remediationRequest.Status.AIAnalysisRef = &corev1.ObjectReference{
-			Name:      aiAnalysis.Name,
-			Namespace: aiAnalysis.Namespace,
-		}
-		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+		// Refetch and update status with retry (controller is also reconciling)
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest); err != nil {
+				return err
+			}
+			remediationRequest.Status.OverallPhase = "analyzing"
+			remediationRequest.Status.AIAnalysisRef = &corev1.ObjectReference{
+				Name:      aiAnalysis.Name,
+				Namespace: aiAnalysis.Namespace,
+			}
+			return k8sClient.Status().Update(ctx, remediationRequest)
+		}, time.Second*3, interval).Should(Succeed())
 
 		// WHEN: Controller processes the request
 		// THEN: WorkflowExecution should NOT be created
