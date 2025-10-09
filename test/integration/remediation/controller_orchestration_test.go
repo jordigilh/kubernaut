@@ -194,6 +194,15 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      remediationRequest.Name + "-processing",
 				Namespace: namespace,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: "remediation.kubernaut.io/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       remediationRequest.Name,
+						UID:        remediationRequest.UID,
+						Controller: func() *bool { b := true; return &b }(),
+					},
+				},
 			},
 			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
 				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
