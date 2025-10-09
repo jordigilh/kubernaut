@@ -144,6 +144,35 @@ type RemediationRequestSpec struct {
     StormAlertCount int `json:"stormAlertCount,omitempty"`
 
     // ========================================
+    // SIGNAL METADATA (PHASE 1 ADDITION)
+    // Structured metadata extracted from provider-specific data
+    // ========================================
+
+    // Signal labels extracted from provider-specific data
+    // For Prometheus: alert.Labels (e.g., {"alertname": "HighMemory", "namespace": "prod", "severity": "critical"})
+    // For Kubernetes events: Event labels (e.g., {"reason": "CrashLoopBackOff", "kind": "Pod"})
+    // For AWS CloudWatch: Alarm tags (e.g., {"AlarmName": "HighCPU", "Environment": "production"})
+    //
+    // Purpose: Provide structured access to signal metadata without parsing providerData
+    // Gateway Service populates this using pkg/gateway/signal_extraction.go helpers
+    // RemediationProcessing and downstream services use this for decision-making
+    //
+    // Note: Labels are sanitized for Kubernetes compliance (63 char max per value)
+    SignalLabels map[string]string `json:"signalLabels,omitempty"`
+
+    // Signal annotations extracted from provider-specific data
+    // For Prometheus: alert.Annotations (e.g., {"summary": "Memory usage above 90%", "description": "Pod xyz..."})
+    // For Kubernetes events: Event message/reason (e.g., {"message": "Container crashed", "reason": "Error"})
+    // For AWS CloudWatch: Alarm description (e.g., {"AlarmDescription": "CPU threshold exceeded"})
+    //
+    // Purpose: Provide human-readable descriptions and context without parsing providerData
+    // Gateway Service populates this using pkg/gateway/signal_extraction.go helpers
+    // Used by notification services, AI analysis, and audit logging
+    //
+    // Note: Annotations have practical size limit (256KB) for storage efficiency
+    SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
+
+    // ========================================
     // PROVIDER-SPECIFIC DATA
     // All provider-specific fields go here (INCLUDING Kubernetes)
     // ========================================
