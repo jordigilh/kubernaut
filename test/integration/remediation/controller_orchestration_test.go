@@ -190,11 +190,15 @@ var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creat
 		}
 		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
 
-		// Initialize status to "processing" to bypass controller's auto-creation of RemediationProcessing
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest)).To(Succeed())
-		remediationRequest.Status.OverallPhase = "processing"
-		remediationRequest.Status.StartTime = &metav1.Time{Time: time.Now()}
-		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+		// Initialize status to "processing" to bypass controller's auto-creation (with retry for race condition)
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: remediationRequest.Name, Namespace: remediationRequest.Namespace}, remediationRequest); err != nil {
+				return err
+			}
+			remediationRequest.Status.OverallPhase = "processing"
+			remediationRequest.Status.StartTime = &metav1.Time{Time: time.Now()}
+			return k8sClient.Status().Update(ctx, remediationRequest)
+		}, time.Second*3, interval).Should(Succeed())
 
 		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{
 			ObjectMeta: metav1.ObjectMeta{
