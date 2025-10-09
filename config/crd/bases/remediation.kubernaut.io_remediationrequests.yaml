@@ -72,6 +72,10 @@ spec:
                 type: object
               environment:
                 description: 'Environment: "prod", "staging", "dev"'
+                enum:
+                - prod
+                - staging
+                - dev
                 type: string
               firingTime:
                 description: |-
@@ -94,6 +98,11 @@ spec:
                 description: |-
                   Priority assigned by Gateway (P0=critical, P1=high, P2=normal)
                   Used by downstream Rego policies for remediation decisions
+                enum:
+                - P0
+                - P1
+                - P2
+                pattern: ^P[0-2]$
                 type: string
               providerData:
                 description: |-
@@ -119,6 +128,10 @@ spec:
                 description: |-
                   Signal Classification
                   Severity level: "critical", "warning", "info"
+                enum:
+                - critical
+                - warning
+                - info
                 type: string
               signalAnnotations:
                 additionalProperties:
@@ -128,6 +141,8 @@ spec:
                 description: |-
                   Core Signal Identification
                   Unique fingerprint for deduplication (SHA256 of alert/event key fields)
+                maxLength: 64
+                pattern: ^[a-f0-9]{64}$
                 type: string
               signalLabels:
                 additionalProperties:
@@ -142,10 +157,12 @@ spec:
               signalName:
                 description: Human-readable signal name (e.g., "HighMemoryUsage",
                   "CrashLoopBackOff")
+                maxLength: 253
                 type: string
               signalSource:
                 description: Adapter that ingested the signal (e.g., "prometheus-adapter",
                   "k8s-event-adapter")
+                maxLength: 63
                 type: string
               signalType:
                 description: |-
@@ -166,6 +183,12 @@ spec:
                 description: |-
                   Target system type: "kubernetes", "aws", "azure", "gcp", "datadog"
                   Indicates which infrastructure system the signal targets
+                enum:
+                - kubernetes
+                - aws
+                - azure
+                - gcp
+                - datadog
                 type: string
               timeoutConfig:
                 description: Optional timeout overrides for this specific remediation

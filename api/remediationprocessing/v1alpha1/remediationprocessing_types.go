@@ -40,30 +40,39 @@ type RemediationProcessingSpec struct {
 	// ========================================
 	// Core signal identity copied from RemediationRequest
 	// Unique fingerprint for deduplication (SHA256 of signal key fields)
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:Pattern="^[a-f0-9]{64}$"
 	SignalFingerprint string `json:"signalFingerprint"`
 
 	// Human-readable signal name (e.g., "HighMemoryUsage", "CrashLoopBackOff")
+	// +kubebuilder:validation:MaxLength=253
 	SignalName string `json:"signalName"`
 
 	// Severity level: "critical", "warning", "info"
+	// +kubebuilder:validation:Enum=critical;warning;info
 	Severity string `json:"severity"`
 
 	// ========================================
 	// SIGNAL CLASSIFICATION (From RemediationRequest)
 	// ========================================
 	// Environment: "prod", "staging", "dev"
+	// +kubebuilder:validation:Enum=prod;staging;dev
 	Environment string `json:"environment"`
 
 	// Priority assigned by Gateway (P0=critical, P1=high, P2=normal)
+	// +kubebuilder:validation:Enum=P0;P1;P2
+	// +kubebuilder:validation:Pattern="^P[0-2]$"
 	Priority string `json:"priority"`
 
 	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", etc.
 	SignalType string `json:"signalType"`
 
 	// Adapter that ingested the signal (e.g., "prometheus-adapter", "k8s-event-adapter")
+	// +kubebuilder:validation:MaxLength=63
 	SignalSource string `json:"signalSource,omitempty"`
 
 	// Target system type: "kubernetes", "aws", "azure", "gcp", "datadog"
+	// +kubebuilder:validation:Enum=kubernetes;aws;azure;gcp;datadog
 	TargetType string `json:"targetType"`
 
 	// ========================================

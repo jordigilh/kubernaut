@@ -41,25 +41,25 @@ type WorkflowExecutionSpec struct {
 
 // WorkflowDefinition represents the workflow to execute
 type WorkflowDefinition struct {
-	Name             string                 `json:"name"`
-	Version          string                 `json:"version"`
-	Steps            []WorkflowStep         `json:"steps"`
-	Dependencies     map[string][]string    `json:"dependencies,omitempty"`
-	AIRecommendations *AIRecommendations    `json:"aiRecommendations,omitempty"`
+	Name              string              `json:"name"`
+	Version           string              `json:"version"`
+	Steps             []WorkflowStep      `json:"steps"`
+	Dependencies      map[string][]string `json:"dependencies,omitempty"`
+	AIRecommendations *AIRecommendations  `json:"aiRecommendations,omitempty"`
 }
 
 // WorkflowStep represents a single step in the workflow
 type WorkflowStep struct {
-	StepNumber   int             `json:"stepNumber"`
-	Name         string          `json:"name"`
-	Action       string          `json:"action"` // e.g., "scale-deployment", "restart-pod"
-	TargetCluster string         `json:"targetCluster"`
-	Parameters   *StepParameters `json:"parameters"`
-	CriticalStep bool            `json:"criticalStep"` // Failure triggers rollback
-	MaxRetries   int             `json:"maxRetries,omitempty"`
-	Timeout      string          `json:"timeout,omitempty"` // e.g., "5m"
-	DependsOn    []int           `json:"dependsOn,omitempty"` // Step numbers
-	RollbackSpec *RollbackSpec   `json:"rollbackSpec,omitempty"`
+	StepNumber    int             `json:"stepNumber"`
+	Name          string          `json:"name"`
+	Action        string          `json:"action"` // e.g., "scale-deployment", "restart-pod"
+	TargetCluster string          `json:"targetCluster"`
+	Parameters    *StepParameters `json:"parameters"`
+	CriticalStep  bool            `json:"criticalStep"` // Failure triggers rollback
+	MaxRetries    int             `json:"maxRetries,omitempty"`
+	Timeout       string          `json:"timeout,omitempty"`   // e.g., "5m"
+	DependsOn     []int           `json:"dependsOn,omitempty"` // Step numbers
+	RollbackSpec  *RollbackSpec   `json:"rollbackSpec,omitempty"`
 }
 
 // RollbackSpec defines how to rollback a step
@@ -95,11 +95,14 @@ type AdaptiveOrchestrationConfig struct {
 // WorkflowExecutionStatus defines the observed state
 type WorkflowExecutionStatus struct {
 	// Phase tracks current execution stage
+	// +kubebuilder:validation:Enum=planning;validating;executing;monitoring;completed;failed;paused
 	Phase string `json:"phase"` // "planning", "validating", "executing", "monitoring", "completed", "failed"
 
 	// CurrentStep tracks progress
+	// +kubebuilder:validation:Minimum=0
 	CurrentStep int `json:"currentStep"`
-	TotalSteps  int `json:"totalSteps"`
+	// +kubebuilder:validation:Minimum=0
+	TotalSteps int `json:"totalSteps"`
 
 	// ExecutionPlan generated during planning phase
 	ExecutionPlan *ExecutionPlan `json:"executionPlan,omitempty"`
@@ -150,9 +153,10 @@ type ExecutionSnapshot struct {
 
 // ExecutionPlan generated during planning phase
 type ExecutionPlan struct {
-	Strategy          string        `json:"strategy"` // "sequential", "parallel", "sequential-with-parallel"
-	EstimatedDuration string        `json:"estimatedDuration"`
-	RollbackStrategy  string        `json:"rollbackStrategy"`
+	// +kubebuilder:validation:Enum=sequential;parallel;sequential-with-parallel
+	Strategy          string `json:"strategy"` // "sequential", "parallel", "sequential-with-parallel"
+	EstimatedDuration string `json:"estimatedDuration"`
+	RollbackStrategy  string `json:"rollbackStrategy"`
 	SafetyChecks      []SafetyCheck `json:"safetyChecks"`
 }
 
@@ -168,20 +172,24 @@ type ValidationResults struct {
 
 // StepStatus tracks individual step execution
 type StepStatus struct {
-	StepNumber       int                     `json:"stepNumber"`
-	Action           string                  `json:"action"`
+	StepNumber int    `json:"stepNumber"`
+	Action     string `json:"action"`
+	// +kubebuilder:validation:Enum=pending;executing;completed;failed;rolled_back;skipped
 	Status           string                  `json:"status"` // "pending", "executing", "completed", "failed", "rolled_back"
 	StartTime        *metav1.Time            `json:"startTime,omitempty"`
 	EndTime          *metav1.Time            `json:"endTime,omitempty"`
 	Result           *StepExecutionResult    `json:"result,omitempty"`
 	ErrorMessage     string                  `json:"errorMessage,omitempty"`
+	// +kubebuilder:validation:Minimum=0
 	RetriesAttempted int                     `json:"retriesAttempted,omitempty"`
 	K8sExecutionRef  *corev1.ObjectReference `json:"k8sExecutionRef,omitempty"`
 }
 
 // ExecutionMetrics tracks workflow performance
 type ExecutionMetrics struct {
-	TotalDuration      string  `json:"totalDuration"`
+	TotalDuration string `json:"totalDuration"`
+	// +kubebuilder:validation:Minimum=0.0
+	// +kubebuilder:validation:Maximum=1.0
 	StepSuccessRate    float64 `json:"stepSuccessRate"`
 	RollbacksPerformed int     `json:"rollbacksPerformed"`
 	ResourcesAffected  int     `json:"resourcesAffected"`
@@ -196,11 +204,11 @@ type AdaptiveAdjustment struct {
 
 // WorkflowResult final outcome
 type WorkflowResult struct {
-	Outcome             string   `json:"outcome"` // "success", "partial_success", "failed", "unknown"
-	EffectivenessScore  float64  `json:"effectivenessScore"` // 0.0-1.0
-	ResourceHealth      string   `json:"resourceHealth"` // "healthy", "degraded", "unhealthy"
-	NewAlertsTriggered  bool     `json:"newAlertsTriggered"`
-	RecommendedActions  []string `json:"recommendedActions,omitempty"` // For partial success or failure
+	Outcome            string   `json:"outcome"`            // "success", "partial_success", "failed", "unknown"
+	EffectivenessScore float64  `json:"effectivenessScore"` // 0.0-1.0
+	ResourceHealth     string   `json:"resourceHealth"`     // "healthy", "degraded", "unhealthy"
+	NewAlertsTriggered bool     `json:"newAlertsTriggered"`
+	RecommendedActions []string `json:"recommendedActions,omitempty"` // For partial success or failure
 }
 
 // ===================================================================
@@ -210,9 +218,11 @@ type WorkflowResult struct {
 // AIRecommendations contains AI-generated workflow optimization suggestions
 type AIRecommendations struct {
 	// Confidence and metadata
-	OverallConfidence    float64 `json:"overallConfidence"` // 0.0-1.0
+	// +kubebuilder:validation:Minimum=0.0
+	// +kubebuilder:validation:Maximum=1.0
+	OverallConfidence    float64 `json:"overallConfidence"`    // 0.0-1.0
 	RecommendationSource string  `json:"recommendationSource"` // "holmesgpt", "history-based"
-	GeneratedAt          string  `json:"generatedAt"` // ISO 8601 timestamp
+	GeneratedAt          string  `json:"generatedAt"`          // ISO 8601 timestamp
 
 	// Step-level recommendations
 	StepOptimizations []StepOptimization `json:"stepOptimizations,omitempty"`
@@ -223,7 +233,7 @@ type AIRecommendations struct {
 
 	// Historical success data
 	SimilarWorkflowSuccessRate float64 `json:"similarWorkflowSuccessRate"` // 0.0-1.0
-	EstimatedDuration          string  `json:"estimatedDuration"` // e.g., "5m30s"
+	EstimatedDuration          string  `json:"estimatedDuration"`          // e.g., "5m30s"
 
 	// Risk assessment
 	RiskFactors []RiskFactor `json:"riskFactors,omitempty"`
@@ -231,39 +241,39 @@ type AIRecommendations struct {
 
 // StepOptimization contains optimization suggestions for a step
 type StepOptimization struct {
-	StepNumber       int                     `json:"stepNumber"`
-	Recommendation   string                  `json:"recommendation"` // Human-readable suggestion
-	Confidence       float64                 `json:"confidence"` // 0.0-1.0
-	ImpactLevel      string                  `json:"impactLevel"` // "low", "medium", "high"
-	ParameterChanges *ParameterOptimization  `json:"parameterChanges,omitempty"`
+	StepNumber       int                    `json:"stepNumber"`
+	Recommendation   string                 `json:"recommendation"` // Human-readable suggestion
+	Confidence       float64                `json:"confidence"`     // 0.0-1.0
+	ImpactLevel      string                 `json:"impactLevel"`    // "low", "medium", "high"
+	ParameterChanges *ParameterOptimization `json:"parameterChanges,omitempty"`
 }
 
 // ParameterOptimization contains parameter change suggestions
 type ParameterOptimization struct {
 	SuggestedParameters map[string]string `json:"suggestedParameters"` // Key-value pairs
-	Reason              string            `json:"reason"` // Why these parameters
+	Reason              string            `json:"reason"`              // Why these parameters
 }
 
 // ParallelExecutionGroup identifies steps that can run in parallel
 type ParallelExecutionGroup struct {
 	GroupName   string  `json:"groupName"`
 	StepNumbers []int   `json:"stepNumbers"` // Steps that can run in parallel
-	Confidence  float64 `json:"confidence"` // 0.0-1.0
+	Confidence  float64 `json:"confidence"`  // 0.0-1.0
 }
 
 // SafetyImprovement suggests safety check additions
 type SafetyImprovement struct {
 	Description string `json:"description"`
 	StepNumber  int    `json:"stepNumber,omitempty"` // 0 = workflow-level
-	SafetyCheck string `json:"safetyCheck"` // Suggested safety check to add
-	Priority    string `json:"priority"` // "low", "medium", "high"
+	SafetyCheck string `json:"safetyCheck"`          // Suggested safety check to add
+	Priority    string `json:"priority"`             // "low", "medium", "high"
 }
 
 // RiskFactor describes a potential risk
 type RiskFactor struct {
-	Factor      string  `json:"factor"` // Description of risk
-	Severity    string  `json:"severity"` // "low", "medium", "high"
-	Probability float64 `json:"probability"` // 0.0-1.0
+	Factor      string  `json:"factor"`               // Description of risk
+	Severity    string  `json:"severity"`             // "low", "medium", "high"
+	Probability float64 `json:"probability"`          // 0.0-1.0
 	Mitigation  string  `json:"mitigation,omitempty"` // Suggested mitigation
 }
 
@@ -314,7 +324,7 @@ type UpdateImageParams struct {
 // Pod action parameters
 type RestartPodParams struct {
 	Namespace   string `json:"namespace"`
-	PodName     string `json:"podName,omitempty"` // Empty = all pods matching selector
+	PodName     string `json:"podName,omitempty"`  // Empty = all pods matching selector
 	Selector    string `json:"selector,omitempty"` // e.g., "app=web"
 	GracePeriod string `json:"gracePeriod,omitempty"`
 }
@@ -353,7 +363,7 @@ type DrainNodeParams struct {
 // Custom action for extensibility
 type CustomActionParams struct {
 	ActionType string            `json:"actionType"` // Custom action identifier
-	Config     map[string]string `json:"config"` // String-only key-value pairs
+	Config     map[string]string `json:"config"`     // String-only key-value pairs
 }
 
 // RollbackParameters is a discriminated union based on rollback action
@@ -387,7 +397,7 @@ type ScaleToPreviousParams struct {
 type RestorePreviousConfigParams struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
-	Type      string `json:"type"` // "ConfigMap" or "Secret"
+	Type      string `json:"type"`     // "ConfigMap" or "Secret"
 	Snapshot  string `json:"snapshot"` // Reference to saved snapshot
 }
 
@@ -402,12 +412,12 @@ type CustomRollbackParams struct {
 
 // DryRunResults contains structured dry-run execution results
 type DryRunResults struct {
-	OverallSuccess  bool                 `json:"overallSuccess"`
-	ExecutionTime   string               `json:"executionTime"` // Duration
-	StepsSimulated  int                  `json:"stepsSimulated"`
-	StepResults     []DryRunStepResult   `json:"stepResults"`
-	ResourceChanges []ResourceChange     `json:"resourceChanges,omitempty"`
-	PotentialIssues []PotentialIssue     `json:"potentialIssues,omitempty"`
+	OverallSuccess  bool               `json:"overallSuccess"`
+	ExecutionTime   string             `json:"executionTime"` // Duration
+	StepsSimulated  int                `json:"stepsSimulated"`
+	StepResults     []DryRunStepResult `json:"stepResults"`
+	ResourceChanges []ResourceChange   `json:"resourceChanges,omitempty"`
+	PotentialIssues []PotentialIssue   `json:"potentialIssues,omitempty"`
 }
 
 type DryRunStepResult struct {
@@ -422,7 +432,7 @@ type ResourceChange struct {
 	ResourceType string            `json:"resourceType"` // "Deployment", "Pod", etc.
 	ResourceName string            `json:"resourceName"`
 	Namespace    string            `json:"namespace"`
-	ChangeType   string            `json:"changeType"` // "scale", "update", "delete"
+	ChangeType   string            `json:"changeType"`  // "scale", "update", "delete"
 	BeforeState  map[string]string `json:"beforeState"` // String key-value pairs only
 	AfterState   map[string]string `json:"afterState"`
 }
@@ -436,8 +446,8 @@ type PotentialIssue struct {
 
 // StepExecutionResult contains structured execution results
 type StepExecutionResult struct {
-	Success       bool     `json:"success"`
-	ExecutionTime string   `json:"executionTime"` // Duration
+	Success       bool   `json:"success"`
+	ExecutionTime string `json:"executionTime"` // Duration
 
 	// Action-specific results (discriminated union - only one populated)
 	ScaleResult   *ScaleExecutionResult   `json:"scaleResult,omitempty"`

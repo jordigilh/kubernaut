@@ -30,9 +30,11 @@ type KubernetesExecutionSpec struct {
 	WorkflowExecutionRef corev1.ObjectReference `json:"workflowExecutionRef"`
 
 	// StepNumber identifies the step within the workflow
+	// +kubebuilder:validation:Minimum=1
 	StepNumber int `json:"stepNumber"`
 
 	// Action type (e.g., "scale_deployment", "restart_pod")
+	// +kubebuilder:validation:Enum=scale_deployment;rollout_restart;delete_pod;patch_deployment;cordon_node;drain_node;uncordon_node;update_configmap;update_secret;apply_manifest
 	Action string `json:"action"`
 
 	// Parameters for the action (discriminated union based on Action)
@@ -43,6 +45,8 @@ type KubernetesExecutionSpec struct {
 	TargetCluster string `json:"targetCluster,omitempty"`
 
 	// MaxRetries for failed executions
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=5
 	MaxRetries int `json:"maxRetries,omitempty"` // Default: 2
 
 	// Timeout for execution
@@ -54,23 +58,27 @@ type KubernetesExecutionSpec struct {
 
 // ActionParameters is a discriminated union based on Action type
 type ActionParameters struct {
-	ScaleDeployment  *ScaleDeploymentParams  `json:"scaleDeployment,omitempty"`
-	RolloutRestart   *RolloutRestartParams   `json:"rolloutRestart,omitempty"`
-	DeletePod        *DeletePodParams        `json:"deletePod,omitempty"`
-	PatchDeployment  *PatchDeploymentParams  `json:"patchDeployment,omitempty"`
-	CordonNode       *CordonNodeParams       `json:"cordonNode,omitempty"`
-	DrainNode        *DrainNodeParams        `json:"drainNode,omitempty"`
-	UncordonNode     *UncordonNodeParams     `json:"uncordonNode,omitempty"`
-	UpdateConfigMap  *UpdateConfigMapParams  `json:"updateConfigMap,omitempty"`
-	UpdateSecret     *UpdateSecretParams     `json:"updateSecret,omitempty"`
-	ApplyManifest    *ApplyManifestParams    `json:"applyManifest,omitempty"`
+	ScaleDeployment *ScaleDeploymentParams `json:"scaleDeployment,omitempty"`
+	RolloutRestart  *RolloutRestartParams  `json:"rolloutRestart,omitempty"`
+	DeletePod       *DeletePodParams       `json:"deletePod,omitempty"`
+	PatchDeployment *PatchDeploymentParams `json:"patchDeployment,omitempty"`
+	CordonNode      *CordonNodeParams      `json:"cordonNode,omitempty"`
+	DrainNode       *DrainNodeParams       `json:"drainNode,omitempty"`
+	UncordonNode    *UncordonNodeParams    `json:"uncordonNode,omitempty"`
+	UpdateConfigMap *UpdateConfigMapParams `json:"updateConfigMap,omitempty"`
+	UpdateSecret    *UpdateSecretParams    `json:"updateSecret,omitempty"`
+	ApplyManifest   *ApplyManifestParams   `json:"applyManifest,omitempty"`
 }
 
 // Action-specific parameter types
 type ScaleDeploymentParams struct {
+	// +kubebuilder:validation:MaxLength=253
 	Deployment string `json:"deployment"`
-	Namespace  string `json:"namespace"`
-	Replicas   int32  `json:"replicas"`
+	// +kubebuilder:validation:MaxLength=63
+	Namespace string `json:"namespace"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1000
+	Replicas int32 `json:"replicas"`
 }
 
 type RolloutRestartParams struct {
@@ -79,16 +87,23 @@ type RolloutRestartParams struct {
 }
 
 type DeletePodParams struct {
-	Pod                string `json:"pod"`
-	Namespace          string `json:"namespace"`
+	// +kubebuilder:validation:MaxLength=253
+	Pod string `json:"pod"`
+	// +kubebuilder:validation:MaxLength=63
+	Namespace string `json:"namespace"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=3600
 	GracePeriodSeconds *int64 `json:"gracePeriodSeconds,omitempty"`
 }
 
 type PatchDeploymentParams struct {
+	// +kubebuilder:validation:MaxLength=253
 	Deployment string `json:"deployment"`
-	Namespace  string `json:"namespace"`
-	PatchType  string `json:"patchType"` // "strategic", "merge", "json"
-	Patch      string `json:"patch"`     // JSON/YAML patch content
+	// +kubebuilder:validation:MaxLength=63
+	Namespace string `json:"namespace"`
+	// +kubebuilder:validation:Enum=strategic;merge;json
+	PatchType string `json:"patchType"` // "strategic", "merge", "json"
+	Patch     string `json:"patch"`     // JSON/YAML patch content
 }
 
 type CordonNodeParams struct {
@@ -96,11 +111,14 @@ type CordonNodeParams struct {
 }
 
 type DrainNodeParams struct {
-	Node               string `json:"node"`
-	GracePeriodSeconds int64  `json:"gracePeriodSeconds,omitempty"`
-	Force              bool   `json:"force,omitempty"`
-	DeleteLocalData    bool   `json:"deleteLocalData,omitempty"`
-	IgnoreDaemonSets   bool   `json:"ignoreDaemonSets,omitempty"`
+	// +kubebuilder:validation:MaxLength=253
+	Node string `json:"node"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=3600
+	GracePeriodSeconds int64 `json:"gracePeriodSeconds,omitempty"`
+	Force              bool  `json:"force,omitempty"`
+	DeleteLocalData    bool  `json:"deleteLocalData,omitempty"`
+	IgnoreDaemonSets   bool  `json:"ignoreDaemonSets,omitempty"`
 }
 
 type UncordonNodeParams struct {
@@ -126,6 +144,7 @@ type ApplyManifestParams struct {
 // KubernetesExecutionStatus defines the observed state of KubernetesExecution.
 type KubernetesExecutionStatus struct {
 	// Phase tracks current execution stage
+	// +kubebuilder:validation:Enum=validating;validated;waiting_approval;executing;rollback_ready;completed;failed
 	Phase string `json:"phase"` // "validating", "validated", "waiting_approval", "executing", "rollback_ready", "completed", "failed"
 
 	// ValidationResults from safety checks
@@ -146,12 +165,12 @@ type KubernetesExecutionStatus struct {
 
 // ValidationResults from pre-execution validation
 type ValidationResults struct {
-	ParameterValidation bool                     `json:"parameterValidation"`
-	RBACValidation      bool                     `json:"rbacValidation"`
-	ResourceExists      bool                     `json:"resourceExists"`
-	PolicyValidation    *PolicyValidationResult  `json:"policyValidation,omitempty"`
-	DryRunResults       *DryRunResults           `json:"dryRunResults,omitempty"`
-	ValidationTime      metav1.Time              `json:"validationTime"`
+	ParameterValidation bool                    `json:"parameterValidation"`
+	RBACValidation      bool                    `json:"rbacValidation"`
+	ResourceExists      bool                    `json:"resourceExists"`
+	PolicyValidation    *PolicyValidationResult `json:"policyValidation,omitempty"`
+	DryRunResults       *DryRunResults          `json:"dryRunResults,omitempty"`
+	ValidationTime      metav1.Time             `json:"validationTime"`
 }
 
 type PolicyValidationResult struct {
@@ -183,8 +202,9 @@ type ExecutionResults struct {
 	Duration          string             `json:"duration,omitempty"`
 	ResourcesAffected []AffectedResource `json:"resourcesAffected,omitempty"`
 	PodLogs           string             `json:"podLogs,omitempty"`
-	RetriesAttempted  int                `json:"retriesAttempted"`
-	ErrorMessage      string             `json:"errorMessage,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	RetriesAttempted int    `json:"retriesAttempted"`
+	ErrorMessage     string `json:"errorMessage,omitempty"`
 }
 
 type AffectedResource struct {
@@ -198,10 +218,10 @@ type AffectedResource struct {
 
 // RollbackInfo for potential rollback operations
 type RollbackInfo struct {
-	Available         bool                        `json:"available"`
-	RollbackAction    string                      `json:"rollbackAction"`
+	Available          bool                          `json:"available"`
+	RollbackAction     string                        `json:"rollbackAction"`
 	RollbackParameters *KubernetesRollbackParameters `json:"rollbackParameters,omitempty"`
-	EstimatedDuration string                      `json:"estimatedDuration,omitempty"`
+	EstimatedDuration  string                        `json:"estimatedDuration,omitempty"`
 }
 
 // KubernetesRollbackParameters is a discriminated union based on rollback action
