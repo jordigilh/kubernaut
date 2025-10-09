@@ -154,9 +154,9 @@ type ExecutionSnapshot struct {
 // ExecutionPlan generated during planning phase
 type ExecutionPlan struct {
 	// +kubebuilder:validation:Enum=sequential;parallel;sequential-with-parallel
-	Strategy          string `json:"strategy"` // "sequential", "parallel", "sequential-with-parallel"
-	EstimatedDuration string `json:"estimatedDuration"`
-	RollbackStrategy  string `json:"rollbackStrategy"`
+	Strategy          string        `json:"strategy"` // "sequential", "parallel", "sequential-with-parallel"
+	EstimatedDuration string        `json:"estimatedDuration"`
+	RollbackStrategy  string        `json:"rollbackStrategy"`
 	SafetyChecks      []SafetyCheck `json:"safetyChecks"`
 }
 
@@ -175,11 +175,11 @@ type StepStatus struct {
 	StepNumber int    `json:"stepNumber"`
 	Action     string `json:"action"`
 	// +kubebuilder:validation:Enum=pending;executing;completed;failed;rolled_back;skipped
-	Status           string                  `json:"status"` // "pending", "executing", "completed", "failed", "rolled_back"
-	StartTime        *metav1.Time            `json:"startTime,omitempty"`
-	EndTime          *metav1.Time            `json:"endTime,omitempty"`
-	Result           *StepExecutionResult    `json:"result,omitempty"`
-	ErrorMessage     string                  `json:"errorMessage,omitempty"`
+	Status       string               `json:"status"` // "pending", "executing", "completed", "failed", "rolled_back"
+	StartTime    *metav1.Time         `json:"startTime,omitempty"`
+	EndTime      *metav1.Time         `json:"endTime,omitempty"`
+	Result       *StepExecutionResult `json:"result,omitempty"`
+	ErrorMessage string               `json:"errorMessage,omitempty"`
 	// +kubebuilder:validation:Minimum=0
 	RetriesAttempted int                     `json:"retriesAttempted,omitempty"`
 	K8sExecutionRef  *corev1.ObjectReference `json:"k8sExecutionRef,omitempty"`

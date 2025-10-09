@@ -11,9 +11,9 @@
 
 This action plan implements the RemediationRequest (RR) controller as the central orchestrator for the multi-CRD remediation architecture. The plan follows the APDC-TDD methodology and implements all features documented in `docs/services/crd-controllers/05-remediationorchestrator/`.
 
-**Scope**: Orchestration logic only - business logic is in dedicated controllers  
-**Estimated Effort**: 7.5 days (4 days P0 + 2 days P1 + 1.5 days observability) **✅ includes TDD tests**  
-**Comprehensive Testing**: 3.5 days (edge cases, integration) **🔍 beyond TDD tests**  
+**Scope**: Orchestration logic only - business logic is in dedicated controllers
+**Estimated Effort**: 7.5 days (4 days P0 + 2 days P1 + 1.5 days observability) **✅ includes TDD tests**
+**Comprehensive Testing**: 3.5 days (edge cases, integration) **🔍 beyond TDD tests**
 **Total**: 11 days
 
 ### ⚠️ **Critical TDD Methodology Note**
@@ -95,7 +95,7 @@ This action plan implements the RemediationRequest (RR) controller as the centra
 
 ### Task 1.0: Update CRD Type Definitions (0.5 day)
 
-**APDC Phase**: Analysis → Plan → Do → Check  
+**APDC Phase**: Analysis → Plan → Do → Check
 **Reference**: [`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md) (authoritative source)
 
 **Purpose**: Update Go type definitions to match authoritative schemas so Tasks 1.1/1.2 can map data correctly.
@@ -121,19 +121,19 @@ This action plan implements the RemediationRequest (RR) controller as the centra
      type AIAnalysisSpec struct {
          // Parent reference
          RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-         
+
          // Analysis request (self-contained data from RemediationProcessing)
          AnalysisRequest AnalysisRequest `json:"analysisRequest"`
-         
+
          // Additional fields per CRD_SCHEMAS.md
      }
-     
+
      type AIAnalysisStatus struct {
          Phase string `json:"phase"` // "investigating", "analyzing", "recommending", "completed", "failed"
-         
+
          // Recommendations for workflow creation
          Recommendations []Recommendation `json:"recommendations,omitempty"`
-         
+
          // Additional fields per CRD_SCHEMAS.md
      }
      ```
@@ -142,19 +142,19 @@ This action plan implements the RemediationRequest (RR) controller as the centra
      type WorkflowExecutionSpec struct {
          // Parent reference
          RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-         
+
          // Workflow definition from AIAnalysis
          WorkflowDefinition WorkflowDefinition `json:"workflowDefinition"`
-         
+
          // Additional fields per CRD_SCHEMAS.md
      }
-     
+
      type WorkflowExecutionStatus struct {
          Phase string `json:"phase"` // "planning", "validating", "executing", "monitoring", "completed", "failed"
-         
+
          // Step execution tracking
          StepStatuses []StepStatus `json:"stepStatuses,omitempty"`
-         
+
          // Additional fields per CRD_SCHEMAS.md
      }
      ```

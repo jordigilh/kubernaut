@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,71 +14,412 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package remediation
+package remediation_test
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
-var _ = Describe("RemediationRequest Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+// ========================================
+// TEST SUITE: RemediationRequest Controller - Phase 1
+// Business Requirement: BR-ORCHESTRATION-001
+// ========================================
 
-		ctx := context.Background()
+var _ = Describe("RemediationRequest Controller - Task 1.1: AIAnalysis CRD Creation", func() {
+	const (
+		timeout  = time.Second * 10
+		interval = time.Millisecond * 250
+	)
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+	var (
+		ctx       context.Context
+		namespace string
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		namespace = "default"
+	})
+
+	// ========================================
+	// TEST 1: Create AIAnalysis when RemediationProcessing completes
+	// Business Requirement: BR-ORCHESTRATION-001
+	// ========================================
+	It("should create AIAnalysis CRD when RemediationProcessing phase is 'completed'", func() {
+		// GIVEN: A RemediationRequest exists
+		remediationRequest := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-remediation-001",
+				Namespace: namespace,
+			},
+			Spec: remediationv1alpha1.RemediationRequestSpec{
+				SignalFingerprint: "abc123def456789012345678901234567890123456789012345678901234",
+				SignalName:        "high-cpu-usage",
+				Severity:          "critical",
+				Environment:       "prod",
+				Priority:          "P0",
+				SignalType:        "prometheus-alert",
+				TargetType:        "kubernetes",
+			},
 		}
-		remediationrequest := &remediationv1alpha1.RemediationRequest{}
+		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind RemediationRequest")
-			err := k8sClient.Get(ctx, typeNamespacedName, remediationrequest)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &remediationv1alpha1.RemediationRequest{
+		// WHEN: RemediationProcessing CRD exists and is marked as 'completed'
+		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
+				Name:      remediationRequest.Name + "-processing",
+				Namespace: namespace,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: remediationRequest.APIVersion,
+						Kind:       remediationRequest.Kind,
+						Name:       remediationRequest.Name,
+						UID:        remediationRequest.UID,
+						Controller: func() *bool { b := true; return &b }(),
 					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-		})
+				},
+			},
+			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
+			},
+		}
+		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &remediationv1alpha1.RemediationRequest{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+		// Update RemediationProcessing status to 'completed'
+		remediationProcessing.Status.Phase = "completed"
+		remediationProcessing.Status.ContextData = map[string]string{
+			"test-key": "test-value",
+		}
+		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
 
-			By("Cleanup the specific resource instance RemediationRequest")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
-		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &RemediationRequestReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+		// Update RemediationRequest status to reference RemediationProcessing
+		remediationRequest.Status.OverallPhase = "processing"
+		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
+			Name:      remediationProcessing.Name,
+			Namespace: remediationProcessing.Namespace,
+		}
+		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
-		})
+		// THEN: AIAnalysis CRD should be created
+		aiAnalysisName := remediationRequest.Name + "-aianalysis"
+		aiAnalysis := &aianalysisv1alpha1.AIAnalysis{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      aiAnalysisName,
+				Namespace: namespace,
+			}, aiAnalysis)
+		}, timeout, interval).Should(Succeed())
+
+		// AND: AIAnalysis should have correct parent reference
+		Expect(aiAnalysis.Spec.RemediationRequestRef.Name).To(Equal(remediationRequest.Name))
+		Expect(aiAnalysis.Spec.RemediationRequestRef.UID).To(Equal(remediationRequest.UID))
+
+		// AND: AIAnalysis should have self-contained signal context
+		Expect(aiAnalysis.Spec.SignalType).To(Equal("prometheus-alert"))
+		Expect(aiAnalysis.Spec.SignalContext).NotTo(BeEmpty())
+
+		// AND: AIAnalysis should have owner reference for cascade deletion
+		Expect(aiAnalysis.OwnerReferences).To(HaveLen(1))
+		Expect(aiAnalysis.OwnerReferences[0].Name).To(Equal(remediationRequest.Name))
+	})
+
+	// ========================================
+	// TEST 2: AIAnalysis includes enriched context from RemediationProcessing
+	// Business Requirement: BR-ORCHESTRATION-001
+	// ========================================
+	It("should include enriched context from RemediationProcessing in AIAnalysis spec", func() {
+		// GIVEN: A RemediationRequest with RemediationProcessing completed
+		remediationRequest := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-remediation-002",
+				Namespace: namespace,
+			},
+			Spec: remediationv1alpha1.RemediationRequestSpec{
+				SignalFingerprint: "def456789012345678901234567890123456789012345678901234567890",
+				SignalName:        "pod-crashloop",
+				Severity:          "critical",
+				Environment:       "prod",
+				Priority:          "P0",
+				SignalType:        "kubernetes-event",
+				TargetType:        "kubernetes",
+				SignalLabels: map[string]string{
+					"namespace": "production",
+					"pod":       "api-server-xyz",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
+
+		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      remediationRequest.Name + "-processing",
+				Namespace: namespace,
+			},
+			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
+				SignalLabels:      remediationRequest.Spec.SignalLabels,
+			},
+			Status: remediationprocessingv1alpha1.RemediationProcessingStatus{
+				Phase: "completed",
+				ContextData: map[string]string{
+					"cluster_state":      "degraded",
+					"recent_deployments": "3",
+					"metrics_available":  "true",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
+
+		remediationRequest.Status.OverallPhase = "processing"
+		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
+			Name:      remediationProcessing.Name,
+			Namespace: remediationProcessing.Namespace,
+		}
+		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+
+		// WHEN: Controller processes the request
+		// THEN: AIAnalysis should include enriched context
+		aiAnalysisName := remediationRequest.Name + "-aianalysis"
+		aiAnalysis := &aianalysisv1alpha1.AIAnalysis{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      aiAnalysisName,
+				Namespace: namespace,
+			}, aiAnalysis)
+		}, timeout, interval).Should(Succeed())
+
+		// Verify context data from RemediationProcessing is copied
+		Expect(aiAnalysis.Spec.SignalContext).To(HaveKey("cluster_state"))
+		Expect(aiAnalysis.Spec.SignalContext["cluster_state"]).To(Equal("degraded"))
+		Expect(aiAnalysis.Spec.SignalContext).To(HaveKey("recent_deployments"))
+	})
+
+	// ========================================
+	// TEST 3: Do NOT create AIAnalysis if RemediationProcessing is not completed
+	// Business Requirement: BR-ORCHESTRATION-001
+	// ========================================
+	It("should NOT create AIAnalysis CRD when RemediationProcessing phase is 'enriching'", func() {
+		// GIVEN: A RemediationRequest with RemediationProcessing still enriching
+		remediationRequest := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-remediation-003",
+				Namespace: namespace,
+			},
+			Spec: remediationv1alpha1.RemediationRequestSpec{
+				SignalFingerprint: "ghi789012345678901234567890123456789012345678901234567890123",
+				SignalName:        "disk-full",
+				Severity:          "warning",
+				Environment:       "staging",
+				Priority:          "P1",
+				SignalType:        "prometheus-alert",
+				TargetType:        "kubernetes",
+			},
+		}
+		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
+
+		remediationProcessing := &remediationprocessingv1alpha1.RemediationProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      remediationRequest.Name + "-processing",
+				Namespace: namespace,
+			},
+			Spec: remediationprocessingv1alpha1.RemediationProcessingSpec{
+				SignalFingerprint: remediationRequest.Spec.SignalFingerprint,
+			},
+			Status: remediationprocessingv1alpha1.RemediationProcessingStatus{
+				Phase: "enriching", // NOT completed
+			},
+		}
+		Expect(k8sClient.Create(ctx, remediationProcessing)).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, remediationProcessing)).To(Succeed())
+
+		remediationRequest.Status.OverallPhase = "processing"
+		remediationRequest.Status.RemediationProcessingRef = &corev1.ObjectReference{
+			Name:      remediationProcessing.Name,
+			Namespace: remediationProcessing.Namespace,
+		}
+		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+
+		// WHEN: Controller processes the request
+		// THEN: AIAnalysis should NOT be created
+		aiAnalysisName := remediationRequest.Name + "-aianalysis"
+		aiAnalysis := &aianalysisv1alpha1.AIAnalysis{}
+		Consistently(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      aiAnalysisName,
+				Namespace: namespace,
+			}, aiAnalysis)
+		}, time.Second*2, interval).ShouldNot(Succeed())
+	})
+})
+
+// ========================================
+// TEST SUITE: Task 1.2 - WorkflowExecution CRD Creation
+// Business Requirement: BR-ORCHESTRATION-002
+// ========================================
+
+var _ = Describe("RemediationRequest Controller - Task 1.2: WorkflowExecution CRD Creation", func() {
+	const (
+		timeout  = time.Second * 10
+		interval = time.Millisecond * 250
+	)
+
+	var (
+		ctx       context.Context
+		namespace string
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		namespace = "default"
+	})
+
+	// ========================================
+	// TEST 4: Create WorkflowExecution when AIAnalysis completes
+	// Business Requirement: BR-ORCHESTRATION-002
+	// ========================================
+	It("should create WorkflowExecution CRD when AIAnalysis phase is 'completed'", func() {
+		// GIVEN: A RemediationRequest with completed AIAnalysis
+		remediationRequest := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-remediation-004",
+				Namespace: namespace,
+			},
+			Spec: remediationv1alpha1.RemediationRequestSpec{
+				SignalFingerprint: "jkl012345678901234567890123456789012345678901234567890123456",
+				SignalName:        "memory-leak",
+				Severity:          "critical",
+				Environment:       "prod",
+				Priority:          "P0",
+				SignalType:        "prometheus-alert",
+				TargetType:        "kubernetes",
+			},
+		}
+		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
+
+		// WHEN: AIAnalysis CRD exists and is marked as 'completed'
+		aiAnalysis := &aianalysisv1alpha1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      remediationRequest.Name + "-aianalysis",
+				Namespace: namespace,
+			},
+			Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      remediationRequest.Name,
+					Namespace: remediationRequest.Namespace,
+					UID:       remediationRequest.UID,
+				},
+				SignalType: remediationRequest.Spec.SignalType,
+			},
+			Status: aianalysisv1alpha1.AIAnalysisStatus{
+				Phase:             "Completed",
+				RecommendedAction: "restart_pod",
+				Confidence:        0.95,
+			},
+		}
+		Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, aiAnalysis)).To(Succeed())
+
+		remediationRequest.Status.OverallPhase = "analyzing"
+		remediationRequest.Status.AIAnalysisRef = &corev1.ObjectReference{
+			Name:      aiAnalysis.Name,
+			Namespace: aiAnalysis.Namespace,
+		}
+		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+
+		// THEN: WorkflowExecution CRD should be created
+		workflowName := remediationRequest.Name + "-workflow"
+		workflow := &workflowexecutionv1alpha1.WorkflowExecution{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      workflowName,
+				Namespace: namespace,
+			}, workflow)
+		}, timeout, interval).Should(Succeed())
+
+		// AND: WorkflowExecution should have correct parent reference
+		Expect(workflow.Spec.RemediationRequestRef.Name).To(Equal(remediationRequest.Name))
+		Expect(workflow.Spec.RemediationRequestRef.UID).To(Equal(remediationRequest.UID))
+
+		// AND: WorkflowExecution should include AI recommendations
+		Expect(workflow.Spec.WorkflowDefinition).NotTo(BeNil())
+
+		// AND: WorkflowExecution should have owner reference
+		Expect(workflow.OwnerReferences).To(HaveLen(1))
+		Expect(workflow.OwnerReferences[0].Name).To(Equal(remediationRequest.Name))
+	})
+
+	// ========================================
+	// TEST 5: Do NOT create WorkflowExecution if AIAnalysis is not completed
+	// Business Requirement: BR-ORCHESTRATION-002
+	// ========================================
+	It("should NOT create WorkflowExecution CRD when AIAnalysis phase is 'Analyzing'", func() {
+		// GIVEN: A RemediationRequest with AIAnalysis still analyzing
+		remediationRequest := &remediationv1alpha1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-remediation-005",
+				Namespace: namespace,
+			},
+			Spec: remediationv1alpha1.RemediationRequestSpec{
+				SignalFingerprint: "mno345678901234567890123456789012345678901234567890123456789",
+				SignalName:        "network-latency",
+				Severity:          "warning",
+				Environment:       "staging",
+				Priority:          "P1",
+				SignalType:        "prometheus-alert",
+				TargetType:        "kubernetes",
+			},
+		}
+		Expect(k8sClient.Create(ctx, remediationRequest)).To(Succeed())
+
+		aiAnalysis := &aianalysisv1alpha1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      remediationRequest.Name + "-aianalysis",
+				Namespace: namespace,
+			},
+			Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      remediationRequest.Name,
+					Namespace: remediationRequest.Namespace,
+					UID:       remediationRequest.UID,
+				},
+			},
+			Status: aianalysisv1alpha1.AIAnalysisStatus{
+				Phase: "Analyzing", // NOT completed
+			},
+		}
+		Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, aiAnalysis)).To(Succeed())
+
+		remediationRequest.Status.OverallPhase = "analyzing"
+		remediationRequest.Status.AIAnalysisRef = &corev1.ObjectReference{
+			Name:      aiAnalysis.Name,
+			Namespace: aiAnalysis.Namespace,
+		}
+		Expect(k8sClient.Status().Update(ctx, remediationRequest)).To(Succeed())
+
+		// WHEN: Controller processes the request
+		// THEN: WorkflowExecution should NOT be created
+		workflowName := remediationRequest.Name + "-workflow"
+		workflow := &workflowexecutionv1alpha1.WorkflowExecution{}
+		Consistently(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{
+				Name:      workflowName,
+				Namespace: namespace,
+			}, workflow)
+		}, time.Second*2, interval).ShouldNot(Succeed())
 	})
 })

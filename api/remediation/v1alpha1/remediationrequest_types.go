@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -170,8 +171,17 @@ type TimeoutConfig struct {
 
 // RemediationRequestStatus defines the observed state of RemediationRequest.
 type RemediationRequestStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Phase tracking for orchestration
+	OverallPhase string `json:"overallPhase,omitempty"` // "pending", "processing", "analyzing", "executing", "completed", "failed"
+
+	// Timestamps
+	StartTime   *metav1.Time `json:"startTime,omitempty"`
+	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+
+	// References to downstream CRDs
+	RemediationProcessingRef *corev1.ObjectReference `json:"remediationProcessingRef,omitempty"`
+	AIAnalysisRef            *corev1.ObjectReference `json:"aiAnalysisRef,omitempty"`
+	WorkflowExecutionRef     *corev1.ObjectReference `json:"workflowExecutionRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true

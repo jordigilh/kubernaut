@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,8 +31,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
 // RemediationRequestReconciler reconciles a RemediationRequest object
@@ -45,81 +48,52 @@ type RemediationRequestReconciler struct {
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=remediationprocessing.kubernaut.io,resources=remediationprocessings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=remediationprocessing.kubernaut.io,resources=remediationprocessings/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=workflowexecution.kubernaut.io,resources=workflowexecutions,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=workflowexecution.kubernaut.io,resources=workflowexecutions/status,verbs=get;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// Task 2.2: Creates RemediationProcessing CRD with self-contained data copied from RemediationRequest
+// Task 1.3: Phase progression state machine for multi-CRD orchestration
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
-	// Fetch the RemediationRequest instance
+	// Fetch RemediationRequest
 	var remediationRequest remediationv1alpha1.RemediationRequest
 	if err := r.Get(ctx, req.NamespacedName, &remediationRequest); err != nil {
-		// Handle not found or other errors
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Check if RemediationProcessing CRD already exists
-	processingName := fmt.Sprintf("%s-processing", remediationRequest.Name)
-	var existingProcessing remediationprocessingv1alpha1.RemediationProcessing
-	err := r.Get(ctx, client.ObjectKey{
-		Name:      processingName,
-		Namespace: remediationRequest.Namespace,
-	}, &existingProcessing)
-
-	if err != nil && !errors.IsNotFound(err) {
-		log.Error(err, "Failed to check for existing RemediationProcessing")
-		return ctrl.Result{}, err
-	}
-
-	// Create RemediationProcessing if it doesn't exist
-	if errors.IsNotFound(err) {
-		processing := &remediationprocessingv1alpha1.RemediationProcessing{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      processingName,
-				Namespace: remediationRequest.Namespace,
-				Labels: map[string]string{
-					"remediation-request": remediationRequest.Name,
-					"signal-type":         remediationRequest.Spec.SignalType,
-					"environment":         remediationRequest.Spec.Environment,
-					"priority":            remediationRequest.Spec.Priority,
-				},
-				Annotations: map[string]string{
-					"signal-fingerprint": remediationRequest.Spec.SignalFingerprint,
-					"created-by":         "remediation-orchestrator",
-				},
-			},
-			Spec: mapRemediationRequestToProcessingSpec(&remediationRequest),
-		}
-
-		// Set owner reference for cascade deletion
-		if err := ctrl.SetControllerReference(&remediationRequest, processing, r.Scheme); err != nil {
-			log.Error(err, "Failed to set owner reference")
+	// Initialize status if new
+	if remediationRequest.Status.OverallPhase == "" {
+		remediationRequest.Status.OverallPhase = "pending"
+		remediationRequest.Status.StartTime = &metav1.Time{Time: time.Now()}
+		if err := r.Status().Update(ctx, &remediationRequest); err != nil {
 			return ctrl.Result{}, err
 		}
-
-		// Create the RemediationProcessing CRD
-		if err := r.Create(ctx, processing); err != nil {
-			log.Error(err, "Failed to create RemediationProcessing")
-			return ctrl.Result{}, err
-		}
-
-		log.Info("Created RemediationProcessing CRD",
-			"name", processingName,
-			"signal-fingerprint", remediationRequest.Spec.SignalFingerprint)
+		return ctrl.Result{Requeue: true}, nil
 	}
 
-	return ctrl.Result{}, nil
+	// Terminal states
+	if remediationRequest.Status.OverallPhase == "completed" ||
+		remediationRequest.Status.OverallPhase == "failed" {
+		return ctrl.Result{}, nil
+	}
+
+	// Orchestrate based on phase
+	return r.orchestratePhase(ctx, &remediationRequest)
 }
 
 // SetupWithManager sets up the controller with the Manager.
+// Task 1.4: Watch downstream CRDs for orchestration
 func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&remediationv1alpha1.RemediationRequest{}).
-		Owns(&remediationprocessingv1alpha1.RemediationProcessing{}). // Watch owned CRDs
+		Owns(&remediationprocessingv1alpha1.RemediationProcessing{}).
+		Owns(&aianalysisv1alpha1.AIAnalysis{}).
+		Owns(&workflowexecutionv1alpha1.WorkflowExecution{}).
 		Named("remediation-remediationrequest").
 		Complete(r)
 }
@@ -301,4 +275,320 @@ func getDefaultEnrichmentConfig() *remediationprocessingv1alpha1.EnrichmentConfi
 		EnableMetrics:      true,  // Enable by default for context
 		EnableHistorical:   false, // Disabled by default (performance)
 	}
+}
+
+// ========================================
+// PHASE ORCHESTRATION - CRD CREATION FUNCTIONS
+// Task 1.1-1.2: AIAnalysis and WorkflowExecution CRD creation
+// ========================================
+
+// createAIAnalysis creates AIAnalysis CRD when RemediationProcessing completes
+func (r *RemediationRequestReconciler) createAIAnalysis(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+	processing *remediationprocessingv1alpha1.RemediationProcessing,
+) error {
+	log := logf.FromContext(ctx)
+
+	aiAnalysisName := fmt.Sprintf("%s-aianalysis", remediation.Name)
+
+	// Map enriched context from RemediationProcessing.Status
+	aiAnalysis := &aianalysisv1alpha1.AIAnalysis{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      aiAnalysisName,
+			Namespace: remediation.Namespace,
+			Labels: map[string]string{
+				"remediation-request": remediation.Name,
+				"signal-type":         remediation.Spec.SignalType,
+			},
+		},
+		Spec: aianalysisv1alpha1.AIAnalysisSpec{
+			RemediationRequestRef: remediation.Name, // String reference, not ObjectReference
+			SignalType:            remediation.Spec.SignalType,
+			SignalContext:         processing.Status.ContextData, // Enriched data
+			LLMProvider:           "holmesgpt",
+			LLMModel:              "gpt-4",
+			MaxTokens:             4000,
+			Temperature:           0.7,
+			IncludeHistory:        true,
+		},
+	}
+
+	// Set owner reference
+	if err := ctrl.SetControllerReference(remediation, aiAnalysis, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	// Create AIAnalysis CRD
+	if err := r.Create(ctx, aiAnalysis); err != nil {
+		return fmt.Errorf("failed to create AIAnalysis: %w", err)
+	}
+
+	log.Info("Created AIAnalysis CRD", "name", aiAnalysisName)
+	return nil
+}
+
+// createWorkflowExecution creates WorkflowExecution CRD when AIAnalysis completes
+func (r *RemediationRequestReconciler) createWorkflowExecution(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+	analysis *aianalysisv1alpha1.AIAnalysis,
+) error {
+	log := logf.FromContext(ctx)
+
+	workflowName := fmt.Sprintf("%s-workflow", remediation.Name)
+
+	// Create workflow from AI recommendations
+	workflow := &workflowexecutionv1alpha1.WorkflowExecution{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      workflowName,
+			Namespace: remediation.Namespace,
+			Labels: map[string]string{
+				"remediation-request": remediation.Name,
+			},
+		},
+		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name:      remediation.Name,
+				Namespace: remediation.Namespace,
+				UID:       remediation.UID,
+			},
+			WorkflowDefinition: workflowexecutionv1alpha1.WorkflowDefinition{
+				Name:    "ai-generated-workflow",
+				Version: "1.0",
+				Steps: []workflowexecutionv1alpha1.WorkflowStep{
+					{
+						StepNumber: 1,
+						Name:       "AI Recommended Action",
+						Action:     analysis.Status.RecommendedAction,
+						Parameters: &workflowexecutionv1alpha1.StepParameters{}, // Pointer type
+						MaxRetries: 3,
+						Timeout:    "5m",
+					},
+				},
+			},
+			ExecutionStrategy: workflowexecutionv1alpha1.ExecutionStrategy{
+				ApprovalRequired: false,
+				DryRunFirst:      true,
+				RollbackStrategy: "automatic",
+				MaxRetries:       3,
+			},
+		},
+	}
+
+	// Set owner reference
+	if err := ctrl.SetControllerReference(remediation, workflow, r.Scheme); err != nil {
+		return fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	// Create WorkflowExecution CRD
+	if err := r.Create(ctx, workflow); err != nil {
+		return fmt.Errorf("failed to create WorkflowExecution: %w", err)
+	}
+
+	log.Info("Created WorkflowExecution CRD", "name", workflowName)
+	return nil
+}
+
+// ========================================
+// PHASE ORCHESTRATION - STATE MACHINE
+// Task 1.3: Phase progression handlers
+// ========================================
+
+// orchestratePhase implements phase progression state machine
+func (r *RemediationRequestReconciler) orchestratePhase(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	switch remediation.Status.OverallPhase {
+	case "pending":
+		return r.handlePendingPhase(ctx, remediation)
+
+	case "processing":
+		return r.handleProcessingPhase(ctx, remediation)
+
+	case "analyzing":
+		return r.handleAnalyzingPhase(ctx, remediation)
+
+	case "executing":
+		return r.handleExecutingPhase(ctx, remediation)
+
+	default:
+		log.Info("Unknown phase", "phase", remediation.Status.OverallPhase)
+		return ctrl.Result{}, nil
+	}
+}
+
+// handlePendingPhase creates RemediationProcessing CRD
+func (r *RemediationRequestReconciler) handlePendingPhase(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Check if RemediationProcessing exists
+	processingName := fmt.Sprintf("%s-processing", remediation.Name)
+	var processing remediationprocessingv1alpha1.RemediationProcessing
+	err := r.Get(ctx, client.ObjectKey{Name: processingName, Namespace: remediation.Namespace}, &processing)
+
+	if errors.IsNotFound(err) {
+		// Create RemediationProcessing
+		processing := &remediationprocessingv1alpha1.RemediationProcessing{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      processingName,
+				Namespace: remediation.Namespace,
+				Labels: map[string]string{
+					"remediation-request": remediation.Name,
+					"signal-type":         remediation.Spec.SignalType,
+					"environment":         remediation.Spec.Environment,
+					"priority":            remediation.Spec.Priority,
+				},
+				Annotations: map[string]string{
+					"signal-fingerprint": remediation.Spec.SignalFingerprint,
+					"created-by":         "remediation-orchestrator",
+				},
+			},
+			Spec: mapRemediationRequestToProcessingSpec(remediation),
+		}
+
+		// Set owner reference for cascade deletion
+		if err := ctrl.SetControllerReference(remediation, processing, r.Scheme); err != nil {
+			log.Error(err, "Failed to set owner reference")
+			return ctrl.Result{}, err
+		}
+
+		// Create the RemediationProcessing CRD
+		if err := r.Create(ctx, processing); err != nil {
+			log.Error(err, "Failed to create RemediationProcessing")
+			return ctrl.Result{}, err
+		}
+
+		log.Info("Created RemediationProcessing CRD",
+			"name", processingName,
+			"signal-fingerprint", remediation.Spec.SignalFingerprint)
+	} else if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Update phase to processing
+	remediation.Status.OverallPhase = "processing"
+	remediation.Status.RemediationProcessingRef = &corev1.ObjectReference{
+		Name:      processingName,
+		Namespace: remediation.Namespace,
+	}
+	return ctrl.Result{}, r.Status().Update(ctx, remediation)
+}
+
+// handleProcessingPhase waits for RemediationProcessing completion
+func (r *RemediationRequestReconciler) handleProcessingPhase(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Get RemediationProcessing
+	var processing remediationprocessingv1alpha1.RemediationProcessing
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      remediation.Status.RemediationProcessingRef.Name,
+		Namespace: remediation.Namespace,
+	}, &processing)
+
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Check if completed
+	if processing.Status.Phase == "completed" {
+		// Create AIAnalysis
+		if err := r.createAIAnalysis(ctx, remediation, &processing); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Update phase
+		remediation.Status.OverallPhase = "analyzing"
+		remediation.Status.AIAnalysisRef = &corev1.ObjectReference{
+			Name:      fmt.Sprintf("%s-aianalysis", remediation.Name),
+			Namespace: remediation.Namespace,
+		}
+		
+		log.Info("Phase transition: processing → analyzing", "remediation", remediation.Name)
+		return ctrl.Result{}, r.Status().Update(ctx, remediation)
+	}
+
+	// Still processing - requeue
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+}
+
+// handleAnalyzingPhase waits for AIAnalysis completion
+func (r *RemediationRequestReconciler) handleAnalyzingPhase(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Get AIAnalysis
+	var analysis aianalysisv1alpha1.AIAnalysis
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      remediation.Status.AIAnalysisRef.Name,
+		Namespace: remediation.Namespace,
+	}, &analysis)
+
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Check if completed
+	if analysis.Status.Phase == "Completed" {
+		// Create WorkflowExecution
+		if err := r.createWorkflowExecution(ctx, remediation, &analysis); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Update phase
+		remediation.Status.OverallPhase = "executing"
+		remediation.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+			Name:      fmt.Sprintf("%s-workflow", remediation.Name),
+			Namespace: remediation.Namespace,
+		}
+		
+		log.Info("Phase transition: analyzing → executing", "remediation", remediation.Name)
+		return ctrl.Result{}, r.Status().Update(ctx, remediation)
+	}
+
+	// Still analyzing - requeue
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+}
+
+// handleExecutingPhase waits for WorkflowExecution completion
+func (r *RemediationRequestReconciler) handleExecutingPhase(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	// Get WorkflowExecution
+	var workflow workflowexecutionv1alpha1.WorkflowExecution
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      remediation.Status.WorkflowExecutionRef.Name,
+		Namespace: remediation.Namespace,
+	}, &workflow)
+
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Check if completed
+	if workflow.Status.Phase == "completed" {
+		// Update to completed
+		remediation.Status.OverallPhase = "completed"
+		remediation.Status.CompletedAt = &metav1.Time{Time: time.Now()}
+		
+		log.Info("Phase transition: executing → completed", "remediation", remediation.Name)
+		return ctrl.Result{}, r.Status().Update(ctx, remediation)
+	}
+
+	// Still executing - requeue
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 }
