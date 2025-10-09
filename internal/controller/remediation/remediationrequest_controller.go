@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -60,10 +61,51 @@ type RemediationRequestReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
 	// Fetch RemediationRequest
 	var remediationRequest remediationv1alpha1.RemediationRequest
 	if err := r.Get(ctx, req.NamespacedName, &remediationRequest); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	// ========================================
+	// FINALIZER HANDLING
+	// Phase 2.3: 24-hour retention management
+	// ========================================
+
+	// Handle deletion - execute finalizer cleanup
+	if !remediationRequest.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(&remediationRequest, RemediationFinalizerName) {
+			log.Info("RemediationRequest being deleted, running finalizer cleanup",
+				"name", remediationRequest.Name)
+
+			// Perform cleanup (e.g., audit logging)
+			if err := r.finalizeRemediationRequest(ctx, &remediationRequest); err != nil {
+				log.Error(err, "Failed to finalize RemediationRequest")
+				return ctrl.Result{}, err
+			}
+
+			// Remove finalizer to allow deletion
+			controllerutil.RemoveFinalizer(&remediationRequest, RemediationFinalizerName)
+			if err := r.Update(ctx, &remediationRequest); err != nil {
+				return ctrl.Result{}, err
+			}
+
+			log.Info("Finalizer removed, RemediationRequest will be deleted",
+				"name", remediationRequest.Name)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if not present (for new objects)
+	if !controllerutil.ContainsFinalizer(&remediationRequest, RemediationFinalizerName) {
+		log.Info("Adding finalizer to RemediationRequest", "name", remediationRequest.Name)
+		controllerutil.AddFinalizer(&remediationRequest, RemediationFinalizerName)
+		if err := r.Update(ctx, &remediationRequest); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Initialize status if new
@@ -76,9 +118,32 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Terminal states
+	// Terminal states with retention management
 	if remediationRequest.Status.OverallPhase == "completed" ||
 		remediationRequest.Status.OverallPhase == "failed" {
+		// Check if 24-hour retention has expired
+		if r.IsRetentionExpired(&remediationRequest) {
+			log.Info("Retention period expired, deleting RemediationRequest",
+				"name", remediationRequest.Name,
+				"completedAt", remediationRequest.Status.CompletedAt)
+
+			// Delete the CRD (finalizer cleanup will be triggered)
+			if err := r.Delete(ctx, &remediationRequest); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
+
+		// Requeue to check retention expiry later
+		requeueAfter := r.CalculateRequeueAfter(&remediationRequest)
+		if requeueAfter > 0 {
+			log.Info("Terminal state with retention, requeuing to check expiry",
+				"name", remediationRequest.Name,
+				"requeueAfter", requeueAfter)
+			return ctrl.Result{RequeueAfter: requeueAfter}, nil
+		}
+
+		// No CompletedAt set yet (shouldn't happen, but handle gracefully)
 		return ctrl.Result{}, nil
 	}
 
@@ -705,6 +770,70 @@ func (r *RemediationRequestReconciler) handleFailure(
 	}
 
 	return ctrl.Result{}, nil // Terminal state, no requeue
+}
+
+// ========================================
+// FINALIZER & RETENTION
+// Phase 2.3: 24-hour retention after completion/failure
+// ========================================
+
+const RemediationFinalizerName = "kubernaut.io/remediation-retention"
+
+// IsRetentionExpired checks if the 24-hour retention period has expired
+// Business Requirement: BR-ORCHESTRATION-005
+func (r *RemediationRequestReconciler) IsRetentionExpired(remediation *remediationv1alpha1.RemediationRequest) bool {
+	// Only terminal states have retention
+	if remediation.Status.OverallPhase != "completed" &&
+		remediation.Status.OverallPhase != "failed" {
+		return false
+	}
+
+	// No retention if CompletedAt is not set
+	if remediation.Status.CompletedAt == nil {
+		return false
+	}
+
+	// Check if 24 hours have passed since completion
+	retentionExpiry := remediation.Status.CompletedAt.Add(24 * time.Hour)
+	return time.Now().After(retentionExpiry)
+}
+
+// CalculateRequeueAfter calculates time until retention expiry
+// Returns 0 if already expired or no CompletedAt time
+func (r *RemediationRequestReconciler) CalculateRequeueAfter(remediation *remediationv1alpha1.RemediationRequest) time.Duration {
+	if remediation.Status.CompletedAt == nil {
+		return 0
+	}
+
+	retentionExpiry := remediation.Status.CompletedAt.Add(24 * time.Hour)
+	timeUntilExpiry := time.Until(retentionExpiry)
+
+	if timeUntilExpiry < 0 {
+		return 0 // Already expired
+	}
+
+	return timeUntilExpiry
+}
+
+// finalizeRemediationRequest performs cleanup before RemediationRequest deletion
+// This is called by the finalizer when DeletionTimestamp is set
+func (r *RemediationRequestReconciler) finalizeRemediationRequest(
+	ctx context.Context,
+	remediation *remediationv1alpha1.RemediationRequest,
+) error {
+	log := logf.FromContext(ctx)
+
+	log.Info("Finalizing RemediationRequest",
+		"name", remediation.Name,
+		"phase", remediation.Status.OverallPhase,
+		"retainedFor", time.Since(remediation.Status.CompletedAt.Time))
+
+	// TODO Phase 3.2: Record final audit entry before deletion
+	// TODO Phase 3.2: Emit Kubernetes event for deletion
+	// NOTE: Child CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution)
+	//       are automatically deleted via owner references - no manual cleanup needed
+
+	return nil
 }
 
 // ========================================
