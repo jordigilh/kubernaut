@@ -1,6 +1,7 @@
 //go:build unit
 // +build unit
 
+<<<<<<< HEAD
 package executor
 
 import (
@@ -8,6 +9,31 @@ import (
 	"context"
 	"fmt"
 	"sync"
+=======
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package executor
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"testing"
+>>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -32,7 +58,11 @@ var _ = Describe("BR-CONCURRENT-EXEC-001: Comprehensive Concurrent Execution Bus
 
 		// Use REAL business logic components
 		// asyncExecutor executor.AsyncExecutor // AsyncExecutor not implemented yet
+<<<<<<< HEAD
 		syncExecutor  executor.Executor
+=======
+		syncExecutor executor.Executor
+>>>>>>> crd_implementation
 
 		ctx    context.Context
 		cancel context.CancelFunc
@@ -50,9 +80,15 @@ var _ = Describe("BR-CONCURRENT-EXEC-001: Comprehensive Concurrent Execution Bus
 
 		// Create REAL business executors with mocked external dependencies
 		config := config.ActionsConfig{
+<<<<<<< HEAD
 			MaxConcurrent:  5,                  // Controlled concurrency for testing
 			DryRun:         true,
 			CooldownPeriod: 1 * time.Second,   // Short cooldown for testing
+=======
+			MaxConcurrent:  5, // Controlled concurrency for testing
+			DryRun:         true,
+			CooldownPeriod: 1 * time.Second, // Short cooldown for testing
+>>>>>>> crd_implementation
 		}
 
 		var err error

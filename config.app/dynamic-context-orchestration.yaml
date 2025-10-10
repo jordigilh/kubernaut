@@ -1,0 +1,77 @@
+# Kubernaut Context API Configuration for Hybrid HolmesGPT Integration
+# This configuration focuses only on Kubernaut-specific context (not K8s/Prometheus proxy)
+
+server:
+  port: 8091
+  host: "0.0.0.0"
+  read_timeout: "30s"
+  write_timeout: "30s"
+
+logging:
+  level: "info"
+  format: "json"
+
+# Context API will only handle Kubernaut-specific endpoints
+context:
+  # Action history from workflow executions
+  action_history:
+    enabled: true
+    retention_days: 30
+    max_records: 1000
+
+  # Pattern analysis from ML-based detection
+  patterns:
+    enabled: true
+    cache_ttl: "15m"
+    analysis_timeout: "30s"
+
+  # Context discovery metadata
+  discovery:
+    enabled: true
+    cache_ttl: "5m"
+
+  # Health monitoring
+  health:
+    enabled: true
+
+# Caching configuration for Kubernaut-specific data
+cache:
+  type: "memory"
+  ttl: "10m"
+  max_size: 1000
+  cleanup_interval: "5m"
+
+# Integration points (HolmesGPT will access K8s/Prometheus directly)
+integration:
+  kubernetes:
+    # Context API doesn't proxy K8s calls anymore
+    direct_access: true
+
+  prometheus:
+    # Context API doesn't proxy Prometheus calls anymore
+    direct_access: true
+
+  holmesgpt:
+    # Only serve Kubernaut-specific endpoints
+    toolset_endpoints:
+      - "/api/v1/context/discover"
+      - "/api/v1/context/action-history"
+      - "/api/v1/context/patterns"
+      - "/api/v1/context/health"
+
+# Performance settings for reduced load
+performance:
+  max_concurrent_requests: 50
+  request_timeout: "60s"
+  graceful_shutdown_timeout: "10s"
+
+# Monitoring for Context API usage
+monitoring:
+  metrics:
+    enabled: true
+    endpoint: "/metrics"
+    port: 9090
+
+  health_check:
+    endpoint: "/api/v1/context/health"
+    interval: "30s"

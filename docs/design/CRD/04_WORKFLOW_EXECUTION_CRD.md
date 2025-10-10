@@ -1,10 +1,71 @@
+<<<<<<< HEAD
+=======
+# ⛔ DEPRECATED - DO NOT USE FOR IMPLEMENTATION
+
+**Status**: 🚨 **HISTORICAL REFERENCE ONLY**
+**Deprecated**: January 2025
+**Confidence**: 100% - This document is ~60% incorrect
+
+---
+
+## 🎯 **FOR CURRENT V1 INFORMATION, SEE:**
+
+### **1. Implementation (Source of Truth)**
+- **[`api/workflowexecution/v1alpha1/workflowexecution_types.go`](../../../api/workflowexecution/v1alpha1/workflowexecution_types.go)** - Actual Go implementation
+
+### **2. Schema Documentation**
+- **[`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md)** - Authoritative schema documentation
+
+### **3. Service Specifications (~2,000 lines)**
+- **[`docs/services/crd-controllers/03-workflowexecution/`](../../services/crd-controllers/03-workflowexecution/)** - Complete service specs
+
+---
+
+## ⚠️ **CRITICAL ISSUES IN THIS DOCUMENT**
+
+**This document is ~60% incorrect for V1. Missing critical validation and dependency patterns!**
+
+| Issue | Severity | What's Wrong |
+|-------|----------|--------------|
+| **API Group** | 🟡 MEDIUM | `workflow.kubernaut.io` → Should be `workflowexecution.kubernaut.io` |
+| **API Version** | 🟡 MEDIUM | `v1` → Should be `v1alpha1` |
+| **Parent Reference** | 🔴 HIGH | Likely `aiAnalysisRef` → Should be `remediationRequestRef` |
+| **Validation Pattern** | 🔴 HIGH | Missing ADR-016 validation responsibility chain (relies on step status, no direct K8s validation) |
+| **Dependency Analysis** | 🔴 HIGH | Missing dynamic execution mode determination (sequential vs parallel based on DAG analysis) |
+| **Context API Usage** | 🔴 HIGH | Document likely shows Context API queries - V1 uses AI recommendations as authoritative |
+
+**Schema Completeness**: ~40% of V1 patterns documented
+
+**Missing V1 Patterns**:
+- Validation Responsibility Chain (ADR-016)
+- Dependency graph analysis for execution ordering
+- Topological sort for DAG linearization
+- Dynamic sequential/parallel execution determination
+
+**See**: `docs/architecture/decisions/ADR-016-validation-responsibility-chain.md`
+
+---
+
+## 📜 **ORIGINAL DOCUMENT (OUTDATED) BELOW**
+
+**Warning**: Everything below this line is outdated. See links above for current information.
+
+---
+
+>>>>>>> crd_implementation
 # WorkflowExecution CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
+<<<<<<< HEAD
 **Status**: **APPROVED** - Ready for Implementation
 **CRD Version**: V1
 **Module**: Workflow Service (`workflow.kubernaut.io`)
+=======
+**Status**: **DEPRECATED** - See banner above (was: "APPROVED")
+**CRD Version**: V1alpha1
+**Module**: Workflow Service (`workflowexecution.kubernaut.io`)
+>>>>>>> crd_implementation
 
 ---
 

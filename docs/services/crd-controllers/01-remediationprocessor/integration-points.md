@@ -28,7 +28,11 @@ func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
                 },
                 // Copy original alert data
                 Alert: processingv1.Alert{
+<<<<<<< HEAD
                     Fingerprint: remediation.Spec.AlertFingerprint,
+=======
+                    Fingerprint: remediation.Spec.SignalFingerprint,
+>>>>>>> crd_implementation
                     Payload:     remediation.Spec.OriginalPayload,
                     Severity:    remediation.Spec.Severity,
                 },
@@ -73,6 +77,7 @@ func (r *RemediationRequestReconciler) reconcileAIAnalysis(
                 },
                 // COPY enriched alert data (data snapshot pattern - TARGETING DATA ONLY)
                 AnalysisRequest: aianalysisv1.AnalysisRequest{
+<<<<<<< HEAD
                     AlertContext: aianalysisv1.AlertContext{
                         Fingerprint:      alertProcessing.Status.EnrichedAlert.Fingerprint,
                         Severity:         alertProcessing.Status.EnrichedAlert.Severity,
@@ -86,6 +91,21 @@ func (r *RemediationRequestReconciler) reconcileAIAnalysis(
 
                         // Kubernetes context (small data ~8KB)
                         KubernetesContext: alertProcessing.Status.EnrichedAlert.KubernetesContext,
+=======
+                    AlertContext: aianalysisv1.SignalContext{
+                        Fingerprint:      alertProcessing.Status.EnrichedSignal.Fingerprint,
+                        Severity:         alertProcessing.Status.EnrichedSignal.Severity,
+                        Environment:      alertProcessing.Status.EnrichedSignal.Environment,
+                        BusinessPriority: alertProcessing.Status.EnrichedSignal.BusinessPriority,
+
+                        // Resource targeting for HolmesGPT (NOT logs/metrics - toolsets fetch those)
+                        Namespace:    alertProcessing.Status.EnrichedSignal.Namespace,
+                        ResourceKind: alertProcessing.Status.EnrichedSignal.ResourceKind,
+                        ResourceName: alertProcessing.Status.EnrichedSignal.ResourceName,
+
+                        // Kubernetes context (small data ~8KB)
+                        KubernetesContext: alertProcessing.Status.EnrichedSignal.KubernetesContext,
+>>>>>>> crd_implementation
                     },
                 },
             },
@@ -129,7 +149,11 @@ type ContextResponse struct {
 **Degraded Mode Fallback**:
 ```go
 // If Context Service unavailable, extract minimal context from alert labels
+<<<<<<< HEAD
 func (e *Enricher) DegradedModeEnrich(alert Alert) EnrichedAlert {
+=======
+func (e *Enricher) DegradedModeEnrich(signal Signal) EnrichedAlert {
+>>>>>>> crd_implementation
     return EnrichedAlert{
         Fingerprint: alert.Fingerprint,
         Severity:    alert.Severity,
