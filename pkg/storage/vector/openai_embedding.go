@@ -1,3 +1,22 @@
+<<<<<<< HEAD
+=======
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+>>>>>>> crd_implementation
 package vector
 
 import (
@@ -35,8 +54,13 @@ type OpenAIConfig struct {
 	BatchSize     int               `yaml:"batch_size" default:"100"`
 	RateLimit     int               `yaml:"rate_limit" default:"60"`
 	Dimensions    int               `yaml:"dimensions" default:"1536"`
+<<<<<<< HEAD
 	ModelOptions  map[string]string `yaml:"model_options,omitempty"`  // Additional model-specific options
 	FallbackModel string            `yaml:"fallback_model,omitempty"` // Fallback model if primary fails
+=======
+	ModelOptions  map[string]string `yaml:"model_options,omitempty"`       // Additional model-specific options
+	FallbackModel string            `yaml:"fallback_model,omitempty"`      // Fallback model if primary fails
+>>>>>>> crd_implementation
 	ValidateModel bool              `yaml:"validate_model" default:"true"` // Validate model availability on startup
 }
 
@@ -552,10 +576,18 @@ func (oes *OpenAIEmbeddingService) GetTokenUsage() map[string]interface{} {
 	// This would be populated during API calls in a real implementation
 	// For now, return basic usage information
 	return map[string]interface{}{
+<<<<<<< HEAD
 		"model":       oes.config.Model,
 		"rate_limit":  oes.config.RateLimit,
 		"batch_size":  oes.config.BatchSize,
 		"dimensions":  oes.config.Dimensions,
 		"validated":   oes.IsModelValidated(),
+=======
+		"model":      oes.config.Model,
+		"rate_limit": oes.config.RateLimit,
+		"batch_size": oes.config.BatchSize,
+		"dimensions": oes.config.Dimensions,
+		"validated":  oes.IsModelValidated(),
+>>>>>>> crd_implementation
 	}
 }

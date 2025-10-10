@@ -1,0 +1,147 @@
+# Configuration for Enterprise 20B+ Model LLM instance at 192.168.1.169:8080
+# This configuration enables enterprise AI features using 20B+ parameter models (MINIMUM REQUIREMENT)
+
+app:
+  name: "kubernaut"
+  version: "1.0.0"
+
+server:
+  webhook_port: "8080"
+  metrics_port: "9090"
+  health_port: "8081"
+
+logging:
+  level: "info"
+  format: "json"
+
+# AI Services Configuration - Direct HolmesGPT Integration (Phase 2)
+ai_services:
+  # Enterprise 20B+ Model for sophisticated workflow generation and analysis
+  llm:
+    endpoint: "http://192.168.1.169:8080"
+    provider: "ramalama"                  # Enterprise ramalama provider for 20B+ models
+    model: "ggml-org/gpt-oss-20b-GGUF"  # 20B+ parameter model (MINIMUM REQUIREMENT)
+    api_key: ""                          # Leave empty for Ollama local deployment
+    timeout: 60s                         # Extended timeout for complex reasoning
+    retry_count: 3
+    temperature: 0.7                     # Enterprise reasoning temperature
+    max_tokens: 131072                   # Full 131K context window utilization
+    min_parameter_count: 20000000000     # 20B parameter minimum enforcement
+    enable_rule_fallback: true           # Enable rule-based fallback for availability
+    max_concurrent_alerts: 5             # Maximum concurrent alerts for current hardware
+
+  # HolmesGPT for specialized alert investigation
+  holmesgpt:
+    enabled: true                    # Enable HolmesGPT integration
+    mode: "development"              # Development vs production mode
+    endpoint: "http://localhost:8090" # Local container endpoint
+    timeout: 60s                     # Longer timeout for investigations
+    retry_count: 3
+    toolsets:                        # Available investigation toolsets
+      - "kubernetes"
+      - "prometheus"
+      - "internet"
+    priority: 100                    # Higher priority than LLM for investigations
+
+  # Context API for HolmesGPT dynamic context orchestration (Phase 2)
+  context_api:
+    enabled: true                    # Enable Context API server
+    host: "0.0.0.0"                  # Listen on all interfaces
+    port: 8091                       # Context API port (avoids conflicts with 8080=main, 8090=HolmesGPT)
+    timeout: 30s                     # Context gathering timeout
+
+# Heartbeat monitoring configuration for 20B+ model availability
+heartbeat:
+  enabled: true                      # Enable heartbeat monitoring
+  monitor_service: "context_api"     # Monitoring from Context API server (recommended)
+  check_interval: "30s"             # Health check frequency
+  failure_threshold: 3              # Consecutive failures before failover
+  healthy_threshold: 2              # Consecutive successes before recovery
+  timeout: "10s"                    # Health check timeout
+  health_prompt: "System health check. Respond with: HEALTHY"
+
+# Failover configuration for rule-based processing
+failover:
+  enabled: true                     # Enable automatic failover
+  mode: "rule_based"               # Fallback mode: rule_based processing
+  confidence_reduction: 0.2        # Reduce confidence by 20% in fallback mode (0.8 -> 0.6)
+  process_with_lower_confidence: true  # Process alerts with lower confidence (don't queue)
+  notification_webhook: ""         # Optional webhook for failover notifications
+  max_fallback_duration: "30m"     # Maximum time in fallback before manual intervention
+
+# Legacy configuration section - automatically uses enterprise 20B+ model settings
+# DEPRECATED: Use ai_services.llm for new deployments
+slm:
+  endpoint: "http://192.168.1.169:8080"
+  provider: "ramalama"                  # Updated to enterprise provider
+  model: "ggml-org/gpt-oss-20b-GGUF"  # 20B+ parameter model requirement
+  timeout: 60s                         # Extended for complex reasoning
+  retry_count: 3
+  temperature: 0.7                     # Enterprise reasoning temperature
+  max_tokens: 131072                   # Full 131K context utilization
+  min_parameter_count: 20000000000     # 20B parameter minimum
+  enable_rule_fallback: true           # Enable rule-based fallback
+  max_concurrent_alerts: 5             # 5 concurrent alerts for current hardware
+
+# Future Anthropic Claude-4-Sonnet integration (after 20B model validation)
+# COMMENTED OUT - Enable after validating acceptance tests with 20B model
+# anthropic:
+#   enabled: false                     # Enable after 20B model validation
+#   api_key: "${ANTHROPIC_API_KEY}"    # Set via environment variable
+#   model: "claude-3-5-sonnet-20241022" # Claude-4-Sonnet when available
+#   endpoint: "https://api.anthropic.com/v1/messages"
+#   max_tokens: 200000                 # Claude's context window
+#   temperature: 0.7
+#   priority: 200                      # Higher priority for testing after validation
+
+kubernetes:
+  context: ""                      # Use default context
+  namespace: "default"
+  service_account: "kubernaut"
+
+actions:
+  dry_run: false                   # Set to true for testing
+  max_concurrent: 5
+  cooldown_period: "5m"
+
+# Database configuration (optional for testing)
+database:
+  enabled: true                    # Enable for AI learning features
+  host: "localhost"
+  port: "5432"
+  database: "action_history"
+  username: "slm_user"
+  password: "slm_password"
+  ssl_mode: "disable"
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime_minutes: 5
+
+# Vector Database - Using PostgreSQL with pgvector (✅ FULLY IMPLEMENTED)
+vectordb:
+  enabled: true
+  backend: "postgresql"            # Use PostgreSQL with pgvector extension
+  postgresql:
+    use_main_db: true              # Use same DB as action history
+    host: "localhost"              # Only needed if use_main_db: false
+    port: "5432"
+    database: "action_history"     # Same database as main application
+    username: "slm_user"
+    password: "slm_password"
+    index_lists: 100               # IVFFlat index parameter for up to 100K vectors
+  embedding:
+    provider: "local"              # Use local embedding generation
+    model: "all-MiniLM-L6-v2"     # 384-dimensional embeddings (matches migration)
+    dimensions: 384
+
+monitoring:
+  use_production_clients: true     # Enable real monitoring integration
+  prometheus_endpoint: "http://localhost:9090"
+  alertmanager_endpoint: "http://localhost:9093"
+
+webhook:
+  port: "8080"
+  path: "/alerts"
+  auth:
+    type: "bearer"
+    token: ""                      # Set via environment variable

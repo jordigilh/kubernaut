@@ -110,7 +110,11 @@ sequenceDiagram
 
         %% V1: HolmesGPT Investigation
         Note over PFH, HGP: 🔍 V1: HOLMESGPT-API INVESTIGATION (PRIMARY & ONLY)
+<<<<<<< HEAD
         PFH->>+HGP: InvestigateAlert(ctx, enrichedAlert)
+=======
+        PFH->>+HGP: InvestigateSignal(ctx, enrichedAlert)
+>>>>>>> crd_implementation
 
         alt HolmesGPT-API Available & Successful
             HGP->>HGP: 🔍 Analyze failure with toolset access
@@ -290,7 +294,11 @@ graph TD
 
 ### **1. HolmesGPT-API Investigation (V1: Primary & Only Strategy)** 🔍
 ```
+<<<<<<< HEAD
 HolmesGPT-API.InvestigateAlert(ctx, alert) → {
+=======
+HolmesGPT-API.InvestigateSignal(ctx, signal) → {
+>>>>>>> crd_implementation
     Method: "holmesgpt-api",
     Analysis: "Detailed failure analysis with Kubernetes context enrichment",
     Recommendations: [

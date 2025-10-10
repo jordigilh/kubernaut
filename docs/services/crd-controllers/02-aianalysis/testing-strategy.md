@@ -610,7 +610,11 @@ Describe("BR-AI-030: Rego Policy Approval Logic", func() {
             // Single test function for all Rego policy evaluation
             input := PolicyInput{
                 Recommendation: Recommendation{Action: action, Confidence: confidence},
+<<<<<<< HEAD
                 Context:        PolicyContext{Environment: env, AlertSeverity: alertSeverity},
+=======
+                Context:        PolicyContext{Environment: env, SignalSeverity: signalSeverity},
+>>>>>>> crd_implementation
             }
 
             result, err := regoEngine.Evaluate(input)

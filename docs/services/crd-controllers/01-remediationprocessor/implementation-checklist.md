@@ -2,6 +2,22 @@
 
 **Note**: Follow APDC-TDD phases for each implementation step (see Development Methodology section)
 
+<<<<<<< HEAD
+=======
+### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
+
+- [ ] **Verify cmd/ structure**: Check [cmd/README.md](../../../../cmd/README.md)
+- [ ] **Create service directory**: `mkdir -p cmd/remediationprocessor` (no hyphens - Go convention)
+- [ ] **Copy main.go template**: From `cmd/remediationorchestrator/main.go`
+- [ ] **Update package imports**: Change to service-specific controller (RemediationProcessingReconciler)
+- [ ] **Verify build**: `go build -o bin/remediation-processor ./cmd/remediationprocessor` (binary can have hyphens)
+- [ ] **Reference documentation**: [cmd/ directory guide](../../../../cmd/README.md)
+
+**Note**: Directory names use Go convention (no hyphens), binaries can use hyphens for readability.
+
+---
+
+>>>>>>> crd_implementation
 ### Phase 1: ANALYSIS & Package Migration (1-2 days) [RED Phase Preparation]
 
 - [ ] **ANALYSIS**: Search existing implementations (`codebase_search "AlertProcessor implementations"`)
@@ -101,7 +117,11 @@ controllerutil.SetControllerReference(&alertRemediation, &alertProcessing, schem
 ### 2. Finalizers for Cleanup Coordination
 **Pattern**: Add finalizer before processing, remove after cleanup
 ```go
+<<<<<<< HEAD
 const alertProcessingFinalizer = "alertprocessing.kubernaut.io/finalizer"
+=======
+const alertProcessingFinalizer = "remediationprocessing.kubernaut.io/finalizer"
+>>>>>>> crd_implementation
 ```
 **Purpose**: Ensure audit data persisted before CRD deletion
 

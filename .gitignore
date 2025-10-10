@@ -11,4 +11,22 @@ dependencies/
 *.bak
 *.bak2
 .trash/*
+<<<<<<< HEAD
 *.log
+=======
+
+# Temporary analysis and build files
+build_failures.*
+*_failures.txt
+*_interfaces.txt
+*_business.txt
+
+# Environment files (except example template)
+.env
+.env.*
+!.env.example
+
+# IDE configuration directories
+.cursor/
+.claude/
+>>>>>>> crd_implementation

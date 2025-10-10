@@ -239,7 +239,11 @@ sequenceDiagram
         AI->>AI: Build enhanced prompt
         Note over AI: 📝 ENHANCED PROMPT ENGINEERING<br/><br/>Prompt structure:<br/>"RECOVERY ANALYSIS REQUEST<br/><br/>This is recovery attempt #1<br/>after workflow failure.<br/><br/>PREVIOUS FAILURE:<br/>• Workflow: wf-001<br/>• Failed Step: 3<br/>• Action: scale-deployment<br/>• Error: timeout (5m 3s)<br/>• Root cause: Resource<br/>  contention + stuck pods<br/><br/>CURRENT SITUATION:<br/>• Signal: HighMemoryUsage<br/>• Cluster: production<br/>• Resource: payment-api<br/>• State: {current_state}<br/><br/>IMPORTANT: The previous<br/>scale-deployment approach<br/>FAILED due to timeout.<br/><br/>Please provide an ALTERNATIVE<br/>remediation strategy that:<br/>1. Addresses root cause<br/>2. Avoids timeout issues<br/>3. Handles stuck pods<br/>4. Has faster execution"
 
+<<<<<<< HEAD
         AI->>HGP: InvestigateAlert(enriched_context)
+=======
+        AI->>HGP: InvestigateSignal(enriched_context)
+>>>>>>> crd_implementation
         Note over HGP: 🔍 HolmesGPT Analysis<br/><br/>Analyze with awareness of:<br/>• Previous failure<br/>• Root cause: contention<br/>• Failed approach: scale<br/>• Time constraint: timeout<br/><br/>Generate ALTERNATIVE plan
 
         HGP->>HGP: Analyze with historical context

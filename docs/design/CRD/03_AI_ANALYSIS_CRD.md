@@ -1,10 +1,68 @@
+<<<<<<< HEAD
+=======
+# ⛔ DEPRECATED - DO NOT USE FOR IMPLEMENTATION
+
+**Status**: 🚨 **HISTORICAL REFERENCE ONLY**
+**Deprecated**: January 2025
+**Confidence**: 100% - This document is ~50% incorrect
+
+---
+
+## 🎯 **FOR CURRENT V1 INFORMATION, SEE:**
+
+### **1. Implementation (Source of Truth)**
+- **[`api/aianalysis/v1alpha1/aianalysis_types.go`](../../../api/aianalysis/v1alpha1/aianalysis_types.go)** - Actual Go implementation
+
+### **2. Schema Documentation**
+- **[`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md)** - Authoritative schema documentation
+
+### **3. Service Specifications (~2,500 lines)**
+- **[`docs/services/crd-controllers/02-aianalysis/`](../../services/crd-controllers/02-aianalysis/)** - Complete service specs
+
+---
+
+## ⚠️ **CRITICAL ISSUES IN THIS DOCUMENT**
+
+**This document is ~50% incorrect for V1. Missing key architectural patterns!**
+
+| Issue | Severity | What's Wrong |
+|-------|----------|--------------|
+| **API Group** | 🟡 MEDIUM | `ai.kubernaut.io` → Should be `aianalysis.kubernaut.io` |
+| **API Version** | 🟡 MEDIUM | `v1` → Should be `v1alpha1` |
+| **Parent Reference** | 🔴 HIGH | `alertRemediationRef` → Should be `remediationRequestRef` |
+| **LLM-Driven Pattern** | 🔴 HIGH | Missing LLM-driven tool selection (function calling) documentation |
+| **Dependency Specification** | 🔴 HIGH | Missing recommendation `id` and `dependencies` fields for parallel execution |
+| **Outdated Status** | 🟡 MEDIUM | Claims "APPROVED" but implementation uses v1alpha1 (pre-release) |
+
+**Schema Completeness**: ~50% of V1 patterns documented
+
+**Missing V1 Patterns**:
+- LLM dynamically decides which tools to invoke
+- Context API data requested adaptively by HolmesGPT
+- Recommendation dependencies enable parallel/sequential execution
+
+---
+
+## 📜 **ORIGINAL DOCUMENT (OUTDATED) BELOW**
+
+**Warning**: Everything below this line is outdated. See links above for current information.
+
+---
+
+>>>>>>> crd_implementation
 # AIAnalysis CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
+<<<<<<< HEAD
 **Status**: **APPROVED** - Ready for Implementation
 **CRD Version**: V1 - HolmesGPT Only
 **Module**: AI Analysis Service (`ai.kubernaut.io`)
+=======
+**Status**: **DEPRECATED** - See banner above (was: "APPROVED")
+**CRD Version**: V1alpha1 - HolmesGPT Only
+**Module**: AI Analysis Service (`aianalysis.kubernaut.io`)
+>>>>>>> crd_implementation
 
 ---
 

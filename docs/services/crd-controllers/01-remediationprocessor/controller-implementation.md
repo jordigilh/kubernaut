@@ -37,7 +37,11 @@ import (
 
 const (
     // Finalizer for cleanup coordination
+<<<<<<< HEAD
     alertProcessingFinalizer = "alertprocessing.kubernaut.io/finalizer"
+=======
+    alertProcessingFinalizer = "remediationprocessing.kubernaut.io/finalizer"
+>>>>>>> crd_implementation
 
     // Timeout configuration
     defaultPhaseTimeout = 5 * time.Minute  // Max time per phase
@@ -199,7 +203,11 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctr
 }
 
 // ensureOwnerReference sets RemediationRequest as owner for cascade deletion
+<<<<<<< HEAD
 func (r *RemediationProcessingReconciler) ensureOwnerReference(ctx context.Context, ap *alertprocessorv1.RemediationProcessing) error {
+=======
+func (r *RemediationProcessingReconciler) ensureOwnerReference(ctx context.Context, ap *processingv1.RemediationProcessing) error {
+>>>>>>> crd_implementation
     // Skip if owner reference already set
     if len(ap.OwnerReferences) > 0 {
         return nil
@@ -301,7 +309,11 @@ func (r *RemediationProcessingReconciler) handlePhaseTimeout(ctx context.Context
 }
 
 // determineRequeueStrategy provides optimized requeue based on phase
+<<<<<<< HEAD
 func (r *RemediationProcessingReconciler) determineRequeueStrategy(ap *alertprocessorv1.RemediationProcessing) ctrl.Result {
+=======
+func (r *RemediationProcessingReconciler) determineRequeueStrategy(ap *processingv1.RemediationProcessing) ctrl.Result {
+>>>>>>> crd_implementation
     switch ap.Status.Phase {
     case "completed":
         // Terminal state - no requeue needed (watch handles updates)
@@ -316,7 +328,11 @@ func (r *RemediationProcessingReconciler) determineRequeueStrategy(ap *alertproc
 }
 
 // reconcileDelete handles cleanup before deletion
+<<<<<<< HEAD
 func (r *RemediationProcessingReconciler) reconcileDelete(ctx context.Context, ap *alertprocessorv1.RemediationProcessing) (ctrl.Result, error) {
+=======
+func (r *RemediationProcessingReconciler) reconcileDelete(ctx context.Context, ap *processingv1.RemediationProcessing) (ctrl.Result, error) {
+>>>>>>> crd_implementation
     log := log.FromContext(ctx)
 
     if !controllerutil.ContainsFinalizer(ap, alertProcessingFinalizer) {
@@ -368,7 +384,11 @@ func (r *RemediationProcessingReconciler) reconcileEnriching(ctx context.Context
     isRecovery := ap.Spec.IsRecoveryAttempt
     if isRecovery {
         log.Info("Enriching RECOVERY attempt with context",
+<<<<<<< HEAD
             "fingerprint", ap.Spec.Alert.Fingerprint,
+=======
+            "fingerprint", ap.Spec.Signal.Fingerprint,
+>>>>>>> crd_implementation
             "attemptNumber", ap.Spec.RecoveryAttemptNumber,
             "failedWorkflow", func() string {
                 if ap.Spec.FailedWorkflowRef != nil {
@@ -377,7 +397,11 @@ func (r *RemediationProcessingReconciler) reconcileEnriching(ctx context.Context
                 return "unknown"
             }())
     } else {
+<<<<<<< HEAD
         log.Info("Enriching alert with context", "fingerprint", ap.Spec.Alert.Fingerprint)
+=======
+        log.Info("Enriching alert with context", "fingerprint", ap.Spec.Signal.Fingerprint)
+>>>>>>> crd_implementation
     }
 
     // Call Context Service for monitoring/business enrichment (ALWAYS - gets FRESH data)
@@ -473,7 +497,11 @@ func (r *RemediationProcessingReconciler) reconcileRouting(ctx context.Context, 
     // Create AIAnalysis CRD for next service
     aiAnalysis := &aianalysisv1.AIAnalysis{
         ObjectMeta: metav1.ObjectMeta{
+<<<<<<< HEAD
             Name:      fmt.Sprintf("ai-analysis-%s", ap.Spec.Alert.Fingerprint),
+=======
+            Name:      fmt.Sprintf("ai-analysis-%s", ap.Spec.Signal.Fingerprint),
+>>>>>>> crd_implementation
             Namespace: ap.Namespace,
         },
         Spec: aianalysisv1.AIAnalysisSpec{
@@ -495,7 +523,11 @@ func (r *RemediationProcessingReconciler) reconcileRouting(ctx context.Context, 
         return ctrl.Result{RequeueAfter: time.Second * 15}, err
     }
 
+<<<<<<< HEAD
     log.Info("Alert processing completed", "fingerprint", ap.Spec.Alert.Fingerprint, "duration", ap.Status.ProcessingTime)
+=======
+    log.Info("Alert processing completed", "fingerprint", ap.Spec.Signal.Fingerprint, "duration", ap.Status.ProcessingTime)
+>>>>>>> crd_implementation
 
     // Terminal state - no requeue
     return ctrl.Result{}, nil
@@ -556,7 +588,11 @@ func (r *RemediationProcessingReconciler) buildFallbackRecoveryContext(
     return &processingv1.RecoveryContext{
         ContextQuality:       "degraded", // Indicates fallback was used
         PreviousFailures:     previousFailures,
+<<<<<<< HEAD
         RelatedAlerts:        []processingv1.RelatedAlert{},        // Empty - no data available
+=======
+        RelatedAlerts:        []processingv1.RelatedSignal{},        // Empty - no data available
+>>>>>>> crd_implementation
         HistoricalPatterns:   []processingv1.HistoricalPattern{},   // Empty - no data available
         SuccessfulStrategies: []processingv1.SuccessfulStrategy{}, // Empty - no data available
         RetrievedAt:          metav1.Now(),
@@ -595,11 +631,19 @@ func convertPreviousFailures(data []PreviousFailureData) []processingv1.Previous
     return result
 }
 
+<<<<<<< HEAD
 func convertRelatedAlerts(data []RelatedAlertData) []processingv1.RelatedAlert {
     result := make([]processingv1.RelatedAlert, len(data))
     for i, a := range data {
         timestamp, _ := time.Parse(time.RFC3339, a.Timestamp)
         result[i] = processingv1.RelatedAlert{
+=======
+func convertRelatedAlerts(data []RelatedAlertData) []processingv1.RelatedSignal {
+    result := make([]processingv1.RelatedSignal, len(data))
+    for i, a := range data {
+        timestamp, _ := time.Parse(time.RFC3339, a.Timestamp)
+        result[i] = processingv1.RelatedSignal{
+>>>>>>> crd_implementation
             AlertFingerprint: a.AlertFingerprint,
             AlertName:        a.AlertName,
             Correlation:      a.Correlation,

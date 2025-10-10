@@ -1,0 +1,32 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kubernaut-gateway-test
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "ingress-ready=true"
+  extraPortMappings:
+  # Map Ingress HTTP port to host
+  - containerPort: 80
+    hostPort: 8080      # Gateway accessible at localhost:8080
+    protocol: TCP
+  # Map Ingress HTTPS port to host  
+  - containerPort: 443
+    hostPort: 8443
+    protocol: TCP
+  # Map Redis NodePort to host (for direct access from tests)
+  - containerPort: 30379
+    hostPort: 6379      # Redis accessible at localhost:6379
+    protocol: TCP
+
+- role: worker
+
+networking:
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+
+

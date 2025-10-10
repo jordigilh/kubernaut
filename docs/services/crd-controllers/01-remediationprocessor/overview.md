@@ -406,7 +406,11 @@ internal/controller/          → CRD controller (INTERNAL)
 
 **PLAN** (10-20 min): Detailed implementation strategy
   - Define TDD phase breakdown (RED → GREEN → REFACTOR)
+<<<<<<< HEAD
   - Plan integration points (RemediationProcessing controller in cmd/alertprocessor/)
+=======
+  - Plan integration points (RemediationProcessing controller in cmd/remediationprocessor/)
+>>>>>>> crd_implementation
   - Establish success criteria (enrichment <2s, classification <500ms, total <5s)
   - Identify risks (Context Service unavailability → degraded mode)
 
@@ -431,7 +435,11 @@ internal/controller/          → CRD controller (INTERNAL)
 
 **CHECK** (5-10 min): Validation and confidence assessment
   - Business requirement verification (BR-AP-001 to BR-AP-050 addressed)
+<<<<<<< HEAD
   - Integration confirmation (controller in cmd/alertprocessor/)
+=======
+  - Integration confirmation (controller in cmd/remediationprocessor/)
+>>>>>>> crd_implementation
   - Test coverage validation (70%+ unit, 20% integration, 10% E2E)
   - Performance validation (total processing <5s)
   - Confidence assessment: 85% (high confidence, see Migration Effort section)

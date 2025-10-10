@@ -1,3 +1,22 @@
+<<<<<<< HEAD
+=======
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+>>>>>>> crd_implementation
 package monitoring
 
 import (
@@ -8,6 +27,7 @@ import (
 
 // MetricAggregationResult represents the result of metric aggregation calculations
 type MetricAggregationResult struct {
+<<<<<<< HEAD
 	Mean     float64 `json:"mean"`
 	Median   float64 `json:"median"`
 	StdDev   float64 `json:"std_dev"`
@@ -17,16 +37,36 @@ type MetricAggregationResult struct {
 	Sum      float64 `json:"sum"`
 	P95      float64 `json:"p95"`
 	P99      float64 `json:"p99"`
+=======
+	Mean   float64 `json:"mean"`
+	Median float64 `json:"median"`
+	StdDev float64 `json:"std_dev"`
+	Min    float64 `json:"min"`
+	Max    float64 `json:"max"`
+	Count  int     `json:"count"`
+	Sum    float64 `json:"sum"`
+	P95    float64 `json:"p95"`
+	P99    float64 `json:"p99"`
+>>>>>>> crd_implementation
 }
 
 // ThresholdAnalysisResult represents threshold evaluation results
 type ThresholdAnalysisResult struct {
+<<<<<<< HEAD
 	IsViolated         bool    `json:"is_violated"`
 	ViolationSeverity  string  `json:"violation_severity"`
 	ViolationLevel     float64 `json:"violation_level"`
 	ThresholdType      string  `json:"threshold_type"`
 	RecommendedAction  string  `json:"recommended_action"`
 	ConfidenceScore    float64 `json:"confidence_score"`
+=======
+	IsViolated        bool    `json:"is_violated"`
+	ViolationSeverity string  `json:"violation_severity"`
+	ViolationLevel    float64 `json:"violation_level"`
+	ThresholdType     string  `json:"threshold_type"`
+	RecommendedAction string  `json:"recommended_action"`
+	ConfidenceScore   float64 `json:"confidence_score"`
+>>>>>>> crd_implementation
 }
 
 // PerformanceScoreResult represents performance calculation results
@@ -335,7 +375,11 @@ func DetectAnomalies(values []float64, sensitivityThreshold float64) *AnomalyDet
 	if len(values) < 3 {
 		return &AnomalyDetectionResult{
 			AnomalousIndices: []int{},
+<<<<<<< HEAD
 			AnomalyScores:   []float64{},
+=======
+			AnomalyScores:    []float64{},
+>>>>>>> crd_implementation
 		}
 	}
 
@@ -396,4 +440,8 @@ func calculatePercentile(sortedValues []float64, percentile float64) float64 {
 	// Linear interpolation between the two adjacent values
 	weight := index - float64(lowerIndex)
 	return sortedValues[lowerIndex]*(1-weight) + sortedValues[upperIndex]*weight
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> crd_implementation
