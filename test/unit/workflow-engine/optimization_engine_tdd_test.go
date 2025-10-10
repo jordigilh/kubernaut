@@ -1,13 +1,6 @@
 //go:build unit
 // +build unit
 
-<<<<<<< HEAD
-package workflowengine
-
-import (
-	"testing"
-	"context"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -29,7 +22,6 @@ package workflowengine
 import (
 	"context"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

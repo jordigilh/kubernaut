@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -16,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package engine
 
 import (
@@ -305,17 +302,10 @@ func (vr *ValidatorRegistry) getConditionPriority(condition *PostCondition) int 
 // SuccessValidator validates action success
 // Business Requirement: BR-VALIDATION-001 - Action success validation
 type SuccessValidator struct {
-<<<<<<< HEAD
-	Config    map[string]interface{} `json:"config"`
-	Logger    interface{}            `json:"-"`
-	Enabled   bool                   `json:"enabled"`
-	StrictMode bool                  `json:"strict_mode"`
-=======
 	Config     map[string]interface{} `json:"config"`
 	Logger     interface{}            `json:"-"`
 	Enabled    bool                   `json:"enabled"`
 	StrictMode bool                   `json:"strict_mode"`
->>>>>>> crd_implementation
 }
 
 func (sv *SuccessValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
@@ -376,19 +366,11 @@ func (cv *ConfidenceValidator) GetPriority() int           { return 200 }
 // DurationValidator validates execution duration constraints
 // Business Requirement: BR-PERF-001 - Performance validation
 type DurationValidator struct {
-<<<<<<< HEAD
-	MaxDuration   time.Duration          `json:"max_duration"`
-	WarnDuration  time.Duration          `json:"warn_duration"`
-	Timeouts      map[string]time.Duration `json:"timeouts"`
-	Config        map[string]interface{} `json:"config"`
-	Enabled       bool                   `json:"enabled"`
-=======
 	MaxDuration  time.Duration            `json:"max_duration"`
 	WarnDuration time.Duration            `json:"warn_duration"`
 	Timeouts     map[string]time.Duration `json:"timeouts"`
 	Config       map[string]interface{}   `json:"config"`
 	Enabled      bool                     `json:"enabled"`
->>>>>>> crd_implementation
 }
 
 func (dv *DurationValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
@@ -421,19 +403,11 @@ func (dv *DurationValidator) GetPriority() int           { return 300 }
 // OutputValidator validates step output content and format
 // Business Requirement: BR-OUTPUT-001 - Output validation
 type OutputValidator struct {
-<<<<<<< HEAD
-	ExpectedSchema map[string]interface{} `json:"expected_schema"`
-	ValidationRules []interface{}         `json:"validation_rules"`
-	Config         map[string]interface{} `json:"config"`
-	StrictMode     bool                   `json:"strict_mode"`
-	Enabled        bool                   `json:"enabled"`
-=======
 	ExpectedSchema  map[string]interface{} `json:"expected_schema"`
 	ValidationRules []interface{}          `json:"validation_rules"`
 	Config          map[string]interface{} `json:"config"`
 	StrictMode      bool                   `json:"strict_mode"`
 	Enabled         bool                   `json:"enabled"`
->>>>>>> crd_implementation
 }
 
 func (ov *OutputValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {
@@ -561,15 +535,9 @@ func (ev *ExpressionValidator) GetPriority() int           { return 800 }
 type MetricValidator struct {
 	MetricThresholds map[string]float64     `json:"metric_thresholds"`
 	RequiredMetrics  []string               `json:"required_metrics"`
-<<<<<<< HEAD
-	Config          map[string]interface{} `json:"config"`
-	ToleranceLevel  float64                `json:"tolerance_level"`
-	Enabled         bool                   `json:"enabled"`
-=======
 	Config           map[string]interface{} `json:"config"`
 	ToleranceLevel   float64                `json:"tolerance_level"`
 	Enabled          bool                   `json:"enabled"`
->>>>>>> crd_implementation
 }
 
 func (mv *MetricValidator) ValidateCondition(ctx context.Context, condition *PostCondition, result *StepResult, stepCtx *StepContext) (*PostConditionResult, error) {

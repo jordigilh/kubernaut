@@ -43,10 +43,7 @@ package storage_test
 
 import (
     "context"
-<<<<<<< HEAD
-=======
     "time"
->>>>>>> crd_implementation
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
@@ -236,10 +233,7 @@ package storage_test
 
 import (
     "context"
-<<<<<<< HEAD
-=======
     "time"
->>>>>>> crd_implementation
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
@@ -304,10 +298,7 @@ package storage_test
 
 import (
     "context"
-<<<<<<< HEAD
-=======
     "time"
->>>>>>> crd_implementation
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
@@ -372,10 +363,7 @@ package storage_test
 
 import (
     "context"
-<<<<<<< HEAD
-=======
     "time"
->>>>>>> crd_implementation
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
@@ -443,10 +431,7 @@ package storage_test
 import (
     "context"
     "database/sql"
-<<<<<<< HEAD
-=======
     "time"
->>>>>>> crd_implementation
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
@@ -521,10 +506,7 @@ package storage_test
 
 import (
     "context"
-<<<<<<< HEAD
-=======
     "time"
->>>>>>> crd_implementation
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
