@@ -96,6 +96,11 @@ type NormalizedSignal struct {
 
 	// AlertCount is the number of alerts in the detected storm
 	AlertCount int
+
+	// AffectedResources is a list of affected resources in an aggregated storm
+	// Only populated for aggregated storm signals (after aggregation window completes)
+	// Format: []string{"namespace:Pod:name", "namespace:Pod:name2", ...}
+	AffectedResources []string
 }
 
 // ResourceIdentifier identifies the Kubernetes resource affected by a signal

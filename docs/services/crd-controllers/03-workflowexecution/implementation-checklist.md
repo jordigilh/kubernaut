@@ -2,8 +2,6 @@
 
 **Note**: Follow APDC-TDD phases for each implementation step (see Development Methodology section)
 
-<<<<<<< HEAD
-=======
 ### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
 
 - [ ] **Verify cmd/ structure**: Check [cmd/README.md](../../../../cmd/README.md)
@@ -17,7 +15,6 @@
 
 ---
 
->>>>>>> crd_implementation
 ### Phase 1: ANALYSIS & CRD Setup (2 days) [RED Phase Preparation]
 
 - [ ] **ANALYSIS**: Search existing workflow implementations (`codebase_search "workflow execution implementations"`)

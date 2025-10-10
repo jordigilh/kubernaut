@@ -11,9 +11,6 @@ dependencies/
 *.bak
 *.bak2
 .trash/*
-<<<<<<< HEAD
-*.log
-=======
 
 # Temporary analysis and build files
 build_failures.*
@@ -29,4 +26,3 @@ build_failures.*
 # IDE configuration directories
 .cursor/
 .claude/
->>>>>>> crd_implementation

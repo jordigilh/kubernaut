@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-package security_test
-
-import (
-	"testing"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -23,16 +17,12 @@ limitations under the License.
 package security_test
 
 import (
->>>>>>> crd_implementation
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"strings"
-<<<<<<< HEAD
-=======
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

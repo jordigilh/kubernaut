@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -16,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package engine
 
 import (
@@ -1694,29 +1691,6 @@ type ClusterMetrics struct {
 	// Core cluster identification
 	ClusterID   string `json:"cluster_id"`
 	ClusterName string `json:"cluster_name"`
-<<<<<<< HEAD
-	
-	// Resource utilization metrics
-	CPUUtilization    float64 `json:"cpu_utilization"`    // Percentage 0-100
-	MemoryUtilization float64 `json:"memory_utilization"` // Percentage 0-100
-	StorageUtilization float64 `json:"storage_utilization"` // Percentage 0-100
-	
-	// Node health metrics
-	TotalNodes     int `json:"total_nodes"`
-	ReadyNodes     int `json:"ready_nodes"`
-	UnreadyNodes   int `json:"unready_nodes"`
-	
-	// Pod metrics
-	TotalPods      int `json:"total_pods"`
-	RunningPods    int `json:"running_pods"`
-	PendingPods    int `json:"pending_pods"`
-	FailedPods     int `json:"failed_pods"`
-	
-	// Network and performance
-	NetworkLatency    time.Duration `json:"network_latency"`
-	APIServerLatency  time.Duration `json:"api_server_latency"`
-	
-=======
 
 	// Resource utilization metrics
 	CPUUtilization     float64 `json:"cpu_utilization"`     // Percentage 0-100
@@ -1738,7 +1712,6 @@ type ClusterMetrics struct {
 	NetworkLatency   time.Duration `json:"network_latency"`
 	APIServerLatency time.Duration `json:"api_server_latency"`
 
->>>>>>> crd_implementation
 	// Timestamp for metrics collection
 	CollectedAt time.Time `json:"collected_at"`
 }

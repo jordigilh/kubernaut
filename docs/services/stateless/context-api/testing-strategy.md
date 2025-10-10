@@ -45,10 +45,7 @@ package context_test
 
 import (
     "context"
-<<<<<<< HEAD
-=======
     "time"
->>>>>>> crd_implementation
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
@@ -229,12 +226,9 @@ go test ./test/unit/context/...
 package context_test
 
 import (
-<<<<<<< HEAD
-=======
     "context"
     "time"
 
->>>>>>> crd_implementation
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
 

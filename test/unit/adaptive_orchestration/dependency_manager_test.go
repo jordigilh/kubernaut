@@ -1,8 +1,6 @@
 //go:build unit
 // +build unit
 
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -19,7 +17,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package adaptive_orchestration
 
 import (
@@ -850,7 +847,3 @@ var _ = Describe("Dependency Manager Unit Tests", func() {
 		})
 	})
 })
-<<<<<<< HEAD
-
-=======
->>>>>>> crd_implementation
