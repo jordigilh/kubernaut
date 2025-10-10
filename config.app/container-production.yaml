@@ -1,0 +1,127 @@
+# Configuration for Containerized HolmesGPT Deployment with Podman
+effectiveness:
+  enable_holmes_gpt: true
+  enable_pattern_learning: true
+  enable_predictive_analytics: true
+  enable_cost_analysis: true
+
+  # Podman bindings configuration
+  podman_bindings:
+    # Container configuration
+    holmes_image: "prometheus-alerts-holmesgpt:latest"
+    docker_host: "unix:///var/run/docker.sock"
+    network_mode: "kubernaut_holmes-network"
+    shared_volume_mount: "/shared"
+    working_dir: "/tmp/holmes-container-sessions"
+
+    # Ollama configuration
+    ollama_url: "http://ollama:11434"
+    model: "gpt-oss:20b"
+    temperature: 0.1
+    max_tokens: 3000
+    timeout: "300s"
+
+    # Container lifecycle
+    reuse_container: true
+    container_lifetime: "1h"
+    auto_cleanup: true
+
+    # Resources
+    cpu_limit: "1.0"
+    memory_limit: "2g"
+
+    # Kubernetes integration
+    kube_config_path: "/root/.kube/config"
+    service_account: ""
+
+    # Custom toolsets
+    custom_toolsets:
+      - "kubernetes"
+      - "prometheus"
+      - "alertmanager"
+      - "grafana"
+
+    # Environment
+    environment:
+      HOLMES_LOG_LEVEL: "INFO"
+      HOLMES_CACHE_DIR: "/shared/cache"
+      PROMETHEUS_URL: "http://prometheus:9090"
+      ALERTMANAGER_URL: "http://alertmanager:9093"
+      GRAFANA_URL: "http://grafana:3000"
+
+    # Debug and logging
+    enable_debug: false
+    enable_streaming: true
+
+  # HolmesGPT integration configuration
+  holmes_integration:
+    max_tokens: 3000
+    max_patterns: 3
+    max_alternative_costs: 5
+    prompt_optimization: true
+    response_parsing_timeout: "300s"
+    fallback_on_parse_error: true
+
+# Application configuration
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: "30s"
+  write_timeout: "30s"
+  idle_timeout: "60s"
+
+# Metrics configuration
+metrics:
+  enabled: true
+  port: 9993
+  path: "/metrics"
+
+# Logging configuration
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
+# Health check configuration
+health:
+  enabled: true
+  path: "/health"
+  checks:
+    - name: "holmes_container"
+      type: "container_bindings"
+      timeout: "10s"
+    - name: "ollama"
+      type: "http"
+      url: "http://ollama:11434/api/version"
+      timeout: "5s"
+    - name: "docker"
+      type: "docker_client"
+      timeout: "5s"
+
+# Kubernetes configuration (if running in cluster)
+kubernetes:
+  in_cluster: false
+  config_path: "/root/.kube/config"
+  namespace: "default"
+
+# Vector Database configuration (production)
+vectordb:
+  enabled: true
+  backend: "postgresql"  # Use PostgreSQL for production
+  embedding_service:
+    service: "local"
+    dimension: 384
+    model: "all-MiniLM-L6-v2"
+  postgresql:
+    use_main_db: true
+    index_lists: 100
+  cache:
+    enabled: true
+    max_size: 10000
+    cache_type: "memory"
+
+# Monitoring URLs
+monitoring:
+  prometheus_url: "http://prometheus:9090"
+  alertmanager_url: "http://alertmanager:9093"
+  grafana_url: "http://grafana:3000"

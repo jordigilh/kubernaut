@@ -1,10 +1,72 @@
+<<<<<<< HEAD
+=======
+# ⛔ DEPRECATED - DO NOT USE FOR IMPLEMENTATION
+
+**Status**: 🚨 **HISTORICAL REFERENCE ONLY**
+**Deprecated**: January 2025
+**Confidence**: 100% - This document is ~60% incorrect
+
+---
+
+## 🎯 **FOR CURRENT V1 INFORMATION, SEE:**
+
+### **1. Implementation (Source of Truth)**
+- **[`api/kubernetesexecution/v1alpha1/kubernetesexecution_types.go`](../../../api/kubernetesexecution/v1alpha1/kubernetesexecution_types.go)** - Actual Go implementation
+
+### **2. Schema Documentation**
+- **[`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md)** - Authoritative schema documentation
+
+### **3. Service Specifications (~2,000 lines)**
+- **[`docs/services/crd-controllers/04-kubernetesexecutor/`](../../services/crd-controllers/04-kubernetesexecutor/)** - Complete service specs
+
+---
+
+## ⚠️ **CRITICAL ISSUES IN THIS DOCUMENT**
+
+**This document is ~60% incorrect for V1. Missing step-level validation pattern!**
+
+| Issue | Severity | What's Wrong |
+|-------|----------|--------------|
+| **API Group** | 🟡 MEDIUM | `executor.kubernaut.io` → Should be `kubernetesexecution.kubernaut.io` |
+| **API Version** | 🟡 MEDIUM | `v1` → Should be `v1alpha1` |
+| **Parent Reference** | 🔴 HIGH | Likely `workflowRef` → Should be `workflowExecutionRef` |
+| **Step Validation** | 🔴 HIGH | Missing step-level post-validation pattern (steps include execution + validation) |
+| **Validation Chain** | 🔴 HIGH | Missing ADR-016 pattern (WorkflowExecution relies on step status, doesn't validate directly) |
+| **Business Reqs** | 🟡 MEDIUM | Wrong BR references (should be BR-EXEC-*) |
+
+**Schema Completeness**: ~40% of V1 patterns documented
+
+**Missing V1 Patterns**:
+- Step execution includes post-validation logic
+- WorkflowExecution relies on step status for confirmation
+- No direct Kubernetes validation by WorkflowExecution controller
+
+**See**:
+- `docs/architecture/decisions/ADR-016-validation-responsibility-chain.md`
+- `docs/services/crd-controllers/04-kubernetesexecutor/step-validation-pattern.md`
+
+---
+
+## 📜 **ORIGINAL DOCUMENT (OUTDATED) BELOW**
+
+**Warning**: Everything below this line is outdated. See links above for current information.
+
+---
+
+>>>>>>> crd_implementation
 # KubernetesExecution CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
+<<<<<<< HEAD
 **Status**: **APPROVED** - Ready for Implementation
 **CRD Version**: V1
 **Module**: Executor Service (`executor.kubernaut.io`)
+=======
+**Status**: **DEPRECATED** - See banner above (was: "APPROVED")
+**CRD Version**: V1alpha1
+**Module**: Executor Service (`kubernetesexecution.kubernaut.io`)
+>>>>>>> crd_implementation
 
 ---
 
