@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -16,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package security
 
 import (
@@ -35,13 +32,8 @@ import (
 	"sync"
 	"time"
 
-<<<<<<< HEAD
-	"golang.org/x/crypto/pbkdf2"
-	"github.com/sirupsen/logrus"
-=======
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/pbkdf2"
->>>>>>> crd_implementation
 )
 
 // SecretManager handles encrypted storage and retrieval of sensitive configuration

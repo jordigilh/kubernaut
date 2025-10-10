@@ -1,15 +1,6 @@
 //go:build unit
 // +build unit
 
-<<<<<<< HEAD
-package workflowengine
-
-import (
-	"testing"
-	"context"
-	"fmt"
-	"sync"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -33,7 +24,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

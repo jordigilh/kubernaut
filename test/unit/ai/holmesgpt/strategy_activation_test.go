@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-package holmesgpt
-
-import (
-	"testing"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/sirupsen/logrus"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -30,7 +21,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 	"testing"
->>>>>>> crd_implementation
 
 	"github.com/jordigilh/kubernaut/pkg/ai/holmesgpt"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"

@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-package holmesgpt
-
-import (
-	"testing"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -23,15 +17,11 @@ limitations under the License.
 package holmesgpt
 
 import (
->>>>>>> crd_implementation
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-<<<<<<< HEAD
-=======
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

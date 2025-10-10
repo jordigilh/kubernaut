@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 # ⛔ DEPRECATED - DO NOT USE FOR IMPLEMENTATION
 
 **Status**: 🚨 **HISTORICAL REFERENCE ONLY**
@@ -53,20 +51,13 @@
 
 ---
 
->>>>>>> crd_implementation
 # KubernetesExecution CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
-<<<<<<< HEAD
-**Status**: **APPROVED** - Ready for Implementation
-**CRD Version**: V1
-**Module**: Executor Service (`executor.kubernaut.io`)
-=======
 **Status**: **DEPRECATED** - See banner above (was: "APPROVED")
 **CRD Version**: V1alpha1
 **Module**: Executor Service (`kubernetesexecution.kubernaut.io`)
->>>>>>> crd_implementation
 
 ---
 

@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-package k8s_test
-
-import (
-	"testing"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -23,15 +17,11 @@ limitations under the License.
 package k8s_test
 
 import (
->>>>>>> crd_implementation
 	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-<<<<<<< HEAD
-=======
 	"testing"
->>>>>>> crd_implementation
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

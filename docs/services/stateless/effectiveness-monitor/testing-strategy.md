@@ -600,12 +600,9 @@ var _ = Describe("Effectiveness Calculator", func() {
 package effectiveness_test
 
 import (
-<<<<<<< HEAD
-=======
     "context"
     "time"
 
->>>>>>> crd_implementation
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
 
@@ -663,10 +660,7 @@ var _ = Describe("Side Effect Detection (BR-INS-005)", func() {
 package effectiveness_test
 
 import (
-<<<<<<< HEAD
-=======
     "context"
->>>>>>> crd_implementation
     "time"
 
     . "github.com/onsi/ginkgo/v2"

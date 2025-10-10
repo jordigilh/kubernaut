@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -16,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package engine
 
 import (
@@ -2449,10 +2446,6 @@ func (iwb *DefaultIntelligentWorkflowBuilder) getParametersFromPattern(pattern *
 	return params
 }
 
-<<<<<<< HEAD
-
-=======
->>>>>>> crd_implementation
 func (iwb *DefaultIntelligentWorkflowBuilder) getPreConditionsFromPattern(pattern *WorkflowPattern) map[string]interface{} {
 	preConditions := make(map[string]interface{})
 

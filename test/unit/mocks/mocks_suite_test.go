@@ -1,8 +1,6 @@
 //go:build unit
 // +build unit
 
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -19,7 +17,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package mocks
 
 import (
@@ -37,9 +34,3 @@ func TestMocks(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Mock Components Unit Tests Suite")
 }
-<<<<<<< HEAD
-
-
-
-=======
->>>>>>> crd_implementation

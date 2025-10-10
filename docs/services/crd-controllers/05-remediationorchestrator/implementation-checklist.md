@@ -29,8 +29,6 @@
 
 ---
 
-<<<<<<< HEAD
-=======
 ### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
 
 - [ ] **Verify cmd/ structure**: Check [cmd/README.md](../../../../cmd/README.md)
@@ -44,7 +42,6 @@
 
 ---
 
->>>>>>> crd_implementation
 ### Phase 1: CRD Schema & API (2-3 days)
 
 - [ ] **Define RemediationRequest API types** (`api/v1/alertremediation_types.go`)

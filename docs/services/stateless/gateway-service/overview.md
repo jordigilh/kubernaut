@@ -247,15 +247,11 @@ func classifyEnvironment(namespace string, alert NormalizedSignal) string {
 }
 ```
 
-<<<<<<< HEAD
-**Result**: "prod", "staging", "dev", or "unknown"
-=======
 **Result**: Any non-empty environment string from labels/ConfigMap, or "unknown" if not found
 
 **Examples**: `"prod"`, `"staging"`, `"dev"`, `"canary"`, `"qa-eu"`, `"prod-west"`, `"blue"`, `"green"`
 
 Organizations define their own environment taxonomy using Kubernetes labels for dynamic configuration.
->>>>>>> crd_implementation
 
 #### 6. **Priority Assignment** (5-8ms Rego evaluation)
 
@@ -280,13 +276,6 @@ priority = "P1" {
 **Fallback** (if Rego fails):
 | Severity | Environment | Priority |
 |----------|-------------|----------|
-<<<<<<< HEAD
-| critical | prod        | P0       |
-| critical | staging/prod| P1       |
-| warning  | prod        | P1       |
-| warning  | staging     | P2       |
-| info     | any         | P2       |
-=======
 | critical | production* | P0       |
 | critical | staging/production | P1       |
 | warning  | production* | P1       |
@@ -295,7 +284,6 @@ priority = "P1" {
 | *        | unknown     | P2       |
 
 **Note**: This table shows **default fallback behavior** for common environments. Organizations can define custom environments (e.g., `canary`, `qa-eu`, `prod-west`) and use **Rego policies** to implement custom priority logic for any environment. The fallback uses pattern matching: `production*` matches `"prod"`, `"production"`, `"prod-east"`, etc.
->>>>>>> crd_implementation
 
 #### 7. **RemediationRequest CRD Creation** (15-20ms K8s API)
 

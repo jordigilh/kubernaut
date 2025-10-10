@@ -47,13 +47,10 @@ Comprehensive testing strategy for the Notification Service following APDC-Enhan
 package notification_test
 
 import (
-<<<<<<< HEAD
-=======
     "bytes"
     "context"
     "time"
 
->>>>>>> crd_implementation
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
 
@@ -139,13 +136,10 @@ var _ = Describe("Sanitizer", func() {
 package notification_test
 
 import (
-<<<<<<< HEAD
-=======
     "bytes"
     "context"
     "time"
 
->>>>>>> crd_implementation
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
 

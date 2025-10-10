@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-package storage
-
-import (
-	"testing"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -23,17 +17,13 @@ limitations under the License.
 package storage
 
 import (
->>>>>>> crd_implementation
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
-<<<<<<< HEAD
-=======
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

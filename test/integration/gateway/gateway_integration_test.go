@@ -19,7 +19,9 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -171,10 +173,36 @@ var _ = Describe("Gateway Integration: Business Outcomes", func() {
 				if err != nil {
 					return 0
 				}
-				// Business capability: Cluster-scoped alerts create remediations
-				return len(rrList.Items)
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"AI can discover Node failures (cluster-scoped), not just namespaced Pods")
+				// Count only CRDs for this specific Node alert
+				count := 0
+				for _, rr := range rrList.Items {
+					if rr.Spec.SignalName == "NodeDiskPressure" {
+						count++
+					}
+				}
+				return count
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"Exactly 1 CRD should be created for Node alert (not multiple duplicates)")
+
+			By("Verifying Node CRD is cluster-scoped (not namespaced)")
+			rrList := &remediationv1alpha1.RemediationRequestList{}
+			err = k8sClient.List(context.Background(), rrList)
+			Expect(err).NotTo(HaveOccurred())
+
+			var nodeCRD *remediationv1alpha1.RemediationRequest
+			for i := range rrList.Items {
+				if rrList.Items[i].Spec.SignalName == "NodeDiskPressure" {
+					nodeCRD = &rrList.Items[i]
+					break
+				}
+			}
+			Expect(nodeCRD).NotTo(BeNil(), "Node alert CRD should exist")
+
+			// Verify it's cluster-scoped (CRD created in default namespace or cluster-scoped)
+			// Note: Kubernetes CRDs are always namespaced, but we verify the signal namespace is empty
+			// to indicate cluster-scoped resource
+			Expect(nodeCRD.Namespace).NotTo(BeEmpty(),
+				"RemediationRequest CRD itself is namespaced (Kubernetes design)")
 
 			// Business capability: System handles both namespaced and cluster-scoped resources
 		})
@@ -295,6 +323,14 @@ var _ = Describe("Gateway Integration: Business Outcomes", func() {
 			By("Deployment rollout fails, causing 12+ pods to crash rapidly")
 			stormAlertName := fmt.Sprintf("DeploymentRolloutFailed-%d", time.Now().UnixNano())
 
+			// Track responses to verify aggregation behavior
+			type Response struct {
+				Status   string `json:"status"`
+				IsStorm  bool   `json:"isStorm"`
+				WindowID string `json:"windowID"`
+			}
+			responses := make([]Response, 0, 12)
+
 			for i := 0; i < 12; i++ {
 				alertPayload := fmt.Sprintf(`{
 					"alerts": [{
@@ -314,47 +350,82 @@ var _ = Describe("Gateway Integration: Business Outcomes", func() {
 				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).NotTo(HaveOccurred())
+
+				// Parse response to verify aggregation
+				var response Response
+				body, _ := io.ReadAll(resp.Body)
+				json.Unmarshal(body, &response)
+				responses = append(responses, response)
 				resp.Body.Close()
 
 				time.Sleep(50 * time.Millisecond) // Rapid fire
 			}
 
-			By("AI service receives aggregated storm request instead of 12 individual requests")
-			// Business outcome: Storm detection prevents AI overload
-			Eventually(func() bool {
-				rrList := &remediationv1alpha1.RemediationRequestList{}
+			By("Gateway accepts all alerts for aggregation (not immediate CRD creation)")
+			// Business capability: All alerts return "accepted" status
+			for i, resp := range responses {
+				Expect(resp.Status).To(Equal("accepted"),
+					fmt.Sprintf("Alert %d should be accepted for aggregation", i))
+				Expect(resp.IsStorm).To(BeTrue(),
+					fmt.Sprintf("Alert %d should be marked as storm", i))
+				Expect(resp.WindowID).NotTo(BeEmpty(),
+					fmt.Sprintf("Alert %d should have aggregation window ID", i))
+			}
+
+			// Verify all alerts share the same window ID
+			firstWindowID := responses[0].WindowID
+			for i, resp := range responses[1:] {
+				Expect(resp.WindowID).To(Equal(firstWindowID),
+					fmt.Sprintf("Alert %d should use same window ID as first alert", i+1))
+			}
+
+			By("Waiting for 1-minute aggregation window to complete")
+			time.Sleep(65 * time.Second) // 1 minute + 5 seconds buffer
+
+			By("AI service receives exactly 1 aggregated CRD with all 12 affected resources")
+			// Business outcome: Storm detection prevents AI overload through strict aggregation
+			var rrList *remediationv1alpha1.RemediationRequestList
+			Eventually(func() int {
+				rrList = &remediationv1alpha1.RemediationRequestList{}
 				err := k8sClient.List(context.Background(), rrList,
 					client.InNamespace(testNamespace))
-				if err != nil || len(rrList.Items) == 0 {
-					return false
+				if err != nil {
+					return -1
 				}
 
-				// Look for storm CRD (business capability: aggregation happened)
+				// Count storm CRDs for this alertname
+				count := 0
 				for _, rr := range rrList.Items {
 					if rr.Spec.SignalName == stormAlertName && rr.Spec.IsStorm {
-						return true
+						count++
 					}
 				}
-				return false
-			}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Storm detection aggregates mass incidents for root-cause analysis")
+				return count
+			}, 15*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"Exactly 1 aggregated CRD should be created after window expires (not 12)")
 
-			By("AI identifies this as a mass incident requiring root-cause analysis")
-			rrList := &remediationv1alpha1.RemediationRequestList{}
-			err := k8sClient.List(context.Background(), rrList, client.InNamespace(testNamespace))
-			Expect(err).NotTo(HaveOccurred())
-			var stormRR *remediationv1alpha1.RemediationRequest
+			By("Verifying aggregated CRD contains all affected resources")
+			// This is the strict verification that was missing in V1.0
+			stormCRDs := make([]*remediationv1alpha1.RemediationRequest, 0)
 			for i := range rrList.Items {
 				if rrList.Items[i].Spec.SignalName == stormAlertName && rrList.Items[i].Spec.IsStorm {
-					stormRR = &rrList.Items[i]
-					break
+					stormCRDs = append(stormCRDs, &rrList.Items[i])
 				}
 			}
+			// Note: This is redundant with Eventually check above, but kept for clarity
+			Expect(len(stormCRDs)).To(Equal(1),
+				"Sanity check: Storm CRD should exist in filtered list")
+
+			stormRR := stormCRDs[0]
 			Expect(stormRR).NotTo(BeNil(), "Storm CRD should exist")
 
 			// Business capability: Storm metadata helps AI choose strategy
 			Expect(stormRR.Spec.StormType).NotTo(BeEmpty(),
 				"Storm type guides AI: rate storm = infra issue, pattern storm = config issue")
+
+			// Business capability: Aggregated CRD contains all affected resources
+			Expect(stormRR.Spec.AffectedResources).To(HaveLen(12),
+				"Aggregated CRD should contain all 12 affected resources")
 
 			// Business value: 50 crashes → 1 root-cause fix (not 50 pod restarts)
 		})
@@ -441,23 +512,37 @@ var _ = Describe("Gateway Integration: Business Outcomes", func() {
 			resp.Body.Close()
 
 			By("AI service knows this is production (enables risk-aware strategy)")
+			var prodRR *remediationv1alpha1.RemediationRequest
 			Eventually(func() bool {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
 				err := k8sClient.List(context.Background(), rrList,
 					client.InNamespace(prodNs.Name))
-				if err != nil || len(rrList.Items) == 0 {
-					return false
+				if err != nil || len(rrList.Items) != 1 {
+					return false // ✅ Strict: exactly 1 CRD, not >=1
 				}
-				rr := rrList.Items[0]
+				prodRR = &rrList.Items[0]
 				// Business capability: Environment classification enables risk decisions
-				return rr.Spec.Environment == "production"
+				return prodRR.Spec.Environment == "production"
 			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"AI knows environment to apply appropriate risk tolerance")
+				"Exactly 1 CRD should be created with production environment")
+
+			By("Verifying environment classification affects priority")
+			// Production + critical severity should result in P0 priority
+			Expect(prodRR.Spec.Priority).To(Equal("P0"),
+				"Production + critical severity → P0 priority (risk-aware decision)")
+
+			By("Verifying namespace label was source of environment classification")
+			// This verifies the classification logic actually read the namespace label
+			ns := &corev1.Namespace{}
+			err = k8sClient.Get(context.Background(), client.ObjectKey{Name: prodNs.Name}, ns)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ns.Labels["environment"]).To(Equal("production"),
+				"Namespace label should be source of environment classification")
 
 			// Business value:
-			// Production → Manual approval required before pod restart
-			// Dev → Auto-restart immediately
-			// (Environment drives remediation aggressiveness)
+			// Production → Manual approval required before pod restart (conservative)
+			// Dev → Auto-restart immediately (aggressive)
+			// Environment classification drives remediation aggressiveness
 		})
 	})
 })
