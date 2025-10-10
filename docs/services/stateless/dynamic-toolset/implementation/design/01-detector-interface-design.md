@@ -1,7 +1,7 @@
 # Dynamic Toolset Service - Detector Interface Design
 
-**Version**: v1.0  
-**Created**: October 10, 2025  
+**Version**: v1.0
+**Created**: October 10, 2025
 **Status**: ✅ Design Complete
 
 ---
@@ -27,10 +27,10 @@ The Dynamic Toolset Service needs to discover multiple service types (Prometheus
 type ServiceDetector interface {
     // Detect searches for services of this type
     Detect(ctx context.Context, services []corev1.Service) ([]toolset.DiscoveredService, error)
-    
+
     // ServiceType returns the type identifier (e.g., "prometheus", "grafana")
     ServiceType() string
-    
+
     // HealthCheck validates the service is actually operational
     HealthCheck(ctx context.Context, endpoint string) error
 }
@@ -59,19 +59,19 @@ func (d *PrometheusDetector) isPrometheus(svc corev1.Service) bool {
     if app, ok := svc.Labels["app"]; ok && app == "prometheus" {
         return true
     }
-    
+
     // Strategy 2: Check service name
     if svc.Name == "prometheus" || svc.Name == "prometheus-server" {
         return true
     }
-    
+
     // Strategy 3: Check for prometheus port
     for _, port := range svc.Spec.Ports {
         if port.Name == "web" && port.Port == 9090 {
             return true
         }
     }
-    
+
     return false
 }
 ```
@@ -85,7 +85,7 @@ func (d *PrometheusDetector) isPrometheus(svc corev1.Service) bool {
 ```go
 func (d *PrometheusDetector) buildEndpoint(svc corev1.Service) string {
     port := d.getPrometheusPort(svc) // e.g., "9090"
-    return fmt.Sprintf("http://%s.%s.svc.cluster.local:%s", 
+    return fmt.Sprintf("http://%s.%s.svc.cluster.local:%s",
         svc.Name, svc.Namespace, port)
 }
 ```
@@ -99,22 +99,22 @@ func (d *PrometheusDetector) buildEndpoint(svc corev1.Service) string {
 ```go
 func (d *PrometheusDetector) HealthCheck(ctx context.Context, endpoint string) error {
     healthURL := fmt.Sprintf("%s/-/healthy", endpoint)
-    
+
     req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
     if err != nil {
         return fmt.Errorf("failed to create health check request: %w", err)
     }
-    
+
     resp, err := d.httpClient.Do(req)
     if err != nil {
         return fmt.Errorf("health check failed: %w", err)
     }
     defer resp.Body.Close()
-    
+
     if resp.StatusCode != http.StatusOK {
         return fmt.Errorf("unhealthy: status %d", resp.StatusCode)
     }
-    
+
     return nil
 }
 ```
@@ -152,19 +152,19 @@ metadata:
 ```go
 func (d *CustomDetector) Detect(ctx context.Context, services []corev1.Service) ([]toolset.DiscoveredService, error) {
     var discovered []toolset.DiscoveredService
-    
+
     for _, svc := range services {
         // Check for kubernaut.io/toolset annotation
         if enabled, ok := svc.Annotations["kubernaut.io/toolset"]; !ok || enabled != "true" {
             continue
         }
-        
+
         serviceType := svc.Annotations["kubernaut.io/toolset-type"]
         serviceName := svc.Annotations["kubernaut.io/toolset-name"]
         healthEndpoint := svc.Annotations["kubernaut.io/health-endpoint"]
-        
+
         endpoint := d.buildEndpoint(svc)
-        
+
         discovered = append(discovered, toolset.DiscoveredService{
             Name:      serviceName,
             Namespace: svc.Namespace,
@@ -176,7 +176,7 @@ func (d *CustomDetector) Detect(ctx context.Context, services []corev1.Service) 
             },
         })
     }
-    
+
     return discovered, nil
 }
 ```
@@ -192,16 +192,16 @@ func (d *CustomDetector) Detect(ctx context.Context, services []corev1.Service) 
 func main() {
     // Create service discoverer
     discoverer := discovery.NewServiceDiscoverer(k8sClient, logger)
-    
+
     // Register built-in detectors
     discoverer.RegisterDetector(discovery.NewPrometheusDetector(logger))
     discoverer.RegisterDetector(discovery.NewGrafanaDetector(logger))
     discoverer.RegisterDetector(discovery.NewJaegerDetector(logger))
     discoverer.RegisterDetector(discovery.NewElasticsearchDetector(logger))
-    
+
     // Register custom detector (for annotation-based services)
     discoverer.RegisterDetector(discovery.NewCustomDetector(logger))
-    
+
     // Start discovery loop
     discoverer.Start(ctx)
 }
@@ -248,7 +248,7 @@ for _, detector := range d.detectors {
             zap.Error(err))
         continue // Don't fail entire discovery
     }
-    
+
     discovered = append(discovered, detectedServices...)
 }
 ```
@@ -265,7 +265,7 @@ for _, svc := range detectedServices {
             zap.Error(err))
         continue // Skip unhealthy service
     }
-    
+
     discovered = append(discovered, svc)
 }
 ```
@@ -319,7 +319,7 @@ type MultiClusterDiscoverer struct {
 
 func (d *MultiClusterDiscoverer) DiscoverServices(ctx context.Context) ([]toolset.DiscoveredService, error) {
     var allServices []toolset.DiscoveredService
-    
+
     for _, cluster := range d.clusters {
         clusterServices, err := d.discoverInCluster(ctx, cluster)
         if err != nil {
@@ -327,14 +327,14 @@ func (d *MultiClusterDiscoverer) DiscoverServices(ctx context.Context) ([]toolse
         }
         allServices = append(allServices, clusterServices...)
     }
-    
+
     return allServices, nil
 }
 ```
 
 ---
 
-**Document Status**: ✅ Detector Interface Design Complete  
-**Last Updated**: October 10, 2025  
+**Document Status**: ✅ Detector Interface Design Complete
+**Last Updated**: October 10, 2025
 **Confidence**: 95% (Very High)
 

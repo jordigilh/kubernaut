@@ -426,7 +426,7 @@ kubectl logs -n kubernaut-system -l app=dynamic-toolset
    ```bash
    # Check if Prometheus/Grafana exist
    kubectl get svc --all-namespaces | grep -E "prometheus|grafana"
-   
+
    # If exists, check labels
    kubectl get svc prometheus -n monitoring -o yaml | grep -A5 labels
    ```

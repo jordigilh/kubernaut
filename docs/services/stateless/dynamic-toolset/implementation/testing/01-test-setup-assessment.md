@@ -1,7 +1,7 @@
 # Dynamic Toolset Service - Test Setup Assessment
 
-**Version**: v1.0  
-**Created**: October 10, 2025  
+**Version**: v1.0
+**Created**: October 10, 2025
 **Status**: ⏸️ Pre-Implementation
 
 ---
@@ -11,7 +11,7 @@
 ### Infrastructure Needs
 
 #### Kind Cluster
-**Purpose**: Integration and E2E testing  
+**Purpose**: Integration and E2E testing
 **Configuration**:
 ```yaml
 kind: Cluster
@@ -32,7 +32,7 @@ kubectl apply -f test/integration/toolset/testdata/mock-services.yaml --context 
 ```
 
 #### Mock Services
-**Purpose**: Simulate Prometheus, Grafana, Jaeger services for discovery testing  
+**Purpose**: Simulate Prometheus, Grafana, Jaeger services for discovery testing
 **Required Services**:
 1. **Prometheus**: Service with `app=prometheus` label, port 9090
 2. **Grafana**: Service with `app=grafana` label, port 3000
@@ -42,7 +42,7 @@ kubectl apply -f test/integration/toolset/testdata/mock-services.yaml --context 
 **Test Data File**: `test/integration/toolset/testdata/mock-services.yaml`
 
 #### No External Dependencies
-**Advantage**: Dynamic Toolset Service has no Redis or external dependencies  
+**Advantage**: Dynamic Toolset Service has no Redis or external dependencies
 **Result**: Simpler test setup than Gateway
 
 ---
@@ -50,7 +50,7 @@ kubectl apply -f test/integration/toolset/testdata/mock-services.yaml --context 
 ## Test Framework
 
 ### Unit Tests
-**Framework**: Ginkgo + Gomega  
+**Framework**: Ginkgo + Gomega
 **Coverage Target**: >70%
 
 **Setup**:
@@ -60,7 +60,7 @@ package toolset_test
 
 import (
     "testing"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
 )
@@ -77,7 +77,7 @@ go test ./test/unit/toolset/... -v
 ```
 
 ### Integration Tests
-**Framework**: Ginkgo + Gomega + Kind cluster  
+**Framework**: Ginkgo + Gomega + Kind cluster
 **Coverage Target**: >50%
 
 **Setup**:
@@ -88,10 +88,10 @@ package toolset_test
 import (
     "context"
     "testing"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    
+
     "k8s.io/client-go/kubernetes"
     "k8s.io/client-go/tools/clientcmd"
 )
@@ -100,14 +100,14 @@ var k8sClient *kubernetes.Clientset
 
 var _ = BeforeSuite(func() {
     // Load Kind cluster kubeconfig
-    config, err := clientcmd.BuildConfigFromFlags("", 
+    config, err := clientcmd.BuildConfigFromFlags("",
         os.Getenv("KUBECONFIG"))
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Create Kubernetes client
     k8sClient, err = kubernetes.NewForConfig(config)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Deploy mock services
     deployMockServices()
 })
@@ -125,7 +125,7 @@ go test ./test/integration/toolset/... -v
 ```
 
 ### E2E Tests
-**Framework**: Ginkgo + Gomega + Kind cluster + HolmesGPT API  
+**Framework**: Ginkgo + Gomega + Kind cluster + HolmesGPT API
 **Coverage Target**: <10%
 
 **Setup**:
@@ -135,7 +135,7 @@ package toolset_test
 
 import (
     "testing"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
 )
@@ -143,10 +143,10 @@ import (
 var _ = BeforeSuite(func() {
     // Deploy Dynamic Toolset Service
     deployDynamicToolsetService()
-    
+
     // Deploy HolmesGPT API (consumer of toolsets)
     deployHolmesGPTAPI()
-    
+
     // Wait for services to be ready
     waitForServicesReady()
 })
@@ -303,8 +303,8 @@ roleRef:
 ## Test Execution Strategy
 
 ### Unit Tests
-**When**: Every commit  
-**CI**: GitHub Actions  
+**When**: Every commit
+**CI**: GitHub Actions
 **Duration**: < 2 minutes
 
 ```bash
@@ -313,8 +313,8 @@ go test ./test/unit/toolset/... -v -cover
 ```
 
 ### Integration Tests
-**When**: Before merge to main  
-**CI**: GitHub Actions (with Kind cluster)  
+**When**: Before merge to main
+**CI**: GitHub Actions (with Kind cluster)
 **Duration**: < 5 minutes
 
 ```bash
@@ -330,8 +330,8 @@ kind delete cluster --name kubernaut-toolset-test
 ```
 
 ### E2E Tests
-**When**: Pre-release validation  
-**CI**: Manual or nightly  
+**When**: Pre-release validation
+**CI**: Manual or nightly
 **Duration**: < 10 minutes
 
 ```bash
@@ -411,7 +411,7 @@ cleanup-toolset-test:
 
 ---
 
-**Document Status**: ✅ Test Setup Assessment Complete  
-**Last Updated**: October 10, 2025  
+**Document Status**: ✅ Test Setup Assessment Complete
+**Last Updated**: October 10, 2025
 **Next Step**: Create BR test strategy document
 

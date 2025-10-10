@@ -1,8 +1,8 @@
 # Dynamic Toolset Service - BR Test Strategy
 
-**Version**: v1.0  
-**Created**: October 10, 2025  
-**Status**: 🎯 Ready for Implementation  
+**Version**: v1.0
+**Created**: October 10, 2025
+**Status**: 🎯 Ready for Implementation
 **Total BRs**: 20 (estimated)
 
 ---
@@ -106,7 +106,7 @@
 It("detects Prometheus service by 'app=prometheus' label", func() {
     // BUSINESS OUTCOME: Admin deploys Prometheus with standard label
     // Expected: Dynamic Toolset discovers and includes in toolset config
-    
+
     mockService := &corev1.Service{
         ObjectMeta: metav1.ObjectMeta{
             Name:      "prometheus-server",
@@ -121,10 +121,10 @@ It("detects Prometheus service by 'app=prometheus' label", func() {
             },
         },
     }
-    
+
     detector := discovery.NewPrometheusDetector(logger)
     discovered, err := detector.Detect(ctx, []corev1.Service{*mockService})
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(discovered).To(HaveLen(1))
     Expect(discovered[0].Type).To(Equal("prometheus"))
@@ -146,10 +146,10 @@ It("detects Prometheus service by name 'prometheus'", func() {
             },
         },
     }
-    
+
     detector := discovery.NewPrometheusDetector(logger)
     discovered, err := detector.Detect(ctx, []corev1.Service{*mockService})
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(discovered).To(HaveLen(1))
 })
@@ -169,10 +169,10 @@ It("detects Prometheus service by port 9090 named 'web'", func() {
             },
         },
     }
-    
+
     detector := discovery.NewPrometheusDetector(logger)
     discovered, err := detector.Detect(ctx, []corev1.Service{*mockService})
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(discovered).To(HaveLen(1))
 })
@@ -195,10 +195,10 @@ It("ignores services that don't match Prometheus patterns", func() {
             },
         },
     }
-    
+
     detector := discovery.NewPrometheusDetector(logger)
     discovered, err := detector.Detect(ctx, []corev1.Service{*mockService})
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(discovered).To(BeEmpty())
 })
@@ -209,10 +209,10 @@ It("ignores services that don't match Prometheus patterns", func() {
 It("detects multiple Prometheus instances across namespaces", func() {
     promService1 := makePrometheusService("prometheus-1", "monitoring")
     promService2 := makePrometheusService("prometheus-2", "observability")
-    
+
     detector := discovery.NewPrometheusDetector(logger)
     discovered, err := detector.Detect(ctx, []corev1.Service{promService1, promService2})
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(discovered).To(HaveLen(2))
 })
@@ -233,17 +233,17 @@ It("detects multiple Prometheus instances across namespaces", func() {
 It("includes healthy Prometheus service in discovery", func() {
     // BUSINESS OUTCOME: Only operational services are included
     // Expected: Health check passes, service included
-    
+
     mockHTTPServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         if r.URL.Path == "/-/healthy" {
             w.WriteHeader(http.StatusOK)
         }
     }))
     defer mockHTTPServer.Close()
-    
+
     detector := discovery.NewPrometheusDetector(logger)
     err := detector.HealthCheck(ctx, mockHTTPServer.URL)
-    
+
     Expect(err).ToNot(HaveOccurred())
 })
 ```
@@ -255,10 +255,10 @@ It("excludes unhealthy Prometheus service from discovery", func() {
         w.WriteHeader(http.StatusServiceUnavailable)
     }))
     defer mockHTTPServer.Close()
-    
+
     detector := discovery.NewPrometheusDetector(logger)
     err := detector.HealthCheck(ctx, mockHTTPServer.URL)
-    
+
     Expect(err).To(HaveOccurred())
 })
 ```
@@ -270,13 +270,13 @@ It("fails health check after timeout", func() {
         time.Sleep(10 * time.Second) // Longer than timeout
     }))
     defer mockHTTPServer.Close()
-    
+
     detector := discovery.NewPrometheusDetector(logger)
     ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
     defer cancel()
-    
+
     err := detector.HealthCheck(ctx, mockHTTPServer.URL)
-    
+
     Expect(err).To(HaveOccurred())
     Expect(err).To(MatchError(ContainSubstring("context deadline exceeded")))
 })
@@ -287,13 +287,13 @@ It("fails health check after timeout", func() {
 It("validates real Prometheus service health in Kind cluster", func() {
     // BUSINESS OUTCOME: Real health check integration
     // Expected: Deployed Prometheus passes health check
-    
+
     // Prometheus should be deployed to Kind cluster in test setup
     discoverer := discovery.NewServiceDiscoverer(k8sClient, logger)
     discoverer.RegisterDetector(discovery.NewPrometheusDetector(logger))
-    
+
     discovered, err := discoverer.DiscoverServices(ctx)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(discovered).To(ContainElement(
         MatchFields(IgnoreExtras, Fields{
@@ -318,9 +318,9 @@ It("validates real Prometheus service health in Kind cluster", func() {
 ```go
 It("always includes Kubernetes toolset in ConfigMap", func() {
     builder := generator.NewToolsetConfigMapBuilder()
-    
+
     cm, err := builder.BuildConfigMap(ctx, []toolset.DiscoveredService{}, nil)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(cm.Data).To(HaveKey("kubernetes-toolset.yaml"))
     Expect(cm.Data["kubernetes-toolset.yaml"]).To(ContainSubstring("toolset: kubernetes"))
@@ -332,16 +332,16 @@ It("always includes Kubernetes toolset in ConfigMap", func() {
 It("includes Prometheus toolset for discovered Prometheus service", func() {
     builder := generator.NewToolsetConfigMapBuilder()
     builder.RegisterGenerator(generator.NewPrometheusToolsetGenerator())
-    
+
     promService := toolset.DiscoveredService{
         Name:      "prometheus-server",
         Namespace: "monitoring",
         Type:      "prometheus",
         Endpoint:  "http://prometheus-server.monitoring:9090",
     }
-    
+
     cm, err := builder.BuildConfigMap(ctx, []toolset.DiscoveredService{promService}, nil)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(cm.Data).To(HaveKey("prometheus-toolset.yaml"))
     Expect(cm.Data["prometheus-toolset.yaml"]).To(ContainSubstring("url: \"http://prometheus-server.monitoring:9090\""))
@@ -352,16 +352,16 @@ It("includes Prometheus toolset for discovered Prometheus service", func() {
 ```go
 It("preserves admin overrides.yaml section", func() {
     builder := generator.NewToolsetConfigMapBuilder()
-    
+
     overrides := map[string]string{
         "overrides.yaml": `custom-service:
   enabled: true
   config:
     url: "http://custom-service:8080"`,
     }
-    
+
     cm, err := builder.BuildConfigMap(ctx, []toolset.DiscoveredService{}, overrides)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(cm.Data).To(HaveKey("overrides.yaml"))
     Expect(cm.Data["overrides.yaml"]).To(ContainSubstring("custom-service"))
@@ -382,22 +382,22 @@ It("preserves admin overrides.yaml section", func() {
 ```go
 It("detects when toolset key is missing from current ConfigMap", func() {
     reconciler := reconciler.NewConfigMapReconciler(k8sClient, logger)
-    
+
     current := &corev1.ConfigMap{
         Data: map[string]string{
             "kubernetes-toolset.yaml": "...",
         },
     }
-    
+
     desired := &corev1.ConfigMap{
         Data: map[string]string{
             "kubernetes-toolset.yaml": "...",
             "prometheus-toolset.yaml": "...",
         },
     }
-    
+
     hasDrift, driftKeys := reconciler.DetectDrift(current, desired)
-    
+
     Expect(hasDrift).To(BeTrue())
     Expect(driftKeys).To(ContainElement("missing:prometheus-toolset.yaml"))
 })
@@ -407,21 +407,21 @@ It("detects when toolset key is missing from current ConfigMap", func() {
 ```go
 It("detects when toolset configuration has been modified", func() {
     reconciler := reconciler.NewConfigMapReconciler(k8sClient, logger)
-    
+
     current := &corev1.ConfigMap{
         Data: map[string]string{
             "prometheus-toolset.yaml": "url: \"http://old-url:9090\"",
         },
     }
-    
+
     desired := &corev1.ConfigMap{
         Data: map[string]string{
             "prometheus-toolset.yaml": "url: \"http://new-url:9090\"",
         },
     }
-    
+
     hasDrift, driftKeys := reconciler.DetectDrift(current, desired)
-    
+
     Expect(hasDrift).To(BeTrue())
     Expect(driftKeys).To(ContainElement("modified:prometheus-toolset.yaml"))
 })
@@ -432,7 +432,7 @@ It("detects when toolset configuration has been modified", func() {
 It("reconciles drifted ConfigMap back to desired state", func() {
     // BUSINESS OUTCOME: Manual ConfigMap edits are overwritten by reconciler
     // Expected: ConfigMap updated to match desired state
-    
+
     // Create ConfigMap with drift
     driftedCM := &corev1.ConfigMap{
         ObjectMeta: metav1.ObjectMeta{
@@ -444,13 +444,13 @@ It("reconciles drifted ConfigMap back to desired state", func() {
         },
     }
     k8sClient.CoreV1().ConfigMaps("kubernaut-system").Create(ctx, driftedCM, metav1.CreateOptions{})
-    
+
     // Run reconciliation
     reconciler := reconciler.NewConfigMapReconciler(k8sClient, logger)
     err := reconciler.Reconcile(ctx, desiredState)
-    
+
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Verify ConfigMap updated
     updatedCM, err := k8sClient.CoreV1().ConfigMaps("kubernaut-system").
         Get(ctx, "kubernaut-toolset-config", metav1.GetOptions{})
@@ -466,7 +466,7 @@ It("reconciles drifted ConfigMap back to desired state", func() {
 ## Test Implementation Order
 
 ### Phase 1: Unit Tests (Week 1, Days 1-2)
-**Priority**: Detectors and ConfigMap generation  
+**Priority**: Detectors and ConfigMap generation
 **Tests**: 65 unit tests
 
 1. Prometheus detector (5 tests)
@@ -478,7 +478,7 @@ It("reconciles drifted ConfigMap back to desired state", func() {
 7. Health checks (8 unit tests)
 
 ### Phase 2: Integration Tests (Week 1, Days 3-4)
-**Priority**: Kubernetes integration  
+**Priority**: Kubernetes integration
 **Tests**: 28 integration tests
 
 1. Service discovery in Kind (8 tests)
@@ -487,7 +487,7 @@ It("reconciles drifted ConfigMap back to desired state", func() {
 4. HTTP API (5 tests)
 
 ### Phase 3: E2E Tests (Week 1, Day 5)
-**Priority**: End-to-end validation  
+**Priority**: End-to-end validation
 **Tests**: 2 E2E tests
 
 1. Complete discovery flow
@@ -514,8 +514,8 @@ It("reconciles drifted ConfigMap back to desired state", func() {
 
 ---
 
-**Document Status**: ✅ BR Test Strategy Complete  
-**Last Updated**: October 10, 2025  
-**Estimated Total Tests**: 95 (65 unit + 28 integration + 2 E2E)  
+**Document Status**: ✅ BR Test Strategy Complete
+**Last Updated**: October 10, 2025
+**Estimated Total Tests**: 95 (65 unit + 28 integration + 2 E2E)
 **Confidence**: 90% (Very High)
 

@@ -115,31 +115,31 @@ _, err := k8sClient.CoreV1().ConfigMaps("kubernaut-system").
 ```go
 import (
     "fmt"
-    
+
     corev1 "k8s.io/api/core/v1"
 )
 
 func (r *ConfigMapReconciler) detectDrift(current, desired *corev1.ConfigMap) (bool, []string) {
     var driftKeys []string
-    
+
     // Check for missing keys in current
     for key := range desired.Data {
         if key == "overrides.yaml" {
             continue // Skip overrides, they're admin-managed
         }
-        
+
         currentValue, ok := current.Data[key]
         if !ok {
             driftKeys = append(driftKeys, fmt.Sprintf("missing:%s", key))
             continue
         }
-        
+
         // Check for modified values
         if currentValue != desired.Data[key] {
             driftKeys = append(driftKeys, fmt.Sprintf("modified:%s", key))
         }
     }
-    
+
     // Check for extra keys in current (deleted services)
     for key := range current.Data {
         if key == "overrides.yaml" {
@@ -149,7 +149,7 @@ func (r *ConfigMapReconciler) detectDrift(current, desired *corev1.ConfigMap) (b
             driftKeys = append(driftKeys, fmt.Sprintf("extra:%s", key))
         }
     }
-    
+
     return len(driftKeys) > 0, driftKeys
 }
 ```
@@ -296,13 +296,13 @@ import (
 
 func (r *ConfigMapReconciler) mergeOverrides(current, desired *corev1.ConfigMap) *corev1.ConfigMap {
     merged := desired.DeepCopy()
-    
+
     // Preserve admin overrides from current ConfigMap
     if overrides, ok := current.Data["overrides.yaml"]; ok {
         merged.Data["overrides.yaml"] = overrides
         r.logger.Debug("Preserved admin overrides")
     }
-    
+
     return merged
 }
 ```
@@ -331,7 +331,7 @@ func (r *ConfigMapReconciler) mergeOverrides(current, desired *corev1.ConfigMap)
 import (
     "context"
     "time"
-    
+
     corev1 "k8s.io/api/core/v1"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "go.uber.org/zap"

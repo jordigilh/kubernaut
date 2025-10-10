@@ -1,7 +1,7 @@
 # Dynamic Toolset Service - Implementation Details
 
-**Version**: v1.0  
-**Last Updated**: October 10, 2025  
+**Version**: v1.0
+**Last Updated**: October 10, 2025
 **Status**: ✅ Design Complete, Ready for Implementation
 
 ---
@@ -97,7 +97,7 @@ package discovery
 import (
     "context"
     "time"
-    
+
     "github.com/jordigilh/kubernaut/pkg/toolset"
     "go.uber.org/zap"
 )
@@ -106,13 +106,13 @@ import (
 type ServiceDiscoverer interface {
     // DiscoverServices finds all detectable services in the cluster
     DiscoverServices(ctx context.Context) ([]toolset.DiscoveredService, error)
-    
+
     // RegisterDetector adds a new service detector to the discovery pipeline
     RegisterDetector(detector ServiceDetector)
-    
+
     // Start begins the discovery loop (every 5 minutes)
     Start(ctx context.Context) error
-    
+
     // Stop gracefully shuts down the discovery loop
     Stop() error
 }
@@ -121,10 +121,10 @@ type ServiceDiscoverer interface {
 type ServiceDetector interface {
     // Detect searches for services of this type
     Detect(ctx context.Context, services []corev1.Service) ([]toolset.DiscoveredService, error)
-    
+
     // ServiceType returns the type identifier (e.g., "prometheus", "grafana")
     ServiceType() string
-    
+
     // HealthCheck validates the service is actually operational
     HealthCheck(ctx context.Context, endpoint string) error
 }
@@ -168,27 +168,27 @@ func (d *ServiceDiscovererImpl) RegisterDetector(detector ServiceDetector) {
 func (d *ServiceDiscovererImpl) DiscoverServices(ctx context.Context) ([]toolset.DiscoveredService, error) {
     d.logger.Info("Starting service discovery")
     startTime := time.Now()
-    
+
     // List all services in all namespaces
     services, err := d.k8sClient.CoreV1().Services("").List(ctx, metav1.ListOptions{})
     if err != nil {
         d.logger.Error("Failed to list services", zap.Error(err))
         return nil, fmt.Errorf("failed to list services: %w", err)
     }
-    
+
     d.logger.Info("Retrieved services from Kubernetes",
         zap.Int("count", len(services.Items)))
-    
+
     var discovered []toolset.DiscoveredService
-    
+
     // Run each detector
     for _, detector := range d.detectors {
         detectorCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
         defer cancel()
-        
+
         d.logger.Debug("Running service detector",
             zap.String("detector", detector.ServiceType()))
-        
+
         detectedServices, err := detector.Detect(detectorCtx, services.Items)
         if err != nil {
             d.logger.Warn("Detector failed",
@@ -196,7 +196,7 @@ func (d *ServiceDiscovererImpl) DiscoverServices(ctx context.Context) ([]toolset
                 zap.Error(err))
             continue // Don't fail entire discovery if one detector fails
         }
-        
+
         // Validate health for each detected service
         for _, svc := range detectedServices {
             if err := detector.HealthCheck(detectorCtx, svc.Endpoint); err != nil {
@@ -207,37 +207,37 @@ func (d *ServiceDiscovererImpl) DiscoverServices(ctx context.Context) ([]toolset
                     zap.Error(err))
                 continue
             }
-            
+
             discovered = append(discovered, svc)
         }
     }
-    
+
     duration := time.Since(startTime)
     d.logger.Info("Service discovery complete",
         zap.Int("discovered_count", len(discovered)),
         zap.Duration("duration", duration))
-    
+
     // Update cache
     d.updateCache(discovered)
-    
+
     // Record metrics
     recordDiscoveryMetrics(len(discovered), duration)
-    
+
     return discovered, nil
 }
 
 func (d *ServiceDiscovererImpl) Start(ctx context.Context) error {
     d.logger.Info("Starting service discovery loop", zap.Duration("interval", 5*time.Minute))
-    
+
     ticker := time.NewTicker(5 * time.Minute)
     defer ticker.Stop()
-    
+
     // Run discovery immediately on start
     if _, err := d.DiscoverServices(ctx); err != nil {
         d.logger.Error("Initial service discovery failed", zap.Error(err))
         return err
     }
-    
+
     for {
         select {
         case <-ticker.C:
@@ -263,7 +263,7 @@ func (d *ServiceDiscovererImpl) Stop() error {
 func (d *ServiceDiscovererImpl) updateCache(services []toolset.DiscoveredService) {
     // Clear old cache
     d.discoveryCache = make(map[string]toolset.DiscoveredService)
-    
+
     // Populate new cache
     for _, svc := range services {
         key := fmt.Sprintf("%s/%s", svc.Type, svc.Name)
@@ -286,7 +286,7 @@ import (
     "fmt"
     "net/http"
     "time"
-    
+
     corev1 "k8s.io/api/core/v1"
     "github.com/jordigilh/kubernaut/pkg/toolset"
     "go.uber.org/zap"
@@ -315,16 +315,16 @@ func (d *PrometheusDetector) Detect(
     services []corev1.Service,
 ) ([]toolset.DiscoveredService, error) {
     var discovered []toolset.DiscoveredService
-    
+
     for _, svc := range services {
         // Check if service matches Prometheus patterns
         if !d.isPrometheus(svc) {
             continue
         }
-        
+
         // Build endpoint URL
         endpoint := d.buildEndpoint(svc)
-        
+
         discovered = append(discovered, toolset.DiscoveredService{
             Name:      svc.Name,
             Namespace: svc.Namespace,
@@ -336,13 +336,13 @@ func (d *PrometheusDetector) Detect(
                 "service_port": d.getPrometheusPort(svc),
             },
         })
-        
+
         d.logger.Info("Detected Prometheus service",
             zap.String("name", svc.Name),
             zap.String("namespace", svc.Namespace),
             zap.String("endpoint", endpoint))
     }
-    
+
     return discovered, nil
 }
 
@@ -351,23 +351,23 @@ func (d *PrometheusDetector) isPrometheus(svc corev1.Service) bool {
     if app, ok := svc.Labels["app"]; ok && app == "prometheus" {
         return true
     }
-    
+
     if app, ok := svc.Labels["app.kubernetes.io/name"]; ok && app == "prometheus" {
         return true
     }
-    
+
     // Detection Strategy 2: Check service name
     if svc.Name == "prometheus" || svc.Name == "prometheus-server" {
         return true
     }
-    
+
     // Detection Strategy 3: Check for prometheus port
     for _, port := range svc.Spec.Ports {
         if port.Name == "web" && port.Port == 9090 {
             return true
         }
     }
-    
+
     return false
 }
 
@@ -382,29 +382,29 @@ func (d *PrometheusDetector) getPrometheusPort(svc corev1.Service) string {
             return fmt.Sprintf("%d", port.Port)
         }
     }
-    
+
     // Default to 9090
     return "9090"
 }
 
 func (d *PrometheusDetector) HealthCheck(ctx context.Context, endpoint string) error {
     healthURL := fmt.Sprintf("%s/-/healthy", endpoint)
-    
+
     req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
     if err != nil {
         return fmt.Errorf("failed to create health check request: %w", err)
     }
-    
+
     resp, err := d.httpClient.Do(req)
     if err != nil {
         return fmt.Errorf("health check failed: %w", err)
     }
     defer resp.Body.Close()
-    
+
     if resp.StatusCode != http.StatusOK {
         return fmt.Errorf("unhealthy: status %d", resp.StatusCode)
     }
-    
+
     d.logger.Debug("Prometheus health check passed", zap.String("endpoint", endpoint))
     return nil
 }
@@ -424,7 +424,7 @@ import (
     "fmt"
     "net/http"
     "time"
-    
+
     corev1 "k8s.io/api/core/v1"
     "github.com/jordigilh/kubernaut/pkg/toolset"
     "go.uber.org/zap"
@@ -453,14 +453,14 @@ func (d *GrafanaDetector) Detect(
     services []corev1.Service,
 ) ([]toolset.DiscoveredService, error) {
     var discovered []toolset.DiscoveredService
-    
+
     for _, svc := range services {
         if !d.isGrafana(svc) {
             continue
         }
-        
+
         endpoint := d.buildEndpoint(svc)
-        
+
         discovered = append(discovered, toolset.DiscoveredService{
             Name:      svc.Name,
             Namespace: svc.Namespace,
@@ -471,13 +471,13 @@ func (d *GrafanaDetector) Detect(
                 "service_port": d.getGrafanaPort(svc),
             },
         })
-        
+
         d.logger.Info("Detected Grafana service",
             zap.String("name", svc.Name),
             zap.String("namespace", svc.Namespace),
             zap.String("endpoint", endpoint))
     }
-    
+
     return discovered, nil
 }
 
@@ -486,23 +486,23 @@ func (d *GrafanaDetector) isGrafana(svc corev1.Service) bool {
     if app, ok := svc.Labels["app"]; ok && app == "grafana" {
         return true
     }
-    
+
     if app, ok := svc.Labels["app.kubernetes.io/name"]; ok && app == "grafana" {
         return true
     }
-    
+
     // Detection Strategy 2: Check service name
     if svc.Name == "grafana" {
         return true
     }
-    
+
     // Detection Strategy 3: Check for grafana port
     for _, port := range svc.Spec.Ports {
         if port.Name == "service" && port.Port == 3000 {
             return true
         }
     }
-    
+
     return false
 }
 
@@ -517,29 +517,29 @@ func (d *GrafanaDetector) getGrafanaPort(svc corev1.Service) string {
             return fmt.Sprintf("%d", port.Port)
         }
     }
-    
+
     // Default to 3000
     return "3000"
 }
 
 func (d *GrafanaDetector) HealthCheck(ctx context.Context, endpoint string) error {
     healthURL := fmt.Sprintf("%s/api/health", endpoint)
-    
+
     req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
     if err != nil {
         return fmt.Errorf("failed to create health check request: %w", err)
     }
-    
+
     resp, err := d.httpClient.Do(req)
     if err != nil {
         return fmt.Errorf("health check failed: %w", err)
     }
     defer resp.Body.Close()
-    
+
     if resp.StatusCode != http.StatusOK {
         return fmt.Errorf("unhealthy: status %d", resp.StatusCode)
     }
-    
+
     d.logger.Debug("Grafana health check passed", zap.String("endpoint", endpoint))
     return nil
 }
@@ -558,7 +558,7 @@ package generator
 
 import (
     "context"
-    
+
     "github.com/jordigilh/kubernaut/pkg/toolset"
     corev1 "k8s.io/api/core/v1"
 )
@@ -567,7 +567,7 @@ import (
 type ConfigMapGenerator interface {
     // Generate creates toolset YAML configuration for the service
     Generate(ctx context.Context, service toolset.DiscoveredService) (string, error)
-    
+
     // ServiceType returns the service type this generator handles
     ServiceType() string
 }
@@ -593,33 +593,33 @@ func (b *ToolsetConfigMapBuilder) BuildConfigMap(
     overrides map[string]string,
 ) (*corev1.ConfigMap, error) {
     configMapData := make(map[string]string)
-    
+
     // Always include Kubernetes toolset (built-in)
     configMapData["kubernetes-toolset.yaml"] = generateKubernetesToolset()
-    
+
     // Generate toolset configs for discovered services
     for _, svc := range services {
         generator, ok := b.generators[svc.Type]
         if !ok {
             continue // Skip services without generators
         }
-        
+
         config, err := generator.Generate(ctx, svc)
         if err != nil {
             return nil, fmt.Errorf("failed to generate %s toolset: %w", svc.Type, err)
         }
-        
+
         key := fmt.Sprintf("%s-toolset.yaml", svc.Type)
         configMapData[key] = config
     }
-    
+
     // Merge overrides (admin-configured toolsets)
     for key, value := range overrides {
         if key == "overrides.yaml" {
             configMapData[key] = value // Preserve admin overrides
         }
     }
-    
+
     // Build ConfigMap
     cm := &corev1.ConfigMap{
         ObjectMeta: metav1.ObjectMeta{
@@ -628,7 +628,7 @@ func (b *ToolsetConfigMapBuilder) BuildConfigMap(
         },
         Data: configMapData,
     }
-    
+
     return cm, nil
 }
 
@@ -652,7 +652,7 @@ package generator
 import (
     "context"
     "fmt"
-    
+
     "github.com/jordigilh/kubernaut/pkg/toolset"
 )
 
@@ -673,7 +673,7 @@ func (g *PrometheusToolsetGenerator) Generate(
     if service.Type != "prometheus" {
         return "", fmt.Errorf("invalid service type: %s", service.Type)
     }
-    
+
     config := fmt.Sprintf(`toolset: prometheus
 enabled: true
 config:
@@ -682,7 +682,7 @@ config:
   # Prometheus API queries will target this endpoint
   # Example queries: up{}, rate(http_requests_total[5m])
 `, service.Endpoint)
-    
+
     return config, nil
 }
 ```
@@ -697,7 +697,7 @@ package generator
 import (
     "context"
     "fmt"
-    
+
     "github.com/jordigilh/kubernaut/pkg/toolset"
 )
 
@@ -718,7 +718,7 @@ func (g *GrafanaToolsetGenerator) Generate(
     if service.Type != "grafana" {
         return "", fmt.Errorf("invalid service type: %s", service.Type)
     }
-    
+
     config := fmt.Sprintf(`toolset: grafana
 enabled: true
 config:
@@ -727,7 +727,7 @@ config:
   # Grafana API access for dashboard and panel queries
   # Requires GRAFANA_API_KEY environment variable
 `, service.Endpoint)
-    
+
     return config, nil
 }
 ```
@@ -747,13 +747,13 @@ import (
     "context"
     "fmt"
     "time"
-    
+
     corev1 "k8s.io/api/core/v1"
     "k8s.io/apimachinery/pkg/api/errors"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/client-go/kubernetes"
     "go.uber.org/zap"
-    
+
     "github.com/jordigilh/kubernaut/pkg/toolset"
 )
 
@@ -784,16 +784,16 @@ func (r *ConfigMapReconciler) Start(ctx context.Context, desiredState *corev1.Co
         zap.String("configmap", r.configMapName),
         zap.String("namespace", r.namespace),
         zap.Duration("interval", 30*time.Second))
-    
+
     ticker := time.NewTicker(30 * time.Second)
     defer ticker.Stop()
-    
+
     // Run reconciliation immediately on start
     if err := r.Reconcile(ctx, desiredState); err != nil {
         r.logger.Error("Initial reconciliation failed", zap.Error(err))
         return err
     }
-    
+
     for {
         select {
         case <-ticker.C:
@@ -818,99 +818,99 @@ func (r *ConfigMapReconciler) Stop() error {
 
 func (r *ConfigMapReconciler) Reconcile(ctx context.Context, desiredState *corev1.ConfigMap) error {
     r.logger.Debug("Reconciling ConfigMap")
-    
+
     // Get current ConfigMap
     currentCM, err := r.k8sClient.CoreV1().ConfigMaps(r.namespace).
         Get(ctx, r.configMapName, metav1.GetOptions{})
-    
+
     if errors.IsNotFound(err) {
         // ConfigMap deleted → recreate
         r.logger.Warn("ConfigMap not found, recreating",
             zap.String("configmap", r.configMapName))
         return r.createConfigMap(ctx, desiredState)
     }
-    
+
     if err != nil {
         return fmt.Errorf("failed to get ConfigMap: %w", err)
     }
-    
+
     // Detect drift
     hasDrift, driftDetails := r.detectDrift(currentCM, desiredState)
-    
+
     if !hasDrift {
         r.logger.Debug("ConfigMap matches desired state, no reconciliation needed")
         return nil
     }
-    
+
     r.logger.Info("ConfigMap drift detected, reconciling",
         zap.Strings("drift_keys", driftDetails))
-    
+
     // Merge admin overrides
     merged := r.mergeOverrides(currentCM, desiredState)
-    
+
     // Update ConfigMap
     return r.updateConfigMap(ctx, merged)
 }
 
 func (r *ConfigMapReconciler) detectDrift(current, desired *corev1.ConfigMap) (bool, []string) {
     var driftKeys []string
-    
+
     // Check for missing keys in current
     for key := range desired.Data {
         if key == "overrides.yaml" {
             continue // Skip overrides, they're admin-managed
         }
-        
+
         currentValue, ok := current.Data[key]
         if !ok {
             driftKeys = append(driftKeys, fmt.Sprintf("missing:%s", key))
             continue
         }
-        
+
         if currentValue != desired.Data[key] {
             driftKeys = append(driftKeys, fmt.Sprintf("modified:%s", key))
         }
     }
-    
+
     return len(driftKeys) > 0, driftKeys
 }
 
 func (r *ConfigMapReconciler) mergeOverrides(current, desired *corev1.ConfigMap) *corev1.ConfigMap {
     merged := desired.DeepCopy()
-    
+
     // Preserve admin overrides from current ConfigMap
     if overrides, ok := current.Data["overrides.yaml"]; ok {
         merged.Data["overrides.yaml"] = overrides
         r.logger.Debug("Preserved admin overrides")
     }
-    
+
     return merged
 }
 
 func (r *ConfigMapReconciler) createConfigMap(ctx context.Context, cm *corev1.ConfigMap) error {
     r.logger.Info("Creating ConfigMap", zap.String("configmap", cm.Name))
-    
+
     _, err := r.k8sClient.CoreV1().ConfigMaps(r.namespace).
         Create(ctx, cm, metav1.CreateOptions{})
-    
+
     if err != nil {
         return fmt.Errorf("failed to create ConfigMap: %w", err)
     }
-    
+
     r.logger.Info("ConfigMap created successfully")
     return nil
 }
 
 func (r *ConfigMapReconciler) updateConfigMap(ctx context.Context, cm *corev1.ConfigMap) error {
     r.logger.Info("Updating ConfigMap", zap.String("configmap", cm.Name))
-    
+
     _, err := r.k8sClient.CoreV1().ConfigMaps(r.namespace).
         Update(ctx, cm, metav1.UpdateOptions{})
-    
+
     if err != nil {
         return fmt.Errorf("failed to update ConfigMap: %w", err)
     }
-    
+
     r.logger.Info("ConfigMap updated successfully")
     return nil
 }
@@ -932,7 +932,7 @@ import (
     "fmt"
     "net/http"
     "time"
-    
+
     "github.com/gorilla/mux"
     "go.uber.org/zap"
 )
@@ -950,13 +950,13 @@ func NewServer(
     discoverer ServiceDiscoverer,
 ) *Server {
     router := mux.NewRouter()
-    
+
     server := &Server{
         router:     router,
         logger:     logger,
         discoverer: discoverer,
     }
-    
+
     server.httpServer = &http.Server{
         Addr:         fmt.Sprintf(":%d", port),
         Handler:      router,
@@ -964,9 +964,9 @@ func NewServer(
         WriteTimeout: 10 * time.Second,
         IdleTimeout:  60 * time.Second,
     }
-    
+
     server.registerRoutes()
-    
+
     return server
 }
 
@@ -974,15 +974,15 @@ func (s *Server) registerRoutes() {
     // Health checks (no auth required)
     s.router.HandleFunc("/health", s.healthHandler).Methods("GET")
     s.router.HandleFunc("/ready", s.readyHandler).Methods("GET")
-    
+
     // API endpoints (auth required)
     api := s.router.PathPrefix("/api/v1").Subrouter()
     api.Use(s.authMiddleware)
-    
+
     api.HandleFunc("/toolsets", s.listToolsetsHandler).Methods("GET")
     api.HandleFunc("/services", s.listServicesHandler).Methods("GET")
     api.HandleFunc("/discover", s.manualDiscoveryHandler).Methods("POST")
-    
+
     // Metrics endpoint (auth required)
     s.router.Handle("/metrics", promhttp.Handler())
 }
@@ -1008,7 +1008,7 @@ package toolset
 import (
     "encoding/json"
     "net/http"
-    
+
     "go.uber.org/zap"
 )
 
@@ -1031,14 +1031,14 @@ func (s *Server) listToolsetsHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Internal server error", http.StatusInternalServerError)
         return
     }
-    
+
     toolsets := make([]string, 0, len(services)+1)
     toolsets = append(toolsets, "kubernetes") // Always include Kubernetes toolset
-    
+
     for _, svc := range services {
         toolsets = append(toolsets, svc.Type)
     }
-    
+
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(map[string]interface{}{
         "toolsets": toolsets,
@@ -1054,7 +1054,7 @@ func (s *Server) listServicesHandler(w http.ResponseWriter, r *http.Request) {
         http.Error(w, "Internal server error", http.StatusInternalServerError)
         return
     }
-    
+
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(map[string]interface{}{
         "services": services,
@@ -1065,14 +1065,14 @@ func (s *Server) listServicesHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) manualDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
     // Trigger manual service discovery
     s.logger.Info("Manual discovery triggered")
-    
+
     services, err := s.discoverer.DiscoverServices(r.Context())
     if err != nil {
         s.logger.Error("Manual discovery failed", zap.Error(err))
         http.Error(w, "Discovery failed", http.StatusInternalServerError)
         return
     }
-    
+
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(map[string]interface{}{
         "status":   "success",
@@ -1109,13 +1109,13 @@ import (
 var (
     // ErrServiceNotFound indicates a service was not found
     ErrServiceNotFound = errors.New("service not found")
-    
+
     // ErrHealthCheckFailed indicates a service health check failed
     ErrHealthCheckFailed = errors.New("health check failed")
-    
+
     // ErrConfigMapNotFound indicates the ConfigMap was not found
     ErrConfigMapNotFound = errors.New("ConfigMap not found")
-    
+
     // ErrInvalidServiceType indicates an unsupported service type
     ErrInvalidServiceType = errors.New("invalid service type")
 )
@@ -1171,11 +1171,11 @@ func (d *PrometheusDetector) HealthCheck(ctx context.Context, endpoint string) e
         return fmt.Errorf("%w: %v", ErrHealthCheckFailed, err)
     }
     defer resp.Body.Close()
-    
+
     if resp.StatusCode != http.StatusOK {
         return fmt.Errorf("%w: status %d", ErrHealthCheckFailed, resp.StatusCode)
     }
-    
+
     return nil
 }
 
@@ -1206,11 +1206,11 @@ import (
     "os"
     "os/signal"
     "syscall"
-    
+
     "go.uber.org/zap"
     "k8s.io/client-go/kubernetes"
     "k8s.io/client-go/rest"
-    
+
     "github.com/jordigilh/kubernaut/pkg/toolset"
     "github.com/jordigilh/kubernaut/pkg/toolset/discovery"
     "github.com/jordigilh/kubernaut/pkg/toolset/generator"
@@ -1221,77 +1221,77 @@ func main() {
     // Initialize logger
     logger, _ := zap.NewProduction()
     defer logger.Sync()
-    
+
     logger.Info("Starting Dynamic Toolset Service")
-    
+
     // Create Kubernetes client (in-cluster)
     config, err := rest.InClusterConfig()
     if err != nil {
         logger.Fatal("Failed to create Kubernetes config", zap.Error(err))
     }
-    
+
     k8sClient, err := kubernetes.NewForConfig(config)
     if err != nil {
         logger.Fatal("Failed to create Kubernetes client", zap.Error(err))
     }
-    
+
     // Create service discoverer
     discoverer := discovery.NewServiceDiscoverer(k8sClient, logger)
-    
+
     // Register service detectors
     discoverer.RegisterDetector(discovery.NewPrometheusDetector(logger))
     discoverer.RegisterDetector(discovery.NewGrafanaDetector(logger))
     discoverer.RegisterDetector(discovery.NewJaegerDetector(logger))
     discoverer.RegisterDetector(discovery.NewElasticsearchDetector(logger))
-    
+
     // Create ConfigMap builder
     builder := generator.NewToolsetConfigMapBuilder()
     builder.RegisterGenerator(generator.NewPrometheusToolsetGenerator())
     builder.RegisterGenerator(generator.NewGrafanaToolsetGenerator())
     builder.RegisterGenerator(generator.NewJaegerToolsetGenerator())
-    
+
     // Create reconciler
     reconcilerCtrl := reconciler.NewConfigMapReconciler(k8sClient, logger)
-    
+
     // Create HTTP server
     server := toolset.NewServer(8080, logger, discoverer)
-    
+
     // Start components
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
-    
+
     // Start discovery loop
     go func() {
         if err := discoverer.Start(ctx); err != nil {
             logger.Fatal("Service discovery failed", zap.Error(err))
         }
     }()
-    
+
     // Start reconciliation loop
     go func() {
         // Build initial desired state
         services, _ := discoverer.DiscoverServices(ctx)
         desiredCM, _ := builder.BuildConfigMap(ctx, services, nil)
-        
+
         if err := reconcilerCtrl.Start(ctx, desiredCM); err != nil {
             logger.Fatal("Reconciliation failed", zap.Error(err))
         }
     }()
-    
+
     // Start HTTP server
     go func() {
         if err := server.Start(); err != nil {
             logger.Fatal("HTTP server failed", zap.Error(err))
         }
     }()
-    
+
     // Wait for termination signal
     sigCh := make(chan os.Signal, 1)
     signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
     <-sigCh
-    
+
     logger.Info("Shutting down Dynamic Toolset Service")
-    
+
     // Graceful shutdown
     discoverer.Stop()
     reconcilerCtrl.Stop()
@@ -1332,7 +1332,7 @@ type ToolsetConfig struct {
 
 ---
 
-**Document Status**: ✅ Complete Implementation Guide  
-**Last Updated**: October 10, 2025  
+**Document Status**: ✅ Complete Implementation Guide
+**Last Updated**: October 10, 2025
 **Next Steps**: Begin Phase 0 implementation following this guide
 

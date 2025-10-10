@@ -1,7 +1,7 @@
 # Dynamic Toolset Service - Metrics & SLOs
 
-**Version**: v1.0  
-**Last Updated**: October 10, 2025  
+**Version**: v1.0
+**Last Updated**: October 10, 2025
 **Status**: ✅ Design Complete
 
 ---
@@ -158,7 +158,7 @@ sum(toolset_services_discovered_total) by (service_type)
 
 **2. Discovery Success Rate**
 ```promql
-rate(toolset_discovery_duration_seconds_count{status="success"}[5m]) / 
+rate(toolset_discovery_duration_seconds_count{status="success"}[5m]) /
 rate(toolset_discovery_duration_seconds_count[5m])
 ```
 
@@ -174,7 +174,7 @@ rate(toolset_configmap_reconcile_total[5m]) by (operation)
 
 **5. Health Check Success Rate**
 ```promql
-rate(toolset_health_checks_total{status="healthy"}[5m]) / 
+rate(toolset_health_checks_total{status="healthy"}[5m]) /
 rate(toolset_health_checks_total[5m]) by (service_type)
 ```
 
@@ -201,11 +201,11 @@ sum(toolset_unhealthy_services) by (service_type)
 
 ### Availability SLO
 
-**Target**: 99.5% availability  
-**Measurement**: Successful HTTP 200 responses / total requests  
+**Target**: 99.5% availability
+**Measurement**: Successful HTTP 200 responses / total requests
 **Query**:
 ```promql
-sum(rate(toolset_http_requests_total{status=~"2.."}[5m])) / 
+sum(rate(toolset_http_requests_total{status=~"2.."}[5m])) /
 sum(rate(toolset_http_requests_total[5m]))
 ```
 
@@ -213,8 +213,8 @@ sum(rate(toolset_http_requests_total[5m]))
 
 ### Discovery Latency SLO
 
-**Target**: p95 < 10s  
-**Measurement**: Time to complete service discovery  
+**Target**: p95 < 10s
+**Measurement**: Time to complete service discovery
 **Query**:
 ```promql
 histogram_quantile(0.95, rate(toolset_discovery_duration_seconds_bucket[5m])) < 10.0
@@ -224,8 +224,8 @@ histogram_quantile(0.95, rate(toolset_discovery_duration_seconds_bucket[5m])) < 
 
 ### Reconciliation Latency SLO
 
-**Target**: p95 < 5s  
-**Measurement**: Time to reconcile ConfigMap  
+**Target**: p95 < 5s
+**Measurement**: Time to reconcile ConfigMap
 **Query**:
 ```promql
 histogram_quantile(0.95, rate(toolset_reconciliation_duration_seconds_bucket[5m])) < 5.0
@@ -235,7 +235,7 @@ histogram_quantile(0.95, rate(toolset_reconciliation_duration_seconds_bucket[5m]
 
 ### API Response Time SLO
 
-**Target**: p95 < 200ms, p99 < 500ms  
+**Target**: p95 < 200ms, p99 < 500ms
 **Query**:
 ```promql
 histogram_quantile(0.95, rate(toolset_http_request_duration_seconds_bucket[5m])) < 0.200
@@ -246,10 +246,10 @@ histogram_quantile(0.99, rate(toolset_http_request_duration_seconds_bucket[5m]))
 
 ### Health Check Success Rate SLO
 
-**Target**: >95% healthy services  
+**Target**: >95% healthy services
 **Query**:
 ```promql
-sum(rate(toolset_health_checks_total{status="healthy"}[5m])) / 
+sum(rate(toolset_health_checks_total{status="healthy"}[5m])) /
 sum(rate(toolset_health_checks_total[5m])) > 0.95
 ```
 
@@ -310,7 +310,7 @@ groups:
     # High health check failure rate
     - alert: DynamicToolsetHealthCheckFailures
       expr: |
-        rate(toolset_health_checks_total{status="unhealthy"}[5m]) / 
+        rate(toolset_health_checks_total{status="unhealthy"}[5m]) /
         rate(toolset_health_checks_total[5m]) > 0.20
       for: 10m
       labels:
@@ -447,7 +447,7 @@ groups:
 
 ---
 
-**Document Status**: ✅ Complete Metrics & SLO Specification  
-**Last Updated**: October 10, 2025  
+**Document Status**: ✅ Complete Metrics & SLO Specification
+**Last Updated**: October 10, 2025
 **Confidence**: 95% (Very High)
 

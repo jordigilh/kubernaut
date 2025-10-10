@@ -1,7 +1,7 @@
 # Dynamic Toolset Service - Toolset Generation Deep Dive
 
-**Version**: v1.0  
-**Last Updated**: October 10, 2025  
+**Version**: v1.0
+**Last Updated**: October 10, 2025
 **Status**: ✅ Design Complete
 
 ---
@@ -123,7 +123,7 @@ func (g *PrometheusToolsetGenerator) Generate(
     if service.Type != "prometheus" {
         return "", fmt.Errorf("invalid service type: %s", service.Type)
     }
-    
+
     config := fmt.Sprintf(`toolset: prometheus
 enabled: true
 config:
@@ -132,7 +132,7 @@ config:
   # Prometheus API queries will target this endpoint
   # Example queries: up{}, rate(http_requests_total[5m])
 `, service.Endpoint)
-    
+
     return config, nil
 }
 ```
@@ -179,7 +179,7 @@ func (g *GrafanaToolsetGenerator) Generate(
     if service.Type != "grafana" {
         return "", fmt.Errorf("invalid service type: %s", service.Type)
     }
-    
+
     config := fmt.Sprintf(`toolset: grafana
 enabled: true
 config:
@@ -188,7 +188,7 @@ config:
   # Grafana API access for dashboard and panel queries
   # Requires GRAFANA_API_KEY environment variable
 `, service.Endpoint)
-    
+
     return config, nil
 }
 ```
@@ -231,7 +231,7 @@ config:
   query_endpoint: "/api/traces"
   # Jaeger tracing backend for distributed traces
 `, service.Endpoint)
-    
+
     return config, nil
 }
 ```
@@ -276,33 +276,33 @@ func (b *ToolsetConfigMapBuilder) BuildConfigMap(
     overrides map[string]string,
 ) (*corev1.ConfigMap, error) {
     configMapData := make(map[string]string)
-    
+
     // Always include Kubernetes toolset (built-in)
     configMapData["kubernetes-toolset.yaml"] = generateKubernetesToolset()
-    
+
     // Generate toolset configs for discovered services
     for _, svc := range services {
         generator, ok := b.generators[svc.Type]
         if !ok {
             continue // Skip services without generators
         }
-        
+
         config, err := generator.Generate(ctx, svc)
         if err != nil {
             return nil, fmt.Errorf("failed to generate %s toolset: %w", svc.Type, err)
         }
-        
+
         key := fmt.Sprintf("%s-toolset.yaml", svc.Type)
         configMapData[key] = config
     }
-    
+
     // Merge overrides (admin-configured toolsets)
     for key, value := range overrides {
         if key == "overrides.yaml" {
             configMapData[key] = value // Preserve admin overrides
         }
     }
-    
+
     // Build ConfigMap
     cm := &corev1.ConfigMap{
         ObjectMeta: metav1.ObjectMeta{
@@ -316,7 +316,7 @@ func (b *ToolsetConfigMapBuilder) BuildConfigMap(
         },
         Data: configMapData,
     }
-    
+
     return cm, nil
 }
 ```
@@ -413,17 +413,17 @@ func (b *ToolsetConfigMapBuilder) mergeOverrides(
     overrides map[string]string,
 ) map[string]string {
     merged := make(map[string]string)
-    
+
     // Copy all generated toolsets
     for key, value := range generated {
         merged[key] = value
     }
-    
+
     // Add/preserve admin overrides
     if overridesYAML, ok := overrides["overrides.yaml"]; ok {
         merged["overrides.yaml"] = overridesYAML
     }
-    
+
     return merged
 }
 ```
@@ -498,12 +498,12 @@ func (b *ToolsetConfigMapBuilder) validateSize(cm *corev1.ConfigMap) error {
     for _, value := range cm.Data {
         totalSize += len(value)
     }
-    
+
     const maxSize = 900000 // 900KB (safety margin)
     if totalSize > maxSize {
         return fmt.Errorf("ConfigMap size %d bytes exceeds limit %d", totalSize, maxSize)
     }
-    
+
     return nil
 }
 ```
@@ -556,14 +556,14 @@ logger.Info("Toolset generated",
 ```go
 It("generates Prometheus toolset with correct URL", func() {
     generator := generator.NewPrometheusToolsetGenerator()
-    
+
     service := toolset.DiscoveredService{
         Type:     "prometheus",
         Endpoint: "http://prometheus-server.monitoring:9090",
     }
-    
+
     config, err := generator.Generate(ctx, service)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(config).To(ContainSubstring("toolset: prometheus"))
     Expect(config).To(ContainSubstring("url: \"http://prometheus-server.monitoring:9090\""))
@@ -579,19 +579,19 @@ It("creates ConfigMap with all discovered toolsets", func() {
     builder := generator.NewToolsetConfigMapBuilder()
     builder.RegisterGenerator(generator.NewPrometheusToolsetGenerator())
     builder.RegisterGenerator(generator.NewGrafanaToolsetGenerator())
-    
+
     services := []toolset.DiscoveredService{
         {Name: "prometheus", Type: "prometheus", Endpoint: "http://..."},
         {Name: "grafana", Type: "grafana", Endpoint: "http://..."},
     }
-    
+
     cm, err := builder.BuildConfigMap(ctx, services, nil)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(cm.Data).To(HaveKey("kubernetes-toolset.yaml"))
     Expect(cm.Data).To(HaveKey("prometheus-toolset.yaml"))
     Expect(cm.Data).To(HaveKey("grafana-toolset.yaml"))
-    
+
     // Write to Kubernetes
     _, err = k8sClient.CoreV1().ConfigMaps("kubernaut-system").Create(ctx, cm, metav1.CreateOptions{})
     Expect(err).ToNot(HaveOccurred())
@@ -642,7 +642,7 @@ prometheus-toolset-production.yaml: |
 
 ---
 
-**Document Status**: ✅ Toolset Generation Deep Dive Complete  
-**Last Updated**: October 10, 2025  
+**Document Status**: ✅ Toolset Generation Deep Dive Complete
+**Last Updated**: October 10, 2025
 **Related**: [implementation.md](./implementation.md), [service-discovery.md](./service-discovery.md), [configmap-reconciliation.md](./configmap-reconciliation.md)
 
