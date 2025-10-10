@@ -171,30 +171,6 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
 	return defaultEnv
 }
 
-// isValidEnvironment checks if the environment value is valid
-//
-// Dynamic Configuration Philosophy:
-// This function now accepts ANY non-empty string as a valid environment.
-// Organizations define their own environment taxonomy based on their needs:
-//
-// Examples of valid environments:
-// - Standard: "prod", "staging", "dev", "qa", "uat"
-// - Regional: "prod-east", "prod-west", "staging-eu"
-// - Deployment strategies: "canary", "blue", "green"
-// - Custom: "production", "pre-prod", "development", "local"
-//
-// Why no hardcoded validation:
-// - Labels are meant for DYNAMIC configuration, not static enforcement
-// - Organizations have diverse environment taxonomies
-// - Downstream services (Priority, Rego) handle environment-specific logic
-// - Validation happens at business rule layer, not infrastructure layer
-//
-// Returns:
-// - bool: true if non-empty, false otherwise
-func isValidEnvironment(env string) bool {
-	return env != ""
-}
-
 // getFromCache retrieves environment from cache
 //
 // Thread-safe read with RLock (supports concurrent lookups).
