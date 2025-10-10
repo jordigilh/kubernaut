@@ -47,8 +47,6 @@ type StepExecutionAudit struct {
     RetriesAttempted int                       `json:"retries_attempted"`
     ErrorMessage     string                    `json:"error_message,omitempty"`
 }
-<<<<<<< HEAD
-=======
 
 type AdaptiveAdjustment struct {
     StepNumber       int                       `json:"step_number"`
@@ -56,13 +54,10 @@ type AdaptiveAdjustment struct {
     Reason           string                    `json:"reason"`
     Timestamp        time.Time                 `json:"timestamp"`
 }
->>>>>>> crd_implementation
 ```
 
 ---
 
-<<<<<<< HEAD
-=======
 ## PostgreSQL Schema
 
 ```sql
@@ -505,4 +500,3 @@ func TestIntegration_WorkflowAuditStorage(t *testing.T) {
 - **Storage Service**: [Storage Service Spec](../../services/storage-service/)
 - **Metrics**: [Metrics & SLOs](./metrics-slos.md)
 - **Testing**: [Testing Strategy](./testing-strategy.md)
->>>>>>> crd_implementation

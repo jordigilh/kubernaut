@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-package holmesgpt_test
-
-import (
-	"testing"
-	"fmt"
-	"sync"
-	"sync/atomic"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -30,7 +21,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	contextpkg "github.com/jordigilh/kubernaut/pkg/ai/context"

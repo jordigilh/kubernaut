@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-package k8s_test
-
-import (
-	"testing"
-	"context"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -26,7 +19,6 @@ package k8s_test
 import (
 	"context"
 	"testing"
->>>>>>> crd_implementation
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
