@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -16,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package vector
 
 import (
@@ -54,13 +51,8 @@ type OpenAIConfig struct {
 	BatchSize     int               `yaml:"batch_size" default:"100"`
 	RateLimit     int               `yaml:"rate_limit" default:"60"`
 	Dimensions    int               `yaml:"dimensions" default:"1536"`
-<<<<<<< HEAD
-	ModelOptions  map[string]string `yaml:"model_options,omitempty"`  // Additional model-specific options
-	FallbackModel string            `yaml:"fallback_model,omitempty"` // Fallback model if primary fails
-=======
 	ModelOptions  map[string]string `yaml:"model_options,omitempty"`       // Additional model-specific options
 	FallbackModel string            `yaml:"fallback_model,omitempty"`      // Fallback model if primary fails
->>>>>>> crd_implementation
 	ValidateModel bool              `yaml:"validate_model" default:"true"` // Validate model availability on startup
 }
 
@@ -576,18 +568,10 @@ func (oes *OpenAIEmbeddingService) GetTokenUsage() map[string]interface{} {
 	// This would be populated during API calls in a real implementation
 	// For now, return basic usage information
 	return map[string]interface{}{
-<<<<<<< HEAD
-		"model":       oes.config.Model,
-		"rate_limit":  oes.config.RateLimit,
-		"batch_size":  oes.config.BatchSize,
-		"dimensions":  oes.config.Dimensions,
-		"validated":   oes.IsModelValidated(),
-=======
 		"model":      oes.config.Model,
 		"rate_limit": oes.config.RateLimit,
 		"batch_size": oes.config.BatchSize,
 		"dimensions": oes.config.Dimensions,
 		"validated":  oes.IsModelValidated(),
->>>>>>> crd_implementation
 	}
 }

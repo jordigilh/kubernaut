@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-package holmesgpt
-
-import (
-	"testing"
-	"context"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -26,7 +19,6 @@ package holmesgpt
 import (
 	"context"
 	"testing"
->>>>>>> crd_implementation
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

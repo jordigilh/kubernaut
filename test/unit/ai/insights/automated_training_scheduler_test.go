@@ -1,14 +1,6 @@
 //go:build unit
 // +build unit
 
-<<<<<<< HEAD
-package insights
-
-import (
-	"testing"
-	"context"
-	"math"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -31,7 +23,6 @@ import (
 	"context"
 	"math"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

@@ -401,9 +401,6 @@ func (f *FakeControllerRuntimeClient) GroupVersionKindFor(obj runtime.Object) (s
 func (f *FakeControllerRuntimeClient) IsObjectNamespaced(obj runtime.Object) (bool, error) {
 	return false, nil
 }
-func (f *FakeControllerRuntimeClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
-	return nil
-}
 
 // FakeK8sClient wraps FakeControllerRuntimeClient (mimics pkg/gateway/k8s/Client)
 type FakeK8sClient = k8s.Client

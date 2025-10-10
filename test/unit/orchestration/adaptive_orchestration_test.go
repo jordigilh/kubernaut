@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-package orchestration
-
-import (
-	"testing"
-	"context"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -26,7 +19,6 @@ package orchestration
 import (
 	"context"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

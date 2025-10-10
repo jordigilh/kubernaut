@@ -1,8 +1,6 @@
 //go:build integration
 // +build integration
 
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -19,7 +17,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package shared
 
 import (
@@ -72,17 +69,10 @@ var _ = Describe("Configuration Loading", func() {
 	Context("with custom environment variables", func() {
 		BeforeEach(func() {
 			envHelper.SetEnvironment(map[string]string{
-<<<<<<< HEAD
-				"LLM_ENDPOINT":  "http://test:8080",
-				"LLM_MODEL":     "test-model",
-				"LLM_PROVIDER":  "ramalama",
-				"USE_MOCK_LLM":  "false", // Disable mock mode for this test
-=======
 				"LLM_ENDPOINT": "http://test:8080",
 				"LLM_MODEL":    "test-model",
 				"LLM_PROVIDER": "ramalama",
 				"USE_MOCK_LLM": "false", // Disable mock mode for this test
->>>>>>> crd_implementation
 			})
 		})
 

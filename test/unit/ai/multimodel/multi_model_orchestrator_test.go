@@ -1,11 +1,3 @@
-<<<<<<< HEAD
-package multimodel
-
-import (
-	"testing"
-	"context"
-	"fmt"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -28,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

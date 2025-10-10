@@ -85,6 +85,7 @@ type Server struct {
 	adapterRegistry *adapters.AdapterRegistry
 	deduplicator    *processing.DeduplicationService
 	stormDetector   *processing.StormDetector
+	stormAggregator *processing.StormAggregator
 	classifier      *processing.EnvironmentClassifier
 	priorityEngine  *processing.PriorityEngine
 	crdCreator      *processing.CRDCreator
@@ -183,6 +184,7 @@ func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
 	}
 
 	stormDetector := processing.NewStormDetector(redisClient)
+	stormAggregator := processing.NewStormAggregator(redisClient)
 	classifier := processing.NewEnvironmentClassifier(ctrlClient, logger)
 	priorityEngine := processing.NewPriorityEngine(logger)
 	crdCreator := processing.NewCRDCreator(k8sClient, logger)
@@ -196,6 +198,7 @@ func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
 		adapterRegistry: adapterRegistry,
 		deduplicator:    deduplicator,
 		stormDetector:   stormDetector,
+		stormAggregator: stormAggregator,
 		classifier:      classifier,
 		priorityEngine:  priorityEngine,
 		crdCreator:      crdCreator,
@@ -513,7 +516,79 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			"alertCount":  stormMetadata.AlertCount,
 		}).Warn("Alert storm detected")
 
-		// Enrich signal with storm metadata (will be used by CRD creator)
+		// BR-GATEWAY-016: Storm aggregation
+		// Instead of creating individual CRDs during storms, aggregate alerts
+		// into a single CRD after a 1-minute window
+		shouldAggregate, windowID, err := s.stormAggregator.ShouldAggregate(ctx, signal)
+		if err != nil {
+			s.logger.WithFields(logrus.Fields{
+				"fingerprint": signal.Fingerprint,
+				"error":       err,
+			}).Warn("Storm aggregation check failed, falling back to individual CRD creation")
+			// Fall through to individual CRD creation
+		} else if shouldAggregate {
+			// Add to existing aggregation window
+			if err := s.stormAggregator.AddResource(ctx, windowID, signal); err != nil {
+				s.logger.WithFields(logrus.Fields{
+					"fingerprint": signal.Fingerprint,
+					"windowID":    windowID,
+					"error":       err,
+				}).Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation")
+				// Fall through to individual CRD creation
+			} else {
+				// Successfully added to aggregation window, return without creating CRD
+				resourceCount, _ := s.stormAggregator.GetResourceCount(ctx, windowID)
+
+				s.logger.WithFields(logrus.Fields{
+					"fingerprint":   signal.Fingerprint,
+					"windowID":      windowID,
+					"resourceCount": resourceCount,
+				}).Info("Alert added to storm aggregation window")
+
+				// Return accepted response (no CRD created yet)
+				return &ProcessingResponse{
+					Status:      StatusAccepted,
+					Message:     fmt.Sprintf("Alert added to storm aggregation window (window ID: %s, %d resources aggregated)", windowID, resourceCount),
+					Fingerprint: signal.Fingerprint,
+					Duplicate:   false,
+					IsStorm:     true,
+					StormType:   stormMetadata.StormType,
+					WindowID:    windowID,
+				}, nil
+			}
+		} else {
+			// Start new aggregation window
+			windowID, err := s.stormAggregator.StartAggregation(ctx, signal, stormMetadata)
+			if err != nil {
+				s.logger.WithFields(logrus.Fields{
+					"fingerprint": signal.Fingerprint,
+					"error":       err,
+				}).Warn("Failed to start storm aggregation, falling back to individual CRD creation")
+				// Fall through to individual CRD creation
+			} else {
+				// Schedule aggregated CRD creation after window expires
+				go s.createAggregatedCRDAfterWindow(ctx, windowID, signal, stormMetadata)
+
+				s.logger.WithFields(logrus.Fields{
+					"fingerprint": signal.Fingerprint,
+					"windowID":    windowID,
+					"windowTTL":   "1 minute",
+				}).Info("Storm aggregation window started")
+
+				// Return accepted response (CRD will be created after window expires)
+				return &ProcessingResponse{
+					Status:      StatusAccepted,
+					Message:     fmt.Sprintf("Storm aggregation window started (window ID: %s, CRD will be created after 1 minute)", windowID),
+					Fingerprint: signal.Fingerprint,
+					Duplicate:   false,
+					IsStorm:     true,
+					StormType:   stormMetadata.StormType,
+					WindowID:    windowID,
+				}, nil
+			}
+		}
+
+		// If we reach here, aggregation failed - enrich signal for individual CRD creation
 		signal.IsStorm = true
 		signal.StormType = stormMetadata.StormType
 		signal.StormWindow = stormMetadata.Window
@@ -619,7 +694,7 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 
 // ProcessingResponse represents the result of signal processing
 type ProcessingResponse struct {
-	Status                      string                            `json:"status"` // "created" or "duplicate"
+	Status                      string                            `json:"status"` // "created", "duplicate", or "accepted"
 	Message                     string                            `json:"message"`
 	Fingerprint                 string                            `json:"fingerprint"`
 	Duplicate                   bool                              `json:"duplicate"`
@@ -628,10 +703,139 @@ type ProcessingResponse struct {
 	Environment                 string                            `json:"environment,omitempty"`
 	Priority                    string                            `json:"priority,omitempty"`
 	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"`
+	// Storm aggregation fields (BR-GATEWAY-016)
+	IsStorm   bool   `json:"isStorm,omitempty"`   // true if alert is part of a storm
+	StormType string `json:"stormType,omitempty"` // "rate" or "pattern"
+	WindowID  string `json:"windowID,omitempty"`  // aggregation window identifier
 }
 
 // Processing status constants
 const (
-	StatusCreated   = "created"
-	StatusDuplicate = "duplicate"
+	StatusCreated   = "created"   // RemediationRequest CRD created
+	StatusDuplicate = "duplicate" // Duplicate alert (deduplicated)
+	StatusAccepted  = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
 )
+
+// createAggregatedCRDAfterWindow creates a single aggregated RemediationRequest CRD
+// after the storm aggregation window expires
+//
+// Business Requirement: BR-GATEWAY-016 - Storm aggregation
+//
+// This method is called in a goroutine when a storm aggregation window is started.
+// It waits for the window duration (1 minute), then:
+// 1. Retrieves all aggregated resources from Redis
+// 2. Retrieves the original signal metadata
+// 3. Creates a single RemediationRequest CRD with all resources
+// 4. Stores deduplication metadata
+//
+// Benefits:
+// - Reduces CRD count by 10-50x during storms
+// - AI service receives single aggregated analysis request
+// - Coordinated remediation instead of 50 parallel workflows
+//
+// Example:
+// - Storm: 50 pod crashes in 1 minute
+// - Without aggregation: 50 CRDs created
+// - With aggregation: 1 CRD created with 50 resources listed
+func (s *Server) createAggregatedCRDAfterWindow(
+	ctx context.Context,
+	windowID string,
+	firstSignal *types.NormalizedSignal,
+	stormMetadata *processing.StormMetadata,
+) {
+	// Wait for aggregation window to expire
+	time.Sleep(1 * time.Minute)
+
+	s.logger.WithFields(logrus.Fields{
+		"windowID":  windowID,
+		"alertName": firstSignal.AlertName,
+	}).Info("Storm aggregation window expired, creating aggregated CRD")
+
+	// Retrieve all aggregated resources
+	resources, err := s.stormAggregator.GetAggregatedResources(ctx, windowID)
+	if err != nil {
+		s.logger.WithFields(logrus.Fields{
+			"windowID": windowID,
+			"error":    err,
+		}).Error("Failed to retrieve aggregated resources")
+		return
+	}
+
+	// Retrieve signal metadata
+	signal, storedStormMetadata, err := s.stormAggregator.GetSignalMetadata(ctx, windowID)
+	if err != nil {
+		s.logger.WithFields(logrus.Fields{
+			"windowID": windowID,
+			"error":    err,
+		}).Warn("Failed to retrieve signal metadata, using first signal")
+		// Fall back to using the first signal passed as parameter
+		signal = firstSignal
+	} else {
+		// Use stored storm metadata if available
+		if storedStormMetadata != nil {
+			stormMetadata = storedStormMetadata
+		}
+	}
+
+	// Update alert count with actual aggregated count
+	resourceCount := len(resources)
+
+	s.logger.WithFields(logrus.Fields{
+		"windowID":      windowID,
+		"alertName":     signal.AlertName,
+		"resourceCount": resourceCount,
+		"stormType":     stormMetadata.StormType,
+	}).Info("Creating aggregated RemediationRequest CRD")
+
+	// Create aggregated signal with all resources
+	aggregatedSignal := *signal
+	aggregatedSignal.IsStorm = true
+	aggregatedSignal.StormType = stormMetadata.StormType
+	aggregatedSignal.StormWindow = stormMetadata.Window
+	aggregatedSignal.AlertCount = resourceCount
+	aggregatedSignal.AffectedResources = resources
+
+	// Environment classification
+	environment := s.classifier.Classify(ctx, aggregatedSignal.Namespace)
+
+	// Priority assignment
+	priority := s.priorityEngine.Assign(ctx, aggregatedSignal.Severity, environment)
+
+	// Create single aggregated RemediationRequest CRD
+	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal, priority, environment)
+	if err != nil {
+		s.logger.WithFields(logrus.Fields{
+			"windowID":      windowID,
+			"resourceCount": resourceCount,
+			"error":         err,
+		}).Error("Failed to create aggregated RemediationRequest CRD")
+
+		// Record metric for failed aggregation
+		metrics.RemediationRequestCreationFailuresTotal.WithLabelValues("k8s_api_error").Inc()
+		return
+	}
+
+	// Store deduplication metadata for all aggregated resources
+	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
+	if err := s.deduplicator.Store(ctx, &aggregatedSignal, remediationRequestRef); err != nil {
+		// Non-critical error: CRD already created, log warning
+		s.logger.WithFields(logrus.Fields{
+			"windowID": windowID,
+			"crdName":  rr.Name,
+			"error":    err,
+		}).Warn("Failed to store deduplication metadata for aggregated CRD")
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"windowID":      windowID,
+		"crdName":       rr.Name,
+		"crdNamespace":  rr.Namespace,
+		"resourceCount": resourceCount,
+		"environment":   environment,
+		"priority":      priority,
+		"stormType":     stormMetadata.StormType,
+	}).Info("Aggregated RemediationRequest CRD created successfully")
+
+	// Record metrics for successful aggregation
+	metrics.RemediationRequestCreatedTotal.WithLabelValues(environment, priority).Inc()
+}

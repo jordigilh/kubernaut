@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-## Integration Points
-
-See Reconciliation Architecture section for integration details.
-=======
 # Integration Points
 
 ## Overview
@@ -622,4 +617,3 @@ sequenceDiagram
 - **Monitoring**: [Metrics & SLOs](./metrics-slos.md)
 - **Testing**: [Testing Strategy](./testing-strategy.md)
 - **Architecture**: [Multi-CRD Reconciliation](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
->>>>>>> crd_implementation
