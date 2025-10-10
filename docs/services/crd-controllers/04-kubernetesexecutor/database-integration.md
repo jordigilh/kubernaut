@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-## Database Integration
-
-See [01-remediationprocessor/database-integration.md](../01-remediationprocessor/database-integration.md) for comprehensive patterns.
-=======
 # Database Integration for Audit & Tracking
 
 ## Overview
@@ -625,4 +620,3 @@ func TestIntegration_AuditStorage(t *testing.T) {
 - **Metrics**: [Metrics & SLOs](./metrics-slos.md)
 - **Testing**: [Testing Strategy](./testing-strategy.md)
 - **Security**: [Security Configuration](./security-configuration.md)
->>>>>>> crd_implementation

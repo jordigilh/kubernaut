@@ -27,8 +27,6 @@
 - **Usage**: `log := ctrl.Log.WithName("kubernetesexecutor")`
 
 ---
-<<<<<<< HEAD
-=======
 
 ### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
 
@@ -296,4 +294,3 @@ After each phase, verify:
 **Estimated Total Effort**: 2 weeks (10 business days)
 **Team Size**: 1-2 developers
 **Priority**: P0 - CRITICAL (blocks workflow execution)
->>>>>>> crd_implementation

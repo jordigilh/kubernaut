@@ -40,11 +40,7 @@ type RemediationRequestReconciler struct {
 func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // Create request-scoped logger with correlation ID
     log := r.Log.WithValues(
-<<<<<<< HEAD
-        "alertremediation", req.NamespacedName,
-=======
         "remediationrequest", req.NamespacedName,
->>>>>>> crd_implementation
         "correlationID", extractCorrelationID(ctx),
     )
 
@@ -57,11 +53,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
     oldPhase := ar.Status.Phase
     log.Info("Reconciling RemediationRequest",
         "phase", ar.Status.Phase,
-<<<<<<< HEAD
-        "alertFingerprint", ar.Spec.TargetingData.Alert.Fingerprint,
-=======
         "alertFingerprint", ar.Spec.TargetingData.Signal.Fingerprint,
->>>>>>> crd_implementation
         "environment", ar.Spec.TargetingData.Environment,
     )
 
@@ -93,11 +85,7 @@ func (r *RemediationRequestReconciler) orchestrateRemediationProcessing(
     log logr.Logger,
 ) error {
     log.Info("Orchestrating RemediationProcessing phase",
-<<<<<<< HEAD
-        "alertFingerprint", ar.Spec.TargetingData.Alert.Fingerprint,
-=======
         "alertFingerprint", ar.Spec.TargetingData.Signal.Fingerprint,
->>>>>>> crd_implementation
     )
 
     // Create RemediationProcessing CRD
@@ -174,11 +162,7 @@ func (r *RemediationRequestReconciler) orchestrateAIAnalysis(
     log logr.Logger,
 ) error {
     log.Info("Orchestrating AIAnalysis phase",
-<<<<<<< HEAD
-        "alertFingerprint", ar.Spec.TargetingData.Alert.Fingerprint,
-=======
         "alertFingerprint", ar.Spec.TargetingData.Signal.Fingerprint,
->>>>>>> crd_implementation
     )
 
     // Create AIAnalysis CRD
@@ -267,11 +251,7 @@ func (r *RemediationRequestReconciler) orchestrateWorkflowExecution(
     log logr.Logger,
 ) error {
     log.Info("Orchestrating WorkflowExecution phase",
-<<<<<<< HEAD
-        "alertFingerprint", ar.Spec.TargetingData.Alert.Fingerprint,
-=======
         "alertFingerprint", ar.Spec.TargetingData.Signal.Fingerprint,
->>>>>>> crd_implementation
     )
 
     // Create WorkflowExecution CRD
@@ -361,11 +341,7 @@ func (r *RemediationRequestReconciler) escalateToNotification(
 ) error {
     log.Warn("Escalating to Notification Service",
         "reason", reason,
-<<<<<<< HEAD
-        "alertFingerprint", ar.Spec.TargetingData.Alert.Fingerprint,
-=======
         "alertFingerprint", ar.Spec.TargetingData.Signal.Fingerprint,
->>>>>>> crd_implementation
         "currentPhase", ar.Status.Phase,
     )
 
@@ -390,11 +366,7 @@ func (r *RemediationRequestReconciler) completeRemediation(
     totalDuration := time.Since(ar.Status.StartTime.Time)
     log.Info("Alert remediation completed successfully",
         "totalDuration", totalDuration,
-<<<<<<< HEAD
-        "alertFingerprint", ar.Spec.TargetingData.Alert.Fingerprint,
-=======
         "alertFingerprint", ar.Spec.TargetingData.Signal.Fingerprint,
->>>>>>> crd_implementation
     )
 
     // Update RemediationRequest status
@@ -414,11 +386,7 @@ func (r *RemediationRequestReconciler) debugLogTargetingData(
     targetingData *remediationv1.TargetingData,
 ) {
     log.V(2).Info("Targeting data details",
-<<<<<<< HEAD
-        "alertFingerprint", targetingData.Alert.Fingerprint,
-=======
         "alertFingerprint", targetingData.Signal.Fingerprint,
->>>>>>> crd_implementation
         "environment", targetingData.Environment,
         "resourceNamespace", targetingData.KubernetesContext.ResourceNamespace,
         "resourceKind", targetingData.KubernetesContext.ResourceKind,
@@ -428,22 +396,6 @@ func (r *RemediationRequestReconciler) debugLogTargetingData(
 
 **Log Correlation Example**:
 ```
-<<<<<<< HEAD
-INFO    Reconciling RemediationRequest      {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "phase": "processing", "alertFingerprint": "abc123", "environment": "production"}
-INFO    Orchestrating RemediationProcessing phase {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "alertFingerprint": "abc123"}
-INFO    RemediationProcessing CRD created       {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "alertprocessing": "ar-xyz-ap", "creationDuration": "15ms"}
-DEBUG   Polling RemediationProcessing status    {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "alertprocessing": "ar-xyz-ap", "phase": "enriching", "degradedMode": false, "duration": "150ms"}
-INFO    RemediationProcessing completed         {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "alertprocessing": "ar-xyz-ap", "duration": "234ms", "degradedMode": false}
-INFO    Orchestrating AIAnalysis phase    {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "alertFingerprint": "abc123"}
-INFO    AIAnalysis CRD created            {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "aianalysis": "ar-xyz-aia", "creationDuration": "12ms"}
-DEBUG   Polling AIAnalysis status         {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "aianalysis": "ar-xyz-aia", "phase": "investigating", "approvalStatus": "pending", "recommendationCount": 0, "duration": "2.3s"}
-INFO    AIAnalysis completed (approved)   {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "aianalysis": "ar-xyz-aia", "duration": "5.2s", "topRecommendation": "restart-pod", "confidence": 0.92}
-INFO    Orchestrating WorkflowExecution phase {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "alertFingerprint": "abc123"}
-INFO    WorkflowExecution CRD created     {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "workflowexecution": "ar-xyz-we", "totalSteps": 3, "creationDuration": "18ms"}
-DEBUG   Polling WorkflowExecution status  {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "workflowexecution": "ar-xyz-we", "phase": "executing", "completedSteps": 2, "totalSteps": 3, "duration": "3.5s"}
-INFO    WorkflowExecution completed       {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "workflowexecution": "ar-xyz-we", "duration": "4.8s", "totalSteps": 3}
-INFO    Alert remediation completed successfully {"alertremediation": "default/ar-xyz", "correlationID": "abc-123-def", "totalDuration": "10.3s", "alertFingerprint": "abc123"}
-=======
 INFO    Reconciling RemediationRequest      {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "phase": "processing", "alertFingerprint": "abc123", "environment": "production"}
 INFO    Orchestrating RemediationProcessing phase {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "alertFingerprint": "abc123"}
 INFO    RemediationProcessing CRD created       {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "alertprocessing": "ar-xyz-ap", "creationDuration": "15ms"}
@@ -458,7 +410,6 @@ INFO    WorkflowExecution CRD created     {"remediationrequest": "default/ar-xyz
 DEBUG   Polling WorkflowExecution status  {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "workflowexecution": "ar-xyz-we", "phase": "executing", "completedSteps": 2, "totalSteps": 3, "duration": "3.5s"}
 INFO    WorkflowExecution completed       {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "workflowexecution": "ar-xyz-we", "duration": "4.8s", "totalSteps": 3}
 INFO    Alert remediation completed successfully {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "totalDuration": "10.3s", "alertFingerprint": "abc123"}
->>>>>>> crd_implementation
 ```
 
 ---
@@ -501,11 +452,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 
     // Add CRD attributes to span
     span.SetAttributes(
-<<<<<<< HEAD
-        attribute.String("alert.fingerprint", ar.Spec.TargetingData.Alert.Fingerprint),
-=======
         attribute.String("signal.fingerprint", ar.Spec.TargetingData.Signal.Fingerprint),
->>>>>>> crd_implementation
         attribute.String("alert.environment", ar.Spec.TargetingData.Environment),
         attribute.String("phase", ar.Status.Phase),
     )
@@ -529,11 +476,7 @@ func (r *RemediationRequestReconciler) orchestrateRemediationProcessing(
 ) error {
     ctx, span := tracer.Start(ctx, "RemediationRequest.OrchestrateRemediationProcessing",
         trace.WithAttributes(
-<<<<<<< HEAD
-            attribute.String("alert.fingerprint", ar.Spec.TargetingData.Alert.Fingerprint),
-=======
             attribute.String("signal.fingerprint", ar.Spec.TargetingData.Signal.Fingerprint),
->>>>>>> crd_implementation
         ),
     )
     defer span.End()
@@ -558,11 +501,7 @@ func (r *RemediationRequestReconciler) orchestrateAIAnalysis(
 ) error {
     ctx, span := tracer.Start(ctx, "RemediationRequest.OrchestrateAIAnalysis",
         trace.WithAttributes(
-<<<<<<< HEAD
-            attribute.String("alert.fingerprint", ar.Spec.TargetingData.Alert.Fingerprint),
-=======
             attribute.String("signal.fingerprint", ar.Spec.TargetingData.Signal.Fingerprint),
->>>>>>> crd_implementation
         ),
     )
     defer span.End()
@@ -587,11 +526,7 @@ func (r *RemediationRequestReconciler) orchestrateWorkflowExecution(
 ) error {
     ctx, span := tracer.Start(ctx, "RemediationRequest.OrchestrateWorkflowExecution",
         trace.WithAttributes(
-<<<<<<< HEAD
-            attribute.String("alert.fingerprint", ar.Spec.TargetingData.Alert.Fingerprint),
-=======
             attribute.String("signal.fingerprint", ar.Spec.TargetingData.Signal.Fingerprint),
->>>>>>> crd_implementation
         ),
     )
     defer span.End()
@@ -899,11 +834,7 @@ spec:
 ### Implementation Code
 
 ```go
-<<<<<<< HEAD
-// cmd/remediation-orchestrator/main.go
-=======
 // cmd/remediationorchestrator/main.go
->>>>>>> crd_implementation
 package main
 
 import (

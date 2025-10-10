@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -16,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package vector
 
 import (
@@ -55,13 +52,8 @@ type HuggingFaceConfig struct {
 	BatchSize     int               `yaml:"batch_size" default:"50"`
 	RateLimit     int               `yaml:"rate_limit" default:"100"`
 	Dimensions    int               `yaml:"dimensions" default:"384"`
-<<<<<<< HEAD
-	ModelOptions  map[string]string `yaml:"model_options,omitempty"`  // Additional model-specific options
-	FallbackModel string            `yaml:"fallback_model,omitempty"` // Fallback model if primary fails
-=======
 	ModelOptions  map[string]string `yaml:"model_options,omitempty"`       // Additional model-specific options
 	FallbackModel string            `yaml:"fallback_model,omitempty"`      // Fallback model if primary fails
->>>>>>> crd_implementation
 	ValidateModel bool              `yaml:"validate_model" default:"true"` // Validate model availability on startup
 }
 

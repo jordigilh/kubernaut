@@ -49,8 +49,6 @@ CREATE TABLE remediation_audit (
 
 ---
 
-<<<<<<< HEAD
-=======
 ## Go Types for Audit Records
 
 ### Remediation Orchestration Audit
@@ -586,4 +584,3 @@ func TestIntegration_AuditStorage(t *testing.T) {
 - **Metrics**: [Metrics & SLOs](./metrics-slos.md)
 - **Testing**: [Testing Strategy](./testing-strategy.md)
 - **Integration**: [integration-points.md](./integration-points.md)
->>>>>>> crd_implementation

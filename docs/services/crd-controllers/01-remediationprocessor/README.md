@@ -59,8 +59,6 @@
 
 ---
 
-<<<<<<< HEAD
-=======
 ## 🏗️ Implementation Structure
 
 ### **Binary Location**
@@ -80,7 +78,6 @@
 
 ---
 
->>>>>>> crd_implementation
 ## 🚀 Quick Start
 
 **For New Developers**:
@@ -225,11 +222,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📞 Support & Documentation
 
-<<<<<<< HEAD
-=======
 - **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
 - **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
->>>>>>> crd_implementation
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
 - **CRD Design Spec**: [docs/design/CRD/02_REMEDIATION_PROCESSING_CRD.md](../../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)

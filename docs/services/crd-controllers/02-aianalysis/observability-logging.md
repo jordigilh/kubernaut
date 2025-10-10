@@ -121,11 +121,7 @@ spec:
 ### Implementation Code
 
 ```go
-<<<<<<< HEAD
-// cmd/ai-analysis/main.go
-=======
 // cmd/aianalysis/main.go
->>>>>>> crd_implementation
 package main
 
 import (

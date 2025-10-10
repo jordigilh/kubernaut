@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-package workflowengine
-
-import (
-	"testing"
-	"fmt"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -26,7 +19,6 @@ package workflowengine
 import (
 	"fmt"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

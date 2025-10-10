@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-package engine
-
-import (
-	"testing"
-	"context"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -26,7 +19,6 @@ package engine
 import (
 	"context"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

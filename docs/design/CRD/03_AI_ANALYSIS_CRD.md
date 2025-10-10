@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 # ⛔ DEPRECATED - DO NOT USE FOR IMPLEMENTATION
 
 **Status**: 🚨 **HISTORICAL REFERENCE ONLY**
@@ -49,20 +47,13 @@
 
 ---
 
->>>>>>> crd_implementation
 # AIAnalysis CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
-<<<<<<< HEAD
-**Status**: **APPROVED** - Ready for Implementation
-**CRD Version**: V1 - HolmesGPT Only
-**Module**: AI Analysis Service (`ai.kubernaut.io`)
-=======
 **Status**: **DEPRECATED** - See banner above (was: "APPROVED")
 **CRD Version**: V1alpha1 - HolmesGPT Only
 **Module**: AI Analysis Service (`aianalysis.kubernaut.io`)
->>>>>>> crd_implementation
 
 ---
 

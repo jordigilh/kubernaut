@@ -153,11 +153,7 @@ func (r *RemediationProcessingReconciler) recordFinalAudit(
     ap *processingv1.RemediationProcessing,
 ) error {
     auditRecord := &AuditRecord{
-<<<<<<< HEAD
-        AlertFingerprint: ap.Spec.Alert.Fingerprint,
-=======
         AlertFingerprint: ap.Spec.Signal.Fingerprint,
->>>>>>> crd_implementation
         ServiceType:      "RemediationProcessing",
         CRDName:          ap.Name,
         Namespace:        ap.Namespace,
@@ -379,11 +375,7 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
                 Namespace: remediation.Namespace,
             },
             Alert: processingv1.Alert{
-<<<<<<< HEAD
-                Fingerprint: remediation.Spec.AlertFingerprint,
-=======
                 Fingerprint: remediation.Spec.SignalFingerprint,
->>>>>>> crd_implementation
                 Payload:     remediation.Spec.OriginalPayload,
             },
         },
@@ -505,11 +497,7 @@ func (r *RemediationProcessingReconciler) emitLifecycleEvents(
 ) {
     // Creation event
     r.Recorder.Event(ap, "Normal", "RemediationProcessingCreated",
-<<<<<<< HEAD
-        fmt.Sprintf("Alert processing started for %s", ap.Spec.Alert.Fingerprint))
-=======
         fmt.Sprintf("Alert processing started for %s", ap.Spec.Signal.Fingerprint))
->>>>>>> crd_implementation
 
     // Phase transition events
     r.Recorder.Event(ap, "Normal", "PhaseTransition",

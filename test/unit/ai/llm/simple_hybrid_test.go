@@ -1,14 +1,6 @@
 //go:build unit
 // +build unit
 
-<<<<<<< HEAD
-package llm
-
-import (
-	"testing"
-	"context"
-	"os"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -31,7 +23,6 @@ import (
 	"context"
 	"os"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

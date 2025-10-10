@@ -1,8 +1,6 @@
 //go:build unit
 // +build unit
 
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -19,7 +17,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package adaptive_orchestration
 
 import (
@@ -446,7 +443,3 @@ func createTestWorkflowFeatures() *shared.WorkflowFeatures {
 // Feature creators for specific failure patterns
 
 // Helper functions for Data Security and Analytics tests
-<<<<<<< HEAD
-
-=======
->>>>>>> crd_implementation

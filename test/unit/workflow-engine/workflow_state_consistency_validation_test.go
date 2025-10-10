@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-package workflowengine
-
-import (
-	"testing"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -23,15 +17,11 @@ limitations under the License.
 package workflowengine
 
 import (
->>>>>>> crd_implementation
 	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
-<<<<<<< HEAD
-=======
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/types"

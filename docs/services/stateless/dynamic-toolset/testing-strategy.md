@@ -46,11 +46,8 @@ package toolset_test
 
 import (
     "context"
-<<<<<<< HEAD
-=======
     "net/http"
     "time"
->>>>>>> crd_implementation
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"

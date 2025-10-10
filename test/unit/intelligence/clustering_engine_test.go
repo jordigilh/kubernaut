@@ -1,11 +1,3 @@
-<<<<<<< HEAD
-package intelligence
-
-import (
-	"testing"
-	"fmt"
-	"math"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -28,7 +20,6 @@ import (
 	"fmt"
 	"math"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
