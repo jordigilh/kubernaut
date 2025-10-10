@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-package llm
-
-import (
-	"testing"
-	"context"
-	"errors"
-	"strings"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -30,7 +21,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

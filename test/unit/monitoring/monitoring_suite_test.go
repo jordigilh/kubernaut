@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -16,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package monitoring_test
 
 import (
@@ -29,8 +26,4 @@ import (
 func TestMonitoring(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Monitoring Unit Tests Suite")
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> crd_implementation

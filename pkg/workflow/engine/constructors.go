@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -16,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package engine
 
 import (
@@ -156,21 +153,12 @@ func (f *FailFastAIMetricsCollector) EvaluateResponseQuality(ctx context.Context
 // FailFastLearningEnhancedPromptBuilder provides learning-enhanced prompt building with fail-fast behavior
 // Business Requirement: BR-AI-PROMPT-001 - Intelligent prompt generation and learning
 type FailFastLearningEnhancedPromptBuilder struct {
-<<<<<<< HEAD
-	Enabled         bool                   `json:"enabled"`
-	LearningEngine  interface{}            `json:"-"`
-	TemplateCache   map[string]interface{} `json:"template_cache"`
-	ExecutionHistory []interface{}         `json:"execution_history"`
-	Config          map[string]interface{} `json:"config"`
-	LastUpdate      time.Time              `json:"last_update"`
-=======
 	Enabled          bool                   `json:"enabled"`
 	LearningEngine   interface{}            `json:"-"`
 	TemplateCache    map[string]interface{} `json:"template_cache"`
 	ExecutionHistory []interface{}          `json:"execution_history"`
 	Config           map[string]interface{} `json:"config"`
 	LastUpdate       time.Time              `json:"last_update"`
->>>>>>> crd_implementation
 }
 
 func (f *FailFastLearningEnhancedPromptBuilder) BuildPrompt(ctx context.Context, template string, context map[string]interface{}) (string, error) {

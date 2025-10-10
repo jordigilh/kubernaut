@@ -2,8 +2,6 @@
 
 **Note**: Follow APDC-TDD phases for each implementation step (see Development Methodology section)
 
-<<<<<<< HEAD
-=======
 ### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
 
 - [ ] **Verify cmd/ structure**: Check [cmd/README.md](../../../../cmd/README.md)
@@ -17,7 +15,6 @@
 
 ---
 
->>>>>>> crd_implementation
 ### Phase 1: ANALYSIS & Package Migration (1-2 days) [RED Phase Preparation]
 
 - [ ] **ANALYSIS**: Search existing implementations (`codebase_search "AlertProcessor implementations"`)
@@ -117,11 +114,7 @@ controllerutil.SetControllerReference(&alertRemediation, &alertProcessing, schem
 ### 2. Finalizers for Cleanup Coordination
 **Pattern**: Add finalizer before processing, remove after cleanup
 ```go
-<<<<<<< HEAD
-const alertProcessingFinalizer = "alertprocessing.kubernaut.io/finalizer"
-=======
 const alertProcessingFinalizer = "remediationprocessing.kubernaut.io/finalizer"
->>>>>>> crd_implementation
 ```
 **Purpose**: Ensure audit data persisted before CRD deletion
 

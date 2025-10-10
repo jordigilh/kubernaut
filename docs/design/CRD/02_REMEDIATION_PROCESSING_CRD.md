@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 # ⛔ DEPRECATED - DO NOT USE FOR IMPLEMENTATION
 
 **Status**: 🚨 **HISTORICAL REFERENCE ONLY**
@@ -47,26 +45,17 @@
 
 ---
 
->>>>>>> crd_implementation
 # RemediationProcessing CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
-<<<<<<< HEAD
-**Status**: **REFERENCE ONLY** - Superseded by CRD_SCHEMAS.md
-=======
 **Status**: **DEPRECATED** - See banner above
->>>>>>> crd_implementation
 **CRD Type**: Signal Processor Service Controller
 **Priority**: **CRITICAL** - Core signal processing component
 
 ---
 
-<<<<<<< HEAD
-## ⚠️ DEPRECATION NOTICES
-=======
 ## ⚠️ ORIGINAL DEPRECATION NOTICES (ALSO OUTDATED)
->>>>>>> crd_implementation
 
 ### **1. Authoritative Source**
 

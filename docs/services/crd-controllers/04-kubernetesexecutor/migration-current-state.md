@@ -62,8 +62,6 @@ pkg/platform/executor/
 
 ---
 
-<<<<<<< HEAD
-=======
 ## Detailed Component Analysis
 
 ### 1. Existing Action Interface
@@ -610,4 +608,3 @@ func (v *ActionValidator) ValidateSafety(ctx context.Context, execution *executi
 - **Integration Points**: [integration-points.md](./integration-points.md)
 - **Testing Strategy**: [testing-strategy.md](./testing-strategy.md)
 - **RBAC Design**: [security-configuration.md](./security-configuration.md)
->>>>>>> crd_implementation

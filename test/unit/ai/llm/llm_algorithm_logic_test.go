@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-package llm_test
-
-import (
-	"testing"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -23,15 +17,11 @@ limitations under the License.
 package llm_test
 
 import (
->>>>>>> crd_implementation
 	"context"
 	"fmt"
 	"math"
 	"strings"
-<<<<<<< HEAD
-=======
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
