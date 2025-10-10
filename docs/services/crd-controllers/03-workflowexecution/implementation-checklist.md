@@ -2,6 +2,22 @@
 
 **Note**: Follow APDC-TDD phases for each implementation step (see Development Methodology section)
 
+<<<<<<< HEAD
+=======
+### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
+
+- [ ] **Verify cmd/ structure**: Check [cmd/README.md](../../../../cmd/README.md)
+- [ ] **Create service directory**: `mkdir -p cmd/workflowexecution` (no hyphens - Go convention)
+- [ ] **Copy main.go template**: From `cmd/remediationorchestrator/main.go`
+- [ ] **Update package imports**: Change to service-specific controller (WorkflowExecutionReconciler)
+- [ ] **Verify build**: `go build -o bin/workflow-execution ./cmd/workflowexecution` (binary can have hyphens)
+- [ ] **Reference documentation**: [cmd/ directory guide](../../../../cmd/README.md)
+
+**Note**: Directory names use Go convention (no hyphens), binaries can use hyphens for readability.
+
+---
+
+>>>>>>> crd_implementation
 ### Phase 1: ANALYSIS & CRD Setup (2 days) [RED Phase Preparation]
 
 - [ ] **ANALYSIS**: Search existing workflow implementations (`codebase_search "workflow execution implementations"`)

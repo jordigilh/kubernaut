@@ -8,6 +8,7 @@ package controller
 import (
     "context"
     "fmt"
+<<<<<<< HEAD
     "time"
 
     remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1"
@@ -20,11 +21,35 @@ import (
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+=======
+    "strconv"
+    "strings"
+    "time"
+
+    corev1 "k8s.io/api/core/v1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/client-go/tools/record"
+    ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+    remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1"
+    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1"
+    workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
+    kubernetesexecutionv1 "github.com/jordigilh/kubernaut/api/kubernetesexecution/v1"
+>>>>>>> crd_implementation
 )
 
 type RemediationRequestReconciler struct {
     client.Client
+<<<<<<< HEAD
     Scheme *runtime.Scheme
+=======
+    Scheme   *runtime.Scheme
+    Recorder record.EventRecorder
+>>>>>>> crd_implementation
 
     NotificationClient NotificationClient
     StorageClient      StorageClient
@@ -98,15 +123,24 @@ func (r *RemediationRequestReconciler) orchestratePhase(
 
     case "processing":
         // Wait for RemediationProcessing completion, then create AIAnalysis
+<<<<<<< HEAD
         var alertProcessing processingv1.RemediationProcessing
         if err := r.Get(ctx, client.ObjectKey{
             Name:      remediation.Status.RemediationProcessingRef.Name,
             Namespace: remediation.Status.RemediationProcessingRef.Namespace,
         }, &alertProcessing); err != nil {
+=======
+        var remediationProcessing processingv1.RemediationProcessing
+        if err := r.Get(ctx, client.ObjectKey{
+            Name:      remediation.Status.RemediationProcessingRef.Name,
+            Namespace: remediation.Status.RemediationProcessingRef.Namespace,
+        }, &remediationProcessing); err != nil {
+>>>>>>> crd_implementation
             return ctrl.Result{}, err
         }
 
         // Check timeout
+<<<<<<< HEAD
         if r.isPhaseTimedOut(&alertProcessing, remediation.Spec.TimeoutConfig) {
             return r.handleTimeout(ctx, remediation, "alert_processing")
         }
@@ -114,18 +148,36 @@ func (r *RemediationRequestReconciler) orchestratePhase(
         if alertProcessing.Status.Phase == "completed" {
             if remediation.Status.AIAnalysisRef == nil {
                 if err := r.createAIAnalysis(ctx, remediation, &alertProcessing); err != nil {
+=======
+        if r.isPhaseTimedOut(&remediationProcessing, remediation.Spec.TimeoutConfig) {
+            return r.handleTimeout(ctx, remediation, "remediation_processing")
+        }
+
+        if remediationProcessing.Status.Phase == "completed" {
+            if remediation.Status.AIAnalysisRef == nil {
+                if err := r.createAIAnalysis(ctx, remediation, &remediationProcessing); err != nil {
+>>>>>>> crd_implementation
                     return ctrl.Result{}, err
                 }
                 remediation.Status.OverallPhase = "analyzing"
                 return ctrl.Result{}, r.Status().Update(ctx, remediation)
             }
+<<<<<<< HEAD
         } else if alertProcessing.Status.Phase == "failed" {
             return r.handleFailure(ctx, remediation, "alert_processing", "Alert processing failed")
+=======
+        } else if remediationProcessing.Status.Phase == "failed" {
+            return r.handleFailure(ctx, remediation, "remediation_processing", "Remediation processing failed")
+>>>>>>> crd_implementation
         }
 
     case "analyzing":
         // Wait for AIAnalysis completion, then create WorkflowExecution
+<<<<<<< HEAD
         var aiAnalysis aiv1.AIAnalysis
+=======
+        var aiAnalysis aianalysisv1.AIAnalysis
+>>>>>>> crd_implementation
         if err := r.Get(ctx, client.ObjectKey{
             Name:      remediation.Status.AIAnalysisRef.Name,
             Namespace: remediation.Status.AIAnalysisRef.Namespace,
@@ -152,7 +204,11 @@ func (r *RemediationRequestReconciler) orchestratePhase(
 
     case "executing":
         // Wait for WorkflowExecution completion, then create KubernetesExecution
+<<<<<<< HEAD
         var workflowExecution workflowv1.WorkflowExecution
+=======
+        var workflowExecution workflowexecutionv1.WorkflowExecution
+>>>>>>> crd_implementation
         if err := r.Get(ctx, client.ObjectKey{
             Name:      remediation.Status.WorkflowExecutionRef.Name,
             Namespace: remediation.Status.WorkflowExecutionRef.Namespace,
@@ -172,7 +228,11 @@ func (r *RemediationRequestReconciler) orchestratePhase(
                 }
 
                 // Wait for KubernetesExecution to complete
+<<<<<<< HEAD
                 var kubernetesExecution executorv1.KubernetesExecution
+=======
+                var kubernetesExecution kubernetesexecutionv1.KubernetesExecution
+>>>>>>> crd_implementation
                 if err := r.Get(ctx, client.ObjectKey{
                     Name:      remediation.Status.KubernetesExecutionRef.Name,
                     Namespace: remediation.Status.KubernetesExecutionRef.Namespace,
@@ -377,9 +437,15 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
     return ctrl.NewControllerManagedBy(mgr).
         For(&remediationv1.RemediationRequest{}).
         Owns(&processingv1.RemediationProcessing{}).
+<<<<<<< HEAD
         Owns(&aiv1.AIAnalysis{}).
         Owns(&workflowv1.WorkflowExecution{}).  // CRITICAL: Watch for workflow failures
         Owns(&executorv1.KubernetesExecution{}).
+=======
+        Owns(&aianalysisv1.AIAnalysis{}).
+        Owns(&workflowexecutionv1.WorkflowExecution{}).  // CRITICAL: Watch for workflow failures
+        Owns(&kubernetesexecutionv1.KubernetesExecution{}).
+>>>>>>> crd_implementation
         Complete(r)
 }
 ```
@@ -407,7 +473,11 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
     if remediation.Status.CurrentWorkflowExecutionRef != nil &&
        remediation.Status.OverallPhase == "executing" {
 
+<<<<<<< HEAD
         var workflow workflowv1.WorkflowExecution
+=======
+        var workflow workflowexecutionv1.WorkflowExecution
+>>>>>>> crd_implementation
         if err := r.Get(ctx, client.ObjectKey{
             Name:      *remediation.Status.CurrentWorkflowExecutionRef,
             Namespace: remediation.Namespace,
@@ -455,7 +525,11 @@ This is the core decision logic that prevents infinite recovery loops:
 func (r *RemediationRequestReconciler) evaluateRecoveryViability(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
+<<<<<<< HEAD
     failedWorkflow *workflowv1.WorkflowExecution,
+=======
+    failedWorkflow *workflowexecutionv1.WorkflowExecution,
+>>>>>>> crd_implementation
 ) (bool, string) {
 
     log := ctrl.LoggerFrom(ctx)
@@ -518,7 +592,11 @@ func (r *RemediationRequestReconciler) evaluateRecoveryViability(
 // hasRepeatedFailurePattern detects if the same failure signature occurs twice
 func (r *RemediationRequestReconciler) hasRepeatedFailurePattern(
     remediation *remediationv1.RemediationRequest,
+<<<<<<< HEAD
     failedWorkflow *workflowv1.WorkflowExecution,
+=======
+    failedWorkflow *workflowexecutionv1.WorkflowExecution,
+>>>>>>> crd_implementation
 ) bool {
 
     // Create failure signature from current failure
@@ -630,7 +708,11 @@ func (r *RemediationRequestReconciler) calculateTerminationRate(
 func (r *RemediationRequestReconciler) initiateRecovery(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
+<<<<<<< HEAD
     failedWorkflow *workflowv1.WorkflowExecution,
+=======
+    failedWorkflow *workflowexecutionv1.WorkflowExecution,
+>>>>>>> crd_implementation
 ) (ctrl.Result, error) {
 
     log := ctrl.LoggerFrom(ctx)
@@ -807,13 +889,21 @@ func (r *RemediationRequestReconciler) escalateToManualReview(
     }
 
     // Send notification to operations team
+<<<<<<< HEAD
     if err := r.NotificationClient.SendManualReviewAlert(ctx, ManualReviewAlert{
+=======
+    if err := r.NotificationClient.SendManualReviewNotification(ctx, ManualReviewNotification{
+>>>>>>> crd_implementation
         RemediationRequestID:  remediation.Name,
         EscalationReason:      reason,
         RecoveryAttempts:      remediation.Status.RecoveryAttempts,
         LastFailureTime:       remediation.Status.LastFailureTime,
         WorkflowFailureHistory: buildFailureHistory(remediation.Status.WorkflowExecutionRefs),
+<<<<<<< HEAD
         AlertContext:          buildAlertContextSummary(&remediation.Spec),
+=======
+        SignalContext:         buildSignalContextSummary(&remediation.Spec),
+>>>>>>> crd_implementation
         Priority:              "high",  // Manual review is always high priority
     }); err != nil {
         log.Error(err, "Failed to send manual review notification")
@@ -836,13 +926,21 @@ func (r *RemediationRequestReconciler) escalateToManualReview(
     return ctrl.Result{}, nil
 }
 
+<<<<<<< HEAD
 type ManualReviewAlert struct {
+=======
+type ManualReviewNotification struct {
+>>>>>>> crd_implementation
     RemediationRequestID   string
     EscalationReason       string
     RecoveryAttempts       int
     LastFailureTime        *metav1.Time
     WorkflowFailureHistory []WorkflowFailureSummary
+<<<<<<< HEAD
     AlertContext           AlertContextSummary
+=======
+    SignalContext          SignalContextSummary
+>>>>>>> crd_implementation
     Priority               string
 }
 
@@ -854,8 +952,13 @@ type WorkflowFailureSummary struct {
     CompletionTime metav1.Time
 }
 
+<<<<<<< HEAD
 type AlertContextSummary struct {
     AlertName   string
+=======
+type SignalContextSummary struct {
+    SignalName  string
+>>>>>>> crd_implementation
     Severity    string
     Environment string
     Namespace   string
@@ -878,10 +981,17 @@ func buildFailureHistory(refs []remediationv1.WorkflowExecutionReferenceWithOutc
     return history
 }
 
+<<<<<<< HEAD
 func buildAlertContextSummary(spec *remediationv1.RemediationRequestSpec) AlertContextSummary {
     // Extract key alert context fields for notification
     return AlertContextSummary{
         AlertName:   spec.AlertName,
+=======
+func buildSignalContextSummary(spec *remediationv1.RemediationRequestSpec) SignalContextSummary {
+    // Extract key signal context fields for notification
+    return SignalContextSummary{
+        SignalName:  spec.SignalName,
+>>>>>>> crd_implementation
         Severity:    spec.Severity,
         Environment: spec.Environment,
         // Additional fields extracted from ProviderData...
@@ -969,8 +1079,13 @@ func TestRecoveryViabilityEvaluation_RepeatedPattern(t *testing.T) {
         },
     }
 
+<<<<<<< HEAD
     failedWorkflow := &workflowv1.WorkflowExecution{
         Status: workflowv1.WorkflowExecutionStatus{
+=======
+    failedWorkflow := &workflowexecutionv1.WorkflowExecution{
+        Status: workflowexecutionv1.WorkflowExecutionStatus{
+>>>>>>> crd_implementation
             FailedStep:    ptr.To(3),
             FailedAction:  ptr.To("scale-deployment"),
             ErrorType:     ptr.To("timeout"),
@@ -1001,9 +1116,15 @@ func TestRecoveryInitiation_Success(t *testing.T) {
         },
     }
 
+<<<<<<< HEAD
     failedWorkflow := &workflowv1.WorkflowExecution{
         ObjectMeta: metav1.ObjectMeta{Name: "workflow-001"},
         Status: workflowv1.WorkflowExecutionStatus{
+=======
+    failedWorkflow := &workflowexecutionv1.WorkflowExecution{
+        ObjectMeta: metav1.ObjectMeta{Name: "workflow-001"},
+        Status: workflowexecutionv1.WorkflowExecutionStatus{
+>>>>>>> crd_implementation
             Phase:         "failed",
             FailedStep:    ptr.To(3),
             FailedAction:  ptr.To("scale-deployment"),
