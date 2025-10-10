@@ -1,7 +1,7 @@
 # Dynamic Toolset Service - Service Discovery Deep Dive
 
-**Version**: v1.0  
-**Last Updated**: October 10, 2025  
+**Version**: v1.0
+**Last Updated**: October 10, 2025
 **Status**: ✅ Design Complete
 
 ---
@@ -60,8 +60,8 @@ The Service Discovery engine is the core component of the Dynamic Toolset Servic
 services, err := k8sClient.CoreV1().Services("").List(ctx, metav1.ListOptions{})
 ```
 
-**What**: Retrieve all Kubernetes Services from all namespaces  
-**Why**: Detectors need complete service list to find matches  
+**What**: Retrieve all Kubernetes Services from all namespaces
+**Why**: Detectors need complete service list to find matches
 **Performance**: Single K8s API call, fast (<100ms typical)
 
 ---
@@ -74,8 +74,8 @@ for _, detector := range d.detectors {
 }
 ```
 
-**What**: Each detector evaluates all services to find matches  
-**Why**: Different services have different detection criteria  
+**What**: Each detector evaluates all services to find matches
+**Why**: Different services have different detection criteria
 **Performance**: In-memory matching, fast (<10ms per detector)
 
 ---
@@ -84,7 +84,7 @@ for _, detector := range d.detectors {
 ```go
 for _, svc := range discovered {
     if err := detector.HealthCheck(ctx, svc.Endpoint); err != nil {
-        logger.Warn("Service health check failed, skipping", 
+        logger.Warn("Service health check failed, skipping",
             zap.String("service", svc.Name), zap.Error(err))
         continue
     }
@@ -92,8 +92,8 @@ for _, svc := range discovered {
 }
 ```
 
-**What**: HTTP GET to each service's health endpoint  
-**Why**: Only include operational services in toolsets  
+**What**: HTTP GET to each service's health endpoint
+**Why**: Only include operational services in toolsets
 **Performance**: Network I/O bound (5s timeout per service)
 
 ---
@@ -107,8 +107,8 @@ for _, svc := range validServices {
 }
 ```
 
-**What**: Store discovered services in-memory cache  
-**Why**: Fast access for API queries  
+**What**: Store discovered services in-memory cache
+**Why**: Fast access for API queries
 **Performance**: In-memory map, instant
 
 ---
@@ -143,6 +143,12 @@ spec:
 
 **Detection Code**:
 ```go
+import (
+    "strings"
+    
+    corev1 "k8s.io/api/core/v1"
+)
+
 func (d *PrometheusDetector) isPrometheus(svc corev1.Service) bool {
     // Strategy 1: Label match (highest confidence)
     if app, ok := svc.Labels["app"]; ok && app == "prometheus" {
@@ -277,10 +283,10 @@ Result: Service is healthy
 
 ### Timing Configuration
 
-**Discovery Interval**: 5 minutes  
+**Discovery Interval**: 5 minutes
 **Rationale**: Services are added/removed infrequently, 5 minutes is acceptable
 
-**Discovery Duration**: < 10 seconds (p95)  
+**Discovery Duration**: < 10 seconds (p95)
 **Breakdown**:
 - List services: 100ms
 - Run detectors: 50ms (5 detectors × 10ms)
@@ -292,13 +298,13 @@ Result: Service is healthy
 func (d *ServiceDiscoverer) Start(ctx context.Context) error {
     ticker := time.NewTicker(5 * time.Minute)
     defer ticker.Stop()
-    
+
     // Run discovery immediately on start
     if _, err := d.DiscoverServices(ctx); err != nil {
         logger.Error("Initial discovery failed", zap.Error(err))
         return err
     }
-    
+
     for {
         select {
         case <-ticker.C:
@@ -328,8 +334,8 @@ func (d *ServiceDiscoverer) Start(ctx context.Context) error {
 for _, detector := range d.detectors {
     detectedServices, err := detector.Detect(ctx, services.Items)
     if err != nil {
-        logger.Warn("Detector failed", 
-            zap.String("detector", detector.ServiceType()), 
+        logger.Warn("Detector failed",
+            zap.String("detector", detector.ServiceType()),
             zap.Error(err))
         continue // Don't fail entire discovery
     }
@@ -378,9 +384,16 @@ if err != nil {
 **In-Memory Cache**: Store discovered services for API queries
 
 ```go
+import (
+    "sync"
+    "time"
+    
+    "github.com/jordigilh/kubernaut/pkg/toolset"
+)
+
 type ServiceCache struct {
     mu       sync.RWMutex
-    services map[string]DiscoveredService
+    services map[string]toolset.DiscoveredService
     ttl      time.Duration
 }
 ```
@@ -395,12 +408,19 @@ type ServiceCache struct {
 **Parallel Execution**: Health check multiple services concurrently
 
 ```go
+import (
+    "context"
+    "sync"
+    
+    "github.com/jordigilh/kubernaut/pkg/toolset"
+)
+
 var wg sync.WaitGroup
-healthChan := make(chan DiscoveredService, len(discovered))
+healthChan := make(chan toolset.DiscoveredService, len(discovered))
 
 for _, svc := range discovered {
     wg.Add(1)
-    go func(s DiscoveredService) {
+    go func(s toolset.DiscoveredService) {
         defer wg.Done()
         if err := detector.HealthCheck(ctx, s.Endpoint); err == nil {
             healthChan <- s
@@ -443,7 +463,7 @@ logger.Info("Service discovery complete",
 
 ---
 
-**Document Status**: ✅ Service Discovery Deep Dive Complete  
-**Last Updated**: October 10, 2025  
+**Document Status**: ✅ Service Discovery Deep Dive Complete
+**Last Updated**: October 10, 2025
 **Related**: [implementation.md](./implementation.md), [design/01-detector-interface-design.md](./implementation/design/01-detector-interface-design.md)
 
