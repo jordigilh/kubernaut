@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-package mocks
-
-import (
-	"testing"
-	"context"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -26,7 +19,6 @@ package mocks
 import (
 	"context"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

@@ -96,6 +96,10 @@ type RemediationRequestSpec struct {
 	// Number of alerts in the storm
 	StormAlertCount int `json:"stormAlertCount,omitempty"`
 
+	// List of affected resources in an aggregated storm (e.g., "namespace:Pod:name")
+	// Only populated for aggregated storm CRDs
+	AffectedResources []string `json:"affectedResources,omitempty"`
+
 	// ========================================
 	// SIGNAL METADATA (PHASE 1 ADDITION)
 	// ========================================

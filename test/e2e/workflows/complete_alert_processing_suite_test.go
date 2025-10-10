@@ -1,7 +1,5 @@
 //go:build e2e
 
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -18,7 +16,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package workflows
 
 import (
@@ -36,7 +33,3 @@ func TestCompleteAlertProcessingWorkflows(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Complete Alert Processing E2E Workflow Tests Suite")
 }
-<<<<<<< HEAD
-
-=======
->>>>>>> crd_implementation
