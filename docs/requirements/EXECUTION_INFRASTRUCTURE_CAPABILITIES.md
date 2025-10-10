@@ -162,11 +162,7 @@ func (r *ActionRegistry) Execute(ctx context.Context, action *types.ActionRecomm
 ```go
 // HolmesGPT provides analysis and recommendations
 investigation, err := holmesGPTClient.Investigate(ctx, &holmesgpt.InvestigateRequest{
-<<<<<<< HEAD
-    AlertContext: alert,
-=======
     AlertContext: signal,
->>>>>>> crd_implementation
     FailureContext: failure,
 })
 

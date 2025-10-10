@@ -15,25 +15,6 @@
 
 | Document | Purpose | Lines | Status |
 |----------|---------|-------|--------|
-<<<<<<< HEAD
-| **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ~120 | ✅ Complete |
-| **[CRD Schema](./crd-schema.md)** | KubernetesExecution CRD types, validation, examples | ~270 | ✅ Complete |
-| **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ~335 | ✅ Complete |
-| **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ~560 | ✅ Complete |
-| **[Predefined Actions](./predefined-actions.md)** | V1 action catalog (80% coverage), custom actions | ~90 | ✅ Complete |
-| **[Finalizers & Lifecycle](./finalizers-lifecycle.md)** | Cleanup patterns, CRD lifecycle management, monitoring | ~770 | ✅ Complete |
-| **[Testing Strategy](./testing-strategy.md)** | Unit/Integration/E2E tests, mock patterns, anti-patterns | ~60 | 🚧 Placeholder |
-| **[Security Configuration](./security-configuration.md)** | RBAC, network policies, secret handling, security context | ~60 | 🚧 Placeholder |
-| **[Observability & Logging](./observability-logging.md)** | Structured logging, distributed tracing, correlation IDs | ~60 | 🚧 Placeholder |
-| **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards, alert rules | ~60 | 🚧 Placeholder |
-| **[Database Integration](./database-integration.md)** | Audit storage, PostgreSQL schema, vector DB | ~60 | 🚧 Placeholder |
-| **[Integration Points](./integration-points.md)** | Upstream/downstream services, external dependencies | ~60 | 🚧 Placeholder |
-| **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path, reusability analysis | ~65 | ✅ Complete |
-| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~60 | 🚧 Placeholder |
-
-**Total**: ~2,255 lines across 14 documents
-**Note**: 🚧 Placeholders reference comprehensive patterns from 01-remediationprocessor/
-=======
 | **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ~390 | ✅ Complete |
 | **[CRD Schema](./crd-schema.md)** | KubernetesExecution CRD types, validation, examples | ~270 | ✅ Complete |
 | **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ~335 | ✅ Complete |
@@ -51,7 +32,6 @@
 
 **Total**: ~6,665 lines across 14 documents
 **Status**: 🟡 78% Complete - 3 critical placeholder files need expansion (database, integration, checklist)
->>>>>>> crd_implementation
 
 ---
 
@@ -66,16 +46,6 @@
 ├── 🔄 reconciliation-phases.md              - Phase details & coordination
 ├── ⚡ predefined-actions.md                 - Predefined action catalog (unique)
 ├── 🧹 finalizers-lifecycle.md               - Cleanup & lifecycle management
-<<<<<<< HEAD
-├── 🧪 testing-strategy.md                   - Test patterns (COMMON PATTERN) 🚧
-├── 🔒 security-configuration.md             - Security patterns (COMMON PATTERN) 🚧
-├── 📊 observability-logging.md              - Logging & tracing (COMMON PATTERN) 🚧
-├── 📈 metrics-slos.md                       - Prometheus & Grafana (COMMON PATTERN) 🚧
-├── 💾 database-integration.md               - Audit storage & schema 🚧
-├── 🔗 integration-points.md                 - Service coordination 🚧
-├── 🔀 migration-current-state.md            - Existing code & migration
-└── ✅ implementation-checklist.md           - APDC-TDD phases & tasks 🚧
-=======
 ├── 🧪 testing-strategy.md                   - Test patterns ✅ **BEST IN CLASS (1,440 lines)**
 ├── 🔒 security-configuration.md             - Security patterns ✅ **BEST IN CLASS (1,035 lines)**
 ├── 📊 observability-logging.md              - Logging & tracing ✅ (870 lines)
@@ -84,15 +54,10 @@
 ├── 🔗 integration-points.md                 - Service coordination 🚧 **CRITICAL STUB (3 lines)**
 ├── 🔀 migration-current-state.md            - Existing code & migration 🟡 (65 lines)
 └── ✅ implementation-checklist.md           - APDC-TDD phases & tasks 🚧 **CRITICAL STUB (42 lines)**
->>>>>>> crd_implementation
 ```
 
 **Legend**:
 - **(COMMON PATTERN)** = Duplicated across all CRD services with service-specific adaptations
-<<<<<<< HEAD
-- 🚧 = Placeholder - references comprehensive patterns from pilot service
-- ⚡ = Service-specific unique file
-=======
 - ✅ = Complete documentation
 - 🚧 = Placeholder/stub - needs expansion
 - 🟡 = Thin - adequate but could be enhanced
@@ -117,7 +82,6 @@
 - **Tests**: `test/unit/kubernetesexecutor/`
 
 **See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
->>>>>>> crd_implementation
 
 ---
 
@@ -269,11 +233,8 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📞 Support & Documentation
 
-<<<<<<< HEAD
-=======
 - **Binary Structure**: [cmd/ directory structure](../../../../cmd/README.md)
 - **Build & Deploy**: [cmd/ build guide](../../../../cmd/README.md#building-services)
->>>>>>> crd_implementation
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
 - **CRD Design Spec**: [docs/design/CRD/08_KUBERNETES_EXECUTION_CRD.md](../../../design/CRD/08_KUBERNETES_EXECUTION_CRD.md)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)
@@ -283,16 +244,6 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ## 📝 Document Maintenance
 
-<<<<<<< HEAD
-**Last Updated**: 2025-01-15
-**Document Structure Version**: 1.0
-**Status**: ✅ Core Complete (95% Confidence) 🚧 Common Patterns Pending
-
-**Common Pattern Updates**: When updating common patterns (testing, security, observability, metrics), update all 5 CRD services.
-
-**Note**: Placeholder documents (🚧) reference comprehensive patterns from [01-remediationprocessor/](../01-remediationprocessor/). During implementation, these will be expanded with service-specific adaptations.
-
-=======
 **Last Updated**: 2025-10-09
 **Document Structure Version**: 1.1
 **Status**: 🟡 78% Complete - 3 critical stub files need expansion
@@ -311,7 +262,6 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 **Common Pattern Updates**: When updating common patterns (testing, security, observability, metrics), update all 5 CRD services.
 
->>>>>>> crd_implementation
 ---
 
 **Ready to implement?** Start with [Implementation Checklist](./implementation-checklist.md) 🚀

@@ -141,11 +141,7 @@ gateway-service/
 | Category | Range | Description |
 |----------|-------|-------------|
 | **Primary** | BR-GATEWAY-001 to BR-GATEWAY-023 | Webhook handling, deduplication, storm detection |
-<<<<<<< HEAD
-| **Environment** | BR-GATEWAY-051 to BR-GATEWAY-053 | Environment classification (prod/staging/dev) |
-=======
 | **Environment** | BR-GATEWAY-051 to BR-GATEWAY-053 | Environment classification (dynamic: any label value) |
->>>>>>> crd_implementation
 | **GitOps** | BR-GATEWAY-071 to BR-GATEWAY-072 | Environment determines remediation behavior |
 | **Notification** | BR-GATEWAY-091 to BR-GATEWAY-092 | Priority-based notification routing (via priority field) |
 
