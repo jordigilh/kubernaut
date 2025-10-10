@@ -80,8 +80,13 @@ spec:
 ```python
 # HolmesGPT uses targeting data to fetch fresh logs/metrics
 holmes_client.investigate(
+<<<<<<< HEAD
     namespace="production-app",      # From AlertContext
     resource_name="web-app-789",     # From AlertContext
+=======
+    namespace="production-app",      # From SignalContext
+    resource_name="web-app-789",     # From SignalContext
+>>>>>>> crd_implementation
     # HolmesGPT toolsets automatically:
     # 1. kubectl logs -n production-app web-app-789 --tail 500
     # 2. kubectl describe pod web-app-789 -n production-app
@@ -183,6 +188,7 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
                 Namespace: remediation.Namespace,
             },
             AnalysisRequest: aiv1.AnalysisRequest{
+<<<<<<< HEAD
                 AlertContext: aiv1.AlertContext{
                     // Data snapshot from RemediationProcessing (already validated by API server)
                     Fingerprint:       alertProcessing.Status.EnrichedAlert.Fingerprint,
@@ -197,15 +203,37 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
 
                     // Kubernetes context (validated by API server: size <= 10KB)
                     KubernetesContext: alertProcessing.Status.EnrichedAlert.KubernetesContext,
+=======
+                AlertContext: aiv1.SignalContext{
+                    // Data snapshot from RemediationProcessing (already validated by API server)
+                    Fingerprint:       alertProcessing.Status.EnrichedSignal.Fingerprint,
+                    Severity:          alertProcessing.Status.EnrichedSignal.Severity,
+                    Environment:       alertProcessing.Status.EnrichedSignal.Environment,
+                    BusinessPriority:  alertProcessing.Status.EnrichedSignal.BusinessPriority,
+
+                    // Resource targeting for HolmesGPT toolsets
+                    Namespace:    alertProcessing.Status.EnrichedSignal.Namespace,
+                    ResourceKind: alertProcessing.Status.EnrichedSignal.ResourceKind,
+                    ResourceName: alertProcessing.Status.EnrichedSignal.ResourceName,
+
+                    // Kubernetes context (validated by API server: size <= 10KB)
+                    KubernetesContext: alertProcessing.Status.EnrichedSignal.KubernetesContext,
+>>>>>>> crd_implementation
                 },
                 AnalysisTypes: []string{"investigation", "root-cause", "recovery-analysis"},
                 InvestigationScope: aiv1.InvestigationScope{
                     TimeWindow: "24h",
                     ResourceScope: []aiv1.ResourceScopeItem{
                         {
+<<<<<<< HEAD
                             Kind:      alertProcessing.Status.EnrichedAlert.ResourceKind,
                             Namespace: alertProcessing.Status.EnrichedAlert.Namespace,
                             Name:      alertProcessing.Status.EnrichedAlert.ResourceName,
+=======
+                            Kind:      alertProcessing.Status.EnrichedSignal.ResourceKind,
+                            Namespace: alertProcessing.Status.EnrichedSignal.Namespace,
+                            Name:      alertProcessing.Status.EnrichedSignal.ResourceName,
+>>>>>>> crd_implementation
                         },
                     },
                     CorrelationDepth:          "detailed",

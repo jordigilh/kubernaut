@@ -1,0 +1,9 @@
+apiVersion: remediationorchestrator.kubernaut.io/v1alpha1
+kind: RemediationOrchestrator
+metadata:
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/managed-by: kustomize
+  name: remediationorchestrator-sample
+spec:
+  # TODO(user): Add fields here

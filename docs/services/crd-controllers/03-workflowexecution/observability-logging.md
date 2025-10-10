@@ -711,7 +711,11 @@ spec:
 ### Implementation Code
 
 ```go
+<<<<<<< HEAD
 // cmd/workflow-execution/main.go
+=======
+// cmd/workflowexecution/main.go
+>>>>>>> crd_implementation
 package main
 
 import (

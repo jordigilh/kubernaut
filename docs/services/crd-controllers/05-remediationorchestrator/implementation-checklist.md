@@ -29,6 +29,22 @@
 
 ---
 
+<<<<<<< HEAD
+=======
+### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
+
+- [ ] **Verify cmd/ structure**: Check [cmd/README.md](../../../../cmd/README.md)
+- [ ] **Create service directory**: `mkdir -p cmd/remediationorchestrator` (no hyphens - Go convention)
+- [ ] **Copy main.go template**: From existing `cmd/remediationorchestrator/main.go` (reference implementation)
+- [ ] **Update package imports**: Verify controller imports (RemediationRequestReconciler)
+- [ ] **Verify build**: `go build -o bin/remediation-orchestrator ./cmd/remediationorchestrator` (binary can have hyphens)
+- [ ] **Reference documentation**: [cmd/ directory guide](../../../../cmd/README.md)
+
+**Note**: Directory names use Go convention (no hyphens), binaries can use hyphens for readability.
+
+---
+
+>>>>>>> crd_implementation
 ### Phase 1: CRD Schema & API (2-3 days)
 
 - [ ] **Define RemediationRequest API types** (`api/v1/alertremediation_types.go`)

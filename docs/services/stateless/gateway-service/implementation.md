@@ -1064,12 +1064,22 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+<<<<<<< HEAD
 // EnvironmentClassifier determines environment (prod/staging/dev) for alerts
+=======
+// EnvironmentClassifier determines environment (any label value) for alerts
+// Supports dynamic configuration: organizations define their own environment taxonomy
+// Examples: "prod", "staging", "dev", "canary", "qa-eu", "prod-west", "blue", "green"
+>>>>>>> crd_implementation
 type EnvironmentClassifier struct {
     k8sClient client.Client
 
     // Cache namespace labels (5-minute TTL)
+<<<<<<< HEAD
     cache      map[string]string // namespace -> environment
+=======
+    cache      map[string]string // namespace -> environment (any non-empty string)
+>>>>>>> crd_implementation
     cacheMutex sync.RWMutex
     cacheTTL   time.Duration
 

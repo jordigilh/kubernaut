@@ -2,6 +2,22 @@
 
 **Note**: Follow APDC-TDD phases for each implementation step (see Development Methodology section)
 
+<<<<<<< HEAD
+=======
+### Phase 0: Project Setup (30 min) [BEFORE ANALYSIS]
+
+- [ ] **Verify cmd/ structure**: Check [cmd/README.md](../../../../cmd/README.md)
+- [ ] **Create service directory**: `mkdir -p cmd/aianalysis` (no hyphens - Go convention)
+- [ ] **Copy main.go template**: From `cmd/remediationorchestrator/main.go`
+- [ ] **Update package imports**: Change to service-specific controller (AIAnalysisReconciler)
+- [ ] **Verify build**: `go build -o bin/ai-analysis ./cmd/aianalysis` (binary can have hyphens)
+- [ ] **Reference documentation**: [cmd/ directory guide](../../../../cmd/README.md)
+
+**Note**: Directory names use Go convention (no hyphens), binaries can use hyphens for readability.
+
+---
+
+>>>>>>> crd_implementation
 ### Phase 1: ANALYSIS & CRD Setup (1-2 days) [RED Phase Preparation]
 
 - [ ] **ANALYSIS**: Search existing AI implementations (`codebase_search "AI analysis implementations"`)
@@ -21,7 +37,11 @@
 
 ---
 
+<<<<<<< HEAD
 - [ ] **ANALYSIS**: Identify integration points in cmd/ai/analysis/
+=======
+- [ ] **ANALYSIS**: Identify integration points in cmd/aianalysis/
+>>>>>>> crd_implementation
 - [ ] **CRD RED**: Write AIAnalysisReconciler tests (should fail - no controller yet)
 - [ ] **CRD GREEN**: Generate CRD + controller skeleton (tests pass)
   - [ ] Create AIAnalysis CRD schema (reference: `docs/design/CRD/03_AI_ANALYSIS_CRD.md`)
@@ -114,7 +134,11 @@
   - [ ] Store investigation embeddings in vector DB
   - [ ] Implement historical success rate queries
 - [ ] **Deployment**: Binary and infrastructure
+<<<<<<< HEAD
   - [ ] Create `cmd/ai-analysis/main.go` entry point
+=======
+  - [ ] Create `cmd/aianalysis/main.go` entry point
+>>>>>>> crd_implementation
   - [ ] Configure Kubebuilder manager with leader election
   - [ ] Add RBAC permissions for CRD operations
   - [ ] Create Kubernetes deployment manifests

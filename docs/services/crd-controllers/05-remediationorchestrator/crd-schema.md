@@ -31,8 +31,13 @@ type RemediationRequestSpec struct {
     // ========================================
 
     // Core Signal Identification (REQUIRED)
+<<<<<<< HEAD
     AlertFingerprint string `json:"alertFingerprint"` // Unique fingerprint for deduplication
     AlertName        string `json:"alertName"`        // Human-readable signal name
+=======
+    SignalFingerprint string `json:"signalFingerprint"` // Unique fingerprint for deduplication
+    SignalName        string `json:"signalName"`        // Human-readable signal name
+>>>>>>> crd_implementation
 
     // Signal Classification (REQUIRED)
     Severity     string `json:"severity"`      // "critical", "warning", "info"
@@ -212,13 +217,21 @@ type RemediationRequestStatus struct {
 
     // Legacy: Kept for backward compatibility, use arrays above for recovery tracking
     // DEPRECATED: Use remediationProcessingRefs, aiAnalysisRefs, and workflowExecutionRefs arrays instead
+<<<<<<< HEAD
     RemediationProcessingRef *RemediationProcessingReference     `json:"alertProcessingRef,omitempty"` // Deprecated: Use remediationProcessingRefs[0]
+=======
+    RemediationProcessingRef *RemediationProcessingReference     `json:"remediationProcessingRef,omitempty"` // Deprecated: Use remediationProcessingRefs[0]
+>>>>>>> crd_implementation
     AIAnalysisRef          *AIAnalysisReference          `json:"aiAnalysisRef,omitempty"`          // Deprecated: Use aiAnalysisRefs
     WorkflowExecutionRef   *WorkflowExecutionReference   `json:"workflowExecutionRef,omitempty"`   // Deprecated: Use workflowExecutionRefs
     KubernetesExecutionRef *KubernetesExecutionReference `json:"kubernetesExecutionRef,omitempty"` // Unchanged (single executor per workflow)
 
     // Aggregated status from service CRDs
+<<<<<<< HEAD
     RemediationProcessingStatus     *RemediationProcessingStatusSummary     `json:"alertProcessingStatus,omitempty"`
+=======
+    RemediationProcessingStatus     *RemediationProcessingStatusSummary     `json:"remediationProcessingStatus,omitempty"`
+>>>>>>> crd_implementation
     AIAnalysisStatus          *AIAnalysisStatusSummary          `json:"aiAnalysisStatus,omitempty"`
     WorkflowExecutionStatus   *WorkflowExecutionStatusSummary   `json:"workflowExecutionStatus,omitempty"`
     KubernetesExecutionStatus *KubernetesExecutionStatusSummary `json:"kubernetesExecutionStatus,omitempty"`
@@ -524,7 +537,11 @@ if !canRecover {
     remediation.Status.FailureReason = &reason  // "max_recovery_attempts_exceeded", etc.
 
     // Send notification to operations team
+<<<<<<< HEAD
     r.NotificationClient.SendManualReviewAlert(remediation)
+=======
+    r.NotificationClient.SendManualReviewNotification(remediation)
+>>>>>>> crd_implementation
 }
 ```
 

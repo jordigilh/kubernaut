@@ -19,7 +19,11 @@ pkg/ai/analysis/
     ├── response_validator.go  # AI response validation (BR-AI-021)
     └── hallucination_detector.go  # Hallucination detection (BR-AI-023)
 
+<<<<<<< HEAD
 cmd/ai-analysis/
+=======
+cmd/aianalysis/
+>>>>>>> crd_implementation
 └── main.go                    # Binary entry point
 
 test/unit/ai/analysis/         # Unit tests (70%+ coverage)
@@ -55,7 +59,11 @@ type Analyzer interface {
 }
 
 type InvestigationRequest struct {
+<<<<<<< HEAD
     AlertContext     *aianalysisv1.AlertContext
+=======
+    AlertContext     *aianalysisv1.SignalContext
+>>>>>>> crd_implementation
     Scope            *aianalysisv1.InvestigationScope
     HolmesGPTConfig  *aianalysisv1.HolmesGPTConfig
 }
@@ -80,7 +88,11 @@ type AnalysisResult struct {
 
 type RecommendationRequest struct {
     AnalysisResult   *AnalysisResult
+<<<<<<< HEAD
     AlertContext     *aianalysisv1.AlertContext
+=======
+    AlertContext     *aianalysisv1.SignalContext
+>>>>>>> crd_implementation
     ConstraintConfig *ConstraintConfig
 }
 
@@ -100,13 +112,25 @@ import (
     "fmt"
     "time"
 
+<<<<<<< HEAD
     "k8s.io/apimachinery/pkg/runtime"
+=======
+    corev1 "k8s.io/api/core/v1"
+    apimeta "k8s.io/apimachinery/pkg/api/meta"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/client-go/tools/record"
+>>>>>>> crd_implementation
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
     aianalysisv1 "github.com/jordigilh/kubernaut/api/ai/v1"
     processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+<<<<<<< HEAD
+=======
+    workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1"
+>>>>>>> crd_implementation
 )
 
 const aiAnalysisFinalizer = "aianalysis.kubernaut.io/aianalysis-cleanup"
@@ -210,7 +234,11 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
         For(&aianalysisv1.AIAnalysis{}).                    // Watch own CRD
+<<<<<<< HEAD
         Owns(&workflowv1.WorkflowExecution{}).      // Watch owned WorkflowExecution
+=======
+        Owns(&workflowexecutionv1.WorkflowExecution{}).      // Watch owned WorkflowExecution
+>>>>>>> crd_implementation
         // NO Watch on RemediationProcessing - data is self-contained in spec
         Complete(r)
 }
@@ -244,6 +272,11 @@ import (
     "fmt"
     "time"
 
+<<<<<<< HEAD
+=======
+    apimeta "k8s.io/apimachinery/pkg/api/meta"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+>>>>>>> crd_implementation
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -280,7 +313,11 @@ func (p *InvestigatingPhase) Handle(ctx context.Context, aiAnalysis *aianalysisv
 
     // Trigger HolmesGPT investigation (BR-AI-011, BR-AI-012)
     investigationReq := analysis.InvestigationRequest{
+<<<<<<< HEAD
         AlertContext:    &aiAnalysis.Spec.AnalysisRequest.AlertContext,
+=======
+        AlertContext:    &aiAnalysis.Spec.AnalysisRequest.SignalContext,
+>>>>>>> crd_implementation
         Scope:           &aiAnalysis.Spec.AnalysisRequest.InvestigationScope,
         HolmesGPTConfig: &aiAnalysis.Spec.HolmesGPTConfig,
     }
@@ -309,7 +346,11 @@ func (p *InvestigatingPhase) Handle(ctx context.Context, aiAnalysis *aianalysisv
     aiAnalysis.Status.PhaseTransitions["analyzing"] = metav1.Now()
 
     // Set condition
+<<<<<<< HEAD
     meta.SetStatusCondition(&aiAnalysis.Status.Conditions, metav1.Condition{
+=======
+    apimeta.SetStatusCondition(&aiAnalysis.Status.Conditions, metav1.Condition{
+>>>>>>> crd_implementation
         Type:    "InvestigationComplete",
         Status:  metav1.ConditionTrue,
         Reason:  "RootCauseIdentified",
@@ -597,10 +638,17 @@ CURRENT SITUATION (FRESH DATA):
         aiAnalysis.Spec.RecoveryAttemptNumber,
         enrichmentData.ContextQuality,
         enrichmentData.EnrichedAt.Format(time.RFC3339),
+<<<<<<< HEAD
         aiAnalysis.Spec.AlertContext.AlertName,
         aiAnalysis.Spec.AlertContext.Severity,
         aiAnalysis.Spec.AlertContext.TargetResource.Kind,
         aiAnalysis.Spec.AlertContext.TargetResource.Namespace,
+=======
+        aiAnalysis.Spec.SignalContext.AlertName,
+        aiAnalysis.Spec.SignalContext.Severity,
+        aiAnalysis.Spec.SignalContext.TargetResource.Kind,
+        aiAnalysis.Spec.SignalContext.TargetResource.Namespace,
+>>>>>>> crd_implementation
     )
 
     // Add FRESH monitoring context (Alternative 2 benefit!)

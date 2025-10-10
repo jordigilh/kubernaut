@@ -1,0 +1,162 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - aianalysis.kubernaut.io
+  resources:
+  - aianalyses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - aianalysis.kubernaut.io
+  resources:
+  - aianalyses/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - aianalysis.kubernaut.io
+  resources:
+  - aianalyses/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - kubernetesexecution.kubernaut.io
+  resources:
+  - kubernetesexecutions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - kubernetesexecution.kubernaut.io
+  resources:
+  - kubernetesexecutions/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - kubernetesexecution.kubernaut.io
+  resources:
+  - kubernetesexecutions/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - remediation.kubernaut.io
+  resources:
+  - remediationrequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - remediation.kubernaut.io
+  resources:
+  - remediationrequests/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - remediation.kubernaut.io
+  resources:
+  - remediationrequests/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - remediationorchestrator.kubernaut.io
+  resources:
+  - remediationorchestrators
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - remediationorchestrator.kubernaut.io
+  resources:
+  - remediationorchestrators/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - remediationorchestrator.kubernaut.io
+  resources:
+  - remediationorchestrators/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - remediationprocessing.kubernaut.io
+  resources:
+  - remediationprocessings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - remediationprocessing.kubernaut.io
+  resources:
+  - remediationprocessings/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - remediationprocessing.kubernaut.io
+  resources:
+  - remediationprocessings/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - workflowexecution.kubernaut.io
+  resources:
+  - workflowexecutions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - workflowexecution.kubernaut.io
+  resources:
+  - workflowexecutions/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - workflowexecution.kubernaut.io
+  resources:
+  - workflowexecutions/status
+  verbs:
+  - get
+  - patch
+  - update

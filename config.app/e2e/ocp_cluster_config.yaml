@@ -1,0 +1,45 @@
+# OCP Cluster Configuration for E2E Testing
+# BR-E2E-001: OpenShift Container Platform cluster setup for production-like testing
+
+cluster:
+  type: "ocp"
+  version: "4.18"
+  name: "kubernaut-e2e-cluster"
+
+nodes:
+  master_count: 3
+  worker_count: 6
+  master_instance_type: "m5.xlarge"
+  worker_instance_type: "m5.large"
+
+networking:
+  cluster_cidr: "10.128.0.0/14"
+  service_cidr: "172.30.0.0/16"
+  network_type: "OpenShiftSDN"
+
+storage:
+  storage_class: "gp2"
+  etcd_storage_size: "20Gi"
+  registry_storage_size: "100Gi"
+
+security:
+  enable_rbac: true
+  enable_network_policies: true
+  enable_pod_security_policies: true
+
+features:
+  enable_monitoring: true
+  enable_logging: true
+  enable_service_mesh: false
+  enable_serverless: false
+
+timeouts:
+  cluster_creation: "45m"
+  node_ready: "10m"
+  pod_ready: "5m"
+
+e2e_specific:
+  create_test_namespaces: true
+  deploy_monitoring_stack: true
+  install_chaos_operator: true
+  enable_performance_monitoring: true

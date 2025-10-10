@@ -1359,12 +1359,20 @@ func (r *KubernetesExecutionReconciler) reconcileCompleted(ctx context.Context, 
 
     // 2. Store persistent audit record in database (SEPARATE PURPOSE)
     auditRecord := &storage.RemediationAuditRecord{
+<<<<<<< HEAD
         AlertFingerprint:    execution.Spec.AlertContext.Fingerprint,
+=======
+        AlertFingerprint:    execution.Spec.SignalContext.Fingerprint,
+>>>>>>> crd_implementation
         RemediationID:      execution.Spec.RemediationRequestRef.Name,
         ActionsExecuted:    execution.Status.ActionResults,
         ExecutionMetrics:   execution.Status.ExecutionMetrics,
         SafetyValidation:   execution.Status.SafetyValidation,
+<<<<<<< HEAD
         BusinessContext:    execution.Spec.AlertContext.BusinessContext,
+=======
+        BusinessContext:    execution.Spec.SignalContext.BusinessContext,
+>>>>>>> crd_implementation
         ComplianceData:     execution.Status.ComplianceData,
         Timestamp:          time.Now(),
         RetentionPolicy:    "7_years", // Compliance-driven retention
