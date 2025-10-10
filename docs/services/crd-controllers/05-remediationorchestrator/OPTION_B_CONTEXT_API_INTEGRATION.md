@@ -79,7 +79,11 @@ type ContextAPIResponse struct {
     RemediationRequestID string                    `json:"remediationRequestId"`
     CurrentAttempt       int                       `json:"currentAttempt"`
     PreviousFailures     []PreviousFailureDTO      `json:"previousFailures"`
+<<<<<<< HEAD
     RelatedAlerts        []RelatedAlertDTO         `json:"relatedAlerts"`
+=======
+    RelatedSignals       []RelatedSignalDTO        `json:"relatedSignals"`
+>>>>>>> crd_implementation
     HistoricalPatterns   []HistoricalPatternDTO    `json:"historicalPatterns"`
     SuccessfulStrategies []SuccessfulStrategyDTO   `json:"successfulStrategies"`
     ContextQuality       string                    `json:"contextQuality"` // "complete", "partial", "minimal"
@@ -99,11 +103,19 @@ type PreviousFailureDTO struct {
     Timestamp        time.Time              `json:"timestamp"`
 }
 
+<<<<<<< HEAD
 type RelatedAlertDTO struct {
     AlertFingerprint string    `json:"alertFingerprint"`
     AlertName        string    `json:"alertName"`
     Correlation      float64   `json:"correlation"`
     Timestamp        time.Time `json:"timestamp"`
+=======
+type RelatedSignalDTO struct {
+    SignalFingerprint string    `json:"signalFingerprint"`
+    SignalName        string    `json:"signalName"`
+    Correlation       float64   `json:"correlation"`
+    Timestamp         time.Time `json:"timestamp"`
+>>>>>>> crd_implementation
 }
 
 type HistoricalPatternDTO struct {
@@ -221,7 +233,11 @@ func (r *RemediationRequestReconciler) initiateRecovery(
         // Context API success - convert response to CRD-embeddable format
         log.Info("Historical context retrieved successfully from Context API",
             "previousFailures", len(contextAPIResponse.PreviousFailures),
+<<<<<<< HEAD
             "relatedAlerts", len(contextAPIResponse.RelatedAlerts),
+=======
+            "relatedSignals", len(contextAPIResponse.RelatedSignals),
+>>>>>>> crd_implementation
             "contextQuality", contextAPIResponse.ContextQuality)
 
         embeddedContext = r.convertContextAPIResponseToEmbeddable(contextAPIResponse)
@@ -254,7 +270,11 @@ func (r *RemediationRequestReconciler) initiateRecovery(
         },
         Spec: aiv1.AIAnalysisSpec{
             // Signal context
+<<<<<<< HEAD
             AlertContext:          remediation.Spec.AlertContext,
+=======
+            SignalContext:         remediation.Spec.SignalContext,
+>>>>>>> crd_implementation
             RemediationRequestRef: corev1.LocalObjectReference{Name: remediation.Name},
 
             // Recovery metadata
@@ -332,7 +352,11 @@ func (r *RemediationRequestReconciler) convertContextAPIResponseToEmbeddable(
     historicalContext := &aiv1.HistoricalContext{
         ContextQuality:       response.ContextQuality,
         PreviousFailures:     make([]aiv1.PreviousFailure, len(response.PreviousFailures)),
+<<<<<<< HEAD
         RelatedAlerts:        make([]aiv1.RelatedAlert, len(response.RelatedAlerts)),
+=======
+        RelatedSignals:       make([]aiv1.RelatedSignal, len(response.RelatedSignals)),
+>>>>>>> crd_implementation
         HistoricalPatterns:   make([]aiv1.HistoricalPattern, len(response.HistoricalPatterns)),
         SuccessfulStrategies: make([]aiv1.SuccessfulStrategy, len(response.SuccessfulStrategies)),
         RetrievedAt:          metav1.Now(),
@@ -354,6 +378,7 @@ func (r *RemediationRequestReconciler) convertContextAPIResponseToEmbeddable(
         }
     }
 
+<<<<<<< HEAD
     // Convert related alerts
     for i, alert := range response.RelatedAlerts {
         historicalContext.RelatedAlerts[i] = aiv1.RelatedAlert{
@@ -361,6 +386,15 @@ func (r *RemediationRequestReconciler) convertContextAPIResponseToEmbeddable(
             AlertName:        alert.AlertName,
             Correlation:      alert.Correlation,
             Timestamp:        metav1.NewTime(alert.Timestamp),
+=======
+    // Convert related signals
+    for i, signal := range response.RelatedSignals {
+        historicalContext.RelatedSignals[i] = aiv1.RelatedSignal{
+            SignalFingerprint: signal.SignalFingerprint,
+            SignalName:        signal.SignalName,
+            Correlation:       signal.Correlation,
+            Timestamp:         metav1.NewTime(signal.Timestamp),
+>>>>>>> crd_implementation
         }
     }
 
@@ -431,7 +465,11 @@ func (r *RemediationRequestReconciler) buildFallbackContext(
     return &aiv1.HistoricalContext{
         ContextQuality:       "degraded",
         PreviousFailures:     previousFailures,
+<<<<<<< HEAD
         RelatedAlerts:        []aiv1.RelatedAlert{},
+=======
+        RelatedSignals:       []aiv1.RelatedSignal{},
+>>>>>>> crd_implementation
         HistoricalPatterns:   []aiv1.HistoricalPattern{},
         SuccessfulStrategies: []aiv1.SuccessfulStrategy{},
         RetrievedAt:          metav1.Now(),

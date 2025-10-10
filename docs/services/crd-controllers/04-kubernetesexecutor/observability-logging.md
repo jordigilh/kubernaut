@@ -775,7 +775,11 @@ spec:
 ### Implementation Code
 
 ```go
+<<<<<<< HEAD
 // cmd/kubernetes-executor/main.go
+=======
+// cmd/kubernetesexecutor/main.go
+>>>>>>> crd_implementation
 package main
 
 import (
