@@ -73,6 +73,7 @@ holmes_client = Client(
 // In AIAnalysisReconciler.investigatePhase()
 investigationRequest := HolmesGPTInvestigationRequest{
     AlertContext: AlertContext{
+<<<<<<< HEAD
         Fingerprint:  aiAnalysis.Spec.AnalysisRequest.AlertContext.Fingerprint,
         Severity:     aiAnalysis.Spec.AnalysisRequest.AlertContext.Severity,
         Environment:  aiAnalysis.Spec.AnalysisRequest.AlertContext.Environment,
@@ -84,6 +85,19 @@ investigationRequest := HolmesGPTInvestigationRequest{
 
         // Kubernetes context (small metadata, <10KB)
         KubernetesContext: aiAnalysis.Spec.AnalysisRequest.AlertContext.KubernetesContext,
+=======
+        Fingerprint:  aiAnalysis.Spec.AnalysisRequest.SignalContext.Fingerprint,
+        Severity:     aiAnalysis.Spec.AnalysisRequest.SignalContext.Severity,
+        Environment:  aiAnalysis.Spec.AnalysisRequest.SignalContext.Environment,
+
+        // Targeting data for HolmesGPT toolsets
+        Namespace:    aiAnalysis.Spec.AnalysisRequest.SignalContext.Namespace,
+        ResourceKind: aiAnalysis.Spec.AnalysisRequest.SignalContext.ResourceKind,
+        ResourceName: aiAnalysis.Spec.AnalysisRequest.SignalContext.ResourceName,
+
+        // Kubernetes context (small metadata, <10KB)
+        KubernetesContext: aiAnalysis.Spec.AnalysisRequest.SignalContext.KubernetesContext,
+>>>>>>> crd_implementation
     },
     AnalysisTypes: aiAnalysis.Spec.AnalysisRequest.AnalysisTypes,
     InvestigationScope: aiAnalysis.Spec.AnalysisRequest.InvestigationScope,
@@ -400,13 +414,21 @@ func (c *ClientImpl) InvestigateWithStructuredResponse(
     req *InvestigateRequest,
 ) (*StructuredInvestigateResponse, error) {
     c.logger.WithFields(logrus.Fields{
+<<<<<<< HEAD
         "alert_name": req.AlertName,
+=======
+        "signal_name": req.AlertName,
+>>>>>>> crd_implementation
         "namespace":  req.Namespace,
     }).Info("Starting structured investigation")
 
     // Prepare request with structured format flag
     payload := map[string]interface{}{
+<<<<<<< HEAD
         "alert_name":        req.AlertName,
+=======
+        "signal_name":        req.AlertName,
+>>>>>>> crd_implementation
         "namespace":         req.Namespace,
         "labels":            req.Labels,
         "annotations":       req.Annotations,
@@ -1044,6 +1066,7 @@ func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
 
                 // COPY all enriched data (data snapshot pattern)
                 AnalysisRequest: aianalysisv1.AnalysisRequest{
+<<<<<<< HEAD
                     AlertContext: aianalysisv1.AlertContext{
                         Fingerprint:      alertProcessing.Status.EnrichedAlert.Fingerprint,
                         Severity:         alertProcessing.Status.EnrichedAlert.Severity,
@@ -1052,6 +1075,16 @@ func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
 
                         // Complete enriched payload snapshot
                         EnrichedPayload: alertProcessing.Status.EnrichedAlert.EnrichedPayload,
+=======
+                    AlertContext: aianalysisv1.SignalContext{
+                        Fingerprint:      alertProcessing.Status.EnrichedSignal.Fingerprint,
+                        Severity:         alertProcessing.Status.EnrichedSignal.Severity,
+                        Environment:      alertProcessing.Status.EnrichedSignal.Environment,
+                        BusinessPriority: alertProcessing.Status.EnrichedSignal.BusinessPriority,
+
+                        // Complete enriched payload snapshot
+                        EnrichedPayload: alertProcessing.Status.EnrichedSignal.EnrichedPayload,
+>>>>>>> crd_implementation
                     },
                     AnalysisTypes: []string{"investigation", "root-cause", "recovery-analysis"},
 
@@ -1060,9 +1093,15 @@ func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
                         TimeWindow: "24h",
                         ResourceScope: []aianalysisv1.ResourceScopeItem{
                             {
+<<<<<<< HEAD
                                 Kind:      alertProcessing.Status.EnrichedAlert.ResourceKind,
                                 Namespace: alertProcessing.Status.EnrichedAlert.Namespace,
                                 Name:      alertProcessing.Status.EnrichedAlert.ResourceName,
+=======
+                                Kind:      alertProcessing.Status.EnrichedSignal.ResourceKind,
+                                Namespace: alertProcessing.Status.EnrichedSignal.Namespace,
+                                Name:      alertProcessing.Status.EnrichedSignal.ResourceName,
+>>>>>>> crd_implementation
                             },
                         },
                         CorrelationDepth: "detailed",

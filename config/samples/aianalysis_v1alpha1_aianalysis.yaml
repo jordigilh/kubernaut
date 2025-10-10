@@ -1,0 +1,9 @@
+apiVersion: aianalysis.kubernaut.io/v1alpha1
+kind: AIAnalysis
+metadata:
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/managed-by: kustomize
+  name: aianalysis-sample
+spec:
+  # TODO(user): Add fields here

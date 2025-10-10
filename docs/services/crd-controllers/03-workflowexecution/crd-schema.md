@@ -33,7 +33,11 @@ import (
 // WorkflowExecutionSpec defines the desired state of WorkflowExecution
 type WorkflowExecutionSpec struct {
     // RemediationRequestRef references the parent RemediationRequest CRD
+<<<<<<< HEAD
     RemediationRequestRef corev1.ObjectReference `json:"alertRemediationRef"`
+=======
+    RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+>>>>>>> crd_implementation
 
     // WorkflowDefinition contains the workflow to execute
     WorkflowDefinition WorkflowDefinition `json:"workflowDefinition"`
