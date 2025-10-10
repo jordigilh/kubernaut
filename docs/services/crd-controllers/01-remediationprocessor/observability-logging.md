@@ -545,7 +545,11 @@ spec:
 ### Implementation Code
 
 ```go
+<<<<<<< HEAD
 // cmd/remediation-processor/main.go
+=======
+// cmd/remediationprocessor/main.go
+>>>>>>> crd_implementation
 package main
 
 import (
