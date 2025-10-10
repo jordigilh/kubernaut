@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-## Current State & Migration Path
-
-TBD - Central controller is new implementation.
-=======
 # Current State & Migration Path
 
 ## Overview
@@ -620,4 +615,3 @@ var (
 - **Owner References**: [ADR-005: Owner Reference Architecture](../../../architecture/decisions/005-owner-reference-architecture.md)
 - **Testing Strategy**: [testing-strategy.md](./testing-strategy.md)
 - **Integration Points**: [integration-points.md](./integration-points.md)
->>>>>>> crd_implementation

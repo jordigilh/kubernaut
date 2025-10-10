@@ -45,8 +45,6 @@ pkg/workflow/
 
 ---
 
-<<<<<<< HEAD
-=======
 ## Detailed Component Analysis
 
 ### 1. Existing Workflow Engine Interfaces
@@ -583,4 +581,3 @@ func (r *WorkflowExecutionReconciler) handleStepFailure(
 - **Testing Strategy**: [testing-strategy.md](./testing-strategy.md)
 - **Database Integration**: [database-integration.md](./database-integration.md)
 - **Architecture**: [Multi-CRD Reconciliation](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
->>>>>>> crd_implementation
