@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-package storage
-
-import (
-	"testing"
-	"context"
-	"database/sql"
-	"os"
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -30,7 +21,6 @@ import (
 	"database/sql"
 	"os"
 	"testing"
->>>>>>> crd_implementation
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

@@ -38,11 +38,6 @@ Following Kubernaut's defense-in-depth testing strategy:
 package gateway_test
 
 import (
-<<<<<<< HEAD
-    . "github.com/onsi/ginkgo/v2"
-    . "github.com/onsi/gomega"
-    "context"
-=======
     "bytes"
     "context"
     "net/http"
@@ -51,7 +46,6 @@ import (
 
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
->>>>>>> crd_implementation
 
     "github.com/jordigilh/kubernaut/pkg/gateway/adapters"
     "github.com/jordigilh/kubernaut/pkg/gateway/processing"
@@ -502,24 +496,12 @@ var _ = Describe("BR-GATEWAY-052: Environment Classification", func() {
         Entry("no classification sources → unknown with low confidence",
             "", "", "", "unknown", 0.30),
 
-<<<<<<< HEAD
-        // BR-GATEWAY-052.5: prod-* namespace pattern matches production
-        Entry("prod-webapp namespace → inferred production with high confidence",
-            "prod-webapp", "", "", "production", 0.85),
-
-        // BR-GATEWAY-052.6: staging-* namespace pattern matches staging
-        Entry("staging-api namespace → inferred staging with high confidence",
-            "staging-api", "", "", "staging", 0.85),
-
-        // BR-GATEWAY-052.7: Conflicting sources → namespace label wins
-=======
         // ❌ REMOVED: BR-GATEWAY-052.5 and 052.6 (Pattern matching)
         // Pattern matching (e.g., "prod-webapp" → "production") was explicitly removed per user request
         // See overview.md:410 - "No Pattern Matching: Removed per user request"
         // Environment classification uses EXACT label values for dynamic configuration
 
         // BR-GATEWAY-052.5: Conflicting sources → namespace label wins
->>>>>>> crd_implementation
         Entry("conflicting labels → namespace label takes precedence",
             "production", "dev", "staging", "production", 0.95),
     )

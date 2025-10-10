@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-## RBAC Configuration
-=======
 # Security Configuration
 
 ## Overview
@@ -34,39 +31,11 @@ automountServiceAccountToken: true
 ---
 
 ### ClusterRole: Full CRD Orchestration Permissions
->>>>>>> crd_implementation
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-<<<<<<< HEAD
-  name: alertremediation-controller
-rules:
-# RemediationRequest CRD permissions
-- apiGroups: ["kubernaut.io"]
-  resources: ["alertremediations", "alertremediations/status", "alertremediations/finalizers"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-
-# Service CRD creation permissions
-- apiGroups: ["remediationprocessing.kubernaut.io"]
-  resources: ["alertprocessings"]
-  verbs: ["create", "get", "list", "watch"]
-
-- apiGroups: ["aianalysis.kubernaut.io"]
-  resources: ["aianalyses"]
-  verbs: ["create", "get", "list", "watch"]
-
-- apiGroups: ["workflowexecution.kubernaut.io"]
-  resources: ["workflowexecutions"]
-  verbs: ["create", "get", "list", "watch"]
-
-- apiGroups: ["kubernetesexecution.kubernaut.io"]
-  resources: ["kubernetesexecutions"]
-  verbs: ["create", "get", "list", "watch"]
-
-# Event emission
-=======
   name: remediation-orchestrator
 rules:
 # RemediationRequest CRD (owned resource - full control)
@@ -105,18 +74,11 @@ rules:
   verbs: ["get", "list", "watch"]
 
 # Event emission (controller events only)
->>>>>>> crd_implementation
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
 ```
 
-<<<<<<< HEAD
-**Note**: RemediationRequest controller creates all service CRDs but only needs read permissions on their status (watches handle updates).
-
----
-
-=======
 **Justification for Elevated Permissions**:
 - **create**: Controller creates 3 downstream CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution)
 - **update/patch/delete**: Owner references require delete permission for cascade cleanup
@@ -632,4 +594,3 @@ func TestSecurityConstraints(t *testing.T) {
 - **Owner References**: [ADR-005: Owner Reference Architecture](../../../architecture/decisions/005-owner-reference-architecture.md)
 - **Testing**: [testing-strategy.md](./testing-strategy.md)
 - **Integration**: [integration-points.md](./integration-points.md)
->>>>>>> crd_implementation

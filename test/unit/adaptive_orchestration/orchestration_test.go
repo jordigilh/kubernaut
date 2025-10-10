@@ -1,8 +1,6 @@
 //go:build unit
 // +build unit
 
-<<<<<<< HEAD
-=======
 /*
 Copyright 2025 Jordi Gil.
 
@@ -19,7 +17,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
->>>>>>> crd_implementation
 package adaptive_orchestration
 
 import (
@@ -41,7 +38,3 @@ var _ = Describe("Orchestration Unit Tests Business Intelligence Test Suite - Ex
 		})
 	})
 })
-<<<<<<< HEAD
-
-=======
->>>>>>> crd_implementation
