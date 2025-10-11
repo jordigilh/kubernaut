@@ -124,13 +124,14 @@ var _ = Describe("BR-GATEWAY-004 Extension: Rate Limiting", func() {
 		}
 
 		By("Rate limiter blocks excess alerts")
-		// Math with realistic limits (100 req/min, burst 20):
-		// - Burst capacity: 20 tokens
-		// - Refill over 1.5s: 1.67 req/sec × 1.5s ≈ 2.5 tokens
-		// - Total allowed: ~23 requests
-		// - Total blocked: ~127 requests (out of 150)
-		Expect(rateLimitedCount).To(BeNumerically(">", 100),
-			"Rate limiter should block significant excess traffic (>100 out of 150)")
+		// Math with test config (500 req/min, burst 50):
+		// - Burst capacity: 50 tokens
+		// - Refill over 1.5s: 8.33 req/sec × 1.5s ≈ 12.5 tokens
+		// - Total allowed: ~62 requests (50 burst + 12 refill)
+		// - Total blocked: ~88 requests (out of 150)
+		// Note: With improved IP extraction, rate limiting is more reliable
+		Expect(rateLimitedCount).To(BeNumerically(">", 70),
+			"Rate limiter should block significant excess traffic (>70 out of 150)")
 
 		By("Rate limiter allows legitimate traffic")
 		// Expect ~20-25 requests to succeed (burst + small refill)
@@ -225,9 +226,10 @@ var _ = Describe("BR-GATEWAY-004 Extension: Rate Limiting", func() {
 		}
 
 		By("Source 1 (noisy) should be rate limited")
-		// Math: 100 req/min, burst 20 → ~23 allowed (burst + small refill), ~127 blocked
-		Expect(source1RateLimited).To(BeNumerically(">", 100),
-			"Noisy source should be rate limited (>100 out of 150)")
+		// Math: 500 req/min, burst 50 → ~62 allowed (burst + small refill), ~88 blocked
+		// Note: With improved IP extraction, per-source isolation is more reliable
+		Expect(source1RateLimited).To(BeNumerically(">", 70),
+			"Noisy source should be rate limited (>70 out of 150)")
 
 		By("Source 2 (legitimate) should NOT be affected by Source 1's rate limit")
 		// All 10 alerts from Source 2 should succeed (well below rate limit)
