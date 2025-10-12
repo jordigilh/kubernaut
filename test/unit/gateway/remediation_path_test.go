@@ -365,6 +365,75 @@ var _ = Describe("BR-GATEWAY-022: Remediation Path Decision", func() {
 			// Business capability verified:
 			// Path decision → Explanation → Audit trail → Compliance
 		})
+
+		It("provides correct explanation when Rego policy is used (no override)", func() {
+			// Business scenario: Organization uses Rego policy, path matches fallback table
+			// Expected: Standard reasoning provided (Rego agrees with fallback)
+
+			// Use real Rego policy file
+			pathDeciderWithRego, err := processing.NewRemediationPathDeciderWithRego(
+				"../../../config.app/gateway/policies/remediation_path.rego",
+				logger,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			signalCtx := &processing.SignalContext{
+				Signal: &types.NormalizedSignal{
+					AlertName: "TestAlert",
+				},
+				Environment: "production",
+				Priority:    "P0",
+			}
+
+			path := pathDeciderWithRego.DeterminePath(ctx, signalCtx)
+			explanation := pathDeciderWithRego.GetPathExplanation(signalCtx, path)
+
+			// BUSINESS OUTCOME: Rego-based path gets correct reasoning
+			Expect(path).To(Equal("aggressive"),
+				"Rego policy returns aggressive for prod+P0")
+			Expect(explanation).To(ContainSubstring("aggressive"),
+				"Explanation mentions aggressive path")
+			Expect(explanation).To(ContainSubstring("Critical production outage"),
+				"Standard reasoning provided when Rego matches fallback")
+
+			// Business capability verified:
+			// Rego policy → Path decision → Standard reasoning → Audit trail
+		})
+
+		It("detects and handles hypothetical Rego override with generic reasoning", func() {
+			// Business scenario: Rego policy overrides fallback table (simulated with mock)
+			// Expected: Generic reasoning provided to avoid contradiction
+
+			// Mock Rego that returns different path than fallback
+			mockRego := &processing.MockRegoEvaluator{
+				Result: "moderate", // Fallback would say "aggressive" for prod+P0
+			}
+			pathDecider.SetRegoEvaluator(mockRego)
+
+			signalCtx := &processing.SignalContext{
+				Signal: &types.NormalizedSignal{
+					AlertName: "TestAlert",
+				},
+				Environment: "production",
+				Priority:    "P0",
+			}
+
+			path := pathDecider.DeterminePath(ctx, signalCtx)
+			explanation := pathDecider.GetPathExplanation(signalCtx, path)
+
+			// BUSINESS OUTCOME: Override detected, generic reasoning prevents contradiction
+			Expect(path).To(Equal("moderate"),
+				"Mock Rego returns moderate (overriding fallback)")
+			Expect(explanation).To(ContainSubstring("moderate"),
+				"Explanation matches actual path")
+			Expect(explanation).To(ContainSubstring("Automated execution with validation"),
+				"Generic reasoning provided for override")
+			Expect(explanation).NotTo(ContainSubstring("Critical production outage"),
+				"Standard reasoning NOT used when Rego overrides")
+
+			// Business capability verified:
+			// Rego override → Detection → Generic reasoning → No contradiction
+		})
 	})
 
 	// BUSINESS OUTCOME: Graceful handling of edge cases
@@ -566,6 +635,68 @@ var _ = Describe("BR-GATEWAY-022: Custom Remediation Strategies via Rego Policie
 
 			// Business capability verified:
 			// Rego enables: environment-based, priority-based, time-based, team-based rules
+		})
+
+		It("provides correct explanation for P2 development (regression test)", func() {
+			// REGRESSION TEST: Previously Rego returned "moderate" but fallback was "manual"
+			// This caused contradictory reasoning: path="moderate" but reason="manual investigation"
+			//
+			// After fix: Rego synced with fallback table (both now say "manual")
+			// Explanation should be consistent with actual path
+
+			signalCtx := &processing.SignalContext{
+				Signal: &types.NormalizedSignal{
+					AlertName: "LowPriorityDevIssue",
+				},
+				Environment: "development",
+				Priority:    "P2",
+			}
+
+			path := pathDecider.DeterminePath(ctx, signalCtx)
+			explanation := pathDecider.GetPathExplanation(signalCtx, path)
+
+			// BUSINESS OUTCOME: Explanation consistent with path
+			Expect(path).To(Equal("manual"),
+				"P2 development requires manual investigation")
+			Expect(explanation).To(ContainSubstring("manual"),
+				"Explanation mentions manual path")
+			Expect(explanation).To(ContainSubstring("manual investigation"),
+				"Reasoning explains manual path correctly")
+
+			// Regression prevented:
+			// ❌ OLD BUG: path="moderate" + reason="manual investigation" (contradiction!)
+			// ✅ FIXED: path="manual" + reason="manual investigation" (consistent)
+		})
+
+		It("provides correct explanation for P2 production (regression test)", func() {
+			// REGRESSION TEST: Previously Rego returned "manual" but fallback was "conservative"
+			// This caused contradictory reasoning: path="manual" but reason="conservative approach"
+			//
+			// After fix: Rego synced with fallback table (both now say "conservative")
+			// Explanation should be consistent with actual path
+
+			signalCtx := &processing.SignalContext{
+				Signal: &types.NormalizedSignal{
+					AlertName: "LowPriorityProdIssue",
+				},
+				Environment: "production",
+				Priority:    "P2",
+			}
+
+			path := pathDecider.DeterminePath(ctx, signalCtx)
+			explanation := pathDecider.GetPathExplanation(signalCtx, path)
+
+			// BUSINESS OUTCOME: Explanation consistent with path
+			Expect(path).To(Equal("conservative"),
+				"P2 production requires conservative approach (GitOps PR)")
+			Expect(explanation).To(ContainSubstring("conservative"),
+				"Explanation mentions conservative path")
+			Expect(explanation).To(ContainSubstring("conservative approach"),
+				"Reasoning explains conservative path correctly")
+
+			// Regression prevented:
+			// ❌ OLD BUG: path="manual" + reason="conservative approach" (contradiction!)
+			// ✅ FIXED: path="conservative" + reason="conservative approach" (consistent)
 		})
 	})
 

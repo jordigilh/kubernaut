@@ -508,8 +508,30 @@ func (d *RemediationPathDecider) GetPathExplanation(signalCtx *SignalContext, pa
 }
 
 // getPathReason provides reasoning for path decision
+//
+// This function validates that the actual path matches the expected fallback path
+// and provides appropriate reasoning. If Rego policy overrides the fallback,
+// it detects the discrepancy and provides generic reasoning.
 func (d *RemediationPathDecider) getPathReason(signalCtx *SignalContext, path string) string {
-	// Path reasoning matrix
+	// Determine expected path from fallback table
+	expectedPath := d.getExpectedPath(signalCtx)
+
+	// Check if actual path matches expected (detects Rego overrides)
+	if expectedPath != "" && path != expectedPath {
+		// Rego policy override detected - log and provide generic reasoning
+		d.logger.WithFields(logrus.Fields{
+			"environment":   signalCtx.Environment,
+			"priority":      signalCtx.Priority,
+			"expected_path": expectedPath,
+			"actual_path":   path,
+			"source":        "rego_override",
+		}).Debug("Rego policy override: path differs from fallback table")
+
+		// Return generic reasoning for Rego-overridden paths
+		return d.getGenericPathReason(path, signalCtx)
+	}
+
+	// Standard path reasoning matrix (matches fallback table)
 	reasons := map[string]map[string]string{
 		"production": {
 			"P0": "Critical production outage requires immediate automated remediation",
@@ -539,5 +561,51 @@ func (d *RemediationPathDecider) getPathReason(signalCtx *SignalContext, path st
 		}
 	}
 
-	return "Default fallback path for undefined scenario"
+	// Fallback for custom environments or catch-all scenarios
+	return d.getGenericPathReason(path, signalCtx)
+}
+
+// getExpectedPath determines the expected path from fallback table
+//
+// This is used to detect when Rego policy overrides the default behavior.
+func (d *RemediationPathDecider) getExpectedPath(signalCtx *SignalContext) string {
+	// Check specific environment first
+	if envMap, ok := d.fallbackTable[signalCtx.Environment]; ok {
+		if path, ok := envMap[signalCtx.Priority]; ok {
+			return path
+		}
+	}
+
+	// Check catch-all for custom environments
+	if catchAllMap, ok := d.fallbackTable["*"]; ok {
+		if path, ok := catchAllMap[signalCtx.Priority]; ok {
+			return path
+		}
+	}
+
+	return "manual" // Default fallback
+}
+
+// getGenericPathReason provides generic reasoning based on path type
+//
+// Used for:
+// - Rego policy overrides
+// - Custom environments not in fallback table
+// - Undefined scenarios
+func (d *RemediationPathDecider) getGenericPathReason(path string, signalCtx *SignalContext) string {
+	genericReasons := map[string]string{
+		"aggressive":   "Immediate automated remediation for critical scenarios",
+		"moderate":     "Automated execution with validation checks for balanced risk/speed",
+		"conservative": "GitOps PR creation with manual approval for production safety",
+		"manual":       "Analysis only with operator review required",
+	}
+
+	if reason, ok := genericReasons[path]; ok {
+		return fmt.Sprintf("%s (environment: %s, priority: %s)",
+			reason, signalCtx.Environment, signalCtx.Priority)
+	}
+
+	// Ultimate fallback
+	return fmt.Sprintf("Remediation path '%s' chosen for environment '%s' with priority '%s'",
+		path, signalCtx.Environment, signalCtx.Priority)
 }

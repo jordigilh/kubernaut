@@ -42,6 +42,7 @@
 |----------|---------|------------|--------|
 | **[Overview](./overview.md)** | Service purpose, architecture, key decisions | ~400 | ✅ Complete |
 | **[Implementation](./implementation.md)** | HTTP handlers, alert adapters, processing pipeline | ~1,300 | ✅ Complete |
+| **[Kind Template Triage](./GATEWAY_KIND_TEMPLATE_TRIAGE.md)** | Migration to Kind cluster test template | ~1,100 | ✅ Complete |
 | **[DESIGN_B_IMPLEMENTATION_SUMMARY.md](./DESIGN_B_IMPLEMENTATION_SUMMARY.md)** | **✅ CURRENT: Adapter-specific endpoints (NO detection)** | ~400 | ✅ **Complete** |
 | **[CONFIGURATION_DRIVEN_ADAPTERS.md](./CONFIGURATION_DRIVEN_ADAPTERS.md)** | **Configuration-driven registration (NOT hardcoded/REST)** | ~450 | ✅ **Complete** |
 | **[ADAPTER_REGISTRY_DESIGN.md](./ADAPTER_REGISTRY_DESIGN.md)** | ⚠️ **SUPERSEDED** - Detection-based architecture (Design A) | ~1,130 | ⚠️ **Historical** |
@@ -56,7 +57,7 @@
 | **[SIGNAL_API_RISK_ANALYSIS.md](./SIGNAL_API_RISK_ANALYSIS.md)** | Risk assessment for source-agnostic API | ~750 | ✅ Complete |
 | **[API_NAMING_CONFIDENCE_ASSESSMENT.md](./API_NAMING_CONFIDENCE_ASSESSMENT.md)** | Plural vs singular endpoint naming analysis | ~350 | ✅ Complete |
 
-**Total**: ~8,480 lines across 16 documents
+**Total**: ~10,680 lines across 18 documents
 
 ---
 

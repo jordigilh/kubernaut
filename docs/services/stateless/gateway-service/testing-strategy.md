@@ -6,6 +6,32 @@
 
 ---
 
+## ✅ Approved Integration Test Strategy
+
+**Classification**: 🔴 **KIND Required** (Full Kubernetes Cluster)
+
+Gateway Service requires **KIND cluster** for integration tests because it:
+- ✅ **Writes CRDs** - Creates RemediationRequest custom resources
+- ✅ **RBAC Required** - Uses ServiceAccount permissions to create CRDs
+- ✅ **TokenReview Authentication** - Validates bearer tokens via Kubernetes TokenReview API
+- ✅ **Real K8s Behavior** - Needs complete Kubernetes API surface including authentication
+
+**Why NOT envtest or Fake Client**:
+- ❌ envtest: No RBAC enforcement or TokenReview API
+- ❌ Fake Client: No CRD support, no authentication
+
+**Integration Test Environment**:
+- **Kind Cluster**: `kubernaut-gateway-test`
+- **Redis**: `redis.integration.svc.cluster.local:6379` (in-cluster)
+- **CRDs**: `config/crd/bases/remediation.kubernaut.io_remediationrequests.yaml`
+- **RBAC**: `config/rbac/gateway_role.yaml`
+
+**Test Setup Helper**: `pkg/testutil/kind/` (Kind cluster integration test template)
+
+**Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#1-gateway-service--kind)
+
+---
+
 ## APDC-Enhanced TDD Methodology
 
 Gateway Service follows **APDC-Enhanced TDD** from `.cursor/rules/00-core-development-methodology.mdc`:
@@ -120,27 +146,57 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter", func() {
 
 ### Test Strategy
 
-Use **real** Redis and K8s (KIND cluster):
+Use **Kind Cluster Test Template** for standardized integration tests:
+
+**Documentation**: [Kind Cluster Test Template Guide](../../../testing/KIND_CLUSTER_TEST_TEMPLATE.md)
 
 ```go
+package gateway_test
+
+import (
+    "context"
+    "fmt"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    goredis "github.com/go-redis/redis/v8"
+
+    "github.com/jordigilh/kubernaut/pkg/testutil/kind"
+    "github.com/jordigilh/kubernaut/pkg/gateway"
+    "github.com/jordigilh/kubernaut/internal/gateway/redis"
+)
+
+var suite *kind.IntegrationSuite
+
+var _ = BeforeSuite(func() {
+    // Use Kind template for standardized test setup
+    // See: docs/testing/KIND_CLUSTER_TEST_TEMPLATE.md
+    suite = kind.Setup("gateway-test", "kubernaut-system")
+})
+
+var _ = AfterSuite(func() {
+    suite.Cleanup()
+})
+
 var _ = Describe("BR-GATEWAY-020: Redis Integration", func() {
     var (
-        server    *gateway.Server
-        redisClient *redis.Client
-        ctx       context.Context
+        server      *gateway.Server
+        redisClient *goredis.Client
     )
 
     BeforeEach(func() {
-        // Real Redis from test environment
-        redisClient = redis.NewClient(&redis.Options{
-            Addr: "localhost:6379",
+        // Connect to Redis in Kind cluster
+        var err error
+        redisClient, err = redis.NewClient(&redis.Config{
+            Addr:     "redis.integration.svc.cluster.local:6379",
+            DB:       15,
+            PoolSize: 10,
         })
+        Expect(err).NotTo(HaveOccurred())
 
-        server = gateway.NewServer(
-            ":8080", ":9090",
-            fakeK8sClient, redisClient,
-        )
-        ctx = context.Background()
+        // Setup Gateway server
+        server = setupGatewayServer(suite, redisClient)
     })
 
     It("should persist deduplication metadata in Redis", func() {
@@ -155,12 +211,19 @@ var _ = Describe("BR-GATEWAY-020: Redis Integration", func() {
 
         // Verify Redis state
         key := fmt.Sprintf("alert:fingerprint:%s", resp1.Fingerprint)
-        count, err := redisClient.HGet(ctx, key, "count").Int()
+        count, err := redisClient.HGet(suite.Context, key, "count").Int()
         Expect(err).ToNot(HaveOccurred())
         Expect(count).To(Equal(2))
     })
 })
 ```
+
+**Key Improvements**:
+- ✅ **Kind template**: 15 lines vs 80+ custom setup
+- ✅ **Complete imports**: All necessary imports included
+- ✅ **Kind cluster DNS**: `redis.integration.svc.cluster.local:6379` (no port-forwarding)
+- ✅ **Automatic cleanup**: `suite.Cleanup()` handles all resources
+- ✅ **Consistent pattern**: Same as Dynamic Toolset, Data Storage services
 
 ### Key Integration Scenarios
 
