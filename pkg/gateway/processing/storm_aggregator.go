@@ -63,9 +63,33 @@ type StormAggregator struct {
 // Rationale: Balances early detection (don't wait too long) with aggregation
 // efficiency (collect enough alerts to make aggregation worthwhile)
 func NewStormAggregator(redisClient *redis.Client) *StormAggregator {
+	return NewStormAggregatorWithWindow(redisClient, 0) // Use default
+}
+
+// NewStormAggregatorWithWindow creates a storm aggregator with custom window duration
+//
+// Parameters:
+// - redisClient: Redis client for aggregation tracking
+// - windowDuration: Aggregation window duration (0 = use default 1 minute)
+//
+// Use cases:
+// - Production: Use default (0) for 1-minute windows
+// - Testing: Use 5*time.Second for fast integration tests
+//
+// Example:
+//
+//	// Production
+//	aggregator := NewStormAggregator(redisClient)
+//
+//	// Testing (5-second window)
+//	aggregator := NewStormAggregatorWithWindow(redisClient, 5*time.Second)
+func NewStormAggregatorWithWindow(redisClient *redis.Client, windowDuration time.Duration) *StormAggregator {
+	if windowDuration == 0 {
+		windowDuration = 1 * time.Minute // Production default
+	}
 	return &StormAggregator{
 		redisClient:    redisClient,
-		windowDuration: 1 * time.Minute,
+		windowDuration: windowDuration,
 	}
 }
 
@@ -164,8 +188,8 @@ func (a *StormAggregator) AddResource(ctx context.Context, windowID string, sign
 		return fmt.Errorf("failed to add resource to aggregation: %w", err)
 	}
 
-	// Set TTL (2 minutes to allow retrieval after window closes)
-	a.redisClient.Expire(ctx, key, 2*time.Minute)
+	// Set TTL (2x window duration to allow retrieval after window closes)
+	a.redisClient.Expire(ctx, key, 2*a.windowDuration)
 
 	return nil
 }
@@ -230,6 +254,18 @@ func (a *StormAggregator) GetSignalMetadata(ctx context.Context, windowID string
 		Annotations: make(map[string]string),
 	}
 
+	// Parse timestamps (required for CRD creation)
+	if firingTimeStr, ok := data["firing_time"]; ok && firingTimeStr != "" {
+		if t, err := time.Parse(time.RFC3339Nano, firingTimeStr); err == nil {
+			signal.FiringTime = t
+		}
+	}
+	if receivedTimeStr, ok := data["received_time"]; ok && receivedTimeStr != "" {
+		if t, err := time.Parse(time.RFC3339Nano, receivedTimeStr); err == nil {
+			signal.ReceivedTime = t
+		}
+	}
+
 	// Reconstruct resource
 	if resourceNamespace, ok := data["resource_namespace"]; ok {
 		signal.Resource = types.ResourceIdentifier{
@@ -266,6 +302,9 @@ func (a *StormAggregator) storeSignalMetadata(ctx context.Context, windowID stri
 		"source":       signal.Source,
 		"storm_type":   stormMetadata.StormType,
 		"storm_window": stormMetadata.Window,
+		// Timestamp fields (required for CRD creation)
+		"firing_time":   signal.FiringTime.Format(time.RFC3339Nano),
+		"received_time": signal.ReceivedTime.Format(time.RFC3339Nano),
 	}
 
 	// Store resource information
@@ -279,10 +318,18 @@ func (a *StormAggregator) storeSignalMetadata(ctx context.Context, windowID stri
 		return fmt.Errorf("failed to store metadata: %w", err)
 	}
 
-	// Set TTL (2 minutes to allow retrieval after window closes)
-	a.redisClient.Expire(ctx, metadataKey, 2*time.Minute)
+	// Set TTL (2x window duration to allow retrieval after window closes)
+	a.redisClient.Expire(ctx, metadataKey, 2*a.windowDuration)
 
 	return nil
+}
+
+// GetWindowDuration returns the configured aggregation window duration
+//
+// This allows the server to wait the appropriate amount of time before
+// creating the aggregated CRD.
+func (a *StormAggregator) GetWindowDuration() time.Duration {
+	return a.windowDuration
 }
 
 // GetResourceCount returns the current count of resources in the aggregation window

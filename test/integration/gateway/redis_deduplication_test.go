@@ -359,6 +359,23 @@ var _ = Describe("BR-GATEWAY-011: Redis Deduplication Storage", func() {
 		err := redisClient.Close()
 		Expect(err).NotTo(HaveOccurred())
 
+		// ✅ CRITICAL: Ensure Redis reconnection happens even if test fails
+		// Use DeferCleanup to guarantee reconnection runs regardless of test outcome
+		DeferCleanup(func() {
+			By("Restoring Redis connection for subsequent tests")
+			var reconnectErr error
+			redisClient, reconnectErr = redis.NewClient(&redis.Config{
+				Addr:     "127.0.0.1:6379",
+				DB:       15,
+				PoolSize: 10,
+			})
+			Expect(reconnectErr).NotTo(HaveOccurred(), "Redis reconnection should succeed")
+
+			// Verify reconnection works
+			pingErr := redisClient.Ping(context.Background()).Err()
+			Expect(pingErr).NotTo(HaveOccurred(), "Redis ping should succeed after reconnection")
+		})
+
 		By("Sending alert while Redis is unavailable")
 		req, err := http.NewRequest("POST",
 			"http://localhost:8090/api/v1/signals/prometheus",
@@ -383,19 +400,8 @@ var _ = Describe("BR-GATEWAY-011: Redis Deduplication Storage", func() {
 		}, 10*time.Second).Should(Equal(1),
 			"CRD created despite Redis failure (critical alerts prioritized)")
 
-		By("Restoring Redis connection for cleanup")
-		// Reconnect Redis for AfterEach cleanup and subsequent tests
-		var reconnectErr error
-		redisClient, reconnectErr = redis.NewClient(&redis.Config{
-			Addr:     "127.0.0.1:6379",
-			DB:       15,
-			PoolSize: 10,
-		})
-		Expect(reconnectErr).NotTo(HaveOccurred(), "Redis reconnection should succeed")
-
-		// Verify reconnection works
-		pingErr := redisClient.Ping(context.Background()).Err()
-		Expect(pingErr).NotTo(HaveOccurred(), "Redis ping should succeed after reconnection")
+		// Note: Redis reconnection handled by DeferCleanup above
+		// (runs even if test fails, ensuring subsequent tests aren't affected)
 
 		// BUSINESS OUTCOME VERIFIED:
 		// ✅ Gateway resilient to Redis failures
