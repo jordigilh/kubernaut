@@ -90,11 +90,11 @@ mv cmd/ai-service cmd/ai-analysis
 mv cmd/workflow-service cmd/workflow-orchestrator
 
 # Update planned service directories in documentation
-# cmd/executor-service → cmd/kubernetes-executor
-# cmd/storage-service → cmd/data-storage
+# cmd/executor-service → cmd/kubernetesexecutor
+# cmd/storage-service → cmd/datastorage
 # cmd/intelligence-service → cmd/intelligence
-# cmd/monitor-service → cmd/effectiveness-monitor
-# cmd/context-service → cmd/context-api
+# cmd/monitor-service → cmd/effectivenessmonitor
+# cmd/context-service → cmd/contextapi
 # cmd/notification-service → cmd/notifications
 ```
 
