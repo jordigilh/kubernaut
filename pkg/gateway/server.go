@@ -123,6 +123,23 @@ type ServerConfig struct {
 	// For production: use default (0) for 5-minute TTL
 	DeduplicationTTL time.Duration `yaml:"deduplication_ttl"`
 
+	// Storm detection thresholds (optional, defaults: rate=10, pattern=5)
+	// For testing: set to 2-3 for early storm detection in tests
+	// For production: use defaults (0) for 10 alerts/minute
+	StormRateThreshold    int `yaml:"storm_rate_threshold"`    // Default: 10 alerts/minute
+	StormPatternThreshold int `yaml:"storm_pattern_threshold"` // Default: 5 similar alerts
+
+	// Storm aggregation window (optional, default: 1 minute)
+	// For testing: set to 5*time.Second for fast integration tests
+	// For production: use default (0) for 1-minute windows
+	StormAggregationWindow time.Duration `yaml:"storm_aggregation_window"` // Default: 1 minute
+
+	// Environment classification cache TTL (optional, default: 30 seconds)
+	// For testing: set to 5*time.Second for fast cache expiry in tests
+	// For production: use default (0) for 30-second TTL
+	// Set to 0 for default behavior
+	EnvironmentCacheTTL time.Duration `yaml:"environment_cache_ttl"` // Default: 30 seconds
+
 	// Environment classification ConfigMap
 	EnvConfigMapNamespace string `yaml:"env_configmap_namespace"` // Default: "kubernaut-system"
 	EnvConfigMapName      string `yaml:"env_configmap_name"`      // Default: "kubernaut-environment-overrides"
@@ -183,9 +200,27 @@ func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
 		deduplicator = processing.NewDeduplicationService(redisClient, logger)
 	}
 
-	stormDetector := processing.NewStormDetector(redisClient)
-	stormAggregator := processing.NewStormAggregator(redisClient)
-	classifier := processing.NewEnvironmentClassifier(ctrlClient, logger)
+	stormDetector := processing.NewStormDetector(redisClient, cfg.StormRateThreshold, cfg.StormPatternThreshold)
+	if cfg.StormRateThreshold > 0 || cfg.StormPatternThreshold > 0 {
+		logger.WithFields(logrus.Fields{
+			"rate_threshold":    cfg.StormRateThreshold,
+			"pattern_threshold": cfg.StormPatternThreshold,
+		}).Info("Using custom storm detection thresholds")
+	}
+
+	stormAggregator := processing.NewStormAggregatorWithWindow(redisClient, cfg.StormAggregationWindow)
+	if cfg.StormAggregationWindow > 0 {
+		logger.WithField("window", cfg.StormAggregationWindow).Info("Using custom storm aggregation window")
+	}
+
+	// Create environment classifier with configurable cache TTL
+	var classifier *processing.EnvironmentClassifier
+	if cfg.EnvironmentCacheTTL > 0 {
+		classifier = processing.NewEnvironmentClassifierWithTTL(ctrlClient, logger, cfg.EnvironmentCacheTTL)
+		logger.WithField("cache_ttl", cfg.EnvironmentCacheTTL).Info("Using custom environment cache TTL")
+	} else {
+		classifier = processing.NewEnvironmentClassifier(ctrlClient, logger)
+	}
 	priorityEngine := processing.NewPriorityEngine(logger)
 	crdCreator := processing.NewCRDCreator(k8sClient, logger)
 
@@ -238,6 +273,7 @@ func (s *Server) setupRoutes() *http.ServeMux {
 
 	// Health and readiness probes
 	mux.HandleFunc("/health", s.healthHandler)
+	mux.HandleFunc("/healthz", s.healthHandler) // Kubernetes-style alias
 	mux.HandleFunc("/ready", s.readinessHandler)
 
 	// Prometheus metrics
@@ -567,7 +603,9 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 				// Fall through to individual CRD creation
 			} else {
 				// Schedule aggregated CRD creation after window expires
-				go s.createAggregatedCRDAfterWindow(ctx, windowID, signal, stormMetadata)
+				// Use background context - HTTP request context gets cancelled after response
+				// but aggregation goroutine needs to run for full window duration (5s-1m)
+				go s.createAggregatedCRDAfterWindow(context.Background(), windowID, signal, stormMetadata)
 
 				s.logger.WithFields(logrus.Fields{
 					"fingerprint": signal.Fingerprint,
@@ -743,12 +781,14 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	firstSignal *types.NormalizedSignal,
 	stormMetadata *processing.StormMetadata,
 ) {
-	// Wait for aggregation window to expire
-	time.Sleep(1 * time.Minute)
+	// Wait for aggregation window to expire (configurable: 5s for tests, 1m for production)
+	windowDuration := s.stormAggregator.GetWindowDuration()
+	time.Sleep(windowDuration)
 
 	s.logger.WithFields(logrus.Fields{
 		"windowID":  windowID,
 		"alertName": firstSignal.AlertName,
+		"duration":  windowDuration,
 	}).Info("Storm aggregation window expired, creating aggregated CRD")
 
 	// Retrieve all aggregated resources
