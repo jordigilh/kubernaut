@@ -42,16 +42,16 @@ path := "moderate" if {
     input.environment == "staging"
 }
 
-# Moderate path: P2 development
-path := "moderate" if {
-    input.priority == "P2"
-    input.environment == "development"
-}
-
-# Manual path: P2 production (human review)
-path := "manual" if {
+# Conservative path: P2 production (GitOps PR)
+path := "conservative" if {
     input.priority == "P2"
     input.environment == "production"
+}
+
+# Manual path: P2 development (human review)
+path := "manual" if {
+    input.priority == "P2"
+    input.environment == "development"
 }
 
 # Manual path: P2 staging (human review)

@@ -272,7 +272,7 @@ build-microservices: build-all-services ## Build all microservices (alias for bu
 .PHONY: build-gateway-service
 build-gateway-service: ## Build gateway service (webhook functionality)
 	@echo "🔨 Building gateway service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/gateway-service ./cmd/gateway-service
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/gateway ./cmd/gateway
 
 .PHONY: build-webhook-service
 build-webhook-service: build-gateway-service ## Build webhook service (alias for gateway-service)

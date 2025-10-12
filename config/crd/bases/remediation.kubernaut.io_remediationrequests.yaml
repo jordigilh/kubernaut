@@ -40,6 +40,13 @@ spec:
           spec:
             description: RemediationRequestSpec defines the desired state of RemediationRequest.
             properties:
+              affectedResources:
+                description: |-
+                  List of affected resources in an aggregated storm (e.g., "namespace:Pod:name")
+                  Only populated for aggregated storm CRDs
+                items:
+                  type: string
+                type: array
               deduplication:
                 description: |-
                   Deduplication Metadata

@@ -6,6 +6,34 @@
 
 ---
 
+## ✅ Approved Integration Test Strategy
+
+**Classification**: ⚪ **HTTP MOCKS** (No Infrastructure Needed)
+
+Effectiveness Monitor Service uses **HTTP mocks** for integration tests because it:
+- ✅ **No Kubernetes Operations** - Pure HTTP API service
+- ✅ **No Databases** - Calls other APIs (Data Storage, Infrastructure Monitoring)
+- ✅ **HTTP-Only Dependencies** - All integration points are REST APIs
+- ✅ **Instant Tests** - Zero infrastructure setup
+
+**Why NOT KIND, envtest, or Podman**:
+- ❌ KIND: No Kubernetes operations needed
+- ❌ envtest: No Kubernetes operations needed
+- ❌ Podman: No databases or containers needed
+
+**Integration Test Environment**:
+- **Mock Data Storage API**: `httptest.Server` with action history responses
+- **Mock Infrastructure Monitoring API**: `httptest.Server` with metrics responses
+- **No real infrastructure**: Purely HTTP mocks
+
+**Test Setup Helper**: Go standard library `net/http/httptest`
+
+**Graceful Degradation Testing**: Mock Infrastructure Monitoring failures to validate circuit breaker behavior
+
+**Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#6-effectiveness-monitor-service--http-mocks)
+
+---
+
 ## 📋 Testing Pyramid
 
 ```
@@ -831,7 +859,7 @@ func seedTestData(db *sql.DB) {
     // Insert test remediation actions
     _, err := db.Exec(`
         INSERT INTO remediation_audit (id, action_type, status, namespace, cluster, created_at)
-        VALUES 
+        VALUES
             ('test-act-1', 'restart-pod', 'success', 'production', 'us-west-2', NOW() - INTERVAL '10 weeks'),
             ('test-act-2', 'restart-pod', 'success', 'production', 'us-west-2', NOW() - INTERVAL '9 weeks'),
             ('test-act-3', 'restart-pod', 'failure', 'production', 'us-west-2', NOW() - INTERVAL '8 weeks')
@@ -1228,7 +1256,7 @@ ginkgo --focus="BR-INS-005" test/unit/effectiveness/...
 
 ---
 
-**Document Maintainer**: Kubernaut Documentation Team  
-**Last Updated**: October 6, 2025  
+**Document Maintainer**: Kubernaut Documentation Team
+**Last Updated**: October 6, 2025
 **Status**: ✅ **COMPLETE - READY FOR TDD IMPLEMENTATION**
 

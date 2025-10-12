@@ -29,8 +29,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/sirupsen/logrus"
 	"k8s.io/client-go/kubernetes/scheme"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -38,15 +38,15 @@ import (
 	"github.com/jordigilh/kubernaut/internal/gateway/redis"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/testutil/kind"
 )
 
 // Test suite variables
 var (
-	k8sClient     client.Client
+	suite         *kind.IntegrationSuite
 	redisClient   *goredis.Client
 	gatewayServer *gateway.Server
-	ctx           context.Context
-	cancel        context.CancelFunc
+	k8sClient     client.Client // Controller-runtime client for CRD access
 
 	// Test token (from environment or file)
 	testToken string
@@ -60,105 +60,36 @@ func TestGatewayIntegration(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	ctx, cancel = context.WithCancel(context.Background())
+	By("Connecting to existing Kind cluster using template")
+	// Use Kind template for standardized test setup
+	// See: docs/testing/KIND_CLUSTER_TEST_TEMPLATE.md
+	suite = kind.Setup("gateway-test", "kubernaut-system")
 
-	By("Connecting to existing Kind cluster (setup via make test-gateway-setup)")
-
-	// 1. Get Kubernetes client (cluster already exists via make)
-	config := ctrl.GetConfigOrDie()
-
+	By("Registering CRD schemes for controller-runtime client")
 	// Register RemediationRequest CRD scheme
 	err := remediationv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Create controller-runtime client
-	k8sClient, err = client.New(config, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
+	By("Creating controller-runtime client for CRD access")
+	// Get Kind cluster REST config using kubeconfig
+	cfg, err := config.GetConfig()
+	Expect(err).NotTo(HaveOccurred(), "Failed to get Kind cluster REST config")
 
-	// 2. Get test token (from env or file)
-	testToken = os.Getenv("TEST_TOKEN")
-	if testToken == "" {
-		// Try reading from file
-		tokenBytes, err := os.ReadFile("/tmp/test-gateway-token.txt")
-		if err != nil {
-			Fail("TEST_TOKEN not set and /tmp/test-gateway-token.txt not found. Run: make test-gateway-setup")
-		}
-		testToken = strings.TrimSpace(string(tokenBytes))
-	}
-	Expect(testToken).NotTo(BeEmpty(), "Test token is required")
-	GinkgoWriter.Printf("Using test token (length: %d)\n", len(testToken))
+	// Create controller-runtime client for CRD operations
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred(), "Failed to create controller-runtime client")
+	Expect(k8sClient).NotTo(BeNil(), "Controller-runtime client should not be nil")
 
-	// 3. Connect to Redis (already deployed via make test-gateway-setup)
-	// Use 127.0.0.1 explicitly to avoid IPv6 localhost resolution issues on macOS
-	redisClient, err = redis.NewClient(&redis.Config{
-		Addr:     "127.0.0.1:6379", // Port-forward setup by test-gateway-setup.sh
-		Password: "",
-		DB:       15, // Use DB 15 for testing
-		PoolSize: 10,
-	})
-	Expect(err).NotTo(HaveOccurred())
+	GinkgoWriter.Println("✅ Controller-runtime client initialized for CRD access")
 
-	// Verify Redis connectivity
-	err = redisClient.Ping(ctx).Err()
-	Expect(err).NotTo(HaveOccurred(), "Redis must be accessible. Run: make test-gateway-setup (includes port-forward)")
+	By("Getting test token for authentication")
+	testToken = getTestToken()
 
-	// Clear test database
-	err = redisClient.FlushDB(ctx).Err()
-	Expect(err).NotTo(HaveOccurred())
+	By("Connecting to Redis in Kind cluster")
+	redisClient = setupRedisClient(suite)
 
-	// 4. Setup Gateway server
-	prometheusAdapter := adapters.NewPrometheusAdapter()
-
-	// Create logrus logger for Gateway
-	logger := logrus.New()
-	logger.SetOutput(GinkgoWriter)
-	logger.SetLevel(logrus.DebugLevel)
-
-	serverConfig := &gateway.ServerConfig{
-		ListenAddr:   ":8090", // Use non-standard port for testing
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
-
-		// Realistic production rate limits for testing
-		// - 100 req/min is standard production rate (prevents DoS)
-		// - Burst of 20 allows short traffic spikes (e.g., storm detection sends 12 requests)
-		// - Rate limiting test sends 150 requests and expects ~127 to be blocked
-		RateLimitRequestsPerMinute: 100,
-		RateLimitBurst:             20,
-
-		Redis: &redis.Config{
-			Addr:     "127.0.0.1:6379", // Port-forward to Kind cluster
-			DB:       15,
-			PoolSize: 10,
-		},
-
-		// Use 5-second TTL for fast integration testing (production: 5 minutes)
-		DeduplicationTTL: 5 * time.Second,
-
-		EnvConfigMapNamespace: "kubernaut-system",
-		EnvConfigMapName:      "kubernaut-environment-overrides",
-	}
-
-	gatewayServer, err = gateway.NewServer(serverConfig, logger)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Register Prometheus adapter
-	err = gatewayServer.RegisterAdapter(prometheusAdapter)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Start Gateway server in background
-	go func() {
-		defer GinkgoRecover()
-		err := gatewayServer.Start(ctx)
-		if err != nil && err.Error() != "http: Server closed" {
-			Fail(fmt.Sprintf("Gateway server failed: %v", err))
-		}
-	}()
-
-	// Wait for server to be ready
-	time.Sleep(500 * time.Millisecond)
+	By("Starting Gateway server")
+	gatewayServer = setupGatewayServer(suite)
 
 	GinkgoWriter.Println("✅ Gateway integration test environment ready!")
 })
@@ -180,8 +111,133 @@ var _ = AfterSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 	}
 
-	// Note: Kind cluster is NOT deleted (persistent for debugging)
-	// Run: make test-gateway-teardown to clean up
+	// Cleanup Kind resources (namespaces, registered resources)
+	suite.Cleanup()
 
-	cancel()
+	GinkgoWriter.Println("✅ Gateway integration test environment cleaned up!")
 })
+
+// getTestToken retrieves the test token from environment or file.
+func getTestToken() string {
+	token := os.Getenv("TEST_TOKEN")
+	if token == "" {
+		// Try reading from file
+		tokenBytes, err := os.ReadFile("/tmp/test-gateway-token.txt")
+		if err != nil {
+			Fail("TEST_TOKEN not set and /tmp/test-gateway-token.txt not found. Run: make test-gateway-setup")
+		}
+		token = strings.TrimSpace(string(tokenBytes))
+	}
+	Expect(token).NotTo(BeEmpty(), "Test token is required")
+	GinkgoWriter.Printf("Using test token (length: %d)\n", len(token))
+	return token
+}
+
+// setupRedisClient connects to Redis in the Kind cluster.
+func setupRedisClient(suite *kind.IntegrationSuite) *goredis.Client {
+	// Connect to Redis via Kind port mapping (NodePort 30379 → localhost:6379)
+	// Tests run on host machine, not inside cluster, so use localhost
+	client, err := redis.NewClient(&redis.Config{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       15, // Use DB 15 for testing
+		PoolSize: 10,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	// Verify Redis connectivity
+	err = client.Ping(suite.Context).Err()
+	Expect(err).NotTo(HaveOccurred(), "Redis must be accessible in Kind cluster")
+
+	// Clear test database
+	err = client.FlushDB(suite.Context).Err()
+	Expect(err).NotTo(HaveOccurred())
+
+	GinkgoWriter.Println("✅ Connected to Redis in Kind cluster")
+	return client
+}
+
+// setupGatewayServer creates and starts the Gateway server.
+// Note: Gateway creates its own Redis client from config. The test suite's
+// redisClient is used separately for test setup/cleanup operations (FlushDB).
+// This provides proper isolation between test infrastructure and application logic.
+func setupGatewayServer(suite *kind.IntegrationSuite) *gateway.Server {
+	prometheusAdapter := adapters.NewPrometheusAdapter()
+
+	// Create logrus logger for Gateway
+	logger := logrus.New()
+	logger.SetOutput(GinkgoWriter)
+	logger.SetLevel(logrus.DebugLevel)
+
+	serverConfig := &gateway.ServerConfig{
+		ListenAddr:   ":8090", // Use non-standard port for testing
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+
+		// Higher rate limits for integration testing
+		// - 2000 req/min (20x production) accommodates storm tests sending 52 alerts in ~2.6s (~1200 alerts/min)
+		// - Burst of 100 (5x production) provides sufficient capacity for rapid storm alert bursts
+		// - Still validates rate limiting behavior (rate limiting tests use unique source IPs)
+		// - Rationale: Storm tests simulate realistic AlertManager storm behavior (many alerts from same source)
+		//   Per-source isolation via X-Forwarded-For ensures non-storm tests remain isolated
+		RateLimitRequestsPerMinute: 2000,
+		RateLimitBurst:             100,
+
+		Redis: &redis.Config{
+			Addr:     "localhost:6379", // Kind port mapping: NodePort 30379 → localhost:6379
+			DB:       15,
+			PoolSize: 10,
+		},
+
+		// Use 5-second TTL for fast integration testing (production: 5 minutes)
+		DeduplicationTTL: 5 * time.Second,
+
+		// Storm detection thresholds for testing (HIGH to prevent interference)
+		// - Production default: 10 alerts/minute (rate), 5 similar alerts (pattern)
+		// - Test default: 50 (HIGH threshold prevents accidental storm triggers in non-storm tests)
+		// - Storm-specific tests can send >50 alerts to explicitly validate storm behavior
+		// - Rationale: Storm detection uses alertname-only fingerprinting, causing
+		//   non-storm tests (e.g., rate limiting burst test with 50 alerts) to accidentally
+		//   trigger storm aggregation. High thresholds ensure test isolation.
+		StormRateThreshold:    50, // >50 alerts/minute triggers storm (prevents test interference)
+		StormPatternThreshold: 50, // >50 similar alerts triggers pattern storm (prevents test interference)
+
+		// Storm aggregation window for testing (much shorter than production)
+		// - Production default: 1 minute (60 seconds)
+		// - Test: 5 seconds (speeds up integration tests by 12x)
+		// - This reduces test execution time from 5+ minutes to ~30 seconds
+		StormAggregationWindow: 5 * time.Second,
+
+		// Environment classification cache TTL for testing (shorter than production)
+		// - Production default: 30 seconds
+		// - Test: 5 seconds (allows tests to verify cache expiry behavior)
+		// - Tests can wait 6 seconds to ensure cache entries expire
+		EnvironmentCacheTTL: 5 * time.Second,
+
+		EnvConfigMapNamespace: "kubernaut-system",
+		EnvConfigMapName:      "kubernaut-environment-overrides",
+	}
+
+	server, err := gateway.NewServer(serverConfig, logger)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Register Prometheus adapter
+	err = server.RegisterAdapter(prometheusAdapter)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Start Gateway server in background
+	go func() {
+		defer GinkgoRecover()
+		err := server.Start(suite.Context)
+		if err != nil && err.Error() != "http: Server closed" {
+			Fail(fmt.Sprintf("Gateway server failed: %v", err))
+		}
+	}()
+
+	// Wait for server to be ready
+	time.Sleep(500 * time.Millisecond)
+
+	GinkgoWriter.Println("✅ Gateway server started")
+	return server
+}

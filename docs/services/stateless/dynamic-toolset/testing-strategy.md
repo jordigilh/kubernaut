@@ -7,6 +7,42 @@
 
 ---
 
+## ✅ Approved Integration Test Strategy
+
+**Classification**: 🔴 **KIND** (Full Kubernetes Cluster)
+
+**Last Updated**: October 12, 2025
+**Status**: ✅ Approved for V1
+
+### **V1 Strategy: KIND** ✅
+
+Dynamic Toolset Service V1 uses **KIND** for integration tests because:
+- ✅ **Authentication Required** - REST API and Metrics endpoints require OAuth2/TokenReview validation
+- ✅ **Real Service Backends** - Health checks require actual HTTP endpoints to validate properly
+- ✅ **Complete Integration** - Tests production-like deployment with authentication, RBAC, and networking
+- ✅ **No Test Logic in Business Code** - Avoids anti-pattern of adding test flags to production code
+
+**Why KIND (not envtest) for V1**:
+- 🔒 **TokenReview API Required** - Authentication middleware validates Bearer tokens via TokenReview
+- 🔒 **Metrics Endpoint Protected** - Separate metrics server requires authentication
+- ✅ **Health Validation** - Real service backends allow proper health check testing
+- ✅ **Production Parity** - Tests match production deployment exactly
+
+**Integration Test Environment**:
+- **KIND**: Full Kubernetes cluster with authentication/authorization
+- **ConfigMap**: `kubernaut-toolset-config` in `kubernaut-system` namespace
+- **Test Services**: Real HTTP backends (httptest servers or mock services)
+- **ServiceAccount**: `kubernaut-toolset` with proper RBAC permissions
+- **Health Checker**: Production configuration (5s timeout, 3 retries)
+- **Setup Time**: ~30-45 seconds (cluster creation + service deployment)
+- **Test Duration**: ~90-120 seconds
+
+**Test Setup Helper**: Shared KIND cluster in `test/integration/toolset/suite_test.go`
+
+**Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#2-dynamic-toolset-service--kind)
+
+---
+
 ## 📋 Testing Pyramid
 
 ```
