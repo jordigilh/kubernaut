@@ -117,8 +117,8 @@ func NewRateLimiter(requestsPerMinute int, burst int, logger *logrus.Logger) *Ra
 // - 200/202: Request allowed (passed to next handler)
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract source IP
-		ip := rl.extractIP(r)
+		// Extract source IP using standalone extractor
+		ip := ExtractClientIP(r)
 
 		// Get or create limiter for this IP
 		limiter := rl.getLimiter(ip)
@@ -181,51 +181,6 @@ func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
 	}).Debug("Created new rate limiter for IP")
 
 	return limiter
-}
-
-// extractIP extracts source IP from request
-//
-// This method checks multiple sources:
-// 1. X-Forwarded-For header (if behind load balancer/proxy)
-// 2. X-Real-IP header (alternative proxy header)
-// 3. RemoteAddr field (direct connection)
-//
-// X-Forwarded-For format: "client-ip, proxy1-ip, proxy2-ip"
-// We use the first IP (client-ip) for rate limiting.
-//
-// Security note: X-Forwarded-For can be spoofed by malicious clients.
-// In production, configure your load balancer to:
-// - Strip X-Forwarded-For headers from untrusted sources
-// - Add trusted X-Forwarded-For header with real client IP
-func (rl *RateLimiter) extractIP(r *http.Request) string {
-	// Check X-Forwarded-For (comma-separated list)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take first IP (client IP)
-		for idx := 0; idx < len(xff); idx++ {
-			if xff[idx] == ',' {
-				return xff[:idx]
-			}
-		}
-		return xff
-	}
-
-	// Check X-Real-IP
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-
-	// Fallback to RemoteAddr
-	// RemoteAddr format: "ip:port" or "[ipv6]:port"
-	remoteAddr := r.RemoteAddr
-
-	// Strip port
-	for i := len(remoteAddr) - 1; i >= 0; i-- {
-		if remoteAddr[i] == ':' {
-			return remoteAddr[:i]
-		}
-	}
-
-	return remoteAddr
 }
 
 // cleanupStaleIPs removes rate limiters for IPs that haven't been seen recently

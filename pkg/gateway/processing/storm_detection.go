@@ -19,6 +19,8 @@ package processing
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -45,25 +47,44 @@ import (
 // - Pattern: alert:pattern:<alertname> (2-minute TTL, sorted set)
 type StormDetector struct {
 	redisClient      *redis.Client
-	rateThreshold    int // Default: 10 alerts/minute
-	patternThreshold int // Default: 5 similar alerts
+	rateThreshold    int         // Default: 10 alerts/minute
+	patternThreshold int         // Default: 5 similar alerts
+	connected        atomic.Bool // Track Redis connection state (for lazy connection)
+	connCheckMu      sync.Mutex  // Protects connection check (prevent thundering herd)
 }
 
-// NewStormDetector creates a new storm detector with default thresholds
+// NewStormDetector creates a new storm detector with configurable thresholds
 //
-// Default thresholds:
-// - Rate: 10 alerts/minute (configurable via ConfigMap in future)
-// - Pattern: 5 similar alerts across resources
+// Parameters:
+// - redisClient: Redis client for storm tracking
+// - rateThreshold: Number of alerts/minute to trigger rate-based storm (default: 10)
+// - patternThreshold: Number of similar alerts across resources to trigger pattern-based storm (default: 5)
+//
+// Default thresholds (when 0 is passed):
+// - Rate: 10 alerts/minute (production default)
+// - Pattern: 5 similar alerts (production default)
+//
+// Test thresholds (recommended for integration tests):
+// - Rate: 2-3 alerts/minute (early storm detection for testing)
+// - Pattern: 2 similar alerts (early pattern detection for testing)
 //
 // Thresholds are based on:
 // - Prometheus default evaluation interval: 30-60 seconds
 // - Typical remediation time: 3-10 minutes
 // - Balance between early detection and false positives
-func NewStormDetector(redisClient *redis.Client) *StormDetector {
+func NewStormDetector(redisClient *redis.Client, rateThreshold, patternThreshold int) *StormDetector {
+	// Apply defaults if zero values provided
+	if rateThreshold == 0 {
+		rateThreshold = 10 // >10 alerts/minute (production default)
+	}
+	if patternThreshold == 0 {
+		patternThreshold = 5 // >5 similar alerts (production default)
+	}
+
 	return &StormDetector{
 		redisClient:      redisClient,
-		rateThreshold:    10, // >10 alerts/minute
-		patternThreshold: 5,  // >5 similar alerts
+		rateThreshold:    rateThreshold,
+		patternThreshold: patternThreshold,
 	}
 }
 
