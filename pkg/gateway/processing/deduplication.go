@@ -19,6 +19,8 @@ package processing
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -48,6 +50,8 @@ type DeduplicationService struct {
 	redisClient *redis.Client
 	ttl         time.Duration
 	logger      *logrus.Logger
+	connected   atomic.Bool // Track Redis connection state (for lazy connection)
+	connCheckMu sync.Mutex  // Protects connection check (prevent thundering herd)
 }
 
 // NewDeduplicationService creates a new deduplication service
@@ -81,6 +85,47 @@ func NewDeduplicationServiceWithTTL(redisClient *redis.Client, ttl time.Duration
 	}
 }
 
+// ensureConnection verifies Redis is available using lazy connection pattern
+//
+// This method implements graceful degradation for Redis failures:
+// 1. Fast path: If already connected, return immediately (no Redis call)
+// 2. Slow path: If not connected, try to ping Redis
+// 3. On success: Mark as connected (subsequent calls use fast path)
+// 4. On failure: Return error (caller implements graceful degradation)
+//
+// Concurrency: Uses double-checked locking to prevent thundering herd
+// Performance: Fast path is ~0.1μs (atomic load), slow path is ~1-3ms (Redis ping)
+//
+// This pattern allows Gateway to:
+// - Start even when Redis is temporarily unavailable (BR-GATEWAY-013)
+// - Recover automatically when Redis becomes available
+// - Handle Redis failures gracefully without crashing
+func (d *DeduplicationService) ensureConnection(ctx context.Context) error {
+	// Fast path: already connected
+	if d.connected.Load() {
+		return nil
+	}
+
+	// Slow path: need to check connection
+	d.connCheckMu.Lock()
+	defer d.connCheckMu.Unlock()
+
+	// Double-check after acquiring lock (another goroutine might have connected)
+	if d.connected.Load() {
+		return nil
+	}
+
+	// Try to connect
+	if err := d.redisClient.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("redis unavailable: %w", err)
+	}
+
+	// Mark as connected (enables fast path for future calls)
+	d.connected.Store(true)
+	d.logger.Info("Redis connection established for deduplication service")
+	return nil
+}
+
 // Check verifies if an alert is a duplicate
 //
 // This method:
@@ -112,11 +157,9 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		metrics.RedisOperationDuration.WithLabelValues("deduplication_check").Observe(time.Since(startTime).Seconds())
 	}()
 
-	key := fmt.Sprintf("alert:fingerprint:%s", signal.Fingerprint)
-
-	// Check if key exists in Redis
-	exists, err := s.redisClient.Exists(ctx, key).Result()
-	if err != nil {
+	// BR-GATEWAY-013: Graceful degradation when Redis unavailable
+	// Check Redis connection before attempting operations
+	if err := s.ensureConnection(ctx); err != nil {
 		// Redis unavailable - graceful degradation
 		// Log error but don't fail request (accept potential duplicates)
 		s.logger.WithError(err).WithFields(logrus.Fields{
@@ -124,6 +167,24 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 			"operation":   "deduplication_check",
 		}).Warn("Redis unavailable, skipping deduplication (alert treated as new)")
 
+		metrics.DeduplicationCacheMissesTotal.Inc()
+		return false, nil, nil // Treat as new alert, allow processing to continue
+	}
+
+	key := fmt.Sprintf("alert:fingerprint:%s", signal.Fingerprint)
+
+	// Check if key exists in Redis
+	exists, err := s.redisClient.Exists(ctx, key).Result()
+	if err != nil {
+		// Redis operation failed (e.g., connection lost after ensureConnection)
+		// Graceful degradation: treat as new alert
+		s.logger.WithError(err).WithFields(logrus.Fields{
+			"fingerprint": signal.Fingerprint,
+			"operation":   "deduplication_check",
+		}).Warn("Redis operation failed, skipping deduplication (alert treated as new)")
+
+		// Mark as disconnected so next call will retry connection
+		s.connected.Store(false)
 		metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, nil // Treat as new alert, allow processing to continue
 	}
@@ -200,6 +261,20 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 		metrics.RedisOperationDuration.WithLabelValues("deduplication_store").Observe(time.Since(startTime).Seconds())
 	}()
 
+	// BR-GATEWAY-013: Graceful degradation when Redis unavailable
+	// Check Redis connection before attempting operations
+	if err := s.ensureConnection(ctx); err != nil {
+		// Redis unavailable - graceful degradation
+		// Log error but don't fail (CRD already created, alert is being processed)
+		s.logger.WithError(err).WithFields(logrus.Fields{
+			"fingerprint": signal.Fingerprint,
+			"crd_ref":     remediationRequestRef,
+			"operation":   "deduplication_store",
+		}).Warn("Redis unavailable, failed to store deduplication metadata (future duplicates won't be detected)")
+
+		return nil // Don't fail the request, CRD is already created
+	}
+
 	key := fmt.Sprintf("alert:fingerprint:%s", signal.Fingerprint)
 	now := time.Now().Format(time.RFC3339)
 
@@ -216,14 +291,16 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	pipe.Expire(ctx, key, s.ttl) // Auto-expire after 5 minutes
 
 	if _, err := pipe.Exec(ctx); err != nil {
-		// Redis unavailable - graceful degradation
-		// Log error but don't fail (CRD already created, alert is being processed)
+		// Redis operation failed (e.g., connection lost after ensureConnection)
+		// Graceful degradation: log error but don't fail
 		s.logger.WithError(err).WithFields(logrus.Fields{
 			"fingerprint": signal.Fingerprint,
 			"crd_ref":     remediationRequestRef,
 			"operation":   "deduplication_store",
-		}).Warn("Redis unavailable, failed to store deduplication metadata (future duplicates won't be detected)")
+		}).Warn("Redis operation failed, failed to store deduplication metadata (future duplicates won't be detected)")
 
+		// Mark as disconnected so next call will retry connection
+		s.connected.Store(false)
 		return nil // Don't fail the request, CRD is already created
 	}
 

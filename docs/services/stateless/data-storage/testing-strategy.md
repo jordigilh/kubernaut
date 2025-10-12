@@ -6,6 +6,34 @@
 
 ---
 
+## ✅ Approved Integration Test Strategy
+
+**Classification**: 🟢 **PODMAN Required** (External Databases)
+
+Data Storage Service requires **Podman containers** for integration tests because it:
+- ✅ **No Kubernetes Operations** - Pure HTTP API service with no K8s dependencies
+- ✅ **PostgreSQL Required** - Writes audit trail to PostgreSQL with transactions
+- ✅ **Vector DB Required** - Writes embeddings to pgvector extension
+- ✅ **Redis Required** - Caches embeddings with TTL
+- ✅ **Fast Tests** - Containers start in ~1-2 seconds
+
+**Why NOT KIND or envtest**:
+- ❌ KIND: No Kubernetes operations needed (overkill)
+- ❌ envtest: No Kubernetes operations needed
+
+**Integration Test Environment**:
+- **PostgreSQL**: `pgvector/pgvector:pg15` container (with pgvector extension)
+- **Redis**: `redis:7-alpine` container
+- **No Kubernetes**: Pure HTTP API testing
+
+**Test Setup Helper**: `testcontainers-go` (Podman/Docker testcontainers)
+
+**Container Sharing**: Same containers used by Context API Service (efficiency)
+
+**Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#3-data-storage-service--podman)
+
+---
+
 ## 📋 Testing Pyramid
 
 ```

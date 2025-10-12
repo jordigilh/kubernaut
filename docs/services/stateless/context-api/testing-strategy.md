@@ -6,6 +6,34 @@
 
 ---
 
+## ✅ Approved Integration Test Strategy
+
+**Classification**: 🟢 **PODMAN Required** (External Databases - Shared)
+
+Context API Service requires **Podman containers** for integration tests because it:
+- ✅ **No Kubernetes Operations** - Pure HTTP API service with no K8s dependencies
+- ✅ **PostgreSQL Required** - Queries audit trail with complex aggregations and partitioning
+- ✅ **Vector DB Required** - Performs semantic search via pgvector
+- ✅ **Redis Required** - Multi-tier caching with varying TTLs
+- ✅ **Fast Tests** - Containers start in ~1-2 seconds
+
+**Why NOT KIND or envtest**:
+- ❌ KIND: No Kubernetes operations needed (overkill)
+- ❌ envtest: No Kubernetes operations needed
+
+**Integration Test Environment**:
+- **PostgreSQL**: `pgvector/pgvector:pg15` container (same as Data Storage)
+- **Redis**: `redis:7-alpine` container (same as Data Storage)
+- **No Kubernetes**: Pure HTTP API testing
+
+**Test Setup Helper**: `testcontainers-go` (Podman/Docker testcontainers)
+
+**Container Sharing**: Shares PostgreSQL + Redis containers with Data Storage Service for efficiency
+
+**Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#4-context-api-service--podman)
+
+---
+
 ## 📋 Testing Pyramid
 
 ```

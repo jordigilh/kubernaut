@@ -19,7 +19,9 @@ package processing
 import (
 	"context"
 	"sync"
+	"time"
 
+	"github.com/patrickmn/go-cache"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -44,30 +46,63 @@ import (
 // - No hardcoded validation - labels provide dynamic configuration
 //
 // Caching:
-// - In-memory cache for namespace → environment mapping
+// - In-memory TTL-based cache for namespace → environment mapping
 // - Reduces Kubernetes API calls (~1ms after first lookup vs ~10-50ms cold lookup)
+// - Cache expires after configurable TTL (default: 30 seconds)
+// - Cache is automatically cleaned up by go-cache background goroutine
 // - Cache is shared across all Gateway replicas (stored in Redis in future enhancement)
 type EnvironmentClassifier struct {
 	k8sClient client.Client
 	logger    *logrus.Logger
 
-	// cache stores namespace → environment mapping
+	// cache stores namespace → environment mapping with TTL
 	// Key: namespace name
 	// Value: environment (any non-empty string, e.g., "prod", "staging", "dev", "canary", "qa-eu")
-	cache map[string]string
-	mu    sync.RWMutex
+	// TTL: Configurable (default 30s), after which cache entry is automatically evicted
+	cache    *cache.Cache
+	cacheTTL time.Duration
+	mu       sync.RWMutex // Still needed for thread-safe operations
 }
 
-// NewEnvironmentClassifier creates a new environment classifier
+// NewEnvironmentClassifier creates a new environment classifier with default cache TTL (30 seconds)
 //
 // Parameters:
 // - k8sClient: Kubernetes client for namespace and ConfigMap lookups
 // - logger: Structured logger for debugging classification decisions
+//
+// For custom TTL, use NewEnvironmentClassifierWithTTL.
 func NewEnvironmentClassifier(k8sClient client.Client, logger *logrus.Logger) *EnvironmentClassifier {
+	return NewEnvironmentClassifierWithTTL(k8sClient, logger, 30*time.Second)
+}
+
+// NewEnvironmentClassifierWithTTL creates a new environment classifier with custom cache TTL
+//
+// Parameters:
+// - k8sClient: Kubernetes client for namespace and ConfigMap lookups
+// - logger: Structured logger for debugging classification decisions
+// - cacheTTL: Time-to-live for cache entries (e.g., 30*time.Second)
+//   - Production default: 30 seconds (balances freshness vs. API calls)
+//   - Testing: 5 seconds (faster cache expiry for integration tests)
+//   - Set to 0 for no caching (every lookup hits Kubernetes API)
+//
+// Cache TTL Trade-offs:
+// - Shorter TTL (5-10s): More responsive to environment changes, more API calls
+// - Longer TTL (60-300s): Fewer API calls, slower to reflect changes
+// - Default 30s: Good balance for most use cases
+func NewEnvironmentClassifierWithTTL(k8sClient client.Client, logger *logrus.Logger, cacheTTL time.Duration) *EnvironmentClassifier {
+	// Create TTL cache with cleanup interval = 2x TTL
+	// This ensures expired entries are cleaned up efficiently
+	cleanupInterval := 2 * cacheTTL
+	if cacheTTL == 0 {
+		// No caching - use very short cleanup to avoid memory leaks
+		cleanupInterval = 1 * time.Minute
+	}
+
 	return &EnvironmentClassifier{
 		k8sClient: k8sClient,
 		logger:    logger,
-		cache:     make(map[string]string),
+		cache:     cache.New(cacheTTL, cleanupInterval),
+		cacheTTL:  cacheTTL,
 	}
 }
 
@@ -171,59 +206,40 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
 	return defaultEnv
 }
 
-// isValidEnvironment checks if the environment value is valid
-//
-// Dynamic Configuration Philosophy:
-// This function now accepts ANY non-empty string as a valid environment.
-// Organizations define their own environment taxonomy based on their needs:
-//
-// Examples of valid environments:
-// - Standard: "prod", "staging", "dev", "qa", "uat"
-// - Regional: "prod-east", "prod-west", "staging-eu"
-// - Deployment strategies: "canary", "blue", "green"
-// - Custom: "production", "pre-prod", "development", "local"
-//
-// Why no hardcoded validation:
-// - Labels are meant for DYNAMIC configuration, not static enforcement
-// - Organizations have diverse environment taxonomies
-// - Downstream services (Priority, Rego) handle environment-specific logic
-// - Validation happens at business rule layer, not infrastructure layer
-//
-// Returns:
-// - bool: true if non-empty, false otherwise
-func isValidEnvironment(env string) bool {
-	return env != ""
-}
-
 // getFromCache retrieves environment from cache
 //
-// Thread-safe read with RLock (supports concurrent lookups).
+// Thread-safe read using go-cache (supports concurrent lookups).
+// Cache entries automatically expire after TTL.
 //
 // Returns:
-// - string: Environment if found in cache, empty string otherwise
+// - string: Environment if found in cache and not expired, empty string otherwise
 func (c *EnvironmentClassifier) getFromCache(namespace string) string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.cache[namespace]
+	if val, found := c.cache.Get(namespace); found {
+		if env, ok := val.(string); ok {
+			return env
+		}
+	}
+	return ""
 }
 
-// setCache stores environment in cache
+// setCache stores environment in cache with TTL
 //
-// Thread-safe write with Lock.
+// Thread-safe write using go-cache.
 //
 // Cache invalidation:
-// - No TTL (environment changes are rare)
-// - Manual invalidation: Restart Gateway service or implement cache eviction API
-// - Future enhancement: Watch namespace labels and ConfigMap for changes
+// - Automatic TTL expiry (default: 30 seconds)
+// - Background cleanup goroutine removes expired entries
+// - Manual invalidation: Use ClearCache() or restart Gateway service
+// - Future enhancement: Watch namespace labels and ConfigMap for real-time invalidation
 func (c *EnvironmentClassifier) setCache(namespace, environment string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cache[namespace] = environment
+	// Use cache.DefaultExpiration to inherit TTL from cache constructor
+	c.cache.Set(namespace, environment, cache.DefaultExpiration)
 
 	c.logger.WithFields(logrus.Fields{
 		"namespace":   namespace,
 		"environment": environment,
-	}).Debug("Cached environment classification")
+		"ttl":         c.cacheTTL,
+	}).Debug("Cached environment classification with TTL")
 }
 
 // ClearCache clears the entire cache
@@ -233,9 +249,7 @@ func (c *EnvironmentClassifier) setCache(namespace, environment string) {
 // - Manual cache invalidation (via admin API in future)
 // - Memory management (if cache grows too large)
 func (c *EnvironmentClassifier) ClearCache() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cache = make(map[string]string)
+	c.cache.Flush()
 
 	c.logger.Info("Cleared environment classification cache")
 }
@@ -246,8 +260,9 @@ func (c *EnvironmentClassifier) ClearCache() {
 // - Monitoring (expose as Prometheus gauge)
 // - Debugging
 // - Testing
+//
+// Note: This includes both non-expired and expired (not yet cleaned up) entries.
+// go-cache cleanup goroutine runs at 2x TTL interval.
 func (c *EnvironmentClassifier) GetCacheSize() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.cache)
+	return c.cache.ItemCount()
 }

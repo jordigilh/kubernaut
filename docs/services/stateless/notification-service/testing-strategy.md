@@ -7,6 +7,42 @@
 
 ---
 
+## ✅ Approved Integration Test Strategy
+
+**Classification**: ⚪ **HTTP MOCKS** (No Infrastructure Needed)
+
+Notification Service uses **HTTP mocks** for integration tests because it:
+- ✅ **No Kubernetes Operations** - Pure HTTP API service
+- ✅ **No Databases** - Stateless notification delivery
+- ✅ **External Webhooks** - SMTP, Slack, Teams, SMS (all HTTP-based)
+- ✅ **Instant Tests** - Zero infrastructure setup
+
+**Why NOT KIND, envtest, or Podman**:
+- ❌ KIND: No Kubernetes operations needed
+- ❌ envtest: No Kubernetes operations needed
+- ❌ Podman: Optional for mock SMTP server (Mailhog), but HTTP mocks sufficient
+
+**Integration Test Environment**:
+- **Mock SMTP**: `httptest.Server` or optional Mailhog container
+- **Mock Slack Webhook**: `httptest.Server` with Slack Block Kit validation
+- **Mock Teams Webhook**: `httptest.Server` with Adaptive Card validation
+- **Mock SMS API**: `httptest.Server` (Twilio/SNS endpoints)
+- **No real external services**: Purely HTTP mocks
+
+**Test Setup Helper**: Go standard library `net/http/httptest`
+
+**Optional Mailhog Container** (if testing real SMTP):
+```go
+mailhogContainer := testcontainers.GenericContainer{
+    Image: "mailhog/mailhog:latest",
+    ExposedPorts: []string{"1025/tcp", "8025/tcp"},
+}
+```
+
+**Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#7-notification-service--http-mocks)
+
+---
+
 ## 📋 Overview
 
 Comprehensive testing strategy for the Notification Service following APDC-Enhanced TDD methodology and defense-in-depth testing pyramid.
