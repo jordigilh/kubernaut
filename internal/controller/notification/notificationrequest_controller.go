@@ -30,6 +30,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
+	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
 )
 
 // NotificationRequestReconciler reconciles a NotificationRequest object
@@ -40,6 +41,9 @@ type NotificationRequestReconciler struct {
 	// Delivery services
 	ConsoleService *delivery.ConsoleDeliveryService
 	SlackService   *delivery.SlackDeliveryService
+
+	// Data sanitization
+	Sanitizer *sanitization.Sanitizer
 }
 
 //+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
@@ -256,7 +260,10 @@ func (r *NotificationRequestReconciler) deliverToConsole(ctx context.Context, no
 	if r.ConsoleService == nil {
 		return fmt.Errorf("console service not initialized")
 	}
-	return r.ConsoleService.Deliver(ctx, notification)
+
+	// Sanitize notification content before delivery
+	sanitizedNotification := r.sanitizeNotification(notification)
+	return r.ConsoleService.Deliver(ctx, sanitizedNotification)
 }
 
 // deliverToSlack delivers notification to Slack webhook
@@ -264,7 +271,24 @@ func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, noti
 	if r.SlackService == nil {
 		return fmt.Errorf("slack service not initialized")
 	}
-	return r.SlackService.Deliver(ctx, notification)
+
+	// Sanitize notification content before delivery
+	sanitizedNotification := r.sanitizeNotification(notification)
+	return r.SlackService.Deliver(ctx, sanitizedNotification)
+}
+
+// sanitizeNotification creates a sanitized copy of the notification
+func (r *NotificationRequestReconciler) sanitizeNotification(notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest {
+	// Create a shallow copy to avoid mutating the original
+	sanitized := notification.DeepCopy()
+
+	// Sanitize subject and body if sanitizer is configured
+	if r.Sanitizer != nil {
+		sanitized.Spec.Subject = r.Sanitizer.Sanitize(sanitized.Spec.Subject)
+		sanitized.Spec.Body = r.Sanitizer.Sanitize(sanitized.Spec.Body)
+	}
+
+	return sanitized
 }
 
 // channelAlreadySucceeded checks if a channel has already succeeded
