@@ -31,7 +31,7 @@ This checklist ensures complete and correct implementation of the Data Storage S
 
 ### **1.1 Project Structure**
 - [ ] Create `pkg/datastorage/` directory structure
-- [ ] Create `cmd/data-storage/main.go` entry point
+- [ ] Create `cmd/datastorage/main.go` entry point
 - [ ] Create `test/unit/datastorage/` for unit tests
 - [ ] Create `test/integration/datastorage/` for integration tests
 - [ ] Create `deploy/data-storage/` for Kubernetes manifests

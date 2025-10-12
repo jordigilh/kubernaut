@@ -7,6 +7,45 @@
 
 ---
 
+## ✅ Approved Integration Test Strategy
+
+**Classification**: 🟡 **FAKE CLIENT** (Start) → **ENVTEST** (If Needed)
+
+HolmesGPT API Service has a **two-phase approach** for integration tests:
+
+**Phase 1: Fake Client (Recommended Start)**
+- ✅ **Reads Kubernetes** - Fetches logs, events, resources
+- ✅ **No field selectors initially** - Simple LIST/GET operations
+- ✅ **Fast tests** - < 1 second startup
+- ✅ **Zero prerequisites** - No setup-envtest needed
+
+**Phase 2: envtest (Only If Needed)**
+- Upgrade if HolmesGPT SDK requires field selectors
+- Upgrade if investigation logic needs complex K8s queries
+- Accept setup cost (~70MB binaries + 2 sec startup)
+
+**Why NOT KIND**:
+- ❌ KIND: No writes to Kubernetes, no RBAC testing needed (overkill)
+
+**Integration Test Environment (Phase 1)**:
+- **Fake K8s Client**: Pre-populated with test Pods, Events, Deployments
+- **Mock LLM**: httptest.Server mocking OpenAI/Claude responses
+- **No real K8s cluster**: Purely in-memory testing
+
+**Integration Test Environment (Phase 2 - If Needed)**:
+- **envtest**: Real API server with CRD support
+- **Requires**: `setup-envtest` (~70MB binaries)
+- **Use controller-runtime client**: For CRD access
+
+**Decision Criteria to Upgrade**:
+- Tests fail due to missing field selectors (`.spec.nodeName`)
+- HolmesGPT SDK requires complex K8s queries
+- Need to test with CRDs
+
+**Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#5-holmesgpt-api-service--envtest-or-fake-client)
+
+---
+
 ## 📋 Testing Pyramid
 
 ```
