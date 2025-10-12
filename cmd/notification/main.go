@@ -32,6 +32,7 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
+	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -94,12 +95,16 @@ func main() {
 	}
 	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
 
-	// Setup controller with delivery services
+	// Initialize data sanitization
+	sanitizer := sanitization.NewSanitizer()
+
+	// Setup controller with delivery services + sanitization
 	if err = (&notification.NotificationRequestReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 		ConsoleService: consoleService,
 		SlackService:   slackService,
+		Sanitizer:      sanitizer,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NotificationRequest")
 		os.Exit(1)
