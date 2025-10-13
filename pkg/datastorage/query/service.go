@@ -46,6 +46,7 @@ type DBQuerier interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 
 	// ExecContext executes a query without returning rows (for SET commands, etc.)
+	// Returns sql.Result for compatibility with sqlx.DB
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
@@ -187,7 +188,7 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 		SET LOCAL enable_seqscan = off;
 		SET LOCAL enable_indexscan = on;
 	`
-	
+
 	if _, err := s.db.ExecContext(ctx, plannerHints); err != nil {
 		// Log warning but don't fail the query
 		// Planner hints are an optimization, not a requirement
