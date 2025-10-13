@@ -11,6 +11,29 @@ FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-notification-test}"
 DOCKERFILE="docker/notification-controller.Dockerfile"
 
+# Target architecture configuration
+# Default to host architecture for integration tests (avoids cross-compilation)
+# Override with TARGETARCH env var for production multi-arch builds
+HOST_ARCH=$(uname -m)
+case "$HOST_ARCH" in
+    x86_64)
+        HOST_ARCH="amd64"
+        ;;
+    aarch64|arm64)
+        HOST_ARCH="arm64"
+        ;;
+    armv7l)
+        HOST_ARCH="arm"
+        ;;
+    *)
+        log_warn "Unknown architecture: $HOST_ARCH, defaulting to amd64"
+        HOST_ARCH="amd64"
+        ;;
+esac
+
+# Use TARGETARCH env var if set, otherwise use host architecture
+TARGETARCH="${TARGETARCH:-$HOST_ARCH}"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -61,6 +84,19 @@ while [[ $# -gt 0 ]]; do
             echo "Environment Variables:"
             echo "  IMAGE_TAG           Image tag (default: latest)"
             echo "  KIND_CLUSTER_NAME   KIND cluster name (default: notification-test)"
+            echo "  TARGETARCH          Target architecture (default: host architecture)"
+            echo "                      - For integration tests: Uses host arch (arm64/amd64)"
+            echo "                      - For production: Set to 'amd64' or 'arm64'"
+            echo ""
+            echo "Examples:"
+            echo "  # Integration tests (uses host architecture)"
+            echo "  ./scripts/build-notification-controller.sh --kind"
+            echo ""
+            echo "  # Production build for amd64"
+            echo "  TARGETARCH=amd64 ./scripts/build-notification-controller.sh --push"
+            echo ""
+            echo "  # Production build for arm64"
+            echo "  TARGETARCH=arm64 IMAGE_TAG=v1.0.0-arm64 ./scripts/build-notification-controller.sh --push"
             exit 0
             ;;
         *)
@@ -100,10 +136,12 @@ fi
 # Build container image
 log_info "Building container image: $FULL_IMAGE"
 log_info "Dockerfile: $DOCKERFILE"
+log_info "Target Architecture: $TARGETARCH"
 
 $CONTAINER_TOOL build \
     -t "$FULL_IMAGE" \
     -f "$DOCKERFILE" \
+    --build-arg TARGETARCH="$TARGETARCH" \
     .
 
 if [[ $? -eq 0 ]]; then
@@ -158,6 +196,7 @@ log_info "========================================="
 log_info "Build Summary"
 log_info "========================================="
 log_info "Image:        $FULL_IMAGE"
+log_info "Architecture: $TARGETARCH"
 log_info "Size:         $IMAGE_SIZE"
 log_info "KIND Loaded:  $LOAD_TO_KIND"
 log_info "Pushed:       $PUSH_TO_REGISTRY"

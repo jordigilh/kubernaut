@@ -4,6 +4,12 @@
 # Stage 1: Build the notification controller binary
 FROM golang:1.24-alpine AS builder
 
+# Build arguments for target architecture
+# TARGETARCH: Target architecture (amd64, arm64, etc.)
+# Defaults to host architecture for integration tests
+# Override for production multi-arch builds
+ARG TARGETARCH=amd64
+
 # Install build dependencies
 RUN apk add --no-cache git make ca-certificates
 
@@ -20,9 +26,10 @@ COPY cmd/notification/ cmd/notification/
 COPY internal/controller/notification/ internal/controller/notification/
 COPY pkg/notification/ pkg/notification/
 
-# Build the controller binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-	-a -installsuffix cgo \
+# Build the controller binary for target architecture
+# Use TARGETARCH build argument for flexibility
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+	-installsuffix cgo \
 	-ldflags="-w -s" \
 	-o manager \
 	cmd/notification/main.go
