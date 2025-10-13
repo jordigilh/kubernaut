@@ -73,10 +73,18 @@ done
 # Validate prerequisites
 log_info "Validating prerequisites..."
 
-if ! command -v docker &> /dev/null; then
-    log_error "Docker is not installed or not in PATH"
+# Detect container tool (docker or podman)
+CONTAINER_TOOL=""
+if command -v docker &> /dev/null; then
+    CONTAINER_TOOL="docker"
+elif command -v podman &> /dev/null; then
+    CONTAINER_TOOL="podman"
+else
+    log_error "Neither Docker nor Podman is installed or in PATH"
     exit 1
 fi
+
+log_info "Using container tool: $CONTAINER_TOOL"
 
 if [[ "$LOAD_TO_KIND" == true ]] && ! command -v kind &> /dev/null; then
     log_error "KIND is not installed but --kind flag was specified"
@@ -89,24 +97,24 @@ if [[ ! -f "$DOCKERFILE" ]]; then
     exit 1
 fi
 
-# Build Docker image
-log_info "Building Docker image: $FULL_IMAGE"
+# Build container image
+log_info "Building container image: $FULL_IMAGE"
 log_info "Dockerfile: $DOCKERFILE"
 
-docker build \
+$CONTAINER_TOOL build \
     -t "$FULL_IMAGE" \
     -f "$DOCKERFILE" \
     .
 
 if [[ $? -eq 0 ]]; then
-    log_info "✅ Docker image built successfully: $FULL_IMAGE"
+    log_info "✅ Container image built successfully: $FULL_IMAGE"
 else
-    log_error "❌ Docker image build failed"
+    log_error "❌ Container image build failed"
     exit 1
 fi
 
 # Get image size
-IMAGE_SIZE=$(docker images "$FULL_IMAGE" --format "{{.Size}}")
+IMAGE_SIZE=$($CONTAINER_TOOL images "$FULL_IMAGE" --format "{{.Size}}")
 log_info "Image size: $IMAGE_SIZE"
 
 # Load into KIND cluster if requested
@@ -134,7 +142,7 @@ fi
 if [[ "$PUSH_TO_REGISTRY" == true ]]; then
     log_info "Pushing image to registry: $FULL_IMAGE"
 
-    docker push "$FULL_IMAGE"
+    $CONTAINER_TOOL push "$FULL_IMAGE"
 
     if [[ $? -eq 0 ]]; then
         log_info "✅ Image pushed to registry: $FULL_IMAGE"
