@@ -43,7 +43,7 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
         SET LOCAL enable_seqscan = off;
         SET LOCAL enable_indexscan = on;
     `
-    
+
     if _, err := s.db.ExecContext(ctx, plannerHints); err != nil {
         // Log warning but don't fail the query
         // Planner hints are an optimization, not a requirement
@@ -63,7 +63,7 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
         ORDER BY embedding <=> $1::vector
         LIMIT 10
     `
-    
+
     // ... execute query and return results ...
 }
 ```
@@ -266,10 +266,10 @@ Failed: 0
 
 **Without Planner Hints** (PostgreSQL might choose sequential scan):
 ```
-EXPLAIN SELECT * FROM remediation_audit 
-WHERE namespace = 'production' 
+EXPLAIN SELECT * FROM remediation_audit
+WHERE namespace = 'production'
   AND severity = 'high'
-ORDER BY embedding <=> '[0.1, 0.2, ...]'::vector 
+ORDER BY embedding <=> '[0.1, 0.2, ...]'::vector
 LIMIT 10;
 
 → Seq Scan on remediation_audit (cost=0.00..1000.00)
@@ -282,10 +282,10 @@ LIMIT 10;
 SET LOCAL enable_seqscan = off;
 SET LOCAL enable_indexscan = on;
 
-EXPLAIN SELECT * FROM remediation_audit 
-WHERE namespace = 'production' 
+EXPLAIN SELECT * FROM remediation_audit
+WHERE namespace = 'production'
   AND severity = 'high'
-ORDER BY embedding <=> '[0.1, 0.2, ...]'::vector 
+ORDER BY embedding <=> '[0.1, 0.2, ...]'::vector
 LIMIT 10;
 
 → Index Scan using idx_remediation_audit_embedding on remediation_audit

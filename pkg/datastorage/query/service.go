@@ -18,6 +18,7 @@ package query
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -45,7 +46,7 @@ type DBQuerier interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 
 	// ExecContext executes a query without returning rows (for SET commands, etc.)
-	ExecContext(ctx context.Context, query string, args ...interface{}) (interface{}, error)
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
 // Service handles query operations
