@@ -34,10 +34,10 @@ type CircuitBreakerConfig struct {
 
 // channelState tracks the state of a single channel's circuit
 type channelState struct {
-	state            CircuitState
-	failureCount     int
-	successCount     int
-	lastFailureTime  time.Time
+	state              CircuitState
+	failureCount       int
+	successCount       int
+	lastFailureTime    time.Time
 	lastTransitionTime time.Time
 }
 
@@ -56,7 +56,7 @@ func (cb *CircuitBreaker) AllowRequest(channel string) bool {
 	defer cb.mu.RUnlock()
 
 	state := cb.getChannelState(channel)
-	
+
 	switch state.state {
 	case CircuitClosed:
 		return true
@@ -160,13 +160,12 @@ func (cb *CircuitBreaker) getChannelState(channel string) *channelState {
 
 	// Create new state for channel
 	state := &channelState{
-		state:            CircuitClosed,
-		failureCount:     0,
-		successCount:     0,
-		lastFailureTime:  time.Time{},
+		state:              CircuitClosed,
+		failureCount:       0,
+		successCount:       0,
+		lastFailureTime:    time.Time{},
 		lastTransitionTime: time.Now(),
 	}
 	cb.channels[channel] = state
 	return state
 }
-

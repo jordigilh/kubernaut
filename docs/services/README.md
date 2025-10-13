@@ -24,7 +24,7 @@ Stateless HTTP API services:
 7. **[Context API](./stateless/context-api/)** - Historical intelligence and pattern matching
 8. **[Data Storage](./stateless/data-storage/)** - Audit trail persistence and embeddings
 9. **[HolmesGPT API](./stateless/holmesgpt-api/)** - AI investigation engine
-10. **[Notification Service](./stateless/notification-service/)** - Escalation and notification routing
+10. **[Notification Controller](./crd-controllers/06-notification/)** - CRD-based multi-channel delivery (migrated from stateless, 2025-10-12)
 11. **[Dynamic Toolset](./stateless/dynamic-toolset/)** - HolmesGPT toolset configuration management
 
 ---
@@ -62,7 +62,7 @@ Stateless HTTP API services:
 | 7 | Context API | HTTP | ⏸️ Design | P1 | ✅ 100% |
 | 8 | Data Storage | HTTP | ⏸️ Design | P1 | ✅ 100% |
 | 9 | HolmesGPT API | HTTP | ⏸️ Design | P0 | ✅ 100% |
-| 10 | Notification Service | HTTP | ⏸️ Design | P0 | ✅ 100% |
+| 10 | Notification Controller | CRD | ⏸️ Design | P0 | ✅ 100% (migrated to CRD 2025-10-12) |
 | 11 | Dynamic Toolset | HTTP | ⏸️ Design | P1 | ✅ 100% |
 
 **Overall**: ✅ **11/11 services** (100%) documentation complete, ready for implementation

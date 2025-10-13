@@ -65,7 +65,7 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 			Spec: notificationv1alpha1.NotificationRequestSpec{
 				Subject:  "Integration Test - Graceful Degradation",
 				Body:     "Testing per-channel isolation: console succeeds, Slack fails",
-				Type:     notificationv1alpha1.NotificationTypeAlert,
+				Type:     notificationv1alpha1.NotificationTypeEscalation,
 				Priority: notificationv1alpha1.NotificationPriorityHigh,
 				Channels: []notificationv1alpha1.Channel{
 					notificationv1alpha1.ChannelConsole, // Will succeed
@@ -176,7 +176,7 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Subject:  fmt.Sprintf("Circuit Breaker Test %d", i),
 					Body:     "Triggering circuit breaker",
-					Type:     notificationv1alpha1.NotificationTypeAlert,
+					Type:     notificationv1alpha1.NotificationTypeEscalation,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelSlack,
@@ -206,7 +206,7 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 			Spec: notificationv1alpha1.NotificationRequestSpec{
 				Subject:  "Integration Test - Circuit Breaker Isolation",
 				Body:     "Console should succeed even if Slack circuit breaker is open",
-				Type:     notificationv1alpha1.NotificationTypeInfo,
+				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityMedium,
 				Channels: []notificationv1alpha1.Channel{
 					notificationv1alpha1.ChannelConsole,

@@ -86,7 +86,7 @@ var _ = Describe("Integration Test 2: Delivery Failure Recovery", func() {
 			Spec: notificationv1alpha1.NotificationRequestSpec{
 				Subject:  "Integration Test - Retry Logic",
 				Body:     "Testing automatic retry on failure (exponential backoff)",
-				Type:     notificationv1alpha1.NotificationTypeAlert,
+				Type:     notificationv1alpha1.NotificationTypeEscalation,
 				Priority: notificationv1alpha1.NotificationPriorityCritical,
 				Channels: []notificationv1alpha1.Channel{
 					notificationv1alpha1.ChannelSlack,
@@ -213,7 +213,7 @@ var _ = Describe("Integration Test 2: Delivery Failure Recovery", func() {
 			Spec: notificationv1alpha1.NotificationRequestSpec{
 				Subject:  "Integration Test - Max Retry",
 				Body:     "Testing max retry limit (should fail after 5 attempts)",
-				Type:     notificationv1alpha1.NotificationTypeAlert,
+				Type:     notificationv1alpha1.NotificationTypeEscalation,
 				Priority: notificationv1alpha1.NotificationPriorityHigh,
 				Channels: []notificationv1alpha1.Channel{
 					notificationv1alpha1.ChannelSlack,

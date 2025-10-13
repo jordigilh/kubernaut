@@ -54,7 +54,7 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 			Spec: notificationv1alpha1.NotificationRequestSpec{
 				Subject:  "Integration Test - Lifecycle",
 				Body:     "Testing notification controller basic lifecycle (Pending → Sent)",
-				Type:     notificationv1alpha1.NotificationTypeAlert,
+				Type:     notificationv1alpha1.NotificationTypeEscalation,
 				Priority: notificationv1alpha1.NotificationPriorityHigh,
 				Channels: []notificationv1alpha1.Channel{
 					notificationv1alpha1.ChannelConsole,
@@ -157,7 +157,7 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 			Spec: notificationv1alpha1.NotificationRequestSpec{
 				Subject:  "Integration Test - Console Only",
 				Body:     "Testing console-only notification delivery",
-				Type:     notificationv1alpha1.NotificationTypeInfo,
+				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityMedium,
 				Channels: []notificationv1alpha1.Channel{
 					notificationv1alpha1.ChannelConsole,

@@ -15,7 +15,7 @@
 2. **[Context API](./context-api/)** - Historical intelligence and pattern matching (read-only)
 3. **[Data Storage](./data-storage/)** - Audit trail persistence and embeddings (write-only)
 4. **[HolmesGPT API](./holmesgpt-api/)** - AI investigation engine (Python SDK wrapper)
-5. **[Notification Service](./notification-service/)** - Escalation and notification routing
+5. **~~[Notification Service](./notification-service/)~~** - ⚠️ DEPRECATED (migrated to CRD Controller, see [06-notification](../crd-controllers/06-notification/))
 6. **[Dynamic Toolset](./dynamic-toolset/)** - HolmesGPT toolset configuration management
 
 ---
@@ -73,9 +73,9 @@
 - **Multi-Provider**: OpenAI, Claude, local LLMs
 
 ### **Notification Service** (Output)
-- **Delivers**: Multi-channel escalation notifications
-- **Channels**: Email, Slack, Teams, SMS, webhooks
-- **Sanitizes**: Sensitive data before sending
+- ⚠️ **DEPRECATED**: Service migrated to CRD Controller (2025-10-12)
+- **See**: [06-notification](../crd-controllers/06-notification/) for current implementation
+- **Reason**: Zero data loss, complete audit trail, automatic retry with CRD-based persistence
 - **Formats**: Channel-specific adapters
 
 ### **Dynamic Toolset** (Configuration)

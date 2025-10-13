@@ -1,0 +1,990 @@
+# HolmesGPT API Service - Implementation Plan v1.0
+
+**Service**: HolmesGPT API Service
+**Phase**: Phase 2, Service #5
+**Plan Version**: v1.0
+**Template Version**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.0
+**Plan Date**: October 13, 2025
+**Implementation Approach**: Complete Rebuild with Legacy Reference
+**Estimated Duration**: 12 days
+**Business Requirements**: BR-HAPI-001 through BR-HAPI-191
+
+---
+
+## Executive Summary
+
+### Implementation Strategy
+
+**Approach**: **Complete rebuild** from scratch following SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.0 methodology, treating existing legacy code (`docker/holmesgpt-api/`) as **reference implementation** that was never tested in production.
+
+**Key Decisions**:
+1. **Service Location**: `holmesgpt-api/` (root-level, only non-Go service, repo-ready)
+2. **Start Fresh**: Build new implementation following template methodology
+3. **Real SDK Integration**: Use actual HolmesGPT Python SDK from `dependencies/holmesgpt` submodule
+4. **Legacy as Reference**: Study existing patterns but rebuild to match template exactly
+5. **Comprehensive Docs**: Include all v2.0 documentation templates (10 DD-XXX documents, handoff, etc.)
+
+### Service Context
+
+| Aspect | Details |
+|--------|---------|
+| **Service Type** | Stateless HTTP Service (Python FastAPI) |
+| **Service Location** | `holmesgpt-api/` (root-level, separate from Go, repo-ready) |
+| **Ports** | 8090 (REST API + Health), 9091 (Metrics) |
+| **Dependencies** | Real HolmesGPT SDK, Kubernetes API, Prometheus, optional Grafana |
+| **Primary BR** | BR-HAPI-001 (Investigation endpoint) |
+| **Integration** | AI Analysis Service (Phase 3) consumes this REST API |
+
+### Success Criteria
+
+- ✅ All 191 business requirements (BR-HAPI-001 to BR-HAPI-191) implemented and tested
+- ✅ 85%+ unit test coverage (pytest)
+- ✅ Real HolmesGPT SDK integration with actual investigations
+- ✅ Production-ready Docker container with health checks
+- ✅ Complete v2.0 documentation suite (DD-XXX, handoff, etc.)
+
+---
+
+## Phase 1: Analysis & Planning (Days 1-2)
+
+### Day 1: Analysis Phase (APDC-A)
+
+**Duration**: 6-8 hours
+**Objective**: Comprehensive context understanding before implementation
+
+#### 1.1 Business Context Discovery
+
+**Actions**:
+1. Review authoritative business requirements:
+   - `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` (191 requirements)
+   - `docs/requirements/BR-HAPI-VALIDATION-RESILIENCE.md` (BR-HAPI-186 to 191)
+   - `docs/requirements/enhancements/HOLMESGPT_INVESTIGATION_SEPARATION.md`
+
+2. Map business requirement categories:
+   - **Investigation**: BR-HAPI-001 to BR-HAPI-015 (Core investigation endpoints)
+   - **Recovery Analysis**: BR-HAPI-RECOVERY-001 to 006 (Analysis only, not execution)
+   - **Safety Analysis**: BR-HAPI-SAFETY-001 to 006 (Pre-execution validation)
+   - **Validation**: BR-HAPI-186 to 191 (Fail-fast startup, resilience)
+
+#### 1.2 Technical Context Discovery
+
+**Legacy Code Analysis** (Reference Only):
+1. Study `docker/holmesgpt-api/` structure:
+   - Review `src/main.py` FastAPI patterns
+   - Examine `src/services/holmesgpt_service.py` SDK integration
+   - Study `tests/test_holmesgpt_service.py` testing approaches
+   - **Note**: This code was never tested in production - use patterns only
+
+2. Real HolmesGPT SDK Investigation:
+   - Review `dependencies/holmesgpt/` submodule structure
+   - Study SDK interfaces in Python library
+   - Identify SDK initialization patterns
+   - Map SDK methods to our BR requirements
+
+3. Integration Point Analysis:
+   - Search how AI Analysis Service will consume our REST API
+   - Review Context API integration patterns (Phase 2, Service #4)
+   - Identify Dynamic Toolset Service ConfigMap integration
+
+**Tool Commands**:
+```bash
+# Study legacy patterns (reference only)
+find docker/holmesgpt-api/src -name "*.py" | xargs wc -l
+grep -r "HolmesGPT" docker/holmesgpt-api/src --include="*.py"
+
+# Review real SDK
+cd dependencies/holmesgpt
+find . -name "*.py" -path "*/holmes*" | head -20
+
+# Integration search
+grep -r "holmesgpt" cmd/ pkg/ --include="*.go"
+grep -r "BR-HAPI" docs/requirements/ --include="*.md"
+```
+
+#### 1.3 Risk Assessment
+
+| Risk | Impact | Mitigation |
+|------|--------|-----------|
+| **Real SDK integration complexity** | High | Study SDK docs at holmesgpt.dev thoroughly |
+| **Legacy code patterns may not match v2.0 template** | Medium | Rebuild from scratch, use legacy as reference only |
+| **191 business requirements scope** | High | Prioritize core investigation (BR-HAPI-001 to 015) for MVP |
+| **Python service in Go-heavy codebase** | Low | Follow established patterns from template |
+
+#### 1.4 Analysis Deliverables
+
+- [ ] Business requirement mapping (191 requirements categorized)
+- [ ] Technical context summary (SDK integration approach)
+- [ ] Integration point documentation (AI Analysis, Context API, Dynamic Toolset)
+- [ ] Risk mitigation strategies
+- [ ] **DD-001**: Design Decision - Service Location (root-level, only non-Go service)
+- [ ] **DD-002**: Design Decision - Complete Rebuild vs Refactor Legacy (rationale documented)
+
+**Checkpoint**: User approval required before proceeding to Plan phase
+
+---
+
+### Day 2: Plan Phase (APDC-P)
+
+**Duration**: 6-8 hours
+**Objective**: Detailed 12-day implementation strategy with TDD phases mapped
+
+#### 2.1 Implementation Strategy
+
+**Directory Structure** (New Implementation - Root Level):
+```
+holmesgpt-api/                       # Python service at root level (repo-ready)
+├── src/
+│   ├── main.py                      # FastAPI app entry point
+│   ├── config/
+│   │   ├── settings.py              # Pydantic settings
+│   │   └── logging.py               # Structured logging
+│   ├── api/
+│   │   ├── v1/
+│   │   │   ├── investigate.py       # BR-HAPI-001 to 015
+│   │   │   ├── recovery.py          # BR-HAPI-RECOVERY-001 to 006
+│   │   │   ├── safety.py            # BR-HAPI-SAFETY-001 to 006
+│   │   │   └── health.py            # BR-HAPI-016 to 025
+│   │   └── middleware/
+│   │       ├── auth.py              # BR-HAPI-091 to 105
+│   │       └── ratelimit.py         # BR-HAPI-106 to 115
+│   ├── services/
+│   │   ├── holmesgpt_client.py      # Real SDK wrapper
+│   │   ├── toolset_manager.py       # BR-HAPI-031 to 040
+│   │   └── context_integration.py   # BR-HAPI-011 to 015
+│   ├── models/
+│   │   ├── requests.py              # Pydantic request models
+│   │   └── responses.py             # Pydantic response models
+│   └── utils/
+│       ├── metrics.py               # Prometheus metrics
+│       └── validation.py            # Input validation
+├── tests/
+│   ├── unit/                        # 70% coverage target
+│   │   ├── test_holmesgpt_client.py
+│   │   ├── test_toolset_manager.py
+│   │   └── test_validation.py
+│   ├── integration/                 # 20% coverage target
+│   │   ├── test_api_endpoints.py
+│   │   └── test_sdk_integration.py
+│   └── e2e/                         # 10% coverage target
+│       └── test_investigation_flow.py
+├── deploy/
+│   ├── kubernetes/
+│   │   ├── deployment.yaml
+│   │   ├── service.yaml
+│   │   └── configmap.yaml
+│   └── docker-compose.yml           # Local development
+├── docs/
+│   ├── DD-001-to-DD-009.md          # Design decisions
+│   ├── API_REFERENCE.md
+│   └── HANDOFF_SUMMARY.md
+├── .gitignore
+├── Dockerfile
+├── requirements.txt
+├── requirements-dev.txt
+├── pyproject.toml
+├── pytest.ini
+└── README.md
+```
+
+**Rationale for Location**:
+- ✅ **Root-Level Simplicity**: Only non-Go service, no need for intermediate directory
+- ✅ **Separate from Go**: Python code completely isolated from Go codebase (`cmd/`, `pkg/`, `internal/`)
+- ✅ **Repo-Ready**: At root level, extremely easy to extract to separate repository
+- ✅ **Service Isolation**: Self-contained with own deploy/, docs/, tests/
+- ✅ **Clear Boundaries**: Obvious it's external to Go monorepo structure
+- ✅ **Future-Proof**: When moved to own repo, already structured correctly
+
+#### 2.2 TDD Phase Mapping
+
+**RED Phase** (Days 3-5):
+- Write failing tests for all 191 business requirements
+- Focus on core investigation endpoints first (BR-HAPI-001 to 015)
+- Mock real HolmesGPT SDK initially
+- Target: 70% unit test coverage defined
+
+**GREEN Phase** (Days 6-8):
+- Minimal implementation to pass tests
+- Integrate real HolmesGPT SDK from `dependencies/holmesgpt`
+- Wire up FastAPI endpoints
+- Integrate with Kubernetes API (read-only RBAC)
+- Target: All tests passing with minimal code
+
+**REFACTOR Phase** (Days 9-10):
+- Enhance error handling and resilience (BR-HAPI-186 to 191)
+- Add caching and performance optimizations
+- Implement authentication and rate limiting
+- Enhance logging and metrics
+- Code quality improvements
+
+#### 2.3 Integration Plan
+
+**Phase 2 Services Integration**:
+1. **Dynamic Toolset Service** (completed):
+   - ConfigMap polling for toolset configuration
+   - Integration endpoint: `ConfigMap/holmesgpt-toolset-config`
+
+2. **Data Storage Service** (completed):
+   - Store investigation results
+   - Integration endpoint: PostgreSQL connection
+
+3. **Context API Service** (in parallel):
+   - Enhanced context for investigations
+   - Integration endpoint: `GET /api/v1/context/{alertId}`
+
+**Phase 3 Services Integration** (future):
+- AI Analysis Service will consume `/api/v1/investigate` endpoint
+
+#### 2.4 Success Definition
+
+| Metric | Target | Validation Method |
+|--------|--------|------------------|
+| **Business Requirements Coverage** | 100% (191 BRs) | Requirements traceability matrix |
+| **Unit Test Coverage** | 85%+ | pytest-cov report |
+| **Integration Test Coverage** | 15 scenarios | pytest integration suite |
+| **Real SDK Integration** | 100% functional | E2E test with actual investigations |
+| **API Response Time** | <500ms (p95) | Load testing with wrk |
+| **Documentation Completeness** | 100% | All DD-XXX, handoff docs present |
+
+#### 2.5 Timeline
+
+| Phase | Days | Deliverables |
+|-------|------|--------------|
+| **Analysis** | Day 1 | Context understanding, risk assessment, DD-001 |
+| **Plan** | Day 2 | Implementation strategy, timeline, user approval |
+| **RED** | Days 3-5 | Failing tests for all 191 BRs, test infrastructure |
+| **GREEN** | Days 6-8 | Minimal implementation, real SDK integration, all tests passing |
+| **REFACTOR** | Days 9-10 | Enhanced implementation, production readiness |
+| **CHECK** | Days 11-12 | Validation, documentation, handoff preparation |
+
+#### 2.6 Plan Deliverables
+
+- [ ] Directory structure defined
+- [ ] TDD phase breakdown (RED/GREEN/REFACTOR)
+- [ ] Integration endpoints documented
+- [ ] Timeline with milestones
+- [ ] **DD-003**: Design Decision - FastAPI vs Flask (rationale)
+- [ ] **DD-004**: Design Decision - Real SDK Integration Strategy
+
+**Checkpoint**: User approval required before proceeding to DO phase
+
+---
+
+## Phase 2: Implementation (Days 3-10)
+
+### Days 3-5: RED Phase - Test-First Development
+
+**Duration**: 3 days (18-24 hours total)
+**Objective**: Write comprehensive failing tests for all 191 business requirements
+
+#### Day 3: Core Investigation Tests (BR-HAPI-001 to 040)
+
+**Focus**: Investigation and toolset management
+
+**Test Files to Create**:
+1. `tests/unit/test_holmesgpt_client.py`:
+   ```python
+   # Tests for BR-HAPI-001 to BR-HAPI-015 (Investigation endpoints)
+   def test_investigate_endpoint_accepts_alert_context():  # BR-HAPI-002
+   def test_investigate_supports_priority_levels():        # BR-HAPI-003
+   def test_investigate_returns_actionable_recommendations(): # BR-HAPI-004
+   def test_investigate_supports_async_with_job_tracking(): # BR-HAPI-005
+   ```
+
+2. `tests/unit/test_toolset_manager.py`:
+   ```python
+   # Tests for BR-HAPI-031 to BR-HAPI-040 (Toolset management)
+   def test_toolset_supports_kubernetes_data_source():     # BR-HAPI-031
+   def test_toolset_supports_prometheus_queries():         # BR-HAPI-032
+   def test_toolset_validates_rbac_permissions():          # BR-HAPI-034
+   ```
+
+3. `tests/integration/test_api_endpoints.py`:
+   ```python
+   # Integration tests for actual API behavior
+   def test_investigate_endpoint_end_to_end():
+   def test_health_check_returns_200():                    # BR-HAPI-016
+   def test_metrics_endpoint_exposes_prometheus_format():  # BR-HAPI-026
+   ```
+
+**Reference Legacy Tests**:
+- Review `docker/holmesgpt-api/tests/test_holmesgpt_service.py` for patterns
+- **Do NOT copy** - rebuild tests to match new architecture
+
+**Validation**: All tests MUST fail initially (RED phase requirement)
+
+#### Day 4: Recovery, Safety, and Health Tests (BR-HAPI-041 to 115)
+
+**Focus**: Recovery analysis, safety analysis, health/observability
+
+**Test Files to Create**:
+1. `tests/unit/test_recovery_analysis.py`:
+   ```python
+   # Tests for BR-HAPI-RECOVERY-001 to 006
+   def test_recovery_analyze_endpoint_generates_strategies(): # BR-HAPI-RECOVERY-002
+   def test_recovery_provides_step_by_step_instructions():    # BR-HAPI-RECOVERY-003
+   def test_recovery_includes_risk_assessment():              # BR-HAPI-RECOVERY-005
+   ```
+
+2. `tests/unit/test_safety_analysis.py`:
+   ```python
+   # Tests for BR-HAPI-SAFETY-001 to 006
+   def test_safety_analyze_endpoint_validates_actions():      # BR-HAPI-SAFETY-002
+   def test_safety_checks_conflicts_with_workloads():         # BR-HAPI-SAFETY-003
+   def test_safety_supports_dry_run_analysis():               # BR-HAPI-SAFETY-006
+   ```
+
+3. `tests/unit/test_health_endpoints.py`:
+   ```python
+   # Tests for BR-HAPI-016 to 025 (Health/readiness)
+   def test_health_endpoint_checks_llm_connectivity():        # BR-HAPI-017
+   def test_readiness_validates_enabled_toolsets():           # BR-HAPI-019
+   ```
+
+#### Day 5: Security, Performance, and Validation Tests (BR-HAPI-116 to 191)
+
+**Focus**: Authentication, rate limiting, validation, resilience
+
+**Test Files to Create**:
+1. `tests/unit/test_authentication.py`:
+   ```python
+   # Tests for BR-HAPI-091 to 105 (Auth/AuthZ)
+   def test_api_key_authentication_required():                # BR-HAPI-091
+   def test_rbac_enforced_for_endpoints():                    # BR-HAPI-093
+   def test_jwt_token_validation():                           # BR-HAPI-095
+   ```
+
+2. `tests/unit/test_rate_limiting.py`:
+   ```python
+   # Tests for BR-HAPI-106 to 115 (Rate limiting)
+   def test_rate_limit_enforced_per_client():                 # BR-HAPI-106
+   def test_rate_limit_headers_returned():                    # BR-HAPI-108
+   ```
+
+3. `tests/unit/test_validation_resilience.py`:
+   ```python
+   # Tests for BR-HAPI-186 to 191 (Validation/resilience)
+   def test_fail_fast_startup_validation():                   # BR-HAPI-186
+   def test_kubernetes_toolset_validated_at_startup():        # BR-HAPI-186
+   def test_configmap_reload_preserves_active_investigations(): # BR-HAPI-191
+   ```
+
+**RED Phase Deliverables** (Days 3-5):
+- [ ] 80+ unit test methods covering all 191 business requirements
+- [ ] 15+ integration test scenarios
+- [ ] Test infrastructure (pytest, fixtures, mocks)
+- [ ] All tests failing (RED phase validation)
+- [ ] Coverage report showing 0% implementation coverage
+- [ ] **DD-005**: Design Decision - Testing Framework Selection (pytest vs unittest)
+
+**Checkpoint**: Review test coverage before GREEN phase
+
+---
+
+### Days 6-8: GREEN Phase - Minimal Implementation
+
+**Duration**: 3 days (18-24 hours total)
+**Objective**: Minimal implementation to pass all tests + real SDK integration
+
+#### Day 6: Core Infrastructure and SDK Integration
+
+**Focus**: FastAPI app, real HolmesGPT SDK, basic endpoints
+
+**Files to Create**:
+1. `src/main.py`:
+   ```python
+   # FastAPI application entry point
+   from fastapi import FastAPI
+   from src.api.v1 import investigate, recovery, safety, health
+   from src.config.settings import Settings
+
+   app = FastAPI(title="HolmesGPT API", version="1.0")
+
+   # Mount routers
+   app.include_router(investigate.router, prefix="/api/v1")
+   app.include_router(health.router, prefix="/api/v1")
+   ```
+
+2. `src/services/holmesgpt_client.py`:
+   ```python
+   # Real HolmesGPT SDK integration
+   from dependencies.holmesgpt import HolmesGPT  # Real SDK import
+
+   class HolmesGPTClient:
+       def __init__(self, config: dict):
+           # Initialize real SDK with configuration
+           self.client = HolmesGPT(
+               llm_provider=config["llm_provider"],
+               kubernetes_config=config["kubernetes"],
+               toolsets=config["toolsets"]
+           )
+
+       def investigate(self, alert_context: dict) -> dict:
+           # Call real SDK investigation method
+           return self.client.investigate(alert_context)
+   ```
+
+3. `src/api/v1/investigate.py`:
+   ```python
+   # Investigation endpoints (BR-HAPI-001 to 015)
+   from fastapi import APIRouter, HTTPException
+   from src.services.holmesgpt_client import HolmesGPTClient
+
+   router = APIRouter()
+
+   @router.post("/investigate")  # BR-HAPI-001
+   async def investigate_alert(request: InvestigateRequest):
+       # Minimal implementation - just pass through to SDK
+       result = holmesgpt_client.investigate(request.dict())
+       return InvestigateResponse(**result)
+   ```
+
+**Reference Legacy Code**:
+- Review `docker/holmesgpt-api/src/main.py` for FastAPI patterns
+- Review `docker/holmesgpt-api/src/services/holmesgpt_service.py` for SDK integration
+- **Rebuild** - do not copy, use as reference only
+
+#### Day 7: Recovery, Safety, and Health Endpoints
+
+**Focus**: Complete API surface with minimal implementation
+
+**Files to Create**:
+1. `src/api/v1/recovery.py`:
+   ```python
+   # Recovery analysis endpoints (BR-HAPI-RECOVERY-001 to 006)
+   @router.post("/recovery/analyze")  # BR-HAPI-RECOVERY-001
+   async def analyze_recovery(request: RecoveryRequest):
+       # Minimal implementation using SDK
+       return holmesgpt_client.analyze_recovery(request.dict())
+   ```
+
+2. `src/api/v1/safety.py`:
+   ```python
+   # Safety analysis endpoints (BR-HAPI-SAFETY-001 to 006)
+   @router.post("/safety/analyze")  # BR-HAPI-SAFETY-001
+   async def analyze_safety(request: SafetyRequest):
+       # Minimal implementation using SDK
+       return holmesgpt_client.analyze_safety(request.dict())
+   ```
+
+3. `src/api/v1/health.py`:
+   ```python
+   # Health and readiness endpoints (BR-HAPI-016 to 025)
+   @router.get("/health")  # BR-HAPI-016
+   async def health_check():
+       # Minimal health check - just return OK
+       return {"status": "ok"}
+
+   @router.get("/ready")  # BR-HAPI-018
+   async def readiness_check():
+       # Check enabled toolsets (fail-fast requirement)
+       toolset_status = holmesgpt_client.validate_toolsets()
+       return {"ready": toolset_status["all_valid"]}
+   ```
+
+#### Day 8: Toolset Management and Configuration
+
+**Focus**: Dynamic toolset configuration, validation
+
+**Files to Create**:
+1. `src/services/toolset_manager.py`:
+   ```python
+   # Toolset management (BR-HAPI-031 to 040)
+   class ToolsetManager:
+       def __init__(self, configmap_path: str):
+           self.configmap_path = configmap_path
+           self.toolsets = self._load_toolsets()
+
+       def validate_toolsets(self) -> dict:
+           # BR-HAPI-186: Fail-fast validation
+           results = {}
+           for toolset in self.enabled_toolsets:
+               results[toolset] = self._validate_toolset(toolset)
+           return results
+
+       def _validate_toolset(self, toolset: str) -> bool:
+           # Kubernetes: check RBAC, API connectivity
+           # Prometheus: check HTTP connectivity, query API
+           # Grafana: check health endpoint
+           pass
+   ```
+
+2. `src/config/settings.py`:
+   ```python
+   # Pydantic settings from environment
+   from pydantic import BaseSettings
+
+   class Settings(BaseSettings):
+       llm_provider: str = "openai"
+       llm_api_key: str
+       kubernetes_config_path: str = "/root/.kube/config"
+       toolset_configmap_path: str = "/etc/config/holmesgpt-toolset"
+
+       class Config:
+           env_file = ".env"
+   ```
+
+**GREEN Phase Deliverables** (Days 6-8):
+- [ ] All API endpoints implemented (minimal)
+- [ ] Real HolmesGPT SDK integrated from `dependencies/holmesgpt`
+- [ ] Toolset validation (fail-fast startup)
+- [ ] Health/readiness endpoints functional
+- [ ] All tests passing (GREEN phase validation)
+- [ ] Coverage report showing 85%+ coverage
+- [ ] **DD-006**: Design Decision - Configuration Management Approach
+- [ ] **DD-007**: Design Decision - Error Handling Strategy
+
+**Checkpoint**: All tests must pass before REFACTOR phase
+
+---
+
+### Days 9-10: REFACTOR Phase - Production Readiness
+
+**Duration**: 2 days (12-16 hours total)
+**Objective**: Enhance implementation for production deployment
+
+#### Day 9: Enhanced Error Handling and Resilience
+
+**Focus**: BR-HAPI-186 to 191 (Validation/resilience)
+
+**Enhancements**:
+1. **Fail-Fast Startup Validation** (BR-HAPI-186):
+   ```python
+   # src/main.py startup event
+   @app.on_event("startup")
+   async def validate_on_startup():
+       # Validate all enabled toolsets before accepting requests
+       toolset_manager = ToolsetManager()
+       validation_results = toolset_manager.validate_toolsets()
+
+       if not validation_results["all_valid"]:
+           # Log detailed error message
+           logger.error("Toolset validation failed: %s", validation_results)
+           # Exit with non-zero code
+           sys.exit(1)
+
+       logger.info("All toolsets validated successfully")
+   ```
+
+2. **Comprehensive Error Messages** (BR-HAPI-187):
+   ```python
+   # Enhanced error responses
+   class ToolsetValidationError(Exception):
+       def __init__(self, toolset: str, details: dict):
+           self.toolset = toolset
+           self.details = details
+           super().__init__(f"Toolset {toolset} validation failed: {details}")
+   ```
+
+3. **ConfigMap Reload** (BR-HAPI-191):
+   ```python
+   # Background task for ConfigMap monitoring
+   async def watch_configmap_changes():
+       while True:
+           if configmap_changed():
+               await reload_toolsets_gracefully()
+           await asyncio.sleep(30)
+   ```
+
+4. **Development Mode** (BR-HAPI-188):
+   ```python
+   # Allow startup without toolsets in dev mode
+   if settings.dev_mode:
+       logger.warning("Dev mode: skipping toolset validation")
+   else:
+       validate_toolsets_or_exit()
+   ```
+
+#### Day 10: Authentication, Rate Limiting, and Performance
+
+**Focus**: Security and performance enhancements
+
+**Enhancements**:
+1. **Authentication Middleware** (BR-HAPI-091 to 105):
+   ```python
+   # src/api/middleware/auth.py
+   from fastapi import Security, HTTPException
+   from fastapi.security import APIKeyHeader
+
+   api_key_header = APIKeyHeader(name="X-API-Key")
+
+   async def validate_api_key(api_key: str = Security(api_key_header)):
+       if api_key not in settings.valid_api_keys:
+           raise HTTPException(status_code=403, detail="Invalid API key")
+       return api_key
+   ```
+
+2. **Rate Limiting** (BR-HAPI-106 to 115):
+   ```python
+   # src/api/middleware/ratelimit.py
+   from slowapi import Limiter
+   from slowapi.util import get_remote_address
+
+   limiter = Limiter(key_func=get_remote_address)
+
+   @router.post("/investigate")
+   @limiter.limit("10/minute")  # BR-HAPI-106
+   async def investigate_alert(request: InvestigateRequest):
+       pass
+   ```
+
+3. **Caching** (BR-HAPI-014):
+   ```python
+   # Context caching for improved performance
+   from aiocache import cached
+
+   @cached(ttl=300)  # 5 minute cache
+   async def get_context_data(alert_id: str):
+       return await context_api.fetch_context(alert_id)
+   ```
+
+4. **Prometheus Metrics** (BR-HAPI-026 to 030):
+   ```python
+   # src/utils/metrics.py
+   from prometheus_client import Counter, Histogram
+
+   investigation_requests = Counter('holmesgpt_investigations_total', 'Total investigations')
+   investigation_duration = Histogram('holmesgpt_investigation_duration_seconds', 'Investigation duration')
+   ```
+
+**REFACTOR Phase Deliverables** (Days 9-10):
+- [ ] Enhanced error handling and logging
+- [ ] Fail-fast startup validation implemented
+- [ ] Authentication and authorization working
+- [ ] Rate limiting enforced
+- [ ] Caching and performance optimizations
+- [ ] Prometheus metrics exposed
+- [ ] All tests still passing (regression validation)
+- [ ] **DD-008**: Design Decision - Caching Strategy
+- [ ] **DD-009**: Design Decision - Authentication Mechanism
+
+**Checkpoint**: Production readiness review
+
+---
+
+## Phase 3: Validation & Handoff (Days 11-12)
+
+### Day 11: CHECK Phase - Comprehensive Validation
+
+**Duration**: 6-8 hours
+**Objective**: Verify all business requirements and production readiness
+
+#### 11.1 Business Requirement Validation
+
+**Validation Checklist**:
+- [ ] All 191 business requirements traced to implementation
+- [ ] All 191 business requirements traced to tests
+- [ ] Requirements traceability matrix complete
+- [ ] No speculative code (everything maps to BR-XXX)
+
+**Tool Commands**:
+```bash
+# Verify all BR-HAPI requirements have tests
+grep -r "BR-HAPI-" tests/ --include="*.py" | wc -l  # Should be 191+
+
+# Verify all BR-HAPI requirements have implementation
+grep -r "BR-HAPI-" src/ --include="*.py" | wc -l
+
+# Run full test suite with coverage
+pytest --cov=src --cov-report=html --cov-report=term
+```
+
+#### 11.2 Integration Testing
+
+**Integration Scenarios** (15+ tests):
+1. **Real SDK Integration**:
+   - Test actual HolmesGPT investigation with real Kubernetes cluster
+   - Verify toolset validation with real Kubernetes API
+   - Test Prometheus query execution
+
+2. **ConfigMap Integration**:
+   - Test toolset configuration loading from ConfigMap
+   - Test ConfigMap reload without disrupting active investigations
+
+3. **Context API Integration**:
+   - Test enhanced investigation with Context API data
+   - Verify context caching behavior
+
+**E2E Testing** (5+ scenarios):
+1. Complete investigation flow: Alert → Investigation → Recommendations
+2. Recovery analysis: Investigation → Recovery strategies → Safety validation
+3. Fail-fast validation: Invalid toolset → Service exit with error message
+
+#### 11.3 Performance Validation
+
+**Load Testing**:
+```bash
+# Test API response time (target: <500ms p95)
+wrk -t4 -c100 -d30s http://localhost:8090/api/v1/health
+
+# Test concurrent investigations
+wrk -t10 -c50 -d60s -s investigate.lua http://localhost:8090/api/v1/investigate
+```
+
+**Metrics Validation**:
+- Verify Prometheus metrics endpoint works
+- Check investigation duration histogram
+- Validate error rate counters
+
+#### 11.4 CHECK Phase Deliverables
+
+- [ ] Requirements traceability matrix (191 BRs → Implementation → Tests)
+- [ ] Test coverage report (85%+ unit, 15+ integration, 5+ E2E)
+- [ ] Integration test results (all passing with real SDK)
+- [ ] Performance test results (response time, throughput)
+- [ ] Security validation (authentication, rate limiting)
+- [ ] **DD-010**: Design Decision - Deployment Strategy (replicas, resources)
+
+**Checkpoint**: Validation results review
+
+---
+
+### Day 12: Documentation and Handoff
+
+**Duration**: 6-8 hours
+**Objective**: Complete v2.0 documentation suite and handoff preparation
+
+#### 12.1 Design Decision Documentation
+
+**Create DD-XXX Documents**:
+1. **DD-001**: Service Location - Root Level (Only Non-Go Service)
+   - Rationale: Only Python service in codebase, will eventually be own repository, no intermediate directory needed
+   - Decision: `holmesgpt-api/` at root level (simple, repo-ready, clearly separate from Go)
+
+2. **DD-002**: Complete Rebuild vs Refactor Legacy
+   - Rationale: Legacy never tested in production, template v2.0 requires fresh start
+   - Decision: Complete rebuild, use legacy as reference only
+
+3. **DD-003**: FastAPI vs Flask
+   - Rationale: FastAPI provides async, auto-docs, Pydantic validation
+   - Decision: FastAPI for REST API framework
+
+4. **DD-004**: Real SDK Integration Strategy
+   - Rationale: Direct import from `dependencies/holmesgpt` submodule
+   - Decision: Import as Python library, wrap in HolmesGPTClient class
+
+5. **DD-005**: Testing Framework Selection
+   - Rationale: pytest provides fixtures, parametrize, coverage integration
+   - Decision: pytest with pytest-asyncio for async testing
+
+6. **DD-006**: Configuration Management Approach
+   - Rationale: Pydantic Settings for type-safe config, env vars + ConfigMap
+   - Decision: Hybrid approach (env vars + file-based ConfigMap)
+
+7. **DD-007**: Error Handling Strategy
+   - Rationale: Fail-fast startup, comprehensive error messages
+   - Decision: Custom exceptions, structured logging, explicit exit codes
+
+8. **DD-008**: Caching Strategy
+   - Rationale: Context API calls expensive, 5-minute TTL reasonable
+   - Decision: aiocache with Redis backend for production
+
+9. **DD-009**: Authentication Mechanism
+   - Rationale: Internal service, API key simple and sufficient
+   - Decision: API key header for v1, consider mTLS for v2
+
+10. **DD-010**: Deployment Strategy
+    - Rationale: Stateless service, 2-3 replicas for HA
+    - Decision: Kubernetes Deployment, HPA based on CPU/request rate
+
+#### 12.2 Implementation Handoff Document
+
+**Create**: `docs/services/stateless/holmesgpt-api/HANDOFF_SUMMARY.md`
+
+**Contents**:
+```markdown
+# HolmesGPT API Service - Implementation Handoff
+
+## What Was Built
+- Stateless Python FastAPI service
+- Real HolmesGPT SDK integration from dependencies/holmesgpt
+- 191 business requirements fully implemented
+- 85%+ test coverage with pytest
+
+## Key Implementation Decisions
+- [Reference to all DD-XXX documents]
+
+## Integration Points
+1. AI Analysis Service: Consumes /api/v1/investigate endpoint
+2. Context API: Provides enhanced investigation context
+3. Dynamic Toolset Service: ConfigMap-based toolset configuration
+4. Data Storage Service: Stores investigation results
+
+## How to Run Locally
+```bash
+cd holmesgpt-api
+pip install -r requirements.txt
+pytest  # Run tests
+uvicorn src.main:app --reload  # Start dev server
+```
+
+## How to Deploy
+```bash
+cd holmesgpt-api
+docker build -t holmesgpt-api:v1.0 .
+kubectl apply -f deploy/kubernetes/
+```
+
+## Known Limitations
+- v1.0: API key authentication only (no mTLS)
+- v1.0: Single LLM provider per deployment
+- v1.0: Manual ConfigMap reload (not automatic)
+
+## Next Service
+AI Analysis Service (Phase 3, Service #6) can now proceed with this REST API available.
+```
+
+#### 12.3 Complete Documentation Suite
+
+**Documentation Deliverables**:
+- [ ] `HANDOFF_SUMMARY.md` (comprehensive implementation summary)
+- [ ] `DD-001.md` to `DD-009.md` (design decision documents)
+- [ ] `README.md` (service overview, quickstart, API documentation)
+- [ ] `API_REFERENCE.md` (OpenAPI 3.0 spec, endpoint details)
+- [ ] `DEPLOYMENT_GUIDE.md` (Kubernetes deployment, configuration)
+- [ ] `TROUBLESHOOTING.md` (common issues, debugging)
+- [ ] `DEVELOPMENT.md` (local development setup, testing)
+
+#### 12.4 Requirements Traceability Matrix
+
+**Create**: `docs/services/stateless/holmesgpt-api/REQUIREMENTS_TRACEABILITY.md`
+
+**Format**:
+| BR ID | Requirement | Implementation File | Test File | Status |
+|-------|------------|---------------------|-----------|--------|
+| BR-HAPI-001 | Investigation endpoint | `src/api/v1/investigate.py` | `tests/unit/test_investigate.py` | ✅ Complete |
+| BR-HAPI-002 | Accept alert context | `src/models/requests.py` | `tests/unit/test_investigate.py::test_alert_context` | ✅ Complete |
+| ... | ... | ... | ... | ... |
+| BR-HAPI-191 | Graceful ConfigMap reload | `src/services/toolset_manager.py` | `tests/integration/test_configmap_reload.py` | ✅ Complete |
+
+#### 12.5 Handoff Deliverables
+
+- [ ] HANDOFF_SUMMARY.md complete
+- [ ] All DD-XXX documents created (DD-001 to DD-010)
+- [ ] Complete documentation suite (7 documents)
+- [ ] Requirements traceability matrix (191 requirements)
+- [ ] Deployment manifests ready
+- [ ] Docker image built and tested
+- [ ] Confidence assessment (target: 88-92%)
+
+---
+
+## Confidence Assessment
+
+### Overall Confidence: 88% ✅ **Excellent with Production Validation**
+
+**Breakdown**:
+| Aspect | Confidence | Rationale |
+|--------|-----------|-----------|
+| **Business Requirements** | 95% | All 191 BRs clearly defined in authoritative docs |
+| **Technical Feasibility** | 85% | Real SDK integration adds complexity, but feasible |
+| **Testing Strategy** | 90% | Comprehensive pytest suite, real SDK integration tests |
+| **Implementation Clarity** | 85% | Clear 12-day plan, legacy code as reference |
+| **Integration Readiness** | 90% | Clear integration points with Phase 2 services |
+| **Documentation** | 90% | v2.0 template provides comprehensive structure |
+
+**Confidence Justification**:
+- ✅ **Strengths**: Complete business requirements (191 BRs), clear template structure, legacy code for reference patterns
+- ⚠️ **Risks**: Real HolmesGPT SDK integration complexity (12% risk), Python service in Go-heavy codebase (5% risk)
+- ✅ **Mitigation**: Study SDK docs at holmesgpt.dev thoroughly, follow legacy patterns where applicable, comprehensive testing with real SDK
+
+**Recommendation**: ✅ **Proceed with implementation** after user approval of this plan
+
+---
+
+## Appendix
+
+### A. Legacy Code Reference Map
+
+**Use Legacy Code For**:
+- FastAPI application structure patterns
+- SDK integration approach (general patterns only)
+- Test infrastructure setup
+- Docker container configuration
+
+**DO NOT Use Legacy Code For**:
+- Direct copy-paste of implementation
+- Production deployment (never tested)
+- Architecture decisions (rebuild from scratch)
+
+### B. Real SDK Integration Resources
+
+**HolmesGPT SDK Documentation**:
+- Official docs: https://holmesgpt.dev/
+- GitHub repo: https://github.com/robusta-dev/holmesgpt
+- Local submodule: `dependencies/holmesgpt/`
+
+**Key SDK Interfaces to Study**:
+1. `HolmesGPT` main class initialization
+2. `investigate()` method signature and return types
+3. Toolset configuration format
+4. LLM provider integration patterns
+
+### C. Business Requirements Summary
+
+**Total Requirements**: 191 (BR-HAPI-001 to BR-HAPI-191)
+
+**Categories**:
+- Investigation (BR-HAPI-001 to 015): 15 requirements
+- Chat (BR-HAPI-006 to 010): 5 requirements
+- Context Integration (BR-HAPI-011 to 015): 5 requirements
+- Health/Metrics (BR-HAPI-016 to 030): 15 requirements
+- Toolset Management (BR-HAPI-031 to 040): 10 requirements
+- Recovery Analysis (BR-HAPI-RECOVERY-001 to 006): 6 requirements
+- Safety Analysis (BR-HAPI-SAFETY-001 to 006): 6 requirements
+- Authentication (BR-HAPI-091 to 105): 15 requirements
+- Rate Limiting (BR-HAPI-106 to 115): 10 requirements
+- Validation/Resilience (BR-HAPI-186 to 191): 6 requirements
+- Additional (BR-HAPI-041 to 090, 116 to 185): 104 requirements
+
+### D. Integration Dependencies
+
+**Required Services** (Phase 2, must be complete):
+1. ✅ Gateway Service (Phase 1, complete)
+2. ✅ Dynamic Toolset Service (Phase 1, complete)
+3. ✅ Data Storage Service (Phase 1, complete)
+4. ✅ Notification Service (Phase 1, complete)
+5. 🚧 Context API Service (Phase 2, in parallel with this service)
+
+**Dependent Services** (Phase 3, blocked until this complete):
+1. ⏸️ AI Analysis Service (Phase 3, consumes /api/v1/investigate)
+2. ⏸️ Workflow Execution Service (Phase 3, may use investigation results)
+
+### E. Key Files Reference
+
+**Legacy Code** (Reference Only):
+- `docker/holmesgpt-api/README.md` - Original implementation overview
+- `docker/holmesgpt-api/src/main.py` - FastAPI patterns
+- `docker/holmesgpt-api/src/services/holmesgpt_service.py` - SDK integration patterns
+- `docker/holmesgpt-api/tests/test_holmesgpt_service.py` - Test patterns
+
+**Authoritative Documentation**:
+- `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` - All 191 business requirements
+- `docs/requirements/BR-HAPI-VALIDATION-RESILIENCE.md` - Validation requirements (BR-HAPI-186 to 191)
+- `docs/services/stateless/holmesgpt-api/overview.md` - Service overview
+- `docs/services/stateless/holmesgpt-api/api-specification.md` - API specification
+
+**New Implementation** (To Be Created):
+- `holmesgpt-api/` - New service location (root-level, only non-Go service, repo-ready)
+- `holmesgpt-api/deploy/kubernetes/` - Kubernetes manifests (self-contained)
+- `holmesgpt-api/docs/DD-XXX.md` - Design decisions (within service)
+
+---
+
+## Approval Required
+
+**User Approval Checkpoints**:
+1. ✅ **Analysis Phase Complete** (Day 1): Approve context understanding and risk assessment
+2. ✅ **Plan Phase Complete** (Day 2): Approve this implementation plan before proceeding to DO phase
+3. ⏸️ **RED Phase Complete** (Day 5): Review test coverage before GREEN phase
+4. ⏸️ **GREEN Phase Complete** (Day 8): Review implementation before REFACTOR phase
+5. ⏸️ **REFACTOR Phase Complete** (Day 10): Production readiness review
+6. ⏸️ **CHECK Phase Complete** (Day 12): Final handoff approval
+
+**Next Step**: User approval to proceed with Day 1 Analysis Phase
+
+---
+
+**Plan Status**: 🚧 **AWAITING USER APPROVAL**
+**Next Action**: User reviews this plan and approves to begin Day 1 Analysis Phase
+**Confidence**: 88% ✅ **Excellent with Production Validation**
+

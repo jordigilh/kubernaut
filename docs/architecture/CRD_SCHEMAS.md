@@ -1253,6 +1253,273 @@ type ExecutionResults struct {
 
 ---
 
+## 🔔 NotificationRequest CRD
+
+### Metadata
+
+**API Group**: `notification.kubernaut.io/v1`
+**Kind**: `NotificationRequest`
+**Owner**: Notification Controller Service
+**Created By**: RemediationOrchestrator Service
+**Scope**: Namespaced
+**Documentation**: [06-notification/](../services/crd-controllers/06-notification/)
+
+### Purpose
+
+CRD-based notification delivery with zero data loss guarantee. Replaces the previous stateless HTTP API design. Provides automatic retry, complete audit trail, and at-least-once delivery semantics through etcd persistence.
+
+**Architecture Change (2025-10-12)**: Migrated from stateless HTTP API to CRD Controller for:
+- **BR-NOT-050**: Zero data loss (etcd persistence)
+- **BR-NOT-051**: Complete audit trail
+- **BR-NOT-052**: Automatic retry
+- **BR-NOT-053**: At-least-once delivery
+- **BR-NOT-054**: Real-time observability
+
+### Source of Truth
+
+**RemediationOrchestrator Service** creates NotificationRequest CRDs after remediation actions complete. The schema below reflects the declarative notification design.
+
+**Why CRD-Based**:
+- Durable state survives pod restarts (etcd)
+- Controller reconciliation provides automatic retry
+- CRD status tracks all delivery attempts (audit trail)
+- At-least-once delivery guarantee
+- Zero data loss on system failures
+
+## 📐 NotificationRequest Spec
+
+```go
+// api/notification/v1alpha1/notificationrequest_types.go
+package v1alpha1
+
+import (
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// NotificationRequestSpec defines the desired state of NotificationRequest
+type NotificationRequestSpec struct {
+    // ========================================
+    // NOTIFICATION METADATA
+    // ========================================
+
+    // Subject line for the notification
+    // +kubebuilder:validation:MaxLength=255
+    // +kubebuilder:validation:MinLength=1
+    Subject string `json:"subject"`
+
+    // Human-readable message body
+    // +kubebuilder:validation:MaxLength=4096
+    // +kubebuilder:validation:MinLength=1
+    Message string `json:"message"`
+
+    // Priority: "critical", "high", "normal", "low"
+    // Critical notifications are delivered first
+    // +kubebuilder:validation:Enum=critical;high;normal;low
+    Priority string `json:"priority"`
+
+    // ========================================
+    // DELIVERY CHANNELS
+    // ========================================
+
+    // List of delivery channels to use
+    // At least one channel must be specified
+    // +kubebuilder:validation:MinItems=1
+    Channels []DeliveryChannel `json:"channels"`
+
+    // ========================================
+    // CONTEXT & LINKING
+    // ========================================
+
+    // Reference to originating RemediationRequest
+    RemediationRequestName string `json:"remediationRequestName,omitempty"`
+
+    // Reference to related WorkflowExecution
+    WorkflowExecutionName string `json:"workflowExecutionName,omitempty"`
+
+    // Namespace of remediation context
+    RemediationNamespace string `json:"remediationNamespace,omitempty"`
+
+    // Direct action links for external services
+    // +kubebuilder:validation:MaxItems=10
+    ActionLinks []ActionLink `json:"actionLinks,omitempty"`
+
+    // ========================================
+    // RETRY CONFIGURATION
+    // ========================================
+
+    // Maximum retry attempts per channel (default: 3)
+    // +kubebuilder:validation:Minimum=0
+    // +kubebuilder:validation:Maximum=10
+    MaxRetries int `json:"maxRetries,omitempty"`
+
+    // Base backoff duration for retry (default: "30s")
+    // Exponential backoff: 30s, 1m, 2m, 4m, 8m
+    RetryBackoff string `json:"retryBackoff,omitempty"`
+
+    // ========================================
+    // SENSITIVE DATA HANDLING
+    // ========================================
+
+    // True if message contains potentially sensitive data
+    // Controller will sanitize before delivery
+    ContainsSensitiveData bool `json:"containsSensitiveData,omitempty"`
+
+    // Sanitization rules to apply
+    SanitizationRules []string `json:"sanitizationRules,omitempty"`
+}
+
+// DeliveryChannel defines a notification delivery target
+type DeliveryChannel struct {
+    // Channel type: "email", "slack", "teams", "sms", "webhook"
+    // +kubebuilder:validation:Enum=email;slack;teams;sms;webhook
+    Type string `json:"type"`
+
+    // Destination (email address, Slack channel, Teams webhook URL, etc.)
+    // +kubebuilder:validation:MaxLength=512
+    // +kubebuilder:validation:MinLength=1
+    Destination string `json:"destination"`
+
+    // Optional custom configuration per channel (JSON)
+    Config map[string]string `json:"config,omitempty"`
+}
+
+// ActionLink defines an external service action link
+type ActionLink struct {
+    // Link label (e.g., "View Logs in Grafana")
+    // +kubebuilder:validation:MaxLength=100
+    // +kubebuilder:validation:MinLength=1
+    Label string `json:"label"`
+
+    // Target URL
+    // +kubebuilder:validation:MaxLength=2048
+    // +kubebuilder:validation:MinLength=1
+    URL string `json:"url"`
+
+    // Link type: "grafana", "prometheus", "github", "k8s-dashboard", "custom"
+    // +kubebuilder:validation:Enum=grafana;prometheus;github;k8s-dashboard;custom
+    Type string `json:"type"`
+}
+```
+
+## 📊 NotificationRequest Status
+
+```go
+// NotificationRequestStatus defines the observed state of NotificationRequest
+type NotificationRequestStatus struct {
+    // ========================================
+    // DELIVERY STATE
+    // ========================================
+
+    // Overall phase: "pending", "sending", "sent", "failed"
+    // +kubebuilder:validation:Enum=pending;sending;sent;failed
+    Phase string `json:"phase"`
+
+    // Per-channel delivery status
+    // +kubebuilder:validation:MinItems=1
+    ChannelStatus []ChannelDeliveryStatus `json:"channelStatus,omitempty"`
+
+    // ========================================
+    // AUDIT TRAIL
+    // ========================================
+
+    // All delivery attempts (complete audit trail)
+    DeliveryAttempts []DeliveryAttempt `json:"deliveryAttempts,omitempty"`
+
+    // Total retry count across all channels
+    // +kubebuilder:validation:Minimum=0
+    TotalRetries int `json:"totalRetries"`
+
+    // ========================================
+    // TIMESTAMPS
+    // ========================================
+
+    // When notification was created
+    CreatedAt *metav1.Time `json:"createdAt,omitempty"`
+
+    // When first delivery attempt started
+    FirstAttemptAt *metav1.Time `json:"firstAttemptAt,omitempty"`
+
+    // When final delivery completed or failed
+    CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+
+    // ========================================
+    // ERROR TRACKING
+    // ========================================
+
+    // Last error message (if any)
+    LastError string `json:"lastError,omitempty"`
+
+    // Per-channel error details
+    ChannelErrors map[string]string `json:"channelErrors,omitempty"`
+}
+
+// ChannelDeliveryStatus tracks delivery for a single channel
+type ChannelDeliveryStatus struct {
+    // Channel type
+    Type string `json:"type"`
+
+    // Destination
+    Destination string `json:"destination"`
+
+    // Status: "pending", "sending", "sent", "failed"
+    // +kubebuilder:validation:Enum=pending;sending;sent;failed
+    Status string `json:"status"`
+
+    // Retry count for this specific channel
+    // +kubebuilder:validation:Minimum=0
+    Retries int `json:"retries"`
+
+    // Last delivery attempt timestamp
+    LastAttempt *metav1.Time `json:"lastAttempt,omitempty"`
+
+    // Error message (if failed)
+    ErrorMessage string `json:"errorMessage,omitempty"`
+}
+
+// DeliveryAttempt tracks a single delivery attempt (audit record)
+type DeliveryAttempt struct {
+    // Attempt number
+    // +kubebuilder:validation:Minimum=1
+    AttemptNumber int `json:"attemptNumber"`
+
+    // Channel type
+    Type string `json:"type"`
+
+    // Destination
+    Destination string `json:"destination"`
+
+    // Success or failure
+    Success bool `json:"success"`
+
+    // Timestamp
+    Timestamp *metav1.Time `json:"timestamp"`
+
+    // Error message (if failed)
+    ErrorMessage string `json:"errorMessage,omitempty"`
+
+    // Response code/ID from external service
+    ResponseCode string `json:"responseCode,omitempty"`
+}
+```
+
+**Phase Transitions**:
+1. `pending` → NotificationRequest created, waiting for controller pickup
+2. `sending` → Controller actively attempting delivery
+3. `sent` → All channels delivered successfully
+4. `failed` → All retry attempts exhausted, at least one channel failed
+
+**Retry Behavior**:
+- Exponential backoff per channel: 30s, 1m, 2m, 4m, 8m (default)
+- Controller requeues NotificationRequest after backoff duration
+- Per-channel graceful degradation (one channel failure doesn't block others)
+
+**Audit Trail**:
+- All delivery attempts stored in `status.deliveryAttempts[]`
+- Long-term audit data persisted to Data Storage service (>90 days)
+- CRD status provides real-time delivery observability
+
+---
+
 ## 📝 Validation Markers Summary
 
 ### RemediationRequest / RemediationProcessing
@@ -1276,9 +1543,18 @@ type ExecutionResults struct {
 - **Numeric**: StepNumber (≥1), Replicas (0-1000), GracePeriodSeconds (0-3600), MaxRetries (0-5)
 - **MaxLength**: Deployment/Pod/Node names (253), Namespace (63)
 
+### NotificationRequest
+- **Enum**: Priority, ChannelType, Phase, Status, LinkType
+- **Numeric**: MaxRetries (0-10), AttemptNumber (≥1), TotalRetries (≥0)
+- **MaxLength**: Subject (255), Message (4096), Destination (512), Label (100), URL (2048)
+- **MinLength**: Subject (1), Message (1), Destination (1), Label (1), URL (1)
+- **MinItems**: Channels (≥1), ChannelStatus (≥1)
+- **MaxItems**: ActionLinks (≤10)
+
 ---
 
 **Generated**: January 10, 2025
+**Last Updated**: October 12, 2025 (Added NotificationRequest CRD)
 **Validates Against**: Kubebuilder v3.x, Kubernetes 1.28+
 **Confidence**: 95% - All validations tested and verified in generated CRD manifests
 

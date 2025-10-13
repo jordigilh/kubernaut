@@ -161,7 +161,7 @@ var _ = Describe("Controller Edge Cases", func() {
 						{Channel: "slack", Status: "failed"},
 						{Channel: "slack", Status: "failed"}, // 5 attempts
 					},
-					TotalAttempts:   5,
+					TotalAttempts:    5,
 					FailedDeliveries: 5,
 				},
 			}
@@ -365,7 +365,7 @@ var _ = Describe("Controller Edge Cases", func() {
 		It("should handle status subresource update failures", func() {
 			// This test verifies the controller handles status update failures gracefully
 			// In real scenarios, this could happen due to conflicts or API server issues
-			
+
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "status-update-test",
@@ -394,4 +394,3 @@ var _ = Describe("Controller Edge Cases", func() {
 		})
 	})
 })
-

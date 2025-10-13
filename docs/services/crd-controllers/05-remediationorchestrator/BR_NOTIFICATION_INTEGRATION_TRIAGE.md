@@ -1,7 +1,7 @@
 # RemediationOrchestrator BR Triage - Notification Integration
 
-**Date**: 2025-10-12  
-**Context**: ADR-017 approves RemediationOrchestrator as NotificationRequest CRD creator  
+**Date**: 2025-10-12
+**Context**: ADR-017 approves RemediationOrchestrator as NotificationRequest CRD creator
 **Question**: Do existing BRs need updates to reflect this architectural decision?
 
 ---
@@ -376,7 +376,7 @@ func (r *RemediationRequestReconciler) buildFailureMessage(
     // BR-NOT-027: Impacted resources
     // BR-NOT-028: AI root cause analysis
     // BR-NOT-029: Analysis justification
-    
+
     return fmt.Sprintf(`# Remediation Failed
 
 **Alert**: %s
@@ -493,7 +493,7 @@ if !r.hasNotificationForEvent(remediation, "failed") {
 ```go
 type RemediationRequestStatus struct {
     // ... existing fields ...
-    
+
     // NotificationsSent tracks which notification events have been created
     // Format: ["failed-20250112120000", "timeout-20250112120500", "completed-20250112120800"]
     // +optional
@@ -549,7 +549,8 @@ Before merging:
 
 ---
 
-**Triage Date**: 2025-10-12  
-**Decision**: **NO BR UPDATES REQUIRED**  
+**Triage Date**: 2025-10-12
+**Decision**: **NO BR UPDATES REQUIRED**
 **Next Action**: Implement ADR-017 in RemediationOrchestrator (estimated 2 hours)
+
 

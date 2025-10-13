@@ -57,6 +57,32 @@ rules:
   - patch
   - update
 - apiGroups:
+  - notification.kubernaut.ai
+  resources:
+  - notificationrequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - notification.kubernaut.ai
+  resources:
+  - notificationrequests/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - notification.kubernaut.ai
+  resources:
+  - notificationrequests/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - remediation.kubernaut.io
   resources:
   - remediationrequests

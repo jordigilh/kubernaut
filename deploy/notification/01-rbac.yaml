@@ -72,3 +72,4 @@ subjects:
     name: notification-controller
     namespace: kubernaut-notifications
 
+

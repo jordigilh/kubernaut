@@ -107,6 +107,11 @@ func (in *RemediationRequestSpec) DeepCopyInto(out *RemediationRequestSpec) {
 	in.FiringTime.DeepCopyInto(&out.FiringTime)
 	in.ReceivedTime.DeepCopyInto(&out.ReceivedTime)
 	in.Deduplication.DeepCopyInto(&out.Deduplication)
+	if in.AffectedResources != nil {
+		in, out := &in.AffectedResources, &out.AffectedResources
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.SignalLabels != nil {
 		in, out := &in.SignalLabels, &out.SignalLabels
 		*out = make(map[string]string, len(*in))
