@@ -73,21 +73,21 @@ var _ = Describe("Integration Test 5: Cross-Service Write Simulation + Stress Te
 					defer GinkgoRecover()
 
 					for writeID := 0; writeID < writesPerService; writeID++ {
-					audit := &models.RemediationAudit{
-						Name:                 fmt.Sprintf("cross-service-svc%d-write%d-%d", svcID, writeID, time.Now().UnixNano()),
-						Namespace:            "default",
-						Phase:                "processing",
-						ActionType:           "restart_pod",
-						Status:               "pending",
-						StartTime:            time.Now(),
-						RemediationRequestID: fmt.Sprintf("req-stress-svc%d-write%d-%d", svcID, writeID, time.Now().UnixNano()),
-						AlertFingerprint:     "alert-cross-service",
-						Severity:             "high",
-						Environment:          "production",
-						ClusterName:          "prod-cluster",
-						TargetResource:       "pod/app",
-						Metadata:             `{"service_id":` + string(rune('0'+svcID)) + `}`,
-					}
+						audit := &models.RemediationAudit{
+							Name:                 fmt.Sprintf("cross-service-svc%d-write%d-%d", svcID, writeID, time.Now().UnixNano()),
+							Namespace:            "default",
+							Phase:                "processing",
+							ActionType:           "restart_pod",
+							Status:               "pending",
+							StartTime:            time.Now(),
+							RemediationRequestID: fmt.Sprintf("req-stress-svc%d-write%d-%d", svcID, writeID, time.Now().UnixNano()),
+							AlertFingerprint:     "alert-cross-service",
+							Severity:             "high",
+							Environment:          "production",
+							ClusterName:          "prod-cluster",
+							TargetResource:       "pod/app",
+							Metadata:             `{"service_id":` + string(rune('0'+svcID)) + `}`,
+						}
 
 						embedding := generateTestEmbedding(float32(svcID) + float32(writeID)/100.0)
 
@@ -154,9 +154,9 @@ var _ = Describe("Integration Test 5: Cross-Service Write Simulation + Stress Te
 				Metadata:             `{"service":"B"}`,
 			}
 
-		// Create 384-dimensional embeddings for both services
-		embeddingA := generateTestEmbedding(0.1)
-		embeddingB := generateTestEmbedding(0.2)
+			// Create 384-dimensional embeddings for both services
+			embeddingA := generateTestEmbedding(0.1)
+			embeddingB := generateTestEmbedding(0.2)
 
 			// Write both concurrently
 			var wg sync.WaitGroup
@@ -327,21 +327,21 @@ var _ = Describe("Integration Test 5: Cross-Service Write Simulation + Stress Te
 					defer wg.Done()
 					defer GinkgoRecover()
 
-				audit := &models.RemediationAudit{
-					Name:                 fmt.Sprintf("stress-test-%d-%d", idx, time.Now().UnixNano()),
-					Namespace:            "default",
-					Phase:                "processing",
-					ActionType:           "restart_pod",
-					Status:               "pending",
-					StartTime:            time.Now(),
-					RemediationRequestID: fmt.Sprintf("req-stress-%d-%d", idx, time.Now().UnixNano()),
-					AlertFingerprint:     "alert-stress",
-					Severity:             "high",
-					Environment:          "production",
-					ClusterName:          "prod-cluster",
-					TargetResource:       "pod/app",
-					Metadata:             `{}`,
-				}
+					audit := &models.RemediationAudit{
+						Name:                 fmt.Sprintf("stress-test-%d-%d", idx, time.Now().UnixNano()),
+						Namespace:            "default",
+						Phase:                "processing",
+						ActionType:           "restart_pod",
+						Status:               "pending",
+						StartTime:            time.Now(),
+						RemediationRequestID: fmt.Sprintf("req-stress-%d-%d", idx, time.Now().UnixNano()),
+						AlertFingerprint:     "alert-stress",
+						Severity:             "high",
+						Environment:          "production",
+						ClusterName:          "prod-cluster",
+						TargetResource:       "pod/app",
+						Metadata:             `{}`,
+					}
 
 					embedding := generateTestEmbedding(float32(idx) / 100.0)
 
