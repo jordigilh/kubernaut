@@ -1,10 +1,26 @@
-# Notification Service - Documentation Hub
+# ⚠️  DEPRECATED - Notification Service Documentation
+
+> **🚨 CRITICAL NOTICE: This documentation is DEPRECATED as of 2025-10-12**
+>
+> The Notification Service has been **redesigned from a stateless HTTP API to a CRD Controller**.
+>
+> **New Location**: [docs/services/crd-controllers/06-notification/](../../crd-controllers/06-notification/)
+>
+> **Start Here**: [06-notification/README.md](../../crd-controllers/06-notification/README.md)
+>
+> **See**: [DEPRECATION_NOTICE.md](./DEPRECATION_NOTICE.md) for full migration details.
+>
+> **Removal Date**: 2026-01-10 (90 days from deprecation)
+
+---
+
+# Notification Service - Documentation Hub (ARCHIVED)
 
 **Version**: 1.0
 **Last Updated**: 2025-10-06
-**Service Type**: Stateless HTTP API Service
-**Status**: ⚠️ NEEDS IMPLEMENTATION
-**Priority**: P0 - CRITICAL
+**Service Type**: Stateless HTTP API Service (DEPRECATED)
+**Status**: ⛔ DEPRECATED - Migrated to CRD Controller
+**Priority**: P0 - CRITICAL (MIGRATION COMPLETE)
 
 ---
 

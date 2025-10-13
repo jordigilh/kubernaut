@@ -1,7 +1,7 @@
 # ADR-017: NotificationRequest CRD Creator Responsibility
 
-**Status**: ✅ **APPROVED**  
-**Date**: 2025-10-12  
+**Status**: ✅ **APPROVED**
+**Date**: 2025-10-12
 **Confidence**: 95%
 
 ---
@@ -161,7 +161,7 @@ case "completed":
 ```go
 type RemediationRequestStatus struct {
     // ... existing fields ...
-    NotificationsSent []string `json:"notificationsSent,omitempty"` 
+    NotificationsSent []string `json:"notificationsSent,omitempty"`
     // Example: ["failed-20250112120000", "completed-20250112120500"]
 }
 ```
@@ -178,7 +178,7 @@ notification := &notificationv1alpha1.NotificationRequest{
             "kubernaut.ai/event":       "failed",
         },
         OwnerReferences: []metav1.OwnerReference{
-            *metav1.NewControllerRef(remediation, 
+            *metav1.NewControllerRef(remediation,
                 remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
         },
     },
@@ -293,8 +293,9 @@ All Notification BRs (BR-NOT-050 to BR-NOT-058) remain satisfied:
 
 ---
 
-**Decision Made By**: Architecture Review  
-**Approved By**: User (2025-10-12)  
-**Implementation Owner**: RemediationOrchestrator Team  
+**Decision Made By**: Architecture Review
+**Approved By**: User (2025-10-12)
+**Implementation Owner**: RemediationOrchestrator Team
 **Status**: ✅ **APPROVED** (95% confidence)
+
 
