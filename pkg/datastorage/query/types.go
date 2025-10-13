@@ -132,7 +132,7 @@ func (r *RemediationAuditResult) ToRemediationAudit() *models.RemediationAudit {
 		TargetResource:       r.TargetResource,
 		ErrorMessage:         r.ErrorMessage,
 		Metadata:             r.Metadata,
-		Embedding:            []float32(r.Embedding),
+		Embedding:            models.Vector(r.Embedding), // Convert query.Vector to models.Vector
 		CreatedAt:            r.CreatedAt,
 		UpdatedAt:            r.UpdatedAt,
 	}

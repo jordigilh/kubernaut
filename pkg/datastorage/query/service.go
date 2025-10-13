@@ -141,14 +141,21 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 		zap.String("query", query),
 		zap.Int("arg_count", len(args)))
 
-	// Execute query and scan results into slice
-	var audits []*models.RemediationAudit
-	if err := s.db.SelectContext(ctx, &audits, query, args...); err != nil {
+	// Execute query and scan results into intermediate type
+	// We use RemediationAuditResult because it has query.Vector which implements sql.Scanner
+	var results []RemediationAuditResult
+	if err := s.db.SelectContext(ctx, &results, query, args...); err != nil {
 		metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusFailure).Inc()
 		s.logger.Error("query failed",
 			zap.Error(err),
 			zap.String("query", query))
 		return nil, fmt.Errorf("query failed: %w", err)
+	}
+
+	// Convert to models.RemediationAudit
+	audits := make([]*models.RemediationAudit, len(results))
+	for i := range results {
+		audits[i] = results[i].ToRemediationAudit()
 	}
 
 	metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusSuccess).Inc()

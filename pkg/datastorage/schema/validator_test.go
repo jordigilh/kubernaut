@@ -54,12 +54,12 @@ var _ = Describe("VersionValidator", func() {
 					WillReturnRows(sqlmock.NewRows([]string{"extversion"}).
 						AddRow("0.5.1"))
 
-				// Mock HNSW test table creation
-				mock.ExpectExec("CREATE TEMP TABLE hnsw_validation_test").
+				// Mock HNSW test table creation (with IF NOT EXISTS)
+				mock.ExpectExec("CREATE TEMP TABLE IF NOT EXISTS hnsw_validation_test").
 					WillReturnResult(sqlmock.NewResult(0, 0))
 
-				// Mock HNSW index creation
-				mock.ExpectExec("CREATE INDEX hnsw_validation_test_idx").
+				// Mock HNSW index creation (with IF NOT EXISTS)
+				mock.ExpectExec("CREATE INDEX IF NOT EXISTS hnsw_validation_test_idx").
 					WillReturnResult(sqlmock.NewResult(0, 0))
 
 				err := validator.ValidateHNSWSupport(ctx)
@@ -76,10 +76,10 @@ var _ = Describe("VersionValidator", func() {
 					WillReturnRows(sqlmock.NewRows([]string{"extversion"}).
 						AddRow("0.6.0"))
 
-				mock.ExpectExec("CREATE TEMP TABLE hnsw_validation_test").
+				mock.ExpectExec("CREATE TEMP TABLE IF NOT EXISTS hnsw_validation_test").
 					WillReturnResult(sqlmock.NewResult(0, 0))
 
-				mock.ExpectExec("CREATE INDEX hnsw_validation_test_idx").
+				mock.ExpectExec("CREATE INDEX IF NOT EXISTS hnsw_validation_test_idx").
 					WillReturnResult(sqlmock.NewResult(0, 0))
 
 				err := validator.ValidateHNSWSupport(ctx)
@@ -96,10 +96,10 @@ var _ = Describe("VersionValidator", func() {
 					WillReturnRows(sqlmock.NewRows([]string{"extversion"}).
 						AddRow("0.7.0"))
 
-				mock.ExpectExec("CREATE TEMP TABLE hnsw_validation_test").
+				mock.ExpectExec("CREATE TEMP TABLE IF NOT EXISTS hnsw_validation_test").
 					WillReturnResult(sqlmock.NewResult(0, 0))
 
-				mock.ExpectExec("CREATE INDEX hnsw_validation_test_idx").
+				mock.ExpectExec("CREATE INDEX IF NOT EXISTS hnsw_validation_test_idx").
 					WillReturnResult(sqlmock.NewResult(0, 0))
 
 				err := validator.ValidateHNSWSupport(ctx)

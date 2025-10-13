@@ -18,25 +18,28 @@ package datastorage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
+	"github.com/jordigilh/kubernaut/internal/database/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 )
 
 var _ = Describe("BR-STORAGE-019: Observability Integration Tests", func() {
 	var (
 		client               datastorage.Client
 		testCtx              context.Context
+		testDB               *sql.DB
 		testSchema           string
 		initialWriteTotal    float64
 		initialWriteDuration float64
@@ -50,17 +53,19 @@ var _ = Describe("BR-STORAGE-019: Observability Integration Tests", func() {
 		_, err := db.Exec(fmt.Sprintf("CREATE SCHEMA %s", testSchema))
 		Expect(err).ToNot(HaveOccurred())
 
-		// Set search path to test schema AND public (for pgvector types)
-		_, err = db.Exec(fmt.Sprintf("SET search_path TO %s, public", testSchema))
+		// Create dedicated DB connection with search_path in connection string
+		// This ensures all connections from the pool have the correct search_path
+		connStr := fmt.Sprintf("host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable search_path=%s,public", testSchema)
+		testDB, err = sql.Open("postgres", connStr)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Initialize schema
-		initializer := schema.NewInitializer(db, logger)
+		// Initialize schema in the test schema
+		initializer := schema.NewInitializer(testDB, logger)
 		err = initializer.Initialize(testCtx)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create client (this will trigger version validation metrics)
-		client, err = datastorage.NewClient(testCtx, db, logger)
+		client, err = datastorage.NewClient(testCtx, testDB, logger)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Capture initial metric values
@@ -69,10 +74,12 @@ var _ = Describe("BR-STORAGE-019: Observability Integration Tests", func() {
 	})
 
 	AfterEach(func() {
-		// Reset search path
-		_, _ = db.Exec("SET search_path TO public")
+		// Close dedicated test DB connection
+		if testDB != nil {
+			_ = testDB.Close()
+		}
 
-		// Drop test schema
+		// Drop test schema using suite-level connection
 		if testSchema != "" {
 			_, _ = db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", testSchema))
 		}
@@ -277,8 +284,13 @@ var _ = Describe("BR-STORAGE-019: Observability Integration Tests", func() {
 			initialQueryDuration := getHistogramCount(metrics.QueryDuration.WithLabelValues(metrics.OperationList))
 
 			// Perform list query
-			queryService := query.NewService(sqlxDB, logger)
-			_, err := queryService.ListRemediationAudits(testCtx, 10, 0)
+			testSqlxDB := sqlx.NewDb(testDB, "postgres")
+			queryService := query.NewService(testSqlxDB, logger)
+			opts := &query.ListOptions{
+				Limit:  10,
+				Offset: 0,
+			}
+			_, err := queryService.ListRemediationAudits(testCtx, opts)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify QueryTotal incremented
@@ -320,7 +332,8 @@ var _ = Describe("BR-STORAGE-019: Observability Integration Tests", func() {
 			initialQueryDuration := getHistogramCount(metrics.QueryDuration.WithLabelValues(metrics.OperationSemanticSearch))
 
 			// Perform semantic search
-			queryService := query.NewService(sqlxDB, logger)
+			testSqlxDB := sqlx.NewDb(testDB, "postgres")
+			queryService := query.NewService(testSqlxDB, logger)
 			_, err = queryService.SemanticSearch(testCtx, "pod restart failure")
 			Expect(err).ToNot(HaveOccurred())
 
@@ -342,6 +355,28 @@ var _ = Describe("BR-STORAGE-019: Observability Integration Tests", func() {
 		It("should track metrics correctly under concurrent writes", func() {
 			// BR-STORAGE-019: Verify metrics are thread-safe under load
 
+			// Create test data sequentially first to ensure schema is warm
+			// This prevents connection pool race conditions where new connections
+			// might not have the test schema in their search_path
+			warmupAudit := &models.RemediationAudit{
+				Name:                 "concurrent-warmup",
+				Namespace:            "default",
+				Phase:                "pending",
+				ActionType:           "scale_deployment",
+				Status:               "success",
+				StartTime:            time.Now(),
+				RemediationRequestID: fmt.Sprintf("req-warmup-%d", time.Now().UnixNano()),
+				AlertFingerprint:     "alert-warmup",
+				Severity:             "high",
+				Environment:          "production",
+				ClusterName:          "prod-cluster",
+				TargetResource:       "deployment/app",
+				Metadata:             "{}",
+			}
+			err := client.CreateRemediationAudit(testCtx, warmupAudit)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Capture initial metric value AFTER warmup write
 			initialWriteTotal := getCounterValue(metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess))
 
 			const numConcurrentWrites = 10
