@@ -180,26 +180,34 @@ test-integration-notification: ## Run Notification Service integration tests (Ki
 	@echo "  2. Delivery failure recovery (retry with exponential backoff)"
 	@echo "  3. Graceful degradation (partial delivery success)"
 	@echo ""
+	@echo "⏱️  Timeouts:"
+	@echo "  • Build timeout: 10 minutes"
+	@echo "  • Test timeout: 15 minutes"
+	@echo "  • Total timeout: 25 minutes"
+	@echo ""
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo ""
 	@echo "🔍 Checking deployment status..."
 	@if ! kubectl get crd notificationrequests.notification.kubernaut.ai &> /dev/null; then \
 		echo "⚠️  NotificationRequest CRD not found - running setup..."; \
-		$(MAKE) test-notification-setup; \
+		timeout 10m $(MAKE) test-notification-setup || \
+			(echo "❌ Setup timed out after 10 minutes" && exit 1); \
 	else \
 		echo "✅ CRD already installed"; \
 		if ! kubectl get deployment notification-controller -n $(NOTIFICATION_NAMESPACE) &> /dev/null; then \
 			echo "⚠️  Controller not deployed - running setup..."; \
-			$(MAKE) test-notification-setup; \
+			timeout 10m $(MAKE) test-notification-setup || \
+				(echo "❌ Setup timed out after 10 minutes" && exit 1); \
 		else \
 			echo "✅ Controller already deployed"; \
 		fi; \
 	fi
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "🧪 Running integration tests..."
+	@echo "🧪 Running integration tests (timeout: 15m)..."
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@go test ./test/integration/notification/... -v -ginkgo.v -timeout=30m
+	@timeout 15m go test ./test/integration/notification/... -v -ginkgo.v -timeout=15m || \
+		(echo "❌ Tests timed out after 15 minutes" && exit 1)
 	@echo ""
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "✅ NOTIFICATION SERVICE INTEGRATION TESTS COMPLETE"
