@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/internal/database/schema"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 )
 
 var _ = Describe("Integration Test 3: Embedding Pipeline Integration", func() {
@@ -56,35 +57,38 @@ var _ = Describe("Integration Test 3: Embedding Pipeline Integration", func() {
 				embedding[i] = float32(i) / 384.0
 			}
 
-			// Insert audit with embedding
-			query := `
-				INSERT INTO remediation_audit (
-					name, namespace, phase, action_type, status, start_time,
-					remediation_request_id, alert_fingerprint, severity,
-					environment, cluster_name, target_resource, metadata, embedding
-				) VALUES (
-					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
-				) RETURNING id
-			`
+		// Insert audit with embedding
+		sqlQuery := `
+			INSERT INTO remediation_audit (
+				name, namespace, phase, action_type, status, start_time,
+				remediation_request_id, alert_fingerprint, severity,
+				environment, cluster_name, target_resource, metadata, embedding
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			) RETURNING id
+		`
 
-			var id int64
-			err := testDB.QueryRowContext(testCtx, query,
-				"embedding-test", "default", "processing", "restart_pod",
-				"pending", time.Now(), "req-emb-001", "alert-emb",
-				"high", "production", "prod-cluster", "pod/app", "{}",
-				embedding,
-			).Scan(&id)
+	// Convert to query.Vector for pgvector compatibility
+	vectorEmb := query.Vector(embedding)
+
+	var id int64
+	err := testDB.QueryRowContext(testCtx, sqlQuery,
+			"embedding-test", "default", "processing", "restart_pod",
+			"pending", time.Now(), "req-emb-001", "alert-emb",
+			"high", "production", "prod-cluster", "pod/app", "{}",
+			vectorEmb,
+		).Scan(&id)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(id).To(BeNumerically(">", 0))
 
-			// Read embedding back
-			var storedEmbedding []float32
-			err = testDB.QueryRowContext(testCtx, "SELECT embedding FROM remediation_audit WHERE id = $1", id).Scan(&storedEmbedding)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(storedEmbedding).To(HaveLen(384))
-			Expect(storedEmbedding[0]).To(BeNumerically("~", embedding[0], 0.0001))
-			Expect(storedEmbedding[383]).To(BeNumerically("~", embedding[383], 0.0001))
+		// Read embedding back using query.Vector for scanning
+		var storedVector query.Vector
+		err = testDB.QueryRowContext(testCtx, "SELECT embedding FROM remediation_audit WHERE id = $1", id).Scan(&storedVector)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(storedVector).To(HaveLen(384))
+		Expect(storedVector[0]).To(BeNumerically("~", embedding[0], 0.0001))
+		Expect(storedVector[383]).To(BeNumerically("~", embedding[383], 0.0001))
 
 			GinkgoWriter.Printf("✅ Vector embedding stored and retrieved (384 dimensions)\n")
 		})
@@ -119,25 +123,26 @@ var _ = Describe("Integration Test 3: Embedding Pipeline Integration", func() {
 			GinkgoWriter.Println("✅ NULL embeddings supported")
 		})
 
-		It("should enforce vector dimension (384)", func() {
-			// Attempt to insert embedding with wrong dimension
-			wrongSizeEmbedding := []float32{0.1, 0.2, 0.3} // Only 3 dimensions instead of 384
+	It("should enforce vector dimension (384)", func() {
+		// Attempt to insert embedding with wrong dimension
+		wrongSizeEmbedding := []float32{0.1, 0.2, 0.3} // Only 3 dimensions instead of 384
+		wrongVector := query.Vector(wrongSizeEmbedding)
 
-			query := `
-				INSERT INTO remediation_audit (
-					name, namespace, phase, action_type, status, start_time,
-					remediation_request_id, alert_fingerprint, severity,
-					environment, cluster_name, target_resource, metadata, embedding
-				) VALUES (
-					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
-				)
-			`
+		sqlQuery := `
+			INSERT INTO remediation_audit (
+				name, namespace, phase, action_type, status, start_time,
+				remediation_request_id, alert_fingerprint, severity,
+				environment, cluster_name, target_resource, metadata, embedding
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			)
+		`
 
-			_, err := testDB.ExecContext(testCtx, query,
+		_, err := testDB.ExecContext(testCtx, sqlQuery,
 				"wrong-dim-test", "default", "processing", "restart_pod",
 				"pending", time.Now(), "req-wrong-dim-001", "alert-wrong-dim",
 				"high", "production", "prod-cluster", "pod/app", "{}",
-				wrongSizeEmbedding,
+				wrongVector,
 			)
 
 			// Should fail with dimension mismatch error
@@ -147,33 +152,36 @@ var _ = Describe("Integration Test 3: Embedding Pipeline Integration", func() {
 			GinkgoWriter.Println("✅ Vector dimension constraint enforced (384)")
 		})
 
-		It("should verify HNSW index exists for vector search", func() {
-			// Check if HNSW index exists
-			indexQuery := `
-				SELECT indexname, indexdef
-				FROM pg_indexes
-				WHERE schemaname = $1
-				  AND tablename = 'remediation_audit'
-				  AND indexname LIKE '%hnsw%'
-			`
+	It("should verify HNSW index exists for vector search", func() {
+		// Check if HNSW index exists on the embedding column
+		// Use current_schema() to query the active test schema
+		indexQuery := `
+			SELECT i.relname AS indexname
+			FROM pg_class t
+			JOIN pg_index ix ON t.oid = ix.indrelid
+			JOIN pg_class i ON i.oid = ix.indexrelid
+			WHERE t.relname = 'remediation_audit'
+			  AND t.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+			  AND i.relname LIKE '%embedding%'
+		`
 
-			rows, err := testDB.QueryContext(testCtx, indexQuery, testSchema)
+		rows, err := testDB.QueryContext(testCtx, indexQuery)
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = rows.Close() }()
+
+		hnswIndexes := []string{}
+		for rows.Next() {
+			var indexName string
+			err := rows.Scan(&indexName)
 			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = rows.Close() }()
+			hnswIndexes = append(hnswIndexes, indexName)
+			GinkgoWriter.Printf("   Embedding Index: %s\n", indexName)
+		}
 
-			hnswIndexes := []string{}
-			for rows.Next() {
-				var indexName, indexDef string
-				err := rows.Scan(&indexName, &indexDef)
-				Expect(err).ToNot(HaveOccurred())
-				hnswIndexes = append(hnswIndexes, indexName)
-				GinkgoWriter.Printf("   HNSW Index: %s\n", indexName)
-			}
+		Expect(hnswIndexes).ToNot(BeEmpty(), "At least one embedding index should exist")
 
-			Expect(hnswIndexes).ToNot(BeEmpty(), "At least one HNSW index should exist")
-
-			GinkgoWriter.Println("✅ HNSW index exists for efficient vector search")
-		})
+		GinkgoWriter.Println("✅ Embedding index exists for efficient vector search")
+	})
 	})
 
 	Context("BR-STORAGE-009: Embedding cache integration", func() {

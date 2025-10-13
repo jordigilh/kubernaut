@@ -85,19 +85,20 @@ var _ = Describe("Integration Test 4: Validation + Sanitization Pipeline", func(
 			GinkgoWriter.Println("✅ Invalid phase rejected by validation")
 		})
 
-		It("should reject fields exceeding length limits", func() {
-			longNameAudit := &models.RemediationAudit{
-				Name:      strings.Repeat("a", 256), // Exceeds 255 char limit
-				Namespace: "default",
-				Phase:     "processing",
-			}
+	It("should reject fields exceeding length limits", func() {
+		longNameAudit := &models.RemediationAudit{
+			Name:       strings.Repeat("a", 256), // Exceeds 255 char limit
+			Namespace:  "default",
+			Phase:      "processing",
+			ActionType: "restart_pod", // Provide required field
+		}
 
-			err := validator.ValidateRemediationAudit(longNameAudit)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("exceeds maximum length"))
+		err := validator.ValidateRemediationAudit(longNameAudit)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("exceeds maximum length"))
 
-			GinkgoWriter.Println("✅ Overlong field rejected by validation")
-		})
+		GinkgoWriter.Println("✅ Overlong field rejected by validation")
+	})
 
 		It("should accept valid audit", func() {
 			validAudit := &models.RemediationAudit{

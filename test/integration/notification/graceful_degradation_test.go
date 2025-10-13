@@ -248,4 +248,3 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 		GinkgoWriter.Println("✅ Circuit breaker isolation validated: Console unaffected by Slack circuit breaker")
 	})
 })
-
