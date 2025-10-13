@@ -1,0 +1,498 @@
+{
+	"dashboard": {
+		"title": "Data Storage Service - Observability Dashboard",
+		"tags": [
+			"datastorage",
+			"kubernaut",
+			"postgresql",
+			"pgvector"
+		],
+		"timezone": "browser",
+		"schemaVersion": 16,
+		"version": 1,
+		"refresh": "30s",
+		"panels": [
+			{
+				"id": 1,
+				"title": "Write Operations Rate",
+				"type": "graph",
+				"gridPos": {
+					"x": 0,
+					"y": 0,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "rate(datastorage_write_total{status=\"success\"}[5m])",
+						"legendFormat": "{{table}} - Success",
+						"refId": "A"
+					},
+					{
+						"expr": "rate(datastorage_write_total{status=\"failure\"}[5m])",
+						"legendFormat": "{{table}} - Failure",
+						"refId": "B"
+					}
+				],
+				"yaxes": [
+					{
+						"format": "ops",
+						"label": "Operations/sec"
+					},
+					{
+						"format": "short"
+					}
+				],
+				"description": "BR-STORAGE-001, BR-STORAGE-002: Write operation rates by table and status"
+			},
+			{
+				"id": 2,
+				"title": "Write Duration (p95, p99)",
+				"type": "graph",
+				"gridPos": {
+					"x": 12,
+					"y": 0,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "histogram_quantile(0.95, rate(datastorage_write_duration_seconds_bucket[5m]))",
+						"legendFormat": "{{table}} - p95",
+						"refId": "A"
+					},
+					{
+						"expr": "histogram_quantile(0.99, rate(datastorage_write_duration_seconds_bucket[5m]))",
+						"legendFormat": "{{table}} - p99",
+						"refId": "B"
+					}
+				],
+				"yaxes": [
+					{
+						"format": "s",
+						"label": "Duration"
+					},
+					{
+						"format": "short"
+					}
+				],
+				"description": "BR-STORAGE-019: Write operation latency percentiles"
+			},
+			{
+				"id": 3,
+				"title": "Dual-Write Success vs Failure",
+				"type": "graph",
+				"gridPos": {
+					"x": 0,
+					"y": 8,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "rate(datastorage_dualwrite_success_total[5m])",
+						"legendFormat": "Success",
+						"refId": "A"
+					},
+					{
+						"expr": "rate(datastorage_dualwrite_failure_total[5m])",
+						"legendFormat": "Failure - {{reason}}",
+						"refId": "B"
+					}
+				],
+				"yaxes": [
+					{
+						"format": "ops",
+						"label": "Operations/sec"
+					},
+					{
+						"format": "short"
+					}
+				],
+				"description": "BR-STORAGE-014: Dual-write coordination success and failure rates"
+			},
+			{
+				"id": 4,
+				"title": "Fallback Mode Operations",
+				"type": "stat",
+				"gridPos": {
+					"x": 12,
+					"y": 8,
+					"w": 6,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "rate(datastorage_fallback_mode_total[5m])",
+						"refId": "A"
+					}
+				],
+				"options": {
+					"graphMode": "area",
+					"colorMode": "value"
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "ops",
+						"thresholds": {
+							"mode": "absolute",
+							"steps": [
+								{
+									"value": 0,
+									"color": "green"
+								},
+								{
+									"value": 1,
+									"color": "yellow"
+								},
+								{
+									"value": 10,
+									"color": "red"
+								}
+							]
+						}
+					}
+				},
+				"description": "BR-STORAGE-015: PostgreSQL-only fallback operations (Vector DB degraded)"
+			},
+			{
+				"id": 5,
+				"title": "Cache Hit Rate",
+				"type": "gauge",
+				"gridPos": {
+					"x": 18,
+					"y": 8,
+					"w": 6,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "rate(datastorage_cache_hits_total[5m]) / (rate(datastorage_cache_hits_total[5m]) + rate(datastorage_cache_misses_total[5m]))",
+						"refId": "A"
+					}
+				],
+				"options": {
+					"showThresholdLabels": false,
+					"showThresholdMarkers": true
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "percentunit",
+						"thresholds": {
+							"mode": "absolute",
+							"steps": [
+								{
+									"value": 0,
+									"color": "red"
+								},
+								{
+									"value": 0.5,
+									"color": "yellow"
+								},
+								{
+									"value": 0.8,
+									"color": "green"
+								}
+							]
+						},
+						"min": 0,
+						"max": 1
+					}
+				},
+				"description": "BR-STORAGE-009: Embedding cache hit rate"
+			},
+			{
+				"id": 6,
+				"title": "Embedding Generation Duration (p95)",
+				"type": "graph",
+				"gridPos": {
+					"x": 12,
+					"y": 12,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "histogram_quantile(0.95, rate(datastorage_embedding_generation_duration_seconds_bucket[5m]))",
+						"legendFormat": "p95",
+						"refId": "A"
+					},
+					{
+						"expr": "histogram_quantile(0.99, rate(datastorage_embedding_generation_duration_seconds_bucket[5m]))",
+						"legendFormat": "p99",
+						"refId": "B"
+					}
+				],
+				"yaxes": [
+					{
+						"format": "s",
+						"label": "Duration"
+					},
+					{
+						"format": "short"
+					}
+				],
+				"description": "BR-STORAGE-008: Embedding generation performance"
+			},
+			{
+				"id": 7,
+				"title": "Validation Failures by Field",
+				"type": "graph",
+				"gridPos": {
+					"x": 0,
+					"y": 16,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "rate(datastorage_validation_failures_total[5m])",
+						"legendFormat": "{{field}} - {{reason}}",
+						"refId": "A"
+					}
+				],
+				"yaxes": [
+					{
+						"format": "ops",
+						"label": "Failures/sec"
+					},
+					{
+						"format": "short"
+					}
+				],
+				"description": "BR-STORAGE-010, BR-STORAGE-011: Input validation failures"
+			},
+			{
+				"id": 8,
+				"title": "Query Operations Rate",
+				"type": "graph",
+				"gridPos": {
+					"x": 12,
+					"y": 16,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "rate(datastorage_query_total{status=\"success\"}[5m])",
+						"legendFormat": "{{operation}} - Success",
+						"refId": "A"
+					},
+					{
+						"expr": "rate(datastorage_query_total{status=\"failure\"}[5m])",
+						"legendFormat": "{{operation}} - Failure",
+						"refId": "B"
+					}
+				],
+				"yaxes": [
+					{
+						"format": "ops",
+						"label": "Queries/sec"
+					},
+					{
+						"format": "short"
+					}
+				],
+				"description": "BR-STORAGE-007, BR-STORAGE-012, BR-STORAGE-013: Query operation rates"
+			},
+			{
+				"id": 9,
+				"title": "Query Duration by Operation (p95)",
+				"type": "graph",
+				"gridPos": {
+					"x": 0,
+					"y": 24,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket[5m]))",
+						"legendFormat": "{{operation}} - p95",
+						"refId": "A"
+					}
+				],
+				"yaxes": [
+					{
+						"format": "s",
+						"label": "Duration"
+					},
+					{
+						"format": "short"
+					}
+				],
+				"description": "BR-STORAGE-019: Query latency by operation type"
+			},
+			{
+				"id": 10,
+				"title": "Semantic Search Performance",
+				"type": "graph",
+				"gridPos": {
+					"x": 12,
+					"y": 24,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "histogram_quantile(0.50, rate(datastorage_query_duration_seconds_bucket{operation=\"semantic_search\"}[5m]))",
+						"legendFormat": "p50 (median)",
+						"refId": "A"
+					},
+					{
+						"expr": "histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation=\"semantic_search\"}[5m]))",
+						"legendFormat": "p95",
+						"refId": "B"
+					},
+					{
+						"expr": "histogram_quantile(0.99, rate(datastorage_query_duration_seconds_bucket{operation=\"semantic_search\"}[5m]))",
+						"legendFormat": "p99",
+						"refId": "C"
+					}
+				],
+				"yaxes": [
+					{
+						"format": "s",
+						"label": "Duration"
+					},
+					{
+						"format": "short"
+					}
+				],
+				"description": "BR-STORAGE-012: HNSW semantic search latency distribution"
+			},
+			{
+				"id": 11,
+				"title": "Error Rate Overview",
+				"type": "stat",
+				"gridPos": {
+					"x": 0,
+					"y": 32,
+					"w": 8,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "sum(rate(datastorage_write_total{status=\"failure\"}[5m])) / sum(rate(datastorage_write_total[5m]))",
+						"refId": "A"
+					}
+				],
+				"options": {
+					"graphMode": "area",
+					"colorMode": "value"
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "percentunit",
+						"thresholds": {
+							"mode": "absolute",
+							"steps": [
+								{
+									"value": 0,
+									"color": "green"
+								},
+								{
+									"value": 0.01,
+									"color": "yellow"
+								},
+								{
+									"value": 0.05,
+									"color": "red"
+								}
+							]
+						}
+					}
+				},
+				"description": "Overall write error rate (target: < 1%)"
+			},
+			{
+				"id": 12,
+				"title": "Query Error Rate",
+				"type": "stat",
+				"gridPos": {
+					"x": 8,
+					"y": 32,
+					"w": 8,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "sum(rate(datastorage_query_total{status=\"failure\"}[5m])) / sum(rate(datastorage_query_total[5m]))",
+						"refId": "A"
+					}
+				],
+				"options": {
+					"graphMode": "area",
+					"colorMode": "value"
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "percentunit",
+						"thresholds": {
+							"mode": "absolute",
+							"steps": [
+								{
+									"value": 0,
+									"color": "green"
+								},
+								{
+									"value": 0.01,
+									"color": "yellow"
+								},
+								{
+									"value": 0.05,
+									"color": "red"
+								}
+							]
+						}
+					}
+				},
+				"description": "Overall query error rate (target: < 1%)"
+			},
+			{
+				"id": 13,
+				"title": "Validation Failure Rate",
+				"type": "stat",
+				"gridPos": {
+					"x": 16,
+					"y": 32,
+					"w": 8,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "sum(rate(datastorage_validation_failures_total[5m])) / sum(rate(datastorage_write_total[5m]))",
+						"refId": "A"
+					}
+				],
+				"options": {
+					"graphMode": "area",
+					"colorMode": "value"
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "percentunit",
+						"thresholds": {
+							"mode": "absolute",
+							"steps": [
+								{
+									"value": 0,
+									"color": "green"
+								},
+								{
+									"value": 0.05,
+									"color": "yellow"
+								},
+								{
+									"value": 0.10,
+									"color": "red"
+								}
+							]
+						}
+					}
+				},
+				"description": "Input validation failure rate (target: < 5%)"
+			}
+		]
+	}
+}

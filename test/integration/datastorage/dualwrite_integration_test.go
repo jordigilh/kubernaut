@@ -3,6 +3,7 @@ package datastorage
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -149,14 +150,17 @@ var _ = Describe("Integration Test 2: Dual-Write Transaction Coordination", func
 				go func(idx int) {
 					defer GinkgoRecover()
 
+					// Use unique IDs by including goroutine index and nanosecond timestamp
+					// to avoid duplicate key violations on concurrent writes
+					timestamp := fmt.Sprintf("%d-%d", time.Now().UnixNano(), idx)
 					audit := &models.RemediationAudit{
-						Name:                 "concurrent-" + time.Now().Format("150405.000000"),
+						Name:                 "concurrent-" + timestamp,
 						Namespace:            "default",
 						Phase:                "processing",
 						ActionType:           "restart_pod",
 						Status:               "pending",
 						StartTime:            time.Now(),
-						RemediationRequestID: "req-concurrent-" + time.Now().Format("150405.000000"),
+						RemediationRequestID: "req-concurrent-" + timestamp,
 						AlertFingerprint:     "alert-concurrent",
 						Severity:             "high",
 						Environment:          "production",
