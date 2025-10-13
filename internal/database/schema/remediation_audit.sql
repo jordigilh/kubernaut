@@ -1,8 +1,12 @@
 -- Remediation Audit Schema
 -- BR-STORAGE-001: Audit trail for remediation workflows
 
--- Enable pgvector extension for embedding storage
-CREATE EXTENSION IF NOT EXISTS vector;
+-- NOTE: pgvector extension must be created at database level before running this schema
+-- This is handled by:
+-- 1. Production: Database initialization scripts or helm charts
+-- 2. Integration tests: test/integration/datastorage/suite_test.go BeforeSuite
+-- 3. Make targets: Makefile test-integration-datastorage target
+-- Extensions are database-scoped, not schema-scoped
 
 -- Create remediation_audit table
 CREATE TABLE IF NOT EXISTS remediation_audit (
@@ -38,7 +42,8 @@ CREATE TABLE IF NOT EXISTS remediation_audit (
     metadata TEXT NOT NULL DEFAULT '{}',
 
     -- Embedding for semantic search
-    embedding vector(384),
+    -- NOTE: Use public.vector to ensure type is found when search_path is set to test schemas
+    embedding public.vector(384),
 
     -- Audit timestamps
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -58,8 +63,9 @@ CREATE INDEX IF NOT EXISTS idx_remediation_audit_alert_fingerprint ON remediatio
 -- Application startup will FAIL if HNSW is not supported
 -- No fallback mechanism - HNSW is mandatory for semantic search
 -- BR-STORAGE-012: Vector similarity search with HNSW index (PostgreSQL 16+ only)
+-- NOTE: Use public.vector_cosine_ops to ensure operator class is found
 CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding ON remediation_audit
-USING hnsw (embedding vector_cosine_ops)
+USING hnsw (embedding public.vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 
 -- Create trigger function to auto-update updated_at timestamp

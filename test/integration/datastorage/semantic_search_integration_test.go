@@ -43,8 +43,9 @@ var _ = Describe("BR-STORAGE-012: Semantic Search Integration", func() {
 		_, err := db.Exec(fmt.Sprintf("CREATE SCHEMA %s", testSchema))
 		Expect(err).ToNot(HaveOccurred())
 
-		// Set search path to test schema
-		_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", testSchema))
+		// Set search path to test schema AND public
+		// NOTE: public must be included to access pgvector extension types (vector, <=> operator, etc.)
+		_, err = db.Exec(fmt.Sprintf("SET search_path TO %s, public", testSchema))
 		Expect(err).ToNot(HaveOccurred())
 
 		// Initialize schema in test schema
@@ -135,6 +136,8 @@ func seedSemanticSearchData() {
 		// Convert embedding to pgvector format
 		embeddingStr := embeddingToString(embedding)
 
+		// NOTE: Cast to vector (not public.vector) since the column is already typed as public.vector
+		// and the cast operator works with the base type name
 		_, err := db.Exec(`
 			INSERT INTO remediation_audit (
 				name, namespace, phase, action_type, status,

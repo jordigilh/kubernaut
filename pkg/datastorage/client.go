@@ -25,6 +25,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dualwrite"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
@@ -142,12 +143,23 @@ func (c *ClientImpl) CreateRemediationAudit(ctx context.Context, audit *models.R
 	}
 
 	// BR-STORAGE-008: Generate embedding
+	// Track embedding generation duration
+	embeddingStart := time.Now()
 	embeddingResult, err := c.embeddingPipeline.Generate(ctx, audit)
 	if err != nil {
 		c.logger.Error("embedding generation failed",
 			zap.Error(err),
 			zap.String("name", audit.Name))
 		return fmt.Errorf("embedding generation failed: %w", err)
+	}
+
+	// Track embedding generation metrics
+	// BR-STORAGE-019: Observability for embedding pipeline
+	metrics.EmbeddingGenerationDuration.Observe(time.Since(embeddingStart).Seconds())
+	if embeddingResult.CacheHit {
+		metrics.CacheHits.Inc()
+	} else {
+		metrics.CacheMisses.Inc()
 	}
 
 	// BR-STORAGE-014: Dual-write (atomic write to PostgreSQL + Vector DB)
