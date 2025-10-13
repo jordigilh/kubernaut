@@ -27,6 +27,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	"go.uber.org/zap"
 )
@@ -64,8 +65,29 @@ type ClientImpl struct {
 
 // NewClient creates a new Data Storage client
 // BR-STORAGE-006: Client initialization
-func NewClient(db *sql.DB, logger *zap.Logger) Client {
-	// Initialize validator
+// BR-STORAGE-012: Vector similarity search with PostgreSQL 16+ and pgvector 0.5.1+ validation
+func NewClient(ctx context.Context, db *sql.DB, logger *zap.Logger) (Client, error) {
+	// CRITICAL: Validate PostgreSQL 16+ and pgvector 0.5.1+ support
+	// This ensures HNSW index compatibility before any operations
+	versionValidator := schema.NewVersionValidator(db, logger)
+
+	// Step 1: Validate HNSW support (PostgreSQL 16+ and pgvector 0.5.1+)
+	if err := versionValidator.ValidateHNSWSupport(ctx); err != nil {
+		return nil, fmt.Errorf("HNSW validation failed: %w. "+
+			"Please upgrade to PostgreSQL 16+ and pgvector 0.5.1+ for vector similarity search support", err)
+	}
+
+	// Step 2: Validate memory configuration (warns if suboptimal, but doesn't block)
+	if err := versionValidator.ValidateMemoryConfiguration(ctx); err != nil {
+		// Log error but continue - memory validation is non-blocking
+		logger.Warn("memory configuration validation failed",
+			zap.Error(err),
+			zap.String("impact", "unable to validate shared_buffers"))
+	}
+
+	logger.Info("PostgreSQL and pgvector validation complete - HNSW support confirmed")
+
+	// Initialize data validator
 	validator := validation.NewValidator(logger)
 
 	// Initialize embedding pipeline with mock dependencies
@@ -91,7 +113,7 @@ func NewClient(db *sql.DB, logger *zap.Logger) Client {
 		embeddingPipeline: embeddingPipeline,
 		coordinator:       coordinator,
 		queryService:      queryService,
-	}
+	}, nil
 }
 
 // CreateRemediationAudit stores a new remediation audit record

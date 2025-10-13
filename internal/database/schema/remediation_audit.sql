@@ -53,27 +53,14 @@ CREATE INDEX IF NOT EXISTS idx_remediation_audit_start_time ON remediation_audit
 CREATE INDEX IF NOT EXISTS idx_remediation_audit_request_id ON remediation_audit(remediation_request_id);
 CREATE INDEX IF NOT EXISTS idx_remediation_audit_alert_fingerprint ON remediation_audit(alert_fingerprint);
 
--- Create vector index for similarity search with graceful degradation
--- Try HNSW first (PostgreSQL 12.16+, pgvector 0.5.0+), fall back to IVFFlat
--- BR-STORAGE-012: Vector similarity search with version compatibility
-DO $$
-BEGIN
-    -- Attempt HNSW index (best performance)
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding ON remediation_audit 
-             USING hnsw (embedding vector_cosine_ops) 
-             WITH (m = 16, ef_construction = 64)';
-    RAISE NOTICE 'HNSW index created successfully for vector similarity search';
-EXCEPTION
-    WHEN OTHERS THEN
-        -- HNSW failed (version incompatibility), fall back to IVFFlat
-        RAISE NOTICE 'HNSW index creation failed: %, falling back to IVFFlat (still provides fast vector search)', SQLERRM;
-        
-        -- Create IVFFlat index (good performance, broader compatibility)
-        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding ON remediation_audit 
-                 USING ivfflat (embedding vector_cosine_ops) 
-                 WITH (lists = 100)';
-        RAISE NOTICE 'IVFFlat index created successfully - vector search enabled';
-END $$;
+-- Create HNSW vector index for similarity search
+-- CRITICAL: Requires PostgreSQL 16.x+ and pgvector 0.5.1+
+-- Application startup will FAIL if HNSW is not supported
+-- No fallback mechanism - HNSW is mandatory for semantic search
+-- BR-STORAGE-012: Vector similarity search with HNSW index (PostgreSQL 16+ only)
+CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding ON remediation_audit
+USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
 
 -- Create trigger function to auto-update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_remediation_audit_updated_at()

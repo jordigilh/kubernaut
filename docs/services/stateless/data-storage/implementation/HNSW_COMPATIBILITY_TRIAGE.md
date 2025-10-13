@@ -1,8 +1,8 @@
 # HNSW Index Compatibility Risk Triage & Mitigation
 
-**Date**: October 13, 2025  
-**Status**: Risk Assessment & Mitigation Plan  
-**Risk Level**: 🟡 Low-Medium (5% uncertainty)  
+**Date**: October 13, 2025
+**Status**: Risk Assessment & Mitigation Plan
+**Risk Level**: 🟡 Low-Medium (5% uncertainty)
 **Confidence**: 95%
 
 ## 📋 Executive Summary
@@ -11,7 +11,7 @@ The HNSW (Hierarchical Navigable Small World) index used for vector similarity s
 
 **Risk**: Integration tests may pass in development but fail in production if PostgreSQL/pgvector versions are incompatible.
 
-**Impact**: 
+**Impact**:
 - Semantic search functionality degraded or non-functional
 - Index creation fails silently
 - Query planner ignores HNSW index, falling back to sequential scans (slow)
@@ -66,16 +66,16 @@ WITH (m = 16, ef_construction = 64);
 -- Attempt HNSW index (PostgreSQL 12.16+, pgvector 0.5.0+)
 DO $$
 BEGIN
-    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding ON remediation_audit 
-             USING hnsw (embedding vector_cosine_ops) 
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding ON remediation_audit
+             USING hnsw (embedding vector_cosine_ops)
              WITH (m = 16, ef_construction = 64)';
     RAISE NOTICE 'HNSW index created successfully';
 EXCEPTION
     WHEN OTHERS THEN
         RAISE NOTICE 'HNSW index creation failed: %, falling back to IVFFlat', SQLERRM;
         -- Fallback to IVFFlat (pgvector 0.1.0+)
-        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding ON remediation_audit 
-                 USING ivfflat (embedding vector_cosine_ops) 
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding ON remediation_audit
+                 USING ivfflat (embedding vector_cosine_ops)
                  WITH (lists = 100)';
         RAISE NOTICE 'IVFFlat index created successfully';
 END $$;
@@ -105,11 +105,11 @@ func (i *Initializer) DetectVectorIndexSupport(ctx context.Context) (string, err
     // Check pgvector version
     var pgvectorVersion string
     err := i.db.QueryRowContext(ctx, `
-        SELECT extversion 
-        FROM pg_extension 
+        SELECT extversion
+        FROM pg_extension
         WHERE extname = 'vector'
     `).Scan(&pgvectorVersion)
-    
+
     if err != nil {
         return "", fmt.Errorf("pgvector extension not found: %w", err)
     }
@@ -119,7 +119,7 @@ func (i *Initializer) DetectVectorIndexSupport(ctx context.Context) (string, err
     err = i.db.QueryRowContext(ctx, `
         SELECT current_setting('server_version_num')::int
     `).Scan(&pgVersion)
-    
+
     if err != nil {
         return "", fmt.Errorf("failed to detect PostgreSQL version: %w", err)
     }
@@ -166,16 +166,16 @@ func (i *Initializer) Initialize(ctx context.Context) error {
     switch indexType {
     case "hnsw":
         indexSQL = `
-            CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding 
-            ON remediation_audit 
-            USING hnsw (embedding vector_cosine_ops) 
+            CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding
+            ON remediation_audit
+            USING hnsw (embedding vector_cosine_ops)
             WITH (m = 16, ef_construction = 64)
         `
     case "ivfflat":
         indexSQL = `
-            CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding 
-            ON remediation_audit 
-            USING ivfflat (embedding vector_cosine_ops) 
+            CREATE INDEX IF NOT EXISTS idx_remediation_audit_embedding
+            ON remediation_audit
+            USING ivfflat (embedding vector_cosine_ops)
             WITH (lists = 100)
         `
     default:
@@ -219,7 +219,7 @@ func (s *Service) SemanticSearch(ctx context.Context, queryEmbedding []float32, 
 
     // Execute semantic search
     sqlQuery := `
-        SELECT 
+        SELECT
             id, name, namespace, phase, action_type, status,
             start_time, end_time, duration,
             remediation_request_id, alert_fingerprint,
@@ -252,7 +252,7 @@ func (i *Initializer) ValidateVectorIndexMemory(ctx context.Context) error {
     err := i.db.QueryRowContext(ctx, `
         SELECT current_setting('shared_buffers')
     `).Scan(&sharedBuffers)
-    
+
     if err != nil {
         return fmt.Errorf("failed to read shared_buffers: %w", err)
     }
@@ -291,7 +291,7 @@ jobs:
   integration-test-matrix:
     name: Integration Tests (PostgreSQL ${{ matrix.pg-version }}, pgvector ${{ matrix.pgvector-version }})
     runs-on: ubuntu-latest
-    
+
     strategy:
       fail-fast: false
       matrix:
@@ -300,17 +300,17 @@ jobs:
           - pg-version: "14"
             pgvector-version: "0.5.1"
             expected-index: "hnsw"
-          
+
           # Test IVFFlat fallback (PostgreSQL 13 with pgvector 0.4.0)
           - pg-version: "13"
             pgvector-version: "0.4.0"
             expected-index: "ivfflat"
-          
+
           # Test minimum version (PostgreSQL 12)
           - pg-version: "12"
             pgvector-version: "0.3.0"
             expected-index: "ivfflat"
-    
+
     services:
       postgres:
         image: pgvector/pgvector:pg${{ matrix.pg-version }}
@@ -323,21 +323,21 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       - name: Run integration tests
         run: |
           make test-integration-datastorage
-          
+
       - name: Verify vector index type
         run: |
           psql -h localhost -U test_user -d test_db -c "
-            SELECT indexname, indexdef 
-            FROM pg_indexes 
-            WHERE tablename = 'remediation_audit' 
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE tablename = 'remediation_audit'
             AND indexname LIKE '%embedding%'
           "
 ```
