@@ -19,9 +19,11 @@ package dualwrite
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 )
@@ -52,14 +54,25 @@ func NewCoordinator(db DB, vectorDB VectorDBClient, logger *zap.Logger) *Coordin
 // If either operation fails, both are rolled back.
 // Business Requirement: BR-STORAGE-014
 func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit, embedding []float32) (*WriteResult, error) {
+	// Track operation duration for observability
+	// BR-STORAGE-019: Prometheus metrics
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		metrics.WriteDuration.WithLabelValues(metrics.TableRemediationAudit).Observe(duration.Seconds())
+	}()
+
 	// Validate inputs
 	if audit == nil {
+		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonValidationFailure).Inc()
 		return nil, fmt.Errorf("audit is nil")
 	}
 	if embedding == nil {
+		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonValidationFailure).Inc()
 		return nil, fmt.Errorf("embedding is nil")
 	}
 	if len(embedding) != RequiredEmbeddingDimension {
+		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonValidationFailure).Inc()
 		return nil, fmt.Errorf("embedding dimension must be %d, got %d", RequiredEmbeddingDimension, len(embedding))
 	}
 
@@ -72,6 +85,14 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	// BR-STORAGE-016: Use BeginTx for context propagation (cancellation, timeout)
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
+		// Track failure reason for observability
+		// BR-STORAGE-019: Track context cancellation separately from other failures
+		if err == context.Canceled || err == context.DeadlineExceeded {
+			metrics.DualWriteFailure.WithLabelValues(metrics.ReasonContextCanceled).Inc()
+		} else {
+			metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
+		}
+
 		c.logger.Error("failed to begin transaction",
 			zap.Error(err),
 			zap.String("name", audit.Name))
@@ -93,6 +114,7 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	// Write to PostgreSQL
 	pgID, err := c.writeToPostgreSQL(tx, audit, embedding)
 	if err != nil {
+		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
 		c.logger.Error("failed to write to PostgreSQL",
 			zap.Error(err),
 			zap.String("name", audit.Name))
@@ -107,6 +129,7 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	if c.vectorDB != nil {
 		metadata := buildMetadata(audit)
 		if err := c.vectorDB.Insert(ctx, pgID, embedding, metadata); err != nil {
+			metrics.DualWriteFailure.WithLabelValues(metrics.ReasonVectorDBFailure).Inc()
 			c.logger.Error("failed to write to Vector DB, rolling back",
 				zap.Error(err),
 				zap.Int64("postgresql_id", pgID),
@@ -125,6 +148,7 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 
 	// Commit PostgreSQL transaction
 	if err := tx.Commit(); err != nil {
+		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonTransactionRollback).Inc()
 		c.logger.Error("failed to commit transaction",
 			zap.Error(err),
 			zap.Int64("postgresql_id", pgID),
@@ -136,10 +160,16 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 	// Commit successful, don't rollback
 	shouldRollback = false
 
+	// Track successful dual-write
+	// BR-STORAGE-019: Prometheus metrics for success
+	metrics.DualWriteSuccess.Inc()
+	metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess).Inc()
+
 	c.logger.Info("dual-write completed successfully",
 		zap.Int64("postgresql_id", pgID),
 		zap.String("name", audit.Name),
-		zap.String("namespace", audit.Namespace))
+		zap.String("namespace", audit.Namespace),
+		zap.Duration("duration", time.Since(start)))
 
 	return &WriteResult{
 		PostgreSQLID:      pgID,
@@ -183,17 +213,25 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 	}
 
 	// Vector DB error - fall back to PostgreSQL-only
+	// BR-STORAGE-015: Graceful degradation tracking
+	metrics.FallbackModeTotal.Inc()
+
 	c.logger.Warn("Vector DB unavailable, falling back to PostgreSQL-only",
 		zap.Error(err),
 		zap.String("name", audit.Name))
 
 	pgID, pgErr := c.writePostgreSQLOnly(ctx, audit, embedding)
 	if pgErr != nil {
+		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
 		c.logger.Error("PostgreSQL-only write failed",
 			zap.Error(pgErr),
 			zap.String("name", audit.Name))
 		return nil, fmt.Errorf("postgresql-only write failed: %w", pgErr)
 	}
+
+	// Track successful fallback write
+	// BR-STORAGE-019: Track fallback success separately
+	metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess).Inc()
 
 	c.logger.Info("completed with PostgreSQL-only fallback",
 		zap.Int64("postgresql_id", pgID),

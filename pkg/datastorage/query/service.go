@@ -20,7 +20,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"go.uber.org/zap"
 )
@@ -38,15 +40,37 @@ type ListOptions struct {
 
 // DBQuerier defines the database query interface (sqlx-compatible)
 // BR-STORAGE-005: Database query abstraction
+//
+// DESIGN RATIONALE: Why args ...interface{}?
+// The args parameter uses interface{} for direct compatibility with database/sql
+// and sqlx standard library signatures. This is the industry standard approach used
+// by all major Go SQL libraries (database/sql, sqlx, pgx, gorm).
+//
+// Supported parameter types (enforced by PostgreSQL driver at query execution):
+//   - string, int, int64, float32, float64, bool
+//   - time.Time, []byte
+//   - query.Vector ([]float32 for pgvector)
+//   - Other types supported by lib/pq PostgreSQL driver
+//
+// Type safety is enforced at:
+//  1. Query execution time by PostgreSQL driver
+//  2. Integration tests validating common query patterns
+//  3. Database schema constraints
+//
+// Alternative approaches (strongly-typed parameters, generics) would break
+// compatibility with *sqlx.DB, requiring wrapper layers with runtime overhead.
 type DBQuerier interface {
 	// SelectContext binds query results to a slice of structs
+	// args accepts SQL parameter values of any type supported by the PostgreSQL driver
 	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 
 	// GetContext binds query result to a single struct
+	// args accepts SQL parameter values of any type supported by the PostgreSQL driver
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 
 	// ExecContext executes a query without returning rows (for SET commands, etc.)
 	// Returns sql.Result for compatibility with sqlx.DB
+	// args accepts SQL parameter values of any type supported by the PostgreSQL driver
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
 }
 
@@ -69,6 +93,14 @@ func NewService(db DBQuerier, logger *zap.Logger) *Service {
 // ListRemediationAudits queries remediation audits with filters and pagination
 // BR-STORAGE-005: List with filtering
 func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) ([]*models.RemediationAudit, error) {
+	// Track query duration for observability
+	// BR-STORAGE-019: Prometheus metrics
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		metrics.QueryDuration.WithLabelValues(metrics.OperationList).Observe(duration.Seconds())
+	}()
+
 	// Build base query
 	query := "SELECT * FROM remediation_audit WHERE 1=1"
 	args := []interface{}{}
@@ -112,12 +144,14 @@ func (s *Service) ListRemediationAudits(ctx context.Context, opts *ListOptions) 
 	// Execute query and scan results into slice
 	var audits []*models.RemediationAudit
 	if err := s.db.SelectContext(ctx, &audits, query, args...); err != nil {
+		metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusFailure).Inc()
 		s.logger.Error("query failed",
 			zap.Error(err),
 			zap.String("query", query))
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
 
+	metrics.QueryTotal.WithLabelValues(metrics.OperationList, metrics.StatusSuccess).Inc()
 	s.logger.Info("query successful",
 		zap.Int("result_count", len(audits)))
 
@@ -169,8 +203,17 @@ func (s *Service) PaginatedList(ctx context.Context, opts *ListOptions) (*Pagina
 // SemanticSearch performs vector similarity search
 // BR-STORAGE-012: Semantic search with HNSW index optimization
 func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*SemanticResult, error) {
+	// Track semantic search duration for observability
+	// BR-STORAGE-019: Prometheus metrics for vector search performance
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		metrics.QueryDuration.WithLabelValues(metrics.OperationSemanticSearch).Observe(duration.Seconds())
+	}()
+
 	// Validate query
 	if queryText == "" {
+		metrics.QueryTotal.WithLabelValues(metrics.OperationSemanticSearch, metrics.StatusFailure).Inc()
 		return nil, fmt.Errorf("query string cannot be empty")
 	}
 
@@ -204,6 +247,8 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 	// <=> is the cosine distance operator in pgvector
 	// 1 - distance = similarity score (0 to 1, where 1 is most similar)
 	// With planner hints, PostgreSQL will prefer using the HNSW index
+	// NOTE: Cast parameter to vector (not public.vector) since the column is already typed
+	// and the <=> operator is defined for vector type
 	sqlQuery := `
 		SELECT
 			id, name, namespace, phase, action_type, status, start_time, end_time,
@@ -220,11 +265,14 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 	// Execute query and scan results into SemanticResultRow (with Vector type)
 	rows := make([]*SemanticResultRow, 0)
 	if err := s.db.SelectContext(ctx, &rows, sqlQuery, queryEmbeddingStr); err != nil {
+		metrics.QueryTotal.WithLabelValues(metrics.OperationSemanticSearch, metrics.StatusFailure).Inc()
 		s.logger.Error("semantic search failed",
 			zap.Error(err),
 			zap.String("query", queryText))
 		return nil, fmt.Errorf("semantic search failed: %w", err)
 	}
+
+	metrics.QueryTotal.WithLabelValues(metrics.OperationSemanticSearch, metrics.StatusSuccess).Inc()
 
 	// Convert to SemanticResult (with []float32)
 	results := make([]*SemanticResult, len(rows))

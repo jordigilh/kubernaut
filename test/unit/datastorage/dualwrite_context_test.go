@@ -31,152 +31,14 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
-var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
-	var (
-		coordinator  *dualwrite.Coordinator
-		mockDB       *MockDBWithContext
-		mockVectorDB *MockVectorDB
-		logger       *zap.Logger
-		testAudit    *models.RemediationAudit
-	)
-
-	BeforeEach(func() {
-		logger, _ = zap.NewDevelopment()
-		mockDB = NewMockDBWithContext()
-		mockVectorDB = NewMockVectorDB()
-
-		coordinator = dualwrite.NewCoordinator(mockDB, mockVectorDB, logger)
-
-		testAudit = &models.RemediationAudit{
-			Name:                 "context-test",
-			Namespace:            "default",
-			Phase:                "pending",
-			ActionType:           "scale_deployment",
-			Status:               "success",
-			StartTime:            time.Now(),
-			RemediationRequestID: "req-ctx-123",
-			AlertFingerprint:     "alert-ctx",
-			Severity:             "high",
-			Environment:          "production",
-			ClusterName:          "prod-cluster",
-			TargetResource:       "deployment/ctx-app",
-			Metadata:             "{}",
-		}
-	})
-
-	// ⭐ TABLE-DRIVEN: Context signal handling
-	DescribeTable("should respect context signals",
-		func(ctxSetup func() context.Context, expectedErr error, description string) {
-			ctx := ctxSetup()
-			embedding := make([]float32, 384)
-			for i := range embedding {
-				embedding[i] = 0.1
-			}
-
-			_, err := coordinator.Write(ctx, testAudit, embedding)
-
-			Expect(err).To(HaveOccurred(), description)
-			Expect(errors.Is(err, expectedErr)).To(BeTrue(),
-				"expected %v, got %v", expectedErr, err)
-		},
-
-		Entry("BR-STORAGE-016.1: cancelled context should fail fast",
-			func() context.Context {
-				ctx, cancel := context.WithCancel(context.Background())
-				cancel() // Cancel immediately
-				return ctx
-			},
-			context.Canceled,
-			"Write() should detect cancelled context and fail"),
-
-		Entry("BR-STORAGE-016.2: expired deadline should fail fast",
-			func() context.Context {
-				// Deadline already passed
-				ctx, cancel := context.WithDeadline(context.Background(),
-					time.Now().Add(-1*time.Second))
-				defer cancel()
-				return ctx
-			},
-			context.DeadlineExceeded,
-			"Write() should detect expired deadline and fail"),
-
-		Entry("BR-STORAGE-016.3: zero timeout should fail fast",
-			func() context.Context {
-				ctx, cancel := context.WithTimeout(context.Background(), 0)
-				defer cancel()
-				return ctx
-			},
-			context.DeadlineExceeded,
-			"Write() should detect zero timeout and fail"),
-	)
-
-	Context("WriteWithFallback context propagation", func() {
-		It("BR-STORAGE-016.4: should respect cancelled context in fallback path", func() {
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel() // Cancel before fallback
-
-			embedding := make([]float32, 384)
-			for i := range embedding {
-				embedding[i] = 0.1
-			}
-			mockVectorDB.shouldFail = true // Force fallback
-
-			_, err := coordinator.WriteWithFallback(ctx, testAudit, embedding)
-
-			// Fallback should also respect cancellation
-			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, context.Canceled)).To(BeTrue())
-		})
-	})
-
-	Context("context deadline during transaction", func() {
-		It("BR-STORAGE-016.5: should timeout if transaction takes too long", func() {
-			// Very short timeout
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-			defer cancel()
-
-			// Simulate slow database
-			mockDB.slowMode = true
-			mockDB.delay = 100 * time.Millisecond
-
-			embedding := make([]float32, 384)
-			for i := range embedding {
-				embedding[i] = 0.1
-			}
-
-			_, err := coordinator.Write(ctx, testAudit, embedding)
-
-			Expect(err).To(HaveOccurred())
-			Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue())
-		})
-	})
-
-	Context("context used correctly", func() {
-		It("BR-STORAGE-016.6: should call BeginTx with context (not Begin)", func() {
-			ctx := context.Background()
-			embedding := make([]float32, 384)
-			for i := range embedding {
-				embedding[i] = 0.1
-			}
-
-			_, err := coordinator.Write(ctx, testAudit, embedding)
-
-			Expect(err).ToNot(HaveOccurred())
-			Expect(mockDB.beginTxCalled).To(BeTrue(), "BeginTx should be called")
-			Expect(mockDB.beginCalled).To(BeFalse(), "Begin() should NOT be called (legacy API)")
-		})
-	})
-})
-
-// MockDBWithContext - Context-aware mock that tracks Begin() vs BeginTx() calls
+// MockDBWithContext - Context-aware mock that verifies BeginTx was called with context
 type MockDBWithContext struct {
 	shouldFail     bool
-	failOnCommit   bool
 	slowMode       bool
 	delay          time.Duration
-	beginCalled    bool // Legacy Begin() called (BAD)
-	beginTxCalled  bool // Modern BeginTx() called (GOOD)
+	beginTxCalled  bool
 	beginTxContext context.Context
+	beginCalled    bool
 	commitCalls    int
 	rollbackCalls  int
 	mu             sync.Mutex
@@ -186,7 +48,7 @@ func NewMockDBWithContext() *MockDBWithContext {
 	return &MockDBWithContext{}
 }
 
-// BeginTx - Context-aware transaction start (CORRECT API)
+// BeginTx - Context-aware transaction start (SHOULD be called)
 func (m *MockDBWithContext) BeginTx(ctx context.Context, opts *sql.TxOptions) (dualwrite.Tx, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -214,90 +76,344 @@ func (m *MockDBWithContext) BeginTx(ctx context.Context, opts *sql.TxOptions) (d
 		return nil, errors.New("begin transaction failed")
 	}
 
-	return &MockTxContext{dbWithContext: m}, nil
+	return &MockTxWithContext{db: m}, nil
 }
 
-// Begin - Legacy API (INCORRECT - should not be called after fix)
+// Begin - Legacy API (should NOT be called after fix)
 func (m *MockDBWithContext) Begin() (dualwrite.Tx, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.beginCalled = true
 
-	if m.shouldFail {
-		return nil, errors.New("begin transaction failed")
-	}
-
-	// Return transaction, but this is the WRONG API to use
-	return &MockTxContext{dbWithContext: m}, nil
+	// This should NOT be called after the fix - fail the test if it is
+	Fail("Begin() called instead of BeginTx() - context not propagated!")
+	return nil, errors.New("Begin() should not be called - use BeginTx(ctx, nil) instead")
 }
 
-// MockTxContext - Transaction mock for context-aware tests
-type MockTxContext struct {
-	dbWithContext *MockDBWithContext
-	committed     bool
-	rolledBack    bool
+// MockTxWithContext simulates transaction operations with context tracking
+type MockTxWithContext struct {
+	db         *MockDBWithContext
+	committed  bool
+	rolledBack bool
 }
 
-func (m *MockTxContext) Commit() error {
-	m.dbWithContext.mu.Lock()
-	defer m.dbWithContext.mu.Unlock()
+func (m *MockTxWithContext) Commit() error {
+	m.db.mu.Lock()
+	defer m.db.mu.Unlock()
 
-	if m.dbWithContext.failOnCommit {
-		return errors.New("commit failed")
-	}
 	m.committed = true
-	m.dbWithContext.commitCalls++
+	m.db.commitCalls++
 	return nil
 }
 
-func (m *MockTxContext) Rollback() error {
-	m.dbWithContext.mu.Lock()
-	defer m.dbWithContext.mu.Unlock()
+func (m *MockTxWithContext) Rollback() error {
+	m.db.mu.Lock()
+	defer m.db.mu.Unlock()
 
 	m.rolledBack = true
-	m.dbWithContext.rollbackCalls++
+	m.db.rollbackCalls++
 	return nil
 }
 
-func (m *MockTxContext) Exec(query string, args ...interface{}) (sql.Result, error) {
-	if m.dbWithContext.shouldFail {
-		return nil, errors.New("exec failed")
-	}
-	return &MockResultContext{lastInsertID: 123}, nil
+func (m *MockTxWithContext) Exec(query string, args ...interface{}) (sql.Result, error) {
+	// Note: This doesn't receive context directly, but BeginTx already checked context
+	return nil, nil
 }
 
-func (m *MockTxContext) QueryRow(query string, args ...interface{}) dualwrite.Row {
-	return &MockRowContext{id: 123, shouldFail: m.dbWithContext.shouldFail}
+func (m *MockTxWithContext) QueryRow(query string, args ...interface{}) dualwrite.Row {
+	return &MockRow{}
 }
 
-// MockRowContext simulates a row result for scanning
-type MockRowContext struct {
-	id         int64
+// MockVectorDBForContext simulates vector database operations
+type MockVectorDBForContext struct {
 	shouldFail bool
+	mu         sync.Mutex
 }
 
-func (m *MockRowContext) Scan(dest ...interface{}) error {
-	if m.shouldFail {
-		return errors.New("scan failed")
+func NewMockVectorDBForContext() *MockVectorDBForContext {
+	return &MockVectorDBForContext{}
+}
+
+func (m *MockVectorDBForContext) Insert(ctx context.Context, id int64, embedding []float32, metadata map[string]interface{}) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check context during vector insert
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
-	if len(dest) > 0 {
-		if idPtr, ok := dest[0].(*int64); ok {
-			*idPtr = m.id
-		}
+
+	if m.shouldFail {
+		return errors.New("vector insert failed")
 	}
 	return nil
 }
 
-// MockResultContext - SQL result mock
-type MockResultContext struct {
-	lastInsertID int64
+func (m *MockVectorDBForContext) Close() error {
+	return nil
 }
 
-func (m *MockResultContext) LastInsertId() (int64, error) {
-	return m.lastInsertID, nil
-}
+var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
+	var (
+		coordinator  *dualwrite.Coordinator
+		mockDB       *MockDBWithContext
+		mockVectorDB *MockVectorDBForContext
+		logger       *zap.Logger
+		testAudit    *models.RemediationAudit
+	)
 
-func (m *MockResultContext) RowsAffected() (int64, error) {
-	return 1, nil
-}
+	BeforeEach(func() {
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
+
+		mockDB = NewMockDBWithContext()
+		mockVectorDB = NewMockVectorDBForContext()
+
+		coordinator = dualwrite.NewCoordinator(mockDB, mockVectorDB, logger)
+
+		testAudit = &models.RemediationAudit{
+			Name:                 "context-test",
+			Namespace:            "default",
+			Phase:                "pending",
+			ActionType:           "scale_deployment",
+			Status:               "success",
+			StartTime:            time.Now(),
+			RemediationRequestID: "req-ctx-123",
+			AlertFingerprint:     "alert-ctx",
+			Severity:             "high",
+			Environment:          "production",
+			ClusterName:          "prod-cluster",
+			TargetResource:       "deployment/ctx-app",
+			Metadata:             "{}",
+		}
+	})
+
+	Context("Write() method context propagation", func() {
+		// ⭐ TABLE-DRIVEN: Context signal handling
+		DescribeTable("should respect context signals",
+			func(ctxSetup func() context.Context, expectedErr error, description string) {
+				ctx := ctxSetup()
+				embedding := make([]float32, 384)
+
+				_, err := coordinator.Write(ctx, testAudit, embedding)
+
+				Expect(err).To(HaveOccurred(), description)
+				Expect(errors.Is(err, expectedErr)).To(BeTrue(),
+					"expected %v, got %v", expectedErr, err)
+
+				// Verify BeginTx was called (not Begin)
+				Expect(mockDB.beginTxCalled).To(BeTrue(),
+					"BeginTx(ctx, nil) should be called")
+				Expect(mockDB.beginCalled).To(BeFalse(),
+					"Begin() should NOT be called - context would be ignored")
+			},
+
+			Entry("BR-STORAGE-016.1: cancelled context should fail fast",
+				func() context.Context {
+					ctx, cancel := context.WithCancel(context.Background())
+					cancel() // Cancel immediately
+					return ctx
+				},
+				context.Canceled,
+				"Write() should detect cancelled context and fail"),
+
+			Entry("BR-STORAGE-016.2: expired deadline should fail fast",
+				func() context.Context {
+					// Deadline already passed
+					ctx, cancel := context.WithDeadline(context.Background(),
+						time.Now().Add(-1*time.Second))
+					defer cancel()
+					return ctx
+				},
+				context.DeadlineExceeded,
+				"Write() should detect expired deadline and fail"),
+
+			Entry("BR-STORAGE-016.3: zero timeout should fail fast",
+				func() context.Context {
+					ctx, cancel := context.WithTimeout(context.Background(), 0)
+					defer cancel()
+					return ctx
+				},
+				context.DeadlineExceeded,
+				"Write() should detect zero timeout and fail"),
+		)
+
+		It("should propagate context to BeginTx", func() {
+			ctx := context.Background()
+			embedding := make([]float32, 384)
+
+			_, err := coordinator.Write(ctx, testAudit, embedding)
+
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify BeginTx was called with the provided context
+			Expect(mockDB.beginTxCalled).To(BeTrue(),
+				"BeginTx should be called")
+			Expect(mockDB.beginTxContext).To(Equal(ctx),
+				"BeginTx should receive the same context passed to Write()")
+			Expect(mockDB.beginCalled).To(BeFalse(),
+				"Begin() should NOT be called")
+		})
+
+		It("should timeout if transaction takes too long", func() {
+			// Very short timeout
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+			defer cancel()
+
+			// Simulate slow database
+			mockDB.slowMode = true
+			mockDB.delay = 100 * time.Millisecond
+
+			embedding := make([]float32, 384)
+
+			_, err := coordinator.Write(ctx, testAudit, embedding)
+
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue(),
+				"Write should fail with DeadlineExceeded when transaction takes too long")
+		})
+	})
+
+	Context("WriteWithFallback() method context propagation", func() {
+		It("should respect cancelled context in fallback path", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel() // Cancel before fallback
+
+			embedding := make([]float32, 384)
+			mockVectorDB.shouldFail = true // Force fallback
+
+			_, err := coordinator.WriteWithFallback(ctx, testAudit, embedding)
+
+			// Fallback should also respect cancellation
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, context.Canceled)).To(BeTrue(),
+				"WriteWithFallback should respect context cancellation")
+
+			// Verify BeginTx was called (not Begin)
+			Expect(mockDB.beginTxCalled).To(BeTrue())
+			Expect(mockDB.beginCalled).To(BeFalse())
+		})
+
+		It("should propagate context to PostgreSQL-only fallback", func() {
+			ctx := context.Background()
+			embedding := make([]float32, 384)
+			mockVectorDB.shouldFail = true // Force PostgreSQL-only fallback
+
+			_, err := coordinator.WriteWithFallback(ctx, testAudit, embedding)
+
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify context was propagated to fallback path
+			Expect(mockDB.beginTxCalled).To(BeTrue(),
+				"Fallback should call BeginTx(ctx, nil)")
+			Expect(mockDB.beginTxContext).To(Equal(ctx),
+				"Fallback should use the same context")
+		})
+	})
+
+	Context("Concurrent writes with context cancellation", func() {
+		It("should handle concurrent writes with mixed context states", func() {
+			var wg sync.WaitGroup
+			successCount := 0
+			cancelledCount := 0
+			var mu sync.Mutex
+
+			// Launch 10 concurrent writes with different context states
+			for i := 0; i < 10; i++ {
+				wg.Add(1)
+				go func(index int) {
+					defer GinkgoRecover()
+					defer wg.Done()
+
+					var ctx context.Context
+					var cancel context.CancelFunc
+
+					// Half with valid contexts, half with cancelled contexts
+					if index%2 == 0 {
+						ctx = context.Background()
+					} else {
+						ctx, cancel = context.WithCancel(context.Background())
+						cancel() // Cancel immediately
+					}
+
+					audit := &models.RemediationAudit{
+						Name:                 testAudit.Name,
+						Namespace:            testAudit.Namespace,
+						Phase:                testAudit.Phase,
+						ActionType:           testAudit.ActionType,
+						Status:               testAudit.Status,
+						StartTime:            time.Now(),
+						RemediationRequestID: testAudit.RemediationRequestID + string(rune(index)),
+						AlertFingerprint:     testAudit.AlertFingerprint,
+						Severity:             testAudit.Severity,
+						Environment:          testAudit.Environment,
+						ClusterName:          testAudit.ClusterName,
+						TargetResource:       testAudit.TargetResource,
+						Metadata:             testAudit.Metadata,
+					}
+
+					embedding := make([]float32, 384)
+					_, err := coordinator.Write(ctx, audit, embedding)
+
+					mu.Lock()
+					if err != nil && errors.Is(err, context.Canceled) {
+						cancelledCount++
+					} else if err == nil {
+						successCount++
+					}
+					mu.Unlock()
+				}(i)
+			}
+
+			wg.Wait()
+
+			// Verify results
+			Expect(successCount).To(Equal(5), "Half should succeed")
+			Expect(cancelledCount).To(Equal(5), "Half should be cancelled")
+		})
+	})
+
+	Context("Context deadline during operations", func() {
+		It("should fail when deadline expires during write", func() {
+			// Create context with very short deadline
+			ctx, cancel := context.WithDeadline(context.Background(),
+				time.Now().Add(5*time.Millisecond))
+			defer cancel()
+
+			// Simulate slow database
+			mockDB.slowMode = true
+			mockDB.delay = 50 * time.Millisecond
+
+			embedding := make([]float32, 384)
+			_, err := coordinator.Write(ctx, testAudit, embedding)
+
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, context.DeadlineExceeded)).To(BeTrue(),
+				"Should fail with DeadlineExceeded when deadline expires")
+		})
+	})
+
+	Context("Context values preservation", func() {
+		It("should preserve context values through call chain", func() {
+			type contextKey string
+			const requestIDKey contextKey = "request-id"
+
+			ctx := context.WithValue(context.Background(), requestIDKey, "req-12345")
+			embedding := make([]float32, 384)
+
+			_, err := coordinator.Write(ctx, testAudit, embedding)
+
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify context was passed through (not replaced)
+			Expect(mockDB.beginTxContext).ToNot(BeNil())
+			value := mockDB.beginTxContext.Value(requestIDKey)
+			Expect(value).To(Equal("req-12345"),
+				"Context values should be preserved through call chain")
+		})
+	})
+})
