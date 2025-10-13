@@ -1,0 +1,75 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-storage-network-policy
+  namespace: kubernaut
+spec:
+  podSelector:
+    matchLabels:
+      app: data-storage-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow ingress from other services in kubernaut namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: kubernaut
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow Prometheus scraping
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+  egress:
+    # Allow egress to PostgreSQL
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kubernaut
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow egress to Vector DB (optional)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kubernaut
+        - podSelector:
+            matchLabels:
+              app: vector-db
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow egress to Redis (optional)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kubernaut
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+        - podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+

@@ -189,10 +189,11 @@ func (v *VersionValidator) testHNSWIndexCreation(ctx context.Context) error {
 	v.logger.Debug("performing HNSW index creation test")
 
 	// Create temporary table with vector column
+	// NOTE: Use public.vector to ensure type is found when search_path is set to test schemas
 	_, err := v.db.ExecContext(ctx, `
 		CREATE TEMP TABLE hnsw_validation_test (
 			id SERIAL PRIMARY KEY,
-			embedding vector(384)
+			embedding public.vector(384)
 		)
 	`)
 	if err != nil {
@@ -200,9 +201,10 @@ func (v *VersionValidator) testHNSWIndexCreation(ctx context.Context) error {
 	}
 
 	// Attempt HNSW index creation
+	// NOTE: Use public.vector_cosine_ops to ensure operator class is found
 	_, err = v.db.ExecContext(ctx, `
 		CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test
-		USING hnsw (embedding vector_cosine_ops)
+		USING hnsw (embedding public.vector_cosine_ops)
 		WITH (m = 16, ef_construction = 64)
 	`)
 	if err != nil {

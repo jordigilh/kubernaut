@@ -62,8 +62,15 @@ var _ = BeforeSuite(func() {
 	// Create sqlx wrapper for query operations
 	sqlxDB = sqlx.NewDb(db, "postgres")
 
+	// CRITICAL: Create pgvector extension at database level BEFORE any tests run
+	// Extensions are database-scoped, not schema-scoped
+	// This ensures all test schemas can use vector types
+	_, err = db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector")
+	Expect(err).ToNot(HaveOccurred(), "Failed to create pgvector extension")
+
 	GinkgoWriter.Println("✅ Data Storage integration test environment ready!")
 	GinkgoWriter.Println("   - PostgreSQL: localhost:5432")
+	GinkgoWriter.Println("   - pgvector extension: enabled")
 })
 
 var _ = AfterSuite(func() {

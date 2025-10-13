@@ -84,9 +84,12 @@ test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 
 	@echo "🔍 Verifying PostgreSQL and pgvector versions..."
 	@podman exec datastorage-postgres psql -U postgres -c "SELECT version();" | grep "PostgreSQL 16" || \
 		(echo "❌ PostgreSQL version is not 16.x" && exit 1)
-	@podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0" || \
-		(echo "⚠️  pgvector version check inconclusive, proceeding with tests")
-	@echo "✅ Version validation passed"
+	@echo "🔧 Creating pgvector extension..."
+	@podman exec datastorage-postgres psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || \
+		(echo "❌ Failed to create pgvector extension" && exit 1)
+	@podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0|0\.[7-9]\.0|0\.[8-9]\.0" || \
+		(echo "❌ pgvector version is not 0.5.1+" && exit 1)
+	@echo "✅ Version validation passed (PostgreSQL 16 + pgvector 0.5.1+)"
 	@echo "🔍 Testing HNSW index creation (dry-run)..."
 	@podman exec datastorage-postgres psql -U postgres -d postgres -c "\
 		CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \

@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-storage-config
+  namespace: kubernaut
+data:
+  # Server Configuration
+  HTTP_PORT: "8080"
+  METRICS_PORT: "9090"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+
+  # Database Configuration (non-sensitive)
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "action_history"
+  DB_MAX_CONNECTIONS: "50"
+  DB_SSL_MODE: "require"
+
+  # Vector DB Configuration (optional)
+  VECTOR_DB_ENABLED: "false"
+  VECTOR_DB_HOST: "vector-db-service"
+  VECTOR_DB_PORT: "8080"
+
+  # Embedding Configuration (optional)
+  EMBEDDING_ENABLED: "false"
+  EMBEDDING_MODEL: "text-embedding-ada-002"
+
+  # Cache Configuration (optional)
+  CACHE_ENABLED: "false"
+  CACHE_TYPE: "redis"
+  CACHE_HOST: "redis-service"
+  CACHE_PORT: "6379"
+  CACHE_TTL: "5m"
+
+  # Performance Tuning
+  QUERY_TIMEOUT: "30s"
+  WRITE_TIMEOUT: "10s"
+  CONTEXT_TIMEOUT: "60s"
+

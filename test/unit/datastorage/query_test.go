@@ -591,6 +591,21 @@ func (m *MockQueryDB) GetContext(ctx context.Context, dest interface{}, query st
 	return sql.ErrNoRows
 }
 
+// ExecContext simulates sqlx ExecContext for commands that don't return rows
+// This is needed for query planner hints (SET LOCAL commands) in SemanticSearch
+func (m *MockQueryDB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	m.lastQuery = query
+	m.lastArgs = args
+
+	// For query planner hints (SET LOCAL commands), just return success
+	if containsString(query, "SET LOCAL") {
+		return nil, nil
+	}
+
+	// For other commands, return a mock result
+	return nil, nil
+}
+
 // containsString is a helper to check if a string contains a substring
 func containsString(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && contains(s, substr))

@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"go.uber.org/zap"
 )
@@ -41,35 +42,44 @@ func NewValidator(logger *zap.Logger) *Validator {
 
 // ValidateRemediationAudit validates a remediation audit record
 // BR-STORAGE-010: Comprehensive input validation
+// BR-STORAGE-019: Validation failure tracking with Prometheus metrics
 func (v *Validator) ValidateRemediationAudit(audit *models.RemediationAudit) error {
 	// Required field validation
 	if audit.Name == "" {
+		metrics.ValidationFailures.WithLabelValues("name", metrics.ValidationReasonRequired).Inc()
 		return fmt.Errorf("name is required")
 	}
 	if audit.Namespace == "" {
+		metrics.ValidationFailures.WithLabelValues("namespace", metrics.ValidationReasonRequired).Inc()
 		return fmt.Errorf("namespace is required")
 	}
 	if audit.Phase == "" {
+		metrics.ValidationFailures.WithLabelValues("phase", metrics.ValidationReasonRequired).Inc()
 		return fmt.Errorf("phase is required")
 	}
 
 	// Phase validation (before other required fields to provide better error messages)
 	if !v.isValidPhase(audit.Phase) {
+		metrics.ValidationFailures.WithLabelValues("phase", metrics.ValidationReasonInvalid).Inc()
 		return fmt.Errorf("invalid phase: %s", audit.Phase)
 	}
 
 	if audit.ActionType == "" {
+		metrics.ValidationFailures.WithLabelValues("action_type", metrics.ValidationReasonRequired).Inc()
 		return fmt.Errorf("action_type is required")
 	}
 
 	// Field length validation
 	if len(audit.Name) > 255 {
+		metrics.ValidationFailures.WithLabelValues("name", metrics.ValidationReasonLengthExceeded).Inc()
 		return fmt.Errorf("name exceeds maximum length of 255")
 	}
 	if len(audit.Namespace) > 255 {
+		metrics.ValidationFailures.WithLabelValues("namespace", metrics.ValidationReasonLengthExceeded).Inc()
 		return fmt.Errorf("namespace exceeds maximum length of 255")
 	}
 	if len(audit.ActionType) > 100 {
+		metrics.ValidationFailures.WithLabelValues("action_type", metrics.ValidationReasonLengthExceeded).Inc()
 		return fmt.Errorf("action_type exceeds maximum length of 100")
 	}
 

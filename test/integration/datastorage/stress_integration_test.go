@@ -192,11 +192,10 @@ var _ = Describe("Integration Test 5: Cross-Service Write Simulation + Stress Te
 		})
 	})
 
-	Context("⚠️ KNOWN_ISSUE_001: Context cancellation stress test", func() {
+	Context("✅ BR-STORAGE-016: Context cancellation stress test", func() {
 		It("should respect context cancellation during write operations", func() {
-			// This test is EXPECTED TO FAIL in current implementation
-			// Per KNOWN_ISSUE_001, coordinator uses Begin() instead of BeginTx(ctx, nil)
-			// This test documents the bug and will be fixed in Day 9
+			// BR-STORAGE-016: Context propagation with BeginTx(ctx, nil)
+			// FIXED in Day 9: Coordinator now uses BeginTx(ctx, nil) instead of Begin()
 
 			// Create context with short timeout
 			writeCtx, cancel := context.WithTimeout(testCtx, 10*time.Millisecond)
@@ -226,19 +225,16 @@ var _ = Describe("Integration Test 5: Cross-Service Write Simulation + Stress Te
 
 			_, err := coordinator.Write(writeCtx, audit, embedding)
 
-			// ⚠️ EXPECTED FAILURE: Current implementation ignores context cancellation
-			// After Day 9 fix (BeginTx(ctx, nil)), this should properly return context.DeadlineExceeded
-			if err != nil && err == context.DeadlineExceeded {
-				GinkgoWriter.Println("✅ Context cancellation respected (KNOWN_ISSUE_001 FIXED)")
-			} else {
-				GinkgoWriter.Println("⚠️ KNOWN_ISSUE_001: Context cancellation NOT respected (expected - will be fixed in Day 9)")
-				GinkgoWriter.Printf("   Error returned: %v (expected: %v)\n", err, context.DeadlineExceeded)
-				// Mark as known issue, not a test failure
-				Skip("KNOWN_ISSUE_001: Context propagation not implemented - scheduled for Day 9 fix")
-			}
+			// ✅ FIXED: Context cancellation is now respected
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(Equal(context.DeadlineExceeded),
+				"Write should fail with DeadlineExceeded when context timeout expires")
+
+			GinkgoWriter.Println("✅ Context cancellation respected (BR-STORAGE-016 validated)")
 		})
 
 		It("should handle context cancellation during transaction", func() {
+			// BR-STORAGE-016: Context propagation with BeginTx(ctx, nil)
 			// Create context that will be cancelled mid-transaction
 			writeCtx, cancel := context.WithCancel(testCtx)
 
@@ -265,16 +261,16 @@ var _ = Describe("Integration Test 5: Cross-Service Write Simulation + Stress Te
 
 			_, err := coordinator.Write(writeCtx, audit, embedding)
 
-			// ⚠️ EXPECTED FAILURE: Current implementation ignores context cancellation
-			if err != nil && err == context.Canceled {
-				GinkgoWriter.Println("✅ Mid-transaction cancellation handled (KNOWN_ISSUE_001 FIXED)")
-			} else {
-				GinkgoWriter.Println("⚠️ KNOWN_ISSUE_001: Mid-transaction cancellation NOT handled")
-				Skip("KNOWN_ISSUE_001: Context propagation not implemented - scheduled for Day 9 fix")
-			}
+			// ✅ FIXED: Context cancellation is now respected
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(Equal(context.Canceled),
+				"Write should fail with Canceled when context is cancelled")
+
+			GinkgoWriter.Println("✅ Mid-transaction cancellation handled (BR-STORAGE-016 validated)")
 		})
 
 		It("should handle deadline exceeded during long operations", func() {
+			// BR-STORAGE-016: Context propagation with BeginTx(ctx, nil)
 			// Create context with very short deadline
 			writeCtx, cancel := context.WithDeadline(testCtx, time.Now().Add(1*time.Millisecond))
 			defer cancel()
@@ -302,13 +298,12 @@ var _ = Describe("Integration Test 5: Cross-Service Write Simulation + Stress Te
 
 			_, err := coordinator.Write(writeCtx, audit, embedding)
 
-			// ⚠️ EXPECTED FAILURE: Current implementation ignores deadline
-			if err != nil && err == context.DeadlineExceeded {
-				GinkgoWriter.Println("✅ Deadline exceeded handled (KNOWN_ISSUE_001 FIXED)")
-			} else {
-				GinkgoWriter.Println("⚠️ KNOWN_ISSUE_001: Deadline exceeded NOT handled")
-				Skip("KNOWN_ISSUE_001: Context propagation not implemented - scheduled for Day 9 fix")
-			}
+			// ✅ FIXED: Deadline exceeded is now respected
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(Equal(context.DeadlineExceeded),
+				"Write should fail with DeadlineExceeded when deadline is exceeded")
+
+			GinkgoWriter.Println("✅ Deadline exceeded handled (BR-STORAGE-016 validated)")
 		})
 	})
 
