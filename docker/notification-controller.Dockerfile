@@ -22,10 +22,10 @@ COPY pkg/notification/ pkg/notification/
 
 # Build the controller binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -a -installsuffix cgo \
-    -ldflags="-w -s" \
-    -o manager \
-    cmd/notification/main.go
+	-a -installsuffix cgo \
+	-ldflags="-w -s" \
+	-o manager \
+	cmd/notification/main.go
 
 # Stage 2: Create minimal runtime image
 FROM gcr.io/distroless/static:nonroot
@@ -44,4 +44,5 @@ EXPOSE 8080 8081
 
 # Set entrypoint
 ENTRYPOINT ["/manager"]
+
 

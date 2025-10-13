@@ -69,7 +69,7 @@ flowchart LR
 #### **📊 Support Services (3 services)**
 - **Data Storage** (8085): PostgreSQL + Local Vector DB operations
 - **Monitoring** (8094): System observability & health checks
-- **Notifications** (8089): Multi-channel delivery
+- **Notification Controller** (CRD): Multi-channel delivery with CRD persistence 🆕
 
 ### **V2 Future Services (5 Additional - Post V1)**
 - **Multi-Model Orchestration** (8092): Ensemble AI decision making

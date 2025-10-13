@@ -65,7 +65,7 @@ graph TB
     end
 
     subgraph "Support Services"
-        Notification[Notification Service<br/>Port 8080/9090]
+        Notification[Notification Controller<br/>CRD: NotificationRequest 🆕]
         HolmesGPT[HolmesGPT API<br/>Port 8080/9090]
         Context[Context API<br/>Port 8080/9090]
         DataStorage[Data Storage<br/>Port 8080/9090]
@@ -106,10 +106,10 @@ graph TB
     WE -->|Create KubernetesExecution CRD| KE
     KE -->|kubectl apply/patch| K8sAPI[Kubernetes API]
 
-    %% Notifications
-    RO -->|HTTP POST /api/v1/notify/escalation| Notification
-    AI -->|HTTP POST /api/v1/notify/escalation| Notification
-    WE -->|HTTP POST /api/v1/notify/escalation| Notification
+    %% Notifications (CRD-based, 2025-10-12)
+    RO -->|Create NotificationRequest CRD| Notification
+    AI -->|Create NotificationRequest CRD| Notification
+    WE -->|Create NotificationRequest CRD| Notification
     Notification -->|Send notifications| Slack
     Notification -->|Send notifications| Email
     Notification -->|Send notifications| PagerDuty
@@ -292,7 +292,7 @@ graph TD
 | **2** | 4 | Data Storage | HTTP | PostgreSQL, Vector DB | All CRD controllers |
 | **2** | 5 | Context API | HTTP | PostgreSQL, Vector DB | Remediation Processor, AI Analysis |
 | **2** | 6 | HolmesGPT API | HTTP | None (self-contained) | AI Analysis |
-| **2** | 7 | Notification | HTTP | None (external deps optional) | All CRD controllers |
+| **2** | 7 | Notification Controller | CRD Controller | NotificationRequest CRD | All CRD controllers |
 | **3** | 8 | CRD Definitions | K8s CRDs | None | All controllers |
 | **4** | 9 | Remediation Orchestrator | CRD Controller | CRDs | Child controllers |
 | **5** | 10 | Remediation Processor | CRD Controller | Context API, Data Storage | None (parallel) |
@@ -322,7 +322,7 @@ graph TD
 - **Kubernetes Executor** - Action execution
 
 #### Support Services (4)
-- **Notification Service** - Alert escalation
+- **Notification Controller** - CRD-based multi-channel delivery with zero data loss (CRD, migrated 2025-10-12)
 - **HolmesGPT API** - AI investigation
 - **Context API** - Historical intelligence
 - **Data Storage** - Persistence layer
@@ -637,9 +637,9 @@ graph TB
 | AI Analysis | Data Storage | `/api/v1/audit/aianalysis` | POST | Audit trail |
 | Workflow Execution | Data Storage | `/api/v1/audit/workflow` | POST | Audit trail |
 | Kubernetes Executor | Data Storage | `/api/v1/audit/execution` | POST | Audit trail |
-| Remediation Orchestrator | Notification | `/api/v1/notify/escalation` | POST | Escalation |
-| AI Analysis | Notification | `/api/v1/notify/escalation` | POST | Escalation |
-| Workflow Execution | Notification | `/api/v1/notify/escalation` | POST | Escalation |
+| Remediation Orchestrator | Notification | Create NotificationRequest CRD | K8s API | Escalation (CRD-based) |
+| AI Analysis | Notification | Create NotificationRequest CRD | K8s API | Escalation (CRD-based) |
+| Workflow Execution | Notification | Create NotificationRequest CRD | K8s API | Escalation (CRD-based) |
 
 ---
 

@@ -90,24 +90,24 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 			}
 
 			payload := delivery.FormatSlackPayload(notification)
-			
+
 			// Validate Block Kit structure
 			Expect(payload).To(HaveKey("blocks"))
 			Expect(payload["blocks"]).To(BeAssignableToTypeOf([]interface{}{}))
-			
+
 			blocks := payload["blocks"].([]interface{})
 			Expect(blocks).To(HaveLen(3), "Expected header, section, and context blocks")
-			
+
 			// Validate header block
 			headerBlock := blocks[0].(map[string]interface{})
 			Expect(headerBlock["type"]).To(Equal("header"))
 			Expect(headerBlock).To(HaveKey("text"))
-			
+
 			// Validate section block (message body)
 			sectionBlock := blocks[1].(map[string]interface{})
 			Expect(sectionBlock["type"]).To(Equal("section"))
 			Expect(sectionBlock).To(HaveKey("text"))
-			
+
 			// Validate context block (metadata)
 			contextBlock := blocks[2].(map[string]interface{})
 			Expect(contextBlock["type"]).To(Equal("context"))
@@ -140,7 +140,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				headerText := headerBlock["text"].(map[string]interface{})
 				text := headerText["text"].(string)
 
-				Expect(text).To(ContainSubstring(n.expectedEmoji), 
+				Expect(text).To(ContainSubstring(n.expectedEmoji),
 					"Expected emoji %s for priority %s", n.expectedEmoji, n.priority)
 			}
 		})
@@ -200,4 +200,3 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 		})
 	})
 })
-
