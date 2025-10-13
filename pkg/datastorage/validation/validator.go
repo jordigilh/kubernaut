@@ -124,4 +124,3 @@ func (v *Validator) isValidPhase(phase string) bool {
 	}
 	return false
 }
-
