@@ -112,16 +112,16 @@ log_info "Image size: $IMAGE_SIZE"
 # Load into KIND cluster if requested
 if [[ "$LOAD_TO_KIND" == true ]]; then
     log_info "Loading image into KIND cluster: $KIND_CLUSTER_NAME"
-    
+
     # Check if KIND cluster exists
     if ! kind get clusters | grep -q "^${KIND_CLUSTER_NAME}$"; then
         log_warn "KIND cluster '$KIND_CLUSTER_NAME' does not exist"
         log_info "Create it with: kind create cluster --name $KIND_CLUSTER_NAME"
         exit 1
     fi
-    
+
     kind load docker-image "$FULL_IMAGE" --name "$KIND_CLUSTER_NAME"
-    
+
     if [[ $? -eq 0 ]]; then
         log_info "✅ Image loaded into KIND cluster: $KIND_CLUSTER_NAME"
     else
@@ -133,9 +133,9 @@ fi
 # Push to registry if requested
 if [[ "$PUSH_TO_REGISTRY" == true ]]; then
     log_info "Pushing image to registry: $FULL_IMAGE"
-    
+
     docker push "$FULL_IMAGE"
-    
+
     if [[ $? -eq 0 ]]; then
         log_info "✅ Image pushed to registry: $FULL_IMAGE"
     else
@@ -161,4 +161,5 @@ log_info "  2. Verify deployment: kubectl get pods -n kubernaut-notifications"
 log_info "  3. Check logs: kubectl logs -f deployment/notification-controller -n kubernaut-notifications"
 
 exit 0
+
 

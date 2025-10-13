@@ -478,25 +478,44 @@ Observability:
 
 ---
 
-### **10. Notification Service**
+### **10. Notification Controller** 🆕
+
+**Service Type**: CRD Controller (migrated from stateless HTTP API, 2025-10-12)
+**Documentation**: [06-notification/](../services/crd-controllers/06-notification/)
 
 #### **Single Responsibility**
-Multi-channel notification delivery and escalation management
+Multi-channel notification delivery with CRD-based persistence, automatic retry, and zero data loss guarantee
 
 #### **Business Requirements**
-- **Primary**: BR-NOT-001 to BR-NOT-050
-- **Enhanced**: BR-NOT-016 (delivery tracking)
+- **Primary**: BR-NOT-001 to BR-NOT-058
+- **NEW**: BR-NOT-050 to BR-NOT-058 (CRD-specific: data loss prevention, audit trail, automatic retry)
+- **Enhanced**: BR-NOT-016 (delivery tracking), BR-NOT-051 (complete audit trail)
 
 #### **Key Capabilities**
 ```yaml
+CRD-Based Persistence:
+  - NotificationRequest CRD for durable state
+  - Zero data loss guarantee (etcd persistence)
+  - At-least-once delivery semantics
+
 Multi-Channel Delivery:
   - Slack, Teams, Email integration
   - SMS and webhook notifications
   - 95% delivery success rate
 
+Automatic Retry:
+  - Exponential backoff retry logic
+  - Per-channel graceful degradation
+  - Automatic reconciliation loop
+
+Complete Audit Trail:
+  - All delivery attempts tracked in CRD status
+  - Long-term audit storage via Data Storage service
+  - Real-time delivery status observability
+
 Escalation Management:
   - Configurable escalation policies
-  - Priority-based routing
+  - Priority-based routing (Critical notifications first)
   - Delivery confirmation tracking
 
 Alert Correlation:
@@ -506,9 +525,10 @@ Alert Correlation:
 ```
 
 #### **Integration Points**
-- **Receives From**: Monitoring Service (system alerts), Workflow Engine (action results)
-- **Sends To**: External notification systems (Slack, Teams, Email)
-- **Dependencies**: External notification APIs (required)
+- **Receives From**: RemediationOrchestrator (creates NotificationRequest CRDs), Workflow Engine (action results)
+- **Sends To**: External notification systems (Slack, Teams, Email), Data Storage (audit trail)
+- **Dependencies**: NotificationRequest CRD (required), External notification APIs (required), Data Storage (optional, for long-term audit)
+- **Architecture Change**: Migrated from stateless HTTP API to CRD controller for data loss prevention and complete audit trail
 
 ---
 
@@ -527,7 +547,7 @@ Alert Correlation:
 | **Context Orchestrator** | Data Storage | Kubernetes API | None |
 | **Data Storage** | PostgreSQL | Redis | None |
 | **Monitoring** | Prometheus | Grafana | None |
-| **Notification** | External APIs | None | Slack, Teams, Email |
+| **Notification** | External APIs, Data Storage | NotificationRequest CRD | Slack, Teams, Email |
 
 ### **Performance Requirements Summary**
 | Service | Response Time | Throughput | Availability |
@@ -590,7 +610,7 @@ For detailed business requirement mappings referenced throughout the architectur
 | **AI & Intelligence** | BR-AI-001 to BR-AI-050, BR-CONTEXT-001 to BR-CONTEXT-180 | AI analysis and context orchestration |
 | **Workflow & Execution** | BR-WF-001 to BR-WF-165, BR-EX-001 to BR-EX-155 | Workflow orchestration and K8s operations |
 | **Data & Storage** | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | Data persistence and vector operations |
-| **Monitoring & Notifications** | BR-MET-001 to BR-OSC-020, BR-NOTIF-001 to BR-NOTIF-120 | Observability and alerting |
+| **Monitoring & Notifications** | BR-MET-001 to BR-OSC-020, BR-NOT-001 to BR-NOT-058 | Observability and CRD-based notifications |
 | **HolmesGPT Integration** | BR-HAPI-001 to BR-HAPI-185, BR-HOLMES-001 to BR-HOLMES-030 | AI investigation wrapper and toolsets |
 
 **Note**: Complete business requirements documentation is available in [`../requirements/`](../requirements/) directory.

@@ -499,10 +499,10 @@ spec:
 - **Operation**: Stateless context retrieval and serving
 - **Why No CRD**: Pure data serving, no state to reconcile
 
-#### Notification Service
-- **Function**: Delivers notifications when triggered
-- **Operation**: Sends notifications to configured channels
-- **Why No CRD**: Stateless message delivery, no ongoing state
+#### Notification Controller 🆕
+- **Function**: CRD-based notification delivery with zero data loss guarantee
+- **Operation**: Reconciles NotificationRequest CRD for multi-channel delivery
+- **Why CRD**: Durable state, automatic retry, complete audit trail (migrated from stateless HTTP API, 2025-10-12)
 
 ---
 
@@ -2072,7 +2072,7 @@ Mitigation:
 
 ```yaml
 Implementation Success:
-  - All 5 CRDs deployed and functional within 8 weeks
+  - All 6 CRDs deployed and functional (5 core + NotificationRequest added 2025-10-12)
   - <1s cross-service communication latency achieved
   - >99.9% CRD reconciliation success rate maintained
   - Zero data consistency issues observed

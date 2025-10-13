@@ -63,6 +63,107 @@ test-gateway: ## Run Gateway integration tests (setup cluster if needed)
 	kubectl config use-context kind-$(GATEWAY_CLUSTER) && \
 	cd test/integration/gateway && ginkgo -v
 
+##@ Service-Specific Integration Tests
+# Per ADR-016: Service-Specific Integration Test Infrastructure
+# Use Podman for database-only services, Kind for Kubernetes-dependent services
+
+.PHONY: test-integration-datastorage
+test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL via Podman, ~30s)
+	@echo "🔧 Starting PostgreSQL with pgvector extension..."
+	@podman run -d --name datastorage-postgres -p 5432:5432 \
+		-e POSTGRES_PASSWORD=postgres \
+		pgvector/pgvector:pg15 > /dev/null 2>&1 || \
+		(echo "⚠️  PostgreSQL container already exists or failed to start" && \
+		 podman start datastorage-postgres > /dev/null 2>&1) || true
+	@echo "⏳ Waiting for PostgreSQL to be ready..."
+	@sleep 5
+	@podman exec datastorage-postgres pg_isready -U postgres > /dev/null 2>&1 || \
+		(echo "❌ PostgreSQL not ready" && exit 1)
+	@echo "✅ PostgreSQL ready"
+	@echo "🧪 Running Data Storage integration tests..."
+	@TEST_RESULT=0; \
+	go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
+	echo "🧹 Cleaning up PostgreSQL container..."; \
+	podman stop datastorage-postgres > /dev/null 2>&1 || true; \
+	podman rm datastorage-postgres > /dev/null 2>&1 || true; \
+	echo "✅ Cleanup complete"; \
+	exit $$TEST_RESULT
+
+.PHONY: test-integration-ai
+test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s)
+	@echo "🔧 Starting Redis cache..."
+	@podman run -d --name ai-redis -p 6379:6379 redis:7-alpine > /dev/null 2>&1 || \
+		(echo "⚠️  Redis container already exists or failed to start" && \
+		 podman start ai-redis > /dev/null 2>&1) || true
+	@echo "⏳ Waiting for Redis to be ready..."
+	@sleep 2
+	@echo "✅ Redis ready"
+	@echo "🧪 Running AI Service integration tests..."
+	@TEST_RESULT=0; \
+	go test ./test/integration/ai/... -v -timeout 5m || TEST_RESULT=$$?; \
+	echo "🧹 Cleaning up Redis container..."; \
+	podman stop ai-redis > /dev/null 2>&1 || true; \
+	podman rm ai-redis > /dev/null 2>&1 || true; \
+	echo "✅ Cleanup complete"; \
+	exit $$TEST_RESULT
+
+.PHONY: test-integration-toolset
+test-integration-toolset: ## Run Dynamic Toolset integration tests (Kind cluster, ~3-5min)
+	@echo "🔧 Ensuring Kind cluster is running..."
+	@./scripts/ensure-kind-cluster.sh
+	@echo "🧪 Running Dynamic Toolset integration tests..."
+	@go test ./test/integration/toolset/... -v -timeout 10m
+
+.PHONY: test-integration-gateway-service
+test-integration-gateway-service: ## Run Gateway Service integration tests (Kind cluster, uses existing test-gateway target)
+	@echo "🔧 Running Gateway Service integration tests..."
+	@$(MAKE) test-gateway
+
+.PHONY: test-integration-service-all
+test-integration-service-all: ## Run ALL service-specific integration tests (sequential)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🚀 Running ALL Service-Specific Integration Tests (per ADR-016)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "📊 Test Plan:"
+	@echo "  1. Data Storage (Podman: PostgreSQL + pgvector) - ~30s"
+	@echo "  2. AI Service (Podman: Redis) - ~15s"
+	@echo "  3. Dynamic Toolset (Kind: Kubernetes) - ~3-5min"
+	@echo "  4. Gateway Service (Kind: Kubernetes) - ~3-5min"
+	@echo ""
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@FAILED=0; \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "1️⃣  Data Storage Service (Podman)"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(MAKE) test-integration-datastorage || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "2️⃣  AI Service (Podman)"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(MAKE) test-integration-ai || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "3️⃣  Dynamic Toolset Service (Kind)"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(MAKE) test-integration-toolset || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "4️⃣  Gateway Service (Kind)"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(MAKE) test-integration-gateway-service || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ ALL SERVICE-SPECIFIC INTEGRATION TESTS PASSED"; \
+	else \
+		echo "❌ $$FAILED service(s) failed integration tests"; \
+	fi; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	exit $$FAILED
+
 ##@ Development (continued)
 
 .PHONY: manifests

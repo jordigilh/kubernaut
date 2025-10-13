@@ -2,6 +2,9 @@
 
 ## Status
 **ACCEPTED** - December 2024
+**SUPERSEDED IN PART** - October 2025 by [ADR-016](./ADR-016-SERVICE-SPECIFIC-INTEGRATION-TEST-INFRASTRUCTURE.md)
+
+**Current Status**: This ADR remains valid for services requiring Kubernetes features (RBAC, TokenReview, Service Discovery). For services that only need databases or caches, see ADR-016 for optimized Podman-based approach.
 
 ## Context
 

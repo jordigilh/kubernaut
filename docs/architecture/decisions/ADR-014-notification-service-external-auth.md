@@ -1,8 +1,24 @@
 # ADR-014: Notification Service Uses External Service Authentication
 
-**Date**: 2025-10-07  
-**Status**: ✅ Accepted  
-**Related**: [Notification Service Overview](../../services/stateless/notification-service/overview.md), BR-NOT-037
+> **⚠️ SUPERSEDED**: 2025-10-12
+>
+> This ADR applies to the original **Stateless HTTP API** design for the Notification Service.
+>
+> The service has been **redesigned as a CRD Controller** with NotificationRequest CRD for:
+> - **Zero data loss** (etcd persistence)
+> - **Complete audit trail** (all delivery attempts tracked)
+> - **Automatic retry** (controller reconciliation)
+> - **At-least-once delivery** (CRD-based state)
+>
+> **New Documentation**: [06-notification/](../../services/crd-controllers/06-notification/)
+>
+> **This ADR remains VALID** for the CRD-based design: External services still handle their own authentication.
+
+---
+
+**Date**: 2025-10-07
+**Status**: ✅ Accepted (Superseded 2025-10-12, but principle remains valid)
+**Related**: [Notification Controller](../../services/crd-controllers/06-notification/overview.md), BR-NOT-037
 
 ---
 
@@ -25,7 +41,7 @@ This added significant complexity (~500 lines of code) and tight coupling betwee
 
 ### Problem Identified
 
-**User Feedback**: 
+**User Feedback**:
 > "Why is there a UI/UX requirement when there is no UI provided? Notifications should provide links to external services (GitHub, GitLab, etc.) and those services should provide the authentication services, not Kubernaut."
 
 **Assessment**: The feedback identified a major architectural misunderstanding. The original approach:
@@ -312,6 +328,6 @@ recipients:
 
 ---
 
-**Decision Made By**: Development Team  
-**Approved By**: Architecture Review  
+**Decision Made By**: Development Team
+**Approved By**: Architecture Review
 **Implementation Status**: ✅ Approved for implementation
