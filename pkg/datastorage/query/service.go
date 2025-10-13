@@ -192,13 +192,19 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 		LIMIT 10
 	`
 
-	// Execute query and scan results
-	results := make([]*SemanticResult, 0)
-	if err := s.db.SelectContext(ctx, &results, sqlQuery, queryEmbeddingStr); err != nil {
+	// Execute query and scan results into SemanticResultRow (with Vector type)
+	rows := make([]*SemanticResultRow, 0)
+	if err := s.db.SelectContext(ctx, &rows, sqlQuery, queryEmbeddingStr); err != nil {
 		s.logger.Error("semantic search failed",
 			zap.Error(err),
 			zap.String("query", queryText))
 		return nil, fmt.Errorf("semantic search failed: %w", err)
+	}
+
+	// Convert to SemanticResult (with []float32)
+	results := make([]*SemanticResult, len(rows))
+	for i, row := range rows {
+		results[i] = row.ToSemanticResult()
 	}
 
 	s.logger.Info("semantic search successful",

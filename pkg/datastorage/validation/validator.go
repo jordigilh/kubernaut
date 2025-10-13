@@ -52,13 +52,14 @@ func (v *Validator) ValidateRemediationAudit(audit *models.RemediationAudit) err
 	if audit.Phase == "" {
 		return fmt.Errorf("phase is required")
 	}
-	if audit.ActionType == "" {
-		return fmt.Errorf("action_type is required")
-	}
 
-	// Phase validation
+	// Phase validation (before other required fields to provide better error messages)
 	if !v.isValidPhase(audit.Phase) {
 		return fmt.Errorf("invalid phase: %s", audit.Phase)
+	}
+
+	if audit.ActionType == "" {
+		return fmt.Errorf("action_type is required")
 	}
 
 	// Field length validation
@@ -93,10 +94,23 @@ func (v *Validator) SanitizeString(input string) string {
 	htmlRegex := regexp.MustCompile(`<[^>]+>`)
 	result = htmlRegex.ReplaceAllString(result, "")
 
-	// Escape SQL special characters (remove semicolons)
-	result = strings.ReplaceAll(result, ";", "")
+	// Remove SQL keywords and special characters (case-insensitive)
+	// BR-STORAGE-011: Protect against SQL injection
+	sqlKeywords := []string{
+		"DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "CREATE", "TRUNCATE", "TABLE",
+		"EXEC", "EXECUTE", "UNION", "SELECT", "--", "/*", "*/", "xp_", "sp_",
+	}
+	for _, keyword := range sqlKeywords {
+		// Case-insensitive replacement
+		result = regexp.MustCompile(`(?i)`+regexp.QuoteMeta(keyword)).ReplaceAllString(result, "")
+	}
 
-	return result
+	// Escape SQL special characters
+	result = strings.ReplaceAll(result, ";", "")
+	result = strings.ReplaceAll(result, "'", "")
+	result = strings.ReplaceAll(result, "\"", "")
+
+	return strings.TrimSpace(result)
 }
 
 // isValidPhase checks if a phase value is valid

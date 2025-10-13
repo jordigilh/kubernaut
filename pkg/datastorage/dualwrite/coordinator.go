@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 )
 
 const (
@@ -209,26 +210,27 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 
 // writeToPostgreSQL writes audit and embedding to PostgreSQL within a transaction.
 func (c *Coordinator) writeToPostgreSQL(tx Tx, audit *models.RemediationAudit, embedding []float32) (int64, error) {
-	query := `
+	sqlQuery := `
 		INSERT INTO remediation_audit (
 			name, namespace, phase, action_type, status,
 			start_time, end_time, remediation_request_id, alert_fingerprint,
 			severity, environment, cluster_name, target_resource,
 			error_message, metadata, embedding
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::vector)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING id
 	`
 
-	// Convert embedding to pgvector format (string representation)
-	embeddingStr := embeddingToString(embedding)
+	// Convert []float32 to query.Vector for pgvector compatibility
+	// BR-STORAGE-008: Use Vector type which implements driver.Valuer
+	vectorEmbedding := query.Vector(embedding)
 
 	// PostgreSQL doesn't support LastInsertId(), use QueryRow with RETURNING instead
 	var id int64
-	err := tx.QueryRow(query,
+	err := tx.QueryRow(sqlQuery,
 		audit.Name, audit.Namespace, audit.Phase, audit.ActionType, audit.Status,
 		audit.StartTime, audit.EndTime, audit.RemediationRequestID, audit.AlertFingerprint,
 		audit.Severity, audit.Environment, audit.ClusterName, audit.TargetResource,
-		audit.ErrorMessage, audit.Metadata, embeddingStr).Scan(&id)
+		audit.ErrorMessage, audit.Metadata, vectorEmbedding).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
@@ -305,21 +307,3 @@ func containsAny(s string, substrings []string) bool {
 	return false
 }
 
-// embeddingToString converts a float32 slice to pgvector string format '[x,y,z,...]'
-// BR-STORAGE-008: Embedding storage in PostgreSQL
-func embeddingToString(embedding []float32) string {
-	if len(embedding) == 0 {
-		return "[]"
-	}
-
-	// Build string representation: [0.1,0.2,0.3,...]
-	result := "["
-	for i, val := range embedding {
-		if i > 0 {
-			result += ","
-		}
-		result += fmt.Sprintf("%f", val)
-	}
-	result += "]"
-	return result
-}
