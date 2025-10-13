@@ -142,7 +142,7 @@ kind delete cluster --name notification-test
 
 ### **Test 1: Basic Lifecycle (Pending → Sent)**
 
-**Duration**: ~10 seconds  
+**Duration**: ~10 seconds
 **Scenario**: Happy path with console + Slack delivery
 
 **Steps**:
@@ -163,7 +163,7 @@ kind delete cluster --name notification-test
 
 ### **Test 2: Delivery Failure Recovery (Retry Logic)**
 
-**Duration**: ~180 seconds  
+**Duration**: ~180 seconds
 **Scenario**: Slack returns 503 twice, then succeeds
 
 **Steps**:
@@ -183,7 +183,7 @@ kind delete cluster --name notification-test
 
 ### **Test 3: Graceful Degradation (Partial Success)**
 
-**Duration**: ~60 seconds  
+**Duration**: ~60 seconds
 **Scenario**: Console succeeds, Slack fails permanently → PartiallySent
 
 **Steps**:
@@ -287,7 +287,8 @@ go test ./test/integration/notification/... -v -ginkgo.v | grep "Mock Slack"
 
 ---
 
-**Version**: 1.0  
-**Last Updated**: 2025-10-12  
+**Version**: 1.0
+**Last Updated**: 2025-10-12
 **Status**: Test Designs Complete, Awaiting Deployment ✅
+
 
