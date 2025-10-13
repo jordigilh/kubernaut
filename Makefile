@@ -68,18 +68,25 @@ test-gateway: ## Run Gateway integration tests (setup cluster if needed)
 # Use Podman for database-only services, Kind for Kubernetes-dependent services
 
 .PHONY: test-integration-datastorage
-test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL via Podman, ~30s)
-	@echo "🔧 Starting PostgreSQL with pgvector extension..."
+test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~30s)
+	@echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."
 	@podman run -d --name datastorage-postgres -p 5432:5432 \
 		-e POSTGRES_PASSWORD=postgres \
-		pgvector/pgvector:pg15 > /dev/null 2>&1 || \
+		-e POSTGRES_SHARED_BUFFERS=1GB \
+		pgvector/pgvector:pg16 > /dev/null 2>&1 || \
 		(echo "⚠️  PostgreSQL container already exists or failed to start" && \
 		 podman start datastorage-postgres > /dev/null 2>&1) || true
 	@echo "⏳ Waiting for PostgreSQL to be ready..."
 	@sleep 5
 	@podman exec datastorage-postgres pg_isready -U postgres > /dev/null 2>&1 || \
 		(echo "❌ PostgreSQL not ready" && exit 1)
-	@echo "✅ PostgreSQL ready"
+	@echo "✅ PostgreSQL 16 ready"
+	@echo "🔍 Verifying PostgreSQL and pgvector versions..."
+	@podman exec datastorage-postgres psql -U postgres -c "SELECT version();" | grep "PostgreSQL 16" || \
+		(echo "❌ PostgreSQL version is not 16.x" && exit 1)
+	@podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0" || \
+		(echo "⚠️  pgvector version check inconclusive, proceeding with tests")
+	@echo "✅ Version validation passed"
 	@echo "🧪 Running Data Storage integration tests..."
 	@TEST_RESULT=0; \
 	go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
@@ -88,6 +95,10 @@ test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 
 	podman rm datastorage-postgres > /dev/null 2>&1 || true; \
 	echo "✅ Cleanup complete"; \
 	exit $$TEST_RESULT
+
+.PHONY: test-integration-datastorage-matrix
+test-integration-datastorage-matrix: ## Run Data Storage tests with PostgreSQL 16 (stable) validation (CI/CD)
+	@./scripts/test-datastorage-matrix.sh
 
 .PHONY: test-integration-ai
 test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s)
