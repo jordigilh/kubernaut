@@ -63,6 +63,148 @@ test-gateway: ## Run Gateway integration tests (setup cluster if needed)
 	kubectl config use-context kind-$(GATEWAY_CLUSTER) && \
 	cd test/integration/gateway && ginkgo -v
 
+##@ Notification Service Integration Tests
+# Per ADR-017: NotificationRequest CRD-based notification service
+# Requires Kind cluster with NotificationRequest CRD and controller deployed
+
+NOTIFICATION_CLUSTER ?= kubernaut-integration
+NOTIFICATION_NAMESPACE ?= kubernaut-notifications
+NOTIFICATION_IMAGE ?= kubernaut-notification:latest
+NOTIFICATION_CRD ?= config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+
+.PHONY: test-notification-setup
+test-notification-setup: ## Setup Kind cluster and deploy Notification controller
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🚀 Notification Service Integration Test Setup"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "📋 Setup Steps:"
+	@echo "  1. Ensure Kind cluster exists"
+	@echo "  2. Generate CRD manifests"
+	@echo "  3. Install NotificationRequest CRD"
+	@echo "  4. Build controller image"
+	@echo "  5. Load image into Kind"
+	@echo "  6. Deploy controller"
+	@echo "  7. Verify deployment"
+	@echo ""
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "1️⃣  Ensuring Kind cluster exists: $(NOTIFICATION_CLUSTER)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@KIND_CLUSTER_NAME=$(NOTIFICATION_CLUSTER) ./scripts/ensure-kind-cluster.sh
+	@kubectl config use-context kind-$(NOTIFICATION_CLUSTER)
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "2️⃣  Generating CRD manifests"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@$(MAKE) manifests
+	@echo "✅ CRD manifests generated"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "3️⃣  Installing NotificationRequest CRD"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@if [ ! -f "$(NOTIFICATION_CRD)" ]; then \
+		echo "❌ Error: CRD file not found: $(NOTIFICATION_CRD)"; \
+		exit 1; \
+	fi
+	@kubectl apply -f $(NOTIFICATION_CRD)
+	@echo "⏳ Waiting for CRD to be established..."
+	@kubectl wait --for condition=established --timeout=60s crd/notificationrequests.notification.kubernaut.ai
+	@echo "✅ NotificationRequest CRD installed and established"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "4️⃣  Building and loading controller image"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@KIND_CLUSTER_NAME=$(NOTIFICATION_CLUSTER) ./scripts/build-notification-controller.sh --kind
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "5️⃣  Deploying Notification controller"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@kubectl apply -k deploy/notification/
+	@echo "⏳ Waiting for controller deployment to be ready..."
+	@kubectl wait --for=condition=available --timeout=120s \
+		deployment/notification-controller -n $(NOTIFICATION_NAMESPACE) || \
+		(echo "⚠️  Deployment not ready, checking status..." && \
+		 kubectl get pods -n $(NOTIFICATION_NAMESPACE) && \
+		 kubectl describe deployment/notification-controller -n $(NOTIFICATION_NAMESPACE) && \
+		 exit 1)
+	@echo "✅ Notification controller deployed successfully"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "6️⃣  Verifying deployment"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Namespace: $(NOTIFICATION_NAMESPACE)"
+	@kubectl get pods -n $(NOTIFICATION_NAMESPACE)
+	@echo ""
+	@echo "Controller logs (last 10 lines):"
+	@kubectl logs -n $(NOTIFICATION_NAMESPACE) deployment/notification-controller --tail=10 || true
+	@echo ""
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "✅ NOTIFICATION SERVICE SETUP COMPLETE"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "📊 Deployment Status:"
+	@echo "  • Kind Cluster: $(NOTIFICATION_CLUSTER)"
+	@echo "  • Namespace: $(NOTIFICATION_NAMESPACE)"
+	@echo "  • CRD: NotificationRequest.notification.kubernaut.ai"
+	@echo "  • Controller: notification-controller"
+	@echo ""
+	@echo "🧪 Ready to run integration tests:"
+	@echo "  make test-integration-notification"
+	@echo ""
+
+.PHONY: test-notification-teardown
+test-notification-teardown: ## Teardown Notification controller (keeps Kind cluster)
+	@echo "🧹 Cleaning up Notification controller deployment..."
+	@kubectl delete -k deploy/notification/ --ignore-not-found=true
+	@kubectl delete crd notificationrequests.notification.kubernaut.ai --ignore-not-found=true
+	@echo "✅ Notification controller cleanup complete"
+	@echo "💡 Tip: To delete Kind cluster, run: kind delete cluster --name $(NOTIFICATION_CLUSTER)"
+
+.PHONY: test-notification-teardown-full
+test-notification-teardown-full: ## Complete teardown including Kind cluster
+	@echo "🧹 Full cleanup: Notification controller + Kind cluster..."
+	@$(MAKE) test-notification-teardown
+	@kind delete cluster --name $(NOTIFICATION_CLUSTER) 2>/dev/null || true
+	@echo "✅ Full cleanup complete"
+
+.PHONY: test-integration-notification
+test-integration-notification: ## Run Notification Service integration tests (Kind cluster, ~3-5min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Notification Service Integration Tests"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "📋 Test Scenarios:"
+	@echo "  1. Basic CRD lifecycle (create → reconcile → complete)"
+	@echo "  2. Delivery failure recovery (retry with exponential backoff)"
+	@echo "  3. Graceful degradation (partial delivery success)"
+	@echo ""
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "🔍 Checking deployment status..."
+	@if ! kubectl get crd notificationrequests.notification.kubernaut.ai &> /dev/null; then \
+		echo "⚠️  NotificationRequest CRD not found - running setup..."; \
+		$(MAKE) test-notification-setup; \
+	else \
+		echo "✅ CRD already installed"; \
+		if ! kubectl get deployment notification-controller -n $(NOTIFICATION_NAMESPACE) &> /dev/null; then \
+			echo "⚠️  Controller not deployed - running setup..."; \
+			$(MAKE) test-notification-setup; \
+		else \
+			echo "✅ Controller already deployed"; \
+		fi; \
+	fi
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🧪 Running integration tests..."
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@go test ./test/integration/notification/... -v -ginkgo.v -timeout=30m
+	@echo ""
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "✅ NOTIFICATION SERVICE INTEGRATION TESTS COMPLETE"
+	@echo "════════════════════════════════════════════════════════════════════════"
+
 ##@ Service-Specific Integration Tests
 # Per ADR-016: Service-Specific Integration Test Infrastructure
 # Use Podman for database-only services, Kind for Kubernetes-dependent services
@@ -147,6 +289,7 @@ test-integration-service-all: ## Run ALL service-specific integration tests (seq
 	@echo "  2. AI Service (Podman: Redis) - ~15s"
 	@echo "  3. Dynamic Toolset (Kind: Kubernetes) - ~3-5min"
 	@echo "  4. Gateway Service (Kind: Kubernetes) - ~3-5min"
+	@echo "  5. Notification Service (Kind: Kubernetes + CRD) - ~3-5min"
 	@echo ""
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo ""
@@ -172,9 +315,14 @@ test-integration-service-all: ## Run ALL service-specific integration tests (seq
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	$(MAKE) test-integration-gateway-service || FAILED=$$((FAILED + 1)); \
 	echo ""; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	echo "5️⃣  Notification Service (Kind)"; \
+	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+	$(MAKE) test-integration-notification || FAILED=$$((FAILED + 1)); \
+	echo ""; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
 	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ ALL SERVICE-SPECIFIC INTEGRATION TESTS PASSED"; \
+		echo "✅ ALL SERVICE-SPECIFIC INTEGRATION TESTS PASSED (5/5)"; \
 	else \
 		echo "❌ $$FAILED service(s) failed integration tests"; \
 	fi; \
