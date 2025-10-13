@@ -193,4 +193,3 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 		GinkgoWriter.Println("✅ Console-only notification validated")
 	})
 })
-

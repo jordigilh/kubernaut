@@ -76,8 +76,8 @@ Each controller runs as a separate microservice with its own binary:
 |---------|--------|---------|------|------|
 | **Gateway Service** | ✅ **COMPLETE** | Multi-signal webhook ingestion | 8080 | [Integration Tests](GATEWAY_TESTS_PHASE2_PHASE3_COMPLETE.md) |
 | **Dynamic Toolset** | 🔄 **In-Progress** | HolmesGPT toolset configuration | 8080 | [docs](docs/services/stateless/) |
-| **Data Storage** | ⏸️ Phase 1 | PostgreSQL + Vector DB management | 8080 | [docs](docs/services/stateless/) |
-| **Context API** | ⏸️ Phase 2 | Dynamic context orchestration | 8080 | [docs](docs/services/stateless/) |
+| **Data Storage** | 🟡 **85% Complete** | PostgreSQL + Vector DB management | 8080 | [Day 9 Complete, Day 10 Pending](docs/services/stateless/data-storage/implementation/NEXT_TASKS.md) |
+| **Context API** | ⏸️ **Blocked** | Dynamic context orchestration | 8080 | [Waiting for Data Storage](docs/services/stateless/context-api/implementation/NEXT_TASKS.md) |
 | **HolmesGPT API** | ⏸️ Phase 2 | AI investigation wrapper (Python) | 8080 | [docs](docs/services/stateless/) |
 | **Effectiveness Monitor** | ⏸️ Phase 5 | Action outcome assessment & learning | 8080 | [docs](docs/services/stateless/) |
 | **Notification Service** | ⏸️ Phase 1 | Multi-channel notification delivery | 8080 | [docs](docs/services/stateless/) |
