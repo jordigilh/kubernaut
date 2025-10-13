@@ -1,5 +1,9 @@
 # DD-STORAGE-002: Hybrid Database Approach - sqlx for Queries, database/sql for Dual-Write
 
+> **Historical Note**: This document references implementation checkpoint files (phase0/XX-dayX-complete.md)
+> that were removed during documentation cleanup on October 13, 2025. These references show when
+> the decision was implemented. The referenced files are available in git history (commit d6de6702) if needed.
+
 ## Status
 **✅ APPROVED** (2025-10-12)
 **Last Reviewed**: 2025-10-12
