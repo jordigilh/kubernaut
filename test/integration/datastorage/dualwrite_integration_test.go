@@ -41,7 +41,8 @@ var _ = Describe("Integration Test 2: Dual-Write Transaction Coordination", func
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create client (handles validation, sanitization, embedding, dual-write)
-		client = datastorage.NewClient(testDB, logger)
+		client, err = datastorage.NewClient(testCtx, testDB, logger)
+		Expect(err).ToNot(HaveOccurred())
 
 		GinkgoWriter.Printf("✅ Test schema %s initialized for dual-write tests\n", testSchema)
 	})
