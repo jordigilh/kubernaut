@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS remediation_audit (
     duration BIGINT, -- milliseconds
 
     -- Relationships
-    remediation_request_id VARCHAR(255) NOT NULL,
+    remediation_request_id VARCHAR(255) NOT NULL UNIQUE,
     alert_fingerprint VARCHAR(255) NOT NULL,
 
     -- Context
@@ -51,6 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_remediation_audit_status ON remediation_audit(sta
 CREATE INDEX IF NOT EXISTS idx_remediation_audit_phase ON remediation_audit(phase);
 CREATE INDEX IF NOT EXISTS idx_remediation_audit_start_time ON remediation_audit(start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_remediation_audit_request_id ON remediation_audit(remediation_request_id);
+CREATE INDEX IF NOT EXISTS idx_remediation_audit_alert_fingerprint ON remediation_audit(alert_fingerprint);
 
 -- Create HNSW index for vector similarity search
 -- Using HNSW (Hierarchical Navigable Small World) for fast approximate nearest neighbor search
