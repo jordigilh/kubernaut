@@ -244,4 +244,3 @@ func parsePostgreSQLSize(size string) (int64, error) {
 		return value * 8192, nil
 	}
 }
-

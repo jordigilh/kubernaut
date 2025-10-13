@@ -337,7 +337,7 @@ func (s *Service) SemanticSearch(...) {
         SET LOCAL enable_seqscan = off;
         SET LOCAL enable_indexscan = on;
     `)
-    
+
     // ... execute semantic search ...
 }
 ```

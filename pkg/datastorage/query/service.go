@@ -43,6 +43,9 @@ type DBQuerier interface {
 
 	// GetContext binds query result to a single struct
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+
+	// ExecContext executes a query without returning rows (for SET commands, etc.)
+	ExecContext(ctx context.Context, query string, args ...interface{}) (interface{}, error)
 }
 
 // Service handles query operations
@@ -162,7 +165,7 @@ func (s *Service) PaginatedList(ctx context.Context, opts *ListOptions) (*Pagina
 }
 
 // SemanticSearch performs vector similarity search
-// BR-STORAGE-012: Semantic search
+// BR-STORAGE-012: Semantic search with HNSW index optimization
 func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*SemanticResult, error) {
 	// Validate query
 	if queryText == "" {
@@ -176,9 +179,29 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 	// Convert embedding to pgvector string format
 	queryEmbeddingStr := embeddingToString(queryEmbedding)
 
+	// Set query planner hints to force HNSW index usage
+	// This ensures PostgreSQL uses the HNSW index even with complex WHERE clauses
+	// SET LOCAL ensures hints only apply to this transaction, not the entire session
+	plannerHints := `
+		SET LOCAL enable_seqscan = off;
+		SET LOCAL enable_indexscan = on;
+	`
+	
+	if _, err := s.db.ExecContext(ctx, plannerHints); err != nil {
+		// Log warning but don't fail the query
+		// Planner hints are an optimization, not a requirement
+		s.logger.Warn("failed to set query planner hints for HNSW optimization",
+			zap.Error(err),
+			zap.String("impact", "query may not use HNSW index optimally, performance could be degraded"))
+	} else {
+		s.logger.Debug("query planner hints set successfully",
+			zap.String("hint", "enable_seqscan=off, enable_indexscan=on"))
+	}
+
 	// Perform vector similarity search using pgvector
 	// <=> is the cosine distance operator in pgvector
 	// 1 - distance = similarity score (0 to 1, where 1 is most similar)
+	// With planner hints, PostgreSQL will prefer using the HNSW index
 	sqlQuery := `
 		SELECT
 			id, name, namespace, phase, action_type, status, start_time, end_time,

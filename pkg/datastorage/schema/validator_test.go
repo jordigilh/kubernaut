@@ -295,4 +295,3 @@ var _ = Describe("VersionValidator", func() {
 		})
 	})
 })
-
