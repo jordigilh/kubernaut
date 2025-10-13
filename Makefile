@@ -87,6 +87,13 @@ test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 
 	@podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0" || \
 		(echo "⚠️  pgvector version check inconclusive, proceeding with tests")
 	@echo "✅ Version validation passed"
+	@echo "🔍 Testing HNSW index creation (dry-run)..."
+	@podman exec datastorage-postgres psql -U postgres -d postgres -c "\
+		CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \
+		CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);" \
+		> /dev/null 2>&1 || \
+		(echo "❌ HNSW index creation test failed - PostgreSQL/pgvector may not support HNSW" && exit 1)
+	@echo "✅ HNSW index support verified"
 	@echo "🧪 Running Data Storage integration tests..."
 	@TEST_RESULT=0; \
 	go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
@@ -95,10 +102,6 @@ test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 
 	podman rm datastorage-postgres > /dev/null 2>&1 || true; \
 	echo "✅ Cleanup complete"; \
 	exit $$TEST_RESULT
-
-.PHONY: test-integration-datastorage-matrix
-test-integration-datastorage-matrix: ## Run Data Storage tests with PostgreSQL 16 (stable) validation (CI/CD)
-	@./scripts/test-datastorage-matrix.sh
 
 .PHONY: test-integration-ai
 test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s)
