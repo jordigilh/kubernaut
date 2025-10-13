@@ -1,0 +1,25 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-controller-metrics
+  namespace: kubernaut-notifications
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: notification-controller
+    app.kubernetes.io/part-of: kubernaut
+    control-plane: notification-controller
+spec:
+  type: ClusterIP
+  selector:
+    control-plane: notification-controller
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
+    - name: health
+      port: 8081
+      targetPort: health
+      protocol: TCP
+

@@ -1,0 +1,84 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-controller
+  namespace: kubernaut-notifications
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: notification-controller
+    app.kubernetes.io/part-of: kubernaut
+    control-plane: notification-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: notification-controller
+  template:
+    metadata:
+      labels:
+        control-plane: notification-controller
+        app.kubernetes.io/name: kubernaut
+        app.kubernetes.io/component: notification-controller
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: notification-controller
+      containers:
+        - name: manager
+          image: localhost:5001/kubernaut-notification:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /manager
+          args:
+            - --leader-elect=false
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+          env:
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: notification-slack-webhook
+                  key: webhook-url
+                  optional: true
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop:
+                - ALL
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+
