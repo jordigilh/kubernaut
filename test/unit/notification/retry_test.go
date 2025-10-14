@@ -184,4 +184,3 @@ var _ = Describe("BR-NOT-055: Circuit Breaker", func() {
 		Expect(breaker.AllowRequest("slack")).To(BeFalse())
 	})
 })
-

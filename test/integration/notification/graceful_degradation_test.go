@@ -37,22 +37,18 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 		resetSlackRequests()
 		notificationName = fmt.Sprintf("test-degradation-%d", time.Now().Unix())
 
-		By("Reconfiguring mock Slack server to always fail (simulating Slack outage)")
-		mockSlackServer.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			GinkgoWriter.Printf("🔴 Mock Slack webhook failed (503 - simulated outage)\n")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("Slack service unavailable"))
-		})
+		By("Configuring mock Slack server to always fail (simulating Slack outage)")
+		ConfigureFailureMode("always", 0, http.StatusServiceUnavailable)
 	})
 
 	AfterEach(func() {
 		if notification != nil {
 			By("Cleaning up test notification")
-			_ = crClient.Delete(ctx, notification)
+			_ = k8sClient.Delete(ctx, notification)
 		}
 
 		By("Restoring normal mock server behavior")
-		deployMockSlackServer() // Reset to default handler
+		ConfigureFailureMode("none", 0, http.StatusOK)
 	})
 
 	It("should mark notification as PartiallySent when some channels succeed and others fail (BR-NOT-055: Graceful Degradation)", func() {
@@ -67,28 +63,40 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 				Body:     "Testing per-channel isolation: console succeeds, Slack fails",
 				Type:     notificationv1alpha1.NotificationTypeEscalation,
 				Priority: notificationv1alpha1.NotificationPriorityHigh,
+				Recipients: []notificationv1alpha1.Recipient{
+					{
+						Slack: "#integration-tests",
+					},
+				},
 				Channels: []notificationv1alpha1.Channel{
 					notificationv1alpha1.ChannelConsole, // Will succeed
 					notificationv1alpha1.ChannelSlack,   // Will fail (503)
 				},
+				// Use fast retry policy for integration tests
+				RetryPolicy: &notificationv1alpha1.RetryPolicy{
+					MaxAttempts:           5,
+					InitialBackoffSeconds: 1,  // 1 second instead of 30
+					BackoffMultiplier:     2,  // Still exponential
+					MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
+				},
 			},
 		}
 
-		err := crClient.Create(ctx, notification)
+		err := k8sClient.Create(ctx, notification)
 		Expect(err).ToNot(HaveOccurred())
 		GinkgoWriter.Printf("✅ Created NotificationRequest: %s\n", notificationName)
 
 		By("Waiting for controller to process both channels")
 		// Console should succeed immediately
-		// Slack will fail and retry multiple times
+		// Slack will fail and retry multiple times with fast backoff
 		// Eventually should reach PartiallySent (not Failed)
-		GinkgoWriter.Println("⏳ Waiting for multi-channel processing...")
+		GinkgoWriter.Println("⏳ Waiting for multi-channel processing (fast retry policy)...")
 		GinkgoWriter.Println("   Console: Expected to succeed immediately")
-		GinkgoWriter.Println("   Slack: Expected to fail all retry attempts")
+		GinkgoWriter.Println("   Slack: Expected to fail all retry attempts (1s, 2s, 4s, 8s, 16s)")
 
 		Eventually(func() notificationv1alpha1.NotificationPhase {
 			updated := &notificationv1alpha1.NotificationRequest{}
-			err := crClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      notificationName,
 				Namespace: "kubernaut-notifications",
 			}, updated)
@@ -102,11 +110,11 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 				updated.Status.FailedDeliveries)
 
 			return updated.Status.Phase
-		}, 60*time.Second, 2*time.Second).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent))
+		}, 45*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent))
 
 		By("Retrieving final status")
 		final := &notificationv1alpha1.NotificationRequest{}
-		err = crClient.Get(ctx, types.NamespacedName{
+		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      notificationName,
 			Namespace: "kubernaut-notifications",
 		}, final)
@@ -178,19 +186,24 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 					Body:     "Triggering circuit breaker",
 					Type:     notificationv1alpha1.NotificationTypeEscalation,
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
+					Recipients: []notificationv1alpha1.Recipient{
+						{
+							Slack: "#integration-tests",
+						},
+					},
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelSlack,
 					},
 				},
 			}
 
-			err := crClient.Create(ctx, slackNotif)
+			err := k8sClient.Create(ctx, slackNotif)
 			Expect(err).ToNot(HaveOccurred())
 			GinkgoWriter.Printf("   Created notification %d/5 to trigger circuit breaker\n", i)
 
 			// Cleanup
 			defer func(n *notificationv1alpha1.NotificationRequest) {
-				_ = crClient.Delete(ctx, n)
+				_ = k8sClient.Delete(ctx, n)
 			}(slackNotif)
 		}
 
@@ -208,6 +221,11 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 				Body:     "Console should succeed even if Slack circuit breaker is open",
 				Type:     notificationv1alpha1.NotificationTypeSimple,
 				Priority: notificationv1alpha1.NotificationPriorityMedium,
+				Recipients: []notificationv1alpha1.Recipient{
+					{
+						Slack: "#integration-tests",
+					},
+				},
 				Channels: []notificationv1alpha1.Channel{
 					notificationv1alpha1.ChannelConsole,
 					notificationv1alpha1.ChannelSlack,
@@ -215,13 +233,13 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 			},
 		}
 
-		err := crClient.Create(ctx, notification)
+		err := k8sClient.Create(ctx, notification)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Verifying console delivery succeeds despite Slack circuit breaker")
 		Eventually(func() int {
 			updated := &notificationv1alpha1.NotificationRequest{}
-			crClient.Get(ctx, types.NamespacedName{
+			k8sClient.Get(ctx, types.NamespacedName{
 				Name:      notification.Name,
 				Namespace: "kubernaut-notifications",
 			}, updated)
@@ -229,7 +247,7 @@ var _ = Describe("Integration Test 3: Graceful Degradation (Multi-Channel Partia
 		}, 15*time.Second, 1*time.Second).Should(BeNumerically(">=", 1))
 
 		final := &notificationv1alpha1.NotificationRequest{}
-		crClient.Get(ctx, types.NamespacedName{
+		k8sClient.Get(ctx, types.NamespacedName{
 			Name:      notification.Name,
 			Namespace: "kubernaut-notifications",
 		}, final)

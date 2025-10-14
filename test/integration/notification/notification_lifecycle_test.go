@@ -40,7 +40,7 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 	AfterEach(func() {
 		if notification != nil {
 			By("Cleaning up test notification")
-			_ = crClient.Delete(ctx, notification)
+			_ = k8sClient.Delete(ctx, notification)
 		}
 	})
 
@@ -51,19 +51,24 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 				Name:      notificationName,
 				Namespace: "kubernaut-notifications",
 			},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Subject:  "Integration Test - Lifecycle",
-				Body:     "Testing notification controller basic lifecycle (Pending → Sent)",
-				Type:     notificationv1alpha1.NotificationTypeEscalation,
-				Priority: notificationv1alpha1.NotificationPriorityHigh,
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelConsole,
-					notificationv1alpha1.ChannelSlack,
+		Spec: notificationv1alpha1.NotificationRequestSpec{
+			Subject:  "Integration Test - Lifecycle",
+			Body:     "Testing notification controller basic lifecycle (Pending → Sent)",
+			Type:     notificationv1alpha1.NotificationTypeEscalation,
+			Priority: notificationv1alpha1.NotificationPriorityHigh,
+			Recipients: []notificationv1alpha1.Recipient{
+				{
+					Slack: "#integration-tests",
 				},
 			},
+			Channels: []notificationv1alpha1.Channel{
+				notificationv1alpha1.ChannelConsole,
+				notificationv1alpha1.ChannelSlack,
+			},
+		},
 		}
 
-		err := crClient.Create(ctx, notification)
+		err := k8sClient.Create(ctx, notification)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create NotificationRequest")
 		GinkgoWriter.Printf("✅ Created NotificationRequest: %s\n", notificationName)
 
@@ -73,7 +78,7 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 		By("Verifying phase transitions: Pending → Sending → Sent")
 		Eventually(func() notificationv1alpha1.NotificationPhase {
 			updated := &notificationv1alpha1.NotificationRequest{}
-			err := crClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      notificationName,
 				Namespace: "kubernaut-notifications",
 			}, updated)
@@ -87,7 +92,7 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 
 		By("Retrieving final status")
 		final := &notificationv1alpha1.NotificationRequest{}
-		err = crClient.Get(ctx, types.NamespacedName{
+		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      notificationName,
 			Namespace: "kubernaut-notifications",
 		}, final)
@@ -154,24 +159,29 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 				Name:      fmt.Sprintf("test-console-only-%d", time.Now().Unix()),
 				Namespace: "kubernaut-notifications",
 			},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Subject:  "Integration Test - Console Only",
-				Body:     "Testing console-only notification delivery",
-				Type:     notificationv1alpha1.NotificationTypeSimple,
-				Priority: notificationv1alpha1.NotificationPriorityMedium,
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelConsole,
+		Spec: notificationv1alpha1.NotificationRequestSpec{
+			Subject:  "Integration Test - Console Only",
+			Body:     "Testing console-only notification delivery",
+			Type:     notificationv1alpha1.NotificationTypeSimple,
+			Priority: notificationv1alpha1.NotificationPriorityMedium,
+			Recipients: []notificationv1alpha1.Recipient{
+				{
+					Slack: "#integration-tests",
 				},
 			},
+			Channels: []notificationv1alpha1.Channel{
+				notificationv1alpha1.ChannelConsole,
+			},
+		},
 		}
 
-		err := crClient.Create(ctx, notification)
+		err := k8sClient.Create(ctx, notification)
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Waiting for Sent phase")
 		Eventually(func() notificationv1alpha1.NotificationPhase {
 			updated := &notificationv1alpha1.NotificationRequest{}
-			crClient.Get(ctx, types.NamespacedName{
+			k8sClient.Get(ctx, types.NamespacedName{
 				Name:      notification.Name,
 				Namespace: "kubernaut-notifications",
 			}, updated)
@@ -180,7 +190,7 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 
 		By("Verifying console-only delivery")
 		final := &notificationv1alpha1.NotificationRequest{}
-		crClient.Get(ctx, types.NamespacedName{
+		k8sClient.Get(ctx, types.NamespacedName{
 			Name:      notification.Name,
 			Namespace: "kubernaut-notifications",
 		}, final)
