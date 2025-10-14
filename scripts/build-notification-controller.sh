@@ -169,23 +169,23 @@ if [[ "$LOAD_TO_KIND" == true ]]; then
     # Handle Podman differently from Docker
     if [[ "$CONTAINER_TOOL" == "podman" ]]; then
         log_info "Using Podman: saving image to tar and loading into KIND..."
-        
+
         # Save Podman image to tar file
         TEMP_TAR="/tmp/${IMAGE_NAME}-${IMAGE_TAG}.tar"
         $CONTAINER_TOOL save -o "$TEMP_TAR" "$FULL_IMAGE"
-        
+
         if [[ $? -ne 0 ]]; then
             log_error "❌ Failed to save Podman image to tar"
             exit 1
         fi
-        
+
         # Load tar into KIND
         kind load image-archive "$TEMP_TAR" --name "$KIND_CLUSTER_NAME"
         LOAD_RESULT=$?
-        
+
         # Cleanup tar file
         rm -f "$TEMP_TAR"
-        
+
         if [[ $LOAD_RESULT -eq 0 ]]; then
             log_info "✅ Image loaded into KIND cluster: $KIND_CLUSTER_NAME"
         else
@@ -195,7 +195,7 @@ if [[ "$LOAD_TO_KIND" == true ]]; then
     else
         # Docker can load directly
         kind load docker-image "$FULL_IMAGE" --name "$KIND_CLUSTER_NAME"
-        
+
         if [[ $? -eq 0 ]]; then
             log_info "✅ Image loaded into KIND cluster: $KIND_CLUSTER_NAME"
         else

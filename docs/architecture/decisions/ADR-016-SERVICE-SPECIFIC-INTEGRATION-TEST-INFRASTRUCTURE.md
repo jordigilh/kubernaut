@@ -2,6 +2,7 @@
 
 ## Status
 **ACCEPTED** - October 12, 2025
+**UPDATED** - October 13, 2025 (Notification Controller classification updated to envtest per ADR-017)
 
 ## Context
 
@@ -73,7 +74,7 @@ go test ./test/integration/datastorage/... -v -timeout 5m
 |---------|----------------|--------------|--------------|-----------|
 | **Data Storage** | Podman | PostgreSQL + pgvector | ~15 sec | No Kubernetes features needed |
 | **AI Service** | Podman | Redis | ~5 sec | No Kubernetes features needed |
-| **Notification Controller** | Podman or None | None (CRD controller) | ~5 sec | May not need external deps |
+| **Notification Controller** | Envtest | None (CRD controller) | ~5-10 sec | CRD-based controller needs K8s API but not full cluster features |
 | **Dynamic Toolset** | Kind | Kubernetes cluster | ~2-5 min | Requires service discovery, RBAC |
 | **Gateway Service** | Kind | Kubernetes cluster | ~2-5 min | Requires RBAC, TokenReview |
 
@@ -101,6 +102,11 @@ test-integration-ai: ## Run AI Service integration tests (Redis via Podman)
 	@podman stop ai-redis && podman rm ai-redis
 	@exit $${TEST_RESULT:-0}
 
+.PHONY: test-integration-notification
+test-integration-notification: ## Run Notification Controller integration tests (Envtest)
+	@echo "Running Notification Controller integration tests with envtest..."
+	@go test ./test/integration/notification/... -v -timeout 5m
+
 .PHONY: test-integration-toolset
 test-integration-toolset: ## Run Dynamic Toolset integration tests (Kind cluster)
 	@./scripts/ensure-kind-cluster.sh
@@ -115,6 +121,7 @@ test-integration-gateway: ## Run Gateway Service integration tests (Kind cluster
 test-integration-all: ## Run ALL integration tests
 	@$(MAKE) test-integration-datastorage
 	@$(MAKE) test-integration-ai
+	@$(MAKE) test-integration-notification
 	@$(MAKE) test-integration-toolset
 	@$(MAKE) test-integration-gateway
 
@@ -172,6 +179,11 @@ infrastructure_matching:
     needs: ["PostgreSQL", "pgvector extension"]
     kubernetes_features_needed: false
     infrastructure: "Podman"
+  notification_controller:
+    needs: ["Kubernetes API (CRD operations)", "CRD validation", "Watch events"]
+    kubernetes_features_needed: false  # No RBAC, service discovery, or networking needed
+    infrastructure: "Envtest"
+    rationale: "CRD controller needs K8s API but not full cluster (ADR-017)"
   dynamic_toolset:
     needs: ["Kubernetes API", "Service Discovery", "RBAC"]
     kubernetes_features_needed: true
@@ -309,6 +321,38 @@ data_storage_service:
 - [INTEGRATION_TEST_INFRASTRUCTURE_DECISION.md](../../services/stateless/data-storage/implementation/INTEGRATION_TEST_INFRASTRUCTURE_DECISION.md) - Detailed analysis
 - [Day 7 Validation Summary](../../services/stateless/data-storage/implementation/phase0/10-day7-validation-summary.md) - Test execution results
 - [IMPLEMENTATION_PLAN_V4.1.md](../../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V4.1.md) - Data Storage implementation plan
+- [ADR-017: Notification CRD Architecture](./ADR-017-notification-crd-creator.md) - NotificationRequest CRD definition
+- [ADR-004: Fake Kubernetes Client](./ADR-004-fake-kubernetes-client.md) - Envtest for integration tests
+
+## Revision History
+
+### October 13, 2025 - Notification Controller Classification Update
+
+**Change**: Updated Notification Controller infrastructure from "Podman or None" to "Envtest"
+
+**Rationale**:
+- Notification Service architecture changed to CRD-based (ADR-017: NotificationRequest CRD)
+- CRD controllers require Kubernetes API for CRD operations, validation, and watch events
+- Envtest provides real Kubernetes API without full cluster overhead
+- Aligns with ADR-004 guidance: "envtest better suited for integration tests"
+
+**Updated Classification**:
+```yaml
+notification_controller:
+  infrastructure: "Envtest"
+  dependencies: "None (CRD controller)"
+  startup_time: "~5-10 sec"
+  rationale: "CRD-based controller needs K8s API but not full cluster features (RBAC, networking, service discovery)"
+```
+
+**Benefits**:
+- ✅ Real CRD validation (OpenAPI v3 schema)
+- ✅ Real watch events for controller testing
+- ✅ 5-18x faster than Kind cluster (9-17s vs 85-170s)
+- ✅ No Docker/Podman/Kind dependencies
+- ✅ Portable (runs in IDE, CI, local development)
+
+**Confidence**: 98% (based on proven envtest usage in remediation controller integration tests)
 
 ## Approval
 

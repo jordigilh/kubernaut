@@ -87,7 +87,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		notification.Status.SuccessfulDeliveries = 0
 		notification.Status.FailedDeliveries = 0
 
-		if err := r.Status().Update(ctx, notification); err != nil {
+		if err := r.updateStatusWithRetry(ctx, notification, 3); err != nil {
 			log.Error(err, "Failed to initialize status")
 			return ctrl.Result{}, err
 		}
@@ -112,7 +112,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		notification.Status.Reason = "ProcessingDeliveries"
 		notification.Status.Message = "Processing delivery channels"
 
-		if err := r.Status().Update(ctx, notification); err != nil {
+		if err := r.updateStatusWithRetry(ctx, notification, 3); err != nil {
 			log.Error(err, "Failed to update phase to Sending")
 			return ctrl.Result{}, err
 		}
@@ -122,6 +122,9 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 	deliveryResults := make(map[string]error)
 	failureCount := 0
 
+	// Get retry policy to check max attempts
+	policy := r.getRetryPolicy(notification)
+
 	for _, channel := range notification.Spec.Channels {
 		// Skip if channel already succeeded (idempotent delivery)
 		if r.channelAlreadySucceeded(notification, string(channel)) {
@@ -129,10 +132,10 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 			continue
 		}
 
-		// Check channel attempt count (max 5 attempts per channel)
+		// Check channel attempt count using policy max attempts
 		attemptCount := r.getChannelAttemptCount(notification, string(channel))
-		if attemptCount >= 5 {
-			log.Info("Max retry attempts reached for channel", "channel", channel, "attempts", attemptCount)
+		if attemptCount >= policy.MaxAttempts {
+			log.Info("Max retry attempts reached for channel", "channel", channel, "attempts", attemptCount, "maxAttempts", policy.MaxAttempts)
 			deliveryResults[string(channel)] = fmt.Errorf("max retry attempts exceeded")
 			failureCount++
 			continue
@@ -173,15 +176,19 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	// Update final status based on delivery results
-	if failureCount == 0 {
-		// All deliveries succeeded
+	// Check overall status, not just this reconciliation loop
+	totalChannels := len(notification.Spec.Channels)
+	totalSuccessful := notification.Status.SuccessfulDeliveries
+
+	if totalSuccessful == totalChannels {
+		// All channels delivered successfully
 		notification.Status.Phase = notificationv1alpha1.NotificationPhaseSent
 		now := metav1.Now()
 		notification.Status.CompletionTime = &now
 		notification.Status.Reason = "AllDeliveriesSucceeded"
-		notification.Status.Message = fmt.Sprintf("Successfully delivered to %d channel(s)", len(deliveryResults))
+		notification.Status.Message = fmt.Sprintf("Successfully delivered to %d channel(s)", notification.Status.SuccessfulDeliveries)
 
-		if err := r.Status().Update(ctx, notification); err != nil {
+		if err := r.updateStatusWithRetry(ctx, notification, 3); err != nil {
 			log.Error(err, "Failed to update status to Sent")
 			return ctrl.Result{}, err
 		}
@@ -189,53 +196,58 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		log.Info("All deliveries successful", "name", notification.Name)
 		return ctrl.Result{}, nil // No requeue - done
 
-	} else if failureCount < len(deliveryResults) {
-		// Partial success
-		notification.Status.Phase = notificationv1alpha1.NotificationPhasePartiallySent
-		notification.Status.Reason = "PartialDeliveryFailure"
-		notification.Status.Message = fmt.Sprintf("%d of %d deliveries succeeded", len(deliveryResults)-failureCount, len(deliveryResults))
-
-		if err := r.Status().Update(ctx, notification); err != nil {
-			log.Error(err, "Failed to update status to PartiallySent")
-			return ctrl.Result{}, err
-		}
-
-		// Requeue failed channels with exponential backoff
+	} else if totalSuccessful > 0 {
+		// Partial success - some channels succeeded, some failed
 		maxAttempt := r.getMaxAttemptCount(notification)
-		if maxAttempt >= 5 {
-			// Max retries reached
-			notification.Status.Phase = notificationv1alpha1.NotificationPhaseFailed
+
+		// Check if max retries reached for failed channels
+		if maxAttempt >= policy.MaxAttempts {
+			// Max retries reached - terminal state, but keep PartiallySent since some succeeded
+			notification.Status.Phase = notificationv1alpha1.NotificationPhasePartiallySent
 			now := metav1.Now()
 			notification.Status.CompletionTime = &now
-			notification.Status.Reason = "MaxRetriesExceeded"
-			notification.Status.Message = "Maximum retry attempts exceeded"
+			notification.Status.Reason = "PartialDeliveryFailure"
+			notification.Status.Message = fmt.Sprintf("%d of %d deliveries succeeded, remaining failed after %d retries",
+				notification.Status.SuccessfulDeliveries, len(notification.Spec.Channels), policy.MaxAttempts)
 
-			if err := r.Status().Update(ctx, notification); err != nil {
-				log.Error(err, "Failed to update status to Failed")
+			if err := r.updateStatusWithRetry(ctx, notification, 3); err != nil {
+				log.Error(err, "Failed to update status to PartiallySent")
 				return ctrl.Result{}, err
 			}
 
 			return ctrl.Result{}, nil // No requeue - terminal state
 		}
 
-		// Requeue with exponential backoff
-		backoff := CalculateBackoff(maxAttempt)
+		// Not yet at max retries - update status and requeue
+		notification.Status.Phase = notificationv1alpha1.NotificationPhasePartiallySent
+		notification.Status.Reason = "PartialDeliveryFailure"
+		notification.Status.Message = fmt.Sprintf("%d of %d deliveries succeeded (attempt %d/%d)",
+			notification.Status.SuccessfulDeliveries, len(notification.Spec.Channels), maxAttempt, policy.MaxAttempts)
+
+		if err := r.updateStatusWithRetry(ctx, notification, 3); err != nil {
+			log.Error(err, "Failed to update status to PartiallySent")
+			return ctrl.Result{}, err
+		}
+
+		// Requeue with exponential backoff using custom policy
+		backoff := r.calculateBackoffWithPolicy(notification, maxAttempt)
 		log.Info("Requeuing for retry", "after", backoff, "attempt", maxAttempt+1)
 		return ctrl.Result{RequeueAfter: backoff}, nil
 
 	} else {
 		// All deliveries failed
-		notification.Status.Phase = notificationv1alpha1.NotificationPhaseFailed
-		notification.Status.Reason = "AllDeliveriesFailed"
-		notification.Status.Message = fmt.Sprintf("All %d deliveries failed", len(deliveryResults))
+		maxAttempt := r.getMaxAttemptCount(notification)
 
 		// Check if max retries reached
-		maxAttempt := r.getMaxAttemptCount(notification)
-		if maxAttempt >= 5 {
+		if maxAttempt >= policy.MaxAttempts {
+			// Max retries reached - terminal state
+			notification.Status.Phase = notificationv1alpha1.NotificationPhaseFailed
+			notification.Status.Reason = "MaxRetriesExceeded"
+			notification.Status.Message = fmt.Sprintf("Maximum retry attempts (%d) exceeded, all deliveries failed", policy.MaxAttempts)
 			now := metav1.Now()
 			notification.Status.CompletionTime = &now
 
-			if err := r.Status().Update(ctx, notification); err != nil {
+			if err := r.updateStatusWithRetry(ctx, notification, 3); err != nil {
 				log.Error(err, "Failed to update status to Failed")
 				return ctrl.Result{}, err
 			}
@@ -243,13 +255,18 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{}, nil // No requeue - terminal state
 		}
 
+		// Not yet at max retries - mark as failed but will retry
+		notification.Status.Phase = notificationv1alpha1.NotificationPhaseFailed
+		notification.Status.Reason = "AllDeliveriesFailed"
+		notification.Status.Message = fmt.Sprintf("All %d deliveries failed (attempt %d/%d)", len(notification.Spec.Channels), maxAttempt, policy.MaxAttempts)
+
 		// Update status and requeue with exponential backoff
-		if err := r.Status().Update(ctx, notification); err != nil {
+		if err := r.updateStatusWithRetry(ctx, notification, 3); err != nil {
 			log.Error(err, "Failed to update status")
 			return ctrl.Result{}, err
 		}
 
-		backoff := CalculateBackoff(maxAttempt)
+		backoff := r.calculateBackoffWithPolicy(notification, maxAttempt)
 		log.Info("All deliveries failed, requeuing", "after", backoff, "attempt", maxAttempt+1)
 		return ctrl.Result{RequeueAfter: backoff}, nil
 	}
@@ -327,8 +344,51 @@ func (r *NotificationRequestReconciler) getMaxAttemptCount(notification *notific
 	return maxAttempt
 }
 
-// CalculateBackoff calculates exponential backoff duration
-// Backoff progression: 30s, 60s, 120s, 240s, 480s (capped)
+// getRetryPolicy returns the retry policy from the notification spec, or default if not specified
+// BR-NOT-052: Automatic Retry with custom retry policies
+func (r *NotificationRequestReconciler) getRetryPolicy(notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.RetryPolicy {
+	if notification.Spec.RetryPolicy != nil {
+		return notification.Spec.RetryPolicy
+	}
+
+	// Return default policy
+	return &notificationv1alpha1.RetryPolicy{
+		MaxAttempts:           5,
+		InitialBackoffSeconds: 30,
+		BackoffMultiplier:     2,
+		MaxBackoffSeconds:     480,
+	}
+}
+
+// calculateBackoffWithPolicy calculates exponential backoff duration using the notification's retry policy
+// BR-NOT-052: Automatic Retry with exponential backoff
+func (r *NotificationRequestReconciler) calculateBackoffWithPolicy(notification *notificationv1alpha1.NotificationRequest, attemptCount int) time.Duration {
+	policy := r.getRetryPolicy(notification)
+
+	baseBackoff := time.Duration(policy.InitialBackoffSeconds) * time.Second
+	maxBackoff := time.Duration(policy.MaxBackoffSeconds) * time.Second
+	multiplier := policy.BackoffMultiplier
+
+	// Calculate exponential backoff: baseBackoff * (multiplier ^ attemptCount)
+	backoff := baseBackoff
+	for i := 0; i < attemptCount; i++ {
+		backoff = backoff * time.Duration(multiplier)
+		// Cap at maxBackoff to prevent overflow
+		if backoff > maxBackoff {
+			return maxBackoff
+		}
+	}
+
+	// Final cap at maxBackoff
+	if backoff > maxBackoff {
+		return maxBackoff
+	}
+
+	return backoff
+}
+
+// CalculateBackoff calculates exponential backoff duration (legacy function for backward compatibility)
+// New code should use calculateBackoffWithPolicy instead
 // BR-NOT-052: Automatic Retry with exponential backoff
 func CalculateBackoff(attemptCount int) time.Duration {
 	baseBackoff := 30 * time.Second
@@ -343,6 +403,38 @@ func CalculateBackoff(attemptCount int) time.Duration {
 	}
 
 	return backoff
+}
+
+// updateStatusWithRetry updates the notification status with retry logic for conflicts
+func (r *NotificationRequestReconciler) updateStatusWithRetry(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, maxRetries int) error {
+	log := log.FromContext(ctx)
+
+	for i := 0; i < maxRetries; i++ {
+		err := r.Status().Update(ctx, notification)
+		if err == nil {
+			return nil
+		}
+
+		if !errors.IsConflict(err) {
+			// Not a conflict error, return immediately
+			return err
+		}
+
+		// Conflict error - refetch and retry
+		log.Info("Status update conflict, retrying", "attempt", i+1, "maxRetries", maxRetries)
+
+		// Refetch the latest version
+		latest := &notificationv1alpha1.NotificationRequest{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(notification), latest); err != nil {
+			return fmt.Errorf("failed to refetch notification after conflict: %w", err)
+		}
+
+		// Copy our status changes to the latest version
+		latest.Status = notification.Status
+		*notification = *latest
+	}
+
+	return fmt.Errorf("failed to update status after %d retries", maxRetries)
 }
 
 // SetupWithManager sets up the controller with the Manager.
