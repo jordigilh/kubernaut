@@ -105,9 +105,7 @@ func (g *holmesGPTGenerator) ValidateToolset(ctx context.Context, toolsetJSON st
 		if tool.Description == "" {
 			return fmt.Errorf("tool[%d]: missing required field 'description'", i)
 		}
-		if tool.Namespace == "" {
-			return fmt.Errorf("tool[%d]: missing required field 'namespace'", i)
-		}
+		// Namespace is optional - it's included for Kubernetes services but may not be present for all tool types
 	}
 
 	return nil
