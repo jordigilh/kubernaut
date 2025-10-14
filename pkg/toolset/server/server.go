@@ -103,11 +103,15 @@ func (s *Server) setupRoutes() {
 	apiMux.HandleFunc("/api/v1/toolsets/validate", s.handleValidateToolset) // BR-TOOLSET-042: Validate toolset
 	apiMux.HandleFunc("/api/v1/toolsets/generate", s.handleGenerateToolset) // BR-TOOLSET-041: Generate toolset
 	apiMux.HandleFunc("/api/v1/toolsets/", s.handleToolsetsRouter)          // BR-TOOLSET-040: Router for list and get operations
+	apiMux.HandleFunc("/api/v1/toolset", s.handleGetLegacyToolset)          // Legacy endpoint for backwards compatibility
 	apiMux.HandleFunc("/api/v1/services", s.handleListServices)
 	apiMux.HandleFunc("/api/v1/discover", s.handleDiscover)
 
 	// Apply auth middleware to API routes
 	s.mux.Handle("/api/", s.authMiddleware.Middleware(apiMux))
+
+	// Metrics endpoint on main server (also available on separate metrics server)
+	s.mux.Handle("/metrics", s.authMiddleware.Middleware(http.HandlerFunc(s.handleMetrics)))
 
 	// Note: Metrics endpoint is on separate server with auth (see NewServer)
 }
@@ -180,6 +184,62 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(response)
+}
+
+// handleGetLegacyToolset handles GET /api/v1/toolset (legacy endpoint)
+// Returns the current combined toolset JSON
+func (s *Server) handleGetLegacyToolset(w http.ResponseWriter, r *http.Request) {
+	timer := prometheus.NewTimer(metrics.APIRequestDuration.WithLabelValues("/api/v1/toolset", "GET"))
+	defer timer.ObserveDuration()
+
+	if r.Method != http.MethodGet {
+		metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "405").Inc()
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Discover services
+	services, err := s.discoverer.DiscoverServices(r.Context())
+	if err != nil {
+		metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "500").Inc()
+		metrics.APIErrors.WithLabelValues("/api/v1/toolset", "discovery_failed").Inc()
+		http.Error(w, "Failed to discover services", http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to pointer slice for GenerateToolset
+	servicePointers := make([]*toolset.DiscoveredService, len(services))
+	for i := range services {
+		servicePointers[i] = &services[i]
+	}
+
+	// Generate toolset from discovered services
+	toolsetJSON, err := s.generator.GenerateToolset(r.Context(), servicePointers)
+	if err != nil {
+		metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "500").Inc()
+		metrics.APIErrors.WithLabelValues("/api/v1/toolset", "generation_failed").Inc()
+		http.Error(w, "Failed to generate toolset", http.StatusInternalServerError)
+		return
+	}
+
+	// Parse JSON to ensure it has the "tools" key
+	var toolsetMap map[string]interface{}
+	if err := json.Unmarshal([]byte(toolsetJSON), &toolsetMap); err != nil {
+		metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "500").Inc()
+		metrics.APIErrors.WithLabelValues("/api/v1/toolset", "json_parse_failed").Inc()
+		http.Error(w, "Failed to parse toolset JSON", http.StatusInternalServerError)
+		return
+	}
+
+	// Ensure "tools" key exists (even if empty)
+	if _, ok := toolsetMap["tools"]; !ok {
+		toolsetMap["tools"] = []interface{}{}
+	}
+
+	metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "200").Inc()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(toolsetMap)
 }
 
 // handleListToolsets handles GET /api/v1/toolsets with optional filtering
