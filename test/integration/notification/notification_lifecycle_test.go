@@ -52,21 +52,21 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 				Name:      notificationName,
 				Namespace: "kubernaut-notifications",
 			},
-		Spec: notificationv1alpha1.NotificationRequestSpec{
-			Subject:  "Integration Test - Lifecycle",
-			Body:     "Testing notification controller basic lifecycle (Pending → Sent)",
-			Type:     notificationv1alpha1.NotificationTypeEscalation,
-			Priority: notificationv1alpha1.NotificationPriorityHigh,
-			Recipients: []notificationv1alpha1.Recipient{
-				{
-					Slack: "#integration-tests",
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Subject:  "Integration Test - Lifecycle",
+				Body:     "Testing notification controller basic lifecycle (Pending → Sent)",
+				Type:     notificationv1alpha1.NotificationTypeEscalation,
+				Priority: notificationv1alpha1.NotificationPriorityHigh,
+				Recipients: []notificationv1alpha1.Recipient{
+					{
+						Slack: "#integration-tests",
+					},
+				},
+				Channels: []notificationv1alpha1.Channel{
+					notificationv1alpha1.ChannelConsole,
+					notificationv1alpha1.ChannelSlack,
 				},
 			},
-			Channels: []notificationv1alpha1.Channel{
-				notificationv1alpha1.ChannelConsole,
-				notificationv1alpha1.ChannelSlack,
-			},
-		},
 		}
 
 		err := k8sClient.Create(ctx, notification)
@@ -164,20 +164,20 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 				Name:      fmt.Sprintf("test-console-only-%d", time.Now().Unix()),
 				Namespace: "kubernaut-notifications",
 			},
-		Spec: notificationv1alpha1.NotificationRequestSpec{
-			Subject:  "Integration Test - Console Only",
-			Body:     "Testing console-only notification delivery",
-			Type:     notificationv1alpha1.NotificationTypeSimple,
-			Priority: notificationv1alpha1.NotificationPriorityMedium,
-			Recipients: []notificationv1alpha1.Recipient{
-				{
-					Slack: "#integration-tests",
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				Subject:  "Integration Test - Console Only",
+				Body:     "Testing console-only notification delivery",
+				Type:     notificationv1alpha1.NotificationTypeSimple,
+				Priority: notificationv1alpha1.NotificationPriorityMedium,
+				Recipients: []notificationv1alpha1.Recipient{
+					{
+						Slack: "#integration-tests",
+					},
+				},
+				Channels: []notificationv1alpha1.Channel{
+					notificationv1alpha1.ChannelConsole,
 				},
 			},
-			Channels: []notificationv1alpha1.Channel{
-				notificationv1alpha1.ChannelConsole,
-			},
-		},
 		}
 
 		err := k8sClient.Create(ctx, notification)

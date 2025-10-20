@@ -78,7 +78,7 @@ func createTestServer() (*httptest.Server, *server.Server) {
 	// Connection strings for test infrastructure
 	// Note: Must include test schema in search_path to use suite's test-isolated schema
 	connStr := fmt.Sprintf("host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable search_path=%s,public", testSchema)
-	
+
 	// REFACTOR Phase: Use dedicated Redis DB 3 for HTTP API tests (parallel test isolation)
 	// Each test file uses its own Redis database to prevent cache pollution:
 	// 01_query_lifecycle_test.go → DB 0, 03_vector_search_test.go → DB 1,

@@ -19,12 +19,6 @@ type SanitizationRule struct {
 	Description string
 }
 
-// SanitizationMetrics tracks sanitization statistics
-type SanitizationMetrics struct {
-	RedactedCount int
-	Patterns      []string
-}
-
 // NewSanitizer creates a new sanitizer with default patterns
 func NewSanitizer() *Sanitizer {
 	return &Sanitizer{
@@ -33,34 +27,18 @@ func NewSanitizer() *Sanitizer {
 }
 
 // Sanitize sanitizes content by applying all redaction rules
+// Returns the sanitized content with secrets replaced by ***REDACTED***
 func (s *Sanitizer) Sanitize(content string) string {
-	result, _ := s.SanitizeWithMetrics(content)
-	return result
-}
-
-// SanitizeWithMetrics sanitizes content and returns metrics
-func (s *Sanitizer) SanitizeWithMetrics(content string) (string, *SanitizationMetrics) {
-	metrics := &SanitizationMetrics{
-		Patterns: []string{},
-	}
-
 	result := content
 
 	// Apply secret patterns
 	for _, rule := range s.secretPatterns {
 		if rule.Pattern.MatchString(result) {
 			result = rule.Pattern.ReplaceAllString(result, rule.Replacement)
-			metrics.RedactedCount++
-			metrics.Patterns = append(metrics.Patterns, rule.Name)
 		}
 	}
 
-	return result, metrics
-}
-
-// AddCustomPattern adds a custom sanitization pattern
-func (s *Sanitizer) AddCustomPattern(rule *SanitizationRule) {
-	s.secretPatterns = append(s.secretPatterns, rule)
+	return result
 }
 
 // ==============================================
@@ -89,7 +67,7 @@ func (s *Sanitizer) SanitizeWithFallback(content string) (string, error) {
 		}()
 
 		// Try normal sanitization
-		sanitized, _ := s.SanitizeWithMetrics(content)
+		sanitized := s.Sanitize(content)
 
 		// If no panic occurred, sanitization succeeded
 		if sanitizationErr == nil {
@@ -352,3 +330,4 @@ func defaultSecretPatterns() []*SanitizationRule {
 		},
 	}
 }
+
