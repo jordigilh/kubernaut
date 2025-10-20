@@ -89,13 +89,11 @@ func (s *Sanitizer) SanitizeWithFallback(content string) (string, error) {
 		}()
 
 		// Try normal sanitization
-		sanitized, metrics := s.SanitizeWithMetrics(content)
+		sanitized, _ := s.SanitizeWithMetrics(content)
 
-		// Check if any patterns matched (metrics.RedactedCount > 0 means patterns were applied)
-		// Even if RedactedCount is 0, sanitization succeeded (just nothing to redact)
+		// If no panic occurred, sanitization succeeded
 		if sanitizationErr == nil {
 			result = sanitized
-			_ = metrics // Use metrics to avoid unused variable
 		}
 	}()
 
@@ -139,32 +137,32 @@ func (s *Sanitizer) SafeFallback(content string) string {
 func (s *Sanitizer) redactPattern(content, pattern string) string {
 	output := content
 	lowerOutput := strings.ToLower(output)
-	
+
 	// Find all occurrences of the pattern (case-insensitive)
 	idx := strings.Index(lowerOutput, pattern)
 	for idx != -1 {
 		// Extract and redact the secret value after the pattern
 		valueStart, valueEnd := s.findSecretValueBounds(output, idx+len(pattern))
-		
+
 		if valueEnd > valueStart {
 			// Replace the secret value with [REDACTED]
 			output = output[:valueStart] + "[REDACTED]" + output[valueEnd:]
 			lowerOutput = strings.ToLower(output)
 		}
-		
+
 		// Search for next occurrence after the redacted section
 		searchStart := idx + len(pattern)
 		if searchStart >= len(lowerOutput) {
 			break
 		}
-		
+
 		remainingIdx := strings.Index(lowerOutput[searchStart:], pattern)
 		if remainingIdx == -1 {
 			break
 		}
 		idx = searchStart + remainingIdx
 	}
-	
+
 	return output
 }
 
@@ -172,13 +170,13 @@ func (s *Sanitizer) redactPattern(content, pattern string) string {
 // Handles quoted and unquoted values, returning the bounds to redact
 func (s *Sanitizer) findSecretValueBounds(content string, startPos int) (valueStart, valueEnd int) {
 	valueStart = startPos
-	
+
 	// Skip leading whitespace
 	valueStart = s.skipWhitespace(content, valueStart)
 	if valueStart >= len(content) {
 		return valueStart, valueStart
 	}
-	
+
 	// Check if value is quoted
 	isQuoted, quoteChar := s.isQuotedValue(content, valueStart)
 	if isQuoted {
@@ -190,7 +188,7 @@ func (s *Sanitizer) findSecretValueBounds(content string, startPos int) (valueSt
 	} else {
 		valueEnd = s.findValueEnd(content, valueStart)
 	}
-	
+
 	return valueStart, valueEnd
 }
 
