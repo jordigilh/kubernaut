@@ -28,7 +28,7 @@ spec:
       serviceAccountName: notification-controller
       containers:
         - name: manager
-          image: kubernaut-notification:latest
+          image: localhost/kubernaut-notification:latest
           imagePullPolicy: Never
           command:
             - /manager
