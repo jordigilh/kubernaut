@@ -19,6 +19,7 @@ package notification
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,6 +31,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
+	"github.com/jordigilh/kubernaut/pkg/notification/retry"
 	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
 )
 
@@ -44,6 +46,9 @@ type NotificationRequestReconciler struct {
 
 	// Data sanitization
 	Sanitizer *sanitization.Sanitizer
+
+	// v3.1: Circuit breaker for graceful degradation (Category B)
+	CircuitBreaker *retry.CircuitBreaker
 }
 
 //+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
@@ -231,6 +236,15 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 
 		// Requeue with exponential backoff using custom policy
 		backoff := r.calculateBackoffWithPolicy(notification, maxAttempt)
+
+		// v3.1: Record backoff duration metrics for Slack retries (Category B)
+		for channel := range deliveryResults {
+			if channel == string(notificationv1alpha1.ChannelSlack) {
+				RecordSlackBackoff(notification.Namespace, backoff.Seconds())
+				RecordSlackRetry(notification.Namespace, "rate_limiting")
+			}
+		}
+
 		log.Info("Requeuing for retry", "after", backoff, "attempt", maxAttempt+1)
 		return ctrl.Result{RequeueAfter: backoff}, nil
 
@@ -267,6 +281,15 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 
 		backoff := r.calculateBackoffWithPolicy(notification, maxAttempt)
+
+		// v3.1: Record backoff duration metrics for Slack retries (Category B)
+		for _, channel := range notification.Spec.Channels {
+			if channel == notificationv1alpha1.ChannelSlack {
+				RecordSlackBackoff(notification.Namespace, backoff.Seconds())
+				RecordSlackRetry(notification.Namespace, "delivery_failure")
+			}
+		}
+
 		log.Info("All deliveries failed, requeuing", "after", backoff, "attempt", maxAttempt+1)
 		return ctrl.Result{RequeueAfter: backoff}, nil
 	}
@@ -289,9 +312,25 @@ func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, noti
 		return fmt.Errorf("slack service not initialized")
 	}
 
+	// v3.1: Check circuit breaker (Category B - fail fast if Slack API is unhealthy)
+	if r.isSlackCircuitBreakerOpen() {
+		return fmt.Errorf("slack circuit breaker is open (too many failures, preventing cascading failures)")
+	}
+
 	// Sanitize notification content before delivery
 	sanitizedNotification := r.sanitizeNotification(notification)
-	return r.SlackService.Deliver(ctx, sanitizedNotification)
+	err := r.SlackService.Deliver(ctx, sanitizedNotification)
+
+	// v3.1: Record circuit breaker state (Category B)
+	if r.CircuitBreaker != nil {
+		if err != nil {
+			r.CircuitBreaker.RecordFailure("slack")
+		} else {
+			r.CircuitBreaker.RecordSuccess("slack")
+		}
+	}
+
+	return err
 }
 
 // sanitizeNotification creates a sanitized copy of the notification
@@ -361,6 +400,7 @@ func (r *NotificationRequestReconciler) getRetryPolicy(notification *notificatio
 }
 
 // calculateBackoffWithPolicy calculates exponential backoff duration using the notification's retry policy
+// v3.1 Enhancement (Category B): Added jitter (±10%) to prevent thundering herd
 // BR-NOT-052: Automatic Retry with exponential backoff
 func (r *NotificationRequestReconciler) calculateBackoffWithPolicy(notification *notificationv1alpha1.NotificationRequest, attemptCount int) time.Duration {
 	policy := r.getRetryPolicy(notification)
@@ -375,16 +415,44 @@ func (r *NotificationRequestReconciler) calculateBackoffWithPolicy(notification 
 		backoff = backoff * time.Duration(multiplier)
 		// Cap at maxBackoff to prevent overflow
 		if backoff > maxBackoff {
-			return maxBackoff
+			backoff = maxBackoff
+			break
 		}
 	}
 
 	// Final cap at maxBackoff
 	if backoff > maxBackoff {
-		return maxBackoff
+		backoff = maxBackoff
+	}
+
+	// v3.1: Add jitter (±10%) to prevent thundering herd problem
+	// This distributes retry attempts over time, reducing Slack API load spikes
+	jitterRange := backoff / 10 // 10% of backoff
+	if jitterRange > 0 {
+		// Random jitter between -10% and +10%
+		jitter := time.Duration(rand.Int63n(int64(jitterRange)*2)) - jitterRange
+		backoff += jitter
+
+		// Ensure backoff remains positive and doesn't exceed max
+		if backoff < baseBackoff {
+			backoff = baseBackoff
+		}
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
 	}
 
 	return backoff
+}
+
+// isSlackCircuitBreakerOpen checks if the Slack circuit breaker is open
+// v3.1 Enhancement (Category B): Circuit breaker for graceful degradation
+// BR-NOT-055: Graceful Degradation (prevent cascading failures)
+func (r *NotificationRequestReconciler) isSlackCircuitBreakerOpen() bool {
+	if r.CircuitBreaker == nil {
+		return false // No circuit breaker configured, allow all requests
+	}
+	return !r.CircuitBreaker.AllowRequest("slack")
 }
 
 // CalculateBackoff calculates exponential backoff duration (legacy function for backward compatibility)
