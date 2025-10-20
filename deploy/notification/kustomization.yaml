@@ -8,6 +8,7 @@ resources:
   - 01-rbac.yaml
   - 02-deployment.yaml
   - 03-service.yaml
+  - 04-buildconfig.yaml
 
 labels:
   - pairs:

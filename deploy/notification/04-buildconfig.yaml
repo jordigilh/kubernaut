@@ -1,0 +1,42 @@
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: kubernaut-notification
+  namespace: kubernaut-notifications
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: notification-controller
+    app.kubernetes.io/part-of: kubernaut
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: kubernaut-notification
+  namespace: kubernaut-notifications
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: notification-controller
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: kubernaut-notification:v1.0.1
+  source:
+    type: Git
+    git:
+      uri: https://github.com/jordigilh/kubernaut.git
+      ref: feature/phase2_services
+    contextDir: .
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: docker/notification-controller.Dockerfile
+      buildArgs:
+        - name: TARGETARCH
+          value: amd64
+  triggers:
+    - type: ConfigChange
+    - type: ImageChange
+
