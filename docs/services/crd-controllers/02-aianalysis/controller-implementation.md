@@ -1,5 +1,9 @@
 ## Controller Implementation
 
+**Updated**: October 16, 2025
+**Prompt Format**: Self-Documenting JSON (DD-HOLMESGPT-009)
+**Token Efficiency**: 75% reduction in LLM API costs
+
 ### Package Structure
 
 ```
@@ -574,10 +578,82 @@ func (p *InvestigatingPhase) Handle(
 
 #### Enhanced Prompt Engineering for Recovery (Alternative 2)
 
-When enrichment data is present in the CRD, the prompt to HolmesGPT includes ALL contexts:
+**Format**: Self-Documenting JSON (DD-HOLMESGPT-009)
+**Token Efficiency**: ~180 tokens vs ~730 tokens (75% reduction)
+**Decision Document**: `docs/architecture/decisions/DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md`
+
+When enrichment data is present in the CRD, the prompt to HolmesGPT uses **ultra-compact JSON format** for maximum token efficiency:
 
 ```go
-// pkg/ai/analysis/prompt_builder.go
+// pkg/ai/analysis/compact_encoder.go
+type InvestigationContext struct{}
+
+func (e *InvestigationContext) BuildCompactPrompt(
+    aiAnalysis *aianalysisv1.AIAnalysis,
+) (string, error) {
+    enrichmentData := aiAnalysis.Spec.EnrichmentData
+    if enrichmentData == nil {
+        return e.buildStandardCompactPrompt(aiAnalysis), nil
+    }
+
+    // Build ultra-compact JSON structure
+    compact := map[string]interface{}{
+        "i":  generateInvestigationID(aiAnalysis),
+        "p":  aiAnalysis.Spec.SignalContext.Priority,
+        "e":  encodeEnvironment(aiAnalysis.Spec.SignalContext.Environment),
+        "s":  aiAnalysis.Spec.SignalContext.ServiceName,
+        "sf": encodeSafetyConstraints(enrichmentData.SafetyContext),
+        "dp": encodeDependencies(enrichmentData.SafetyContext.RiskFactors),
+        "dc": encodeCriticality(enrichmentData.SafetyContext.DataCriticality),
+        "ui": encodeCriticality(enrichmentData.SafetyContext.UserImpact),
+        "al": encodeAlert(aiAnalysis.Spec.SignalContext),
+        "k8": encodeKubernetes(enrichmentData.MonitoringContext),
+        "mn": encodeMonitoring(enrichmentData.MonitoringContext),
+        "sc": encodeScope(aiAnalysis.Spec.InvestigationScope),
+        "rg": encodeRego(enrichmentData.SafetyContext.RegoPolicyContext),
+    }
+
+    // Add recovery context if this is a recovery attempt
+    if aiAnalysis.Spec.IsRecoveryAttempt {
+        compact["rc"] = encodeRecoveryContext(enrichmentData.RecoveryContext)
+        compact["att"] = aiAnalysis.Spec.RecoveryAttemptNumber
+        compact["t"] = buildRecoveryTaskDirective(aiAnalysis)
+    } else {
+        compact["t"] = buildStandardTaskDirective()
+    }
+
+    jsonBytes, err := json.Marshal(compact)
+    if err != nil {
+        return "", fmt.Errorf("failed to marshal compact format: %w", err)
+    }
+
+    return string(jsonBytes), nil
+}
+
+// Helper functions for encoding
+func encodeCriticality(c string) string {
+    switch c {
+    case "low": return "l"
+    case "medium": return "m"
+    case "high": return "h"
+    case "critical": return "c"
+    default: return c
+    }
+}
+
+func encodeEnvironment(env string) string {
+    switch env {
+    case "development": return "dev"
+    case "staging": return "stg"
+    case "production": return "prod"
+    default: return env
+    }
+}
+```
+
+**Legacy Verbose Format** (Deprecated):
+```go
+// pkg/ai/analysis/prompt_builder.go (DEPRECATED)
 func buildRecoveryPrompt(
     aiAnalysis *aianalysisv1.AIAnalysis,
 ) string {
@@ -923,6 +999,343 @@ var (
 ✅ **No External Dependencies**: Self-contained CRD pattern
 ✅ **Better Failure Handling**: Context API failures handled before analysis, not during
 ✅ **Clear Audit Trail**: Complete context visible in CRD YAML
+
+---
+
+## V1.0 Approval Notification Functions
+
+**Business Requirements**: BR-AI-059 (Approval Context), BR-AI-060 (Approval Decision Tracking)
+**ADR Reference**: ADR-018 (Approval Notification V1.0 Integration)
+
+### Function 1: populateApprovalContext() (BR-AI-059)
+
+**Purpose**: Populate AIAnalysis.status.approvalContext with rich context for RemediationOrchestrator notification triggering
+
+**When Called**: After HolmesGPT investigation completes with medium confidence (60-79%)
+
+**Implementation**:
+
+```go
+// internal/controller/aianalysis/approval_context.go
+package aianalysis
+
+import (
+    "context"
+    "fmt"
+
+    aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+)
+
+// populateApprovalContext populates AIAnalysis.status.approvalContext for rich notifications
+// Business Requirement: BR-AI-059
+func (r *AIAnalysisReconciler) populateApprovalContext(
+    ctx context.Context,
+    aiAnalysis *aianalysisv1alpha1.AIAnalysis,
+    holmesResponse *HolmesGPTResponse,
+) error {
+    if !aiAnalysis.Status.RequiresApproval {
+        return nil // Only populate if approval needed
+    }
+
+    aiAnalysis.Status.ApprovalContext = &aianalysisv1alpha1.ApprovalContext{
+        Reason: fmt.Sprintf("Medium confidence (%.1f%%) - requires human review",
+            holmesResponse.Confidence * 100),
+        ConfidenceScore: holmesResponse.Confidence,
+        ConfidenceLevel: r.getConfidenceLevel(holmesResponse.Confidence),
+        InvestigationSummary: holmesResponse.RootCause,
+        EvidenceCollected: holmesResponse.Evidence,
+        RecommendedActions: convertRecommendations(holmesResponse.Recommendations),
+        AlternativesConsidered: convertAlternatives(holmesResponse.Alternatives),
+        WhyApprovalRequired: fmt.Sprintf(
+            "Confidence %.1f%% is below auto-approve threshold (80%%) per policy",
+            holmesResponse.Confidence * 100,
+        ),
+    }
+
+    return r.Status().Update(ctx, aiAnalysis)
+}
+
+// Helper: Determine confidence level from score
+func (r *AIAnalysisReconciler) getConfidenceLevel(score float64) string {
+    if score < 0.60 {
+        return "low"
+    } else if score < 0.80 {
+        return "medium"
+    }
+    return "high"
+}
+
+// Helper: Convert HolmesGPT recommendations to CRD format
+func convertRecommendations(recs []HolmesGPTRecommendation) []aianalysisv1alpha1.RecommendedAction {
+    actions := make([]aianalysisv1alpha1.RecommendedAction, len(recs))
+    for i, rec := range recs {
+        actions[i] = aianalysisv1alpha1.RecommendedAction{
+            Action:    rec.Action,
+            Rationale: rec.Rationale,
+        }
+    }
+    return actions
+}
+
+// Helper: Convert HolmesGPT alternatives to CRD format
+func convertAlternatives(alts []HolmesGPTAlternative) []aianalysisv1alpha1.AlternativeApproach {
+    alternatives := make([]aianalysisv1alpha1.AlternativeApproach, len(alts))
+    for i, alt := range alts {
+        alternatives[i] = aianalysisv1alpha1.AlternativeApproach{
+            Approach: alt.Approach,
+            ProsCons: alt.ProsCons,
+        }
+    }
+    return alternatives
+}
+```
+
+**TDD Approach**:
+
+**Unit Tests**:
+```go
+// test/unit/aianalysis/approval_context_test.go
+package aianalysis_test
+
+var _ = Describe("populateApprovalContext", func() {
+    Context("when approval is required (medium confidence)", func() {
+        It("should populate all approval context fields", func() {
+            holmesResponse := &HolmesGPTResponse{
+                Confidence: 0.725,
+                RootCause: "Memory leak in payment processing",
+                Evidence: []string{"50MB/hr growth", "Similar incident 3 weeks ago"},
+                Recommendations: []HolmesGPTRecommendation{
+                    {Action: "collect_diagnostics", Rationale: "Capture heap dump"},
+                    {Action: "increase_resources", Rationale: "Increase memory 2Gi → 3Gi"},
+                },
+                Alternatives: []HolmesGPTAlternative{
+                    {Approach: "Wait and monitor", ProsCons: "Pros: No disruption. Cons: OOM risk"},
+                },
+            }
+
+            err := reconciler.populateApprovalContext(ctx, aiAnalysis, holmesResponse)
+            Expect(err).ToNot(HaveOccurred())
+
+            Expect(aiAnalysis.Status.ApprovalContext).ToNot(BeNil())
+            Expect(aiAnalysis.Status.ApprovalContext.ConfidenceScore).To(Equal(0.725))
+            Expect(aiAnalysis.Status.ApprovalContext.ConfidenceLevel).To(Equal("medium"))
+            Expect(aiAnalysis.Status.ApprovalContext.InvestigationSummary).To(ContainSubstring("Memory leak"))
+            Expect(aiAnalysis.Status.ApprovalContext.EvidenceCollected).To(HaveLen(2))
+            Expect(aiAnalysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(2))
+            Expect(aiAnalysis.Status.ApprovalContext.AlternativesConsidered).To(HaveLen(1))
+        })
+    })
+
+    Context("when approval is not required (high confidence)", func() {
+        It("should not populate approval context", func() {
+            aiAnalysis.Status.RequiresApproval = false
+
+            err := reconciler.populateApprovalContext(ctx, aiAnalysis, holmesResponse)
+            Expect(err).ToNot(HaveOccurred())
+            Expect(aiAnalysis.Status.ApprovalContext).To(BeNil())
+        })
+    })
+
+    Context("with incomplete approval context (missing required fields)", func() {
+        It("should reject context with missing investigation summary", func() {
+            holmesResponse.RootCause = ""
+
+            err := reconciler.populateApprovalContext(ctx, aiAnalysis, holmesResponse)
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring("investigation summary required"))
+        })
+    })
+})
+```
+
+**Integration Tests**:
+```go
+// test/integration/aianalysis/approval_notification_test.go
+var _ = Describe("AIAnalysis Approval Notification Integration", func() {
+    It("should populate approval context for RemediationOrchestrator consumption", func() {
+        // Create AIAnalysis with medium confidence trigger
+        aiAnalysis := createAIAnalysisWithMediumConfidence()
+        Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
+
+        // Wait for approval context population
+        Eventually(func() *aianalysisv1alpha1.ApprovalContext {
+            Expect(k8sClient.Get(ctx, key, aiAnalysis)).To(Succeed())
+            return aiAnalysis.Status.ApprovalContext
+        }, timeout, interval).ShouldNot(BeNil())
+
+        // Verify RemediationOrchestrator can use this context
+        Expect(aiAnalysis.Status.ApprovalContext.InvestigationSummary).ToNot(BeEmpty())
+        Expect(aiAnalysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(BeNumerically(">=", 1)))
+    })
+})
+```
+
+---
+
+### Function 2: updateApprovalDecisionStatus() (BR-AI-060)
+
+**Purpose**: Track approval decision metadata when AIApprovalRequest is updated for complete audit trail
+
+**When Called**: When AIApprovalRequest CRD status changes (approved/rejected)
+
+**Implementation**:
+
+```go
+// internal/controller/aianalysis/approval_decision.go
+package aianalysis
+
+import (
+    "context"
+    "time"
+
+    aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// updateApprovalDecisionStatus tracks approval decision metadata when AIApprovalRequest is updated
+// Business Requirement: BR-AI-060
+func (r *AIAnalysisReconciler) updateApprovalDecisionStatus(
+    ctx context.Context,
+    aiAnalysis *aianalysisv1alpha1.AIAnalysis,
+    approvalRequest *aianalysisv1alpha1.AIApprovalRequest,
+) error {
+    if approvalRequest.Spec.Decision == "" {
+        return nil // No decision yet
+    }
+
+    // Update common fields
+    aiAnalysis.Status.ApprovalStatus = string(approvalRequest.Spec.Decision)
+    aiAnalysis.Status.ApprovalTime = &approvalRequest.Status.DecisionTimestamp
+    aiAnalysis.Status.ApprovalDuration = calculateDuration(
+        aiAnalysis.Status.ApprovalRequestedAt.Time,
+        approvalRequest.Status.DecisionTimestamp.Time,
+    )
+    aiAnalysis.Status.ApprovalMethod = string(approvalRequest.Spec.DecisionMethod)
+    aiAnalysis.Status.ApprovalJustification = approvalRequest.Spec.Justification
+
+    // Branch on decision type
+    if approvalRequest.Spec.Decision == aianalysisv1alpha1.ApprovalDecisionApproved {
+        aiAnalysis.Status.ApprovedBy = approvalRequest.Spec.DecidedBy
+        aiAnalysis.Status.RejectedBy = "" // Clear if previously rejected
+        aiAnalysis.Status.Phase = "Completed"
+    } else if approvalRequest.Spec.Decision == aianalysisv1alpha1.ApprovalDecisionRejected {
+        aiAnalysis.Status.RejectedBy = approvalRequest.Spec.DecidedBy
+        aiAnalysis.Status.ApprovedBy = "" // Clear if previously approved
+        aiAnalysis.Status.RejectionReason = approvalRequest.Spec.Justification
+        aiAnalysis.Status.Phase = "Rejected"
+    }
+
+    return r.Status().Update(ctx, aiAnalysis)
+}
+
+// Helper: Calculate duration between two timestamps
+func calculateDuration(start, end time.Time) string {
+    duration := end.Sub(start)
+    minutes := int(duration.Minutes())
+    seconds := int(duration.Seconds()) % 60
+    return fmt.Sprintf("%dm%ds", minutes, seconds)
+}
+```
+
+**TDD Approach**:
+
+**Unit Tests**:
+```go
+// test/unit/aianalysis/approval_decision_test.go
+package aianalysis_test
+
+var _ = Describe("updateApprovalDecisionStatus", func() {
+    Context("when approval is granted", func() {
+        It("should track approval metadata", func() {
+            approvalRequest := &aianalysisv1alpha1.AIApprovalRequest{
+                Spec: aianalysisv1alpha1.AIApprovalRequestSpec{
+                    Decision:      aianalysisv1alpha1.ApprovalDecisionApproved,
+                    DecidedBy:     "ops-engineer@company.com",
+                    Justification: "Approved - low risk change",
+                    DecisionMethod: aianalysisv1alpha1.ApprovalMethodConsole,
+                },
+                Status: aianalysisv1alpha1.AIApprovalRequestStatus{
+                    DecisionTimestamp: metav1.NewTime(time.Now()),
+                },
+            }
+
+            err := reconciler.updateApprovalDecisionStatus(ctx, aiAnalysis, approvalRequest)
+            Expect(err).ToNot(HaveOccurred())
+
+            Expect(aiAnalysis.Status.ApprovalStatus).To(Equal("approved"))
+            Expect(aiAnalysis.Status.ApprovedBy).To(Equal("ops-engineer@company.com"))
+            Expect(aiAnalysis.Status.ApprovalMethod).To(Equal("console"))
+            Expect(aiAnalysis.Status.ApprovalJustification).To(ContainSubstring("low risk"))
+            Expect(aiAnalysis.Status.Phase).To(Equal("Completed"))
+        })
+    })
+
+    Context("when approval is rejected", func() {
+        It("should track rejection metadata", func() {
+            approvalRequest.Spec.Decision = aianalysisv1alpha1.ApprovalDecisionRejected
+            approvalRequest.Spec.Justification = "Resource constraints"
+
+            err := reconciler.updateApprovalDecisionStatus(ctx, aiAnalysis, approvalRequest)
+            Expect(err).ToNot(HaveOccurred())
+
+            Expect(aiAnalysis.Status.ApprovalStatus).To(Equal("rejected"))
+            Expect(aiAnalysis.Status.RejectedBy).To(Equal("ops-engineer@company.com"))
+            Expect(aiAnalysis.Status.RejectionReason).To(ContainSubstring("Resource constraints"))
+            Expect(aiAnalysis.Status.Phase).To(Equal("Rejected"))
+        })
+    })
+
+    Context("with no decision yet", func() {
+        It("should not update status", func() {
+            approvalRequest.Spec.Decision = ""
+
+            err := reconciler.updateApprovalDecisionStatus(ctx, aiAnalysis, approvalRequest)
+            Expect(err).ToNot(HaveOccurred())
+            Expect(aiAnalysis.Status.ApprovalStatus).To(BeEmpty())
+        })
+    })
+})
+```
+
+**Integration Tests**:
+```go
+// test/integration/aianalysis/approval_decision_test.go
+var _ = Describe("AIAnalysis Approval Decision Tracking", func() {
+    It("should update AIAnalysis status when AIApprovalRequest is approved", func() {
+        // Create AIAnalysis and AIApprovalRequest
+        aiAnalysis := createAIAnalysisRequiringApproval()
+        Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
+
+        approvalRequest := createAIApprovalRequest(aiAnalysis)
+        Expect(k8sClient.Create(ctx, approvalRequest)).To(Succeed())
+
+        // Approve the request
+        approvalRequest.Spec.Decision = aianalysisv1alpha1.ApprovalDecisionApproved
+        approvalRequest.Spec.DecidedBy = "test-operator@company.com"
+        Expect(k8sClient.Update(ctx, approvalRequest)).To(Succeed())
+
+        // Wait for AIAnalysis status update
+        Eventually(func() string {
+            Expect(k8sClient.Get(ctx, key, aiAnalysis)).To(Succeed())
+            return aiAnalysis.Status.ApprovalStatus
+        }, timeout, interval).Should(Equal("approved"))
+
+        // Verify complete audit trail
+        Expect(aiAnalysis.Status.ApprovedBy).To(Equal("test-operator@company.com"))
+        Expect(aiAnalysis.Status.ApprovalDuration).ToNot(BeEmpty())
+    })
+})
+```
+
+---
+
+**Edge Cases**:
+1. ❌ **Incomplete Approval Context**: Missing required fields (investigation summary, recommended actions, evidence)
+   - Validation: Return error if required fields are missing
+2. ❌ **Concurrent Approval Decisions**: Multiple operators approve/reject simultaneously
+   - Mitigation: Optimistic locking with `resourceVersion` in Status().Update()
+3. ❌ **Approval Request Not Found**: AIApprovalRequest CRD deleted before decision tracking
+   - Mitigation: Handle gracefully, log warning, continue reconciliation
 
 ---
 

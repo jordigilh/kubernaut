@@ -720,12 +720,28 @@ kubectl describe pod -n kubernaut -l app=data-storage-service
 2. **Analytics Service** - Aggregates metrics and trends
 3. **UI/Dashboard** - Displays audit trail to users
 
+### Infrastructure Sharing
+
+**Context API Service** (Phase 2 - Intelligence Layer) shares Data Storage Service infrastructure for integration testing:
+
+- **Shared Resource**: PostgreSQL 16+ with pgvector extension (localhost:5432)
+- **Shared Schema**: `internal/database/schema/remediation_audit.sql` (authoritative schema)
+- **Isolation Strategy**: Schema-based isolation (`contextapi_test_<timestamp>`)
+- **Benefits**: Zero schema drift guarantee, faster test execution, reduced infrastructure overhead
+- **Documentation**: See [../context-api/implementation/SCHEMA_ALIGNMENT.md](../context-api/implementation/SCHEMA_ALIGNMENT.md)
+
+**Integration Test Compatibility**:
+- Data Storage tests: Use `datastorage-postgres` container (port 5432)
+- Context API tests: Reuse same PostgreSQL instance with separate schema
+- No conflicts: Different test schemas ensure parallel test execution safety
+
 ### External Dependencies
 
 1. **PostgreSQL 16+** (Required)
    - Primary data storage
    - ACID guarantees
    - pgvector for semantic search
+   - **Shared with**: Context API integration tests
 
 2. **Vector DB** (Optional)
    - Enhanced semantic search

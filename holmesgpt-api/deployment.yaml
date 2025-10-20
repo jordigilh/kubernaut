@@ -1,0 +1,234 @@
+# Kubernetes Deployment for HolmesGPT API Service
+# Design Decision: DD-HOLMESGPT-012 - Minimal Internal Service Architecture
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+    component: ai-analysis
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api
+  labels:
+    app: holmesgpt-api
+rules:
+  # TokenReviewer API access for authentication
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  # Read access to Context API (for investigation)
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+    resourceNames: ["context-api"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api
+  labels:
+    app: holmesgpt-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api
+    namespace: kubernaut-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-api-config
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+data:
+  ENVIRONMENT: "production"
+  DEV_MODE: "false"
+  AUTH_ENABLED: "true"
+  LLM_PROVIDER: "ollama"
+  LLM_MODEL: "llama2"
+  LLM_ENDPOINT: "http://ollama-service:11434"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+    component: ai-analysis
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: holmesgpt-api
+  template:
+    metadata:
+      labels:
+        app: holmesgpt-api
+        component: ai-analysis
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: holmesgpt-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: holmesgpt-api
+          image: quay.io/kubernaut/kubernaut-holmesgpt-api:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: holmesgpt-api-config
+          env:
+            - name: KUBERNETES_SERVICE_HOST
+              value: "kubernetes.default.svc"
+            - name: KUBERNETES_SERVICE_PORT
+              value: "443"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - holmesgpt-api
+                topologyKey: kubernetes.io/hostname
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+    component: ai-analysis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: holmesgpt-api
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+spec:
+  podSelector:
+    matchLabels:
+      app: holmesgpt-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only allow traffic from Effectiveness Monitor and RemediationProcessor
+    - from:
+        - podSelector:
+            matchLabels:
+              app: effectiveness-monitor
+        - podSelector:
+            matchLabels:
+              app: remediationprocessor
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow K8s API access (for TokenReviewer)
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              component: apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow Context API access
+    - to:
+        - podSelector:
+            matchLabels:
+              app: context-api
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow LLM access
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ollama
+      ports:
+        - protocol: TCP
+          port: 11434
+

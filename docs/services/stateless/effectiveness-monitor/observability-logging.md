@@ -375,6 +375,164 @@ func (c *DataStorageClient) PersistAssessment(ctx context.Context, assessment *E
 
 ---
 
+## 🤖 AI Analysis Logging
+
+### **AI Trigger Decision Logging**
+
+```go
+// Log AI decision logic
+logger.Info("AI decision evaluation",
+    zap.String("workflow_id", workflow.ID),
+    zap.String("priority", workflow.Priority),
+    zap.Bool("success", workflow.Success),
+    zap.Bool("is_new_action_type", workflow.IsNewActionType),
+    zap.Int("anomaly_count", len(anomalies)),
+    zap.Bool("is_recurring_failure", workflow.IsRecurringFailure),
+    zap.Bool("ai_analysis_triggered", aiDecision),
+    zap.String("trigger_reason", triggerReason), // "p0_failure", "new_action_type", "anomaly_detected", "oscillation", "routine_skipped"
+)
+```
+
+**Example Log Entries**:
+
+```json
+// P0 failure - AI triggered
+{
+  "level": "info",
+  "timestamp": "2025-10-06T10:15:30Z",
+  "message": "AI decision evaluation",
+  "workflow_id": "wf-abc123",
+  "priority": "P0",
+  "success": false,
+  "is_new_action_type": false,
+  "anomaly_count": 0,
+  "is_recurring_failure": false,
+  "ai_analysis_triggered": true,
+  "trigger_reason": "p0_failure"
+}
+
+// Routine success - AI skipped
+{
+  "level": "info",
+  "timestamp": "2025-10-06T10:15:35Z",
+  "message": "AI decision evaluation",
+  "workflow_id": "wf-def456",
+  "priority": "P2",
+  "success": true,
+  "is_new_action_type": false,
+  "anomaly_count": 0,
+  "is_recurring_failure": false,
+  "ai_analysis_triggered": false,
+  "trigger_reason": "routine_skipped"
+}
+
+// Anomaly detected - AI triggered
+{
+  "level": "info",
+  "timestamp": "2025-10-06T10:15:40Z",
+  "message": "AI decision evaluation",
+  "workflow_id": "wf-ghi789",
+  "priority": "P1",
+  "success": true,
+  "is_new_action_type": false,
+  "anomaly_count": 3,
+  "is_recurring_failure": false,
+  "ai_analysis_triggered": true,
+  "trigger_reason": "anomaly_detected"
+}
+```
+
+### **AI Call Execution Logging**
+
+```go
+// Log AI API call start
+logger.Info("Calling HolmesGPT API for post-execution analysis",
+    zap.String("workflow_id", workflow.ID),
+    zap.String("endpoint", "/api/v1/postexec/analyze"),
+    zap.String("execution_id", execID),
+)
+
+// Log AI API call success
+logger.Info("HolmesGPT API call successful",
+    zap.String("workflow_id", workflow.ID),
+    zap.Duration("duration", duration),
+    zap.Float64("effectiveness_score", response.EffectivenessScore),
+    zap.Int("lessons_learned_count", len(response.LessonsLearned)),
+    zap.Float64("confidence", response.Confidence),
+    zap.Float64("estimated_cost", 0.50), // $0.50 per call
+)
+
+// Log AI API call failure
+logger.Error("HolmesGPT API call failed",
+    zap.String("workflow_id", workflow.ID),
+    zap.Duration("duration", duration),
+    zap.Error(err),
+    zap.String("fallback", "using automated assessment only"),
+)
+```
+
+**Example Log Entries**:
+
+```json
+// AI call success
+{
+  "level": "info",
+  "timestamp": "2025-10-06T10:15:45Z",
+  "message": "HolmesGPT API call successful",
+  "workflow_id": "wf-abc123",
+  "duration": "2.3s",
+  "effectiveness_score": 0.85,
+  "lessons_learned_count": 3,
+  "confidence": 0.90,
+  "estimated_cost": 0.50
+}
+
+// AI call failure (fallback to automated)
+{
+  "level": "error",
+  "timestamp": "2025-10-06T10:16:00Z",
+  "message": "HolmesGPT API call failed",
+  "workflow_id": "wf-jkl012",
+  "duration": "30s",
+  "error": "context deadline exceeded",
+  "fallback": "using automated assessment only"
+}
+```
+
+### **Cost Tracking Logs**
+
+```go
+// Log daily cost summary (cron job)
+logger.Info("Daily AI cost summary",
+    zap.Int("total_ai_calls", dailyCount),
+    zap.Int("p0_failures", p0Count),
+    zap.Int("new_action_types", newActionCount),
+    zap.Int("anomalies", anomalyCount),
+    zap.Int("oscillations", oscillationCount),
+    zap.Float64("daily_cost_usd", dailyCount*0.50),
+    zap.Float64("projected_monthly_cost_usd", dailyCount*0.50*30),
+)
+```
+
+**Example Log Entry**:
+
+```json
+{
+  "level": "info",
+  "timestamp": "2025-10-06T23:59:59Z",
+  "message": "Daily AI cost summary",
+  "total_ai_calls": 70,
+  "p0_failures": 50,
+  "new_action_types": 10,
+  "anomalies": 5,
+  "oscillations": 5,
+  "daily_cost_usd": 35.00,
+  "projected_monthly_cost_usd": 1050.00
+}
+```
+
+---
+
 ## 📈 Prometheus Metrics
 
 ### **Metric Definitions**

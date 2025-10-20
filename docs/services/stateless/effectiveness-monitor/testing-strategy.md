@@ -777,6 +777,133 @@ var _ = Describe("Trend Analysis (BR-INS-003)", func() {
 
 ---
 
+## 🤖 **Decision Logic Unit Tests**
+
+### **Test File**: `test/unit/effectiveness/decision_logic_test.go`
+
+**Purpose**: Validate `shouldCallAI()` decision logic for selective AI analysis
+
+```go
+var _ = Describe("AI Decision Logic", func() {
+    var service *EffectivenessMonitorService
+
+    BeforeEach(func() {
+        service = NewEffectivenessMonitorService(mockDeps)
+    })
+
+    Context("P0 Failures", func() {
+        It("should trigger AI analysis for P0 failures", func() {
+            workflow := &WorkflowExecution{
+                ID:       "wf-001",
+                Priority: "P0",
+                Success:  false,
+            }
+
+            shouldCall := service.shouldCallAI(workflow, 0.5, []string{})
+            Expect(shouldCall).To(BeTrue(), "P0 failures always trigger AI")
+        })
+
+        It("should not trigger AI for P0 successes", func() {
+            workflow := &WorkflowExecution{
+                ID:       "wf-002",
+                Priority: "P0",
+                Success:  true,
+                IsNewActionType: false,
+            }
+
+            shouldCall := service.shouldCallAI(workflow, 0.95, []string{})
+            Expect(shouldCall).To(BeFalse(), "P0 successes use automated assessment")
+        })
+    })
+
+    Context("New Action Types", func() {
+        It("should trigger AI for new action types", func() {
+            workflow := &WorkflowExecution{
+                ID:              "wf-003",
+                Priority:        "P2",
+                Success:         true,
+                IsNewActionType: true,
+            }
+
+            shouldCall := service.shouldCallAI(workflow, 0.85, []string{})
+            Expect(shouldCall).To(BeTrue(), "New action types trigger AI for knowledge building")
+        })
+    })
+
+    Context("Anomalies Detected", func() {
+        It("should trigger AI when anomalies detected", func() {
+            workflow := &WorkflowExecution{
+                ID:       "wf-004",
+                Priority: "P1",
+                Success:  true,
+            }
+            anomalies := []string{"unexpected_cpu_spike", "memory_oscillation"}
+
+            shouldCall := service.shouldCallAI(workflow, 0.80, anomalies)
+            Expect(shouldCall).To(BeTrue(), "Anomalies trigger AI investigation")
+        })
+
+        It("should not trigger AI when no anomalies", func() {
+            workflow := &WorkflowExecution{
+                ID:       "wf-005",
+                Priority: "P2",
+                Success:  true,
+            }
+
+            shouldCall := service.shouldCallAI(workflow, 0.92, []string{})
+            Expect(shouldCall).To(BeFalse(), "Routine successes use automated assessment")
+        })
+    })
+
+    Context("Oscillations/Recurring Failures", func() {
+        It("should trigger AI for recurring failures", func() {
+            workflow := &WorkflowExecution{
+                ID:                  "wf-006",
+                Priority:            "P1",
+                Success:             false,
+                IsRecurringFailure:  true,
+            }
+
+            shouldCall := service.shouldCallAI(workflow, 0.60, []string{})
+            Expect(shouldCall).To(BeTrue(), "Recurring failures trigger AI pattern analysis")
+        })
+    })
+
+    Context("Routine Successes", func() {
+        It("should not trigger AI for routine P2 successes", func() {
+            workflow := &WorkflowExecution{
+                ID:                 "wf-007",
+                Priority:           "P2",
+                Success:            true,
+                IsNewActionType:    false,
+                IsRecurringFailure: false,
+            }
+
+            shouldCall := service.shouldCallAI(workflow, 0.95, []string{})
+            Expect(shouldCall).To(BeFalse(), "Routine successes handled by automation")
+        })
+    })
+
+    Context("Prometheus Metrics", func() {
+        It("should increment correct trigger metric", func() {
+            workflow := &WorkflowExecution{
+                ID:       "wf-008",
+                Priority: "P0",
+                Success:  false,
+            }
+
+            service.shouldCallAI(workflow, 0.5, []string{})
+
+            // Verify metric incremented
+            metric := testutil.ToFloat64(service.metrics.aiTriggerCounter.WithLabelValues("p0_failure"))
+            Expect(metric).To(BeNumerically(">", 0))
+        })
+    })
+})
+```
+
+---
+
 ## 🔗 **Integration Tests (>50% Coverage)**
 
 ### **Test Categories**
@@ -786,8 +913,196 @@ var _ = Describe("Trend Analysis (BR-INS-003)", func() {
 | **Data Storage Integration** | PostgreSQL + pgvector | 6 tests | Action history retrieval, effectiveness data persistence |
 | **Infrastructure Monitoring** | Prometheus metrics | 5 tests | Metrics correlation, side effect detection |
 | **Cross-Service Integration** | Context API, Data Storage | 4 tests | Assessment request flow, trend storage |
+| **HolmesGPT API Client Integration** | HolmesGPT API service | 5 tests | Post-execution analysis, authentication, error handling |
 
-### **1. Data Storage Integration Tests**
+### **1. HolmesGPT Client Integration Tests**
+
+```go
+// test/integration/effectiveness/holmesgpt_client_test.go
+package effectiveness_integration_test
+
+import (
+    "context"
+    "net/http"
+    "net/http/httptest"
+    "testing"
+    "time"
+
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+
+    "github.com/jordigilh/kubernaut/pkg/monitor"
+)
+
+var _ = Describe("HolmesGPT Client Integration (DD-EFFECTIVENESS-001)", func() {
+    var (
+        ctx          context.Context
+        client       *monitor.HolmesGPTClient
+        mockServer   *httptest.Server
+        callsReceived int
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+        callsReceived = 0
+
+        // Mock HolmesGPT API server
+        mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            callsReceived++
+
+            // Verify authentication
+            authHeader := r.Header.Get("Authorization")
+            if authHeader == "" {
+                w.WriteHeader(http.StatusUnauthorized)
+                return
+            }
+
+            // Verify endpoint
+            if r.URL.Path == "/api/v1/postexec/analyze" {
+                w.Header().Set("Content-Type", "application/json")
+                w.WriteHeader(http.StatusOK)
+                w.Write([]byte(`{
+                    "execution_id": "exec-001",
+                    "execution_success": true,
+                    "success_justification": "All objectives met",
+                    "objectives_achieved": [
+                        {"objective": "reduce_latency", "achieved": true}
+                    ],
+                    "follow_up_actions": [],
+                    "lessons_learned": [
+                        {"category": "optimization", "observation": "Memory increase effective"}
+                    ],
+                    "effectiveness_score": 0.90,
+                    "side_effects": [],
+                    "recommendations": ["Monitor for 24h"],
+                    "confidence": 0.85
+                }`))
+                return
+            }
+
+            w.WriteHeader(http.StatusNotFound)
+        }))
+
+        var err error
+        client, err = monitor.NewHolmesGPTClient(mockServer.URL)
+        Expect(err).ToNot(HaveOccurred())
+    })
+
+    AfterEach(func() {
+        mockServer.Close()
+    })
+
+    Context("Successful AI Analysis", func() {
+        It("should call post-execution analysis endpoint", func() {
+            req := monitor.PostExecRequest{
+                ExecutionID:     "exec-001",
+                ActionType:      "restart-pod",
+                ActionDetails:   map[string]any{"pod": "test-pod"},
+                ExecutionResult: map[string]any{"status": "success"},
+                ExecutionSuccess: true,
+                Context:         map[string]any{"priority": "P0"},
+            }
+
+            resp, err := client.AnalyzePostExecution(ctx, req)
+            Expect(err).ToNot(HaveOccurred())
+            Expect(resp).ToNot(BeNil())
+            Expect(resp.ExecutionSuccess).To(BeTrue())
+            Expect(resp.EffectivenessScore).To(Equal(0.90))
+            Expect(callsReceived).To(Equal(1), "Should make exactly 1 API call")
+        })
+
+        It("should include authentication token", func() {
+            req := monitor.PostExecRequest{
+                ExecutionID:      "exec-002",
+                ActionType:       "scale-deployment",
+                ExecutionSuccess: true,
+            }
+
+            _, err := client.AnalyzePostExecution(ctx, req)
+            Expect(err).ToNot(HaveOccurred())
+            Expect(callsReceived).To(Equal(1), "Authenticated request successful")
+        })
+    })
+
+    Context("Error Handling", func() {
+        It("should handle API unavailability gracefully", func() {
+            mockServer.Close() // Simulate service down
+
+            req := monitor.PostExecRequest{
+                ExecutionID:      "exec-003",
+                ExecutionSuccess: true,
+            }
+
+            _, err := client.AnalyzePostExecution(ctx, req)
+            Expect(err).To(HaveOccurred(), "Should return error when API unavailable")
+        })
+
+        It("should timeout on slow responses", func() {
+            slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+                time.Sleep(35 * time.Second) // Exceed 30s timeout
+                w.WriteHeader(http.StatusOK)
+            }))
+            defer slowServer.Close()
+
+            slowClient, _ := monitor.NewHolmesGPTClient(slowServer.URL)
+
+            req := monitor.PostExecRequest{
+                ExecutionID:      "exec-004",
+                ExecutionSuccess: true,
+            }
+
+            _, err := slowClient.AnalyzePostExecution(ctx, req)
+            Expect(err).To(HaveOccurred(), "Should timeout after 30 seconds")
+        })
+    })
+
+    Context("Prometheus Metrics Integration", func() {
+        It("should increment AI call counter on success", func() {
+            req := monitor.PostExecRequest{
+                ExecutionID:      "exec-005",
+                ExecutionSuccess: true,
+            }
+
+            _, err := client.AnalyzePostExecution(ctx, req)
+            Expect(err).ToNot(HaveOccurred())
+
+            // Verify metrics (mocked prometheus registry)
+            // Real test would check prometheus counter incremented
+        })
+
+        It("should track AI call duration", func() {
+            req := monitor.PostExecRequest{
+                ExecutionID:      "exec-006",
+                ExecutionSuccess: true,
+            }
+
+            start := time.Now()
+            _, err := client.AnalyzePostExecution(ctx, req)
+            duration := time.Since(start)
+
+            Expect(err).ToNot(HaveOccurred())
+            Expect(duration).To(BeNumerically("<", 5*time.Second), "API call should be fast")
+        })
+    })
+
+    Context("Cost Tracking Integration", func() {
+        It("should increment cost counter ($0.50/call)", func() {
+            req := monitor.PostExecRequest{
+                ExecutionID:      "exec-007",
+                ExecutionSuccess: true,
+            }
+
+            _, err := client.AnalyzePostExecution(ctx, req)
+            Expect(err).ToNot(HaveOccurred())
+
+            // Verify cost metric incremented by $0.50
+            // Real test would check prometheus counter value
+        })
+    })
+})
+```
+
+### **2. Data Storage Integration Tests**
 
 ```go
 // test/integration/effectiveness/data_storage_test.go

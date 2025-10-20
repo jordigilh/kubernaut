@@ -1057,3 +1057,269 @@ func TestRecoveryInitiation_Success(t *testing.T) {
 
 ---
 
+## V1.0 Approval Notification Implementation (BR-ORCH-001)
+
+**Business Requirement**: BR-ORCH-001 (RemediationOrchestrator Notification Creation)
+**ADR Reference**: ADR-018 (Approval Notification V1.0 Integration)
+
+### Watch Configuration
+
+```go
+// internal/controller/remediationorchestrator/remediationorchestrator_controller.go
+package remediationorchestrator
+
+import (
+    remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+    aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+    notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+    ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/handler"
+    "sigs.k8s.io/controller-runtime/pkg/source"
+)
+
+func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
+    return ctrl.NewControllerManagedBy(mgr).
+        For(&remediationv1alpha1.RemediationRequest{}).
+        Watches(
+            &source.Kind{Type: &aianalysisv1alpha1.AIAnalysis{}},
+            handler.EnqueueRequestsFromMapFunc(r.findRemediationRequestsForAIAnalysis),
+        ).
+        Complete(r)
+}
+
+func (r *RemediationRequestReconciler) findRemediationRequestsForAIAnalysis(aiAnalysis client.Object) []ctrl.Request {
+    // Find owning RemediationRequest via OwnerReferences
+    for _, ownerRef := range aiAnalysis.GetOwnerReferences() {
+        if ownerRef.Kind == "RemediationRequest" {
+            return []ctrl.Request{{
+                NamespacedName: types.NamespacedName{
+                    Name:      ownerRef.Name,
+                    Namespace: aiAnalysis.GetNamespace(),
+                },
+            }}
+        }
+    }
+    return []ctrl.Request{}
+}
+```
+
+### Reconcile Logic Extension
+
+```go
+// internal/controller/remediationorchestrator/remediationorchestrator_controller.go
+func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    log := ctrl.LoggerFrom(ctx)
+
+    // Fetch RemediationRequest
+    var remediation remediationv1alpha1.RemediationRequest
+    if err := r.Get(ctx, req.NamespacedName, &remediation); err != nil {
+        if errors.IsNotFound(err) {
+            return ctrl.Result{}, nil
+        }
+        return ctrl.Result{}, err
+    }
+
+    // ... existing orchestration logic ...
+
+    // Check if AIAnalysis requires approval (BR-ORCH-001)
+    if remediation.Status.AIAnalysisRef != nil {
+        var aiAnalysis aianalysisv1alpha1.AIAnalysis
+        aiAnalysisKey := types.NamespacedName{
+            Name:      remediation.Status.AIAnalysisRef.Name,
+            Namespace: remediation.Status.AIAnalysisRef.Namespace,
+        }
+
+        if err := r.Get(ctx, aiAnalysisKey, &aiAnalysis); err != nil {
+            if errors.IsNotFound(err) {
+                log.Info("AIAnalysis not found yet", "aiAnalysisName", aiAnalysisKey.Name)
+                return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+            }
+            return ctrl.Result{}, err
+        }
+
+        // Approval notification triggering (V1.0)
+        if aiAnalysis.Status.Phase == "Approving" && !remediation.Status.ApprovalNotificationSent {
+            log.Info("AIAnalysis requires approval, creating notification",
+                "aiAnalysisName", aiAnalysis.Name,
+                "confidence", aiAnalysis.Status.Confidence)
+
+            if err := r.createApprovalNotification(ctx, &remediation, &aiAnalysis); err != nil {
+                log.Error(err, "Failed to create approval notification")
+                r.Recorder.Event(&remediation, corev1.EventTypeWarning, "NotificationFailed",
+                    fmt.Sprintf("Failed to create approval notification: %v", err))
+                return ctrl.Result{}, fmt.Errorf("failed to create approval notification: %w", err)
+            }
+
+            remediation.Status.ApprovalNotificationSent = true
+            if err := r.Status().Update(ctx, &remediation); err != nil {
+                log.Error(err, "Failed to update RemediationRequest status")
+                return ctrl.Result{}, err
+            }
+
+            log.Info("Approval notification created successfully", "aiAnalysisName", aiAnalysis.Name)
+            r.Recorder.Event(&remediation, corev1.EventTypeNormal, "NotificationCreated",
+                "Approval notification sent to operators")
+        }
+    }
+
+    return ctrl.Result{}, nil
+}
+```
+
+### createApprovalNotification Function
+
+```go
+// internal/controller/remediationorchestrator/approval_notification.go
+package remediationorchestrator
+
+import (
+    "context"
+    "fmt"
+    "strings"
+
+    remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+    aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+    notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// createApprovalNotification creates NotificationRequest CRD for operator approval
+// Business Requirement: BR-ORCH-001
+func (r *RemediationRequestReconciler) createApprovalNotification(
+    ctx context.Context,
+    remediation *remediationv1alpha1.RemediationRequest,
+    aiAnalysis *aianalysisv1alpha1.AIAnalysis,
+) error {
+    notification := &notificationv1alpha1.NotificationRequest{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("approval-notification-%s-%s", remediation.Name, aiAnalysis.Name),
+            Namespace: remediation.Namespace,
+            OwnerReferences: []metav1.OwnerReference{
+                *metav1.NewControllerRef(remediation, remediationv1alpha1.GroupVersion.WithKind("RemediationRequest")),
+            },
+        },
+        Spec: notificationv1alpha1.NotificationRequestSpec{
+            Subject:  fmt.Sprintf("🚨 Approval Required: %s", aiAnalysis.Status.ApprovalContext.Reason),
+            Body:     r.formatApprovalBody(remediation, aiAnalysis),
+            Priority: notificationv1alpha1.NotificationPriorityHigh,
+            Channels: []notificationv1alpha1.Channel{
+                notificationv1alpha1.ChannelSlack,
+                notificationv1alpha1.ChannelConsole,
+            },
+            Metadata: map[string]string{
+                "remediationRequest": remediation.Name,
+                "aiAnalysis":         aiAnalysis.Name,
+                "aiApprovalRequest":  aiAnalysis.Status.ApprovalRequestName,
+                "confidence":         fmt.Sprintf("%.2f", aiAnalysis.Status.Confidence),
+            },
+        },
+    }
+
+    return r.Create(ctx, notification)
+}
+
+// formatApprovalBody formats approval context into notification body
+func (r *RemediationRequestReconciler) formatApprovalBody(
+    remediation *remediationv1alpha1.RemediationRequest,
+    aiAnalysis *aianalysisv1alpha1.AIAnalysis,
+) string {
+    ctx := aiAnalysis.Status.ApprovalContext
+    return fmt.Sprintf(`
+Investigation Summary:
+%s
+
+Evidence:
+%s
+
+Recommended Actions:
+%s
+
+Alternatives Considered:
+%s
+
+Why Approval Required:
+%s
+
+Confidence: %.1f%% (medium)
+`,
+        ctx.InvestigationSummary,
+        formatEvidence(ctx.EvidenceCollected),
+        formatActions(ctx.RecommendedActions),
+        formatAlternatives(ctx.AlternativesConsidered),
+        ctx.WhyApprovalRequired,
+        ctx.ConfidenceScore*100)
+}
+
+// Helper: Format evidence list
+func formatEvidence(evidence []string) string {
+    lines := make([]string, len(evidence))
+    for i, e := range evidence {
+        lines[i] = fmt.Sprintf("- %s", e)
+    }
+    return strings.Join(lines, "\n")
+}
+
+// Helper: Format actions list
+func formatActions(actions []aianalysisv1alpha1.RecommendedAction) string {
+    lines := make([]string, len(actions))
+    for i, a := range actions {
+        lines[i] = fmt.Sprintf("- %s: %s", a.Action, a.Rationale)
+    }
+    return strings.Join(lines, "\n")
+}
+
+// Helper: Format alternatives list
+func formatAlternatives(alts []aianalysisv1alpha1.AlternativeApproach) string {
+    lines := make([]string, len(alts))
+    for i, alt := range alts {
+        lines[i] = fmt.Sprintf("- %s\n  %s", alt.Approach, alt.ProsCons)
+    }
+    return strings.Join(lines, "\n")
+}
+```
+
+### TDD Approach
+
+**Integration Test**:
+```go
+// test/integration/remediationorchestrator/approval_notification_test.go
+package remediationorchestrator_test
+
+var _ = Describe("RemediationOrchestrator Approval Notification", func() {
+    It("should create NotificationRequest when AIAnalysis requires approval", func() {
+        // Create RemediationRequest
+        remediation := createRemediationRequest()
+        Expect(k8sClient.Create(ctx, remediation)).To(Succeed())
+
+        // Create AIAnalysis with Approving phase
+        aiAnalysis := createAIAnalysisWithApprovalRequired(remediation)
+        Expect(k8sClient.Create(ctx, aiAnalysis)).To(Succeed())
+
+        // Wait for NotificationRequest creation
+        Eventually(func() bool {
+            var notifications notificationv1alpha1.NotificationRequestList
+            Expect(k8sClient.List(ctx, &notifications)).To(Succeed())
+            return len(notifications.Items) > 0
+        }, timeout, interval).Should(BeTrue())
+
+        // Verify notification content
+        var notification notificationv1alpha1.NotificationRequest
+        notificationKey := types.NamespacedName{
+            Name:      fmt.Sprintf("approval-notification-%s-%s", remediation.Name, aiAnalysis.Name),
+            Namespace: remediation.Namespace,
+        }
+        Expect(k8sClient.Get(ctx, notificationKey, &notification)).To(Succeed())
+
+        Expect(notification.Spec.Subject).To(ContainSubstring("Approval Required"))
+        Expect(notification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityHigh))
+        Expect(notification.Spec.Channels).To(ContainElement(notificationv1alpha1.ChannelSlack))
+
+        // Verify idempotency
+        Expect(k8sClient.Get(ctx, remediation.GetObjectMeta(), remediation)).To(Succeed())
+        Expect(remediation.Status.ApprovalNotificationSent).To(BeTrue())
+    })
+})
+```
+
+---
+

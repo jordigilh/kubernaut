@@ -15,7 +15,7 @@ The HolmesGPT REST API Wrapper is a standalone Python-based microservice that pr
 ### 1.2 Key Architectural Decisions
 - **Language**: Python 3.11+ (HolmesGPT SDK compatibility)
 - **Framework**: FastAPI (async performance, OpenAPI generation)
-- **Container**: Red Hat UBI9 images (enterprise compliance)
+- **Container**: upstream community UBI9 images (enterprise compliance)
 - **Deployment**: Kubernetes-native with horizontal scaling
 - **Integration**: HTTP API with Kubernaut Context API
 - **Security**: Enterprise-grade authentication and authorization
@@ -25,7 +25,7 @@ The HolmesGPT REST API Wrapper is a standalone Python-based microservice that pr
 - **API-First**: RESTful HTTP API with OpenAPI specification
 - **Security-First**: Zero-trust security model with comprehensive protection
 - **Performance-First**: Async processing with intelligent caching
-- **Enterprise-Ready**: Red Hat certified containers and OpenShift compatibility
+- **Enterprise-Ready**: upstream community certified containers and Kubernetes compatibility
 
 ---
 
@@ -810,10 +810,10 @@ async def chat_websocket(
 
 ## 6. Container Architecture
 
-### 6.1 Multi-Stage Dockerfile with Red Hat UBI
+### 6.1 Multi-Stage Dockerfile with upstream community UBI
 
 ```dockerfile
-# Dockerfile - Production-ready Red Hat UBI container
+# Dockerfile - Production-ready upstream community UBI container
 # Build stage
 FROM registry.access.redhat.com/ubi9/python-311:1-66 AS builder
 
@@ -848,7 +848,7 @@ RUN pip install --no-cache-dir --user --upgrade pip setuptools wheel && \
 # Runtime stage - UBI-micro for minimal footprint
 FROM registry.access.redhat.com/ubi9-micro:9.3-13
 
-# Metadata for Red Hat Container Certification
+# Metadata for upstream community Container Certification
 LABEL name="holmesgpt-api-server" \
       vendor="Kubernaut Project" \
       version="1.0.0" \
@@ -1894,7 +1894,7 @@ async def _check_kubernetes_health() -> Dict[str, Any]:
 
 #### Week 1-2: Foundation
 - **Environment Setup**
-  - Red Hat UBI container configuration
+  - upstream community UBI container configuration
   - Python project structure and dependencies
   - FastAPI application skeleton
   - Basic configuration management

@@ -16,7 +16,7 @@
 | Document | Purpose | Lines | Status |
 |----------|---------|-------|--------|
 | **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ~390 | ✅ Complete |
-| **[CRD Schema](./crd-schema.md)** | KubernetesExecution CRD types, validation, examples | ~270 | ✅ Complete |
+| **[CRD Schema](./crd-schema.md)** | KubernetesExecution CRD types, validation, examples, **DD-002 validation framework** | ~590 | ✅ Complete |
 | **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ~335 | ✅ Complete |
 | **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ~560 | ✅ Complete |
 | **[Predefined Actions](./predefined-actions.md)** | V1 action catalog (80% coverage), custom actions | ~270 | ✅ Complete |
@@ -121,10 +121,11 @@
 
 | Category | Range | Description |
 |----------|-------|-------------|
-| **Primary** | BR-EXEC-001 to BR-EXEC-050 | Kubernetes action execution via Jobs |
+| **Primary** | BR-EXEC-001 to BR-EXEC-088 | Kubernetes action execution via Jobs |
 | **Actions** | BR-EXEC-010 to BR-EXEC-030 | Predefined action catalog (80% coverage) |
 | **RBAC** | BR-EXEC-040 to BR-EXEC-045 | Per-action RBAC isolation |
 | **Rollback** | BR-EXEC-050 to BR-EXEC-055 | Rollback strategies and safety |
+| **Validation Framework (NEW)** | BR-EXEC-016, BR-EXEC-036 | **Per-action precondition/postcondition validation** (DD-002) |
 
 ---
 

@@ -706,7 +706,8 @@ rules:
 
 ## 🔗 **RELATED DOCUMENTS**
 
-- [Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
+- [Kubernaut CRD Architecture](../../architecture/KUBERNAUT_CRD_ARCHITECTURE.md) (Authoritative)
+- ~~[Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)~~ (DEPRECATED)
 - [Business Requirements Overview](../requirements/00_REQUIREMENTS_OVERVIEW.md)
 - [AlertProcessing CRD Design](./02_ALERT_PROCESSING_CRD.md) *(Next)*
 - [AIAnalysis CRD Design](./03_AI_ANALYSIS_CRD.md) *(Planned)*

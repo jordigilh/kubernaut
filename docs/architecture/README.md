@@ -99,7 +99,15 @@ These documents describe how Kubernaut transforms raw alert data into intelligen
    - **Connects To**: Architecture Overview (AI integration) → Detailed implementation
    - **Read Time**: 15 minutes
 
-10. **[AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md](AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)**
+10. **[effectiveness-monitor-sequence-diagrams.md](effectiveness-monitor-sequence-diagrams.md)** ⭐ **NEW**
+   - **Purpose**: Visual representation of Effectiveness Monitor workflows (hybrid automated + AI)
+   - **Audience**: Developers, integration engineers, architects
+   - **Key Content**: Automated-only flow (99.3%), AI-enhanced flow (0.7%), decision logic, real examples
+   - **Watch Strategy**: RemediationRequest CRD (DD-EFFECTIVENESS-003) for future-proof abstraction
+   - **Connects To**: Service Catalog (Effectiveness Monitor) → Visual workflow documentation
+   - **Read Time**: 12 minutes
+
+11. **[AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md](AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)**
     - **Purpose**: Dynamic context gathering and AI-driven investigations
     - **Audience**: AI engineers, context developers
     - **Key Content**: Context API design, historical intelligence, vector similarity search

@@ -183,23 +183,68 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 
 ---
 
-## 4. AI Insights Service
+## 4. AI Insights Service (Effectiveness Monitor)
+
+**Architecture**: **Hybrid Approach** (Automated Checks + Selective AI Analysis)
+- **Effectiveness Monitor Service**: GO service performing automated checks, metrics collection, and data aggregation
+- **HolmesGPT API Integration**: AI-powered pattern analysis, root cause validation, and lesson extraction (selective)
+- **Design Decision**: [DD-EFFECTIVENESS-001: Hybrid Automated + AI Analysis Approach](../architecture/decisions/)
 
 ### 4.1 Business Capabilities
 
 #### 4.1.1 Effectiveness Assessment
-- **BR-INS-001**: MUST assess the effectiveness of executed remediation actions
-- **BR-INS-002**: MUST correlate action outcomes with environmental improvements
-- **BR-INS-003**: MUST track long-term effectiveness trends for different action types
-- **BR-INS-004**: MUST identify actions that consistently produce positive outcomes
-- **BR-INS-005**: MUST detect actions that cause adverse effects or oscillations
 
-#### 4.1.2 Analytics Engine
+##### **Automated Assessment (Effectiveness Monitor - Always Executed)**
+- **BR-INS-001**: MUST assess the effectiveness of executed remediation actions using automated checks
+  - **Implementation**: Effectiveness Monitor service (GO)
+  - **Scope**: Technical validation, metric comparison, health checks
+  - **Examples**: Pod running status, OOM error count, latency metrics, readiness probes
+  - **Frequency**: Every workflow execution
+  - **Dependencies**: BR-EXEC-027 to BR-EXEC-030 (action outcome verification)
+
+##### **AI-Powered Analysis (HolmesGPT API - Selective Execution)**
+- **BR-INS-002**: MUST correlate action outcomes with environmental improvements using AI analysis
+  - **Implementation**: HolmesGPT API `/api/v1/postexec/analyze` endpoint
+  - **Scope**: Causation analysis (not just correlation), root cause validation, unintended consequences
+  - **Triggers**: P0 failures, new action types, suspected oscillations, periodic batch analysis
+  - **Rationale**: AI distinguishes "problem masked" from "problem solved" (see DD-EFFECTIVENESS-001)
+
+- **BR-INS-003**: MUST track long-term effectiveness trends for different action types
+  - **Implementation**: Data Storage (automated metrics) + HolmesGPT API (pattern analysis)
+  - **Automated**: Time-series metrics, success rates, execution times
+  - **AI Analysis**: Context-aware patterns (e.g., "gradual scaling better for Java memory leaks")
+
+- **BR-INS-004**: MUST identify actions that consistently produce positive outcomes
+  - **Implementation**: Effectiveness Monitor (data aggregation) + HolmesGPT API (pattern recognition)
+  - **Automated**: Success rate calculations, metric improvements
+  - **AI Analysis**: Context-specific effectiveness (environment, workload type, time of day)
+
+- **BR-INS-005**: MUST detect actions that cause adverse effects or oscillations
+  - **Implementation**: Effectiveness Monitor (metric anomaly detection) + HolmesGPT API (causation analysis)
+  - **Automated**: Detect metric changes (CPU throttling after memory increase)
+  - **AI Analysis**: Explain causation ("Fix OOM → JVM heap expansion → GC pauses → CPU throttling")
+  - **Critical**: Prevents remediation loops (BR-WF-541)
+
+#### 4.1.2 Analytics Engine (Pattern Learning - AI-Powered)
 - **BR-INS-006**: MUST provide advanced pattern recognition across remediation history
+  - **Implementation**: HolmesGPT API with historical data from Context API
+  - **Scope**: Cross-remediation patterns, context-aware insights, trend analysis
+
 - **BR-INS-007**: MUST generate insights on optimal remediation strategies
+  - **Implementation**: HolmesGPT API analyzing effectiveness data across contexts
+  - **Examples**: "Gradual scaling 95% effective vs immediate scaling 80% effective for stateful apps"
+
 - **BR-INS-008**: MUST identify seasonal or temporal patterns in system behavior
+  - **Implementation**: HolmesGPT API analyzing time-series effectiveness data
+  - **Examples**: "OOM incidents increase 3x during peak traffic hours"
+
 - **BR-INS-009**: MUST detect emerging issues before they become critical alerts
+  - **Implementation**: HolmesGPT API analyzing effectiveness degradation trends
+  - **Examples**: "Action effectiveness declining 5% week-over-week"
+
 - **BR-INS-010**: MUST provide predictive insights for capacity planning
+  - **Implementation**: HolmesGPT API analyzing resource utilization trends
+  - **Examples**: "Current growth rate will exhaust capacity in 45 days"
 
 #### 4.1.3 Continuous Learning
 - **BR-INS-011**: MUST continuously improve decision-making based on outcomes

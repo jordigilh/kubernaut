@@ -11,7 +11,8 @@
 
 1. **[overview.md](./overview.md)** - Service architecture, responsibilities, and design decisions
 2. **[api-specification.md](./api-specification.md)** - 4 GET endpoints with schemas
-3. **[database-schema.md](./database-schema.md)** - PostgreSQL + Vector DB schema
+3. **[SCHEMA_ALIGNMENT.md](./implementation/SCHEMA_ALIGNMENT.md)** - ✅ **AUTHORITATIVE**: Schema reference (reads from Data Storage Service)
+4. ~~[database-schema.md](./database-schema.md)~~ - ⚠️ **DEPRECATED**: See SCHEMA_ALIGNMENT.md instead
 
 ---
 
@@ -56,11 +57,13 @@
 ## 🗄️ Data Storage
 
 **Reads from**:
-- PostgreSQL (primary data)
-- Vector DB (embeddings for semantic search)
+- PostgreSQL (primary data) - **AUTHORITATIVE SCHEMA**: `internal/database/schema/remediation_audit.sql`
+- Vector DB (embeddings for semantic search) - pgvector extension, vector(384)
 - Redis (query result cache)
 
 **No Writes**: This is a read-only service
+
+**Schema Authority**: Context API uses the `remediation_audit` table schema defined by Data Storage Service. This ensures zero schema drift and consistency across services. See [SCHEMA_ALIGNMENT.md](implementation/SCHEMA_ALIGNMENT.md) for details.
 
 ---
 

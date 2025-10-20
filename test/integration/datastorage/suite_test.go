@@ -45,11 +45,18 @@ var _ = BeforeSuite(func() {
 	logger, err = logConfig.Build()
 	Expect(err).ToNot(HaveOccurred())
 
-	// Connect to PostgreSQL (running via make bootstrap-dev)
+	// Connect to PostgreSQL (running via make bootstrap-dev or test-integration-datastorage)
 	// Database: postgres (master database for test isolation)
 	// User: postgres
 	// Password: postgres
 	// Host: localhost:5432
+	//
+	// INFRASTRUCTURE SHARING NOTE:
+	// This PostgreSQL instance is SHARED with Context API integration tests
+	// - Context API uses same PostgreSQL instance with separate schemas (contextapi_test_<timestamp>)
+	// - Schema-based isolation ensures no conflicts between test suites
+	// - Both services share remediation_audit schema from internal/database/schema/
+	// - Zero schema drift guaranteed through shared infrastructure
 	connStr := "host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"
 	db, err = sql.Open("postgres", connStr)
 	Expect(err).ToNot(HaveOccurred())
@@ -65,12 +72,14 @@ var _ = BeforeSuite(func() {
 	// CRITICAL: Create pgvector extension at database level BEFORE any tests run
 	// Extensions are database-scoped, not schema-scoped
 	// This ensures all test schemas can use vector types
+	// Note: Context API integration tests also rely on this extension
 	_, err = db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector")
 	Expect(err).ToNot(HaveOccurred(), "Failed to create pgvector extension")
 
 	GinkgoWriter.Println("✅ Data Storage integration test environment ready!")
-	GinkgoWriter.Println("   - PostgreSQL: localhost:5432")
+	GinkgoWriter.Println("   - PostgreSQL: localhost:5432 (SHARED with Context API tests)")
 	GinkgoWriter.Println("   - pgvector extension: enabled")
+	GinkgoWriter.Println("   - Infrastructure sharing: Schema-based isolation for parallel testing")
 })
 
 var _ = AfterSuite(func() {

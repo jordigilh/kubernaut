@@ -1,7 +1,7 @@
 # Remediation Orchestrator (Alert Remediation Service)
 
-**Version**: v1.0
-**Status**: ✅ Design Complete (98%)
+**Version**: v1.1
+**Status**: ✅ Design Complete (100% - includes V1.0 approval notification integration)
 **Health/Ready Port**: 8080 (`/health`, `/ready` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
 **CRD**: RemediationRequest
@@ -242,11 +242,29 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 
 ---
 
+## 📝 Version History
+
+### **Version 1.1** (2025-10-20)
+- ✅ **Added V1.0 approval notification CRD schema field** (BR-ORCH-001)
+- ✅ **Added Phase 3.5: Approval Notification Triggering to reconciliation phases**
+- ✅ **Added controller implementation specifications for AIAnalysis watch and NotificationRequest creation**
+- ✅ **Added downstream integration documentation for Notification Service**
+- ✅ **Updated from standalone implementation plan to main specification integration**
+- 📊 **Design completeness**: 98% → 100%
+
+### **Version 1.0** (2025-10-09)
+- Initial Remediation Orchestrator Service specification
+- CRD-based orchestration architecture
+- Watch-based coordination patterns
+- Testing strategy and recovery workflows
+
+---
+
 ## 📝 Document Maintenance
 
-**Last Updated**: 2025-10-09
+**Last Updated**: 2025-10-20
 **Document Structure Version**: 1.1
-**Status**: 🟡 85% Complete - 3 stub files need expansion
+**Status**: ✅ 100% Complete (V1.0 approval notification integration)
 
 **Completion Status**:
 - ✅ **Core Documentation**: 100% complete (11/14 files)

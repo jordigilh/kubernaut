@@ -1,0 +1,369 @@
+package contextapi
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+func TestServer(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Context API Server Suite")
+}
+
+var _ = Describe("BR-CONTEXT-008: REST API Endpoints", func() {
+	var (
+		server *httptest.Server
+		client *http.Client
+	)
+
+	BeforeEach(func() {
+		client = &http.Client{}
+		// Server will be initialized in GREEN phase
+		server = nil
+	})
+
+	AfterEach(func() {
+		if server != nil {
+			server.Close()
+		}
+	})
+
+	Describe("Health Check Endpoints", func() {
+		Context("GET /health", func() {
+			It("should return 200 OK when service is healthy", func() {
+				Skip("GREEN phase: Server implementation pending")
+
+				resp, err := client.Get(server.URL + "/health")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var health map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&health)
+				Expect(health["status"]).To(Equal("healthy"))
+			})
+		})
+
+		Context("GET /health/ready", func() {
+			It("should return 200 OK when dependencies are ready", func() {
+				Skip("GREEN phase: Readiness check pending")
+
+				resp, err := client.Get(server.URL + "/health/ready")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var readiness map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&readiness)
+				Expect(readiness["database"]).To(Equal("ready"))
+				Expect(readiness["cache"]).To(Equal("ready"))
+			})
+		})
+
+		Context("GET /health/live", func() {
+			It("should return 200 OK when service is alive", func() {
+				Skip("GREEN phase: Liveness check pending")
+
+				resp, err := client.Get(server.URL + "/health/live")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			})
+		})
+	})
+
+	Describe("Metrics Endpoint", func() {
+		Context("GET /metrics", func() {
+			It("should expose Prometheus metrics", func() {
+				Skip("GREEN phase: Metrics endpoint pending")
+
+				resp, err := client.Get(server.URL + "/metrics")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+				Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/plain"))
+			})
+
+			It("should include query metrics", func() {
+				Skip("GREEN phase: Query metrics pending")
+
+				resp, err := client.Get(server.URL + "/metrics")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				var body bytes.Buffer
+				body.ReadFrom(resp.Body)
+				metricsText := body.String()
+
+				// Verify key metrics are present
+				Expect(metricsText).To(ContainSubstring("context_api_queries_total"))
+				Expect(metricsText).To(ContainSubstring("context_api_query_duration_seconds"))
+				Expect(metricsText).To(ContainSubstring("context_api_cache_hits_total"))
+			})
+		})
+	})
+
+	Describe("Query Endpoints", func() {
+		Context("GET /api/v1/incidents", func() {
+			It("should return list of incidents", func() {
+				Skip("GREEN phase: ListIncidents endpoint pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/incidents?limit=10")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var result map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(result["incidents"]).ToNot(BeNil())
+				Expect(result["total"]).To(BeNumerically(">=", 0))
+			})
+
+			It("should support filtering by namespace", func() {
+				Skip("GREEN phase: Namespace filtering pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/incidents?namespace=production")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			})
+
+			It("should support pagination", func() {
+				Skip("GREEN phase: Pagination pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/incidents?limit=5&offset=10")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var result map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(result["limit"]).To(Equal(float64(5)))
+				Expect(result["offset"]).To(Equal(float64(10)))
+			})
+		})
+
+		Context("GET /api/v1/incidents/:id", func() {
+			It("should return single incident by ID", func() {
+				Skip("GREEN phase: GetIncident endpoint pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/incidents/123")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				if resp.StatusCode == http.StatusOK {
+					var incident map[string]interface{}
+					json.NewDecoder(resp.Body).Decode(&incident)
+					Expect(incident["id"]).To(Equal(float64(123)))
+				}
+			})
+
+			It("should return 404 for nonexistent incident", func() {
+				Skip("GREEN phase: 404 handling pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/incidents/999999")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+			})
+		})
+	})
+
+	Describe("Aggregation Endpoints", func() {
+		Context("GET /api/v1/aggregations/success-rate", func() {
+			It("should return success rate for workflow", func() {
+				Skip("GREEN phase: Success rate endpoint pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/aggregations/success-rate?workflow_id=scale-deployment")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var result map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(result["workflow_id"]).To(Equal("scale-deployment"))
+				Expect(result["success_rate"]).To(BeNumerically(">=", 0.0))
+				Expect(result["success_rate"]).To(BeNumerically("<=", 1.0))
+			})
+		})
+
+		Context("GET /api/v1/aggregations/namespaces", func() {
+			It("should return incidents grouped by namespace", func() {
+				Skip("GREEN phase: Namespace grouping endpoint pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/aggregations/namespaces")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var result map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(result["groups"]).ToNot(BeNil())
+			})
+		})
+
+		Context("GET /api/v1/aggregations/severity", func() {
+			It("should return severity distribution", func() {
+				Skip("GREEN phase: Severity distribution endpoint pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/aggregations/severity?namespace=production")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var result map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(result["distribution"]).ToNot(BeNil())
+			})
+		})
+
+		Context("GET /api/v1/aggregations/trend", func() {
+			It("should return incident trend over time", func() {
+				Skip("GREEN phase: Trend endpoint pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/aggregations/trend?days=30")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var result map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(result["trend"]).ToNot(BeNil())
+			})
+		})
+	})
+
+	Describe("Semantic Search Endpoint", func() {
+		Context("POST /api/v1/search/semantic", func() {
+			It("should perform semantic search with query text", func() {
+				Skip("GREEN phase: Semantic search endpoint pending")
+
+				reqBody := map[string]interface{}{
+					"query":     "pod crash loop",
+					"limit":     10,
+					"threshold": 0.8,
+				}
+				bodyBytes, _ := json.Marshal(reqBody)
+
+				resp, err := client.Post(
+					server.URL+"/api/v1/search/semantic",
+					"application/json",
+					bytes.NewReader(bodyBytes),
+				)
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var result map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(result["results"]).ToNot(BeNil())
+			})
+
+			It("should validate request body", func() {
+				Skip("GREEN phase: Request validation pending")
+
+				resp, err := client.Post(
+					server.URL+"/api/v1/search/semantic",
+					"application/json",
+					bytes.NewReader([]byte("{invalid json")),
+				)
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+			})
+		})
+	})
+
+	Describe("Error Handling", func() {
+		Context("when invalid query parameters provided", func() {
+			It("should return 400 Bad Request for invalid limit", func() {
+				Skip("GREEN phase: Parameter validation pending")
+
+				resp, err := client.Get(server.URL + "/api/v1/incidents?limit=invalid")
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+			})
+		})
+
+		Context("when unsupported HTTP method used", func() {
+			It("should return 405 Method Not Allowed", func() {
+				Skip("GREEN phase: Method validation pending")
+
+				req, _ := http.NewRequest("DELETE", server.URL+"/api/v1/incidents", nil)
+				resp, err := client.Do(req)
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed))
+			})
+		})
+	})
+
+	Describe("CORS Headers", func() {
+		It("should include CORS headers in response", func() {
+			Skip("GREEN phase: CORS middleware pending")
+
+			resp, err := client.Get(server.URL + "/api/v1/incidents")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.Header.Get("Access-Control-Allow-Origin")).ToNot(BeEmpty())
+		})
+	})
+})
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RED PHASE TEST METRICS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Total Tests: 22 (all skipped - awaiting GREEN implementation)
+// BR Coverage: BR-CONTEXT-008 (REST API), BR-CONTEXT-006 (Observability)
+// Test Categories:
+//   - Health Check Endpoints: 3 tests
+//   - Metrics Endpoint: 2 tests
+//   - Query Endpoints: 4 tests
+//   - Aggregation Endpoints: 4 tests
+//   - Semantic Search: 2 tests
+//   - Error Handling: 2 tests
+//   - CORS: 1 test
+//
+// Expected GREEN Phase Outcomes:
+//   1. Implement HTTP server with chi router
+//   2. Implement all REST endpoints:
+//      - GET /health, /health/ready, /health/live
+//      - GET /metrics (Prometheus)
+//      - GET /api/v1/incidents
+//      - GET /api/v1/incidents/:id
+//      - GET /api/v1/aggregations/success-rate
+//      - GET /api/v1/aggregations/namespaces
+//      - GET /api/v1/aggregations/severity
+//      - GET /api/v1/aggregations/trend
+//      - POST /api/v1/search/semantic
+//   3. Integrate with Router and AggregationService
+//   4. Add Prometheus metrics collection
+//   5. Add middleware (logging, CORS, error handling)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+

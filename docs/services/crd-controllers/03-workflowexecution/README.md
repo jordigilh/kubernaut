@@ -16,7 +16,7 @@
 | Document | Purpose | Lines | Status |
 |----------|---------|-------|--------|
 | **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ~110 | ✅ Complete |
-| **[CRD Schema](./crd-schema.md)** | WorkflowExecution CRD types, validation, examples | ~510 | ✅ Complete |
+| **[CRD Schema](./crd-schema.md)** | WorkflowExecution CRD types, validation, examples, **DD-002 validation framework** | ~1100 | ✅ Complete |
 | **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ~150 | ✅ Complete |
 | **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ~590 | ✅ Complete |
 | **[Finalizers & Lifecycle](./finalizers-lifecycle.md)** | Cleanup patterns, CRD lifecycle management, monitoring | ~645 | ✅ Complete |
@@ -113,9 +113,10 @@
 
 | Category | Range | Description |
 |----------|-------|-------------|
-| **Primary** | BR-WF-001 to BR-WF-050 | Workflow orchestration and step execution |
+| **Primary** | BR-WF-001 to BR-WF-053 | Workflow orchestration and step execution |
 | **Validation** | BR-WF-010 to BR-WF-015 | DSL validation and step sequencing |
 | **Execution** | BR-WF-020 to BR-WF-030 | Parallel vs sequential, step dependencies |
+| **Step Validation (NEW)** | BR-WF-016, BR-WF-052, BR-WF-053 | **Step-level precondition/postcondition validation** (DD-002) |
 
 ---
 

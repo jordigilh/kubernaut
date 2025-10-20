@@ -121,7 +121,14 @@ status:
 - Verify rollback procedures are defined
 - Confirm monitoring endpoints are accessible
 
-**Step 5: Status Update**
+**Step 5: Step-Level Precondition Planning** (BR-WF-016, BR-WF-053) [NEW - DD-002]
+- Identify steps with preConditions defined
+- Validate precondition Rego policies are syntactically correct
+- Plan precondition evaluation strategy (which conditions are required vs warnings)
+- Record which steps require precondition checks
+- Load condition policies from ConfigMap if using policy references
+
+**Step 6: Status Update**
 - Set `status.phase = "executing"`
 - Set `status.validationResults` with checks
 - Record validation timestamp
@@ -150,7 +157,15 @@ if allSafetyChecksPassed && (approvalReceived || !approvalRequired) {
 
 **Step 1: Step Execution Loop**
 - For each step in execution order:
-  - Create KubernetesExecution CRD for step
+  - **Step 1a: Precondition Validation** (BR-WF-016) [NEW - DD-002]
+    - Evaluate all `step.preConditions[]` using Rego policy engine
+    - Query current cluster state for condition input (e.g., deployment status, pod count, resource availability)
+    - For each precondition:
+      - Execute Rego policy with cluster state as input
+      - If `condition.required=true` and evaluation fails: Block execution, mark step as "blocked", update `status.stepStatuses[n].preConditionResults`, do NOT create KubernetesExecution CRD
+      - If `condition.required=false` and evaluation fails: Log warning, update `status.stepStatuses[n].preConditionResults`, continue execution
+    - Wait up to `condition.timeout` for async precondition checks
+  - Create KubernetesExecution CRD for step (only if all required preconditions passed)
   - Set owner reference to WorkflowExecution
   - Configure step-specific parameters
   - Record step start time
@@ -338,11 +353,22 @@ func (r *WorkflowExecutionReconciler) reconcileExecuting(
 - Update historical success rates
 - Generate optimization recommendations
 
-**Step 4: Status Update**
+**Step 4: Postcondition Verification** (BR-WF-052) [NEW - DD-002]
+- After all steps complete, evaluate all `step.postConditions[]` for completed steps
+- Query cluster state to verify intended outcomes achieved
+- For each postcondition:
+  - Execute Rego policy with post-execution cluster state as input
+  - Wait up to `condition.timeout` for async verification (e.g., pods starting, deployment stabilizing)
+  - If `condition.required=true` and verification fails: Mark step as "failed", update `status.stepStatuses[n].postConditionResults`, trigger rollback if `rollbackStrategy=automatic`
+  - If `condition.required=false` and verification fails: Log warning, update `status.stepStatuses[n].postConditionResults`, mark as partial success
+- Aggregate postcondition results across all steps
+- Use postcondition results to inform workflow effectiveness score
+
+**Step 5: Status Update**
 - Set `status.phase = "completed"`
-- Set `status.workflowResult` with outcome
+- Set `status.workflowResult` with outcome (consider postcondition results)
 - Record completion timestamp
-- Calculate workflow effectiveness score
+- Calculate workflow effectiveness score (postcondition success rate contributes to score)
 
 **Transition Criteria**:
 ```go

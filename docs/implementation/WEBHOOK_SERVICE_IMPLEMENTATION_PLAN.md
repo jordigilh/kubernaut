@@ -45,7 +45,7 @@
 - **Code Coverage**: 75.0% for webhook components (exceeds 70% target)
 - **Core Functionality**: ✅ Complete (webhook handling, authentication, rate limiting, circuit breaker, retry queue, dead letter queue)
 - **Integration Status**: ✅ Complete (`cmd/webhook-service/main.go`)
-- **Container Build**: ✅ **NEW** - `kubernaut-webhook-service:latest` (144MB, Red Hat UBI9 base)
+- **Container Build**: ✅ **NEW** - `kubernaut-webhook-service:latest` (144MB, upstream community UBI9 base)
 - **Backward Compatibility**: ✅ Verified (all existing tests maintained)
 - **Performance**: ✅ Validated (BR-PERF-001: <2s response time, BR-PERF-002: 1000 concurrent requests)
 - **Security**: ✅ Validated (authentication, authorization, input validation, HTTP method restrictions)
@@ -1241,7 +1241,7 @@ timeout := config.ProcessorTimeout
 2. ✅ **Integration Test Validation**: Confirmed 6/6 integration tests passing with fallback environment
 3. ✅ **TDD Methodology Compliance**: Followed RED-GREEN-REFACTOR approach throughout
 4. ✅ **Code Quality**: All webhook unit tests (21/21) and integration tests (6/6) passing
-5. ✅ **Container Build Success**: Built `kubernaut-webhook-service:latest` container (144MB, Red Hat UBI9)
+5. ✅ **Container Build Success**: Built `kubernaut-webhook-service:latest` container (144MB, upstream community UBI9)
 6. ✅ **Podman Machine Setup**: Successfully started podman machine for container operations
 7. 🔄 **Environment Setup Analysis**: Identified podman rootful configuration as blocker
 
@@ -1256,7 +1256,7 @@ timeout := config.ProcessorTimeout
 - **Image ID**: `693b94c7200c`
 - **Size**: 144MB (optimized multi-stage build)
 - **Architecture**: ARM64 (Apple Silicon compatible)
-- **Base Images**: Red Hat UBI9 (go-toolset:1.24 + ubi-minimal:latest)
+- **Base Images**: upstream community UBI9 (go-toolset:1.24 + ubi-minimal:latest)
 - **Security**: Non-root user (webhook-user, UID 1001)
 - **Ports**: 8080 (webhook), 9090 (metrics), 8081 (health)
 - **Build Status**: ✅ Successful with expected configuration error (needs config file)
@@ -1465,7 +1465,7 @@ kubectl get pods -l app=webhook-service
 - `docs/implementation/WEBHOOK_SERVICE_IMPLEMENTATION_PLAN.md` - Updated status and container build info
 
 ### **Container Build Artifacts (NEW)**
-- `docker/webhook-service.Dockerfile` - Multi-stage Red Hat UBI9 Dockerfile
+- `docker/webhook-service.Dockerfile` - Multi-stage upstream community UBI9 Dockerfile
 - `kubernaut-webhook-service:latest` - Built container image (144MB, ARM64)
 - Container ID: `693b94c7200c` - Ready for deployment
 

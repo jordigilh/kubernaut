@@ -47,11 +47,50 @@ type AIAnalysisSpec struct {
 	IncludeHistory bool    `json:"includeHistory"` // Include historical patterns
 }
 
+// ApprovalContext contains rich context for approval notifications (BR-AI-059)
+type ApprovalContext struct {
+	// Reason why approval is required
+	Reason string `json:"reason"`
+	// ConfidenceScore from AI analysis (0.0-1.0)
+	// +kubebuilder:validation:Minimum=0.0
+	// +kubebuilder:validation:Maximum=1.0
+	ConfidenceScore float64 `json:"confidenceScore"`
+	// ConfidenceLevel: "low" | "medium" | "high"
+	// +kubebuilder:validation:Enum=low;medium;high
+	ConfidenceLevel string `json:"confidenceLevel"`
+	// InvestigationSummary from HolmesGPT analysis
+	InvestigationSummary string `json:"investigationSummary"`
+	// EvidenceCollected that led to this conclusion
+	EvidenceCollected []string `json:"evidenceCollected,omitempty"`
+	// RecommendedActions with rationale
+	RecommendedActions []RecommendedAction `json:"recommendedActions"`
+	// AlternativesConsidered with pros/cons
+	AlternativesConsidered []AlternativeApproach `json:"alternativesConsidered,omitempty"`
+	// WhyApprovalRequired explains the need for human review
+	WhyApprovalRequired string `json:"whyApprovalRequired"`
+}
+
+// RecommendedAction describes a remediation action with rationale
+type RecommendedAction struct {
+	// Action type (from 29 canonical actions)
+	Action string `json:"action"`
+	// Rationale explaining why this action is recommended
+	Rationale string `json:"rationale"`
+}
+
+// AlternativeApproach describes an alternative approach with pros/cons
+type AlternativeApproach struct {
+	// Approach description
+	Approach string `json:"approach"`
+	// ProsCons analysis
+	ProsCons string `json:"prosCons"`
+}
+
 // AIAnalysisStatus defines the observed state of AIAnalysis.
 type AIAnalysisStatus struct {
 	// Phase tracking
-	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Recommending;Completed;Failed
-	Phase   string `json:"phase"` // "Pending", "Investigating", "Completed", "Failed"
+	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Recommending;Approving;Completed;Failed;Rejected
+	Phase   string `json:"phase"` // "Pending", "Investigating", "Approving", "Completed", "Failed", "Rejected"
 	Message string `json:"message,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 
@@ -74,6 +113,33 @@ type AIAnalysisStatus struct {
 	TokensUsed int `json:"tokensUsed,omitempty"` // LLM tokens consumed
 	// +kubebuilder:validation:Minimum=0
 	InvestigationTime int64 `json:"investigationTime,omitempty"` // Duration in seconds
+
+	// Approval fields (BR-AI-059, BR-AI-060)
+	// ApprovalRequestName links to AIApprovalRequest CRD
+	ApprovalRequestName string `json:"approvalRequestName,omitempty"`
+	// ApprovalRequestedAt timestamp when approval was requested
+	ApprovalRequestedAt *metav1.Time `json:"approvalRequestedAt,omitempty"`
+	// ApprovalContext contains rich context for notifications
+	ApprovalContext *ApprovalContext `json:"approvalContext,omitempty"`
+
+	// Approval decision tracking (BR-AI-060)
+	// ApprovalStatus: "Approved" | "Rejected" | "Pending"
+	// +kubebuilder:validation:Enum=Approved;Rejected;Pending
+	ApprovalStatus string `json:"approvalStatus,omitempty"`
+	// ApprovedBy: email/username of approver
+	ApprovedBy string `json:"approvedBy,omitempty"`
+	// RejectedBy: email/username of rejecter
+	RejectedBy string `json:"rejectedBy,omitempty"`
+	// ApprovalTime: timestamp of approval decision
+	ApprovalTime *metav1.Time `json:"approvalTime,omitempty"`
+	// RejectionReason: why approval was rejected
+	RejectionReason string `json:"rejectionReason,omitempty"`
+	// ApprovalMethod: "kubectl" | "dashboard" | "slack-button" | "email-link"
+	ApprovalMethod string `json:"approvalMethod,omitempty"`
+	// ApprovalJustification: optional operator comment
+	ApprovalJustification string `json:"approvalJustification,omitempty"`
+	// ApprovalDuration: time from request to decision (e.g., "2m15s")
+	ApprovalDuration string `json:"approvalDuration,omitempty"`
 
 	// Conditions
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

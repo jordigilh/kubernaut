@@ -15,7 +15,7 @@ This implementation guide provides step-by-step instructions for implementing th
 - **Incremental Development**: Build upon existing test infrastructure
 - **Business Requirements First**: Every implementation maps to specific BR-XXX requirements
 - **Development Guidelines Compliance**: Follow established patterns and practices
-- **Real Infrastructure Integration**: Leverage OCP cluster and oss-gpt:20b model
+- **Real Infrastructure Integration**: Leverage Kind cluster and oss-gpt:20b model
 - **Automated Validation**: Continuous business outcome verification
 
 ---
@@ -836,7 +836,7 @@ spec:
 .PHONY: test-e2e-use-cases
 test-e2e-use-cases: ## Run all E2E use case tests
 	@echo "Running E2E use case tests..."
-	@echo "Using OCP cluster and oss-gpt:20b model..."
+	@echo "Using Kind cluster and oss-gpt:20b model..."
 	KUBECONFIG=${KUBECONFIG} \
 	LLM_ENDPOINT=http://localhost:8080 \
 	LLM_MODEL=gpt-oss:20b \
@@ -1047,10 +1047,10 @@ echo ""
 echo "📋 Step 1: Validating prerequisites..."
 "${SCRIPT_DIR}/validate-e2e-prerequisites.sh"
 
-# Step 2: Setup OCP cluster if needed
-echo "🏗️  Step 2: Setting up OCP cluster..."
+# Step 2: Setup Kind cluster if needed
+echo "🏗️  Step 2: Setting up Kind cluster..."
 if ! oc cluster-info >/dev/null 2>&1; then
-    echo "Setting up OCP cluster with KCLI..."
+    echo "Setting up Kind cluster with KCLI..."
     cd "${PROJECT_ROOT}/docs/development/e2e-testing"
     ./deploy-kcli-cluster.sh kubernaut-e2e kcli-baremetal-params.yml
 
@@ -1368,7 +1368,7 @@ Each implementation phase must pass these quality gates:
 4. **Timeline Confirmation**: Validate 6-week implementation timeline
 
 ### **Risk Mitigation**
-1. **Dependency Management**: Ensure OCP cluster and AI model availability
+1. **Dependency Management**: Ensure Kind cluster and AI model availability
 2. **Testing Infrastructure**: Validate LitmusChaos compatibility
 3. **Performance Baseline**: Establish baseline metrics before implementation
 4. **Rollback Planning**: Prepare rollback procedures for each phase

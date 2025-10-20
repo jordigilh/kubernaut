@@ -1,9 +1,9 @@
 # RemediationOrchestrator - Notification Integration Implementation Plan
 
-**Date**: 2025-10-13  
-**Status**: ⏳ **Ready for Implementation** (awaiting RemediationOrchestrator completion)  
-**Effort**: **1-2 hours**  
-**Confidence**: **90%**  
+**Date**: 2025-10-13
+**Status**: ⏳ **Ready for Implementation** (awaiting RemediationOrchestrator completion)
+**Effort**: **1-2 hours**
+**Confidence**: **90%**
 **Related**: ADR-017 (NotificationRequest CRD Creator)
 
 ---
@@ -15,7 +15,7 @@ Per **ADR-017**, the `RemediationOrchestrator` is responsible for creating `Noti
 2. Critical events requiring escalation
 3. Significant status changes
 
-**Current Status**: RemediationOrchestrator CRD is scaffold-only  
+**Current Status**: RemediationOrchestrator CRD is scaffold-only
 **Implementation Approach**: Add notification creation logic to controller when CRD is complete
 
 ---
@@ -46,7 +46,7 @@ Per **ADR-017**, the `RemediationOrchestrator` is responsible for creating `Noti
 ```go
 import (
     "fmt"
-    
+
     notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -79,7 +79,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
     // Create notification if appropriate
     if r.shouldNotify(orchestrator) {
         if err := r.createNotification(ctx, orchestrator); err != nil {
-            log.Error(err, "Failed to create notification", 
+            log.Error(err, "Failed to create notification",
                 "orchestrator", orchestrator.Name)
             // Don't fail reconciliation - notification is non-critical
         }
@@ -148,8 +148,8 @@ func (r *RemediationOrchestratorReconciler) createNotification(
 
     notification := &notificationv1alpha1.NotificationRequest{
         ObjectMeta: metav1.ObjectMeta{
-            Name: fmt.Sprintf("remediation-%s-%s", 
-                orchestrator.Name, 
+            Name: fmt.Sprintf("remediation-%s-%s",
+                orchestrator.Name,
                 orchestrator.Status.Phase),
             Namespace: orchestrator.Namespace,
             Labels: map[string]string{
@@ -177,7 +177,7 @@ func (r *RemediationOrchestratorReconciler) createNotification(
         },
     }
 
-    log.Info("Creating notification", 
+    log.Info("Creating notification",
         "notification", notification.Name,
         "remediation", orchestrator.Name,
         "phase", orchestrator.Status.Phase)
@@ -198,7 +198,7 @@ func (r *RemediationOrchestratorReconciler) createNotification(
 
 // formatSubject creates a notification subject line
 func formatSubject(orchestrator *remediationorchestratorv1alpha1.RemediationOrchestrator) string {
-    return fmt.Sprintf("Remediation %s: %s", 
+    return fmt.Sprintf("Remediation %s: %s",
         orchestrator.Status.Phase,
         orchestrator.Name)
 }
@@ -621,9 +621,9 @@ This integration enables:
 
 ---
 
-**Version**: 1.0  
-**Date**: 2025-10-13  
-**Status**: ⏳ **Ready for implementation** (awaiting RemediationOrchestrator completion)  
-**Effort**: 1.5-2 hours  
+**Version**: 1.0
+**Date**: 2025-10-13
+**Status**: ⏳ **Ready for implementation** (awaiting RemediationOrchestrator completion)
+**Effort**: 1.5-2 hours
 **Confidence**: 90%
 

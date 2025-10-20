@@ -18,6 +18,7 @@ package datastorage_query_test
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -25,9 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
+	dsquery "github.com/jordigilh/kubernaut/pkg/datastorage/query"
 )
 
 func TestQuery(t *testing.T) {
@@ -37,7 +37,7 @@ func TestQuery(t *testing.T) {
 
 var _ = Describe("BR-STORAGE-005: Query API with Filtering", func() {
 	var (
-		queryService *query.Service
+		queryService *dsquery.Service
 		mockDB       *MockQueryDB
 		logger       *zap.Logger
 		ctx          context.Context
@@ -46,7 +46,7 @@ var _ = Describe("BR-STORAGE-005: Query API with Filtering", func() {
 	BeforeEach(func() {
 		logger, _ = zap.NewDevelopment()
 		mockDB = NewMockQueryDB()
-		queryService = query.NewService(mockDB, logger)
+		queryService = dsquery.NewService(mockDB, logger)
 		ctx = context.Background()
 
 		// Seed mock database with test data
@@ -55,7 +55,7 @@ var _ = Describe("BR-STORAGE-005: Query API with Filtering", func() {
 
 	// ⭐ TABLE-DRIVEN: Filter combinations
 	DescribeTable("should filter remediation audits correctly",
-		func(opts *datastorage.ListOptions, expectedCount int, description string) {
+		func(opts *dsquery.ListOptions, expectedCount int, description string) {
 			audits, err := queryService.ListRemediationAudits(ctx, opts)
 
 			Expect(err).ToNot(HaveOccurred(), description)
@@ -63,47 +63,47 @@ var _ = Describe("BR-STORAGE-005: Query API with Filtering", func() {
 		},
 
 		Entry("BR-STORAGE-005.1: filter by namespace",
-			&datastorage.ListOptions{Namespace: "production"},
+			&dsquery.ListOptions{Namespace: "production"},
 			5,
 			"should return only production namespace audits"),
 
 		Entry("BR-STORAGE-005.2: filter by status",
-			&datastorage.ListOptions{Status: "success"},
+			&dsquery.ListOptions{Status: "success"},
 			10,
 			"should return only successful audits"),
 
 		Entry("BR-STORAGE-005.3: filter by phase",
-			&datastorage.ListOptions{Phase: "completed"},
+			&dsquery.ListOptions{Phase: "completed"},
 			8,
 			"should return only completed phase audits"),
 
 		Entry("BR-STORAGE-005.4: filter by namespace + status (combined)",
-			&datastorage.ListOptions{Namespace: "production", Status: "success"},
+			&dsquery.ListOptions{Namespace: "production", Status: "success"},
 			3,
 			"should apply both filters"),
 
 		Entry("BR-STORAGE-005.5: filter by all fields (namespace + status + phase)",
-			&datastorage.ListOptions{Namespace: "production", Status: "success", Phase: "completed"},
+			&dsquery.ListOptions{Namespace: "production", Status: "success", Phase: "completed"},
 			2,
 			"should apply all three filters"),
 
 		Entry("BR-STORAGE-005.6: limit results to 5",
-			&datastorage.ListOptions{Limit: 5},
+			&dsquery.ListOptions{Limit: 5},
 			5,
 			"should limit to 5 results"),
 
 		Entry("BR-STORAGE-005.7: pagination offset 10 limit 10",
-			&datastorage.ListOptions{Limit: 10, Offset: 10},
+			&dsquery.ListOptions{Limit: 10, Offset: 10},
 			10,
 			"should return second page of 10 results"),
 
 		Entry("BR-STORAGE-005.8: filter nonexistent namespace",
-			&datastorage.ListOptions{Namespace: "nonexistent"},
+			&dsquery.ListOptions{Namespace: "nonexistent"},
 			0,
 			"should return empty result for nonexistent namespace"),
 
 		Entry("BR-STORAGE-005.9: no filters returns all",
-			&datastorage.ListOptions{},
+			&dsquery.ListOptions{},
 			20,
 			"should return all audits when no filters applied"),
 	)
@@ -112,14 +112,14 @@ var _ = Describe("BR-STORAGE-005: Query API with Filtering", func() {
 		It("should handle empty database gracefully", func() {
 			mockDB.Clear()
 
-			audits, err := queryService.ListRemediationAudits(ctx, &datastorage.ListOptions{})
+			audits, err := queryService.ListRemediationAudits(ctx, &dsquery.ListOptions{})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(audits).To(BeEmpty())
 		})
 
 		It("should handle offset beyond total count", func() {
-			audits, err := queryService.ListRemediationAudits(ctx, &datastorage.ListOptions{
+			audits, err := queryService.ListRemediationAudits(ctx, &dsquery.ListOptions{
 				Offset: 1000,
 				Limit:  10,
 			})
@@ -129,7 +129,7 @@ var _ = Describe("BR-STORAGE-005: Query API with Filtering", func() {
 		})
 
 		It("should handle very large limit gracefully", func() {
-			audits, err := queryService.ListRemediationAudits(ctx, &datastorage.ListOptions{
+			audits, err := queryService.ListRemediationAudits(ctx, &dsquery.ListOptions{
 				Limit: 10000,
 			})
 
@@ -140,7 +140,7 @@ var _ = Describe("BR-STORAGE-005: Query API with Filtering", func() {
 
 	Context("ordering", func() {
 		It("should order by start_time DESC by default", func() {
-			audits, err := queryService.ListRemediationAudits(ctx, &datastorage.ListOptions{
+			audits, err := queryService.ListRemediationAudits(ctx, &dsquery.ListOptions{
 				Limit: 5,
 			})
 
@@ -159,7 +159,7 @@ var _ = Describe("BR-STORAGE-005: Query API with Filtering", func() {
 
 var _ = Describe("BR-STORAGE-006: Pagination Support", func() {
 	var (
-		queryService *query.Service
+		queryService *dsquery.Service
 		mockDB       *MockQueryDB
 		logger       *zap.Logger
 		ctx          context.Context
@@ -168,7 +168,7 @@ var _ = Describe("BR-STORAGE-006: Pagination Support", func() {
 	BeforeEach(func() {
 		logger, _ = zap.NewDevelopment()
 		mockDB = NewMockQueryDB()
-		queryService = query.NewService(mockDB, logger)
+		queryService = dsquery.NewService(mockDB, logger)
 		ctx = context.Background()
 
 		// Seed with 50 test records for pagination testing
@@ -176,7 +176,7 @@ var _ = Describe("BR-STORAGE-006: Pagination Support", func() {
 	})
 
 	DescribeTable("should paginate results correctly",
-		func(opts *datastorage.ListOptions, expectedPage int, expectedTotalPages int) {
+		func(opts *dsquery.ListOptions, expectedPage int, expectedTotalPages int) {
 			result, err := queryService.PaginatedList(ctx, opts)
 
 			Expect(err).ToNot(HaveOccurred())
@@ -192,28 +192,28 @@ var _ = Describe("BR-STORAGE-006: Pagination Support", func() {
 		},
 
 		Entry("BR-STORAGE-006.1: first page (10 per page)",
-			&datastorage.ListOptions{Limit: 10, Offset: 0},
+			&dsquery.ListOptions{Limit: 10, Offset: 0},
 			1, 5),
 
 		Entry("BR-STORAGE-006.2: second page (10 per page)",
-			&datastorage.ListOptions{Limit: 10, Offset: 10},
+			&dsquery.ListOptions{Limit: 10, Offset: 10},
 			2, 5),
 
 		Entry("BR-STORAGE-006.3: last page (10 per page)",
-			&datastorage.ListOptions{Limit: 10, Offset: 40},
+			&dsquery.ListOptions{Limit: 10, Offset: 40},
 			5, 5),
 
 		Entry("BR-STORAGE-006.4: first page (20 per page)",
-			&datastorage.ListOptions{Limit: 20, Offset: 0},
+			&dsquery.ListOptions{Limit: 20, Offset: 0},
 			1, 3),
 
 		Entry("BR-STORAGE-006.5: last partial page (20 per page)",
-			&datastorage.ListOptions{Limit: 20, Offset: 40},
+			&dsquery.ListOptions{Limit: 20, Offset: 40},
 			3, 3),
 	)
 
 	It("should include correct pagination metadata", func() {
-		result, err := queryService.PaginatedList(ctx, &datastorage.ListOptions{
+		result, err := queryService.PaginatedList(ctx, &dsquery.ListOptions{
 			Limit:  10,
 			Offset: 20,
 		})
@@ -230,7 +230,7 @@ var _ = Describe("BR-STORAGE-006: Pagination Support", func() {
 
 var _ = Describe("BR-STORAGE-012: Semantic Search", func() {
 	var (
-		queryService *query.Service
+		queryService *dsquery.Service
 		mockDB       *MockQueryDB
 		logger       *zap.Logger
 		ctx          context.Context
@@ -239,7 +239,7 @@ var _ = Describe("BR-STORAGE-012: Semantic Search", func() {
 	BeforeEach(func() {
 		logger, _ = zap.NewDevelopment()
 		mockDB = NewMockQueryDB()
-		queryService = query.NewService(mockDB, logger)
+		queryService = dsquery.NewService(mockDB, logger)
 		ctx = context.Background()
 
 		// Seed with embeddings
@@ -335,7 +335,7 @@ func NewMockQueryDB() *MockQueryDB {
 }
 
 // MockQueryResults implements filter logic for testing
-func (m *MockQueryDB) MockQueryResults(opts *datastorage.ListOptions) []*models.RemediationAudit {
+func (m *MockQueryDB) MockQueryResults(opts *dsquery.ListOptions) []*models.RemediationAudit {
 	results := make([]*models.RemediationAudit, 0)
 
 	// Apply filters
@@ -572,7 +572,7 @@ func (m *MockQueryDB) SelectContext(ctx context.Context, dest interface{}, query
 	}
 
 	// Regular query - parse query and return filtered results
-	opts := &datastorage.ListOptions{}
+	opts := &dsquery.ListOptions{}
 
 	// Parse args based on query structure
 	argIdx := 0
@@ -617,6 +617,15 @@ func (m *MockQueryDB) SelectContext(ctx context.Context, dest interface{}, query
 	return nil
 }
 
+// ExecContext implements DBQuerier interface for non-SELECT queries
+// Used for SET commands and other query execution that doesn't return rows
+func (m *MockQueryDB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+	m.lastQuery = query
+	m.lastArgs = args
+	// Mock implementation returns nil result (sufficient for testing)
+	return nil, nil
+}
+
 // containsString checks if query contains substring
 func containsString(s, substr string) bool {
 	if len(substr) == 0 {
@@ -642,7 +651,7 @@ func (m *MockQueryDB) GetContext(ctx context.Context, dest interface{}, query st
 
 	// For DO-GREEN phase: return count based on filters
 	// Parse query to determine filter order (same logic as SelectContext)
-	opts := &datastorage.ListOptions{}
+	opts := &dsquery.ListOptions{}
 
 	argIdx := 0
 	if containsString(query, "namespace") && argIdx < len(args) {
