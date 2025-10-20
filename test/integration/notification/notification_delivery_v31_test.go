@@ -2,6 +2,8 @@ package notification
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -9,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/testutil/timing"
 )
 
 // ==============================================
@@ -49,19 +52,21 @@ var _ = Describe("Notification Delivery v3.1 - Anti-Flaky Patterns", func() {
 				_ = k8sClient.Delete(ctx, nr)
 			}()
 
-			// Anti-flaky: EventuallyWithRetry for async delivery
-			// Use 30s timeout with 2s polling interval
-			Eventually(func() string {
+			// v3.1: Use EventuallyWithRetry for async delivery reliability
+			timing.EventuallyWithRetry(func() error {
 				var updated notificationv1alpha1.NotificationRequest
 				err := k8sClient.Get(ctx, client.ObjectKey{
 					Name:      nr.Name,
 					Namespace: nr.Namespace,
 				}, &updated)
 				if err != nil {
-					return ""
+					return err
 				}
-				return string(updated.Status.Phase)
-			}, "30s", "2s").Should(Equal(string(notificationv1alpha1.NotificationPhaseSent)),
+				if updated.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
+					return fmt.Errorf("expected phase Sent, got %s", updated.Status.Phase)
+				}
+				return nil
+			}, 5, 6*timing.ReconcileTimeout()).Should(Succeed(),
 				"NotificationRequest should be delivered within 30s")
 
 			// Verify delivery attempts (list-based verification)
@@ -140,15 +145,21 @@ var _ = Describe("Notification Delivery v3.1 - Anti-Flaky Patterns", func() {
 			// Delete immediately
 			Expect(k8sClient.Delete(ctx, nr)).To(Succeed())
 
-			// Verify it's deleted (not found is expected)
-			Eventually(func() bool {
-				var check notificationv1alpha1.NotificationRequest
-				err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      nr.Name,
-					Namespace: nr.Namespace,
-				}, &check)
-				return err != nil
-			}, "10s", "1s").Should(BeTrue())
+			// v3.1: Use WaitForConditionWithDeadline to verify deletion
+			err := timing.WaitForConditionWithDeadline(
+				ctx,
+				func() bool {
+					var check notificationv1alpha1.NotificationRequest
+					err := k8sClient.Get(ctx, client.ObjectKey{
+						Name:      nr.Name,
+						Namespace: nr.Namespace,
+					}, &check)
+					return err != nil // deletion confirmed when not found
+				},
+				1*time.Second, // check interval
+				10*time.Second, // deadline
+			)
+			Expect(err).ToNot(HaveOccurred(), "NotificationRequest should be deleted within 10s")
 		})
 
 		It("should handle Category D: Status Update Conflicts", func() {
@@ -186,18 +197,22 @@ var _ = Describe("Notification Delivery v3.1 - Anti-Flaky Patterns", func() {
 				_ = k8sClient.Delete(ctx, nr)
 			}()
 
-			// Verify notification is eventually delivered (with sanitization)
-			Eventually(func() string {
+			// v3.1: Use EventuallyWithRetry to verify delivery with sanitization
+			timing.EventuallyWithRetry(func() error {
 				var updated notificationv1alpha1.NotificationRequest
 				err := k8sClient.Get(ctx, client.ObjectKey{
 					Name:      nr.Name,
 					Namespace: nr.Namespace,
 				}, &updated)
 				if err != nil {
-					return ""
+					return err
 				}
-				return string(updated.Status.Phase)
-			}, "30s", "2s").Should(Equal(string(notificationv1alpha1.NotificationPhaseSent)))
+				if updated.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
+					return fmt.Errorf("expected phase Sent, got %s", updated.Status.Phase)
+				}
+				return nil
+			}, 5, 6*timing.ReconcileTimeout()).Should(Succeed(),
+				"Notification with secrets should be delivered after sanitization")
 		})
 	})
 
