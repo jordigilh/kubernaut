@@ -156,7 +156,7 @@ var _ = Describe("Notification Delivery v3.1 - Anti-Flaky Patterns", func() {
 					}, &check)
 					return err != nil // deletion confirmed when not found
 				},
-				1*time.Second, // check interval
+				1*time.Second,  // check interval
 				10*time.Second, // deadline
 			)
 			Expect(err).ToNot(HaveOccurred(), "NotificationRequest should be deleted within 10s")

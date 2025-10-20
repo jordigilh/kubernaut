@@ -137,25 +137,25 @@ data:
 		})
 	})
 
-	Context("sanitization metrics", func() {
-		It("should track redaction count", func() {
+	Context("sanitization behavior verification", func() {
+		It("should redact multiple secrets in one message", func() {
 			input := `password=secret123 and apiKey=abc789`
 
-			result, metrics := sanitizer.SanitizeWithMetrics(input)
+			result := sanitizer.Sanitize(input)
 
+			// Observable behavior: secrets are redacted
 			Expect(result).To(ContainSubstring("***REDACTED***"))
-			Expect(metrics.RedactedCount).To(BeNumerically(">=", 1))
-			Expect(metrics.Patterns).ToNot(BeEmpty())
+			Expect(result).ToNot(ContainSubstring("secret123"), "password should be redacted")
+			Expect(result).ToNot(ContainSubstring("abc789"), "API key should be redacted")
 		})
 
-		It("should return zero metrics for clean content", func() {
+		It("should not modify clean content", func() {
 			input := `This is a clean message with no secrets`
 
-			result, metrics := sanitizer.SanitizeWithMetrics(input)
+			result := sanitizer.Sanitize(input)
 
+			// Observable behavior: clean content unchanged
 			Expect(result).To(Equal(input))
-			Expect(metrics.RedactedCount).To(Equal(0))
-			Expect(metrics.Patterns).To(BeEmpty())
 		})
 	})
 })
