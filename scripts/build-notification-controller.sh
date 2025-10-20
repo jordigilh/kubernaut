@@ -11,9 +11,13 @@ FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-notification-test}"
 DOCKERFILE="docker/notification-controller.Dockerfile"
 
-# Target architecture configuration
-# Default to host architecture for integration tests (avoids cross-compilation)
-# Override with TARGETARCH env var for production multi-arch builds
+# ADR-027: Multi-Architecture Build Strategy
+# Default to multi-arch builds (amd64 + arm64) for cross-platform deployment
+MULTI_ARCH="${MULTI_ARCH:-true}"
+PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+
+# Target architecture configuration (for single-arch builds only)
+# Override with TARGETARCH env var for single-arch builds
 HOST_ARCH=$(uname -m)
 case "$HOST_ARCH" in
     x86_64)
@@ -61,6 +65,8 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --kind)
             LOAD_TO_KIND=true
+            # KIND doesn't support multi-arch manifest loading, force single-arch
+            MULTI_ARCH=false
             shift
             ;;
         --push)
@@ -72,31 +78,44 @@ while [[ $# -gt 0 ]]; do
             FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
             shift 2
             ;;
+        --single-arch)
+            MULTI_ARCH=false
+            shift
+            ;;
+        --multi-arch)
+            MULTI_ARCH=true
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --kind          Load image into KIND cluster"
+            echo "  --kind          Load image into KIND cluster (forces single-arch)"
             echo "  --push          Push image to registry"
             echo "  --tag TAG       Set image tag (default: latest)"
+            echo "  --multi-arch    Force multi-architecture build (default)"
+            echo "  --single-arch   Force single-architecture build"
             echo "  --help          Show this help message"
             echo ""
             echo "Environment Variables:"
             echo "  IMAGE_TAG           Image tag (default: latest)"
             echo "  KIND_CLUSTER_NAME   KIND cluster name (default: notification-test)"
-            echo "  TARGETARCH          Target architecture (default: host architecture)"
-            echo "                      - For integration tests: Uses host arch (arm64/amd64)"
-            echo "                      - For production: Set to 'amd64' or 'arm64'"
+            echo "  MULTI_ARCH          Enable multi-arch builds (default: true)"
+            echo "  PLATFORMS           Target platforms (default: linux/amd64,linux/arm64)"
+            echo "  TARGETARCH          Target architecture for single-arch (default: host arch)"
             echo ""
             echo "Examples:"
-            echo "  # Integration tests (uses host architecture)"
+            echo "  # Multi-arch build (default, amd64 + arm64)"
+            echo "  ./scripts/build-notification-controller.sh --push"
+            echo ""
+            echo "  # Single-arch for KIND cluster"
             echo "  ./scripts/build-notification-controller.sh --kind"
             echo ""
-            echo "  # Production build for amd64"
-            echo "  TARGETARCH=amd64 ./scripts/build-notification-controller.sh --push"
+            echo "  # Single-arch build for debugging"
+            echo "  ./scripts/build-notification-controller.sh --single-arch"
             echo ""
-            echo "  # Production build for arm64"
-            echo "  TARGETARCH=arm64 IMAGE_TAG=v1.0.0-arm64 ./scripts/build-notification-controller.sh --push"
+            echo "  # Multi-arch with custom platforms"
+            echo "  PLATFORMS=linux/amd64,linux/arm64,linux/arm/v7 ./scripts/build-notification-controller.sh"
             exit 0
             ;;
         *)
@@ -134,26 +153,49 @@ if [[ ! -f "$DOCKERFILE" ]]; then
 fi
 
 # Build container image
-log_info "Building container image: $FULL_IMAGE"
-log_info "Dockerfile: $DOCKERFILE"
-log_info "Target Architecture: $TARGETARCH"
-
-$CONTAINER_TOOL build \
-    -t "$FULL_IMAGE" \
-    -f "$DOCKERFILE" \
-    --build-arg TARGETARCH="$TARGETARCH" \
-    .
-
-if [[ $? -eq 0 ]]; then
-    log_info "✅ Container image built successfully: $FULL_IMAGE"
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    log_info "Building multi-architecture image: $FULL_IMAGE"
+    log_info "Dockerfile: $DOCKERFILE"
+    log_info "Platforms: $PLATFORMS"
+    
+    $CONTAINER_TOOL build \
+        --platform "$PLATFORMS" \
+        -t "$FULL_IMAGE" \
+        -f "$DOCKERFILE" \
+        .
+    
+    if [[ $? -eq 0 ]]; then
+        log_info "✅ Multi-arch container image built successfully: $FULL_IMAGE"
+    else
+        log_error "❌ Multi-arch container image build failed"
+        exit 1
+    fi
+    
+    # Get manifest size info
+    log_info "Manifest list created for platforms: $PLATFORMS"
+    IMAGE_SIZE="multi-arch"
 else
-    log_error "❌ Container image build failed"
-    exit 1
+    log_info "Building single-architecture image: $FULL_IMAGE"
+    log_info "Dockerfile: $DOCKERFILE"
+    log_info "Target Architecture: $TARGETARCH"
+    
+    $CONTAINER_TOOL build \
+        -t "$FULL_IMAGE" \
+        -f "$DOCKERFILE" \
+        --build-arg TARGETARCH="$TARGETARCH" \
+        .
+    
+    if [[ $? -eq 0 ]]; then
+        log_info "✅ Single-arch container image built successfully: $FULL_IMAGE"
+    else
+        log_error "❌ Single-arch container image build failed"
+        exit 1
+    fi
+    
+    # Get image size
+    IMAGE_SIZE=$($CONTAINER_TOOL images "$FULL_IMAGE" --format "{{.Size}}")
+    log_info "Image size: $IMAGE_SIZE"
 fi
-
-# Get image size
-IMAGE_SIZE=$($CONTAINER_TOOL images "$FULL_IMAGE" --format "{{.Size}}")
-log_info "Image size: $IMAGE_SIZE"
 
 # Load into KIND cluster if requested
 if [[ "$LOAD_TO_KIND" == true ]]; then
@@ -209,7 +251,15 @@ fi
 if [[ "$PUSH_TO_REGISTRY" == true ]]; then
     log_info "Pushing image to registry: $FULL_IMAGE"
 
-    $CONTAINER_TOOL push "$FULL_IMAGE"
+    if [[ "$MULTI_ARCH" == "true" ]]; then
+        # Push manifest list for multi-arch images
+        log_info "Pushing multi-arch manifest list..."
+        $CONTAINER_TOOL manifest push "$FULL_IMAGE" docker://"$FULL_IMAGE" || \
+        $CONTAINER_TOOL push "$FULL_IMAGE"
+    else
+        # Push single-arch image
+        $CONTAINER_TOOL push "$FULL_IMAGE"
+    fi
 
     if [[ $? -eq 0 ]]; then
         log_info "✅ Image pushed to registry: $FULL_IMAGE"
@@ -222,10 +272,16 @@ fi
 # Summary
 log_info ""
 log_info "========================================="
-log_info "Build Summary"
+log_info "Build Summary (ADR-027)"
 log_info "========================================="
 log_info "Image:        $FULL_IMAGE"
-log_info "Architecture: $TARGETARCH"
+if [[ "$MULTI_ARCH" == "true" ]]; then
+    log_info "Multi-Arch:   true"
+    log_info "Platforms:    $PLATFORMS"
+else
+    log_info "Multi-Arch:   false (single-arch)"
+    log_info "Architecture: $TARGETARCH"
+fi
 log_info "Size:         $IMAGE_SIZE"
 log_info "KIND Loaded:  $LOAD_TO_KIND"
 log_info "Pushed:       $PUSH_TO_REGISTRY"
