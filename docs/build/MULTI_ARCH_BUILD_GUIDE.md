@@ -1,7 +1,7 @@
 # Multi-Architecture Build Guide
 
-**Version**: 1.0.0  
-**Status**: ✅ Active (ADR-027)  
+**Version**: 1.0.0
+**Status**: ✅ Active (ADR-027)
 **Last Updated**: 2025-10-20
 
 ---
@@ -412,12 +412,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Setup Podman
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
-      
+
       - name: Build Multi-Arch Image
         run: |
           ./scripts/build-notification-controller.sh --push
@@ -496,6 +496,6 @@ For issues with multi-architecture builds:
 3. **Verify Registry**: Ensure registry supports OCI manifest lists
 4. **Consult ADR-027**: Architecture decision rationale and trade-offs
 
-**Confidence Assessment**: 95%  
+**Confidence Assessment**: 95%
 **Justification**: Based on successful multi-arch build implementation for Notification Service v1.0.1. The 5% gap accounts for edge cases in registry compatibility and platform-specific build failures that may require additional troubleshooting steps.
 

@@ -1,10 +1,52 @@
-# Data Storage Service - Implementation Plan v4.1
+# Data Storage Service - Implementation Plan v4.2
 
-**Version**: 4.1 - COMPLETE TEMPLATE ALIGNMENT
-**Date**: 2025-10-11
+**Version**: 4.2 - SCHEMA & INFRASTRUCTURE GOVERNANCE
+**Date**: 2025-10-19
 **Timeline**: 12 days (96 hours)
 **Status**: ✅ Ready for Implementation
 **Based On**: Template v1.2 + v4.0 Day 7 (Kind cluster + complete imports)
+
+---
+
+## 📋 **VERSION HISTORY**
+
+### **v4.2** (2025-10-19) - SCHEMA & INFRASTRUCTURE GOVERNANCE
+
+**Purpose**: Add explicit governance section documenting Data Storage Service's authoritative ownership of schema and infrastructure resources
+
+**Changes**:
+- ✅ **Schema & Infrastructure Governance section added** (Service Overview, ~50 lines)
+  - Documents Data Storage Service as authoritative owner of `remediation_audit` schema
+  - Lists all owned resources (PostgreSQL schema, Redis, pgvector, vector DB, connection params)
+  - Documents dependent services (Context API v2.2.1, future services)
+  - Establishes 7-step change management protocol (propose → assess → approve → notify → validate → deploy → rollback)
+  - Defines breaking changes (column removal, data type changes, version upgrades)
+  - Documents breaking change requirements (1 sprint advance notice, testing coordination, rollback plan)
+  - Cross-references Context API v2.2.1 governance clause for reciprocal relationship
+- ✅ **Dependent service integration documented**
+  - Context API v2.2.1 explicitly listed as consumer with read-only access
+  - Future services pattern established for scalability
+
+**Rationale**:
+Multi-service architectures require explicit ownership documentation to prevent:
+- Uncoordinated schema changes causing dependent service outages
+- Ambiguity about approval authority for breaking changes
+- Missing notifications when infrastructure changes
+- Schema drift incidents without clear escalation paths
+
+**Impact**:
+- Governance Clarity: Explicit ownership prevents coordination failures
+- Change Management: Formal protocol for breaking changes with 1 sprint notice requirement
+- Risk Mitigation: Prevents uncoordinated deployments across Data Storage and Context API
+- Scalability: Establishes pattern for future services consuming `remediation_audit`
+
+**Time Investment**: 5 minutes (pure documentation, no code changes)
+
+**Related**:
+- Context API v2.2.1 (reciprocal governance clause)
+- Context API SCHEMA_ALIGNMENT.md (zero-drift validation)
+- Context API Pattern 3 (Schema Alignment Enforcement)
+- Context API Pitfall 3 (Schema Drift Between Services)
 
 ---
 
@@ -54,6 +96,57 @@
 - Concurrent writes: 10+ services
 - Memory usage: < 512MB per replica
 - CPU usage: < 1 core average
+
+---
+
+## 🏛️ **Schema & Infrastructure Governance**
+
+**Authoritative Ownership**: Data Storage Service owns all schema and infrastructure resources
+
+**Owned Resources**:
+- PostgreSQL database schema (`remediation_audit` table, all 21 columns)
+- Infrastructure bootstrap (PostgreSQL 15+, Redis 7+, pgvector extension)
+- Schema migrations (DDL changes, column additions/modifications, indexes, partitioning)
+- Connection parameters (host, port, database name, credentials, connection pool limits)
+- Vector database configuration (Qdrant/Weaviate)
+- Embedding cache configuration (Redis)
+
+**Dependent Services**:
+- [Context API v2.2.1](../../context-api/implementation/IMPLEMENTATION_PLAN_V2.0.md) (consumer, read-only access)
+- Future services consuming `remediation_audit` table
+
+**Change Management Protocol**:
+1. **Propose**: Data Storage Service proposes schema/infrastructure changes
+2. **Impact Assessment**: Evaluate impact on all dependent services (Context API, future services)
+3. **Approval**: Architecture review + all dependent service leads approve
+4. **Notification**: Provide 1 sprint advance notice for breaking changes to all dependent services
+5. **Validation**: Dependent services run automated compatibility tests (e.g., Context API schema validation)
+6. **Deployment**: Coordinate deployment across Data Storage and all dependent services
+7. **Rollback**: Coordinate rollback procedures if issues detected
+
+**Breaking Change Definition**:
+- Column removal or rename in `remediation_audit`
+- Data type changes affecting existing columns
+- Index removal affecting query performance
+- Connection parameter changes (host, port, credentials)
+- PostgreSQL version upgrades with breaking changes
+- pgvector extension upgrades with API changes
+
+**Breaking Change Requirements**:
+- MUST provide 1 sprint (2 weeks) advance notice to all dependent services
+- MUST coordinate testing with dependent service maintainers
+- MUST provide rollback plan before deployment
+- MUST validate zero schema drift after deployment (automated tests)
+
+**Zero-Drift Guarantee**:
+- Context API enforces schema alignment through automated validation
+- See: [Context API Schema Alignment](../../context-api/implementation/SCHEMA_ALIGNMENT.md)
+- See: [Context API Governance](../../context-api/implementation/IMPLEMENTATION_PLAN_V2.0.md#schema--infrastructure-ownership-governance)
+
+**Escalation Path**:
+- Schema drift incidents → Architecture review (immediate escalation)
+- Breaking change conflicts → Service leads + architecture review
+- Rollback decisions → Data Storage lead + architecture review
 
 ---
 

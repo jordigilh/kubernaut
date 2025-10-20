@@ -14,7 +14,7 @@ We have successfully extended the existing e2e testing infrastructure in `docs/d
 
 #### **🚀 Complete E2E Environment Setup (One Command)**
 - **Main Script**: `setup-complete-e2e-environment.sh`
-- **Capability**: Deploy OCP cluster + Kubernaut + AI model + Vector DB + Chaos testing + Monitoring in ~30 minutes
+- **Capability**: Deploy Kind cluster + Kubernaut + AI model + Vector DB + Chaos testing + Monitoring in ~30 minutes
 - **Features**: 12-step automated process with progress tracking and comprehensive logging
 
 #### **🧹 Environment Cleanup & Management**
@@ -60,11 +60,11 @@ We have successfully extended the existing e2e testing infrastructure in `docs/d
 │  └─ Load Testing (AI Model Stress Testing)                   │
 ├─────────────────────────────────────────────────────────────────┤
 │  🔧 Core Infrastructure                                       │
-│  ├─ OpenShift 4.18 (KCLI Virtual Deployment)                │
+│  ├─ Kubernetes 4.18 (KCLI Virtual Deployment)                │
 │  ├─ oss-gpt:20b @ localhost:8080 (AI Model)                  │
 │  ├─ PostgreSQL + pgvector (Vector Database)                  │
 │  ├─ Prometheus/Grafana (Monitoring Stack)                    │
-│  └─ OpenShift Data Foundation (Storage)                      │
+│  └─ persistent storage (Storage)                      │
 ├─────────────────────────────────────────────────────────────────┤
 │  🖥️  Host Infrastructure                                      │
 │  └─ RHEL 9.7 with Intel Xeon Gold 5218R, 256GB RAM, 3TB     │

@@ -1,10 +1,38 @@
-# Multi-CRD Reconciliation Architecture - APPROVED
+# ⚠️ DEPRECATED - Multi-CRD Reconciliation Architecture
 
-**Document Version**: 1.0 APPROVED
+**Status**: 🚫 **DEPRECATED - DO NOT USE**
+**Deprecation Date**: 2025-10-20
+**Replacement**: See [KUBERNAUT_CRD_ARCHITECTURE.md](KUBERNAUT_CRD_ARCHITECTURE.md) (coming soon)
+
+**⚠️ CRITICAL WARNING**: This document contains **95+ critical errors** and does not match the current Kubernaut architecture.
+
+**Known Issues**:
+- ❌ Wrong CRD names (uses "alert" prefix, should be "remediation")
+- ❌ Missing critical services (HolmesGPT-API, Dynamic Toolset)
+- ❌ Incorrect API groups (uses `kubernaut.io`, should be service-specific)
+- ❌ Obsolete execution architecture (references deleted KubernetesExecution CRD)
+- ❌ Wrong service names (Context Service vs Context API, etc.)
+- ❌ Outdated code examples (won't compile with actual imports)
+
+**See Detailed Analysis**:
+- [Triage Report](MULTI_CRD_RECONCILIATION_ARCHITECTURE_TRIAGE.md) - 10 categories of errors identified
+- [Deprecation Assessment](MULTI_CRD_RECONCILIATION_ARCHITECTURE_DEPRECATION_ASSESSMENT.md) - 95% confidence to rewrite
+
+**For Current Architecture**: Use authoritative sources until new document is published:
+- CRD Specs: `api/*/v1alpha1/*_types.go`
+- Service Specs: `docs/services/*/README.md`
+- Architecture: `docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md`
+- Execution: `docs/architecture/TEKTON_EXECUTION_ARCHITECTURE.md`
+
+---
+
+# ORIGINAL DOCUMENT (OUTDATED - FOR HISTORICAL REFERENCE ONLY)
+
+**Document Version**: 1.0 APPROVED (DEPRECATED)
 **Date**: January 2025
-**Status**: **APPROVED - CRITICAL PRIORITY** - Official Architecture Specification
+**Status**: **DEPRECATED** - Replaced by new authoritative documentation
 **Architecture Type**: Declarative Manifest with Reconciliation for Microservices Event Handling
-**Priority Level**: **CRITICAL** - Immediate Implementation Required
+**Priority Level**: **DEPRECATED** - See replacement documentation
 
 ---
 
@@ -54,18 +82,20 @@ graph TB
         INT[Intelligence Service<br/>Pattern Analysis]
         MON[Monitor Service<br/>System Metrics]
         CTX[Context Service<br/>Context Serving]
-        NOT[Notification Service<br/>Message Delivery]
     end
 
     subgraph "Central Coordination"
         RMS[RemediationRequest CRD<br/>Central State Tracking]
     end
 
-    subgraph "Alert-Processing CRDs (4 CRDs)"
+    subgraph "Alert-Processing CRDs (3 CRDs)"
         APC[RemediationProcessing CRD<br/>Alert Service]
         AIC[AIAnalysis CRD<br/>AI Service]
-        WFC[WorkflowExecution CRD<br/>Workflow Service]
-        EXC[KubernetesExecution CRD<br/>Executor Service]
+        WFC[WorkflowExecution CRD<br/>Workflow Service<br/>Creates Tekton PipelineRuns]
+    end
+
+    subgraph "Notification CRD (1 CRD)"
+        NOTC[NotificationRequest CRD<br/>Notification Controller]
     end
 
     %% Gateway creates only RemediationRequest
@@ -75,24 +105,23 @@ graph TB
     RMS -->|creates| APC
     RMS -->|creates| AIC
     RMS -->|creates| WFC
-    RMS -->|creates| EXC
+    RMS -->|creates on events| NOTC
 
     %% Phase progression (watch-based)
     APC -.->|completes| AIC
     AIC -.->|completes| WFC
-    WFC -.->|completes| EXC
+    WFC -.->|creates Tekton PipelineRuns| K8S
 
     %% CRD references to central
     APC -.->|references| RMS
     AIC -.->|references| RMS
     WFC -.->|references| RMS
-    EXC -.->|references| RMS
+    NOTC -.->|references| RMS
 
     %% Stateless service interactions
     APC -->|queries| CTX
     AIC -->|queries| CTX
-    EXC -->|stores data| STO
-    EXC -->|triggers| NOT
+    WFC -->|stores action records| STO
     STO -->|triggers| INT
     MON -->|monitors| RMS
 ```
@@ -391,82 +420,23 @@ spec:
     kind: WorkflowExecution
 ```
 
-### 5. KubernetesExecution CRD (Executor Service)
+### 5. ~~KubernetesExecution CRD~~ → Tekton Pipelines (V1)
 
-**Purpose**: Executes Kubernetes operations with safety validation and rollback capabilities
+**Status**: ⚠️ **DEPRECATED** - Replaced by Tekton Pipelines from V1
 
-**Business Requirements**: BR-EX-001 to BR-EX-155
+**Purpose**: Action execution now handled by **Tekton Pipelines** (industry-standard CNCF Graduated project)
 
-```yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: kubernetesexecutions.executor.kubernaut.io
-spec:
-  group: executor.kubernaut.io
-  versions:
-  - name: v1
-    served: true
-    storage: true
-    schema:
-      openAPIV3Schema:
-        type: object
-        properties:
-          spec:
-            type: object
-            properties:
-              alertRemediationRef:
-                type: object
-                properties:
-                  name: {type: string}
-                  namespace: {type: string}
-              actions:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    actionId: {type: string}
-                    actionType: {type: string}
-                    targetResource: {type: object}
-                    parameters: {type: object}
-                    workflowContext: {type: object}
-                    safetyChecks: {type: array}
-              executionPolicy:
-                type: object
-                properties:
-                  requireApproval: {type: boolean}
-                  dryRunFirst: {type: boolean}
-                  rollbackOnFailure: {type: boolean}
-                  maxRetries: {type: integer}
-                  safetyValidation: {type: boolean}
-              clusterConfiguration:
-                type: object
-                properties:
-                  targetClusters: {type: array}
-                  rbacValidation: {type: boolean}
-                  resourceQuotaCheck: {type: boolean}
-              notificationConfig:
-                type: object
-                properties:
-                  channels: {type: array}
-                  recipients: {type: array}
-                  notifyOnStart: {type: boolean}
-                  notifyOnCompletion: {type: boolean}
-          status:
-            type: object
-            properties:
-              phase: {type: string, enum: [validating, executing, verifying, completed, failed]}
-              actionResults: {type: array}
-              safetyValidation: {type: object}
-              executionMetrics: {type: object}
-              notificationsSent: {type: object}
-              clusterOperations: {type: object}
-  scope: Namespaced
-  names:
-    plural: kubernetesexecutions
-    singular: kubernetesexecution
-    kind: KubernetesExecution
-```
+**Migration**: See [ADR-023: Tekton from V1](decisions/ADR-023-tekton-from-v1.md) and [KubernetesExecutor Service Elimination](decisions/ADR-025-kubernetesexecutor-service-elimination.md)
+
+**Execution Architecture**:
+- **WorkflowExecution Controller**: Creates Tekton PipelineRuns for each workflow step
+- **Tekton Pipelines**: Executes action containers with DAG orchestration, parallel execution, and workspace management
+- **Action Containers**: Cosign-signed container images with embedded Rego policies for safety validation
+- **Data Storage Service**: Receives action execution records from WorkflowExecution for audit trail
+
+**Business Requirements**: BR-WF-001 to BR-WF-165 (consolidated into WorkflowExecution)
+
+**Reference**: [Tekton Execution Architecture](TEKTON_EXECUTION_ARCHITECTURE.md)
 
 ---
 
@@ -550,10 +520,6 @@ func (r *RemediationRequestController) SetupWithManager(mgr ctrl.Manager) error 
             &source.Kind{Type: &workflowv1.WorkflowExecution{}},
             handler.EnqueueRequestsFromMapFunc(r.mapServiceCRDToRemediationRequest),
         ).
-        Watches(
-            &source.Kind{Type: &executorv1.KubernetesExecution{}},
-            handler.EnqueueRequestsFromMapFunc(r.mapServiceCRDToRemediationRequest),
-        ).
         Complete(r)
 }
 
@@ -574,11 +540,6 @@ func (r *RemediationRequestController) mapServiceCRDToRemediationRequest(obj cli
             Namespace: v.Spec.RemediationRequestRef.Namespace,
         }
     case *workflowv1.WorkflowExecution:
-        alertRemediationRef = &corev1.ObjectReference{
-            Name:      v.Spec.RemediationRequestRef.Name,
-            Namespace: v.Spec.RemediationRequestRef.Namespace,
-        }
-    case *executorv1.KubernetesExecution:
         alertRemediationRef = &corev1.ObjectReference{
             Name:      v.Spec.RemediationRequestRef.Name,
             Namespace: v.Spec.RemediationRequestRef.Namespace,
@@ -631,14 +592,11 @@ Service CRD completes → RemediationRequest watches completion → RemediationR
 
 3. WorkflowExecution.status.phase = "completed"
    → RemediationRequest watches this
-   → RemediationRequest creates KubernetesExecution CRD
-
-4. KubernetesExecution.status.phase = "completed"
-   → RemediationRequest watches this
+   → WorkflowExecution creates Tekton PipelineRuns for action execution
    → RemediationRequest sets overall status to "completed"
 ```
 
-**Service Controllers DO NOT Create CRDs**: Service controllers (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) only update their own status. They do NOT create the next phase CRD.
+**Service Controllers DO NOT Create CRDs**: Service controllers (RemediationProcessing, AIAnalysis, WorkflowExecution) only update their own status and may create external resources (e.g., WorkflowExecution creates Tekton PipelineRuns). They do NOT create the next phase Kubernaut CRD.
 
 ### Enhanced RemediationRequest Reconciliation
 
@@ -726,11 +684,14 @@ func (r *RemediationRequestController) orchestrateNextPhase(
         }
     }
 
-    // 3. If WorkflowExecution completed, create KubernetesExecution
+    // 3. If WorkflowExecution completed, mark remediation as complete
+    // Note: WorkflowExecution creates Tekton PipelineRuns for action execution
     if workflowStatus, ok := serviceStatuses["workflowExecution"].(map[string]interface{}); ok {
         if phase, ok := workflowStatus["phase"].(string); ok && phase == "completed" {
-            if remediation.Status.KubernetesExecutionRef == nil {
-                return r.createKubernetesExecution(ctx, remediation, workflowStatus)
+            if remediation.Status.Phase != "completed" {
+                remediation.Status.Phase = "completed"
+                remediation.Status.CompletedAt = metav1.Now()
+                return r.Status().Update(ctx, remediation)
             }
         }
     }
@@ -1915,10 +1876,9 @@ Success Criteria:
 
 ```yaml
 Deliverables:
-  - WorkflowExecution CRD and controller
-  - KubernetesExecution CRD and controller
+  - WorkflowExecution CRD and controller with Tekton Pipelines integration
   - End-to-end alert processing pipeline
-  - Safety validation and rollback mechanisms
+  - Safety validation and rollback mechanisms via Rego policies
 
 Success Criteria:
   - Complete alert processing pipeline functional
@@ -2366,7 +2326,7 @@ This architecture is **CRITICAL** for addressing fundamental cloud-native limita
 ### **Next Steps - IMMEDIATE ACTION REQUIRED**
 1. **Week 1-2**: Core Infrastructure (RemediationRequest CRD + Controller)
 2. **Week 3-4**: Alert Processing CRDs (RemediationProcessing + AIAnalysis)
-3. **Week 5-6**: Workflow and Execution CRDs (WorkflowExecution + KubernetesExecution)
+3. **Week 5-6**: Workflow CRD with Tekton Pipelines Integration (WorkflowExecution + Tekton)
 4. **Week 7-8**: Production Readiness and Deployment
 
 **APPROVED BY**: Architecture Review Board

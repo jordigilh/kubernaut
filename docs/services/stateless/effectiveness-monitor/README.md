@@ -19,6 +19,7 @@
 | **[V2.1 Architecture Update](../../../architecture/V2.1_EFFECTIVENESS_MONITOR_V1_INCLUSION.md)** | Official architecture decision | ✅ Complete |
 | **[Business Logic Implementation](../../../../pkg/ai/insights/)** | Core effectiveness assessment code (6,295 lines) | ✅ 98% Complete |
 | **[Database Schema](../../../../migrations/006_effectiveness_assessment.sql)** | PostgreSQL schema for effectiveness data | ✅ Complete |
+| **[DD-EFFECTIVENESS-003](../../../architecture/decisions/DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md)** | Watch RemediationRequest (not WorkflowExecution) for future-proofing | ✅ Approved (92% confidence) |
 
 ---
 
@@ -40,25 +41,97 @@ Without effectiveness monitoring, Kubernaut would be "flying blind" - executing 
 
 ---
 
-## 🏗️ **Architecture**
+## 🏗️ **Hybrid Architecture**
+
+**Design Decision**: [DD-EFFECTIVENESS-001: Hybrid Automated + AI Analysis Approach](../../architecture/decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md)
+
+### **Two-Level Assessment**
+
+The Effectiveness Monitor uses a **hybrid approach** combining automated checks (always) with selective AI-powered analysis (high-value cases only).
+
+#### **Level 1: Automated Assessment** (Always Executed)
+- **Implementation**: GO service
+- **Scope**:
+  - Health checks (pod running, OOM errors, latency metrics)
+  - Metric comparisons (pre/post execution)
+  - Basic effectiveness scoring (formula-based)
+  - Anomaly detection (metric changes > thresholds)
+- **Cost**: Negligible (computational only)
+- **Latency**: <100ms
+- **Volume**: Every workflow (~3.67M/year)
+
+#### **Level 2: AI-Powered Analysis** (Selective Execution)
+- **Implementation**: Calls HolmesGPT API `POST /api/v1/postexec/analyze`
+- **Scope**:
+  - Root cause validation ("problem solved" vs "problem masked")
+  - Oscillation detection ("fix A caused problem B")
+  - Pattern learning (context-aware effectiveness)
+  - Lesson extraction (for Context API)
+- **Cost**: ~$9K/year (LLM API costs)
+- **Latency**: 2-5s (async, doesn't block workflow status updates)
+- **Volume**: ~18,000/year (0.5% of workflows)
+
+#### **Decision Triggers** (When AI Analysis is Called)
+
+| Trigger | Volume/Year | Rationale |
+|---------|-------------|-----------|
+| **P0 Failures** | ~3,650 | Learn from critical failures to prevent recurrence |
+| **New Action Types** | ~2,600 | Build pattern library for new actions |
+| **Suspected Oscillations** | ~1,825 | Detect "fix A caused problem B" scenarios |
+| **Periodic Batch** | ~10,000 | Long-term trend analysis, predictive insights |
+| **Routine Successes** | 0 (skip) | No learning value, waste of cost |
+
+**Cost/Benefit**: $9K/year investment for $100K+ value (11x ROI)
+- Achieves 85-90% remediation effectiveness (vs 70% current)
+- Reduces cascade failures from 30% to <10%
+- Enables continuous pattern learning
+
+---
+
+## 🏗️ **Service Architecture**
 
 ### **Service Position in V1**
 
 ```
-K8s Executor (8080) → Data Storage (8080) → Effectiveness Monitor (8080)
-                                             ↑
-External Prometheus (9090) ──────────────────┘
-                                             ↓
-                              Context API (8080) → Notifications (8080)
+WorkflowExecution CRD (completed) → Effectiveness Monitor (8080)
+                                    ↓ (5-min stabilization delay)
+                                    ├→ Data Storage (8080)
+                                    ├→ External Prometheus (9090)
+                                    └→ HolmesGPT API (8080) [selective]
+                                    ↓
+                                    Context API (8080) → Notifications (8080)
 ```
 
-**Data Flow**:
-1. **K8s Executor** executes action → stores in Data Storage
-2. **Effectiveness Monitor** retrieves action trace (10 min later)
-3. **Effectiveness Monitor** queries metrics from Infrastructure Monitoring
-4. **Effectiveness Monitor** performs multi-dimensional assessment
-5. **Effectiveness Monitor** stores results in Data Storage
-6. **Context API** uses effectiveness data for future recommendations
+**Data Flow** (Hybrid Approach):
+1. **WorkflowExecution** completes → CRD status = "completed"
+2. **Effectiveness Monitor Controller** watches WorkflowExecution CRDs → detects completion (< 1s)
+3. **Idempotency Check**: Database lookup via WorkflowExecution.UID → skip if already assessed
+4. **Assessment Scheduled**: Record created with **5-minute stabilization delay**
+5. **After 5 Minutes** → **Effectiveness Monitor** performs **automated assessment**:
+   - Retrieves action history from Data Storage (90-day window)
+   - Queries metrics from External Prometheus (before/after comparison)
+   - Health checks (pod running, OOM errors, restart count)
+   - Metric comparisons (latency, CPU, memory, network)
+   - Basic effectiveness scoring (0-1 scale)
+   - Anomaly detection (unexpected side effects)
+6. **Effectiveness Monitor** makes **decision**: `shouldCallAI()?`
+   - P0 failure? → YES (~50/day)
+   - New action type? → YES (~10/day)
+   - Anomaly detected? → YES (~5/day)
+   - Oscillation/recurring failure? → YES (~5/day)
+   - Routine success? → NO (~10,000/day)
+7. **IF YES** → **Effectiveness Monitor** calls **HolmesGPT API**:
+   - `POST /api/v1/postexec/analyze`
+   - Root cause validation (was diagnosis correct?)
+   - Oscillation detection (repeating failures?)
+   - Pattern learning (similar scenarios?)
+   - Lesson extraction (what to do differently?)
+8. **Effectiveness Monitor** stores **combined results**:
+   - Automated metrics (always) → Data Storage PostgreSQL
+   - AI lessons (when analyzed) → Context API for future use
+9. **Context API** uses effectiveness data for future recommendations
+
+**Key Timing**: WorkflowExecution completion → Assessment complete = **~5-6 minutes total**
 
 ### **Dependencies**
 
@@ -66,9 +139,12 @@ External Prometheus (9090) ─────────────────�
 |------------|------|---------|-----------|
 | **Data Storage Service** | 8080 | Action history, vector DB, effectiveness storage | ✅ V1 |
 | **External Prometheus** | 9090 | Metrics scraping, side effect detection | ✅ V1 |
+| **HolmesGPT API** | 8090 | AI-powered post-execution analysis (selective) | ✅ V1 |
 | **Intelligence Service** | 8080 | Advanced pattern discovery (optional) | 🔴 V2 |
 
 **Result**: ✅ All required dependencies available in V1 (Intelligence Service is optional)
+
+**Integration Pattern**: Effectiveness Monitor calls HolmesGPT API selectively (~18K/year) for intelligent analysis
 
 ---
 
@@ -397,7 +473,42 @@ logger.Info("Effectiveness assessment completed",
 
 ---
 
+## 🔄 **RECENT ARCHITECTURAL UPDATES - October 16, 2025**
+
+### **Major Enhancements**
+
+1. **Restart Recovery & Idempotency Design** (DD-EFFECTIVENESS-002)
+   - Database-backed idempotency using WorkflowExecution.UID
+   - Automatic catch-up for missed assessments during downtime
+   - Race condition handling for HA deployments
+   - Zero manual intervention required
+
+2. **5-Minute Stabilization Delay Documented**
+   - Allows metrics to stabilize after action execution
+   - Improves assessment accuracy from 70% to 85-90%
+   - Timing breakdown: completion → assessment = ~5-6 minutes total
+
+3. **Hybrid Approach Formalized** (DD-EFFECTIVENESS-001)
+   - Automated assessment: 100% of actions
+   - AI analysis: Selective (~0.49% of actions, ~18K/year)
+   - Cost/benefit: $9K/year for 11x ROI
+
+### **Related Documentation**
+
+- **Design Decisions**:
+  - `/docs/decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md`
+  - `/docs/decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md`
+
+- **Architecture**:
+  - `/docs/architecture/EFFECTIVENESS_MONITOR_RESTART_RECOVERY_FLOWS.md`
+
+- **Technical Details**:
+  - `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_CRD_DESIGN_ASSESSMENT.md`
+  - `/holmesgpt-api/docs/EFFECTIVENESS_MONITOR_RESTART_RECOVERY.md`
+
+---
+
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 6, 2025
-**Status**: ✅ Documentation Hub Complete
+**Last Updated**: October 16, 2025 (Architectural Enhancements)
+**Status**: ✅ Documentation Hub Complete - Architecturally Validated
 

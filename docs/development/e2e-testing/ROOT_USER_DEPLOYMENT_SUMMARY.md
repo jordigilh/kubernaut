@@ -14,7 +14,7 @@ We have successfully adapted the complete E2E testing infrastructure to run as r
 ### **🔐 Why Root User Deployment?**
 
 #### **Production Alignment**
-- **Enterprise Standard**: Matches how OpenShift is typically deployed in enterprise environments
+- **Enterprise Standard**: Matches how Kubernetes is typically deployed in enterprise environments
 - **Full System Control**: Complete access to libvirt, networking, storage, and system services
 - **Security Compliance**: Proper ownership and permissions throughout the deployment
 - **Resource Management**: Direct control over system resources and virtualization stack
@@ -37,7 +37,7 @@ We have successfully adapted the complete E2E testing infrastructure to run as r
 ### **Core Deployment Scripts**
 | Script | Purpose | Key Features |
 |--------|---------|-------------|
-| **`deploy-kcli-cluster-root.sh`** | OpenShift cluster deployment for root | KCLI installation, libvirt setup, root environment configuration |
+| **`deploy-kcli-cluster-root.sh`** | Kubernetes cluster deployment for root | KCLI installation, libvirt setup, root environment configuration |
 | **`validate-baremetal-setup-root.sh`** | Comprehensive root validation | RHEL 9.7 checks, root permissions, system service validation |
 | **`setup-complete-e2e-environment-root.sh`** | Complete E2E environment for root | Full stack deployment with root-optimized paths and permissions |
 | **`cleanup-e2e-environment-root.sh`** | Environment cleanup for root | Safe cleanup with libvirt resource management |
@@ -74,7 +74,7 @@ make deploy-cluster-root # Deploy only cluster as root
 │  └─ Storage pools (/var/lib/libvirt/images)                   │
 ├─────────────────────────────────────────────────────────────────┤
 │  🖥️  Virtual Infrastructure                                   │
-│  ├─ OpenShift 4.18 (3 masters + 3 workers)                   │
+│  ├─ Kubernetes 4.18 (3 masters + 3 workers)                   │
 │  ├─ Virtual networking (192.168.122.0/24)                      │
 │  ├─ Storage (ODF with 200Gi per worker)                       │
 │  └─ Resource allocation (84GB RAM, 24 vCPU)                   │
@@ -141,7 +141,7 @@ make cleanup-e2e-root     # Complete cleanup
 ## ✨ **Root User Features & Benefits**
 
 ### **Enterprise Deployment Alignment**
-- ✅ **Production Patterns**: Matches how OpenShift is deployed in enterprise environments
+- ✅ **Production Patterns**: Matches how Kubernetes is deployed in enterprise environments
 - ✅ **Full System Control**: Direct management of all system resources and services
 - ✅ **Security Compliance**: Proper permissions, ownership, and access controls
 - ✅ **Resource Optimization**: Direct control over memory, CPU, and storage allocation

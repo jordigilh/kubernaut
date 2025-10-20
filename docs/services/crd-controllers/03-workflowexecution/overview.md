@@ -1,6 +1,35 @@
 ## Overview
 
+**Version**: 2.0.0
+**Last Updated**: 2025-10-19
+**Status**: ✅ Updated for Tekton Architecture
+
+---
+
+## Changelog
+
+### Version 2.0.0 (2025-10-19)
+**Breaking Changes**:
+- ❌ **Removed**: Step Orchestrator component (replaced by Tekton DAG orchestration)
+- ❌ **Removed**: KubernetesExecution CRD creation responsibility
+- ✅ **Added**: Direct Tekton PipelineRun creation
+- ✅ **Added**: Data Storage Service integration for action records
+- ✅ **Updated**: Architecture diagrams to show Tekton components
+- ✅ **Updated**: Core responsibilities to reflect Tekton integration
+
+**Decision**: [ADR-024: Eliminate ActionExecution Layer](../../../architecture/decisions/ADR-024-eliminate-actionexecution-layer.md)
+
+**Migration Impact**: Controllers must be updated to use Tekton client instead of KubernetesExecution watch patterns.
+
+### Version 1.0.0 (Previous)
+- Original architecture with KubernetesExecution CRD orchestration
+- Step Orchestrator component for dependency resolution
+
+---
+
 **Purpose**: Orchestrates multi-step remediation workflows with adaptive execution, safety validation, and intelligent optimization.
+
+**Architecture**: Now uses Tekton Pipelines directly for workflow execution (see [ADR-024](../../../architecture/decisions/ADR-024-eliminate-actionexecution-layer.md))
 
 **Core Responsibilities**:
 1. Plan workflow execution based on AI recommendations (BR-WF-001, BR-WF-002)
@@ -8,8 +37,9 @@
 3. Execute workflow steps with dependency resolution (BR-WF-010, BR-WF-011)
 4. Monitor execution progress and health (BR-WF-030, BR-WF-031)
 5. Handle failures with rollback and recovery (BR-WF-050, BR-WF-051)
-6. Create KubernetesExecution CRDs for approved actions
-7. Apply adaptive orchestration based on runtime conditions (BR-ORCHESTRATION-001)
+6. **Create Tekton PipelineRuns directly** (no intermediate ActionExecution layer)
+7. **Write action records to Data Storage Service** for pattern monitoring and effectiveness tracking
+8. Apply adaptive orchestration based on runtime conditions (BR-ORCHESTRATION-001)
 
 **V1 Scope - Core Workflow Orchestration**:
 - Single-workflow execution (sequential or parallel steps)
@@ -29,13 +59,14 @@
 
 **Key Architectural Decisions**:
 - **Multi-Phase State Machine**: Planning → Validating → Executing → Monitoring → Completed (5 phases)
-- **Step-Based Execution**: Each step creates KubernetesExecution CRD for atomic operations
+- **Tekton Direct Integration**: Translates WorkflowExecution → Tekton PipelineRun (no ActionExecution layer)
+- **Data Storage Integration**: Writes action records to Data Storage Service for pattern monitoring
 - **Adaptive Orchestration**: Runtime adjustment based on success/failure patterns
 - **Safety-First Validation**: Mandatory validation phase before execution
 - **Rollback Capability**: Automatic or manual rollback with state preservation
-- **Watch-Based Coordination**: Monitors KubernetesExecution status for step completion
+- **Watch-Based Coordination**: Monitors Tekton PipelineRun status for workflow completion
 - **24-Hour Retention**: Aligned with RemediationRequest lifecycle
-- **Does NOT execute K8s operations** (Executor Service responsibility)
+- **Generic Meta-Task**: Single Tekton Task executes all action containers
 
 ---
 
@@ -69,44 +100,42 @@ graph TB
     subgraph "Workflow Execution Service"
         WE[WorkflowExecution CRD]
         Controller[WorkflowExecutionReconciler]
-        Orchestrator[Step Orchestrator]
-        DependencyGraph[Dependency Resolver]
     end
 
     subgraph "External Services"
         AR[RemediationRequest CRD<br/>Parent]
     end
 
-    subgraph "Child CRDs"
-        KE1[KubernetesExecution<br/>Step 1]
-        KE2[KubernetesExecution<br/>Step 2]
-        KE3[KubernetesExecution<br/>Step 3]
+    subgraph "Tekton Pipelines"
+        PR[PipelineRun<br/>DAG Orchestration]
+        TR1[TaskRun Step 1]
+        TR2[TaskRun Step 2]
+        TR3[TaskRun Step 3]
     end
 
     subgraph "Data Sources"
-        DB[Data Storage Service<br/>Audit Trail]
+        DB[Data Storage Service<br/>Action History + Effectiveness]
     end
 
     AR -->|Creates & Owns| WE
     Controller -->|Watches| WE
-    Controller -->|Resolve Dependencies| DependencyGraph
-    Controller -->|Orchestrate Steps| Orchestrator
-    Orchestrator -->|Create & Own| KE1
-    Orchestrator -->|Create & Own| KE2
-    Orchestrator -->|Create & Own| KE3
-    Controller -->|Watch for Completion| KE1
-    Controller -->|Watch for Completion| KE2
-    Controller -->|Watch for Completion| KE3
-    Controller -->|Update Status| WE
-    Controller -->|Audit Trail| DB
-    WE -->|Triggers| AR
+    Controller -->|Translates to<br/>Single PipelineRun| PR
+    PR -->|Creates TaskRuns<br/>with Dependencies| TR1
+    PR -->|Creates TaskRuns<br/>with Dependencies| TR2
+    PR -->|Creates TaskRuns<br/>with Dependencies| TR3
+    Controller -->|Monitors Status| PR
+    Controller -->|Updates Status| WE
+    Controller -->|Records Actions| DB
+    WE -->|Status Updates| AR
 
     style WE fill:#e1f5ff
     style Controller fill:#fff4e1
     style AR fill:#ffe1e1
-    style KE1 fill:#e1ffe1
-    style KE2 fill:#e1ffe1
-    style KE3 fill:#e1ffe1
+    style TR1 fill:#e1ffe1
+    style TR2 fill:#e1ffe1
+    style TR3 fill:#e1ffe1
+    style PR fill:#cceeff
+    style DB fill:#ffffcc
 ```
 
 ### Sequence Diagram - Step Orchestration
@@ -246,7 +275,7 @@ WorkflowExecution implements **4 distinct business domains** across multiple BR 
 
 #### 1. Core Workflow Management (BR-WF-*)
 **Range**: BR-WF-001 to BR-WF-180
-**V1 Scope**: BR-WF-001 to BR-WF-021 (21 BRs)
+**V1 Scope**: BR-WF-001 to BR-WF-053 (24 BRs)
 **Focus**: Workflow planning, validation, lifecycle management, and execution coordination
 
 **Primary Functions**:
@@ -256,6 +285,7 @@ WorkflowExecution implements **4 distinct business domains** across multiple BR 
 - Step dependency resolution and ordering
 - Real-time execution monitoring
 - Rollback and failure handling
+- **Step-level precondition/postcondition validation** (BR-WF-016, BR-WF-052, BR-WF-053) - See [DD-002](../../../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2)
 
 #### 2. Orchestration Logic (BR-ORCHESTRATION-*)
 **Range**: BR-ORCHESTRATION-001 to BR-ORCHESTRATION-100
@@ -301,13 +331,15 @@ WorkflowExecution implements **4 distinct business domains** across multiple BR 
 
 | Prefix | Total Range | V1 Active | V2 Reserved | Business Domain |
 |--------|-------------|-----------|-------------|-----------------|
-| BR-WF-* | 001-180 | 001-021 (21 BRs) | 022-180 | Core workflow management |
+| BR-WF-* | 001-180 | 001-053 (24 BRs) | 054-180 | Core workflow management |
 | BR-ORCHESTRATION-* | 001-100 | 001-010 (10 BRs) | 011-100 | Multi-step coordination |
 | BR-AUTOMATION-* | 001-050 | 001-002 (2 BRs) | 003-050 | Intelligent automation |
 | BR-EXECUTION-* | 001-050 | 001-002 (2 BRs) | 003-050 | Workflow execution monitoring |
 
-**Total V1 BRs**: 35 (21 + 10 + 2 + 2)
+**Total V1 BRs**: 38 (24 + 10 + 2 + 2)
 **Total Reserved**: 300+ for V2 expansion
+
+**New in V1**: Per-step validation framework (BR-WF-016, BR-WF-052, BR-WF-053) implements precondition/postcondition checking for defense-in-depth validation. See [DD-002](../../../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2) and [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md).
 
 **Rationale for Multiple Prefixes**:
 WorkflowExecution genuinely implements 4 distinct business domains, each with clear semantic boundaries. Multiple prefixes preserve this semantic clarity and align with the architectural reality of the service. Per the [Multiple BR Prefixes Policy](../CRD_BR_MULTIPLE_PREFIXES_POLICY.md), multiple prefixes are acceptable when:

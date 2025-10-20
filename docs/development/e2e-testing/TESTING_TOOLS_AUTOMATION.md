@@ -615,7 +615,7 @@ func (a *AIDecisionAuditTrail) ValidateBusinessRequirement(
 ### **8. Maintenance & Efficiency Tools**
 
 #### **Test Environment Provisioning**
-Automated OCP cluster setup/teardown for testing.
+Automated Kind cluster setup/teardown for testing.
 
 ```bash
 #!/bin/bash

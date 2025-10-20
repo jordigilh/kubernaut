@@ -1,0 +1,411 @@
+package contextapi
+
+import (
+	"strings"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
+	"github.com/jordigilh/kubernaut/pkg/contextapi/sqlbuilder"
+)
+
+var _ = Describe("Query Builder", func() {
+	// BR-CONTEXT-001: Query incident audit data
+	// BR-CONTEXT-004: Namespace/cluster/severity filtering
+	// BR-CONTEXT-007: Pagination support
+
+	var builder *sqlbuilder.Builder
+
+	BeforeEach(func() {
+		builder = sqlbuilder.NewBuilder()
+	})
+
+	Context("BuildListQuery", func() {
+		It("should build basic query with no filters", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  10,
+				Offset: 0,
+			}
+
+			sql, args, err := builder.BuildListQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("SELECT * FROM remediation_audit"))
+			Expect(sql).To(ContainSubstring("ORDER BY created_at DESC"))
+			Expect(sql).To(ContainSubstring("LIMIT $1 OFFSET $2"))
+			Expect(args).To(HaveLen(2))
+			Expect(args[0]).To(Equal(10))
+			Expect(args[1]).To(Equal(0))
+		})
+
+		It("should build query with namespace filter", func() {
+			namespace := "production"
+			params := &models.ListIncidentsParams{
+				Namespace: &namespace,
+				Limit:     10,
+				Offset:    0,
+			}
+
+			sql, args, err := builder.BuildListQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("WHERE namespace = $1"))
+			Expect(sql).To(ContainSubstring("ORDER BY created_at DESC"))
+			Expect(sql).To(ContainSubstring("LIMIT $2 OFFSET $3"))
+			Expect(args).To(HaveLen(3))
+			Expect(args[0]).To(Equal("production"))
+			Expect(args[1]).To(Equal(10))
+			Expect(args[2]).To(Equal(0))
+		})
+
+		It("should build query with severity filter", func() {
+			severity := "critical"
+			params := &models.ListIncidentsParams{
+				Severity: &severity,
+				Limit:    10,
+				Offset:   0,
+			}
+
+			sql, args, err := builder.BuildListQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("WHERE severity = $1"))
+			Expect(args).To(HaveLen(3))
+			Expect(args[0]).To(Equal("critical"))
+		})
+
+		It("should build query with multiple filters", func() {
+			namespace := "production"
+			severity := "critical"
+			phase := "failed"
+
+			params := &models.ListIncidentsParams{
+				Namespace: &namespace,
+				Severity:  &severity,
+				Phase:     &phase,
+				Limit:     20,
+				Offset:    10,
+			}
+
+			sql, args, err := builder.BuildListQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("WHERE"))
+			Expect(sql).To(ContainSubstring("namespace = $1"))
+			Expect(sql).To(ContainSubstring("phase = $2"))
+			Expect(sql).To(ContainSubstring("severity = $3"))
+			Expect(sql).To(ContainSubstring("AND"))
+			Expect(sql).To(ContainSubstring("ORDER BY created_at DESC"))
+			Expect(sql).To(ContainSubstring("LIMIT $4 OFFSET $5"))
+			Expect(args).To(HaveLen(5))
+			Expect(args[0]).To(Equal("production"))
+			Expect(args[1]).To(Equal("failed"))
+			Expect(args[2]).To(Equal("critical"))
+			Expect(args[3]).To(Equal(20))
+			Expect(args[4]).To(Equal(10))
+		})
+
+		It("should build query with all possible filters", func() {
+			name := "test-alert"
+			fingerprint := "fp-001"
+			namespace := "production"
+			phase := "completed"
+			status := "success"
+			severity := "warning"
+			cluster := "prod-01"
+			env := "prod"
+			action := "scale"
+
+			params := &models.ListIncidentsParams{
+				Name:             &name,
+				AlertFingerprint: &fingerprint,
+				Namespace:        &namespace,
+				Phase:            &phase,
+				Status:           &status,
+				Severity:         &severity,
+				ClusterName:      &cluster,
+				Environment:      &env,
+				ActionType:       &action,
+				Limit:            50,
+				Offset:           25,
+			}
+
+			sql, args, err := builder.BuildListQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("WHERE"))
+			Expect(sql).To(ContainSubstring("name = $1"))
+			Expect(sql).To(ContainSubstring("alert_fingerprint = $2"))
+			Expect(sql).To(ContainSubstring("namespace = $3"))
+			Expect(sql).To(ContainSubstring("phase = $4"))
+			Expect(sql).To(ContainSubstring("status = $5"))
+			Expect(sql).To(ContainSubstring("severity = $6"))
+			Expect(sql).To(ContainSubstring("cluster_name = $7"))
+			Expect(sql).To(ContainSubstring("environment = $8"))
+			Expect(sql).To(ContainSubstring("action_type = $9"))
+			Expect(sql).To(ContainSubstring("LIMIT $10 OFFSET $11"))
+
+			Expect(args).To(HaveLen(11))
+			Expect(args[0]).To(Equal("test-alert"))
+			Expect(args[1]).To(Equal("fp-001"))
+			Expect(args[2]).To(Equal("production"))
+			Expect(args[3]).To(Equal("completed"))
+			Expect(args[4]).To(Equal("success"))
+			Expect(args[5]).To(Equal("warning"))
+			Expect(args[6]).To(Equal("prod-01"))
+			Expect(args[7]).To(Equal("prod"))
+			Expect(args[8]).To(Equal("scale"))
+			Expect(args[9]).To(Equal(50))
+			Expect(args[10]).To(Equal(25))
+		})
+
+		It("should handle pagination correctly", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  100,
+				Offset: 200,
+			}
+
+			sql, args, err := builder.BuildListQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("LIMIT $1 OFFSET $2"))
+			Expect(args[0]).To(Equal(100))
+			Expect(args[1]).To(Equal(200))
+		})
+
+		It("should reject invalid parameters", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  -1, // Invalid
+				Offset: 0,
+			}
+
+			_, _, err := builder.BuildListQuery(params)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid params"))
+		})
+
+		It("should use parameterized queries to prevent SQL injection", func() {
+			namespace := "prod'; DROP TABLE remediation_audit; --"
+			params := &models.ListIncidentsParams{
+				Namespace: &namespace,
+				Limit:     10,
+				Offset:    0,
+			}
+
+			sql, args, err := builder.BuildListQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			// SQL should use placeholder, not inline value
+			Expect(sql).To(ContainSubstring("namespace = $1"))
+			Expect(sql).ToNot(ContainSubstring("DROP TABLE"))
+			// Malicious value should be in args (will be sanitized by driver)
+			Expect(args[0]).To(Equal("prod'; DROP TABLE remediation_audit; --"))
+		})
+	})
+
+	Context("BuildCountQuery", func() {
+		It("should build basic count query with no filters", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  10,
+				Offset: 0,
+			}
+
+			sql, args, err := builder.BuildCountQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(Equal("SELECT COUNT(*) FROM remediation_audit"))
+			Expect(args).To(BeEmpty())
+		})
+
+		It("should build count query with filters", func() {
+			namespace := "production"
+			severity := "critical"
+
+			params := &models.ListIncidentsParams{
+				Namespace: &namespace,
+				Severity:  &severity,
+				Limit:     10,
+				Offset:    0,
+			}
+
+			sql, args, err := builder.BuildCountQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("SELECT COUNT(*) FROM remediation_audit"))
+			Expect(sql).To(ContainSubstring("WHERE"))
+			Expect(sql).To(ContainSubstring("namespace = $1"))
+			Expect(sql).To(ContainSubstring("severity = $2"))
+			Expect(sql).ToNot(ContainSubstring("LIMIT"))
+			Expect(sql).ToNot(ContainSubstring("OFFSET"))
+			Expect(args).To(HaveLen(2))
+		})
+
+		It("should not include pagination in count query", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  100,
+				Offset: 200,
+			}
+
+			sql, args, err := builder.BuildCountQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).ToNot(ContainSubstring("LIMIT"))
+			Expect(sql).ToNot(ContainSubstring("OFFSET"))
+			Expect(args).To(BeEmpty())
+		})
+
+		It("should build count query with all filters", func() {
+			name := "test"
+			namespace := "prod"
+			severity := "critical"
+
+			params := &models.ListIncidentsParams{
+				Name:      &name,
+				Namespace: &namespace,
+				Severity:  &severity,
+				Limit:     10,
+				Offset:    0,
+			}
+
+			sql, args, err := builder.BuildCountQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("WHERE"))
+			Expect(sql).To(ContainSubstring("name = $1"))
+			Expect(sql).To(ContainSubstring("namespace = $2"))
+			Expect(sql).To(ContainSubstring("severity = $3"))
+			Expect(args).To(HaveLen(3))
+		})
+	})
+
+	Context("BuildSemanticSearchQuery", func() {
+		// BR-CONTEXT-002: Semantic search on embeddings
+
+		It("should build basic semantic search query", func() {
+			embedding := make([]float32, 384)
+			for i := range embedding {
+				embedding[i] = 0.1
+			}
+
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Limit:          10,
+			}
+
+			sql, args, err := builder.BuildSemanticSearchQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("SELECT *, embedding <=> $1 AS distance"))
+			Expect(sql).To(ContainSubstring("FROM remediation_audit"))
+			Expect(sql).To(ContainSubstring("WHERE embedding IS NOT NULL"))
+			Expect(sql).To(ContainSubstring("ORDER BY distance"))
+			Expect(sql).To(ContainSubstring("LIMIT $2"))
+			Expect(args).To(HaveLen(2))
+			Expect(args[0]).To(Equal(embedding))
+			Expect(args[1]).To(Equal(10))
+		})
+
+		It("should build semantic search with namespace filter", func() {
+			embedding := make([]float32, 384)
+			namespace := "production"
+
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Namespace:      &namespace,
+				Limit:          10,
+			}
+
+			sql, args, err := builder.BuildSemanticSearchQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("AND namespace = $2"))
+			Expect(sql).To(ContainSubstring("LIMIT $3"))
+			Expect(args).To(HaveLen(3))
+			Expect(args[1]).To(Equal("production"))
+		})
+
+		It("should build semantic search with severity filter", func() {
+			embedding := make([]float32, 384)
+			severity := "critical"
+
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Severity:       &severity,
+				Limit:          10,
+			}
+
+			sql, args, err := builder.BuildSemanticSearchQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("AND severity = $2"))
+			Expect(args).To(HaveLen(3))
+			Expect(args[1]).To(Equal("critical"))
+		})
+
+		It("should build semantic search with multiple filters", func() {
+			embedding := make([]float32, 384)
+			namespace := "production"
+			severity := "critical"
+
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Namespace:      &namespace,
+				Severity:       &severity,
+				Limit:          10,
+			}
+
+			sql, args, err := builder.BuildSemanticSearchQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("AND namespace = $2 AND severity = $3"))
+			Expect(sql).To(ContainSubstring("LIMIT $4"))
+			Expect(args).To(HaveLen(4))
+			Expect(args[0]).To(Equal(embedding))
+			Expect(args[1]).To(Equal("production"))
+			Expect(args[2]).To(Equal("critical"))
+			Expect(args[3]).To(Equal(10))
+		})
+
+		It("should reject invalid embedding", func() {
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: []float32{}, // Empty
+				Limit:          10,
+			}
+
+			_, _, err := builder.BuildSemanticSearchQuery(params)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid params"))
+		})
+
+		It("should use cosine distance operator (<=>)", func() {
+			embedding := make([]float32, 384)
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Limit:          10,
+			}
+
+			sql, _, err := builder.BuildSemanticSearchQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("<=>"))
+		})
+
+		It("should order by distance (most similar first)", func() {
+			embedding := make([]float32, 384)
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Limit:          10,
+			}
+
+			sql, _, err := builder.BuildSemanticSearchQuery(params)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sql).To(ContainSubstring("ORDER BY distance"))
+			// Lower distance = more similar, so ascending order is correct
+			Expect(strings.Index(sql, "ORDER BY distance")).To(BeNumerically(">", 0))
+		})
+	})
+})

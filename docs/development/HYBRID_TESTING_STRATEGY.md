@@ -3,7 +3,7 @@
 **Document Version**: 2.0
 **Date**: January 2025
 **Status**: ✅ **IMPLEMENTED**
-**Strategy**: Kind for CI/CD and local testing, OCP for E2E tests
+**Strategy**: Kind for CI/CD and local testing, Kubernetes cluster for E2E tests
 
 ---
 
@@ -12,7 +12,7 @@
 Kubernaut uses a **hybrid testing strategy** that optimizes for both development velocity and production confidence:
 
 - **🏗️ Kind Cluster**: For CI/CD and local integration testing
-- **🏢 OpenShift Container Platform**: For end-to-end production validation
+- **🏢 Kubernetes cluster**: For end-to-end production validation
 - **🤖 Configurable LLM**: Real model locally, mocked in CI/CD
 - **🗃️ Real Databases**: PostgreSQL + Vector DB for all scenarios
 
@@ -33,8 +33,8 @@ graph TB
     end
 
     subgraph "Production E2E"
-        OCP[OpenShift 4.18<br/>Multi-node<br/>Production-like]
-        OCP_STORAGE[OCP Storage<br/>OpenShift Data Foundation]
+        OCP[Kubernetes 4.18<br/>Multi-node<br/>Production-like]
+        OCP_STORAGE[Kubernetes cluster Storage<br/>persistent storage]
         OCP_AI[AI Model<br/>Real LLM Service]
         CHAOS[Chaos Engineering<br/>LitmusChaos]
     end
@@ -44,9 +44,9 @@ graph TB
     KIND --> REDIS
     KIND --> LLM_MOCK
 
-    OCP --> OCP_STORAGE
-    OCP --> OCP_AI
-    OCP --> CHAOS
+    Kubernetes cluster --> OCP_STORAGE
+    Kubernetes cluster --> OCP_AI
+    Kubernetes cluster --> CHAOS
 ```
 
 ---
@@ -111,7 +111,7 @@ make test-ci
 
 ---
 
-## 🏢 **OpenShift Container Platform Strategy (E2E)**
+## 🏢 **Kubernetes cluster Strategy (E2E)**
 
 ### **Use Cases**
 - ✅ **Production validation testing**
@@ -123,11 +123,11 @@ make test-ci
 ### **Architecture**
 ```yaml
 cluster:
-  platform: OpenShift 4.18+
+  platform: Kubernetes 4.18+
   nodes:
     control_planes: 3 nodes (HA)
     workers: 6+ nodes
-  storage: OpenShift Data Foundation
+  storage: persistent storage
   networking: OVN-Kubernetes
 
 features:
@@ -147,7 +147,7 @@ testing:
 # Production E2E tests
 make test-e2e-ocp
 
-# Setup OCP cluster (automated)
+# Setup Kind cluster (automated)
 cd docs/development/e2e-testing
 ./setup-complete-e2e-environment.sh
 
@@ -158,8 +158,8 @@ make test-e2e-stress
 ```
 
 ### **Confidence Assessment: 9.5/10**
-- ✅ **Production realism**: Real multi-node OCP cluster
-- ✅ **Enterprise features**: Complete OCP ecosystem
+- ✅ **Production realism**: Real multi-node Kind cluster
+- ✅ **Enterprise features**: Complete Kubernetes cluster ecosystem
 - ✅ **Chaos engineering**: Multi-node failure scenarios
 - ✅ **Scale testing**: Enterprise-level validation
 - ⚠️ **Resource intensive**: Requires dedicated hardware
@@ -193,7 +193,7 @@ if ciMode || getBoolEnvOrDefault("USE_MOCK_LLM", false) {
 |-------------|--------------|-------|---------|
 | **Local Development** | `http://localhost:8080` | `granite3.1-dense:8b` | Real AI testing |
 | **CI/CD Pipeline** | `mock://localhost:8080` | `mock-model` | Reliable testing |
-| **OCP E2E** | `http://remote-llm:8080` | `production-model` | Production validation |
+| **Kubernetes cluster E2E** | `http://remote-llm:8080` | `production-model` | Production validation |
 
 ### **Manual Override**
 ```bash
@@ -326,7 +326,7 @@ The CI/CD pipeline automatically:
 
 ### **3. Production E2E Testing**
 ```bash
-# Setup OCP cluster
+# Setup Kind cluster
 cd docs/development/e2e-testing
 ./setup-complete-e2e-environment.sh
 
@@ -349,7 +349,7 @@ make test-e2e-ocp
 | **Resource Usage** | ~4GB RAM, 2 CPU | Efficient |
 | **Confidence** | 8.5/10 | High for 80% of scenarios |
 
-### **OCP Cluster (E2E)**
+### **Kubernetes cluster Cluster (E2E)**
 | Metric | Value | Purpose |
 |--------|-------|---------|
 | **Setup Time** | ~45 minutes | Production setup |
@@ -361,7 +361,7 @@ make test-e2e-ocp
 - 🚀 **95% faster CI/CD** cycles (Kind vs OCP)
 - 💰 **80% resource savings** in development
 - 🎯 **95% test coverage** across all scenarios
-- ✅ **Production confidence** through OCP validation
+- ✅ **Production confidence** through Kubernetes cluster validation
 
 ---
 
@@ -443,7 +443,7 @@ export MAX_RETRIES=1
 The **Kubernaut Hybrid Testing Strategy** provides:
 
 1. **🏗️ Optimal Development Velocity**: Kind cluster for rapid iteration
-2. **🏢 Production Confidence**: OCP cluster for realistic validation
+2. **🏢 Production Confidence**: Kind cluster for realistic validation
 3. **🤖 Flexible AI Integration**: Real or mocked LLM based on context
 4. **🗃️ Consistent Data Layer**: Real databases in all scenarios
 5. **📊 Comprehensive Coverage**: 95% test coverage across all scenarios

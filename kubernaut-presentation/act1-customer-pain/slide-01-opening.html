@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>The $11.2M Problem - Kubernaut Presentation</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #1a1a1a;
+            color: #ffffff;
+        }
+        .slide {
+            width: 960px;
+            height: 720px;
+            margin: 20px auto;
+            padding: 60px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            box-sizing: border-box;
+            page-break-after: always;
+            position: relative;
+        }
+        .slide h1 {
+            font-size: 48px;
+            margin: 0 0 20px 0;
+            color: #ffffff;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .slide h2 {
+            font-size: 36px;
+            margin: 30px 0 20px 0;
+            color: #ffd700;
+        }
+        .slide h3 {
+            font-size: 28px;
+            margin: 20px 0 15px 0;
+            color: #87ceeb;
+        }
+        .subtitle {
+            font-size: 24px;
+            color: #b0c4de;
+            margin-bottom: 40px;
+        }
+        .story {
+            background: rgba(0,0,0,0.3);
+            padding: 30px;
+            border-left: 5px solid #ffd700;
+            margin: 20px 0;
+            font-size: 20px;
+            line-height: 1.6;
+            font-style: italic;
+        }
+        .story strong {
+            color: #ff6347;
+            font-size: 24px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: rgba(255,255,255,0.1);
+            font-size: 18px;
+        }
+        th {
+            background: rgba(255,215,0,0.3);
+            padding: 15px;
+            text-align: left;
+            font-size: 20px;
+            color: #ffd700;
+        }
+        td {
+            padding: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        tr:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        .quote {
+            background: rgba(0,0,0,0.4);
+            padding: 30px;
+            border-left: 5px solid #87ceeb;
+            margin: 30px 0;
+            font-size: 22px;
+            font-style: italic;
+            line-height: 1.6;
+        }
+        .quote strong {
+            color: #ffd700;
+        }
+        .quote-author {
+            text-align: right;
+            color: #b0c4de;
+            margin-top: 15px;
+            font-style: normal;
+        }
+        .visual-options {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .visual-option {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        .visual-option h4 {
+            color: #ffd700;
+            margin-top: 0;
+            font-size: 18px;
+        }
+        .takeaway {
+            background: rgba(255,99,71,0.2);
+            padding: 30px;
+            border: 3px solid #ff6347;
+            text-align: center;
+            font-size: 26px;
+            font-weight: bold;
+            margin: 30px 0;
+            border-radius: 8px;
+        }
+        .transition {
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            text-align: center;
+            font-size: 22px;
+            font-style: italic;
+            color: #87ceeb;
+            margin-top: 40px;
+        }
+        .sources {
+            font-size: 14px;
+            color: #b0c4de;
+            margin-top: 10px;
+        }
+        .emoji {
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+
+<!-- SLIDE 1: Title -->
+<div class="slide">
+    <h1>The $11.2M Problem</h1>
+    <p class="subtitle">Why Kubernetes Operations Are Breaking Teams</p>
+    <div style="position: absolute; bottom: 40px; left: 60px; font-size: 18px; color: #b0c4de;">
+        Act 1: Customer Pain
+    </div>
+</div>
+
+<!-- SLIDE 2: The 3 AM Story -->
+<div class="slide">
+    <h2>The 3 AM Problem</h2>
+    <div class="story">
+        <p><strong>"It's 3 AM. Your customer's production Kubernetes cluster is down."</strong></p>
+        <p>CrashLoopBackOff errors are cascading. Prometheus is firing 200+ alerts. CloudWatch shows database connection timeouts. The on-call engineer is manually reading logs, checking Git history, and SSHing into nodes.</p>
+        <p>45 minutes later, they find the issue: A memory leak caused OOMKilled pods.</p>
+        <p>The fix? A simple resource limit adjustment and rolling restart.</p>
+        <p><strong>"Something AI could have detected and fixed in under 5 minutes."</strong></p>
+    </div>
+</div>
+
+<!-- SLIDE 3: Key Statistics -->
+<div class="slide">
+    <h2><span class="emoji">📊</span> The Real Cost</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Value</th>
+                <th>Impact</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Average MTTR</strong></td>
+                <td>60 minutes</td>
+                <td>Manual investigation + fix</td>
+            </tr>
+            <tr>
+                <td><strong>Downtime Cost</strong></td>
+                <td>$5,000-$9,000/min</td>
+                <td><strong>$300K-$540K per 60-min incident</strong></td>
+            </tr>
+            <tr>
+                <td><strong>Engineer Toil</strong></td>
+                <td>40% of time</td>
+                <td>Manual incident response</td>
+            </tr>
+            <tr>
+                <td><strong>Alert Growth</strong></td>
+                <td>10x faster than team growth</td>
+                <td>Unsustainable scaling model</td>
+            </tr>
+        </tbody>
+    </table>
+    <div class="sources">
+        Sources: Industry observability platforms (Datadog, Dynatrace) • Gartner Research / Atlassian • Google SRE Book
+    </div>
+</div>
+
+<!-- SLIDE 4: Customer Quote -->
+<div class="slide">
+    <h2><span class="emoji">💬</span> What Customers Are Saying</h2>
+    <div class="quote">
+        "We're hiring SREs faster than we can scale our Kubernetes clusters. Every new service means more alerts, more incidents, and more burnout. <strong>We need automation that actually works.</strong>"
+        <div class="quote-author">— VP Engineering, SaaS Company</div>
+    </div>
+</div>
+
+<!-- SLIDE 5: Visual Recommendations -->
+<div class="slide">
+    <h2><span class="emoji">🎨</span> Visual Concepts</h2>
+    <div class="visual-options">
+        <div class="visual-option">
+            <h4>Option 1: Dark Background with Spotlight</h4>
+            <ul style="margin: 10px 0; padding-left: 20px; font-size: 14px;">
+                <li>Single engineer at laptop in the dark</li>
+                <li>Time: 3:00 AM (clock display)</li>
+                <li>Screen showing Kubernetes dashboard with red alerts</li>
+            </ul>
+        </div>
+        <div class="visual-option">
+            <h4>Option 2: Split Screen</h4>
+            <ul style="margin: 10px 0; padding-left: 20px; font-size: 14px;">
+                <li>Left: Engineer exhausted, multiple alerts firing</li>
+                <li>Right: Same scenario with Kubernaut (sleeping engineer, AI fixing issue)</li>
+            </ul>
+        </div>
+        <div class="visual-option">
+            <h4>Option 3: Timeline</h4>
+            <ul style="margin: 10px 0; padding-left: 20px; font-size: 14px;">
+                <li>00:00 - Alert fires</li>
+                <li>00:02 - Engineer woken up</li>
+                <li>00:45 - Manual fix complete</li>
+                <li>Next slide: "What if it took 2 minutes instead?"</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- SLIDE 6: Key Takeaway -->
+<div class="slide">
+    <h2><span class="emoji">🎯</span> The Reality</h2>
+    <div class="takeaway">
+        "This is happening to your customers RIGHT NOW. Engineers are burning out. Companies are losing millions. Manual operations don't scale."
+    </div>
+    <div class="transition">
+        But it's not just about one incident. Let's look at why this problem is getting exponentially worse...
+        <div style="margin-top: 20px; font-size: 24px; color: #ffd700;">
+            → Next: The Scaling Wall
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
+

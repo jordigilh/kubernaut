@@ -201,7 +201,7 @@ deployment_complexity_comparison:
 - **👥 Community Ecosystem**: Active development, comprehensive [documentation](https://docs.k8sgpt.ai/), tutorials, and plugins
 - **⚡ Immediate Deployment**: Faster initial setup for vanilla Kubernetes environments
 - **💰 Lower Infrastructure Costs**: No persistent storage or database requirements
-- **🔄 Cross-Platform**: Works on any Kubernetes distribution, not OpenShift-specific
+- **🔄 Cross-Platform**: Works on any Kubernetes distribution, not Kubernetes-specific
 
 #### **K8sGPT's Remaining Advantages:**
 ```yaml

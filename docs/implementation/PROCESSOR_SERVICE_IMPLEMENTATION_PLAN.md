@@ -649,7 +649,7 @@ func (h *ProcessAlertHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 #### 4.3.1 Processor Service Dockerfile
 ```dockerfile
-# Multi-stage build for processor service using Red Hat UBI9
+# Multi-stage build for processor service using upstream community UBI9
 FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
 
 # Switch to root for package installation
@@ -668,7 +668,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o processor-service \
     ./cmd/processor-service
 
-# Runtime stage - Red Hat UBI9 minimal
+# Runtime stage - upstream community UBI9 minimal
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # Install runtime dependencies

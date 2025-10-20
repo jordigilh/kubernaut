@@ -6,10 +6,10 @@ The Kubernaut project uses a **hybrid testing strategy** with a BDD-style testin
 
 ## 🎯 **Hybrid Testing Strategy**
 
-**Strategy**: Kind for CI/CD and local testing, OpenShift Container Platform for E2E tests
+**Strategy**: Kind for CI/CD and local testing, Kubernetes cluster for E2E tests
 
 - **🏗️ Kind Cluster**: Fast iteration for development and CI/CD
-- **🏢 OpenShift**: Production-like E2E validation
+- **🏢 Kubernetes**: Production-like E2E validation
 - **🤖 Configurable LLM**: Real model locally, mocked in CI/CD
 - **🗃️ Real Databases**: PostgreSQL + Vector DB for all scenarios
 
@@ -137,7 +137,7 @@ make test-integration-kind
 # CI/CD Tests (Kind + Real DB + Mock LLM)
 make test-ci
 
-# E2E Tests (OpenShift + Real Everything)
+# E2E Tests (Kubernetes + Real Everything)
 make test-e2e-ocp
 
 # All Tests
@@ -188,11 +188,11 @@ go test -tags=integration ./test/integration/infrastructure/... -v
 make integration-services-stop
 ```
 
-### E2E Tests (OpenShift Strategy)
+### E2E Tests (Kubernetes Strategy)
 
 #### **Production E2E Testing**
 ```bash
-# Full OpenShift E2E validation
+# Full Kubernetes E2E validation
 make test-e2e-ocp
 
 # Specific E2E scenarios
@@ -215,7 +215,7 @@ Tests are automatically configured based on environment:
 #### **Automatic Configuration**
 - **Local Development**: Real LLM at `localhost:8080`, Real K8s via Kind
 - **CI/CD Pipeline**: Mock LLM, Real K8s via Kind, Real databases
-- **E2E Testing**: Real LLM, Real OpenShift cluster
+- **E2E Testing**: Real LLM, Real Kubernetes cluster
 
 #### **Environment Variables**
 ```bash

@@ -1,0 +1,462 @@
+package contextapi
+
+import (
+	"testing"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
+)
+
+func TestModels(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Context API Models Suite")
+}
+
+var _ = Describe("IncidentEvent Model", func() {
+	// BR-CONTEXT-001: Query incident audit data
+	// BR-CONTEXT-004: Namespace/cluster/severity filtering
+
+	Context("Model Structure", func() {
+		It("should have all required fields from remediation_audit schema", func() {
+			now := time.Now()
+			duration := int64(30000)
+			errorMsg := "test error"
+
+			incident := &models.IncidentEvent{
+				ID:                   1,
+				Name:                 "high-cpu-usage",
+				AlertFingerprint:     "fp-12345",
+				RemediationRequestID: "req-001",
+				Namespace:            "production",
+				ClusterName:          "prod-cluster-01",
+				Environment:          "prod",
+				TargetResource:       "deployment/api-server",
+				Phase:                "completed",
+				Status:               "success",
+				Severity:             "warning",
+				ActionType:           "scale-deployment",
+				StartTime:            &now,
+				EndTime:              &now,
+				Duration:             &duration,
+				ErrorMessage:         &errorMsg,
+				Metadata:             `{"replicas": 5}`,
+				Embedding:            []float32{0.1, 0.2, 0.3},
+				CreatedAt:            now,
+				UpdatedAt:            now,
+			}
+
+			Expect(incident.ID).To(Equal(int64(1)))
+			Expect(incident.Name).To(Equal("high-cpu-usage"))
+			Expect(incident.AlertFingerprint).To(Equal("fp-12345"))
+			Expect(incident.RemediationRequestID).To(Equal("req-001"))
+			Expect(incident.Namespace).To(Equal("production"))
+			Expect(incident.ClusterName).To(Equal("prod-cluster-01"))
+			Expect(incident.Environment).To(Equal("prod"))
+			Expect(incident.TargetResource).To(Equal("deployment/api-server"))
+			Expect(incident.Phase).To(Equal("completed"))
+			Expect(incident.Status).To(Equal("success"))
+			Expect(incident.Severity).To(Equal("warning"))
+			Expect(incident.ActionType).To(Equal("scale-deployment"))
+			Expect(*incident.Duration).To(Equal(int64(30000)))
+			Expect(*incident.ErrorMessage).To(Equal("test error"))
+			Expect(incident.Metadata).To(Equal(`{"replicas": 5}`))
+			Expect(incident.Embedding).To(HaveLen(3))
+		})
+
+		It("should handle optional fields as nil pointers", func() {
+			incident := &models.IncidentEvent{
+				ID:                   1,
+				Name:                 "test-alert",
+				AlertFingerprint:     "fp-001",
+				RemediationRequestID: "req-001",
+				Namespace:            "default",
+				ClusterName:          "test-cluster",
+				Environment:          "dev",
+				TargetResource:       "pod/test",
+				Phase:                "pending",
+				Status:               "pending",
+				Severity:             "info",
+				ActionType:           "restart",
+				Metadata:             "{}",
+				CreatedAt:            time.Now(),
+				UpdatedAt:            time.Now(),
+				// Optional fields: EndTime, Duration, ErrorMessage, Embedding
+			}
+
+			Expect(incident.EndTime).To(BeNil())
+			Expect(incident.Duration).To(BeNil())
+			Expect(incident.ErrorMessage).To(BeNil())
+			Expect(incident.Embedding).To(BeNil())
+		})
+	})
+})
+
+var _ = Describe("ListIncidentsParams", func() {
+	// BR-CONTEXT-004: Namespace/cluster/severity filtering
+	// BR-CONTEXT-007: Pagination support
+
+	Context("Validation", func() {
+		It("should validate valid parameters", func() {
+			namespace := "production"
+			severity := "critical"
+
+			params := &models.ListIncidentsParams{
+				Namespace: &namespace,
+				Severity:  &severity,
+				Limit:     10,
+				Offset:    0,
+			}
+
+			err := params.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(params.Limit).To(Equal(10))
+			Expect(params.Offset).To(Equal(0))
+		})
+
+		It("should set default limit to 10 when not provided", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  0,
+				Offset: 0,
+			}
+
+			err := params.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(params.Limit).To(Equal(10))
+		})
+
+		It("should reject negative limit", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  -1,
+				Offset: 0,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrInvalidLimit))
+		})
+
+		It("should reject limit > 100", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  101,
+				Offset: 0,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrLimitTooLarge))
+		})
+
+		It("should reject negative offset", func() {
+			params := &models.ListIncidentsParams{
+				Limit:  10,
+				Offset: -1,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrInvalidOffset))
+		})
+
+		It("should validate phase values", func() {
+			validPhases := []string{"pending", "processing", "completed", "failed"}
+
+			for _, phase := range validPhases {
+				p := phase
+				params := &models.ListIncidentsParams{
+					Phase:  &p,
+					Limit:  10,
+					Offset: 0,
+				}
+
+				err := params.Validate()
+				Expect(err).ToNot(HaveOccurred())
+			}
+		})
+
+		It("should reject invalid phase", func() {
+			invalidPhase := "invalid-phase"
+			params := &models.ListIncidentsParams{
+				Phase:  &invalidPhase,
+				Limit:  10,
+				Offset: 0,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrInvalidPhase))
+		})
+
+		It("should validate severity values", func() {
+			validSeverities := []string{"critical", "warning", "info"}
+
+			for _, severity := range validSeverities {
+				s := severity
+				params := &models.ListIncidentsParams{
+					Severity: &s,
+					Limit:    10,
+					Offset:   0,
+				}
+
+				err := params.Validate()
+				Expect(err).ToNot(HaveOccurred())
+			}
+		})
+
+		It("should reject invalid severity", func() {
+			invalidSeverity := "invalid-severity"
+			params := &models.ListIncidentsParams{
+				Severity: &invalidSeverity,
+				Limit:    10,
+				Offset:   0,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrInvalidSeverity))
+		})
+
+		It("should handle all filter combinations", func() {
+			name := "test-alert"
+			fingerprint := "fp-001"
+			namespace := "production"
+			phase := "completed"
+			status := "success"
+			severity := "critical"
+			cluster := "prod-01"
+			env := "prod"
+			action := "scale"
+
+			params := &models.ListIncidentsParams{
+				Name:             &name,
+				AlertFingerprint: &fingerprint,
+				Namespace:        &namespace,
+				Phase:            &phase,
+				Status:           &status,
+				Severity:         &severity,
+				ClusterName:      &cluster,
+				Environment:      &env,
+				ActionType:       &action,
+				Limit:            20,
+				Offset:           10,
+			}
+
+			err := params.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(*params.Name).To(Equal("test-alert"))
+			Expect(*params.AlertFingerprint).To(Equal("fp-001"))
+			Expect(*params.Namespace).To(Equal("production"))
+			Expect(*params.Phase).To(Equal("completed"))
+			Expect(*params.Status).To(Equal("success"))
+			Expect(*params.Severity).To(Equal("critical"))
+			Expect(*params.ClusterName).To(Equal("prod-01"))
+			Expect(*params.Environment).To(Equal("prod"))
+			Expect(*params.ActionType).To(Equal("scale"))
+		})
+	})
+})
+
+var _ = Describe("SemanticSearchParams", func() {
+	// BR-CONTEXT-002: Semantic search on embeddings
+
+	Context("Validation", func() {
+		It("should validate valid parameters", func() {
+			embedding := make([]float32, 384)
+			for i := range embedding {
+				embedding[i] = 0.1
+			}
+
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Limit:          10,
+			}
+
+			err := params.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(params.Limit).To(Equal(10))
+		})
+
+		It("should set default limit to 10 when not provided", func() {
+			embedding := make([]float32, 384)
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Limit:          0,
+			}
+
+			err := params.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(params.Limit).To(Equal(10))
+		})
+
+		It("should reject missing embedding", func() {
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: []float32{},
+				Limit:          10,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrMissingEmbedding))
+		})
+
+		It("should reject invalid embedding dimension", func() {
+			embedding := make([]float32, 512) // Wrong dimension
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Limit:          10,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrInvalidEmbeddingDimension))
+		})
+
+		It("should reject negative limit", func() {
+			embedding := make([]float32, 384)
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Limit:          -1,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrInvalidLimit))
+		})
+
+		It("should reject limit > 50", func() {
+			embedding := make([]float32, 384)
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Limit:          51,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrLimitTooLarge))
+		})
+
+		It("should validate optional severity filter", func() {
+			embedding := make([]float32, 384)
+			severity := "critical"
+
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Severity:       &severity,
+				Limit:          10,
+			}
+
+			err := params.Validate()
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should reject invalid severity filter", func() {
+			embedding := make([]float32, 384)
+			invalidSeverity := "invalid"
+
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Severity:       &invalidSeverity,
+				Limit:          10,
+			}
+
+			err := params.Validate()
+			Expect(err).To(MatchError(models.ErrInvalidSeverity))
+		})
+
+		It("should validate optional namespace filter", func() {
+			embedding := make([]float32, 384)
+			namespace := "production"
+
+			params := &models.SemanticSearchParams{
+				QueryEmbedding: embedding,
+				Namespace:      &namespace,
+				Limit:          10,
+			}
+
+			err := params.Validate()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(*params.Namespace).To(Equal("production"))
+		})
+	})
+})
+
+var _ = Describe("Response Models", func() {
+	// BR-CONTEXT-008: REST API for LLM context
+
+	Context("ListIncidentsResponse", func() {
+		It("should structure response correctly", func() {
+			incidents := []*models.IncidentEvent{
+				{
+					ID:        1,
+					Name:      "test-1",
+					Namespace: "prod",
+				},
+				{
+					ID:        2,
+					Name:      "test-2",
+					Namespace: "prod",
+				},
+			}
+
+			response := &models.ListIncidentsResponse{
+				Incidents: incidents,
+				Total:     100,
+				Limit:     10,
+				Offset:    0,
+			}
+
+			Expect(response.Incidents).To(HaveLen(2))
+			Expect(response.Total).To(Equal(100))
+			Expect(response.Limit).To(Equal(10))
+			Expect(response.Offset).To(Equal(0))
+		})
+
+		It("should handle empty incidents list", func() {
+			response := &models.ListIncidentsResponse{
+				Incidents: []*models.IncidentEvent{},
+				Total:     0,
+				Limit:     10,
+				Offset:    0,
+			}
+
+			Expect(response.Incidents).To(BeEmpty())
+			Expect(response.Total).To(Equal(0))
+		})
+	})
+
+	Context("SemanticSearchResponse", func() {
+		It("should structure response with similarity scores", func() {
+			incidents := []*models.IncidentEvent{
+				{ID: 1, Name: "test-1"},
+				{ID: 2, Name: "test-2"},
+			}
+			scores := []float32{0.95, 0.87}
+
+			response := &models.SemanticSearchResponse{
+				Incidents: incidents,
+				Scores:    scores,
+				Limit:     10,
+			}
+
+			Expect(response.Incidents).To(HaveLen(2))
+			Expect(response.Scores).To(HaveLen(2))
+			Expect(response.Scores[0]).To(BeNumerically("~", 0.95, 0.01))
+			Expect(response.Scores[1]).To(BeNumerically("~", 0.87, 0.01))
+		})
+	})
+
+	Context("HealthResponse", func() {
+		It("should structure health response", func() {
+			response := &models.HealthResponse{
+				Status:  "healthy",
+				Message: "All systems operational",
+			}
+
+			Expect(response.Status).To(Equal("healthy"))
+			Expect(response.Message).To(Equal("All systems operational"))
+		})
+
+		It("should handle unhealthy status", func() {
+			response := &models.HealthResponse{
+				Status:  "unhealthy",
+				Message: "Database connection failed",
+			}
+
+			Expect(response.Status).To(Equal("unhealthy"))
+			Expect(response.Message).To(ContainSubstring("Database"))
+		})
+	})
+})

@@ -275,6 +275,11 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              approvalNotificationSent:
+                description: |-
+                  Approval notification tracking (BR-ORCH-001)
+                  Prevents duplicate notifications when AIAnalysis requires approval
+                type: boolean
               completedAt:
                 format: date-time
                 type: string

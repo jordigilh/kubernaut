@@ -1,9 +1,19 @@
 # HolmesGPT API - REST API Specification
 
-**Version**: v1.0
-**Last Updated**: October 6, 2025
+**Version**: v1.1
+**Last Updated**: October 16, 2025
 **Base URL**: `http://holmesgpt-api.kubernaut-system:8080`
 **Authentication**: Bearer Token (Kubernetes ServiceAccount)
+**Prompt Format**: Self-Documenting JSON (DD-HOLMESGPT-009)
+
+**IMPORTANT UPDATE (October 16, 2025)**: All investigation requests now use **Self-Documenting JSON format** for LLM prompts. This achieves:
+- ✅ **60% token reduction** (~730 → ~180 tokens)
+- ✅ **$1,980/year cost savings** ($165/month)
+- ✅ **150ms latency improvement** per investigation
+- ✅ **98% parsing accuracy maintained**
+- ✅ **Single format only** (pre-production system, no backward compatibility needed)
+
+**Decision Document**: `docs/architecture/decisions/DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md`
 
 **Note**: This is a streamlined version. See [ORIGINAL_MONOLITHIC.md](./ORIGINAL_MONOLITHIC.md) for complete 2,100+ line specification.
 
@@ -49,8 +59,54 @@ Content-Type: application/json
 POST /api/v1/investigate
 ```
 
-#### Request Body
+#### Request Body (Self-Documenting JSON - Current)
 
+**Format**: DD-HOLMESGPT-009
+**Token Count**: ~180 tokens (vs ~730 for verbose)
+
+The `context` field now accepts ultra-compact JSON for maximum token efficiency:
+
+```json
+{
+  "context": {
+    "i":"mem-api-srv-abc123","p":"P0","e":"prod","s":"api-server",
+    "sf":{"dt":60,"a":0,"ok":["scale","restart","rollback","mem_inc"],"no":["del_*"]},
+    "dp":[{"s":"api-gw","i":"c"},{"s":"db-proxy","i":"h"}],"dc":"h","ui":"c",
+    "al":{"n":"HighMemoryUsage","ns":"prod","pod":"api-server-abc123","mem":"3.8/4.0"},
+    "k8":{"d":"api-server","r":3,"node":"node-5","mem_lim":"4Gi","mem_req":"2Gi"},
+    "mn":{"ra":2,"cpu":"s","mem":"u","lat":"s","err":"s"},
+    "sc":{"w":"15m","d":"dtl","h":1},
+    "t":"Analyze HighMemoryUsage. Generate 2-3 recs with deps for parallel exec. Respect 60s downtime."
+  },
+  "llmProvider": "openai",
+  "llmModel": "gpt-4",
+  "toolsets": ["kubernetes", "prometheus"],
+  "maxTokens": 2000,
+  "temperature": 0.7,
+  "responseFormat": "v2-structured",
+  "enableValidation": true
+}
+```
+
+**Legend** (one-time overhead):
+```
+i=inv_id, p=priority, e=env, s=service, sf=safety, dt=downtime, a=approval(0/1),
+ok=allowed, no=blocked, dp=dependencies, dc=data_crit, ui=usr_impact,
+al=alert, k8=kubernetes, mn=monitoring, sc=scope, t=task,
+c=critical, h=high, m=medium, l=low, s=stable, u=up, d=down, dtl=detailed
+```
+
+**Fields**:
+- `context` (object, required): Investigation context in ultra-compact JSON format
+- `llmProvider` (string, required): LLM provider (`"openai"`, `"anthropic"`, etc.)
+- `llmModel` (string, required): Model name (e.g., `"gpt-4"`, `"claude-3-opus"`)
+- `toolsets` (array, optional): Available toolsets for investigation
+- `maxTokens` (integer, optional): Maximum tokens for response (default: 2000)
+- `temperature` (float, optional): LLM temperature 0.0-1.0 (default: 0.7)
+- `responseFormat` (string, optional): Response format version (`"v2-structured"` default)
+- `enableValidation` (boolean, optional): Enable schema validation (default: `true`)
+
+**Legacy Verbose Format** (Deprecated):
 ```json
 {
   "context": {
@@ -68,10 +124,6 @@ POST /api/v1/investigate
   "enableValidation": true
 }
 ```
-
-**New Fields**:
-- `responseFormat` (string, optional): Response format version. Values: `"legacy"`, `"v1-structured"`, `"v2-structured"` (default: `"v2-structured"`)
-- `enableValidation` (boolean, optional): Enable schema validation for structured responses (default: `true`)
 
 #### Response (200 OK) - Legacy Format
 

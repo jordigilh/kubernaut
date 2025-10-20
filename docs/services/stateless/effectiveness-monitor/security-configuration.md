@@ -76,6 +76,176 @@ func (s *EffectivenessMonitorService) AuthMiddleware() func(http.Handler) http.H
 
 ---
 
+## 🤖 HolmesGPT API Authentication
+
+### **Service Account Token for AI Analysis**
+
+**Purpose**: Authenticate to HolmesGPT API for post-execution analysis when AI decision logic triggers.
+
+**Token Source**: Kubernetes ServiceAccount mounted in pod
+
+```go
+// pkg/monitor/holmesgpt_client.go
+package monitor
+
+import (
+    "context"
+    "crypto/tls"
+    "fmt"
+    "net/http"
+    "os"
+)
+
+type HolmesGPTClient struct {
+    baseURL    string
+    httpClient *http.Client
+    token      string
+}
+
+// NewHolmesGPTClient creates client with ServiceAccount token
+func NewHolmesGPTClient(baseURL string) (*HolmesGPTClient, error) {
+    // Read ServiceAccount token from mounted volume
+    tokenPath := "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    tokenBytes, err := os.ReadFile(tokenPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read service account token: %w", err)
+    }
+
+    // Create HTTP client with TLS
+    client := &http.Client{
+        Transport: &http.Transport{
+            TLSClientConfig: &tls.Config{
+                MinVersion: tls.VersionTLS12,
+            },
+        },
+        Timeout: 30 * time.Second,
+    }
+
+    return &HolmesGPTClient{
+        baseURL:    baseURL,
+        httpClient: client,
+        token:      string(tokenBytes),
+    }, nil
+}
+
+// AnalyzePostExecution calls HolmesGPT API with authentication
+func (c *HolmesGPTClient) AnalyzePostExecution(ctx context.Context, req PostExecRequest) (*PostExecResponse, error) {
+    url := fmt.Sprintf("%s/api/v1/postexec/analyze", c.baseURL)
+
+    httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
+    if err != nil {
+        return nil, err
+    }
+
+    // Add Bearer token for authentication
+    httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
+    httpReq.Header.Set("Content-Type", "application/json")
+
+    // Execute request
+    resp, err := c.httpClient.Do(httpReq)
+    // ... (handle response)
+}
+```
+
+### **ServiceAccount Configuration**
+
+```yaml
+# deploy/effectiveness-monitor/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: effectiveness-monitor
+  namespace: prometheus-alerts-slm
+---
+# deploy/effectiveness-monitor/clusterrole.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: effectiveness-monitor-holmesgpt-client
+rules:
+# No additional permissions needed for HolmesGPT API calls
+# (Authentication via ServiceAccount token, authorization handled by HolmesGPT API)
+---
+# deploy/effectiveness-monitor/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      serviceAccountName: effectiveness-monitor
+      containers:
+      - name: effectiveness-monitor
+        env:
+        - name: HOLMESGPT_API_URL
+          value: "http://holmesgpt-api.prometheus-alerts-slm.svc.cluster.local:8080"
+```
+
+### **HolmesGPT API Authorization**
+
+**Authorization handled by HolmesGPT API** (not Effectiveness Monitor):
+
+- HolmesGPT API validates ServiceAccount token via Kubernetes TokenReview
+- HolmesGPT API checks RBAC permissions for `/api/v1/postexec/analyze` endpoint
+- Effectiveness Monitor only needs valid ServiceAccount token
+
+**Required RBAC on HolmesGPT side** (defined in HolmesGPT API service):
+
+```yaml
+# HolmesGPT API RBAC (not Effectiveness Monitor)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api-postexec-analyzer
+rules:
+- apiGroups: ["holmesgpt.kubernaut.io"]
+  resources: ["postexecanalyses"]
+  verbs: ["create"]
+---
+# HolmesGPT API ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: effectiveness-monitor-holmesgpt-access
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api-postexec-analyzer
+subjects:
+- kind: ServiceAccount
+  name: effectiveness-monitor
+  namespace: prometheus-alerts-slm
+```
+
+### **Security Best Practices**
+
+**Token Rotation**:
+- ServiceAccount tokens auto-rotate (Kubernetes projected volume)
+- Client automatically picks up new token on next read
+
+**TLS/SSL**:
+- All HolmesGPT API calls use HTTPS (TLS 1.2+)
+- Certificate validation enabled
+
+**Error Handling**:
+```go
+// Graceful degradation on authentication failure
+resp, err := holmesgptClient.AnalyzePostExecution(ctx, req)
+if err != nil {
+    logger.Warn("HolmesGPT API authentication failed, using automated assessment",
+        zap.Error(err),
+        zap.String("workflow_id", workflow.ID),
+    )
+    // Fallback to automated assessment (no AI)
+    return automatedAssessment, nil
+}
+```
+
+**Rate Limiting**:
+- HolmesGPT API enforces rate limits per ServiceAccount
+- Effectiveness Monitor respects rate limits with exponential backoff
+
+---
+
 ## 🔒 RBAC Permissions
 
 ### **Effectiveness Monitor Service Permissions**

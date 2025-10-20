@@ -157,20 +157,20 @@ if [[ "$MULTI_ARCH" == "true" ]]; then
     log_info "Building multi-architecture image: $FULL_IMAGE"
     log_info "Dockerfile: $DOCKERFILE"
     log_info "Platforms: $PLATFORMS"
-    
+
     $CONTAINER_TOOL build \
         --platform "$PLATFORMS" \
         -t "$FULL_IMAGE" \
         -f "$DOCKERFILE" \
         .
-    
+
     if [[ $? -eq 0 ]]; then
         log_info "✅ Multi-arch container image built successfully: $FULL_IMAGE"
     else
         log_error "❌ Multi-arch container image build failed"
         exit 1
     fi
-    
+
     # Get manifest size info
     log_info "Manifest list created for platforms: $PLATFORMS"
     IMAGE_SIZE="multi-arch"
@@ -178,20 +178,20 @@ else
     log_info "Building single-architecture image: $FULL_IMAGE"
     log_info "Dockerfile: $DOCKERFILE"
     log_info "Target Architecture: $TARGETARCH"
-    
+
     $CONTAINER_TOOL build \
         -t "$FULL_IMAGE" \
         -f "$DOCKERFILE" \
         --build-arg TARGETARCH="$TARGETARCH" \
         .
-    
+
     if [[ $? -eq 0 ]]; then
         log_info "✅ Single-arch container image built successfully: $FULL_IMAGE"
     else
         log_error "❌ Single-arch container image build failed"
         exit 1
     fi
-    
+
     # Get image size
     IMAGE_SIZE=$($CONTAINER_TOOL images "$FULL_IMAGE" --format "{{.Size}}")
     log_info "Image size: $IMAGE_SIZE"

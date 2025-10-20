@@ -1,0 +1,616 @@
+{
+	"dashboard": {
+		"title": "HolmesGPT API Service",
+		"tags": [
+			"kubernaut",
+			"holmesgpt",
+			"ai",
+			"investigations"
+		],
+		"timezone": "browser",
+		"schemaVersion": 36,
+		"version": 1,
+		"refresh": "30s",
+		"time": {
+			"from": "now-6h",
+			"to": "now"
+		},
+		"panels": [
+			{
+				"title": "Overview",
+				"type": "row",
+				"gridPos": {
+					"x": 0,
+					"y": 0,
+					"w": 24,
+					"h": 1
+				},
+				"collapsed": false
+			},
+			{
+				"title": "Requests Per Second",
+				"type": "stat",
+				"gridPos": {
+					"x": 0,
+					"y": 1,
+					"w": 6,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "sum(rate(holmesgpt_investigations_total[1m]))",
+						"legendFormat": "RPS"
+					}
+				],
+				"options": {
+					"colorMode": "value",
+					"graphMode": "area",
+					"orientation": "auto"
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "reqps",
+						"decimals": 2
+					}
+				}
+			},
+			{
+				"title": "Success Rate",
+				"type": "stat",
+				"gridPos": {
+					"x": 6,
+					"y": 1,
+					"w": 6,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "sum(rate(holmesgpt_investigations_total{status=\"success\"}[5m])) / sum(rate(holmesgpt_investigations_total[5m])) * 100",
+						"legendFormat": "Success %"
+					}
+				],
+				"options": {
+					"colorMode": "value",
+					"graphMode": "area"
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "percent",
+						"decimals": 2,
+						"thresholds": {
+							"mode": "absolute",
+							"steps": [
+								{
+									"value": 0,
+									"color": "red"
+								},
+								{
+									"value": 95,
+									"color": "yellow"
+								},
+								{
+									"value": 99,
+									"color": "green"
+								}
+							]
+						}
+					}
+				}
+			},
+			{
+				"title": "P95 Latency",
+				"type": "stat",
+				"gridPos": {
+					"x": 12,
+					"y": 1,
+					"w": 6,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "histogram_quantile(0.95, rate(holmesgpt_investigation_duration_seconds_bucket[5m]))",
+						"legendFormat": "p95"
+					}
+				],
+				"options": {
+					"colorMode": "value",
+					"graphMode": "area"
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "s",
+						"decimals": 2,
+						"thresholds": {
+							"mode": "absolute",
+							"steps": [
+								{
+									"value": 0,
+									"color": "green"
+								},
+								{
+									"value": 2.5,
+									"color": "yellow"
+								},
+								{
+									"value": 5,
+									"color": "red"
+								}
+							]
+						}
+					}
+				}
+			},
+			{
+				"title": "Daily Cost",
+				"type": "stat",
+				"gridPos": {
+					"x": 18,
+					"y": 1,
+					"w": 6,
+					"h": 4
+				},
+				"targets": [
+					{
+						"expr": "sum(increase(holmesgpt_investigation_cost_dollars_total[24h]))",
+						"legendFormat": "Cost (24h)"
+					}
+				],
+				"options": {
+					"colorMode": "value",
+					"graphMode": "area"
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "currencyUSD",
+						"decimals": 2
+					}
+				}
+			},
+			{
+				"title": "Request Rate by Status",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 0,
+					"y": 5,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (status) (rate(holmesgpt_investigations_total[5m]))",
+						"legendFormat": "{{status}}"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "reqps"
+					}
+				}
+			},
+			{
+				"title": "Latency Percentiles",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 12,
+					"y": 5,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "histogram_quantile(0.50, rate(holmesgpt_investigation_duration_seconds_bucket[5m]))",
+						"legendFormat": "p50"
+					},
+					{
+						"expr": "histogram_quantile(0.95, rate(holmesgpt_investigation_duration_seconds_bucket[5m]))",
+						"legendFormat": "p95"
+					},
+					{
+						"expr": "histogram_quantile(0.99, rate(holmesgpt_investigation_duration_seconds_bucket[5m]))",
+						"legendFormat": "p99"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "s"
+					}
+				}
+			},
+			{
+				"title": "Token Usage & Cost",
+				"type": "row",
+				"gridPos": {
+					"x": 0,
+					"y": 13,
+					"w": 24,
+					"h": 1
+				},
+				"collapsed": false
+			},
+			{
+				"title": "Token Count (Input/Output)",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 0,
+					"y": 14,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (type) (rate(holmesgpt_investigation_tokens_total[5m]) * 60)",
+						"legendFormat": "{{type}} tokens/min"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "short"
+					}
+				}
+			},
+			{
+				"title": "Cost Rate ($/hour)",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 12,
+					"y": 14,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "rate(holmesgpt_investigation_cost_dollars_total[5m]) * 3600",
+						"legendFormat": "$/hour"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "currencyUSD"
+					}
+				}
+			},
+			{
+				"title": "Average Cost Per Investigation",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 0,
+					"y": 22,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "rate(holmesgpt_investigation_cost_dollars_total[5m]) / rate(holmesgpt_investigations_total{status=\"success\"}[5m])",
+						"legendFormat": "Avg cost/investigation"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "currencyUSD",
+						"decimals": 4
+					}
+				}
+			},
+			{
+				"title": "Token Distribution by Provider",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 12,
+					"y": 22,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (provider, model) (rate(holmesgpt_investigation_tokens_total[5m]))",
+						"legendFormat": "{{provider}}-{{model}}"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				}
+			},
+			{
+				"title": "LLM Provider",
+				"type": "row",
+				"gridPos": {
+					"x": 0,
+					"y": 30,
+					"w": 24,
+					"h": 1
+				},
+				"collapsed": false
+			},
+			{
+				"title": "LLM Calls by Provider",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 0,
+					"y": 31,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (provider, model) (rate(holmesgpt_llm_calls_total[5m]))",
+						"legendFormat": "{{provider}}-{{model}}"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				}
+			},
+			{
+				"title": "LLM Call Latency (p95)",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 12,
+					"y": 31,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "histogram_quantile(0.95, sum by (provider, le) (rate(holmesgpt_llm_call_duration_seconds_bucket[5m])))",
+						"legendFormat": "{{provider}} p95"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "s"
+					}
+				}
+			},
+			{
+				"title": "LLM Success Rate",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 0,
+					"y": 39,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (provider) (rate(holmesgpt_llm_calls_total{status=\"success\"}[5m])) / sum by (provider) (rate(holmesgpt_llm_calls_total[5m])) * 100",
+						"legendFormat": "{{provider}} success %"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "percent",
+						"min": 0,
+						"max": 100
+					}
+				}
+			},
+			{
+				"title": "Context API Calls",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 12,
+					"y": 39,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (tool_name) (rate(holmesgpt_context_api_calls_total[5m]))",
+						"legendFormat": "{{tool_name}}"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				}
+			},
+			{
+				"title": "Security & Errors",
+				"type": "row",
+				"gridPos": {
+					"x": 0,
+					"y": 47,
+					"w": 24,
+					"h": 1
+				},
+				"collapsed": false
+			},
+			{
+				"title": "Authentication Failures",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 0,
+					"y": 48,
+					"w": 8,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (reason) (rate(holmesgpt_auth_failures_total[5m]))",
+						"legendFormat": "{{reason}}"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				}
+			},
+			{
+				"title": "Rate Limit Hits",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 8,
+					"y": 48,
+					"w": 8,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "topk(10, sum by (client_ip) (rate(holmesgpt_rate_limit_hits_total[5m])))",
+						"legendFormat": "{{client_ip}}"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				}
+			},
+			{
+				"title": "Error Rate",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 16,
+					"y": 48,
+					"w": 8,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum(rate(holmesgpt_investigations_total{status=\"error\"}[5m])) / sum(rate(holmesgpt_investigations_total[5m])) * 100",
+						"legendFormat": "Error %"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				},
+				"fieldConfig": {
+					"defaults": {
+						"unit": "percent",
+						"min": 0,
+						"max": 100,
+						"thresholds": {
+							"mode": "absolute",
+							"steps": [
+								{
+									"value": 0,
+									"color": "green"
+								},
+								{
+									"value": 1,
+									"color": "yellow"
+								},
+								{
+									"value": 5,
+									"color": "red"
+								}
+							]
+						}
+					}
+				}
+			},
+			{
+				"title": "Business Metrics",
+				"type": "row",
+				"gridPos": {
+					"x": 0,
+					"y": 56,
+					"w": 24,
+					"h": 1
+				},
+				"collapsed": false
+			},
+			{
+				"title": "Investigations by Priority",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 0,
+					"y": 57,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (priority) (rate(holmesgpt_investigations_total[5m]))",
+						"legendFormat": "{{priority}}"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				}
+			},
+			{
+				"title": "Investigations by Environment",
+				"type": "timeseries",
+				"gridPos": {
+					"x": 12,
+					"y": 57,
+					"w": 12,
+					"h": 8
+				},
+				"targets": [
+					{
+						"expr": "sum by (environment) (rate(holmesgpt_investigations_total[5m]))",
+						"legendFormat": "{{environment}}"
+					}
+				],
+				"options": {
+					"legend": {
+						"displayMode": "list",
+						"placement": "bottom"
+					}
+				}
+			}
+		]
+	}
+}
+

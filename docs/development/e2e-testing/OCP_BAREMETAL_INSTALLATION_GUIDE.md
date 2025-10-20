@@ -1,6 +1,6 @@
-# OpenShift 4.18 Bare Metal Installation Guide
+# Kubernetes 4.18 Bare Metal Installation Guide
 
-This guide provides detailed instructions for deploying OpenShift 4.18 on bare metal infrastructure using the openshift-installer CLI and the provided configuration manifest.
+This guide provides detailed instructions for deploying Kubernetes 4.18 on bare metal infrastructure using the openshift-installer CLI and the provided configuration manifest.
 
 ## Prerequisites
 
@@ -39,7 +39,7 @@ This guide provides detailed instructions for deploying OpenShift 4.18 on bare m
 
 1. **Red Hat Account**: Required for pull secret and subscription
 2. **SSH Key Pair**: For accessing cluster nodes
-3. **OpenShift Installer**: Version 4.18 or compatible
+3. **Kubernetes Installer**: Version 4.18 or compatible
 4. **BMC Access**: IPMI/Redfish access to all bare metal nodes
 5. **DNS Configuration**: Proper DNS records for the cluster
 
@@ -47,7 +47,7 @@ This guide provides detailed instructions for deploying OpenShift 4.18 on bare m
 
 ### 1. Pull Secret
 
-Obtain your pull secret from the [Red Hat OpenShift Cluster Manager](https://console.redhat.com/openshift/install/pull-secret).
+Obtain your pull secret from the [Red Hat Kubernetes Cluster Manager](https://console.redhat.com/openshift/install/pull-secret).
 
 ```bash
 # Download your pull secret and save it as pull-secret.txt
@@ -118,7 +118,7 @@ Update network settings in the configuration:
 - **provisioningNetworkCIDR**: CIDR for provisioning network
 - **provisioningDHCPRange**: DHCP range for provisioning
 
-### Step 4: Install OpenShift
+### Step 4: Install Kubernetes
 
 1. Create the installation directory:
 ```bash
@@ -251,7 +251,7 @@ If installation fails:
 
 ## Support Resources
 
-- [OpenShift Documentation](https://docs.openshift.com/container-platform/4.18/)
+- [Kubernetes Documentation](https://docs.openshift.com/container-platform/4.18/)
 - [Red Hat Customer Portal](https://access.redhat.com/)
-- [OpenShift Community](https://community.openshift.com/)
+- [Kubernetes Community](https://community.openshift.com/)
 - [Red Hat Training](https://www.redhat.com/en/services/training)

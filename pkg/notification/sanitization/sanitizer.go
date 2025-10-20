@@ -78,7 +78,7 @@ func (s *Sanitizer) SanitizeWithFallback(content string) (string, error) {
 	// Attempt normal sanitization with panic recovery
 	var result string
 	var sanitizationErr error
-	
+
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -90,7 +90,7 @@ func (s *Sanitizer) SanitizeWithFallback(content string) (string, error) {
 
 		// Try normal sanitization
 		sanitized, metrics := s.SanitizeWithMetrics(content)
-		
+
 		// Check if any patterns matched (metrics.RedactedCount > 0 means patterns were applied)
 		// Even if RedactedCount is 0, sanitization succeeded (just nothing to redact)
 		if sanitizationErr == nil {
@@ -115,10 +115,9 @@ func (s *Sanitizer) SanitizeWithFallback(content string) (string, error) {
 //
 // BR-NOT-055: Graceful Degradation
 func (s *Sanitizer) SafeFallback(content string) string {
-	// Use simple string matching instead of regex to avoid same failure mode
 	output := content
 
-	// Redact anything after common secret keywords
+	// Common secret patterns to redact (using simple string matching, not regex)
 	secretPatterns := []string{
 		"password:", "passwd:", "pwd:",
 		"token:", "api_token:", "access_token:",
@@ -127,77 +126,112 @@ func (s *Sanitizer) SafeFallback(content string) string {
 		"credential:", "credentials:",
 	}
 
+	// Redact each pattern found in the content
 	for _, pattern := range secretPatterns {
-		// Case-insensitive search
-		lowerOutput := strings.ToLower(output)
-		idx := strings.Index(lowerOutput, pattern)
-		
-		for idx != -1 {
-			// Find the end of the secret value (next space, newline, or end of string)
-			valueStart := idx + len(pattern)
-			if valueStart >= len(output) {
-				break
-			}
-			
-			// Skip whitespace after the colon
-			for valueStart < len(output) && (output[valueStart] == ' ' || output[valueStart] == '\t') {
-				valueStart++
-			}
-			
-			// Check if value is quoted and skip the opening quote
-			isQuoted := false
-			var quoteChar byte
-			if valueStart < len(output) && (output[valueStart] == '"' || output[valueStart] == '\'') {
-				isQuoted = true
-				quoteChar = output[valueStart]
-				valueStart++ // Skip opening quote
-			}
-			
-			// Find the end of the value
-			valueEnd := valueStart
-			if isQuoted {
-				// For quoted values, find the closing quote
-				for valueEnd < len(output) && output[valueEnd] != quoteChar {
-					valueEnd++
-				}
-			} else {
-				// For unquoted values, stop at delimiters
-				for valueEnd < len(output) {
-					ch := output[valueEnd]
-					// Stop at whitespace, newline, comma, quote, or bracket
-					if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || 
-					   ch == ',' || ch == '"' || ch == '\'' || ch == '}' || ch == ']' {
-						break
-					}
-					valueEnd++
-				}
-			}
-			
-			// Redact the value
-			if valueEnd > valueStart {
-				// If quoted, include the closing quote in the redaction
-				endPos := valueEnd
-				if isQuoted && valueEnd < len(output) {
-					endPos++ // Skip closing quote
-				}
-				output = output[:valueStart] + "[REDACTED]" + output[endPos:]
-				// Adjust for the length change
-				lowerOutput = strings.ToLower(output)
-			}
-			
-			// Search for next occurrence
-			searchStart := idx + len(pattern)
-			if searchStart >= len(lowerOutput) {
-				break
-			}
-			idx = strings.Index(lowerOutput[searchStart:], pattern)
-			if idx != -1 {
-				idx += searchStart
-			}
-		}
+		output = s.redactPattern(output, pattern)
 	}
 
 	return output
+}
+
+// redactPattern redacts secret values for a specific pattern using simple string matching
+// Returns the content with all occurrences of the pattern's value redacted
+func (s *Sanitizer) redactPattern(content, pattern string) string {
+	output := content
+	lowerOutput := strings.ToLower(output)
+	
+	// Find all occurrences of the pattern (case-insensitive)
+	idx := strings.Index(lowerOutput, pattern)
+	for idx != -1 {
+		// Extract and redact the secret value after the pattern
+		valueStart, valueEnd := s.findSecretValueBounds(output, idx+len(pattern))
+		
+		if valueEnd > valueStart {
+			// Replace the secret value with [REDACTED]
+			output = output[:valueStart] + "[REDACTED]" + output[valueEnd:]
+			lowerOutput = strings.ToLower(output)
+		}
+		
+		// Search for next occurrence after the redacted section
+		searchStart := idx + len(pattern)
+		if searchStart >= len(lowerOutput) {
+			break
+		}
+		
+		remainingIdx := strings.Index(lowerOutput[searchStart:], pattern)
+		if remainingIdx == -1 {
+			break
+		}
+		idx = searchStart + remainingIdx
+	}
+	
+	return output
+}
+
+// findSecretValueBounds identifies the start and end positions of a secret value
+// Handles quoted and unquoted values, returning the bounds to redact
+func (s *Sanitizer) findSecretValueBounds(content string, startPos int) (valueStart, valueEnd int) {
+	valueStart = startPos
+	
+	// Skip leading whitespace
+	valueStart = s.skipWhitespace(content, valueStart)
+	if valueStart >= len(content) {
+		return valueStart, valueStart
+	}
+	
+	// Check if value is quoted
+	isQuoted, quoteChar := s.isQuotedValue(content, valueStart)
+	if isQuoted {
+		valueStart++ // Skip opening quote
+		valueEnd = s.findClosingQuote(content, valueStart, quoteChar)
+		if valueEnd < len(content) {
+			valueEnd++ // Include closing quote
+		}
+	} else {
+		valueEnd = s.findValueEnd(content, valueStart)
+	}
+	
+	return valueStart, valueEnd
+}
+
+// skipWhitespace advances the position past any whitespace characters
+func (s *Sanitizer) skipWhitespace(content string, pos int) int {
+	for pos < len(content) && (content[pos] == ' ' || content[pos] == '\t') {
+		pos++
+	}
+	return pos
+}
+
+// isQuotedValue checks if the value at the given position starts with a quote
+func (s *Sanitizer) isQuotedValue(content string, pos int) (bool, byte) {
+	if pos < len(content) && (content[pos] == '"' || content[pos] == '\'') {
+		return true, content[pos]
+	}
+	return false, 0
+}
+
+// findClosingQuote finds the position of the closing quote for a quoted value
+func (s *Sanitizer) findClosingQuote(content string, startPos int, quoteChar byte) int {
+	for pos := startPos; pos < len(content); pos++ {
+		if content[pos] == quoteChar {
+			return pos
+		}
+	}
+	return len(content)
+}
+
+// findValueEnd finds the end position of an unquoted secret value
+// Stops at whitespace, newlines, or common delimiters
+func (s *Sanitizer) findValueEnd(content string, startPos int) int {
+	for pos := startPos; pos < len(content); pos++ {
+		ch := content[pos]
+		// Stop at delimiter characters
+		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' ||
+			ch == ',' || ch == '"' || ch == '\'' || ch == '}' || ch == ']' {
+			return pos
+		}
+	}
+	return len(content)
 }
 
 // defaultSecretPatterns returns built-in secret redaction patterns

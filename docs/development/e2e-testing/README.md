@@ -1,22 +1,25 @@
-# OpenShift 4.18 Virtual Deployment on RHEL 9.7
+# Kubernaut E2E Testing Infrastructure
 
-This directory contains comprehensive configurations and guides for deploying OpenShift 4.18 **virtually using KCLI** on a RHEL 9.7 host, optimized for testing environments.
+This directory contains configurations and guides for Kubernaut's end-to-end testing infrastructure, primarily using **Kind (Kubernetes in Docker)** for lightweight, fast testing.
 
-## 🎯 **Optimized for Your Environment**
+## 🎯 **Primary Testing Platform: Kind**
 
-**Target Host:** RHEL 9.7 with Intel Xeon Gold 5218R, 256GB RAM, 3TB storage
-**Deployment Type:** Virtual cluster using KVM/QEMU on single physical host
-**Resource Usage:** Conservative allocation leaving plenty of headroom
+**Recommended Platform:** Kind (Kubernetes in Docker)
+**Setup Time:** < 2 minutes
+**Resource Requirements:** 8GB RAM, 4 vCPU, 20GB disk
+**Compatibility:** Works on any Docker-capable machine (Linux, macOS, Windows)
 
 ## 📁 Directory Contents
 
-### 🚀 **Quick Start Files** (Start Here!)
-- **`KCLI_QUICK_START.md`** - **Recommended quick start** (5 commands to full cluster)
-- **`QUICK_START.md`** - Traditional openshift-installer approach
+### 🚀 **Quick Start** (Recommended)
+Use the Makefile commands for instant Kind-based testing:
+```bash
+make test-e2e  # Complete E2E test suite with Kind cluster
+```
 
-### 📖 **Comprehensive Guides**
-- **`KCLI_BAREMETAL_INSTALLATION_GUIDE.md`** - Complete KCLI guide with RHEL 9.7 specifics
-- **`OCP_BAREMETAL_INSTALLATION_GUIDE.md`** - Traditional installer guide
+### 📖 **Optional Alternative Platforms** (Not Required)
+- **`KCLI_BAREMETAL_INSTALLATION_GUIDE.md`** - KCLI virtual cluster guide (optional)
+- **`OCP_BAREMETAL_INSTALLATION_GUIDE.md`** - Bare-metal guide (optional, not required for development)
 
 ### ⚙️ **Configuration Files**
 - **`kcli-baremetal-params.yml`** - **Main configuration** - optimized for your host
@@ -29,55 +32,44 @@ This directory contains comprehensive configurations and guides for deploying Op
 
 ### 💾 **Storage Configuration**
 - **`storage/local-storage-operator.yaml`** - Local Storage Operator config
-- **`storage/odf-operator.yaml`** - OpenShift Data Foundation config
+- **`storage/odf-operator.yaml`** - persistent storage config
 
-## 🚀 **Quick Start**
+## 🚀 **Quick Start with Kind**
 
-**New to E2E Testing?** 👉 **[GETTING_STARTED.md](GETTING_STARTED.md)** - Complete setup guide with hybrid architecture
+### **Standard E2E Testing (Recommended)**
 
-## ⚡ **Super Quick Deployment Options**
-
-### **Option 1: OpenShift Cluster Only (2 Steps)**
-
-#### **Step 1:** Provide Required Files (Only 2!)
 ```bash
-# 1. Download your pull secret from Red Hat
-curl -s https://console.redhat.com/openshift/install/pull-secret -o ~/.pull-secret.txt
+# Run complete E2E test suite (includes Kind cluster setup + teardown)
+make test-e2e
 
-# 2. Generate SSH key if needed
-ssh-keygen -t rsa -b 4096 -C "your-email@kubernaut.io"
+# Or manual cluster management:
+make setup-test-e2e     # Create Kind cluster
+make test-e2e           # Run E2E tests
+make cleanup-test-e2e   # Remove Kind cluster
 ```
 
-#### **Step 2:** Deploy Cluster Only
+### **Manual Kind Cluster Setup**
+
 ```bash
-# Navigate to config directory
-cd docs/development/e2e-testing/
+# Create a Kind cluster manually
+kind create cluster --name kubernaut-e2e --config kind-config.yaml
 
-# Optionally validate setup first
-./validate-baremetal-setup.sh kcli-baremetal-params.yml
+# Deploy Kubernaut
+kubectl apply -f deploy/
 
-# Deploy complete cluster with automated storage
-./deploy-kcli-cluster.sh kubernaut-e2e kcli-baremetal-params.yml
+# Run E2E tests
+go test ./test/e2e/... -v
 
-# Access cluster (ready in ~80 minutes)
-export KUBECONFIG=~/.kcli/clusters/kubernaut-e2e/auth/kubeconfig
-oc get nodes
-oc get storageclass  # 5 storage classes ready!
+# Cleanup
+kind delete cluster --name kubernaut-e2e
 ```
 
-### **Option 2: Complete E2E Testing Environment (1 Step!)**
+## 📚 **Optional Advanced Testing Platforms**
 
-#### **Deploy Everything for E2E Testing**
-```bash
-# Navigate to e2e testing directory
-cd docs/development/e2e-testing/
+For specialized testing scenarios (not required for standard development):
 
-# Deploy complete E2E testing environment
-# Includes: OCP cluster + Kubernaut + AI model + Vector DB + Chaos testing + Monitoring
-./setup-complete-e2e-environment.sh
-
-# Validate complete environment
-./validate-complete-e2e-environment.sh --detailed
+### **KCLI Virtual Clusters**
+See [KCLI_BAREMETAL_INSTALLATION_GUIDE.md](KCLI_BAREMETAL_INSTALLATION_GUIDE.md) for virtual cluster deployments on bare metal.
 
 # Run E2E tests
 ./run-e2e-tests.sh all
@@ -118,7 +110,7 @@ sudo ./cleanup-e2e-environment-root.sh
 #### **Deploy Hybrid: Remote Cluster + Local AI/Tests**
 
 **Architecture Overview:**
-- 🖥️ **OpenShift Cluster**: Remote host (helios08)
+- 🖥️ **Kubernetes Cluster**: Remote host (helios08)
 - 🤖 **HolmesGPT Container**: Custom REST API container (localhost:8090 or in-cluster)
 - 🔧 **Kubernaut**: Local machine (manages remote cluster)
 - 🧪 **Tests**: Local machine
@@ -133,7 +125,7 @@ sudo ./cleanup-e2e-environment-root.sh
 # Navigate to e2e testing directory
 cd docs/development/e2e-testing/
 
-# 1. Deploy ONLY OpenShift cluster on remote host
+# 1. Deploy ONLY Kubernetes cluster on remote host
 make deploy-cluster-remote-only
 
 # 2. Setup local Kubernaut to connect to remote cluster
@@ -213,7 +205,7 @@ TEST_CONNECTION=false ./configure-remote-host.sh 192.168.122.100
 - **VM Usage:** ~84GB RAM, 24 vCPUs, ~500GB storage
 - **Headroom:** **172+ GB RAM, 16+ CPU threads, 2.5+ TB disk free**
 
-### **Virtual OpenShift Cluster**
+### **Virtual Kubernetes Cluster**
 | Component | Count | Per VM | Total |
 |-----------|-------|---------|--------|
 | **Masters** | 3 | 16GB RAM, 4 vCPU, 80GB | 48GB, 12 vCPU, 240GB |
@@ -228,7 +220,7 @@ TEST_CONNECTION=false ./configure-remote-host.sh 192.168.122.100
 
 ### **Storage Operators Installed Automatically**
 1. **Local Storage Operator (LSO)** - Manages virtual storage devices
-2. **OpenShift Data Foundation (ODF)** - Enterprise Ceph storage (200GB/worker)
+2. **persistent storage (ODF)** - Enterprise Ceph storage (200GB/worker)
 
 ### **5 Storage Classes Created Automatically**
 1. **`ocs-storagecluster-ceph-rbd`** (default) - High-performance block storage
@@ -323,9 +315,9 @@ worker_memory: 12288               # 12GB per worker
 
 ### **What Gets Installed Automatically**
 - KCLI (if not present)
-- OpenShift 4.18 cluster (6 VMs)
+- Kubernetes 4.18 cluster (6 VMs)
 - Local Storage Operator
-- OpenShift Data Foundation
+- persistent storage
 - All required dependencies
 
 ## 🆘 **Troubleshooting**
@@ -356,7 +348,7 @@ oc get pv
 
 After successful deployment:
 
-✅ **Production-ready OpenShift 4.18 cluster**
+✅ **Production-ready Kubernetes 4.18 cluster**
 ✅ **5 storage classes with default configured**
 ✅ **Enterprise Ceph storage with HA**
 ✅ **Monitoring, logging, and alerting enabled**
@@ -371,7 +363,7 @@ After successful deployment:
 The complete E2E environment includes everything needed for Kubernaut testing:
 
 #### **Core Infrastructure**
-- **OpenShift 4.18 Cluster**: Virtual cluster with ODF storage
+- **Kubernetes 4.18 Cluster**: Virtual cluster with ODF storage
 - **AI Model Integration**: oss-gpt:20b at localhost:8080
 - **Vector Database**: PostgreSQL with pgvector for pattern storage
 - **Monitoring Stack**: Prometheus/Grafana for metrics and alerting
@@ -401,7 +393,7 @@ The complete E2E environment includes everything needed for Kubernaut testing:
 - **Enterprise Security**: Production-like isolation between cluster and AI services
 
 #### **Hybrid Architecture Features**
-- **Remote Cluster Management**: Local Kubernaut manages remote OpenShift cluster
+- **Remote Cluster Management**: Local Kubernaut manages remote Kubernetes cluster
 - **Local AI Integration**: Fast access to localhost:8080 AI model with no network latency
 - **Network Topology Validation**: Ensures proper isolation between components
 - **Kubeconfig Management**: Automatic retrieval and management of remote cluster access
@@ -483,7 +475,7 @@ The complete E2E environment includes everything needed for Kubernaut testing:
 
 #### **Hybrid Setup Commands**
 ```bash
-# Deploy OpenShift cluster on remote host only
+# Deploy Kubernetes cluster on remote host only
 make deploy-cluster-remote-only
 
 # Setup local Kubernaut to connect to remote cluster
@@ -558,7 +550,7 @@ make ssh-e2e-remote
 5. **Cleanup environment:** `./cleanup-e2e-environment.sh` when done
 
 ### **For Hybrid E2E Deployment (Recommended):**
-1. **Deploy remote cluster:** `make deploy-cluster-remote-only` (OpenShift on helios08)
+1. **Deploy remote cluster:** `make deploy-cluster-remote-only` (Kubernetes on helios08)
 2. **Start local AI model:** Ensure oss-gpt:20b is running on localhost:8080
 3. **Setup local environment:** `make setup-local-hybrid` (local Kubernaut + Vector DB)
 4. **Validate topology:** `make validate-hybrid-topology` (network isolation tests)
@@ -579,8 +571,8 @@ make ssh-e2e-remote
 ## 🔗 **Additional Resources**
 
 - **KCLI Documentation:** https://kcli.readthedocs.io/
-- **OpenShift Documentation:** https://docs.openshift.com/container-platform/4.18/
-- **OpenShift Data Foundation:** https://access.redhat.com/products/red-hat-openshift-data-foundation
+- **Kubernetes Documentation:** https://docs.openshift.com/container-platform/4.18/
+- **persistent storage:** https://access.redhat.com/products/red-hat-openshift-data-foundation
 - **Red Hat Support:** https://access.redhat.com/
 
 ---
