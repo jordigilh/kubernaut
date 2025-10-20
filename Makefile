@@ -415,28 +415,40 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+# ADR-027: Multi-Architecture Build Strategy (amd64 + arm64)
+# All Kubernaut services built for linux/amd64 and linux/arm64 by default
+PLATFORMS ?= linux/amd64,linux/arm64
+
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+docker-build: ## Build multi-architecture docker image (linux/amd64, linux/arm64)
+	@echo "🔨 Building multi-architecture image: ${IMG}"
+	@echo "   Platforms: $(PLATFORMS)"
+	$(CONTAINER_TOOL) build --platform=$(PLATFORMS) -t ${IMG} .
+	@echo "✅ Multi-arch image built: ${IMG}"
+
+.PHONY: docker-build-single
+docker-build-single: ## Build single-architecture image (host arch only, for debugging)
+	@echo "🔨 Building single-arch image for debugging: ${IMG}"
+	$(CONTAINER_TOOL) build -t ${IMG}-$(shell uname -m) .
+	@echo "✅ Single-arch image built: ${IMG}-$(shell uname -m)"
 
 .PHONY: docker-push
-docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}
+docker-push: ## Push multi-architecture docker image to registry
+	@echo "📤 Pushing multi-arch image: ${IMG}"
+	$(CONTAINER_TOOL) manifest push ${IMG} docker://$(IMG) || $(CONTAINER_TOOL) push ${IMG}
+	@echo "✅ Image pushed: ${IMG}"
 
-# PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
-# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
-# - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
-# - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
-# To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+# Legacy docker-buildx target (deprecated, use docker-build instead)
+PLATFORMS_LEGACY ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
-docker-buildx: ## Build and push docker image for the manager for cross-platform support
+docker-buildx: ## [DEPRECATED] Use docker-build instead - Build and push docker image for cross-platform support
+	@echo "⚠️  WARNING: docker-buildx is deprecated. Use 'make docker-build' instead."
+	@echo "   The new docker-build target builds multi-arch by default (amd64 + arm64)"
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name kubernaut-temp-builder
 	$(CONTAINER_TOOL) buildx use kubernaut-temp-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS_LEGACY) --tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm kubernaut-temp-builder
 	rm Dockerfile.cross
 
@@ -734,6 +746,63 @@ docker-push: ## Push container image
 .PHONY: docker-run
 docker-run: ## Run container locally
 	docker run --rm -p 8080:8080 -p 9090:9090 $(IMAGE_NAME):$(VERSION)
+
+##@ HolmesGPT API Service (Python)
+
+HOLMESGPT_IMAGE_NAME ?= kubernaut-holmesgpt-api
+HOLMESGPT_VERSION ?= latest
+HOLMESGPT_REGISTRY ?= quay.io/jordigilh
+
+.PHONY: build-holmesgpt-api
+build-holmesgpt-api: ## Build HolmesGPT API service container image (Python/FastAPI)
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🐍 Building HolmesGPT API Service (Python/FastAPI)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Image: $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
+	@echo ""
+	cd holmesgpt-api && podman build \
+		-t $(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION) \
+		-t $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION) \
+		--label "build.date=$$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+		--label "build.version=$(HOLMESGPT_VERSION)" \
+		.
+	@echo ""
+	@echo "✅ Build complete!"
+	@echo "   Local: $(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
+	@echo "   Tagged: $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
+
+.PHONY: push-holmesgpt-api
+push-holmesgpt-api: ## Push HolmesGPT API service container image to quay.io/jordigilh
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "📤 Pushing HolmesGPT API Service to Registry"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Registry: $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
+	@echo ""
+	podman push $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)
+	@echo ""
+	@echo "✅ Push complete!"
+	@echo "   Image: $(HOLMESGPT_REGISTRY)/$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)"
+
+.PHONY: test-holmesgpt-api
+test-holmesgpt-api: ## Run HolmesGPT API service tests in container
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🧪 Testing HolmesGPT API Service"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	podman run --rm $(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION) pytest -v
+
+.PHONY: run-holmesgpt-api
+run-holmesgpt-api: ## Run HolmesGPT API service locally (dev mode)
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "🚀 Running HolmesGPT API Service (Dev Mode)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Port: 8080"
+	@echo "Health: http://localhost:8080/health"
+	@echo "Docs: http://localhost:8080/docs"
+	@echo ""
+	podman run --rm -p 8080:8080 \
+		-e DEV_MODE=true \
+		-e AUTH_ENABLED=false \
+		$(HOLMESGPT_IMAGE_NAME):$(HOLMESGPT_VERSION)
 
 ##@ Kubernetes
 .PHONY: k8s-namespace
