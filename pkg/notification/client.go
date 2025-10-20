@@ -61,33 +61,7 @@ type Client interface {
 	// UpdateStatus updates the status subresource
 	// This is used by the controller to update delivery status, phase, etc.
 	UpdateStatus(ctx context.Context, notif *notificationv1alpha1.NotificationRequest) error
-
-	// Watch returns a channel that receives notification events
-	// Useful for monitoring notification lifecycle in integration tests
-	// Note: Close the returned channel when done watching
-	Watch(ctx context.Context, namespace string) (<-chan Event, error)
 }
-
-// Event represents a notification event for watching
-type Event struct {
-	Type         EventType
-	Notification *notificationv1alpha1.NotificationRequest
-	Error        error
-}
-
-// EventType represents the type of notification event
-type EventType string
-
-const (
-	// EventAdded indicates a notification was created
-	EventAdded EventType = "ADDED"
-	// EventModified indicates a notification was updated
-	EventModified EventType = "MODIFIED"
-	// EventDeleted indicates a notification was deleted
-	EventDeleted EventType = "DELETED"
-	// EventError indicates an error occurred during watch
-	EventError EventType = "ERROR"
-)
 
 // notificationClient implements the Client interface
 type notificationClient struct {
@@ -213,92 +187,4 @@ func (c *notificationClient) UpdateStatus(ctx context.Context, notif *notificati
 	}
 
 	return nil
-}
-
-// Watch returns a channel that receives notification events
-// Note: This is a simplified implementation for integration tests
-// Production use should implement proper watch with reconnection logic
-func (c *notificationClient) Watch(ctx context.Context, namespace string) (<-chan Event, error) {
-	// Note: controller-runtime client doesn't directly support watch
-	// For integration tests, use periodic List() calls instead
-	// For production, use client-go's watch directly on the RESTClient
-	return nil, fmt.Errorf("watch is not implemented - use periodic List() calls for integration tests")
-}
-
-// Helper functions for common notification creation patterns
-
-// CreateEscalationNotification creates a notification for alert escalation
-// This is a convenience method for RemediationOrchestrator to create escalation notifications
-func CreateEscalationNotification(
-	name, namespace string,
-	subject, body string,
-	recipients []notificationv1alpha1.Recipient,
-	channels []notificationv1alpha1.Channel,
-	metadata map[string]string,
-) *notificationv1alpha1.NotificationRequest {
-	return &notificationv1alpha1.NotificationRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: notificationv1alpha1.NotificationRequestSpec{
-			Type:       notificationv1alpha1.NotificationTypeEscalation,
-			Priority:   notificationv1alpha1.NotificationPriorityCritical,
-			Subject:    subject,
-			Body:       body,
-			Recipients: recipients,
-			Channels:   channels,
-			Metadata:   metadata,
-		},
-	}
-}
-
-// CreateStatusUpdateNotification creates a notification for status updates
-// Used by RemediationOrchestrator to notify about remediation progress
-func CreateStatusUpdateNotification(
-	name, namespace string,
-	subject, body string,
-	recipients []notificationv1alpha1.Recipient,
-	channels []notificationv1alpha1.Channel,
-	metadata map[string]string,
-) *notificationv1alpha1.NotificationRequest {
-	return &notificationv1alpha1.NotificationRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: notificationv1alpha1.NotificationRequestSpec{
-			Type:       notificationv1alpha1.NotificationTypeStatusUpdate,
-			Priority:   notificationv1alpha1.NotificationPriorityMedium,
-			Subject:    subject,
-			Body:       body,
-			Recipients: recipients,
-			Channels:   channels,
-			Metadata:   metadata,
-		},
-	}
-}
-
-// CreateSimpleNotification creates a simple notification
-// Used for informational messages
-func CreateSimpleNotification(
-	name, namespace string,
-	subject, body string,
-	recipients []notificationv1alpha1.Recipient,
-	channels []notificationv1alpha1.Channel,
-) *notificationv1alpha1.NotificationRequest {
-	return &notificationv1alpha1.NotificationRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: notificationv1alpha1.NotificationRequestSpec{
-			Type:       notificationv1alpha1.NotificationTypeSimple,
-			Priority:   notificationv1alpha1.NotificationPriorityLow,
-			Subject:    subject,
-			Body:       body,
-			Recipients: recipients,
-			Channels:   channels,
-		},
-	}
 }
