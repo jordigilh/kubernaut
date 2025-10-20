@@ -68,6 +68,25 @@ var (
 		},
 		[]string{"namespace"},
 	)
+
+	// v3.1 Category B: Slack API retry metrics
+	notificationSlackRetryCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "notification_slack_retry_count",
+			Help: "Total number of Slack API retry attempts",
+		},
+		[]string{"namespace", "reason"},
+	)
+
+	// v3.1 Category B: Slack API backoff duration metrics
+	notificationSlackBackoffDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "notification_slack_backoff_duration_seconds",
+			Help:    "Backoff duration for Slack API retries (with jitter)",
+			Buckets: []float64{30, 60, 120, 240, 480}, // 30s, 1m, 2m, 4m, 8m
+		},
+		[]string{"namespace"},
+	)
 )
 
 func init() {
@@ -79,6 +98,8 @@ func init() {
 		notificationDeliveryDuration,
 		notificationPhase,
 		notificationRetryCount,
+		notificationSlackRetryCount,
+		notificationSlackBackoffDuration,
 	)
 }
 
@@ -112,4 +133,16 @@ func UpdatePhaseCount(namespace, phase string, count float64) {
 // RecordRetryCount records the number of retries for a notification
 func RecordRetryCount(namespace string, retries float64) {
 	notificationRetryCount.WithLabelValues(namespace).Observe(retries)
+}
+
+// v3.1 Category B: Slack API retry metrics helpers
+
+// RecordSlackRetry records a Slack API retry attempt
+func RecordSlackRetry(namespace, reason string) {
+	notificationSlackRetryCount.WithLabelValues(namespace, reason).Inc()
+}
+
+// RecordSlackBackoff records the backoff duration for a Slack API retry
+func RecordSlackBackoff(namespace string, durationSeconds float64) {
+	notificationSlackBackoffDuration.WithLabelValues(namespace).Observe(durationSeconds)
 }
