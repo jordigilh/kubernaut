@@ -136,4 +136,3 @@ func isTerminalPhase(phase notificationv1alpha1.NotificationPhase) bool {
 
 	return false
 }
-
