@@ -1,9 +1,15 @@
 # Effectiveness Monitor Service - Implementation Checklist
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
+**Version**: 1.0.1 (Ultra-Compact JSON Format)
+**Last Updated**: October 6, 2025 (Format Update: October 16, 2025)
 **Service Type**: Stateless HTTP API Service (Assessment & Analysis)
 **Port**: 8080 (REST API + Health), 9090 (Metrics)
+
+**Format Optimization (DD-HOLMESGPT-009)**: 🆕
+- **Ultra-Compact JSON Format**: 75% token reduction for HolmesGPT API calls
+- **Cost Savings**: $1,320/year on LLM API calls (~18K post-execution analyses)
+- **Latency Improvement**: 150ms per post-execution analysis
+- **Decision Document**: `docs/architecture/decisions/DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md`
 
 ---
 
@@ -132,6 +138,38 @@ Following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-
 - [ ] Implement side effect detection algorithms
 - [ ] Add trend analysis (improving/declining/stable)
 - [ ] Implement pattern insights generation
+
+#### **Day 2b: Hybrid AI Integration (DD-EFFECTIVENESS-001 + DD-HOLMESGPT-009)**
+
+- [ ] Implement HolmesGPT client (`pkg/monitor/holmesgpt_client.go`)
+  ```go
+  // Client for calling HolmesGPT API post-execution analysis
+  type HolmesGPTClient interface {
+      AnalyzePostExecution(ctx context.Context, req PostExecRequest) (*PostExecResponse, error)
+  }
+  ```
+- [ ] **REQUIRED**: Implement InvestigationContext for ultra-compact JSON format (DD-HOLMESGPT-009) 🆕
+  ```go
+  // pkg/ai/analysis/compact_encoder.go
+  func (e *InvestigationContext) BuildPostExecCompactContext(req *PostExecRequest) (string, error)
+  ```
+- [ ] Use InvestigationContext in HolmesGPTClient implementation
+  ```go
+  compactContext, err := encoder.BuildPostExecCompactContext(request)
+  // ~180 tokens vs ~730 tokens (75% reduction)
+  ```
+- [ ] Implement `shouldCallAI()` decision logic
+  ```go
+  func shouldCallAI(workflow *WorkflowExecution, basicScore float64, anomalies []string) bool
+  ```
+- [ ] Add AI analysis Prometheus metrics (including token count)
+  ```go
+  effectiveness_ai_trigger_total{trigger_type="p0_failure|new_action_type|anomaly_detected|oscillation|routine_skipped"}
+  effectiveness_ai_calls_total{status="success|failure|timeout"}
+  effectiveness_ai_cost_total_dollars
+  effectiveness_ai_call_duration_seconds
+  effectiveness_ai_token_count{phase="input|output"}  // NEW
+  ```
 
 #### **Day 3: Observability**
 

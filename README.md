@@ -10,16 +10,16 @@
 > - ✅ **Dynamic Toolset Service**: COMPLETE ([Handoff Summary](docs/services/stateless/dynamic-toolset/implementation/00-HANDOFF-SUMMARY.md))
 > - ✅ **Notification Service**: COMPLETE ([Service Completion](docs/services/crd-controllers/06-notification/SERVICE_COMPLETION_FINAL.md))
 > - 🔄 **Context API**: In-progress (Days 2-3 DO-RED ✅ COMPLETE, 84/84 tests passing, Day 4 DO-GREEN next)
-> - ⏸️ **7 services pending**: HolmesGPT API, RemediationProcessor, WorkflowExecution, KubernetesExecutor, AIAnalysis, RemediationOrchestrator, Effectiveness Monitor
+> - ⏸️ **6 services pending**: HolmesGPT API, RemediationProcessor, WorkflowExecution, AIAnalysis, RemediationOrchestrator, Effectiveness Monitor
 >
 > **Timeline**: Weeks 1-13 development plan (currently in Week 1-2)
 >
 > **For Current V1 Architecture**, see:
-> - [APPROVED_MICROSERVICES_ARCHITECTURE.md](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md) - Authoritative V1 architecture (12 services)
+> - [APPROVED_MICROSERVICES_ARCHITECTURE.md](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md) - Authoritative V1 architecture (11 services)
 > - [SERVICE_DEVELOPMENT_ORDER_STRATEGY.md](docs/planning/SERVICE_DEVELOPMENT_ORDER_STRATEGY.md) - Development timeline & dependencies
 > - [V1_SOURCE_OF_TRUTH_HIERARCHY.md](docs/V1_SOURCE_OF_TRUTH_HIERARCHY.md) - Documentation hierarchy
 
-An intelligent Kubernetes remediation platform built on **microservices architecture** that autonomously analyzes **multiple signal types** (Prometheus alerts, Kubernetes events, CloudWatch alarms, custom webhooks) and executes automated actions using AI-powered decision making, with complete CRD-based orchestration.
+Kubernaut is an open source Kubernetes AIOps (KAIOps) platform that combines AI-driven investigation with automated remediation. It performs root cause analysis on Kubernetes incidents (Prometheus alerts), orchestrates multi-step remediation workflows, and executes validated actions, targeting mean time to resolution reduction from an estimated 60 minutes to under 5 minutes while maintaining operational safety.
 
 ---
 
@@ -34,10 +34,10 @@ An intelligent Kubernetes remediation platform built on **microservices architec
 
 - 🏗️ **[Kubernaut Architecture Overview](docs/architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md)**
   - High-level system design and architectural principles
-  - V1 microservices overview (12 core services)
+  - V1 microservices overview (11 core services)
 
 - 🏛️ **[Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)** ⭐ **AUTHORITATIVE**
-  - **V1 Implementation Specification**: 12 services (5 CRD controllers + 7 stateless services)
+  - **V1 Implementation Specification**: 11 services (4 CRD controllers + 7 stateless services)
   - Detailed microservices decomposition and service boundaries
   - CRD-based communication architecture
   - Service dependencies and integration patterns
@@ -48,7 +48,7 @@ An intelligent Kubernetes remediation platform built on **microservices architec
 
 - 📐 **[CRD Schemas](docs/architecture/CRD_SCHEMAS.md)** - **AUTHORITATIVE**
   - Single source of truth for all CRD field definitions
-  - OpenAPI v3 schemas for RemediationRequest, RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution
+  - OpenAPI v3 schemas for RemediationRequest, RemediationProcessing, AIAnalysis, WorkflowExecution
 
 **Quality Assurance**: [V1 Documentation Triage Report](docs/analysis/V1_DOCUMENTATION_TRIAGE_REPORT.md) - 239 files analyzed, 0 critical issues
 
@@ -58,11 +58,11 @@ An intelligent Kubernetes remediation platform built on **microservices architec
 
 **CURRENT IMPLEMENTATION**: **Phase 1 of 5** - CRD-based microservices with independent scaling, deployment, and failure domains.
 
-### **🎯 V1 Architecture: 12 Services (5 CRD Controllers + 7 Stateless Services)**
+### **🎯 V1 Architecture: 11 Services (4 CRD Controllers + 7 Stateless Services)**
 
 **Reference**: [Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md) (**Tier 1: AUTHORITATIVE**)
 
-#### **CRD Controllers** (5 services)
+#### **CRD Controllers** (4 services)
 Each controller runs as a separate microservice with its own binary:
 
 | Service | Status | CRD | Purpose | Docs |
@@ -70,14 +70,13 @@ Each controller runs as a separate microservice with its own binary:
 | **RemediationOrchestrator** | ⏸️ Phase 5 | RemediationRequest | Cross-CRD coordination & lifecycle management | [docs](docs/services/crd-controllers/05-remediationorchestrator/) |
 | **RemediationProcessor** | ⏸️ Phase 3 | RemediationProcessing | Signal processing and enrichment | [docs](docs/services/crd-controllers/01-remediationprocessor/) |
 | **AIAnalysis** | ⏸️ Phase 4 | AIAnalysis | AI-powered analysis and recommendations | [docs](docs/services/crd-controllers/02-aianalysis/) |
-| **WorkflowExecution** | ⏸️ Phase 3 | WorkflowExecution | Multi-step workflow orchestration | [docs](docs/services/crd-controllers/03-workflowexecution/) |
-| **KubernetesExecutor** | ⏸️ Phase 3 | KubernetesExecution | Safe Kubernetes operation execution | [docs](docs/services/crd-controllers/04-kubernetesexecutor/) |
+| **WorkflowExecution** | ⏸️ Phase 3 | WorkflowExecution | Multi-step workflow orchestration with Tekton Pipelines | [docs](docs/services/crd-controllers/03-workflowexecution/) |
 
 #### **Stateless Services** (7 services)
 
 | Service | Status | Purpose | Port | Docs |
 |---------|--------|---------|------|------|
-| **Gateway Service** | ✅ **COMPLETE** | Multi-signal webhook ingestion | 8080 | [Integration Tests](GATEWAY_TESTS_PHASE2_PHASE3_COMPLETE.md) |
+| **Gateway Service** | ✅ **COMPLETE** | Prometheus alert webhook ingestion | 8080 | [Integration Tests](GATEWAY_TESTS_PHASE2_PHASE3_COMPLETE.md) |
 | **Dynamic Toolset** | ✅ **COMPLETE** | HolmesGPT toolset configuration | 8080 | [Handoff Summary](docs/services/stateless/dynamic-toolset/implementation/00-HANDOFF-SUMMARY.md) |
 | **Data Storage** | ✅ **COMPLETE** | PostgreSQL + Vector DB management | 8080 | [Handoff Summary](docs/services/stateless/data-storage/implementation/HANDOFF_SUMMARY.md) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel notification delivery (CRD-based) | 8080 | [Service Completion](docs/services/crd-controllers/06-notification/SERVICE_COMPLETION_FINAL.md) |
@@ -89,7 +88,34 @@ Each controller runs as a separate microservice with its own binary:
 - **8080**: Health/Ready endpoints + API (all services)
 - **9090**: Metrics endpoints (all services)
 
-**Development Status**: **4 of 12 services complete (33%) + 1 in-progress**
+**Development Status**: **4 of 11 services complete (36%) + 1 in-progress**
+
+---
+
+## 🚀 **TEKTON EXECUTION ARCHITECTURE**
+
+**Reference**: [Tekton Execution Architecture](docs/architecture/TEKTON_EXECUTION_ARCHITECTURE.md) | [ADR-023](docs/architecture/decisions/ADR-023-tekton-from-v1.md)
+
+Kubernaut uses **Tekton Pipelines** as its workflow execution engine **from V1 (Q4 2025)**:
+
+### **Core Architecture**
+- ✅ **Tekton Pipelines**: DAG orchestration, parallel execution, workspace management
+- ✅ **Generic Meta-Task**: Single Tekton Task executes all 29+ action containers
+- ✅ **ActionExecution Tracking**: Dedicated CRDs for pattern monitoring and effectiveness
+- ✅ **Cosign Verification**: Image signatures validated at admission time
+
+### **Universal Availability**
+- ✅ **All Kubernetes Distributions**: Upstream Tekton (open source, 5-minute install)
+- ✅ **Cloud Platforms**: EKS, GKE, AKS fully compatible
+- ✅ **On-Premises**: Self-managed Kubernetes clusters supported
+
+### **Key Benefits**
+- ✅ **Zero throwaway code**: Eliminates 500+ lines of custom orchestration
+- ✅ **50% faster development**: 8 weeks vs 16 weeks (no V1 → V2 migration)
+- ✅ **Industry standard**: Tekton Pipelines (CNCF Graduated project)
+- ✅ **Enterprise ready**: Same trust level as Kubernetes
+
+**Decision**: Using Tekton from V1 eliminates architectural waste (500+ lines of throwaway custom orchestration code) and ensures maximum industrial acceptance through CNCF Graduated Tekton Pipelines.
 
 ---
 
@@ -102,13 +128,15 @@ Each controller runs as a separate microservice with its own binary:
 Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service communication, enabling event-driven, resilient, and auditable workflows:
 
 ```
-Signal Sources → Gateway Service → RemediationRequest CRD (created)
-(Prometheus Alerts,       ↓
- K8s Events,         RemediationOrchestrator (watches RemediationRequest)
- CloudWatch Alarms,       ↓
- Custom Webhooks)    Creates child CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution)
+Signal Source → Gateway Service → RemediationRequest CRD (created)
+(Prometheus Alerts)       ↓
+                    RemediationOrchestrator (watches RemediationRequest)
+                          ↓
+                    Creates child CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution)
                           ↓
                      Each CRD Controller watches its CRD type
+                          ↓
+                     WorkflowExecution creates Tekton PipelineRuns for action execution
                           ↓
                      Controllers reconcile independently (event-driven)
                           ↓
@@ -135,7 +163,7 @@ sequenceDiagram
     participant RP as RemediationProcessor
     participant AI as AIAnalysis
     participant WF as WorkflowExecution
-    participant EX as KubernetesExecutor
+    participant TEK as Tekton Pipelines
     participant K8S as Kubernetes Cluster
 
     SRC->>GW: POST /webhook (signal)
@@ -161,15 +189,13 @@ sequenceDiagram
 
     Note over WF: Watch WorkflowExecution CRD
     WF->>WF: Reconcile: Build workflow
-    WF->>K8S: Update status: Completed
+    WF->>TEK: Create PipelineRun (action execution)
 
-    Note over ORCH: Watch status update
-    ORCH->>K8S: Create KubernetesExecution CRD
+    Note over TEK: Execute action containers
+    TEK->>K8S: Apply remediation
+    TEK->>WF: PipelineRun status: Complete
 
-    Note over EX: Watch KubernetesExecution CRD
-    EX->>EX: Reconcile: Execute actions
-    EX->>K8S: Apply remediation
-    EX->>K8S: Update status: Completed
+    WF->>K8S: Update WorkflowExecution status: Completed
 
     ORCH->>K8S: Update RemediationRequest: Complete
 ```
@@ -178,7 +204,7 @@ sequenceDiagram
 
 ## 📊 **IMPLEMENTATION STATUS & ROADMAP**
 
-### **Current Status: Phase 1 (Foundation) - 4 of 12 services**
+### **Current Status: Phase 1 (Foundation) - 4 of 11 services**
 
 **Reference**: [Service Development Order Strategy](docs/planning/SERVICE_DEVELOPMENT_ORDER_STRATEGY.md)
 
@@ -186,7 +212,7 @@ sequenceDiagram
 |-------|----------|--------|----------|
 | **Phase 1: Foundation** | Gateway, Dynamic Toolset, Data Storage, Notifications | ✅✅✅✅ | Weeks 1-3 |
 | **Phase 2: Intelligence** | Context API, HolmesGPT API | ⏸️⏸️ | Weeks 3-5 |
-| **Phase 3: Core Controllers** | RemediationProcessor, WorkflowExecution, KubernetesExecutor | ⏸️⏸️⏸️ | Weeks 5-8 |
+| **Phase 3: Core Controllers** | RemediationProcessor, WorkflowExecution | ⏸️⏸️ | Weeks 5-8 |
 | **Phase 4: AI Integration** | AIAnalysis | ⏸️ | Weeks 8-10 |
 | **Phase 5: Orchestration** | RemediationOrchestrator, Effectiveness Monitor | ⏸️⏸️ | Weeks 10-13 |
 
@@ -197,7 +223,7 @@ sequenceDiagram
 #### ✅ **Gateway Service** (COMPLETE)
 - **Status**: Production-ready with comprehensive integration tests
 - **Features**:
-  - Multi-signal webhook ingestion (Prometheus, K8s Events, CloudWatch, custom)
+  - Prometheus alert webhook ingestion (V1 scope)
   - Signal deduplication with Redis
   - Storm detection and aggregation
   - Environment classification (prod/staging/dev)
@@ -209,6 +235,7 @@ sequenceDiagram
 - **Testing**: [Gateway Integration Tests Complete](GATEWAY_TESTS_PHASE2_PHASE3_COMPLETE.md)
 - **Test Coverage**: Unit (70%+), Integration (20%), E2E scenarios
 - **Confidence**: **98%** - Production-ready
+- **Note**: Multi-signal support (K8s Events, CloudWatch, custom webhooks) planned for V2
 
 #### ✅ **Dynamic Toolset Service** (COMPLETE)
 - **Status**: Production-ready with comprehensive documentation
@@ -251,8 +278,7 @@ sequenceDiagram
 
 ### **Phase 3: Core Business Logic** (Weeks 5-8)
 - **RemediationProcessor**: Signal enrichment with cluster context
-- **WorkflowExecution**: Multi-step workflow orchestration with dependency resolution
-- **KubernetesExecutor**: 25+ Kubernetes remediation actions with safety validation
+- **WorkflowExecution**: Multi-step workflow orchestration with Tekton Pipelines, **step-level precondition/postcondition validation** (DD-002), **per-action validation framework with Rego policies** (DD-002)
 
 ### **Phase 4: AI Integration** (Weeks 8-10)
 - **AIAnalysis**: AI-powered root cause analysis and action recommendations
@@ -268,11 +294,9 @@ sequenceDiagram
 
 When V1 implementation completes (Week 13), Kubernaut will support:
 
-### **Multi-Signal Processing**
-- Prometheus AlertManager webhooks
-- Kubernetes events (pod crashes, node issues)
-- CloudWatch alarms (AWS integration)
-- Custom webhook integrations
+### **Signal Processing**
+- Prometheus AlertManager webhooks (V1 scope)
+- Note: Multi-signal support (Kubernetes events, CloudWatch alarms, custom webhooks) planned for V2
 
 ### **AI-Powered Analysis**
 - Root cause analysis via HolmesGPT
@@ -280,8 +304,8 @@ When V1 implementation completes (Week 13), Kubernaut will support:
 - Confidence scoring for recommendations
 - Multi-LLM provider support
 
-### **Automated Remediation Actions** (25+)
-Planned for KubernetesExecutor service (Phase 3):
+### **Automated Remediation Actions** (29 Canonical Actions)
+Executed by WorkflowExecution via Tekton Pipelines (Phase 3):
 
 **Scaling & Resources**:
 - `scale_deployment`, `increase_resources`, `update_hpa`, `scale_statefulset`
@@ -327,7 +351,7 @@ make install
 
 # Build all CRD controllers (single binary for development)
 make build
-# Creates: bin/manager (includes RemediationOrchestrator, RemediationProcessor, AIAnalysis, WorkflowExecution, KubernetesExecutor)
+# Creates: bin/manager (includes RemediationOrchestrator, RemediationProcessor, AIAnalysis, WorkflowExecution)
 
 # Build individual services (when available)
 go build -o bin/gateway-service ./cmd/gateway
@@ -430,7 +454,7 @@ gateway:
 
 3. 🔄 **[ADR-015: Alert to Signal Naming Migration](docs/architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)**
    - Critical naming convention change
-   - Multi-signal architecture (alerts, events, alarms)
+   - Foundation for future multi-signal architecture (V2: events, alarms, webhooks)
    - 5-phase migration strategy
 
 ### **Architecture Documentation**
@@ -440,7 +464,7 @@ gateway:
 - **[CRD Schemas](docs/architecture/CRD_SCHEMAS.md)**: Authoritative CRD field definitions
 
 ### **Service Documentation**
-- **[CRD Controllers](docs/services/crd-controllers/)**: RemediationOrchestrator, RemediationProcessor, AIAnalysis, WorkflowExecution, KubernetesExecutor
+- **[CRD Controllers](docs/services/crd-controllers/)**: RemediationOrchestrator, RemediationProcessor, AIAnalysis, WorkflowExecution
 - **[Stateless Services](docs/services/stateless/)**: Gateway, Dynamic Toolset, Data Storage, Context API, HolmesGPT API, Effectiveness Monitor, Notifications
 
 ### **Development Guides**
@@ -463,7 +487,10 @@ metadata:
   name: kubernaut-operator
 rules:
 - apiGroups: ["remediation.kubernaut.io"]
-  resources: ["remediationrequests", "remediationprocessings", "aianalyses", "workflowexecutions", "kubernetesexecutions"]
+  resources: ["remediationrequests", "remediationprocessings", "aianalyses", "workflowexecutions"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["tekton.dev"]
+  resources: ["pipelineruns", "taskruns"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: [""]
   resources: ["pods", "nodes", "events", "configmaps"]

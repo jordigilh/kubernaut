@@ -1,0 +1,51 @@
+# HolmesGPT API Service - Production Dependencies
+#
+# Strategy: Install HolmesGPT SDK first, which brings all required dependencies.
+# Then add ONLY our additional service-specific dependencies.
+#
+# IMPORTANT: HolmesGPT has a dependency specification issue:
+#   - Requires: supabase = "^2.5" (allows any 2.x)
+#   - Requires: postgrest = "0.16.8" (locked for bug workaround)
+#   - But supabase 2.9+ requires postgrest>=0.17 (conflict!)
+#
+# Solution: We constrain supabase to compatible version range.
+#
+# HolmesGPT SDK Dependencies (auto-installed, from pyproject.toml):
+# - pydantic = "^2.7"
+# - fastapi = "^0.116"
+# - uvicorn = "^0.30"
+# - supabase = "^2.5" (WE CONSTRAIN TO <2.9 for postgrest 0.16.8 compatibility)
+# - postgrest = "0.16.8"
+# - tenacity = "^9.1.2"
+# - mcp = "v1.12.2" (brings httpx>=0.27, anyio>=4.5, pydantic-settings>=2.5.2)
+# - openai, boto3, kubernetes, litellm, sentry-sdk, and many others
+
+# Constrain supabase to version compatible with HolmesGPT's postgrest pin
+# Must install BEFORE HolmesGPT to prevent pip from picking incompatible version
+# supabase 2.8+ requires postgrest>=0.17, but we need 0.16.8
+# Also constrain httpx for supabase compatibility
+supabase>=2.5,<2.8  # Compatible with postgrest 0.16.8 (HolmesGPT requirement)
+postgrest==0.16.8   # Match HolmesGPT's pin exactly
+httpx<0.28,>=0.24   # Supabase stack requires <0.28
+
+# HolmesGPT SDK (from local copy) - Install AFTER supabase constraint
+# Using local copy from ../dependencies/holmesgpt/ for faster installation
+../dependencies/holmesgpt/
+
+# Additional service-specific dependencies (NOT in HolmesGPT SDK)
+# These are only for holmesgpt-api service functionality
+
+# HTTP client for K8s TokenReviewer API (not used by HolmesGPT SDK)
+aiohttp>=3.9.1
+aiodns>=3.1.1
+
+# Prometheus metrics (holmesgpt has 'prometrix' but we need prometheus-client for direct metrics)
+prometheus-client>=0.19.0
+
+# Structured logging (HolmesGPT has colorlog, we add python-json-logger for JSON output)
+python-json-logger>=2.0.7
+
+# LLM Provider SDKs (optional, install based on provider used)
+# Vertex AI (Google Cloud)
+google-cloud-aiplatform>=1.38  # Required for litellm Vertex AI integration
+

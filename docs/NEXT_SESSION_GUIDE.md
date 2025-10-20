@@ -1622,7 +1622,7 @@ kubectl apply -f deploy/infrastructure/
 2. What deployment target?
    - Local KIND cluster (development)?
    - Production Kubernetes cluster?
-   - OpenShift cluster?
+   - Kubernetes cluster?
 
 3. What timeline constraints exist?
    - MVP in 6-8 weeks?

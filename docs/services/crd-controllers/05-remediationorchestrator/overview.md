@@ -13,6 +13,7 @@
 - Single RemediationRequest CRD per alert (created by Gateway Service)
 - Watch-based event-driven coordination (no polling)
 - Sequential phase CRD creation (RemediationProcessing → AIAnalysis → WorkflowExecution → KubernetesExecution)
+- **V1.0 Approval Notification Triggering** (ADR-018): Watches AIAnalysis phase and creates NotificationRequest CRDs when approval is required (BR-ORCH-001), reducing approval miss rate from 40-60% to <5% and enabling $392K savings per approval-required incident
 - 24-hour retention with configurable cleanup
 - Per-phase timeout detection with escalation
 

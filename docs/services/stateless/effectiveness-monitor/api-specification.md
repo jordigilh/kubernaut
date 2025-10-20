@@ -305,6 +305,136 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
 
 ---
 
+## 🤖 Decision Logic API (Internal)
+
+### **Internal Method: `shouldCallAI()`**
+
+**Purpose**: Determines if AI analysis adds value beyond automated assessment
+
+**Function Signature**:
+```go
+func (s *EffectivenessMonitorService) shouldCallAI(
+    workflow *WorkflowExecution,
+    basicScore float64,
+    anomalies []string,
+) bool
+```
+
+**Decision Table**:
+
+| Trigger Type | Condition | Frequency/Day | Annual Calls | AI Called? |
+|--------------|-----------|---------------|--------------|------------|
+| **P0 Failures** | `Priority == "P0" && !Success` | 50 | 18,250 | ✅ YES |
+| **New Action Types** | `IsNewActionType == true` | 10 | 3,650 | ✅ YES |
+| **Anomalies Detected** | `len(anomalies) > 0` | 5 | 1,825 | ✅ YES |
+| **Oscillations** | `IsRecurringFailure == true` | 5 | 1,825 | ✅ YES |
+| **Routine Successes** | `Success && !anomalies` | 10,000 | 3,650,000 | ❌ NO |
+| **TOTAL** | - | **10,070** | **3,675,550** | **0.7% AI** |
+
+**Volume Impact**:
+- **Total Assessments**: 3.65M/year (~10K/day)
+- **AI Analysis Calls**: 25.5K/year (~70/day)
+- **AI Usage Rate**: 0.7% (selective, high-value only)
+
+**Cost Impact**:
+- **Always-AI Approach**: $1,825,000/year (100% AI)
+- **Hybrid Approach**: $12,775/year (0.7% AI)
+- **Annual Savings**: $1,812,225/year (99.3% cost reduction)
+
+**Business Rationale**:
+- ✅ Critical failures (P0) always get AI root cause analysis
+- ✅ New action types build knowledge base with AI insights
+- ✅ Anomalies trigger investigation for pattern learning
+- ✅ Oscillations analyzed for recurring failure patterns
+- ❌ Routine successes handled efficiently with automation (no AI cost)
+
+**Return Value**:
+- `true`: AI analysis warranted → Call HolmesGPT API `/api/v1/postexec/analyze`
+- `false`: Automated assessment sufficient → Store basic metrics only
+
+---
+
+## 📊 AI Analysis Metrics
+
+### Prometheus Metrics
+
+```go
+// AI trigger tracking
+effectiveness_ai_trigger_total{trigger_type="p0_failure"}          // P0 failures analyzed
+effectiveness_ai_trigger_total{trigger_type="new_action_type"}     // New action types analyzed
+effectiveness_ai_trigger_total{trigger_type="anomaly_detected"}    // Anomalies investigated
+effectiveness_ai_trigger_total{trigger_type="oscillation"}         // Recurring failures analyzed
+effectiveness_ai_trigger_total{trigger_type="routine_skipped"}     // Routine successes (no AI)
+
+// AI call tracking
+effectiveness_ai_calls_total{status="success"}                     // Successful AI analyses
+effectiveness_ai_calls_total{status="failure"}                     // Failed AI API calls
+effectiveness_ai_calls_total{status="timeout"}                     // Timeout AI calls
+
+// Cost tracking
+effectiveness_ai_cost_total_dollars                                // Estimated total AI cost ($0.50/call)
+
+// AI call duration
+effectiveness_ai_call_duration_seconds_bucket                      // Histogram of AI call latency
+```
+
+### Cost Monitoring Queries
+
+**Daily AI Analysis Cost**:
+```promql
+sum(increase(effectiveness_ai_cost_total_dollars[24h]))
+```
+
+**AI Trigger Breakdown (Last 7 Days)**:
+```promql
+sum by (trigger_type) (increase(effectiveness_ai_trigger_total[7d]))
+```
+
+**AI Call Success Rate**:
+```promql
+rate(effectiveness_ai_calls_total{status="success"}[24h])
+/
+rate(effectiveness_ai_calls_total[24h])
+```
+
+**P95 AI Call Duration**:
+```promql
+histogram_quantile(0.95, effectiveness_ai_call_duration_seconds_bucket)
+```
+
+**Monthly Cost Projection**:
+```promql
+sum(increase(effectiveness_ai_cost_total_dollars[30d]))
+```
+
+**AI Usage Rate** (% of assessments using AI):
+```promql
+sum(rate(effectiveness_ai_calls_total[24h]))
+/
+sum(rate(effectiveness_assessment_total[24h]))
+```
+
+### Cost Alerts
+
+**Budget Exceeded** (>$15,000/year):
+```promql
+sum(increase(effectiveness_ai_cost_total_dollars[365d])) > 15000
+```
+
+**Unexpected AI Surge** (>100 calls/hour):
+```promql
+rate(effectiveness_ai_calls_total[1h]) > 100
+```
+
+**High Failure Rate** (>10% AI call failures):
+```promql
+sum(rate(effectiveness_ai_calls_total{status="failure"}[1h]))
+/
+sum(rate(effectiveness_ai_calls_total[1h])) > 0.10
+```
+
+---
+
 ## 🔍 Health & Readiness Endpoints
 
 ### **5. GET `/health`**

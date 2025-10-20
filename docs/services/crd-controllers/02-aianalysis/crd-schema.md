@@ -157,6 +157,30 @@ status:
   - type: RecommendationsGenerated
     status: "True"
     reason: TopRecommendationSelected
+
+  # V1.0 Approval Notification Integration (ADR-018)
+  # ================================================
+
+  # Approval Context (BR-AI-059) - Rich context for RemediationOrchestrator notifications
+  approvalContext:
+    reason: string                           # "Medium confidence (72.5%) - requires human review"
+    confidenceScore: float64                 # 72.5
+    confidenceLevel: string                  # "medium" (low/medium/high)
+    investigationSummary: string             # "Memory leak in payment processing..."
+    evidenceCollected: []string              # ["Linear memory growth 50MB/hour per pod", ...]
+    recommendedActions: []RecommendedAction  # [{action: "collect_diagnostics", rationale: "..."}, ...]
+    alternativesConsidered: []Alternative    # [{approach: "Wait and monitor", prosCons: "..."}, ...]
+    whyApprovalRequired: string              # "Historical pattern requires validation..."
+
+  # Approval Decision Tracking (BR-AI-060) - Audit trail for operator decisions
+  approvalStatus: string                     # "approved" | "rejected" | "pending"
+  approvedBy: string                         # "ops-engineer@company.com"
+  approvalTime: *metav1.Time                 # When decision was made
+  approvalDuration: string                   # "2m15s" (time from request to decision)
+  approvalMethod: string                     # "console" | "slack" | "api"
+  approvalJustification: string              # "Approved - low risk change in staging"
+  rejectedBy: string                         # (populated if rejected)
+  rejectionReason: string                    # (populated if rejected)
 ```
 
 ### Multi-Step Workflow Example with Dependencies

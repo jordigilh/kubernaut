@@ -1,8 +1,8 @@
-# OpenShift Compact Cluster Issue and Resolution
+# Kubernetes Compact Cluster Issue and Resolution
 
 ## Issue Summary
 
-During OpenShift 4.18 deployment using KCLI, the cluster was deployed as a **compact cluster** (3 control+worker nodes) instead of the intended **3+3 topology** (3 control + 3 dedicated worker nodes), causing severe resource constraints and preventing additional operators from scheduling.
+During Kubernetes 4.18 deployment using KCLI, the cluster was deployed as a **compact cluster** (3 control+worker nodes) instead of the intended **3+3 topology** (3 control + 3 dedicated worker nodes), causing severe resource constraints and preventing additional operators from scheduling.
 
 ## Root Cause Analysis
 
@@ -14,7 +14,7 @@ During OpenShift 4.18 deployment using KCLI, the cluster was deployed as a **com
 
 ### Technical Root Cause
 
-The issue was in the KCLI configuration that caused OpenShift to install with `platform: none` instead of proper platform configuration:
+The issue was in the KCLI configuration that caused Kubernetes to install with `platform: none` instead of proper platform configuration:
 
 ```yaml
 # Problem Configuration (install-config.yaml)
@@ -28,7 +28,7 @@ compute:
 **Why this happened:**
 - KCLI configuration included `baremetal_hosts` section for virtualized deployment
 - This triggered bare metal provisioning mode in virtualized environment
-- OpenShift fell back to platform-agnostic mode (`platform: none`)
+- Kubernetes fell back to platform-agnostic mode (`platform: none`)
 - Without machine API management, control planes became schedulable workers
 
 ### Resource Impact
@@ -184,4 +184,4 @@ oc get machinesets -n openshift-machine-api
 4. **Early Validation**: Check node topology immediately after deployment
 5. **Separate Configs**: Maintain distinct configurations for different deployment types
 
-This issue cost significant troubleshooting time but provides valuable insights for future OpenShift deployments using KCLI.
+This issue cost significant troubleshooting time but provides valuable insights for future Kubernetes deployments using KCLI.

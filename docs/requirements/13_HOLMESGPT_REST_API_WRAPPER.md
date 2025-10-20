@@ -166,7 +166,7 @@ graph TB
 
 #### 4.1.1 Multi-Architecture Support
 - **BR-HAPI-046**: MUST build container images for linux/amd64 and linux/arm64
-- **BR-HAPI-047**: MUST use Red Hat UBI Python 3.11+ base image (registry.access.redhat.com/ubi9/python-311) with security updates
+- **BR-HAPI-047**: MUST use upstream community UBI Python 3.11+ base image (registry.access.redhat.com/ubi9/python-311) with security updates
 - **BR-HAPI-048**: MUST minimize container size while including all dependencies using UBI-micro for minimal footprint
 - **BR-HAPI-049**: MUST implement non-root user execution for security
 - **BR-HAPI-050**: MUST provide proper signal handling for container lifecycle
@@ -226,11 +226,11 @@ graph TB
 ### 5.3 Container Security
 
 #### 5.3.1 Image Security
-- **BR-HAPI-081**: MUST use Red Hat Universal Base Images (UBI) from Red Hat Catalog (ubi9-minimal, ubi9-micro, or ubi9-python)
-- **BR-HAPI-082**: MUST scan container images for vulnerabilities before deployment using Red Hat security scanning tools
+- **BR-HAPI-081**: MUST use upstream community Universal Base Images (UBI) from upstream community Catalog (ubi9-minimal, ubi9-micro, or ubi9-python)
+- **BR-HAPI-082**: MUST scan container images for vulnerabilities before deployment using upstream community security scanning tools
 - **BR-HAPI-083**: MUST run containers as non-root user with minimal privileges
 - **BR-HAPI-084**: MUST implement read-only file systems where possible
-- **BR-HAPI-085**: MUST use multi-stage builds to minimize attack surface with Red Hat UBI base images
+- **BR-HAPI-085**: MUST use multi-stage builds to minimize attack surface with upstream community UBI base images
 
 #### 5.3.2 Runtime Security
 - **BR-HAPI-086**: MUST implement security contexts and pod security standards
@@ -239,12 +239,12 @@ graph TB
 - **BR-HAPI-089**: MUST disable unnecessary capabilities and system calls
 - **BR-HAPI-090**: MUST implement container image signing and verification
 
-#### 5.3.3 Red Hat Enterprise Compliance
-- **BR-HAPI-091**: MUST use certified Red Hat UBI images to ensure enterprise support and compliance
-- **BR-HAPI-092**: MUST leverage Red Hat Package Manager (RPM) for system dependencies when possible
-- **BR-HAPI-093**: MUST comply with Red Hat Container Certification requirements for enterprise deployment
-- **BR-HAPI-094**: MUST use Red Hat security advisories and update mechanisms for base image maintenance
-- **BR-HAPI-095**: MUST implement Red Hat container best practices for OpenShift compatibility
+#### 5.3.3 upstream community Enterprise Compliance
+- **BR-HAPI-091**: MUST use certified upstream community UBI images to ensure enterprise support and compliance
+- **BR-HAPI-092**: MUST leverage upstream community Package Manager (RPM) for system dependencies when possible
+- **BR-HAPI-093**: MUST comply with upstream community Container Certification requirements for enterprise deployment
+- **BR-HAPI-094**: MUST use upstream community security advisories and update mechanisms for base image maintenance
+- **BR-HAPI-095**: MUST implement upstream community container best practices for Kubernetes compatibility
 
 ### 5.4 Application Security
 
@@ -406,10 +406,10 @@ graph TB
 
 ## 9. Container Implementation Example
 
-### 9.1 Red Hat UBI Dockerfile Example
+### 9.1 upstream community UBI Dockerfile Example
 
 ```dockerfile
-# Multi-stage build using Red Hat UBI images
+# Multi-stage build using upstream community UBI images
 # Build stage
 FROM registry.access.redhat.com/ubi9/python-311:latest AS builder
 
@@ -474,7 +474,7 @@ CMD ["python3.11", "main.py"]
 ### 9.2 Container Labels and Annotations
 
 ```dockerfile
-# Add Red Hat Container Certification labels
+# Add upstream community Container Certification labels
 LABEL name="holmesgpt-api-server" \
       vendor="Kubernaut Project" \
       version="1.0.0" \
@@ -491,7 +491,7 @@ LABEL name="holmesgpt-api-server" \
 ### 9.3 Security Context Configuration
 
 ```yaml
-# Kubernetes SecurityContext for Red Hat UBI containers
+# Kubernetes SecurityContext for upstream community UBI containers
 apiVersion: apps/v1
 kind: Deployment
 metadata:

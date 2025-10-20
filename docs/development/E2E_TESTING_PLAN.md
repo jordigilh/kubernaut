@@ -13,10 +13,10 @@ This document outlines a comprehensive end-to-end (e2e) testing strategy for **K
 
 ### Testing Environment Overview
 
-- **Platform**: OpenShift Container Platform (OCP) 4.18
-- **AI Backend**: Remote Ollama model instance
-- **Data Storage**: Local PostgreSQL database instances
-- **Runtime**: Kubernaut CLI via Go implementation
+- **Platform**: Kind (Kubernetes in Docker) cluster
+- **AI Backend**: HolmesGPT REST API (localhost:8090)
+- **Data Storage**: PostgreSQL containers
+- **Runtime**: Kubernaut services via Kubernetes deployments
 - **Chaos Engineering**: LitmusChaos framework for controlled instability injection
 - **Scope**: Comprehensive validation of all remediation categories and AI decision-making capabilities
 
@@ -24,23 +24,22 @@ This document outlines a comprehensive end-to-end (e2e) testing strategy for **K
 
 ## Infrastructure Requirements
 
-### OpenShift Container Platform (OCP) 4.18
+### Kind Cluster
 
 #### **Cluster Specifications**
 | Component | Requirement | Purpose |
 |-----------|-------------|---------|
-| **Master Nodes** | 3 nodes, 4 vCPU, 16GB RAM, 100GB SSD | Control plane resilience |
-| **Worker Nodes** | 6+ nodes, 8 vCPU, 32GB RAM, 200GB SSD | Workload distribution and chaos testing |
-| **Storage** | OpenShift Data Foundation or equivalent | Persistent storage for databases and logs |
-| **Network** | SDN with NetworkPolicy support | Network chaos scenarios |
-| **Monitoring Stack** | Prometheus + Alertmanager | Alert generation for kubernaut |
+| **Control Plane** | 1 node, 4 vCPU, 8GB RAM | Lightweight control plane |
+| **Worker Nodes** | 3+ nodes, 2 vCPU, 4GB RAM each | Workload distribution and testing |
+| **Storage** | Local path provisioner | Persistent storage for databases |
+| **Network** | Calico or Kindnet | Network policy support |
+| **Setup Time** | < 2 minutes | Fast cluster creation/teardown |
 
 #### **Required Cluster Features**
-- **RBAC**: Extended permissions for kubernaut operations
-- **Custom Resource Definitions (CRDs)**: Support for LitmusChaos and kubernaut workflows
-- **Service Mesh**: Istio/OpenShift Service Mesh for network chaos scenarios
-- **Persistent Volumes**: For database and action history storage
-- **LoadBalancer Services**: External access to kubernaut components
+- **RBAC**: Kubernetes RBAC for kubernaut operations
+- **Custom Resource Definitions (CRDs)**: Support for Tekton and kubernaut workflows
+- **Persistent Volumes**: Local path provisioner for databases
+- **Port Forwarding**: Access to kubernaut services
 
 ### Remote Ollama Model Instance
 
@@ -51,7 +50,7 @@ This document outlines a comprehensive end-to-end (e2e) testing strategy for **K
 | **CPU/GPU** | M2 Max chip, 30 GPU cores | Apple Silicon optimized for LLM inference |
 | **Memory** | 32GB Unified Memory | Sufficient for 7B-13B parameter models |
 | **Storage** | 500GB+ SSD | Support for multiple model variants |
-| **Network** | High-bandwidth connection to OCP | Minimize AI analysis latency |
+| **Network** | High-bandwidth connection to Kubernetes cluster | Minimize AI analysis latency |
 | **OS** | macOS with Ollama native support | Apple Silicon optimized performance |
 
 #### **Supported Models for Testing**
@@ -119,7 +118,7 @@ graph TB
         ALERTS[Simulated Alert Sources<br/>Prometheus<br/>Custom Test Alerts]
     end
 
-    subgraph "OCP 4.18 Cluster"
+    subgraph "Kubernetes cluster 4.18 Cluster"
         subgraph "Kubernaut System"
             CLI[Kubernaut CLI<br/>Go Implementation<br/>Port: 8080]
             HGCLIENT[HolmesGPT Client<br/>Direct Go Integration]
@@ -144,7 +143,7 @@ graph TB
 
         subgraph "Infrastructure"
             K8S_API[Kubernetes API<br/>RBAC + CRDs]
-            INGRESS[OpenShift Router<br/>External Access]
+            INGRESS[Kubernetes Router<br/>External Access]
         end
     end
 
@@ -708,10 +707,10 @@ data:
 
 ### Phase 1: Infrastructure Setup (Week 1-2)
 **Duration**: 10 business days
-**Prerequisites**: OCP 4.18 cluster access, Ollama instance provisioning
+**Prerequisites**: Kubernetes cluster 4.18 cluster access, Ollama instance provisioning
 
 #### **Deliverables:**
-1. **OCP Cluster Configuration**
+1. **Kubernetes cluster Cluster Configuration**
    - RBAC policies for kubernaut and LitmusChaos
    - Storage classes and persistent volume setup
    - Monitoring stack deployment (Prometheus + Grafana)
@@ -721,7 +720,7 @@ data:
    - Apple Studio M2 Max setup with optimized macOS configuration
    - Model deployment leveraging 32GB unified memory and 30 GPU cores
    - Apple Metal acceleration enablement for enhanced performance
-   - Network connectivity validation from OCP cluster
+   - Network connectivity validation from Kind cluster
    - Performance baseline testing with Apple Silicon optimizations
    - Multi-model support utilizing M2 Max memory capacity
 
@@ -847,7 +846,7 @@ data:
 
 | Risk Category | Risk Description | Impact | Probability | Mitigation Strategy |
 |---------------|------------------|---------|-------------|-------------------|
-| **Infrastructure** | OCP cluster instability during testing | High | Medium | Dedicated test cluster, automated backups |
+| **Infrastructure** | Kind cluster instability during testing | High | Medium | Dedicated test cluster, automated backups |
 | **AI/LLM** | Ollama model unavailability/latency | Medium | Low | Apple M2 Max dedicated hardware, multiple model support, Apple Metal acceleration |
 | **Data** | PostgreSQL data corruption during chaos | High | Low | Frequent backups, replica validation |
 | **Networking** | Network isolation preventing communication | High | Low | Multiple network paths, monitoring |
@@ -856,7 +855,7 @@ data:
 ### Success Prerequisites
 
 1. **Technical Prerequisites**
-   - Stable OCP 4.18 cluster with admin access
+   - Stable Kubernetes cluster 4.18 cluster with admin access
    - Reliable network connectivity to Ollama instance
    - Sufficient computational resources (48+ vCPU, 192+ GB RAM)
    - PostgreSQL cluster with backup/recovery capability

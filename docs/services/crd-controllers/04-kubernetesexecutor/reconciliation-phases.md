@@ -53,6 +53,16 @@
 - Parse dry-run results and potential impacts
 - Detect any validation errors or warnings
 
+**Step 6: Precondition Evaluation** (BR-EXEC-016) [NEW - DD-002]
+- Evaluate all `spec.preConditions[]` using Rego policy engine
+- Query current cluster state for condition input (e.g., deployment status, node capacity, RBAC permissions)
+- For each precondition:
+  - Execute Rego policy with cluster state as input
+  - If `condition.required=true` and evaluation fails: Block Job creation, mark execution as "failed", update `status.validationResults.preConditionResults`, do NOT proceed to Job creation
+  - If `condition.required=false` and evaluation fails: Log warning, update `status.validationResults.preConditionResults`, continue execution
+- Wait up to `condition.timeout` for async precondition checks
+- Record all precondition results in `status.validationResults.preConditionResults[]`
+
 **Transition Criteria**:
 ```go
 if allValidationsPassed && dryRunSuccessful {
@@ -165,6 +175,17 @@ job := &batchv1.Job{
 - Extract execution results from Pod logs
 - Record resources affected by action
 - Calculate execution duration
+
+**Step 5: Postcondition Verification** (BR-EXEC-036) [NEW - DD-002]
+- After `Job.status.succeeded = 1`, evaluate all `spec.postConditions[]`
+- Query cluster state to validate intended outcome achieved
+- For each postcondition:
+  - Execute Rego policy with post-execution cluster state as input
+  - Wait up to `condition.timeout` for async verification (e.g., pods starting, deployment Available=true)
+  - If `condition.required=true` and verification fails: Mark execution as "failed", update `status.validationResults.postConditionResults`, capture rollback information, transition to "rollback_ready"
+  - If `condition.required=false` and verification fails: Log warning, update `status.validationResults.postConditionResults`, mark as partial success
+- Record all postcondition results in `status.validationResults.postConditionResults[]`
+- If any required postcondition fails, populate `status.rollbackInformation` with details for WorkflowExecution to use
 
 **Transition Criteria**:
 ```go

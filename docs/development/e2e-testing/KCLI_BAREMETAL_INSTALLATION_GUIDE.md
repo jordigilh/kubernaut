@@ -1,10 +1,10 @@
-# OpenShift 4.18 Bare Metal Installation with KCLI
+# Kubernetes 4.18 Bare Metal Installation with KCLI
 
-This guide provides instructions for deploying OpenShift 4.18 on bare metal infrastructure using KCLI, which significantly simplifies the installation process compared to the traditional openshift-installer approach.
+This guide provides instructions for deploying Kubernetes 4.18 on bare metal infrastructure using KCLI, which significantly simplifies the installation process compared to the traditional openshift-installer approach.
 
 ## What is KCLI?
 
-KCLI (Kubernetes CLI) is a tool designed to make it easy to deploy and manage Kubernetes and OpenShift clusters across different platforms. For bare metal deployments, it automates many of the complex tasks involved in cluster provisioning.
+KCLI (Kubernetes CLI) is a tool designed to make it easy to deploy and manage Kubernetes and Kubernetes clusters across different platforms. For bare metal deployments, it automates many of the complex tasks involved in cluster provisioning.
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ KCLI (Kubernetes CLI) is a tool designed to make it easy to deploy and manage Ku
 - **Available Headroom**: 172+ GB RAM, 16+ CPU threads, 2.5+ TB storage
 - **Bootstrap Peak**: Additional 16 GB RAM, 4 vCPUs during installation only
 
-#### Virtual Nodes (OpenShift Cluster VMs)
+#### Virtual Nodes (Kubernetes Cluster VMs)
 - **Masters**: 3 VMs × (16 GB RAM, 4 vCPUs, 80 GB disk)
 - **Workers**: 3 VMs × (12 GB RAM, 4 vCPUs, 80 GB disk)
 - **Storage**: Additional virtual disks for ODF testing
@@ -88,7 +88,7 @@ kcli create host kvm -H 127.0.0.1 local
 kcli list host
 ```
 
-#### Download OpenShift installer and client
+#### Download Kubernetes installer and client
 
 ```bash
 # KCLI can download these automatically, but you can also pre-download
@@ -285,7 +285,7 @@ imagecontentsources: |
     source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
 ```
 
-### Single Node OpenShift (SNO)
+### Single Node Kubernetes (SNO)
 
 ```bash
 kcli create cluster openshift \
@@ -297,9 +297,9 @@ kcli create cluster openshift \
   --network baremetal
 ```
 
-## KCLI vs OpenShift Installer Comparison
+## KCLI vs Kubernetes Installer Comparison
 
-| Feature | KCLI | OpenShift Installer |
+| Feature | KCLI | Kubernetes Installer |
 |---------|------|-------------------|
 | Configuration | Parameter files | install-config.yaml |
 | Complexity | Simplified | Complex |
@@ -367,13 +367,13 @@ kcli scale cluster ocp418-baremetal --workers 5
 
 ### Automated Storage Setup
 
-KCLI can automatically install and configure Local Storage Operator (LSO) and OpenShift Data Foundation (ODF) for persistent storage. This is configured in the parameter file:
+KCLI can automatically install and configure Local Storage Operator (LSO) and persistent storage (ODF) for persistent storage. This is configured in the parameter file:
 
 ```yaml
 # Storage Configuration
 storage_operators: true         # Install storage operators automatically
 local_storage: true            # Install Local Storage Operator (LSO)
-odf: true                      # Install OpenShift Data Foundation (ODF)
+odf: true                      # Install persistent storage (ODF)
 odf_size: "2Ti"               # ODF storage size per node
 local_storage_devices:         # Local storage devices to use
   - "/dev/sdb"
@@ -382,7 +382,7 @@ local_storage_devices:         # Local storage devices to use
 # Post-deployment Applications and Operators
 apps:
   - local-storage-operator      # Local Storage Operator
-  - odf-operator               # OpenShift Data Foundation
+  - odf-operator               # persistent storage
   - monitoring                 # Enhanced monitoring for storage
 ```
 
@@ -478,5 +478,5 @@ After successful installation:
 
 - [KCLI Documentation](https://kcli.readthedocs.io/)
 - [KCLI GitHub Repository](https://github.com/karmab/kcli)
-- [OpenShift Bare Metal Documentation](https://docs.openshift.com/container-platform/4.18/installing/installing_bare_metal_ipi/ipi-install-overview.html)
-- [Red Hat OpenShift Documentation](https://docs.openshift.com/)
+- [Kubernetes Bare Metal Documentation](https://docs.openshift.com/container-platform/4.18/installing/installing_bare_metal_ipi/ipi-install-overview.html)
+- [Red Hat Kubernetes Documentation](https://docs.openshift.com/)

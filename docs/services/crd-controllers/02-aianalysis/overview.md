@@ -10,7 +10,8 @@
 5. Generate ranked remediation recommendations (BR-AI-006, BR-AI-007)
 6. **Leverage historical failure context for recovery attempts** (BR-WF-RECOVERY-011 - Alternative 2)
 7. Validate AI responses and detect hallucinations (BR-AI-021, BR-AI-023)
-8. Create WorkflowExecution CRD for approved recommendations
+8. **V1.0 Approval Notification Support** (ADR-018): Populates rich approval context (BR-AI-059) and tracks operator approval decisions (BR-AI-060) for RemediationOrchestrator notification triggering, reducing approval miss rate from 40-60% to <5%
+9. Create WorkflowExecution CRD for approved recommendations
 
 
 **V1 Scope - HolmesGPT with Complete Enrichment**:

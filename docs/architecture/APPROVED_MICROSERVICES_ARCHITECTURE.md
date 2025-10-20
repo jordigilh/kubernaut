@@ -1,15 +1,15 @@
 # Kubernaut - Approved Microservices Architecture
 
-**Document Version**: 2.2
+**Document Version**: 2.3
 **Date**: October 2025
-**Status**: **V1 IMPLEMENTATION** - Current Architecture Specification (Updated: CRD Lifecycle & Retention Policy Added)
+**Status**: **V1 IMPLEMENTATION** - Current Architecture Specification (Updated: RemediationOrchestrator Specification & Approval Notification Integration)
 **Architecture Type**: V1 Microservices (11 Services) with V2 Roadmap (15 Services)
 
 ---
 
 ## 🎯 **EXECUTIVE SUMMARY**
 
-This document defines the **V1 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1 architecture implements **12 core microservices** (5 CRD controllers + 7 stateless services), each adhering to the **Single Responsibility Principle**, with a **V2 roadmap** for 4 additional advanced services. This provides rapid deployment capability while maintaining complete business requirements coverage.
+This document defines the **V1 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1 architecture implements **11 core microservices** (4 CRD controllers + 7 stateless services), each adhering to the **Single Responsibility Principle**, with a **V2 roadmap** for 4 additional advanced services. This provides rapid deployment capability while maintaining complete business requirements coverage.
 
 **V2.1 Update**: Effectiveness Monitor Service moved from V2 to V1 with graceful degradation strategy to enable progressive capability improvement as remediation data accumulates.
 
@@ -25,16 +25,15 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 
 ---
 
-## 🏗️ **V1 MICROSERVICES OVERVIEW (12 Services)**
+## 🏗️ **V1 MICROSERVICES OVERVIEW (11 Services)**
 
-### **V1 Service Portfolio - Current Implementation (12 Services)**
+### **V1 Service Portfolio - Current Implementation (11 Services)**
 | Service | Responsibility | Business Requirements | External Connections |
 |---------|---------------|----------------------|---------------------|
 | **🔗 Gateway** | HTTP Gateway & Security | BR-WH-001 to BR-WH-015 | Multi-Signal Sources |
 | **🧠 Remediation Processor** | Signal Processing Logic + Environment Classification | BR-AP-001 to BR-AP-050, BR-ENV-001 to BR-ENV-050 | None (internal only) |
 | **🤖 AI Analysis** | AI Analysis & Decision Making (HolmesGPT-Only) | BR-AI-001 to BR-AI-050 | HolmesGPT-API |
-| **🎯 Workflow Execution** | Workflow Execution | BR-WF-001 to BR-WF-165 | None (internal only) |
-| **⚡ K8s Executor** | Kubernetes Operations | BR-EX-001 to BR-EX-155 | Kubernetes Clusters |
+| **🎯 Workflow Execution** | Workflow Orchestration with Tekton Pipelines | BR-WF-001 to BR-WF-165 | Tekton Pipelines, Kubernetes Clusters |
 | **🎛️ Remediation Orchestrator** | End-to-End Remediation Lifecycle Management | BR-ORCH-001 to BR-ORCH-050 | None (internal only) |
 | **📊 Data Storage** | Data Persistence & Local Vector DB | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | PostgreSQL, Local Vector |
 | **🌐 Context API** | Context Orchestration (HolmesGPT-Optimized) | BR-CTX-001 to BR-CTX-180 | None (internal only) |
@@ -44,7 +43,7 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 | **📢 Notifications** | Multi-Channel Notifications | BR-NOTIF-001 to BR-NOTIF-120 | Slack, Teams, Email, PagerDuty |
 
 **Service Breakdown**:
-- **CRD Controllers** (5): Remediation Processor, AI Analysis, Workflow Execution, K8s Executor, Remediation Orchestrator
+- **CRD Controllers** (4): Remediation Processor, AI Analysis, Workflow Execution, Remediation Orchestrator
 - **Stateless Services** (7): Gateway, Data Storage, Context API, HolmesGPT API, Dynamic Toolset, Effectiveness Monitor, Notifications
 
 **Important Notes**:
@@ -64,7 +63,7 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 
 ## 🔄 **SERVICE FLOW ARCHITECTURE**
 
-### **V1 Complete Architecture (12 Services)**
+### **V1 Complete Architecture (11 Services)**
 
 This diagram shows all V1 services and their interactions:
 
@@ -82,8 +81,11 @@ flowchart TB
         RP[🧠 Processor<br/>8080]
         AI[🤖 AI Analysis<br/>8080]
         WF[🎯 Workflow<br/>8080]
-        EX[⚡ Executor<br/>8080]
         ORCH[🎛️ Orchestrator<br/>8080]
+    end
+
+    subgraph TEKTON["⚙️ Tekton Execution"]
+        TEK[🔧 Tekton Pipelines]
     end
 
     subgraph INVESTIGATION["🔍 AI Investigation"]
@@ -99,18 +101,22 @@ flowchart TB
     end
 
     %% Main flow
-    SIG --> GW --> RP --> AI --> WF --> EX --> K8S
+    SIG --> GW --> RP --> AI --> WF
+    WF -->|creates PipelineRuns| TEK
+    TEK --> K8S
 
     %% Orchestration (creates and monitors all CRDs)
     GW -->|creates| ORCH
     ORCH -->|creates & watches| RP
     ORCH -->|creates & watches| AI
     ORCH -->|creates & watches| WF
-    ORCH -->|creates & watches| EX
     RP -.->|status update| ORCH
     AI -.->|status update| ORCH
     WF -.->|status update| ORCH
-    EX -.->|status update| ORCH
+
+    %% Approval Notification Flow (V1.0 - ADR-018)
+    AI -->|phase=Approving| ORCH
+    ORCH -->|creates NotificationRequest| NOT
 
     %% Investigation flow
     AI <-.-> HGP
@@ -119,7 +125,7 @@ flowchart TB
     HGP -.->|queries cluster state| K8S
 
     %% Storage interactions
-    EX -->|writes results| ST
+    WF -->|writes action records| ST
     AI -.->|queries patterns| ST
     EFF -.->|queries action history| ST
 
@@ -128,13 +134,17 @@ flowchart TB
 
     %% Notifications
     EFF -->|alerts on remediation loops| NOT
+    ORCH -->|escalation events| NOT
 
     %% CRD Creation Pattern (Watch-Based)
     %% Gateway creates RemediationRequest → ORCH creates all service CRDs
     %% ORCH watches service CRD status → creates next CRD when previous completes
+    %% ORCH detects AIAnalysis phase=Approving → creates NotificationRequest CRD
+    %% WorkflowExecution creates Tekton PipelineRuns for action execution
 
     style EXTERNAL fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px,color:#000
     style MAIN fill:#e3f2fd,stroke:#1976d2,stroke-width:3px,color:#000
+    style TEKTON fill:#fff3e0,stroke:#e65100,stroke-width:3px,color:#000
     style INVESTIGATION fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px,color:#000
     style SUPPORT fill:#e8f5e9,stroke:#388e3c,stroke-width:3px,color:#000
 
@@ -142,7 +152,7 @@ flowchart TB
     style RP fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
     style AI fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
     style WF fill:#bbdefb,stroke:#1976d2,stroke-width:2px,color:#000
-    style EX fill:#c8e6c9,stroke:#388e3c,stroke-width:2px,color:#000
+    style TEK fill:#ffe0b2,stroke:#e65100,stroke-width:2px,color:#000
     style ORCH fill:#ffcdd2,stroke:#c62828,stroke-width:2px,color:#000
     style HGP fill:#e1bee7,stroke:#7b1fa2,stroke-width:2px,color:#000
     style CTX fill:#ffe0b2,stroke:#f57c00,stroke-width:2px,color:#000
@@ -206,8 +216,14 @@ AI Analysis ↔ HolmesGPT API ↔ Context API
 - Triggers alerts to Notifications when remediation loops detected or effectiveness declining
 
 **Notification Triggers**:
+- **RemediationOrchestrator** → Notifications (approval requests, escalation events) - **NEW in V1.0 (ADR-018)**
 - **Effectiveness Monitor** → Notifications (loop detection alerts, effectiveness trends)
 - **K8s Executor** → Notifications (execution failures)
+
+**Approval Notification Flow** (V1.0):
+```
+AIAnalysis (phase=Approving) → RemediationOrchestrator (watches status) → NotificationRequest CRD → Notification Service → Slack/Console
+```
 
 **Note**: Context API is read-only and does not trigger notifications. Workflow Execution notification triggers require explicit BR documentation (currently not implemented in V1).
 
@@ -234,6 +250,8 @@ sequenceDiagram
     participant EX as K8s<br/>Executor
     participant K8S as Kubernetes<br/>Cluster
     participant ORCH as Remediation<br/>Orchestrator
+    participant NOT as Notification<br/>Service
+    participant EXT as External<br/>(Slack/Console)
     participant ST as Data<br/>Storage
 
     Note over SRC,ST: Phase 1: Signal Ingestion & Validation
@@ -260,29 +278,41 @@ sequenceDiagram
     AI->>AI: Reconcile: Analyze signal
     AI->>AI: HolmesGPT investigation
     AI->>AI: Validate recommendations
-    AI->>AI: Update status: Completed
-    AI->>ORCH: Status update triggers watch
 
-    Note over WF,EX: Phase 4: Workflow Planning
+    alt Medium Confidence (60-79%) - Requires Approval
+        AI->>AI: Update status: phase=Approving
+        AI->>ORCH: Status update triggers watch
+        Note over ORCH,NOT: Phase 3.5: Approval Notification (NEW in V1.0)
+        ORCH->>ORCH: Detect phase=Approving
+        ORCH->>ORCH: Create NotificationRequest CRD
+        ORCH->>NOT: NotificationRequest triggers notification
+        NOT->>NOT: Format approval notification
+        NOT->>EXT: Send to Slack/Console
+        Note over ORCH,NOT: Operator approves via console/slack
+        AI->>AI: Wait for approval decision
+        AI->>AI: Update status: Completed (if approved)
+        AI->>ORCH: Status update triggers watch
+    else High Confidence (≥80%) - Auto-Execute
+        AI->>AI: Update status: Completed
+        AI->>ORCH: Status update triggers watch
+    end
+
+    Note over WF,K8S: Phase 4: Workflow Orchestration & Execution
     ORCH->>ORCH: Create WorkflowExecution CRD
     ORCH->>WF: Watch WorkflowExecution CRD
     WF->>WF: Reconcile: Build workflow
     WF->>WF: Load action templates
     WF->>WF: Validate safety constraints
+    WF->>TEK: Create Tekton PipelineRun
+    TEK->>TEK: Execute action containers
+    TEK->>K8S: Apply remediation<br/>(restart pod/scale/etc)
+    K8S-->>TEK: Execution result
+    TEK-->>WF: PipelineRun status: Complete
+    WF->>ST: Store execution results
     WF->>WF: Update status: Completed
     WF->>ORCH: Status update triggers watch
 
-    Note over EX,K8S: Phase 5: Kubernetes Execution
-    ORCH->>ORCH: Create KubernetesExecution CRD
-    ORCH->>EX: Watch KubernetesExecution CRD
-    EX->>EX: Reconcile: Execute actions
-    EX->>K8S: Apply remediation<br/>(restart pod/scale/etc)
-    K8S-->>EX: Execution result
-    EX->>ST: Store execution results
-    EX->>EX: Update status: Completed
-    EX->>ORCH: Status update triggers watch
-
-    Note over ORCH,ST: Phase 6: Lifecycle Completion
+    Note over ORCH,ST: Phase 5: Lifecycle Completion
     ORCH->>ORCH: Monitor all CRD statuses
     ORCH->>ORCH: Update RemediationRequest: Complete
     ORCH->>ST: Store final audit trail
@@ -292,6 +322,7 @@ sequenceDiagram
 - **CRD-Based Communication**: Services communicate via Kubernetes Custom Resources
 - **Event-Driven**: Each controller watches for CRD changes and reconciles
 - **Orchestrated**: RemediationOrchestrator monitors entire lifecycle
+- **Approval-Aware**: Automatically notifies operators for medium-confidence recommendations (60-79%)
 - **Auditable**: All state changes stored in CRDs and Data Storage
 - **Resilient**: Built-in retry and reconciliation loops
 
@@ -406,50 +437,50 @@ sequenceDiagram
     WFC->>WFC: Validate safety constraints
     WFC->>WFC: Calculate execution order<br/>(sequential vs parallel)
 
-    Note over WFC,EX1: Phase 2: Step 1 - Sequential Start
+    Note over WFC,TR1: Phase 2: Step 1 - Sequential Start
     WFC->>WFC: Identify ready steps<br/>(no dependencies)
-    WFC->>EX1: Create KubernetesExecution CRD<br/>(Step 1: Scale Deployment)
-    activate EX1
-    WFC->>WFC: Watch Step 1 status
-    EX1->>EX1: Validate action safety
-    EX1->>K8S: Execute: scale deployment<br/>replicas: 2 → 3
-    K8S-->>EX1: Scale successful
-    EX1->>K8S: Verify: deployment scaled<br/>(expected outcome validation)
-    K8S-->>EX1: Validation successful
-    EX1->>EX1: Update status: Completed<br/>(with validation result)
-    EX1->>ST: Store execution result
-    deactivate EX1
-    EX1-->>WFC: Status update triggers watch
+    WFC->>TR1: Create Tekton PipelineRun<br/>(Step 1: Scale Deployment)
+    activate TR1
+    WFC->>WFC: Watch PipelineRun status
+    TR1->>TR1: Validate action safety (Rego policies)
+    TR1->>K8S: Execute: scale deployment<br/>replicas: 2 → 3
+    K8S-->>TR1: Scale successful
+    TR1->>K8S: Verify: deployment scaled<br/>(expected outcome validation)
+    K8S-->>TR1: Validation successful
+    TR1->>TR1: Update status: Succeeded<br/>(with validation result)
+    WFC->>ST: Store execution result
+    deactivate TR1
+    TR1-->>WFC: Status update triggers watch
 
-    Note over WFC,EX3: Phase 3: Steps 2 & 3 - Parallel Execution
+    Note over WFC,TR3: Phase 3: Steps 2 & 3 - Parallel Execution
     WFC->>WFC: Step 1 completed<br/>Steps 2 & 3 ready (no dependencies)
 
     par Parallel Step Execution
-        WFC->>EX2: Create KubernetesExecution CRD<br/>(Step 2: Restart Pods)
-        activate EX2
-        WFC->>WFC: Watch Step 2 status
-        EX2->>EX2: Validate action safety
-        EX2->>K8S: Execute: delete pods<br/>(controlled restart)
-        K8S-->>EX2: Pods deleted
-        EX2->>K8S: Verify: new pods running<br/>(expected outcome validation)
-        K8S-->>EX2: Validation successful
-        EX2->>EX2: Update status: Completed<br/>(with validation result)
-        EX2->>ST: Store execution result
-        deactivate EX2
-        EX2-->>WFC: Status update triggers watch
+        WFC->>TR2: Create Tekton PipelineRun<br/>(Step 2: Restart Pods)
+        activate TR2
+        WFC->>WFC: Watch PipelineRun status
+        TR2->>TR2: Validate action safety (Rego policies)
+        TR2->>K8S: Execute: delete pods<br/>(controlled restart)
+        K8S-->>TR2: Pods deleted
+        TR2->>K8S: Verify: new pods running<br/>(expected outcome validation)
+        K8S-->>TR2: Validation successful
+        TR2->>TR2: Update status: Succeeded<br/>(with validation result)
+        WFC->>ST: Store execution result
+        deactivate TR2
+        TR2-->>WFC: Status update triggers watch
     and
-        WFC->>EX3: Create KubernetesExecution CRD<br/>(Step 3: Update ConfigMap)
-        activate EX3
-        WFC->>WFC: Watch Step 3 status
-        EX3->>EX3: Validate action safety
-        EX3->>K8S: Execute: patch configmap<br/>(memory limits)
-        K8S-->>EX3: ConfigMap updated
-        EX3->>K8S: Verify: configmap has new values<br/>(expected outcome validation)
-        K8S-->>EX3: Validation successful
-        EX3->>EX3: Update status: Completed<br/>(with validation result)
-        EX3->>ST: Store execution result
-        deactivate EX3
-        EX3-->>WFC: Status update triggers watch
+        WFC->>TR3: Create Tekton PipelineRun<br/>(Step 3: Update ConfigMap)
+        activate TR3
+        WFC->>WFC: Watch PipelineRun status
+        TR3->>TR3: Validate action safety (Rego policies)
+        TR3->>K8S: Execute: patch configmap<br/>(memory limits)
+        K8S-->>TR3: ConfigMap updated
+        TR3->>K8S: Verify: configmap has new values<br/>(expected outcome validation)
+        K8S-->>TR3: Validation successful
+        TR3->>TR3: Update status: Succeeded<br/>(with validation result)
+        WFC->>ST: Store execution result
+        deactivate TR3
+        TR3-->>WFC: Status update triggers watch
     end
 
     Note over WFC,ST: Phase 4: Workflow Completion
@@ -468,10 +499,10 @@ sequenceDiagram
 - **Parallel Execution**: Executes independent steps concurrently for faster remediation
 - **Sequential Execution**: Ensures dependent steps run in correct order
 - **Safety Validation**: Each step validated before execution (dry-run capability)
-- **Watch-Based Coordination**: Monitors KubernetesExecution CRD status for step completion
+- **Watch-Based Coordination**: Monitors Tekton PipelineRun status for step completion
 - **AI Recommendations Authority**: Uses AI recommendations as authoritative source (no Context API revalidation)
-- **Step-Level Validation**: Each executor validates expected outcomes, Workflow relies on step status
-- **Atomic Operations**: Each step is independent KubernetesExecution CRD (isolated failure domain)
+- **Step-Level Validation**: Each action container validates expected outcomes, Workflow relies on PipelineRun status
+- **Atomic Operations**: Each step is independent Tekton PipelineRun (isolated failure domain)
 - **Audit Trail**: Complete execution history stored in Data Storage
 
 **Key Design Patterns**:
@@ -480,16 +511,16 @@ sequenceDiagram
    - Steps execute when all dependencies complete
    - Parallel execution when multiple steps ready simultaneously
 
-2. **CRD-per-Step Pattern**: Each workflow step creates KubernetesExecution CRD
-   - **Benefits**: Isolated failure, independent retry, clear audit trail
-   - **Watch-Based**: Workflow watches each KubernetesExecution status
+2. **PipelineRun-per-Step Pattern**: Each workflow step creates Tekton PipelineRun
+   - **Benefits**: Isolated failure, independent retry, clear audit trail, industry-standard execution
+   - **Watch-Based**: Workflow watches each PipelineRun status
    - **Non-Blocking**: Workflow doesn't wait, relies on watch events
 
 3. **Safety-First Validation**: Multi-layer safety before execution
    - AI recommendations as authoritative source (no Context API revalidation)
-   - Safety constraint validation (Rego policies)
+   - Safety constraint validation (Rego policies via ConfigMaps)
    - Dry-run capability (optional per step)
-   - Expected outcome validation (per-step in Executor)
+   - Expected outcome validation (per-step in action containers)
 
 4. **Step-Driven Orchestration**: Workflow relies on step status for decisions
    - If step status = failed → trigger rollback steps
@@ -672,6 +703,65 @@ This architecture enables efficient, safe, and adaptive workflow execution with 
 - Multiple Kubernetes clusters
 - Kubernetes API servers
 - Custom Resource Definitions (CRDs)
+
+---
+
+### **🎛️ Remediation Orchestrator Service**
+**CRD**: `RemediationRequest`
+**Image**: `quay.io/jordigilh/remediationorchestrator`
+**Port**: 8080 (health/ready), 9090 (metrics)
+**Single Responsibility**: End-to-End Remediation Lifecycle Management Only
+
+**Capabilities**:
+- **CRD Orchestration**: Creates and manages child CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution) with watch-based coordination (BR-ORCH-001 to BR-ORCH-010)
+- **Lifecycle Tracking**: Monitors remediation phases (pending → processing → analyzing → executing → completed/failed) with comprehensive state management (BR-ORCH-011 to BR-ORCH-020)
+- **Approval Notification Triggering**: Creates NotificationRequest CRDs when AIAnalysis requires approval (phase = "Approving"), preventing 40-60% approval miss rate (BR-ORCH-001, ADR-018)
+- **Failure Escalation**: Triggers notifications for timeout, rejection, and execution failures (BR-ORCH-021 to BR-ORCH-030)
+- **Status Aggregation**: Aggregates child CRD status into parent RemediationRequest status for centralized visibility (BR-ORCH-031 to BR-ORCH-040)
+
+**CRD Watch Configuration**:
+- **Owns**: RemediationRequest CRD (primary reconciliation target)
+- **Watches**: RemediationProcessing CRD (signal enrichment status)
+- **Watches**: AIAnalysis CRD (investigation status, approval phase detection)
+- **Watches**: WorkflowExecution CRD (execution status)
+- **Creates**: NotificationRequest CRD (approval requests, escalations)
+
+**Approval Notification Logic** (V1.0 - ADR-018):
+```yaml
+# Triggers notification when AIAnalysis requires approval
+if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotificationSent:
+  - Extract approval context from aiAnalysis.status.approvalContext
+  - Create NotificationRequest CRD with:
+    - Subject: "🚨 Approval Required: {reason}"
+    - Body: Investigation summary, evidence, recommended actions, alternatives
+    - Channels: Slack (#kubernaut-approvals), Console
+    - Priority: High
+    - Metadata: remediationRequest, aiAnalysis, aiApprovalRequest names, confidence score
+  - Set remediation.status.approvalNotificationSent = true (idempotency)
+```
+
+**Internal Dependencies**:
+- **Creates Child CRDs**: RemediationProcessing, AIAnalysis, WorkflowExecution (sequential watch-based pattern)
+- **Watches Child Status**: Monitors child CRD phases to determine next action
+- **Creates Notifications**: NotificationRequest CRDs for approval requests and escalations
+- **Queries Data Storage**: CRD audit persistence before 24-hour CRD deletion (90-day default retention)
+
+**Orchestration Pattern** (Watch-Based Sequential CRD Creation):
+1. Gateway creates RemediationRequest CRD
+2. Orchestrator creates RemediationProcessing CRD, watches status
+3. When RP completes, creates AIAnalysis CRD, watches status
+4. **If AIAnalysis phase = "Approving"**: Creates NotificationRequest CRD for approval (NEW in V1.0)
+5. When AI completes, creates WorkflowExecution CRD, watches status
+6. When WE completes, updates RemediationRequest phase to "completed"
+
+**Performance Requirements**:
+- **CRD Watch Latency**: <500ms from child status update to parent reconciliation
+- **Notification Trigger Time**: <2 seconds from approval phase detection to NotificationRequest creation
+- **Approval Miss Rate**: <5% (down from 40-60% without notifications)
+- **Orchestration Overhead**: <1% additional latency vs direct service-to-service communication
+
+**External Integrations**:
+- Kubernetes API (CRD creation, status updates, watch configuration)
 
 ---
 
@@ -1036,7 +1126,7 @@ This architecture enables efficient, safe, and adaptive workflow execution with 
 
 **Implementation Details**:
 - **Finalizer Pattern**: Prevents premature deletion during 24-hour retention window
-- **Owner References**: All service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) owned by RemediationRequest for automatic cascade deletion
+- **Owner References**: All service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution) owned by RemediationRequest for automatic cascade deletion
 - **Cleanup Automation**: Kubernetes garbage collector handles cascade deletion of all child CRDs
 - **Audit Persistence**: Complete remediation audit trail stored in PostgreSQL before CRD deletion
 
@@ -1119,16 +1209,28 @@ This architecture enables efficient, safe, and adaptive workflow execution with 
 
 ---
 
-**Document Status**: ✅ **APPROVED** (Updated v2.2: 2025-10-03)
+**Document Status**: ✅ **APPROVED** (Updated v2.3: 2025-10-20)
 **Architecture Confidence**: **99%** (High confidence with complete service portfolio)
 **Implementation Ready**: ✅ **YES**
-**V2.2 Changes**: CRD Lifecycle & Retention Management documentation added with environment-specific retention policies
+**V2.3 Changes**: RemediationOrchestrator service specification and approval notification integration (ADR-018) fully documented
 
 This architecture specification serves as the definitive guide for Kubernaut's microservices implementation, ensuring proper separation of concerns, complete business requirements coverage, enterprise-grade operational excellence, and comprehensive CRD lifecycle management.
 
 ---
 
 ## 📝 **CHANGE LOG**
+
+### **Version 2.3 (2025-10-20)**
+- **ADDED**: RemediationOrchestrator Service detailed specification (§ 🎛️ Remediation Orchestrator Service)
+- **ADDED**: Approval Notification Integration (V1.0 - ADR-018) with comprehensive capabilities documentation
+- **UPDATED**: Architecture diagram with approval notification flow (AI phase=Approving → ORCH → NotificationRequest)
+- **UPDATED**: Sequence diagram with Phase 3.5 (Approval Notification) showing medium vs high confidence paths
+- **UPDATED**: Service Flow Summary with approval notification triggers and flow diagram
+- **UPDATED**: Notification Triggers section with RemediationOrchestrator approval request creation
+- **DOCUMENTED**: CRD Watch Configuration for RemediationOrchestrator (watches AIAnalysis, creates NotificationRequest)
+- **DOCUMENTED**: Approval Notification Logic with idempotency pattern (status.approvalNotificationSent flag)
+- **DOCUMENTED**: Performance requirements (40-60% approval miss rate → <5% with notifications)
+- **IMPROVED**: Architecture completeness with RemediationOrchestrator specification matching other CRD controllers
 
 ### **Version 2.2 (2025-10-03)**
 - **ADDED**: CRD Lifecycle & Retention Management section in Operational Excellence

@@ -189,6 +189,10 @@ type RemediationRequestStatus struct {
 	RemediationProcessingRef *corev1.ObjectReference `json:"remediationProcessingRef,omitempty"`
 	AIAnalysisRef            *corev1.ObjectReference `json:"aiAnalysisRef,omitempty"`
 	WorkflowExecutionRef     *corev1.ObjectReference `json:"workflowExecutionRef,omitempty"`
+
+	// Approval notification tracking (BR-ORCH-001)
+	// Prevents duplicate notifications when AIAnalysis requires approval
+	ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"`
 }
 
 // +kubebuilder:object:root=true

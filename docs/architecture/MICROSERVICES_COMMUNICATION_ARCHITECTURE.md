@@ -478,7 +478,7 @@ Status: Complete
 Changes:
   - Extracted webhook processing to independent service
   - Implemented TDD methodology
-  - Created Docker image with Red Hat UBI9
+  - Created Docker image with upstream community UBI9
   - Deployed Kubernetes manifests
   - Maintained backward compatibility
 ```

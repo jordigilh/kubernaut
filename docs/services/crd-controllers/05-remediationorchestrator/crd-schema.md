@@ -237,6 +237,10 @@ type RemediationRequestStatus struct {
     // Duplicate tracking (from Gateway Service)
     DuplicateCount int      `json:"duplicateCount"` // Number of duplicate alerts suppressed
     LastDuplicateTime *metav1.Time `json:"lastDuplicateTime,omitempty"`
+
+    // V1.0 Approval Notification Integration (ADR-018)
+    // Idempotency flag to prevent duplicate notifications (BR-ORCH-001)
+    ApprovalNotificationSent bool `json:"approvalNotificationSent,omitempty"` // true after NotificationRequest CRD created
 }
 
 // Reference types

@@ -101,7 +101,7 @@ Resources for contributors and developers extending Kubernaut.
   - **[Quick Start](development/e2e-testing/QUICK_START.md)** - Fast E2E test execution
   - **[KCLI Quick Start](development/e2e-testing/KCLI_QUICK_START.md)** - KCLI-based testing
   - **[KCLI Baremetal Installation](development/e2e-testing/KCLI_BAREMETAL_INSTALLATION_GUIDE.md)** - Baremetal test setup
-  - **[OCP Baremetal Installation](development/e2e-testing/OCP_BAREMETAL_INSTALLATION_GUIDE.md)** - OpenShift baremetal testing
+  - **[OCP Baremetal Installation](development/e2e-testing/OCP_BAREMETAL_INSTALLATION_GUIDE.md)** - Kubernetes baremetal testing
 
 ### 📡 **API Documentation**
 Interface documentation for system integration.

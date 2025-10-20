@@ -67,7 +67,56 @@ cat testing-strategy.md
 
 ---
 
+## 🚀 Phase 3 Implementation Planning
+
+### **Quick Start**
+
+- **[Phase 3 Final Summary](./CATEGORY1_FINAL_SUMMARY.md)** - Complete achievement summary (97% avg confidence)
+- **[Implementation Quick Reference](./QUICK_REFERENCE_NEXT_STEPS.md)** - Next steps, make targets, timelines
+
+**Status**: ✅ All 3 Phase 3 services ready for implementation (Remediation Processor, Workflow Execution, Kubernetes Executor)
+
+---
+
 ## 📚 Meta-Documentation
+
+### **Planning Records** → [`planning/`](./planning/)
+
+Historical planning session records and expansion summaries:
+- Session 2: Workflow Execution expansion (Part 1)
+- Session 3: Workflow Execution expansion (Part 2)
+- Session 4: Kubernetes Executor expansion
+- Session wrap-up and ROI analysis
+- Expansion plans summary
+
+### **Testing Documentation** → [`testing/`](./testing/)
+
+Testing architecture, strategies, and infrastructure:
+- Integration test architecture (Hybrid Envtest/Kind approach)
+- BR coverage correction (Defense-in-depth strategy)
+- Envtest vs Kind assessment
+- Infrastructure assessment and setup
+
+### **Implementation Standards** → [`standards/`](./standards/)
+
+Coding standards, patterns, and best practices:
+- Go code standards for implementation plans
+- Edge cases and error handling philosophy
+- Precondition/postcondition validation framework
+- Make targets and infrastructure setup
+- Gap closure implementation (anti-flaky patterns, etc.)
+
+### **Operational Guides** → [`operations/`](./operations/)
+
+Production deployment and maintenance procedures:
+- Production deployment guide (manifests, RBAC, monitoring)
+- Maintenance guide for CRD controllers
+
+### **Administrative** → [`admin/`](./admin/)
+
+Meta-documentation and administrative records:
+- Document cleanup summary (48 ephemeral docs removed)
+- Document organization proposal (approved Option A)
 
 ### **Analysis & Triage Reports**
 
@@ -88,10 +137,6 @@ Resources for developing and maintaining CRD controller documentation:
 - **[CRD Service Specification Template](../../development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md)**
   Standard template for creating new CRD controller service specifications
   _Use this when adding new CRD controller services_
-
-- **[Maintenance Guide](./MAINTENANCE_GUIDE.md)**
-  How to maintain the CRD controllers directory structure
-  _Read this before making structural changes_
 
 ### **Historical Reference**
 
@@ -238,5 +283,6 @@ Common patterns duplicated with clear markers for easy maintenance.
 **Maintainer**: Kubernaut Documentation Team
 **Last Restructure**: 2025-01-15
 **Relocation Update**: 2025-10-12
+**Document Reorganization**: 2025-10-14 (85% reduction in root-level files)
 **Status**: ✅ Active and maintained
 

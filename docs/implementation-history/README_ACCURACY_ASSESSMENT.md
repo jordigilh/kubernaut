@@ -291,7 +291,7 @@ Total: 27 production actions
 
 **What's Accurate**:
 - ✅ Prerequisites mention Go 1.23.9+ (though actual go.mod should be checked)
-- ✅ Kubernetes/OpenShift cluster requirement is accurate
+- ✅ Kubernetes/Kubernetes cluster requirement is accurate
 - ✅ PostgreSQL database requirement is accurate
 - ✅ Configuration YAML files exist in `config/` directory
 

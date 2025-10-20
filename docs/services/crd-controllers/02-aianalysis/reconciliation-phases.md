@@ -478,6 +478,105 @@ AIAnalysis.status.phase = "completed"
 
 ---
 
+## Approval Context Population & Decision Tracking (V1.0)
+
+**Business Requirements**: BR-AI-059 (Approval Context), BR-AI-060 (Approval Decision Tracking)
+**ADR Reference**: ADR-018 (Approval Notification V1.0 Integration)
+
+### Approval Context Population (BR-AI-059)
+
+**Purpose**: Enable RemediationOrchestrator to create rich operator notifications by populating comprehensive approval context when AI recommendations require human review.
+
+**Trigger**: HolmesGPT response with confidence 60-79% (medium confidence threshold)
+
+**Action**: Populate `status.approvalContext` with:
+1. **Investigation Summary**: Concise description of root cause analysis
+2. **Evidence Collected**: List of supporting evidence from Context API and cluster state
+3. **Recommended Actions**: Structured list of actions with rationales
+4. **Alternatives Considered**: Other approaches considered with pros/cons
+5. **Why Approval Required**: Clear explanation of why human review is needed
+
+**Code Reference**: `populateApprovalContext()` function in controller implementation
+
+**Validation Requirements**:
+- ✅ MUST have `investigationSummary` (non-empty)
+- ✅ MUST have at least 1 `recommendedAction`
+- ✅ MUST have at least 1 `evidenceCollected` item
+- ✅ SHOULD have at least 1 `alternativeConsidered` (for informed decisions)
+
+**Example Approval Context**:
+```yaml
+status:
+  approvalContext:
+    reason: "Medium confidence (72.5%) - requires human review"
+    confidenceScore: 72.5
+    confidenceLevel: "medium"
+    investigationSummary: "Memory leak detected in payment processing coroutine (50MB/hr growth rate)"
+    evidenceCollected:
+      - "Linear memory growth 50MB/hour per pod over 4-hour observation window"
+      - "Similar incident resolved 3 weeks ago with 92% success rate (memory increase)"
+      - "No code deployment in last 24h - rules out recent regression"
+    recommendedActions:
+      - action: "collect_diagnostics"
+        rationale: "Capture heap dump before making changes for post-mortem analysis"
+      - action: "increase_resources"
+        rationale: "Increase memory limit 2Gi → 3Gi based on observed growth rate"
+      - action: "restart_pod"
+        rationale: "Rolling restart to clear leaked memory and restore service"
+    alternativesConsidered:
+      - approach: "Wait and monitor"
+        prosCons: "Pros: No disruption. Cons: OOM risk in ~4 hours based on current trend"
+      - approach: "Immediate restart without memory increase"
+        prosCons: "Pros: Fast recovery. Cons: Doesn't address root cause, will recur"
+    whyApprovalRequired: "Historical pattern requires validation (71-86% HolmesGPT accuracy on generic K8s memory issues)"
+```
+
+**Integration**: RemediationOrchestrator watches `AIAnalysis.status.phase = "Approving"` and uses `approvalContext` to format rich notifications for Slack/Console delivery.
+
+---
+
+### Approval Decision Tracking (BR-AI-060)
+
+**Purpose**: Maintain complete audit trail of operator approval decisions for compliance, system learning, and effectiveness tracking.
+
+**Trigger**: AIApprovalRequest status update (decision = "approved" or "rejected")
+
+**Action**: Update `status` with approval decision metadata:
+1. **Approval Status**: "approved", "rejected", or "pending"
+2. **Decision Metadata**: Approver/rejector identity, timestamp, method (console/slack/api)
+3. **Justification**: Operator-provided reason for their decision
+4. **Timing**: Duration from approval request to decision
+
+**Code Reference**: `updateApprovalDecisionStatus()` function in controller implementation
+
+**Status Fields Populated**:
+```yaml
+status:
+  # Decision metadata
+  approvalStatus: "approved"  # or "rejected" or "pending"
+  approvalTime: "2025-10-20T14:32:45Z"
+  approvalDuration: "2m15s"
+  approvalMethod: "console"
+  approvalJustification: "Approved - low risk change in staging environment"
+
+  # Approval path (if approved)
+  approvedBy: "ops-engineer@company.com"
+
+  # Rejection path (if rejected)
+  rejectedBy: "ops-engineer@company.com"
+  rejectionReason: "Resource constraints - cannot increase memory at this time"
+```
+
+**Audit Trail Benefits**:
+- ✅ **Compliance**: Complete record of who approved/rejected what and why
+- ✅ **System Learning**: AI learns from operator decisions to improve future confidence scoring
+- ✅ **Effectiveness Tracking**: Track approval success rates for different recommendation types
+- ✅ **Operator Patterns**: Identify frequently rejected action types for training improvement
+
+**Watch Pattern**: AIAnalysis controller watches AIApprovalRequest status changes and updates its own status when decisions are made.
+
+---
+
 #### Coordination Benefits
 
 **For AIAnalysis Controller**:

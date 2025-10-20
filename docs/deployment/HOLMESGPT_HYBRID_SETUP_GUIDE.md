@@ -74,7 +74,7 @@ If you prefer to set up manually or need to troubleshoot, follow these detailed 
 brew install podman curl jq
 ```
 
-**OpenShift CLI:**
+**Kubernetes CLI:**
 ```bash
 # Download from https://mirror.openshift.com/pub/openshift-v4/clients/ocp/
 # Or use the web console download link
@@ -88,7 +88,7 @@ curl --version
 jq --version
 oc version
 
-# Check Kubernetes/OpenShift access
+# Check Kubernetes/Kubernetes access
 oc whoami
 oc get nodes
 ```

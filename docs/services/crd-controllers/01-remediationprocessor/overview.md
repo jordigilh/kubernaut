@@ -5,6 +5,11 @@
 > **Status**: ✅ Approved Design | **Confidence**: 95%
 > **See**: [DESIGN_DECISIONS.md#dd-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
 
+> **📋 Design Decision: DD-HOLMESGPT-009 - Ultra-Compact JSON Format**
+> **Impact on RemediationProcessor**: Enriched context prepared by this service is consumed by AIAnalysis Controller, which formats it as self-documenting JSON for HolmesGPT API calls
+> **Status**: ✅ Approved Design | **Benefit**: 60% token reduction in downstream AI analysis
+> **See**: [DD-HOLMESGPT-009](../../../architecture/decisions/DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md)
+
 ---
 
 **Purpose**: Alert enrichment, environment classification, and recovery context integration with Kubernetes context enrichment.
@@ -34,6 +39,14 @@
 - Cross-cluster context enrichment
 
 **Note**: Logs/metrics/traces are NEVER stored in CRDs. HolmesGPT fetches these dynamically using toolsets (`kubernetes`, `prometheus`, `grafana`).
+
+**Downstream Format Impact (DD-HOLMESGPT-009)**: The enriched context prepared by RemediationProcessor is consumed by AIAnalysis Controller, which converts it to **self-documenting JSON format** for HolmesGPT API calls. This achieves:
+- ✅ **60% token reduction** (~730 → ~180 tokens per investigation)
+- ✅ **$1,980/year cost savings** in LLM API costs
+- ✅ **150ms latency improvement** per AI analysis
+- ✅ **98% parsing accuracy maintained**
+
+While RemediationProcessor doesn't directly call HolmesGPT, its enrichment quality directly impacts downstream token efficiency.
 
 **Key Architectural Decisions**:
 - CRD-based state management (not HTTP polling)

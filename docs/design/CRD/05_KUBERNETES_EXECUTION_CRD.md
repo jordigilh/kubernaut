@@ -1419,7 +1419,8 @@ func (r *KubernetesExecutionController) Reconcile(ctx context.Context, req ctrl.
 
 ## 🔗 **Related Documentation**
 
-- **Architecture**: [Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
+- **Architecture**: [Kubernaut CRD Architecture](../../architecture/KUBERNAUT_CRD_ARCHITECTURE.md) (Authoritative)
+- ~~[Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)~~ (DEPRECATED - KubernetesExecution CRD eliminated)
 - **Requirements**: [Platform & Kubernetes Operations Requirements](../requirements/03_PLATFORM_KUBERNETES_OPERATIONS.md)
 - **Execution Infrastructure**: [Execution Infrastructure Capabilities](../requirements/EXECUTION_INFRASTRUCTURE_CAPABILITIES.md)
 - **Parent CRD**: [WorkflowExecution CRD](04_WORKFLOW_EXECUTION_CRD.md)

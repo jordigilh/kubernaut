@@ -41,17 +41,25 @@ Content-Type: application/json
 - **Burst**: 1500 requests
 - **Response Header**: `X-RateLimit-Remaining: 999`
 
-### Structured Action Format Support
+### Structured Action Format Support (Data Provider Role)
 
 **Business Requirements**: BR-LLM-021 to BR-LLM-026
+**Context API Role**: Read-only data provider (NO LLM integration)
 
-Context API provides enriched context that supports HolmesGPT's structured action generation. Context responses are optimized for AI consumption and include:
+Context API provides enriched historical context that **HolmesGPT API consumes** to support structured action generation by its LLM. Context API is a **stateless HTTP REST service** that queries historical data and serves it to multiple clients.
+
+**Client Integration**:
+- **PRIMARY**: RemediationProcessing Controller (workflow recovery context)
+- **SECONDARY**: HolmesGPT API Service (AI investigation context)
+- **TERTIARY**: Effectiveness Monitor Service (historical trend analytics)
+
+**Data Provided** (read-only queries of remediation_audit table):
 - Historical action success rates by action type
 - Environment-specific constraints and policies
 - Previous remediation patterns and outcomes
 - Resource health indicators and thresholds
 
-This structured context enables HolmesGPT to generate accurate, contextually-aware structured action recommendations with appropriate parameters, priorities, and risk assessments.
+**Note**: Context API ONLY provides data. HolmesGPT API (the client) uses this data with its LLM to generate action recommendations.
 
 ---
 
@@ -882,15 +890,18 @@ POST /api/v1/context/match
 
 ---
 
-## Structured Context for AI (NEW)
+## Structured Context for AI (Data Provider - READ-ONLY)
 
 **Business Requirements**: BR-LLM-021 to BR-LLM-026, BR-CTX-001 to BR-CTX-005
+**Context API Role**: Read-only historical data provider (NO LLM processing)
 
 **Source of Truth**: `docs/design/CANONICAL_ACTION_TYPES.md` (27 canonical action types)
 
-### Get Structured Context for HolmesGPT
+### Get Structured Context for HolmesGPT API
 
-**Purpose**: Provide enriched, AI-optimized context to support HolmesGPT's structured action generation. Context API provides success rates and constraints for all 27 canonical action types including `uncordon_node`.
+**Purpose**: Provide enriched, AI-optimized historical data that **HolmesGPT API** (the client) uses with its LLM for structured action generation. Context API queries the `remediation_audit` table and returns historical success rates and constraints for all 27 canonical action types.
+
+**Architectural Note**: Context API is a **stateless REST service** that provides data. HolmesGPT API (the consumer) performs LLM processing.
 
 #### Request
 
