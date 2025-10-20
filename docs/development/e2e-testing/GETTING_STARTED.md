@@ -9,7 +9,7 @@
 ## 🎯 **Quick Overview**
 
 Kubernaut E2E testing uses a **hybrid architecture** for optimal security and performance:
-- **🖥️ OpenShift Cluster**: Remote dedicated host (e.g., helios08)
+- **🖥️ Kubernetes Cluster**: Remote dedicated host (e.g., helios08)
 - **🤖 HolmesGPT Container**: Custom container image with REST API (deployed in cluster or locally)
 - **🔧 Kubernaut**: Local machine (manages remote cluster)
 - **🧪 Tests**: Local machine
@@ -55,7 +55,7 @@ curl http://localhost:8090/health
 
 ## 🏗️ **2. Hybrid Deployment (Primary Method)**
 
-### **Step 1: Deploy Remote OpenShift Cluster**
+### **Step 1: Deploy Remote Kubernetes Cluster**
 ```bash
 # Navigate to e2e testing directory
 cd docs/development/e2e-testing/
@@ -63,7 +63,7 @@ cd docs/development/e2e-testing/
 # Configure and validate remote host
 make configure-e2e-remote
 
-# Deploy ONLY OpenShift cluster on remote host
+# Deploy ONLY Kubernetes cluster on remote host
 make deploy-cluster-remote-only
 ```
 
@@ -219,7 +219,7 @@ make cleanup-hybrid
 # This will:
 # - Stop local Kubernaut and PostgreSQL
 # - Remove local configuration files
-# - Cleanup remote OpenShift cluster
+# - Cleanup remote Kubernetes cluster
 # - Remove remote deployment files
 ```
 

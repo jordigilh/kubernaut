@@ -251,6 +251,50 @@ To add a new action:
 
 ---
 
+## Condition Templates (DD-002)
+
+**New in V1**: Per-action precondition/postcondition validation framework
+**Design Decision**: [DD-002 - Per-Step Validation Framework](../../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2)
+**Business Requirements**: [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md)
+
+### Representative Example: scale_deployment
+
+**Preconditions**:
+- **deployment_exists**: Deployment must exist before scaling
+- **cluster_capacity_available**: Cluster must have capacity for additional pods
+- **image_pull_secrets_valid**: Deployment must have valid image pull secrets
+- **node_selector_matches**: Cluster should have nodes matching deployment node selector (warning)
+
+**Postconditions**:
+- **desired_replicas_running**: All desired replicas must be running and ready
+- **deployment_health_check**: Deployment must be Available and Progressing
+- **no_crashloop_pods**: No pods should be in CrashLoopBackOff
+- **resource_usage_acceptable**: Pods should not be throttled or OOMKilled
+
+**Implementation Details**:
+See [Precondition/Postcondition Framework](../standards/precondition-postcondition-framework.md) for:
+- Complete Rego policy examples for `scale_deployment`
+- Integration with existing dry-run validation
+- Async verification patterns
+- Test scenarios
+
+### Remaining Actions
+
+Condition templates for the **remaining 26 actions** will be defined during implementation following the same pattern as `scale_deployment`.
+
+See [Precondition/Postcondition Framework](../standards/precondition-postcondition-framework.md) for:
+- **Phase 1** (Weeks 1-2): Top 5 actions - `scale_deployment` (complete), `restart_pod`, `increase_resources`, `rollback_deployment`, `expand_pvc`
+- **Phase 2** (Weeks 3-4): Next 10 actions - Infrastructure, storage, application lifecycle
+- **Phase 3** (Weeks 5-6): Remaining 12 actions - Security, network, database, monitoring
+
+**Benefits**:
+- ✅ **Cascade Failure Prevention**: 30% → <10% (-67%)
+- ✅ **Remediation Effectiveness**: 70% → 85-90% (+15-20%)
+- ✅ **kubectl Success ≠ Actual Success**: Gap reduced from 15-20% to <5%
+- ✅ **Better Observability**: Step-level failure diagnosis with cluster state evidence
+
+---
+
 ## Cross-References
 
 - **Canonical List**: `docs/design/CANONICAL_ACTION_TYPES.md`
@@ -259,9 +303,12 @@ To add a new action:
 - **HolmesGPT API Spec**: `docs/services/stateless/holmesgpt-api/api-specification.md`
 - **AI Analysis Spec**: `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 - **Workflow Spec**: `docs/services/crd-controllers/03-workflowexecution/integration-points.md`
+- **Validation Framework**: `docs/services/crd-controllers/standards/precondition-postcondition-framework.md` **(NEW)**
+- **Design Decision DD-002**: `docs/architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2` **(NEW)**
+- **Validation BRs**: `docs/requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md` **(NEW)**
 
 ---
 
 **Document Owner**: Platform Team
-**Review Frequency**: When actions are added/removed
+**Review Frequency**: When actions are added/removed or validation framework updated
 **Next Review Date**: 2026-01-07

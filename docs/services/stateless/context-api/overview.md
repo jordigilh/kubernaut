@@ -300,19 +300,26 @@ LIMIT 10;
 
 **Rationale**:
 - **PostgreSQL**: Excellent for structured queries (success rates, time series)
-- **Vector DB**: Optimized for embedding similarity search
+- **Vector DB**: Optimized for embedding similarity search (pgvector extension)
 - **Complementary**: Structured data + semantic search = comprehensive context
+
+**Schema Authority**: Context API uses Data Storage Service's `remediation_audit` schema
+- **Authoritative Schema**: `internal/database/schema/remediation_audit.sql`
+- **Zero Drift**: Context API has no independent schema - reads directly from Data Storage Service tables
+- **Infrastructure Reuse**: Same PostgreSQL instance (localhost:5432) for all services
+- **See**: [SCHEMA_ALIGNMENT.md](./implementation/SCHEMA_ALIGNMENT.md) for details
 
 **Alternatives Considered**:
 - ❌ **PostgreSQL only**: Poor performance for vector similarity
 - ❌ **Vector DB only**: Lacks ACID guarantees for audit trail
-- ✅ **Hybrid**: Best of both worlds
+- ✅ **Hybrid**: Best of both worlds (pgvector extension provides both)
 
 **Implications**:
 - ✅ Structured queries use PostgreSQL indexes (fast)
-- ✅ Semantic search uses vector embeddings (accurate)
+- ✅ Semantic search uses pgvector embeddings (accurate, vector(384))
 - ✅ Single API abstracts storage complexity
-- ❌ Requires maintaining two data stores
+- ✅ Schema consistency guaranteed through shared schema file
+- ❌ Requires Data Storage Service PostgreSQL to be operational
 
 ---
 
@@ -611,8 +618,9 @@ sequenceDiagram
 
 ### Core Specifications
 - [API Specification](./api-specification.md) - Complete REST API reference
-- [Database Schema](./database-schema.md) - PostgreSQL schema and indexes
-- [Vector DB Integration](./vector-db-integration.md) - Semantic search implementation
+- [Schema Alignment](./implementation/SCHEMA_ALIGNMENT.md) - ✅ **AUTHORITATIVE**: PostgreSQL schema reference (Data Storage Service)
+- ~~[Database Schema](./database-schema.md)~~ - ⚠️ **DEPRECATED**: See SCHEMA_ALIGNMENT.md
+- [Vector DB Integration](./vector-db-integration.md) - Semantic search implementation (pgvector)
 - [Caching Strategy](./caching-strategy.md) - Multi-tier caching details
 
 ### Architecture References
@@ -625,9 +633,9 @@ sequenceDiagram
 ## Next Steps
 
 1. [API Specification](./api-specification.md) - Define all REST endpoints
-2. [Database Schema](./database-schema.md) - Design PostgreSQL tables and indexes
-3. [Vector DB Integration](./vector-db-integration.md) - Implement semantic search
-4. [Implementation Plan](./implementation-plan.md) - Development roadmap
+2. [Schema Alignment](./implementation/SCHEMA_ALIGNMENT.md) - ✅ **AUTHORITATIVE**: Review PostgreSQL schema (Data Storage Service)
+3. [Vector DB Integration](./vector-db-integration.md) - Implement semantic search (pgvector)
+4. [Implementation Plan](./implementation/IMPLEMENTATION_PLAN_V1.0.md) - Development roadmap
 
 ---
 

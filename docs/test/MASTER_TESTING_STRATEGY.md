@@ -333,7 +333,7 @@ on:
         required: true
         default: 'http://192.168.1.169:7070'
       ocp_cluster:
-        description: 'OpenShift cluster endpoint'
+        description: 'Kubernetes cluster endpoint'
         required: true
         default: 'https://api.ocp.example.com:6443'
 
@@ -345,7 +345,7 @@ jobs:
       - name: Check LLM Availability
         run: |
           curl -f ${{ github.event.inputs.llm_endpoint }}/health || exit 1
-      - name: Check OpenShift Cluster Access
+      - name: Check Kubernetes Cluster Access
         run: |
           oc login ${{ github.event.inputs.ocp_cluster }} --token=${{ secrets.OCP_TOKEN }}
           oc cluster-info || exit 1
@@ -354,7 +354,7 @@ jobs:
 
   e2e-tests:
     name: E2E Tests (Complete Workflows)
-    runs-on: self-hosted # Requires access to LLM and OCP cluster
+    runs-on: self-hosted # Requires access to LLM and Kind cluster
     needs: e2e-environment-check
     environment: ${{ github.event.inputs.environment }}
     steps:
@@ -394,8 +394,8 @@ jobs:
   - Alternative: `http://192.168.1.169:8080` (SSH tunnel)
   - Not available in GitHub's ephemeral runners
 
-- **OpenShift/Kubernetes Cluster**: Requires real OCP cluster access
-  - Production-like OpenShift cluster for realistic testing
+- **Kubernetes/Kubernetes Cluster**: Requires real Kind cluster access
+  - Production-like Kubernetes cluster for realistic testing
   - Persistent storage and networking capabilities
   - Administrative access for resource creation/deletion
   - Not feasible in GitHub's containerized environment
@@ -413,7 +413,7 @@ jobs:
 |-----------|------------------|----------------|-------------------|------------------------|
 | **Unit Tests** | **Automated** | ✅ Always | None | 35% (algorithmic logic) |
 | **Integration Tests** | **Automated** | ✅ Always | Docker containers only | 40% (cross-component) |
-| **E2E Tests** | **Manual** | ❌ Manual trigger | LLM + OCP cluster | 25% (complete workflows) |
+| **E2E Tests** | **Manual** | ❌ Manual trigger | LLM + Kind cluster | 25% (complete workflows) |
 
 ### **CI/CD Confidence Levels**
 
@@ -426,7 +426,7 @@ jobs:
 #### **Complete System Confidence** (Manual Execution):
 - **Unit + Integration + E2E Testing**: **87% confidence**
 - **Execution**: Manual trigger for releases and major milestones
-- **Dependencies**: External LLM + OpenShift cluster
+- **Dependencies**: External LLM + Kubernetes cluster
 - **Duration**: 2-3 hours total
 
 ### **E2E Testing Execution Guidelines**
@@ -452,15 +452,15 @@ if ! curl -f "${LLM_ENDPOINT}/health" > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check OpenShift cluster access
+# Check Kubernetes cluster access
 if ! oc cluster-info > /dev/null 2>&1; then
-    echo "❌ OpenShift cluster not accessible"
+    echo "❌ Kubernetes cluster not accessible"
     exit 1
 fi
 
-# Check required OpenShift permissions
+# Check required Kubernetes permissions
 if ! oc auth can-i create pods > /dev/null 2>&1; then
-    echo "❌ Insufficient OpenShift permissions"
+    echo "❌ Insufficient Kubernetes permissions"
     exit 1
 fi
 
@@ -473,7 +473,7 @@ fi
 
 echo "✅ All E2E prerequisites validated"
 echo "  - LLM endpoint: ${LLM_ENDPOINT}"
-echo "  - OCP cluster: $(oc whoami --show-server)"
+echo "  - Kind cluster: $(kubectl cluster-info)"
 echo "  - Available model: ${MODEL_STATUS}"
 ```
 
@@ -543,7 +543,7 @@ type BusinessValueMetrics struct {
 2. **Efficient CI/CD**: Fast automated testing (15-20 minutes) for daily development
 3. **Controlled E2E Validation**: Manual trigger for resource-intensive complete system testing
 4. **Maintainable Test Suite**: Clear separation with execution method per test type
-5. **Realistic Business Validation**: E2E tests with actual LLM and OpenShift resources
+5. **Realistic Business Validation**: E2E tests with actual LLM and Kubernetes resources
 
 ### **Risk Mitigation Strategy**
 1. **Daily Development Risk**: Mitigated by automated unit + integration testing (82% confidence)
@@ -725,4 +725,4 @@ gantt
 
 ---
 
-**🎯 CONCLUSION: The three-tier testing strategy provides optimal confidence through strategic test distribution and execution methods. The approach achieves 82% automated confidence for daily development (Unit + Integration) and 87% complete system confidence through manual E2E execution for releases, with a clear roadmap to enhance confidence to 98% through business value validation, performance benchmarking, and stakeholder success criteria. This dual-execution model balances resource constraints with comprehensive validation, ensuring efficient CI/CD with thorough business value validation when external resources (LLM + OpenShift) are available.**
+**🎯 CONCLUSION: The three-tier testing strategy provides optimal confidence through strategic test distribution and execution methods. The approach achieves 82% automated confidence for daily development (Unit + Integration) and 87% complete system confidence through manual E2E execution for releases, with a clear roadmap to enhance confidence to 98% through business value validation, performance benchmarking, and stakeholder success criteria. This dual-execution model balances resource constraints with comprehensive validation, ensuring efficient CI/CD with thorough business value validation when external resources (LLM + Kubernetes) are available.**

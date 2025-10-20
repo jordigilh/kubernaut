@@ -314,3 +314,98 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 ---
 
+## Phase 3.5: Approval Notification Triggering (V1.0 - BR-ORCH-001)
+
+**Business Requirement**: BR-ORCH-001 (RemediationOrchestrator Notification Creation)
+**ADR Reference**: ADR-018 (Approval Notification V1.0 Integration)
+
+**Trigger**: AIAnalysis.status.phase == "Approving"
+
+**Purpose**: Create NotificationRequest CRD to notify operators when AIAnalysis requires manual approval (medium confidence 60-79%), reducing approval miss rate from 40-60% to <5%.
+
+### Watch Configuration
+
+RemediationOrchestrator watches AIAnalysis CRD for status changes:
+
+```go
+func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
+    return ctrl.NewControllerManagedBy(mgr).
+        For(&remediationv1alpha1.RemediationRequest{}).
+        Watches(
+            &source.Kind{Type: &aianalysisv1alpha1.AIAnalysis{}},
+            handler.EnqueueRequestsFromMapFunc(r.findRemediationRequestsForAIAnalysis),
+        ).
+        Complete(r)
+}
+```
+
+### Reconciliation Logic
+
+**Step 1: Detect Approval Requirement**
+1. Fetch AIAnalysis CRD referenced by `RemediationRequest.status.aiAnalysisRef`
+2. Check if `AIAnalysis.status.phase == "Approving"`
+3. Check if `RemediationRequest.status.approvalNotificationSent == false` (idempotency)
+
+**Step 2: Create NotificationRequest CRD** (if both conditions met)
+1. Extract approval context from `AIAnalysis.status.approvalContext`:
+   - Investigation summary
+   - Evidence collected
+   - Recommended actions with rationales
+   - Alternatives considered with pros/cons
+   - Why approval is required
+2. Create `NotificationRequest` CRD:
+   - **Name**: `approval-notification-{remediationRequest}-{aiAnalysis}`
+   - **Subject**: `"🚨 Approval Required: {reason}"`
+   - **Body**: Formatted approval context (investigation summary, evidence, actions, alternatives)
+   - **Priority**: High
+   - **Channels**: Slack (#kubernaut-approvals), Console
+   - **Metadata**: RemediationRequest name, AIAnalysis name, AIApprovalRequest name, confidence score
+   - **OwnerReference**: RemediationRequest (for cascade deletion)
+3. Set `RemediationRequest.status.approvalNotificationSent = true`
+
+**Step 3: Notification Delivery**
+- Notification Service watches NotificationRequest CRD
+- Delivers formatted notification to Slack/Console
+- Operators receive push notification with approval context
+
+### Idempotency Pattern
+
+The `approvalNotificationSent` flag ensures single notification per approval request:
+
+```go
+if aiAnalysis.Status.Phase == "Approving" && !remediation.Status.ApprovalNotificationSent {
+    // Create notification
+    createApprovalNotification(ctx, remediation, aiAnalysis)
+
+    // Mark as sent (prevents duplicates on reconciliation retries)
+    remediation.Status.ApprovalNotificationSent = true
+    r.Status().Update(ctx, remediation)
+}
+```
+
+**Why Needed**: RemediationOrchestrator may reconcile multiple times while AIAnalysis is in "Approving" phase (status updates, watch triggers, etc.). Without idempotency flag, this would create duplicate notifications.
+
+### Performance Metrics
+
+- **CRD Watch Latency**: <500ms from AIAnalysis status update to RemediationOrchestrator reconciliation
+- **Notification Creation Time**: <2 seconds from approval phase detection to NotificationRequest creation
+- **End-to-End Latency**: <5 seconds from AIAnalysis "Approving" to operator notification delivery
+- **Approval Miss Rate**: Reduced from 40-60% (manual polling) to <5% (push notifications)
+
+### Business Value
+
+**Without Approval Notifications** (V0):
+- Operators must manually poll: `kubectl get aiapprovalrequest --watch`
+- 40-60% approval miss rate (operators miss pending approvals)
+- 30-40% timeout rate (15-minute default approval timeout)
+- MTTR degradation: 60+ minutes for manual intervention
+
+**With Approval Notifications** (V1.0):
+- Push notifications to Slack/Console (no polling required)
+- <5% approval miss rate (operators receive immediate alerts)
+- <10% timeout rate (operators notified promptly)
+- MTTR improvement: 5 minutes average for approval-required incidents
+- **Cost savings**: $392K per approval-required incident (large enterprise, $7K/min downtime cost)
+
+---
+

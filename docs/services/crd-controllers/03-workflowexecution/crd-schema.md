@@ -66,6 +66,11 @@ type WorkflowStep struct {
     Timeout        string                 `json:"timeout,omitempty"` // e.g., "5m"
     DependsOn      []int                  `json:"dependsOn,omitempty"` // Step numbers
     RollbackSpec   *RollbackSpec          `json:"rollbackSpec,omitempty"`
+
+    // ✅ NEW: Step Validation Framework (DD-002)
+    // See: docs/architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2
+    PreConditions  []StepCondition        `json:"preConditions,omitempty"`  // BR-WF-016: Validate before step execution
+    PostConditions []StepCondition        `json:"postConditions,omitempty"` // BR-WF-052: Verify after step completion
 }
 
 // RollbackSpec defines how to rollback a step
@@ -96,6 +101,37 @@ type AdaptiveOrchestrationConfig struct {
     OptimizationEnabled      bool `json:"optimizationEnabled"`
     LearningFromHistory      bool `json:"learningFromHistory"`
     DynamicStepAdjustment    bool `json:"dynamicStepAdjustment"`
+}
+
+// ========================================
+// STEP VALIDATION FRAMEWORK (DD-002)
+// ✅ NEW: Per-step precondition/postcondition validation
+// See: docs/architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2
+// ========================================
+
+// StepCondition defines a validation rule for workflow steps
+// Evaluated before (precondition) or after (postcondition) step execution
+type StepCondition struct {
+    // Type categorizes the condition (e.g., "resource_state", "metric_threshold", "pod_count")
+    Type string `json:"type"`
+
+    // Description provides human-readable explanation of the condition
+    Description string `json:"description"`
+
+    // Rego contains the Rego policy expression for evaluation
+    // Policy should return 'allow' decision for condition pass
+    // Example: "allow if { input.deployment_found == true }"
+    Rego string `json:"rego"`
+
+    // Required determines if condition failure blocks execution
+    // - true: Condition failure blocks step execution (precondition) or marks step failed (postcondition)
+    // - false: Condition failure logs warning but allows execution to proceed
+    Required bool `json:"required"`
+
+    // Timeout specifies maximum wait time for async condition checks
+    // Example: "30s" for preconditions, "2m" for postconditions (pod startup)
+    // Default: "30s"
+    Timeout string `json:"timeout,omitempty"`
 }
 
 // WorkflowExecutionStatus defines the observed state
@@ -198,6 +234,32 @@ type StepStatus struct {
     ErrorMessage      string                 `json:"errorMessage,omitempty"`
     RetriesAttempted  int                    `json:"retriesAttempted,omitempty"`
     K8sExecutionRef   *corev1.ObjectReference `json:"k8sExecutionRef,omitempty"`
+
+    // ✅ NEW: Step Validation Framework (DD-002)
+    PreConditionResults  []ConditionResult  `json:"preConditionResults,omitempty"`  // BR-WF-016: Precondition evaluation results
+    PostConditionResults []ConditionResult  `json:"postConditionResults,omitempty"` // BR-WF-052: Postcondition verification results
+}
+
+// ConditionResult captures the outcome of a single condition evaluation
+// Used for both preconditions and postconditions
+type ConditionResult struct {
+    // ConditionType identifies which condition was evaluated (e.g., "deployment_exists", "desired_replicas_running")
+    ConditionType string `json:"conditionType"`
+
+    // Evaluated indicates whether the condition was actually evaluated
+    // false if evaluation was skipped (e.g., due to earlier failure)
+    Evaluated bool `json:"evaluated"`
+
+    // Passed indicates whether the condition passed
+    // Only meaningful if Evaluated == true
+    Passed bool `json:"passed"`
+
+    // ErrorMessage provides details when condition fails
+    // Example: "Only 2 of 5 desired pods running (insufficient resources)"
+    ErrorMessage string `json:"errorMessage,omitempty"`
+
+    // EvaluationTime records when the condition was evaluated
+    EvaluationTime metav1.Time `json:"evaluationTime"`
 }
 
 // ExecutionMetrics tracks workflow performance
@@ -765,6 +827,237 @@ Batch 3 (Sequential):
   Step 4: verify-deployment
     ↓ waits for steps 2 AND 3
 ```
+
+---
+
+## Representative Example: scale_deployment with Precondition/Postcondition Validation
+
+> **📋 Design Decision Status**
+>
+> **Current Implementation**: **DD-002 Alternative 2** (Approved Design)
+> **Status**: ✅ **Framework Design Complete**
+> **Confidence**: 78%
+> **Design Decision**: [DD-002](../../../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2)
+> **Business Requirements**: BR-WF-016, BR-WF-052, BR-WF-053
+>
+> <details>
+> <summary><b>Why DD-002?</b> (Click to expand)</summary>
+>
+> - ✅ **Prevents Cascade Failures**: Validates state before each step (20% reduction)
+> - ✅ **Verifies Outcomes**: Confirms intended effect achieved (15-20% effectiveness improvement)
+> - ✅ **Better Observability**: Step-level failure diagnosis with state evidence
+> - ✅ **Leverages Infrastructure**: Reuses Rego policy engine (BR-REGO-001 to BR-REGO-010)
+>
+> **Full Analysis**: See [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md)
+> </details>
+
+This example demonstrates the per-step validation framework with a `scale_deployment` action that includes both preconditions and postconditions:
+
+```yaml
+apiVersion: workflow.kubernaut.io/v1
+kind: WorkflowExecution
+metadata:
+  name: web-app-scale-workflow
+  namespace: production
+spec:
+  remediationRequestRef:
+    name: web-app-high-cpu-remediation
+    namespace: production
+
+  workflowDefinition:
+    name: "scale-web-application"
+    version: "v1"
+    steps:
+      - stepNumber: 1
+        name: "scale-web-deployment"
+        action: "scale_deployment"
+        targetCluster: "production-cluster"
+        parameters:
+          deployment:
+            name: web-app
+            namespace: production
+            replicas: 5
+        criticalStep: true
+        maxRetries: 2
+        timeout: "5m"
+
+        # ========================================
+        # PRECONDITIONS (DD-002, BR-WF-016)
+        # Validated BEFORE creating KubernetesExecution CRD
+        # ========================================
+        preConditions:
+          - type: deployment_exists
+            description: "Deployment must exist before scaling"
+            rego: |
+              package precondition
+              import future.keywords.if
+              allow if { input.deployment_found == true }
+            required: true
+            timeout: "10s"
+
+          - type: current_replicas_match
+            description: "Current replicas should match expected baseline"
+            rego: |
+              package precondition
+              import future.keywords.if
+              allow if { input.current_replicas == 3 }
+            required: false  # warning only, not blocking
+            timeout: "5s"
+
+          - type: cluster_capacity_available
+            description: "Cluster must have capacity for additional pods"
+            rego: |
+              package precondition
+              import future.keywords.if
+              allow if {
+                input.available_cpu >= input.required_cpu_per_pod * 2
+                input.available_memory >= input.required_memory_per_pod * 2
+              }
+            required: true
+            timeout: "10s"
+
+        # ========================================
+        # POSTCONDITIONS (DD-002, BR-WF-052)
+        # Verified AFTER KubernetesExecution completes
+        # ========================================
+        postConditions:
+          - type: desired_replicas_running
+            description: "All desired replicas must be running"
+            rego: |
+              package postcondition
+              import future.keywords.if
+              allow if {
+                input.running_pods >= input.target_replicas
+                input.ready_pods >= input.target_replicas
+              }
+            required: true
+            timeout: "2m"  # wait for pods to start
+
+          - type: deployment_health_check
+            description: "Deployment must be Available and Progressing"
+            rego: |
+              package postcondition
+              import future.keywords.if
+              allow if {
+                input.conditions.Available == true
+                input.conditions.Progressing == true
+              }
+            required: true
+            timeout: "1m"
+
+          - type: no_crashloop_pods
+            description: "No pods should be in CrashLoopBackOff"
+            rego: |
+              package postcondition
+              import future.keywords.if
+              allow if {
+                count([p | p := input.pods[_]; p.status == "CrashLoopBackOff"]) == 0
+              }
+            required: true
+            timeout: "1m"
+
+  executionStrategy:
+    approvalRequired: false
+    dryRunFirst: true
+    rollbackStrategy: "automatic"
+    maxRetries: 2
+
+status:
+  phase: "completed"
+  currentStep: 1
+  totalSteps: 1
+
+  stepStatuses:
+    - stepNumber: 1
+      action: "scale_deployment"
+      status: "completed"
+      startTime: "2025-10-14T10:00:00Z"
+      endTime: "2025-10-14T10:02:30Z"
+
+      # ========================================
+      # PRECONDITION EVALUATION RESULTS
+      # ========================================
+      preConditionResults:
+        - conditionType: deployment_exists
+          evaluated: true
+          passed: true
+          evaluationTime: "2025-10-14T10:00:01Z"
+
+        - conditionType: current_replicas_match
+          evaluated: true
+          passed: false  # warning only, execution proceeded
+          errorMessage: "Current replicas: 1, expected: 3 (previous step may have failed)"
+          evaluationTime: "2025-10-14T10:00:02Z"
+
+        - conditionType: cluster_capacity_available
+          evaluated: true
+          passed: true
+          evaluationTime: "2025-10-14T10:00:03Z"
+
+      # ========================================
+      # POSTCONDITION VERIFICATION RESULTS
+      # ========================================
+      postConditionResults:
+        - conditionType: desired_replicas_running
+          evaluated: true
+          passed: true
+          evaluationTime: "2025-10-14T10:02:25Z"
+
+        - conditionType: deployment_health_check
+          evaluated: true
+          passed: true
+          evaluationTime: "2025-10-14T10:02:26Z"
+
+        - conditionType: no_crashloop_pods
+          evaluated: true
+          passed: true
+          evaluationTime: "2025-10-14T10:02:27Z"
+
+      k8sExecutionRef:
+        name: web-app-scale-workflow-step-1
+        namespace: production
+
+  executionMetrics:
+    totalDuration: "2m30s"
+    stepSuccessRate: 1.0
+    rollbacksPerformed: 0
+    resourcesAffected: 1
+
+  completionTime: "2025-10-14T10:02:30Z"
+```
+
+### Validation Flow
+
+```
+1. WorkflowExecution receives step execution request
+   ↓
+2. Evaluate step.preConditions[] (BR-WF-016)
+   - deployment_exists: ✅ PASS (blocking)
+   - current_replicas_match: ❌ FAIL (warning only, log and proceed)
+   - cluster_capacity_available: ✅ PASS (blocking)
+   ↓ (all required preconditions passed)
+3. Create KubernetesExecution CRD
+   ↓
+4. KubernetesExecutor executes action (kubectl scale)
+   ↓
+5. KubernetesExecutor reports completion
+   ↓
+6. WorkflowExecution evaluates step.postConditions[] (BR-WF-052)
+   - desired_replicas_running: ✅ PASS (5 pods running)
+   - deployment_health_check: ✅ PASS (Available=true, Progressing=true)
+   - no_crashloop_pods: ✅ PASS (0 crashloop pods)
+   ↓ (all postconditions passed)
+7. Mark step as "completed"
+```
+
+### Condition Template Placeholder
+
+**Note**: This representative example shows complete precondition/postcondition policies for the `scale_deployment` action. Condition templates for the **remaining 26 actions** will be defined during implementation.
+
+See [Precondition/Postcondition Framework](../standards/precondition-postcondition-framework.md) for phased rollout strategy:
+- **Phase 1** (Weeks 1-2): Top 5 actions (scale_deployment, restart_pod, increase_resources, rollback_deployment, expand_pvc)
+- **Phase 2** (Weeks 3-4): Next 10 actions (infrastructure, storage, application lifecycle)
+- **Phase 3** (Weeks 5-6): Remaining 12 actions (security, network, database, monitoring)
 
 **Key Points**:
 - ✅ AIAnalysis uses `recommendation.id` (string) and `dependencies []string`

@@ -1,7 +1,7 @@
 # Multi-Architecture Build Status
 
-**ADR**: [ADR-027](../architecture/decisions/ADR-027-multi-architecture-build-strategy.md)  
-**Status**: ✅ Implemented  
+**ADR**: [ADR-027](../architecture/decisions/ADR-027-multi-architecture-build-strategy.md)
+**Status**: ✅ Implemented
 **Date**: 2025-10-20
 
 ---
@@ -56,7 +56,7 @@
 
 ### CRD Controllers (5 services)
 
-**Build Method**: Individual build scripts + Makefile  
+**Build Method**: Individual build scripts + Makefile
 **Multi-Arch**: ✅ Enabled by default via Makefile `docker-build` target
 
 1. **notification-controller** - ✅ Dedicated script with multi-arch support
@@ -67,7 +67,7 @@
 
 ### Stateless Services (6 services)
 
-**Build Method**: Makefile targets only  
+**Build Method**: Makefile targets only
 **Multi-Arch**: ✅ Enabled by default via Makefile `docker-build` target
 
 1. **gateway-service** - 🔄 Uses Makefile (multi-arch by default)
@@ -347,6 +347,6 @@ oc start-build kubernaut-<service> --from-dir=.
 
 **Status**: ✅ Multi-architecture build strategy successfully implemented for core infrastructure. Remaining services inherit multi-arch support via Makefile targets.
 
-**Confidence**: 95%  
+**Confidence**: 95%
 **Rationale**: Core infrastructure (Makefile, build scripts) tested and working. Remaining services inherit this functionality. The 5% gap accounts for service-specific edge cases that may emerge during broader testing.
 

@@ -194,7 +194,7 @@ sudo -u postgres psql -d kubernaut -c "SELECT version();"
 sudo -u postgres psql -d kubernaut -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
 ```
 
-#### **Red Hat/CentOS/Fedora**
+#### **upstream community/CentOS/Fedora**
 
 ```bash
 # 1. Install PostgreSQL 16

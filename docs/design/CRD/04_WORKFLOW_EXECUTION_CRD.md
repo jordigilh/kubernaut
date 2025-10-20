@@ -1235,7 +1235,8 @@ func (r *WorkflowExecutionController) Reconcile(ctx context.Context, req ctrl.Re
 
 ## 🔗 **Related Documentation**
 
-- **Architecture**: [Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
+- **Architecture**: [Kubernaut CRD Architecture](../../architecture/KUBERNAUT_CRD_ARCHITECTURE.md) (Authoritative)
+- ~~[Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)~~ (DEPRECATED)
 - **Requirements**: [Workflow Engine & Orchestration Requirements](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)
 - **Parent CRD**: [AlertRemediation CRD](01_ALERT_REMEDIATION_CRD.md)
 - **Input CRD**: [AIAnalysis CRD](03_AI_ANALYSIS_CRD.md)

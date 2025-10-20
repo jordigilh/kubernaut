@@ -1,9 +1,24 @@
 # Context API - Database Schema
 
-**Version**: v1.0
+**Version**: v1.0 (⚠️ DEPRECATED - See SCHEMA_ALIGNMENT.md)
 **Last Updated**: October 6, 2025
 **Database**: PostgreSQL 15+ with pgvector extension
 **Purpose**: Read-only queries for historical intelligence
+
+⚠️ **IMPORTANT ARCHITECTURAL CORRECTION**:
+This document describes the **ORIGINAL PLAN** which has been superseded by the actual Data Storage Service schema.
+
+**✅ CURRENT IMPLEMENTATION** (use this instead):
+- **Schema Document**: [SCHEMA_ALIGNMENT.md](implementation/SCHEMA_ALIGNMENT.md)
+- **Actual Table**: `remediation_audit` (created by Data Storage Service)
+- **Schema Location**: `internal/database/schema/remediation_audit.sql`
+- **Key Differences**:
+  - ❌ Context API does NOT query multiple tables (`remediation_requests`, `ai_analysis`, `workflow_executions`, etc.)
+  - ✅ Context API queries ONLY the `remediation_audit` table
+  - ❌ Context API does NOT have LLM configuration (AIAnalysis service handles LLM)
+  - ✅ Context API is purely READ-ONLY (queries pre-existing data only)
+
+**Migration Path**: Replace references to this document with [SCHEMA_ALIGNMENT.md](implementation/SCHEMA_ALIGNMENT.md)
 
 ---
 

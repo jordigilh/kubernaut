@@ -9,11 +9,11 @@
 
 ## Executive Summary
 
-This document defines the **Top 10 End-to-End Use Cases** for Kubernaut testing, designed to validate AI-driven Kubernetes remediation capabilities under realistic failure conditions. These use cases are prioritized based on business requirements, infrastructure capabilities (OCP cluster + oss-gpt:20b model), and development guidelines.
+This document defines the **Top 10 End-to-End Use Cases** for Kubernaut testing, designed to validate AI-driven Kubernetes remediation capabilities under realistic failure conditions. These use cases are prioritized based on business requirements, infrastructure capabilities (Kind cluster + oss-gpt:20b model), and development guidelines.
 
 ### Testing Environment Overview
 
-- **Platform**: OpenShift Container Platform (OCP) 4.18
+- **Platform**: Kubernetes cluster (OCP) 4.18
 - **AI Backend**: oss-gpt:20b model running at localhost:8080
 - **Data Storage**: PostgreSQL with vector extensions
 - **Runtime**: Kubernaut CLI via Go implementation
@@ -399,7 +399,7 @@ expected_actions: [restore_cluster_state, rebuild_vector_embeddings, resume_oper
 - **Mock Usage**: Extends existing mock patterns for consistency
 
 ### **Infrastructure Integration**
-- **OCP Cluster**: Full integration with OpenShift 4.18 features
+- **Kubernetes cluster Cluster**: Full integration with Kubernetes 4.18 features
 - **oss-gpt:20b Model**: Direct integration with localhost:8080 endpoint
 - **PostgreSQL**: Vector database persistence and pattern storage
 - **LitmusChaos**: Chaos engineering framework integration
@@ -416,7 +416,7 @@ expected_actions: [restore_cluster_state, rebuild_vector_embeddings, resume_oper
 ## 🚀 **Next Steps**
 
 1. **Review and Approval**: Stakeholder review of use cases and success criteria
-2. **Infrastructure Preparation**: OCP cluster and testing environment setup
+2. **Infrastructure Preparation**: Kind cluster and testing environment setup
 3. **Implementation Planning**: Detailed implementation timeline and resource allocation
 4. **Tool Development**: Custom testing tools and automation framework
 5. **Execution and Validation**: Systematic use case implementation and validation

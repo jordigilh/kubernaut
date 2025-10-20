@@ -1,5 +1,10 @@
 ## Integration Points
 
+**Updated**: October 16, 2025
+**Downstream Impact**: Ultra-Compact JSON (DD-HOLMESGPT-009)
+
+**Note**: RemediationProcessor prepares enriched context that is consumed by AIAnalysis Controller and formatted as **self-documenting JSON** for HolmesGPT API calls. While this service doesn't directly interact with HolmesGPT, its enrichment quality enables 60% token reduction in downstream AI analysis.
+
 ### 1. Upstream Integration: RemediationRequest Controller
 
 **Integration Pattern**: Watch-based status coordination

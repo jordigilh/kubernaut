@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-This documentation suite provides a comprehensive approach for implementing end-to-end testing for Kubernaut, an intelligent Kubernetes remediation agent. The approach leverages existing infrastructure (OCP cluster + oss-gpt:20b model), follows established development guidelines, and ensures business outcome validation through chaos engineering and automated testing frameworks.
+This documentation suite provides a comprehensive approach for implementing end-to-end testing for Kubernaut, an intelligent Kubernetes remediation agent. The approach leverages existing infrastructure (Kind cluster + oss-gpt:20b model), follows established development guidelines, and ensures business outcome validation through chaos engineering and automated testing frameworks.
 
 ### Key Deliverables
 
@@ -36,10 +36,10 @@ This documentation suite provides a comprehensive approach for implementing end-
 
 | Document | Purpose | Implementation Phase |
 |----------|---------|---------------------|
-| **[README.md](README.md)** | OCP cluster setup and configuration | Pre-Phase 1 |
+| **[README.md](README.md)** | Kind cluster setup and configuration | Pre-Phase 1 |
 | **[KCLI_QUICK_START.md](KCLI_QUICK_START.md)** | Rapid cluster deployment | Pre-Phase 1 |
 | **[deploy-kcli-cluster.sh](deploy-kcli-cluster.sh)** | Automated cluster setup script | Pre-Phase 1 |
-| **[storage/odf-operator.yaml](storage/odf-operator.yaml)** | OpenShift Data Foundation config | Phase 1 |
+| **[storage/odf-operator.yaml](storage/odf-operator.yaml)** | persistent storage config | Phase 1 |
 
 ---
 
@@ -111,7 +111,7 @@ graph TB
     end
 
     subgraph "Infrastructure"
-        OCP[OCP Cluster]
+        OCP[Kubernetes cluster Cluster]
         AI[oss-gpt:20b Model]
         PG[PostgreSQL Vector DB]
         LC[LitmusChaos]
@@ -242,7 +242,7 @@ graph TB
 
 ### **Prerequisites Checklist**
 
-- [ ] **OpenShift Container Platform 4.18** cluster ready and accessible
+- [ ] **Kubernetes cluster 4.18** cluster ready and accessible
 - [ ] **oss-gpt:20b model** running at localhost:8080 and validated
 - [ ] **PostgreSQL** with vector extensions for pattern storage
 - [ ] **Development environment** with Go 1.21+ and necessary tools
@@ -302,7 +302,7 @@ Follow the detailed [Implementation Guide](IMPLEMENTATION_GUIDE.md) for step-by-
 - **Testing Framework**: Ginkgo/Gomega BDD (existing standard)
 - **Chaos Engineering**: LitmusChaos for controlled failure injection
 - **AI Model**: oss-gpt:20b at localhost:8080 for decision-making validation
-- **Container Platform**: OpenShift Container Platform 4.18
+- **Container Platform**: Kubernetes cluster 4.18
 - **Database**: PostgreSQL with pgvector for pattern storage
 - **Monitoring**: Prometheus + Grafana for metrics and dashboards
 
@@ -343,7 +343,7 @@ Follow the detailed [Implementation Guide](IMPLEMENTATION_GUIDE.md) for step-by-
 ### **Immediate Next Steps**
 1. **Stakeholder Review**: Present complete approach to business and technical stakeholders
 2. **Resource Allocation**: Assign dedicated team members for 6-week implementation
-3. **Environment Preparation**: Ensure OCP cluster and AI model readiness
+3. **Environment Preparation**: Ensure Kind cluster and AI model readiness
 4. **Phase 1 Kickoff**: Begin implementation following the detailed guide
 
 ### **Long-term Vision**

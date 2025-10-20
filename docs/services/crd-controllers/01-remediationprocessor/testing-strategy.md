@@ -425,7 +425,7 @@ var _ = Describe("BR-INTEGRATION-AP-001: Alert Processing CRD Integration", func
 **Service Tests**: Create `test/e2e/alertprocessor/e2e_test.go`
 **Coverage Target**: 10% of critical business workflows
 **Confidence**: 90-95%
-**Execution**: `make test-e2e-kind` (KIND) or `make test-e2e-ocp` (OpenShift)
+**Execution**: `make test-e2e-kind` (KIND) or `make test-e2e-ocp` (Kubernetes)
 
 **Test File Structure** (aligned with package name `alertprocessor`):
 ```

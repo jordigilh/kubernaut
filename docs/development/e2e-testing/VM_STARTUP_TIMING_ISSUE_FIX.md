@@ -1,8 +1,8 @@
-# OpenShift KCLI VM Skipping Issue Fix
+# Kubernetes KCLI VM Skipping Issue Fix
 
 ## Problem Description
 
-During OpenShift 4.18 deployment using KCLI on virtualized infrastructure (helios08), we encountered a **VM skipping issue** where:
+During Kubernetes 4.18 deployment using KCLI on virtualized infrastructure (helios08), we encountered a **VM skipping issue** where:
 
 1. **KCLI skips creating VMs** because conflicting VMs already exist from previous deployments
 2. **Bootstrap process times out** because no actual VMs are running
@@ -304,7 +304,7 @@ Future versions may include:
 
 ## Conclusion
 
-This fix addresses the VM startup timing issue that affected OpenShift KCLI deployments on virtualized infrastructure. The solution provides:
+This fix addresses the VM startup timing issue that affected Kubernetes KCLI deployments on virtualized infrastructure. The solution provides:
 
 - **Automatic recovery** during deployment
 - **Manual recovery tools** for troubleshooting

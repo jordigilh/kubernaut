@@ -3,7 +3,7 @@
 ## 🎯 **Overview**
 
 Successfully implemented **Hybrid 10-Service Microservices E2E Architecture** where:
-- **OpenShift Cluster**: Runs on remote host (helios08)
+- **Kubernetes Cluster**: Runs on remote host (helios08)
 - **HolmesGPT Container**: Custom container image with REST API (deployed in cluster or locally)
 - **Kubernaut Microservices**: 10 services run locally but manage remote cluster
 - **Tests**: Run locally with access to both cluster and microservices APIs
@@ -22,7 +22,7 @@ This architecture provides **enterprise-grade security isolation** while maintai
 │                                                                                 │
 │  LOCAL DEVELOPMENT MACHINE                    REMOTE HOST (helios08)            │
 │  ┌─────────────────────────────────┐         ┌─────────────────────────────────┐ │
-│  │  🤖 HolmesGPT Container         │         │  🖥️  OpenShift 4.18 Cluster    │ │
+│  │  🤖 HolmesGPT Container         │         │  🖥️  Kubernetes 4.18 Cluster    │ │
 │  │     Custom REST API Image       │         │     - 3 control plane nodes    │ │
 │  │     localhost:8090              │         │     - 3 worker nodes           │ │
 │  │                                 │         │     - ODF Storage              │ │
@@ -60,7 +60,7 @@ This architecture provides **enterprise-grade security isolation** while maintai
 ## 🚀 **Delivered Components**
 
 ### **Remote Deployment Scripts**
-- **`deploy-cluster-only-remote.sh`**: Deploys only OpenShift cluster on helios08
+- **`deploy-cluster-only-remote.sh`**: Deploys only Kubernetes cluster on helios08
 - **`configure-remote-host.sh`**: Validates SSH connectivity and host readiness
 
 ### **Local Hybrid Setup Scripts**
@@ -74,7 +74,7 @@ This architecture provides **enterprise-grade security isolation** while maintai
 ### **Makefile Integration**
 ```bash
 # Hybrid Architecture Targets
-make deploy-cluster-remote-only    # Deploy OpenShift cluster on helios08
+make deploy-cluster-remote-only    # Deploy Kubernetes cluster on helios08
 make setup-local-hybrid           # Setup local Kubernaut + AI integration
 make validate-hybrid-topology     # Validate network isolation
 make status-hybrid               # Check all component status
@@ -110,7 +110,7 @@ make ssh-remote-cluster         # SSH to remote cluster
 ## 📊 **Key Features**
 
 ### **Enterprise-Grade Capabilities**
-- **Remote Cluster Management**: Full control over OpenShift cluster from local machine
+- **Remote Cluster Management**: Full control over Kubernetes cluster from local machine
 - **Local AI Performance**: Zero network latency for AI model access
 - **Development Efficiency**: Fast iteration cycles with local tools
 - **Production Realism**: Tests on actual enterprise hardware

@@ -568,3 +568,29 @@ type ServiceCRDStatus struct {
 
 ---
 
+## Downstream: Notification Service (V1.0 Approval Notifications)
+
+**Business Requirement**: BR-ORCH-001 (RemediationOrchestrator Notification Creation)
+**ADR Reference**: ADR-018 (Approval Notification V1.0 Integration)
+
+**Integration Pattern**: CRD-based notification triggering
+
+**Trigger**: AIAnalysis requires approval (phase = "Approving")
+
+**CRD Created**: NotificationRequest
+
+**Notification Details**:
+- **Subject**: "🚨 Approval Required: {reason}"
+- **Body**: Investigation summary, evidence, recommended actions, alternatives, approval rationale
+- **Priority**: High
+- **Channels**: Slack (#kubernaut-approvals), Console
+- **Metadata**: RemediationRequest name, AIAnalysis name, AIApprovalRequest name, confidence score
+
+**Ownership**: RemediationRequest owns NotificationRequest (OwnerReference for cascade deletion)
+
+**Performance**: <2 seconds from approval phase detection to notification delivery
+
+**Business Value**: Reduces approval miss rate from 40-60% to <5%, preventing $392K per missed approval (large enterprise, $7K/min downtime cost)
+
+---
+

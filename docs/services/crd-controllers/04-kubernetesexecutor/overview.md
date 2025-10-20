@@ -33,27 +33,32 @@
 
 **KubernetesExecutor** implements infrastructure action execution across Kubernetes and (V2) cloud providers:
 
-### V1 Scope: Kubernetes Actions (BR-EXEC-001 to BR-EXEC-086)
+### V1 Scope: Kubernetes Actions (BR-EXEC-001 to BR-EXEC-088)
 
 **Range**: BR-EXEC-001 to BR-EXEC-180
-**V1 Active**: BR-EXEC-001 to BR-EXEC-086 (39 BRs total)
-**V2 Reserved**: BR-EXEC-087 to BR-EXEC-180 (multi-cloud expansion)
+**V1 Active**: BR-EXEC-001 to BR-EXEC-088 (41 BRs total)
+**V2 Reserved**: BR-EXEC-089 to BR-EXEC-180 (multi-cloud expansion)
 
 **V1 Business Requirements Breakdown**:
 
 #### Core Execution (BR-EXEC-001 to BR-EXEC-059)
 - BR-EXEC-001 to BR-EXEC-015: Core action execution patterns
-- BR-EXEC-020 to BR-EXEC-040: Kubernetes Job creation and monitoring
+- BR-EXEC-016: **Action precondition framework** (NEW) - See [DD-002](../../../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2)
+- BR-EXEC-020 to BR-EXEC-035: Kubernetes Job creation and monitoring
+- BR-EXEC-036: **Action postcondition verification** (NEW) - See [DD-002](../../../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2)
+- BR-EXEC-037 to BR-EXEC-040: Job result handling
 - BR-EXEC-045 to BR-EXEC-055: Timeout, RBAC, and safety validation
 
-#### Migrated from BR-KE-* (BR-EXEC-060 to BR-EXEC-086)
+#### Migrated from BR-KE-* (BR-EXEC-060 to BR-EXEC-088)
 - BR-EXEC-060 to BR-EXEC-066: Safety validation, dry-run, audit (was BR-KE-001 to BR-KE-016)
 - BR-EXEC-067 to BR-EXEC-069: Job lifecycle and monitoring (was BR-KE-020 to BR-KE-022)
 - BR-EXEC-070 to BR-EXEC-080: Per-action execution patterns (was BR-KE-030 to BR-KE-040)
-- BR-EXEC-081 to BR-EXEC-086: Testing, security, multi-cluster (was BR-KE-045 to BR-KE-060)
+- BR-EXEC-081 to BR-EXEC-088: Testing, security, multi-cluster (was BR-KE-045 to BR-KE-060, extended with validation framework)
 
 **Rationale for BR Migration (BR-KE-* → BR-EXEC-*)**:
 KubernetesExecutor will expand to **Multi-Cloud Executor** in V2, executing infrastructure actions across Kubernetes, AWS, Azure, and GCP. The generic "BR-EXEC-*" prefix is cloud-agnostic and scales naturally to multi-cloud scenarios, while "BR-KE-*" (Kubernetes Executor) would be misleading when executing AWS EC2 or Azure VM actions. See [BR Migration Mapping](./BR_MIGRATION_MAPPING.md) for complete details.
+
+**New in V1**: Action-level validation framework (BR-EXEC-016, BR-EXEC-036) extends existing dry-run validation with per-action precondition/postcondition checking. See [DD-002](../../../architecture/DESIGN_DECISIONS.md#dd-002-per-step-validation-framework-alternative-2) and [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../../../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md).
 
 ### V2 Expansion (BR-EXEC-087 to BR-EXEC-180) - MANDATORY FOR V2
 
