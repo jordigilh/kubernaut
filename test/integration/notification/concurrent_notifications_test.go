@@ -87,29 +87,29 @@ var _ = Describe("Integration Test 5: Concurrent Notification Handling", func() 
 			wg.Wait()
 
 			By("Verifying all notifications were created successfully")
-		for i, err := range createErrors {
-			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Notification %d should be created", i))
-		}
+			for i, err := range createErrors {
+				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Notification %d should be created", i))
+			}
 
-		By("Waiting for all notifications to reach Sent phase (with anti-flaky retry)")
-		// v3.1: Use EventuallyWithRetry with 60s timeout for concurrent delivery reliability
-		for i := 0; i < numNotifications; i++ {
-			i := i // capture loop variable
-			timing.EventuallyWithRetry(func() error {
-				latest := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
-				if err != nil {
-					return err
-				}
-				if latest.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
-					return fmt.Errorf("expected phase Sent, got %s", latest.Status.Phase)
-				}
-				return nil
-			}, 10, 6*time.Second).Should(Succeed(),
-				fmt.Sprintf("Notification %d should reach Sent phase", i))
-		}
+			By("Waiting for all notifications to reach Sent phase (with anti-flaky retry)")
+			// v3.1: Use EventuallyWithRetry with 60s timeout for concurrent delivery reliability
+			for i := 0; i < numNotifications; i++ {
+				i := i // capture loop variable
+				timing.EventuallyWithRetry(func() error {
+					latest := &notificationv1alpha1.NotificationRequest{}
+					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
+					if err != nil {
+						return err
+					}
+					if latest.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
+						return fmt.Errorf("expected phase Sent, got %s", latest.Status.Phase)
+					}
+					return nil
+				}, 10, 6*time.Second).Should(Succeed(),
+					fmt.Sprintf("Notification %d should reach Sent phase", i))
+			}
 
-		By("Verifying all status updates are correct (no conflicts)")
+			By("Verifying all status updates are correct (no conflicts)")
 			for i := 0; i < numNotifications; i++ {
 				latest := &notificationv1alpha1.NotificationRequest{}
 				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
@@ -183,30 +183,30 @@ var _ = Describe("Integration Test 5: Concurrent Notification Handling", func() 
 			By("Waiting for all creates to complete")
 			wg.Wait()
 
-		By("Verifying all notifications were created successfully")
-		for i, err := range createErrors {
-			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Notification %d should be created", i))
-		}
+			By("Verifying all notifications were created successfully")
+			for i, err := range createErrors {
+				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Notification %d should be created", i))
+			}
 
-		By("Waiting for all notifications to reach Sent phase (with anti-flaky retry)")
-		// v3.1: Use EventuallyWithRetry with 60s timeout for concurrent delivery reliability
-		for i := 0; i < numNotifications; i++ {
-			i := i // capture loop variable
-			timing.EventuallyWithRetry(func() error {
-				latest := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
-				if err != nil {
-					return err
-				}
-				if latest.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
-					return fmt.Errorf("expected phase Sent, got %s", latest.Status.Phase)
-				}
-				return nil
-			}, 10, 6*time.Second).Should(Succeed(),
-				fmt.Sprintf("Notification %d should reach Sent phase", i))
-		}
+			By("Waiting for all notifications to reach Sent phase (with anti-flaky retry)")
+			// v3.1: Use EventuallyWithRetry with 60s timeout for concurrent delivery reliability
+			for i := 0; i < numNotifications; i++ {
+				i := i // capture loop variable
+				timing.EventuallyWithRetry(func() error {
+					latest := &notificationv1alpha1.NotificationRequest{}
+					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
+					if err != nil {
+						return err
+					}
+					if latest.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
+						return fmt.Errorf("expected phase Sent, got %s", latest.Status.Phase)
+					}
+					return nil
+				}, 10, 6*time.Second).Should(Succeed(),
+					fmt.Sprintf("Notification %d should reach Sent phase", i))
+			}
 
-		By("Verifying all priorities were processed (no priority inversions)")
+			By("Verifying all priorities were processed (no priority inversions)")
 			criticalCount := 0
 			lowCount := 0
 
@@ -275,18 +275,21 @@ var _ = Describe("Integration Test 5: Concurrent Notification Handling", func() 
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Waiting for notification to reach Sent or Failed phase")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
+			By("Waiting for notification to reach Sent or Failed phase (with anti-flaky retry)")
+			// v3.1: Use EventuallyWithRetry for terminal phase verification
+			timing.EventuallyWithRetry(func() error {
 				latest := &notificationv1alpha1.NotificationRequest{}
 				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notification), latest)
 				if err != nil {
-					return ""
+					return err
 				}
-				return latest.Status.Phase
-			}, "20s", "500ms").Should(Or(
-				Equal(notificationv1alpha1.NotificationPhaseSent),
-				Equal(notificationv1alpha1.NotificationPhaseFailed),
-			), "Notification should reach terminal phase")
+				phase := latest.Status.Phase
+				if phase != notificationv1alpha1.NotificationPhaseSent && phase != notificationv1alpha1.NotificationPhaseFailed {
+					return fmt.Errorf("expected phase Sent or Failed, got %s", phase)
+				}
+				return nil
+			}, 10, 2*time.Second).Should(Succeed(),
+				"Notification should reach terminal phase")
 
 			By("Verifying status updates are atomic (BR-NOT-051: No Lost Attempts)")
 			latest := &notificationv1alpha1.NotificationRequest{}
