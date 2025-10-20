@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/testutil/timing"
 )
 
 var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending → Sent)", func() {
@@ -75,8 +76,9 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 		By("Waiting for controller to reconcile (initial phase should be Pending)")
 		time.Sleep(2 * time.Second)
 
-		By("Verifying phase transitions: Pending → Sending → Sent")
-		Eventually(func() notificationv1alpha1.NotificationPhase {
+		By("Verifying phase transitions: Pending → Sending → Sent (with anti-flaky retry)")
+		// v3.1: Use EventuallyWithRetry for better CI reliability
+		timing.EventuallyWithRetry(func() error {
 			updated := &notificationv1alpha1.NotificationRequest{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      notificationName,
@@ -84,11 +86,14 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 			}, updated)
 			if err != nil {
 				GinkgoWriter.Printf("⚠️  Failed to get NotificationRequest: %v\n", err)
-				return ""
+				return err
 			}
 			GinkgoWriter.Printf("   Current phase: %s (reason: %s)\n", updated.Status.Phase, updated.Status.Reason)
-			return updated.Status.Phase
-		}, 15*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+			if updated.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
+				return fmt.Errorf("expected phase Sent, got %s", updated.Status.Phase)
+			}
+			return nil
+		}, 5, 6*time.Second).Should(Succeed())
 
 		By("Retrieving final status")
 		final := &notificationv1alpha1.NotificationRequest{}
@@ -178,15 +183,22 @@ var _ = Describe("Integration Test 1: NotificationRequest Lifecycle (Pending →
 		err := k8sClient.Create(ctx, notification)
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Waiting for Sent phase")
-		Eventually(func() notificationv1alpha1.NotificationPhase {
+		By("Waiting for Sent phase (with anti-flaky retry)")
+		// v3.1: Use EventuallyWithRetry for better CI reliability
+		timing.EventuallyWithRetry(func() error {
 			updated := &notificationv1alpha1.NotificationRequest{}
-			k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      notification.Name,
 				Namespace: "kubernaut-notifications",
 			}, updated)
-			return updated.Status.Phase
-		}, 10*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+			if err != nil {
+				return err
+			}
+			if updated.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
+				return fmt.Errorf("expected phase Sent, got %s", updated.Status.Phase)
+			}
+			return nil
+		}, 5, 2*time.Second).Should(Succeed())
 
 		By("Verifying console-only delivery")
 		final := &notificationv1alpha1.NotificationRequest{}
