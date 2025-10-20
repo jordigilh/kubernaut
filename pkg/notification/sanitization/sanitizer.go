@@ -330,4 +330,3 @@ func defaultSecretPatterns() []*SanitizationRule {
 		},
 	}
 }
-

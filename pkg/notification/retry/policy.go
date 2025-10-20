@@ -96,4 +96,3 @@ func isRetryableHTTPStatus(statusCode int) bool {
 
 	return retryableCodes[statusCode]
 }
-

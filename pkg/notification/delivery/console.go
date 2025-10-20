@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/sirupsen/logrus"
 )
 
 // ConsoleDeliveryService delivers notifications to console (stdout)
@@ -67,4 +67,3 @@ func (s *ConsoleDeliveryService) Deliver(ctx context.Context, notification *noti
 
 	return nil
 }
-
