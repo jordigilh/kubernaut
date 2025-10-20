@@ -57,4 +57,3 @@ func (f *ConsoleFormatter) Format(notification *notificationv1alpha1.Notificatio
 
 	return formatted, nil
 }
-

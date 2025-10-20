@@ -286,4 +286,3 @@ type NotificationRequestList struct {
 func init() {
 	SchemeBuilder.Register(&NotificationRequest{}, &NotificationRequestList{})
 }
-

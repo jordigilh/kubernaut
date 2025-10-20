@@ -68,4 +68,3 @@ var _ = Describe("Edge Case: Config Changes During Delivery", func() {
 		k8sClient.Delete(ctx, nr1)
 	})
 })
-

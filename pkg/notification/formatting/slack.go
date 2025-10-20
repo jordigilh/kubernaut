@@ -40,4 +40,3 @@ func (f *SlackFormatter) Format(notification *notificationv1alpha1.NotificationR
 	// - Enforce 40KB limit
 	return nil, nil
 }
-

@@ -29,8 +29,8 @@ var _ = Describe("Edge Case: Slack Rate Limiting", func() {
 					Namespace: "kubernaut-notifications",
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Subject: fmt.Sprintf("Rate limit test %d", i),
-					Body:    "Testing circuit breaker behavior under high load",
+					Subject:  fmt.Sprintf("Rate limit test %d", i),
+					Body:     "Testing circuit breaker behavior under high load",
 					Priority: notificationv1alpha1.NotificationPriorityMedium,
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelSlack,
@@ -66,9 +66,9 @@ var _ = Describe("Edge Case: Slack Rate Limiting", func() {
 				if updated.Status.Phase == notificationv1alpha1.NotificationPhaseFailed {
 					// Check if circuit breaker blocked it
 					for _, attempt := range updated.Status.DeliveryAttempts {
-						if attempt.Status == "failed" && 
+						if attempt.Status == "failed" &&
 							(attempt.Error == "slack circuit breaker is open (too many failures, preventing cascading failures)" ||
-							 attempt.Error == "slack service not initialized") {
+								attempt.Error == "slack service not initialized") {
 							return nil
 						}
 					}
@@ -91,7 +91,7 @@ var _ = Describe("Edge Case: Slack Rate Limiting", func() {
 				} else {
 					// Check if circuit breaker blocked it
 					for _, attempt := range final.Status.DeliveryAttempts {
-						if attempt.Status == "failed" && 
+						if attempt.Status == "failed" &&
 							attempt.Error == "slack circuit breaker is open (too many failures, preventing cascading failures)" {
 							circuitBreakerBlockedCount++
 							break
@@ -104,13 +104,13 @@ var _ = Describe("Edge Case: Slack Rate Limiting", func() {
 		By("Verifying circuit breaker prevented some deliveries (graceful degradation)")
 		// Expect that circuit breaker activated and blocked some requests
 		// This demonstrates graceful degradation under high load
-		GinkgoWriter.Printf("Results: %d succeeded, %d blocked by circuit breaker (out of 20)\n", 
+		GinkgoWriter.Printf("Results: %d succeeded, %d blocked by circuit breaker (out of 20)\n",
 			successCount, circuitBreakerBlockedCount)
-		
+
 		// Circuit breaker should have activated if >5 consecutive failures
 		// In a real scenario with actual Slack API, we'd expect circuit breaker to block requests
 		// For this test, we're verifying the mechanism exists
-		Expect(successCount + circuitBreakerBlockedCount).To(BeNumerically(">", 0),
+		Expect(successCount+circuitBreakerBlockedCount).To(BeNumerically(">", 0),
 			"At least some notifications should have been processed")
 
 		By("Cleaning up test notifications")
@@ -119,4 +119,3 @@ var _ = Describe("Edge Case: Slack Rate Limiting", func() {
 		}
 	})
 })
-
