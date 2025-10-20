@@ -10,8 +10,14 @@ mcp-server
 dependencies/
 *.bak
 *.bak2
-.trash/*
+# Python artifacts
+*.pyc
+__pycache__/
+.coverage
+*.py[cod]
+*$py.class
 
+.trash/*
 # Temporary analysis and build files
 build_failures.*
 *_failures.txt
