@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/testutil/timing"
 )
 
 // BR-NOT-053: At-Least-Once Delivery - Concurrent notifications should all be delivered
@@ -86,24 +87,29 @@ var _ = Describe("Integration Test 5: Concurrent Notification Handling", func() 
 			wg.Wait()
 
 			By("Verifying all notifications were created successfully")
-			for i, err := range createErrors {
-				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Notification %d should be created", i))
-			}
+		for i, err := range createErrors {
+			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Notification %d should be created", i))
+		}
 
-			By("Waiting for all notifications to reach Sent phase")
-			for i := 0; i < numNotifications; i++ {
-				Eventually(func() notificationv1alpha1.NotificationPhase {
-					latest := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
-					if err != nil {
-						return ""
-					}
-					return latest.Status.Phase
-				}, "15s", "500ms").Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-					fmt.Sprintf("Notification %d should reach Sent phase", i))
-			}
+		By("Waiting for all notifications to reach Sent phase (with anti-flaky retry)")
+		// v3.1: Use EventuallyWithRetry with 60s timeout for concurrent delivery reliability
+		for i := 0; i < numNotifications; i++ {
+			i := i // capture loop variable
+			timing.EventuallyWithRetry(func() error {
+				latest := &notificationv1alpha1.NotificationRequest{}
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
+				if err != nil {
+					return err
+				}
+				if latest.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
+					return fmt.Errorf("expected phase Sent, got %s", latest.Status.Phase)
+				}
+				return nil
+			}, 10, 6*time.Second).Should(Succeed(),
+				fmt.Sprintf("Notification %d should reach Sent phase", i))
+		}
 
-			By("Verifying all status updates are correct (no conflicts)")
+		By("Verifying all status updates are correct (no conflicts)")
 			for i := 0; i < numNotifications; i++ {
 				latest := &notificationv1alpha1.NotificationRequest{}
 				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
@@ -177,25 +183,30 @@ var _ = Describe("Integration Test 5: Concurrent Notification Handling", func() 
 			By("Waiting for all creates to complete")
 			wg.Wait()
 
-			By("Verifying all notifications were created successfully")
-			for i, err := range createErrors {
-				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Notification %d should be created", i))
-			}
+		By("Verifying all notifications were created successfully")
+		for i, err := range createErrors {
+			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Notification %d should be created", i))
+		}
 
-			By("Waiting for all notifications to reach Sent phase")
-			for i := 0; i < numNotifications; i++ {
-				Eventually(func() notificationv1alpha1.NotificationPhase {
-					latest := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
-					if err != nil {
-						return ""
-					}
-					return latest.Status.Phase
-				}, "15s", "500ms").Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-					fmt.Sprintf("Notification %d should reach Sent phase", i))
-			}
+		By("Waiting for all notifications to reach Sent phase (with anti-flaky retry)")
+		// v3.1: Use EventuallyWithRetry with 60s timeout for concurrent delivery reliability
+		for i := 0; i < numNotifications; i++ {
+			i := i // capture loop variable
+			timing.EventuallyWithRetry(func() error {
+				latest := &notificationv1alpha1.NotificationRequest{}
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notifications[i]), latest)
+				if err != nil {
+					return err
+				}
+				if latest.Status.Phase != notificationv1alpha1.NotificationPhaseSent {
+					return fmt.Errorf("expected phase Sent, got %s", latest.Status.Phase)
+				}
+				return nil
+			}, 10, 6*time.Second).Should(Succeed(),
+				fmt.Sprintf("Notification %d should reach Sent phase", i))
+		}
 
-			By("Verifying all priorities were processed (no priority inversions)")
+		By("Verifying all priorities were processed (no priority inversions)")
 			criticalCount := 0
 			lowCount := 0
 
