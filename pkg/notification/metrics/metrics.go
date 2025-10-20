@@ -113,4 +113,3 @@ func init() {
 		ChannelHealthScore,
 	)
 }
-
