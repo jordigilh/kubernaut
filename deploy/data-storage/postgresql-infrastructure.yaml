@@ -1,0 +1,226 @@
+# PostgreSQL Infrastructure for Data Storage Service
+# Namespace: kubernaut-system
+# Owner: Data Storage Service
+# Database: action_history with pgvector extension
+# Used by: Data Storage Service, Context API
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: kubernaut-system
+  labels:
+    app: postgres
+    component: database
+    part-of: kubernaut
+    owner: data-storage-service
+data:
+  POSTGRES_DB: "action_history"
+  POSTGRES_USER: "slm_user"
+  POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
+  postgresql.conf: |
+    # PostgreSQL Configuration for Data Storage Service
+    max_connections = 100
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    maintenance_work_mem = 64MB
+    checkpoint_completion_target = 0.9
+    wal_buffers = 16MB
+    default_statistics_target = 100
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    work_mem = 4MB
+    min_wal_size = 1GB
+    max_wal_size = 4GB
+    
+    # Logging
+    log_destination = 'stderr'
+    logging_collector = on
+    log_directory = 'log'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_statement = 'all'
+    log_duration = on
+    log_line_prefix = '%m [%p] %q%u@%d '
+  
+  init-vector-db.sql: |
+    -- Initialize pgvector extension for Data Storage Service
+    CREATE EXTENSION IF NOT EXISTS vector;
+    
+    -- Verify extension installation
+    SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';
+    
+    -- Log successful initialization
+    DO $$
+    BEGIN
+      RAISE NOTICE 'pgvector extension initialized successfully';
+    END
+    $$;
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: kubernaut-system
+  labels:
+    app: postgres
+    component: database
+    part-of: kubernaut
+    owner: data-storage-service
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: "slm_password_dev"
+  # NOTE: Change this password in production!
+  # Use a secrets manager (Sealed Secrets, Vault, etc.) for production
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: kubernaut-system
+  labels:
+    app: postgres
+    component: database
+    part-of: kubernaut
+    owner: data-storage-service
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: gp3  # Adjust for your cluster
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: kubernaut-system
+  labels:
+    app: postgres
+    component: database
+    part-of: kubernaut
+    owner: data-storage-service
+    version: "16"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Required for stateful services with PVC
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        component: database
+    spec:
+      containers:
+      - name: postgres
+        image: pgvector/pgvector:pg16
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5432
+          name: postgres
+          protocol: TCP
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: postgres-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: postgres-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_INITDB_ARGS
+          valueFrom:
+            configMapKeyRef:
+              name: postgres-config
+              key: POSTGRES_INITDB_ARGS
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config-volume
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d/99-init-vector.sql
+          subPath: init-vector-db.sql
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB -h localhost -p 5432
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U $POSTGRES_USER -d $POSTGRES_DB -h localhost -p 5432
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: postgres-data
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - name: postgres-config-volume
+        configMap:
+          name: postgres-config
+          items:
+          - key: postgresql.conf
+            path: postgresql.conf
+      - name: init-scripts
+        configMap:
+          name: postgres-config
+          items:
+          - key: init-vector-db.sql
+            path: init-vector-db.sql
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: kubernaut-system
+  labels:
+    app: postgres
+    component: database
+    part-of: kubernaut
+    owner: data-storage-service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  selector:
+    app: postgres
+
