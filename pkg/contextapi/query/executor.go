@@ -155,11 +155,29 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 			zap.Int("incidents", len(incidents)),
 			zap.Int("total", total))
 
-		// Return both incidents and total as a single result
-		return &CachedResult{
+		// Create result
+		cachedResult := &CachedResult{
 			Incidents: incidents,
 			Total:     total,
-		}, nil
+		}
+
+		// FIX: Populate cache SYNCHRONOUSLY before returning
+		// This ensures the cache is populated before single-flight releases waiting goroutines
+		// Prevents race condition where late-arriving concurrent requests miss the cache
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		
+		if cacheErr := e.cache.Set(timeoutCtx, cacheKey, cachedResult); cacheErr != nil {
+			e.logger.Warn("failed to populate cache in single-flight",
+				zap.String("key", cacheKey),
+				zap.Error(cacheErr))
+			// Don't fail the query if cache write fails
+		} else {
+			e.logger.Debug("cache populated in single-flight",
+				zap.String("key", cacheKey))
+		}
+
+		return cachedResult, nil
 	})
 
 	if err != nil {
@@ -171,15 +189,12 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 		e.logger.Debug("single-flight: request deduplicated (waited for shared result)",
 			zap.String("key", cacheKey))
 	} else {
-		e.logger.Debug("single-flight: request executed query (first in group)",
+		e.logger.Debug("single-flight: executed database query and populated cache (first in group)",
 			zap.String("key", cacheKey))
 	}
 
 	// Extract result
 	cachedResult := result.(*CachedResult)
-
-	// Async cache repopulation (non-blocking)
-	go e.populateCache(context.Background(), cacheKey, cachedResult.Incidents, cachedResult.Total)
 
 	return cachedResult.Incidents, cachedResult.Total, nil
 }
@@ -205,7 +220,7 @@ func (e *CachedExecutor) GetIncidentByID(ctx context.Context, id int64) (*models
 
 	// Cache miss → query database with Data Storage schema
 	query := `
-SELECT 
+SELECT
     rat.id,
     rat.alert_name AS name,
     rat.alert_fingerprint,
@@ -388,7 +403,6 @@ func (e *CachedExecutor) getTotalCount(ctx context.Context, params *models.ListI
 
 	return total, nil
 }
-
 
 // stringPtrOrDefault returns string value or default if nil
 // Helper for logging
