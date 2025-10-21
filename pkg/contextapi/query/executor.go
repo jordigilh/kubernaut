@@ -21,24 +21,35 @@ package query
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/sqlbuilder"
 )
 
+// DBExecutor defines the database operations required by CachedExecutor
+// This interface allows for dependency injection and testing with mocks
+// Day 11 Edge Case Testing: Interface extraction for cache stampede prevention testing
+type DBExecutor interface {
+	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	PingContext(ctx context.Context) error
+}
+
 // Config holds configuration for CachedExecutor
 // BR-CONTEXT-001: Executor configuration
 type Config struct {
 	Cache cache.CacheManager
-	DB    *sqlx.DB
+	DB    DBExecutor    // Changed from *sqlx.DB to DBExecutor interface for testability
 	TTL   time.Duration // Default cache TTL
 }
 
@@ -48,13 +59,17 @@ type Config struct {
 //
 // Fallback Chain:
 // 1. Try Cache (L1 Redis → L2 LRU)
-// 2. On miss → Query Database (L3)
+// 2. On miss → Query Database (L3) with single-flight deduplication
 // 3. Async repopulate cache
+//
+// Day 11 Edge Case 1.1: Single-flight pattern prevents cache stampede
+// Multiple concurrent requests for same cache key are deduplicated to single DB query
 type CachedExecutor struct {
-	cache  cache.CacheManager
-	db     *sqlx.DB
-	logger *zap.Logger
-	ttl    time.Duration
+	cache        cache.CacheManager
+	db           DBExecutor // Changed from *sqlx.DB to DBExecutor interface for testability
+	logger       *zap.Logger
+	ttl          time.Duration
+	singleflight singleflight.Group // Day 11: Prevents cache stampede on concurrent cache misses
 }
 
 // CachedResult wraps query results for caching
@@ -94,6 +109,7 @@ func NewCachedExecutor(cfg *Config) (*CachedExecutor, error) {
 // ListIncidents retrieves incidents with multi-tier fallback
 // BR-CONTEXT-001: Query incident audit data
 // BR-CONTEXT-005: Multi-tier caching
+// Day 11 Edge Case 1.1: Single-flight pattern prevents cache stampede
 func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListIncidentsParams) ([]*models.IncidentEvent, int, error) {
 	// Generate cache key from params
 	cacheKey := generateCacheKey(params)
@@ -107,19 +123,65 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 		return cachedData.Incidents, cachedData.Total, nil
 	}
 
-	// Cache miss or error → fallback to database
-	e.logger.Debug("cache miss, querying database",
+	// Cache miss or error → fallback to database with single-flight deduplication
+	// Day 11 Edge Case 1.1: Multiple concurrent cache misses deduplicated to single DB query
+	e.logger.Debug("cache miss, querying database with single-flight",
 		zap.String("key", cacheKey))
 
-	incidents, total, err := e.queryDatabase(ctx, params)
+	// Use single-flight to deduplicate concurrent requests
+	// Only one database query executes per unique cache key, even with 10+ concurrent requests
+	//
+	// Performance Characteristics (Day 11 REFACTOR):
+	// - First request: Executes DB query (~50-200ms), populates cache
+	// - Concurrent requests (2-N): Wait for shared result (~0-50ms), receive same data
+	// - Cache stampede prevention: 90% reduction in DB queries during high concurrency
+	//
+	// Example Scenario:
+	// - 10 concurrent requests with same params → 1 DB query (2 total: SELECT + COUNT)
+	// - WITHOUT single-flight: 10 DB queries (20 total: 10 SELECT + 10 COUNT)
+	result, err, shared := e.singleflight.Do(cacheKey, func() (interface{}, error) {
+		// REFACTOR: Log execution start for database query
+		e.logger.Debug("single-flight: executing database query",
+			zap.String("key", cacheKey))
+
+		incidents, total, dbErr := e.queryDatabase(ctx, params)
+		if dbErr != nil {
+			return nil, fmt.Errorf("database query failed: %w", dbErr)
+		}
+
+		// REFACTOR: Log successful query execution
+		e.logger.Debug("single-flight: database query complete",
+			zap.String("key", cacheKey),
+			zap.Int("incidents", len(incidents)),
+			zap.Int("total", total))
+
+		// Return both incidents and total as a single result
+		return &CachedResult{
+			Incidents: incidents,
+			Total:     total,
+		}, nil
+	})
+
 	if err != nil {
-		return nil, 0, fmt.Errorf("database query failed: %w", err)
+		return nil, 0, err
 	}
 
-	// Async cache repopulation (non-blocking)
-	go e.populateCache(context.Background(), cacheKey, incidents, total)
+	// REFACTOR: Log whether this request was deduplicated or executed the query
+	if shared {
+		e.logger.Debug("single-flight: request deduplicated (waited for shared result)",
+			zap.String("key", cacheKey))
+	} else {
+		e.logger.Debug("single-flight: request executed query (first in group)",
+			zap.String("key", cacheKey))
+	}
 
-	return incidents, total, nil
+	// Extract result
+	cachedResult := result.(*CachedResult)
+
+	// Async cache repopulation (non-blocking)
+	go e.populateCache(context.Background(), cacheKey, cachedResult.Incidents, cachedResult.Total)
+
+	return cachedResult.Incidents, cachedResult.Total, nil
 }
 
 // GetIncidentByID retrieves a single incident with caching

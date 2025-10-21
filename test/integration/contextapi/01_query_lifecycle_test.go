@@ -288,8 +288,3 @@ var _ = Describe("Query Lifecycle Integration Tests", func() {
 	})
 
 })
-
-// Helper function for string pointer
-func strPtr(s string) *string {
-	return &s
-}
