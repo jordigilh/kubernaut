@@ -43,7 +43,13 @@ var _ = Describe("Aggregation Integration Tests", func() {
 		defer cancel()
 
 		// Clean up test data
-		_, err := db.ExecContext(testCtx, "TRUNCATE TABLE remediation_audit")
+		_, err := db.ExecContext(testCtx, "DELETE FROM resource_action_traces WHERE action_id LIKE 'test-%' OR action_id LIKE 'rr-%';
+			DELETE FROM action_histories WHERE id IN (
+				SELECT ah.id FROM action_histories ah
+				JOIN resource_references rr ON ah.resource_id = rr.id
+				WHERE rr.resource_uid LIKE 'test-uid-%'
+			);
+			DELETE FROM resource_references WHERE resource_uid LIKE 'test-uid-%'")
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -228,7 +234,13 @@ var _ = Describe("Aggregation Integration Tests", func() {
 
 			// BR-CONTEXT-004: Empty result handling
 			// Clear all test data
-			_, err := db.ExecContext(testCtx, "TRUNCATE TABLE remediation_audit")
+			_, err := db.ExecContext(testCtx, "DELETE FROM resource_action_traces WHERE action_id LIKE 'test-%' OR action_id LIKE 'rr-%';
+			DELETE FROM action_histories WHERE id IN (
+				SELECT ah.id FROM action_histories ah
+				JOIN resource_references rr ON ah.resource_id = rr.id
+				WHERE rr.resource_uid LIKE 'test-uid-%'
+			);
+			DELETE FROM resource_references WHERE resource_uid LIKE 'test-uid-%'")
 			Expect(err).ToNot(HaveOccurred())
 
 			// Query empty dataset
@@ -276,8 +288,8 @@ var _ = Describe("Aggregation Integration Tests", func() {
 			// Day 8 DO-REFACTOR: Test activated (Batch 8)
 
 			// BR-CONTEXT-004: Complex query aggregations
-			// Note: Current schema is single table (remediation_audit)
-			// This test validates join correctness if schema expands
+			// Note: Uses Data Storage Service schema (DD-SCHEMA-001)
+			// Joins: resource_action_traces + action_histories + resource_references
 
 			result, err := aggregation.AggregateSuccessRate(testCtx, "workflow-1")
 
@@ -445,7 +457,13 @@ var _ = Describe("Aggregation Integration Tests", func() {
 			// Expected: Return 0.0 or handle gracefully
 
 			// Clear data
-			_, err := db.ExecContext(testCtx, "TRUNCATE TABLE remediation_audit")
+			_, err := db.ExecContext(testCtx, "DELETE FROM resource_action_traces WHERE action_id LIKE 'test-%' OR action_id LIKE 'rr-%';
+			DELETE FROM action_histories WHERE id IN (
+				SELECT ah.id FROM action_histories ah
+				JOIN resource_references rr ON ah.resource_id = rr.id
+				WHERE rr.resource_uid LIKE 'test-uid-%'
+			);
+			DELETE FROM resource_references WHERE resource_uid LIKE 'test-uid-%'")
 			Expect(err).ToNot(HaveOccurred())
 
 			// Query with no data (potential division by zero)

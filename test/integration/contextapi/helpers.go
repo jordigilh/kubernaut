@@ -14,43 +14,173 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query" // For Vector type
 )
 
-// InsertTestIncident inserts a test incident into the database
+// InsertTestIncident inserts a test incident into the database using Data Storage schema
 // BR-CONTEXT-001: Historical context query test data setup
+// DD-SCHEMA-001: Uses Data Storage Service's authoritative schema (3-table structure)
 func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
-	sqlQuery := `
-		INSERT INTO remediation_audit (
-			id, name, alert_fingerprint, remediation_request_id,
-			namespace, cluster_name, environment, target_resource,
-			phase, status, severity, action_type,
-			start_time, end_time, duration,
-			error_message, metadata, embedding,
-			created_at, updated_at
-		) VALUES (
-			$1, $2, $3, $4,
-			$5, $6, $7, $8,
-			$9, $10, $11, $12,
-			$13, $14, $15,
-			$16, $17, $18,
-			$19, $20
-		)
-	`
+	// Data Storage schema requires 3-step insertion:
+	// 1. resource_references (Kubernetes resource)
+	// 2. action_histories (per-resource metrics)
+	// 3. resource_action_traces (individual action)
 
+	// Step 1: Insert or get resource_reference
+	var resourceID int64
+	resourceUID := fmt.Sprintf("test-uid-%d", incident.ID) // Use incident ID for test isolation
+	
+	// Parse target_resource to extract kind and name (e.g., "pod/test-1" -> kind="Pod", name="test-1")
+	kind := "Pod"
+	name := fmt.Sprintf("test-%d", incident.ID)
+	if incident.TargetResource != "" {
+		parts := splitTargetResource(incident.TargetResource)
+		if len(parts) == 2 {
+			kind = capitalizeKind(parts[0])
+			name = parts[1]
+		}
+	}
+
+	err := db.QueryRow(`
+		INSERT INTO resource_references (resource_uid, api_version, kind, name, namespace, created_at, last_seen)
+		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+		ON CONFLICT (resource_uid) DO UPDATE SET last_seen = NOW()
+		RETURNING id
+	`, resourceUID, "v1", kind, name, incident.Namespace).Scan(&resourceID)
+	
+	if err != nil {
+		return fmt.Errorf("failed to insert resource_reference: %w", err)
+	}
+
+	// Step 2: Insert or get action_history
+	var actionHistoryID int64
+	err = db.QueryRow(`
+		INSERT INTO action_histories (resource_id, max_actions, max_age_days, total_actions, last_action_at, created_at, updated_at)
+		VALUES ($1, 1000, 30, 1, NOW(), NOW(), NOW())
+		ON CONFLICT (resource_id) DO UPDATE SET 
+			total_actions = action_histories.total_actions + 1,
+			last_action_at = NOW(),
+			updated_at = NOW()
+		RETURNING id
+	`, resourceID).Scan(&actionHistoryID)
+	
+	if err != nil {
+		return fmt.Errorf("failed to insert action_history: %w", err)
+	}
+
+	// Step 3: Insert resource_action_trace
+	// Map Context API fields to Data Storage fields
+	executionStatus := mapPhaseToExecutionStatus(incident.Phase, incident.Status)
+	
 	// Convert embedding to query.Vector for pgvector compatibility
 	var vectorEmb query.Vector
 	if incident.Embedding != nil {
 		vectorEmb = query.Vector(incident.Embedding)
 	}
 
-	_, err := db.Exec(sqlQuery,
-		incident.ID, incident.Name, incident.AlertFingerprint, incident.RemediationRequestID,
-		incident.Namespace, incident.ClusterName, incident.Environment, incident.TargetResource,
-		incident.Phase, incident.Status, incident.Severity, incident.ActionType,
-		incident.StartTime, incident.EndTime, incident.Duration,
-		incident.ErrorMessage, incident.Metadata, vectorEmb,
-		incident.CreatedAt, incident.UpdatedAt,
+	_, err = db.Exec(`
+		INSERT INTO resource_action_traces (
+			action_history_id,
+			action_id,
+			action_timestamp,
+			execution_start_time,
+			execution_end_time,
+			execution_duration_ms,
+			alert_name,
+			alert_severity,
+			alert_fingerprint,
+			alert_firing_time,
+			model_used,
+			model_confidence,
+			action_type,
+			action_parameters,
+			execution_status,
+			execution_error,
+			cluster_name,
+			environment,
+			embedding,
+			created_at,
+			updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+		)
+	`,
+		actionHistoryID,
+		incident.RemediationRequestID,
+		incident.StartTime,
+		incident.StartTime,
+		incident.EndTime,
+		incident.Duration,
+		incident.Name,
+		incident.Severity,
+		incident.AlertFingerprint,
+		incident.StartTime, // alert_firing_time (use start_time as approximation)
+		"gpt-4",            // model_used (default for tests)
+		0.9,                // model_confidence (default for tests)
+		incident.ActionType,
+		[]byte(incident.Metadata), // action_parameters as JSONB
+		executionStatus,
+		incident.ErrorMessage,
+		incident.ClusterName,
+		incident.Environment,
+		vectorEmb,
+		incident.CreatedAt,
+		incident.UpdatedAt,
 	)
 
 	return err
+}
+
+// splitTargetResource splits "kind/name" into [kind, name]
+func splitTargetResource(target string) []string {
+	for i := 0; i < len(target); i++ {
+		if target[i] == '/' {
+			return []string{target[:i], target[i+1:]}
+		}
+	}
+	return []string{target}
+}
+
+// capitalizeKind capitalizes Kubernetes resource kind (pod -> Pod, deployment -> Deployment)
+func capitalizeKind(kind string) string {
+	if len(kind) == 0 {
+		return kind
+	}
+	// Simple capitalization for common kinds
+	switch kind {
+	case "pod":
+		return "Pod"
+	case "deployment":
+		return "Deployment"
+	case "service":
+		return "Service"
+	case "configmap":
+		return "ConfigMap"
+	case "secret":
+		return "Secret"
+	case "node":
+		return "Node"
+	default:
+		// Capitalize first letter
+		return string(kind[0]-32) + kind[1:]
+	}
+}
+
+// mapPhaseToExecutionStatus maps Context API phase/status to Data Storage execution_status
+func mapPhaseToExecutionStatus(phase, status string) string {
+	// Data Storage uses: pending, executing, completed, failed, rolled-back
+	// Context API uses phase + status combination
+	if status == "failed" || status == "failure" {
+		return "failed"
+	}
+	if phase == "completed" || status == "completed" || status == "success" {
+		return "completed"
+	}
+	if phase == "processing" || status == "in_progress" {
+		return "executing"
+	}
+	if phase == "pending" || status == "pending" {
+		return "pending"
+	}
+	return "pending" // default
 }
 
 // CreateTestEmbedding generates a test embedding vector
