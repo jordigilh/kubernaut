@@ -5,6 +5,10 @@
 # Build stage - Red Hat UBI9 Go 1.24 toolset
 FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
 
+# Build arguments for multi-architecture support
+ARG GOOS=linux
+ARG GOARCH=amd64
+
 # Switch to root for package installation
 USER root
 
@@ -30,9 +34,8 @@ COPY --chown=1001:0 . .
 
 # Build the Context API service binary
 # CGO_ENABLED=0 for static linking (no C dependencies)
-# GOOS=linux for Linux targets
-# GOARCH will be set automatically by podman's --platform flag
-RUN CGO_ENABLED=0 GOOS=linux go build \
+# GOOS and GOARCH from build args for multi-architecture support
+RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-ldflags='-w -s -extldflags "-static"' \
 	-a -installsuffix cgo \
 	-o context-api \
