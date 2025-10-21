@@ -1,0 +1,81 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-ai
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: ai-analysis
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: holmesgpt-api
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow from AIAnalysis controller and other Kubernaut services
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernaut.io/managed: "true"
+        - namespaceSelector:
+            matchLabels:
+              name: kubernaut-system
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow from monitoring (Prometheus)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Allow to Kubernetes API server
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              component: apiserver
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Allow to Context API
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kubernaut-system
+        - podSelector:
+            matchLabels:
+              app: context-api
+      ports:
+        - protocol: TCP
+          port: 8091
+
+    # Allow outbound to LLM providers (HTTPS)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+
+

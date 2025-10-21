@@ -30,4 +30,3 @@ type ServiceDiscoverer interface {
 	// Design: Paired with Start() for clean lifecycle management
 	Stop() error
 }
-

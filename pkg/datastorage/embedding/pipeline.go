@@ -151,4 +151,3 @@ func generateCacheKey(text string) string {
 	hash := sha256.Sum256([]byte(text))
 	return "emb:" + hex.EncodeToString(hash[:])
 }
-

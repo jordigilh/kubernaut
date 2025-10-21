@@ -88,19 +88,20 @@ const (
 
 // Query operations - bounded set for cardinality protection
 const (
-	OperationList          = "list"
-	OperationGet           = "get"
+	OperationList           = "list"
+	OperationGet            = "get"
 	OperationSemanticSearch = "semantic_search"
-	OperationFilter        = "filter"
+	OperationFilter         = "filter"
 )
 
 // SanitizeFailureReason ensures the failure reason is from a known bounded set.
 // This prevents accidental high-cardinality labels from error messages or user input.
 //
 // Usage:
-//   metrics.DualWriteFailure.WithLabelValues(
-//       metrics.SanitizeFailureReason("postgresql_failure"),
-//   ).Inc()
+//
+//	metrics.DualWriteFailure.WithLabelValues(
+//	    metrics.SanitizeFailureReason("postgresql_failure"),
+//	).Inc()
 //
 // Returns:
 //   - Original reason if it's in the known set
@@ -125,22 +126,23 @@ func SanitizeFailureReason(reason string) string {
 // SanitizeValidationReason ensures the validation reason is from a known bounded set.
 //
 // Usage:
-//   metrics.ValidationFailures.WithLabelValues(
-//       "name",
-//       metrics.SanitizeValidationReason("required"),
-//   ).Inc()
+//
+//	metrics.ValidationFailures.WithLabelValues(
+//	    "name",
+//	    metrics.SanitizeValidationReason("required"),
+//	).Inc()
 //
 // Returns:
 //   - Original reason if it's in the known set
 //   - ValidationReasonInvalid if it's not recognized (catch-all)
 func SanitizeValidationReason(reason string) string {
 	knownReasons := map[string]bool{
-		ValidationReasonRequired:        true,
-		ValidationReasonInvalid:         true,
-		ValidationReasonLengthExceeded:  true,
-		ValidationReasonXSSDetected:     true,
-		ValidationReasonSQLInjection:    true,
-		ValidationReasonWhitespaceOnly:  true,
+		ValidationReasonRequired:       true,
+		ValidationReasonInvalid:        true,
+		ValidationReasonLengthExceeded: true,
+		ValidationReasonXSSDetected:    true,
+		ValidationReasonSQLInjection:   true,
+		ValidationReasonWhitespaceOnly: true,
 	}
 
 	if knownReasons[reason] {
@@ -154,10 +156,11 @@ func SanitizeValidationReason(reason string) string {
 // SanitizeTableName ensures the table name is from a known bounded set.
 //
 // Usage:
-//   metrics.WriteTotal.WithLabelValues(
-//       metrics.SanitizeTableName("remediation_audit"),
-//       metrics.StatusSuccess,
-//   ).Inc()
+//
+//	metrics.WriteTotal.WithLabelValues(
+//	    metrics.SanitizeTableName("remediation_audit"),
+//	    metrics.StatusSuccess,
+//	).Inc()
 //
 // Returns:
 //   - Original table name if it's in the known set
@@ -181,10 +184,11 @@ func SanitizeTableName(table string) string {
 // SanitizeStatus ensures the status is either "success" or "failure".
 //
 // Usage:
-//   metrics.WriteTotal.WithLabelValues(
-//       metrics.TableRemediationAudit,
-//       metrics.SanitizeStatus("success"),
-//   ).Inc()
+//
+//	metrics.WriteTotal.WithLabelValues(
+//	    metrics.TableRemediationAudit,
+//	    metrics.SanitizeStatus("success"),
+//	).Inc()
 //
 // Returns:
 //   - StatusSuccess if status indicates success
@@ -199,9 +203,10 @@ func SanitizeStatus(status string) string {
 // SanitizeQueryOperation ensures the query operation is from a known bounded set.
 //
 // Usage:
-//   metrics.QueryDuration.WithLabelValues(
-//       metrics.SanitizeQueryOperation("semantic_search"),
-//   ).Observe(duration.Seconds())
+//
+//	metrics.QueryDuration.WithLabelValues(
+//	    metrics.SanitizeQueryOperation("semantic_search"),
+//	).Observe(duration.Seconds())
 //
 // Returns:
 //   - Original operation if it's in the known set
@@ -241,4 +246,3 @@ func SanitizeQueryOperation(operation string) string {
 //   - Protected by: SanitizeQueryOperation()
 //
 // Total Maximum Cardinality: < 100 (SAFE for Prometheus)
-

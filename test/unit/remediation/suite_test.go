@@ -27,4 +27,3 @@ func TestRemediation(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "RemediationRequest Controller Unit Test Suite")
 }
-

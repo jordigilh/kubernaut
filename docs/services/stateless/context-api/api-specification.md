@@ -1,9 +1,10 @@
 # Context API - REST API Specification
 
-**Version**: v1.0
-**Last Updated**: October 6, 2025
-**Base URL**: `http://context-api.kubernaut-system:8080`
+**Version**: v2.0
+**Last Updated**: October 20, 2025
+**Base URL**: `http://context-api.kubernaut-system.svc.cluster.local:8091`
 **Authentication**: Bearer Token (Kubernetes ServiceAccount)
+**Namespace**: kubernaut-system
 
 ---
 
@@ -25,8 +26,13 @@
 
 ### Base URL
 ```
-http://context-api.kubernaut-system:8080
+http://context-api.kubernaut-system.svc.cluster.local:8091
 ```
+
+**Service Details**:
+- **Port**: 8091 (HTTP API)
+- **Metrics Port**: 9090 (Prometheus)
+- **Namespace**: kubernaut-system
 
 ### API Version
 All endpoints are prefixed with `/api/v1/`

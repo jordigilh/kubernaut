@@ -17,9 +17,9 @@ import (
 
 // mockDetector is a test mock for ServiceDetector
 type mockDetector struct {
-	serviceType   string
-	detectFunc    func(ctx context.Context, svc *corev1.Service) (*toolset.DiscoveredService, error)
-	healthFunc    func(ctx context.Context, endpoint string) error
+	serviceType string
+	detectFunc  func(ctx context.Context, svc *corev1.Service) (*toolset.DiscoveredService, error)
+	healthFunc  func(ctx context.Context, endpoint string) error
 }
 
 func (m *mockDetector) ServiceType() string {
@@ -42,10 +42,10 @@ func (m *mockDetector) HealthCheck(ctx context.Context, endpoint string) error {
 
 var _ = Describe("BR-TOOLSET-025: Service Discoverer", func() {
 	var (
-		discoverer  discovery.ServiceDiscoverer
-		ctx         context.Context
-		fakeClient  *fake.Clientset
-		cancelFunc  context.CancelFunc
+		discoverer discovery.ServiceDiscoverer
+		ctx        context.Context
+		fakeClient *fake.Clientset
+		cancelFunc context.CancelFunc
 	)
 
 	BeforeEach(func() {

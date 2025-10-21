@@ -128,4 +128,3 @@ func ExtractServiceAccount(username string) (namespace string, saName string) {
 
 	return parts[0], parts[1]
 }
-

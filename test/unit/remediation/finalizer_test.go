@@ -140,4 +140,3 @@ var _ = Describe("RemediationRequest Controller - Finalizer & Retention", func()
 		})
 	})
 })
-
