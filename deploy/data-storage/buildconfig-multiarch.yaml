@@ -1,0 +1,94 @@
+# Data Storage Service Multi-Architecture Build Configuration
+# Builds for linux/amd64 and linux/arm64, combines into manifest list, pushes to quay.io
+# Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
+
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: data-storage
+  namespace: kubernaut-system
+  labels:
+    app: data-storage
+    component: build
+    part-of: kubernaut
+spec:
+  lookupPolicy:
+    local: false
+
+---
+# AMD64 Build Configuration
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: data-storage-amd64
+  namespace: kubernaut-system
+  labels:
+    app: data-storage
+    component: build
+    part-of: kubernaut
+    architecture: amd64
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: data-storage:latest-amd64
+  source:
+    type: Git
+    git:
+      uri: https://github.com/jordigilh/kubernaut.git
+      ref: feature/phase2_services
+    contextDir: .
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: docker/data-storage.Dockerfile
+      buildArgs:
+        - name: GOOS
+          value: linux
+        - name: GOARCH
+          value: amd64
+  triggers:
+    - type: ConfigChange
+  runPolicy: Serial
+  successfulBuildsHistoryLimit: 2
+  failedBuildsHistoryLimit: 2
+
+---
+# ARM64 Build Configuration
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: data-storage-arm64
+  namespace: kubernaut-system
+  labels:
+    app: data-storage
+    component: build
+    part-of: kubernaut
+    architecture: arm64
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: data-storage:latest-arm64
+  source:
+    type: Git
+    git:
+      uri: https://github.com/jordigilh/kubernaut.git
+      ref: feature/phase2_services
+    contextDir: .
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: docker/data-storage.Dockerfile
+      buildArgs:
+        - name: GOOS
+          value: linux
+        - name: GOARCH
+          value: arm64
+  triggers:
+    - type: ConfigChange
+  runPolicy: Serial
+  successfulBuildsHistoryLimit: 2
+  failedBuildsHistoryLimit: 2
+
