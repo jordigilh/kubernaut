@@ -26,7 +26,7 @@ func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
 	// Step 1: Insert or get resource_reference
 	var resourceID int64
 	resourceUID := fmt.Sprintf("test-uid-%d", incident.ID) // Use incident ID for test isolation
-	
+
 	// Parse target_resource to extract kind and name (e.g., "pod/test-1" -> kind="Pod", name="test-1")
 	kind := "Pod"
 	name := fmt.Sprintf("test-%d", incident.ID)
@@ -44,7 +44,7 @@ func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
 		ON CONFLICT (resource_uid) DO UPDATE SET last_seen = NOW()
 		RETURNING id
 	`, resourceUID, "v1", kind, name, incident.Namespace).Scan(&resourceID)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to insert resource_reference: %w", err)
 	}
@@ -54,13 +54,13 @@ func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
 	err = db.QueryRow(`
 		INSERT INTO action_histories (resource_id, max_actions, max_age_days, total_actions, last_action_at, created_at, updated_at)
 		VALUES ($1, 1000, 30, 1, NOW(), NOW(), NOW())
-		ON CONFLICT (resource_id) DO UPDATE SET 
+		ON CONFLICT (resource_id) DO UPDATE SET
 			total_actions = action_histories.total_actions + 1,
 			last_action_at = NOW(),
 			updated_at = NOW()
 		RETURNING id
 	`, resourceID).Scan(&actionHistoryID)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to insert action_history: %w", err)
 	}
@@ -68,7 +68,7 @@ func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
 	// Step 3: Insert resource_action_trace
 	// Map Context API fields to Data Storage fields
 	executionStatus := mapPhaseToExecutionStatus(incident.Phase, incident.Status)
-	
+
 	// Convert embedding to query.Vector for pgvector compatibility
 	var vectorEmb query.Vector
 	if incident.Embedding != nil {
