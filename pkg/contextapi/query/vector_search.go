@@ -64,4 +64,3 @@ func (vs *VectorSearch) FindSimilar(ctx context.Context, query *models.PatternMa
 
 	return results, nil
 }
-

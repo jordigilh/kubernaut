@@ -54,11 +54,18 @@ type MultiTierCache struct {
 
 // Config holds cache configuration
 type Config struct {
-	RedisAddr  string
-	RedisDB    int
-	LRUSize    int
-	DefaultTTL time.Duration
+	RedisAddr    string
+	RedisDB      int
+	LRUSize      int
+	DefaultTTL   time.Duration
+	MaxValueSize int64 // Maximum cached object size in bytes; 0=default(5MB), -1=unlimited
 }
+
+const (
+	// DefaultMaxValueSize is the default maximum size for cached objects (5MB)
+	// Day 11: Large object OOM prevention
+	DefaultMaxValueSize = 5 * 1024 * 1024 // 5MB
+)
 
 // CachedIncidentsList wraps incidents list with total count
 type CachedIncidentsList struct {
