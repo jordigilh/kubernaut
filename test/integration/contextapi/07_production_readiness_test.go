@@ -129,8 +129,9 @@ func createTestServerForProduction() (*httptest.Server, *server.Server) {
 		WriteTimeout: 30 * time.Second,
 	}
 
-	// Connection string for test infrastructure
-	connStr := fmt.Sprintf("host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable search_path=%s,public", testSchema)
+	// Connection string for test infrastructure (Data Storage Service)
+	// DD-SCHEMA-001: Connect to Data Storage Service database
+	connStr := "host=localhost port=5432 user=slm_user password=slm_password_dev dbname=action_history sslmode=disable"
 
 	// Use Redis DB 6 for production readiness tests (parallel test isolation)
 	redisAddr := "localhost:6379/6"
