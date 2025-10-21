@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: context-api
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: api
+    part-of: kubernaut
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: context-api
+  template:
+    metadata:
+      labels:
+        app: context-api
+        component: api
+        part-of: kubernaut
+    spec:
+      serviceAccountName: default
+      containers:
+      - name: context-api
+        image: quay.io/jordigilh/context-api:v0.1.0
+        imagePullPolicy: Always
+        args:
+          - --config
+          - /etc/context-api/config.yaml
+        ports:
+        - containerPort: 8091
+          name: http
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        env:
+          # Override sensitive values with Secrets
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: context-api-db-secret
+                key: password
+        volumeMounts:
+          - name: config
+            mountPath: /etc/context-api
+            readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8091
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8091
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+      volumes:
+        - name: config
+          configMap:
+            name: context-api-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: context-api
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: api
+    part-of: kubernaut
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8091
+    targetPort: 8091
+    protocol: TCP
+    name: http
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+    name: metrics
+  selector:
+    app: context-api
+

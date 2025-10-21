@@ -1,12 +1,43 @@
-# Notification Controller - Implementation Plan v3.1
+# Notification Controller - Implementation Plan v3.2
 
-**Version**: 3.1 - PRODUCTION-READY WITH ENHANCED PATTERNS (99% Confidence) ✅
-**Date**: 2025-10-12 (Updated: 2025-10-18)
-**Timeline**: 9-10 days (72-80 hours)
-**Status**: ✅ **Ready for Implementation** (99% Confidence)
-**Based On**: Template v1.3 + Data Storage v4.1 Standard + CRD Controller Design Document
+**Version**: 3.2 - UBI9 MIGRATION PLANNED (99% Confidence) ✅
+**Date**: 2025-10-12 (Updated: 2025-10-21)
+**Timeline**: 9-10 days (72-80 hours) + UBI9 Migration (3 hours)
+**Status**: ✅ **Ready for Implementation** + ⚠️ **UBI9 Migration Required**
+**Based On**: Template v1.3 + Data Storage v4.1 Standard + CRD Controller Design Document + ADR-027 (Multi-Arch with UBI9)
 
 **Version History**:
+- **v3.2** (2025-10-21): 📦 **Red Hat UBI9 Container Migration Task**
+  - **Requirement**: Migrate from alpine/distroless to Red Hat UBI9 base images (ADR-027 compliance)
+  - **Current State**:
+    - Build: `golang:1.24-alpine`
+    - Runtime: `gcr.io/distroless/static:nonroot`
+    - Status: Functional but not enterprise-standard
+  - **Target State**:
+    - Build: `registry.access.redhat.com/ubi9/go-toolset:1.24`
+    - Runtime: `registry.access.redhat.com/ubi9/ubi-minimal:latest`
+    - Add Red Hat UBI9 compatible labels (13 required)
+  - **Migration Tasks**:
+    1. Update `docker/notification-controller.Dockerfile` to UBI9 pattern
+    2. Replace user management (distroless UID 65532 → UBI9 UID 1001)
+    3. Add multi-arch header comment (`# Based on: ADR-027`)
+    4. Add Red Hat UBI9 labels (name, vendor, version, summary, etc.)
+    5. Remove hardcoded config files (use Kubernetes ConfigMaps)
+    6. Test multi-arch build with `podman --platform linux/amd64,linux/arm64`
+    7. Version bump to v1.1.0-ubi9
+    8. Deploy to dev OCP cluster for validation
+  - **Priority**: P1 - HIGH (Week 2 of ADR-027 rollout)
+  - **Effort**: 2-3 hours
+  - **Timeline**: After v1.0.0 production deployment, before v1.1.0 release
+  - **Validation**:
+    - ✅ Multi-arch manifest contains both amd64 and arm64
+    - ✅ Image uses Red Hat UBI9 base images
+    - ✅ Image size acceptable (<100MB increase from current)
+    - ✅ Reconciliation loop functions correctly
+    - ✅ Health checks pass on both architectures
+  - **Documentation**: See ADR-027 "Migration Strategy for Existing Services"
+  - **Source**: [ADR-027](../../../architecture/decisions/ADR-027-multi-architecture-build-strategy.md)
+
 - **v3.1** (2025-10-18): 🔧 **Enhanced Patterns Integrated (Notification-Specific)**
   - **Error Handling Philosophy**: 5 notification-specific error categories (A-E)
     - Category A: NotificationRequest not found (normal cleanup)
