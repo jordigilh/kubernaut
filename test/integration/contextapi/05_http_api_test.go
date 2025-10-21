@@ -3,7 +3,6 @@ package contextapi
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
