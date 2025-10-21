@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: data-storage-service
-  namespace: kubernaut
+  namespace: kubernaut-system
   labels:
     app: data-storage-service
     component: stateless
@@ -26,13 +26,11 @@ spec:
       serviceAccountName: data-storage-sa
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: data-storage
-          image: kubernaut/data-storage:latest
+          image: quay.io/jordigilh/data-storage:latest
           imagePullPolicy: Always
           ports:
             - name: http
