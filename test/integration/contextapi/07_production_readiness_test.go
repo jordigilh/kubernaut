@@ -2,7 +2,6 @@ package contextapi
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
