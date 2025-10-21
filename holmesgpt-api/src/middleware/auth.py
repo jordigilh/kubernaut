@@ -25,6 +25,16 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Import metrics recording functions
+try:
+    from src.middleware.metrics import record_auth_failure, record_auth_success
+except ImportError:
+    # Graceful degradation if metrics not available
+    def record_auth_failure(reason: str, endpoint: str):
+        pass
+    def record_auth_success(username: str, role: str):
+        pass
+
 # Kubernetes ServiceAccount paths
 K8S_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 K8S_SA_CA_CERT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
@@ -139,8 +149,12 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             user = await self._validate_request(request)
             request.state.user = user
 
+            # Record authentication success
+            record_auth_success(user.username, user.role)
+
             # Check permissions (BR-HAPI-068)
             if not self._check_permissions(user, request):
+                record_auth_failure("insufficient_permissions", request.url.path)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Insufficient permissions"
@@ -149,12 +163,18 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         except HTTPException as e:
+            # Record authentication failure for 401/403 errors
+            if e.status_code in [401, 403]:
+                reason = "invalid_credentials" if e.status_code == 401 else "forbidden"
+                record_auth_failure(reason, request.url.path)
+            
             return JSONResponse(
                 status_code=e.status_code,
                 content={"detail": e.detail}
             )
         except Exception as e:
             logger.error({"event": "auth_error", "error": str(e)})
+            record_auth_failure("internal_error", request.url.path)
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={"detail": "Internal server error"}
@@ -164,7 +184,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         """
         Validate authentication credentials
 
-        REFACTOR phase: Uses K8s TokenReviewer API for production
+        Production Implementation: Uses K8s TokenReviewer API
         """
         auth_header = request.headers.get("Authorization", "")
 
@@ -172,6 +192,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             token = auth_header[7:]
             return await self._validate_k8s_token(token)
 
+        # Record missing credentials
+        record_auth_failure("no_credentials", request.url.path)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="No valid authentication credentials provided"

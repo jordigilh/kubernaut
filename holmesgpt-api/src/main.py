@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # Import extensions
 from src.extensions import recovery, postexec, health
 from src.middleware.auth import AuthenticationMiddleware
+from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
 
 
 def load_config() -> Dict[str, Any]:
@@ -71,6 +72,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add Prometheus metrics middleware
+app.add_middleware(PrometheusMetricsMiddleware)
+logger.info("Prometheus metrics middleware enabled")
+
 # Add authentication middleware
 if config["auth_enabled"]:
     app.add_middleware(AuthenticationMiddleware, config=config)
@@ -87,6 +92,22 @@ app.include_router(health.router, tags=["Health"])
 recovery.router.config = config
 postexec.router.config = config
 health.router.config = config
+
+
+# ========================================
+# METRICS ENDPOINT
+# ========================================
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    """
+    Prometheus metrics endpoint
+    
+    Business Requirement: BR-HAPI-100 to 103
+    
+    Exposes metrics in Prometheus exposition format for scraping
+    """
+    return metrics_endpoint()
 
 
 @app.on_event("startup")
