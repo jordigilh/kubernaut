@@ -587,7 +587,7 @@ func main() {
 **File**: `test/unit/datastorage/schema_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
 	"context"
@@ -774,7 +774,7 @@ func (i *Initializer) Verify(ctx context.Context) error {
 **File**: `test/unit/datastorage/validation_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -1056,7 +1056,7 @@ func DefaultRules() *ValidationRules {
 **File**: `test/unit/datastorage/embedding_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -1306,7 +1306,7 @@ func (c *RedisCache) Set(ctx context.Context, key string, embedding []float32, t
 **File**: `test/unit/datastorage/dualwrite_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -1512,7 +1512,7 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 **File**: `test/unit/datastorage/query_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -1747,7 +1747,7 @@ func (s *Service) PaginatedList(ctx context.Context, opts *datastorage.ListOptio
 **File**: `test/integration/datastorage/suite_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
 	"testing"
@@ -1922,7 +1922,7 @@ Review integration test results and identify unit test priorities:
 **File**: `test/unit/datastorage/validation_comprehensive_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
 	. "github.com/onsi/ginkgo/v2"

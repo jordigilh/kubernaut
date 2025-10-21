@@ -35,18 +35,18 @@ VALUES
     ('test-uid-003', 'v1', 'Node', 'worker-01', 'production', NOW(), NOW()),
     ('test-uid-004', 'apps/v1', 'Deployment', 'api-service', 'production', NOW(), NOW()),
     ('test-uid-005', 'v1', 'Service', 'frontend', 'production', NOW(), NOW()),
-    
+
     -- Staging resources
     ('test-uid-006', 'apps/v1', 'Deployment', 'database-proxy', 'staging', NOW(), NOW()),
     ('test-uid-007', 'v1', 'ConfigMap', 'rate-limits', 'staging', NOW(), NOW()),
-    
+
     -- Development resources
     ('test-uid-008', 'v1', 'Secret', 'registry-creds', 'development', NOW(), NOW()),
-    
+
     -- Monitoring/Logging resources
     ('test-uid-009', 'v1', 'Pod', 'prometheus-0', 'monitoring', NOW(), NOW()),
     ('test-uid-010', 'v1', 'Pod', 'logstash-0', 'logging', NOW(), NOW()),
-    
+
     -- Additional production resources for trend analysis
     ('test-uid-011', 'v1', 'Node', 'worker-03', 'production', NOW(), NOW()),
     ('test-uid-012', 'v1', 'PersistentVolumeClaim', 'data-volume', 'production', NOW(), NOW());
@@ -478,7 +478,7 @@ BEGIN
         JOIN resource_references rr ON ah.resource_id = rr.id
         WHERE rr.resource_uid LIKE 'test-uid-%';
     SELECT COUNT(*) INTO trace_count FROM resource_action_traces WHERE action_id LIKE 'test-rr-%';
-    SELECT COUNT(*) INTO embedding_count FROM resource_action_traces 
+    SELECT COUNT(*) INTO embedding_count FROM resource_action_traces
         WHERE action_id LIKE 'test-rr-%' AND embedding IS NOT NULL;
 
     RAISE NOTICE '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';

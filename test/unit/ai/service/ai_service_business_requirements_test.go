@@ -17,7 +17,7 @@ limitations under the License.
 //go:build unit
 // +build unit
 
-package ai_service_test
+package ai_service
 
 import (
 	"context"

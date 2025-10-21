@@ -269,7 +269,7 @@ func (r *NotificationRequestReconciler) handleDelivering(ctx context.Context, nr
 ```go
 // File: test/integration/notification/notification_delivery_test.go
 
-package notification_test
+package notification
 
 import (
 	"context"
@@ -851,7 +851,7 @@ Foundation is solid, ready for reconciliation logic implementation.
 **BR Coverage**: BR-NOT-050 (Zero Data Loss), BR-NOT-052 (Automatic Retry)
 
 ```go
-package notification_test
+package notification
 
 import (
 	"context"
@@ -1466,7 +1466,7 @@ File: `test/unit/notification/slack_delivery_test.go`
 
 **Use table-driven tests for multiple scenarios:**
 ```go
-package notification_test
+package notification
 
 import (
 	"context"
@@ -1759,7 +1759,7 @@ func IsRetryable(err error) bool {
 **BR Coverage**: BR-NOT-051 (Complete Audit Trail), BR-NOT-054 (Observability)
 
 ```go
-package notification_test
+package notification
 
 import (
 	"context"
@@ -2487,7 +2487,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 **BR Coverage**: Security best practice - prevent credential/PII leakage in notifications
 
 ```go
-package notification_test
+package notification
 
 import (
 	"testing"
@@ -3048,7 +3048,7 @@ func (s *SlackDeliveryService) Deliver(ctx context.Context, notification *notifi
 **BR Coverage**: BR-NOT-052 (Automatic Retry), BR-NOT-055 (Graceful Degradation)
 
 ```go
-package notification_test
+package notification
 
 import (
 	"errors"

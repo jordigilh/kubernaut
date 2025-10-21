@@ -17,7 +17,7 @@ limitations under the License.
 //go:build unit
 // +build unit
 
-package dependency_test
+package dependency
 
 import (
 	"context"
