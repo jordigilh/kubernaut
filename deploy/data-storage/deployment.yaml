@@ -51,26 +51,17 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-              scheme: HTTP
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 1
-            successThreshold: 1
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 8080
-              scheme: HTTP
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 1
-            successThreshold: 1
-            failureThreshold: 3
+          # TODO: Add health/readiness probes when HTTP server is implemented
+          # livenessProbe:
+          #   httpGet:
+          #     path: /health
+          #     port: 8080
+          #     scheme: HTTP
+          # readinessProbe:
+          #   httpGet:
+          #     path: /ready
+          #     port: 8080
+          #     scheme: HTTP
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
