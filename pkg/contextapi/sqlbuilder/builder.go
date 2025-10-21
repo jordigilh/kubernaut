@@ -22,12 +22,14 @@ import (
 	"time"
 )
 
-// Builder constructs parameterized SQL queries for remediation_audit table
+// Builder constructs parameterized SQL queries using Data Storage Service schema
 // BR-CONTEXT-001: Query historical incident context
 // BR-CONTEXT-002: Filter by namespace, severity, time range
+// BR-CONTEXT-004: Filter by cluster, environment, action type
 // BR-CONTEXT-007: Pagination support
 //
-// Following Data Storage Service v4.1 query patterns
+// Schema Authority: Data Storage Service (DD-SCHEMA-001)
+// Queries join resource_action_traces, action_histories, resource_references
 type Builder struct {
 	baseQuery    string
 	whereClauses []string
@@ -36,16 +38,52 @@ type Builder struct {
 	offset       int
 }
 
-// NewBuilder creates a query builder for remediation_audit table
+// NewBuilder creates a query builder using Data Storage Service schema
 // BR-CONTEXT-001: Historical context query builder
 //
 // Default values:
-//   - Base query: SELECT * FROM remediation_audit
+//   - Base query: JOIN query from resource_action_traces, action_histories, resource_references
 //   - Limit: DefaultLimit (100) - prevents accidental large queries
 //   - Offset: 0
+//
+// Schema Design Decision: DD-SCHEMA-001
+// Context API uses Data Storage Service's authoritative schema
 func NewBuilder() *Builder {
+	// Data Storage Service schema with proper JOINs
+	// Maps IncidentEvent model to resource_action_traces + related tables
+	baseQuery := `SELECT 
+    rat.id,
+    rat.alert_name AS name,
+    rat.alert_fingerprint,
+    rat.action_id AS remediation_request_id,
+    rr.namespace,
+    rat.cluster_name,
+    rat.environment,
+    rr.kind AS target_resource,
+    CASE rat.execution_status
+        WHEN 'completed' THEN 'completed'
+        WHEN 'failed' THEN 'failed'
+        WHEN 'rolled-back' THEN 'failed'
+        WHEN 'pending' THEN 'pending'
+        WHEN 'executing' THEN 'processing'
+        ELSE 'pending'
+    END AS phase,
+    rat.execution_status AS status,
+    rat.alert_severity AS severity,
+    rat.action_type,
+    rat.action_timestamp AS start_time,
+    rat.execution_end_time AS end_time,
+    rat.execution_duration_ms AS duration,
+    rat.execution_error AS error_message,
+    rat.action_parameters::TEXT AS metadata,
+    rat.created_at,
+    rat.updated_at
+FROM resource_action_traces rat
+JOIN action_histories ah ON rat.action_history_id = ah.id
+JOIN resource_references rr ON ah.resource_id = rr.id`
+
 	return &Builder{
-		baseQuery: "SELECT * FROM remediation_audit",
+		baseQuery: baseQuery,
 		limit:     DefaultLimit, // Default limit (BR-CONTEXT-007)
 		offset:    0,            // Default offset
 	}
@@ -57,10 +95,10 @@ func NewBuilder() *Builder {
 // Example:
 //
 //	builder.WithNamespace("production")
-//	// Generates: WHERE namespace = $1
+//	// Generates: WHERE rr.namespace = $1
 func (b *Builder) WithNamespace(namespace string) *Builder {
 	paramNum := len(b.args) + 1
-	b.whereClauses = append(b.whereClauses, fmt.Sprintf("namespace = $%d", paramNum))
+	b.whereClauses = append(b.whereClauses, fmt.Sprintf("rr.namespace = $%d", paramNum))
 	b.args = append(b.args, namespace)
 	return b
 }
@@ -71,11 +109,53 @@ func (b *Builder) WithNamespace(namespace string) *Builder {
 // Example:
 //
 //	builder.WithSeverity("critical")
-//	// Generates: WHERE severity = $1
+//	// Generates: WHERE rat.alert_severity = $1
 func (b *Builder) WithSeverity(severity string) *Builder {
 	paramNum := len(b.args) + 1
-	b.whereClauses = append(b.whereClauses, fmt.Sprintf("severity = $%d", paramNum))
+	b.whereClauses = append(b.whereClauses, fmt.Sprintf("rat.alert_severity = $%d", paramNum))
 	b.args = append(b.args, severity)
+	return b
+}
+
+// WithClusterName adds cluster filter (parameterized)
+// BR-CONTEXT-004: Filter by cluster (multi-cluster support)
+//
+// Example:
+//
+//	builder.WithClusterName("prod-us-west")
+//	// Generates: WHERE rat.cluster_name = $1
+func (b *Builder) WithClusterName(clusterName string) *Builder {
+	paramNum := len(b.args) + 1
+	b.whereClauses = append(b.whereClauses, fmt.Sprintf("rat.cluster_name = $%d", paramNum))
+	b.args = append(b.args, clusterName)
+	return b
+}
+
+// WithEnvironment adds environment filter (parameterized)
+// BR-CONTEXT-004: Filter by environment (production/staging/development)
+//
+// Example:
+//
+//	builder.WithEnvironment("production")
+//	// Generates: WHERE rat.environment = $1
+func (b *Builder) WithEnvironment(environment string) *Builder {
+	paramNum := len(b.args) + 1
+	b.whereClauses = append(b.whereClauses, fmt.Sprintf("rat.environment = $%d", paramNum))
+	b.args = append(b.args, environment)
+	return b
+}
+
+// WithActionType adds action type filter (parameterized)
+// BR-CONTEXT-004: Filter by action type
+//
+// Example:
+//
+//	builder.WithActionType("scale_deployment")
+//	// Generates: WHERE rat.action_type = $1
+func (b *Builder) WithActionType(actionType string) *Builder {
+	paramNum := len(b.args) + 1
+	b.whereClauses = append(b.whereClauses, fmt.Sprintf("rat.action_type = $%d", paramNum))
+	b.args = append(b.args, actionType)
 	return b
 }
 
@@ -159,7 +239,7 @@ func (b *Builder) Build() (string, []interface{}, error) {
 
 	// Add ORDER BY for consistent pagination
 	// BR-CONTEXT-007: Consistent ordering required for reliable pagination
-	query += " ORDER BY created_at DESC"
+	query += " ORDER BY rat.action_timestamp DESC"
 
 	// Create args copy to avoid modifying builder state (for idempotency)
 	args := make([]interface{}, len(b.args))
@@ -171,4 +251,31 @@ func (b *Builder) Build() (string, []interface{}, error) {
 	args = append(args, b.limit, b.offset)
 
 	return query, args, nil
+}
+
+// BuildCount constructs SQL query to count total matching records
+// BR-CONTEXT-007: Total count needed for pagination metadata
+//
+// Returns:
+//   - query: SQL count query with same WHERE filters as Build()
+//   - args: Slice of parameter values (excludes LIMIT/OFFSET)
+//
+// Note: Count query uses same JOIN structure but excludes ORDER BY, LIMIT, OFFSET
+func (b *Builder) BuildCount() (string, []interface{}) {
+	// Start with SELECT COUNT(*) and same JOIN structure
+	query := `SELECT COUNT(*)
+FROM resource_action_traces rat
+JOIN action_histories ah ON rat.action_history_id = ah.id
+JOIN resource_references rr ON ah.resource_id = rr.id`
+
+	// Add WHERE clauses if any filters were added
+	if len(b.whereClauses) > 0 {
+		query += " WHERE " + strings.Join(b.whereClauses, " AND ")
+	}
+
+	// Return args without LIMIT/OFFSET
+	args := make([]interface{}, len(b.args))
+	copy(args, b.args)
+
+	return query, args
 }
