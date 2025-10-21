@@ -29,12 +29,16 @@ data:
     pidfile /var/run/redis_6379.pid
     loglevel notice
     logfile ""
-    databases 16  # Support 16 databases for test isolation
+    # Support 16 databases for test isolation
+    databases 16
     
     # Snapshotting (persistence)
-    save 900 1      # Save after 900 seconds if at least 1 key changed
-    save 300 10     # Save after 300 seconds if at least 10 keys changed
-    save 60 10000   # Save after 60 seconds if at least 10000 keys changed
+    # Save after 900 seconds if at least 1 key changed
+    save 900 1
+    # Save after 300 seconds if at least 10 keys changed
+    save 300 10
+    # Save after 60 seconds if at least 10000 keys changed
+    save 60 10000
     stop-writes-on-bgsave-error yes
     rdbcompression yes
     rdbchecksum yes
@@ -54,7 +58,8 @@ data:
     # Limits
     maxclients 10000
     maxmemory 512mb
-    maxmemory-policy allkeys-lru  # LRU eviction when memory limit reached
+    # LRU eviction when memory limit reached
+    maxmemory-policy allkeys-lru
     
     # Append Only File (AOF) persistence
     appendonly no
