@@ -27,10 +27,10 @@ class HolmesGPTAPIUser(HttpUser):
     """
     Simulates a user making investigation requests to HolmesGPT API
     """
-    
+
     # Wait 1-3 seconds between tasks
     wait_time = between(1, 3)
-    
+
     # Sample alert data for testing
     SAMPLE_ALERTS = [
         {
@@ -102,7 +102,7 @@ class HolmesGPTAPIUser(HttpUser):
             }
         }
     ]
-    
+
     SAMPLE_POSTEXEC = {
         "execution_id": "exec-test-001",
         "incident_id": "test-incident-001",
@@ -124,29 +124,29 @@ class HolmesGPTAPIUser(HttpUser):
             "replica_count": 5
         }
     }
-    
+
     def on_start(self):
         """Called when a user starts"""
         pass
-    
+
     @task(5)
     def health_check(self):
         """
         Health check endpoint (weight: 5)
-        
+
         Simulates monitoring probes hitting health endpoints
         """
         self.client.get("/health", name="/health")
-    
+
     @task(2)
     def ready_check(self):
         """
         Readiness check endpoint (weight: 2)
-        
+
         Simulates k8s readiness probes
         """
         self.client.get("/ready", name="/ready")
-    
+
     @task(10)
     def recovery_analysis(self):
         """
@@ -157,14 +157,14 @@ class HolmesGPTAPIUser(HttpUser):
         alert = random.choice(self.SAMPLE_ALERTS)
         
         with self.client.post(
-            "/api/v1/recovery",
+            "/api/v1/recovery/analyze",
             json=alert,
             catch_response=True,
-            name="/api/v1/recovery"
+            name="/api/v1/recovery/analyze"
         ) as response:
             if response.status_code == 200:
                 data = response.json()
-                
+
                 # Validate response structure
                 if "incident_id" in data and "strategies" in data:
                     response.success()
@@ -175,7 +175,7 @@ class HolmesGPTAPIUser(HttpUser):
                 response.success()
             else:
                 response.failure(f"Unexpected status code: {response.status_code}")
-    
+
     @task(3)
     def postexec_analysis(self):
         """
@@ -187,14 +187,14 @@ class HolmesGPTAPIUser(HttpUser):
         postexec_data["execution_id"] = f"exec-test-{random.randint(1000, 9999)}"
         
         with self.client.post(
-            "/api/v1/postexec",
+            "/api/v1/postexec/analyze",
             json=postexec_data,
             catch_response=True,
-            name="/api/v1/postexec"
+            name="/api/v1/postexec/analyze"
         ) as response:
             if response.status_code == 200:
                 data = response.json()
-                
+
                 # Validate response structure
                 if "execution_id" in data and "effectiveness_assessment" in data:
                     response.success()
@@ -205,12 +205,12 @@ class HolmesGPTAPIUser(HttpUser):
                 response.success()
             else:
                 response.failure(f"Unexpected status code: {response.status_code}")
-    
+
     @task(1)
     def metrics_endpoint(self):
         """
         Metrics endpoint (weight: 1)
-        
+
         Simulates Prometheus scraping metrics
         """
         with self.client.get("/metrics", name="/metrics", catch_response=True) as response:
@@ -227,12 +227,12 @@ class HolmesGPTAPIUser(HttpUser):
 class AdminUser(HttpUser):
     """
     Simulates an admin user checking configuration
-    
+
     Lower frequency, mainly checks config endpoint
     """
-    
+
     wait_time = between(10, 20)
-    
+
     @task
     def check_config(self):
         """Check configuration endpoint"""
@@ -243,7 +243,7 @@ class AdminUser(HttpUser):
 class LightLoad(HttpUser):
     """
     Light load scenario: 10 users, gradual ramp-up
-    
+
     Usage:
         locust -f locustfile.py --host=http://localhost:8080 \
                --users 10 --spawn-rate 2 --run-time 5m
@@ -255,7 +255,7 @@ class LightLoad(HttpUser):
 class MediumLoad(HttpUser):
     """
     Medium load scenario: 50 users, moderate ramp-up
-    
+
     Usage:
         locust -f locustfile.py --host=http://localhost:8080 \
                --users 50 --spawn-rate 5 --run-time 10m
@@ -267,11 +267,11 @@ class MediumLoad(HttpUser):
 class HeavyLoad(HttpUser):
     """
     Heavy load scenario: 200 users, aggressive ramp-up
-    
+
     Usage:
         locust -f locustfile.py --host=http://localhost:8080 \
                --users 200 --spawn-rate 10 --run-time 15m
-    
+
     WARNING: Use mock LLM to avoid high inference costs
     """
     wait_time = between(0.5, 2)
