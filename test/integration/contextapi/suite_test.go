@@ -3,9 +3,6 @@ package contextapi
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -41,20 +38,19 @@ var _ = BeforeSuite(func() {
 	logger, err = zap.NewDevelopment()
 	Expect(err).ToNot(HaveOccurred())
 
-	// BR-CONTEXT-011: Schema Alignment - Connect to the existing PostgreSQL instance
-	// Uses Data Storage Service infrastructure (make bootstrap-dev)
-	// Database: postgres (master database for test isolation)
-	// User: postgres
-	// Password: postgres
-	// Host: localhost:5432
+	// BR-CONTEXT-011: Schema Alignment - Connect to Data Storage Service PostgreSQL
+	// Uses Data Storage Service infrastructure (deployed in kubernaut-system)
+	// Database: action_history (Data Storage Service database)
+	// User: slm_user
+	// Password: slm_password_dev
+	// Host: localhost:5432 (port-forward to cluster)
 	//
 	// INFRASTRUCTURE SHARING NOTE:
-	// This PostgreSQL instance is SHARED with Data Storage Service integration tests
-	// - Context API uses same PostgreSQL instance with separate schemas (contextapi_test_<timestamp>)
-	// - Schema-based isolation ensures no conflicts between test suites
-	// - Both services share remediation_audit schema from internal/database/schema/
-	// - Zero schema drift guaranteed through shared infrastructure
-	connStr := "host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable"
+	// This PostgreSQL instance is SHARED with Data Storage Service
+	// - Context API uses Data Storage schema (resource_action_traces + action_histories + resource_references)
+	// - Schema authority: Data Storage Service (DD-SCHEMA-001)
+	// - Requires port-forward: oc port-forward -n kubernaut-system svc/postgres 5432:5432
+	connStr := "host=localhost port=5432 user=slm_user password=slm_password_dev dbname=action_history sslmode=disable"
 	db, err = sql.Open("postgres", connStr)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -66,45 +62,40 @@ var _ = BeforeSuite(func() {
 	// Create sqlx wrapper for query operations
 	sqlxDB = sqlx.NewDb(db, "postgres")
 
-	// CRITICAL: Create pgvector extension at database level BEFORE any tests run
-	// Extensions are database-scoped, not schema-scoped
-	// This ensures all test schemas can use vector types
-	// Note: Data Storage Service integration tests also rely on this extension
+	// CRITICAL: Verify pgvector extension exists
+	// Extension is created by Data Storage Service migrations
 	_, err = db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector")
 	Expect(err).ToNot(HaveOccurred(), "Failed to create pgvector extension")
 
-	// BR-CONTEXT-011: Schema Alignment - Create a unique schema for this test run for isolation
-	testSchema = fmt.Sprintf("contextapi_test_%d", time.Now().UnixNano())
-	_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", testSchema))
+	// BR-CONTEXT-011: Schema Alignment - Use Data Storage Service schema (public)
+	// Schema Authority: Data Storage Service (DD-SCHEMA-001)
+	// Tables: resource_action_traces, action_histories, resource_references
+	// Test isolation: Use test-uid-* and test-rr-* prefixes, cleaned up in AfterEach
+	testSchema = "public" // Use existing Data Storage schema
+	GinkgoWriter.Println("Using Data Storage Service schema:", testSchema)
+
+	// Verify Data Storage schema tables exist
+	var tableCount int
+	err = db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM information_schema.tables
+		WHERE table_schema = 'public'
+		AND table_name IN ('resource_references', 'action_histories', 'resource_action_traces')
+	`).Scan(&tableCount)
 	Expect(err).ToNot(HaveOccurred())
-	GinkgoWriter.Printf("Created test schema: %s\n", testSchema)
-
-	// Set search path to the new schema
-	_, err = db.ExecContext(ctx, fmt.Sprintf("SET search_path TO %s, public", testSchema))
-	Expect(err).ToNot(HaveOccurred())
-
-	// BR-CONTEXT-011: Zero Schema Drift - Load the authoritative remediation_audit schema
-	// AUTHORITATIVE SOURCE: internal/database/schema/remediation_audit.sql
-	// This is the SAME schema used by Data Storage Service
-	// Any changes to schema MUST be made in this file only
-	schemaFile := filepath.Join("..", "..", "..", "internal", "database", "schema", "remediation_audit.sql")
-	schemaSQL, err := os.ReadFile(schemaFile)
-	Expect(err).ToNot(HaveOccurred(), "Failed to read authoritative schema file")
-
-	_, err = db.ExecContext(ctx, string(schemaSQL))
-	Expect(err).ToNot(HaveOccurred(), "Failed to apply authoritative schema to test schema")
-	GinkgoWriter.Println("✅ Authoritative remediation_audit schema applied to test schema")
+	Expect(tableCount).To(Equal(3), "Data Storage schema tables must exist (run migrations first)")
+	GinkgoWriter.Println("✅ Verified Data Storage schema tables exist")
 
 	// BR-CONTEXT-001: Historical Context Query - Create Context API database client
-	connStrWithSchema := fmt.Sprintf("host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable search_path=%s,public", testSchema)
-	dbClient, err = client.NewPostgresClient(connStrWithSchema, logger)
+	// Uses Data Storage Service schema directly (no test schema needed)
+	dbClient, err = client.NewPostgresClient(connStr, logger)
 	Expect(err).ToNot(HaveOccurred())
 
 	GinkgoWriter.Println("✅ Context API integration test environment ready (reusing Data Storage infrastructure)!")
-	GinkgoWriter.Println("   - PostgreSQL: localhost:5432 (SHARED with Data Storage tests)")
+	GinkgoWriter.Println("   - PostgreSQL: localhost:5432 (port-forward from kubernaut-system)")
+	GinkgoWriter.Println("   - Database: action_history (Data Storage Service)")
+	GinkgoWriter.Println("   - Schema: public (Data Storage schema - DD-SCHEMA-001)")
 	GinkgoWriter.Println("   - pgvector extension: enabled")
-	GinkgoWriter.Println("   - Test schema:", testSchema)
-	GinkgoWriter.Println("   - Infrastructure sharing: Schema-based isolation for parallel testing")
+	GinkgoWriter.Println("   - Test data isolation: test-uid-* and test-rr-* prefixes")
 })
 
 var _ = AfterSuite(func() {
@@ -116,11 +107,22 @@ var _ = AfterSuite(func() {
 		Expect(err).ToNot(HaveOccurred())
 	}
 
-	// Clean up the test schema
+	// Clean up test data (not schema - we're using Data Storage Service schema)
 	if db != nil {
-		GinkgoWriter.Println("Dropping test schema:", testSchema)
-		_, err := db.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", testSchema))
-		Expect(err).ToNot(HaveOccurred(), "Failed to drop test schema")
+		GinkgoWriter.Println("Cleaning up test data...")
+		// Delete test data using prefixes (same as init-db.sql cleanup)
+		_, err := db.ExecContext(ctx, `
+			DELETE FROM resource_action_traces WHERE action_id LIKE 'test-rr-%';
+			DELETE FROM action_histories WHERE id IN (
+				SELECT ah.id FROM action_histories ah
+				JOIN resource_references rr ON ah.resource_id = rr.id
+				WHERE rr.resource_uid LIKE 'test-uid-%'
+			);
+			DELETE FROM resource_references WHERE resource_uid LIKE 'test-uid-%';
+		`)
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Test data cleanup failed (non-fatal): %v\n", err)
+		}
 		db.Close()
 	}
 
