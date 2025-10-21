@@ -1,0 +1,255 @@
+# Context API Multi-Architecture Build Configuration
+# Builds for linux/amd64 and linux/arm64, combines into manifest list, pushes to quay.io
+# Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
+
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: context-api
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+    part-of: kubernaut
+spec:
+  lookupPolicy:
+    local: false
+
+---
+# AMD64 Build Configuration
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: context-api-amd64
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+    part-of: kubernaut
+    architecture: amd64
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: context-api:latest-amd64
+  source:
+    type: Git
+    git:
+      uri: https://github.com/jordigilh/kubernaut.git
+      ref: feature/phase2_services
+    contextDir: .
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: docker/context-api.Dockerfile
+      buildArgs:
+        - name: GOOS
+          value: linux
+        - name: GOARCH
+          value: amd64
+  triggers:
+    - type: ConfigChange
+  runPolicy: Serial
+  successfulBuildsHistoryLimit: 2
+  failedBuildsHistoryLimit: 2
+
+---
+# ARM64 Build Configuration
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: context-api-arm64
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+    part-of: kubernaut
+    architecture: arm64
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: context-api:latest-arm64
+  source:
+    type: Git
+    git:
+      uri: https://github.com/jordigilh/kubernaut.git
+      ref: feature/phase2_services
+    contextDir: .
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: docker/context-api.Dockerfile
+      buildArgs:
+        - name: GOOS
+          value: linux
+        - name: GOARCH
+          value: arm64
+  triggers:
+    - type: ConfigChange
+  runPolicy: Serial
+  successfulBuildsHistoryLimit: 2
+  failedBuildsHistoryLimit: 2
+
+---
+# ServiceAccount for manifest creation job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: context-api-manifest-builder
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+
+---
+# Role for accessing ImageStreams
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: context-api-manifest-builder
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+rules:
+  - apiGroups: ["image.openshift.io"]
+    resources: ["imagestreams", "imagestreamtags", "imagestreamimages"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["quay-io-push-secret"]
+
+---
+# RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: context-api-manifest-builder
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: context-api-manifest-builder
+subjects:
+  - kind: ServiceAccount
+    name: context-api-manifest-builder
+    namespace: kubernaut-system
+
+---
+# Job to create manifest list and push to quay.io
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: context-api-manifest-push
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+    job-type: manifest-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: context-api
+        component: build
+        job-type: manifest-creation
+    spec:
+      serviceAccountName: context-api-manifest-builder
+      restartPolicy: OnFailure
+      containers:
+      - name: buildah
+        image: quay.io/buildah/stable:latest
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          privileged: true
+        env:
+          - name: STORAGE_DRIVER
+            value: vfs
+          - name: BUILDAH_ISOLATION
+            value: chroot
+          - name: IMAGE_REGISTRY
+            value: image-registry.openshift-image-registry.svc:5000
+          - name: NAMESPACE
+            value: kubernaut-system
+          - name: QUAY_REGISTRY
+            value: quay.io/jordigilh
+          - name: IMAGE_NAME
+            value: context-api
+          - name: IMAGE_TAG
+            value: latest
+        volumeMounts:
+          - name: quay-auth
+            mountPath: /tmp/quay-auth
+            readOnly: true
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "🔐 Configuring authentication..."
+          
+          # Configure quay.io authentication
+          mkdir -p ${HOME}/.docker
+          cp /tmp/quay-auth/.dockerconfigjson ${HOME}/.docker/config.json
+          
+          # Get internal registry token
+          INTERNAL_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          
+          # Configure internal registry authentication
+          buildah login -u serviceaccount -p ${INTERNAL_TOKEN} ${IMAGE_REGISTRY} --tls-verify=false
+          
+          echo "📥 Pulling architecture-specific images from internal registry..."
+          
+          # Pull amd64 image
+          buildah pull --tls-verify=false ${IMAGE_REGISTRY}/${NAMESPACE}/${IMAGE_NAME}:latest-amd64
+          
+          # Pull arm64 image
+          buildah pull --tls-verify=false ${IMAGE_REGISTRY}/${NAMESPACE}/${IMAGE_NAME}:latest-arm64
+          
+          echo "📦 Creating manifest list..."
+          
+          # Create manifest list
+          buildah manifest create ${IMAGE_NAME}:${IMAGE_TAG}
+          
+          # Add amd64 image to manifest
+          buildah manifest add ${IMAGE_NAME}:${IMAGE_TAG} \
+            ${IMAGE_REGISTRY}/${NAMESPACE}/${IMAGE_NAME}:latest-amd64
+          
+          # Add arm64 image to manifest
+          buildah manifest add ${IMAGE_NAME}:${IMAGE_TAG} \
+            ${IMAGE_REGISTRY}/${NAMESPACE}/${IMAGE_NAME}:latest-arm64
+          
+          echo "✅ Manifest list created:"
+          buildah manifest inspect ${IMAGE_NAME}:${IMAGE_TAG}
+          
+          echo "📤 Pushing multi-arch manifest to quay.io..."
+          
+          # Tag for quay.io
+          buildah tag ${IMAGE_NAME}:${IMAGE_TAG} ${QUAY_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+          
+          # Push to quay.io
+          buildah manifest push --all ${QUAY_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \
+            docker://${QUAY_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+          
+          echo "🎉 Successfully pushed multi-arch image to ${QUAY_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+          
+          # Also tag as v0.1.0
+          buildah manifest push --all ${QUAY_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \
+            docker://${QUAY_REGISTRY}/${IMAGE_NAME}:v0.1.0
+          
+          echo "🎉 Also tagged as v0.1.0"
+      volumes:
+        - name: quay-auth
+          secret:
+            secretName: quay-io-push-secret
+            items:
+              - key: .dockerconfigjson
+                path: .dockerconfigjson
+
