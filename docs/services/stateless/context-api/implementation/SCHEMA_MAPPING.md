@@ -1,8 +1,8 @@
 # Context API to Data Storage Schema Mapping
 
-**Version**: 1.0  
-**Date**: 2025-10-21  
-**Status**: Active  
+**Version**: 1.0
+**Date**: 2025-10-21
+**Status**: Active
 **Authority**: Data Storage Service owns canonical schema
 
 ---
@@ -196,19 +196,19 @@ rat.updated_at
 ### Base Query for ListIncidents
 
 ```sql
-SELECT 
+SELECT
     -- Primary identification
     rat.id,
     rat.alert_name AS name,
     rat.alert_fingerprint,
     rat.action_id AS remediation_request_id,
-    
+
     -- Context
     rr.namespace,
     rat.cluster_name,
     rat.environment,
     rr.kind AS target_resource,
-    
+
     -- Status
     CASE rat.execution_status
         WHEN 'completed' THEN 'completed'
@@ -221,21 +221,21 @@ SELECT
     rat.execution_status AS status,
     rat.alert_severity AS severity,
     rat.action_type,
-    
+
     -- Timing
     rat.action_timestamp AS start_time,
     rat.execution_end_time AS end_time,
     rat.execution_duration_ms AS duration,
-    
+
     -- Error tracking
     rat.execution_error AS error_message,
-    
+
     -- Metadata
     rat.action_parameters::TEXT AS metadata,
-    
+
     -- Vector embeddings (optional, only for semantic search)
     -- rat.embedding,
-    
+
     -- Audit timestamps
     rat.created_at,
     rat.updated_at
@@ -408,4 +408,5 @@ All schema changes go through Data Storage Service migrations:
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0 | 2025-10-21 | Initial schema mapping documentation | AI Assistant |
+
 

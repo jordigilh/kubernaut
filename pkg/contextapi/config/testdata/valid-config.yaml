@@ -22,3 +22,4 @@ database:
   password: "slm_password_dev"
   ssl_mode: "disable"
 
+

@@ -1017,7 +1017,7 @@ apiVersion: executor.kubernaut.io/v1
 kind: KubernetesExecution
 metadata:
   name: k8s-execution-restart-pod-abc123
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
   labels:
     kubernaut.io/remediation: "high-cpu-alert-abc123"
     kubernaut.io/environment: "production"
@@ -1025,11 +1025,11 @@ metadata:
 spec:
   alertRemediationRef:
     name: "high-cpu-alert-abc123"
-    namespace: "prometheus-alerts-slm"
+    namespace: "kubernaut-system"
 
   workflowExecutionRef:
     name: "workflow-execution-high-cpu-alert-abc123"
-    namespace: "prometheus-alerts-slm"
+    namespace: "kubernaut-system"
     stepId: "restart-pod"
 
   actionDefinition:

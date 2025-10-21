@@ -40,6 +40,7 @@
 
 | Document | Purpose | Est. Lines | Status |
 |----------|---------|------------|--------|
+| **[📋 IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md)** | **✅ PRIMARY: Status tracking, BRs, test counts, deployment** | ~800 | ✅ **Complete** |
 | **[Overview](./overview.md)** | Service purpose, architecture, key decisions | ~400 | ✅ Complete |
 | **[Implementation](./implementation.md)** | HTTP handlers, alert adapters, processing pipeline | ~1,300 | ✅ Complete |
 | **[Kind Template Triage](./GATEWAY_KIND_TEMPLATE_TRIAGE.md)** | Migration to Kind cluster test template | ~1,100 | ✅ Complete |
@@ -85,19 +86,21 @@ gateway-service/
 
 ## 🚀 Quick Start
 
+**📋 PRIMARY SOURCE OF TRUTH**: [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) ← **START HERE**
+
 **For New Developers**:
-1. **Understand the Service**: Start with [Overview](./overview.md) (5 min read)
-2. **Review Alert Sources**: See [Implementation](./implementation.md) → Alert Adapters (10 min read)
-3. **Understand Deduplication**: Read [Deduplication](./deduplication.md) (15 min read)
+1. **Implementation Status**: Start with [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) (10 min read) ← **PRIMARY**
+2. **Understand the Service**: Read [Overview](./overview.md) (5 min read)
+3. **Review Architecture**: See [Implementation](./implementation.md) → Adapter Pattern (10 min read)
 
 **For Implementers**:
-1. **Follow Checklist**: Use [Implementation Checklist](./implementation-checklist.md)
-2. **Review Patterns**: Reference [Implementation](./implementation.md) for HTTP handler patterns
+1. **Implementation Plan**: Use [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) for status tracking ← **PRIMARY**
+2. **Technical Details**: Reference [Implementation](./implementation.md) for code patterns
 3. **Test Strategy**: Follow [Testing Strategy](./testing-strategy.md) APDC-TDD workflow
 
 **For Reviewers**:
-1. **Security Review**: Check [Security Configuration](./security-configuration.md) → JWT auth
-2. **Testing Review**: Verify [Testing Strategy](./testing-strategy.md) → 70%+ unit coverage
+1. **Status & Progress**: Check [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) → Test counts & BRs ← **PRIMARY**
+2. **Security Review**: Verify [Security Configuration](./security-configuration.md) → JWT auth
 3. **Observability**: Validate [Metrics & SLOs](./metrics-slos.md) → Comprehensive metrics
 
 ---
@@ -235,12 +238,20 @@ Following Kubernaut's APDC-Enhanced TDD methodology:
 
 ## 📈 Implementation Status
 
-| Phase | Status | Effort | Confidence |
-|-------|--------|--------|------------|
-| **Design Specification** | ✅ Complete | 16h | 100% |
-| **Implementation** | ⏸️ Pending | 46-60h | 85% |
-| **Testing** | ⏸️ Pending | Included | 85% |
-| **Deployment** | ⏸️ Pending | 8h | 90% |
+**📋 DETAILED STATUS**: See [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) for complete tracking
+
+| Phase | Tests | Status | Effort | Confidence |
+|-------|-------|--------|--------|------------|
+| **Design Specification** | N/A | ✅ Complete | 16h | 100% |
+| **Unit Tests** | 0/75 | ⏸️ Not Started | 20-25h | 85% |
+| **Integration Tests** | 0/30 | ⏸️ Not Started | 15-20h | 85% |
+| **E2E Tests** | 0/5 | ⏸️ Not Started | 5-10h | 85% |
+| **Deployment** | N/A | ⏸️ Not Started | 8h | 90% |
+
+**Total**: 0/110 tests passing (estimated total)
+**Business Requirements**: ~40 BRs (0% implemented)
+
+**See**: [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) for detailed BR tracking and test breakdown
 
 ---
 

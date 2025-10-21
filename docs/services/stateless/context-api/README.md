@@ -37,7 +37,7 @@
 |--------|-------|
 | **HTTP Port** | 8080 (REST API, `/health`, `/ready`) |
 | **Metrics Port** | 9090 (Prometheus `/metrics` with auth) |
-| **Namespace** | `prometheus-alerts-slm` |
+| **Namespace** | `kubernaut-system` |
 | **ServiceAccount** | `context-api-sa` |
 
 ---

@@ -90,23 +90,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Install dependencies
         run: pip install locust
-      
+
       - name: Port-forward to OCP
         run: |
           oc login ${{ secrets.OCP_API_URL }} --token=${{ secrets.OCP_TOKEN }}
           kubectl port-forward -n kubernaut-system svc/holmesgpt-api 8080:80 &
           sleep 5
-      
+
       - name: Run load test
         run: |
           cd holmesgpt-api/tests/load
           locust -f locustfile.py --host=http://localhost:8080 \
                  --users 50 --spawn-rate 5 --run-time 5m --headless \
                  --csv=results/load-test
-      
+
       - name: Upload results
         uses: actions/upload-artifact@v3
         with:
@@ -279,4 +279,5 @@ print(f"P95 latency: {stats['95%'].mean():.2f}ms")
 - **BR-HAPI-104**: Performance validation and capacity planning
 - **BR-HAPI-105**: Load testing framework for production readiness
 - **BR-HAPI-106**: Cost-aware testing strategy
+
 

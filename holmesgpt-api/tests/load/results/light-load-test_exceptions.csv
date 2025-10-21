@@ -1,0 +1,11 @@
+Count,Message,Traceback,Nodes
+365,'HeavyLoad' object has no attribute 'events',"  File ""/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/locust/user/task.py"", line 355, in run
+    self.execute_next_task()
+  File ""/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/locust/user/task.py"", line 388, in execute_next_task
+    self.execute_task(self._task_queue.popleft())
+  File ""/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/locust/user/task.py"", line 505, in execute_task
+    task(self.user)
+  File ""/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/locust/user/users.py"", line 277, in __init__
+    request_event=self.environment.events.request,
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+",local

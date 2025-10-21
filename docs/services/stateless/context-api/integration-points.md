@@ -312,7 +312,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: context-api-config
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 data:
   # Database
   postgres.host: "postgresql-service"
@@ -337,7 +337,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: context-api-secrets
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 type: Opaque
 stringData:
   postgres-password: "<redacted>"

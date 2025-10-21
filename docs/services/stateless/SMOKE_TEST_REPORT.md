@@ -1,8 +1,8 @@
 # Smoke Test Report - Kubernaut System Services
 
-**Date**: 2025-10-21  
-**Namespace**: `kubernaut-system`  
-**Test Environment**: OpenShift 4.x  
+**Date**: 2025-10-21
+**Namespace**: `kubernaut-system`
+**Test Environment**: OpenShift 4.x
 **Services Tested**: Context API, Data Storage, PostgreSQL, Redis, HolmesGPT API
 
 ---
@@ -91,7 +91,7 @@ action_outcomes
 **Option A: Create Compatibility View** (Recommended for immediate fix)
 ```sql
 CREATE VIEW remediation_audit AS
-SELECT 
+SELECT
     ah.id,
     rr.namespace,
     ah.severity,
@@ -137,7 +137,7 @@ redis-75cfb58d99-s8vwp                  1/1     Running   0          88m
 ### Test 2: PostgreSQL Connection ✅
 
 ```
-PostgreSQL 16.10 (Debian 16.10-1.pgdg12+1) on x86_64-pc-linux-gnu, 
+PostgreSQL 16.10 (Debian 16.10-1.pgdg12+1) on x86_64-pc-linux-gnu,
 compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
 ```
 
@@ -147,8 +147,8 @@ compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
 
 ### Test 3: PostgreSQL Schema Validation ✅
 
-**Tables Created**: 17  
-**Partitions**: 4 (monthly partitions for resource_action_traces)  
+**Tables Created**: 17
+**Partitions**: 4 (monthly partitions for resource_action_traces)
 **Extensions**: pgvector 0.8.1, uuid-ossp 1.1
 
 **Schema Details**:
@@ -420,8 +420,9 @@ The kubernaut-system deployment is **structurally successful** with all infrastr
 
 ---
 
-**Smoke Test Execution Date**: 2025-10-21  
-**Executed By**: AI Assistant (Kubernaut Team)  
-**Environment**: OpenShift kubernaut-system namespace  
+**Smoke Test Execution Date**: 2025-10-21
+**Executed By**: AI Assistant (Kubernaut Team)
+**Environment**: OpenShift kubernaut-system namespace
 **Report Version**: 1.0
+
 

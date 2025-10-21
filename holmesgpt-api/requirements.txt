@@ -45,6 +45,9 @@ prometheus-client>=0.19.0
 # Structured logging (HolmesGPT has colorlog, we add python-json-logger for JSON output)
 python-json-logger>=2.0.7
 
+# YAML configuration parsing (for mounted ConfigMap)
+PyYAML>=6.0
+
 # LLM Provider SDKs (optional, install based on provider used)
 # Vertex AI (Google Cloud)
 google-cloud-aiplatform>=1.38  # Required for litellm Vertex AI integration

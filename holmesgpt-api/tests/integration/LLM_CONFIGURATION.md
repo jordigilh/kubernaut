@@ -195,18 +195,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-      
+
       - name: Install dependencies
         run: |
           cd holmesgpt-api
           pip install -r requirements.txt
           pip install -r requirements-test.txt
-      
+
       - name: Run Real LLM Tests
         env:
           RUN_REAL_LLM: "true"
@@ -370,4 +370,5 @@ After configuring LLM integration:
 - **Test Strategy**: `holmesgpt-api/tests/integration/README.md`
 - **Deployment Guide**: `deploy/holmesgpt-api/README.md`
 - **Context API Integration**: `holmesgpt-api/tests/integration/README.md#test-modes`
+
 

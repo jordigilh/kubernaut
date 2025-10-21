@@ -29,104 +29,94 @@ spec:
       serviceAccountName: holmesgpt-api
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1001  # UBI9 standard UID
-        fsGroup: 0       # UBI9 uses root group
+        # runAsUser and fsGroup removed - let OpenShift assign from SCC range
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: holmesgpt-api
-          image: image-registry.openshift-image-registry.svc:5000/kubernaut-system/holmesgpt-api:v1.0.0
-          imagePullPolicy: Always
-          ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-          env:
-            # From ConfigMap
-            - name: LOG_LEVEL
-              valueFrom:
-                configMapKeyRef:
-                  name: holmesgpt-api-config
-                  key: LOG_LEVEL
-            - name: DEV_MODE
-              valueFrom:
-                configMapKeyRef:
-                  name: holmesgpt-api-config
-                  key: DEV_MODE
+      - name: holmesgpt-api
+        image: quay.io/jordigilh/kubernaut-holmesgpt-api:v1.0.4-amd64
+        imagePullPolicy: Always
+        ports:
+          - name: http
+            containerPort: 8080
+            protocol: TCP
+        env:
+          # Configuration file location
+          - name: CONFIG_FILE
+            value: /etc/holmesgpt/config.yaml
 
-            # From Secret
-            - name: LLM_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: holmesgpt-api-secret
-                  key: LLM_API_KEY
-            - name: LLM_MODEL
-              valueFrom:
-                secretKeyRef:
-                  name: holmesgpt-api-secret
-                  key: LLM_MODEL
-            - name: LLM_ENDPOINT
-              valueFrom:
-                secretKeyRef:
-                  name: holmesgpt-api-secret
-                  key: LLM_ENDPOINT
-                  optional: true
-            - name: CONTEXT_API_URL
-              valueFrom:
-                secretKeyRef:
-                  name: holmesgpt-api-secret
-                  key: CONTEXT_API_URL
-          resources:
-            requests:
-              cpu: "200m"
-              memory: "512Mi"
-            limits:
-              cpu: "1000m"
-              memory: "2Gi"
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            runAsUser: 1001  # UBI9 standard UID
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: cache
-              mountPath: /.cache
+          # LLM provider credentials (generic path for any provider)
+          - name: LLM_CREDENTIALS_PATH
+            value: /var/secrets/llm/credentials.json
+
+          # Google Cloud credentials (legacy compatibility)
+          # Some libraries (google-cloud-aiplatform) look for this specifically
+          - name: GOOGLE_APPLICATION_CREDENTIALS
+            value: /var/secrets/llm/credentials.json
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          # runAsUser removed - let OpenShift assign from SCC range
+          capabilities:
+            drop:
+              - ALL
+        volumeMounts:
+          - name: tmp
+            mountPath: /tmp
+          - name: cache
+            mountPath: /.cache
+          - name: config
+            mountPath: /etc/holmesgpt
+            readOnly: true
+          - name: llm-credentials
+            mountPath: /var/secrets/llm
+            readOnly: true
       volumes:
-        - name: tmp
-          emptyDir: {}
-        - name: cache
-          emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: holmesgpt-api-config
+      - name: llm-credentials
+        secret:
+          secretName: holmesgpt-api-llm-credentials
+          optional: true
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchExpressions:
-                    - key: app.kubernetes.io/name
-                      operator: In
-                      values:
-                        - holmesgpt-api
-                topologyKey: kubernetes.io/hostname
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - holmesgpt-api
+              topologyKey: kubernetes.io/hostname
 

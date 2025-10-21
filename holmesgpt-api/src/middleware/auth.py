@@ -59,18 +59,18 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     Production Implementation: Uses K8s TokenReviewer API with ServiceAccount
     """
 
-    PUBLIC_ENDPOINTS = ["/health", "/ready", "/docs", "/redoc", "/openapi.json"]
+    PUBLIC_ENDPOINTS = ["/health", "/ready", "/metrics", "/docs", "/redoc", "/openapi.json"]
 
     def __init__(self, app, config: Dict[str, Any]):
         super().__init__(app)
         self.config = config
         self.dev_mode = config.get("dev_mode", False)
-        
+
         # Load ServiceAccount token for authenticating to K8s API
         self.sa_token = self._load_serviceaccount_token()
         self.k8s_api_url = self._get_k8s_api_url()
         self.ca_cert_path = K8S_SA_CA_CERT_PATH if Path(K8S_SA_CA_CERT_PATH).exists() else None
-        
+
         logger.info({
             "event": "auth_middleware_initialized",
             "dev_mode": self.dev_mode,
@@ -78,19 +78,19 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             "k8s_api_url": self.k8s_api_url,
             "ca_cert_available": self.ca_cert_path is not None
         })
-    
+
     def _load_serviceaccount_token(self) -> Optional[str]:
         """
         Load ServiceAccount token from mounted volume.
-        
+
         Business Requirement: BR-HAPI-067 (Token authentication)
-        
+
         Returns None in dev mode or if file doesn't exist.
         """
         if self.dev_mode:
             logger.info({"event": "skipping_sa_token_load", "reason": "dev_mode"})
             return None
-        
+
         token_path = Path(K8S_SA_TOKEN_PATH)
         if not token_path.exists():
             logger.warning({
@@ -99,7 +99,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 "note": "Running outside Kubernetes cluster"
             })
             return None
-        
+
         try:
             with open(token_path, "r") as f:
                 token = f.read().strip()
@@ -116,22 +116,22 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 "path": K8S_SA_TOKEN_PATH
             })
             return None
-    
+
     def _get_k8s_api_url(self) -> str:
         """
         Get Kubernetes API server URL.
-        
+
         Uses environment variables set by Kubernetes or falls back to default.
         """
         host = os.getenv("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
         port = os.getenv("KUBERNETES_SERVICE_PORT", "443")
-        
+
         # Construct full URL
         if not host.startswith("http"):
             url = f"https://{host}:{port}"
         else:
             url = f"{host}:{port}"
-        
+
         return url
 
     async def dispatch(self, request: Request, call_next):
@@ -167,7 +167,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             if e.status_code in [401, 403]:
                 reason = "invalid_credentials" if e.status_code == 401 else "forbidden"
                 record_auth_failure(reason, request.url.path)
-            
+
             return JSONResponse(
                 status_code=e.status_code,
                 content={"detail": e.detail}
@@ -237,7 +237,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         Call the Kubernetes TokenReviewer API to validate a token.
 
         Business Requirement: BR-HAPI-067 (Token validation)
-        
+
         Production Implementation:
         - Uses ServiceAccount token to authenticate to K8s API
         - Handles SSL certificate validation
@@ -255,7 +255,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         }
 
         headers = {"Content-Type": "application/json"}
-        
+
         # Add ServiceAccount token for authentication to K8s API
         if self.sa_token:
             headers["Authorization"] = f"Bearer {self.sa_token}"
@@ -272,7 +272,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         # Retry logic with exponential backoff
         max_retries = 3
         retry_delay = 0.1  # Start with 100ms
-        
+
         for attempt in range(max_retries):
             try:
                 async with aiohttp.ClientSession() as session:
@@ -284,7 +284,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                         timeout=aiohttp.ClientTimeout(total=5.0)
                     ) as response:
                         response_text = await response.text()
-                        
+
                         if response.status != 201:  # TokenReview creation returns 201
                             logger.error({
                                 "event": "token_review_failed",
@@ -292,12 +292,12 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                                 "response": response_text[:200],
                                 "attempt": attempt + 1
                             })
-                            
+
                             if attempt < max_retries - 1:
                                 await asyncio.sleep(retry_delay)
                                 retry_delay *= 2  # Exponential backoff
                                 continue
-                            
+
                             raise HTTPException(
                                 status_code=status.HTTP_401_UNAUTHORIZED,
                                 detail=f"Kubernetes TokenReview failed: HTTP {response.status}"
@@ -333,7 +333,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                         })
 
                         return {"username": username, "role": role}
-                        
+
             except aiohttp.ClientError as e:
                 logger.error({
                     "event": "token_review_connection_error",
@@ -341,17 +341,17 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                     "attempt": attempt + 1,
                     "max_retries": max_retries
                 })
-                
+
                 if attempt < max_retries - 1:
                     await asyncio.sleep(retry_delay)
                     retry_delay *= 2
                     continue
-                
+
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail=f"Cannot reach Kubernetes API: {str(e)}"
                 )
-        
+
         # Should not reach here, but just in case
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

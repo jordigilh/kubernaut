@@ -1,0 +1,263 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: holmesgpt-api-alerts
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/part-of: kubernaut
+    prometheus: k8s
+    role: alert-rules
+spec:
+  groups:
+    - name: holmesgpt-api.performance
+      interval: 30s
+      rules:
+        # High error rate alert
+        - alert: HolmesGPTAPIHighErrorRate
+          expr: |
+            rate(holmesgpt_http_requests_total{status=~"5.."}[5m]) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: api
+          annotations:
+            summary: "HolmesGPT API experiencing high error rate"
+            description: "Error rate is {{ $value | humanize }} req/sec (threshold: 0.05 req/sec) for endpoint {{ $labels.endpoint }}"
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/holmesgpt-api-high-error-rate.md"
+        
+        # Critical error rate
+        - alert: HolmesGPTAPICriticalErrorRate
+          expr: |
+            rate(holmesgpt_http_requests_total{status=~"5.."}[5m]) > 0.2
+          for: 2m
+          labels:
+            severity: critical
+            service: holmesgpt-api
+            component: api
+          annotations:
+            summary: "HolmesGPT API experiencing CRITICAL error rate"
+            description: "Error rate is {{ $value | humanize }} req/sec (threshold: 0.2 req/sec)"
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/holmesgpt-api-high-error-rate.md"
+        
+        # High investigation latency
+        - alert: HolmesGPTAPIHighLatency
+          expr: |
+            histogram_quantile(0.95, 
+              rate(holmesgpt_investigations_duration_seconds_bucket[5m])
+            ) > 10
+          for: 5m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: investigations
+          annotations:
+            summary: "Investigation latency is high"
+            description: "P95 investigation latency is {{ $value | humanize }}s (threshold: 10s)"
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/holmesgpt-api-high-latency.md"
+        
+        # Critical investigation latency
+        - alert: HolmesGPTAPICriticalLatency
+          expr: |
+            histogram_quantile(0.95, 
+              rate(holmesgpt_investigations_duration_seconds_bucket[5m])
+            ) > 30
+          for: 2m
+          labels:
+            severity: critical
+            service: holmesgpt-api
+            component: investigations
+          annotations:
+            summary: "Investigation latency is CRITICAL"
+            description: "P95 investigation latency is {{ $value | humanize }}s (threshold: 30s)"
+        
+        # LLM high latency
+        - alert: HolmesGPTAPILLMHighLatency
+          expr: |
+            histogram_quantile(0.95, 
+              rate(holmesgpt_llm_call_duration_seconds_bucket[5m])
+            ) > 15
+          for: 5m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: llm
+          annotations:
+            summary: "LLM API calls are slow"
+            description: "P95 LLM call latency is {{ $value | humanize }}s for provider {{ $labels.provider }} model {{ $labels.model }}"
+    
+    - name: holmesgpt-api.security
+      interval: 30s
+      rules:
+        # Authentication failures spike
+        - alert: HolmesGPTAPIHighAuthFailureRate
+          expr: |
+            rate(holmesgpt_auth_failures_total[5m]) > 0.1
+          for: 2m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: authentication
+          annotations:
+            summary: "High authentication failure rate detected"
+            description: "Auth failures: {{ $value | humanize }} failures/sec (threshold: 0.1/sec) for reason {{ $labels.reason }}"
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/holmesgpt-api-auth-failures.md"
+        
+        # Critical authentication failures
+        - alert: HolmesGPTAPICriticalAuthFailureRate
+          expr: |
+            rate(holmesgpt_auth_failures_total[5m]) > 0.5
+          for: 1m
+          labels:
+            severity: critical
+            service: holmesgpt-api
+            component: authentication
+          annotations:
+            summary: "CRITICAL authentication failure rate - possible attack"
+            description: "Auth failures: {{ $value | humanize }} failures/sec (threshold: 0.5/sec)"
+        
+        # Auth failure ratio
+        - alert: HolmesGPTAPIHighAuthFailureRatio
+          expr: |
+            (
+              rate(holmesgpt_auth_failures_total[5m]) / 
+              (rate(holmesgpt_auth_success_total[5m]) + rate(holmesgpt_auth_failures_total[5m]))
+            ) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: authentication
+          annotations:
+            summary: "High authentication failure ratio"
+            description: "{{ $value | humanizePercentage }} of authentication attempts are failing (threshold: 10%)"
+    
+    - name: holmesgpt-api.dependencies
+      interval: 30s
+      rules:
+        # Context API degraded
+        - alert: HolmesGPTAPIContextAPIDegraded
+          expr: |
+            rate(holmesgpt_context_api_calls_total{status!="success"}[5m]) > 0.2
+          for: 5m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: context-api
+          annotations:
+            summary: "Context API experiencing high error rate"
+            description: "Context API error rate: {{ $value | humanize }} errors/sec (threshold: 0.2/sec)"
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/context-api-degraded.md"
+        
+        # Context API down
+        - alert: HolmesGPTAPIContextAPIDown
+          expr: |
+            rate(holmesgpt_context_api_calls_total[5m]) == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: holmesgpt-api
+            component: context-api
+          annotations:
+            summary: "Context API is not responding"
+            description: "No successful Context API calls in the last 5 minutes"
+        
+        # LLM high error rate
+        - alert: HolmesGPTAPILLMHighErrorRate
+          expr: |
+            rate(holmesgpt_llm_calls_total{status!="success"}[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: llm
+          annotations:
+            summary: "LLM provider experiencing high error rate"
+            description: "LLM error rate: {{ $value | humanize }} errors/sec for provider {{ $labels.provider }}"
+    
+    - name: holmesgpt-api.availability
+      interval: 30s
+      rules:
+        # Pod down
+        - alert: HolmesGPTAPIPodDown
+          expr: |
+            kube_deployment_status_replicas_available{deployment="holmesgpt-api",namespace="kubernaut-system"} < 1
+          for: 2m
+          labels:
+            severity: critical
+            service: holmesgpt-api
+            component: availability
+          annotations:
+            summary: "HolmesGPT API has no available pods"
+            description: "No pods are available for HolmesGPT API service"
+        
+        # Reduced capacity
+        - alert: HolmesGPTAPIReducedCapacity
+          expr: |
+            kube_deployment_status_replicas_available{deployment="holmesgpt-api",namespace="kubernaut-system"} < 
+            kube_deployment_spec_replicas{deployment="holmesgpt-api",namespace="kubernaut-system"}
+          for: 10m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: availability
+          annotations:
+            summary: "HolmesGPT API running with reduced capacity"
+            description: "Only {{ $value }} of {{ $labels.spec_replicas }} pods are available"
+        
+        # High CPU usage
+        - alert: HolmesGPTAPIHighCPU
+          expr: |
+            rate(container_cpu_usage_seconds_total{
+              namespace="kubernaut-system",
+              pod=~"holmesgpt-api-.*"
+            }[5m]) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: resources
+          annotations:
+            summary: "HolmesGPT API pod CPU usage is high"
+            description: "Pod {{ $labels.pod }} CPU usage is {{ $value | humanizePercentage }} (threshold: 80%)"
+        
+        # High memory usage
+        - alert: HolmesGPTAPIHighMemory
+          expr: |
+            container_memory_working_set_bytes{
+              namespace="kubernaut-system",
+              pod=~"holmesgpt-api-.*"
+            } / 
+            container_spec_memory_limit_bytes{
+              namespace="kubernaut-system",
+              pod=~"holmesgpt-api-.*"
+            } > 0.9
+          for: 5m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: resources
+          annotations:
+            summary: "HolmesGPT API pod memory usage is high"
+            description: "Pod {{ $labels.pod }} memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+    
+    - name: holmesgpt-api.cost
+      interval: 60s
+      rules:
+        # High token usage rate
+        - alert: HolmesGPTAPIHighTokenUsage
+          expr: |
+            rate(holmesgpt_llm_token_usage_total[1h]) > 100000
+          for: 10m
+          labels:
+            severity: warning
+            service: holmesgpt-api
+            component: cost
+          annotations:
+            summary: "High LLM token usage rate detected"
+            description: "Token usage rate: {{ $value | humanize }} tokens/sec for provider {{ $labels.provider }} (threshold: 100k/hour)"
+            runbook_url: "https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/high-llm-cost.md"
+
+

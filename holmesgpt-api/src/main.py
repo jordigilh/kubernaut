@@ -10,6 +10,8 @@ Design Decision: DD-HOLMESGPT-012 - Minimal Internal Service Architecture
 
 import logging
 import os
+import yaml
+from pathlib import Path
 from typing import Dict, Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,26 +31,101 @@ from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
 
 def load_config() -> Dict[str, Any]:
     """
-    Load service configuration from environment
+    Load service configuration from YAML file
 
-    Design Decision: DD-HOLMESGPT-012 - Minimal configuration for internal service
+    Design Decision: DD-HOLMESGPT-012 - Configuration as mounted ConfigMap
+    - Reads config from /etc/holmesgpt/config.yaml (mounted ConfigMap)
+    - Falls back to default development configuration if file not found
+    - Cleaner than environment variables - no deployment changes for config updates
+
+    Environment variable overrides:
+    - CONFIG_FILE: Override config file path (default: /etc/holmesgpt/config.yaml)
+    - LLM_CREDENTIALS_PATH: Path to LLM provider credentials (generic, any provider)
+    - GOOGLE_APPLICATION_CREDENTIALS: Legacy/auto-set for Google Cloud compatibility
     """
-    return {
+    config_file = os.getenv("CONFIG_FILE", "/etc/holmesgpt/config.yaml")
+    config_path = Path(config_file)
+
+    # Default development configuration
+    default_config = {
         "service_name": "holmesgpt-api",
         "version": "1.0.0",
-        "environment": os.getenv("ENVIRONMENT", "development"),
-        "dev_mode": os.getenv("DEV_MODE", "true").lower() == "true",
-
-        # Authentication (K8s ServiceAccount tokens)
-        "auth_enabled": os.getenv("AUTH_ENABLED", "false").lower() == "true",
-
-        # LLM Configuration
+        "log_level": "INFO",
+        "dev_mode": True,
+        "auth_enabled": False,
+        "api_host": "0.0.0.0",
+        "api_port": 8080,
         "llm": {
-            "provider": os.getenv("LLM_PROVIDER", "ollama"),
-            "model": os.getenv("LLM_MODEL", "llama2"),
-            "endpoint": os.getenv("LLM_ENDPOINT", "http://localhost:11434"),
+            "provider": "ollama",
+            "model": "llama2",
+            "endpoint": "http://localhost:11434",
+            "max_retries": 3,
+            "timeout_seconds": 60,
+            "max_tokens_per_request": 4096,
+            "temperature": 0.7,
+        },
+        "context_api": {
+            "url": "http://localhost:8091",
+            "timeout_seconds": 10,
+            "max_retries": 2,
+        },
+        "kubernetes": {
+            "service_host": "kubernetes.default.svc",
+            "service_port": 443,
+            "token_reviewer_enabled": True,
+        },
+        "public_endpoints": ["/health", "/ready", "/metrics"],
+        "metrics": {
+            "enabled": True,
+            "endpoint": "/metrics",
+            "scrape_interval": "30s",
         },
     }
+
+    # Load config from file if it exists
+    if config_path.exists():
+        try:
+            logger.info(f"Loading configuration from {config_file}")
+            with open(config_path, 'r') as f:
+                file_config = yaml.safe_load(f)
+
+            # Merge file config with defaults (file config takes precedence)
+            config = {**default_config, **file_config}
+
+            # Ensure nested dicts are properly merged
+            for key in ["llm", "context_api", "kubernetes", "metrics"]:
+                if key in file_config:
+                    config[key] = {**default_config.get(key, {}), **file_config[key]}
+
+            logger.info({
+                "event": "config_loaded",
+                "source": "file",
+                "path": config_file,
+                "llm_provider": config.get("llm", {}).get("provider"),
+                "auth_enabled": config.get("auth_enabled"),
+            })
+            return config
+
+        except Exception as e:
+            logger.error({
+                "event": "config_load_failed",
+                "error": str(e),
+                "path": config_file,
+                "fallback": "using_defaults"
+            })
+            # Fall through to return default config
+    else:
+        logger.warning({
+            "event": "config_file_not_found",
+            "path": config_file,
+            "fallback": "using_defaults"
+        })
+
+    # Add service metadata to default config
+    default_config["service_name"] = "holmesgpt-api"
+    default_config["version"] = "1.0.0"
+
+    return default_config
 
 
 # Load configuration
@@ -102,9 +179,9 @@ health.router.config = config
 async def metrics():
     """
     Prometheus metrics endpoint
-    
+
     Business Requirement: BR-HAPI-100 to 103
-    
+
     Exposes metrics in Prometheus exposition format for scraping
     """
     return metrics_endpoint()
@@ -112,9 +189,10 @@ async def metrics():
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info(f"Starting {config['service_name']} v{config['version']}")
-    logger.info(f"Environment: {config['environment']}")
-    logger.info(f"Dev mode: {config['dev_mode']}")
+    logger.info(f"Starting {config.get('service_name', 'holmesgpt-api')} v{config.get('version', '1.0.0')}")
+    logger.info(f"LLM Provider: {config.get('llm', {}).get('provider', 'unknown')}")
+    logger.info(f"Dev mode: {config.get('dev_mode', False)}")
+    logger.info(f"Auth enabled: {config.get('auth_enabled', False)}")
     logger.info("Service started successfully")
 
 
