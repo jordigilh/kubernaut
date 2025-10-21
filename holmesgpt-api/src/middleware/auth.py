@@ -10,18 +10,25 @@ Design Decision: DD-HOLMESGPT-012 - Minimal Internal Service Architecture
 - No complex RBAC (K8s RBAC handles authorization)
 - No multiple auth methods (K8s ServiceAccount only)
 
-REFACTOR phase: Production implementation with K8s TokenReviewer API
+Production Implementation: Uses K8s TokenReviewer API with resilience
 """
 
 import logging
 import os
-from typing import Dict, Any, List
+import asyncio
+from typing import Dict, Any, List, Optional
 import aiohttp
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Kubernetes ServiceAccount paths
+K8S_SA_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+K8S_SA_CA_CERT_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+K8S_SA_NAMESPACE_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
 
 class User:
@@ -39,7 +46,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     - BR-HAPI-067: JWT token authentication
     - BR-HAPI-068: Role-based access control
 
-    REFACTOR phase: Production implementation with K8s TokenReviewer API
+    Production Implementation: Uses K8s TokenReviewer API with ServiceAccount
     """
 
     PUBLIC_ENDPOINTS = ["/health", "/ready", "/docs", "/redoc", "/openapi.json"]
@@ -48,10 +55,74 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.config = config
         self.dev_mode = config.get("dev_mode", False)
+        
+        # Load ServiceAccount token for authenticating to K8s API
+        self.sa_token = self._load_serviceaccount_token()
+        self.k8s_api_url = self._get_k8s_api_url()
+        self.ca_cert_path = K8S_SA_CA_CERT_PATH if Path(K8S_SA_CA_CERT_PATH).exists() else None
+        
         logger.info({
             "event": "auth_middleware_initialized",
-            "dev_mode": self.dev_mode
+            "dev_mode": self.dev_mode,
+            "sa_token_loaded": self.sa_token is not None,
+            "k8s_api_url": self.k8s_api_url,
+            "ca_cert_available": self.ca_cert_path is not None
         })
+    
+    def _load_serviceaccount_token(self) -> Optional[str]:
+        """
+        Load ServiceAccount token from mounted volume.
+        
+        Business Requirement: BR-HAPI-067 (Token authentication)
+        
+        Returns None in dev mode or if file doesn't exist.
+        """
+        if self.dev_mode:
+            logger.info({"event": "skipping_sa_token_load", "reason": "dev_mode"})
+            return None
+        
+        token_path = Path(K8S_SA_TOKEN_PATH)
+        if not token_path.exists():
+            logger.warning({
+                "event": "sa_token_not_found",
+                "path": K8S_SA_TOKEN_PATH,
+                "note": "Running outside Kubernetes cluster"
+            })
+            return None
+        
+        try:
+            with open(token_path, "r") as f:
+                token = f.read().strip()
+            logger.info({
+                "event": "sa_token_loaded",
+                "path": K8S_SA_TOKEN_PATH,
+                "token_length": len(token)
+            })
+            return token
+        except Exception as e:
+            logger.error({
+                "event": "sa_token_load_failed",
+                "error": str(e),
+                "path": K8S_SA_TOKEN_PATH
+            })
+            return None
+    
+    def _get_k8s_api_url(self) -> str:
+        """
+        Get Kubernetes API server URL.
+        
+        Uses environment variables set by Kubernetes or falls back to default.
+        """
+        host = os.getenv("KUBERNETES_SERVICE_HOST", "kubernetes.default.svc")
+        port = os.getenv("KUBERNETES_SERVICE_PORT", "443")
+        
+        # Construct full URL
+        if not host.startswith("http"):
+            url = f"https://{host}:{port}"
+        else:
+            url = f"{host}:{port}"
+        
+        return url
 
     async def dispatch(self, request: Request, call_next):
         """
@@ -141,13 +212,17 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
     async def _call_token_reviewer_api(self, token: str) -> Dict[str, Any]:
         """
-        Internal method to call the Kubernetes TokenReviewer API.
+        Call the Kubernetes TokenReviewer API to validate a token.
 
-        REFACTOR phase: Production implementation with retry and circuit breaker
+        Business Requirement: BR-HAPI-067 (Token validation)
+        
+        Production Implementation:
+        - Uses ServiceAccount token to authenticate to K8s API
+        - Handles SSL certificate validation
+        - Includes retry logic with exponential backoff
+        - Provides detailed error logging
         """
-        k8s_api_url = os.getenv("KUBERNETES_SERVICE_HOST", "https://kubernetes.default.svc")
-        k8s_api_port = os.getenv("KUBERNETES_SERVICE_PORT", "443")
-        token_reviewer_url = f"{k8s_api_url}:{k8s_api_port}/apis/authentication.k8s.io/v1/tokenreviews"
+        token_reviewer_url = f"{self.k8s_api_url}/apis/authentication.k8s.io/v1/tokenreviews"
 
         request_body = {
             "apiVersion": "authentication.k8s.io/v1",
@@ -157,43 +232,109 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             }
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                token_reviewer_url,
-                json=request_body,
-                headers={"Content-Type": "application/json"},
-                ssl=False  # Internal cluster communication
-            ) as response:
-                if response.status != 200:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid Kubernetes ServiceAccount token"
-                    )
+        headers = {"Content-Type": "application/json"}
+        
+        # Add ServiceAccount token for authentication to K8s API
+        if self.sa_token:
+            headers["Authorization"] = f"Bearer {self.sa_token}"
 
-                result = await response.json()
+        # Configure SSL
+        ssl_context = None
+        if self.ca_cert_path:
+            import ssl
+            ssl_context = ssl.create_default_context(cafile=self.ca_cert_path)
+        else:
+            # Dev mode or no CA cert available
+            ssl_context = False
 
-                # Check if token is authenticated
-                if not result.get("status", {}).get("authenticated", False):
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Token not authenticated by Kubernetes"
-                    )
+        # Retry logic with exponential backoff
+        max_retries = 3
+        retry_delay = 0.1  # Start with 100ms
+        
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        token_reviewer_url,
+                        json=request_body,
+                        headers=headers,
+                        ssl=ssl_context,
+                        timeout=aiohttp.ClientTimeout(total=5.0)
+                    ) as response:
+                        response_text = await response.text()
+                        
+                        if response.status != 201:  # TokenReview creation returns 201
+                            logger.error({
+                                "event": "token_review_failed",
+                                "status": response.status,
+                                "response": response_text[:200],
+                                "attempt": attempt + 1
+                            })
+                            
+                            if attempt < max_retries - 1:
+                                await asyncio.sleep(retry_delay)
+                                retry_delay *= 2  # Exponential backoff
+                                continue
+                            
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail=f"Kubernetes TokenReview failed: HTTP {response.status}"
+                            )
 
-                # Extract user info
-                user_info = result.get("status", {}).get("user", {})
-                username = user_info.get("username", "unknown")
-                groups = user_info.get("groups", [])
+                        result = await response.json()
 
-                # Map K8s groups to application roles
-                role = self._map_k8s_groups_to_role(groups)
+                        # Check if token is authenticated
+                        if not result.get("status", {}).get("authenticated", False):
+                            error_msg = result.get("status", {}).get("error", "Token not authenticated")
+                            logger.warning({
+                                "event": "token_not_authenticated",
+                                "error": error_msg
+                            })
+                            raise HTTPException(
+                                status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail=f"Token not authenticated by Kubernetes: {error_msg}"
+                            )
 
-                logger.info({
-                    "event": "k8s_token_validated",
-                    "username": username,
-                    "role": role
+                        # Extract user info
+                        user_info = result.get("status", {}).get("user", {})
+                        username = user_info.get("username", "unknown")
+                        groups = user_info.get("groups", [])
+
+                        # Map K8s groups to application roles
+                        role = self._map_k8s_groups_to_role(groups)
+
+                        logger.info({
+                            "event": "k8s_token_validated",
+                            "username": username,
+                            "role": role,
+                            "groups_count": len(groups)
+                        })
+
+                        return {"username": username, "role": role}
+                        
+            except aiohttp.ClientError as e:
+                logger.error({
+                    "event": "token_review_connection_error",
+                    "error": str(e),
+                    "attempt": attempt + 1,
+                    "max_retries": max_retries
                 })
-
-                return {"username": username, "role": role}
+                
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                    continue
+                
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Cannot reach Kubernetes API: {str(e)}"
+                )
+        
+        # Should not reach here, but just in case
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="TokenReviewer API call failed after retries"
+        )
 
     def _map_k8s_groups_to_role(self, groups: List[str]) -> str:
         """
