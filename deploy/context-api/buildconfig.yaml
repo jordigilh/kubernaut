@@ -1,0 +1,45 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: context-api
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+    part-of: kubernaut
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: context-api
+  namespace: kubernaut-system
+  labels:
+    app: context-api
+    component: build
+    part-of: kubernaut
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: context-api:latest
+  source:
+    type: Git
+    git:
+      uri: https://github.com/jordigilh/kubernaut.git
+      ref: feature/phase2_services
+    contextDir: .
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: docker/context-api.Dockerfile
+      buildArgs:
+        - name: GOOS
+          value: linux
+        - name: GOARCH
+          value: amd64
+  triggers:
+    - type: ConfigChange
+  runPolicy: Serial
+  successfulBuildsHistoryLimit: 2
+  failedBuildsHistoryLimit: 2
+

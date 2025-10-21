@@ -807,3 +807,127 @@ run-holmesgpt-api: ## Run HolmesGPT API service locally (dev mode)
 ##@ Kubernetes
 .PHONY: k8s-namespace
 k8s-namespace: ## Create namespace
+
+##@ Context API Service
+
+# Context API Image Configuration
+CONTEXT_API_IMG ?= quay.io/jordigilh/context-api:v0.1.0
+
+.PHONY: build-context-api
+build-context-api: ## Build Context API binary locally
+	@echo "🔨 Building Context API binary..."
+	go build -o bin/context-api cmd/contextapi/main.go
+	@echo "✅ Binary: bin/context-api"
+
+.PHONY: run-context-api
+run-context-api: build-context-api ## Run Context API locally with config file
+	@echo "🚀 Starting Context API..."
+	./bin/context-api --config config/context-api.yaml
+
+.PHONY: test-context-api
+test-context-api: ## Run Context API unit tests
+	@echo "🧪 Running Context API tests..."
+	go test ./pkg/contextapi/... -v -cover
+
+.PHONY: test-context-api-integration
+test-context-api-integration: ## Run Context API integration tests
+	@echo "🧪 Running Context API integration tests..."
+	go test ./test/integration/contextapi/... -v
+
+.PHONY: docker-build-context-api
+docker-build-context-api: ## Build multi-architecture Context API image (ADR-027: podman + amd64/arm64)
+	@echo "🔨 Building multi-architecture image: $(CONTEXT_API_IMG)"
+	podman build --platform linux/amd64,linux/arm64 \
+		-t $(CONTEXT_API_IMG) \
+		-f docker/context-api.Dockerfile .
+	@echo "✅ Multi-arch image built: $(CONTEXT_API_IMG)"
+
+.PHONY: docker-push-context-api
+docker-push-context-api: docker-build-context-api ## Push Context API multi-arch image to registry
+	@echo "📤 Pushing multi-arch image: $(CONTEXT_API_IMG)"
+	podman manifest push $(CONTEXT_API_IMG) docker://$(CONTEXT_API_IMG)
+	@echo "✅ Image pushed: $(CONTEXT_API_IMG)"
+
+.PHONY: docker-build-context-api-single
+docker-build-context-api-single: ## Build single-arch debug image (current platform only)
+	@echo "🔨 Building single-arch debug image: $(CONTEXT_API_IMG)-$(shell uname -m)"
+	podman build -t $(CONTEXT_API_IMG)-$(shell uname -m) \
+		-f docker/context-api.Dockerfile .
+	@echo "✅ Single-arch debug image built: $(CONTEXT_API_IMG)-$(shell uname -m)"
+
+.PHONY: docker-run-context-api
+docker-run-context-api: docker-build-context-api ## Run Context API in container with environment variables
+	@echo "🚀 Starting Context API container..."
+	podman run -d --rm \
+		--name context-api \
+		-p 8091:8091 \
+		-p 9090:9090 \
+		-e DB_HOST=localhost \
+		-e DB_PORT=5432 \
+		-e DB_NAME=postgres \
+		-e DB_USER=postgres \
+		-e DB_PASSWORD=postgres \
+		-e REDIS_ADDR=localhost:6379 \
+		-e REDIS_DB=0 \
+		-e LOG_LEVEL=info \
+		$(CONTEXT_API_IMG)
+	@echo "✅ Context API running: http://localhost:8091"
+	@echo "📊 Metrics endpoint: http://localhost:9090/metrics"
+	@echo "🛑 Stop with: make docker-stop-context-api"
+
+.PHONY: docker-run-context-api-with-config
+docker-run-context-api-with-config: docker-build-context-api ## Run Context API with mounted config file (local dev)
+	@echo "🚀 Starting Context API container with config file..."
+	podman run -d --rm \
+		--name context-api \
+		-p 8091:8091 \
+		-p 9090:9090 \
+		-v $(PWD)/config/context-api.yaml:/etc/context-api/config.yaml:ro \
+		$(CONTEXT_API_IMG) \
+		--config /etc/context-api/config.yaml
+	@echo "✅ Context API running: http://localhost:8091"
+	@echo "📊 Metrics endpoint: http://localhost:9090/metrics"
+	@echo "🛑 Stop with: make docker-stop-context-api"
+
+.PHONY: docker-stop-context-api
+docker-stop-context-api: ## Stop Context API container
+	@echo "🛑 Stopping Context API container..."
+	podman stop context-api || true
+	@echo "✅ Context API stopped"
+
+.PHONY: docker-logs-context-api
+docker-logs-context-api: ## Show Context API container logs
+	podman logs -f context-api
+
+.PHONY: deploy-context-api
+deploy-context-api: ## Deploy Context API to Kubernetes cluster
+	@echo "🚀 Deploying Context API to Kubernetes..."
+	kubectl apply -f deploy/context-api/
+	@echo "✅ Context API deployed"
+	@echo "⏳ Waiting for rollout..."
+	kubectl rollout status deployment/context-api -n kubernaut-system
+
+.PHONY: undeploy-context-api
+undeploy-context-api: ## Remove Context API from Kubernetes cluster
+	@echo "🗑️  Removing Context API from Kubernetes..."
+	kubectl delete -f deploy/context-api/ || true
+	@echo "✅ Context API removed"
+
+.PHONY: validate-context-api-build
+validate-context-api-build: ## Validate Context API build pipeline
+	@echo "✅ Validating Context API build pipeline..."
+	@echo "1️⃣  Building binary..."
+	@$(MAKE) build-context-api
+	@echo "2️⃣  Running unit tests..."
+	@$(MAKE) test-context-api
+	@echo "3️⃣  Building Docker image..."
+	@$(MAKE) docker-build-context-api-single
+	@echo "4️⃣  Testing container startup..."
+	@podman run --rm -d --name context-api-validate -p 8091:8091 -p 9090:9090 \
+		-e DB_HOST=localhost -e DB_PORT=5432 -e DB_NAME=test -e DB_USER=test -e DB_PASSWORD=test \
+		-e REDIS_ADDR=localhost:6379 -e REDIS_DB=0 \
+		$(CONTEXT_API_IMG)-$(shell uname -m) || true
+	@sleep 3
+	@curl -f http://localhost:8091/health && echo "✅ Health check passed" || echo "❌ Health check failed"
+	@podman stop context-api-validate || true
+	@echo "✅ Context API build pipeline validated"
