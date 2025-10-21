@@ -27,14 +27,22 @@ import (
 )
 
 func main() {
-	// Flag parsing
+	// Read from environment variables first, then flags
+	getEnv := func(key, fallback string) string {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+		return fallback
+	}
+	
+	// Flag parsing with environment variable defaults
 	var (
-		addr       = flag.String("addr", ":8080", "HTTP server address")
-		dbHost     = flag.String("db-host", "localhost", "PostgreSQL host")
+		addr       = flag.String("addr", getEnv("HTTP_PORT", ":8080"), "HTTP server address")
+		dbHost     = flag.String("db-host", getEnv("DB_HOST", "localhost"), "PostgreSQL host")
 		dbPort     = flag.Int("db-port", 5432, "PostgreSQL port")
-		dbName     = flag.String("db-name", "kubernaut", "PostgreSQL database name")
-		dbUser     = flag.String("db-user", "kubernaut", "PostgreSQL user")
-		dbPassword = flag.String("db-password", "", "PostgreSQL password")
+		dbName     = flag.String("db-name", getEnv("DB_NAME", "kubernaut"), "PostgreSQL database name")
+		dbUser     = flag.String("db-user", getEnv("DB_USER", "kubernaut"), "PostgreSQL user")
+		dbPassword = flag.String("db-password", getEnv("DB_PASSWORD", ""), "PostgreSQL password")
 	)
 	flag.Parse()
 

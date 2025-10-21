@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: data-storage-config
-  namespace: kubernaut
+  namespace: kubernaut-system
 data:
   # Server Configuration
   HTTP_PORT: "8080"
@@ -11,11 +11,12 @@ data:
   LOG_FORMAT: "json"
 
   # Database Configuration (non-sensitive)
-  DB_HOST: "postgres-service"
+  DB_HOST: "postgres.kubernaut-system.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "action_history"
+  DB_USER: "slm_user"
   DB_MAX_CONNECTIONS: "50"
-  DB_SSL_MODE: "require"
+  DB_SSL_MODE: "disable"
 
   # Vector DB Configuration (optional)
   VECTOR_DB_ENABLED: "false"
