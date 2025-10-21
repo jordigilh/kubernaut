@@ -171,4 +171,3 @@ var _ = Describe("Cache Thrashing Detection (Scenario 1.2)", func() {
 		})
 	})
 })
-

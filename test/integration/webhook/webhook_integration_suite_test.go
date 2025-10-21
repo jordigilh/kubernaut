@@ -17,7 +17,7 @@ limitations under the License.
 //go:build integration
 // +build integration
 
-package webhook_test
+package webhook
 
 import (
 	"testing"

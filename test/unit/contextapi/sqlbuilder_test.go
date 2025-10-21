@@ -107,14 +107,14 @@ var _ = Describe("SQL Builder", func() {
 				query, args, err := builder.Build()
 				Expect(err).ToNot(HaveOccurred())
 
-			// Verify raw input is NOT in the query string
-			Expect(query).ToNot(ContainSubstring(severity))
+				// Verify raw input is NOT in the query string
+				Expect(query).ToNot(ContainSubstring(severity))
 
-			// Verify input is parameterized in args
-			Expect(args).To(ContainElement(severity))
+				// Verify input is parameterized in args
+				Expect(args).To(ContainElement(severity))
 
-			// Verify parameterized placeholder is used with table alias (Data Storage schema)
-			Expect(query).To(ContainSubstring("rat.alert_severity = $"))
+				// Verify parameterized placeholder is used with table alias (Data Storage schema)
+				Expect(query).To(ContainSubstring("rat.alert_severity = $"))
 			},
 			Entry("normal input", "critical"),
 			Entry("SQL injection attempt", "critical' OR '1'='1"),

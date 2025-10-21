@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sqlbuilder_test
+package sqlbuilder
 
 import (
 	"testing"
@@ -39,14 +39,14 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 
 			// Must query from resource_action_traces (not remediation_audit)
 			Expect(query).To(ContainSubstring("FROM resource_action_traces"))
-			
+
 			// Must include alias 'rat'
 			Expect(query).To(ContainSubstring("resource_action_traces rat"))
-			
+
 			// Must JOIN with action_histories
 			Expect(query).To(ContainSubstring("JOIN action_histories ah"))
 			Expect(query).To(ContainSubstring("ON rat.action_history_id = ah.id"))
-			
+
 			// Must JOIN with resource_references
 			Expect(query).To(ContainSubstring("JOIN resource_references rr"))
 			Expect(query).To(ContainSubstring("ON ah.resource_id = rr.id"))
@@ -63,18 +63,18 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 			Expect(query).To(ContainSubstring("rat.alert_name"))
 			Expect(query).To(ContainSubstring("rat.alert_fingerprint"))
 			Expect(query).To(ContainSubstring("rat.action_id"))
-			
+
 			// Context fields
 			Expect(query).To(ContainSubstring("rr.namespace"))
 			Expect(query).To(ContainSubstring("rat.cluster_name"))
 			Expect(query).To(ContainSubstring("rat.environment"))
 			Expect(query).To(ContainSubstring("rr.kind"))
-			
+
 			// Status fields
 			Expect(query).To(ContainSubstring("rat.execution_status"))
 			Expect(query).To(ContainSubstring("rat.alert_severity"))
 			Expect(query).To(ContainSubstring("rat.action_type"))
-			
+
 			// Timing fields
 			Expect(query).To(ContainSubstring("rat.action_timestamp"))
 			Expect(query).To(ContainSubstring("rat.execution_end_time"))
@@ -165,7 +165,7 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 			builder := sqlbuilder.NewBuilder()
 			query, _, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// Context API expects 'name' field
 			Expect(query).To(ContainSubstring("rat.alert_name AS name"))
 		})
@@ -174,7 +174,7 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 			builder := sqlbuilder.NewBuilder()
 			query, _, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// Context API expects 'remediation_request_id'
 			Expect(query).To(ContainSubstring("rat.action_id AS remediation_request_id"))
 		})
@@ -183,7 +183,7 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 			builder := sqlbuilder.NewBuilder()
 			query, _, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// Context API expects 'target_resource'
 			Expect(query).To(ContainSubstring("rr.kind AS target_resource"))
 		})
@@ -192,7 +192,7 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 			builder := sqlbuilder.NewBuilder()
 			query, _, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// Context API expects 'status'
 			Expect(query).To(ContainSubstring("rat.execution_status AS status"))
 		})
@@ -201,11 +201,11 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 			builder := sqlbuilder.NewBuilder()
 			query, _, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// Must use CASE statement to derive phase
 			Expect(query).To(ContainSubstring("CASE rat.execution_status"))
 			Expect(query).To(ContainSubstring("AS phase"))
-			
+
 			// Should handle common statuses
 			Expect(query).To(ContainSubstring("completed"))
 			Expect(query).To(ContainSubstring("failed"))
@@ -231,7 +231,7 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 			Expect(err).ToNot(HaveOccurred())
 			err = builder.WithOffset(20)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			query, args, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
 
@@ -246,14 +246,14 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 		It("should generate count query with same JOINs", func() {
 			builder := sqlbuilder.NewBuilder()
 			builder.WithNamespace("production")
-			
+
 			countQuery, args := builder.BuildCount()
 
 			// Must have same JOIN structure
 			Expect(countQuery).To(ContainSubstring("FROM resource_action_traces rat"))
 			Expect(countQuery).To(ContainSubstring("JOIN action_histories ah"))
 			Expect(countQuery).To(ContainSubstring("JOIN resource_references rr"))
-			
+
 			// Must have same WHERE clause
 			Expect(countQuery).To(ContainSubstring("WHERE rr.namespace = $1"))
 			Expect(args).To(HaveLen(1))
@@ -265,7 +265,7 @@ var _ = Describe("SQL Builder Schema Alignment", func() {
 			Expect(err).ToNot(HaveOccurred())
 			err = builder.WithOffset(20)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			countQuery, _ := builder.BuildCount()
 
 			// Count queries don't need ordering or limits
