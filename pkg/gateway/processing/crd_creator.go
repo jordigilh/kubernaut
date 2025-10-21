@@ -167,15 +167,15 @@ func (c *CRDCreator) CreateRemediationRequest(
 			// Original payload for audit trail
 			OriginalPayload: signal.RawPayload,
 
-		// Storm detection (populated if storm detected)
-		IsStorm:           signal.IsStorm,
-		StormType:         signal.StormType,
-		StormWindow:       signal.StormWindow,
-		StormAlertCount:   signal.AlertCount,
-		AffectedResources: signal.AffectedResources,
+			// Storm detection (populated if storm detected)
+			IsStorm:           signal.IsStorm,
+			StormType:         signal.StormType,
+			StormWindow:       signal.StormWindow,
+			StormAlertCount:   signal.AlertCount,
+			AffectedResources: signal.AffectedResources,
 
-		// Deduplication metadata (initial values)
-		Deduplication: remediationv1alpha1.DeduplicationInfo{
+			// Deduplication metadata (initial values)
+			Deduplication: remediationv1alpha1.DeduplicationInfo{
 				FirstSeen:       metav1.NewTime(signal.ReceivedTime),
 				LastSeen:        metav1.NewTime(signal.ReceivedTime),
 				OccurrenceCount: 1,

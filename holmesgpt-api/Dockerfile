@@ -1,17 +1,16 @@
-# Multi-stage build for HolmesGPT API service using Red Hat UBI9 Python
-# Design Decision: DD-HOLMESGPT-012 - Minimal Internal Service Architecture
+# HolmesGPT API - Multi-Architecture Dockerfile using Red Hat UBI9
+# Supports: linux/amd64, linux/arm64
+# Based on: ADR-027 (Multi-Architecture Build Strategy)
 
-# ========================================
-# Stage 1: Builder (Install dependencies)
-# ========================================
-FROM registry.access.redhat.com/ubi9/python-311:latest AS builder
+# Build stage - Red Hat UBI9 Python 3.12
+FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
 
 # Switch to root for package installation
 USER root
 
-# Install system dependencies (including git for pip install from git)
+# Install build dependencies
 RUN dnf update -y && \
-	dnf install -y git ca-certificates tzdata && \
+	dnf install -y gcc gcc-c++ git ca-certificates tzdata && \
 	dnf clean all
 
 # Switch back to default user for security
@@ -20,66 +19,70 @@ USER 1001
 # Set working directory
 WORKDIR /opt/app-root/src
 
-# Copy dependency files first (for layer caching)
-COPY --chown=1001:0 requirements.txt ./
+# Copy HolmesGPT SDK dependencies (referenced in requirements.txt)
+COPY --chown=1001:0 dependencies/ ../dependencies/
 
-# Install Python dependencies
-# Note: requirements.txt includes HolmesGPT SDK from git
+# Copy requirements first for layer caching
+COPY --chown=1001:0 holmesgpt-api/requirements.txt ./
+
+# Upgrade pip and install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
 	pip install --no-cache-dir -r requirements.txt
 
-# Copy application source code
-COPY --chown=1001:0 src ./src
-COPY --chown=1001:0 pytest.ini ./
+# Runtime stage - Red Hat UBI9 Python 3.12
+FROM registry.access.redhat.com/ubi9/python-312:latest
 
-# ========================================
-# Stage 2: Runtime (Minimal production image)
-# ========================================
-FROM registry.access.redhat.com/ubi9/python-311:latest
-
-# Switch to root for package installation
+# Install runtime dependencies
 USER root
-
-# Install runtime dependencies only
 RUN dnf update -y && \
 	dnf install -y ca-certificates tzdata && \
 	dnf clean all
 
-# Switch back to default user for security
-USER 1001
-
-# Set working directory
+# Set working directory (UBI9 Python already has UID 1001 user)
 WORKDIR /opt/app-root/src
 
-# Copy Python dependencies from builder (includes HolmesGPT SDK)
-COPY --from=builder /opt/app-root/lib/python3.11/site-packages /opt/app-root/lib/python3.11/site-packages
+# Copy Python dependencies from builder (includes HolmesGPT SDK in site-packages)
+COPY --from=builder /opt/app-root/lib/python3.12/site-packages /opt/app-root/lib/python3.12/site-packages
+COPY --from=builder /opt/app-root/bin /opt/app-root/bin
 
-# Copy application code from builder
-COPY --from=builder --chown=1001:0 /opt/app-root/src/src ./src
+# Copy application code
+COPY --chown=1001:0 holmesgpt-api/src/ ./src/
+COPY --chown=1001:0 holmesgpt-api/requirements.txt ./
 
-# Set Python path to include dependencies
-ENV PYTHONPATH=/opt/app-root/src:/opt/app-root/lib/python3.11/site-packages
-ENV PATH=/opt/app-root/bin:$PATH
+# Create necessary directories with correct permissions
+RUN mkdir -p /tmp /opt/app-root/.cache && \
+	chown -R 1001:0 /opt/app-root /tmp && \
+	chmod -R g=u /opt/app-root /tmp
 
-# Expose port for FastAPI (internal service)
-# Design Decision: DD-HOLMESGPT-012 - Single port for internal service
+# Switch to non-root user for security
+USER 1001
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+	PYTHONDONTWRITEBYTECODE=1 \
+	PATH="/opt/app-root/bin:${PATH}" \
+	HOME=/opt/app-root
+
+# Expose port
 EXPOSE 8080
 
-# Health check using FastAPI health endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-	CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()" || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+	CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
-# Set entrypoint to run FastAPI with uvicorn
-ENTRYPOINT ["python", "-m", "uvicorn", "src.main:app"]
-CMD ["--host", "0.0.0.0", "--port", "8080"]
+# Run FastAPI with uvicorn
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]
 
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-holmesgpt-api" \
 	vendor="Kubernaut" \
 	version="1.0.0" \
-	summary="HolmesGPT API Service - Minimal Internal Service" \
-	description="FastAPI wrapper around HolmesGPT SDK for Kubernaut-specific investigations" \
-	io.k8s.description="HolmesGPT API Service for recovery and post-execution analysis" \
-	io.k8s.display-name="HolmesGPT API" \
-	io.openshift.tags="kubernaut,ai,holmesgpt,fastapi,python"
-
+	release="1" \
+	summary="HolmesGPT API - AI-Powered Recovery Analysis Service" \
+	description="A Python microservice component of Kubernaut that provides AI-powered recovery analysis for Kubernetes remediation using HolmesGPT SDK and LLM integration." \
+	maintainer="jgil@redhat.com" \
+	component="ai-analysis" \
+	part-of="kubernaut" \
+	io.k8s.description="HolmesGPT API Service for AI-powered Kubernetes remediation analysis" \
+	io.k8s.display-name="Kubernaut HolmesGPT API" \
+	io.openshift.tags="kubernaut,holmesgpt,ai,llm,recovery,python,microservice"

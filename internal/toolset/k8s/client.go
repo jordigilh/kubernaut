@@ -81,4 +81,3 @@ func NewClient(cfg Config, logger *zap.Logger) (kubernetes.Interface, error) {
 
 	return clientset, nil
 }
-

@@ -21,10 +21,10 @@ import (
 
 var _ = Describe("BR-TOOLSET-033: HTTP Server", func() {
 	var (
-		srv          *server.Server
-		fakeClient   *fake.Clientset
-		ctx          context.Context
-		cancelFunc   context.CancelFunc
+		srv        *server.Server
+		fakeClient *fake.Clientset
+		ctx        context.Context
+		cancelFunc context.CancelFunc
 	)
 
 	BeforeEach(func() {
@@ -329,4 +329,3 @@ func authenticatedTokenReactor() func(action k8stesting.Action) (bool, runtime.O
 		return true, tokenReview, nil
 	}
 }
-
