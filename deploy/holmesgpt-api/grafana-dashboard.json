@@ -1,0 +1,301 @@
+{
+  "dashboard": {
+    "title": "HolmesGPT API - Production Observability",
+    "tags": ["holmesgpt", "api", "ai", "kubernetes"],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "type": "graph",
+        "title": "Investigation Request Rate",
+        "targets": [
+          {
+            "expr": "rate(holmesgpt_investigations_total[5m])",
+            "legendFormat": "{{method}} {{endpoint}} ({{status}})",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Requests/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 2,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "type": "graph",
+        "title": "Investigation Duration (p50, p95, p99)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))",
+            "legendFormat": "p50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(holmesgpt_investigations_duration_seconds_bucket[5m]))",
+            "legendFormat": "p99",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 3,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "type": "graph",
+        "title": "LLM API Call Rate",
+        "targets": [
+          {
+            "expr": "rate(holmesgpt_llm_calls_total[5m])",
+            "legendFormat": "{{provider}} {{model}} ({{status}})",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Calls/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 4,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "type": "graph",
+        "title": "LLM Token Usage Rate",
+        "targets": [
+          {
+            "expr": "rate(holmesgpt_llm_token_usage_total{type=\"prompt\"}[5m])",
+            "legendFormat": "Prompt Tokens/sec",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(holmesgpt_llm_token_usage_total{type=\"completion\"}[5m])",
+            "legendFormat": "Completion Tokens/sec",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Tokens/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 5,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "type": "graph",
+        "title": "Authentication Metrics",
+        "targets": [
+          {
+            "expr": "rate(holmesgpt_auth_success_total[5m])",
+            "legendFormat": "Success: {{username}} ({{role}})",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(holmesgpt_auth_failures_total[5m])",
+            "legendFormat": "Failure: {{reason}} ({{endpoint}})",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Auth Events/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 6,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "type": "graph",
+        "title": "Context API Integration",
+        "targets": [
+          {
+            "expr": "rate(holmesgpt_context_api_calls_total[5m])",
+            "legendFormat": "{{endpoint}} ({{status}})",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Calls/sec"},
+          {"format": "short"}
+        ]
+      },
+      {
+        "id": 7,
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 24},
+        "type": "stat",
+        "title": "Active Requests",
+        "targets": [
+          {
+            "expr": "sum(holmesgpt_active_requests)",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto"
+        }
+      },
+      {
+        "id": 8,
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 24},
+        "type": "stat",
+        "title": "Total Investigations (24h)",
+        "targets": [
+          {
+            "expr": "sum(increase(holmesgpt_investigations_total[24h]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto"
+        }
+      },
+      {
+        "id": 9,
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 24},
+        "type": "stat",
+        "title": "Total LLM Calls (24h)",
+        "targets": [
+          {
+            "expr": "sum(increase(holmesgpt_llm_calls_total[24h]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto"
+        }
+      },
+      {
+        "id": 10,
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 24},
+        "type": "stat",
+        "title": "Auth Failure Rate",
+        "targets": [
+          {
+            "expr": "rate(holmesgpt_auth_failures_total[5m]) / (rate(holmesgpt_auth_success_total[5m]) + rate(holmesgpt_auth_failures_total[5m])) * 100",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "orientation": "auto",
+          "unit": "percent"
+        },
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"value": 0, "color": "green"},
+            {"value": 1, "color": "yellow"},
+            {"value": 5, "color": "red"}
+          ]
+        }
+      },
+      {
+        "id": 11,
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 30},
+        "type": "table",
+        "title": "LLM Cost Estimation (based on token usage)",
+        "targets": [
+          {
+            "expr": "sum by (provider, model) (increase(holmesgpt_llm_token_usage_total[24h]))",
+            "refId": "A",
+            "format": "table"
+          }
+        ],
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {},
+              "indexByName": {},
+              "renameByName": {
+                "provider": "Provider",
+                "model": "Model",
+                "Value": "Tokens (24h)"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 38},
+        "type": "graph",
+        "title": "HTTP Error Rate by Endpoint",
+        "targets": [
+          {
+            "expr": "rate(holmesgpt_http_requests_total{status=~\"4..|5..\"}[5m])",
+            "legendFormat": "{{method}} {{endpoint}} ({{status}})",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Errors/sec"},
+          {"format": "short"}
+        ],
+        "alert": {
+          "name": "High HTTP Error Rate",
+          "conditions": [
+            {
+              "evaluator": {"params": [0.1], "type": "gt"},
+              "operator": {"type": "and"},
+              "query": {"params": ["A", "5m", "now"]},
+              "reducer": {"params": [], "type": "avg"},
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "frequency": "1m",
+          "handler": 1,
+          "message": "HTTP error rate is above threshold",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      },
+      {
+        "id": 13,
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 38},
+        "type": "graph",
+        "title": "Context API Duration (p50, p95, p99)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(holmesgpt_context_api_duration_seconds_bucket[5m]))",
+            "legendFormat": "p50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(holmesgpt_context_api_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(holmesgpt_context_api_duration_seconds_bucket[5m]))",
+            "legendFormat": "p99",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "s", "label": "Duration"},
+          {"format": "short"}
+        ]
+      }
+    ]
+  }
+}
+
