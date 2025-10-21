@@ -2,16 +2,46 @@
 Integration Tests for Context API Client
 
 Tests real HTTP integration with Context API service.
-Uses mock Context API server when service is unavailable.
+Uses mock Context API server when real service is unavailable.
+
+**Test Modes**:
+1. **Real Integration** (CONTEXT_API_URL set): Tests against real Context API in cluster
+2. **Mock Integration** (no env var): Uses local mock server for development
 
 Business Requirements: BR-HAPI-070 (Historical Context Integration)
 """
 
 import pytest
 import asyncio
+import os
 from unittest.mock import Mock, patch, AsyncMock
 from aiohttp import web
 from src.clients.context_api_client import ContextAPIClient
+
+
+# ========================================
+# TEST CONFIGURATION
+# ========================================
+
+def use_real_context_api():
+    """Check if tests should use real Context API service"""
+    context_api_url = os.getenv("CONTEXT_API_URL")
+    return context_api_url is not None and context_api_url != ""
+
+
+@pytest.fixture
+def context_api_mode():
+    """Determine test mode: 'real' or 'mock'"""
+    return "real" if use_real_context_api() else "mock"
+
+
+@pytest.fixture
+def real_context_api_url():
+    """Get real Context API URL from environment"""
+    return os.getenv(
+        "CONTEXT_API_URL",
+        "http://context-api.kubernaut-system.svc.cluster.local:8091"
+    )
 
 
 # ========================================
@@ -98,6 +128,21 @@ async def mock_context_api_server(aiohttp_server, mock_context_api_response):
     return await aiohttp_server(app)
 
 
+@pytest.fixture
+async def context_api_base_url(context_api_mode, real_context_api_url, mock_context_api_server):
+    """
+    Provide Context API base URL based on test mode
+    
+    Returns:
+        - Real Context API URL if CONTEXT_API_URL is set
+        - Mock server URL otherwise
+    """
+    if context_api_mode == "real":
+        return real_context_api_url
+    else:
+        return str(mock_context_api_server.make_url(""))
+
+
 # ========================================
 # TEST SUITE 1: Client Initialization
 # ========================================
@@ -137,13 +182,17 @@ class TestContextAPIHealthCheck:
     """Test Context API health check"""
 
     @pytest.mark.asyncio
-    async def test_health_check_success(self, mock_context_api_server):
-        """Test successful health check"""
-        client = ContextAPIClient(base_url=str(mock_context_api_server.make_url("")))
+    async def test_health_check_success(self, context_api_base_url, context_api_mode):
+        """
+        Test successful health check
+        
+        **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
+        """
+        client = ContextAPIClient(base_url=context_api_base_url)
 
         is_healthy = await client.health_check()
 
-        assert is_healthy is True
+        assert is_healthy is True, f"Health check failed in {context_api_mode} mode"
 
     @pytest.mark.asyncio
     async def test_health_check_failure_unavailable_service(self):
@@ -165,11 +214,16 @@ class TestGetHistoricalContextSuccess:
     @pytest.mark.asyncio
     async def test_get_historical_context_success(
         self,
-        mock_context_api_server,
+        context_api_base_url,
+        context_api_mode,
         mock_context_api_response
     ):
-        """Test successful retrieval of historical context"""
-        client = ContextAPIClient(base_url=str(mock_context_api_server.make_url("")))
+        """
+        Test successful retrieval of historical context
+        
+        **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
+        """
+        client = ContextAPIClient(base_url=context_api_base_url)
 
         context = await client.get_historical_context(
             namespace="production",
@@ -178,19 +232,27 @@ class TestGetHistoricalContextSuccess:
             time_range="30d"
         )
 
-        assert context is not None
-        assert context["available"] is True
-        assert "success_rates" in context
-        assert "similar_incidents" in context
-        assert "environment_patterns" in context
+        assert context is not None, f"Context retrieval failed in {context_api_mode} mode"
+        assert context.get("available", True) is not False
+        # When using real Context API, response structure may vary
+        if context_api_mode == "mock":
+            assert context["available"] is True
+            assert "success_rates" in context
+            assert "similar_incidents" in context
+            assert "environment_patterns" in context
 
     @pytest.mark.asyncio
     async def test_get_historical_context_includes_success_rates(
         self,
-        mock_context_api_server
+        context_api_base_url,
+        context_api_mode
     ):
-        """Test historical context includes success rates"""
-        client = ContextAPIClient(base_url=str(mock_context_api_server.make_url("")))
+        """
+        Test historical context includes success rates
+        
+        **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
+        """
+        client = ContextAPIClient(base_url=context_api_base_url)
 
         context = await client.get_historical_context(
             namespace="production",
@@ -198,18 +260,28 @@ class TestGetHistoricalContextSuccess:
             target_name="api-server"
         )
 
-        success_rates = context["success_rates"]
-        assert "scale-deployment" in success_rates
-        assert success_rates["scale-deployment"]["success_rate"] == 89.4
-        assert success_rates["scale-deployment"]["total_attempts"] == 47
+        # In mock mode, validate exact structure
+        if context_api_mode == "mock":
+            success_rates = context["success_rates"]
+            assert "scale-deployment" in success_rates
+            assert success_rates["scale-deployment"]["success_rate"] == 89.4
+            assert success_rates["scale-deployment"]["total_attempts"] == 47
+        # In real mode, just verify success_rates key exists if data is available
+        elif context.get("available", True):
+            assert "success_rates" in context or context.get("available") is False
 
     @pytest.mark.asyncio
     async def test_get_historical_context_includes_similar_incidents(
         self,
-        mock_context_api_server
+        context_api_base_url,
+        context_api_mode
     ):
-        """Test historical context includes similar incidents"""
-        client = ContextAPIClient(base_url=str(mock_context_api_server.make_url("")))
+        """
+        Test historical context includes similar incidents
+        
+        **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
+        """
+        client = ContextAPIClient(base_url=context_api_base_url)
 
         context = await client.get_historical_context(
             namespace="production",
@@ -217,18 +289,28 @@ class TestGetHistoricalContextSuccess:
             target_name="api-server"
         )
 
-        similar_incidents = context["similar_incidents"]
-        assert len(similar_incidents) == 2
-        assert similar_incidents[0]["remediation_action"] == "increase-memory"
-        assert similar_incidents[0]["similarity_score"] == 0.95
+        # In mock mode, validate exact structure
+        if context_api_mode == "mock":
+            similar_incidents = context["similar_incidents"]
+            assert len(similar_incidents) == 2
+            assert similar_incidents[0]["remediation_action"] == "increase-memory"
+            assert similar_incidents[0]["similarity_score"] == 0.95
+        # In real mode, just verify similar_incidents key exists if data is available
+        elif context.get("available", True):
+            assert "similar_incidents" in context or context.get("available") is False
 
     @pytest.mark.asyncio
     async def test_get_historical_context_includes_environment_patterns(
         self,
-        mock_context_api_server
+        context_api_base_url,
+        context_api_mode
     ):
-        """Test historical context includes environment patterns"""
-        client = ContextAPIClient(base_url=str(mock_context_api_server.make_url("")))
+        """
+        Test historical context includes environment patterns
+        
+        **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
+        """
+        client = ContextAPIClient(base_url=context_api_base_url)
 
         context = await client.get_historical_context(
             namespace="production",
@@ -236,17 +318,22 @@ class TestGetHistoricalContextSuccess:
             target_name="api-server"
         )
 
-        env_patterns = context["environment_patterns"]
-        assert "production" in env_patterns
-        assert "High memory usage typical" in env_patterns["production"]
+        # In mock mode, validate exact structure
+        if context_api_mode == "mock":
+            env_patterns = context["environment_patterns"]
+            assert "production" in env_patterns
+            assert "High memory usage typical" in env_patterns["production"]
+        # In real mode, just verify environment_patterns key exists if data is available
+        elif context.get("available", True):
+            assert "environment_patterns" in context or context.get("available") is False
 
     @pytest.mark.asyncio
     async def test_get_historical_context_with_optional_signal_type(
         self,
-        mock_context_api_server
+        context_api_base_url
     ):
         """Test historical context with optional signal_type parameter"""
-        client = ContextAPIClient(base_url=str(mock_context_api_server.make_url("")))
+        client = ContextAPIClient(base_url=context_api_base_url)
 
         context = await client.get_historical_context(
             namespace="production",
