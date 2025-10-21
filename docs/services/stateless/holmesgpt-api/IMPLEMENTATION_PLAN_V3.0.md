@@ -154,17 +154,17 @@ holmesgpt-api/src/
 **Architectural Drift Detected**:
 ```
 PROBLEM: Implemented API Gateway instead of thin wrapper
-EVIDENCE: 
+EVIDENCE:
   - 58.4% of tests (104/178) were infrastructure overhead
   - 100% of core business logic (74 tests) already passing
   - Service is internal-only (network policies handle access)
-  
+
 SOLUTION: Remove infrastructure overhead, focus on core business value
-BENEFIT: 
+BENEFIT:
   - 60% time savings (10 days → 4 days)
   - Zero technical debt (no unused features)
   - Same business value (100% core features retained)
-  
+
 PATTERN: Use K8s native features (network policies, RBAC, service mesh)
 ```
 
@@ -288,7 +288,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: holmesgpt-api-ingress
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:
@@ -358,7 +358,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: holmesgpt-api
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
   labels:
     app: holmesgpt-api
     version: v1.0.0
@@ -416,7 +416,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: holmesgpt-api
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   selector:
     app: holmesgpt-api
@@ -432,7 +432,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: holmesgpt-api-sa
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 ```
 
 ---
@@ -446,7 +446,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: holmesgpt-api-ingress
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:

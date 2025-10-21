@@ -8,7 +8,7 @@
 ### Context & Problem
 
 The original namespace strategy (`docs/architecture/NAMESPACE_STRATEGY.md`) used a dual-namespace approach:
-- `kubernaut-system`: Stateless HTTP services
+- `prometheus-alerts-slm`: Stateless HTTP services
 - `kubernaut-system`: CRD controllers
 
 **Problem**: This created unnecessary complexity and confusion about service placement.
@@ -20,7 +20,7 @@ The original namespace strategy (`docs/architecture/NAMESPACE_STRATEGY.md`) used
 
 ### Alternatives Considered
 
-#### Alternative 1: Keep Dual-Namespace (kubernaut + kubernaut-system)
+#### Alternative 1: Keep Dual-Namespace (prometheus-alerts-slm + kubernaut-system)
 **Approach**: Maintain current split between stateless services and controllers
 
 **Pros**:

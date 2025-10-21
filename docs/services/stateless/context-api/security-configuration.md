@@ -154,7 +154,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: context-api-service
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:
@@ -168,7 +168,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          name: prometheus-alerts-slm
+          name: kubernaut-system
     ports:
     - protocol: TCP
       port: 8080
@@ -232,7 +232,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: context-api-service
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   template:
     spec:

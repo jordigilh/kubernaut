@@ -241,7 +241,7 @@ internal/handlers/                → HTTP request handlers (INTERNAL)
 | **Metrics Port** | 9090 (with auth) |
 | **Health Endpoints** | `/health`, `/ready` (no auth) |
 | **API Endpoints** | `/api/v1/notify/*` (with TokenReviewer auth) |
-| **Namespace** | `prometheus-alerts-slm` |
+| **Namespace** | `kubernaut-system` |
 | **ServiceAccount** | `notification-service` |
 
 ---

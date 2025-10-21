@@ -51,7 +51,7 @@ type Builder struct {
 func NewBuilder() *Builder {
 	// Data Storage Service schema with proper JOINs
 	// Maps IncidentEvent model to resource_action_traces + related tables
-	baseQuery := `SELECT 
+	baseQuery := `SELECT
     rat.id,
     rat.alert_name AS name,
     rat.alert_fingerprint,

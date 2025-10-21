@@ -318,7 +318,7 @@ BR-ALERT-006, BR-ALERT-021, BR-ALERT-024, BR-ALERT-025, BR-ALERT-026
 - All 5 controllers use namespace: **`kubernaut-system`**
 
 **Stateless Services**:
-- All 7 services use namespace: **`prometheus-alerts-slm`**
+- All 7 services use namespace: **`kubernaut-system`**
 
 #### **Problem**
 
@@ -348,7 +348,7 @@ BR-ALERT-006, BR-ALERT-021, BR-ALERT-024, BR-ALERT-025, BR-ALERT-026
    - Single deployment target
 
 3. **If split is intentional, document rationale**
-   - Why `kubernaut-system` vs `prometheus-alerts-slm`?
+   - Why `kubernaut-system` vs `kubernaut`?
    - Benefits of separation?
    - Drawbacks accepted?
 
@@ -360,7 +360,7 @@ BR-ALERT-006, BR-ALERT-021, BR-ALERT-024, BR-ALERT-025, BR-ALERT-026
 - Document cross-namespace RBAC requirements
 
 **Option B: Unify Namespace** (If no strong reason for split)
-- Move all to `prometheus-alerts-slm` (matches project naming)
+- Move all to `kubernaut-system` (matches project naming)
 - Simplifies RBAC and NetworkPolicies
 - Single deployment target
 
@@ -815,7 +815,7 @@ func (r *Reconciler) MetricsHandler() http.Handler {
 | **Logger Library** | Explicitly documented ✅ | Implicit only ❌ | ⚠️ Needs Fix |
 | **Port Strategy** | 8080 for REST+Health ✅ | 8080 for Health ✅ | ✅ Consistent |
 | **Metrics Port** | 9090 with auth ✅ | 9090 with auth ✅ | ✅ Consistent |
-| **Namespace** | `prometheus-alerts-slm` | `kubernaut-system` | ⚠️ Inconsistent |
+| **Namespace** | `kubernaut-system` | `kubernaut-system` | ✅ Consistent |
 
 **Overall Consistency**: 37.5% (3 of 8 aspects consistent)
 

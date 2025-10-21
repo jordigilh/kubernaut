@@ -190,13 +190,13 @@ oc get networkpolicy -n kubernaut-system context-api -o yaml
 async def test_my_new_feature(self, context_api_base_url, context_api_mode):
     """
     Test description
-    
+
     **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
     """
     client = ContextAPIClient(base_url=context_api_base_url)
-    
+
     result = await client.my_feature()
-    
+
     # Mock mode: validate exact structure
     if context_api_mode == "mock":
         assert result["field"] == "expected_value"
@@ -210,4 +210,5 @@ async def test_my_new_feature(self, context_api_base_url, context_api_mode):
 - **Context API Deployment**: `docs/services/stateless/context-api/DEPLOYMENT.md`
 - **HolmesGPT API README**: `holmesgpt-api/README.md`
 - **Integration Test Patterns**: `docs/testing/integration-testing-guide.md`
+
 

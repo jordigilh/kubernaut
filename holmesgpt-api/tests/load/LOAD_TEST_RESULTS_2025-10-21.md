@@ -2,12 +2,12 @@
 
 ## Test Configuration
 
-**Date**: 2025-10-21 17:49:45  
-**Duration**: 2 minutes  
-**Tool**: Locust 2.42.0  
-**Target**: `http://localhost:8080` (port-forward to kubernaut-system/holmesgpt-api)  
-**Users**: 10 (light load scenario)  
-**Spawn Rate**: 2 users/second  
+**Date**: 2025-10-21 17:49:45
+**Duration**: 2 minutes
+**Tool**: Locust 2.42.0
+**Target**: `http://localhost:8080` (port-forward to kubernaut-system/holmesgpt-api)
+**Users**: 10 (light load scenario)
+**Spawn Rate**: 2 users/second
 **Test Mode**: Mock LLM (no inference costs)
 
 ## Overall Results
@@ -70,7 +70,7 @@
 ### ⚠️ Issues Identified
 
 #### 1. **Incorrect Endpoint Paths (Fixed)**
-**Problem**: 404 errors for investigation endpoints  
+**Problem**: 404 errors for investigation endpoints
 **Cause**: Locust script used incorrect paths:
 - Used: `/api/v1/recovery` and `/api/v1/postexec`
 - Actual: `/api/v1/recovery/analyze` and `/api/v1/postexec/analyze`
@@ -80,8 +80,8 @@
 **Impact**: All 64 failures were due to 404 errors, not actual performance issues
 
 #### 2. **Locust Script Issues**
-**Problem**: `AttributeError: 'LightLoad' object has no attribute 'events'`  
-**Cause**: Incorrect use of HttpUser subclasses in scenario definitions  
+**Problem**: `AttributeError: 'LightLoad' object has no attribute 'events'`
+**Cause**: Incorrect use of HttpUser subclasses in scenario definitions
 **Impact**: Error messages in logs but didn't affect primary HolmesGPTAPIUser tests
 
 ---
@@ -124,8 +124,8 @@
 ## Recommendations
 
 ### 1. **Re-run Load Test with Corrected Endpoints** ✅
-**Priority**: High  
-**Action**: Use corrected paths in locustfile.py  
+**Priority**: High
+**Action**: Use corrected paths in locustfile.py
 **Expected**: 0% failure rate for investigation endpoints (or expected 500 if LLM not configured)
 
 ### 2. **Scale Testing**
@@ -140,7 +140,7 @@
 - Or expect 500 errors and mark as successful in tests
 
 ### 4. **Fix Locust Script Scenario Classes**
-**Issue**: LightLoad, MediumLoad, HeavyLoad classes causing errors  
+**Issue**: LightLoad, MediumLoad, HeavyLoad classes causing errors
 **Fix**: Remove or properly implement environment setup
 
 ---
@@ -149,9 +149,9 @@
 
 ### Mock LLM Testing (This Run)
 
-**LLM API Calls**: 0  
-**LLM Cost**: $0.00  
-**Infrastructure Cost**: Minimal (running on OCP cluster)  
+**LLM API Calls**: 0
+**LLM Cost**: $0.00
+**Infrastructure Cost**: Minimal (running on OCP cluster)
 **Duration**: 2 minutes
 
 **Result**: ✅ **Cost-effective infrastructure testing**
@@ -171,7 +171,7 @@ If we ran with real LLM (Vertex AI Claude 3.5 Sonnet):
 - Output: 49 × 200 = 9,800 tokens = $0.15
 - **Total**: ~$0.22 for 2-minute test
 
-**For 1-hour load test**: ~$6.60  
+**For 1-hour load test**: ~$6.60
 **For 200-user stress test (15 min)**: ~$3.30
 
 ---
@@ -268,8 +268,9 @@ During the test, the following metrics were collected:
 
 ---
 
-**Test Conducted By**: AI Assistant (Cursor IDE)  
-**Test Type**: Light Load (Infrastructure Validation)  
-**Status**: ✅ **SUCCESSFUL** (with fixes applied)  
+**Test Conducted By**: AI Assistant (Cursor IDE)
+**Test Type**: Light Load (Infrastructure Validation)
+**Status**: ✅ **SUCCESSFUL** (with fixes applied)
 **Confidence**: 90% (infrastructure healthy, endpoint paths corrected)
+
 

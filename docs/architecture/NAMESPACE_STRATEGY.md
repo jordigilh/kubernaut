@@ -14,7 +14,7 @@ Kubernaut uses a **dual-namespace architecture** to separate concerns between HT
 
 ## 🏗️ Namespace Allocation
 
-### **1. Stateless Services Namespace: `prometheus-alerts-slm`**
+### **1. Stateless Services Namespace: `kubernaut-system`**
 
 **Services**:
 1. Gateway Service (Port 8080)
@@ -97,7 +97,7 @@ All cross-namespace communication uses **Kubernetes ServiceAccount tokens** vali
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: prometheus-alerts-slm
+  name: kubernaut-system
   labels:
     app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: stateless-services
@@ -113,19 +113,19 @@ metadata:
 
 ### **ServiceAccount Strategy**
 
-#### Stateless Services (in `prometheus-alerts-slm`)
+#### Stateless Services (in `kubernaut-system`)
 ```yaml
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: gateway-service-sa
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: context-api-sa
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 # ... (one per stateless service)
 ```
 
@@ -170,7 +170,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: stateless-services-policy
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   podSelector: {}
   policyTypes:
@@ -227,15 +227,15 @@ spec:
 
 ### **DNS Resolution**
 
-#### Stateless Services (in `prometheus-alerts-slm`)
+#### Stateless Services (in `kubernaut-system`)
 ```
-gateway-service.prometheus-alerts-slm.svc.cluster.local:8080
-context-api.prometheus-alerts-slm.svc.cluster.local:8082
-data-storage.prometheus-alerts-slm.svc.cluster.local:8080
-holmesgpt-api.prometheus-alerts-slm.svc.cluster.local:8080
-dynamic-toolset.prometheus-alerts-slm.svc.cluster.local:8083
-effectiveness-monitor.prometheus-alerts-slm.svc.cluster.local:8080
-notification-service.prometheus-alerts-slm.svc.cluster.local:8088
+gateway-service.kubernaut-system.svc.cluster.local:8080
+context-api.kubernaut-system.svc.cluster.local:8082
+data-storage.kubernaut-system.svc.cluster.local:8080
+holmesgpt-api.kubernaut-system.svc.cluster.local:8080
+dynamic-toolset.kubernaut-system.svc.cluster.local:8083
+effectiveness-monitor.kubernaut-system.svc.cluster.local:8080
+notification-service.kubernaut-system.svc.cluster.local:8088
 ```
 
 #### CRD Controllers (in `kubernaut-system`)
@@ -263,7 +263,7 @@ remediation-orchestrator-controller.kubernaut-system.svc.cluster.local:9090/metr
 - Blast radius containment
 
 ### **3. Operational Clarity**
-- `kubectl get pods -n prometheus-alerts-slm` → See all stateless services
+- `kubectl get pods -n kubernaut-system` → See all stateless services
 - `kubectl get pods -n kubernaut-system` → See all controllers
 - Easy to monitor, upgrade, or debug specific components
 
@@ -284,7 +284,7 @@ remediation-orchestrator-controller.kubernaut-system.svc.cluster.local:9090/metr
 **⚠️ Not Recommended**: Dual-namespace architecture is preferred.
 
 If unification is required:
-1. Choose target namespace: `kubernaut-system` (platform-centric) or `prometheus-alerts-slm` (service-centric)
+1. Choose target namespace: `kubernaut-system` (platform-centric) or `kubernaut` (service-centric)
 2. Update all ServiceAccount references
 3. Update all Service DNS references
 4. Update all NetworkPolicy rules
@@ -300,20 +300,20 @@ If unification is required:
 ## 📋 Deployment Checklist
 
 ### **Prerequisites**
-- [ ] Create `prometheus-alerts-slm` namespace
+- [ ] Create `kubernaut-system` namespace
 - [ ] Create `kubernaut-system` namespace
 - [ ] Create ServiceAccounts for all 12 services
 - [ ] Create RBAC roles and bindings
 - [ ] Create NetworkPolicies (if required)
 
 ### **Stateless Services Deployment**
-- [ ] Deploy Gateway Service in `prometheus-alerts-slm`
-- [ ] Deploy Context API in `prometheus-alerts-slm`
-- [ ] Deploy Data Storage in `prometheus-alerts-slm`
-- [ ] Deploy HolmesGPT API in `prometheus-alerts-slm`
-- [ ] Deploy Dynamic Toolset in `prometheus-alerts-slm`
-- [ ] Deploy Effectiveness Monitor in `prometheus-alerts-slm`
-- [ ] Deploy Notification Service in `prometheus-alerts-slm`
+- [ ] Deploy Gateway Service in `kubernaut-system`
+- [ ] Deploy Context API in `kubernaut-system`
+- [ ] Deploy Data Storage in `kubernaut-system`
+- [ ] Deploy HolmesGPT API in `kubernaut-system`
+- [ ] Deploy Dynamic Toolset in `kubernaut-system`
+- [ ] Deploy Effectiveness Monitor in `kubernaut-system`
+- [ ] Deploy Notification Service in `kubernaut-system`
 
 ### **CRD Controllers Deployment**
 - [ ] Deploy RemediationProcessor in `kubernaut-system`

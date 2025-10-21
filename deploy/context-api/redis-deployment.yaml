@@ -22,7 +22,7 @@ data:
     tcp-backlog 511
     timeout 0
     tcp-keepalive 300
-    
+
     # General
     daemonize no
     supervised no
@@ -31,7 +31,7 @@ data:
     logfile ""
     # Support 16 databases for test isolation
     databases 16
-    
+
     # Snapshotting (persistence)
     # Save after 900 seconds if at least 1 key changed
     save 900 1
@@ -44,23 +44,23 @@ data:
     rdbchecksum yes
     dbfilename dump.rdb
     dir /data
-    
+
     # Replication
     replica-serve-stale-data yes
     replica-read-only yes
     repl-diskless-sync no
     repl-diskless-sync-delay 5
     repl-disable-tcp-nodelay no
-    
+
     # Security
     # requirepass CHANGE_ME_IN_PRODUCTION  # Uncomment and set password for production
-    
+
     # Limits
     maxclients 10000
     maxmemory 512mb
     # LRU eviction when memory limit reached
     maxmemory-policy allkeys-lru
-    
+
     # Append Only File (AOF) persistence
     appendonly no
     appendfilename "appendonly.aof"
@@ -68,7 +68,7 @@ data:
     no-appendfsync-on-rewrite no
     auto-aof-rewrite-percentage 100
     auto-aof-rewrite-min-size 64mb
-    
+
     # Slow log
     slowlog-log-slower-than 10000
     slowlog-max-len 128

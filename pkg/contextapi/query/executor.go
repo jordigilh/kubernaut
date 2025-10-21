@@ -166,7 +166,7 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 		// Prevents race condition where late-arriving concurrent requests miss the cache
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		
+
 		if cacheErr := e.cache.Set(timeoutCtx, cacheKey, cachedResult); cacheErr != nil {
 			e.logger.Warn("failed to populate cache in single-flight",
 				zap.String("key", cacheKey),

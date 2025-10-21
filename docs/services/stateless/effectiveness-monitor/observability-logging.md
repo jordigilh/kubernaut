@@ -779,7 +779,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: effectiveness-monitor-alerts
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   groups:
   - name: effectiveness-monitor.critical
