@@ -20,9 +20,10 @@ resources:
   - 09-buildconfig.yaml
   - 10-servicemonitor.yaml
   - 11-grafana-dashboard-configmap.yaml
+  - 12-prometheus-rules.yaml
 
 images:
   - name: holmesgpt-api
-    newName: image-registry.openshift-image-registry.svc:5000/kubernaut-system/holmesgpt-api
-    newTag: v1.0.0
+    newName: quay.io/jordigilh/kubernaut-holmesgpt-api
+    newTag: v1.0.4-amd64
 

@@ -318,7 +318,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: holmesgpt-api-ingress
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:

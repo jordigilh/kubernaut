@@ -89,18 +89,18 @@ class ContextAPIClient:
 
         # Track request timing
         start_time = time.time()
-        
+
         try:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:
                 async with session.get(endpoint, params=params) as response:
                     duration = time.time() - start_time
-                    
+
                     if response.status == 200:
                         data = await response.json()
-                        
+
                         # Record success metrics
                         record_context_api_call("/api/v1/context/historical", "success", duration)
-                        
+
                         logger.info({
                             "event": "context_api_success",
                             "namespace": namespace,
@@ -112,7 +112,7 @@ class ContextAPIClient:
                     elif response.status == 404:
                         # Record not found (still success from API perspective)
                         record_context_api_call("/api/v1/context/historical", "not_found", duration)
-                        
+
                         logger.warning({
                             "event": "context_api_no_data",
                             "namespace": namespace,
@@ -122,10 +122,10 @@ class ContextAPIClient:
                         return self._empty_context()
                     else:
                         duration = time.time() - start_time
-                        
+
                         # Record error metrics
                         record_context_api_call("/api/v1/context/historical", "error", duration)
-                        
+
                         logger.error({
                             "event": "context_api_error",
                             "status": response.status,
@@ -136,10 +136,10 @@ class ContextAPIClient:
 
         except aiohttp.ClientError as e:
             duration = time.time() - start_time
-            
+
             # Record connection error metrics
             record_context_api_call("/api/v1/context/historical", "connection_error", duration)
-            
+
             logger.error({
                 "event": "context_api_connection_error",
                 "error": str(e),
@@ -149,10 +149,10 @@ class ContextAPIClient:
             return self._empty_context()
         except Exception as e:
             duration = time.time() - start_time
-            
+
             # Record unexpected error metrics
             record_context_api_call("/api/v1/context/historical", "unexpected_error", duration)
-            
+
             logger.error({
                 "event": "context_api_unexpected_error",
                 "error": str(e),

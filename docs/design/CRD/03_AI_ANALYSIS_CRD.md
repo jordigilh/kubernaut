@@ -633,7 +633,7 @@ apiVersion: ai.kubernaut.io/v1
 kind: AIAnalysis
 metadata:
   name: ai-analysis-high-cpu-alert-abc123
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
   labels:
     kubernaut.io/remediation: "high-cpu-alert-abc123"
     kubernaut.io/environment: "production"
@@ -642,7 +642,7 @@ metadata:
 spec:
   alertRemediationRef:
     name: "high-cpu-alert-abc123"
-    namespace: "prometheus-alerts-slm"
+    namespace: "kubernaut-system"
 
   analysisRequest:
     alertContext:

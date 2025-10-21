@@ -42,7 +42,7 @@ CREATE INDEX idx_rat_environment ON resource_action_traces (environment);
 -- Create vector similarity search index using HNSW (hierarchical navigable small world)
 -- HNSW provides better performance for semantic search than IVFFlat
 -- Using cosine distance for 384-dimensional sentence-transformer embeddings
-CREATE INDEX idx_rat_embedding_hnsw ON resource_action_traces 
+CREATE INDEX idx_rat_embedding_hnsw ON resource_action_traces
 USING hnsw (embedding vector_cosine_ops);
 
 -- Composite index for common Context API query patterns

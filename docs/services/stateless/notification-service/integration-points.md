@@ -49,7 +49,7 @@ func (r *Remediation OrchestratorReconciler) EscalateTimeout(ctx context.Context
 
     body, _ := json.Marshal(payload)
     httpReq, _ := http.NewRequest("POST",
-        "http://notification-service.prometheus-alerts-slm.svc.cluster.local:8080/api/v1/notify/escalation",
+        "http://notification-service.kubernaut-system.svc.cluster.local:8080/api/v1/notify/escalation",
         bytes.NewReader(body))
 
     httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", r.getServiceAccountToken()))
@@ -159,7 +159,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: notification-email-config
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 type: Opaque
 stringData:
   smtp-host: "smtp.company.com"
@@ -185,7 +185,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: notification-slack-config
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 type: Opaque
 stringData:
   webhook-url: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX"
@@ -316,7 +316,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: notification-config
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 data:
   # Channel enablement
   slack.enabled: "true"
@@ -343,7 +343,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: notification-secrets
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 type: Opaque
 stringData:
   slack-webhook-url: "<redacted>"

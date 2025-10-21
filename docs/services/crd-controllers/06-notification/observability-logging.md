@@ -449,7 +449,7 @@ groups:
 
 ## 📊 **Metrics Endpoint**
 
-**URL**: `http://notification-service.prometheus-alerts-slm.svc.cluster.local:9090/metrics`
+**URL**: `http://notification-service.kubernaut-system.svc.cluster.local:9090/metrics`
 **Port**: 9090
 **Authentication**: Kubernetes TokenReviewer (required)
 
@@ -459,7 +459,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: notification-service
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   selector:
     matchLabels:

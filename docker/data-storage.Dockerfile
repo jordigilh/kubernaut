@@ -92,3 +92,4 @@ LABEL name="kubernaut-data-storage" \
 	io.k8s.display-name="Kubernaut Data Storage Service" \
 	io.openshift.tags="kubernaut,data-storage,audit,postgres,pgvector,database,persistence,microservice"
 
+

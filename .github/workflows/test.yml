@@ -23,7 +23,7 @@ jobs:
         run: |
           chmod +x ./scripts/verify-test-package-names.sh
           ./scripts/verify-test-package-names.sh
-        
+
       - name: Report status
         if: failure()
         run: |
@@ -135,16 +135,17 @@ jobs:
           echo "📊 Unit tests: ${{ needs.unit-tests.result }}"
           echo "🔍 Lint: ${{ needs.lint.result }}"
           echo "🔨 Build: ${{ needs.build.result }}"
-          
+
           if [ "${{ needs.package-naming-verification.result }}" != "success" ]; then
             echo "❌ Package naming verification failed - this is blocking"
             exit 1
           fi
-          
+
           if [ "${{ needs.build.result }}" != "success" ]; then
             echo "❌ Build failed - this is blocking"
             exit 1
           fi
-          
+
           echo "✅ All blocking checks passed!"
+
 
