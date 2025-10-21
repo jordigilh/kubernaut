@@ -18,6 +18,8 @@ resources:
   - 07-service.yaml
   - 08-networkpolicy.yaml
   - 09-buildconfig.yaml
+  - 10-servicemonitor.yaml
+  - 11-grafana-dashboard-configmap.yaml
 
 images:
   - name: holmesgpt-api
