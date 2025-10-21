@@ -18,8 +18,11 @@ var _ = Describe("SQL Builder", func() {
 
 			query, args, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
-			Expect(query).To(ContainSubstring("SELECT * FROM remediation_audit"))
-			Expect(query).To(ContainSubstring("ORDER BY created_at DESC"))
+			// Updated for Data Storage Service schema (DD-SCHEMA-001)
+			Expect(query).To(ContainSubstring("FROM resource_action_traces rat"))
+			Expect(query).To(ContainSubstring("JOIN action_histories ah"))
+			Expect(query).To(ContainSubstring("JOIN resource_references rr"))
+			Expect(query).To(ContainSubstring("ORDER BY rat.action_timestamp DESC"))
 			Expect(query).To(ContainSubstring("LIMIT"))
 			Expect(args).To(HaveLen(2)) // Default limit + offset
 		})
@@ -85,12 +88,12 @@ var _ = Describe("SQL Builder", func() {
 				// Verify input is parameterized in args
 				Expect(args).To(ContainElement(namespace))
 
-				// Verify parameterized placeholder is used
-				Expect(query).To(ContainSubstring("namespace = $"))
+				// Verify parameterized placeholder is used with table alias (Data Storage schema)
+				Expect(query).To(ContainSubstring("rr.namespace = $"))
 			},
 			Entry("normal input", "default"),
 			Entry("SQL injection attempt 1", "default' OR '1'='1"),
-			Entry("SQL injection attempt 2", "default; DROP TABLE remediation_audit;--"),
+			Entry("SQL injection attempt 2", "default; DROP TABLE resource_action_traces;--"),
 			Entry("SQL injection attempt 3", "default' UNION SELECT * FROM secrets--"),
 			Entry("SQL injection attempt 4", "default') OR 1=1--"),
 			Entry("special chars", "namespace-with-special_chars.123"),
@@ -104,14 +107,14 @@ var _ = Describe("SQL Builder", func() {
 				query, args, err := builder.Build()
 				Expect(err).ToNot(HaveOccurred())
 
-				// Verify raw input is NOT in the query string
-				Expect(query).ToNot(ContainSubstring(severity))
+			// Verify raw input is NOT in the query string
+			Expect(query).ToNot(ContainSubstring(severity))
 
-				// Verify input is parameterized in args
-				Expect(args).To(ContainElement(severity))
+			// Verify input is parameterized in args
+			Expect(args).To(ContainElement(severity))
 
-				// Verify parameterized placeholder is used
-				Expect(query).To(ContainSubstring("severity = $"))
+			// Verify parameterized placeholder is used with table alias (Data Storage schema)
+			Expect(query).To(ContainSubstring("rat.alert_severity = $"))
 			},
 			Entry("normal input", "critical"),
 			Entry("SQL injection attempt", "critical' OR '1'='1"),
@@ -127,10 +130,10 @@ var _ = Describe("SQL Builder", func() {
 			query, args, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			// Verify WHERE clause exists
+			// Verify WHERE clause exists with table aliases (Data Storage schema)
 			Expect(query).To(ContainSubstring("WHERE"))
-			Expect(query).To(ContainSubstring("namespace = $1"))
-			Expect(query).To(ContainSubstring("severity = $2"))
+			Expect(query).To(ContainSubstring("rr.namespace = $1"))
+			Expect(query).To(ContainSubstring("rat.alert_severity = $2"))
 			Expect(query).To(ContainSubstring("LIMIT $3"))
 			Expect(query).To(ContainSubstring("OFFSET $4"))
 
@@ -150,8 +153,8 @@ var _ = Describe("SQL Builder", func() {
 			query, args, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			// Verify BETWEEN clause
-			Expect(query).To(ContainSubstring("created_at BETWEEN $1 AND $2"))
+			// Verify BETWEEN clause with table alias (Data Storage schema)
+			Expect(query).To(ContainSubstring("rat.action_timestamp BETWEEN $1 AND $2"))
 
 			// Verify args contain time values
 			Expect(args).To(ContainElement(start))
@@ -172,10 +175,10 @@ var _ = Describe("SQL Builder", func() {
 			query, args, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			// Verify all filters are present
-			Expect(query).To(ContainSubstring("namespace = $1"))
-			Expect(query).To(ContainSubstring("severity = $2"))
-			Expect(query).To(ContainSubstring("created_at BETWEEN $3 AND $4"))
+			// Verify all filters are present with table aliases (Data Storage schema)
+			Expect(query).To(ContainSubstring("rr.namespace = $1"))
+			Expect(query).To(ContainSubstring("rat.alert_severity = $2"))
+			Expect(query).To(ContainSubstring("rat.action_timestamp BETWEEN $3 AND $4"))
 			Expect(query).To(ContainSubstring("LIMIT $5"))
 			Expect(query).To(ContainSubstring("OFFSET $6"))
 
@@ -201,7 +204,8 @@ var _ = Describe("SQL Builder", func() {
 			orderIdx := strings.Index(query, "ORDER BY")
 			limitIdx := strings.Index(query, "LIMIT")
 			Expect(orderIdx).To(BeNumerically("<", limitIdx))
-			Expect(query).To(ContainSubstring("ORDER BY created_at DESC"))
+			// Updated for Data Storage schema
+			Expect(query).To(ContainSubstring("ORDER BY rat.action_timestamp DESC"))
 		})
 
 		It("should join multiple filters with AND", func() {
@@ -212,8 +216,8 @@ var _ = Describe("SQL Builder", func() {
 			query, _, err := builder.Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			// Verify AND between filters
-			Expect(query).To(ContainSubstring("namespace = $1 AND severity = $2"))
+			// Verify AND between filters with table aliases (Data Storage schema)
+			Expect(query).To(ContainSubstring("rr.namespace = $1 AND rat.alert_severity = $2"))
 		})
 	})
 

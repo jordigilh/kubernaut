@@ -186,6 +186,8 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 
 // GetIncidentByID retrieves a single incident with caching
 // BR-CONTEXT-001: Query incident audit data by ID
+//
+// Updated for Data Storage Service schema (DD-SCHEMA-001)
 func (e *CachedExecutor) GetIncidentByID(ctx context.Context, id int64) (*models.IncidentEvent, error) {
 	// Generate cache key
 	cacheKey := fmt.Sprintf("incident:%d", id)
@@ -201,22 +203,56 @@ func (e *CachedExecutor) GetIncidentByID(ctx context.Context, id int64) (*models
 		}
 	}
 
-	// Cache miss → query database
-	query := `SELECT * FROM remediation_audit WHERE id = $1`
-	var incident models.IncidentEvent
-	err = e.db.GetContext(ctx, &incident, query, id)
+	// Cache miss → query database with Data Storage schema
+	query := `
+SELECT 
+    rat.id,
+    rat.alert_name AS name,
+    rat.alert_fingerprint,
+    rat.action_id AS remediation_request_id,
+    rr.namespace,
+    rat.cluster_name,
+    rat.environment,
+    rr.kind AS target_resource,
+    CASE rat.execution_status
+        WHEN 'completed' THEN 'completed'
+        WHEN 'failed' THEN 'failed'
+        WHEN 'rolled-back' THEN 'failed'
+        WHEN 'pending' THEN 'pending'
+        WHEN 'executing' THEN 'processing'
+        ELSE 'pending'
+    END AS phase,
+    rat.execution_status AS status,
+    rat.alert_severity AS severity,
+    rat.action_type,
+    rat.action_timestamp AS start_time,
+    rat.execution_end_time AS end_time,
+    rat.execution_duration_ms AS duration,
+    rat.execution_error AS error_message,
+    rat.action_parameters::TEXT AS metadata,
+    rat.created_at,
+    rat.updated_at
+FROM resource_action_traces rat
+JOIN action_histories ah ON rat.action_history_id = ah.id
+JOIN resource_references rr ON ah.resource_id = rr.id
+WHERE rat.id = $1`
+
+	var row IncidentEventRow
+	err = e.db.GetContext(ctx, &row, query, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get incident: %w", err)
 	}
+
+	incident := row.ToIncidentEvent()
 
 	// Async cache repopulation
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = e.cache.Set(ctx, cacheKey, &incident)
+		_ = e.cache.Set(ctx, cacheKey, incident)
 	}()
 
-	return &incident, nil
+	return incident, nil
 }
 
 // getFromCache retrieves cached result
@@ -319,6 +355,9 @@ func (e *CachedExecutor) queryDatabase(ctx context.Context, params *models.ListI
 // getTotalCount executes COUNT(*) query to get total matching incidents
 // REFACTOR Phase: Provides accurate pagination metadata
 // BR-CONTEXT-002: Pagination support (total count before LIMIT/OFFSET)
+//
+// Updated for Data Storage Service schema (DD-SCHEMA-001)
+// Uses Builder.BuildCount() which includes proper JOINs
 func (e *CachedExecutor) getTotalCount(ctx context.Context, params *models.ListIncidentsParams) (int, error) {
 	// Build COUNT query using SQL builder with same filters
 	builder := sqlbuilder.NewBuilder()
@@ -331,25 +370,13 @@ func (e *CachedExecutor) getTotalCount(ctx context.Context, params *models.ListI
 	}
 	// Note: Do NOT add LIMIT/OFFSET for COUNT query
 
-	// Build base query (we'll modify it to COUNT)
-	query, args, err := builder.Build()
-	if err != nil {
-		return 0, fmt.Errorf("failed to build count query: %w", err)
-	}
-
-	// Replace SELECT columns with COUNT(*) and strip ORDER BY/LIMIT/OFFSET
-	// Original query: SELECT * FROM remediation_audit WHERE ... ORDER BY created_at DESC LIMIT $X OFFSET $Y
-	// Count query:    SELECT COUNT(*) FROM remediation_audit WHERE ...
-	// REFACTOR Phase: Strips ORDER BY to avoid GROUP BY errors, strips LIMIT/OFFSET as not needed
-	countQuery := replaceSelectWithCount(query)
-
-	// Strip LIMIT/OFFSET args from args array (last 2 arguments)
-	// Builder.Build() appends limit and offset as last 2 args, but we stripped them from query
-	countArgs := args[:len(args)-2]
+	// Use BuildCount() method which generates proper COUNT query with JOINs
+	// No need to strip LIMIT/OFFSET - BuildCount() doesn't include them
+	countQuery, countArgs := builder.BuildCount()
 
 	// Execute COUNT query
 	var total int
-	err = e.db.GetContext(ctx, &total, countQuery, countArgs...)
+	err := e.db.GetContext(ctx, &total, countQuery, countArgs...)
 	if err != nil {
 		return 0, fmt.Errorf("count query failed: %w", err)
 	}
@@ -362,39 +389,6 @@ func (e *CachedExecutor) getTotalCount(ctx context.Context, params *models.ListI
 	return total, nil
 }
 
-// replaceSelectWithCount replaces SELECT columns with COUNT(*) and strips ORDER BY/LIMIT/OFFSET
-// Helper for getTotalCount
-// REFACTOR Phase: Fixed to remove ORDER BY clause that caused GROUP BY errors
-func replaceSelectWithCount(query string) string {
-	// Find the position of FROM keyword
-	// Query format: "SELECT * FROM remediation_audit WHERE ... ORDER BY created_at DESC LIMIT $X OFFSET $Y"
-	// We want: "SELECT COUNT(*) FROM remediation_audit WHERE ..."
-	// (strip ORDER BY and LIMIT/OFFSET for COUNT query)
-
-	fromIdx := strings.Index(query, "FROM")
-	if fromIdx == -1 {
-		// Fallback: return as-is (should not happen with valid SQL builder output)
-		return query
-	}
-
-	// Extract everything from FROM to end
-	fromClause := query[fromIdx:]
-
-	// Strip ORDER BY clause (causes GROUP BY error with COUNT(*))
-	// "FROM ... ORDER BY created_at DESC LIMIT ..." → "FROM ... LIMIT ..."
-	if orderIdx := strings.Index(fromClause, "ORDER BY"); orderIdx != -1 {
-		fromClause = fromClause[:orderIdx]
-	}
-
-	// Strip LIMIT clause (not needed for COUNT)
-	// "FROM ... LIMIT $X OFFSET $Y" → "FROM ..."
-	if limitIdx := strings.Index(fromClause, "LIMIT"); limitIdx != -1 {
-		fromClause = fromClause[:limitIdx]
-	}
-
-	// Build count query with cleaned FROM clause
-	return "SELECT COUNT(*) " + strings.TrimSpace(fromClause)
-}
 
 // stringPtrOrDefault returns string value or default if nil
 // Helper for logging
@@ -502,20 +496,44 @@ func (e *CachedExecutor) SemanticSearch(ctx context.Context, embedding []float32
 	// Execute HNSW optimization (best effort - ignore errors)
 	_, _ = e.db.ExecContext(ctx, hnswOptimization)
 
-	// Query database with pgvector
+	// Query database with pgvector using Data Storage schema
 	// Using cosine distance operator <=> for similarity
 	query := `
 		SELECT
-			id, name, namespace, phase, action_type, status,
-			alert_fingerprint, severity, cluster_name, target_resource,
-			start_time, end_time, duration, error_message,
-			metadata, embedding, created_at, updated_at,
-			remediation_request_id, environment,
-			(1 - (embedding <=> $1::vector)) as similarity
-		FROM remediation_audit
-		WHERE embedding IS NOT NULL
-			AND (1 - (embedding <=> $1::vector)) >= $2
-		ORDER BY embedding <=> $1::vector
+			rat.id,
+			rat.alert_name AS name,
+			rr.namespace,
+			CASE rat.execution_status
+				WHEN 'completed' THEN 'completed'
+				WHEN 'failed' THEN 'failed'
+				WHEN 'rolled-back' THEN 'failed'
+				WHEN 'pending' THEN 'pending'
+				WHEN 'executing' THEN 'processing'
+				ELSE 'pending'
+			END AS phase,
+			rat.action_type,
+			rat.execution_status AS status,
+			rat.alert_fingerprint,
+			rat.alert_severity AS severity,
+			rat.cluster_name,
+			rr.kind AS target_resource,
+			rat.action_timestamp AS start_time,
+			rat.execution_end_time AS end_time,
+			rat.execution_duration_ms AS duration,
+			rat.execution_error AS error_message,
+			rat.action_parameters::TEXT AS metadata,
+			rat.embedding,
+			rat.created_at,
+			rat.updated_at,
+			rat.action_id AS remediation_request_id,
+			rat.environment,
+			(1 - (rat.embedding <=> $1::vector)) as similarity
+		FROM resource_action_traces rat
+		JOIN action_histories ah ON rat.action_history_id = ah.id
+		JOIN resource_references rr ON ah.resource_id = rr.id
+		WHERE rat.embedding IS NOT NULL
+			AND (1 - (rat.embedding <=> $1::vector)) >= $2
+		ORDER BY rat.embedding <=> $1::vector
 		LIMIT $3
 	`
 
