@@ -45,9 +45,7 @@ metadata:
     part-of: kubernaut
 type: Opaque
 stringData:
-  password: "CHANGE_ME_IN_PRODUCTION"
-  # Example values for different environments:
-  # Development: slm_password_dev
-  # Staging: generate-secure-password-for-staging
-  # Production: generate-secure-password-for-production
+  password: "slm_password_dev"
+  # NOTE: This must match the password in postgres-secret
+  # For production: Use secure password management (Sealed Secrets, Vault, etc.)
 
