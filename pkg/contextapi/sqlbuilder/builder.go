@@ -167,11 +167,13 @@ func (b *Builder) WithActionType(actionType string) *Builder {
 //	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 //	end := time.Date(2025, 1, 31, 23, 59, 59, 0, time.UTC)
 //	builder.WithTimeRange(start, end)
-//	// Generates: WHERE created_at BETWEEN $1 AND $2
+//	// Generates: WHERE rat.action_timestamp BETWEEN $1 AND $2
+//
+// Updated for Data Storage Service schema (DD-SCHEMA-001)
 func (b *Builder) WithTimeRange(start, end time.Time) *Builder {
 	paramNum := len(b.args) + 1
 	b.whereClauses = append(b.whereClauses,
-		fmt.Sprintf("created_at BETWEEN $%d AND $%d", paramNum, paramNum+1))
+		fmt.Sprintf("rat.action_timestamp BETWEEN $%d AND $%d", paramNum, paramNum+1))
 	b.args = append(b.args, start, end)
 	return b
 }
