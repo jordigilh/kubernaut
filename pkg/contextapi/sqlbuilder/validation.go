@@ -63,4 +63,3 @@ func ValidateOffset(offset int) error {
 	}
 	return nil
 }
-

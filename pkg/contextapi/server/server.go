@@ -206,6 +206,21 @@ func (s *Server) Start() error {
 	return s.httpServer.ListenAndServe()
 }
 
+// Shutdown gracefully shuts down the server
+// BR-CONTEXT-007: Production Readiness - Graceful shutdown
+func (s *Server) Shutdown(ctx context.Context) error {
+	s.logger.Info("Initiating graceful shutdown...")
+
+	// Shutdown HTTP server gracefully
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		s.logger.Error("Error during shutdown", zap.Error(err))
+		return fmt.Errorf("failed to shutdown server: %w", err)
+	}
+
+	s.logger.Info("Server shutdown complete")
+	return nil
+}
+
 // Stop gracefully stops the HTTP server
 func (s *Server) Stop(ctx context.Context) error {
 	s.logger.Info("Stopping Context API server")

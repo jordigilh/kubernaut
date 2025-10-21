@@ -16,6 +16,13 @@ type Metrics struct {
 	CacheHits   *prometheus.CounterVec // Cache hits by tier (redis, lru)
 	CacheMisses *prometheus.CounterVec // Cache misses by tier
 
+	// Single-flight metrics (Day 11: Cache stampede prevention)
+	SingleFlightHits   prometheus.Counter // Requests deduplicated by single-flight
+	SingleFlightMisses prometheus.Counter // Requests that executed (not deduplicated)
+
+	// Cache size metrics (Day 11: Large object OOM prevention)
+	CachedObjectSize prometheus.Histogram // Size distribution of cached objects (bytes)
+
 	// Vector search metrics
 	VectorSearchResults prometheus.Histogram // Number of results from vector search
 
@@ -81,6 +88,36 @@ func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.R
 				Help:      "Total number of cache misses by tier",
 			},
 			[]string{"tier"},
+		),
+
+		// Day 11: Cache stampede prevention metrics
+		SingleFlightHits: factory.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "singleflight_hits_total",
+				Help:      "Total number of requests deduplicated by single-flight (waited for shared result)",
+			},
+		),
+
+		SingleFlightMisses: factory.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "singleflight_misses_total",
+				Help:      "Total number of requests that executed database query (not deduplicated)",
+			},
+		),
+
+		// Day 11: Large object OOM prevention - track cached object sizes
+		CachedObjectSize: factory.NewHistogram(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "cached_object_size_bytes",
+				Help:      "Size distribution of cached objects in bytes",
+				Buckets:   []float64{1024, 10240, 102400, 1048576, 5242880, 10485760, 52428800}, // 1KB, 10KB, 100KB, 1MB, 5MB, 10MB, 50MB
+			},
 		),
 
 		VectorSearchResults: factory.NewHistogram(
@@ -166,6 +203,24 @@ func (m *Metrics) RecordCacheHit(tier string) {
 // RecordCacheMiss records a cache miss
 func (m *Metrics) RecordCacheMiss(tier string) {
 	m.CacheMisses.WithLabelValues(tier).Inc()
+}
+
+// RecordSingleFlightHit records a request that was deduplicated by single-flight
+// Day 11: Cache stampede prevention - tracks deduplication effectiveness
+func (m *Metrics) RecordSingleFlightHit() {
+	m.SingleFlightHits.Inc()
+}
+
+// RecordSingleFlightMiss records a request that executed (not deduplicated)
+// Day 11: Cache stampede prevention - tracks actual database executions
+func (m *Metrics) RecordSingleFlightMiss() {
+	m.SingleFlightMisses.Inc()
+}
+
+// RecordCachedObjectSize records the size of a cached object
+// Day 11: Large object OOM prevention - tracks size distribution
+func (m *Metrics) RecordCachedObjectSize(sizeBytes int) {
+	m.CachedObjectSize.Observe(float64(sizeBytes))
 }
 
 // RecordDatabaseQuery records a database query

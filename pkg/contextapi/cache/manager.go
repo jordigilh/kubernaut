@@ -51,14 +51,15 @@ type HealthStatus struct {
 
 // multiTierCache implements CacheManager
 type multiTierCache struct {
-	redis      *redis.Client
-	memory     map[string]*cacheEntry
-	mu         sync.RWMutex
-	maxSize    int
-	logger     *zap.Logger
-	ttl        time.Duration
-	redisAvail bool // Track Redis availability for health checks
-	stats      cacheStats
+	redis        *redis.Client
+	memory       map[string]*cacheEntry
+	mu           sync.RWMutex
+	maxSize      int
+	maxValueSize int64 // Day 11: Maximum cached object size (bytes)
+	logger       *zap.Logger
+	ttl          time.Duration
+	redisAvail   bool // Track Redis availability for health checks
+	stats        cacheStats
 }
 
 // NewCacheManager creates a new multi-tier cache manager
@@ -110,13 +111,22 @@ func NewCacheManager(cfg *Config, logger *zap.Logger) (CacheManager, error) {
 			zap.Duration("ttl", cfg.DefaultTTL))
 	}
 
+	// Apply default max value size if not configured
+	// Day 11: Large object OOM prevention
+	maxValueSize := cfg.MaxValueSize
+	if maxValueSize == 0 {
+		maxValueSize = DefaultMaxValueSize // 5MB default
+	}
+	// -1 means unlimited (disable size checks)
+
 	return &multiTierCache{
-		redis:      redisClient,
-		memory:     make(map[string]*cacheEntry),
-		maxSize:    cfg.LRUSize,
-		logger:     logger,
-		ttl:        cfg.DefaultTTL,
-		redisAvail: redisAvail,
+		redis:        redisClient,
+		memory:       make(map[string]*cacheEntry),
+		maxSize:      cfg.LRUSize,
+		maxValueSize: maxValueSize,
+		logger:       logger,
+		ttl:          cfg.DefaultTTL,
+		redisAvail:   redisAvail,
 	}, nil
 }
 
@@ -185,10 +195,13 @@ func (c *multiTierCache) Get(ctx context.Context, key string) ([]byte, error) {
 //
 // Flow:
 //  1. Marshal value to JSON
-//  2. Write to L1 (Redis) - best effort, log warning if fails
-//  3. Write to L2 (LRU) - always succeeds
+//  2. Validate size against MaxValueSize (Day 11: OOM prevention)
+//  3. Write to L1 (Redis) - best effort, log warning if fails
+//  4. Write to L2 (LRU) - always succeeds
 //
-// Returns error only if JSON marshaling fails
+// Returns error if:
+//   - JSON marshaling fails
+//   - Object size exceeds MaxValueSize (unless MaxValueSize=-1 for unlimited)
 func (c *multiTierCache) Set(ctx context.Context, key string, value interface{}) error {
 	// Marshal value to JSON
 	data, err := json.Marshal(value)
@@ -197,6 +210,20 @@ func (c *multiTierCache) Set(ctx context.Context, key string, value interface{})
 			zap.Error(err),
 			zap.String("key", key))
 		return fmt.Errorf("failed to marshal value: %w", err)
+	}
+
+	// Day 11: Validate object size (OOM prevention)
+	// MaxValueSize = -1 means unlimited (skip size check)
+	if c.maxValueSize > 0 {
+		dataSize := int64(len(data))
+		if dataSize > c.maxValueSize {
+			c.stats.RecordError()
+			c.logger.Warn("object exceeds maximum size, rejecting",
+				zap.String("key", key),
+				zap.Int64("size", dataSize),
+				zap.Int64("max_size", c.maxValueSize))
+			return fmt.Errorf("object size (%d bytes) exceeds maximum size (%d bytes)", dataSize, c.maxValueSize)
+		}
 	}
 
 	// Write to L1 (Redis) - best effort
@@ -272,19 +299,57 @@ func (c *multiTierCache) Delete(ctx context.Context, key string) error {
 // BR-CONTEXT-008: REST API health check support
 //
 // Returns:
-//   - HealthStatus: healthy if Redis available, degraded if LRU-only
+//   - HealthStatus: healthy if Redis available, degraded if LRU-only or thrashing
 //   - error: nil (health check always succeeds)
+//
+// Day 11 Scenario 1.2: Detects cache thrashing (high eviction rate)
+// - Eviction rate > 80% indicates cache size < working set
+// - Alerts operators to resize cache
 func (c *multiTierCache) HealthCheck(ctx context.Context) (*HealthStatus, error) {
+	// Get current stats for thrashing detection
+	stats := c.stats.Snapshot()
+
+	// Day 11: Check for cache thrashing (high eviction rate)
+	// Eviction rate = evictions / total sets
+	// >80% indicates cache is undersized for working set
+	degraded := false
+	message := ""
+
+	if stats.Sets > 0 {
+		evictionRate := float64(stats.Evictions) / float64(stats.Sets)
+		if evictionRate > 0.8 {
+			// High eviction rate detected - cache thrashing
+			degraded = true
+			message = fmt.Sprintf("Cache thrashing detected (eviction rate: %.1f%%) - consider increasing cache size", evictionRate*100)
+		}
+	}
+
+	// Check Redis connectivity
 	if c.redis != nil {
 		// Test Redis connectivity
 		if err := c.redis.Ping(ctx).Err(); err != nil {
 			// Redis failed - degraded mode
+			if message != "" {
+				// Both Redis unavailable AND thrashing
+				message = fmt.Sprintf("%s; Redis unavailable: %v (using LRU only)", message, err)
+			} else {
+				message = fmt.Sprintf("Redis unavailable: %v (using LRU only)", err)
+			}
 			return &HealthStatus{
 				Degraded: true,
-				Message:  fmt.Sprintf("Redis unavailable: %v (using LRU only)", err),
+				Message:  message,
 			}, nil
 		}
-		// Redis healthy
+
+		// Redis healthy - check if thrashing detected
+		if degraded {
+			return &HealthStatus{
+				Degraded: true,
+				Message:  message,
+			}, nil
+		}
+
+		// Redis healthy, no thrashing
 		return &HealthStatus{
 			Degraded: false,
 			Message:  "Cache healthy (Redis L1 + LRU L2)",
@@ -292,9 +357,16 @@ func (c *multiTierCache) HealthCheck(ctx context.Context) (*HealthStatus, error)
 	}
 
 	// Redis disabled - degraded mode
+	if message != "" {
+		// Both Redis unavailable AND thrashing
+		message = fmt.Sprintf("%s; Redis unavailable (using LRU L2 only)", message)
+	} else {
+		message = "Redis unavailable (using LRU L2 only)"
+	}
+
 	return &HealthStatus{
 		Degraded: true,
-		Message:  "Redis unavailable (using LRU L2 only)",
+		Message:  message,
 	}, nil
 }
 

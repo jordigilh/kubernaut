@@ -48,4 +48,3 @@ func NewOffsetError(value int) *ValidationError {
 		Message: "offset must be >= 0",
 	}
 }
-

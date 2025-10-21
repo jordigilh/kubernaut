@@ -474,4 +474,5 @@ var _ = Describe("Cache Manager", func() {
 			Expect(stats.RedisStatus).To(Equal("unavailable"))
 		})
 	})
+
 })
