@@ -11,10 +11,60 @@ This directory contains Kubernetes manifests for deploying the HolmesGPT API ser
 
 ## Prerequisites
 
-1. **Kubernetes Cluster**: 1.24+ (or OpenShift 4.10+)
-2. **Context API**: Deploy Context API first ([deploy/context-api-deployment.yaml](../context-api-deployment.yaml))
-3. **LLM Provider Credentials**: API key for your chosen LLM provider
-4. **kubectl/oc CLI**: For deployment
+### 1. Kubernetes Cluster
+- **Version**: 1.24+ (or OpenShift 4.10+)
+- **Namespace**: `kubernaut-system` (created by Context API deployment)
+
+### 2. Context API (REQUIRED)
+
+**⚠️ CRITICAL**: HolmesGPT API requires Context API for historical context enrichment. Deploy Context API **before** deploying HolmesGPT API.
+
+#### Deploy Context API
+
+```bash
+# OpenShift: Use BuildConfig for OCP-native build
+oc apply -k docs/services/stateless/context-api/deployment/
+
+# Or deploy existing Context API manifests
+kubectl apply -f deploy/context-api-deployment.yaml
+```
+
+#### Verify Context API Deployment
+
+```bash
+# 1. Check pod is running
+kubectl get pods -n kubernaut-system -l app=context-api
+# Expected: 1/1 Running
+
+# 2. Test health endpoint
+kubectl exec -n kubernaut-system deployment/context-api -- curl -s http://localhost:8091/health
+# Expected: {"status":"healthy","time":"..."}
+
+# 3. Verify PostgreSQL connection (from logs)
+kubectl logs -n kubernaut-system -l app=context-api | grep "PostgreSQL client created"
+# Expected: "PostgreSQL client created successfully"
+
+# 4. Verify Redis connection (from logs)
+kubectl logs -n kubernaut-system -l app=context-api | grep "Cache manager created"
+# Expected: "Cache manager created with Redis L1 + LRU L2"
+```
+
+#### Context API Dependencies
+
+Context API requires these services in `kubernaut-system` namespace:
+- **PostgreSQL**: With pgvector extension for semantic search
+- **Redis**: For L1 caching layer
+
+If these are not deployed, Context API will fail to start.
+
+**See**: `docs/services/stateless/context-api/DEPLOYMENT.md` for full Context API setup guide.
+
+### 3. LLM Provider Credentials
+- **API Key**: For your chosen provider
+- **Supported Providers**: OpenAI, Claude (Anthropic), Vertex AI, or custom
+
+### 4. kubectl/oc CLI
+- **kubectl**: 1.24+ or **oc**: 4.10+
 
 ## Quick Start
 
@@ -191,14 +241,32 @@ kubectl logs -n kubernaut-ai -l app.kubernetes.io/name=holmesgpt-api
 
 #### 3. Context API Unavailable
 
-```bash
-# Verify Context API is running
-kubectl get pods -n kubernaut-system -l app=context-api
+**Symptoms**: HolmesGPT API degrades gracefully, but logs show Context API connection errors.
 
-# Test Context API health
+```bash
+# 1. Verify Context API is running
+kubectl get pods -n kubernaut-system -l app=context-api
+# Expected: 1/1 Running (not CrashLoopBackOff)
+
+# 2. Test Context API health from within cluster
 kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- \
   curl http://context-api.kubernaut-system.svc.cluster.local:8091/health
+# Expected: {"status":"healthy","time":"..."}
+
+# 3. Check Context API logs for errors
+kubectl logs -n kubernaut-system -l app=context-api --tail=50
+
+# 4. Verify Context API dependencies
+kubectl get pods -n kubernaut-system -l app=postgres
+kubectl get pods -n kubernaut-system -l app=redis
 ```
+
+**Resolution**:
+- If Context API is not deployed: Follow [Prerequisites](#2-context-api-required) to deploy it
+- If Context API is in CrashLoopBackOff: Check PostgreSQL and Redis are available
+- If Context API is running but unreachable: Verify NetworkPolicy allows traffic from HolmesGPT API
+
+**Note**: HolmesGPT API will continue to function without Context API, but recommendations will lack historical context.
 
 #### 4. Authentication Failures
 
