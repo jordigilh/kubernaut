@@ -33,8 +33,9 @@ type ListIncidentsResult struct {
 // createCachedExecutorForStampede creates executor with Redis DB 7 for cache stampede tests
 // Uses custom metrics registry to avoid conflicts with other test suites
 func createCachedExecutorForStampede() (*query.CachedExecutor, *dbQueryCounter) {
-	// Create connection string for test infrastructure
-	connStr := fmt.Sprintf("host=localhost port=5432 user=postgres password=postgres dbname=postgres sslmode=disable search_path=%s,public", testSchema)
+	// Create connection string for test infrastructure (Data Storage Service)
+	// DD-SCHEMA-001: Connect to Data Storage Service database
+	connStr := "host=localhost port=5432 user=slm_user password=slm_password_dev dbname=action_history sslmode=disable"
 
 	// Create database client
 	db, err := sqlx.Connect("postgres", connStr)
