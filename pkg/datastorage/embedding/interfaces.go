@@ -50,4 +50,3 @@ type EmbeddingResult struct {
 	// CacheHit indicates if the result came from cache
 	CacheHit bool
 }
-

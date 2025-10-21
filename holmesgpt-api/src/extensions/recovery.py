@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, status
 
 from src.models.recovery_models import RecoveryRequest, RecoveryResponse, RecoveryStrategy
+from src.clients.context_api_client import ContextAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -180,11 +181,48 @@ def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
 - Allowed Actions: {', '.join(allowed_actions) if allowed_actions else 'Any'}
 """
 
+    # BR-HAPI-070: Add historical context from Context API
+    historical_context = request_data.get("historical_context", {})
+    if historical_context and historical_context.get("available", True):
+        prompt += """
+## Historical Context (from past 30 days)
+
+"""
+        # Add success rates
+        success_rates = historical_context.get("success_rates", {})
+        if success_rates:
+            prompt += "### Past Remediation Success Rates:\n"
+            for workflow, rate_data in success_rates.items():
+                success_rate = rate_data.get("success_rate", 0)
+                total_attempts = rate_data.get("total_attempts", 0)
+                prompt += f"- {workflow}: {success_rate:.1f}% success ({total_attempts} attempts)\n"
+            prompt += "\n"
+
+        # Add similar incidents
+        similar_incidents = historical_context.get("similar_incidents", [])
+        if similar_incidents:
+            prompt += f"### Similar Past Incidents ({len(similar_incidents)} found):\n"
+            for idx, incident in enumerate(similar_incidents[:5], 1):  # Top 5 similar incidents
+                similarity = incident.get("similarity_score", 0)
+                remediation = incident.get("remediation_action", "unknown")
+                outcome = incident.get("outcome", "unknown")
+                prompt += f"{idx}. {remediation} → {outcome} (similarity: {similarity:.2f})\n"
+            prompt += "\n"
+
+        # Add environment patterns
+        env_patterns = historical_context.get("environment_patterns", {})
+        if env_patterns:
+            prompt += "### Environment-Specific Patterns:\n"
+            for pattern_name, pattern_data in env_patterns.items():
+                prompt += f"- {pattern_name}: {pattern_data}\n"
+            prompt += "\n"
+
     # Add analysis request with structured output format
     prompt += """
 ## Required Analysis
 
 Provide recovery strategies for this failed remediation action.
+**IMPORTANT**: Use the historical context above to inform your recommendations. Prioritize strategies with proven success rates.
 
 **OUTPUT FORMAT**: Respond with a JSON object containing your analysis:
 
@@ -377,13 +415,74 @@ def _extract_warnings_from_analysis(analysis_text: str) -> List[str]:
     return warnings
 
 
+async def _get_historical_context(request_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get historical context from Context API
+
+    BR-HAPI-070: Historical Context Integration
+
+    Args:
+        request_data: Recovery request data containing:
+            - context.namespace: Kubernetes namespace
+            - context.target.type: Resource type (deployment, statefulset, etc.)
+            - context.target.name: Resource name
+
+    Returns:
+        Historical context dict with:
+            - similar_incidents: List of similar past incidents
+            - success_rates: Success rates for different recovery strategies
+            - environment_patterns: Environment-specific patterns
+            - available: True if context was retrieved, False if degraded
+    """
+    try:
+        # Extract target information from request
+        context = request_data.get("context", {})
+        target = context.get("target", {})
+
+        namespace = context.get("namespace", "unknown")
+        target_type = target.get("type", "unknown")
+        target_name = target.get("name", "unknown")
+
+        # Skip Context API call if target info is missing
+        if namespace == "unknown" or target_type == "unknown" or target_name == "unknown":
+            logger.warning({
+                "event": "context_api_skipped_missing_target",
+                "namespace": namespace,
+                "target_type": target_type,
+                "target_name": target_name
+            })
+            return {"available": False}
+
+        # Create Context API client
+        context_client = ContextAPIClient()
+
+        # Call Context API for historical context
+        historical_context = await context_client.get_historical_context(
+            namespace=namespace,
+            target_type=target_type,
+            target_name=target_name,
+            signal_type="kubernetes-event",  # Recovery scenarios are typically K8s events
+            time_range="30d"  # Last 30 days of historical data
+        )
+
+        return historical_context
+
+    except Exception as e:
+        logger.error({
+            "event": "context_api_integration_error",
+            "error": str(e)
+        })
+        # Graceful degradation - return empty context
+        return {"available": False}
+
+
 async def analyze_recovery(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Core recovery analysis logic
 
-    Business Requirements: BR-HAPI-001 to 050
+    Business Requirements: BR-HAPI-001 to 050, BR-HAPI-070 (Context API Integration)
 
-    Uses HolmesGPT SDK for AI-powered recovery analysis
+    Uses HolmesGPT SDK for AI-powered recovery analysis with historical context
     Falls back to stub implementation in DEV_MODE
     """
     incident_id = request_data.get("incident_id")
@@ -404,9 +503,21 @@ async def analyze_recovery(request_data: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("Using stub implementation (DEV_MODE=true)")
         return _stub_recovery_analysis(request_data)
 
-    # Production mode: Use HolmesGPT SDK with enhanced error handling
+    # Production mode: Use HolmesGPT SDK with enhanced error handling and historical context
     try:
-        # Create investigation prompt
+        # BR-HAPI-070: Get historical context from Context API
+        historical_context = await _get_historical_context(request_data)
+
+        # Add historical context to request_data for prompt generation
+        if historical_context and historical_context.get("available", True):
+            request_data["historical_context"] = historical_context
+            logger.info({
+                "event": "historical_context_retrieved",
+                "similar_incidents": len(historical_context.get("similar_incidents", [])),
+                "success_rates_available": bool(historical_context.get("success_rates"))
+            })
+
+        # Create investigation prompt (now includes historical context if available)
         investigation_prompt = _create_investigation_prompt(request_data)
 
         # Log the prompt being sent to LLM

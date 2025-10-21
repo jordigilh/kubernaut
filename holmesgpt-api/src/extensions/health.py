@@ -19,15 +19,14 @@ def _check_sdk() -> bool:
     Check if HolmesGPT SDK is available
 
     REFACTOR phase: Real SDK availability check
+    Checks if the holmes package can be imported (installed via pip)
     """
     try:
-        import sys
-        from pathlib import Path
-        sdk_path = Path(__file__).parent.parent.parent.parent / "dependencies" / "holmesgpt"
-        if not sdk_path.exists():
-            logger.warning({"event": "sdk_not_found", "path": str(sdk_path)})
-            return False
+        import holmes
         return True
+    except ImportError:
+        logger.warning({"event": "sdk_not_found", "reason": "holmes package not importable"})
+        return False
     except Exception as e:
         logger.error({"event": "sdk_check_failed", "error": str(e)})
         return False

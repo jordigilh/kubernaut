@@ -27,4 +27,3 @@ func TestDataStorageUnit(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Data Storage Unit Test Suite")
 }
-

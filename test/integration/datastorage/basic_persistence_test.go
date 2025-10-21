@@ -206,4 +206,3 @@ var _ = Describe("Integration Test 1: Basic Audit Persistence", func() {
 		})
 	})
 })
-

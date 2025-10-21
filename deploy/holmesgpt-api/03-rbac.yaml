@@ -1,0 +1,46 @@
+---
+# ClusterRole for HolmesGPT API - allows ServiceAccount token validation
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: holmesgpt-api
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: ai-analysis
+    app.kubernetes.io/part-of: kubernaut
+rules:
+  # TokenReviewer API access for authentication
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+
+  # Read-only access to pods for investigation context
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+
+  # Read-only access to events for investigation context
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: holmesgpt-api
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: ai-analysis
+    app.kubernetes.io/part-of: kubernaut
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: holmesgpt-api
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api
+    namespace: kubernaut-ai
+
+
+

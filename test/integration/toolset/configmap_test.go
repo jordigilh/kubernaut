@@ -114,12 +114,12 @@ var _ = Describe("ConfigMap Operations Integration", func() {
 			updated, err := builder.BuildConfigMapWithOverrides(testCtx, updatedJSON, existing)
 			Expect(err).ToNot(HaveOccurred())
 
-		// Verify custom labels are preserved
-		Expect(updated.Labels).To(HaveKeyWithValue("custom-label", "custom-value"))
-		Expect(updated.Labels).To(HaveKeyWithValue("team", "platform"))
+			// Verify custom labels are preserved
+			Expect(updated.Labels).To(HaveKeyWithValue("custom-label", "custom-value"))
+			Expect(updated.Labels).To(HaveKeyWithValue("team", "platform"))
 
-		// Verify managed labels are updated
-		Expect(updated.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "kubernaut"))
+			// Verify managed labels are updated
+			Expect(updated.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "kubernaut"))
 
 			// Verify toolset data is updated
 			Expect(updated.Data["toolset.json"]).To(Equal(updatedJSON))

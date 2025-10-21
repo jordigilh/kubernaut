@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-ai
+  labels:
+    app.kubernetes.io/name: holmesgpt-api
+    app.kubernetes.io/component: ai-analysis
+    app.kubernetes.io/part-of: kubernaut
+
+
+

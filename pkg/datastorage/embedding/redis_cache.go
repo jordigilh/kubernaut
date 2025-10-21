@@ -94,4 +94,3 @@ func (r *RedisCache) Set(ctx context.Context, key string, embedding []float32, t
 
 	return nil
 }
-

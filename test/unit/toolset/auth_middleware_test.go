@@ -248,4 +248,3 @@ var _ = Describe("BR-TOOLSET-032: Authentication Middleware", func() {
 		})
 	})
 })
-
