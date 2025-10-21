@@ -267,4 +267,3 @@ var _ = Describe("SQL Builder", func() {
 		})
 	})
 })
-

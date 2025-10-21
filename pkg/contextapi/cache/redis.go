@@ -88,4 +88,3 @@ func (r *RedisClient) Close() error {
 func (r *RedisClient) GetClient() *redis.Client {
 	return r.client
 }
-

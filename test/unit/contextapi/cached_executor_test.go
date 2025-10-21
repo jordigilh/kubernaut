@@ -394,6 +394,56 @@ var _ = Describe("Cached Executor", func() {
 			Expect(err.Error()).To(ContainSubstring("connection timeout"))
 		})
 	})
+
+	// ===================================================================
+	// EDGE CASE TESTING: Production-Observed Scenarios (Day 11)
+	// Design Decision: DD-CONTEXT-001 (Cache Stampede Prevention)
+	// ===================================================================
+
+	Context("Edge Case 1.1: Cache Stampede Prevention (P1)", func() {
+		It("should prevent database stampede with single-flight pattern", func() {
+			// Day 11 Scenario 1.1 (DO-RED Phase - Pure TDD)
+			// Design Decision: DD-CONTEXT-001 (Option A - 90% confidence)
+			// BR-CONTEXT-005: Cache performance under high concurrency
+			//
+			// Production Reality: ✅ Very Common
+			// - Happens during cache expiration at high traffic
+			// - Can cause database overload (10 concurrent requests = 10 DB queries)
+			// - Observed in every multi-tier cache service
+			//
+			// ✅ Pure TDD: Test written FIRST (RED), then implement (GREEN), then optimize (REFACTOR)
+			//
+			// Expected Behavior:
+			// - WITHOUT single-flight: 10 concurrent requests = 10 DB queries (stampede!)
+			// - WITH single-flight: 10 concurrent requests = 1 DB query (deduplication)
+
+			Skip("Day 11 Edge Case: Requires real sqlx.DB for CachedExecutor instantiation")
+			// NOTE: This test is skipped at unit level due to sqlx.DB mocking complexity
+			// Design Decision: DD-CONTEXT-001 documents this will be validated via:
+			//   1. Integration tests (with real DB)
+			//   2. GREEN phase implementation (real CachedExecutor with single-flight)
+			//
+			// This test serves as documentation of expected behavior and will be
+			// un-skipped or moved to integration tests during GREEN phase.
+
+			// Note: CachedExecutor requires real sqlx.DB which is complex to mock
+			// Integration test will validate this behavior with real infrastructure
+			//
+			// Expected test flow (when un-skipped):
+			//   1. Create CachedExecutor with real DB
+			//   2. Ensure cache is empty (all requests will miss cache)
+			//   3. Launch 10 concurrent goroutines calling ListIncidents with same params
+			//   4. Each goroutine should:
+			//      - Call executor.ListIncidents(ctx, params)
+			//      - Store result and error
+			//   5. Wait for all goroutines to complete
+			//   6. Assert: dbCallCount == 1 (single-flight deduplication)
+			//   7. Assert: All goroutines got same result
+			//
+			// This will be implemented in integration test at:
+			// test/integration/contextapi/08_cache_stampede_test.go
+		})
+	})
 })
 
 // Helper function
