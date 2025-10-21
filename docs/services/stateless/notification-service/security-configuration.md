@@ -1,8 +1,8 @@
 # Notification Service - Security Configuration
 
-**Version**: 1.0  
-**Last Updated**: October 6, 2025  
-**Service Type**: Stateless HTTP API Service  
+**Version**: 1.0
+**Last Updated**: October 6, 2025
+**Service Type**: Stateless HTTP API Service
 **Status**: ⚠️ NEEDS IMPLEMENTATION
 
 ---
@@ -153,23 +153,23 @@ func NewSanitizer() *Sanitizer {
             // API Keys and tokens
             "api_key":     regexp.MustCompile(`(?i)(api[_-]?key|apikey|token)["\s:=]+([a-zA-Z0-9_\-]{20,})`),
             "bearer":      regexp.MustCompile(`(?i)Bearer\s+([a-zA-Z0-9_\-\.]{20,})`),
-            
+
             // Passwords
             "password":    regexp.MustCompile(`(?i)(password|passwd|pwd)["\s:=]+([^\s"']{8,})`),
-            
+
             // Database connection strings
             "db_conn":     regexp.MustCompile(`(?i)(postgres|mysql|mongodb)://[^@]+@[^\s]+`),
-            
+
             // AWS credentials
             "aws_key":     regexp.MustCompile(`(?i)(AKIA[0-9A-Z]{16})`),
             "aws_secret":  regexp.MustCompile(`(?i)(aws[_-]?secret[_-]?access[_-]?key)["\s:=]+([a-zA-Z0-9/+=]{40})`),
-            
+
             // Email addresses (PII)
             "email":       regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`),
-            
+
             // Phone numbers (PII)
             "phone":       regexp.MustCompile(`\+?[1-9]\d{1,14}`),
-            
+
             // Credit cards
             "credit_card": regexp.MustCompile(`\b(?:\d{4}[-\s]?){3}\d{4}\b`),
         },
@@ -270,7 +270,7 @@ var (
 
 **Decision**: Use **Kubernetes Projected Volumes** (Option 3) for V1, with migration path to External Secrets + Vault (Option 4) for production.
 
-**Date Confirmed**: October 2025  
+**Date Confirmed**: October 2025
 **Status**: ✅ Approved
 
 ---
@@ -658,7 +658,7 @@ The application still reads from `/var/run/secrets/kubernaut/smtp/password` - sa
 | **Operational Complexity** | Low | Medium (requires Vault) |
 | **External Dependencies** | None | Vault/AWS Secrets Manager |
 
-**Recommendation**: 
+**Recommendation**:
 - ✅ **V1**: Start with Option 3 (Projected Volume) - excellent security, zero external dependencies
 - ⏳ **V2**: Migrate to Option 4 (External Secrets + Vault) when centralized secret management is required
 
@@ -714,7 +714,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: notification-service
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:
@@ -722,17 +722,17 @@ spec:
   policyTypes:
   - Ingress
   - Egress
-  
+
   ingress:
   # Allow from other Kubernaut services
   - from:
     - namespaceSelector:
         matchLabels:
-          name: prometheus-alerts-slm
+          name: kubernaut-system
     ports:
     - protocol: TCP
       port: 8080
-  
+
   # Allow from Prometheus for metrics scraping
   - from:
     - namespaceSelector:
@@ -744,7 +744,7 @@ spec:
     ports:
     - protocol: TCP
       port: 9090
-  
+
   egress:
   # Allow to Kubernetes API
   - to:
@@ -755,7 +755,7 @@ spec:
     ports:
     - protocol: TCP
       port: 443
-  
+
   # Allow to external notification channels (Slack, Email, etc.)
   - to:
     - podSelector: {}
@@ -846,7 +846,7 @@ var (
 
 ---
 
-**Document Maintainer**: Kubernaut Documentation Team  
-**Last Updated**: October 6, 2025  
+**Document Maintainer**: Kubernaut Documentation Team
+**Last Updated**: October 6, 2025
 **Status**: ✅ Complete Specification
 

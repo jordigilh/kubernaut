@@ -10,7 +10,7 @@
 
 ## 📋 API Overview
 
-**Base URL**: `http://effectiveness-monitor-service.prometheus-alerts-slm.svc.cluster.local:8080`
+**Base URL**: `http://effectiveness-monitor-service.kubernaut-system.svc.cluster.local:8080`
 
 **Authentication**:
 - **API endpoints** (`/api/v1/assess/*`): Kubernetes TokenReviewer (Bearer token required)

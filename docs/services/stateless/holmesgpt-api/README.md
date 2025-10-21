@@ -65,7 +65,7 @@
 | **HTTP Port** | 8080 (REST API) |
 | **Metrics Port** | 9090 (Prometheus `/metrics`) |
 | **Language** | Python (FastAPI + HolmesGPT SDK) |
-| **Namespace** | `prometheus-alerts-slm` |
+| **Namespace** | `kubernaut-system` |
 | **ServiceAccount** | `holmesgpt-api-sa` |
 | **Network Access** | Internal-only (network policies) |
 | **Authentication** | K8s ServiceAccount tokens (TokenReviewer API) |
@@ -279,7 +279,7 @@ This service does not maintain persistent state. All data is:
 
 **Quick Deploy**:
 ```bash
-# Deploy to prometheus-alerts-slm namespace
+# Deploy to kubernaut-system namespace
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/serviceaccount.yaml
 kubectl apply -f k8s/deployment.yaml
@@ -287,8 +287,8 @@ kubectl apply -f k8s/service.yaml
 kubectl apply -f k8s/networkpolicy.yaml
 
 # Verify deployment
-kubectl -n prometheus-alerts-slm get pods -l app=holmesgpt-api
-kubectl -n prometheus-alerts-slm logs -f deployment/holmesgpt-api
+kubectl -n kubernaut-system get pods -l app=holmesgpt-api
+kubectl -n kubernaut-system logs -f deployment/holmesgpt-api
 ```
 
 ### Network Policy (Critical)
@@ -300,7 +300,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: holmesgpt-api-ingress
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:

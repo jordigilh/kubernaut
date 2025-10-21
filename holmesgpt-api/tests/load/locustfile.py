@@ -151,11 +151,11 @@ class HolmesGPTAPIUser(HttpUser):
     def recovery_analysis(self):
         """
         Recovery analysis request (weight: 10)
-        
+
         Primary investigation endpoint - highest weight
         """
         alert = random.choice(self.SAMPLE_ALERTS)
-        
+
         with self.client.post(
             "/api/v1/recovery/analyze",
             json=alert,
@@ -180,12 +180,12 @@ class HolmesGPTAPIUser(HttpUser):
     def postexec_analysis(self):
         """
         Post-execution analysis request (weight: 3)
-        
+
         Secondary endpoint for analyzing execution results
         """
         postexec_data = self.SAMPLE_POSTEXEC.copy()
         postexec_data["execution_id"] = f"exec-test-{random.randint(1000, 9999)}"
-        
+
         with self.client.post(
             "/api/v1/postexec/analyze",
             json=postexec_data,

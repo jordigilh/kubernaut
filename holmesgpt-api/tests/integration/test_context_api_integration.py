@@ -132,7 +132,7 @@ async def mock_context_api_server(aiohttp_server, mock_context_api_response):
 async def context_api_base_url(context_api_mode, real_context_api_url, mock_context_api_server):
     """
     Provide Context API base URL based on test mode
-    
+
     Returns:
         - Real Context API URL if CONTEXT_API_URL is set
         - Mock server URL otherwise
@@ -185,7 +185,7 @@ class TestContextAPIHealthCheck:
     async def test_health_check_success(self, context_api_base_url, context_api_mode):
         """
         Test successful health check
-        
+
         **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
         """
         client = ContextAPIClient(base_url=context_api_base_url)
@@ -220,7 +220,7 @@ class TestGetHistoricalContextSuccess:
     ):
         """
         Test successful retrieval of historical context
-        
+
         **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
         """
         client = ContextAPIClient(base_url=context_api_base_url)
@@ -249,7 +249,7 @@ class TestGetHistoricalContextSuccess:
     ):
         """
         Test historical context includes success rates
-        
+
         **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
         """
         client = ContextAPIClient(base_url=context_api_base_url)
@@ -278,7 +278,7 @@ class TestGetHistoricalContextSuccess:
     ):
         """
         Test historical context includes similar incidents
-        
+
         **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
         """
         client = ContextAPIClient(base_url=context_api_base_url)
@@ -307,7 +307,7 @@ class TestGetHistoricalContextSuccess:
     ):
         """
         Test historical context includes environment patterns
-        
+
         **Test Mode**: Real or Mock (based on CONTEXT_API_URL env var)
         """
         client = ContextAPIClient(base_url=context_api_base_url)

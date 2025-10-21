@@ -155,7 +155,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: effectiveness-monitor
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 ---
 # deploy/effectiveness-monitor/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -177,7 +177,7 @@ spec:
       - name: effectiveness-monitor
         env:
         - name: HOLMESGPT_API_URL
-          value: "http://holmesgpt-api.prometheus-alerts-slm.svc.cluster.local:8080"
+          value: "http://holmesgpt-api.kubernaut-system.svc.cluster.local:8080"
 ```
 
 ### **HolmesGPT API Authorization**
@@ -213,7 +213,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: effectiveness-monitor
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 ```
 
 ### **Security Best Practices**
@@ -343,7 +343,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: effectiveness-monitor-service
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:
@@ -357,13 +357,13 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
-          name: prometheus-alerts-slm
+          name: kubernaut-system
       podSelector:
         matchLabels:
           app: context-api-service
     - namespaceSelector:
         matchLabels:
-          name: prometheus-alerts-slm
+          name: kubernaut-system
       podSelector:
         matchLabels:
           app: holmesgpt-api-service
@@ -385,7 +385,7 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
-          name: prometheus-alerts-slm
+          name: kubernaut-system
       podSelector:
         matchLabels:
           app: data-storage-service
@@ -397,7 +397,7 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
-          name: prometheus-alerts-slm
+          name: kubernaut-system
       podSelector:
         matchLabels:
           app: infrastructure-monitoring-service
@@ -490,12 +490,12 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: effectiveness-monitor-db-credentials
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 type: Opaque
 stringData:
   DB_USERNAME: effectiveness_monitor_user
   DB_PASSWORD: <generate-secure-password>
-  DB_HOST: data-storage-service.prometheus-alerts-slm.svc.cluster.local
+  DB_HOST: data-storage-service.kubernaut-system.svc.cluster.local
   DB_PORT: "5432"
   DB_NAME: kubernaut_audit
 ```
@@ -516,7 +516,7 @@ import (
 )
 
 func loadDatabaseCredentials(ctx context.Context, kubeClient *kubernetes.Clientset, logger *zap.Logger) (*DatabaseConfig, error) {
-    secret, err := kubeClient.CoreV1().Secrets("prometheus-alerts-slm").Get(
+    secret, err := kubeClient.CoreV1().Secrets("kubernaut-system").Get(
         ctx, "effectiveness-monitor-db-credentials", metav1.GetOptions{},
     )
     if err != nil {
@@ -591,7 +591,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: effectiveness-monitor-sa
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 ```
 
 ### **Deployment with ServiceAccount**
@@ -601,7 +601,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: effectiveness-monitor-service
-  namespace: prometheus-alerts-slm
+  namespace: kubernaut-system
 spec:
   replicas: 2
   selector:

@@ -34,7 +34,7 @@ func main() {
 		}
 		return fallback
 	}
-	
+
 	// Flag parsing with environment variable defaults
 	var (
 		addr       = flag.String("addr", getEnv("HTTP_PORT", ":8080"), "HTTP server address")

@@ -65,7 +65,7 @@ The **Dynamic Toolset Service** automatically discovers Kubernetes services (Pro
 |--------|-------|
 | **HTTP Port** | 8080 (REST API, `/health`, `/ready`) |
 | **Metrics Port** | 9090 (Prometheus `/metrics` with auth) |
-| **Namespace** | `prometheus-alerts-slm` |
+| **Namespace** | `kubernaut-system` |
 | **ServiceAccount** | `dynamic-toolset-sa` |
 
 ---
@@ -108,7 +108,7 @@ The **Dynamic Toolset Service** automatically discovers Kubernetes services (Pro
 1. **HolmesGPT API** - Reads generated toolset ConfigMaps
 
 **Generates**:
-- ConfigMaps in `prometheus-alerts-slm` namespace
+- ConfigMaps in `kubernaut-system` namespace
 - Format: HolmesGPT toolset configuration
 
 ---

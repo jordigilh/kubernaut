@@ -3,23 +3,68 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: holmesgpt-api-config
-  namespace: kubernaut-ai
+  namespace: kubernaut-system
   labels:
     app.kubernetes.io/name: holmesgpt-api
     app.kubernetes.io/component: ai-analysis
     app.kubernetes.io/part-of: kubernaut
 data:
-  # Application configuration
-  LOG_LEVEL: "info"
-  DEV_MODE: "false"
+  config.yaml: |
+    # HolmesGPT API Configuration
+    # Application Settings
+    log_level: INFO
+    dev_mode: false
+    auth_enabled: true
+    api_host: "0.0.0.0"
+    api_port: 8080
 
-  # API configuration
-  API_HOST: "0.0.0.0"
-  API_PORT: "8080"
+    # LLM Provider Configuration
+    llm:
+      provider: vertex-ai
+      model: claude-3-5-sonnet@20241022
+      endpoint: https://us-central1-aiplatform.googleapis.com
 
-  # Kubernetes service discovery
-  KUBERNETES_SERVICE_HOST: "kubernetes.default.svc"
-  KUBERNETES_SERVICE_PORT: "443"
+      # Credentials: Mounted from secret at /var/secrets/llm/credentials.json
+      # - Accessed via LLM_CREDENTIALS_PATH environment variable (generic)
+      # - Also available via GOOGLE_APPLICATION_CREDENTIALS for GCP compatibility
+      # - Works with any LLM provider (Vertex AI, OpenAI, Anthropic, etc.)
+
+      # Provider-specific Configuration
+      gcp_project_id: REPLACE_WITH_YOUR_PROJECT_ID
+      gcp_region: us-central1
+
+      # Rate limiting and timeouts
+      max_retries: 3
+      timeout_seconds: 60
+
+      # Cost controls
+      max_tokens_per_request: 4096
+      temperature: 0.7
+
+    # Context API Configuration
+    context_api:
+      url: http://context-api.kubernaut-system.svc.cluster.local:8091
+      timeout_seconds: 10
+      max_retries: 2
+
+    # Kubernetes API Configuration
+    kubernetes:
+      # Uses in-cluster config by default
+      service_host: kubernetes.default.svc
+      service_port: 443
+      token_reviewer_enabled: true
+
+    # Public endpoints (no auth required)
+    public_endpoints:
+      - /health
+      - /ready
+      - /metrics
+
+    # Metrics Configuration
+    metrics:
+      enabled: true
+      endpoint: /metrics
+      scrape_interval: 30s
 
 
 

@@ -253,3 +253,4 @@ spec:
               - key: .dockerconfigjson
                 path: .dockerconfigjson
 
+
