@@ -22,7 +22,7 @@ spec:
       serviceAccountName: default
       containers:
       - name: context-api
-        image: quay.io/jordigilh/context-api:v0.1.0
+        image: quay.io/jordigilh/context-api:latest
         imagePullPolicy: Always
         args:
           - --config
