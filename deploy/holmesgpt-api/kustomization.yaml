@@ -1,0 +1,26 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kubernaut-system
+
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/part-of: kubernaut
+
+resources:
+  - 01-namespace.yaml
+  - 02-serviceaccount.yaml
+  - 03-rbac.yaml
+  - 04-secret.yaml
+  - 05-configmap.yaml
+  - 06-deployment.yaml
+  - 07-service.yaml
+  - 08-networkpolicy.yaml
+  - 09-buildconfig.yaml
+
+images:
+  - name: holmesgpt-api
+    newName: image-registry.openshift-image-registry.svc:5000/kubernaut-system/holmesgpt-api
+    newTag: v1.0.0
+

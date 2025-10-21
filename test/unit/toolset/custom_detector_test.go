@@ -90,9 +90,9 @@ var _ = Describe("BR-TOOLSET-022: Custom Detector", func() {
 			Entry("with custom health endpoint override",
 				"legacy-service", "default",
 				map[string]string{
-					"kubernaut.io/toolset":               "enabled",
-					"kubernaut.io/toolset-type":          "legacy",
-					"kubernaut.io/toolset-health-path":   "/healthz",
+					"kubernaut.io/toolset":             "enabled",
+					"kubernaut.io/toolset-type":        "legacy",
+					"kubernaut.io/toolset-health-path": "/healthz",
 				},
 				[]corev1.ServicePort{{Port: 8080}},
 				"legacy",
@@ -339,4 +339,3 @@ var _ = Describe("BR-TOOLSET-022: Custom Detector", func() {
 		})
 	})
 })
-

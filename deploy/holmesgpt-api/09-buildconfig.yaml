@@ -1,0 +1,54 @@
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+    part-of: kubernaut
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+    part-of: kubernaut
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: holmesgpt-api:v1.0.0
+  source:
+    type: Git
+    git:
+      uri: https://github.com/jordigilh/kubernaut.git
+      ref: main
+    contextDir: .
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: holmesgpt-api/Dockerfile
+      from:
+        kind: DockerImage
+        name: registry.access.redhat.com/ubi9/python-312:latest
+      noCache: false
+      forcePull: true
+  triggers:
+    - type: ConfigChange
+    - type: ImageChange
+      imageChange:
+        from:
+          kind: ImageStreamTag
+          name: python-312:latest
+          namespace: openshift
+  successfulBuildsHistoryLimit: 2
+  failedBuildsHistoryLimit: 2
+
+
+
