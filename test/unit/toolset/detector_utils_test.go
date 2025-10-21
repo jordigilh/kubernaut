@@ -1,4 +1,4 @@
-package toolset_test
+package toolset
 
 import (
 	. "github.com/onsi/ginkgo/v2"
