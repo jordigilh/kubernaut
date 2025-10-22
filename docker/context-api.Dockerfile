@@ -2,12 +2,14 @@
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
 
-# Build stage - Red Hat UBI9 Go 1.24 toolset
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
-
-# Build arguments for multi-architecture support
+# Build arguments for multi-architecture support (MUST be before FROM)
+ARG TARGETARCH=amd64
 ARG GOOS=linux
 ARG GOARCH=amd64
+
+# Build stage - Red Hat UBI9 Go 1.24 toolset
+# Use --platform to pull the correct architecture variant
+FROM --platform=linux/${TARGETARCH} registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
 
 # Switch to root for package installation
 USER root
@@ -42,7 +44,8 @@ RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	./cmd/contextapi/main.go
 
 # Runtime stage - Red Hat UBI9 minimal runtime image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# Use --platform to pull the correct architecture variant
+FROM --platform=linux/${TARGETARCH} registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # Install runtime dependencies
 RUN microdnf update -y && \
