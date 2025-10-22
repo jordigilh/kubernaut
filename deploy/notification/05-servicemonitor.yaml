@@ -1,0 +1,26 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: notification-controller
+  namespace: kubernaut-notifications
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: notification-controller
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  selector:
+    matchLabels:
+      control-plane: notification-controller
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      scheme: http
+  namespaceSelector:
+    matchNames:
+      - kubernaut-notifications
+
+
+
