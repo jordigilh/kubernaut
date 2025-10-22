@@ -1,6 +1,21 @@
 # Vertex AI Configuration for HolmesGPT API
 
-## Overview
+## ⚠️ **DEPRECATED - DO NOT USE**
+
+**This document is outdated and references an old architecture that no longer exists.**
+
+**Status**: This guide uses environment variable-based configuration which was **replaced with YAML ConfigMap** in v1.0.3
+
+**For current Vertex AI setup, see**:
+- **Triage Report**: [`VERTEX_AI_SETUP_TRIAGE.md`](./VERTEX_AI_SETUP_TRIAGE.md) - Explains what's wrong with this document
+- **Deployment Guide**: [`README.md`](./README.md) - Current deployment instructions
+- **Configuration Guide**: [`../../docs/services/stateless/holmesgpt-api/CONFIGURATION_REFACTORING_SUMMARY.md`](../../docs/services/stateless/holmesgpt-api/CONFIGURATION_REFACTORING_SUMMARY.md) - New architecture explanation
+
+**Following this guide will result in 100% deployment failure.**
+
+---
+
+## Overview (OUTDATED - DO NOT FOLLOW)
 
 This guide explains how to configure HolmesGPT API to use Claude 3.5 Sonnet via Google Cloud Vertex AI.
 
