@@ -72,13 +72,13 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
-            runAsUser: 65532
+            # runAsUser removed - let OpenShift assign from SCC range
             capabilities:
               drop:
                 - ALL
       terminationGracePeriodSeconds: 10
       securityContext:
-        fsGroup: 65532
+        # fsGroup removed - let OpenShift assign from SCC range
         seccompProfile:
           type: RuntimeDefault
 
