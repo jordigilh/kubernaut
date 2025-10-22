@@ -9,6 +9,7 @@ resources:
   - 02-deployment.yaml
   - 03-service.yaml
   - 04-buildconfig.yaml
+  - 05-servicemonitor.yaml
 
 labels:
   - pairs:
