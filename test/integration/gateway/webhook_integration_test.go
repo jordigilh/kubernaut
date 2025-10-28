@@ -38,9 +38,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
-	"github.com/jordigilh/kubernaut/pkg/gateway/server"
 )
 
 // Business Outcome Testing: Test WHAT complete webhook processing enables
@@ -59,7 +59,7 @@ func addAuthHeader(req *http.Request) {
 var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integration Tests", func() {
 	var (
 		ctx           context.Context
-		gatewayServer *server.Server
+		gatewayServer *gateway.Server
 		redisClient   *goredis.Client
 		k8sClient     client.Client
 		logger        *zap.Logger
@@ -130,7 +130,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		pathDecider := processing.NewRemediationPathDecider(logger)
 		crdCreator := processing.NewCRDCreator(k8sClient, logger)
 
-		serverConfig := &server.Config{
+		serverConfig := &gateway.Config{
 			Port:         8080,
 			ReadTimeout:  5,
 			WriteTimeout: 10,
@@ -152,7 +152,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// "duplicate metrics collector registration" panics
 		metricsRegistry := prometheus.NewRegistry()
 
-		gatewayServer, serverErr = server.NewServer(
+		gatewayServer, serverErr = gateway.NewServer(
 			adapterRegistry,
 			classifier,
 			priorityEngine,
