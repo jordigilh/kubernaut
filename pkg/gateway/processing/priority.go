@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/open-policy-agent/opa/rego"
-	"github.com/sirupsen/logrus"
+	"github.com/open-policy-agent/opa/v1/rego"
+	"go.uber.org/zap"
 )
 
 // PriorityEngine assigns priority based on severity and environment
@@ -55,7 +55,7 @@ type PriorityEngine struct {
 	// This table is ALWAYS available as a fallback
 	fallbackTable map[string]map[string]string
 
-	logger *logrus.Logger
+	logger *zap.Logger
 }
 
 // NewPriorityEngine creates a new priority engine with fallback table
@@ -83,7 +83,7 @@ type PriorityEngine struct {
 // - Enables dynamic environment configuration (canary, qa-eu, blue, green, etc.)
 // - Organizations can use ANY environment taxonomy without code changes
 // - Unknown environments get sensible priority based on severity
-func NewPriorityEngine(logger *logrus.Logger) *PriorityEngine {
+func NewPriorityEngine(logger *zap.Logger) *PriorityEngine {
 	// Build fallback table with catch-all for unknown environments
 	fallbackTable := map[string]map[string]string{
 		"critical": {
@@ -129,7 +129,7 @@ func NewPriorityEngine(logger *logrus.Logger) *PriorityEngine {
 //	}
 //
 // Expected Rego output: "P0", "P1", "P2", or "P3"
-func NewPriorityEngineWithRego(policyPath string, logger *logrus.Logger) (*PriorityEngine, error) {
+func NewPriorityEngineWithRego(policyPath string, logger *zap.Logger) (*PriorityEngine, error) {
 	// Build fallback table (same as NewPriorityEngine) with catch-all for unknown environments
 	fallbackTable := map[string]map[string]string{
 		"critical": {
@@ -168,9 +168,9 @@ func NewPriorityEngineWithRego(policyPath string, logger *logrus.Logger) (*Prior
 		return nil, fmt.Errorf("failed to prepare Rego policy: %w", err)
 	}
 
-	logger.WithFields(logrus.Fields{
-		"policy_path": policyPath,
-	}).Info("Rego policy loaded successfully for priority assignment")
+	logger.Info("Rego policy loaded successfully for priority assignment",
+		zap.Any("policy_path", policyPath),
+	)
 
 	return &PriorityEngine{
 		regoQuery:     &query,
@@ -202,20 +202,20 @@ func (p *PriorityEngine) Assign(ctx context.Context, severity, environment strin
 	// 1. Try Rego evaluation (if configured)
 	if p.regoQuery != nil {
 		if priority, err := p.evaluateRego(ctx, severity, environment); err == nil {
-			p.logger.WithFields(logrus.Fields{
-				"severity":    severity,
-				"environment": environment,
-				"priority":    priority,
-				"source":      "rego",
-			}).Debug("Priority assigned via Rego policy")
+			p.logger.Debug("Priority assigned via Rego policy",
+				zap.Any("severity", severity),
+				zap.Any("environment", environment),
+				zap.Any("priority", priority),
+				zap.String("source", "rego"),
+			)
 			return priority
 		} else {
 			// Log Rego failure but continue to fallback
-			p.logger.WithFields(logrus.Fields{
-				"severity":    severity,
-				"environment": environment,
-				"error":       err,
-			}).Warn("Rego policy evaluation failed, using fallback table")
+			p.logger.Warn("Rego policy evaluation failed, using fallback table",
+				zap.Any("severity", severity),
+				zap.Any("environment", environment),
+				zap.Error(err),
+			)
 		}
 	}
 
@@ -223,32 +223,32 @@ func (p *PriorityEngine) Assign(ctx context.Context, severity, environment strin
 	if envMap, ok := p.fallbackTable[severity]; ok {
 		// Try exact environment match first
 		if priority, ok := envMap[environment]; ok {
-			p.logger.WithFields(logrus.Fields{
-				"severity":    severity,
-				"environment": environment,
-				"priority":    priority,
-				"source":      "fallback_table_exact",
-			}).Debug("Priority assigned via fallback table (exact match)")
+			p.logger.Debug("Priority assigned via fallback table (exact match)",
+				zap.Any("severity", severity),
+				zap.Any("environment", environment),
+				zap.Any("priority", priority),
+				zap.String("source", "fallback_table_exact"),
+			)
 			return priority
 		}
 
 		// Try catch-all if exact match not found
 		if priority, ok := envMap["*"]; ok {
-			p.logger.WithFields(logrus.Fields{
-				"severity":    severity,
-				"environment": environment,
-				"priority":    priority,
-				"source":      "fallback_table_catchall",
-			}).Debug("Priority assigned via fallback table (catch-all for unknown environment)")
+			p.logger.Debug("Priority assigned via fallback table (catch-all for unknown environment)",
+				zap.Any("severity", severity),
+				zap.Any("environment", environment),
+				zap.Any("priority", priority),
+				zap.String("source", "fallback_table_catchall"),
+			)
 			return priority
 		}
 	}
 
 	// 3. Final fallback (safe default - should rarely be reached)
-	p.logger.WithFields(logrus.Fields{
-		"severity":    severity,
-		"environment": environment,
-	}).Warn("No priority mapping found (unknown severity), defaulting to P2")
+	p.logger.Warn("No priority mapping found (unknown severity), defaulting to P2",
+		zap.Any("severity", severity),
+		zap.Any("environment", environment),
+	)
 
 	return "P2"
 }

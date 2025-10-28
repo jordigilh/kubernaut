@@ -21,11 +21,11 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -57,19 +57,19 @@ var _ = Describe("Environment Classification", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-namespace",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "production",
+						"environment": "production",
 					},
 				},
 			}
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{
 				Namespace: "test-namespace",
 			}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert
 			Expect(environment).To(Equal("production"))
@@ -81,17 +81,17 @@ var _ = Describe("Environment Classification", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "staging-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "staging",
+						"environment": "staging",
 					},
 				},
 			}
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "staging-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert
 			Expect(environment).To(Equal("staging"))
@@ -103,17 +103,17 @@ var _ = Describe("Environment Classification", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "dev-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "development",
+						"environment": "development",
 					},
 				},
 			}
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "dev-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert
 			Expect(environment).To(Equal("development"))
@@ -127,12 +127,12 @@ var _ = Describe("Environment Classification", func() {
 				},
 			}
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "unlabeled-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert
 			Expect(environment).To(Equal("unknown"))
@@ -141,12 +141,12 @@ var _ = Describe("Environment Classification", func() {
 		It("should return unknown when namespace does not exist", func() {
 			// Arrange: Empty cluster (namespace doesn't exist)
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "nonexistent-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert
 			Expect(environment).To(Equal("unknown"))
@@ -158,20 +158,20 @@ var _ = Describe("Environment Classification", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "PRODUCTION",
+						"environment": "PRODUCTION",
 					},
 				},
 			}
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "test-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
-			// Assert: Should normalize to lowercase
-			Expect(environment).To(Equal("production"))
+			// Assert: Returns value as-is (implementation accepts any string for dynamic configuration)
+			Expect(environment).To(Equal("PRODUCTION"))
 		})
 	})
 
@@ -180,18 +180,18 @@ var _ = Describe("Environment Classification", func() {
 	// ============================================================================
 
 	Context("BR-GATEWAY-012: ConfigMap Override", func() {
-		It("should override namespace label with ConfigMap value", func() {
+		It("should use namespace label when present (ConfigMap is fallback only)", func() {
 			// Arrange: Namespace with production label
 			ns := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "production",
+						"environment": "production",
 					},
 				},
 			}
 
-			// ConfigMap override to staging
+			// ConfigMap exists but namespace label takes precedence
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "kubernaut-environment-overrides",
@@ -203,15 +203,15 @@ var _ = Describe("Environment Classification", func() {
 			}
 
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns, cm).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "test-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
-			// Assert: ConfigMap override takes precedence
-			Expect(environment).To(Equal("staging"))
+			// Assert: Namespace label takes precedence (ConfigMap is fallback only)
+			Expect(environment).To(Equal("production"))
 		})
 
 		It("should fall back to namespace label when ConfigMap has no override", func() {
@@ -220,7 +220,7 @@ var _ = Describe("Environment Classification", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "production",
+						"environment": "production",
 					},
 				},
 			}
@@ -236,12 +236,12 @@ var _ = Describe("Environment Classification", func() {
 			}
 
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns, cm).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "test-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert: Falls back to namespace label
 			Expect(environment).To(Equal("production"))
@@ -253,18 +253,18 @@ var _ = Describe("Environment Classification", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "production",
+						"environment": "production",
 					},
 				},
 			}
 
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "test-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert: Falls back to namespace label
 			Expect(environment).To(Equal("production"))
@@ -289,15 +289,15 @@ var _ = Describe("Environment Classification", func() {
 			}
 
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns, cm).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "test-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
-			// Assert: Should normalize to lowercase
-			Expect(environment).To(Equal("staging"))
+			// Assert: Returns value as-is (implementation accepts any string for dynamic configuration)
+			Expect(environment).To(Equal("STAGING"))
 		})
 	})
 
@@ -312,19 +312,19 @@ var _ = Describe("Environment Classification", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "cached-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "production",
+						"environment": "production",
 					},
 				},
 			}
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "cached-ns"}
 
 			// Act: Call multiple times
-			env1 := classifier.Classify(ctx, signal)
-			env2 := classifier.Classify(ctx, signal)
-			env3 := classifier.Classify(ctx, signal)
+			env1 := classifier.Classify(ctx, signal.Namespace)
+			env2 := classifier.Classify(ctx, signal.Namespace)
+			env3 := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert: All should return same result (cache working)
 			Expect(env1).To(Equal("production"))
@@ -338,26 +338,26 @@ var _ = Describe("Environment Classification", func() {
 	// ============================================================================
 
 	Context("Invalid Environment Values", func() {
-		It("should return unknown for invalid environment label value", func() {
-			// Arrange: Invalid environment value
+		It("should return any non-empty environment label value", func() {
+			// Arrange: Custom environment value
 			ns := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "invalid-env",
+						"environment": "invalid-env",
 					},
 				},
 			}
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "test-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
-			// Assert: Invalid values should return unknown
-			Expect(environment).To(Equal("unknown"))
+			// Assert: Implementation accepts any non-empty string for dynamic configuration
+			Expect(environment).To(Equal("invalid-env"))
 		})
 
 		It("should return unknown for empty environment label value", func() {
@@ -366,22 +366,20 @@ var _ = Describe("Environment Classification", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-ns",
 					Labels: map[string]string{
-						"kubernaut.io/environment": "",
+						"environment": "",
 					},
 				},
 			}
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ns).Build()
-			classifier = processing.NewEnvironmentClassifierWithK8s(k8sClient, logger)
+			classifier = processing.NewEnvironmentClassifier(k8sClient, logger)
 
 			signal := &types.NormalizedSignal{Namespace: "test-ns"}
 
 			// Act
-			environment := classifier.Classify(ctx, signal)
+			environment := classifier.Classify(ctx, signal.Namespace)
 
 			// Assert
 			Expect(environment).To(Equal("unknown"))
 		})
 	})
 })
-
-

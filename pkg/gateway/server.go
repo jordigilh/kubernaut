@@ -27,7 +27,7 @@ import (
 
 	goredis "github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 
 	// "k8s.io/client-go/kubernetes" // DD-GATEWAY-004: No longer needed (authentication removed)
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -106,7 +106,7 @@ type Server struct {
 	metricsInstance *metrics.Metrics
 
 	// Logger
-	logger *logrus.Logger
+	logger *zap.Logger
 }
 
 // ServerConfig holds server configuration
@@ -165,7 +165,7 @@ type ServerConfig struct {
 // 2. Register adapters: server.RegisterAdapter(prometheusAdapter)
 // 3. Start server: server.Start(ctx)
 // 4. Graceful shutdown on signal: server.Stop(ctx)
-func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
+func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 	// 1. Initialize Redis client
 	redisClient := goredis.NewClient(cfg.Redis)
 
@@ -200,29 +200,29 @@ func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
 	var deduplicator *processing.DeduplicationService
 	if cfg.DeduplicationTTL > 0 {
 		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, cfg.DeduplicationTTL, logger, metricsInstance)
-		logger.WithField("ttl", cfg.DeduplicationTTL).Info("Using custom deduplication TTL")
+		logger.Info("Using custom deduplication TTL", zap.Duration("ttl", cfg.DeduplicationTTL))
 	} else {
 		deduplicator = processing.NewDeduplicationService(redisClient, logger, metricsInstance)
 	}
 
 	stormDetector := processing.NewStormDetector(redisClient, cfg.StormRateThreshold, cfg.StormPatternThreshold, metricsInstance)
 	if cfg.StormRateThreshold > 0 || cfg.StormPatternThreshold > 0 {
-		logger.WithFields(logrus.Fields{
-			"rate_threshold":    cfg.StormRateThreshold,
-			"pattern_threshold": cfg.StormPatternThreshold,
-		}).Info("Using custom storm detection thresholds")
+		logger.Info("Using custom storm detection thresholds",
+			zap.Int("rate_threshold", cfg.StormRateThreshold),
+			zap.Int("pattern_threshold", cfg.StormPatternThreshold),
+		)
 	}
 
 	stormAggregator := processing.NewStormAggregatorWithWindow(redisClient, cfg.StormAggregationWindow)
 	if cfg.StormAggregationWindow > 0 {
-		logger.WithField("window", cfg.StormAggregationWindow).Info("Using custom storm aggregation window")
+		logger.Info("Using custom storm aggregation window", zap.Duration("window", cfg.StormAggregationWindow))
 	}
 
 	// Create environment classifier with configurable cache TTL
 	var classifier *processing.EnvironmentClassifier
 	if cfg.EnvironmentCacheTTL > 0 {
 		classifier = processing.NewEnvironmentClassifierWithTTL(ctrlClient, logger, cfg.EnvironmentCacheTTL)
-		logger.WithField("cache_ttl", cfg.EnvironmentCacheTTL).Info("Using custom environment cache TTL")
+		logger.Info("Using custom environment cache TTL", zap.Duration("cache_ttl", cfg.EnvironmentCacheTTL))
 	} else {
 		classifier = processing.NewEnvironmentClassifier(ctrlClient, logger)
 	}
@@ -325,10 +325,9 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	// Register route directly (no middleware wrapping)
 	s.httpServer.Handler.(*http.ServeMux).Handle(adapter.GetRoute(), handler)
 
-	s.logger.WithFields(logrus.Fields{
-		"adapter": adapter.Name(),
-		"route":   adapter.GetRoute(),
-	}).Info("Registered adapter route")
+	s.logger.Info("Registered adapter route",
+		zap.String("adapter", adapter.Name()),
+		zap.String("route", adapter.GetRoute()))
 
 	return nil
 }
@@ -355,7 +354,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		// Read request body
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			s.logger.WithError(err).Error("Failed to read request body")
+			s.logger.Error("Failed to read request body", zap.Error(err))
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
@@ -363,10 +362,10 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		// Parse signal using adapter
 		signal, err := adapter.Parse(ctx, body)
 		if err != nil {
-			s.logger.WithFields(logrus.Fields{
-				"adapter": adapter.Name(),
-				"error":   err,
-			}).Warn("Failed to parse signal")
+			s.logger.Warn("Failed to parse signal",
+				zap.String("adapter", adapter.Name()),
+				zap.Error(err),
+			)
 
 			// Return 413 for payload size errors, 400 for other parse errors
 			statusCode := http.StatusBadRequest
@@ -380,10 +379,9 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 
 		// Validate signal
 		if err := adapter.Validate(signal); err != nil {
-			s.logger.WithFields(logrus.Fields{
-				"adapter": adapter.Name(),
-				"error":   err,
-			}).Warn("Signal validation failed")
+			s.logger.Warn("Signal validation failed",
+				zap.String("adapter", adapter.Name()),
+				zap.Error(err))
 			http.Error(w, fmt.Sprintf("Signal validation failed: %v", err), http.StatusBadRequest)
 			return
 		}
@@ -391,10 +389,9 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		// Process signal through pipeline
 		response, err := s.ProcessSignal(ctx, signal)
 		if err != nil {
-			s.logger.WithFields(logrus.Fields{
-				"adapter": adapter.Name(),
-				"error":   err,
-			}).Error("Signal processing failed")
+			s.logger.Error("Signal processing failed",
+				zap.String("adapter", adapter.Name()),
+				zap.Error(err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -420,7 +417,9 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		// Send response
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			s.logger.Error("Failed to encode JSON response", zap.Error(err))
+		}
 	}
 }
 
@@ -439,7 +438,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 //	    }
 //	}()
 func (s *Server) Start(ctx context.Context) error {
-	s.logger.WithField("addr", s.httpServer.Addr).Info("Starting Gateway server")
+	s.logger.Info("Starting Gateway server", zap.String("addr", s.httpServer.Addr))
 	return s.httpServer.ListenAndServe()
 }
 
@@ -460,14 +459,14 @@ func (s *Server) Stop(ctx context.Context) error {
 
 	// Graceful HTTP server shutdown
 	if err := s.httpServer.Shutdown(ctx); err != nil {
-		s.logger.WithError(err).Error("Failed to gracefully shutdown HTTP server")
+		s.logger.Error("Failed to gracefully shutdown HTTP server", zap.Error(err))
 		return err
 	}
 
 	// Close Redis connections
 	if s.redisClient != nil {
 		if err := s.redisClient.Close(); err != nil {
-			s.logger.WithError(err).Error("Failed to close Redis client")
+			s.logger.Error("Failed to close Redis client", zap.Error(err))
 			return err
 		}
 	}
@@ -512,10 +511,9 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	// 1. Deduplication check
 	isDuplicate, metadata, err := s.deduplicator.Check(ctx, signal)
 	if err != nil {
-		s.logger.WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"error":       err,
-		}).Error("Deduplication check failed")
+		s.logger.Error("Deduplication check failed",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Error(err))
 		return nil, fmt.Errorf("deduplication check failed: %w", err)
 	}
 
@@ -523,11 +521,11 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		// Fast path: duplicate signal, no CRD creation needed
 		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
 
-		s.logger.WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"count":       metadata.Count,
-			"firstSeen":   metadata.FirstSeen,
-		}).Debug("Duplicate signal detected")
+		s.logger.Debug("Duplicate signal detected",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Int("count", metadata.Count),
+			zap.String("firstSeen", metadata.FirstSeen),
+		)
 
 		return &ProcessingResponse{
 			Status:      StatusDuplicate,
@@ -542,48 +540,43 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	isStorm, stormMetadata, err := s.stormDetector.Check(ctx, signal)
 	if err != nil {
 		// Non-critical error: log warning but continue processing
-		s.logger.WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"error":       err,
-		}).Warn("Storm detection failed")
+		s.logger.Warn("Storm detection failed",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Error(err))
 	} else if isStorm && stormMetadata != nil {
 		s.metricsInstance.AlertStormsDetectedTotal.WithLabelValues(stormMetadata.StormType, signal.AlertName).Inc()
 
-		s.logger.WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"stormType":   stormMetadata.StormType,
-			"stormWindow": stormMetadata.Window,
-			"alertCount":  stormMetadata.AlertCount,
-		}).Warn("Alert storm detected")
+		s.logger.Warn("Alert storm detected",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("stormType", stormMetadata.StormType),
+			zap.String("stormWindow", stormMetadata.Window),
+			zap.Int("alertCount", stormMetadata.AlertCount))
 
 		// BR-GATEWAY-016: Storm aggregation
 		// Instead of creating individual CRDs during storms, aggregate alerts
 		// into a single CRD after a 1-minute window
 		shouldAggregate, windowID, err := s.stormAggregator.ShouldAggregate(ctx, signal)
 		if err != nil {
-			s.logger.WithFields(logrus.Fields{
-				"fingerprint": signal.Fingerprint,
-				"error":       err,
-			}).Warn("Storm aggregation check failed, falling back to individual CRD creation")
+			s.logger.Warn("Storm aggregation check failed, falling back to individual CRD creation",
+				zap.String("fingerprint", signal.Fingerprint),
+				zap.Error(err))
 			// Fall through to individual CRD creation
 		} else if shouldAggregate {
 			// Add to existing aggregation window
 			if err := s.stormAggregator.AddResource(ctx, windowID, signal); err != nil {
-				s.logger.WithFields(logrus.Fields{
-					"fingerprint": signal.Fingerprint,
-					"windowID":    windowID,
-					"error":       err,
-				}).Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation")
+				s.logger.Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation",
+					zap.String("fingerprint", signal.Fingerprint),
+					zap.String("windowID", windowID),
+					zap.Error(err))
 				// Fall through to individual CRD creation
 			} else {
 				// Successfully added to aggregation window, return without creating CRD
 				resourceCount, _ := s.stormAggregator.GetResourceCount(ctx, windowID)
 
-				s.logger.WithFields(logrus.Fields{
-					"fingerprint":   signal.Fingerprint,
-					"windowID":      windowID,
-					"resourceCount": resourceCount,
-				}).Info("Alert added to storm aggregation window")
+				s.logger.Info("Alert added to storm aggregation window",
+					zap.String("fingerprint", signal.Fingerprint),
+					zap.String("windowID", windowID),
+					zap.Int("resourceCount", resourceCount))
 
 				// Return accepted response (no CRD created yet)
 				return &ProcessingResponse{
@@ -600,10 +593,9 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			// Start new aggregation window
 			windowID, err := s.stormAggregator.StartAggregation(ctx, signal, stormMetadata)
 			if err != nil {
-				s.logger.WithFields(logrus.Fields{
-					"fingerprint": signal.Fingerprint,
-					"error":       err,
-				}).Warn("Failed to start storm aggregation, falling back to individual CRD creation")
+				s.logger.Warn("Failed to start storm aggregation, falling back to individual CRD creation",
+					zap.String("fingerprint", signal.Fingerprint),
+					zap.Error(err))
 				// Fall through to individual CRD creation
 			} else {
 				// Schedule aggregated CRD creation after window expires
@@ -611,11 +603,10 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 				// but aggregation goroutine needs to run for full window duration (5s-1m)
 				go s.createAggregatedCRDAfterWindow(context.Background(), windowID, signal, stormMetadata)
 
-				s.logger.WithFields(logrus.Fields{
-					"fingerprint": signal.Fingerprint,
-					"windowID":    windowID,
-					"windowTTL":   "1 minute",
-				}).Info("Storm aggregation window started")
+				s.logger.Info("Storm aggregation window started",
+					zap.String("fingerprint", signal.Fingerprint),
+					zap.String("windowID", windowID),
+					zap.String("windowTTL", "1 minute"))
 
 				// Return accepted response (CRD will be created after window expires)
 				return &ProcessingResponse{
@@ -646,10 +637,9 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	// 5. Create RemediationRequest CRD
 	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal, priority, environment)
 	if err != nil {
-		s.logger.WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"error":       err,
-		}).Error("Failed to create RemediationRequest CRD")
+		s.logger.Error("Failed to create RemediationRequest CRD",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
 
@@ -657,22 +647,20 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
 	if err := s.deduplicator.Store(ctx, signal, remediationRequestRef); err != nil {
 		// Non-critical error: CRD already created, log warning
-		s.logger.WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"crdName":     rr.Name,
-			"error":       err,
-		}).Warn("Failed to store deduplication metadata")
+		s.logger.Warn("Failed to store deduplication metadata",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("crdName", rr.Name),
+			zap.Error(err))
 	}
 
 	// Record processing duration
 	duration := time.Since(start)
-	s.logger.WithFields(logrus.Fields{
-		"fingerprint": signal.Fingerprint,
-		"crdName":     rr.Name,
-		"environment": environment,
-		"priority":    priority,
-		"duration_ms": duration.Milliseconds(),
-	}).Info("Signal processed successfully")
+	s.logger.Info("Signal processed successfully",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("crdName", rr.Name),
+		zap.String("environment", environment),
+		zap.String("priority", priority),
+		zap.Int64("duration_ms", duration.Milliseconds()))
 
 	return &ProcessingResponse{
 		Status:                      StatusCreated,
@@ -695,7 +683,9 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 // If this endpoint fails, Kubernetes will restart the pod.
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		s.logger.Error("Failed to encode health response", zap.Error(err))
+	}
 }
 
 // readinessHandler handles readiness probes
@@ -717,12 +707,14 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Check Redis connectivity
 	if err := s.redisClient.Ping(ctx).Err(); err != nil {
-		s.logger.WithError(err).Warn("Readiness check failed: Redis not reachable")
+		s.logger.Warn("Readiness check failed: Redis not reachable", zap.Error(err))
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{
+		if encErr := json.NewEncoder(w).Encode(map[string]string{
 			"status": "not ready",
 			"reason": "redis unavailable",
-		})
+		}); encErr != nil {
+			s.logger.Error("Failed to encode readiness error response", zap.Error(encErr))
+		}
 		return
 	}
 
@@ -731,7 +723,9 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 	// to perform a simple API call (e.g. list namespaces with limit=1)
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ready"}); err != nil {
+		s.logger.Error("Failed to encode readiness response", zap.Error(err))
+	}
 }
 
 // ProcessingResponse represents the result of signal processing
@@ -789,29 +783,26 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	windowDuration := s.stormAggregator.GetWindowDuration()
 	time.Sleep(windowDuration)
 
-	s.logger.WithFields(logrus.Fields{
-		"windowID":  windowID,
-		"alertName": firstSignal.AlertName,
-		"duration":  windowDuration,
-	}).Info("Storm aggregation window expired, creating aggregated CRD")
+	s.logger.Info("Storm aggregation window expired, creating aggregated CRD",
+		zap.String("windowID", windowID),
+		zap.String("alertName", firstSignal.AlertName),
+		zap.Duration("duration", windowDuration))
 
 	// Retrieve all aggregated resources
 	resources, err := s.stormAggregator.GetAggregatedResources(ctx, windowID)
 	if err != nil {
-		s.logger.WithFields(logrus.Fields{
-			"windowID": windowID,
-			"error":    err,
-		}).Error("Failed to retrieve aggregated resources")
+		s.logger.Error("Failed to retrieve aggregated resources",
+			zap.String("windowID", windowID),
+			zap.Error(err))
 		return
 	}
 
 	// Retrieve signal metadata
 	signal, storedStormMetadata, err := s.stormAggregator.GetSignalMetadata(ctx, windowID)
 	if err != nil {
-		s.logger.WithFields(logrus.Fields{
-			"windowID": windowID,
-			"error":    err,
-		}).Warn("Failed to retrieve signal metadata, using first signal")
+		s.logger.Warn("Failed to retrieve signal metadata, using first signal",
+			zap.String("windowID", windowID),
+			zap.Error(err))
 		// Fall back to using the first signal passed as parameter
 		signal = firstSignal
 	} else {
@@ -824,12 +815,11 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	// Update alert count with actual aggregated count
 	resourceCount := len(resources)
 
-	s.logger.WithFields(logrus.Fields{
-		"windowID":      windowID,
-		"alertName":     signal.AlertName,
-		"resourceCount": resourceCount,
-		"stormType":     stormMetadata.StormType,
-	}).Info("Creating aggregated RemediationRequest CRD")
+	s.logger.Info("Creating aggregated RemediationRequest CRD",
+		zap.String("windowID", windowID),
+		zap.String("alertName", signal.AlertName),
+		zap.Int("resourceCount", resourceCount),
+		zap.String("stormType", stormMetadata.StormType))
 
 	// Create aggregated signal with all resources
 	aggregatedSignal := *signal
@@ -848,11 +838,10 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	// Create single aggregated RemediationRequest CRD
 	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal, priority, environment)
 	if err != nil {
-		s.logger.WithFields(logrus.Fields{
-			"windowID":      windowID,
-			"resourceCount": resourceCount,
-			"error":         err,
-		}).Error("Failed to create aggregated RemediationRequest CRD")
+		s.logger.Error("Failed to create aggregated RemediationRequest CRD",
+			zap.String("windowID", windowID),
+			zap.Int("resourceCount", resourceCount),
+			zap.Error(err))
 
 		// Record metric for failed aggregation
 		s.metricsInstance.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
@@ -863,22 +852,20 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
 	if err := s.deduplicator.Store(ctx, &aggregatedSignal, remediationRequestRef); err != nil {
 		// Non-critical error: CRD already created, log warning
-		s.logger.WithFields(logrus.Fields{
-			"windowID": windowID,
-			"crdName":  rr.Name,
-			"error":    err,
-		}).Warn("Failed to store deduplication metadata for aggregated CRD")
+		s.logger.Warn("Failed to store deduplication metadata for aggregated CRD",
+			zap.String("windowID", windowID),
+			zap.String("crdName", rr.Name),
+			zap.Error(err))
 	}
 
-	s.logger.WithFields(logrus.Fields{
-		"windowID":      windowID,
-		"crdName":       rr.Name,
-		"crdNamespace":  rr.Namespace,
-		"resourceCount": resourceCount,
-		"environment":   environment,
-		"priority":      priority,
-		"stormType":     stormMetadata.StormType,
-	}).Info("Aggregated RemediationRequest CRD created successfully")
+	s.logger.Info("Aggregated RemediationRequest CRD created successfully",
+		zap.String("windowID", windowID),
+		zap.String("crdName", rr.Name),
+		zap.String("crdNamespace", rr.Namespace),
+		zap.Int("resourceCount", resourceCount),
+		zap.String("environment", environment),
+		zap.String("priority", priority),
+		zap.String("stormType", stormMetadata.StormType))
 
 	// Record metrics for successful aggregation
 	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
