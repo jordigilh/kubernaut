@@ -15,6 +15,7 @@ import (
 	"time"
 
 	goredis "github.com/go-redis/redis/v8"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -23,6 +24,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
