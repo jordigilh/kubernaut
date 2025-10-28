@@ -200,7 +200,7 @@ type EnvironmentSettings struct {
 	ConfigMapName      string `yaml:"configmap_name"`      // Default: "kubernaut-environment-overrides"
 }
 
-// NewServer creates a new Gateway server
+// NewServer creates a new Gateway server with default metrics registry
 //
 // This initializes:
 // - Redis client with connection pooling
@@ -214,7 +214,26 @@ type EnvironmentSettings struct {
 // 2. Register adapters: server.RegisterAdapter(prometheusAdapter)
 // 3. Start server: server.Start(ctx)
 // 4. Graceful shutdown on signal: server.Stop(ctx)
+//
+// For testing with isolated metrics, use NewServerWithMetrics() instead.
 func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
+	return NewServerWithMetrics(cfg, logger, nil)
+}
+
+// NewServerWithMetrics creates a new Gateway server with custom metrics instance
+//
+// This constructor allows tests to provide isolated Prometheus registries,
+// preventing "duplicate metrics collector registration" panics when creating
+// multiple Gateway servers in the same test suite.
+//
+// Usage in tests:
+//
+//	registry := prometheus.NewRegistry()
+//	metricsInstance := metrics.NewMetricsWithRegistry(registry)
+//	server, err := gateway.NewServerWithMetrics(cfg, logger, metricsInstance)
+//
+// If metricsInstance is nil, creates a new metrics instance with the default registry.
+func NewServerWithMetrics(cfg *ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
 	// 1. Initialize Redis client
 	redisClient := goredis.NewClient(cfg.Infrastructure.Redis)
 
@@ -243,8 +262,10 @@ func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 	// 3. Initialize processing pipeline components
 	adapterRegistry := adapters.NewAdapterRegistry(logger)
 
-	// Use custom TTL if provided (for testing), otherwise default to 5 minutes
-	metricsInstance := metrics.NewMetrics()
+	// Use provided metrics instance or create new one with default registry
+	if metricsInstance == nil {
+		metricsInstance = metrics.NewMetrics()
+	}
 
 	var deduplicator *processing.DeduplicationService
 	if cfg.Processing.Deduplication.TTL > 0 {
