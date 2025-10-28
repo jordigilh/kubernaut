@@ -45,6 +45,7 @@ var _ = Describe("HTTPMetrics Middleware", func() {
 
 	BeforeEach(func() {
 		// Create custom registry for test isolation
+		// Each test gets a fresh registry to avoid metric registration conflicts
 		registry = prometheus.NewRegistry()
 		metrics = gatewayMetrics.NewMetricsWithRegistry(registry)
 
@@ -91,9 +92,9 @@ var _ = Describe("HTTPMetrics Middleware", func() {
 						labelMap[label.GetName()] = label.GetValue()
 					}
 
+					Expect(labelMap["endpoint"]).To(Equal("/test"))
 					Expect(labelMap["method"]).To(Equal("GET"))
-					Expect(labelMap["path"]).To(Equal("/test"))
-					Expect(labelMap["status_code"]).To(Equal("200"))
+					Expect(labelMap["status"]).To(Equal("200"))
 
 					// Verify histogram has observations
 					histogram := metrics[0].GetHistogram()
@@ -131,7 +132,7 @@ var _ = Describe("HTTPMetrics Middleware", func() {
 					for _, metric := range mf.GetMetric() {
 						labels := metric.GetLabel()
 						for _, label := range labels {
-							if label.GetName() == "status_code" {
+							if label.GetName() == "status" {
 								if label.GetValue() == "200" {
 									foundOK = true
 								}
@@ -226,6 +227,7 @@ var _ = Describe("InFlightRequests Middleware", func() {
 
 	BeforeEach(func() {
 		// Create custom registry for test isolation
+		// Each test gets a fresh registry to avoid metric registration conflicts
 		registry = prometheus.NewRegistry()
 		metrics = gatewayMetrics.NewMetricsWithRegistry(registry)
 
@@ -326,5 +328,3 @@ var _ = Describe("InFlightRequests Middleware", func() {
 		})
 	})
 })
-
-
