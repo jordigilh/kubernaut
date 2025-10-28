@@ -18,13 +18,13 @@ package processing
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
@@ -65,6 +65,12 @@ type DeduplicationService struct {
 // - Too short: Duplicate alerts create multiple CRDs (wasted resources)
 // - Too long: Stale alerts prevent new remediation attempts (delayed resolution)
 func NewDeduplicationService(redisClient *redis.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
+	if metricsInstance == nil {
+		// Use custom registry to avoid "duplicate metrics collector registration" in tests
+		registry := prometheus.NewRegistry()
+		metricsInstance = metrics.NewMetricsWithRegistry(registry)
+	}
 	return &DeduplicationService{
 		redisClient: redisClient,
 		ttl:         5 * time.Minute,
@@ -81,6 +87,12 @@ func NewDeduplicationService(redisClient *redis.Client, logger *zap.Logger, metr
 // Production usage: Use NewDeduplicationService() with default 5-minute TTL
 // Test usage: Use NewDeduplicationServiceWithTTL(client, 5*time.Second, logger) for fast tests
 func NewDeduplicationServiceWithTTL(redisClient *redis.Client, ttl time.Duration, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
+	if metricsInstance == nil {
+		// Use custom registry to avoid "duplicate metrics collector registration" in tests
+		registry := prometheus.NewRegistry()
+		metricsInstance = metrics.NewMetricsWithRegistry(registry)
+	}
 	return &DeduplicationService{
 		redisClient: redisClient,
 		ttl:         ttl,
@@ -152,14 +164,20 @@ func (d *DeduplicationService) ensureConnection(ctx context.Context) error {
 //
 // Returns:
 // - bool: true if duplicate, false if new alert or Redis unavailable
-// - *DeduplicationMetadata: Metadata for duplicate alerts (nil if Redis unavailable)
-// - error: Always nil (errors logged, not returned)
+// - *DeduplicationMetadata: Metadata for duplicate alerts (nil if new or Redis unavailable)
+// - error: Validation errors only (Redis errors trigger graceful degradation)
 func (s *DeduplicationService) Check(ctx context.Context, signal *types.NormalizedSignal) (bool, *DeduplicationMetadata, error) {
 	startTime := time.Now()
 	defer func() {
 		// Record Redis operation duration for monitoring
 		s.metrics.RedisOperationDuration.WithLabelValues("deduplication_check").Observe(time.Since(startTime).Seconds())
 	}()
+
+	// BR-GATEWAY-006: Fingerprint validation
+	// Reject invalid fingerprints at boundary
+	if signal.Fingerprint == "" {
+		return false, nil, fmt.Errorf("invalid fingerprint: empty fingerprint not allowed")
+	}
 
 	// BR-GATEWAY-013: Graceful degradation when Redis unavailable
 	// Check Redis connection before attempting operations
@@ -210,8 +228,8 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		return false, nil, fmt.Errorf("failed to increment count: %w", err)
 	}
 
-	// Update lastSeen timestamp
-	now := time.Now().Format(time.RFC3339)
+	// Update lastSeen timestamp (use RFC3339Nano for sub-second precision)
+	now := time.Now().Format(time.RFC3339Nano)
 	if err := s.redisClient.HSet(ctx, key, "lastSeen", now).Err(); err != nil {
 		return false, nil, fmt.Errorf("failed to update lastSeen: %w", err)
 	}
@@ -376,23 +394,20 @@ type DeduplicationMetadata struct {
 //
 // Returns error if Redis operation fails
 func (s *DeduplicationService) Record(ctx context.Context, fingerprint string, crdName string) error {
-	key := "gateway:dedup:fingerprint:" + fingerprint
+	// Use same key format and data structure as Check() and Store() methods
+	key := fmt.Sprintf("alert:fingerprint:%s", fingerprint)
+	now := time.Now().Format(time.RFC3339Nano) // Use RFC3339Nano for sub-second precision
 
-	// Store fingerprint with CRD reference and TTL
-	metadata := map[string]interface{}{
-		"crd_name":   crdName,
-		"first_seen": time.Now().Format(time.RFC3339),
-		"count":      1,
-	}
+	// Store as Redis hash with pipeline for atomicity (same as Store() method)
+	pipe := s.redisClient.Pipeline()
+	pipe.HSet(ctx, key, "fingerprint", fingerprint)
+	pipe.HSet(ctx, key, "firstSeen", now)
+	pipe.HSet(ctx, key, "lastSeen", now)
+	pipe.HSet(ctx, key, "count", 1)
+	pipe.HSet(ctx, key, "remediationRequestRef", crdName)
+	pipe.Expire(ctx, key, s.ttl) // Auto-expire after TTL
 
-	data, err := json.Marshal(metadata)
-	if err != nil {
-		return fmt.Errorf("failed to marshal deduplication metadata: %w", err)
-	}
-
-	// Store with TTL
-	err = s.redisClient.Set(ctx, key, data, s.ttl).Err()
-	if err != nil {
+	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("failed to store fingerprint in Redis: %w", err)
 	}
 

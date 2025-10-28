@@ -77,6 +77,14 @@ type Metrics struct {
 	RedisPoolIdle     prometheus.Gauge
 	RedisPoolStale    prometheus.Gauge
 
+	// Redis Pool Metrics - Test-Compatible Names (Pre-Day 10 Unit Test Validation)
+	RedisPoolConnectionsTotal  prometheus.Gauge
+	RedisPoolConnectionsIdle   prometheus.Gauge
+	RedisPoolConnectionsActive prometheus.Gauge
+	RedisPoolHitsTotal         prometheus.Counter
+	RedisPoolMissesTotal       prometheus.Counter
+	RedisPoolTimeoutsTotal     prometheus.Counter
+
 	// Authentication and Rate Limiting Metrics
 	// DD-GATEWAY-004: Authentication metrics removed (network-level security)
 	// Kept for backward compatibility but not actively used
@@ -282,6 +290,44 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			prometheus.GaugeOpts{
 				Name: "gateway_redis_pool_stale_connections",
 				Help: "Number of stale connections removed from the pool",
+			},
+		),
+
+		// Redis Pool Metrics - Test-Compatible Names (Pre-Day 10 Unit Test Validation)
+		RedisPoolConnectionsTotal: factory.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "gateway_redis_pool_connections_total",
+				Help: "Total number of connections in the Redis pool (test-compatible name)",
+			},
+		),
+		RedisPoolConnectionsIdle: factory.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "gateway_redis_pool_connections_idle",
+				Help: "Number of idle connections in the Redis pool (test-compatible name)",
+			},
+		),
+		RedisPoolConnectionsActive: factory.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "gateway_redis_pool_connections_active",
+				Help: "Number of active connections in the Redis pool (test-compatible name)",
+			},
+		),
+		RedisPoolHitsTotal: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "gateway_redis_pool_hits_total",
+				Help: "Total number of times a free connection was found in the pool (test-compatible name)",
+			},
+		),
+		RedisPoolMissesTotal: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "gateway_redis_pool_misses_total",
+				Help: "Total number of times a free connection was NOT found in the pool (test-compatible name)",
+			},
+		),
+		RedisPoolTimeoutsTotal: factory.NewCounter(
+			prometheus.CounterOpts{
+				Name: "gateway_redis_pool_timeouts_total",
+				Help: "Total number of times a wait timeout occurred when getting a connection (test-compatible name)",
 			},
 		),
 
