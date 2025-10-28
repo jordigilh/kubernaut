@@ -111,45 +111,93 @@ type Server struct {
 }
 
 // ServerConfig holds server configuration
+// ServerConfig is the top-level configuration for the Gateway service.
+// Organized by Single Responsibility Principle for better maintainability.
 type ServerConfig struct {
-	// Server settings
+	// HTTP Server configuration
+	Server ServerSettings `yaml:"server"`
+
+	// Middleware configuration
+	Middleware MiddlewareSettings `yaml:"middleware"`
+
+	// Infrastructure dependencies
+	Infrastructure InfrastructureSettings `yaml:"infrastructure"`
+
+	// Business logic configuration
+	Processing ProcessingSettings `yaml:"processing"`
+}
+
+// ServerSettings contains HTTP server configuration.
+// Single Responsibility: HTTP server behavior
+type ServerSettings struct {
 	ListenAddr   string        `yaml:"listen_addr"`   // Default: ":8080"
 	ReadTimeout  time.Duration `yaml:"read_timeout"`  // Default: 30s
 	WriteTimeout time.Duration `yaml:"write_timeout"` // Default: 30s
 	IdleTimeout  time.Duration `yaml:"idle_timeout"`  // Default: 120s
+}
 
-	// Rate limiting
-	RateLimitRequestsPerMinute int `yaml:"rate_limit_requests_per_minute"` // Default: 100
-	RateLimitBurst             int `yaml:"rate_limit_burst"`               // Default: 10
+// MiddlewareSettings contains middleware configuration.
+// Single Responsibility: Request processing middleware
+type MiddlewareSettings struct {
+	RateLimit RateLimitSettings `yaml:"rate_limit"`
+}
 
-	// Redis configuration
+// RateLimitSettings contains rate limiting configuration.
+type RateLimitSettings struct {
+	RequestsPerMinute int `yaml:"requests_per_minute"` // Default: 100
+	Burst             int `yaml:"burst"`               // Default: 10
+}
+
+// InfrastructureSettings contains external dependency configuration.
+// Single Responsibility: Infrastructure connections
+type InfrastructureSettings struct {
 	Redis *goredis.Options `yaml:"redis"`
+}
 
-	// Deduplication TTL (optional, defaults to 5 minutes)
+// ProcessingSettings contains business logic configuration.
+// Single Responsibility: Signal processing behavior
+type ProcessingSettings struct {
+	Deduplication DeduplicationSettings `yaml:"deduplication"`
+	Storm         StormSettings         `yaml:"storm"`
+	Environment   EnvironmentSettings   `yaml:"environment"`
+}
+
+// DeduplicationSettings contains deduplication configuration.
+type DeduplicationSettings struct {
+	// TTL for deduplication fingerprints
 	// For testing: set to 5*time.Second for fast tests
 	// For production: use default (0) for 5-minute TTL
-	DeduplicationTTL time.Duration `yaml:"deduplication_ttl"`
+	TTL time.Duration `yaml:"ttl"` // Default: 5m
+}
 
-	// Storm detection thresholds (optional, defaults: rate=10, pattern=5)
+// StormSettings contains storm detection configuration.
+type StormSettings struct {
+	// Rate threshold for rate-based storm detection
 	// For testing: set to 2-3 for early storm detection in tests
-	// For production: use defaults (0) for 10 alerts/minute
-	StormRateThreshold    int `yaml:"storm_rate_threshold"`    // Default: 10 alerts/minute
-	StormPatternThreshold int `yaml:"storm_pattern_threshold"` // Default: 5 similar alerts
+	// For production: use default (0) for 10 alerts/minute
+	RateThreshold int `yaml:"rate_threshold"` // Default: 10 alerts/minute
 
-	// Storm aggregation window (optional, default: 1 minute)
+	// Pattern threshold for pattern-based storm detection
+	// For testing: set to 2-3 for early storm detection in tests
+	// For production: use default (0) for 5 similar alerts
+	PatternThreshold int `yaml:"pattern_threshold"` // Default: 5 similar alerts
+
+	// Aggregation window for storm aggregation
 	// For testing: set to 5*time.Second for fast integration tests
 	// For production: use default (0) for 1-minute windows
-	StormAggregationWindow time.Duration `yaml:"storm_aggregation_window"` // Default: 1 minute
+	AggregationWindow time.Duration `yaml:"aggregation_window"` // Default: 1m
+}
 
-	// Environment classification cache TTL (optional, default: 30 seconds)
+// EnvironmentSettings contains environment classification configuration.
+type EnvironmentSettings struct {
+	// Cache TTL for namespace label cache
 	// For testing: set to 5*time.Second for fast cache expiry in tests
 	// For production: use default (0) for 30-second TTL
-	// Set to 0 for default behavior
-	EnvironmentCacheTTL time.Duration `yaml:"environment_cache_ttl"` // Default: 30 seconds
+	CacheTTL time.Duration `yaml:"cache_ttl"` // Default: 30s
 
-	// Environment classification ConfigMap
-	EnvConfigMapNamespace string `yaml:"env_configmap_namespace"` // Default: "kubernaut-system"
-	EnvConfigMapName      string `yaml:"env_configmap_name"`      // Default: "kubernaut-environment-overrides"
+	// ConfigMap for environment overrides
+	ConfigMapNamespace string `yaml:"configmap_namespace"` // Default: "kubernaut-system"
+	ConfigMapName      string `yaml:"configmap_name"`      // Default: "kubernaut-environment-overrides"
 }
 
 // NewServer creates a new Gateway server
@@ -168,7 +216,7 @@ type ServerConfig struct {
 // 4. Graceful shutdown on signal: server.Stop(ctx)
 func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 	// 1. Initialize Redis client
-	redisClient := goredis.NewClient(cfg.Redis)
+	redisClient := goredis.NewClient(cfg.Infrastructure.Redis)
 
 	// 2. Initialize Kubernetes clients
 	// Get kubeconfig
@@ -199,31 +247,31 @@ func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 	metricsInstance := metrics.NewMetrics()
 
 	var deduplicator *processing.DeduplicationService
-	if cfg.DeduplicationTTL > 0 {
-		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, cfg.DeduplicationTTL, logger, metricsInstance)
-		logger.Info("Using custom deduplication TTL", zap.Duration("ttl", cfg.DeduplicationTTL))
+	if cfg.Processing.Deduplication.TTL > 0 {
+		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, cfg.Processing.Deduplication.TTL, logger, metricsInstance)
+		logger.Info("Using custom deduplication TTL", zap.Duration("ttl", cfg.Processing.Deduplication.TTL))
 	} else {
 		deduplicator = processing.NewDeduplicationService(redisClient, logger, metricsInstance)
 	}
 
-	stormDetector := processing.NewStormDetector(redisClient, cfg.StormRateThreshold, cfg.StormPatternThreshold, metricsInstance)
-	if cfg.StormRateThreshold > 0 || cfg.StormPatternThreshold > 0 {
+	stormDetector := processing.NewStormDetector(redisClient, cfg.Processing.Storm.RateThreshold, cfg.Processing.Storm.PatternThreshold, metricsInstance)
+	if cfg.Processing.Storm.RateThreshold > 0 || cfg.Processing.Storm.PatternThreshold > 0 {
 		logger.Info("Using custom storm detection thresholds",
-			zap.Int("rate_threshold", cfg.StormRateThreshold),
-			zap.Int("pattern_threshold", cfg.StormPatternThreshold),
+			zap.Int("rate_threshold", cfg.Processing.Storm.RateThreshold),
+			zap.Int("pattern_threshold", cfg.Processing.Storm.PatternThreshold),
 		)
 	}
 
-	stormAggregator := processing.NewStormAggregatorWithWindow(redisClient, cfg.StormAggregationWindow)
-	if cfg.StormAggregationWindow > 0 {
-		logger.Info("Using custom storm aggregation window", zap.Duration("window", cfg.StormAggregationWindow))
+	stormAggregator := processing.NewStormAggregatorWithWindow(redisClient, cfg.Processing.Storm.AggregationWindow)
+	if cfg.Processing.Storm.AggregationWindow > 0 {
+		logger.Info("Using custom storm aggregation window", zap.Duration("window", cfg.Processing.Storm.AggregationWindow))
 	}
 
 	// Create environment classifier with configurable cache TTL
 	var classifier *processing.EnvironmentClassifier
-	if cfg.EnvironmentCacheTTL > 0 {
-		classifier = processing.NewEnvironmentClassifierWithTTL(ctrlClient, logger, cfg.EnvironmentCacheTTL)
-		logger.Info("Using custom environment cache TTL", zap.Duration("cache_ttl", cfg.EnvironmentCacheTTL))
+	if cfg.Processing.Environment.CacheTTL > 0 {
+		classifier = processing.NewEnvironmentClassifierWithTTL(ctrlClient, logger, cfg.Processing.Environment.CacheTTL)
+		logger.Info("Using custom environment cache TTL", zap.Duration("cache_ttl", cfg.Processing.Environment.CacheTTL))
 	} else {
 		classifier = processing.NewEnvironmentClassifier(ctrlClient, logger)
 	}
@@ -234,7 +282,7 @@ func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 	// 4. Initialize middleware
 	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
 	// authMiddleware := middleware.NewAuthMiddleware(clientset, logger) // REMOVED
-	// rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRequestsPerMinute, cfg.RateLimitBurst, logger) // REMOVED
+	// rateLimiter := middleware.NewRateLimiter(cfg.Middleware.RateLimit.RequestsPerMinute, cfg.Middleware.RateLimit.Burst, logger) // REMOVED
 
 	// 5. Create server
 	server := &Server{
@@ -259,11 +307,11 @@ func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 	// 6. Setup HTTP server with routes
 	mux := server.setupRoutes()
 	server.httpServer = &http.Server{
-		Addr:         cfg.ListenAddr,
+		Addr:         cfg.Server.ListenAddr,
 		Handler:      mux,
-		ReadTimeout:  cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout,
-		IdleTimeout:  cfg.IdleTimeout,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
 	return server, nil
@@ -291,6 +339,17 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	return mux
+}
+
+// Handler returns the HTTP handler for the Gateway server.
+// This is useful for testing with httptest.NewServer.
+//
+// Example:
+//
+//	server := gateway.NewServer(cfg, logger)
+//	testServer := httptest.NewServer(server.Handler())
+func (s *Server) Handler() http.Handler {
+	return s.httpServer.Handler
 }
 
 // RegisterAdapter registers a RoutableAdapter and its HTTP route

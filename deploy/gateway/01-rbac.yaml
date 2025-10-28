@@ -1,0 +1,72 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+  namespace: kubernaut-gateway
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: kubernaut
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gateway-role
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: kubernaut
+rules:
+  # RemediationRequest CRD access
+  - apiGroups:
+      - remediation.kubernaut.ai
+    resources:
+      - remediationrequests
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - update
+      - patch
+
+  # Namespace access for environment classification
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+
+  # ConfigMap access for environment classification
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gateway-rolebinding
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: kubernaut
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gateway-role
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: kubernaut-gateway
+

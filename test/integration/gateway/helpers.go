@@ -219,38 +219,48 @@ func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClie
 		return nil, fmt.Errorf("Redis client is required for Gateway startup (BR-GATEWAY-008, BR-GATEWAY-009)")
 	}
 
-	// Create ServerConfig for tests
+	// Create ServerConfig for tests (nested structure)
 	// Uses fast TTLs and low thresholds for rapid test execution
 	cfg := &gateway.ServerConfig{
-		// Server settings
-		ListenAddr:   ":8080",
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Server: gateway.ServerSettings{
+			ListenAddr:   ":8080",
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 10 * time.Second,
+			IdleTimeout:  120 * time.Second,
+		},
 
-		// Rate limiting (lower for tests)
-		RateLimitRequestsPerMinute: 20, // Production: 100
-		RateLimitBurst:             5,  // Production: 10
+		Middleware: gateway.MiddlewareSettings{
+			RateLimit: gateway.RateLimitSettings{
+				RequestsPerMinute: 20, // Production: 100
+				Burst:             5,  // Production: 10
+			},
+		},
 
-		// Redis configuration
-		Redis: redisClient.Client.Options(),
+		Infrastructure: gateway.InfrastructureSettings{
+			Redis: redisClient.Client.Options(),
+		},
 
-		// Fast TTLs for tests (production uses longer TTLs)
-		DeduplicationTTL:       5 * time.Second, // Production: 5 minutes
-		StormRateThreshold:     2,               // Production: 10 alerts/minute
-		StormPatternThreshold:  2,               // Production: 5 similar alerts
-		StormAggregationWindow: 5 * time.Second, // Production: 1 minute
-		EnvironmentCacheTTL:    5 * time.Second, // Production: 30 seconds
-
-		// Environment classification ConfigMap
-		EnvConfigMapNamespace: "kubernaut-system",
-		EnvConfigMapName:      "kubernaut-environment-overrides",
+		Processing: gateway.ProcessingSettings{
+			Deduplication: gateway.DeduplicationSettings{
+				TTL: 5 * time.Second, // Production: 5 minutes
+			},
+			Storm: gateway.StormSettings{
+				RateThreshold:     2,               // Production: 10 alerts/minute
+				PatternThreshold:  2,               // Production: 5 similar alerts
+				AggregationWindow: 5 * time.Second, // Production: 1 minute
+			},
+			Environment: gateway.EnvironmentSettings{
+				CacheTTL:           5 * time.Second, // Production: 30 seconds
+				ConfigMapNamespace: "kubernaut-system",
+				ConfigMapName:      "kubernaut-environment-overrides",
+			},
+		},
 	}
 
 	logger.Info("Creating Gateway server for integration tests",
-		zap.Duration("deduplication_ttl", cfg.DeduplicationTTL),
-		zap.Int("storm_rate_threshold", cfg.StormRateThreshold),
-		zap.Int("rate_limit", cfg.RateLimitRequestsPerMinute),
+		zap.Duration("deduplication_ttl", cfg.Processing.Deduplication.TTL),
+		zap.Int("storm_rate_threshold", cfg.Processing.Storm.RateThreshold),
+		zap.Int("rate_limit", cfg.Middleware.RateLimit.RequestsPerMinute),
 	)
 
 	// Create Gateway server using new ServerConfig API
