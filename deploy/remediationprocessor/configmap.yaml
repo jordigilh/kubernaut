@@ -1,0 +1,71 @@
+# Kubernetes ConfigMap for remediationprocessor controller configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: remediationprocessor-config
+  namespace: kubernaut-system
+  labels:
+    app: remediationprocessor
+    component: controller
+data:
+  config.yaml: |
+    # Common controller configuration
+    namespace: kubernaut-system
+    metrics_address: ":8080"
+    health_address: ":8081"
+    leader_election: true
+    log_level: info
+    max_concurrency: 10
+
+    # Kubernetes API configuration
+    kubernetes:
+      qps: 20.0
+      burst: 30
+
+    # Data Storage configuration (PostgreSQL)
+    data_storage:
+      postgres_host: postgres-service.kubernaut-system.svc.cluster.local
+      postgres_port: 5432
+      postgres_user: remediation_user
+      # postgres_password is loaded from Secret via environment variable
+      postgres_database: kubernaut_remediation
+      ssl_mode: require
+      max_connections: 25
+      max_idle_conns: 5
+
+    # Context API configuration for enrichment
+    context:
+      endpoint: http://context-api.kubernaut-system.svc.cluster.local:8080
+      timeout: 30
+      max_retries: 3
+      retry_backoff_ms: 100
+
+    # Classification configuration for semantic analysis
+    classification:
+      semantic_threshold: 0.85
+      time_window_minutes: 60
+      similarity_engine: cosine
+      batch_size: 100
+
+---
+# Secret for sensitive configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: remediationprocessor-secret
+  namespace: kubernaut-system
+  labels:
+    app: remediationprocessor
+    component: controller
+type: Opaque
+stringData:
+  # PostgreSQL password for remediation database
+  postgres_password: "changeme"
+  # Note: Update with actual password in production
+
+
+
+
+
+
+
