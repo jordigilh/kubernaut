@@ -33,7 +33,7 @@ var _ = Describe("BR-GATEWAY-008, BR-GATEWAY-009: Redis HA Failure Scenarios", f
 	var (
 		_      context.Context // Will be used when tests are implemented
 		cancel context.CancelFunc
-		// gatewayURL  string // Unused for now, will be used when tests are implemented
+		// testServer  *httptest.Server // Unused for now, will be used when tests are implemented
 		// redisClient *RedisTestClient // Unused for now, will be used when tests are implemented
 		// k8sClient   *K8sTestClient // Unused for now, will be used when tests are implemented
 	)
@@ -44,7 +44,9 @@ var _ = Describe("BR-GATEWAY-008, BR-GATEWAY-009: Redis HA Failure Scenarios", f
 		// Setup test infrastructure (commented out until tests are implemented)
 		// redisClient = SetupRedisTestClient(ctx)
 		// k8sClient = SetupK8sTestClient(ctx)
-		// gatewayURL = StartTestGateway(ctx, redisClient, k8sClient)
+		// gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		// Expect(err).ToNot(HaveOccurred())
+		// testServer = httptest.NewServer(gatewayServer.Handler())
 
 		// TODO: Add Redis flush when tests are implemented to prevent OOM
 		// if redisClient != nil && redisClient.Client != nil {
@@ -55,7 +57,9 @@ var _ = Describe("BR-GATEWAY-008, BR-GATEWAY-009: Redis HA Failure Scenarios", f
 
 	AfterEach(func() {
 		// Cleanup (commented out until tests are implemented)
-		// StopTestGateway(ctx)
+		// if testServer != nil {
+		//     testServer.Close()
+		// }
 		// redisClient.Cleanup(ctx)
 		// k8sClient.Cleanup(ctx)
 		if cancel != nil {
@@ -165,36 +169,6 @@ var _ = Describe("BR-GATEWAY-008, BR-GATEWAY-009: Redis HA Failure Scenarios", f
 	// BUSINESS VALUE:
 	// - Zero duplicate CRDs even during Redis failures
 	// - Storm protection maintained during partial failures
-	// - Automatic recovery (no manual intervention)
-	// - Clear error messages (operators know what's wrong)
-	// - Prometheus retry handles transient failures
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-})
-
-	// - Automatic recovery (no manual intervention)
-	// - Clear error messages (operators know what's wrong)
-	// - Prometheus retry handles transient failures
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-})
-
-	// - Automatic recovery (no manual intervention)
-	// - Clear error messages (operators know what's wrong)
-	// - Prometheus retry handles transient failures
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-})
-
-	// - Automatic recovery (no manual intervention)
-	// - Clear error messages (operators know what's wrong)
-	// - Prometheus retry handles transient failures
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-})
-
-	// - Automatic recovery (no manual intervention)
-	// - Clear error messages (operators know what's wrong)
-	// - Prometheus retry handles transient failures
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-})
-
 	// - Automatic recovery (no manual intervention)
 	// - Clear error messages (operators know what's wrong)
 	// - Prometheus retry handles transient failures
