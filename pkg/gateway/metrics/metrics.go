@@ -374,7 +374,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		),
 		CRDsCreated: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_crds_created_total",
+				Name: "gateway_crds_created_by_type_total",
 				Help: "Total CRDs created by type",
 			},
 			[]string{"type"},
