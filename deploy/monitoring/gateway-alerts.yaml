@@ -1,0 +1,182 @@
+# Gateway Service - Prometheus Alert Rules
+# DD-GATEWAY-003: Redis Outage Risk Tracking Metrics
+#
+# These alerts monitor the 5 critical risks identified in REDIS_FAILURE_HANDLING.md:
+# 1. Prolonged Redis outage (>5 min) → Alert backlog in Prometheus
+# 2. Prometheus retry exhaustion → Alerts may be dropped
+# 3. Redis failover impact → Service degradation during failover
+# 4. Sentinel misconfiguration → Failover capability compromised
+# 5. Alert backlog accumulation → System overwhelm after recovery
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-prometheus-rules
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+    component: monitoring
+data:
+  gateway-alerts.yaml: |
+    groups:
+      - name: gateway_redis_availability
+        interval: 30s
+        rules:
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          # CRITICAL ALERTS (Page immediately)
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          - alert: GatewayRedisUnavailable
+            expr: gateway_redis_availability_seconds > 300
+            for: 1m
+            labels:
+              severity: critical
+              component: gateway
+              service: "{{ $labels.service }}"
+            annotations:
+              summary: "Gateway Redis unavailable for >5 minutes ({{ $labels.service }})"
+              description: |
+                Redis has been unavailable for {{ $value | humanizeDuration }} for service {{ $labels.service }}.
+
+                **Impact**:
+                - All webhook requests are being rejected with 503
+                - Prometheus is retrying alerts (may exhaust retries after 15 minutes)
+                - Cannot guarantee zero duplicate CRDs
+                - Storm protection is disabled
+
+                **Immediate Actions**:
+                1. Check Redis HA status: `kubectl get pods -n kubernaut-system -l app=redis`
+                2. Check Sentinel quorum: `kubectl exec redis-0 -c sentinel -- redis-cli -p 26379 sentinel master mymaster`
+                3. Check Gateway logs: `kubectl logs -n kubernaut-system deployment/gateway --tail=100`
+                4. Estimate alert backlog: `gateway_alerts_queued_estimate` metric
+
+                **Runbook**: https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/gateway-redis-unavailable.md
+
+          - alert: GatewayPrometheusRetryExhaustion
+            expr: gateway_consecutive_503_responses > 30
+            for: 2m
+            labels:
+              severity: critical
+              component: gateway
+              namespace: "{{ $labels.namespace }}"
+            annotations:
+              summary: "Gateway rejecting requests for >2 min ({{ $labels.namespace }})"
+              description: |
+                Gateway has rejected {{ $value }} consecutive requests in namespace {{ $labels.namespace }}.
+
+                **Risk**: Prometheus may exhaust retries and drop alerts after 15 minutes.
+
+                **Impact**:
+                - Alerts may be lost permanently
+                - No RemediationRequest CRDs created for affected namespace
+                - Manual intervention required for remediation
+
+                **Immediate Actions**:
+                1. Check Redis availability: `gateway_redis_availability_seconds` metric
+                2. Check alert backlog estimate: `gateway_alerts_queued_estimate` metric
+                3. Verify Prometheus AlertManager retry config
+                4. Consider manual alert replay if Redis recovery takes >15 min
+
+                **Runbook**: https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/gateway-prometheus-retry-exhaustion.md
+
+          - alert: GatewaySentinelQuorumLost
+            expr: count(gateway_redis_sentinel_health == 1) < 2
+            for: 1m
+            labels:
+              severity: critical
+              component: gateway
+            annotations:
+              summary: "Redis Sentinel quorum lost (cannot failover)"
+              description: |
+                Only {{ $value }} Sentinel instances are healthy (need 2 for quorum).
+
+                **Impact**:
+                - Redis HA cannot perform automatic failover
+                - If Redis master fails, Gateway will be unavailable
+                - Manual intervention required to restore Sentinel quorum
+
+                **Immediate Actions**:
+                1. Check Sentinel pod status: `kubectl get pods -n kubernaut-system -l app=redis`
+                2. Check Sentinel logs: `kubectl logs -n kubernaut-system redis-0 -c sentinel`
+                3. Verify Sentinel configuration: `kubectl get cm redis-sentinel-config -n kubernaut-system`
+                4. Restart unhealthy Sentinel pods if needed
+
+                **Runbook**: https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/gateway-sentinel-quorum-lost.md
+
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          # WARNING ALERTS (Investigate during business hours)
+          # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+          - alert: GatewayRedisConnectionFailures
+            expr: rate(gateway_redis_connection_failures_total[5m]) > 0.1
+            for: 5m
+            labels:
+              severity: warning
+              component: gateway
+              service: "{{ $labels.service }}"
+            annotations:
+              summary: "Gateway Redis connection failures ({{ $labels.service }})"
+              description: |
+                Redis connection failures detected at {{ $value | humanize }} failures/sec for service {{ $labels.service }}.
+
+                **Possible Causes**:
+                - Network instability
+                - Redis pod restarts
+                - Resource contention (CPU/memory)
+                - Sentinel failover in progress
+
+                **Actions**:
+                1. Check Redis pod health: `kubectl get pods -n kubernaut-system -l app=redis`
+                2. Check Redis resource usage: `kubectl top pods -n kubernaut-system -l app=redis`
+                3. Check for recent failovers: `gateway_redis_master_changes_total` metric
+                4. Review Redis logs for errors
+
+                **Runbook**: https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/gateway-redis-connection-failures.md
+
+          - alert: GatewayRedisFailoverDetected
+            expr: increase(gateway_redis_master_changes_total[5m]) > 0
+            for: 1m
+            labels:
+              severity: warning
+              component: gateway
+            annotations:
+              summary: "Redis master failover detected"
+              description: |
+                Redis Sentinel performed a master failover ({{ $value }} changes in last 5 minutes).
+
+                **Impact**:
+                - Brief service degradation (5-10 seconds)
+                - Some requests may have been rejected with 503
+                - Prometheus will retry affected alerts
+
+                **Actions**:
+                1. Verify new master is healthy: `kubectl exec redis-0 -c sentinel -- redis-cli -p 26379 sentinel master mymaster`
+                2. Check failover duration: `gateway_redis_failover_duration_seconds` histogram
+                3. Verify all replicas are synced with new master
+                4. Review Sentinel logs for failover cause
+
+                **Runbook**: https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/gateway-redis-failover.md
+
+          - alert: GatewayAlertBacklogEstimate
+            expr: gateway_alerts_queued_estimate > 100
+            for: 5m
+            labels:
+              severity: warning
+              component: gateway
+            annotations:
+              summary: "High alert backlog estimate ({{ $value }} alerts)"
+              description: |
+                Estimated {{ $value }} alerts queued in Prometheus retry buffer.
+
+                **Risk**: System may be overwhelmed when Redis recovers.
+
+                **Actions**:
+                1. Check Redis availability: `gateway_redis_availability_seconds` metric
+                2. Estimate recovery time based on current outage duration
+                3. Consider scaling Gateway replicas before Redis recovery
+                4. Monitor Gateway resource usage during recovery
+                5. Prepare for potential alert storm after recovery
+
+                **Runbook**: https://github.com/jordigilh/kubernaut/blob/main/docs/runbooks/gateway-alert-backlog.md
+
+
