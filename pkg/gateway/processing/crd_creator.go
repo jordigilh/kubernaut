@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -47,12 +47,12 @@ import (
 // - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
 type CRDCreator struct {
 	k8sClient *k8s.Client
-	logger    *logrus.Logger
+	logger    *zap.Logger
 	metrics   *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
 }
 
 // NewCRDCreator creates a new CRD creator
-func NewCRDCreator(k8sClient *k8s.Client, logger *logrus.Logger, metricsInstance *metrics.Metrics) *CRDCreator {
+func NewCRDCreator(k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *CRDCreator {
 	return &CRDCreator{
 		k8sClient: k8sClient,
 		logger:    logger,
@@ -190,11 +190,11 @@ func (c *CRDCreator) CreateRemediationRequest(
 		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
 		// This is normal behavior - Redis TTL is shorter than CRD lifecycle
 		if strings.Contains(err.Error(), "already exists") {
-			c.logger.WithFields(logrus.Fields{
-				"name":        crdName,
-				"namespace":   signal.Namespace,
-				"fingerprint": signal.Fingerprint,
-			}).Debug("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)")
+			c.logger.Debug("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)",
+				zap.String("name", crdName),
+				zap.String("namespace", signal.Namespace),
+				zap.String("fingerprint", signal.Fingerprint),
+			)
 
 			// Fetch existing CRD and return it
 			// This allows deduplication metadata to be updated in Redis
@@ -204,22 +204,21 @@ func (c *CRDCreator) CreateRemediationRequest(
 				return nil, fmt.Errorf("CRD exists but failed to fetch: %w", err)
 			}
 
-			c.logger.WithFields(logrus.Fields{
-				"name":        crdName,
-				"namespace":   signal.Namespace,
-				"fingerprint": signal.Fingerprint,
-			}).Info("Reusing existing RemediationRequest CRD (Redis TTL expired)")
+			c.logger.Info("Reusing existing RemediationRequest CRD (Redis TTL expired)",
+				zap.String("name", crdName),
+				zap.String("namespace", signal.Namespace),
+				zap.String("fingerprint", signal.Fingerprint),
+			)
 
 			return existing, nil
 		}
 
 		// Check if namespace doesn't exist - fall back to default namespace
 		if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), "not found") {
-			c.logger.WithFields(logrus.Fields{
-				"original_namespace": signal.Namespace,
-				"fallback_namespace": "default",
-				"crd_name":           crdName,
-			}).Warn("Target namespace not found, creating CRD in default namespace as fallback")
+			c.logger.Warn("Target namespace not found, creating CRD in default namespace as fallback",
+				zap.String("original_namespace", signal.Namespace),
+				zap.String("fallback_namespace", "default"),
+				zap.String("crd_name", crdName))
 
 			// Update namespace to default
 			rr.Namespace = "default"
@@ -231,12 +230,11 @@ func (c *CRDCreator) CreateRemediationRequest(
 			}
 
 			// Success with fallback
-			c.logger.WithFields(logrus.Fields{
-				"name":        crdName,
-				"namespace":   "default",
-				"fingerprint": signal.Fingerprint,
-				"original_ns": signal.Namespace,
-			}).Info("Created RemediationRequest CRD in default namespace (fallback)")
+			c.logger.Info("Created RemediationRequest CRD in default namespace (fallback)",
+				zap.String("name", crdName),
+				zap.String("namespace", "default"),
+				zap.String("fingerprint", signal.Fingerprint),
+				zap.String("original_ns", signal.Namespace))
 
 			c.metrics.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 			return rr, nil
@@ -245,12 +243,11 @@ func (c *CRDCreator) CreateRemediationRequest(
 		// Other errors (not namespace-related, not already-exists)
 		c.metrics.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
 
-		c.logger.WithFields(logrus.Fields{
-			"name":        crdName,
-			"namespace":   signal.Namespace,
-			"fingerprint": signal.Fingerprint,
-			"error":       err,
-		}).Error("Failed to create RemediationRequest CRD")
+		c.logger.Error("Failed to create RemediationRequest CRD",
+			zap.String("name", crdName),
+			zap.String("namespace", signal.Namespace),
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Error(err))
 
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
@@ -259,15 +256,14 @@ func (c *CRDCreator) CreateRemediationRequest(
 	c.metrics.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 
 	// Log creation event
-	c.logger.WithFields(logrus.Fields{
-		"name":        crdName,
-		"namespace":   signal.Namespace,
-		"fingerprint": signal.Fingerprint,
-		"severity":    signal.Severity,
-		"environment": environment,
-		"priority":    priority,
-		"alertName":   signal.AlertName,
-	}).Info("Created RemediationRequest CRD")
+	c.logger.Info("Created RemediationRequest CRD",
+		zap.String("name", crdName),
+		zap.String("namespace", signal.Namespace),
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("severity", signal.Severity),
+		zap.String("environment", environment),
+		zap.String("priority", priority),
+		zap.String("alertName", signal.AlertName))
 
 	return rr, nil
 }
@@ -283,10 +279,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 // - For deduplication/TTL purposes, ReceivedTime is an acceptable fallback
 func (c *CRDCreator) getFiringTime(signal *types.NormalizedSignal) time.Time {
 	if signal.FiringTime.IsZero() {
-		c.logger.WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"alert_name":  signal.AlertName,
-		}).Debug("FiringTime not set by adapter, using ReceivedTime as fallback")
+		c.logger.Debug("FiringTime not set by adapter, using ReceivedTime as fallback",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("alert_name", signal.AlertName))
 		return signal.ReceivedTime
 	}
 	return signal.FiringTime
@@ -318,10 +313,9 @@ func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 	// Marshal to JSON
 	jsonData, err := json.Marshal(providerData)
 	if err != nil {
-		c.logger.WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"error":       err,
-		}).Warn("Failed to marshal provider data, using empty")
+		c.logger.Warn("Failed to marshal provider data, using empty",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Error(err))
 		return []byte("{}")
 	}
 

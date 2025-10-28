@@ -21,7 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 )
@@ -292,13 +292,12 @@ var _ = Describe("BR-GATEWAY-020: Custom Priority Rules via Rego Policies", func
 	var (
 		priorityEngine *processing.PriorityEngine
 		ctx            context.Context
-		logger         *logrus.Logger
+		logger         *zap.Logger
 	)
 
 	BeforeEach(func() {
-		logger = logrus.New()
-		logger.SetOutput(GinkgoWriter)
-		logger.SetLevel(logrus.PanicLevel) // Suppress logs during tests
+		logger = zap.NewNop()
+		// No-op logger (no output needed for tests)
 		ctx = context.Background()
 	})
 

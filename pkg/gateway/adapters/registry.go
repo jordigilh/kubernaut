@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 // AdapterRegistry manages signal adapter registration
@@ -57,7 +57,7 @@ type AdapterRegistry struct {
 	mu sync.RWMutex
 
 	// log is used for adapter registration logging
-	log *logrus.Logger
+	log *zap.Logger
 }
 
 // NewAdapterRegistry creates an empty adapter registry
@@ -65,7 +65,7 @@ type AdapterRegistry struct {
 // Adapters must be registered explicitly using Register() before
 // the HTTP server starts. This allows configuration-driven adapter
 // enablement (enable/disable adapters via config files).
-func NewAdapterRegistry(log *logrus.Logger) *AdapterRegistry {
+func NewAdapterRegistry(log *zap.Logger) *AdapterRegistry {
 	return &AdapterRegistry{
 		adapters: make(map[string]RoutableAdapter),
 		log:      log,
@@ -97,12 +97,12 @@ func (r *AdapterRegistry) Register(adapter RoutableAdapter) error {
 
 	// Log registration for debugging
 	metadata := adapter.GetMetadata()
-	r.log.WithFields(logrus.Fields{
-		"adapter":     name,
-		"route":       adapter.GetRoute(),
-		"version":     metadata.Version,
-		"description": metadata.Description,
-	}).Info("Adapter registered")
+	r.log.Info("Adapter registered",
+		zap.Any("adapter", name),
+		zap.Any("route", adapter.GetRoute()),
+		zap.Any("version", metadata.Version),
+		zap.Any("description", metadata.Description),
+	)
 
 	return nil
 }
