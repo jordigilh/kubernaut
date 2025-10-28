@@ -62,9 +62,9 @@ func HTTPMetrics(metrics *gatewayMetrics.Metrics) func(next http.Handler) http.H
 			// Record duration
 			duration := time.Since(start).Seconds()
 			metrics.HTTPRequestDuration.WithLabelValues(
-				r.Method,
-				r.URL.Path,
-				strconv.Itoa(ww.Status()),
+				r.URL.Path,                // endpoint
+				r.Method,                  // method
+				strconv.Itoa(ww.Status()), // status
 			).Observe(duration)
 		})
 	}
@@ -106,7 +106,3 @@ func InFlightRequests(metrics *gatewayMetrics.Metrics) func(next http.Handler) h
 		})
 	}
 }
-
-
-
-
