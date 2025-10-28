@@ -19,8 +19,6 @@ package processing
 import (
 	"context"
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -49,8 +47,6 @@ type StormDetector struct {
 	redisClient      *redis.Client
 	rateThreshold    int              // Default: 10 alerts/minute
 	patternThreshold int              // Default: 5 similar alerts
-	connected        atomic.Bool      // Track Redis connection state (for lazy connection)
-	connCheckMu      sync.Mutex       // Protects connection check (prevent thundering herd)
 	metrics          *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
 }
 

@@ -23,7 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -41,20 +41,18 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 	var (
 		crdCreator    *processing.CRDCreator
 		ctx           context.Context
-		logger        *logrus.Logger
+		logger        *zap.Logger
 		fakeK8sClient *FakeK8sClient // We'll use a fake since this is unit test
 	)
 
 	BeforeEach(func() {
-		logger = logrus.New()
-		logger.SetOutput(GinkgoWriter)
-		logger.SetLevel(logrus.PanicLevel) // Suppress logs during tests
+		logger = zap.NewNop() // No-op logger for tests (no output)
 		ctx = context.Background()
 
 		// Create fake K8s client for unit testing
 		fakeClient := NewFakeControllerRuntimeClient()
 		fakeK8sClient = NewFakeK8sClientWrapper(fakeClient)
-		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger)
+		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, nil) // nil metrics for unit tests
 	})
 
 	// BUSINESS CAPABILITY: Notification service needs complete context to alert humans
@@ -341,6 +339,101 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 			// Business capability verified:
 			// PagerDuty on first alert: "🔔 New issue: Disk space running out"
 			// PagerDuty on 5th alert: "🔁 Recurring: Disk space (seen 5 times in 10 min)"
+		})
+
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// PHASE 3: CRD METADATA EDGE CASES (BR-GATEWAY-015)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// Production Risk: K8s label/annotation limits cause CRD creation failures
+		// Business Impact: Valid alerts rejected due to metadata size
+		// Defense: Truncation and validation
+
+		Context("Phase 3: CRD Metadata Edge Cases", func() {
+			It("should truncate label values exceeding K8s 63 char limit", func() {
+				// BR-GATEWAY-015: K8s label value limit compliance
+				// BUSINESS OUTCOME: Long label values don't break CRD creation
+
+				longLabelValue := "very-long-environment-name-that-exceeds-kubernetes-label-value-limit-of-63-characters"
+
+				signal := &types.NormalizedSignal{
+					Fingerprint:  "fp-long-label",
+					AlertName:    "HighMemory",
+					Severity:     "critical",
+					Namespace:    "production",
+					FiringTime:   time.Now(),
+					ReceivedTime: time.Now(),
+					SourceType:   "prometheus-alert",
+					Source:       "prometheus-adapter",
+					RawPayload:   json.RawMessage(`{}`),
+					Labels: map[string]string{
+						"environment": longLabelValue, // >63 chars
+					},
+				}
+
+				rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+
+				// BUSINESS OUTCOME: CRD created successfully with truncated label
+				Expect(err).NotTo(HaveOccurred())
+				Expect(rr).NotTo(BeNil())
+
+				// Verify label was truncated to K8s limit
+				if envLabel, ok := rr.Spec.SignalLabels["environment"]; ok {
+					Expect(len(envLabel)).To(BeNumerically("<=", 63),
+						"Label value must comply with K8s 63 char limit")
+				}
+
+				// Business capability verified:
+				// System handles long label values gracefully without K8s API rejection
+			})
+
+			It("should handle extremely large annotations (>256KB K8s limit)", func() {
+				// BR-GATEWAY-015: K8s annotation size limit compliance
+				// BUSINESS OUTCOME: Large annotations don't break CRD creation
+
+				// K8s annotation limit is 256KB total for all annotations
+				largeAnnotation := make([]byte, 300*1024) // 300KB
+				for i := range largeAnnotation {
+					largeAnnotation[i] = 'A'
+				}
+
+				signal := &types.NormalizedSignal{
+					Fingerprint:  "fp-large-annotation",
+					AlertName:    "HighMemory",
+					Severity:     "critical",
+					Namespace:    "production",
+					FiringTime:   time.Now(),
+					ReceivedTime: time.Now(),
+					SourceType:   "prometheus-alert",
+					Source:       "prometheus-adapter",
+					RawPayload:   json.RawMessage(`{}`),
+					Annotations: map[string]string{
+						"description": string(largeAnnotation), // >256KB
+					},
+				}
+
+				rr, err := crdCreator.CreateRemediationRequest(ctx, signal, "P0", "production")
+
+				// BUSINESS OUTCOME: CRD created successfully (annotation truncated or rejected)
+				// Implementation may either:
+				// 1. Truncate annotation to fit K8s limit
+				// 2. Reject signal with clear error
+				// Both are acceptable - key is not crashing or hanging
+				if err != nil {
+					// If rejected, error should be clear
+					Expect(err.Error()).To(ContainSubstring("annotation"),
+						"Error should indicate annotation size issue")
+				} else {
+					// If accepted, annotation should be truncated
+					Expect(rr).NotTo(BeNil())
+					if desc, ok := rr.Spec.SignalAnnotations["description"]; ok {
+						Expect(len(desc)).To(BeNumerically("<", 256*1024),
+							"Annotation must be truncated to K8s limit")
+					}
+				}
+
+				// Business capability verified:
+				// System handles extremely large annotations without crashing
+			})
 		})
 	})
 })

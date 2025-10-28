@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -50,7 +50,7 @@ import (
 type DeduplicationService struct {
 	redisClient *redis.Client
 	ttl         time.Duration
-	logger      *logrus.Logger
+	logger      *zap.Logger
 	connected   atomic.Bool      // Track Redis connection state (for lazy connection)
 	connCheckMu sync.Mutex       // Protects connection check (prevent thundering herd)
 	metrics     *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
@@ -64,7 +64,7 @@ type DeduplicationService struct {
 // The 5-minute window balances:
 // - Too short: Duplicate alerts create multiple CRDs (wasted resources)
 // - Too long: Stale alerts prevent new remediation attempts (delayed resolution)
-func NewDeduplicationService(redisClient *redis.Client, logger *logrus.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+func NewDeduplicationService(redisClient *redis.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	return &DeduplicationService{
 		redisClient: redisClient,
 		ttl:         5 * time.Minute,
@@ -80,7 +80,7 @@ func NewDeduplicationService(redisClient *redis.Client, logger *logrus.Logger, m
 //
 // Production usage: Use NewDeduplicationService() with default 5-minute TTL
 // Test usage: Use NewDeduplicationServiceWithTTL(client, 5*time.Second, logger) for fast tests
-func NewDeduplicationServiceWithTTL(redisClient *redis.Client, ttl time.Duration, logger *logrus.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+func NewDeduplicationServiceWithTTL(redisClient *redis.Client, ttl time.Duration, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	return &DeduplicationService{
 		redisClient: redisClient,
 		ttl:         ttl,
@@ -166,10 +166,11 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	if err := s.ensureConnection(ctx); err != nil {
 		// Redis unavailable - graceful degradation
 		// Log error but don't fail request (accept potential duplicates)
-		s.logger.WithError(err).WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"operation":   "deduplication_check",
-		}).Warn("Redis unavailable, skipping deduplication (alert treated as new)")
+		s.logger.Warn("Redis unavailable, skipping deduplication (alert treated as new)",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("operation", "deduplication_check"),
+		)
 
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, nil // Treat as new alert, allow processing to continue
@@ -182,10 +183,11 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	if err != nil {
 		// Redis operation failed (e.g., connection lost after ensureConnection)
 		// Graceful degradation: treat as new alert
-		s.logger.WithError(err).WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"operation":   "deduplication_check",
-		}).Warn("Redis operation failed, skipping deduplication (alert treated as new)")
+		s.logger.Warn("Redis operation failed, skipping deduplication (alert treated as new)",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("operation", "deduplication_check"),
+		)
 
 		// Mark as disconnected so next call will retry connection
 		s.connected.Store(false)
@@ -270,11 +272,12 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	if err := s.ensureConnection(ctx); err != nil {
 		// Redis unavailable - graceful degradation
 		// Log error but don't fail (CRD already created, alert is being processed)
-		s.logger.WithError(err).WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"crd_ref":     remediationRequestRef,
-			"operation":   "deduplication_store",
-		}).Warn("Redis unavailable, failed to store deduplication metadata (future duplicates won't be detected)")
+		s.logger.Warn("Redis unavailable, failed to store deduplication metadata (future duplicates won't be detected)",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("crd_ref", remediationRequestRef),
+			zap.String("operation", "deduplication_store"),
+		)
 
 		return nil // Don't fail the request, CRD is already created
 	}
@@ -297,11 +300,12 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	if _, err := pipe.Exec(ctx); err != nil {
 		// Redis operation failed (e.g., connection lost after ensureConnection)
 		// Graceful degradation: log error but don't fail
-		s.logger.WithError(err).WithFields(logrus.Fields{
-			"fingerprint": signal.Fingerprint,
-			"crd_ref":     remediationRequestRef,
-			"operation":   "deduplication_store",
-		}).Warn("Redis operation failed, failed to store deduplication metadata (future duplicates won't be detected)")
+		s.logger.Warn("Redis operation failed, failed to store deduplication metadata (future duplicates won't be detected)",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("crd_ref", remediationRequestRef),
+			zap.String("operation", "deduplication_store"),
+		)
 
 		// Mark as disconnected so next call will retry connection
 		s.connected.Store(false)
