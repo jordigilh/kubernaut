@@ -46,7 +46,7 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 	// NOTE: Tests simulate full HTTP handler flow (Parse + Validate)
 	// This matches BR-GATEWAY-003: "Validate incoming webhook payloads and reject invalid data"
 	DescribeTable("should reject invalid payloads",
-		func(testCase string, payload []byte, expectedErrorSubstring string) {
+		func(testCase string, payload []byte, expectedErrorSubstring string, shouldAccept bool) {
 			// Parse payload
 			signal, err := adapter.Parse(ctx, payload)
 
@@ -63,43 +63,55 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 
 			// For validation errors (missing required fields), Validate() returns error
 			err = adapter.Validate(signal)
-			Expect(err).To(HaveOccurred(),
-				"BR-003: Must reject invalid payload at Validate stage: %s", testCase)
-			if expectedErrorSubstring != "" {
-				Expect(err.Error()).To(ContainSubstring(expectedErrorSubstring),
-					"BR-003: Error message should indicate validation failure type")
+			if shouldAccept {
+				// Some payloads are accepted (sanitization happens downstream)
+				Expect(err).NotTo(HaveOccurred(),
+					"BR-003: Should accept payload for downstream sanitization: %s", testCase)
+			} else {
+				Expect(err).To(HaveOccurred(),
+					"BR-003: Must reject invalid payload at Validate stage: %s", testCase)
+				if expectedErrorSubstring != "" {
+					Expect(err.Error()).To(ContainSubstring(expectedErrorSubstring),
+						"BR-003: Error message should indicate validation failure type")
+				}
 			}
 		},
 		// Malformed JSON (caught by Parse)
 		Entry("malformed JSON syntax",
 			"invalid JSON structure",
 			[]byte(`{"alerts": [{"labels": {"alertname": "Test"]}`), // Missing closing brace
-			"invalid"),
+			"invalid",
+			false), // Should reject
 		Entry("empty payload",
 			"empty payload provides no actionable data",
 			[]byte(``),
-			""),
+			"",
+			false), // Should reject
 		Entry("null payload",
 			"null is not a valid AlertManager webhook",
 			[]byte(`null`),
-			""),
+			"",
+			false), // Should reject
 
 		// Missing required fields (caught by Parse)
 		Entry("missing alerts array",
 			"AlertManager webhook must contain alerts array",
 			[]byte(`{"version": "4", "status": "firing"}`),
-			"alert"),
+			"alert",
+			false), // Should reject
 		Entry("empty alerts array",
 			"at least one alert must be present",
 			[]byte(`{"alerts": []}`),
-			"alert"),
+			"alert",
+			false), // Should reject
 
 		// Missing alertname (caught by Validate)
 		// Note: Parse succeeds, but Validate fails because alertname is required
 		Entry("missing alertname label",
 			"alertname is required for identification",
 			[]byte(`{"alerts": [{"labels": {"namespace": "prod", "pod": "api-1"}}]}`),
-			"alertName"),
+			"alertName",
+			false), // Should reject
 
 		// NOTE: Namespace is NOT required per prometheus_adapter.go:154
 		//   "// Note: Namespace can be empty for cluster-scoped alerts (e.g., node alerts)"
@@ -109,10 +121,29 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 		Entry("alerts array contains non-object",
 			"each alert must be a structured object",
 			[]byte(`{"alerts": ["string instead of object"]}`),
-			""),
+			"",
+			false), // Should reject
 		Entry("labels is not an object",
 			"labels must be key-value pairs",
 			[]byte(`{"alerts": [{"labels": "string instead of object"}]}`),
-			""),
+			"",
+			false), // Should reject
+
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// PHASE 3: MALICIOUS INPUT EDGE CASES (BR-GATEWAY-010)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// Production Risk: Malformed payloads can cause crashes
+		// Business Impact: Gateway stability and availability
+		// Defense: Payload validation and rejection
+		//
+		// NOTE: SQL injection and log injection protection are tested in:
+		// - test/unit/gateway/middleware/log_sanitization_test.go (actual redaction)
+		// - Integration tests (end-to-end protection validation)
+
+		Entry("null bytes in payload → should reject",
+			"null bytes can cause string handling issues",
+			[]byte("{\x00\"alerts\": [{\"labels\": {\"alertname\": \"Test\"}}]}"),
+			"invalid",
+			false), // Should reject
 	)
 })
