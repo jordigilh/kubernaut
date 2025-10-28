@@ -90,6 +90,7 @@ type Server struct {
 	stormAggregator *processing.StormAggregator
 	classifier      *processing.EnvironmentClassifier
 	priorityEngine  *processing.PriorityEngine
+	pathDecider     *processing.RemediationPathDecider
 	crdCreator      *processing.CRDCreator
 
 	// Infrastructure clients
@@ -227,6 +228,7 @@ func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 		classifier = processing.NewEnvironmentClassifier(ctrlClient, logger)
 	}
 	priorityEngine := processing.NewPriorityEngine(logger)
+	pathDecider := processing.NewRemediationPathDecider(logger)
 	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance)
 
 	// 4. Initialize middleware
@@ -242,6 +244,7 @@ func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 		stormAggregator: stormAggregator,
 		classifier:      classifier,
 		priorityEngine:  priorityEngine,
+		pathDecider:     pathDecider,
 		crdCreator:      crdCreator,
 		redisClient:     redisClient,
 		k8sClient:       k8sClient,
@@ -634,7 +637,21 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	// 4. Priority assignment
 	priority := s.priorityEngine.Assign(ctx, signal.Severity, environment)
 
-	// 5. Create RemediationRequest CRD
+	// 5. Remediation path decision
+	signalCtx := &processing.SignalContext{
+		Signal:      signal,
+		Environment: environment,
+		Priority:    priority,
+	}
+	remediationPath := s.pathDecider.DeterminePath(ctx, signalCtx)
+
+	s.logger.Debug("Remediation path decided",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("environment", environment),
+		zap.String("priority", priority),
+		zap.String("remediationPath", remediationPath))
+
+	// 6. Create RemediationRequest CRD
 	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal, priority, environment)
 	if err != nil {
 		s.logger.Error("Failed to create RemediationRequest CRD",
@@ -643,7 +660,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
 
-	// 6. Store deduplication metadata
+	// 7. Store deduplication metadata
 	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
 	if err := s.deduplicator.Store(ctx, signal, remediationRequestRef); err != nil {
 		// Non-critical error: CRD already created, log warning
@@ -660,6 +677,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		zap.String("crdName", rr.Name),
 		zap.String("environment", environment),
 		zap.String("priority", priority),
+		zap.String("remediationPath", remediationPath),
 		zap.Int64("duration_ms", duration.Milliseconds()))
 
 	return &ProcessingResponse{
@@ -671,6 +689,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		RemediationRequestNamespace: rr.Namespace,
 		Environment:                 environment,
 		Priority:                    priority,
+		RemediationPath:             remediationPath,
 	}, nil
 }
 
@@ -738,6 +757,7 @@ type ProcessingResponse struct {
 	RemediationRequestNamespace string                            `json:"remediationRequestNamespace,omitempty"`
 	Environment                 string                            `json:"environment,omitempty"`
 	Priority                    string                            `json:"priority,omitempty"`
+	RemediationPath             string                            `json:"remediationPath,omitempty"`
 	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"`
 	// Storm aggregation fields (BR-GATEWAY-016)
 	IsStorm   bool   `json:"isStorm,omitempty"`   // true if alert is part of a storm

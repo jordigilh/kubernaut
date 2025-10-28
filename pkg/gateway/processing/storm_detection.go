@@ -168,7 +168,9 @@ func (d *StormDetector) checkRateStorm(ctx context.Context, signal *types.Normal
 	// Increment counter in Redis
 	count, err := d.redisClient.Incr(ctx, key).Result()
 	if err != nil {
-		return false, fmt.Errorf("failed to increment storm counter: %w", err)
+		// BR-GATEWAY-013: Graceful degradation when Redis unavailable
+		// Don't fail storm detection - treat as no storm (allow processing)
+		return false, nil
 	}
 
 	// Set 1-minute TTL on first increment
@@ -176,7 +178,8 @@ func (d *StormDetector) checkRateStorm(ctx context.Context, signal *types.Normal
 		d.redisClient.Expire(ctx, key, 60*time.Second)
 	}
 
-	// Check if threshold exceeded (>10 alerts/minute)
+	// Check if threshold exceeded (>rateThreshold alerts/minute)
+	// Note: Threshold is exclusive (e.g., threshold=10 means storm at 11+, not at 10)
 	return count > int64(d.rateThreshold), nil
 }
 
@@ -233,7 +236,9 @@ func (d *StormDetector) checkPatternStorm(ctx context.Context, signal *types.Nor
 		Score:  now,
 		Member: resourceID,
 	}).Err(); err != nil {
-		return false, nil, fmt.Errorf("failed to add pattern entry: %w", err)
+		// BR-GATEWAY-013: Graceful degradation when Redis unavailable
+		// Don't fail storm detection - treat as no storm (allow processing)
+		return false, nil, nil
 	}
 
 	// Remove old entries (older than 2 minutes)
