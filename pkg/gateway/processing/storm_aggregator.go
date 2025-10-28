@@ -349,3 +349,29 @@ func (a *StormAggregator) GetResourceCount(ctx context.Context, windowID string)
 
 	return int(count), nil
 }
+
+// AggregateOrCreate determines if a signal should be aggregated or if a new storm CRD should be created
+//
+// Returns:
+// - bool: true if signal was aggregated into existing storm, false if new storm CRD should be created
+// - string: storm window ID (for aggregation) or empty (for new CRD creation)
+// - error: Redis errors or aggregation failures
+func (a *StormAggregator) AggregateOrCreate(ctx context.Context, signal *types.NormalizedSignal) (bool, string, error) {
+	// Check if there's an active storm window for this signal
+	shouldAggregate, windowID, err := a.ShouldAggregate(ctx, signal)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to check aggregation status: %w", err)
+	}
+
+	if shouldAggregate {
+		// Add resource to existing storm window
+		err = a.AddResource(ctx, windowID, signal)
+		if err != nil {
+			return false, "", fmt.Errorf("failed to add resource to storm window: %w", err)
+		}
+		return true, windowID, nil
+	}
+
+	// No active storm window - signal new CRD should be created
+	return false, "", nil
+}
