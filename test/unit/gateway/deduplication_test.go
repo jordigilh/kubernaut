@@ -262,23 +262,27 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 	// Redis down → Log error, continue processing → CRDs still created
 	Describe("Error Handling", func() {
 		It("handles Redis connection failure gracefully", func() {
-			// BR-GATEWAY-005: Redis error handling
+			// BR-GATEWAY-013: Graceful degradation when Redis unavailable
 			// BUSINESS SCENARIO: Redis cluster unavailable during alert spike
-			// Expected: Error returned, Gateway continues processing
+			// Expected: Graceful degradation - treat as new alert, allow processing
 
 			// Close Redis connection to simulate failure
 			if redisClient != nil {
 				_ = redisClient.Close()
 			}
 
-			_, _, err := dedupService.Check(ctx, testSignal)
+			isDup, metadata, err := dedupService.Check(ctx, testSignal)
 
 			// BUSINESS OUTCOME: Redis failure doesn't crash Gateway
-			Expect(err).To(HaveOccurred(),
-				"Redis connection failure must return error")
+			Expect(err).NotTo(HaveOccurred(),
+				"Graceful degradation: should not error")
+			Expect(isDup).To(BeFalse(),
+				"Graceful degradation: treat as new alert")
+			Expect(metadata).To(BeNil(),
+				"Graceful degradation: no metadata when Redis unavailable")
 
 			// Business capability verified:
-			// Redis fails → Error logged → Webhook returns 500 → Prometheus retries
+			// Redis fails → Error logged → Alert treated as new → Processing continues
 			// Deduplication temporarily disabled, but Gateway operational
 		})
 
