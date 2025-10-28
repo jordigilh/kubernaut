@@ -138,7 +138,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 
 	// 3. Filter event types (business logic: only Warning/Error need remediation)
 	if event.Type == "Normal" {
-		return nil, fmt.Errorf("normal events not processed (informational only)")
+		return nil, fmt.Errorf("Normal events not processed (informational only)")
 	}
 	if event.Type != "Warning" && event.Type != "Error" {
 		return nil, fmt.Errorf("unsupported event type: %s (expected Warning or Error)", event.Type)

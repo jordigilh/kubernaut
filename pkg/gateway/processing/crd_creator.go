@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -53,6 +54,12 @@ type CRDCreator struct {
 
 // NewCRDCreator creates a new CRD creator
 func NewCRDCreator(k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *CRDCreator {
+	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
+	if metricsInstance == nil {
+		// Use custom registry to avoid "duplicate metrics collector registration" in tests
+		registry := prometheus.NewRegistry()
+		metricsInstance = metrics.NewMetricsWithRegistry(registry)
+	}
 	return &CRDCreator{
 		k8sClient: k8sClient,
 		logger:    logger,
@@ -114,9 +121,13 @@ func (c *CRDCreator) CreateRemediationRequest(
 	priority string,
 	environment string,
 ) (*remediationv1alpha1.RemediationRequest, error) {
-	// Generate CRD name from fingerprint (first 16 chars)
+	// Generate CRD name from fingerprint (first 16 chars, or full fingerprint if shorter)
 	// Example: rr-a1b2c3d4e5f6789
-	crdName := fmt.Sprintf("rr-%s", signal.Fingerprint[:16])
+	fingerprintPrefix := signal.Fingerprint
+	if len(fingerprintPrefix) > 16 {
+		fingerprintPrefix = fingerprintPrefix[:16]
+	}
+	crdName := fmt.Sprintf("rr-%s", fingerprintPrefix)
 
 	// Build RemediationRequest CRD
 	rr := &remediationv1alpha1.RemediationRequest{
@@ -159,9 +170,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 			FiringTime:   metav1.NewTime(c.getFiringTime(signal)),
 			ReceivedTime: metav1.NewTime(signal.ReceivedTime),
 
-			// Signal metadata
-			SignalLabels:      signal.Labels,
-			SignalAnnotations: signal.Annotations,
+			// Signal metadata (with K8s label value truncation)
+			SignalLabels:      c.truncateLabelValues(signal.Labels),
+			SignalAnnotations: c.truncateAnnotationValues(signal.Annotations),
 
 			// Provider-specific data (structured JSON for downstream services)
 			ProviderData: c.buildProviderData(signal),
@@ -361,4 +372,44 @@ func (c *CRDCreator) UpdateStormCRD(ctx context.Context, crd *remediationv1alpha
 
 	// No CRD update needed - metadata is in Redis
 	return nil
+}
+
+// truncateLabelValues truncates label values to comply with K8s 63 character limit
+// K8s label values must be <= 63 characters
+// See: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+func (c *CRDCreator) truncateLabelValues(labels map[string]string) map[string]string {
+	if labels == nil {
+		return nil
+	}
+
+	truncated := make(map[string]string, len(labels))
+	for key, value := range labels {
+		if len(value) > 63 {
+			truncated[key] = value[:63]
+		} else {
+			truncated[key] = value
+		}
+	}
+	return truncated
+}
+
+// truncateAnnotationValues truncates annotation values to comply with K8s 256KB limit
+// K8s annotation values must be < 256KB (262144 bytes)
+// We truncate to 262000 bytes to leave room for metadata overhead
+// See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
+func (c *CRDCreator) truncateAnnotationValues(annotations map[string]string) map[string]string {
+	if annotations == nil {
+		return nil
+	}
+
+	const maxAnnotationSize = 262000 // Slightly less than 256KB to leave room for overhead
+	truncated := make(map[string]string, len(annotations))
+	for key, value := range annotations {
+		if len(value) > maxAnnotationSize {
+			truncated[key] = value[:maxAnnotationSize]
+		} else {
+			truncated[key] = value
+		}
+	}
+	return truncated
 }
