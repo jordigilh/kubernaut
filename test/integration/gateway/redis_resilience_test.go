@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -11,7 +12,7 @@ import (
 var _ = Describe("Redis Resilience Integration Tests", func() {
 	var (
 		ctx         context.Context
-		gatewayURL  string
+		testServer  *httptest.Server
 		redisClient *RedisTestClient
 		k8sClient   *K8sTestClient
 	)
@@ -20,14 +21,19 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 		ctx = context.Background()
 		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
-		gatewayURL = StartTestGateway(ctx, redisClient, k8sClient)
+
+		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
+		testServer = httptest.NewServer(gatewayServer.Handler())
 
 		// Ensure Redis is clean before each test
 		redisClient.FlushDB(ctx)
 	})
 
 	AfterEach(func() {
-		StopTestGateway(ctx)
+		if testServer != nil {
+			testServer.Close()
+		}
 	})
 
 	Context("BR-GATEWAY-071: Redis Failure Handling", func() {
