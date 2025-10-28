@@ -48,13 +48,15 @@ import (
 type CRDCreator struct {
 	k8sClient *k8s.Client
 	logger    *logrus.Logger
+	metrics   *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
 }
 
 // NewCRDCreator creates a new CRD creator
-func NewCRDCreator(k8sClient *k8s.Client, logger *logrus.Logger) *CRDCreator {
+func NewCRDCreator(k8sClient *k8s.Client, logger *logrus.Logger, metricsInstance *metrics.Metrics) *CRDCreator {
 	return &CRDCreator{
 		k8sClient: k8sClient,
 		logger:    logger,
+		metrics:   metricsInstance,
 	}
 }
 
@@ -198,7 +200,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 			// This allows deduplication metadata to be updated in Redis
 			existing, err := c.k8sClient.GetRemediationRequest(ctx, signal.Namespace, crdName)
 			if err != nil {
-				metrics.RemediationRequestCreationFailuresTotal.WithLabelValues("fetch_existing_failed").Inc()
+				c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
 				return nil, fmt.Errorf("CRD exists but failed to fetch: %w", err)
 			}
 
@@ -224,7 +226,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			// Retry creation in default namespace
 			if err := c.k8sClient.CreateRemediationRequest(ctx, rr); err != nil {
-				metrics.RemediationRequestCreationFailuresTotal.WithLabelValues("fallback_failed").Inc()
+				c.metrics.CRDCreationErrors.WithLabelValues("fallback_failed").Inc()
 				return nil, fmt.Errorf("failed to create CRD in fallback namespace: %w", err)
 			}
 
@@ -236,12 +238,12 @@ func (c *CRDCreator) CreateRemediationRequest(
 				"original_ns": signal.Namespace,
 			}).Info("Created RemediationRequest CRD in default namespace (fallback)")
 
-			metrics.RemediationRequestCreatedTotal.WithLabelValues(environment, priority).Inc()
+			c.metrics.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 			return rr, nil
 		}
 
 		// Other errors (not namespace-related, not already-exists)
-		metrics.RemediationRequestCreationFailuresTotal.WithLabelValues("k8s_api_error").Inc()
+		c.metrics.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
 
 		c.logger.WithFields(logrus.Fields{
 			"name":        crdName,
@@ -254,7 +256,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 	}
 
 	// Record success metric
-	metrics.RemediationRequestCreatedTotal.WithLabelValues(environment, priority).Inc()
+	c.metrics.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 
 	// Log creation event
 	c.logger.WithFields(logrus.Fields{
@@ -324,4 +326,45 @@ func (c *CRDCreator) buildProviderData(signal *types.NormalizedSignal) []byte {
 	}
 
 	return jsonData
+}
+
+// CreateStormCRD creates a new RemediationRequest CRD for storm aggregation
+//
+// Parameters:
+// - signal: The first signal that triggered storm detection
+// - windowID: Storm window ID for tracking aggregated resources
+//
+// Returns the created CRD or error
+func (c *CRDCreator) CreateStormCRD(ctx context.Context, signal *types.NormalizedSignal, windowID string) (*remediationv1alpha1.RemediationRequest, error) {
+	// Create base CRD
+	rr, err := c.CreateRemediationRequest(ctx, signal, "high", "ai")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create storm CRD: %w", err)
+	}
+
+	// Storm aggregation metadata is stored in Redis, not in CRD spec
+	// The windowID is used to track aggregated resources in Redis
+	// This keeps CRD size minimal and avoids etcd size limits
+
+	return rr, nil
+}
+
+// UpdateStormCRD updates an existing storm CRD with new alert count
+//
+// Parameters:
+// - crd: The existing storm CRD to update
+// - alertCount: New total alert count
+//
+// # Returns error if update fails
+//
+// Note: Storm aggregation metadata (alert count, resources) is stored in Redis,
+// not in the CRD spec. This method is a no-op for now, as updates happen in Redis.
+// The CRD itself remains unchanged to avoid etcd size limits.
+func (c *CRDCreator) UpdateStormCRD(ctx context.Context, crd *remediationv1alpha1.RemediationRequest, alertCount int) error {
+	// Storm aggregation metadata is stored in Redis, not CRD spec
+	// This keeps CRD size minimal and avoids etcd size limits
+	// The alert count is tracked in Redis using the storm window ID
+
+	// No CRD update needed - metadata is in Redis
+	return nil
 }
