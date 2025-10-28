@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,7 +14,7 @@ import (
 var _ = Describe("Health Endpoints Integration Tests", func() {
 	var (
 		ctx         context.Context
-		gatewayURL  string
+		testServer  *httptest.Server
 		redisClient *RedisTestClient
 		k8sClient   *K8sTestClient
 	)
@@ -22,11 +23,16 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 		ctx = context.Background()
 		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
-		gatewayURL = StartTestGateway(ctx, redisClient, k8sClient)
+
+		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
+		testServer = httptest.NewServer(gatewayServer.Handler())
 	})
 
 	AfterEach(func() {
-		StopTestGateway(ctx)
+		if testServer != nil {
+			testServer.Close()
+		}
 	})
 
 	Context("BR-GATEWAY-024: Basic Health Endpoint", func() {
@@ -36,7 +42,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 
 			// Act: Call /health endpoint
 			client := &http.Client{Timeout: 10 * time.Second}
-			resp, err := client.Get(gatewayURL + "/health")
+			resp, err := client.Get(testServer.URL + "/health")
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -65,7 +71,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 
 			// Act: Call /health/ready endpoint
 			client := &http.Client{Timeout: 10 * time.Second}
-			resp, err := client.Get(gatewayURL + "/health/ready")
+			resp, err := client.Get(testServer.URL + "/health/ready")
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -93,7 +99,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 
 			// Act: Call /health/live endpoint
 			client := &http.Client{Timeout: 10 * time.Second}
-			resp, err := client.Get(gatewayURL + "/health/live")
+			resp, err := client.Get(testServer.URL + "/health/live")
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -114,7 +120,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			client := &http.Client{Timeout: 10 * time.Second}
 
 			for _, endpoint := range endpoints {
-				resp, err := client.Get(gatewayURL + endpoint)
+				resp, err := client.Get(testServer.URL + endpoint)
 				Expect(err).ToNot(HaveOccurred(), "Should successfully call "+endpoint)
 				defer resp.Body.Close()
 
@@ -129,4 +135,3 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 		})
 	})
 })
-
