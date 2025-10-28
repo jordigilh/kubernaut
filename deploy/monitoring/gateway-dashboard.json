@@ -1,0 +1,582 @@
+{
+	"annotations": {
+		"list": [
+			{
+				"builtIn": 1,
+				"datasource": "-- Grafana --",
+				"enable": true,
+				"hide": true,
+				"iconColor": "rgba(0, 211, 255, 1)",
+				"name": "Annotations & Alerts",
+				"type": "dashboard"
+			}
+		]
+	},
+	"editable": true,
+	"gnetId": null,
+	"graphTooltip": 0,
+	"id": null,
+	"links": [],
+	"panels": [
+		{
+			"datasource": "Prometheus",
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "thresholds"
+					},
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							},
+							{
+								"color": "yellow",
+								"value": 60
+							},
+							{
+								"color": "red",
+								"value": 300
+							}
+						]
+					},
+					"unit": "s"
+				}
+			},
+			"gridPos": {
+				"h": 8,
+				"w": 12,
+				"x": 0,
+				"y": 0
+			},
+			"id": 1,
+			"options": {
+				"orientation": "auto",
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					],
+					"fields": "",
+					"values": false
+				},
+				"showThresholdLabels": false,
+				"showThresholdMarkers": true,
+				"text": {}
+			},
+			"pluginVersion": "8.0.0",
+			"targets": [
+				{
+					"expr": "gateway_redis_availability_seconds",
+					"legendFormat": "{{service}}",
+					"refId": "A"
+				}
+			],
+			"title": "Redis Availability (seconds unavailable)",
+			"type": "gauge",
+			"description": "Seconds Redis has been unavailable (0 = healthy). Critical if >300s (5 min)."
+		},
+		{
+			"datasource": "Prometheus",
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "palette-classic"
+					},
+					"custom": {
+						"axisLabel": "",
+						"axisPlacement": "auto",
+						"barAlignment": 0,
+						"drawStyle": "line",
+						"fillOpacity": 10,
+						"gradientMode": "none",
+						"hideFrom": {
+							"tooltip": false,
+							"viz": false,
+							"legend": false
+						},
+						"lineInterpolation": "linear",
+						"lineWidth": 1,
+						"pointSize": 5,
+						"scaleDistribution": {
+							"type": "linear"
+						},
+						"showPoints": "never",
+						"spanNulls": true,
+						"stacking": {
+							"group": "A",
+							"mode": "none"
+						},
+						"thresholdsStyle": {
+							"mode": "off"
+						}
+					},
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							}
+						]
+					},
+					"unit": "reqps"
+				}
+			},
+			"gridPos": {
+				"h": 8,
+				"w": 12,
+				"x": 12,
+				"y": 0
+			},
+			"id": 2,
+			"options": {
+				"legend": {
+					"calcs": [],
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "single"
+				}
+			},
+			"pluginVersion": "8.0.0",
+			"targets": [
+				{
+					"expr": "rate(gateway_requests_rejected_total[5m])",
+					"legendFormat": "{{reason}} ({{service}})",
+					"refId": "A"
+				}
+			],
+			"title": "Request Rejection Rate (503)",
+			"type": "timeseries",
+			"description": "Rate of requests rejected with 503 Service Unavailable by reason."
+		},
+		{
+			"datasource": "Prometheus",
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "thresholds"
+					},
+					"mappings": [
+						{
+							"options": {
+								"0": {
+									"color": "red",
+									"index": 0,
+									"text": "DISABLED"
+								},
+								"1": {
+									"color": "green",
+									"index": 1,
+									"text": "ACTIVE"
+								}
+							},
+							"type": "value"
+						}
+					],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "red",
+								"value": null
+							},
+							{
+								"color": "green",
+								"value": 1
+							}
+						]
+					}
+				}
+			},
+			"gridPos": {
+				"h": 4,
+				"w": 6,
+				"x": 0,
+				"y": 8
+			},
+			"id": 3,
+			"options": {
+				"orientation": "auto",
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					],
+					"fields": "",
+					"values": false
+				},
+				"showThresholdLabels": false,
+				"showThresholdMarkers": true,
+				"text": {}
+			},
+			"pluginVersion": "8.0.0",
+			"targets": [
+				{
+					"expr": "gateway_duplicate_prevention_active",
+					"refId": "A"
+				}
+			],
+			"title": "Duplicate Prevention Status",
+			"type": "gauge",
+			"description": "Can we guarantee zero duplicate CRDs? (1=yes, 0=no)"
+		},
+		{
+			"datasource": "Prometheus",
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "thresholds"
+					},
+					"mappings": [
+						{
+							"options": {
+								"0": {
+									"color": "red",
+									"index": 0,
+									"text": "DISABLED"
+								},
+								"1": {
+									"color": "green",
+									"index": 1,
+									"text": "ACTIVE"
+								}
+							},
+							"type": "value"
+						}
+					],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "red",
+								"value": null
+							},
+							{
+								"color": "green",
+								"value": 1
+							}
+						]
+					}
+				}
+			},
+			"gridPos": {
+				"h": 4,
+				"w": 6,
+				"x": 6,
+				"y": 8
+			},
+			"id": 4,
+			"options": {
+				"orientation": "auto",
+				"reduceOptions": {
+					"calcs": [
+						"lastNotNull"
+					],
+					"fields": "",
+					"values": false
+				},
+				"showThresholdLabels": false,
+				"showThresholdMarkers": true,
+				"text": {}
+			},
+			"pluginVersion": "8.0.0",
+			"targets": [
+				{
+					"expr": "gateway_storm_protection_active",
+					"refId": "A"
+				}
+			],
+			"title": "Storm Protection Status",
+			"type": "gauge",
+			"description": "Is storm protection working? (1=yes, 0=no)"
+		},
+		{
+			"datasource": "Prometheus",
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "palette-classic"
+					},
+					"custom": {
+						"axisLabel": "",
+						"axisPlacement": "auto",
+						"barAlignment": 0,
+						"drawStyle": "line",
+						"fillOpacity": 10,
+						"gradientMode": "none",
+						"hideFrom": {
+							"tooltip": false,
+							"viz": false,
+							"legend": false
+						},
+						"lineInterpolation": "linear",
+						"lineWidth": 1,
+						"pointSize": 5,
+						"scaleDistribution": {
+							"type": "linear"
+						},
+						"showPoints": "never",
+						"spanNulls": true,
+						"stacking": {
+							"group": "A",
+							"mode": "none"
+						},
+						"thresholdsStyle": {
+							"mode": "off"
+						}
+					},
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							}
+						]
+					},
+					"unit": "short"
+				}
+			},
+			"gridPos": {
+				"h": 4,
+				"w": 12,
+				"x": 12,
+				"y": 8
+			},
+			"id": 5,
+			"options": {
+				"legend": {
+					"calcs": [],
+					"displayMode": "list",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "single"
+				}
+			},
+			"pluginVersion": "8.0.0",
+			"targets": [
+				{
+					"expr": "gateway_consecutive_503_responses",
+					"legendFormat": "{{namespace}}",
+					"refId": "A"
+				}
+			],
+			"title": "Consecutive 503 Responses by Namespace",
+			"type": "timeseries",
+			"description": "Consecutive 503 responses per namespace. Critical if >30 (Prometheus retry risk)."
+		},
+		{
+			"datasource": "Prometheus",
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "palette-classic"
+					},
+					"custom": {
+						"axisLabel": "",
+						"axisPlacement": "auto",
+						"barAlignment": 0,
+						"drawStyle": "line",
+						"fillOpacity": 10,
+						"gradientMode": "none",
+						"hideFrom": {
+							"tooltip": false,
+							"viz": false,
+							"legend": false
+						},
+						"lineInterpolation": "linear",
+						"lineWidth": 1,
+						"pointSize": 5,
+						"scaleDistribution": {
+							"type": "linear"
+						},
+						"showPoints": "never",
+						"spanNulls": true,
+						"stacking": {
+							"group": "A",
+							"mode": "none"
+						},
+						"thresholdsStyle": {
+							"mode": "off"
+						}
+					},
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							},
+							{
+								"color": "yellow",
+								"value": 1
+							},
+							{
+								"color": "red",
+								"value": 3
+							}
+						]
+					},
+					"unit": "short"
+				}
+			},
+			"gridPos": {
+				"h": 8,
+				"w": 12,
+				"x": 0,
+				"y": 12
+			},
+			"id": 6,
+			"options": {
+				"legend": {
+					"calcs": [
+						"last"
+					],
+					"displayMode": "table",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "single"
+				}
+			},
+			"pluginVersion": "8.0.0",
+			"targets": [
+				{
+					"expr": "gateway_redis_master_changes_total",
+					"legendFormat": "Master Changes",
+					"refId": "A"
+				},
+				{
+					"expr": "gateway_redis_sentinel_health",
+					"legendFormat": "Sentinel {{instance}}",
+					"refId": "B"
+				}
+			],
+			"title": "Redis HA Status",
+			"type": "timeseries",
+			"description": "Redis master failovers and Sentinel health. Need 2+ healthy Sentinels for quorum."
+		},
+		{
+			"datasource": "Prometheus",
+			"fieldConfig": {
+				"defaults": {
+					"color": {
+						"mode": "palette-classic"
+					},
+					"custom": {
+						"axisLabel": "",
+						"axisPlacement": "auto",
+						"barAlignment": 0,
+						"drawStyle": "line",
+						"fillOpacity": 10,
+						"gradientMode": "none",
+						"hideFrom": {
+							"tooltip": false,
+							"viz": false,
+							"legend": false
+						},
+						"lineInterpolation": "linear",
+						"lineWidth": 1,
+						"pointSize": 5,
+						"scaleDistribution": {
+							"type": "linear"
+						},
+						"showPoints": "never",
+						"spanNulls": true,
+						"stacking": {
+							"group": "A",
+							"mode": "none"
+						},
+						"thresholdsStyle": {
+							"mode": "off"
+						}
+					},
+					"mappings": [],
+					"thresholds": {
+						"mode": "absolute",
+						"steps": [
+							{
+								"color": "green",
+								"value": null
+							},
+							{
+								"color": "yellow",
+								"value": 50
+							},
+							{
+								"color": "red",
+								"value": 100
+							}
+						]
+					},
+					"unit": "short"
+				}
+			},
+			"gridPos": {
+				"h": 8,
+				"w": 12,
+				"x": 12,
+				"y": 12
+			},
+			"id": 7,
+			"options": {
+				"legend": {
+					"calcs": [
+						"last",
+						"max"
+					],
+					"displayMode": "table",
+					"placement": "bottom"
+				},
+				"tooltip": {
+					"mode": "single"
+				}
+			},
+			"pluginVersion": "8.0.0",
+			"targets": [
+				{
+					"expr": "gateway_alerts_queued_estimate",
+					"legendFormat": "Estimated Queued Alerts",
+					"refId": "A"
+				},
+				{
+					"expr": "rate(gateway_duplicate_crds_prevented_total[5m]) * 300",
+					"legendFormat": "Duplicates Prevented (5min rate × 60)",
+					"refId": "B"
+				}
+			],
+			"title": "Business Impact Metrics",
+			"type": "timeseries",
+			"description": "Alert backlog estimate and duplicate CRDs prevented by Redis HA."
+		}
+	],
+	"refresh": "10s",
+	"schemaVersion": 27,
+	"style": "dark",
+	"tags": [
+		"gateway",
+		"redis",
+		"observability"
+	],
+	"templating": {
+		"list": []
+	},
+	"time": {
+		"from": "now-1h",
+		"to": "now"
+	},
+	"timepicker": {},
+	"timezone": "",
+	"title": "Gateway Service - Redis HA Monitoring",
+	"uid": "gateway-redis-ha",
+	"version": 1,
+	"description": "Gateway Service Redis HA monitoring dashboard (DD-GATEWAY-003). Tracks 5 critical risks: prolonged outage, Prometheus retry exhaustion, Redis failover impact, Sentinel misconfiguration, alert backlog."
+}
