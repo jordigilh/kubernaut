@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	goredis "github.com/go-redis/redis/v8"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -24,9 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/contextapi/server"
-	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
-	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
+	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -197,110 +193,68 @@ func (k *K8sTestClient) DeleteCRD(ctx context.Context, name, namespace string) e
 // GATEWAY SERVER LIFECYCLE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-var (
-	testGatewayServer *httptest.Server
-	testHTTPHandler   http.Handler
-)
-
-// StartTestGateway starts Gateway server for integration tests
-// Returns the base URL for webhook endpoints
+// StartTestGateway creates a Gateway server for integration tests
+// Returns the Gateway server instance for creating test HTTP servers
+//
+// Example usage:
+//
+//	gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+//	Expect(err).ToNot(HaveOccurred())
+//	testServer := httptest.NewServer(gatewayServer.Handler())
+//	defer testServer.Close()
+//	resp, _ := http.Post(testServer.URL+"/webhook/prometheus", "application/json", body)
+//
 // DD-GATEWAY-004: Authentication removed - security now at network layer
-func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) string {
+func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) (*gateway.Server, error) {
 	// Use production logger with console output to capture errors in test logs
 	logConfig := zap.NewProductionConfig()
 	logConfig.OutputPaths = []string{"stdout"}
 	logConfig.ErrorOutputPaths = []string{"stderr"}
 	logger, _ := logConfig.Build()
 
-	// Create Gateway components
-	adapterRegistry := adapters.NewAdapterRegistry()
-	classifier := processing.NewEnvironmentClassifier()
-
-	// Load Rego policy for priority assignment (BR-GATEWAY-013)
-	// Use relative path from test directory to policy file
-	policyPath := "../../../docs/gateway/policies/priority-policy.rego"
-	priorityEngine, err := processing.NewPriorityEngineWithRego(policyPath, logger)
-	if err != nil {
-		logger.Fatal("Failed to load Rego priority policy", zap.Error(err))
-	}
-
-	pathDecider := processing.NewRemediationPathDecider(logger)
-
-	// Day 9 Phase 6B Option C1: Create metrics with custom registry for test isolation
-	// Each Gateway instance gets its own metrics registry to prevent collisions in parallel tests
-	metricsInstance := gatewayMetrics.NewMetricsWithRegistry(metricsRegistry)
-
-	crdCreator := processing.NewCRDCreator(k8sClient.Client, logger, metricsInstance)
-
 	// v2.9: Wire deduplication and storm detection services (REQUIRED)
 	// BR-GATEWAY-008, BR-GATEWAY-009, BR-GATEWAY-010
 	// These services are MANDATORY - Gateway will not start without them
 	if redisClient == nil || redisClient.Client == nil {
-		logger.Fatal("Redis client is required for Gateway startup (BR-GATEWAY-008, BR-GATEWAY-009)")
+		return nil, fmt.Errorf("Redis client is required for Gateway startup (BR-GATEWAY-008, BR-GATEWAY-009)")
 	}
 
-	// Create deduplication service with TEST TTL (5 seconds for fast TTL expiration testing)
-	// Production default is 5 minutes, but tests need faster expiration
-	dedupService := processing.NewDeduplicationServiceWithTTL(redisClient.Client, 5*time.Second, logger, metricsInstance)
-	stormDetector := processing.NewStormDetector(redisClient.Client, 0, 0, metricsInstance) // Use default thresholds
-	stormAggregator := processing.NewStormAggregator(redisClient.Client)
+	// Create ServerConfig for tests
+	// Uses fast TTLs and low thresholds for rapid test execution
+	cfg := &gateway.ServerConfig{
+		// Server settings
+		ListenAddr:   ":8080",
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 
-	logger.Info("Deduplication, storm detection, and storm aggregation services initialized for integration tests")
+		// Rate limiting (lower for tests)
+		RateLimitRequestsPerMinute: 20, // Production: 100
+		RateLimitBurst:             5,  // Production: 10
 
-	// DD-GATEWAY-004: K8s clientset and DisableAuth removed
-	// Authentication now handled at network layer (Network Policies + TLS)
-	serverConfig := &server.Config{
-		Port:            8080,
-		ReadTimeout:     5,
-		WriteTimeout:    10,
-		RateLimit:       20,               // TEST ONLY: Lower limit for integration tests (production: 100)
-		RateLimitWindow: 60 * time.Second, // 60 seconds window
+		// Redis configuration
+		Redis: redisClient.Client.Options(),
+
+		// Fast TTLs for tests (production uses longer TTLs)
+		DeduplicationTTL:       5 * time.Second, // Production: 5 minutes
+		StormRateThreshold:     2,               // Production: 10 alerts/minute
+		StormPatternThreshold:  2,               // Production: 5 similar alerts
+		StormAggregationWindow: 5 * time.Second, // Production: 1 minute
+		EnvironmentCacheTTL:    5 * time.Second, // Production: 30 seconds
+
+		// Environment classification ConfigMap
+		EnvConfigMapNamespace: "kubernaut-system",
+		EnvConfigMapName:      "kubernaut-environment-overrides",
 	}
 
-	// Phase 2 Fix: Create custom Prometheus registry per Gateway server instance
-	// This prevents "duplicate metrics collector registration" panics when multiple
-	// test suites call StartTestGateway() in the same process
-	metricsRegistry := prometheus.NewRegistry()
-
-	// Register Go runtime collectors to custom registry
-	// Without this, /metrics endpoint will be empty (no Go metrics)
-	metricsRegistry.MustRegister(prometheus.NewGoCollector())
-	metricsRegistry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
-
-	// DD-GATEWAY-004: k8sClientset removed - authentication now at network layer
-	gatewayServer, err := server.NewServer(
-		adapterRegistry,
-		classifier,
-		priorityEngine,
-		pathDecider,
-		crdCreator,
-		dedupService,       // REQUIRED v2.9
-		stormDetector,      // REQUIRED v2.9
-		stormAggregator,    // REQUIRED v2.11
-		redisClient.Client, // REQUIRED v2.11 (rate limiting)
-		logger,
-		serverConfig,
-		metricsRegistry, // Phase 2 Fix: Custom registry per Gateway instance for test isolation
+	logger.Info("Creating Gateway server for integration tests",
+		zap.Duration("deduplication_ttl", cfg.DeduplicationTTL),
+		zap.Int("storm_rate_threshold", cfg.StormRateThreshold),
+		zap.Int("rate_limit", cfg.RateLimitRequestsPerMinute),
 	)
-	if err != nil {
-		logger.Fatal("Failed to create Gateway server", zap.Error(err))
-	}
 
-	// Get HTTP handler from server
-	testHTTPHandler = gatewayServer.Handler()
-
-	// Create httptest server for integration tests
-	testGatewayServer = httptest.NewServer(testHTTPHandler)
-
-	return testGatewayServer.URL
-}
-
-// StopTestGateway stops the Gateway server
-func StopTestGateway(ctx context.Context) {
-	if testGatewayServer != nil {
-		testGatewayServer.Close()
-		testGatewayServer = nil
-	}
+	// Create Gateway server using new ServerConfig API
+	return gateway.NewServer(cfg, logger)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
