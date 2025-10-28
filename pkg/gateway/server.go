@@ -28,15 +28,17 @@ import (
 	goredis "github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
-	"k8s.io/client-go/kubernetes"
+
+	// "k8s.io/client-go/kubernetes" // DD-GATEWAY-004: No longer needed (authentication removed)
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/jordigilh/kubernaut/internal/gateway/redis"
+	// "github.com/jordigilh/kubernaut/internal/gateway/redis" // DELETED: internal/gateway/ removed
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
-	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
+
+	// "github.com/jordigilh/kubernaut/pkg/gateway/middleware" // DD-GATEWAY-004: Middleware removed
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -96,8 +98,12 @@ type Server struct {
 	ctrlClient  client.Client
 
 	// Middleware
-	authMiddleware *middleware.AuthMiddleware
-	rateLimiter    *middleware.RateLimiter
+	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
+	// authMiddleware *middleware.AuthMiddleware // REMOVED
+	// rateLimiter    *middleware.RateLimiter    // REMOVED
+
+	// Metrics
+	metricsInstance *metrics.Metrics
 
 	// Logger
 	logger *logrus.Logger
@@ -116,7 +122,7 @@ type ServerConfig struct {
 	RateLimitBurst             int `yaml:"rate_limit_burst"`               // Default: 10
 
 	// Redis configuration
-	Redis *redis.Config `yaml:"redis"`
+	Redis *goredis.Options `yaml:"redis"`
 
 	// Deduplication TTL (optional, defaults to 5 minutes)
 	// For testing: set to 5*time.Second for fast tests
@@ -161,10 +167,7 @@ type ServerConfig struct {
 // 4. Graceful shutdown on signal: server.Stop(ctx)
 func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
 	// 1. Initialize Redis client
-	redisClient, err := redis.NewClient(cfg.Redis)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Redis client: %w", err)
-	}
+	redisClient := goredis.NewClient(cfg.Redis)
 
 	// 2. Initialize Kubernetes clients
 	// Get kubeconfig
@@ -182,25 +185,27 @@ func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// kubernetes clientset (for TokenReview authentication)
-	clientset, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Kubernetes clientset: %w", err)
-	}
+	// DD-GATEWAY-004: kubernetes clientset removed (no longer needed for authentication)
+	// clientset, err := kubernetes.NewForConfig(kubeConfig) // REMOVED
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to create Kubernetes clientset: %w", err)
+	// } // REMOVED
 
 	// 3. Initialize processing pipeline components
 	adapterRegistry := adapters.NewAdapterRegistry(logger)
 
 	// Use custom TTL if provided (for testing), otherwise default to 5 minutes
+	metricsInstance := metrics.NewMetrics()
+
 	var deduplicator *processing.DeduplicationService
 	if cfg.DeduplicationTTL > 0 {
-		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, cfg.DeduplicationTTL, logger)
+		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, cfg.DeduplicationTTL, logger, metricsInstance)
 		logger.WithField("ttl", cfg.DeduplicationTTL).Info("Using custom deduplication TTL")
 	} else {
-		deduplicator = processing.NewDeduplicationService(redisClient, logger)
+		deduplicator = processing.NewDeduplicationService(redisClient, logger, metricsInstance)
 	}
 
-	stormDetector := processing.NewStormDetector(redisClient, cfg.StormRateThreshold, cfg.StormPatternThreshold)
+	stormDetector := processing.NewStormDetector(redisClient, cfg.StormRateThreshold, cfg.StormPatternThreshold, metricsInstance)
 	if cfg.StormRateThreshold > 0 || cfg.StormPatternThreshold > 0 {
 		logger.WithFields(logrus.Fields{
 			"rate_threshold":    cfg.StormRateThreshold,
@@ -222,11 +227,12 @@ func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
 		classifier = processing.NewEnvironmentClassifier(ctrlClient, logger)
 	}
 	priorityEngine := processing.NewPriorityEngine(logger)
-	crdCreator := processing.NewCRDCreator(k8sClient, logger)
+	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance)
 
 	// 4. Initialize middleware
-	authMiddleware := middleware.NewAuthMiddleware(clientset, logger)
-	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRequestsPerMinute, cfg.RateLimitBurst, logger)
+	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
+	// authMiddleware := middleware.NewAuthMiddleware(clientset, logger) // REMOVED
+	// rateLimiter := middleware.NewRateLimiter(cfg.RateLimitRequestsPerMinute, cfg.RateLimitBurst, logger) // REMOVED
 
 	// 5. Create server
 	server := &Server{
@@ -240,8 +246,10 @@ func NewServer(cfg *ServerConfig, logger *logrus.Logger) (*Server, error) {
 		redisClient:     redisClient,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
-		authMiddleware:  authMiddleware,
-		rateLimiter:     rateLimiter,
+		// DD-GATEWAY-004: Authentication middleware removed
+		// authMiddleware:  authMiddleware, // REMOVED
+		// rateLimiter:     rateLimiter,    // REMOVED
+		metricsInstance: metricsInstance,
 		logger:          logger,
 	}
 
@@ -310,16 +318,12 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	// Create adapter HTTP handler
 	handler := s.createAdapterHandler(adapter)
 
-	// Wrap with middleware stack (order matters!)
-	// 1. Rate limiting (outermost - reject early)
-	// 2. Authentication (validate token)
-	// 3. Adapter handler (innermost - process signal)
-	wrappedHandler := s.rateLimiter.Middleware(
-		s.authMiddleware.Middleware(handler),
-	)
+	// DD-GATEWAY-004: Middleware removed (network-level security)
+	// No rate limiting or authentication middleware
+	// Security now handled at network layer (Network Policies + TLS)
 
-	// Register route
-	s.httpServer.Handler.(*http.ServeMux).Handle(adapter.GetRoute(), wrappedHandler)
+	// Register route directly (no middleware wrapping)
+	s.httpServer.Handler.(*http.ServeMux).Handle(adapter.GetRoute(), handler)
 
 	s.logger.WithFields(logrus.Fields{
 		"adapter": adapter.Name(),
@@ -407,7 +411,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		if routableAdapter, ok := adapter.(adapters.RoutableAdapter); ok {
 			route = routableAdapter.GetRoute()
 		}
-		metrics.HTTPRequestDuration.WithLabelValues(
+		s.metricsInstance.HTTPRequestDuration.WithLabelValues(
 			route,
 			r.Method,
 			fmt.Sprintf("%d", statusCode),
@@ -503,7 +507,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	start := time.Now()
 
 	// Record ingestion metric
-	metrics.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity, "unknown").Inc()
+	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity, "unknown").Inc()
 
 	// 1. Deduplication check
 	isDuplicate, metadata, err := s.deduplicator.Check(ctx, signal)
@@ -517,7 +521,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 
 	if isDuplicate {
 		// Fast path: duplicate signal, no CRD creation needed
-		metrics.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
+		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
 
 		s.logger.WithFields(logrus.Fields{
 			"fingerprint": signal.Fingerprint,
@@ -543,7 +547,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			"error":       err,
 		}).Warn("Storm detection failed")
 	} else if isStorm && stormMetadata != nil {
-		metrics.AlertStormsDetectedTotal.WithLabelValues(stormMetadata.StormType, signal.AlertName).Inc()
+		s.metricsInstance.AlertStormsDetectedTotal.WithLabelValues(stormMetadata.StormType, signal.AlertName).Inc()
 
 		s.logger.WithFields(logrus.Fields{
 			"fingerprint": signal.Fingerprint,
@@ -851,7 +855,7 @@ func (s *Server) createAggregatedCRDAfterWindow(
 		}).Error("Failed to create aggregated RemediationRequest CRD")
 
 		// Record metric for failed aggregation
-		metrics.RemediationRequestCreationFailuresTotal.WithLabelValues("k8s_api_error").Inc()
+		s.metricsInstance.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
 		return
 	}
 
@@ -877,5 +881,5 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	}).Info("Aggregated RemediationRequest CRD created successfully")
 
 	// Record metrics for successful aggregation
-	metrics.RemediationRequestCreatedTotal.WithLabelValues(environment, priority).Inc()
+	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 }

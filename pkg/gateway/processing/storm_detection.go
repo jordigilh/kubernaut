@@ -47,10 +47,11 @@ import (
 // - Pattern: alert:pattern:<alertname> (2-minute TTL, sorted set)
 type StormDetector struct {
 	redisClient      *redis.Client
-	rateThreshold    int         // Default: 10 alerts/minute
-	patternThreshold int         // Default: 5 similar alerts
-	connected        atomic.Bool // Track Redis connection state (for lazy connection)
-	connCheckMu      sync.Mutex  // Protects connection check (prevent thundering herd)
+	rateThreshold    int              // Default: 10 alerts/minute
+	patternThreshold int              // Default: 5 similar alerts
+	connected        atomic.Bool      // Track Redis connection state (for lazy connection)
+	connCheckMu      sync.Mutex       // Protects connection check (prevent thundering herd)
+	metrics          *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
 }
 
 // NewStormDetector creates a new storm detector with configurable thresholds
@@ -72,7 +73,7 @@ type StormDetector struct {
 // - Prometheus default evaluation interval: 30-60 seconds
 // - Typical remediation time: 3-10 minutes
 // - Balance between early detection and false positives
-func NewStormDetector(redisClient *redis.Client, rateThreshold, patternThreshold int) *StormDetector {
+func NewStormDetector(redisClient *redis.Client, rateThreshold, patternThreshold int, metricsInstance *metrics.Metrics) *StormDetector {
 	// Apply defaults if zero values provided
 	if rateThreshold == 0 {
 		rateThreshold = 10 // >10 alerts/minute (production default)
@@ -85,6 +86,7 @@ func NewStormDetector(redisClient *redis.Client, rateThreshold, patternThreshold
 		redisClient:      redisClient,
 		rateThreshold:    rateThreshold,
 		patternThreshold: patternThreshold,
+		metrics:          metricsInstance,
 	}
 }
 
@@ -101,7 +103,7 @@ func NewStormDetector(redisClient *redis.Client, rateThreshold, patternThreshold
 func (d *StormDetector) Check(ctx context.Context, signal *types.NormalizedSignal) (bool, *StormMetadata, error) {
 	startTime := time.Now()
 	defer func() {
-		metrics.RedisOperationDuration.WithLabelValues("storm_detection").Observe(time.Since(startTime).Seconds())
+		d.metrics.RedisOperationDuration.WithLabelValues("storm_detection").Observe(time.Since(startTime).Seconds())
 	}()
 
 	// Check rate-based storm (faster check first)
@@ -112,7 +114,7 @@ func (d *StormDetector) Check(ctx context.Context, signal *types.NormalizedSigna
 
 	if isRateStorm {
 		count := d.getRateCount(ctx, signal)
-		metrics.AlertStormsDetectedTotal.WithLabelValues("rate", signal.AlertName).Inc()
+		d.metrics.AlertStormsDetectedTotal.WithLabelValues("rate", signal.AlertName).Inc()
 
 		return true, &StormMetadata{
 			StormType:  "rate",
@@ -128,7 +130,7 @@ func (d *StormDetector) Check(ctx context.Context, signal *types.NormalizedSigna
 	}
 
 	if isPatternStorm {
-		metrics.AlertStormsDetectedTotal.WithLabelValues("pattern", signal.AlertName).Inc()
+		d.metrics.AlertStormsDetectedTotal.WithLabelValues("pattern", signal.AlertName).Inc()
 
 		return true, &StormMetadata{
 			StormType:         "pattern",
@@ -162,7 +164,7 @@ func (d *StormDetector) Check(ctx context.Context, signal *types.NormalizedSigna
 func (d *StormDetector) checkRateStorm(ctx context.Context, signal *types.NormalizedSignal) (bool, error) {
 	startTime := time.Now()
 	defer func() {
-		metrics.RedisOperationDuration.WithLabelValues("storm_detection_rate").Observe(time.Since(startTime).Seconds())
+		d.metrics.RedisOperationDuration.WithLabelValues("storm_detection_rate").Observe(time.Since(startTime).Seconds())
 	}()
 
 	key := fmt.Sprintf("alert:storm:rate:%s", signal.AlertName)
@@ -221,7 +223,7 @@ func (d *StormDetector) getRateCount(ctx context.Context, signal *types.Normaliz
 func (d *StormDetector) checkPatternStorm(ctx context.Context, signal *types.NormalizedSignal) (bool, []string, error) {
 	startTime := time.Now()
 	defer func() {
-		metrics.RedisOperationDuration.WithLabelValues("storm_detection_pattern").Observe(time.Since(startTime).Seconds())
+		d.metrics.RedisOperationDuration.WithLabelValues("storm_detection_pattern").Observe(time.Since(startTime).Seconds())
 	}()
 
 	key := fmt.Sprintf("alert:pattern:%s", signal.AlertName)

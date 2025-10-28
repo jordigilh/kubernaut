@@ -18,6 +18,7 @@ package processing
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -50,8 +51,9 @@ type DeduplicationService struct {
 	redisClient *redis.Client
 	ttl         time.Duration
 	logger      *logrus.Logger
-	connected   atomic.Bool // Track Redis connection state (for lazy connection)
-	connCheckMu sync.Mutex  // Protects connection check (prevent thundering herd)
+	connected   atomic.Bool      // Track Redis connection state (for lazy connection)
+	connCheckMu sync.Mutex       // Protects connection check (prevent thundering herd)
+	metrics     *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
 }
 
 // NewDeduplicationService creates a new deduplication service
@@ -62,11 +64,12 @@ type DeduplicationService struct {
 // The 5-minute window balances:
 // - Too short: Duplicate alerts create multiple CRDs (wasted resources)
 // - Too long: Stale alerts prevent new remediation attempts (delayed resolution)
-func NewDeduplicationService(redisClient *redis.Client, logger *logrus.Logger) *DeduplicationService {
+func NewDeduplicationService(redisClient *redis.Client, logger *logrus.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	return &DeduplicationService{
 		redisClient: redisClient,
 		ttl:         5 * time.Minute,
 		logger:      logger,
+		metrics:     metricsInstance,
 	}
 }
 
@@ -77,11 +80,12 @@ func NewDeduplicationService(redisClient *redis.Client, logger *logrus.Logger) *
 //
 // Production usage: Use NewDeduplicationService() with default 5-minute TTL
 // Test usage: Use NewDeduplicationServiceWithTTL(client, 5*time.Second, logger) for fast tests
-func NewDeduplicationServiceWithTTL(redisClient *redis.Client, ttl time.Duration, logger *logrus.Logger) *DeduplicationService {
+func NewDeduplicationServiceWithTTL(redisClient *redis.Client, ttl time.Duration, logger *logrus.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	return &DeduplicationService{
 		redisClient: redisClient,
 		ttl:         ttl,
 		logger:      logger,
+		metrics:     metricsInstance,
 	}
 }
 
@@ -154,7 +158,7 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	startTime := time.Now()
 	defer func() {
 		// Record Redis operation duration for monitoring
-		metrics.RedisOperationDuration.WithLabelValues("deduplication_check").Observe(time.Since(startTime).Seconds())
+		s.metrics.RedisOperationDuration.WithLabelValues("deduplication_check").Observe(time.Since(startTime).Seconds())
 	}()
 
 	// BR-GATEWAY-013: Graceful degradation when Redis unavailable
@@ -167,7 +171,7 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 			"operation":   "deduplication_check",
 		}).Warn("Redis unavailable, skipping deduplication (alert treated as new)")
 
-		metrics.DeduplicationCacheMissesTotal.Inc()
+		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, nil // Treat as new alert, allow processing to continue
 	}
 
@@ -185,18 +189,18 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 
 		// Mark as disconnected so next call will retry connection
 		s.connected.Store(false)
-		metrics.DeduplicationCacheMissesTotal.Inc()
+		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, nil // Treat as new alert, allow processing to continue
 	}
 
 	if exists == 0 {
 		// First occurrence - not a duplicate
-		metrics.DeduplicationCacheMissesTotal.Inc()
+		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, nil
 	}
 
 	// Duplicate detected - update metadata
-	metrics.DeduplicationCacheHitsTotal.Inc()
+	s.metrics.DeduplicationCacheHitsTotal.Inc()
 
 	// Atomically increment count
 	count, err := s.redisClient.HIncrBy(ctx, key, "count", 1).Result()
@@ -258,7 +262,7 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 func (s *DeduplicationService) Store(ctx context.Context, signal *types.NormalizedSignal, remediationRequestRef string) error {
 	startTime := time.Now()
 	defer func() {
-		metrics.RedisOperationDuration.WithLabelValues("deduplication_store").Observe(time.Since(startTime).Seconds())
+		s.metrics.RedisOperationDuration.WithLabelValues("deduplication_store").Observe(time.Since(startTime).Seconds())
 	}()
 
 	// BR-GATEWAY-013: Graceful degradation when Redis unavailable
@@ -357,4 +361,36 @@ type DeduplicationMetadata struct {
 	// Updated every time Check() detects a duplicate
 	// Example: "2025-10-09T10:04:30Z"
 	LastSeen string
+}
+
+// Record stores a fingerprint in Redis for deduplication tracking
+// This is used after successfully creating a CRD to prevent duplicates
+//
+// Parameters:
+// - fingerprint: The signal fingerprint to track
+// - crdName: The RemediationRequest CRD name created for this signal
+//
+// Returns error if Redis operation fails
+func (s *DeduplicationService) Record(ctx context.Context, fingerprint string, crdName string) error {
+	key := "gateway:dedup:fingerprint:" + fingerprint
+
+	// Store fingerprint with CRD reference and TTL
+	metadata := map[string]interface{}{
+		"crd_name":   crdName,
+		"first_seen": time.Now().Format(time.RFC3339),
+		"count":      1,
+	}
+
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal deduplication metadata: %w", err)
+	}
+
+	// Store with TTL
+	err = s.redisClient.Set(ctx, key, data, s.ttl).Err()
+	if err != nil {
+		return fmt.Errorf("failed to store fingerprint in Redis: %w", err)
+	}
+
+	return nil
 }
