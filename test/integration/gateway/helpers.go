@@ -263,8 +263,14 @@ func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClie
 		zap.Int("rate_limit", cfg.Middleware.RateLimit.RequestsPerMinute),
 	)
 
-	// Create Gateway server using new ServerConfig API
-	return gateway.NewServer(cfg, logger)
+	// Create isolated Prometheus registry for this test
+	// This prevents "duplicate metrics collector registration" panics when
+	// multiple Gateway servers are created in the same test suite
+	registry := prometheus.NewRegistry()
+	metricsInstance := metrics.NewMetricsWithRegistry(registry)
+
+	// Create Gateway server with isolated metrics
+	return gateway.NewServerWithMetrics(cfg, logger, metricsInstance)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

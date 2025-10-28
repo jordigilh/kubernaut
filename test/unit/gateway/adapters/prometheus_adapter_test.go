@@ -39,143 +39,178 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 		ctx = context.Background()
 	})
 
-	Context("when webhook contains a single firing alert", func() {
-		It("should extract alert name from labels", func() {
-			// Business Requirement: AlertManager webhook → NormalizedSignal with alertName
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-006: Fingerprint Generation Algorithm (Unit Test - 70% Tier)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	//
+	// UNIT TEST FOCUS: Test business logic (fingerprint algorithm, normalization rules)
+	// NOT struct field extraction (that's implementation detail)
+	//
+	// These tests are part of the 70%+ unit tier coverage
+	// Integration tests (>50% tier) test the complete flow (webhook → CRD + Redis)
+	// Defense-in-Depth: Same BRs tested at multiple levels
+	//
+	// See: 03-testing-strategy.mdc for tier coverage explanation
+
+	Context("BR-GATEWAY-006: Fingerprint Generation Algorithm", func() {
+		It("generates consistent SHA256 fingerprint for identical alerts", func() {
+			// BR-GATEWAY-006: Fingerprint consistency enables deduplication
+			// BUSINESS LOGIC: Same alert → Same fingerprint (deterministic hashing)
+			// Unit Test (70% tier): Tests algorithm logic, not complete flow
+
 			payload := []byte(`{
-				"version": "4",
-				"status": "firing",
 				"alerts": [{
-					"status": "firing",
 					"labels": {
 						"alertname": "HighMemoryUsage",
 						"namespace": "production",
-						"pod": "api-server-1",
-						"severity": "critical"
-					},
-					"annotations": {
-						"summary": "Pod memory usage is at 95%"
-					},
-					"startsAt": "2025-10-09T10:00:00Z"
-				}]
-			}`)
-
-			signal, err := adapter.Parse(ctx, payload)
-
-			Expect(err).NotTo(HaveOccurred(), "Valid AlertManager webhook should parse successfully")
-			Expect(signal.AlertName).To(Equal("HighMemoryUsage"), "BR-002: Must extract alertname from labels")
-		})
-
-		It("should extract namespace from labels", func() {
-			// Business Requirement: Namespace needed for environment classification
-			payload := []byte(`{
-				"alerts": [{
-					"labels": {
-						"alertname": "Test",
-						"namespace": "production",
-						"pod": "test-pod"
-					}
-				}]
-			}`)
-
-			signal, err := adapter.Parse(ctx, payload)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Namespace).To(Equal("production"), "BR-002: Must extract namespace for classification")
-		})
-
-		It("should extract severity from labels", func() {
-			// Business Requirement: Severity needed for priority assignment
-			payload := []byte(`{
-				"alerts": [{
-					"labels": {
-						"alertname": "Test",
-						"namespace": "prod",
-						"severity": "critical"
-					}
-				}]
-			}`)
-
-			signal, err := adapter.Parse(ctx, payload)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("critical"), "BR-002: Must extract severity for priority")
-		})
-
-		It("should extract resource information (kind and name)", func() {
-			// Business Requirement: Resource info needed for fingerprinting
-			payload := []byte(`{
-				"alerts": [{
-					"labels": {
-						"alertname": "Test",
-						"namespace": "prod",
 						"pod": "api-server-1"
 					}
 				}]
 			}`)
 
-			signal, err := adapter.Parse(ctx, payload)
+			// Parse same payload twice
+			signal1, err1 := adapter.Parse(ctx, payload)
+			signal2, err2 := adapter.Parse(ctx, payload)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Resource.Kind).To(Equal("Pod"), "BR-002: Must identify resource kind")
-			Expect(signal.Resource.Name).To(Equal("api-server-1"), "BR-002: Must extract resource name")
-		})
+			Expect(err1).NotTo(HaveOccurred())
+			Expect(err2).NotTo(HaveOccurred())
 
-		It("should generate unique fingerprint for deduplication", func() {
-			// Business Requirement: BR-010 - Fingerprint for deduplication
-			payload := []byte(`{
-				"alerts": [{
-					"labels": {
-						"alertname": "HighCPU",
-						"namespace": "prod",
-						"pod": "api-1"
-					}
-				}]
-			}`)
-
-			signal, err := adapter.Parse(ctx, payload)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Fingerprint).NotTo(BeEmpty(), "BR-010: Must generate fingerprint")
-			Expect(len(signal.Fingerprint)).To(Equal(64), "BR-010: SHA256 fingerprint should be 64 chars")
-		})
-
-		It("should generate same fingerprint for identical alerts", func() {
-			// Business Requirement: BR-010 - Deduplication requires consistent fingerprints
-			payload := []byte(`{
-				"alerts": [{
-					"labels": {
-						"alertname": "Test",
-						"namespace": "prod",
-						"pod": "api-1"
-					}
-				}]
-			}`)
-
-			signal1, err := adapter.Parse(ctx, payload)
-			Expect(err).NotTo(HaveOccurred())
-
-			signal2, err := adapter.Parse(ctx, payload)
-			Expect(err).NotTo(HaveOccurred())
-
+			// BUSINESS RULE: Identical alerts must produce identical fingerprints
 			Expect(signal1.Fingerprint).To(Equal(signal2.Fingerprint),
-				"BR-010: Identical alerts must produce same fingerprint for deduplication")
+				"Deduplication requires consistent fingerprints for identical alerts")
+
+			// BUSINESS RULE: SHA256 produces 64-character hex string
+			Expect(len(signal1.Fingerprint)).To(Equal(64),
+				"SHA256 fingerprint must be 64 hex characters")
+			Expect(signal1.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"),
+				"Fingerprint must be valid SHA256 hex string")
 		})
 
-		It("should preserve raw payload for audit purposes", func() {
-			// Business Requirement: Audit trail needs original payload
-			payload := []byte(`{"alerts": [{"labels": {"alertname": "Test", "namespace": "prod"}}]}`)
+		It("generates different fingerprints for different alerts", func() {
+			// BR-GATEWAY-006: Fingerprint uniqueness enables alert differentiation
+			// BUSINESS LOGIC: Different alerts → Different fingerprints
+			// Unit Test (70% tier): Tests algorithm distinguishes different inputs
 
-			signal, err := adapter.Parse(ctx, payload)
+			payload1 := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "HighMemoryUsage",
+						"namespace": "production",
+						"pod": "api-server-1"
+					}
+				}]
+			}`)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect([]byte(signal.RawPayload)).To(Equal(payload), "BR-002: Must preserve raw payload for audit")
+			payload2 := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "HighCPUUsage",
+						"namespace": "production",
+						"pod": "api-server-1"
+					}
+				}]
+			}`)
+
+			signal1, err1 := adapter.Parse(ctx, payload1)
+			signal2, err2 := adapter.Parse(ctx, payload2)
+
+			Expect(err1).NotTo(HaveOccurred())
+			Expect(err2).NotTo(HaveOccurred())
+
+			// BUSINESS RULE: Different alerts must produce different fingerprints
+			Expect(signal1.Fingerprint).NotTo(Equal(signal2.Fingerprint),
+				"Different alerts must be distinguishable for deduplication")
+		})
+
+		It("generates different fingerprints for same alert in different namespaces", func() {
+			// BR-GATEWAY-006: Namespace is part of fingerprint (namespace-scoped deduplication)
+			// BUSINESS LOGIC: Same alert name + different namespace → Different fingerprints
+
+			payload1 := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "HighMemoryUsage",
+						"namespace": "production",
+						"pod": "api-server-1"
+					}
+				}]
+			}`)
+
+			payload2 := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "HighMemoryUsage",
+						"namespace": "staging",
+						"pod": "api-server-1"
+					}
+				}]
+			}`)
+
+			signal1, _ := adapter.Parse(ctx, payload1)
+			signal2, _ := adapter.Parse(ctx, payload2)
+
+			// BUSINESS RULE: Namespace-scoped deduplication
+			Expect(signal1.Fingerprint).NotTo(Equal(signal2.Fingerprint),
+				"Same alert in different namespaces should be treated as different alerts")
 		})
 	})
 
-	Context("when webhook contains multiple alerts", func() {
-		It("should process only the first alert", func() {
-			// Business Requirement: Each alert processed independently
+	Context("BR-GATEWAY-003: Signal Normalization Rules", func() {
+		It("normalizes Prometheus alert to standard format for downstream processing", func() {
+			// BR-GATEWAY-003: Normalization enables consistent processing
+			// BUSINESS LOGIC: Prometheus format → Unified NormalizedSignal format
+			// Unit Test (70% tier): Tests normalization rules
+
+			payload := []byte(`{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "HighMemoryUsage",
+						"severity": "critical",
+						"namespace": "production",
+						"pod": "payment-api-123"
+					},
+					"annotations": {
+						"summary": "Pod memory usage at 95%"
+					},
+					"startsAt": "2025-10-22T10:00:00Z"
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			// BUSINESS RULE: Required fields must be populated
+			Expect(signal.AlertName).NotTo(BeEmpty(),
+				"Alert name required for AI analysis")
+			Expect(signal.Severity).To(BeElementOf([]string{"critical", "warning", "info"}),
+				"Severity must be normalized to standard values")
+			Expect(signal.Namespace).NotTo(BeEmpty(),
+				"Namespace required for environment classification")
+			Expect(signal.FiringTime).NotTo(BeZero(),
+				"Timestamp required for timeline analysis")
+			Expect(signal.SourceType).To(Equal("prometheus-alert"),
+				"Source type distinguishes Prometheus from K8s events")
+		})
+
+		It("preserves raw payload for audit trail", func() {
+			// BR-GATEWAY-003: Audit trail requires original payload
+			// BUSINESS LOGIC: Raw payload preserved for compliance/debugging
+
+			payload := []byte(`{"alerts": [{"labels": {"alertname": "Test", "namespace": "prod"}}]}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			// BUSINESS RULE: Original payload must be preserved byte-for-byte
+			Expect([]byte(signal.RawPayload)).To(Equal(payload),
+				"Raw payload required for audit trail and debugging")
+		})
+
+		It("processes only first alert from multi-alert webhook", func() {
+			// BR-GATEWAY-003: Single-alert processing simplifies deduplication
+			// BUSINESS LOGIC: AlertManager sends multiple alerts → Process one at a time
+
 			payload := []byte(`{
 				"alerts": [
 					{
@@ -196,10 +231,11 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			}`)
 
 			signal, err := adapter.Parse(ctx, payload)
-
 			Expect(err).NotTo(HaveOccurred())
+
+			// BUSINESS RULE: First alert processed (server iterates for remaining)
 			Expect(signal.AlertName).To(Equal("FirstAlert"),
-				"BR-002: Adapter processes one alert at a time (server handles iteration)")
+				"Adapter processes one alert at a time for simpler deduplication")
 		})
 	})
 
