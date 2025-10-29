@@ -436,11 +436,17 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 			})
 		})
 
+		// NOTE: E2E test moved to test/e2e/gateway/
+		// - Storm window TTL expiration → test/e2e/gateway/storm_ttl_expiration_test.go
+		// See test/e2e/gateway/README.md for implementation details
+		// Reason: Test takes 2+ minutes (too slow for integration tier)
+		
 		Context("when storm window expires and new storm starts", func() {
-			PIt("should create new storm window after TTL expiration", func() {
+			XIt("should create new storm window after TTL expiration", func() {
+				// MOVED TO: test/e2e/gateway/storm_ttl_expiration_test.go
 				// BR-GATEWAY-016: Storm window TTL expiration
 				// BUSINESS OUTCOME: Expired storm window → new window created
-				// PENDING: This test takes 2+ minutes - run manually or in nightly E2E suite
+				// REASON: This test takes 2+ minutes - run in nightly E2E suite
 
 				signal := &types.NormalizedSignal{
 					Namespace:   "prod-api",
