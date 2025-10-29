@@ -80,7 +80,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			// Send request with very short timeout context
 			// Note: This test validates that the Gateway respects timeouts
 			// In production, Redis should respond in <5ms (p95)
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
 			// BUSINESS OUTCOME: Request completes (doesn't hang indefinitely)
 			// May return 201 (success) or 503 (timeout) depending on Redis speed
