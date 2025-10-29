@@ -15,7 +15,8 @@ set -euo pipefail
 # Configuration
 REDIS_CONTAINER_NAME="redis-gateway"
 REDIS_PORT="6379"
-REDIS_MEMORY="2gb"
+REDIS_MEMORY="2147483648"  # 2GB in bytes (Redis requires bytes, not "2gb")
+REDIS_MEMORY_DISPLAY="2GB"
 REDIS_IMAGE="redis:7-alpine"
 KIND_KUBECONFIG="${HOME}/.kube/kind-config"
 
@@ -91,7 +92,7 @@ stop_redis() {
 start_redis() {
     log_info "Starting Redis container: ${REDIS_CONTAINER_NAME}"
     log_info "Configuration:"
-    echo "  • Memory: ${REDIS_MEMORY}"
+    echo "  • Memory: ${REDIS_MEMORY_DISPLAY}"
     echo "  • Port: ${REDIS_PORT}"
     echo "  • Eviction Policy: allkeys-lru"
     echo ""
