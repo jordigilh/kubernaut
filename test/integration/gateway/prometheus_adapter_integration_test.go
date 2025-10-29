@@ -321,6 +321,14 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
 				"First alert must create CRD (201 Created)")
 
+			// Parse response to get full fingerprint (before K8s label truncation)
+			var response1 map[string]interface{}
+			err = json.NewDecoder(resp1.Body).Decode(&response1)
+			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
+			fingerprint, ok := response1["fingerprint"].(string)
+			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
+			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
+
 			// BUSINESS OUTCOME 1: First CRD created in K8s
 			var crdList1 remediationv1alpha1.RemediationRequestList
 			err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace("production"))
@@ -328,11 +336,12 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			Expect(crdList1.Items).To(HaveLen(1), "First alert creates exactly one CRD")
 
 			firstCRDName := crdList1.Items[0].Name
-			fingerprint := crdList1.Items[0].Labels["kubernaut.io/fingerprint"]
 
-			// Verify fingerprint stored in Redis
-			exists, _ := redisClient.Client.Exists(ctx, "alert:fingerprint:"+fingerprint).Result()
-			Expect(exists).To(Equal(int64(1)), "Fingerprint must be in Redis after first alert")
+			// Verify fingerprint stored in Redis (check immediately after HTTP response)
+			Eventually(func() int64 {
+				exists, _ := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
+				return exists
+			}, "2s", "100ms").Should(Equal(int64(1)), "Fingerprint must be in Redis after first alert")
 
 			// Second alert: Duplicate (within TTL)
 			resp2, err := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -350,11 +359,11 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			Expect(crdList2.Items[0].Name).To(Equal(firstCRDName),
 				"Same CRD name confirms no duplicate CRD created")
 
-			// BUSINESS OUTCOME 3: Redis metadata updated with duplicate count
-			count, err := redisClient.Client.HGet(ctx, "alert:fingerprint:"+fingerprint, "count").Int()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(count).To(BeNumerically(">=", 2),
-				"Duplicate count must be tracked in Redis (at least 2)")
+		// BUSINESS OUTCOME 3: Redis metadata updated with duplicate count
+		count, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "count").Int()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(count).To(BeNumerically(">=", 2),
+			"Duplicate count must be tracked in Redis (at least 2)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Fingerprint generation enables deduplication
