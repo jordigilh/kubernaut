@@ -61,13 +61,13 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		ns := &corev1.Namespace{}
 		ns.Name = "production"
 		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
-		
+
 		// Wait for deletion to complete (namespace deletion is asynchronous)
 		Eventually(func() error {
 			checkNs := &corev1.Namespace{}
 			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
 		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
-		
+
 		// Now create fresh namespace
 		ns = &corev1.Namespace{}
 		ns.Name = "production"
@@ -416,4 +416,3 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		})
 	})
 })
-
