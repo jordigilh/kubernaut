@@ -57,22 +57,38 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 		}
 
-		// Create production namespace for tests (required for CRD creation)
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
+	// Create test namespaces with environment labels for classification
+	// This is required for environment-based priority assignment
+	testNamespaces := []struct {
+		name  string
+		label string
+	}{
+		{"production", "production"},
+		{"staging", "staging"},
+		{"development", "development"},
+	}
+
+	for _, ns := range testNamespaces {
+		// Delete first to ensure clean state (ignore error if doesn't exist)
+		namespace := &corev1.Namespace{}
+		namespace.Name = ns.name
+		_ = k8sClient.Client.Delete(ctx, namespace)
 
 		// Wait for deletion to complete (namespace deletion is asynchronous)
 		Eventually(func() error {
 			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
+		}, "10s", "100ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
 
-		// Now create fresh namespace
-		ns = &corev1.Namespace{}
-		ns.Name = "production"
-		err := k8sClient.Client.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred(), "Should create production namespace")
+		// Recreate with correct label
+		namespace = &corev1.Namespace{}
+		namespace.Name = ns.name
+		namespace.Labels = map[string]string{
+			"environment": ns.label, // Required for EnvironmentClassifier
+		}
+		err := k8sClient.Client.Create(ctx, namespace)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
+	}
 
 		// Start Gateway server
 		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
@@ -85,6 +101,14 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		if redisClient != nil && redisClient.Client != nil {
 			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
 			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+		}
+
+		// Cleanup all test namespaces
+		testNamespaces := []string{"production", "staging", "development"}
+		for _, nsName := range testNamespaces {
+			ns := &corev1.Namespace{}
+			ns.Name = nsName
+			_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
 		}
 
 		// Cleanup
