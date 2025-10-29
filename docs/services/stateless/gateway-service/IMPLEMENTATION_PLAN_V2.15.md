@@ -1,20 +1,20 @@
-# Gateway Service - Implementation Plan v2.13
+# Gateway Service - Implementation Plan v2.16
 
-✅ **COMPREHENSIVE IMPLEMENTATION PLAN** - CMD Directory Naming Correction                                                                            
+✅ **COMPREHENSIVE IMPLEMENTATION PLAN** - Day 6 Security Architecture Update (DD-GATEWAY-004)
 
 **Service**: Gateway Service (Entry Point for All Signals)
 **Phase**: Phase 2, Service #1
-**Plan Version**: v2.15 (Day 5 Remediation Path Decider Integration)
+**Plan Version**: v2.16 (Day 6 Security Architecture Update - DD-GATEWAY-004)
 **Template Version**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.0
 **Plan Date**: October 28, 2025
-**Current Status**: 🚀 V2.13 CMD NAMING CORRECTION (100% Confidence, Documentation Fix)                                                                       
-**Business Requirements**: BR-GATEWAY-001 through BR-GATEWAY-075 (~75 BRs)
-**Scope**: Prometheus AlertManager + Kubernetes Events + Complete Security Layer + Redis Optimization                                                          
-**Confidence**: 99% ✅ **Production-Ready - Redis OOM eliminated, 93% memory reduction**                                                                               
+**Current Status**: 🚀 V2.16 DAY 6 SECURITY UPDATE (100% Confidence, DD-GATEWAY-004 Alignment)
+**Business Requirements**: BR-GATEWAY-001 through BR-GATEWAY-076 (~76 BRs)
+**Scope**: Prometheus AlertManager + Kubernetes Events + Network-Level Security + Redis Optimization
+**Confidence**: 99% ✅ **Production-Ready - Redis OOM eliminated, 93% memory reduction, Network-level security**
 
 **Architecture**: Adapter-specific self-registered endpoints (DD-GATEWAY-001)
-**Security**: TokenReview + SubjectAccessReview + Rate Limiting + Log Sanitization + Redis Secrets
-**Optimization**: Lightweight metadata storage (DD-GATEWAY-004)
+**Security**: Network Policies + TLS + Rate Limiting + Security Headers + Log Sanitization + Timestamp Validation (DD-GATEWAY-004)
+**Optimization**: Lightweight metadata storage (DD-GATEWAY-004 Redis)
 
 ---
 
@@ -42,7 +42,8 @@
 || **v2.12** | Oct 24, 2025 | **Redis Memory Optimization - Day 8 Phase 2**: Eliminated Redis OOM (Out of Memory) errors by storing lightweight metadata (2KB) instead of full RemediationRequest CRDs (30KB) for storm aggregation. **Root Cause**: Memory fragmentation from storing large objects (95% waste, 2GB+ usage instead of expected 1MB). **Solution**: Added `StormAggregationMetadata` struct with 5 essential fields (pattern, alert count, affected resources, timestamps) + conversion functions (`toStormMetadata`, `fromStormMetadata`) + simplified Lua script (35 lines, was 45). **Impact**: 93% memory reduction (30KB → 2KB per CRD), 7.8x performance improvement (2500µs → 320µs), 75% Redis cost reduction (2GB+ → 512MB), zero functional changes (same business logic). **Files Modified**: `pkg/gateway/processing/storm_aggregator.go` (+200 lines, ~50 modified), `test/integration/gateway/start-redis.sh` (4GB → 512MB). **Design Decision**: [DD-GATEWAY-004](../../architecture/decisions/DD-GATEWAY-004-redis-memory-optimization.md) - Comprehensive analysis with alternatives, performance metrics, rollback plan. **Testing**: Integration tests with 512MB Redis (expected: no OOM, <500MB usage, all tests pass). **Documentation**: 4 comprehensive documents (DD-GATEWAY-004, implementation summary, risk analysis, test plan). **Confidence**: 99% (implementation), 95% (tests), 97% overall. Status: ✅ CODE COMPLETE - Ready for Testing. | ⚠️ SUPERSEDED |
 || **v2.13** | Oct 28, 2025 | **CMD Directory Naming Correction**: Fixed incorrect `cmd/gateway-service/` references to use correct Go naming convention `cmd/gateway/` per [CRD_SERVICE_CMD_DIRECTORY_GAPS_TRIAGE.md](../../analysis/CRD_SERVICE_CMD_DIRECTORY_GAPS_TRIAGE.md). **Rationale**: Go style guide mandates no hyphens in package directories. Binary names can still use hyphens via `-o` flag for readability. **Changes**: Day 9 Makefile target corrected (`cmd/gateway/main.go`), Dockerfile references updated (`docker/gateway.Dockerfile`, `docker/gateway-ubi9.Dockerfile`), all documentation references standardized. **Impact**: Zero functional changes, documentation consistency with project standards. **Reference**: Standard naming convention per `docs/analysis/CRD_SERVICE_CMD_DIRECTORY_GAPS_TRIAGE.md` lines 196-250 - "STANDARD: Go convention (no hyphens) for cmd/ directories". **Files Modified**: Day 9 section (lines 3195-3213), all cmd/ references throughout plan. **Confidence**: 100% (documentation-only fix). Status: ⚠️ SUPERSEDED |
 || **v2.14** | Oct 28, 2025 | **Pre-Day 10 Validation Checkpoint**: Added mandatory validation checkpoint after Day 9 before proceeding to Day 10 final BR coverage. **Purpose**: Ensure all Day 1-9 unit and integration tests pass with zero build/lint errors before final validation. **Tasks**: (1) Unit Test Validation (1h) - run all tests, verify zero errors, triage Day 1-9 failures, target 100% pass rate; (2) Integration Test Validation (1h) - refactor helpers if needed, run all tests, verify infrastructure health, target 100% pass rate; (3) Business Logic Validation (30min) - verify all BRs have tests, confirm no orphaned code, full build validation. **Success Criteria**: All tests pass (100%), zero build errors, zero lint errors, all Day 1-9 BRs validated. **Rationale**: Systematic validation prevents accumulating technical debt and ensures production readiness. **Impact**: +2-3 hours before Day 10, prevents cascade failures. **Files Modified**: Day 9 section (added Pre-Day 10 Validation Checkpoint after deliverables). **Confidence**: 100% (quality gate). Status: ⚠️ SUPERSEDED |
-|| **v2.15** | Oct 28, 2025 | **Day 5 Remediation Path Decider Integration**: Updated Day 5 to explicitly include Remediation Path Decider integration into processing pipeline. **Finding**: Day 4 validation discovered that `pkg/gateway/processing/remediation_path.go` (21K, 562 lines) exists and compiles but is not wired into `server.go`. Component uses Rego policy (`docs/gateway/policies/remediation-path-policy.rego`) to determine remediation strategy (Aggressive/Moderate/Conservative/Manual) based on environment and priority. **Changes**: (1) Updated Day 5 objective to include "complete processing pipeline integration"; (2) Added Remediation Path Decider to APDC Do phase; (3) Added full pipeline validation to Check phase; (4) Added new deliverable: wire Remediation Path Decider into server constructor (15-30 min); (5) Added "Processing Pipeline Integration" section showing full flow: Signal → Adapter → Environment → Priority → Remediation Path → CRD; (6) Added "Remediation Path Decider Integration" section with component details, status, and effort estimate. **Rationale**: Systematic day-by-day validation revealed integration gap; Day 5 is logical integration point when wiring full processing pipeline. **Impact**: +15-30 minutes to Day 5, ensures complete pipeline validation. **Files Modified**: Day 5 section (lines 3073-3106). **Confidence**: 100% (component exists, straightforward wiring). Status: ✅ **CURRENT** - Day 5 updated with integration task. |
+|| **v2.15** | Oct 28, 2025 | **Day 5 Remediation Path Decider Integration**: Updated Day 5 to explicitly include Remediation Path Decider integration into processing pipeline. **Finding**: Day 4 validation discovered that `pkg/gateway/processing/remediation_path.go` (21K, 562 lines) exists and compiles but is not wired into `server.go`. Component uses Rego policy (`docs/gateway/policies/remediation-path-policy.rego`) to determine remediation strategy (Aggressive/Moderate/Conservative/Manual) based on environment and priority. **Changes**: (1) Updated Day 5 objective to include "complete processing pipeline integration"; (2) Added Remediation Path Decider to APDC Do phase; (3) Added full pipeline validation to Check phase; (4) Added new deliverable: wire Remediation Path Decider into server constructor (15-30 min); (5) Added "Processing Pipeline Integration" section showing full flow: Signal → Adapter → Environment → Priority → Remediation Path → CRD; (6) Added "Remediation Path Decider Integration" section with component details, status, and effort estimate. **Rationale**: Systematic day-by-day validation revealed integration gap; Day 5 is logical integration point when wiring full processing pipeline. **Impact**: +15-30 minutes to Day 5, ensures complete pipeline validation. **Files Modified**: Day 5 section (lines 3073-3106). **Confidence**: 100% (component exists, straightforward wiring). Status: ⚠️ SUPERSEDED |
+|| **v2.16** | Oct 28, 2025 | **Day 6 Security Architecture Update (DD-GATEWAY-004)**: Updated Day 6 to reflect [DD-GATEWAY-004-authentication-strategy.md](../../decisions/DD-GATEWAY-004-authentication-strategy.md) (approved 2025-10-27) which removed OAuth2 authentication in favor of network-level security. **Finding**: Day 6 validation discovered plan v2.15 still described TokenReview and SubjectAccessReview authentication (from v2.10), but actual implementation follows DD-GATEWAY-004 network-level security approach. **Changes**: (1) Removed TokenReview authentication from Day 6 deliverables; (2) Removed SubjectAccessReview authorization from Day 6 deliverables; (3) Updated Day 6 objective to "Security Middleware" (not "Authentication + Security"); (4) Added log sanitization, timestamp validation, HTTP metrics, IP extractor to deliverables; (5) Updated BR references (removed BR-066, BR-067, BR-068; added BR-076); (6) Added DD-GATEWAY-004 rationale and layered security architecture; (7) Updated success criteria to reflect network-level security; (8) Updated security scope in header from "TokenReview + SubjectAccessReview" to "Network Policies + TLS". **Rationale**: Align plan with DD-GATEWAY-004 approved design decision and actual implementation. **Impact**: Documentation now matches implementation; clarifies security architecture is network-level (not application-level OAuth2). **Files Modified**: Header (lines 1-17), Day 6 section (lines 3113-3135). **Confidence**: 100% (documentation alignment with approved design). Status: ✅ **CURRENT** - Day 6 updated for DD-GATEWAY-004. |
 
 ---
 
@@ -3110,27 +3111,43 @@ Signal → Adapter → Environment Classifier → Priority Engine → Remediatio
 
 ---
 
-## 📅 **DAY 6: AUTHENTICATION + SECURITY** (8 hours)
+## 📅 **DAY 6: SECURITY MIDDLEWARE** (8 hours)
 
-**Objective**: Implement TokenReviewer authentication, rate limiting, security middleware
+**Objective**: Implement application-level security middleware (rate limiting, headers, sanitization, timestamp validation)
 
-**Business Requirements**: BR-GATEWAY-066 through BR-GATEWAY-075
+**Business Requirements**: BR-GATEWAY-069 through BR-GATEWAY-076
+
+**Design Decision**: [DD-GATEWAY-004](../../decisions/DD-GATEWAY-004-authentication-strategy.md) - Network-Level Security Approach (approved 2025-10-27)
+- **Authentication**: Kubernetes Network Policies + TLS (not application-level OAuth2)
+- **Authorization**: Namespace isolation + Network Policies
+- **Application Security**: Rate limiting, headers, sanitization, timestamp validation
 
 **APDC Summary**:
-- **Analysis** (1h): Kubernetes TokenReviewer API, rate limiting algorithms, security headers
-- **Plan** (1h): TDD for auth middleware, rate limiter, security headers
-- **Do** (5h): Implement TokenReviewer auth (Bearer tokens), rate limiter (100 req/min, burst 10), security headers (CORS, CSP, HSTS), webhook timestamp validation (5min window)
-- **Check** (1h): Verify auth blocks invalid tokens, rate limit enforced, security headers present
+- **Analysis** (1h): DD-GATEWAY-004 review, rate limiting algorithms, security headers, log sanitization patterns
+- **Plan** (1h): TDD for security middleware components
+- **Do** (5h): Implement rate limiter (100 req/min, burst 10), security headers (CORS, CSP, HSTS), log sanitization (sensitive data redaction), webhook timestamp validation (5min window), HTTP metrics, IP extractor
+- **Check** (1h): Verify rate limit enforced, security headers present, logs sanitized, timestamps validated
 
 **Key Deliverables**:
-- `pkg/gateway/middleware/auth.go` - TokenReviewer authentication
-- `pkg/gateway/middleware/rate_limiter.go` - Rate limiting (redis-based)
-- `pkg/gateway/middleware/security.go` - Security headers
-- `test/unit/gateway/middleware/` - 10-12 unit tests
+- `pkg/gateway/middleware/ratelimit.go` - Redis-based rate limiting
+- `pkg/gateway/middleware/security_headers.go` - CORS, CSP, HSTS headers
+- `pkg/gateway/middleware/log_sanitization.go` - Sensitive data redaction
+- `pkg/gateway/middleware/timestamp.go` - Replay attack prevention
+- `pkg/gateway/middleware/http_metrics.go` - Prometheus metrics
+- `pkg/gateway/middleware/ip_extractor.go` - Source IP extraction
+- `test/unit/gateway/middleware/` - 30+ unit tests
 
-**Success Criteria**: Auth blocks unauthorized, rate limit works, security headers set, 85%+ test coverage
+**Layered Security Architecture** (DD-GATEWAY-004):
+- **Layer 1** (MANDATORY): Network Policies + Namespace Isolation
+- **Layer 2** (MANDATORY): TLS Encryption + Certificate Management
+- **Layer 3** (THIS DAY): Application Security Middleware
+- **Layer 4** (OPTIONAL): Sidecar Authentication (deployment-specific)
 
-**Confidence**: 85% (TokenReviewer straightforward, rate limiting needs load testing)
+**Success Criteria**: Rate limit works, security headers set, logs sanitized, timestamps validated, 85%+ test coverage
+
+**Confidence**: 90% (middleware straightforward, network-level security documented)
+
+**Note**: TokenReview and SubjectAccessReview authentication removed per DD-GATEWAY-004. Security provided by network-level controls and application middleware.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
