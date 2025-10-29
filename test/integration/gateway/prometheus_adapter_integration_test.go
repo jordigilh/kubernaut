@@ -126,7 +126,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			}`)
 
 			// Send webhook to Gateway
-			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -194,7 +194,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				}]
 			}`)
 
-			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
@@ -248,7 +248,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				}]
 			}`)
 
-			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
 			// First alert: Creates CRD
 			resp1, err := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -358,7 +358,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 					}]
 				}`, tc.severity, tc.namespace))
 
-				url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+				url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 				resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
 				Expect(err).ToNot(HaveOccurred())
 				resp.Body.Close()
