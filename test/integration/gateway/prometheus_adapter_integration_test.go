@@ -84,27 +84,38 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		testServer = httptest.NewServer(gatewayServer.Handler())
 		Expect(testServer).ToNot(BeNil(), "Test server should be created")
 
-		// Create test namespace with environment label for classification
-		// This is required for environment-based priority assignment
+	// Create test namespaces with environment labels for classification
+	// This is required for environment-based priority assignment
+	testNamespaces := []struct {
+		name  string
+		label string
+	}{
+		{"production", "production"},
+		{"staging", "staging"},
+		{"development", "development"},
+	}
+
+	for _, ns := range testNamespaces {
 		// Delete first to ensure clean state (ignore error if doesn't exist)
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns)
+		namespace := &corev1.Namespace{}
+		namespace.Name = ns.name
+		_ = k8sClient.Client.Delete(ctx, namespace)
 
 		// Wait for deletion to complete (namespace deletion is asynchronous)
 		Eventually(func() error {
 			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
+		}, "10s", "100ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
 
 		// Recreate with correct label
-		ns = &corev1.Namespace{}
-		ns.Name = "production"
-		ns.Labels = map[string]string{
-			"environment": "production", // Required for EnvironmentClassifier
+		namespace = &corev1.Namespace{}
+		namespace.Name = ns.name
+		namespace.Labels = map[string]string{
+			"environment": ns.label, // Required for EnvironmentClassifier
 		}
-		err = k8sClient.Client.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred(), "Should create production namespace with environment label")
+		err = k8sClient.Client.Create(ctx, namespace)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
+	}
 
 		logger.Info("Test setup complete",
 			zap.String("test_server_url", testServer.URL),
@@ -119,10 +130,13 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
 		}
 
-		// Cleanup namespace
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
+		// Cleanup all test namespaces
+		testNamespaces := []string{"production", "staging", "development"}
+		for _, nsName := range testNamespaces {
+			ns := &corev1.Namespace{}
+			ns.Name = nsName
+			_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
+		}
 
 		// Cleanup test server and Redis
 		if testServer != nil {
