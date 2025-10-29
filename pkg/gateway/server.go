@@ -492,7 +492,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Only accept POST requests
 		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			s.writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
@@ -506,7 +506,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			logger.Error("Failed to read request body", zap.Error(err))
-			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			s.writeJSONError(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
 
@@ -518,15 +518,15 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 				zap.Error(err),
 			)
 
-			// Return 413 for payload size errors, 400 for other parse errors
-			statusCode := http.StatusBadRequest
-			if strings.Contains(err.Error(), "payload too large") {
-				statusCode = http.StatusRequestEntityTooLarge
-			}
-
-			http.Error(w, fmt.Sprintf("Failed to parse signal: %v", err), statusCode)
-			return
+		// Return 413 for payload size errors, 400 for other parse errors
+		statusCode := http.StatusBadRequest
+		if strings.Contains(err.Error(), "payload too large") {
+			statusCode = http.StatusRequestEntityTooLarge
 		}
+
+		s.writeJSONError(w, fmt.Sprintf("Failed to parse signal: %v", err), statusCode)
+		return
+	}
 
 		// Validate signal
 		if err := adapter.Validate(signal); err != nil {
@@ -537,15 +537,15 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 			return
 		}
 
-		// Process signal through pipeline
-		response, err := s.ProcessSignal(ctx, signal)
-		if err != nil {
-			logger.Error("Signal processing failed",
-				zap.String("adapter", adapter.Name()),
-				zap.Error(err))
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
+	// Process signal through pipeline
+	response, err := s.ProcessSignal(ctx, signal)
+	if err != nil {
+		logger.Error("Signal processing failed",
+			zap.String("adapter", adapter.Name()),
+			zap.Error(err))
+		s.writeJSONError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 
 		// Determine HTTP status code based on response status
 		// BR-GATEWAY-016: Storm aggregation returns 202 Accepted
@@ -1054,12 +1054,12 @@ func (s *Server) createAggregatedCRDAfterWindow(
 func (s *Server) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	errorResponse := map[string]interface{}{
-		"error": message,
+		"error":  message,
 		"status": statusCode,
 	}
-	
+
 	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
 		// Fallback to plain text if JSON encoding fails
 		http.Error(w, message, statusCode)
