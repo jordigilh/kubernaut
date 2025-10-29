@@ -127,13 +127,25 @@ connect_registry() {
 configure_kubectl() {
     log "Configuring kubectl context..."
 
+    # Export kubeconfig to standard location for integration tests
+    local kubeconfig_dir="${HOME}/.kube"
+    local kubeconfig_file="${kubeconfig_dir}/kind-config"
+    
+    # Create .kube directory if it doesn't exist
+    mkdir -p "${kubeconfig_dir}"
+    
+    # Export kubeconfig to file
+    kind get kubeconfig --name="${CLUSTER_NAME}" > "${kubeconfig_file}"
+    chmod 600 "${kubeconfig_file}"
+    log "Kubeconfig saved to: ${kubeconfig_file}"
+
     # Set kubectl context to the new cluster
-    kubectl cluster-info --context "kind-${CLUSTER_NAME}"
-    kubectl config use-context "kind-${CLUSTER_NAME}"
+    KUBECONFIG="${kubeconfig_file}" kubectl cluster-info --context "kind-${CLUSTER_NAME}"
+    KUBECONFIG="${kubeconfig_file}" kubectl config use-context "kind-${CLUSTER_NAME}"
 
     # Wait for cluster to be ready
     log "Waiting for cluster to be ready..."
-    kubectl wait --for=condition=Ready nodes --all --timeout=300s
+    KUBECONFIG="${kubeconfig_file}" kubectl wait --for=condition=Ready nodes --all --timeout=300s
 
     log "Cluster is ready!"
 }
@@ -142,28 +154,30 @@ configure_kubectl() {
 deploy_monitoring_stack() {
     log "Deploying Prometheus monitoring stack..."
 
+    local kubeconfig_file="${HOME}/.kube/kind-config"
+
     # Apply monitoring manifests
-    kubectl apply -f test/manifests/monitoring/namespace.yaml
-    kubectl apply -f test/manifests/monitoring/prometheus-rbac.yaml
-    kubectl apply -f test/manifests/monitoring/prometheus-config.yaml
-    kubectl apply -f test/manifests/monitoring/alert-rules.yaml
-    kubectl apply -f test/manifests/monitoring/prometheus-deployment.yaml
-    kubectl apply -f test/manifests/monitoring/alertmanager-config.yaml
-    kubectl apply -f test/manifests/monitoring/alertmanager-deployment.yaml
-    kubectl apply -f test/manifests/monitoring/kube-state-metrics.yaml
+    KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/monitoring/namespace.yaml
+    KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/monitoring/prometheus-rbac.yaml
+    KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/monitoring/prometheus-config.yaml
+    KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/monitoring/alert-rules.yaml
+    KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/monitoring/prometheus-deployment.yaml
+    KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/monitoring/alertmanager-config.yaml
+    KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/monitoring/alertmanager-deployment.yaml
+    KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/monitoring/kube-state-metrics.yaml
 
     log "Waiting for monitoring stack to be ready..."
 
     # Wait for Prometheus to be ready
-    kubectl wait --for=condition=Available deployment/prometheus -n monitoring --timeout=300s
+    KUBECONFIG="${kubeconfig_file}" kubectl wait --for=condition=Available deployment/prometheus -n monitoring --timeout=300s
     log "Prometheus is ready"
 
     # Wait for AlertManager to be ready
-    kubectl wait --for=condition=Available deployment/alertmanager -n monitoring --timeout=300s
+    KUBECONFIG="${kubeconfig_file}" kubectl wait --for=condition=Available deployment/alertmanager -n monitoring --timeout=300s
     log "AlertManager is ready"
 
     # Wait for kube-state-metrics to be ready
-    kubectl wait --for=condition=Available deployment/kube-state-metrics -n monitoring --timeout=300s
+    KUBECONFIG="${kubeconfig_file}" kubectl wait --for=condition=Available deployment/kube-state-metrics -n monitoring --timeout=300s
     log "Kube-state-metrics is ready"
 
     log "Monitoring stack deployed successfully"
@@ -173,23 +187,25 @@ deploy_monitoring_stack() {
 deploy_prerequisites() {
     log "Deploying test prerequisites..."
 
+    local kubeconfig_file="${HOME}/.kube/kind-config"
+
     # Create test namespace
-    kubectl create namespace e2e-test --dry-run=client -o yaml | kubectl apply -f -
+    KUBECONFIG="${kubeconfig_file}" kubectl create namespace e2e-test --dry-run=client -o yaml | KUBECONFIG="${kubeconfig_file}" kubectl apply -f -
 
     # Apply test manifests if they exist
     if [[ -f "test/manifests/test-deployment.yaml" ]]; then
-        kubectl apply -f test/manifests/test-deployment.yaml -n e2e-test
+        KUBECONFIG="${kubeconfig_file}" kubectl apply -f test/manifests/test-deployment.yaml -n e2e-test
         log "Test deployment applied"
     fi
 
     # Create RBAC for kubernaut
-    kubectl create serviceaccount kubernaut -n e2e-test --dry-run=client -o yaml | kubectl apply -f -
+    KUBECONFIG="${kubeconfig_file}" kubectl create serviceaccount kubernaut -n e2e-test --dry-run=client -o yaml | KUBECONFIG="${kubeconfig_file}" kubectl apply -f -
 
     # Grant necessary permissions for testing
-    kubectl create clusterrolebinding kubernaut-admin \
+    KUBECONFIG="${kubeconfig_file}" kubectl create clusterrolebinding kubernaut-admin \
         --clusterrole=cluster-admin \
         --serviceaccount=e2e-test:kubernaut \
-        --dry-run=client -o yaml | kubectl apply -f -
+        --dry-run=client -o yaml | KUBECONFIG="${kubeconfig_file}" kubectl apply -f -
 
     log "Prerequisites deployed successfully"
 }
@@ -269,11 +285,13 @@ EOF
 deploy_vector_db_support() {
     log "Deploying vector database support for integration testing..."
 
+    local kubeconfig_file="${HOME}/.kube/kind-config"
+
     # Create vector DB namespace
-    kubectl create namespace vector-db --dry-run=client -o yaml | kubectl apply -f -
+    KUBECONFIG="${kubeconfig_file}" kubectl create namespace vector-db --dry-run=client -o yaml | KUBECONFIG="${kubeconfig_file}" kubectl apply -f -
 
     # Deploy pgvector support (ConfigMap for initialization)
-    cat <<EOF | kubectl apply -f -
+    cat <<EOF | KUBECONFIG="${kubeconfig_file}" kubectl apply -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -318,6 +336,8 @@ main() {
     deploy_vector_db_support
     deploy_prerequisites
 
+    local kubeconfig_file="${HOME}/.kube/kind-config"
+
     log "KinD cluster setup complete!"
     echo ""
     log "🏗️ Cluster Architecture:"
@@ -328,16 +348,16 @@ main() {
     echo "  └── Bootstrap: Integration test components"
     echo ""
     log "Cluster info:"
-    kubectl cluster-info --context "kind-${CLUSTER_NAME}"
+    KUBECONFIG="${kubeconfig_file}" kubectl cluster-info --context "kind-${CLUSTER_NAME}"
     echo ""
     log "Monitoring services:"
-    kubectl get pods,svc -n monitoring
+    KUBECONFIG="${kubeconfig_file}" kubectl get pods,svc -n monitoring
     echo ""
     log "Test environment:"
-    kubectl get pods,svc -n e2e-test
+    KUBECONFIG="${kubeconfig_file}" kubectl get pods,svc -n e2e-test
     echo ""
     log "Vector DB support:"
-    kubectl get configmap -n vector-db
+    KUBECONFIG="${kubeconfig_file}" kubectl get configmap -n vector-db
     echo ""
     log "🚀 Ready for Integration Testing:"
     echo "  • Real Kubernetes API via Kind"
@@ -346,12 +366,12 @@ main() {
     echo "  • Full monitoring stack"
     echo ""
     log "Configuration:"
-    echo "  export KUBECONFIG=\"\$(kind get kubeconfig --name=${CLUSTER_NAME})\""
+    echo "  export KUBECONFIG=${kubeconfig_file}"
     echo "  kubectl config use-context kind-${CLUSTER_NAME}"
     echo ""
     log "Access services:"
-    echo "  kubectl port-forward svc/prometheus 9090:9090 -n monitoring"
-    echo "  kubectl port-forward svc/alertmanager 9093:9093 -n monitoring"
+    echo "  KUBECONFIG=${kubeconfig_file} kubectl port-forward svc/prometheus 9090:9090 -n monitoring"
+    echo "  KUBECONFIG=${kubeconfig_file} kubectl port-forward svc/alertmanager 9093:9093 -n monitoring"
     echo ""
     log "Run tests:"
     echo "  make test-integration-kind    # Integration tests with Kind"
