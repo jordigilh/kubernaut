@@ -518,15 +518,15 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 				zap.Error(err),
 			)
 
-		// Return 413 for payload size errors, 400 for other parse errors
-		statusCode := http.StatusBadRequest
-		if strings.Contains(err.Error(), "payload too large") {
-			statusCode = http.StatusRequestEntityTooLarge
-		}
+			// Return 413 for payload size errors, 400 for other parse errors
+			statusCode := http.StatusBadRequest
+			if strings.Contains(err.Error(), "payload too large") {
+				statusCode = http.StatusRequestEntityTooLarge
+			}
 
-		s.writeJSONError(w, fmt.Sprintf("Failed to parse signal: %v", err), statusCode)
-		return
-	}
+			s.writeJSONError(w, fmt.Sprintf("Failed to parse signal: %v", err), statusCode)
+			return
+		}
 
 		// Validate signal
 		if err := adapter.Validate(signal); err != nil {
@@ -543,6 +543,16 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		logger.Error("Signal processing failed",
 			zap.String("adapter", adapter.Name()),
 			zap.Error(err))
+
+		// BR-GATEWAY-008, BR-GATEWAY-009: Return 503 when Redis unavailable (per DD-GATEWAY-003)
+		// Check if error is due to Redis unavailability
+		if strings.Contains(err.Error(), "redis unavailable") || strings.Contains(err.Error(), "deduplication check failed") {
+			// Set Retry-After header (30 seconds - allows time for Redis HA failover)
+			w.Header().Set("Retry-After", "30")
+			s.writeJSONError(w, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", http.StatusServiceUnavailable)
+			return
+		}
+
 		s.writeJSONError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
