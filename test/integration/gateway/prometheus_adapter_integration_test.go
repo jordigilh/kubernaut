@@ -178,10 +178,10 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				"Namespace enables kubectl targeting: 'kubectl -n production'")
 
 			// BUSINESS OUTCOME 3: Fingerprint stored in Redis for deduplication
-			fingerprint := crd.Labels["kubernaut.io/fingerprint"]
+			fingerprint := crd.Labels["kubernaut.io/signal-fingerprint"]
 			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint label must exist for deduplication")
 
-			exists, err := redisClient.Client.Exists(ctx, "alert:fingerprint:"+fingerprint).Result()
+			exists, err := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
 			Expect(err).NotTo(HaveOccurred(), "Redis query should succeed")
 			Expect(exists).To(Equal(int64(1)),
 				"Fingerprint must be stored in Redis to enable deduplication")
