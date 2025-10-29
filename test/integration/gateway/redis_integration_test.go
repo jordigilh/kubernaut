@@ -92,7 +92,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			})
 
 			// Send first alert
-			resp1 := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp1.StatusCode).To(Equal(201))
 
 			// Verify: Fingerprint stored in Redis
@@ -100,7 +100,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			Expect(fingerprintCount).To(Equal(1))
 
 			// Send duplicate alert
-			resp2 := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp2.StatusCode).To(Equal(202)) // v2.9: Duplicate detected (202 Accepted)
 
 			// BUSINESS OUTCOME: Deduplication state persisted
@@ -123,7 +123,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			})
 
 			// Send alert
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// Get the CRD name from the response (for cleanup later)
@@ -150,7 +150,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Send same alert again - should create new CRD (not deduplicated)
-			resp2 := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp2.StatusCode).To(Equal(201)) // New CRD created (not deduplicated)
 		})
 
@@ -170,7 +170,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			})
 
 			// Send alert (should still work, but no deduplication)
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
 			// BUSINESS OUTCOME: Request processed despite Redis failure
 			// May return 201 (created) or 500 (error) depending on graceful degradation
@@ -197,7 +197,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 					},
 				})
 
-				SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			}
 
 			// BUSINESS OUTCOME: Storm state stored in Redis
@@ -238,7 +238,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 						Namespace: "production",
 					})
 
-					resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+					resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 					if resp.StatusCode == 201 {
 						mu.Lock()
 						successCount++
@@ -278,14 +278,14 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			})
 
 			// Send first alert
-			resp1 := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp1.StatusCode).To(Equal(201))
 
 			// Simulate Redis failover (reconnect to replica)
 			redisClient.SimulateFailover(ctx)
 
 			// Send duplicate alert after failover
-			resp2 := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
 			// BUSINESS OUTCOME: Gateway rejects request when Redis unavailable (503)
 			// This is CORRECT behavior - fail fast when dependencies are down
@@ -305,7 +305,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 					Namespace: "production",
 				})
 
-				SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			}
 
 			// Trigger Redis memory pressure (simulate LRU eviction)
@@ -317,7 +317,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 				Namespace: "production",
 			})
 
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
 			// BUSINESS OUTCOME: System handles eviction gracefully
 			// May create new CRD (201) if evicted, detect duplicate (202), or reject if Redis down (503)
@@ -340,7 +340,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 					Namespace: "production",
 				})
 
-				SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			}
 
 			// Simulate pipeline failure
@@ -353,7 +353,7 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 					Namespace: "production",
 				})
 
-				SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			}
 
 			// BUSINESS OUTCOME: State remains consistent despite failures
