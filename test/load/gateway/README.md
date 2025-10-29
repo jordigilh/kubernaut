@@ -1,7 +1,7 @@
 # Load Testing Tier - Gateway
 
-**Purpose**: Test Gateway under heavy load and high concurrency  
-**Coverage Target**: <5% of total tests  
+**Purpose**: Test Gateway under heavy load and high concurrency
+**Coverage Target**: <5% of total tests
 **Infrastructure**: Dedicated test environment, performance monitoring
 
 ---
@@ -17,7 +17,7 @@
    - Verify subsequent alerts aggregated
    - Verify no race conditions
    - Verify storm counters accurate
-   
+
    **Business Value**: Validates storm detection under production load
    **Priority**: MEDIUM - Important for production scale
    **Estimated Effort**: 4-6 hours
@@ -57,6 +57,6 @@
 
 ---
 
-**Status**: 📋 **PENDING IMPLEMENTATION**  
-**Priority**: **MEDIUM** - Important for production scale  
+**Status**: 📋 **PENDING IMPLEMENTATION**
+**Priority**: **MEDIUM** - Important for production scale
 **Next Step**: Implement high concurrency storm detection test

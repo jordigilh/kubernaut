@@ -196,6 +196,12 @@ func (c *CRDCreator) CreateRemediationRequest(
 		},
 	}
 
+	// BR-GATEWAY-016: Add storm label if this is an aggregated storm CRD
+	// This enables filtering storm CRDs: kubectl get remediationrequests -l kubernaut.io/storm=true
+	if signal.IsStorm {
+		rr.Labels["kubernaut.io/storm"] = "true"
+	}
+
 	// Create CRD in Kubernetes
 	if err := c.k8sClient.CreateRemediationRequest(ctx, rr); err != nil {
 		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
