@@ -24,6 +24,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 )
 
@@ -272,7 +273,24 @@ func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClie
 	metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
 	// Create Gateway server with isolated metrics
-	return gateway.NewServerWithMetrics(cfg, logger, metricsInstance)
+	server, err := gateway.NewServerWithMetrics(cfg, logger, metricsInstance)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gateway server: %w", err)
+	}
+
+	// Register Prometheus adapter (required for webhook endpoint)
+	prometheusAdapter := adapters.NewPrometheusAdapter()
+	if err := server.RegisterAdapter(prometheusAdapter); err != nil {
+		return nil, fmt.Errorf("failed to register Prometheus adapter: %w", err)
+	}
+
+	// Register Kubernetes Event adapter
+	k8sEventAdapter := adapters.NewKubernetesEventAdapter()
+	if err := server.RegisterAdapter(k8sEventAdapter); err != nil {
+		return nil, fmt.Errorf("failed to register Kubernetes Event adapter: %w", err)
+	}
+
+	return server, nil
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
