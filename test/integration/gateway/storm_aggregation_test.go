@@ -199,17 +199,22 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				// BR-GATEWAY-016: Storm aggregation logic
 				// BUSINESS OUTCOME: 15 alerts → 1 storm window → 1 CRD (97% cost reduction)
 
-				// Start storm window with first alert
-				signal1 := &types.NormalizedSignal{
-					Namespace:   "prod-api",
-					AlertName:   "HighCPUUsage",
-					Severity:    "critical",
-					Fingerprint: "cpu-high-prod-api-pod1",
-					Labels: map[string]string{
-						"pod":       "api-server-1",
-						"namespace": "prod-api",
-					},
-				}
+			// Start storm window with first alert
+			signal1 := &types.NormalizedSignal{
+				Namespace:   "prod-api",
+				AlertName:   "HighCPUUsage",
+				Severity:    "critical",
+				Fingerprint: "cpu-high-prod-api-pod1",
+				Resource: types.ResourceIdentifier{
+					Namespace: "prod-api",
+					Kind:      "Pod",
+					Name:      "api-server-1",
+				},
+				Labels: map[string]string{
+					"pod":       "api-server-1",
+					"namespace": "prod-api",
+				},
+			}
 
 				stormMetadata := &processing.StormMetadata{
 					StormType:  "pattern",
@@ -219,18 +224,23 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				windowID, err := aggregator.StartAggregation(ctx, signal1, stormMetadata)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Add 14 more alerts to same storm window
-				for i := 2; i <= 15; i++ {
-					signal := &types.NormalizedSignal{
-						Namespace:   "prod-api",
-						AlertName:   "HighCPUUsage",
-						Severity:    "critical",
-						Fingerprint: fmt.Sprintf("cpu-high-prod-api-pod%d", i),
-						Labels: map[string]string{
-							"pod":       fmt.Sprintf("api-server-%d", i),
-							"namespace": "prod-api",
-						},
-					}
+			// Add 14 more alerts to same storm window
+			for i := 2; i <= 15; i++ {
+				signal := &types.NormalizedSignal{
+					Namespace:   "prod-api",
+					AlertName:   "HighCPUUsage",
+					Severity:    "critical",
+					Fingerprint: fmt.Sprintf("cpu-high-prod-api-pod%d", i),
+					Resource: types.ResourceIdentifier{
+						Namespace: "prod-api",
+						Kind:      "Pod",
+						Name:      fmt.Sprintf("api-server-%d", i),
+					},
+					Labels: map[string]string{
+						"pod":       fmt.Sprintf("api-server-%d", i),
+						"namespace": "prod-api",
+					},
+				}
 
 					aggregated, returnedWindowID, err := aggregator.AggregateOrCreate(ctx, signal)
 					Expect(err).ToNot(HaveOccurred())
