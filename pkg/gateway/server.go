@@ -40,8 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
-
-	// "github.com/jordigilh/kubernaut/pkg/gateway/middleware" // DD-GATEWAY-004: Middleware removed
+	"github.com/jordigilh/kubernaut/pkg/gateway/middleware" // BR-109: Request ID middleware
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -85,6 +84,7 @@ import (
 type Server struct {
 	// HTTP server
 	httpServer *http.Server
+	mux        *http.ServeMux // BR-109: Store mux reference for adapter registration
 
 	// Core processing components
 	adapterRegistry *adapters.AdapterRegistry
@@ -340,9 +340,18 @@ func NewServerWithMetrics(cfg *ServerConfig, logger *zap.Logger, metricsInstance
 
 	// 6. Setup HTTP server with routes
 	mux := server.setupRoutes()
+
+	// 7. Store mux reference for adapter registration (BR-109)
+	server.mux = mux
+
+	// 8. Wrap with request ID middleware (BR-109)
+	// BUSINESS OUTCOME: Enable operators to trace requests across Gateway components
+	// TDD GREEN: Minimal implementation to make BR-109 tests pass
+	handler := server.wrapWithMiddleware(mux)
+
 	server.httpServer = &http.Server{
 		Addr:         cfg.Server.ListenAddr,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,
@@ -373,6 +382,48 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	return mux
+}
+
+// wrapWithMiddleware wraps the HTTP handler with middleware stack
+//
+// BUSINESS OUTCOME: Enable structured logging with request context (BR-109)
+// TDD GREEN: Minimal middleware stack for request tracing
+//
+// Middleware Stack:
+// 1. Request ID Middleware: Adds request_id, source_ip, endpoint to logs
+// 2. Performance Logging: Adds duration_ms to logs
+//
+// Future middleware can be added here (rate limiting, authentication, etc.)
+func (s *Server) wrapWithMiddleware(handler http.Handler) http.Handler {
+	// Wrap with performance logging middleware first (BR-109)
+	// This runs LAST (after request ID is set)
+	handler = s.performanceLoggingMiddleware(handler)
+
+	// Wrap with request ID middleware (BR-109)
+	// This runs FIRST (sets request ID for all subsequent middleware/handlers)
+	handler = middleware.RequestIDMiddleware(s.logger)(handler)
+
+	return handler
+}
+
+// performanceLoggingMiddleware logs request duration
+//
+// BUSINESS OUTCOME: Enable operators to analyze performance via logs (BR-109)
+// TDD GREEN: Minimal implementation to log duration_ms
+func (s *Server) performanceLoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Call next handler
+		next.ServeHTTP(w, r)
+
+		// Log request completion with duration
+		duration := time.Since(start)
+		logger := middleware.GetLogger(r.Context())
+		logger.Info("Request completed",
+			zap.Float64("duration_ms", float64(duration.Milliseconds())),
+		)
+	})
 }
 
 // Handler returns the HTTP handler for the Gateway server.
@@ -419,7 +470,8 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	// Security now handled at network layer (Network Policies + TLS)
 
 	// Register route directly (no middleware wrapping)
-	s.httpServer.Handler.(*http.ServeMux).Handle(adapter.GetRoute(), handler)
+	// BR-109: Use stored mux reference instead of casting httpServer.Handler
+	s.mux.Handle(adapter.GetRoute(), handler)
 
 	s.logger.Info("Registered adapter route",
 		zap.String("adapter", adapter.Name()),
@@ -447,10 +499,13 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		start := time.Now()
 		ctx := r.Context()
 
+		// BR-109: Get request-scoped logger from context (includes request_id, source_ip, endpoint)
+		logger := middleware.GetLogger(ctx)
+
 		// Read request body
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			s.logger.Error("Failed to read request body", zap.Error(err))
+			logger.Error("Failed to read request body", zap.Error(err))
 			http.Error(w, "Failed to read request body", http.StatusBadRequest)
 			return
 		}
@@ -458,7 +513,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		// Parse signal using adapter
 		signal, err := adapter.Parse(ctx, body)
 		if err != nil {
-			s.logger.Warn("Failed to parse signal",
+			logger.Warn("Failed to parse signal",
 				zap.String("adapter", adapter.Name()),
 				zap.Error(err),
 			)
@@ -475,17 +530,17 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 
 		// Validate signal
 		if err := adapter.Validate(signal); err != nil {
-			s.logger.Warn("Signal validation failed",
+			logger.Warn("Signal validation failed",
 				zap.String("adapter", adapter.Name()),
 				zap.Error(err))
-			http.Error(w, fmt.Sprintf("Signal validation failed: %v", err), http.StatusBadRequest)
+			s.writeJSONError(w, fmt.Sprintf("Signal validation failed: %v", err), http.StatusBadRequest)
 			return
 		}
 
 		// Process signal through pipeline
 		response, err := s.ProcessSignal(ctx, signal)
 		if err != nil {
-			s.logger.Error("Signal processing failed",
+			logger.Error("Signal processing failed",
 				zap.String("adapter", adapter.Name()),
 				zap.Error(err))
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -516,7 +571,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
 		if err := json.NewEncoder(w).Encode(response); err != nil {
-			s.logger.Error("Failed to encode JSON response", zap.Error(err))
+			logger.Error("Failed to encode JSON response", zap.Error(err))
 		}
 	}
 }
@@ -603,13 +658,16 @@ func (s *Server) Stop(ctx context.Context) error {
 func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSignal) (*ProcessingResponse, error) {
 	start := time.Now()
 
+	// BR-109: Get request-scoped logger from context (includes request_id, source_ip, endpoint)
+	logger := middleware.GetLogger(ctx)
+
 	// Record ingestion metric
 	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity, "unknown").Inc()
 
 	// 1. Deduplication check
 	isDuplicate, metadata, err := s.deduplicator.Check(ctx, signal)
 	if err != nil {
-		s.logger.Error("Deduplication check failed",
+		logger.Error("Deduplication check failed",
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.Error(err))
 		return nil, fmt.Errorf("deduplication check failed: %w", err)
@@ -619,7 +677,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		// Fast path: duplicate signal, no CRD creation needed
 		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
 
-		s.logger.Debug("Duplicate signal detected",
+		logger.Debug("Duplicate signal detected",
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.Int("count", metadata.Count),
 			zap.String("firstSeen", metadata.FirstSeen),
@@ -638,13 +696,13 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	isStorm, stormMetadata, err := s.stormDetector.Check(ctx, signal)
 	if err != nil {
 		// Non-critical error: log warning but continue processing
-		s.logger.Warn("Storm detection failed",
+		logger.Warn("Storm detection failed",
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.Error(err))
 	} else if isStorm && stormMetadata != nil {
 		s.metricsInstance.AlertStormsDetectedTotal.WithLabelValues(stormMetadata.StormType, signal.AlertName).Inc()
 
-		s.logger.Warn("Alert storm detected",
+		logger.Warn("Alert storm detected",
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.String("stormType", stormMetadata.StormType),
 			zap.String("stormWindow", stormMetadata.Window),
@@ -655,14 +713,14 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 		// into a single CRD after a 1-minute window
 		shouldAggregate, windowID, err := s.stormAggregator.ShouldAggregate(ctx, signal)
 		if err != nil {
-			s.logger.Warn("Storm aggregation check failed, falling back to individual CRD creation",
+			logger.Warn("Storm aggregation check failed, falling back to individual CRD creation",
 				zap.String("fingerprint", signal.Fingerprint),
 				zap.Error(err))
 			// Fall through to individual CRD creation
 		} else if shouldAggregate {
 			// Add to existing aggregation window
 			if err := s.stormAggregator.AddResource(ctx, windowID, signal); err != nil {
-				s.logger.Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation",
+				logger.Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation",
 					zap.String("fingerprint", signal.Fingerprint),
 					zap.String("windowID", windowID),
 					zap.Error(err))
@@ -671,7 +729,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 				// Successfully added to aggregation window, return without creating CRD
 				resourceCount, _ := s.stormAggregator.GetResourceCount(ctx, windowID)
 
-				s.logger.Info("Alert added to storm aggregation window",
+				logger.Info("Alert added to storm aggregation window",
 					zap.String("fingerprint", signal.Fingerprint),
 					zap.String("windowID", windowID),
 					zap.Int("resourceCount", resourceCount))
@@ -691,7 +749,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			// Start new aggregation window
 			windowID, err := s.stormAggregator.StartAggregation(ctx, signal, stormMetadata)
 			if err != nil {
-				s.logger.Warn("Failed to start storm aggregation, falling back to individual CRD creation",
+				logger.Warn("Failed to start storm aggregation, falling back to individual CRD creation",
 					zap.String("fingerprint", signal.Fingerprint),
 					zap.Error(err))
 				// Fall through to individual CRD creation
@@ -701,7 +759,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 				// but aggregation goroutine needs to run for full window duration (5s-1m)
 				go s.createAggregatedCRDAfterWindow(context.Background(), windowID, signal, stormMetadata)
 
-				s.logger.Info("Storm aggregation window started",
+				logger.Info("Storm aggregation window started",
 					zap.String("fingerprint", signal.Fingerprint),
 					zap.String("windowID", windowID),
 					zap.String("windowTTL", "1 minute"))
@@ -740,7 +798,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	}
 	remediationPath := s.pathDecider.DeterminePath(ctx, signalCtx)
 
-	s.logger.Debug("Remediation path decided",
+	logger.Debug("Remediation path decided",
 		zap.String("fingerprint", signal.Fingerprint),
 		zap.String("environment", environment),
 		zap.String("priority", priority),
@@ -749,7 +807,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	// 6. Create RemediationRequest CRD
 	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal, priority, environment)
 	if err != nil {
-		s.logger.Error("Failed to create RemediationRequest CRD",
+		logger.Error("Failed to create RemediationRequest CRD",
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.Error(err))
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
@@ -759,7 +817,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
 	if err := s.deduplicator.Store(ctx, signal, remediationRequestRef); err != nil {
 		// Non-critical error: CRD already created, log warning
-		s.logger.Warn("Failed to store deduplication metadata",
+		logger.Warn("Failed to store deduplication metadata",
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.String("crdName", rr.Name),
 			zap.Error(err))
@@ -767,7 +825,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 
 	// Record processing duration
 	duration := time.Since(start)
-	s.logger.Info("Signal processed successfully",
+	logger.Info("Signal processed successfully",
 		zap.String("fingerprint", signal.Fingerprint),
 		zap.String("crdName", rr.Name),
 		zap.String("environment", environment),
@@ -988,4 +1046,22 @@ func (s *Server) createAggregatedCRDAfterWindow(
 
 	// Record metrics for successful aggregation
 	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
+}
+
+// writeJSONError writes a JSON error response
+// TDD GREEN: Added to support BR-001 (validation error propagation)
+// Business Outcome: Operators receive structured error messages they can parse
+func (s *Server) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	
+	errorResponse := map[string]interface{}{
+		"error": message,
+		"status": statusCode,
+	}
+	
+	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
+		// Fallback to plain text if JSON encoding fails
+		http.Error(w, message, statusCode)
+	}
 }
