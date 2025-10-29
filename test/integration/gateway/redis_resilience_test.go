@@ -70,35 +70,10 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 	})
 
 	Context("BR-GATEWAY-071: Redis Failure Handling", func() {
-		PIt("should handle Redis connection failure gracefully", func() {
-			// TODO: Requires chaos testing infrastructure
-			// This test needs to simulate Redis becoming unavailable
-			// Expected: Gateway returns 503 (graceful degradation per DD-GATEWAY-003)
-			//
-			// Implementation approach:
-			// 1. Stop Redis container
-			// 2. Send webhook request
-			// 3. Verify 503 response
-			// 4. Restart Redis
-			// 5. Verify Gateway recovers
-			//
-			// Moved to E2E/Chaos tier - requires infrastructure to stop/start Redis
-		})
-
-		PIt("should recover when Redis becomes available again", func() {
-			// TODO: Requires chaos testing infrastructure
-			// This test validates automatic recovery after Redis outage
-			// Expected: Gateway automatically detects Redis is back and resumes normal operation
-			//
-			// Implementation approach:
-			// 1. Verify Gateway is working (201 responses)
-			// 2. Stop Redis (Gateway should return 503)
-			// 3. Restart Redis
-			// 4. Wait for health monitor to detect recovery
-			// 5. Verify Gateway resumes normal operation (201 responses)
-			//
-			// Moved to E2E/Chaos tier - requires infrastructure to stop/start Redis
-		})
+		// NOTE: Chaos tests moved to test/chaos/gateway/
+		// - Redis connection failure gracefully → test/chaos/gateway/redis_failure_test.go
+		// - Redis recovery after outage → test/chaos/gateway/redis_recovery_test.go
+		// See test/chaos/gateway/README.md for implementation details
 
 		It("should respect context timeout when Redis is slow", func() {
 			// BR-GATEWAY-071: Timeout handling for slow Redis operations
@@ -161,54 +136,11 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 		})
 	})
 
-	Context("BR-GATEWAY-073: Redis State Cleanup", func() {
-		PIt("should clean up Redis state on CRD deletion", func() {
-			// TODO: Requires CRD lifecycle management
-			// This test validates that Redis state is cleaned up when CRDs are deleted
-			// Expected: Fingerprints and storm state removed from Redis
-			//
-			// Implementation approach:
-			// 1. Create alert (stores fingerprint in Redis)
-			// 2. Verify fingerprint exists in Redis
-			// 3. Delete CRD
-			// 4. Verify fingerprint removed from Redis
-			//
-			// Deferred: Requires CRD controller integration (out of scope for Gateway v1.0)
-		})
-	})
-
-	Context("BR-GATEWAY-074: Redis Cluster Failover", func() {
-		PIt("should handle Redis cluster failover without data loss", func() {
-			// TODO: Requires Redis HA infrastructure
-			// This test validates Gateway behavior during Redis master failover
-			// Expected: Temporary 503 errors during failover, then automatic recovery
-			//
-			// Implementation approach:
-			// 1. Send alerts (verify 201 responses)
-			// 2. Trigger Redis master failover (Sentinel promotes replica)
-			// 3. During failover: Expect 503 errors (Redis unavailable)
-			// 4. After failover: Expect 201 responses (Redis recovered)
-			// 5. Verify no data loss (fingerprints preserved)
-			//
-			// Moved to E2E tier - requires Redis Sentinel HA setup
-		})
-	})
-
-	Context("BR-GATEWAY-075: Redis Pipeline Failures", func() {
-		PIt("should handle Redis pipeline command failures", func() {
-			// TODO: Requires Redis failure injection
-			// This test validates Gateway behavior when Redis pipeline commands fail
-			// Expected: Partial failures don't corrupt state
-			//
-			// Implementation approach:
-			// 1. Send batch of alerts (20 alerts)
-			// 2. Simulate pipeline failure mid-batch (network issue, Redis restart)
-			// 3. Continue sending alerts (20 more alerts)
-			// 4. Verify state remains consistent (no duplicate fingerprints, correct counts)
-			//
-			// Moved to E2E/Chaos tier - requires Redis failure injection
-		})
-	})
+	// NOTE: Following contexts moved to other tiers:
+	// BR-GATEWAY-073: Redis State Cleanup → test/e2e/gateway/crd_lifecycle_test.go (DEFERRED - out of scope v1.0)
+	// BR-GATEWAY-074: Redis Cluster Failover → test/chaos/gateway/redis_ha_test.go
+	// BR-GATEWAY-075: Redis Pipeline Failures → test/chaos/gateway/redis_pipeline_failure_test.go
+	// See test/chaos/gateway/README.md and test/e2e/gateway/README.md for implementation details
 
 	Context("BR-GATEWAY-076: Redis Memory Management", func() {
 		It("should handle Redis memory pressure gracefully", func() {
