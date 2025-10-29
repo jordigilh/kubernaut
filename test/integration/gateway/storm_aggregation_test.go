@@ -555,7 +555,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				}`, alertName, namespace, podNum, podNum)
 
 					// Send authenticated request
-					req, err := http.NewRequest("POST", testServer.URL+"/webhook/prometheus", bytes.NewBuffer([]byte(payload)))
+					req, err := http.NewRequest("POST", testServer.URL+"/api/v1/signals/prometheus", bytes.NewBuffer([]byte(payload)))
 					if err != nil {
 						results <- WebhookResponse{StatusCode: 0}
 						return
