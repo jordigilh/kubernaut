@@ -1,7 +1,7 @@
 # Chaos Testing Tier - Gateway
 
-**Purpose**: Test Gateway resilience under infrastructure failures and chaos scenarios  
-**Coverage Target**: <5% of total tests  
+**Purpose**: Test Gateway resilience under infrastructure failures and chaos scenarios
+**Coverage Target**: <5% of total tests
 **Infrastructure**: Chaos engineering tools (toxiproxy, pumba, etc.)
 
 ---
@@ -90,7 +90,7 @@
 
 ---
 
-**Status**: 📋 **PENDING IMPLEMENTATION**  
-**Priority**: **MEDIUM** - Important for production resilience  
+**Status**: 📋 **PENDING IMPLEMENTATION**
+**Priority**: **MEDIUM** - Important for production resilience
 **Next Step**: Build chaos testing infrastructure
 

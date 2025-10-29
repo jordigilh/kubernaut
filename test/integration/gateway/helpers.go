@@ -793,3 +793,387 @@ func SendPrometheusWebhook(gatewayURL string, payload string) WebhookResponse {
 		Headers:    resp.Header,
 	}
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HTTP SERVER TEST INFRASTRUCTURE (BR-036 to BR-045)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// SlowReader simulates a slow client for timeout testing (BR-037, BR-038)
+// Used to test ReadTimeout and WriteTimeout enforcement
+type SlowReader struct {
+	data      []byte
+	pos       int
+	delay     time.Duration
+	chunkSize int
+}
+
+// NewSlowReader creates a reader that delays between chunks
+// delay: time to wait between each Read() call
+// chunkSize: bytes to return per Read() call (default: 1 byte for maximum slowness)
+func NewSlowReader(data []byte, delay time.Duration) *SlowReader {
+	return &SlowReader{
+		data:      data,
+		pos:       0,
+		delay:     delay,
+		chunkSize: 1, // 1 byte at a time = very slow
+	}
+}
+
+// Read implements io.Reader with artificial delay
+// BR-037: Enables testing ReadTimeout by delaying body transmission
+func (r *SlowReader) Read(p []byte) (n int, err error) {
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+
+	// Delay before reading (simulates slow network)
+	time.Sleep(r.delay)
+
+	// Read one chunk
+	remaining := len(r.data) - r.pos
+	toRead := r.chunkSize
+	if toRead > remaining {
+		toRead = remaining
+	}
+	if toRead > len(p) {
+		toRead = len(p)
+	}
+
+	n = copy(p, r.data[r.pos:r.pos+toRead])
+	r.pos += n
+	return n, nil
+}
+
+// SendSlowRequest sends HTTP request with slow body transmission
+// BR-037: Tests ReadTimeout by sending body slowly
+// url: Gateway endpoint
+// payload: request body
+// delay: time between each byte
+// Returns: HTTP response or error
+func SendSlowRequest(url string, payload []byte, delay time.Duration) (*http.Response, error) {
+	slowReader := NewSlowReader(payload, delay)
+
+	req, err := http.NewRequest("POST", url, slowReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.ContentLength = int64(len(payload))
+
+	// Use default HTTP client (no timeout on client side)
+	// We want to test server-side timeout enforcement
+	client := &http.Client{
+		Timeout: 0, // No client timeout - test server timeout
+	}
+
+	return client.Do(req)
+}
+
+// BackgroundRequestConfig configures background request generation
+type BackgroundRequestConfig struct {
+	URL               string        // Gateway endpoint
+	Payload           []byte        // Request body
+	RequestsPerSecond int           // Rate of requests
+	Duration          time.Duration // How long to send requests (0 = until context cancelled)
+}
+
+// SendBackgroundRequests sends requests in background goroutine
+// BR-040: Tests graceful shutdown by sending requests during shutdown
+// Returns: error channel (receives errors from background requests)
+func SendBackgroundRequests(ctx context.Context, config BackgroundRequestConfig) chan error {
+	errCh := make(chan error, 100)
+
+	go func() {
+		defer close(errCh)
+
+		ticker := time.NewTicker(time.Second / time.Duration(config.RequestsPerSecond))
+		defer ticker.Stop()
+
+		var stopTime time.Time
+		if config.Duration > 0 {
+			stopTime = time.Now().Add(config.Duration)
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// Check duration limit
+				if config.Duration > 0 && time.Now().After(stopTime) {
+					return
+				}
+
+				// Send request in goroutine (non-blocking)
+				go func() {
+					resp, err := http.Post(config.URL, "application/json", bytes.NewReader(config.Payload))
+					if err != nil {
+						select {
+						case errCh <- err:
+						default: // Channel full, drop error
+						}
+						return
+					}
+					_ = resp.Body.Close()
+				}()
+			}
+		}
+	}()
+
+	return errCh
+}
+
+// SendConcurrentRequests sends N requests concurrently
+// BR-045: Tests concurrent request handling without degradation
+// Returns: slice of errors (empty if all succeeded)
+func SendConcurrentRequests(url string, count int, payload []byte) []error {
+	type result struct {
+		err        error
+		statusCode int
+	}
+
+	resultCh := make(chan result, count)
+
+	// Launch all requests concurrently
+	for i := 0; i < count; i++ {
+		go func() {
+			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			if err != nil {
+				resultCh <- result{err: err}
+				return
+			}
+			defer resp.Body.Close()
+
+			// Read body to ensure full response processing
+			_, _ = io.ReadAll(resp.Body)
+
+			resultCh <- result{statusCode: resp.StatusCode}
+		}()
+	}
+
+	// Collect results
+	var errors []error
+	for i := 0; i < count; i++ {
+		res := <-resultCh
+		if res.err != nil {
+			errors = append(errors, res.err)
+		}
+	}
+
+	return errors
+}
+
+// MeasureConcurrentLatency sends N concurrent requests and measures latency
+// BR-045: Tests that p95 latency remains acceptable under concurrent load
+// Returns: latencies (one per request), errors
+func MeasureConcurrentLatency(url string, count int, payload []byte) ([]time.Duration, []error) {
+	type result struct {
+		latency time.Duration
+		err     error
+	}
+
+	resultCh := make(chan result, count)
+
+	// Launch all requests concurrently
+	for i := 0; i < count; i++ {
+		go func() {
+			start := time.Now()
+			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			latency := time.Since(start)
+
+			if err != nil {
+				resultCh <- result{err: err}
+				return
+			}
+			defer resp.Body.Close()
+
+			// Read body to ensure full response processing
+			_, _ = io.ReadAll(resp.Body)
+
+			resultCh <- result{latency: latency}
+		}()
+	}
+
+	// Collect results
+	var latencies []time.Duration
+	var errors []error
+	for i := 0; i < count; i++ {
+		res := <-resultCh
+		if res.err != nil {
+			errors = append(errors, res.err)
+		} else {
+			latencies = append(latencies, res.latency)
+		}
+	}
+
+	return latencies, errors
+}
+
+// CalculateP95Latency calculates 95th percentile latency
+// BR-045: Used to verify p95 latency SLO (<500ms)
+func CalculateP95Latency(latencies []time.Duration) time.Duration {
+	if len(latencies) == 0 {
+		return 0
+	}
+
+	// Sort latencies
+	sorted := make([]time.Duration, len(latencies))
+	copy(sorted, latencies)
+	for i := 0; i < len(sorted); i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[i] > sorted[j] {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	// Calculate 95th percentile index
+	p95Index := int(float64(len(sorted)) * 0.95)
+	if p95Index >= len(sorted) {
+		p95Index = len(sorted) - 1
+	}
+
+	return sorted[p95Index]
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// OBSERVABILITY TEST INFRASTRUCTURE (BR-101 to BR-110)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// PrometheusMetrics represents parsed Prometheus metrics
+type PrometheusMetrics map[string]*PrometheusMetric
+
+// PrometheusMetric represents a single Prometheus metric
+type PrometheusMetric struct {
+	Name   string
+	Type   string // counter, gauge, histogram, summary
+	Help   string
+	Values map[string]float64 // label_set -> value
+}
+
+// GetPrometheusMetrics fetches and parses /metrics endpoint
+// BR-101: Tests Prometheus metrics endpoint
+// Returns: parsed metrics map (metric_name -> PrometheusMetric)
+func GetPrometheusMetrics(metricsURL string) (PrometheusMetrics, error) {
+	resp, err := http.Get(metricsURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch metrics: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("metrics endpoint returned %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read metrics body: %w", err)
+	}
+
+	// Parse Prometheus text format
+	metrics := make(PrometheusMetrics)
+	lines := strings.Split(string(body), "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			// Handle HELP and TYPE comments
+			if strings.HasPrefix(line, "# HELP ") {
+				parts := strings.SplitN(line[7:], " ", 2)
+				if len(parts) == 2 {
+					name := parts[0]
+					if _, exists := metrics[name]; !exists {
+						metrics[name] = &PrometheusMetric{
+							Name:   name,
+							Help:   parts[1],
+							Values: make(map[string]float64),
+						}
+					} else {
+						metrics[name].Help = parts[1]
+					}
+				}
+			} else if strings.HasPrefix(line, "# TYPE ") {
+				parts := strings.SplitN(line[7:], " ", 2)
+				if len(parts) == 2 {
+					name := parts[0]
+					if _, exists := metrics[name]; !exists {
+						metrics[name] = &PrometheusMetric{
+							Name:   name,
+							Type:   parts[1],
+							Values: make(map[string]float64),
+						}
+					} else {
+						metrics[name].Type = parts[1]
+					}
+				}
+			}
+			continue
+		}
+
+		// Parse metric value line
+		// Format: metric_name{label="value"} value timestamp
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Extract metric name and labels
+		nameAndLabels := parts[0]
+		var metricName string
+		var labelSet string
+
+		if idx := strings.Index(nameAndLabels, "{"); idx != -1 {
+			metricName = nameAndLabels[:idx]
+			labelSet = nameAndLabels[idx:]
+		} else {
+			metricName = nameAndLabels
+			labelSet = ""
+		}
+
+		// Parse value
+		var value float64
+		_, err := fmt.Sscanf(parts[1], "%f", &value)
+		if err != nil {
+			continue
+		}
+
+		// Store metric
+		if _, exists := metrics[metricName]; !exists {
+			metrics[metricName] = &PrometheusMetric{
+				Name:   metricName,
+				Values: make(map[string]float64),
+			}
+		}
+		metrics[metricName].Values[labelSet] = value
+	}
+
+	return metrics, nil
+}
+
+// GetMetricValue retrieves a specific metric value
+// BR-102, BR-103, BR-104, BR-105: Helper for metric validation
+func GetMetricValue(metrics PrometheusMetrics, name string, labels string) (float64, bool) {
+	metric, exists := metrics[name]
+	if !exists {
+		return 0, false
+	}
+
+	value, exists := metric.Values[labels]
+	return value, exists
+}
+
+// GetMetricSum returns sum of all values for a metric (useful for counters)
+// BR-102, BR-103: Helper for validating counter metrics
+func GetMetricSum(metrics PrometheusMetrics, name string) float64 {
+	metric, exists := metrics[name]
+	if !exists {
+		return 0
+	}
+
+	var sum float64
+	for _, value := range metric.Values {
+		sum += value
+	}
+	return sum
+}

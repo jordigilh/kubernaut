@@ -199,22 +199,22 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				// BR-GATEWAY-016: Storm aggregation logic
 				// BUSINESS OUTCOME: 15 alerts → 1 storm window → 1 CRD (97% cost reduction)
 
-			// Start storm window with first alert
-			signal1 := &types.NormalizedSignal{
-				Namespace:   "prod-api",
-				AlertName:   "HighCPUUsage",
-				Severity:    "critical",
-				Fingerprint: "cpu-high-prod-api-pod1",
-				Resource: types.ResourceIdentifier{
-					Namespace: "prod-api",
-					Kind:      "Pod",
-					Name:      "api-server-1",
-				},
-				Labels: map[string]string{
-					"pod":       "api-server-1",
-					"namespace": "prod-api",
-				},
-			}
+				// Start storm window with first alert
+				signal1 := &types.NormalizedSignal{
+					Namespace:   "prod-api",
+					AlertName:   "HighCPUUsage",
+					Severity:    "critical",
+					Fingerprint: "cpu-high-prod-api-pod1",
+					Resource: types.ResourceIdentifier{
+						Namespace: "prod-api",
+						Kind:      "Pod",
+						Name:      "api-server-1",
+					},
+					Labels: map[string]string{
+						"pod":       "api-server-1",
+						"namespace": "prod-api",
+					},
+				}
 
 				stormMetadata := &processing.StormMetadata{
 					StormType:  "pattern",
@@ -224,23 +224,23 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				windowID, err := aggregator.StartAggregation(ctx, signal1, stormMetadata)
 				Expect(err).ToNot(HaveOccurred())
 
-			// Add 14 more alerts to same storm window
-			for i := 2; i <= 15; i++ {
-				signal := &types.NormalizedSignal{
-					Namespace:   "prod-api",
-					AlertName:   "HighCPUUsage",
-					Severity:    "critical",
-					Fingerprint: fmt.Sprintf("cpu-high-prod-api-pod%d", i),
-					Resource: types.ResourceIdentifier{
-						Namespace: "prod-api",
-						Kind:      "Pod",
-						Name:      fmt.Sprintf("api-server-%d", i),
-					},
-					Labels: map[string]string{
-						"pod":       fmt.Sprintf("api-server-%d", i),
-						"namespace": "prod-api",
-					},
-				}
+				// Add 14 more alerts to same storm window
+				for i := 2; i <= 15; i++ {
+					signal := &types.NormalizedSignal{
+						Namespace:   "prod-api",
+						AlertName:   "HighCPUUsage",
+						Severity:    "critical",
+						Fingerprint: fmt.Sprintf("cpu-high-prod-api-pod%d", i),
+						Resource: types.ResourceIdentifier{
+							Namespace: "prod-api",
+							Kind:      "Pod",
+							Name:      fmt.Sprintf("api-server-%d", i),
+						},
+						Labels: map[string]string{
+							"pod":       fmt.Sprintf("api-server-%d", i),
+							"namespace": "prod-api",
+						},
+					}
 
 					aggregated, returnedWindowID, err := aggregator.AggregateOrCreate(ctx, signal)
 					Expect(err).ToNot(HaveOccurred())
@@ -440,7 +440,7 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 		// - Storm window TTL expiration → test/e2e/gateway/storm_ttl_expiration_test.go
 		// See test/e2e/gateway/README.md for implementation details
 		// Reason: Test takes 2+ minutes (too slow for integration tier)
-		
+
 		Context("when storm window expires and new storm starts", func() {
 			XIt("should create new storm window after TTL expiration", func() {
 				// MOVED TO: test/e2e/gateway/storm_ttl_expiration_test.go
@@ -549,23 +549,10 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 			}
 		})
 
-	PIt("should aggregate 15 concurrent Prometheus alerts into 1 storm CRD", func() {
-		// TODO: Storm detection HTTP status code not correct
-		// ISSUE: Gateway returns 201 Created for all 15 requests
-		// EXPECTED: ~9-10 requests return 201 Created, then 4-6 return 202 Accepted after storm kicks in
-		// ACTUAL: All 15 requests return 201 Created, acceptedCount=0
-		//
-		// ROOT CAUSE: Gateway not returning 202 Accepted after storm detection
-		// - Storm detection IS working (logs show "isStorm":true,"stormType":"rate")
-		// - Storm CRD IS created (resourceCount=13)
-		// - But HTTP response always 201, never 202
-		//
-		// REQUIRES: Investigation of HTTP status code logic in pkg/gateway/server.go
-		// PRIORITY: MEDIUM - Storm detection works, but HTTP status codes don't match spec
-		//
-		// Marked as PIt (pending) until HTTP status code logic is fixed
-		// BUSINESS OUTCOME: 15 rapid-fire alerts → 1 aggregated CRD (97% cost reduction)
-		// This validates the complete flow: Webhook → Storm Detection → Aggregation → CRD
+		It("should aggregate 15 concurrent Prometheus alerts into 1 storm CRD", func() {
+			// BUSINESS OUTCOME: 15 rapid-fire alerts → 1 aggregated CRD (97% cost reduction)
+			// This validates HTTP status codes: 201 Created (before storm) → 202 Accepted (during storm)
+			// This validates the complete flow: Webhook → Storm Detection → Aggregation → CRD
 
 			namespace := "prod-payments"
 			alertName := "HighMemoryUsage"
@@ -679,15 +666,15 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				}
 			}
 
-			// Expect: With atomic Lua script and threshold=10:
-			// - Requests 1-9: count < threshold → 201 Created (individual CRDs)
-			// - Request 10: count = threshold → 201 Created (first storm CRD, flag set atomically)
-			// - Requests 11-15: IsStormActive() = true → 202 Accepted (aggregated)
-			// Due to concurrency, we might see 9-11 created and 4-6 aggregated
-			Expect(createdCount).To(BeNumerically(">=", 9),
-				"Should create ~9-10 CRDs before storm threshold is reached (threshold=10)")
-			Expect(acceptedCount).To(BeNumerically(">=", 4),
-				"Should aggregate at least 4-6 alerts after storm detection kicks in")
+			// Expect: With atomic Lua script and threshold=2 (test config):
+			// - Requests 1-2: count <= threshold → 201 Created (individual CRDs)
+			// - Request 3: count > threshold → 202 Accepted (storm window started)
+			// - Requests 4-15: IsStormActive() = true → 202 Accepted (aggregated)
+			// Due to concurrency, we might see 2-3 created and 12-13 aggregated
+			Expect(createdCount).To(BeNumerically(">=", 2),
+				"Should create ~2-3 CRDs before storm threshold is reached (threshold=2)")
+			Expect(acceptedCount).To(BeNumerically(">=", 12),
+				"Should aggregate at least 12-13 alerts after storm detection kicks in")
 
 			// VALIDATION 2: Verify storm CRD exists in K8s
 			var stormCRDs remediationv1alpha1.RemediationRequestList
@@ -721,15 +708,17 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 			Expect(stormCRD.Spec.IsStorm).To(BeTrue(), "Storm CRD should have IsStorm=true")
 
 			// VALIDATION 3: Storm CRD contains aggregated alert metadata (scattered fields)
-			// With atomic Lua script and threshold=10:
-			// - Alert 10: First storm CRD created with count=1
-			// - Alerts 11-15: Aggregated, count increases to 6
+			// With atomic Lua script and threshold=2 (test config):
+			// - Alerts 1-2: Individual CRDs created (201 Created)
+			// - Alert 3: Storm window started (202 Accepted)
+			// - Alerts 4-15: Aggregated into storm window (202 Accepted)
+			// - After 5 seconds: 1 aggregated storm CRD created with 13 alerts
 			//
 			// NOTE: Due to concurrent updates and eventual consistency, the K8s CRD alert_count
 			// might not reflect the total number of aggregated alerts (last write wins).
 			// The critical validation is that:
 			// 1. Storm CRD exists (✅)
-			// 2. 202 Accepted responses were returned (✅ validated above: acceptedCount >= 4)
+			// 2. 202 Accepted responses were returned (✅ validated above: acceptedCount >= 12)
 			// 3. Redis metadata has correct count (source of truth)
 			//
 			// We relax this assertion to >= 1 (storm CRD was created and updated at least once)
@@ -765,22 +754,9 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 			// ✅ BR-GATEWAY-016 fully validated
 		})
 
-	PIt("should handle mixed storm and non-storm alerts correctly", func() {
-		// TODO: Storm detection HTTP status code not correct (related to BR-GATEWAY-016)
-		// ISSUE: Gateway returns 201 Created for all requests
-		// EXPECTED: ~9-10 requests return 201 Created, then 4-6 return 202 Accepted after storm kicks in
-		// ACTUAL: All requests return 201 Created, acceptedCount=0
-		//
-		// ROOT CAUSE: Gateway not returning 202 Accepted after storm detection
-		// - Storm detection IS working (logs show isStorm:true, stormType:rate)
-		// - Storm CRD IS created
-		// - But HTTP response always 201, never 202
-		//
-		// REQUIRES: Investigation of HTTP status code logic in pkg/gateway/server.go
-		// PRIORITY: MEDIUM - Storm detection works, but HTTP status codes don't match spec
-		//
-		// Marked as PIt (pending) until HTTP status code logic is fixed
-		// BUSINESS OUTCOME: Storm alerts aggregated, normal alerts processed individually
+		It("should handle mixed storm and non-storm alerts correctly", func() {
+			// BUSINESS OUTCOME: Storm alerts aggregated, normal alerts processed individually
+			// This validates that storm detection only aggregates related alerts (same alertname)
 
 			namespace := "prod-api"
 

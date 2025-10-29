@@ -1,7 +1,7 @@
 # E2E Testing Tier - Gateway
 
-**Purpose**: Test complete user workflows and production-like scenarios  
-**Coverage Target**: <10% of total tests  
+**Purpose**: Test complete user workflows and production-like scenarios
+**Coverage Target**: <10% of total tests
 **Infrastructure**: Production-like environment, nightly test suite
 
 ---
@@ -15,7 +15,7 @@
    - Send new alert after expiration
    - Verify new storm window created
    - Verify new CRD created (not aggregated)
-   
+
    **Status**: ✅ Test is complete, just needs to be moved
    **Duration**: 2+ minutes
    **Recommendation**: Run in nightly E2E suite, not integration CI
@@ -33,7 +33,7 @@
    - Verify CRD name truncated to 253 chars
    - Verify CRD created successfully
    - Verify fingerprint preserved in labels/annotations
-   
+
    **Status**: ⚠️ **Borderline** - Could stay in integration if fast (<1s)
    **Recommendation**: Verify test speed, move if >1s
 
@@ -42,7 +42,7 @@
    - Verify all CRDs created successfully
    - Verify no conflicts or race conditions
    - Verify all CRDs have unique names
-   
+
    **Status**: ⚠️ **Depends on concurrency level**
    - If <10 concurrent: E2E
    - If 50+ concurrent: LOAD tier
@@ -55,7 +55,7 @@
    - Verify fingerprint removed from Redis
    - Verify storm state removed from Redis
    - Verify no orphaned Redis keys
-   
+
    **Status**: ❌ **DEFERRED** - Out of scope for Gateway v1.0
    **Requires**: CRD controller with finalizers
    **Estimated Effort**: 8-12 hours
@@ -95,7 +95,7 @@
 
 ---
 
-**Status**: 📋 **PENDING IMPLEMENTATION**  
-**Priority**: **LOW-MEDIUM** - Important for edge case coverage  
+**Status**: 📋 **PENDING IMPLEMENTATION**
+**Priority**: **LOW-MEDIUM** - Important for edge case coverage
 **Next Step**: Build E2E infrastructure and nightly test suite
 
