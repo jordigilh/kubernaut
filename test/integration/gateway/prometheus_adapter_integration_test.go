@@ -19,6 +19,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -89,7 +90,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		ns := &corev1.Namespace{}
 		ns.Name = "production"
 		_ = k8sClient.Client.Delete(ctx, ns)
-		
+
 		// Recreate with correct label
 		ns = &corev1.Namespace{}
 		ns.Name = "production"
@@ -157,7 +158,22 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"First occurrence must create CRD (201 Created)")
 
-			// BUSINESS OUTCOME 2: CRD created in Kubernetes with correct business metadata
+			// Parse response to get fingerprint (for Redis check before TTL expires)
+			var response map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
+			fingerprint, ok := response["fingerprint"].(string)
+			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
+			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
+
+			// BUSINESS OUTCOME 2: Fingerprint stored in Redis for deduplication
+			// Check Redis IMMEDIATELY after HTTP response (before 5-second TTL expires)
+			exists, err := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
+			Expect(err).NotTo(HaveOccurred(), "Redis query should succeed")
+			Expect(exists).To(Equal(int64(1)),
+				"Fingerprint must be stored in Redis to enable deduplication")
+
+			// BUSINESS OUTCOME 3: CRD created in Kubernetes with correct business metadata
 			var crdList remediationv1alpha1.RemediationRequestList
 			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
 			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in production namespace")
@@ -177,14 +193,14 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			Expect(crd.Namespace).To(Equal("production"),
 				"Namespace enables kubectl targeting: 'kubectl -n production'")
 
-			// BUSINESS OUTCOME 3: Fingerprint stored in Redis for deduplication
-			fingerprint := crd.Labels["kubernaut.io/signal-fingerprint"]
-			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint label must exist for deduplication")
-
-			exists, err := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
-			Expect(err).NotTo(HaveOccurred(), "Redis query should succeed")
-			Expect(exists).To(Equal(int64(1)),
-				"Fingerprint must be stored in Redis to enable deduplication")
+			// Verify fingerprint label matches response fingerprint (truncated to K8s 63-char limit)
+			fingerprintLabel := crd.Labels["kubernaut.io/signal-fingerprint"]
+			expectedLabel := fingerprint
+			if len(expectedLabel) > 63 {
+				expectedLabel = expectedLabel[:63] // K8s label value max length
+			}
+			Expect(fingerprintLabel).To(Equal(expectedLabel),
+				"CRD fingerprint label must match response fingerprint (truncated to 63 chars for K8s)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Prometheus alert → Gateway → CRD created with complete business metadata
@@ -406,4 +422,3 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		})
 	})
 })
-
