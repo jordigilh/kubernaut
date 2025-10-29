@@ -105,7 +105,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 							"pod": "test-pod-" + string(rune('0'+index)),
 						},
 					})
-					results <- SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+					results <- SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 				}(i)
 			}
 
@@ -193,7 +193,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 						"instance": "test-instance-" + string(rune('0'+i%10)),
 					},
 				})
-				resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+				resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
 				// BUSINESS OUTCOME: Requests processed or gracefully rejected
 				// 201 = success, 503 = Redis unavailable (OOM)
@@ -205,7 +205,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 				AlertName: "PostMemoryPressureTest",
 				Namespace: "production",
 			})
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Or(Equal(201), Equal(202), Equal(503)))
 		})
 	})
@@ -222,7 +222,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			})
 
 			// Send alert (creates fingerprint with TTL)
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// Verify fingerprint exists
