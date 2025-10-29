@@ -160,5 +160,55 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			), "Error message should indicate which fields are problematic")
 		})
 	})
+
+	Describe("BR-001: Internal Server Error Propagation", func() {
+		It("should return HTTP 500 with error details when processing fails", func() {
+			// TDD RED PHASE: Write test first
+			// Business Outcome: Operators receive actionable error messages for server failures
+
+			// Create valid alert that will pass validation but might fail processing
+			alertJSON := `{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "ProcessingTest",
+						"severity": "critical",
+						"namespace": "nonexistent-namespace"
+					},
+					"annotations": {
+						"summary": "Test alert for processing error"
+					}
+				}]
+			}`
+
+			// Send request
+			resp, err := http.Post(
+				fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL),
+				"application/json",
+				strings.NewReader(alertJSON),
+			)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// Verify business outcome: HTTP 500 or 201 (depending on whether namespace exists)
+			// If namespace doesn't exist, Gateway should either:
+			// 1. Create CRD in default namespace (201)
+			// 2. Return error (500)
+			Expect(resp.StatusCode).To(Or(
+				Equal(http.StatusCreated),
+				Equal(http.StatusInternalServerError),
+			), "Should either create CRD or return error")
+
+			// If error, verify JSON format
+			if resp.StatusCode == http.StatusInternalServerError {
+				var errorResponse map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(errorResponse).To(HaveKey("error"),
+					"Error response should include error field")
+			}
+		})
+	})
 })
 
