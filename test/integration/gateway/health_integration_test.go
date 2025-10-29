@@ -87,9 +87,9 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			// Liveness probe is simple - just checks if process is alive
 			// No dependency checks needed
 
-			// Act: Call /health/live endpoint
+			// Act: Call /health endpoint (liveness)
 			client := &http.Client{Timeout: 10 * time.Second}
-			resp, err := client.Get(testServer.URL + "/health/live")
+			resp, err := client.Get(testServer.URL + "/health")
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
