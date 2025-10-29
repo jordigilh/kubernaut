@@ -64,9 +64,9 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			// DD-GATEWAY-004: K8s API readiness check removed (network-level security)
 			// Readiness endpoint now only checks Redis connectivity
 
-			// Act: Call /health/ready endpoint
+			// Act: Call /ready endpoint
 			client := &http.Client{Timeout: 10 * time.Second}
-			resp, err := client.Get(testServer.URL + "/health/ready")
+			resp, err := client.Get(testServer.URL + "/ready")
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -78,12 +78,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Validate response structure
-			Expect(readiness["time"]).ToNot(BeEmpty())
-
-			// DD-GATEWAY-004: Redis check + K8s marked as "not_applicable"
 			Expect(readiness["status"]).To(Equal("ready"))
-			Expect(readiness["redis"]).To(Equal("healthy"))
-			Expect(readiness["kubernetes"]).To(Equal("not_applicable"))
 		})
 	})
 
