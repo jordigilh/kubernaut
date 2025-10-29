@@ -19,6 +19,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -73,6 +75,26 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		err := redisClient.Client.FlushDB(ctx).Err()
 		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
+		// Create production namespace for tests (required for CRD creation)
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
+
+		// Wait for deletion to complete (namespace deletion is asynchronous)
+		Eventually(func() error {
+			checkNs := &corev1.Namespace{}
+			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
+		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+
+		// Now create fresh namespace with environment label
+		ns = &corev1.Namespace{}
+		ns.Name = "production"
+		ns.Labels = map[string]string{
+			"environment": "production", // Required for EnvironmentClassifier
+		}
+		err = k8sClient.Client.Create(ctx, ns)
+		Expect(err).ToNot(HaveOccurred(), "Should create production namespace")
+
 		// Create Gateway server using helper
 		gatewayServer, err = StartTestGateway(ctx, redisClient, k8sClient)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
@@ -94,6 +116,11 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
 			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
 		}
+
+		// Cleanup namespace (this will cascade delete all CRDs in the namespace)
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
 
 		// Cleanup
 		if testServer != nil {
@@ -141,7 +168,22 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"First occurrence must create CRD (201 Created)")
 
-			// BUSINESS OUTCOME 2: CRD created in Kubernetes
+			// Parse response to get fingerprint (for Redis check before TTL expires)
+			var response map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
+			fingerprint, ok := response["fingerprint"].(string)
+			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
+			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
+
+			// BUSINESS OUTCOME 2: Fingerprint stored in Redis for deduplication
+			// Check Redis IMMEDIATELY after HTTP response (before 5-second TTL expires)
+			exists, err := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
+			Expect(err).NotTo(HaveOccurred(), "Redis query should succeed")
+			Expect(exists).To(Equal(int64(1)),
+				"Fingerprint must be stored in Redis to enable deduplication")
+
+			// BUSINESS OUTCOME 3: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
 			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
 			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in production namespace")
@@ -155,13 +197,14 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"),
 				"Alert name enables AI to understand failure type")
 
-			// BUSINESS OUTCOME 3: Fingerprint stored in Redis
-			fingerprint := crd.Labels["kubernaut.io/fingerprint"]
-			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint enables deduplication")
-
-			exists, err := redisClient.Client.Exists(ctx, "alert:fingerprint:"+fingerprint).Result()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(exists).To(Equal(int64(1)), "Fingerprint should be stored in Redis")
+			// Verify fingerprint label matches response fingerprint (truncated to K8s 63-char limit)
+			fingerprintLabel := crd.Labels["kubernaut.io/signal-fingerprint"]
+			expectedLabel := fingerprint
+			if len(expectedLabel) > 63 {
+				expectedLabel = expectedLabel[:63] // K8s label value max length
+			}
+			Expect(fingerprintLabel).To(Equal(expectedLabel),
+				"CRD fingerprint label must match response fingerprint (truncated to 63 chars for K8s)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Prometheus alert → Gateway → CRD created
