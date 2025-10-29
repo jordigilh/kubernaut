@@ -205,7 +205,7 @@ func (k *K8sTestClient) DeleteCRD(ctx context.Context, name, namespace string) e
 //	Expect(err).ToNot(HaveOccurred())
 //	testServer := httptest.NewServer(gatewayServer.Handler())
 //	defer testServer.Close()
-//	resp, _ := http.Post(testServer.URL+"/webhook/prometheus", "application/json", body)
+//	resp, _ := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", body)
 //
 // DD-GATEWAY-004: Authentication removed - security now at network layer
 func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) (*gateway.Server, error) {
@@ -722,7 +722,7 @@ func WaitForRedisFingerprintCount(ctx context.Context, redisClient *RedisTestCli
 // Uses existing WebhookResponse type (defined above)
 // DD-GATEWAY-004: Authentication removed - no Bearer token needed
 func SendPrometheusWebhook(gatewayURL string, payload string) WebhookResponse {
-	url := gatewayURL + "/webhook/prometheus"
+	url := gatewayURL + "/api/v1/signals/prometheus"
 
 	// DD-GATEWAY-004: Create request (no authentication - handled at network layer)
 	req, err := http.NewRequest("POST", url, strings.NewReader(payload))
