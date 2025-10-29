@@ -241,8 +241,11 @@ func NewServerWithMetrics(cfg *ServerConfig, logger *zap.Logger, metricsInstance
 	redisClient := goredis.NewClient(cfg.Infrastructure.Redis)
 
 	// 2. Initialize Kubernetes clients
-	// Get kubeconfig - prefer KUBECONFIG env var (for Kind cluster in tests)
-	// In production, this will use in-cluster config
+	// Get kubeconfig with standard Kubernetes precedence:
+	// 1. --kubeconfig flag
+	// 2. KUBECONFIG environment variable (used in tests: ~/.kube/kind-config)
+	// 3. In-cluster config (production)
+	// 4. $HOME/.kube/config (default)
 	kubeConfig, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Kubernetes config: %w", err)
