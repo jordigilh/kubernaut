@@ -505,6 +505,34 @@ func (r *RedisTestClient) TriggerMemoryPressure(ctx context.Context) {
 	r.Client.ConfigSet(ctx, "maxmemory", "1mb") // Force memory pressure
 }
 
+// ResetRedisConfig resets Redis to test-safe configuration
+// ⚠️ CRITICAL: Call this in AfterEach to prevent state pollution across tests
+//
+// Background: TriggerMemoryPressure() sets Redis maxmemory to 1MB to simulate
+// memory pressure scenarios. This change persists in Redis memory across test runs.
+// If not reset, ALL subsequent tests will hit OOM errors (cascade failure).
+//
+// Root Cause: CONFIG SET changes persist in Redis until:
+// 1. Explicitly reset (this function)
+// 2. Container restart (podman restart redis-gateway)
+// 3. Container recreate (podman stop + rm + start)
+//
+// Usage:
+//   AfterEach(func() {
+//       if redisClient != nil {
+//           redisClient.ResetRedisConfig(ctx)
+//           redisClient.Client.FlushDB(ctx)
+//       }
+//   })
+func (r *RedisTestClient) ResetRedisConfig(ctx context.Context) {
+	if r.Client == nil {
+		return
+	}
+	// Reset to 2GB (matches container start command in scripts/start-redis-for-tests.sh)
+	r.Client.ConfigSet(ctx, "maxmemory", "2147483648")
+	r.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+}
+
 // SimulatePipelineFailure simulates Redis pipeline command failures
 // Tests recovery from partial pipeline execution failures
 func (r *RedisTestClient) SimulatePipelineFailure(ctx context.Context) {

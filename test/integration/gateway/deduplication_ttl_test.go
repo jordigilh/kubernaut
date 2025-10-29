@@ -109,6 +109,11 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 
 	AfterEach(func() {
 		if redisClient != nil {
+			// Reset Redis config to prevent OOM cascade failures
+			// (TriggerMemoryPressure sets maxmemory to 1MB)
+			redisClient.ConfigSet(ctx, "maxmemory", "2147483648")
+			redisClient.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+
 			// Cleanup test data
 			keys, _ := redisClient.Keys(ctx, "gateway:dedup:fingerprint:integration-test-ttl-*").Result()
 			if len(keys) > 0 {

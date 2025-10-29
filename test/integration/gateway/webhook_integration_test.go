@@ -89,6 +89,12 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 	})
 
 	AfterEach(func() {
+		// Reset Redis config to prevent OOM cascade failures
+		if redisClient != nil && redisClient.Client != nil {
+			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
+			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+		}
+
 		// Cleanup
 		if testServer != nil {
 			testServer.Close()
