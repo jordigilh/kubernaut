@@ -104,7 +104,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication TTL Expiration - Integration Tes
 			Fingerprint: "integration-test-ttl-" + time.Now().Format("20060102150405"),
 		}
 
-		dedupService = processing.NewDeduplicationService(redisClient, 5*time.Second, logger)
+		dedupService = processing.NewDeduplicationServiceWithTTL(redisClient, 5*time.Second, logger, nil)
 	})
 
 	AfterEach(func() {

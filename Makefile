@@ -708,10 +708,27 @@ docker-build: ## Build monolithic container image
 docker-build-microservices: docker-build-gateway-service docker-build-ai-analysis ## Build all microservice container images
 
 .PHONY: docker-build-gateway-service
-docker-build-gateway-service: ## Build gateway service container image
-	@echo "🐳 Building gateway service container..."
-	docker build -f docker/gateway-service.Dockerfile -t $(REGISTRY)/kubernaut-gateway-service:$(VERSION) .
-	docker tag $(REGISTRY)/kubernaut-gateway-service:$(VERSION) $(REGISTRY)/kubernaut-gateway-service:latest
+docker-build-gateway-service: ## Build gateway service container image (multi-arch UBI9, ADR-027/ADR-028)
+	@echo "🐳 Building multi-architecture Gateway service image..."
+	podman build --platform linux/amd64,linux/arm64 \
+		-f docker/gateway.Dockerfile \
+		-t $(REGISTRY)/kubernaut-gateway:$(VERSION) .
+	@echo "✅ Multi-arch image built: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
+
+.PHONY: docker-build-gateway-ubi9
+docker-build-gateway-ubi9: ## Build gateway service UBI9 image (OpenShift optimized)
+	@echo "🐳 Building UBI9 Gateway service image..."
+	podman build --platform linux/amd64,linux/arm64 \
+		-f docker/gateway-ubi9.Dockerfile \
+		-t $(REGISTRY)/kubernaut-gateway-ubi9:$(VERSION) .
+	@echo "✅ UBI9 image built: $(REGISTRY)/kubernaut-gateway-ubi9:$(VERSION)"
+
+.PHONY: docker-build-gateway-single
+docker-build-gateway-single: ## Build single-arch debug image (current platform only)
+	@echo "🔨 Building single-arch debug image..."
+	podman build -t $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m) \
+		-f docker/gateway.Dockerfile .
+	@echo "✅ Debug image: $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m)"
 
 .PHONY: docker-build-webhook-service
 docker-build-webhook-service: docker-build-gateway-service ## Build webhook service container image (alias for gateway-service)
@@ -726,11 +743,15 @@ docker-build-ai-analysis: ## Build AI service container image
 .PHONY: docker-push-microservices
 docker-push-microservices: docker-push-webhook-service docker-push-ai-service ## Push all microservice container images
 
+.PHONY: docker-push-gateway-service
+docker-push-gateway-service: docker-build-gateway-service ## Push Gateway service multi-arch image
+	@echo "📤 Pushing multi-arch Gateway image..."
+	podman manifest push $(REGISTRY)/kubernaut-gateway:$(VERSION) docker://$(REGISTRY)/kubernaut-gateway:$(VERSION)
+	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
+
 .PHONY: docker-push-webhook-service
-docker-push-webhook-service: ## Push webhook service container image
-	@echo "📤 Pushing webhook service container..."
-	docker push $(REGISTRY)/kubernaut-webhook-service:$(VERSION)
-	docker push $(REGISTRY)/kubernaut-webhook-service:latest
+docker-push-webhook-service: docker-push-gateway-service ## Push webhook service container image (alias for gateway)
+	@echo "🔗 Webhook service is now part of gateway-service"
 
 .PHONY: docker-push-ai-service
 docker-push-ai-service: ## Push AI service container image

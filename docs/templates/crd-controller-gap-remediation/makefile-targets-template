@@ -1,0 +1,139 @@
+# Generic Makefile targets template for CRD controllers
+#
+# CUSTOMIZATION INSTRUCTIONS:
+# 1. Replace {{CONTROLLER_NAME}} with your controller name (lowercase, e.g., remediationprocessor)
+# 2. Replace {{CONTROLLER_NAME_UPPER}} with uppercase version (e.g., REMEDIATIONPROCESSOR)
+# 3. Replace {{BIN_NAME}} with binary name (e.g., remediation-processor)
+# 4. Replace {{IMAGE_NAME}} with container image name (e.g., remediationprocessor)
+# 5. Update version tag as needed
+# 6. Add these targets to the main Makefile under appropriate section
+
+##@ {{CONTROLLER_NAME}} Controller
+
+# Controller-specific variables
+{{CONTROLLER_NAME_UPPER}}_IMG ?= quay.io/jordigilh/{{IMAGE_NAME}}:v0.1.0
+{{CONTROLLER_NAME_UPPER}}_BIN := bin/{{BIN_NAME}}
+{{CONTROLLER_NAME_UPPER}}_DOCKERFILE := docker/{{IMAGE_NAME}}.Dockerfile
+
+.PHONY: {{CONTROLLER_NAME}}-build
+{{CONTROLLER_NAME}}-build: ## Build {{CONTROLLER_NAME}} controller binary
+	@echo "Building {{CONTROLLER_NAME}} controller..."
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+		-a -installsuffix cgo \
+		-ldflags="-w -s" \
+		-o $({{CONTROLLER_NAME_UPPER}}_BIN) \
+		./cmd/{{CONTROLLER_NAME}}
+	@echo "✅ {{CONTROLLER_NAME}} binary built: $({{CONTROLLER_NAME_UPPER}}_BIN)"
+
+.PHONY: {{CONTROLLER_NAME}}-test
+{{CONTROLLER_NAME}}-test: ## Run unit tests for {{CONTROLLER_NAME}}
+	@echo "Running {{CONTROLLER_NAME}} unit tests..."
+	go test -v -race -coverprofile=coverage-{{CONTROLLER_NAME}}.out \
+		./pkg/{{CONTROLLER_NAME}}/...
+	@echo "✅ {{CONTROLLER_NAME}} unit tests passed"
+
+.PHONY: {{CONTROLLER_NAME}}-test-integration
+{{CONTROLLER_NAME}}-test-integration: ## Run integration tests for {{CONTROLLER_NAME}}
+	@echo "Running {{CONTROLLER_NAME}} integration tests..."
+	go test -v -race -tags=integration \
+		./test/integration/{{CONTROLLER_NAME}}/...
+	@echo "✅ {{CONTROLLER_NAME}} integration tests passed"
+
+.PHONY: {{CONTROLLER_NAME}}-test-coverage
+{{CONTROLLER_NAME}}-test-coverage: {{CONTROLLER_NAME}}-test ## Generate coverage report for {{CONTROLLER_NAME}}
+	@echo "Generating {{CONTROLLER_NAME}} coverage report..."
+	go tool cover -html=coverage-{{CONTROLLER_NAME}}.out -o coverage-{{CONTROLLER_NAME}}.html
+	@echo "✅ Coverage report: coverage-{{CONTROLLER_NAME}}.html"
+
+.PHONY: {{CONTROLLER_NAME}}-docker-build
+{{CONTROLLER_NAME}}-docker-build: ## Build {{CONTROLLER_NAME}} container image
+	@echo "Building {{CONTROLLER_NAME}} container image..."
+	$(CONTAINER_TOOL) build \
+		-f $({{CONTROLLER_NAME_UPPER}}_DOCKERFILE) \
+		-t $({{CONTROLLER_NAME_UPPER}}_IMG) \
+		.
+	@echo "✅ {{CONTROLLER_NAME}} image built: $({{CONTROLLER_NAME_UPPER}}_IMG)"
+
+.PHONY: {{CONTROLLER_NAME}}-docker-build-multiarch
+{{CONTROLLER_NAME}}-docker-build-multiarch: ## Build {{CONTROLLER_NAME}} multi-arch container image
+	@echo "Building {{CONTROLLER_NAME}} multi-arch container image..."
+	$(CONTAINER_TOOL) buildx build \
+		--platform linux/amd64,linux/arm64 \
+		-f $({{CONTROLLER_NAME_UPPER}}_DOCKERFILE) \
+		-t $({{CONTROLLER_NAME_UPPER}}_IMG) \
+		--push \
+		.
+	@echo "✅ {{CONTROLLER_NAME}} multi-arch image built and pushed"
+
+.PHONY: {{CONTROLLER_NAME}}-docker-push
+{{CONTROLLER_NAME}}-docker-push: ## Push {{CONTROLLER_NAME}} container image
+	@echo "Pushing {{CONTROLLER_NAME}} container image..."
+	$(CONTAINER_TOOL) push $({{CONTROLLER_NAME_UPPER}}_IMG)
+	@echo "✅ {{CONTROLLER_NAME}} image pushed: $({{CONTROLLER_NAME_UPPER}}_IMG)"
+
+.PHONY: {{CONTROLLER_NAME}}-docker-run
+{{CONTROLLER_NAME}}-docker-run: ## Run {{CONTROLLER_NAME}} container locally
+	@echo "Running {{CONTROLLER_NAME}} container..."
+	$(CONTAINER_TOOL) run --rm -it \
+		-p 8080:8080 \
+		-p 8081:8081 \
+		-v $(HOME)/.kube/config:/root/.kube/config:ro \
+		$({{CONTROLLER_NAME_UPPER}}_IMG)
+
+.PHONY: {{CONTROLLER_NAME}}-deploy
+{{CONTROLLER_NAME}}-deploy: ## Deploy {{CONTROLLER_NAME}} to Kubernetes
+	@echo "Deploying {{CONTROLLER_NAME}} to Kubernetes..."
+	kubectl apply -f deploy/{{CONTROLLER_NAME}}/
+	@echo "✅ {{CONTROLLER_NAME}} deployed"
+
+.PHONY: {{CONTROLLER_NAME}}-undeploy
+{{CONTROLLER_NAME}}-undeploy: ## Remove {{CONTROLLER_NAME}} from Kubernetes
+	@echo "Removing {{CONTROLLER_NAME}} from Kubernetes..."
+	kubectl delete -f deploy/{{CONTROLLER_NAME}}/ --ignore-not-found=true
+	@echo "✅ {{CONTROLLER_NAME}} removed"
+
+.PHONY: {{CONTROLLER_NAME}}-logs
+{{CONTROLLER_NAME}}-logs: ## Tail {{CONTROLLER_NAME}} logs
+	@echo "Tailing {{CONTROLLER_NAME}} logs..."
+	kubectl logs -f -l app={{CONTROLLER_NAME}} -n kubernaut-system
+
+.PHONY: {{CONTROLLER_NAME}}-restart
+{{CONTROLLER_NAME}}-restart: ## Restart {{CONTROLLER_NAME}} deployment
+	@echo "Restarting {{CONTROLLER_NAME}}..."
+	kubectl rollout restart deployment/{{CONTROLLER_NAME}} -n kubernaut-system
+	kubectl rollout status deployment/{{CONTROLLER_NAME}} -n kubernaut-system
+	@echo "✅ {{CONTROLLER_NAME}} restarted"
+
+.PHONY: {{CONTROLLER_NAME}}-status
+{{CONTROLLER_NAME}}-status: ## Check {{CONTROLLER_NAME}} status
+	@echo "Checking {{CONTROLLER_NAME}} status..."
+	@echo "\n=== Deployment Status ==="
+	kubectl get deployment {{CONTROLLER_NAME}} -n kubernaut-system
+	@echo "\n=== Pod Status ==="
+	kubectl get pods -l app={{CONTROLLER_NAME}} -n kubernaut-system
+	@echo "\n=== Recent Events ==="
+	kubectl get events -n kubernaut-system --field-selector involvedObject.name={{CONTROLLER_NAME}} --sort-by='.lastTimestamp' | tail -10
+
+.PHONY: {{CONTROLLER_NAME}}-clean
+{{CONTROLLER_NAME}}-clean: ## Clean {{CONTROLLER_NAME}} build artifacts
+	@echo "Cleaning {{CONTROLLER_NAME}} artifacts..."
+	rm -f $({{CONTROLLER_NAME_UPPER}}_BIN)
+	rm -f coverage-{{CONTROLLER_NAME}}.out coverage-{{CONTROLLER_NAME}}.html
+	@echo "✅ {{CONTROLLER_NAME}} artifacts cleaned"
+
+.PHONY: {{CONTROLLER_NAME}}-lint
+{{CONTROLLER_NAME}}-lint: ## Run linters on {{CONTROLLER_NAME}} code
+	@echo "Running linters on {{CONTROLLER_NAME}} code..."
+	golangci-lint run ./pkg/{{CONTROLLER_NAME}}/... ./cmd/{{CONTROLLER_NAME}}/...
+	@echo "✅ {{CONTROLLER_NAME}} linting passed"
+
+.PHONY: {{CONTROLLER_NAME}}-fmt
+{{CONTROLLER_NAME}}-fmt: ## Format {{CONTROLLER_NAME}} code
+	@echo "Formatting {{CONTROLLER_NAME}} code..."
+	gofmt -w ./pkg/{{CONTROLLER_NAME}}/ ./cmd/{{CONTROLLER_NAME}}/
+	goimports -w ./pkg/{{CONTROLLER_NAME}}/ ./cmd/{{CONTROLLER_NAME}}/
+	@echo "✅ {{CONTROLLER_NAME}} code formatted"
+
+.PHONY: {{CONTROLLER_NAME}}-all
+{{CONTROLLER_NAME}}-all: {{CONTROLLER_NAME}}-fmt {{CONTROLLER_NAME}}-lint {{CONTROLLER_NAME}}-test {{CONTROLLER_NAME}}-build ## Run all {{CONTROLLER_NAME}} tasks
+	@echo "✅ All {{CONTROLLER_NAME}} tasks completed"
