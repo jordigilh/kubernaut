@@ -1,0 +1,84 @@
+# Generic ConfigMap template for CRD controllers
+#
+# CUSTOMIZATION INSTRUCTIONS:
+# 1. Replace {{CONTROLLER_NAME}} with your controller name (lowercase)
+# 2. Replace {{NAMESPACE}} with your Kubernetes namespace
+# 3. Update config.yaml with controller-specific configuration
+# 4. Add environment-specific overrides in data section
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{CONTROLLER_NAME}}-config
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{CONTROLLER_NAME}}
+    component: controller
+    part-of: kubernaut
+data:
+  config.yaml: |
+    # {{CONTROLLER_NAME}} Controller Configuration
+
+    # Common controller configuration
+    namespace: {{NAMESPACE}}
+    metrics_address: :8080
+    health_address: :8081
+    leader_election: true
+    log_level: info
+    max_concurrency: 10
+
+    # Kubernetes API configuration
+    kubernetes:
+      qps: 20.0
+      burst: 30
+
+    # TODO: Add controller-specific configuration here
+    # Example for RemediationProcessor:
+    # data_storage:
+    #   postgres_host: postgres-service.{{NAMESPACE}}.svc.cluster.local
+    #   postgres_port: 5432
+    #   postgres_user: {{CONTROLLER_NAME}}_user
+    #   postgres_password: ${POSTGRES_PASSWORD}  # From secret
+    #   postgres_database: kubernaut
+    #   ssl_mode: require
+    #
+    # context:
+    #   endpoint: http://context-api.{{NAMESPACE}}.svc.cluster.local:8080
+    #   timeout: 30
+    #   max_retries: 3
+    #
+    # classification:
+    #   semantic_threshold: 0.8
+    #   time_window_minutes: 60
+    #   batch_size: 100
+
+---
+# Environment variable overrides (optional)
+# Use this for environment-specific configurations
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{CONTROLLER_NAME}}-env
+  namespace: {{NAMESPACE}}
+  labels:
+    app: {{CONTROLLER_NAME}}
+    component: controller
+    part-of: kubernaut
+data:
+  # Override common settings
+  CONTROLLER_NAMESPACE: "{{NAMESPACE}}"
+  LOG_LEVEL: "info"
+  MAX_CONCURRENCY: "10"
+
+  # Override Kubernetes API settings
+  KUBERNETES_QPS: "20.0"
+  KUBERNETES_BURST: "30"
+
+  # TODO: Add controller-specific environment variables here
+  # Example for RemediationProcessor:
+  # POSTGRES_HOST: "postgres-service.{{NAMESPACE}}.svc.cluster.local"
+  # POSTGRES_PORT: "5432"
+  # POSTGRES_DATABASE: "kubernaut"
+  # CONTEXT_API_ENDPOINT: "http://context-api.{{NAMESPACE}}.svc.cluster.local:8080"
+  # CONTEXT_API_TIMEOUT: "30"
+  # CLASSIFICATION_SEMANTIC_THRESHOLD: "0.8"

@@ -53,14 +53,9 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			err = json.NewDecoder(resp.Body).Decode(&health)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Validate response structure
+			// Validate response structure per HEALTH_CHECK_STANDARD.md
 			Expect(health["status"]).To(Equal("healthy"))
-			Expect(health["service"]).To(Equal("gateway"))
-			Expect(health["time"]).ToNot(BeEmpty())
-
-			// DD-GATEWAY-004: Only Redis check remains (K8s API removed)
-			checks := health["checks"].(map[string]interface{})
-			Expect(checks["redis"]).To(Equal("healthy"))
+			Expect(health["timestamp"]).ToNot(BeEmpty())
 		})
 	})
 

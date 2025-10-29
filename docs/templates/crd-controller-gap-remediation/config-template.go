@@ -1,0 +1,198 @@
+// Generic config package template for CRD controllers
+//
+// CUSTOMIZATION INSTRUCTIONS:
+// 1. Replace {{CONTROLLER_NAME}} with your controller name (lowercase)
+// 2. Add controller-specific configuration fields to the Config struct
+// 3. Update setDefaults() with appropriate default values
+// 4. Add validation rules in Validate() method
+// 5. Add environment variable mappings in LoadFromEnv()
+//
+// Controller-Specific Examples:
+//   - RemediationProcessor: Data Storage Service, Context API, Classification Config
+//   - WorkflowExecution: Kubernetes API, Parallel Limits, Validation Framework
+//   - AIAnalysis: HolmesGPT API, Context API, Approval Thresholds
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config represents the controller configuration.
+type Config struct {
+	// Common controller configuration
+	Namespace      string `yaml:"namespace"`
+	MetricsAddress string `yaml:"metrics_address"`
+	HealthAddress  string `yaml:"health_address"`
+	LeaderElection bool   `yaml:"leader_election"`
+	LogLevel       string `yaml:"log_level"`
+	MaxConcurrency int    `yaml:"max_concurrency"`
+
+	// Kubernetes API configuration
+	Kubernetes KubernetesConfig `yaml:"kubernetes"`
+
+	// TODO: Add controller-specific configuration fields here
+	// Example for RemediationProcessor:
+	// DataStorage    DataStorageConfig    `yaml:"data_storage"`
+	// Context        ContextAPIConfig     `yaml:"context"`
+	// Classification ClassificationConfig `yaml:"classification"`
+}
+
+// KubernetesConfig holds Kubernetes API client configuration.
+type KubernetesConfig struct {
+	QPS   float32 `yaml:"qps"`
+	Burst int     `yaml:"burst"`
+}
+
+// TODO: Add controller-specific configuration structs here
+// Example for RemediationProcessor:
+//
+// type DataStorageConfig struct {
+// 	PostgresHost     string `yaml:"postgres_host"`
+// 	PostgresPort     int    `yaml:"postgres_port"`
+// 	PostgresUser     string `yaml:"postgres_user"`
+// 	PostgresPassword string `yaml:"postgres_password"`
+// 	PostgresDatabase string `yaml:"postgres_database"`
+// 	SSLMode          string `yaml:"ssl_mode"`
+// }
+//
+// type ContextAPIConfig struct {
+// 	Endpoint   string `yaml:"endpoint"`
+// 	Timeout    int    `yaml:"timeout"`
+// 	MaxRetries int    `yaml:"max_retries"`
+// }
+
+// LoadConfig loads configuration from a YAML file.
+func LoadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	}
+
+	// Set defaults
+	cfg.setDefaults()
+
+	return &cfg, nil
+}
+
+// setDefaults sets default values for unspecified configuration.
+func (c *Config) setDefaults() {
+	if c.Namespace == "" {
+		c.Namespace = "kubernaut-system"
+	}
+	if c.MetricsAddress == "" {
+		c.MetricsAddress = ":8080"
+	}
+	if c.HealthAddress == "" {
+		c.HealthAddress = ":8081"
+	}
+	if c.LogLevel == "" {
+		c.LogLevel = "info"
+	}
+	if c.MaxConcurrency == 0 {
+		c.MaxConcurrency = 10
+	}
+	if c.Kubernetes.QPS == 0 {
+		c.Kubernetes.QPS = 20.0
+	}
+	if c.Kubernetes.Burst == 0 {
+		c.Kubernetes.Burst = 30
+	}
+
+	// TODO: Add controller-specific defaults here
+	// Example:
+	// if c.DataStorage.PostgresPort == 0 {
+	// 	c.DataStorage.PostgresPort = 5432
+	// }
+}
+
+// Validate validates the configuration.
+func (c *Config) Validate() error {
+	if c.Namespace == "" {
+		return fmt.Errorf("namespace is required")
+	}
+	if c.MetricsAddress == "" {
+		return fmt.Errorf("metrics_address is required")
+	}
+	if c.HealthAddress == "" {
+		return fmt.Errorf("health_address is required")
+	}
+	if c.LogLevel == "" {
+		return fmt.Errorf("log_level is required")
+	}
+	if c.MaxConcurrency <= 0 {
+		return fmt.Errorf("max_concurrency must be greater than 0")
+	}
+
+	// Validate Kubernetes config
+	if c.Kubernetes.QPS <= 0 {
+		return fmt.Errorf("kubernetes.qps must be greater than 0")
+	}
+	if c.Kubernetes.Burst <= 0 {
+		return fmt.Errorf("kubernetes.burst must be greater than 0")
+	}
+
+	// TODO: Add controller-specific validation here
+	// Example:
+	// if c.DataStorage.PostgresHost == "" {
+	// 	return fmt.Errorf("data_storage.postgres_host is required")
+	// }
+
+	return nil
+}
+
+// LoadFromEnv loads environment variable overrides.
+func (c *Config) LoadFromEnv() error {
+	// Common environment variables
+	if ns := os.Getenv("CONTROLLER_NAMESPACE"); ns != "" {
+		c.Namespace = ns
+	}
+	if addr := os.Getenv("METRICS_ADDRESS"); addr != "" {
+		c.MetricsAddress = addr
+	}
+	if addr := os.Getenv("HEALTH_ADDRESS"); addr != "" {
+		c.HealthAddress = addr
+	}
+	if level := os.Getenv("LOG_LEVEL"); level != "" {
+		c.LogLevel = level
+	}
+	if concurrency := os.Getenv("MAX_CONCURRENCY"); concurrency != "" {
+		val, err := strconv.Atoi(concurrency)
+		if err != nil {
+			return fmt.Errorf("invalid MAX_CONCURRENCY: %w", err)
+		}
+		c.MaxConcurrency = val
+	}
+
+	// Kubernetes API overrides
+	if qps := os.Getenv("KUBERNETES_QPS"); qps != "" {
+		val, err := strconv.ParseFloat(qps, 32)
+		if err != nil {
+			return fmt.Errorf("invalid KUBERNETES_QPS: %w", err)
+		}
+		c.Kubernetes.QPS = float32(val)
+	}
+	if burst := os.Getenv("KUBERNETES_BURST"); burst != "" {
+		val, err := strconv.Atoi(burst)
+		if err != nil {
+			return fmt.Errorf("invalid KUBERNETES_BURST: %w", err)
+		}
+		c.Kubernetes.Burst = val
+	}
+
+	// TODO: Add controller-specific environment variable overrides here
+	// Example:
+	// if host := os.Getenv("POSTGRES_HOST"); host != "" {
+	// 	c.DataStorage.PostgresHost = host
+	// }
+
+	return nil
+}
