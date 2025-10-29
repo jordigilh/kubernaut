@@ -32,3 +32,9 @@ build_failures.*
 # IDE configuration directories
 .cursor/
 .claude/
+
+# Ephemeral documentation files
+*_UPDATE_COMPLETE.md
+*_COMPLETE.md
+*_PROGRESS.md
+*_TRIAGE.md
