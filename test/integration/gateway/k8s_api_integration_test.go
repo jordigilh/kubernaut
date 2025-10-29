@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -60,6 +61,14 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		ns := &corev1.Namespace{}
 		ns.Name = "production"
 		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
+		
+		// Wait for deletion to complete (namespace deletion is asynchronous)
+		Eventually(func() error {
+			checkNs := &corev1.Namespace{}
+			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
+		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+		
+		// Now create fresh namespace
 		ns = &corev1.Namespace{}
 		ns.Name = "production"
 		err := k8sClient.Client.Create(ctx, ns)

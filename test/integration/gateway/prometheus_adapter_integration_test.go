@@ -91,6 +91,12 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		ns.Name = "production"
 		_ = k8sClient.Client.Delete(ctx, ns)
 
+		// Wait for deletion to complete (namespace deletion is asynchronous)
+		Eventually(func() error {
+			checkNs := &corev1.Namespace{}
+			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
+		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+
 		// Recreate with correct label
 		ns = &corev1.Namespace{}
 		ns.Name = "production"
