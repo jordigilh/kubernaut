@@ -84,38 +84,38 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		testServer = httptest.NewServer(gatewayServer.Handler())
 		Expect(testServer).ToNot(BeNil(), "Test server should be created")
 
-	// Create test namespaces with environment labels for classification
-	// This is required for environment-based priority assignment
-	testNamespaces := []struct {
-		name  string
-		label string
-	}{
-		{"production", "production"},
-		{"staging", "staging"},
-		{"development", "development"},
-	}
-
-	for _, ns := range testNamespaces {
-		// Delete first to ensure clean state (ignore error if doesn't exist)
-		namespace := &corev1.Namespace{}
-		namespace.Name = ns.name
-		_ = k8sClient.Client.Delete(ctx, namespace)
-
-		// Wait for deletion to complete (namespace deletion is asynchronous)
-		Eventually(func() error {
-			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
-
-		// Recreate with correct label
-		namespace = &corev1.Namespace{}
-		namespace.Name = ns.name
-		namespace.Labels = map[string]string{
-			"environment": ns.label, // Required for EnvironmentClassifier
+		// Create test namespaces with environment labels for classification
+		// This is required for environment-based priority assignment
+		testNamespaces := []struct {
+			name  string
+			label string
+		}{
+			{"production", "production"},
+			{"staging", "staging"},
+			{"development", "development"},
 		}
-		err = k8sClient.Client.Create(ctx, namespace)
-		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
-	}
+
+		for _, ns := range testNamespaces {
+			// Delete first to ensure clean state (ignore error if doesn't exist)
+			namespace := &corev1.Namespace{}
+			namespace.Name = ns.name
+			_ = k8sClient.Client.Delete(ctx, namespace)
+
+			// Wait for deletion to complete (namespace deletion is asynchronous)
+			Eventually(func() error {
+				checkNs := &corev1.Namespace{}
+				return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
+			}, "10s", "100ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
+
+			// Recreate with correct label
+			namespace = &corev1.Namespace{}
+			namespace.Name = ns.name
+			namespace.Labels = map[string]string{
+				"environment": ns.label, // Required for EnvironmentClassifier
+			}
+			err = k8sClient.Client.Create(ctx, namespace)
+			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
+		}
 
 		logger.Info("Test setup complete",
 			zap.String("test_server_url", testServer.URL),
