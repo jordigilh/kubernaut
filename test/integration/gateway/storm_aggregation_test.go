@@ -135,6 +135,11 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 					AlertName:   "HighCPUUsage",
 					Severity:    "critical",
 					Fingerprint: "cpu-high-prod-api-pod1",
+					Resource: types.ResourceIdentifier{
+						Namespace: "prod-api",
+						Kind:      "Pod",
+						Name:      "api-server-1",
+					},
 					Labels: map[string]string{
 						"pod":       "api-server-1",
 						"namespace": "prod-api",
@@ -157,6 +162,11 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 					AlertName:   "HighCPUUsage",
 					Severity:    "critical",
 					Fingerprint: "cpu-high-prod-api-pod2",
+					Resource: types.ResourceIdentifier{
+						Namespace: "prod-api",
+						Kind:      "Pod",
+						Name:      "api-server-2",
+					},
 					Labels: map[string]string{
 						"pod":       "api-server-2",
 						"namespace": "prod-api",
