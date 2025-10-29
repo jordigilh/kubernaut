@@ -126,7 +126,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			}`)
 
 			// Send webhook to Gateway
-			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -191,7 +191,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}]
 			}`)
 
-			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
 			// First alert: Creates CRD
 			resp1, err := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -263,7 +263,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}]
 			}`)
 
-			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
 			// First alert
 			resp1, _ := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -313,7 +313,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// BUSINESS SCENARIO: Node failure → 15 pod alerts in 10 seconds
 			// Expected: Single storm CRD, not 15 individual CRDs
 
-			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
 			// Simulate node failure: 15 pods on same node report issues
 			for i := 1; i <= 15; i++ {

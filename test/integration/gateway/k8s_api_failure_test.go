@@ -350,7 +350,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				}`)
 
 			// Send webhook to Gateway
-			req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/signals/prometheus", bytes.NewReader(payload))
 			req.Header.Set("Content-Type", "application/json")
 			// DD-GATEWAY-004: No authentication needed - handled at network layer
 			rec := httptest.NewRecorder()
@@ -410,7 +410,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					}]
 				}`)
 
-			req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/signals/prometheus", bytes.NewReader(payload))
 			req.Header.Set("Content-Type", "application/json")
 			// DD-GATEWAY-004: No authentication needed - handled at network layer
 			rec := httptest.NewRecorder()
