@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -42,9 +43,33 @@ import (
 // - Defensive programming prevents crashes
 
 var _ = Describe("Error Handling & Edge Cases", func() {
-	var testNamespace string
+	var (
+		testNamespace string
+		k8sClient     *K8sTestClient
+		redisClient   *RedisTestClient
+		testServer    *httptest.Server
+		ctx           context.Context
+	)
 
 	BeforeEach(func() {
+		ctx = context.Background()
+
+		// Setup test clients
+		k8sClient = SetupK8sTestClient(ctx)
+		Expect(k8sClient).ToNot(BeNil(), "K8s client required for error handling tests")
+
+		redisClient = SetupRedisTestClient(ctx)
+		Expect(redisClient).ToNot(BeNil(), "Redis client required for error handling tests")
+
+		// Create Gateway server for testing
+		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+		Expect(err).ToNot(HaveOccurred(), "Failed to start Gateway server")
+		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should be created")
+
+		// Create HTTP test server
+		testServer = httptest.NewServer(gatewayServer.Handler())
+		Expect(testServer).ToNot(BeNil(), "Test server should be created")
+
 		// Create unique namespace for test isolation
 		testNamespace = fmt.Sprintf("test-err-%d", time.Now().UnixNano())
 		ns := &corev1.Namespace{
@@ -52,20 +77,25 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 				Name: testNamespace,
 			},
 		}
-		Expect(k8sClient.Create(context.Background(), ns)).To(Succeed())
+		Expect(k8sClient.Client.Create(ctx, ns)).To(Succeed())
 
 		// Clear Redis
-		Expect(redisClient.FlushDB(context.Background()).Err()).To(Succeed())
+		Expect(redisClient.Client.FlushDB(ctx).Err()).To(Succeed())
 	})
 
 	AfterEach(func() {
+		// Cleanup test server
+		if testServer != nil {
+			testServer.Close()
+		}
+
 		// Cleanup namespace
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
 			},
 		}
-		_ = k8sClient.Delete(context.Background(), ns)
+		_ = k8sClient.Client.Delete(ctx, ns)
 	})
 
 	It("handles malformed JSON gracefully with clear error message", func() {
@@ -80,11 +110,10 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		By("Sending malformed JSON to Gateway")
 		req, err := http.NewRequest("POST",
-			"http://localhost:8090/api/v1/signals/prometheus",
+			testServer.URL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(malformedJSON))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
@@ -137,11 +166,10 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		By("Sending large payload to Gateway")
 		req, err := http.NewRequest("POST",
-			"http://localhost:8090/api/v1/signals/prometheus",
+			testServer.URL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(largePayload))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
@@ -181,11 +209,10 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		By("Sending alert with missing required field")
 		req, err := http.NewRequest("POST",
-			"http://localhost:8090/api/v1/signals/prometheus",
+			testServer.URL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(invalidAlert))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
@@ -260,11 +287,10 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		By("Sending alert for non-existent namespace")
 		req, err := http.NewRequest("POST",
-			"http://localhost:8090/api/v1/signals/prometheus",
+			testServer.URL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(alertPayload))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", testToken))
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
@@ -278,14 +304,14 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			rrList := &remediationv1alpha1.RemediationRequestList{}
 
 			// Try non-existent namespace first
-			err1 := k8sClient.List(context.Background(), rrList,
+			err1 := k8sClient.Client.List(context.Background(), rrList,
 				client.InNamespace(nonExistentNamespace))
 			if err1 == nil && len(rrList.Items) > 0 {
 				return true
 			}
 
 			// Fall back to default namespace
-			err2 := k8sClient.List(context.Background(), rrList,
+			err2 := k8sClient.Client.List(context.Background(), rrList,
 				client.InNamespace("default"))
 			return err2 == nil && len(rrList.Items) > 0
 		}, 10*time.Second).Should(BeTrue(),
