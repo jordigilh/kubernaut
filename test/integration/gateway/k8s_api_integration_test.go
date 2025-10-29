@@ -81,6 +81,12 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 	})
 
 	AfterEach(func() {
+		// Reset Redis config to prevent OOM cascade failures
+		if redisClient != nil && redisClient.Client != nil {
+			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
+			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+		}
+
 		// Cleanup
 		if testServer != nil {
 			testServer.Close()

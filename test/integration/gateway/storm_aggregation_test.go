@@ -80,6 +80,12 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 	})
 
 	AfterEach(func() {
+		// Reset Redis config to prevent OOM cascade failures
+		if redisClient != nil {
+			redisClient.ConfigSet(ctx, "maxmemory", "2147483648")
+			redisClient.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+		}
+
 		// Clean up Redis state after test
 		if redisClient != nil {
 			_ = redisClient.FlushDB(ctx)
