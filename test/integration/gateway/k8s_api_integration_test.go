@@ -10,6 +10,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -54,6 +55,15 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 		}
+
+		// Create production namespace for tests (required for CRD creation)
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
+		ns = &corev1.Namespace{}
+		ns.Name = "production"
+		err := k8sClient.Client.Create(ctx, ns)
+		Expect(err).ToNot(HaveOccurred(), "Should create production namespace")
 
 		// Start Gateway server
 		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
