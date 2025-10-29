@@ -303,6 +303,11 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", signal.Fingerprint)
 	now := time.Now().Format(time.RFC3339)
 
+	s.logger.Info("Storing deduplication metadata in Redis",
+		zap.String("key", key),
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("crd_ref", remediationRequestRef))
+
 	// Store as Redis hash with pipeline for atomicity
 	pipe := s.redisClient.Pipeline()
 	pipe.HSet(ctx, key, "fingerprint", signal.Fingerprint)
@@ -329,6 +334,11 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 		s.connected.Store(false)
 		return nil // Don't fail the request, CRD is already created
 	}
+
+	s.logger.Info("Successfully stored deduplication metadata in Redis",
+		zap.String("key", key),
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.Duration("ttl", s.ttl))
 
 	return nil
 }
