@@ -85,7 +85,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				Namespace: "production",
 			})
 
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// BUSINESS OUTCOME: CRD exists in Kubernetes
@@ -104,7 +104,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				Severity:  "critical",
 			})
 
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// Verify CRD metadata
@@ -133,7 +133,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 					Namespace: "production",
 				})
 
-				resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+				resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
 				// BUSINESS OUTCOME: Requests succeed (may be slower)
 				// Status codes: 201 (created), 429 (rate limited + retry), 500 (error)
@@ -160,8 +160,8 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				Namespace: "staging",
 			})
 
-			resp1 := SendWebhook(testServer.URL+"/webhook/prometheus", payload1)
-			resp2 := SendWebhook(testServer.URL+"/webhook/prometheus", payload2)
+			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload1)
+			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload2)
 
 			Expect(resp1.StatusCode).To(Equal(201))
 			Expect(resp2.StatusCode).To(Equal(201))
@@ -191,7 +191,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				}]
 			}`)
 
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", invalidPayload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", invalidPayload)
 
 			// BUSINESS OUTCOME: Invalid payload rejected
 			Expect(resp.StatusCode).To(Equal(400))
@@ -213,7 +213,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				Namespace: "production",
 			})
 
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
 			// BUSINESS OUTCOME: Request may fail initially but retries succeed
 			// Either succeeds immediately (201) or fails and retries (500 → 201)
@@ -255,7 +255,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 						Namespace: "production",
 					})
 
-					SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+					SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 				}(i)
 			}
 
@@ -283,7 +283,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				Namespace: "production",
 			})
 
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// BUSINESS OUTCOME: CRD created with compliant name
@@ -303,7 +303,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				Namespace: "production",
 			})
 
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// Simulate watch connection interruption
@@ -315,7 +315,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				Namespace: "production",
 			})
 
-			resp2 := SendWebhook(testServer.URL+"/webhook/prometheus", payload2)
+			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload2)
 
 			// BUSINESS OUTCOME: Second alert processed after watch reconnect
 			Expect(resp2.StatusCode).To(Equal(201))
@@ -343,7 +343,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			// Send request (should take >8s)
 			start := time.Now()
-			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			duration := time.Since(start)
 
 			// BUSINESS OUTCOME: Request completes despite slow API
@@ -378,7 +378,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 						Namespace: "production",
 					})
 
-					SendWebhook(testServer.URL+"/webhook/prometheus", payload)
+					SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 				}(i)
 			}
 

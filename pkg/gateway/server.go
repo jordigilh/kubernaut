@@ -30,9 +30,12 @@ import (
 	"go.uber.org/zap"
 
 	// "k8s.io/client-go/kubernetes" // DD-GATEWAY-004: No longer needed (authentication removed)
+	corev1 "k8s.io/api/core/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	// "github.com/jordigilh/kubernaut/internal/gateway/redis" // DELETED: internal/gateway/ removed
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
@@ -238,14 +241,21 @@ func NewServerWithMetrics(cfg *ServerConfig, logger *zap.Logger, metricsInstance
 	redisClient := goredis.NewClient(cfg.Infrastructure.Redis)
 
 	// 2. Initialize Kubernetes clients
-	// Get kubeconfig
+	// Get kubeconfig - prefer KUBECONFIG env var (for Kind cluster in tests)
+	// In production, this will use in-cluster config
 	kubeConfig, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Kubernetes config: %w", err)
 	}
 
-	// controller-runtime client (for environment classification)
-	ctrlClient, err := client.New(kubeConfig, client.Options{})
+	// Create scheme with RemediationRequest CRD + core K8s types
+	// This is required for controller-runtime to work with custom CRDs
+	scheme := k8sruntime.NewScheme()
+	_ = remediationv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
+
+	// controller-runtime client (for environment classification and CRD creation)
+	ctrlClient, err := client.New(kubeConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
 	}
