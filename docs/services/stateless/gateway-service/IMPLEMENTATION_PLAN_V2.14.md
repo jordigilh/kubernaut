@@ -1,16 +1,16 @@
 # Gateway Service - Implementation Plan v2.13
 
-✅ **COMPREHENSIVE IMPLEMENTATION PLAN** - CMD Directory Naming Correction                                                                            
+✅ **COMPREHENSIVE IMPLEMENTATION PLAN** - CMD Directory Naming Correction
 
 **Service**: Gateway Service (Entry Point for All Signals)
 **Phase**: Phase 2, Service #1
-**Plan Version**: v2.14 (Pre-Day 10 Validation Checkpoint)
+**Plan Version**: v2.15 (Day 5 Remediation Path Decider Integration)
 **Template Version**: SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md v2.0
 **Plan Date**: October 28, 2025
-**Current Status**: 🚀 V2.13 CMD NAMING CORRECTION (100% Confidence, Documentation Fix)                                                                       
+**Current Status**: 🚀 V2.13 CMD NAMING CORRECTION (100% Confidence, Documentation Fix)
 **Business Requirements**: BR-GATEWAY-001 through BR-GATEWAY-075 (~75 BRs)
-**Scope**: Prometheus AlertManager + Kubernetes Events + Complete Security Layer + Redis Optimization                                                          
-**Confidence**: 99% ✅ **Production-Ready - Redis OOM eliminated, 93% memory reduction**                                                                               
+**Scope**: Prometheus AlertManager + Kubernetes Events + Complete Security Layer + Redis Optimization
+**Confidence**: 99% ✅ **Production-Ready - Redis OOM eliminated, 93% memory reduction**
 
 **Architecture**: Adapter-specific self-registered endpoints (DD-GATEWAY-001)
 **Security**: TokenReview + SubjectAccessReview + Rate Limiting + Log Sanitization + Redis Secrets
@@ -41,7 +41,8 @@
 || **v2.11** | Oct 23, 2025 | **Priority 1 Edge Cases - Production Hardening**: Comprehensive edge case coverage analysis identified 24 missing edge cases across 3 security areas. **PRIORITY 1 IMPLEMENTED** (Option B approved): Added 6 critical edge case tests (+1h) addressing highest-risk attack vectors. **VULN-001 Enhancement** (+2 tests): Empty Bearer token bypass prevention, DoS via very long token (10KB) handling. **VULN-002 Enhancement** (+2 tests): Cross-namespace privilege escalation prevention (CRITICAL - ServiceAccount from namespace A cannot create CRD in namespace B), empty namespace validation. **VULN-003 Enhancement** (+2 tests): IPv6 address rate limiting support, IPv6 address independence validation. **Test Coverage**: 24 → 30 unit tests (+25% increase). **Attack Vectors Mitigated**: 6 critical attacks (empty token bypass, long token DoS, cross-namespace escalation, empty namespace exploit, IPv6 rate limit bypass, IPv6 collision). **Confidence Improvement**: Security 75% → 90% (+15%), Edge Case 60% → 85% (+25%), Attack Vector 65% → 90% (+25%). **Path to 100% Defined**: Phase 1 (Day 6 Phase 5 Timestamp Validation, +3% security, +2% attack, 2h), Phase 2 (Day 8 Integration Testing, +7% security, +15% edge case, +8% attack, 8h). **Priority 2-3 Deferred**: 13 edge cases deferred to Day 8 integration testing (TokenReview timeout, X-Forwarded-For bypass, Redis connection exhaustion, etc.). **Documentation**: `PRIORITY1_EDGE_CASES_V2.11.md` (517 lines), `V2.11_CHANGELOG.md` (245 lines). Status: ✅ PRODUCTION-READY (90% confidence, 30/30 tests passing). Next: Day 6 Phase 5 Timestamp Validation. | ⚠️ SUPERSEDED |
 || **v2.12** | Oct 24, 2025 | **Redis Memory Optimization - Day 8 Phase 2**: Eliminated Redis OOM (Out of Memory) errors by storing lightweight metadata (2KB) instead of full RemediationRequest CRDs (30KB) for storm aggregation. **Root Cause**: Memory fragmentation from storing large objects (95% waste, 2GB+ usage instead of expected 1MB). **Solution**: Added `StormAggregationMetadata` struct with 5 essential fields (pattern, alert count, affected resources, timestamps) + conversion functions (`toStormMetadata`, `fromStormMetadata`) + simplified Lua script (35 lines, was 45). **Impact**: 93% memory reduction (30KB → 2KB per CRD), 7.8x performance improvement (2500µs → 320µs), 75% Redis cost reduction (2GB+ → 512MB), zero functional changes (same business logic). **Files Modified**: `pkg/gateway/processing/storm_aggregator.go` (+200 lines, ~50 modified), `test/integration/gateway/start-redis.sh` (4GB → 512MB). **Design Decision**: [DD-GATEWAY-004](../../architecture/decisions/DD-GATEWAY-004-redis-memory-optimization.md) - Comprehensive analysis with alternatives, performance metrics, rollback plan. **Testing**: Integration tests with 512MB Redis (expected: no OOM, <500MB usage, all tests pass). **Documentation**: 4 comprehensive documents (DD-GATEWAY-004, implementation summary, risk analysis, test plan). **Confidence**: 99% (implementation), 95% (tests), 97% overall. Status: ✅ CODE COMPLETE - Ready for Testing. | ⚠️ SUPERSEDED |
 || **v2.13** | Oct 28, 2025 | **CMD Directory Naming Correction**: Fixed incorrect `cmd/gateway-service/` references to use correct Go naming convention `cmd/gateway/` per [CRD_SERVICE_CMD_DIRECTORY_GAPS_TRIAGE.md](../../analysis/CRD_SERVICE_CMD_DIRECTORY_GAPS_TRIAGE.md). **Rationale**: Go style guide mandates no hyphens in package directories. Binary names can still use hyphens via `-o` flag for readability. **Changes**: Day 9 Makefile target corrected (`cmd/gateway/main.go`), Dockerfile references updated (`docker/gateway.Dockerfile`, `docker/gateway-ubi9.Dockerfile`), all documentation references standardized. **Impact**: Zero functional changes, documentation consistency with project standards. **Reference**: Standard naming convention per `docs/analysis/CRD_SERVICE_CMD_DIRECTORY_GAPS_TRIAGE.md` lines 196-250 - "STANDARD: Go convention (no hyphens) for cmd/ directories". **Files Modified**: Day 9 section (lines 3195-3213), all cmd/ references throughout plan. **Confidence**: 100% (documentation-only fix). Status: ⚠️ SUPERSEDED |
-|| **v2.14** | Oct 28, 2025 | **Pre-Day 10 Validation Checkpoint**: Added mandatory validation checkpoint after Day 9 before proceeding to Day 10 final BR coverage. **Purpose**: Ensure all Day 1-9 unit and integration tests pass with zero build/lint errors before final validation. **Tasks**: (1) Unit Test Validation (1h) - run all tests, verify zero errors, triage Day 1-9 failures, target 100% pass rate; (2) Integration Test Validation (1h) - refactor helpers if needed, run all tests, verify infrastructure health, target 100% pass rate; (3) Business Logic Validation (30min) - verify all BRs have tests, confirm no orphaned code, full build validation. **Success Criteria**: All tests pass (100%), zero build errors, zero lint errors, all Day 1-9 BRs validated. **Rationale**: Systematic validation prevents accumulating technical debt and ensures production readiness. **Impact**: +2-3 hours before Day 10, prevents cascade failures. **Files Modified**: Day 9 section (added Pre-Day 10 Validation Checkpoint after deliverables). **Confidence**: 100% (quality gate). Status: ✅ **CURRENT** - Validation checkpoint added. |
+|| **v2.14** | Oct 28, 2025 | **Pre-Day 10 Validation Checkpoint**: Added mandatory validation checkpoint after Day 9 before proceeding to Day 10 final BR coverage. **Purpose**: Ensure all Day 1-9 unit and integration tests pass with zero build/lint errors before final validation. **Tasks**: (1) Unit Test Validation (1h) - run all tests, verify zero errors, triage Day 1-9 failures, target 100% pass rate; (2) Integration Test Validation (1h) - refactor helpers if needed, run all tests, verify infrastructure health, target 100% pass rate; (3) Business Logic Validation (30min) - verify all BRs have tests, confirm no orphaned code, full build validation. **Success Criteria**: All tests pass (100%), zero build errors, zero lint errors, all Day 1-9 BRs validated. **Rationale**: Systematic validation prevents accumulating technical debt and ensures production readiness. **Impact**: +2-3 hours before Day 10, prevents cascade failures. **Files Modified**: Day 9 section (added Pre-Day 10 Validation Checkpoint after deliverables). **Confidence**: 100% (quality gate). Status: ⚠️ SUPERSEDED |
+|| **v2.15** | Oct 28, 2025 | **Day 5 Remediation Path Decider Integration**: Updated Day 5 to explicitly include Remediation Path Decider integration into processing pipeline. **Finding**: Day 4 validation discovered that `pkg/gateway/processing/remediation_path.go` (21K, 562 lines) exists and compiles but is not wired into `server.go`. Component uses Rego policy (`docs/gateway/policies/remediation-path-policy.rego`) to determine remediation strategy (Aggressive/Moderate/Conservative/Manual) based on environment and priority. **Changes**: (1) Updated Day 5 objective to include "complete processing pipeline integration"; (2) Added Remediation Path Decider to APDC Do phase; (3) Added full pipeline validation to Check phase; (4) Added new deliverable: wire Remediation Path Decider into server constructor (15-30 min); (5) Added "Processing Pipeline Integration" section showing full flow: Signal → Adapter → Environment → Priority → Remediation Path → CRD; (6) Added "Remediation Path Decider Integration" section with component details, status, and effort estimate. **Rationale**: Systematic day-by-day validation revealed integration gap; Day 5 is logical integration point when wiring full processing pipeline. **Impact**: +15-30 minutes to Day 5, ensures complete pipeline validation. **Files Modified**: Day 5 section (lines 3073-3106). **Confidence**: 100% (component exists, straightforward wiring). Status: ✅ **CURRENT** - Day 5 updated with integration task. |
 
 ---
 
@@ -3072,25 +3073,38 @@ func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClie
 
 ## 📅 **DAY 5: CRD CREATION + HTTP SERVER** (8 hours)
 
-**Objective**: Implement RemediationRequest CRD creation, HTTP server with chi router, middleware setup
+**Objective**: Implement RemediationRequest CRD creation, HTTP server with chi router, middleware setup, complete processing pipeline integration
 
 **Business Requirements**: BR-GATEWAY-015, BR-GATEWAY-017, BR-GATEWAY-018, BR-GATEWAY-019, BR-GATEWAY-020, BR-GATEWAY-022, BR-GATEWAY-023
 
 **APDC Summary**:
-- **Analysis** (1h): RemediationRequest CRD schema, chi router patterns, middleware stack
-- **Plan** (1h): TDD for CRD creator, HTTP handlers, response codes
-- **Do** (5h): Implement CRD creator (controller-runtime), webhook handlers (Prometheus, K8s Event), middleware (logging, recovery, request ID), HTTP responses (201/202/400/500)
-- **Check** (1h): Verify CRDs created in K8s, webhooks return correct codes, middleware active
+- **Analysis** (1h): RemediationRequest CRD schema, chi router patterns, middleware stack, processing pipeline integration
+- **Plan** (1h): TDD for CRD creator, HTTP handlers, response codes, pipeline wiring
+- **Do** (5h): Implement CRD creator (controller-runtime), webhook handlers (Prometheus, K8s Event), middleware (logging, recovery, request ID), HTTP responses (201/202/400/500), **integrate Remediation Path Decider into processing pipeline**
+- **Check** (1h): Verify CRDs created in K8s, webhooks return correct codes, middleware active, **full pipeline validated (Signal → Adapter → Environment → Priority → Remediation Path → CRD)**
 
 **Key Deliverables**:
 - `pkg/gateway/processing/crd_creator.go` - Create RemediationRequest CRDs
 - `pkg/gateway/server/handlers.go` - Webhook HTTP handlers
 - `pkg/gateway/middleware/` - Logging, recovery, request ID middlewares
 - `test/unit/gateway/server/` - 12-15 unit tests
+- **`pkg/gateway/server.go` - Wire Remediation Path Decider into server constructor (15-30 min)**
 
-**Success Criteria**: CRDs created successfully, HTTP 201/202/400/500 codes correct, 85%+ test coverage
+**Processing Pipeline Integration**:
+```
+Signal → Adapter → Environment Classifier → Priority Engine → Remediation Path Decider → CRD Creator
+```
 
-**Confidence**: 90% (CRD creation well-understood, HTTP patterns established)
+**Remediation Path Decider Integration** (from Day 4 validation):
+- **Component**: `pkg/gateway/processing/remediation_path.go` (21K, already exists)
+- **Policy**: `docs/gateway/policies/remediation-path-policy.rego` (already exists)
+- **Status**: Implemented but not wired into server
+- **Task**: Add to server constructor and wire into processing pipeline
+- **Effort**: 15-30 minutes
+
+**Success Criteria**: CRDs created successfully, HTTP 201/202/400/500 codes correct, **Remediation Path Decider integrated and functional**, 85%+ test coverage
+
+**Confidence**: 90% (CRD creation well-understood, HTTP patterns established, Remediation Path Decider already implemented)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

@@ -27,7 +27,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 		testServer = httptest.NewServer(gatewayServer.Handler())
 
 		// Ensure Redis is clean before each test
-		redisClient.FlushDB(ctx)
+		redisClient.Client.FlushDB(ctx)
 	})
 
 	AfterEach(func() {
@@ -80,7 +80,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			// Send request with very short timeout context
 			// Note: This test validates that the Gateway respects timeouts
 			// In production, Redis should respond in <5ms (p95)
-			resp := SendWebhook(gatewayURL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
 
 			// BUSINESS OUTCOME: Request completes (doesn't hang indefinitely)
 			// May return 201 (success) or 503 (timeout) depending on Redis speed
@@ -105,7 +105,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 							"pod": "test-pod-" + string(rune('0'+index)),
 						},
 					})
-					results <- SendWebhook(gatewayURL+"/webhook/prometheus", payload)
+					results <- SendWebhook(testServer.URL+"/webhook/prometheus", payload)
 				}(i)
 			}
 
@@ -193,7 +193,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 						"instance": "test-instance-" + string(rune('0'+i%10)),
 					},
 				})
-				resp := SendWebhook(gatewayURL+"/webhook/prometheus", payload)
+				resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
 
 				// BUSINESS OUTCOME: Requests processed or gracefully rejected
 				// 201 = success, 503 = Redis unavailable (OOM)
@@ -205,7 +205,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 				AlertName: "PostMemoryPressureTest",
 				Namespace: "production",
 			})
-			resp := SendWebhook(gatewayURL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
 			Expect(resp.StatusCode).To(Or(Equal(201), Equal(202), Equal(503)))
 		})
 	})
@@ -222,7 +222,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			})
 
 			// Send alert (creates fingerprint with TTL)
-			resp := SendWebhook(gatewayURL+"/webhook/prometheus", payload)
+			resp := SendWebhook(testServer.URL+"/webhook/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// Verify fingerprint exists
@@ -238,4 +238,3 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 		})
 	})
 })
-

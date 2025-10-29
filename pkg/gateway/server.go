@@ -782,7 +782,11 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 // If this endpoint fails, Kubernetes will restart the pod.
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+	// Per HEALTH_CHECK_STANDARD.md: Liveness returns "healthy" not "ok"
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"status":    "healthy",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
 		s.logger.Error("Failed to encode health response", zap.Error(err))
 	}
 }

@@ -19,49 +19,41 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"time"
 
-	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
-	"k8s.io/apimachinery/pkg/runtime"
-
-	// DD-GATEWAY-004: clientcmd import removed - no longer needed
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
-	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
-	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 )
 
 // Business Outcome Testing: Test WHAT complete webhook processing enables
 //
-// ❌ WRONG: "should parse JSON and call Redis" (tests implementation)
+// ❌ WRONG: "HTTP response contains status field" (tests implementation)
 // ✅ RIGHT: "Prometheus alerts create RemediationRequest CRDs for AI analysis" (tests business outcome)
-
-// addAuthHeader adds the authorized ServiceAccount token to the request
-// This is required for all webhook requests after security middleware integration
-func addAuthHeader(req *http.Request) {
-	// NO-OP: Authentication is disabled for Kind cluster integration tests (DisableAuth=true)
-	// Security tests are skipped when DisableAuth=true
-	// This function is kept for backward compatibility with test code
-}
+//
+// These tests verify the COMPLETE end-to-end business flow:
+// 1. Webhook arrives (Prometheus or K8s Event)
+// 2. CRD created in Kubernetes with correct business metadata
+// 3. Fingerprint stored in Redis for deduplication
+// 4. Duplicate alerts return 202 and NO new CRD created
+// 5. Storm detection aggregates multiple alerts into single CRD
+//
+// This REPLACES the old tests that only verified HTTP response body structure.
 
 var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integration Tests", func() {
 	var (
 		ctx           context.Context
 		gatewayServer *gateway.Server
-		redisClient   *goredis.Client
-		k8sClient     client.Client
+		testServer    *httptest.Server
+		redisClient   *RedisTestClient
+		k8sClient     *K8sTestClient
 		logger        *zap.Logger
 	)
 
@@ -69,131 +61,52 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		ctx = context.Background()
 		logger = zap.NewNop()
 
-		// Check if running in CI without Redis
-		if os.Getenv("SKIP_E2E_INTEGRATION") == "true" {
-			Skip("E2E integration tests skipped (SKIP_E2E_INTEGRATION=true)")
-		}
+		// Setup test infrastructure using helpers
+		redisClient = SetupRedisTestClient(ctx)
+		Expect(redisClient).ToNot(BeNil(), "Redis client required for integration tests")
+		Expect(redisClient.Client).ToNot(BeNil(), "Redis connection required")
 
-		// Connect to real Redis (OCP or Docker)
-		redisAddr := "localhost:6379"
-		redisPassword := ""
-		redisDB := 3 // Use DB 3 for E2E tests
-
-		redisClient = goredis.NewClient(&goredis.Options{
-			Addr:     redisAddr,
-			Password: redisPassword,
-			DB:       redisDB,
-		})
-
-		// Verify Redis is available
-		_, err := redisClient.Ping(ctx).Result()
-		if err != nil {
-			// Try fallback to local Docker Redis
-			_ = redisClient.Close()
-			redisClient = goredis.NewClient(&goredis.Options{
-				Addr:     "localhost:6380",
-				Password: "integration_redis_password",
-				DB:       redisDB,
-			})
-
-			_, err = redisClient.Ping(ctx).Result()
-			if err != nil {
-				Skip("Redis not available - run 'kubectl port-forward -n kubernaut-system svc/redis 6379:6379'")
-			}
-		}
-
-		// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
-		err = redisClient.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
-
-		// Verify Redis is clean
-		keys, err := redisClient.Keys(ctx, "*").Result()
-		Expect(err).ToNot(HaveOccurred())
-		Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
-
-		// Create fake Kubernetes client for CRD creation
-		scheme := runtime.NewScheme()
-		schemeErr := remediationv1alpha1.AddToScheme(scheme)
-		Expect(schemeErr).NotTo(HaveOccurred())
-		k8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-
-		// Create Gateway server with real Redis and fake K8s
-		adapterRegistry := adapters.NewAdapterRegistry()
-		classifier := processing.NewEnvironmentClassifier()
-
-		// Load Rego policy for priority assignment (BR-GATEWAY-013)
-		// Path is relative to workspace root (where tests are run from)
-		policyPath := "../../../docs/gateway/policies/priority-policy.rego"
-		priorityEngine, err := processing.NewPriorityEngineWithRego(policyPath, logger)
-		Expect(err).ToNot(HaveOccurred(), "Failed to load Rego priority policy")
-
-		pathDecider := processing.NewRemediationPathDecider(logger)
-		crdCreator := processing.NewCRDCreator(k8sClient, logger)
-
-		serverConfig := &gateway.Config{
-			Port:         8080,
-			ReadTimeout:  5,
-			WriteTimeout: 10,
-		}
-
-		// v2.9: Wire deduplication and storm detection services (REQUIRED)
-		// BR-GATEWAY-008, BR-GATEWAY-009 mandate these services
-		if redisClient == nil {
-			Fail("Redis client is required for Gateway startup (BR-GATEWAY-008, BR-GATEWAY-009)")
-		}
-
-		dedupService := processing.NewDeduplicationService(redisClient, 5*time.Second, logger)
-		stormDetector := processing.NewStormDetector(redisClient, logger)
-		stormAggregator := processing.NewStormAggregator(redisClient)
-
-		var serverErr error
-		// DD-GATEWAY-004: K8s clientset removed - authentication now at network layer
-		// Phase 2 Fix: Create custom Prometheus registry per test to prevent
-		// "duplicate metrics collector registration" panics
-		metricsRegistry := prometheus.NewRegistry()
-
-		gatewayServer, serverErr = gateway.NewServer(
-			adapterRegistry,
-			classifier,
-			priorityEngine,
-			pathDecider,
-			crdCreator,
-			dedupService,    // REQUIRED v2.9
-			stormDetector,   // REQUIRED v2.9
-			stormAggregator, // REQUIRED v2.11
-			redisClient,     // REQUIRED v2.11 (rate limiting)
-			logger,
-			serverConfig,
-			metricsRegistry, // Phase 2 Fix: Custom registry per test for isolation
-		)
-		Expect(serverErr).ToNot(HaveOccurred(), "Gateway server creation should succeed")
+		k8sClient = SetupK8sTestClient(ctx)
+		Expect(k8sClient).ToNot(BeNil(), "K8s client required for integration tests")
 
 		// Clean Redis before each test
-		redisClient.FlushDB(ctx)
+		err := redisClient.Client.FlushDB(ctx).Err()
+		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
+
+		// Create Gateway server using helper
+		gatewayServer, err = StartTestGateway(ctx, redisClient, k8sClient)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
+		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should be created")
+
+		// Create HTTP test server
+		testServer = httptest.NewServer(gatewayServer.Handler())
+		Expect(testServer).ToNot(BeNil(), "Test server should be created")
+
+		logger.Info("Test setup complete",
+			zap.String("test_server_url", testServer.URL),
+			zap.String("redis_addr", redisClient.Client.Options().Addr),
+		)
 	})
 
 	AfterEach(func() {
-		// Cleanup Redis
-		if redisClient != nil {
-			_ = redisClient.FlushDB(ctx).Err()
-			_ = redisClient.Close()
+		// Cleanup
+		if testServer != nil {
+			testServer.Close()
 		}
-
-		// Cleanup K8s CRDs to prevent collisions
-		if k8sClient != nil {
-			crdList := &remediationv1alpha1.RemediationRequestList{}
-			_ = k8sClient.List(ctx, crdList)
-			for _, crd := range crdList.Items {
-				_ = k8sClient.Delete(ctx, &crd)
-			}
+		if redisClient != nil && redisClient.Client != nil {
+			_ = redisClient.Client.FlushDB(ctx).Err()
 		}
 	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-001: Prometheus Alert → CRD Creation
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("BR-GATEWAY-001: Prometheus Alert → CRD Creation", func() {
 		It("creates RemediationRequest CRD from Prometheus AlertManager webhook", func() {
 			// BR-GATEWAY-001, BR-GATEWAY-015: Complete webhook-to-CRD flow
 			// BUSINESS SCENARIO: Production pod memory alert → AI analysis triggered
-			// Expected: 201 Created, CRD with correct priority and environment
+			// Expected: CRD created in K8s with correct priority and environment
 
 			payload := []byte(`{
 				"alerts": [{
@@ -212,27 +125,37 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}]
 			}`)
 
-			req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-			req.Header.Set("Content-Type", "application/json")
-			addAuthHeader(req) // Add authentication token
-			rec := httptest.NewRecorder()
+			// Send webhook to Gateway
+			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
+			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
+			defer resp.Body.Close()
 
-			gatewayServer.Handler().ServeHTTP(rec, req)
-
-			// BUSINESS OUTCOME: CRD created for AI analysis
-			Expect(rec.Code).To(Equal(http.StatusCreated),
+			// BUSINESS OUTCOME 1: HTTP 201 Created
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"First occurrence must create CRD (201 Created)")
 
-			var response map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).NotTo(HaveOccurred())
+			// BUSINESS OUTCOME 2: CRD created in Kubernetes
+			var crdList remediationv1alpha1.RemediationRequestList
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
+			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in production namespace")
+			Expect(crdList.Items).To(HaveLen(1), "One CRD should be created")
 
-			Expect(response["status"]).To(Equal("created"))
-			Expect(response["priority"]).To(Equal("P0"),
+			crd := crdList.Items[0]
+			Expect(crd.Spec.Priority).To(Equal("P0"),
 				"critical + production = P0 (revenue-impacting)")
-			Expect(response["environment"]).To(Equal("production"))
-			Expect(response["fingerprint"]).NotTo(BeEmpty(),
-				"Fingerprint enables deduplication")
+			Expect(crd.Spec.Environment).To(Equal("production"),
+				"Environment should be classified from namespace")
+			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"),
+				"Alert name enables AI to understand failure type")
+
+			// BUSINESS OUTCOME 3: Fingerprint stored in Redis
+			fingerprint := crd.Labels["kubernaut.io/fingerprint"]
+			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint enables deduplication")
+
+			exists, err := redisClient.Client.Exists(ctx, "alert:fingerprint:"+fingerprint).Result()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(exists).To(Equal(int64(1)), "Fingerprint should be stored in Redis")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Prometheus alert → Gateway → CRD created
@@ -240,356 +163,254 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// ✅ Environment classified from namespace
 			// ✅ Fingerprint generated for deduplication
 		})
-
-		It("includes resource information for AI remediation targeting", func() {
-			// BR-GATEWAY-001: Resource identification for kubectl commands
-			// BUSINESS SCENARIO: AI needs to know which Pod to analyze
-			// Expected: CRD includes resource kind, name, namespace
-
-			payload := []byte(`{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "HighCPU",
-						"severity": "warning",
-						"namespace": "staging",
-						"deployment": "frontend"
-					},
-					"annotations": {
-						"summary": "Deployment frontend using 90% CPU"
-					},
-					"startsAt": "2025-10-22T10:05:00Z"
-				}]
-			}`)
-
-			req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-			req.Header.Set("Content-Type", "application/json")
-			addAuthHeader(req) // Add authentication token
-			rec := httptest.NewRecorder()
-
-			gatewayServer.Handler().ServeHTTP(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusCreated))
-
-			var response map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Resource information enables AI to run:
-			// kubectl describe deployment frontend -n staging
-			// kubectl scale deployment frontend --replicas=5 -n staging
-			Expect(response["priority"]).To(Equal("P2"),
-				"warning + staging = P2 (pre-prod testing)")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ AI can target correct Kubernetes resource
-			// ✅ Resource kind (Deployment) extracted from labels
-			// ✅ Resource name (frontend) extracted from labels
-			// ✅ Namespace (staging) preserved for multi-tenancy
-		})
 	})
 
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-003-005: Deduplication
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 	Context("BR-GATEWAY-003-005: Deduplication", func() {
-		It("returns 202 Accepted for duplicate alerts within 5-minute window", func() {
-			// BR-GATEWAY-003: Prevent duplicate CRD creation
-			// BUSINESS SCENARIO: Same alert fires 3 times in 2 minutes
-			// Expected: First → 201 Created, subsequent → 202 Accepted
+		It("returns 202 Accepted for duplicate alerts within TTL window", func() {
+			// BR-GATEWAY-003-005: Duplicate detection prevents CRD spam
+			// BUSINESS SCENARIO: Same alert fires 3 times in 5 seconds
+			// Expected: First = 201 Created, subsequent = 202 Accepted, NO duplicate CRDs
 
 			payload := []byte(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
-						"alertname": "DatabaseDown",
-						"severity": "critical",
+						"alertname": "CPUThrottling",
+						"severity": "warning",
 						"namespace": "production",
-						"statefulset": "postgres"
+						"pod": "api-gateway-7"
 					},
 					"annotations": {
-						"summary": "PostgreSQL database unavailable"
+						"summary": "CPU throttling detected"
 					},
-					"startsAt": "2025-10-22T10:00:00Z"
+					"startsAt": "2025-10-22T12:00:00Z"
 				}]
 			}`)
 
-			// First occurrence: Create CRD
-			req1 := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-			req1.Header.Set("Content-Type", "application/json")
-			addAuthHeader(req1) // Add authentication token
-			rec1 := httptest.NewRecorder()
-			gatewayServer.Handler().ServeHTTP(rec1, req1)
+			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
 
-			Expect(rec1.Code).To(Equal(http.StatusCreated),
-				"First occurrence creates CRD")
+			// First alert: Creates CRD
+			resp1, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred())
+			defer resp1.Body.Close()
+			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
+				"First alert must create CRD")
 
-			var response1 map[string]interface{}
-			unmarshalErr1 := json.Unmarshal(rec1.Body.Bytes(), &response1)
-			Expect(unmarshalErr1).NotTo(HaveOccurred())
-			firstFingerprint := response1["fingerprint"].(string)
-			firstCRDName := response1["crd_name"].(string)
+			// BUSINESS OUTCOME 1: First CRD created
+			var crdList1 remediationv1alpha1.RemediationRequestList
+			err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace("production"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(crdList1.Items).To(HaveLen(1), "First alert creates CRD")
 
-			// Second occurrence: Duplicate detected
-			req2 := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-			req2.Header.Set("Content-Type", "application/json")
-			addAuthHeader(req2) // Add authentication token
-			rec2 := httptest.NewRecorder()
-			gatewayServer.Handler().ServeHTTP(rec2, req2)
+			firstCRDName := crdList1.Items[0].Name
 
-			Expect(rec2.Code).To(Equal(http.StatusAccepted),
-				"Duplicate alert returns 202 Accepted (not 201)")
+			// Second alert: Duplicate (within TTL)
+			resp2, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred())
+			defer resp2.Body.Close()
+			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
+				"Duplicate alert must return 202 Accepted")
 
-			var response2 map[string]interface{}
-			unmarshalErr2 := json.Unmarshal(rec2.Body.Bytes(), &response2)
-			Expect(unmarshalErr2).NotTo(HaveOccurred())
+			// BUSINESS OUTCOME 2: NO new CRD created
+			var crdList2 remediationv1alpha1.RemediationRequestList
+			err = k8sClient.Client.List(ctx, &crdList2, client.InNamespace("production"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(crdList2.Items).To(HaveLen(1),
+				"Duplicate alert must NOT create new CRD")
+			Expect(crdList2.Items[0].Name).To(Equal(firstCRDName),
+				"Same CRD name confirms deduplication")
 
-			Expect(response2["status"]).To(Equal("duplicate"))
-			Expect(response2["fingerprint"]).To(Equal(firstFingerprint),
-				"Same fingerprint confirms duplicate")
-			Expect(response2["original_crd"]).To(Equal(firstCRDName),
-				"Reference to original CRD for tracking")
+			// Third alert: Still duplicate
+			resp3, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred())
+			defer resp3.Body.Close()
+			Expect(resp3.StatusCode).To(Equal(http.StatusAccepted),
+				"Third duplicate must also return 202 Accepted")
 
-			// Third occurrence: Still duplicate
-			req3 := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-			req3.Header.Set("Content-Type", "application/json")
-			addAuthHeader(req3) // Add authentication token
-			rec3 := httptest.NewRecorder()
-			gatewayServer.Handler().ServeHTTP(rec3, req3)
-
-			Expect(rec3.Code).To(Equal(http.StatusAccepted))
+			// BUSINESS OUTCOME 3: Still only 1 CRD
+			var crdList3 remediationv1alpha1.RemediationRequestList
+			err = k8sClient.Client.List(ctx, &crdList3, client.InNamespace("production"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(crdList3.Items).To(HaveLen(1),
+				"Third duplicate must NOT create new CRD (still only 1 CRD)")
 
 			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ First alert → CRD created → AI analyzes
-			// ✅ Duplicate alerts → No new CRD → AI not overloaded
-			// ✅ 40-60% reduction in AI processing load
-			// ✅ All duplicates tracked to original CRD
+			// ✅ Deduplication prevents CRD spam (1 CRD, not 3)
+			// ✅ Duplicate alerts tracked but don't create new CRDs
 		})
 
 		It("tracks duplicate count and timestamps in Redis metadata", func() {
-			// BR-GATEWAY-004, BR-GATEWAY-005: Metadata tracking
-			// BUSINESS SCENARIO: Operations need to see duplicate count
-			// Expected: Redis metadata includes count, timestamps, CRD ref
+			// BR-GATEWAY-005: Duplicate metadata for operational visibility
+			// BUSINESS SCENARIO: Alert fires 5 times → Ops sees escalation pattern
+			// Expected: Redis metadata includes count, first seen, last seen
 
 			payload := []byte(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
-						"alertname": "ServiceUnavailable",
+						"alertname": "NetworkLatency",
 						"severity": "critical",
-						"namespace": "production",
-						"service": "api-gateway"
+						"namespace": "production"
 					},
-					"startsAt": "2025-10-22T10:00:00Z"
+					"annotations": {
+						"summary": "Network latency > 500ms"
+					},
+					"startsAt": "2025-10-22T13:00:00Z"
 				}]
 			}`)
 
-			// Send alert 5 times
-			for i := 0; i < 5; i++ {
-				req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-				req.Header.Set("Content-Type", "application/json")
-				addAuthHeader(req) // Add authentication token
-				rec := httptest.NewRecorder()
-				gatewayServer.Handler().ServeHTTP(rec, req)
+			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
 
-				if i == 0 {
-					Expect(rec.Code).To(Equal(http.StatusCreated))
-				} else {
-					Expect(rec.Code).To(Equal(http.StatusAccepted))
-				}
+			// First alert
+			resp1, _ := http.Post(url, "application/json", bytes.NewReader(payload))
+			defer resp1.Body.Close()
+
+			// Get CRD to extract fingerprint
+			var crdList remediationv1alpha1.RemediationRequestList
+			k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
+			Expect(crdList.Items).To(HaveLen(1))
+			fingerprint := crdList.Items[0].Labels["kubernaut.io/fingerprint"]
+
+			// Send 4 more duplicates
+			for i := 0; i < 4; i++ {
+				resp, _ := http.Post(url, "application/json", bytes.NewReader(payload))
+				resp.Body.Close()
 			}
 
-			// Verify Redis metadata
-			// Note: This requires direct Redis access to validate metadata
-			// In production, operations can query Redis to see duplicate counts
+			// BUSINESS OUTCOME: Redis metadata tracks duplicate count
+			count, err := redisClient.Client.HGet(ctx, "alert:fingerprint:"+fingerprint, "count").Int()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(count).To(BeNumerically(">=", 5),
+				"Count shows alert fired 5 times (1 original + 4 duplicates)")
+
+			firstSeen, err := redisClient.Client.HGet(ctx, "alert:fingerprint:"+fingerprint, "firstSeen").Result()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(firstSeen).NotTo(BeEmpty(),
+				"First seen timestamp shows when issue started")
+
+			lastSeen, err := redisClient.Client.HGet(ctx, "alert:fingerprint:"+fingerprint, "lastSeen").Result()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lastSeen).NotTo(BeEmpty(),
+				"Last seen timestamp shows issue is ongoing")
 
 			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Duplicate count tracked (5 occurrences)
-			// ✅ First/last seen timestamps recorded
-			// ✅ RemediationRequest CRD reference stored
-			// ✅ Operations can query Redis for incident details
+			// ✅ Duplicate tracking provides operational visibility
+			// ✅ Metadata helps ops understand alert escalation patterns
 		})
 	})
 
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-013: Storm Detection
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 	Context("BR-GATEWAY-013: Storm Detection", func() {
-		It("detects alert storm when 10+ alerts in 1 minute", func() {
-			// BR-GATEWAY-013: Storm detection and aggregation
-			// BUSINESS SCENARIO: Rollout causes 15 pod crashes in 1 minute
-			// Expected: First 10 alerts create CRDs, then storm aggregation kicks in
+		It("aggregates multiple related alerts into single storm CRD", func() {
+			// BR-GATEWAY-013: Storm detection prevents CRD flood
+			// BUSINESS SCENARIO: Node failure → 15 pod alerts in 10 seconds
+			// Expected: Single storm CRD, not 15 individual CRDs
 
-			createdCount := 0
-			aggregatedCount := 0
+			url := fmt.Sprintf("%s/webhook/prometheus", testServer.URL)
 
-			// Send 15 alerts to same namespace (different pods = different fingerprints)
-			// Storm detection is per namespace:alertname, not per fingerprint
-			// Threshold is 10, so alert #10 triggers storm detection (count=10 >= threshold)
-			for i := 0; i < 15; i++ {
+			// Simulate node failure: 15 pods on same node report issues
+			for i := 1; i <= 15; i++ {
 				payload := []byte(fmt.Sprintf(`{
 					"alerts": [{
 						"status": "firing",
 						"labels": {
-							"alertname": "PodCrashLooping",
-							"severity": "warning",
-							"namespace": "staging",
-							"pod": "frontend-%d"
+							"alertname": "PodNotReady",
+							"severity": "critical",
+							"namespace": "production",
+							"pod": "app-pod-%d",
+							"node": "worker-node-03"
 						},
 						"annotations": {
-							"summary": "Pod frontend-%d crash looping"
+							"summary": "Pod not ready after node failure"
 						},
-						"startsAt": "2025-10-22T10:00:00Z"
+						"startsAt": "2025-10-22T14:00:00Z"
 					}]
-				}`, i, i))
+				}`, i))
 
-				req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-				req.Header.Set("Content-Type", "application/json")
-				addAuthHeader(req) // Add authentication token
-				rec := httptest.NewRecorder()
-				gatewayServer.Handler().ServeHTTP(rec, req)
-
-				// First 9 alerts: Individual CRDs created (201) - count 1-9 < threshold
-				// Alert 10: Storm detected (202) - count=10 >= threshold (storm flag set)
-				// Alerts 11-15: Storm aggregation (202) - storm flag active
-				if i < 9 {
-					Expect(rec.Code).To(Equal(http.StatusCreated),
-						fmt.Sprintf("Alert %d should create individual CRD (count=%d < threshold)", i+1, i+1))
-					createdCount++
-				} else {
-					Expect(rec.Code).To(Equal(http.StatusAccepted),
-						fmt.Sprintf("Alert %d should be aggregated (count=%d >= threshold or storm active)", i+1, i+1))
-					aggregatedCount++
-
-					// Verify aggregation response
-					var response map[string]interface{}
-					err := json.Unmarshal(rec.Body.Bytes(), &response)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(response["status"]).To(Equal("aggregated"),
-						"Response should indicate storm aggregation")
-				}
+				resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+				Expect(err).ToNot(HaveOccurred())
+				resp.Body.Close()
 			}
 
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ 9 individual CRDs created (before storm threshold)
-			// ✅ 6 alerts aggregated (at and after storm threshold: alerts 10-15)
-			// ✅ Storm flag set in Redis (5-minute TTL)
-			// ✅ AI protected from overload (40% reduction: 15 alerts → 9 CRDs)
-			Expect(createdCount).To(Equal(9), "Should create 9 individual CRDs")
-			Expect(aggregatedCount).To(Equal(6), "Should aggregate 6 alerts (including threshold trigger)")
-		})
-	})
+			// Wait for storm aggregation window to complete
+			time.Sleep(2 * time.Second)
 
-	Context("BR-GATEWAY-002: Kubernetes Event Webhook", func() {
-		It("creates CRD from Kubernetes Event webhook", func() {
-			// BR-GATEWAY-002: Kubernetes Event webhook support
-			// BUSINESS SCENARIO: Pod crash event → AI investigates
-			// Expected: 201 Created, CRD with event details
-
-			payload := []byte(`{
-				"metadata": {
-					"name": "pod-crash-event",
-					"namespace": "production"
-				},
-				"involvedObject": {
-					"kind": "Pod",
-					"name": "payment-api-456",
-					"namespace": "production"
-				},
-				"reason": "BackOff",
-				"message": "Back-off restarting failed container payment-api in pod payment-api-456",
-				"type": "Warning",
-				"eventTime": "2025-10-22T10:00:00Z"
-			}`)
-
-			req := httptest.NewRequest(http.MethodPost, "/webhook/k8s-event", bytes.NewReader(payload))
-			req.Header.Set("Content-Type", "application/json")
-			addAuthHeader(req) // Add authentication token
-			rec := httptest.NewRecorder()
-
-			gatewayServer.Handler().ServeHTTP(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusCreated),
-				"Kubernetes Event creates CRD")
-
-			var response map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			// BUSINESS OUTCOME: Storm CRD created (not 15 individual CRDs)
+			var crdList remediationv1alpha1.RemediationRequestList
+			err := k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(response["status"]).To(Equal("created"))
-			Expect(response["environment"]).To(Equal("production"))
+			// Should have 1 storm CRD (not 15)
+			Expect(crdList.Items).To(HaveLen(1),
+				"Storm detection should create 1 CRD, not 15")
+
+			crd := crdList.Items[0]
+			Expect(crd.Spec.StormAlertCount).To(BeNumerically(">=", 15),
+				"All related alerts aggregated into single CRD")
+			Expect(crd.Labels["kubernaut.io/storm"]).To(Equal("true"),
+				"Storm label indicates aggregated CRD")
 
 			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Kubernetes Events trigger AI analysis
-			// ✅ Both Prometheus and K8s Events supported
-			// ✅ Multi-source signal ingestion working
+			// ✅ Storm detection prevents K8s API overload (1 CRD, not 15)
+			// ✅ Related alerts aggregated for efficient AI analysis
 		})
 	})
 
-	Context("Multi-Adapter Concurrent Processing", func() {
-		// Skip: Requires K8s Event adapter implementation (BR-GATEWAY-002)
-		PIt("handles concurrent webhooks from multiple sources", func() {
-			// BR-GATEWAY-001, BR-GATEWAY-002: Multi-source concurrent processing
-			// BUSINESS SCENARIO: Prometheus + K8s Event webhooks arrive simultaneously
-			// Expected: Both processed successfully, no race conditions
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-002: Kubernetes Event Webhooks
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-			prometheusPayload := []byte(`{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "HighMemory",
-						"severity": "critical",
-						"namespace": "production",
-						"pod": "concurrent-test-1"
-					},
-					"startsAt": "2025-10-22T10:00:00Z"
-				}]
-			}`)
+	Context("BR-GATEWAY-002: Kubernetes Event Webhooks", func() {
+		It("creates CRD from Kubernetes Warning events", func() {
+			// BR-GATEWAY-002: K8s events trigger remediation workflow
+			// BUSINESS SCENARIO: Pod OOMKilled event → AI analyzes memory issue
+			// Expected: CRD created with event details
 
-			k8sEventPayload := []byte(`{
-				"metadata": {
-					"name": "concurrent-event",
-					"namespace": "production"
-				},
+			payload := []byte(`{
+				"type": "Warning",
+				"reason": "OOMKilled",
+				"message": "Container killed due to out of memory",
 				"involvedObject": {
 					"kind": "Pod",
-					"name": "concurrent-test-2",
-					"namespace": "production"
+					"namespace": "production",
+					"name": "payment-processor-42"
 				},
-				"reason": "Failed",
-				"message": "Container failed",
-				"type": "Warning",
-				"eventTime": "2025-10-22T10:00:00Z"
+				"metadata": {
+					"namespace": "production"
+				}
 			}`)
 
-			// Send both webhooks concurrently
-			done := make(chan bool, 2)
+			url := fmt.Sprintf("%s/webhook/kubernetes", testServer.URL)
+			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
 
-			go func() {
-				defer GinkgoRecover() // Prevent panic in goroutine
-				req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(prometheusPayload))
-				req.Header.Set("Content-Type", "application/json")
-				addAuthHeader(req) // Add authentication token
-				rec := httptest.NewRecorder()
-				gatewayServer.Handler().ServeHTTP(rec, req)
-				Expect(rec.Code).To(Equal(http.StatusCreated))
-				done <- true
-			}()
+			// BUSINESS OUTCOME 1: HTTP 201 Created
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"Warning event must create CRD for AI analysis")
 
-			go func() {
-				defer GinkgoRecover() // Prevent panic in goroutine
-				req := httptest.NewRequest(http.MethodPost, "/webhook/kubernetes-event", bytes.NewReader(k8sEventPayload))
-				req.Header.Set("Content-Type", "application/json")
-				addAuthHeader(req) // Add authentication token
-				rec := httptest.NewRecorder()
-				gatewayServer.Handler().ServeHTTP(rec, req)
-				Expect(rec.Code).To(Equal(http.StatusCreated))
-				done <- true
-			}()
+			// BUSINESS OUTCOME 2: CRD created in Kubernetes
+			var crdList remediationv1alpha1.RemediationRequestList
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(crdList.Items).To(HaveLen(1), "K8s event should create CRD")
 
-			// Wait for both to complete
-			<-done
-			<-done
+			crd := crdList.Items[0]
+			Expect(crd.Spec.SignalName).To(Equal("OOMKilled"),
+				"Event reason helps AI identify root cause")
+			Expect(crd.Spec.SignalType).To(Equal("kubernetes-event"),
+				"Signal type distinguishes K8s events from Prometheus alerts")
 
 			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Concurrent webhook processing works
-			// ✅ No race conditions in Redis or K8s client
-			// ✅ Both adapters work simultaneously
-			// ✅ Gateway can handle production load
+			// ✅ K8s events trigger remediation workflow
+			// ✅ Event details provide AI with root cause context
 		})
 	})
 })

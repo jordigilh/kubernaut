@@ -61,7 +61,7 @@ Based on test output analysis, the remaining 39 failures fall into these categor
 
 **Affected Test Files** (need RC-3 fix):
 1. `deduplication_ttl_test.go` - 4 tests
-2. `health_integration_test.go` - 3 tests  
+2. `health_integration_test.go` - 3 tests
 3. `k8s_api_integration_test.go` - 8 tests
 4. `redis_integration_test.go` - 6 tests
 5. `redis_resilience_test.go` - 4 tests
@@ -145,19 +145,19 @@ for file in health_integration_test.go deduplication_ttl_test.go \
             redis_integration_test.go redis_resilience_test.go \
             k8s_api_integration_test.go storm_aggregation_test.go \
             prometheus_adapter_integration_test.go; do
-    
+
     if [ ! -f "test/integration/gateway/$file" ]; then
         continue
     fi
-    
+
     echo "Fixing $file..."
-    
+
     # Check if testServer already exists
     if grep -q "testServer.*httptest.Server" "test/integration/gateway/$file"; then
         echo "  ✓ testServer already declared"
         continue
     fi
-    
+
     # Add testServer to var block
     # Add StartTestGateway to BeforeEach
     # Add cleanup to AfterEach

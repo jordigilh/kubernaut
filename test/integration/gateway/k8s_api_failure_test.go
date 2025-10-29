@@ -264,179 +264,179 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 	// which was removed during configuration refactoring (v2.18).
 	// Original content preserved in git history if needed for reference.
 	/*
-		BeforeEach(func() {
-			// Create Gateway server with failing K8s client
-			// Note: NewAdapterRegistry() already registers Prometheus and K8s Event adapters
-			adapterRegistry := adapters.NewAdapterRegistry()
+			BeforeEach(func() {
+				// Create Gateway server with failing K8s client
+				// Note: NewAdapterRegistry() already registers Prometheus and K8s Event adapters
+				adapterRegistry := adapters.NewAdapterRegistry()
 
-			classifier := processing.NewEnvironmentClassifier()
-			// Load Rego policy for priority assignment (BR-GATEWAY-013)
-			// Use absolute path from project root (tests run from package directory)
-			policyPath := "../../../docs/gateway/policies/priority-policy.rego"
-			priorityEngine, err := processing.NewPriorityEngineWithRego(policyPath, logger)
-			Expect(err).ToNot(HaveOccurred(), "Should load Rego priority policy")
-			pathDecider := processing.NewRemediationPathDecider(logger)
-			crdCreator := processing.NewCRDCreator(failingK8sClient, logger)
+				classifier := processing.NewEnvironmentClassifier()
+				// Load Rego policy for priority assignment (BR-GATEWAY-013)
+				// Use absolute path from project root (tests run from package directory)
+				policyPath := "../../../docs/gateway/policies/priority-policy.rego"
+				priorityEngine, err := processing.NewPriorityEngineWithRego(policyPath, logger)
+				Expect(err).ToNot(HaveOccurred(), "Should load Rego priority policy")
+				pathDecider := processing.NewRemediationPathDecider(logger)
+				crdCreator := processing.NewCRDCreator(failingK8sClient, logger)
 
-			serverConfig = &gateway.Config{
-				Port:         8080,
-				ReadTimeout:  5,
-				WriteTimeout: 10,
-			}
+				serverConfig = &gateway.Config{
+					Port:         8080,
+					ReadTimeout:  5,
+					WriteTimeout: 10,
+				}
 
-			// v2.9: Deduplication and storm detection are REQUIRED (BR-GATEWAY-008, BR-GATEWAY-009)
-			// Even for K8s API failure tests, we need these services
-			// Use miniredis or real Redis for testing
-			redisClient := SetupRedisTestClient(ctx)
-			if redisClient == nil || redisClient.Client == nil {
-				Skip("Redis not available - required for Gateway startup")
-			}
+				// v2.9: Deduplication and storm detection are REQUIRED (BR-GATEWAY-008, BR-GATEWAY-009)
+				// Even for K8s API failure tests, we need these services
+				// Use miniredis or real Redis for testing
+				redisClient := SetupRedisTestClient(ctx)
+				if redisClient == nil || redisClient.Client == nil {
+					Skip("Redis not available - required for Gateway startup")
+				}
 
-			// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
-			err = redisClient.Client.FlushDB(ctx).Err()
-			Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
+				// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
+				err = redisClient.Client.FlushDB(ctx).Err()
+				Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
-			// Verify Redis is clean
-			keys, err := redisClient.Client.Keys(ctx, "*").Result()
-			Expect(err).ToNot(HaveOccurred())
-			Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
+				// Verify Redis is clean
+				keys, err := redisClient.Client.Keys(ctx, "*").Result()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 
-			dedupService := processing.NewDeduplicationService(redisClient.Client, 5*time.Second, logger)
-			stormDetector := processing.NewStormDetector(redisClient.Client, logger)
-			stormAggregator := processing.NewStormAggregator(redisClient.Client)
+				dedupService := processing.NewDeduplicationService(redisClient.Client, 5*time.Second, logger)
+				stormDetector := processing.NewStormDetector(redisClient.Client, logger)
+				stormAggregator := processing.NewStormAggregator(redisClient.Client)
 
-			// DD-GATEWAY-004: K8s clientset no longer needed - authentication removed
-			// Phase 2 Fix: Create custom Prometheus registry per test to prevent
-			// "duplicate metrics collector registration" panics
-			metricsRegistry := prometheus.NewRegistry()
+				// DD-GATEWAY-004: K8s clientset no longer needed - authentication removed
+				// Phase 2 Fix: Create custom Prometheus registry per test to prevent
+				// "duplicate metrics collector registration" panics
+				metricsRegistry := prometheus.NewRegistry()
 
-			gatewayServer, err = gateway.NewServer(
-				adapterRegistry,
-				classifier,
-				priorityEngine,
-				pathDecider,
-				crdCreator,
-				dedupService,       // REQUIRED v2.9
-				stormDetector,      // REQUIRED v2.9
-				stormAggregator,    // REQUIRED v2.11
-				redisClient.Client, // REQUIRED v2.11 (rate limiting)
-				logger,
-				serverConfig,
-				metricsRegistry, // Phase 2 Fix: Custom registry per test for isolation
-			)
-			Expect(err).ToNot(HaveOccurred(), "Gateway server creation should succeed")
+				gatewayServer, err = gateway.NewServer(
+					adapterRegistry,
+					classifier,
+					priorityEngine,
+					pathDecider,
+					crdCreator,
+					dedupService,       // REQUIRED v2.9
+					stormDetector,      // REQUIRED v2.9
+					stormAggregator,    // REQUIRED v2.11
+					redisClient.Client, // REQUIRED v2.11 (rate limiting)
+					logger,
+					serverConfig,
+					metricsRegistry, // Phase 2 Fix: Custom registry per test for isolation
+				)
+				Expect(err).ToNot(HaveOccurred(), "Gateway server creation should succeed")
+			})
+
+			It("returns 500 Internal Server Error when K8s API unavailable during webhook processing", func() {
+				// BR-GATEWAY-019: Full webhook → 500 error → Prometheus retry flow
+				// BUSINESS SCENARIO: Kubernetes API down during webhook processing
+				// Expected: 500 error → Prometheus retries → Eventual success when API recovers
+
+				// Prepare Prometheus webhook payload
+				payload := []byte(`{
+					"alerts": [{
+						"status": "firing",
+						"labels": {
+							"alertname": "HighMemoryUsage",
+							"severity": "critical",
+							"namespace": "production",
+							"pod": "payment-api-123"
+						},
+						"annotations": {
+							"summary": "Pod payment-api-123 using 95% memory"
+						},
+						"startsAt": "2025-10-22T10:00:00Z"
+					}]
+				}`)
+
+			// Send webhook to Gateway
+			req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
+			req.Header.Set("Content-Type", "application/json")
+			// DD-GATEWAY-004: No authentication needed - handled at network layer
+			rec := httptest.NewRecorder()
+
+				// Process webhook through Gateway handler
+				gatewayServer.Handler().ServeHTTP(rec, req)
+
+				// BUSINESS OUTCOME: 500 error triggers Prometheus retry
+				Expect(rec.Code).To(Equal(http.StatusInternalServerError),
+					"K8s API failure must return 500 to trigger client retry")
+
+				var response map[string]interface{}
+				unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(unmarshalErr).NotTo(HaveOccurred())
+
+				Expect(response["status"]).To(Equal("error"),
+					"Response must indicate error status")
+				Expect(response["error"]).To(ContainSubstring("failed to create remediation request"),
+					"Error message must explain what failed")
+				Expect(response["code"]).To(Equal("CRD_CREATION_ERROR"),
+					"Error code must indicate CRD creation failure")
+
+				// BUSINESS CAPABILITY VERIFIED:
+				// ✅ K8s API failure → 500 error → Prometheus retries webhook
+				// ✅ Gateway doesn't crash or hang
+				// ✅ Webhook eventually succeeds when K8s API recovers
+				// ✅ Alert data preserved for retry (idempotent)
+				//
+				// Real-world recovery flow:
+				// 10:00 AM → K8s API down → Webhook fails with 500
+				// 10:01 AM → Prometheus retries → Still fails (API still down)
+				// 10:03 AM → K8s API recovers
+				// 10:03 AM → Prometheus retries → Success (CRD created) ✅
+			})
+
+			It("returns 201 Created when K8s API is available", func() {
+				// BR-GATEWAY-019: Successful webhook processing with healthy K8s API
+				// BUSINESS SCENARIO: Normal operation, K8s API healthy
+				// Expected: 201 Created, CRD metadata returned
+
+				// Simulate K8s API recovery
+				failingK8sClient.failCreate = false
+
+				payload := []byte(`{
+					"alerts": [{
+						"status": "firing",
+						"labels": {
+							"alertname": "HighCPU",
+							"severity": "warning",
+							"namespace": "staging",
+							"deployment": "frontend"
+						},
+						"annotations": {
+							"summary": "Deployment frontend using 90% CPU"
+						},
+						"startsAt": "2025-10-22T10:05:00Z"
+					}]
+				}`)
+
+			req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
+			req.Header.Set("Content-Type", "application/json")
+			// DD-GATEWAY-004: No authentication needed - handled at network layer
+			rec := httptest.NewRecorder()
+
+				gatewayServer.Handler().ServeHTTP(rec, req)
+
+				// BUSINESS OUTCOME: Successful CRD creation
+				Expect(rec.Code).To(Equal(http.StatusCreated),
+					"Successful webhook processing must return 201 Created")
+
+				var response map[string]interface{}
+				unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(unmarshalErr).NotTo(HaveOccurred())
+
+				Expect(response["status"]).To(Equal("created"),
+					"Response must indicate success")
+				Expect(response["priority"]).To(Equal("P2"),
+					"Priority must be assigned (warning + staging = P2 per BR-GATEWAY-020 fallback matrix)")
+				Expect(response["environment"]).To(Equal("staging"),
+					"Environment must be classified")
+
+				// BUSINESS CAPABILITY VERIFIED:
+				// ✅ Normal webhook processing works when K8s API healthy
+				// ✅ CRD created with correct priority and environment
+				// ✅ Response includes metadata for client tracking
+			})
 		})
-
-		It("returns 500 Internal Server Error when K8s API unavailable during webhook processing", func() {
-			// BR-GATEWAY-019: Full webhook → 500 error → Prometheus retry flow
-			// BUSINESS SCENARIO: Kubernetes API down during webhook processing
-			// Expected: 500 error → Prometheus retries → Eventual success when API recovers
-
-			// Prepare Prometheus webhook payload
-			payload := []byte(`{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "HighMemoryUsage",
-						"severity": "critical",
-						"namespace": "production",
-						"pod": "payment-api-123"
-					},
-					"annotations": {
-						"summary": "Pod payment-api-123 using 95% memory"
-					},
-					"startsAt": "2025-10-22T10:00:00Z"
-				}]
-			}`)
-
-		// Send webhook to Gateway
-		req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-		req.Header.Set("Content-Type", "application/json")
-		// DD-GATEWAY-004: No authentication needed - handled at network layer
-		rec := httptest.NewRecorder()
-
-			// Process webhook through Gateway handler
-			gatewayServer.Handler().ServeHTTP(rec, req)
-
-			// BUSINESS OUTCOME: 500 error triggers Prometheus retry
-			Expect(rec.Code).To(Equal(http.StatusInternalServerError),
-				"K8s API failure must return 500 to trigger client retry")
-
-			var response map[string]interface{}
-			unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(unmarshalErr).NotTo(HaveOccurred())
-
-			Expect(response["status"]).To(Equal("error"),
-				"Response must indicate error status")
-			Expect(response["error"]).To(ContainSubstring("failed to create remediation request"),
-				"Error message must explain what failed")
-			Expect(response["code"]).To(Equal("CRD_CREATION_ERROR"),
-				"Error code must indicate CRD creation failure")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ K8s API failure → 500 error → Prometheus retries webhook
-			// ✅ Gateway doesn't crash or hang
-			// ✅ Webhook eventually succeeds when K8s API recovers
-			// ✅ Alert data preserved for retry (idempotent)
-			//
-			// Real-world recovery flow:
-			// 10:00 AM → K8s API down → Webhook fails with 500
-			// 10:01 AM → Prometheus retries → Still fails (API still down)
-			// 10:03 AM → K8s API recovers
-			// 10:03 AM → Prometheus retries → Success (CRD created) ✅
-		})
-
-		It("returns 201 Created when K8s API is available", func() {
-			// BR-GATEWAY-019: Successful webhook processing with healthy K8s API
-			// BUSINESS SCENARIO: Normal operation, K8s API healthy
-			// Expected: 201 Created, CRD metadata returned
-
-			// Simulate K8s API recovery
-			failingK8sClient.failCreate = false
-
-			payload := []byte(`{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "HighCPU",
-						"severity": "warning",
-						"namespace": "staging",
-						"deployment": "frontend"
-					},
-					"annotations": {
-						"summary": "Deployment frontend using 90% CPU"
-					},
-					"startsAt": "2025-10-22T10:05:00Z"
-				}]
-			}`)
-
-		req := httptest.NewRequest(http.MethodPost, "/webhook/prometheus", bytes.NewReader(payload))
-		req.Header.Set("Content-Type", "application/json")
-		// DD-GATEWAY-004: No authentication needed - handled at network layer
-		rec := httptest.NewRecorder()
-
-			gatewayServer.Handler().ServeHTTP(rec, req)
-
-			// BUSINESS OUTCOME: Successful CRD creation
-			Expect(rec.Code).To(Equal(http.StatusCreated),
-				"Successful webhook processing must return 201 Created")
-
-			var response map[string]interface{}
-			unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(unmarshalErr).NotTo(HaveOccurred())
-
-			Expect(response["status"]).To(Equal("created"),
-				"Response must indicate success")
-			Expect(response["priority"]).To(Equal("P2"),
-				"Priority must be assigned (warning + staging = P2 per BR-GATEWAY-020 fallback matrix)")
-			Expect(response["environment"]).To(Equal("staging"),
-				"Environment must be classified")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Normal webhook processing works when K8s API healthy
-			// ✅ CRD created with correct priority and environment
-			// ✅ Response includes metadata for client tracking
-		})
-	})
 	*/
 })
