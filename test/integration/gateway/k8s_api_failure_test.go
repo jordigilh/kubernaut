@@ -232,33 +232,14 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 		})
 	})
 
-	Context("Full Webhook Handler Integration", func() {
-		PIt("returns 500 Internal Server Error when K8s API unavailable during webhook processing", func() {
-			// BR-GATEWAY-019: Full webhook → 500 error → Prometheus retry flow
-			// BUSINESS SCENARIO: Kubernetes API down during webhook processing
-			// Expected: 500 error → Prometheus retries → Eventual success when API recovers
-			//
-			// NOTE: This test is pending because it requires rewriting to use StartTestGateway()
-			// helper instead of the removed gateway.NewServer() API.
-			//
-			// The business scenarios are already covered by:
-			// - CRD Creation Failures context (above) - tests CRDCreator error handling
-			// - webhook_integration_test.go - tests full webhook E2E flow
-			//
-			// To implement: Rewrite to use StartTestGateway() helper from helpers.go
-			Skip("Pending: Requires rewrite to use StartTestGateway() helper")
-		})
-
-		PIt("returns 201 Created when K8s API recovers", func() {
-			// BR-GATEWAY-019: Recovery flow validation
-			// BUSINESS SCENARIO: K8s API recovers, webhook succeeds
-			// Expected: 201 Created → CRD created successfully
-			//
-			// NOTE: This test is pending because it requires rewriting to use StartTestGateway()
-			// helper instead of the removed gateway.NewServer() API.
-			Skip("Pending: Requires rewrite to use StartTestGateway() helper")
-		})
-	})
+	// NOTE: Chaos tests moved to test/chaos/gateway/
+	// - K8s API unavailable during webhook → test/chaos/gateway/k8s_api_failure_test.go
+	// - K8s API recovery → test/chaos/gateway/k8s_api_recovery_test.go
+	// See test/chaos/gateway/README.md for implementation details
+	//
+	// Business scenarios already covered by:
+	// - CRD Creation Failures context (above) - tests CRDCreator error handling
+	// - webhook_integration_test.go - tests full webhook E2E flow
 
 	// The following section was removed because it used the old gateway.NewServer() API
 	// which was removed during configuration refactoring (v2.18).
