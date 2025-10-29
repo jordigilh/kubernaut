@@ -318,30 +318,37 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			resp1, _ := http.Post(url, "application/json", bytes.NewReader(payload))
 			defer resp1.Body.Close()
 
-			// Get CRD to extract fingerprint
-			var crdList remediationv1alpha1.RemediationRequestList
-			k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
-			Expect(crdList.Items).To(HaveLen(1))
-			fingerprint := crdList.Items[0].Labels["kubernaut.io/fingerprint"]
+		// Parse response to get full fingerprint (before K8s label truncation)
+		var response map[string]interface{}
+		err := json.NewDecoder(resp1.Body).Decode(&response)
+		Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
+		fingerprint, ok := response["fingerprint"].(string)
+		Expect(ok).To(BeTrue(), "Response should contain fingerprint")
+		Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
 
-			// Send 4 more duplicates
-			for i := 0; i < 4; i++ {
-				resp, _ := http.Post(url, "application/json", bytes.NewReader(payload))
-				resp.Body.Close()
+		// Send 4 more duplicates
+		for i := 0; i < 4; i++ {
+			resp, _ := http.Post(url, "application/json", bytes.NewReader(payload))
+			resp.Body.Close()
+		}
+
+		// BUSINESS OUTCOME: Redis metadata tracks duplicate count
+		// Use Eventually because Redis writes are async
+		Eventually(func() int {
+			count, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "count").Int()
+			if err != nil {
+				return 0
 			}
+			return count
+		}, "2s", "100ms").Should(BeNumerically(">=", 5),
+			"Count shows alert fired 5 times (1 original + 4 duplicates)")
 
-			// BUSINESS OUTCOME: Redis metadata tracks duplicate count
-			count, err := redisClient.Client.HGet(ctx, "alert:fingerprint:"+fingerprint, "count").Int()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(count).To(BeNumerically(">=", 5),
-				"Count shows alert fired 5 times (1 original + 4 duplicates)")
+		firstSeen, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "firstSeen").Result()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(firstSeen).NotTo(BeEmpty(),
+			"First seen timestamp shows when issue started")
 
-			firstSeen, err := redisClient.Client.HGet(ctx, "alert:fingerprint:"+fingerprint, "firstSeen").Result()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(firstSeen).NotTo(BeEmpty(),
-				"First seen timestamp shows when issue started")
-
-			lastSeen, err := redisClient.Client.HGet(ctx, "alert:fingerprint:"+fingerprint, "lastSeen").Result()
+		lastSeen, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "lastSeen").Result()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lastSeen).NotTo(BeEmpty(),
 				"Last seen timestamp shows issue is ongoing")
