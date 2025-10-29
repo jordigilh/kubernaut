@@ -436,14 +436,19 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				Expect(err).ToNot(HaveOccurred())
 				resp.Body.Close()
 
-				// BUSINESS OUTCOME: CRD has correct environment and priority based on namespace
-				var crdList remediationv1alpha1.RemediationRequestList
-				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(tc.namespace))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(crdList.Items).To(HaveLen(1),
-					"Alert in %s namespace should create CRD", tc.namespace)
-
-				crd := crdList.Items[0]
+		// BUSINESS OUTCOME: CRD has correct environment and priority based on namespace
+		// Use Eventually to handle async CRD creation
+		var crd remediationv1alpha1.RemediationRequest
+		Eventually(func() bool {
+			var crdList remediationv1alpha1.RemediationRequestList
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(tc.namespace))
+			if err != nil || len(crdList.Items) == 0 {
+				return false
+			}
+			crd = crdList.Items[0]
+			return true
+		}, "10s", "200ms").Should(BeTrue(),
+			"Alert in %s namespace should create CRD", tc.namespace)
 				Expect(crd.Spec.Environment).To(Equal(tc.expectedEnv),
 					"Namespace '%s' → Environment '%s'", tc.namespace, tc.expectedEnv)
 				Expect(crd.Spec.Priority).To(Equal(tc.expectedPri),
