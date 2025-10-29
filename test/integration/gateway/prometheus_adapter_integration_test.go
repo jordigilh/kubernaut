@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -82,6 +83,22 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		testServer = httptest.NewServer(gatewayServer.Handler())
 		Expect(testServer).ToNot(BeNil(), "Test server should be created")
 
+		// Create test namespace with environment label for classification
+		// This is required for environment-based priority assignment
+		// Delete first to ensure clean state (ignore error if doesn't exist)
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns)
+		
+		// Recreate with correct label
+		ns = &corev1.Namespace{}
+		ns.Name = "production"
+		ns.Labels = map[string]string{
+			"environment": "production", // Required for EnvironmentClassifier
+		}
+		err = k8sClient.Client.Create(ctx, ns)
+		Expect(err).ToNot(HaveOccurred(), "Should create production namespace with environment label")
+
 		logger.Info("Test setup complete",
 			zap.String("test_server_url", testServer.URL),
 			zap.String("redis_addr", redisClient.Client.Options().Addr),
@@ -89,7 +106,12 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 	})
 
 	AfterEach(func() {
-		// Cleanup
+		// Cleanup namespace
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
+
+		// Cleanup test server and Redis
 		if testServer != nil {
 			testServer.Close()
 		}
