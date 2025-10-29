@@ -234,6 +234,12 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		return false, nil, fmt.Errorf("failed to update lastSeen: %w", err)
 	}
 
+	// BR-GATEWAY-003: Refresh TTL on duplicate detection
+	// This ensures the deduplication window extends as long as alerts keep firing
+	if err := s.redisClient.Expire(ctx, key, s.ttl).Err(); err != nil {
+		return false, nil, fmt.Errorf("failed to refresh TTL: %w", err)
+	}
+
 	// Retrieve metadata for response
 	metadata := &DeduplicationMetadata{
 		Fingerprint:           signal.Fingerprint,
