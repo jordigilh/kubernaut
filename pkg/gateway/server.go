@@ -492,9 +492,11 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 			return
 		}
 
-		// Determine HTTP status code
+		// Determine HTTP status code based on response status
+		// BR-GATEWAY-016: Storm aggregation returns 202 Accepted
+		// BR-GATEWAY-003: Deduplication returns 202 Accepted
 		statusCode := http.StatusCreated
-		if response.Duplicate {
+		if response.Status == StatusAccepted || response.Duplicate {
 			statusCode = http.StatusAccepted
 		}
 
