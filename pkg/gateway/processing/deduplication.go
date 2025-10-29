@@ -194,7 +194,7 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		return false, nil, nil // Treat as new alert, allow processing to continue
 	}
 
-	key := fmt.Sprintf("alert:fingerprint:%s", signal.Fingerprint)
+	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", signal.Fingerprint)
 
 	// Check if key exists in Redis
 	exists, err := s.redisClient.Exists(ctx, key).Result()
@@ -272,7 +272,7 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 //
 // Redis schema:
 //
-//	Key: alert:fingerprint:<sha256-hash>
+//	Key: gateway:dedup:fingerprint:<sha256-hash>
 //	Type: Hash
 //	TTL: 5 minutes (300 seconds)
 //	Fields: fingerprint, alertName, namespace, resource, firstSeen, lastSeen, count, remediationRequestRef
@@ -300,7 +300,7 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 		return nil // Don't fail the request, CRD is already created
 	}
 
-	key := fmt.Sprintf("alert:fingerprint:%s", signal.Fingerprint)
+	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", signal.Fingerprint)
 	now := time.Now().Format(time.RFC3339)
 
 	// Store as Redis hash with pipeline for atomicity
@@ -395,7 +395,7 @@ type DeduplicationMetadata struct {
 // Returns error if Redis operation fails
 func (s *DeduplicationService) Record(ctx context.Context, fingerprint string, crdName string) error {
 	// Use same key format and data structure as Check() and Store() methods
-	key := fmt.Sprintf("alert:fingerprint:%s", fingerprint)
+	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", fingerprint)
 	now := time.Now().Format(time.RFC3339Nano) // Use RFC3339Nano for sub-second precision
 
 	// Store as Redis hash with pipeline for atomicity (same as Store() method)
