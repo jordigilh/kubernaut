@@ -179,19 +179,21 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		return false, nil, fmt.Errorf("invalid fingerprint: empty fingerprint not allowed")
 	}
 
-	// BR-GATEWAY-013: Graceful degradation when Redis unavailable
+	// BR-GATEWAY-008: MUST prevent duplicate CRDs
+	// BR-GATEWAY-013: Request rejection when Redis unavailable (per DD-GATEWAY-003)
 	// Check Redis connection before attempting operations
 	if err := s.ensureConnection(ctx); err != nil {
-		// Redis unavailable - graceful degradation
-		// Log error but don't fail request (accept potential duplicates)
-		s.logger.Warn("Redis unavailable, skipping deduplication (alert treated as new)",
+		// Redis unavailable - return error to trigger HTTP 503
+		// Gateway will reject request, Prometheus will retry
+		// This prevents duplicate CRDs and maintains data integrity
+		s.logger.Warn("Redis unavailable, cannot guarantee deduplication",
 			zap.Error(err),
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.String("operation", "deduplication_check"),
 		)
 
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
-		return false, nil, nil // Treat as new alert, allow processing to continue
+		return false, nil, fmt.Errorf("redis unavailable: %w", err)
 	}
 
 	key := fmt.Sprintf("gateway:dedup:fingerprint:%s", signal.Fingerprint)

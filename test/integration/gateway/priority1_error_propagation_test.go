@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	goredis "github.com/go-redis/redis/v8"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -102,15 +103,82 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 	})
 
 	Describe("BR-003: Redis Connection Error Propagation", func() {
-		PIt("should return HTTP 503 with retry-after header when Redis is unavailable", func() {
-			// TDD RED PHASE: This test will fail initially
-			// Business Outcome: Operators receive actionable error with retry guidance
-			
-			// NOTE: This test requires a way to simulate Redis failure
-			// Current StartTestGateway() requires working Redis
-			// Need to implement: StartTestGatewayWithInvalidRedis() helper
-			
-			Skip("Requires helper function to start Gateway with invalid Redis config")
+		It("should return HTTP 503 with retry-after header when Redis is unavailable", func() {
+			// TDD RED PHASE: Test fails because Gateway doesn't handle Redis connection errors gracefully
+			// TDD GREEN PHASE: Gateway will be updated to detect Redis errors and return HTTP 503
+			// Business Outcome: Operators receive actionable error with retry guidance when Redis is down
+
+			// Cleanup existing test infrastructure
+			if testServer != nil {
+				testServer.Close()
+				testServer = nil
+			}
+			if redisClient != nil {
+				redisClient.Cleanup(ctx)
+				redisClient = nil
+			}
+
+			// Create Gateway with invalid Redis config (pointing to non-existent Redis)
+			invalidRedisClient := &RedisTestClient{
+				Client: goredis.NewClient(&goredis.Options{
+					Addr: "localhost:9999", // Non-existent Redis port
+					DB:   0,
+				}),
+			}
+
+			// Start Gateway with invalid Redis (should still start but fail on first Redis operation)
+			gatewayServer, err := StartTestGateway(ctx, invalidRedisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred(), "Gateway should start even with invalid Redis config")
+			testServer = httptest.NewServer(gatewayServer.Handler())
+
+			// Send valid alert that will trigger Redis operation
+			alertJSON := `{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "RedisConnectionTest",
+						"severity": "critical",
+						"namespace": "production"
+					},
+					"annotations": {
+						"summary": "Test alert for Redis connection error"
+					}
+				}]
+			}`
+
+			// Send request
+			resp, err := http.Post(
+				fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL),
+				"application/json",
+				strings.NewReader(alertJSON),
+			)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// Verify business outcome: HTTP 503 Service Unavailable
+			Expect(resp.StatusCode).To(Equal(http.StatusServiceUnavailable),
+				"Gateway should return 503 when Redis is unavailable")
+
+			// Verify Retry-After header is present
+			retryAfter := resp.Header.Get("Retry-After")
+			Expect(retryAfter).ToNot(BeEmpty(), "Response should include Retry-After header")
+
+			// Verify JSON error response
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(errorResponse).To(HaveKey("error"), "Error response should include error field")
+			Expect(errorResponse).To(HaveKey("status"), "Error response should include status field")
+			Expect(errorResponse["status"]).To(BeEquivalentTo(http.StatusServiceUnavailable))
+
+			errorMsg := errorResponse["error"].(string)
+			Expect(errorMsg).To(Or(
+				ContainSubstring("redis"),
+				ContainSubstring("Redis"),
+				ContainSubstring("unavailable"),
+				ContainSubstring("connection"),
+			), "Error message should indicate Redis connection issue")
 		})
 	})
 
@@ -211,4 +279,3 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 		})
 	})
 })
-
