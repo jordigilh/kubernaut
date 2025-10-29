@@ -457,14 +457,14 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}
 			}`)
 
-			url := fmt.Sprintf("%s/webhook/kubernetes", testServer.URL)
-			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
-			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+		url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL)
+		resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
 
-			// BUSINESS OUTCOME 1: HTTP 201 Created
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
-				"Warning event must create CRD for AI analysis")
+		// BUSINESS OUTCOME 1: HTTP 201 Created
+		Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+			"Warning event must create CRD for AI analysis")
 
 			// BUSINESS OUTCOME 2: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
