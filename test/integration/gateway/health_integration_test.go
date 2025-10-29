@@ -105,29 +105,30 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 	})
 
 	Context("Response Format Validation", func() {
-		It("should return valid JSON for all health endpoints", func() {
-			// Validate that all health endpoints return valid JSON
+	It("should return valid JSON for all health endpoints", func() {
+		// Validate that all health endpoints return valid JSON
 
-			endpoints := []string{
-				"/health",
-				"/health/ready",
-			}
+		endpoints := map[string]string{
+			"/health": "timestamp", // Liveness endpoint returns "timestamp" field
+			"/ready":  "status",    // Readiness endpoint returns "status" field
+		}
 
-			client := &http.Client{Timeout: 10 * time.Second}
+		client := &http.Client{Timeout: 10 * time.Second}
 
-			for _, endpoint := range endpoints {
-				resp, err := client.Get(testServer.URL + endpoint)
-				Expect(err).ToNot(HaveOccurred(), "Should successfully call "+endpoint)
-				defer resp.Body.Close()
+		for endpoint, expectedField := range endpoints {
+			resp, err := client.Get(testServer.URL + endpoint)
+			Expect(err).ToNot(HaveOccurred(), "Should successfully call "+endpoint)
+			defer resp.Body.Close()
 
-				// Should return valid JSON
-				var result map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&result)
-				Expect(err).ToNot(HaveOccurred(), endpoint+" should return valid JSON")
+			// Should return valid JSON
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred(), endpoint+" should return valid JSON")
 
-				// Should have at least a time field
-				Expect(result["time"]).ToNot(BeEmpty(), endpoint+" should include timestamp")
-			}
-		})
+			// Should have the expected field
+			Expect(result[expectedField]).ToNot(BeNil(), endpoint+" should include "+expectedField+" field")
+			Expect(result[expectedField]).ToNot(BeEmpty(), endpoint+" "+expectedField+" should not be empty")
+		}
+	})
 	})
 })
