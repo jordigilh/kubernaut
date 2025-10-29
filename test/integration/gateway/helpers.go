@@ -518,12 +518,13 @@ func (r *RedisTestClient) TriggerMemoryPressure(ctx context.Context) {
 // 3. Container recreate (podman stop + rm + start)
 //
 // Usage:
-//   AfterEach(func() {
-//       if redisClient != nil {
-//           redisClient.ResetRedisConfig(ctx)
-//           redisClient.Client.FlushDB(ctx)
-//       }
-//   })
+//
+//	AfterEach(func() {
+//	    if redisClient != nil {
+//	        redisClient.ResetRedisConfig(ctx)
+//	        redisClient.Client.FlushDB(ctx)
+//	    }
+//	})
 func (r *RedisTestClient) ResetRedisConfig(ctx context.Context) {
 	if r.Client == nil {
 		return

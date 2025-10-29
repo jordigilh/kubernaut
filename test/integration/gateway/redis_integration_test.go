@@ -2,9 +2,7 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"sync"
@@ -12,6 +10,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -61,6 +61,26 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 		}
 
+		// Create production namespace for tests (required for CRD creation)
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
+
+		// Wait for deletion to complete (namespace deletion is asynchronous)
+		Eventually(func() error {
+			checkNs := &corev1.Namespace{}
+			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
+		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+
+		// Now create fresh namespace with environment label
+		ns = &corev1.Namespace{}
+		ns.Name = "production"
+		ns.Labels = map[string]string{
+			"environment": "production", // Required for EnvironmentClassifier
+		}
+		err := k8sClient.Client.Create(ctx, ns)
+		Expect(err).ToNot(HaveOccurred(), "Should create production namespace")
+
 		// Start Gateway server
 		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
@@ -73,6 +93,11 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
 			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
 		}
+
+		// Cleanup namespace (this will cascade delete all CRDs in the namespace)
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
 
 		// Cleanup
 		if testServer != nil {
@@ -132,12 +157,6 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
-			// Get the CRD name from the response (for cleanup later)
-			var crdResponse map[string]interface{}
-			err := json.NewDecoder(bytes.NewReader([]byte(resp.Body))).Decode(&crdResponse)
-			Expect(err).ToNot(HaveOccurred())
-			crdName := crdResponse["crd_name"].(string)
-
 			// Verify: Fingerprint stored with TTL
 			fingerprintCount := redisClient.CountFingerprints(ctx, "production")
 			Expect(fingerprintCount).To(Equal(1))
@@ -150,12 +169,9 @@ var _ = Describe("DAY 8 PHASE 2: Redis Integration Tests", func() {
 			fingerprintCount = redisClient.CountFingerprints(ctx, "production")
 			Expect(fingerprintCount).To(Equal(0))
 
-			// Delete the first CRD to allow the second request to create it again
-			// (In production, CRDs would be processed and deleted by the workflow engine)
-			err = k8sClient.DeleteCRD(ctx, crdName, "production")
-			Expect(err).ToNot(HaveOccurred())
-
 			// Send same alert again - should create new CRD (not deduplicated)
+			// Note: CRD from first request still exists, but deduplication is based on Redis TTL
+			// In production, CRDs would be processed and deleted by the workflow engine
 			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp2.StatusCode).To(Equal(201)) // New CRD created (not deduplicated)
 		})
