@@ -30,6 +30,12 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 	})
 
 	AfterEach(func() {
+		// Reset Redis config to prevent OOM cascade failures
+		if redisClient != nil && redisClient.Client != nil {
+			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
+			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
+		}
+
 		if testServer != nil {
 			testServer.Close()
 		}
