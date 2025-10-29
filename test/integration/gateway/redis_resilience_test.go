@@ -7,6 +7,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("Redis Resilience Integration Tests", func() {
@@ -22,6 +24,26 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
 
+		// Create production namespace for tests (required for CRD creation)
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
+
+		// Wait for deletion to complete (namespace deletion is asynchronous)
+		Eventually(func() error {
+			checkNs := &corev1.Namespace{}
+			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
+		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+
+		// Now create fresh namespace with environment label
+		ns = &corev1.Namespace{}
+		ns.Name = "production"
+		ns.Labels = map[string]string{
+			"environment": "production", // Required for EnvironmentClassifier
+		}
+		err := k8sClient.Client.Create(ctx, ns)
+		Expect(err).ToNot(HaveOccurred(), "Should create production namespace")
+
 		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 		testServer = httptest.NewServer(gatewayServer.Handler())
@@ -36,6 +58,11 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
 			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
 		}
+
+		// Cleanup namespace (this will cascade delete all CRDs in the namespace)
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
 
 		if testServer != nil {
 			testServer.Close()
