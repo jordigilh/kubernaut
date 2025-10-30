@@ -1138,42 +1138,65 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 }
 
-// ErrorResponse represents a structured error response
-// TDD REFACTOR: Extracted from writeJSONError for type safety and reusability
-// Business Outcome: Consistent error format across all Gateway endpoints
-// BR-109: Added RequestID for request tracing
-type ErrorResponse struct {
-	Error     string `json:"error"`
-	Status    int    `json:"status"`
-	RequestID string `json:"request_id,omitempty"` // BR-109: Request tracing
+// RFC7807Error represents an RFC 7807 Problem Details error response
+// BR-041: RFC 7807 error format
+// TDD GREEN: Implements standards-compliant error responses
+type RFC7807Error struct {
+	Type      string `json:"type"`                // URI reference identifying the problem type
+	Title     string `json:"title"`               // Short, human-readable summary
+	Detail    string `json:"detail"`              // Human-readable explanation
+	Status    int    `json:"status"`              // HTTP status code
+	Instance  string `json:"instance"`            // URI reference to specific occurrence
+	RequestID string `json:"request_id,omitempty"` // BR-109: Request tracing (extension member)
 }
 
-// writeJSONError writes a JSON error response
-// TDD GREEN: Added to support BR-001 (validation error propagation)
-// TDD REFACTOR: Now uses ErrorResponse struct for type safety
+// writeJSONError writes an RFC 7807 compliant error response
+// TDD GREEN: Updated to support BR-041 (RFC 7807 error format)
 // BR-109: Added request ID extraction for request tracing
 // BR-GATEWAY-078: Added error message sanitization to prevent sensitive data exposure
-// Business Outcome: Operators receive structured error messages they can parse and trace, without sensitive data leakage
+// Business Outcome: Clients receive standards-compliant, machine-readable error responses
 func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, message string, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(statusCode)
 
 	// BR-109: Extract request ID from context for tracing
 	requestID := middleware.GetRequestID(r.Context())
 
 	// BR-GATEWAY-078: Sanitize error message to prevent sensitive data exposure
-	// This protects against accidental leakage of passwords, tokens, API keys, etc.
 	sanitizedMessage := middleware.SanitizeForLog(message)
 
-	errorResponse := ErrorResponse{
-		Error:     sanitizedMessage,
+	// Determine error type and title based on status code
+	errorType, title := getErrorTypeAndTitle(statusCode)
+
+	errorResponse := RFC7807Error{
+		Type:      errorType,
+		Title:     title,
+		Detail:    sanitizedMessage,
 		Status:    statusCode,
+		Instance:  r.URL.Path,
 		RequestID: requestID,
 	}
 
 	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
 		// Fallback to plain text if JSON encoding fails
 		http.Error(w, message, statusCode)
+	}
+}
+
+// getErrorTypeAndTitle returns the RFC 7807 error type URI and title for a given HTTP status code
+// BR-041: RFC 7807 error format
+func getErrorTypeAndTitle(statusCode int) (string, string) {
+	switch statusCode {
+	case http.StatusBadRequest:
+		return "https://kubernaut.io/errors/validation-error", "Bad Request"
+	case http.StatusMethodNotAllowed:
+		return "https://kubernaut.io/errors/method-not-allowed", "Method Not Allowed"
+	case http.StatusInternalServerError:
+		return "https://kubernaut.io/errors/internal-error", "Internal Server Error"
+	case http.StatusServiceUnavailable:
+		return "https://kubernaut.io/errors/service-unavailable", "Service Unavailable"
+	default:
+		return "https://kubernaut.io/errors/unknown", "Error"
 	}
 }
 
