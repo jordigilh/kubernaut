@@ -32,15 +32,27 @@ import (
 
 var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 	var (
-		ctx         context.Context
-		cancel      context.CancelFunc
-		testServer  *httptest.Server
-		redisClient *RedisTestClient
-		k8sClient   *K8sTestClient
+		ctx                context.Context
+		cancel             context.CancelFunc
+		testServer         *httptest.Server
+		redisClient        *RedisTestClient
+		k8sClient          *K8sTestClient
+		testNamespaceProd  string
+		testNamespaceStage string
+		testNamespaceDev   string
+		testCounter        int
 	)
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Minute)
+
+		// Generate unique namespaces for test isolation
+		testCounter++
+		baseTimestamp := time.Now().UnixNano()
+		baseSeed := GinkgoRandomSeed()
+		testNamespaceProd = fmt.Sprintf("test-k8s-prod-%d-%d-%d", baseTimestamp, baseSeed, testCounter)
+		testNamespaceStage = fmt.Sprintf("test-k8s-stage-%d-%d-%d", baseTimestamp, baseSeed, testCounter)
+		testNamespaceDev = fmt.Sprintf("test-k8s-dev-%d-%d-%d", baseTimestamp, baseSeed, testCounter)
 
 		// Setup test infrastructure
 		redisClient = SetupRedisTestClient(ctx)
@@ -57,22 +69,21 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 		}
 
-	// Create test namespaces with environment labels for classification
-	// This is required for environment-based priority assignment
-	testNamespaces := []struct {
-		name  string
-		label string
-	}{
-		{"production", "production"},
-		{"staging", "staging"},
-		{"development", "development"},
-	}
+		// Create test namespaces with environment labels for classification
+		// This is required for environment-based priority assignment
+		testNamespaces := []struct {
+			name  string
+			label string
+		}{
+			{testNamespaceProd, "production"},
+			{testNamespaceStage, "staging"},
+			{testNamespaceDev, "development"},
+		}
 
-	for _, ns := range testNamespaces {
-		// Delete first to ensure clean state (ignore error if doesn't exist)
-		namespace := &corev1.Namespace{}
-		namespace.Name = ns.name
-		_ = k8sClient.Client.Delete(ctx, namespace)
+		for _, ns := range testNamespaces {
+			// Use helper to ensure namespace exists with proper labels
+			namespace := &corev1.Namespace{}
+			namespace.Name = ns.name
 
 		// Wait for deletion to complete (namespace deletion is asynchronous)
 		Eventually(func() error {
@@ -104,7 +115,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		}
 
 		// Cleanup all test namespaces
-		testNamespaces := []string{"production", "staging", "development"}
+		testNamespaces := []string{testNamespaceProd, testNamespaceStage, testNamespaceDev}
 		for _, nsName := range testNamespaces {
 			ns := &corev1.Namespace{}
 			ns.Name = nsName
@@ -131,14 +142,14 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "CRDCreationTest",
-				Namespace: "production",
+				Namespace: testNamespaceProd,
 			})
 
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// BUSINESS OUTCOME: CRD exists in Kubernetes
-			crds := ListRemediationRequests(ctx, k8sClient, "production")
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
 			Expect(crds).To(HaveLen(1))
 			Expect(crds[0].Spec.SignalName).To(Equal("CRDCreationTest"))
 		})
@@ -149,7 +160,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "MetadataTest",
-				Namespace: "production",
+				Namespace: testNamespaceProd,
 				Severity:  "critical",
 			})
 
@@ -157,7 +168,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// Verify CRD metadata
-			crds := ListRemediationRequests(ctx, k8sClient, "production")
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
 			Expect(crds).To(HaveLen(1))
 
 			crd := crds[0]
@@ -179,7 +190,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			for i := 0; i < 100; i++ {
 				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 					AlertName: fmt.Sprintf("RateLimitTest-%d", i),
-					Namespace: "production",
+					Namespace: testNamespaceProd,
 				})
 
 				resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
@@ -191,7 +202,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			// Eventually, all CRDs should be created
 			Eventually(func() int {
-				return len(ListRemediationRequests(ctx, k8sClient, "production"))
+				return len(ListRemediationRequests(ctx, k8sClient, testNamespaceProd))
 			}, "30s", "1s").Should(BeNumerically(">=", 90))
 		})
 
@@ -202,11 +213,11 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// Send 2 alerts with same name but different namespaces
 			payload1 := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "CollisionTest",
-				Namespace: "production",
+				Namespace: testNamespaceProd,
 			})
 			payload2 := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "CollisionTest",
-				Namespace: "staging",
+				Namespace: testNamespaceStage,
 			})
 
 			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload1)
@@ -216,8 +227,8 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(resp2.StatusCode).To(Equal(201))
 
 			// BUSINESS OUTCOME: Both CRDs created with unique names
-			prodCRDs := ListRemediationRequests(ctx, k8sClient, "production")
-			stagingCRDs := ListRemediationRequests(ctx, k8sClient, "staging")
+			prodCRDs := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
+			stagingCRDs := ListRemediationRequests(ctx, k8sClient, testNamespaceStage)
 
 			Expect(prodCRDs).To(HaveLen(1))
 			Expect(stagingCRDs).To(HaveLen(1))
@@ -235,7 +246,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				"alerts": [{
 					"status": "firing",
 					"labels": {
-						"namespace": "production"
+						"namespace": testNamespaceProd
 					}
 				}]
 			}`)
@@ -246,7 +257,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(resp.StatusCode).To(Equal(400))
 
 			// Verify: No CRD created
-			crds := ListRemediationRequests(ctx, k8sClient, "production")
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
 			Expect(crds).To(HaveLen(0))
 		})
 
@@ -259,7 +270,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "RetryTest",
-				Namespace: "production",
+				Namespace: testNamespaceProd,
 			})
 
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
@@ -273,7 +284,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			// Eventually, CRD should be created
 			Eventually(func() int {
-				return len(ListRemediationRequests(ctx, k8sClient, "production"))
+				return len(ListRemediationRequests(ctx, k8sClient, testNamespaceProd))
 			}, "10s", "1s").Should(Equal(1))
 		})
 	})
@@ -301,7 +312,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 					payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 						AlertName: fmt.Sprintf("QuotaTest-%d", index),
-						Namespace: "production",
+						Namespace: testNamespaceProd,
 					})
 
 					SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
@@ -314,7 +325,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// BUSINESS OUTCOME: Requests processed successfully
 			// Note: Some may be deduplicated or storm-aggregated (expected behavior)
 			Eventually(func() int {
-				return len(ListRemediationRequests(ctx, k8sClient, "production"))
+				return len(ListRemediationRequests(ctx, k8sClient, testNamespaceProd))
 			}, "30s", "1s").Should(BeNumerically(">=", 5),
 				"At least 5 CRDs should be created (deduplication/storm aggregation may reduce count)")
 		})
@@ -329,14 +340,14 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: longAlertName,
-				Namespace: "production",
+				Namespace: testNamespaceProd,
 			})
 
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
 			// BUSINESS OUTCOME: CRD created with compliant name
-			crds := ListRemediationRequests(ctx, k8sClient, "production")
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
 			Expect(crds).To(HaveLen(1))
 			Expect(len(crds[0].Name)).To(BeNumerically("<=", 253))
 		})
@@ -349,7 +360,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// Send alert
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "WatchTest",
-				Namespace: "production",
+				Namespace: testNamespaceProd,
 			})
 
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
@@ -361,7 +372,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// Send another alert after interruption
 			payload2 := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "WatchTest2",
-				Namespace: "production",
+				Namespace: testNamespaceProd,
 			})
 
 			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload2)
@@ -371,7 +382,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			// Verify: Both CRDs exist
 			Eventually(func() int {
-				return len(ListRemediationRequests(ctx, k8sClient, "production"))
+				return len(ListRemediationRequests(ctx, k8sClient, testNamespaceProd))
 			}, "10s", "1s").Should(Equal(2))
 		})
 
@@ -387,7 +398,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "SlowAPITest",
-				Namespace: "production",
+				Namespace: testNamespaceProd,
 			})
 
 			// Send request (should take >8s)
@@ -400,7 +411,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(duration).To(BeNumerically(">=", 8*time.Second))
 
 			// Verify: CRD created
-			crds := ListRemediationRequests(ctx, k8sClient, "production")
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
 			Expect(crds).To(HaveLen(1))
 		})
 
@@ -424,7 +435,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 					payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 						AlertName: fmt.Sprintf("ConcurrentNS-%d", index),
-						Namespace: "production",
+						Namespace: testNamespaceProd,
 					})
 
 					SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
@@ -438,7 +449,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// Note: Storm aggregation SHOULD reduce count (this is correct behavior)
 			// Expect 3-10 CRDs (storm detection aggregates similar alerts)
 			Eventually(func() int {
-				return len(ListRemediationRequests(ctx, k8sClient, "production"))
+				return len(ListRemediationRequests(ctx, k8sClient, testNamespaceProd))
 			}, "30s", "1s").Should(And(
 				BeNumerically(">=", 3),
 				BeNumerically("<=", 15),
