@@ -97,13 +97,13 @@ var _ = Describe("Observability Integration Tests", func() {
 			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
 			Expect(err).ToNot(HaveOccurred(), "Should parse Prometheus metrics")
 
-			// Verify key Gateway metrics are present
-			expectedMetrics := []string{
-				"gateway_alerts_received_total",
-				"gateway_crds_created_total",
-				"gateway_http_request_duration_seconds",
-				"gateway_http_requests_in_flight",
-			}
+		// Verify key Gateway metrics are present (BR-GATEWAY-SIGNAL-TERMINOLOGY)
+		expectedMetrics := []string{
+			"gateway_signals_received_total",      // Multi-source signals (not just alerts)
+			"gateway_crds_created_total",
+			"gateway_http_request_duration_seconds",
+			"gateway_http_requests_in_flight",
+		}
 
 			for _, metricName := range expectedMetrics {
 				_, exists := metrics[metricName]
@@ -122,14 +122,14 @@ var _ = Describe("Observability Integration Tests", func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("BR-102: Alert Ingestion Metrics", func() {
-		It("should track alerts received via gateway_alerts_received_total", func() {
-			// BUSINESS OUTCOME: Operators can monitor alert ingestion rate
-			// BUSINESS SCENARIO: Operator creates Prometheus alert: rate(gateway_alerts_received_total[1m]) > 100
+	It("should track signals received via gateway_signals_received_total", func() {
+		// BUSINESS OUTCOME: Operators can monitor signal ingestion rate for ALL signal types
+		// BUSINESS SCENARIO: Operator creates Prometheus alert: rate(gateway_signals_received_total[1m]) > 100
 
-			// Get initial metric value
-			initialMetrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-			initialCount := GetMetricSum(initialMetrics, "gateway_alerts_received_total")
+		// Get initial metric value
+		initialMetrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+		Expect(err).ToNot(HaveOccurred())
+		initialCount := GetMetricSum(initialMetrics, "gateway_signals_received_total")
 
 			// Send 5 alerts
 			for i := 0; i < 5; i++ {
@@ -148,24 +148,24 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Wait for metrics to update
 			time.Sleep(100 * time.Millisecond)
 
-			// Get updated metric value
-			updatedMetrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-			updatedCount := GetMetricSum(updatedMetrics, "gateway_alerts_received_total")
+		// Get updated metric value
+		updatedMetrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+		Expect(err).ToNot(HaveOccurred())
+		updatedCount := GetMetricSum(updatedMetrics, "gateway_signals_received_total")
 
-			// Verify counter incremented
-			Expect(updatedCount).To(BeNumerically(">=", initialCount+5),
-				"Alerts received counter should increment by at least 5")
+		// Verify counter incremented
+		Expect(updatedCount).To(BeNumerically(">=", initialCount+5),
+			"Signals received counter should increment by at least 5")
 
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Operators can track alert ingestion rate
-			// ✅ Prometheus query: rate(gateway_alerts_received_total[1m])
-			// ✅ Alerting rule: rate(gateway_alerts_received_total[1m]) > 100
-		})
+		// BUSINESS CAPABILITY VERIFIED:
+		// ✅ Operators can track signal ingestion rate (Prometheus alerts, K8s events, etc.)
+		// ✅ Prometheus query: rate(gateway_signals_received_total[1m])
+		// ✅ Alerting rule: rate(gateway_signals_received_total[1m]) > 100
+	})
 
-		It("should track deduplicated alerts via gateway_alerts_deduplicated_total", func() {
-			// BUSINESS OUTCOME: Operators can monitor deduplication effectiveness
-			// BUSINESS SCENARIO: Operator tracks deduplication rate to tune TTL settings
+	It("should track deduplicated signals via gateway_signals_deduplicated_total", func() {
+		// BUSINESS OUTCOME: Operators can monitor deduplication effectiveness for ALL signal types
+		// BUSINESS SCENARIO: Operator tracks deduplication rate to tune TTL settings
 
 			// Send same alert twice (should be deduplicated)
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
@@ -189,19 +189,19 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Wait for metrics to update
 			time.Sleep(100 * time.Millisecond)
 
-			// Verify deduplication metric incremented
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
+		// Verify deduplication metric incremented
+		metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+		Expect(err).ToNot(HaveOccurred())
 
-			dedupCount := GetMetricSum(metrics, "gateway_alerts_deduplicated_total")
-			Expect(dedupCount).To(BeNumerically(">=", 1),
-				"Deduplication counter should increment for duplicate alert")
+		dedupCount := GetMetricSum(metrics, "gateway_signals_deduplicated_total")
+		Expect(dedupCount).To(BeNumerically(">=", 1),
+			"Deduplication counter should increment for duplicate signal")
 
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Operators can monitor deduplication effectiveness
-			// ✅ Prometheus query: rate(gateway_alerts_deduplicated_total[5m]) / rate(gateway_alerts_received_total[5m])
-			// ✅ Deduplication rate tracking enables TTL tuning
-		})
+		// BUSINESS CAPABILITY VERIFIED:
+		// ✅ Operators can monitor deduplication effectiveness for all signal types
+		// ✅ Prometheus query: rate(gateway_signals_deduplicated_total[5m]) / rate(gateway_signals_received_total[5m])
+		// ✅ Deduplication rate tracking enables TTL tuning
+	})
 
 		It("should track storm detection via gateway_alert_storms_detected_total", func() {
 			// BUSINESS OUTCOME: Operators can detect alert storms via metrics
@@ -278,11 +278,11 @@ var _ = Describe("Observability Integration Tests", func() {
 			Expect(updatedCount).To(BeNumerically(">", initialCount),
 				"CRD creation counter should increment")
 
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ Operators can track CRD creation success rate
-			// ✅ SLO query: sum(rate(gateway_crds_created_total[5m])) / sum(rate(gateway_alerts_received_total[5m])) > 0.999
-			// ✅ SLO compliance tracking enabled
-		})
+		// BUSINESS CAPABILITY VERIFIED:
+		// ✅ Operators can track CRD creation success rate
+		// ✅ SLO query: sum(rate(gateway_crds_created_total[5m])) / sum(rate(gateway_signals_received_total[5m])) > 0.999
+		// ✅ SLO compliance tracking enabled
+	})
 
 		It("should track CRD creation errors via gateway_crd_creation_errors", func() {
 			// BUSINESS OUTCOME: Operators can detect and diagnose CRD creation failures
