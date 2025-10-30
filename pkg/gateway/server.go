@@ -1148,7 +1148,8 @@ type ErrorResponse struct {
 // TDD GREEN: Added to support BR-001 (validation error propagation)
 // TDD REFACTOR: Now uses ErrorResponse struct for type safety
 // BR-109: Added request ID extraction for request tracing
-// Business Outcome: Operators receive structured error messages they can parse and trace
+// BR-GATEWAY-078: Added error message sanitization to prevent sensitive data exposure
+// Business Outcome: Operators receive structured error messages they can parse and trace, without sensitive data leakage
 func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -1156,8 +1157,12 @@ func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, message 
 	// BR-109: Extract request ID from context for tracing
 	requestID := middleware.GetRequestID(r.Context())
 
+	// BR-GATEWAY-078: Sanitize error message to prevent sensitive data exposure
+	// This protects against accidental leakage of passwords, tokens, API keys, etc.
+	sanitizedMessage := middleware.SanitizeForLog(message)
+
 	errorResponse := ErrorResponse{
-		Error:     message,
+		Error:     sanitizedMessage,
 		Status:    statusCode,
 		RequestID: requestID,
 	}

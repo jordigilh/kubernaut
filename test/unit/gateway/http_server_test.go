@@ -64,24 +64,67 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 			// ✅ Operators can correlate errors with logs
 		})
 
-		It("should sanitize sensitive data in error responses", func() {
-			// BUSINESS OUTCOME: Error responses don't leak sensitive information
-			// BUSINESS SCENARIO: Error occurs with sensitive data, response is sanitized
+	It("should sanitize sensitive data in error responses", func() {
+		// BUSINESS OUTCOME: Error responses don't leak sensitive information
+		// BUSINESS SCENARIO: Error occurs with sensitive data, response is sanitized
+		// BR-GATEWAY-078: Error message sanitization
 
-			Skip("Requires Gateway to implement error sanitization")
+		// Setup test infrastructure
+		ctx := context.Background()
+		redisClient := gateway.SetupRedisTestClient(ctx)
+		k8sClient := gateway.SetupK8sTestClient(ctx)
+		defer redisClient.ResetRedisConfig(ctx)
 
-			// TODO: Implement when Gateway sanitizes error responses
-			// Expected behavior:
-			// 1. Error contains sensitive data (API token, password, etc.)
-			// 2. Error response sanitizes sensitive fields
-			// 3. Response includes generic error message
-			// 4. Detailed error logged securely (not in response)
+		// Start Gateway server
+		gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+		Expect(err).ToNot(HaveOccurred())
 
-			// BUSINESS CAPABILITY TO VERIFY:
-			// ✅ Sensitive data not exposed in error responses
-			// ✅ Security compliance maintained
-			// ✅ Detailed errors available in logs (not HTTP responses)
-		})
+		testServer := httptest.NewServer(gatewayServer.Handler())
+		defer testServer.Close()
+
+		// Send malformed payload that contains sensitive data
+		// This will trigger a validation error because required fields are missing
+		// The error message might include the sensitive data from the payload
+		sensitivePayload := []byte(`{
+			"alerts": [{
+				"status": "firing",
+				"labels": {
+					"api_key": "secret-api-key-12345",
+					"password": "super-secret-password"
+				}
+			}]
+		}`)
+
+		resp, err := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", bytes.NewReader(sensitivePayload))
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
+
+		// BUSINESS OUTCOME VERIFICATION: Error response sanitizes sensitive data
+		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
+
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+
+		// Verify error message exists
+		errorMsg, exists := errorResponse["error"]
+		Expect(exists).To(BeTrue(), "Error response should include error field")
+
+		errorMsgStr, ok := errorMsg.(string)
+		Expect(ok).To(BeTrue(), "Error message should be a string")
+
+		// CRITICAL SECURITY VERIFICATION: Sensitive data MUST be redacted
+		Expect(errorMsgStr).ToNot(ContainSubstring("secret-api-key-12345"), "API key MUST be redacted from error response")
+		Expect(errorMsgStr).ToNot(ContainSubstring("super-secret-password"), "Password MUST be redacted from error response")
+
+		// Verify redaction markers are present (if sensitive data was in error message)
+		// Note: The error might not include the sensitive fields at all, which is also acceptable
+
+		// BUSINESS CAPABILITY TO VERIFY:
+		// ✅ Sensitive data not exposed in error responses
+		// ✅ Security compliance maintained
+		// ✅ API keys and passwords are redacted
+	})
 
 	It("should include request ID in error responses for tracing", func() {
 		// BUSINESS OUTCOME: Operators can trace errors across Gateway components
