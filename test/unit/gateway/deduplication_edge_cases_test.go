@@ -160,29 +160,29 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Edge Cases", func() {
 	})
 
 	Describe("Edge Case 3: Redis Connection Loss Mid-Deduplication", func() {
-		It("should gracefully degrade during Check operation when Redis unavailable", func() {
-			// BR-GATEWAY-003 + BR-GATEWAY-013: Graceful degradation edge case
-			// BUSINESS SCENARIO: Redis becomes unavailable during deduplication check
-			// Expected: Graceful degradation - treat as new alert, allow processing to continue
+	It("should gracefully degrade during Check operation when Redis unavailable", func() {
+		// BR-GATEWAY-003: Request rejection when Redis unavailable (DD-GATEWAY-003)
+		// BUSINESS SCENARIO: Redis becomes unavailable during deduplication check
+		// Expected: Return error (Gateway returns HTTP 503 to client)
 
-			signal := &types.NormalizedSignal{
-				AlertName:   "HighCPU",
-				Namespace:   "production",
-				Resource:    types.ResourceIdentifier{Kind: "Pod", Name: "api-1"},
-				Severity:    "critical",
-				Fingerprint: "redis_disconnect_fingerprint",
-			}
+		signal := &types.NormalizedSignal{
+			AlertName:   "HighCPU",
+			Namespace:   "production",
+			Resource:    types.ResourceIdentifier{Kind: "Pod", Name: "api-1"},
+			Severity:    "critical",
+			Fingerprint: "redis_disconnect_fingerprint",
+		}
 
-			// Close Redis server to simulate connection loss
-			redisServer.Close()
+		// Close Redis server to simulate connection loss
+		redisServer.Close()
 
-			// Check should gracefully degrade (not panic, not error)
-			// BUSINESS LOGIC: Treat as new alert when Redis unavailable
-			isDup, metadata, err := dedupService.Check(ctx, signal)
-			Expect(err).NotTo(HaveOccurred(), "Graceful degradation: should not error")
-			Expect(isDup).To(BeFalse(), "Graceful degradation: treat as new alert")
-			Expect(metadata).To(BeNil(), "Graceful degradation: no metadata when Redis unavailable")
-		})
+		// Check should return error (Gateway returns HTTP 503)
+		// BUSINESS LOGIC: Reject request when Redis unavailable
+		isDup, metadata, err := dedupService.Check(ctx, signal)
+		Expect(err).To(HaveOccurred(), "Redis unavailable should return error (HTTP 503)")
+		Expect(isDup).To(BeFalse(), "Should return false when error occurs")
+		Expect(metadata).To(BeNil(), "Should return nil metadata when error occurs")
+	})
 
 		It("should gracefully degrade during Store operation when Redis unavailable", func() {
 			// BR-GATEWAY-003 + BR-GATEWAY-013: Graceful degradation during store

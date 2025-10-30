@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -217,6 +218,13 @@ func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClie
 	logConfig.OutputPaths = []string{"stdout"}
 	logConfig.ErrorOutputPaths = []string{"stderr"}
 	logger, _ := logConfig.Build()
+
+	return StartTestGatewayWithLogger(ctx, redisClient, k8sClient, logger)
+}
+
+// StartTestGatewayWithLogger creates and starts a Gateway server with a custom logger
+// This is useful for observability tests that need to capture and verify log output
+func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient, logger *zap.Logger) (*gateway.Server, error) {
 
 	// v2.9: Wire deduplication and storm detection services (REQUIRED)
 	// BR-GATEWAY-008, BR-GATEWAY-009, BR-GATEWAY-010
@@ -1339,7 +1347,7 @@ func EnsureTestNamespace(ctx context.Context, k8sClient *K8sTestClient, namespac
 		"environment": "production", // Tests simulate production environment
 	}
 	err := k8sClient.Client.Create(ctx, ns)
-	if err != nil {
+	if err != nil && !errors.IsAlreadyExists(err) {
 		panic(fmt.Sprintf("Failed to create test namespace %s: %v", namespaceName, err))
 	}
 
