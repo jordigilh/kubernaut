@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 
 	gateway "github.com/jordigilh/kubernaut/test/integration/gateway"
 )
@@ -57,8 +58,8 @@ var _ = Describe("Observability Unit Tests", func() {
 			redisClient = gateway.SetupRedisTestClient(ctx)
 			k8sClient = gateway.SetupK8sTestClient(ctx)
 
-			// Start Gateway with log capture
-			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient, logCapture.Logger)
+			// Start Gateway with log capture for observability testing
+			gatewayServer, err := gateway.StartTestGatewayWithLogger(ctx, redisClient, k8sClient, logCapture.Logger)
 			Expect(err).ToNot(HaveOccurred(), "Gateway should start successfully")
 			Expect(gatewayServer).ToNot(BeNil(), "Gateway server should not be nil")
 
@@ -66,8 +67,8 @@ var _ = Describe("Observability Unit Tests", func() {
 			Expect(testServer).ToNot(BeNil(), "HTTP test server should not be nil")
 
 			// Create production namespace for tests
-			err = k8sClient.CreateNamespace(ctx, "production", map[string]string{"environment": "production"})
-			Expect(err).ToNot(HaveOccurred(), "Should create production namespace")
+			gateway.EnsureTestNamespace(ctx, k8sClient, "production")
+
 		})
 
 		AfterEach(func() {
@@ -81,7 +82,10 @@ var _ = Describe("Observability Unit Tests", func() {
 				redisClient.ResetRedisConfig(ctx)
 			}
 			if k8sClient != nil {
-				_ = k8sClient.DeleteNamespace(ctx, "production")
+				// Delete production namespace
+				ns := &corev1.Namespace{}
+				ns.Name = "production"
+				_ = k8sClient.Client.Delete(ctx, ns)
 			}
 		})
 
@@ -336,7 +340,7 @@ var _ = Describe("Observability Unit Tests", func() {
 
 			// Test DEBUG level
 			logCaptureDebug := gateway.NewLogCapture(zapcore.DebugLevel)
-			gatewayDebug, err := gateway.StartTestGateway(ctx, redisClient, k8sClient, logCaptureDebug.Logger)
+			gatewayDebug, err := gateway.StartTestGatewayWithLogger(ctx, redisClient, k8sClient, logCaptureDebug.Logger)
 			Expect(err).ToNot(HaveOccurred())
 			testServerDebug := httptest.NewServer(gatewayDebug.Handler())
 			defer testServerDebug.Close()
@@ -369,7 +373,7 @@ var _ = Describe("Observability Unit Tests", func() {
 
 			// Test INFO level
 			logCaptureInfo := gateway.NewLogCapture(zapcore.InfoLevel)
-			gatewayInfo, err := gateway.StartTestGateway(ctx, redisClient, k8sClient, logCaptureInfo.Logger)
+			gatewayInfo, err := gateway.StartTestGatewayWithLogger(ctx, redisClient, k8sClient, logCaptureInfo.Logger)
 			Expect(err).ToNot(HaveOccurred())
 			testServerInfo := httptest.NewServer(gatewayInfo.Handler())
 			defer testServerInfo.Close()
