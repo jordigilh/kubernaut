@@ -1282,34 +1282,16 @@ func (tc *Priority1TestContext) Cleanup() {
 		tc.TestServer.Close()
 	}
 
-	// TDD FIX: Wait for Gateway's storm aggregation window to expire before namespace cleanup
-	// This prevents "unable to create new content in namespace X because it is being terminated" errors
-	// that occur when Gateway's background goroutines try to create aggregated CRDs after namespace deletion starts
+	// TDD FIX V2: Register namespace for suite-level batch cleanup
+	// This prevents "namespace is being terminated" errors during storm aggregation
+	// by deferring namespace deletion until AfterSuite (after all storm windows complete)
 	//
-	// Storm aggregation window: 1 second (configured in StartTestGateway)
-	// Buffer: 2 seconds (to ensure all goroutines complete + K8s API propagation)
-	// Total wait: 3 seconds
-	//
-	// Why this is necessary:
-	// 1. Test sends concurrent requests → Gateway starts storm aggregation window
-	// 2. Test completes → closes server (stops new requests)
-	// 3. Gateway's aggregation window expires 1 second later → tries to create CRD
-	// 4. If namespace is already terminating → K8s rejects CRD creation
-	//
-	// Solution: Close server, wait for aggregation window + buffer, then delete namespace
-	// TDD REFACTOR: Increased from 2s to 3s to eliminate flakiness
-	time.Sleep(3 * time.Second)
-
-	// TDD FIX: Cleanup unique test namespace (ignore "not found" errors)
-	// Each test has its own namespace, so deleting it removes all CRDs automatically
-	if tc.K8sClient != nil && tc.TestNamespace != "" {
-		ns := &corev1.Namespace{}
-		ns.Name = tc.TestNamespace
-		err := tc.K8sClient.Client.Delete(tc.Ctx, ns)
-		if err != nil && !strings.Contains(err.Error(), "not found") {
-			// Log warning but don't fail cleanup
-			fmt.Printf("Warning: Failed to delete test namespace %s during cleanup: %v\n", tc.TestNamespace, err)
-		}
+	// Benefits:
+	// 1. No 3-second wait per test → faster test execution
+	// 2. Storm aggregation windows can complete without interference
+	// 3. Batch deletion is more efficient
+	if tc.TestNamespace != "" {
+		RegisterTestNamespace(tc.TestNamespace)
 	}
 
 	// Cleanup Redis (log errors but don't fail)
@@ -1324,9 +1306,7 @@ func (tc *Priority1TestContext) Cleanup() {
 	if tc.RedisClient != nil {
 		tc.RedisClient.Cleanup(tc.Ctx)
 	}
-	if tc.K8sClient != nil {
-		tc.K8sClient.Cleanup(tc.Ctx)
-	}
+	// NOTE: K8s client cleanup removed - handled by AfterSuite to allow namespace batch deletion
 
 	// Cancel context
 	if tc.Cancel != nil {
