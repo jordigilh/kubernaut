@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	goredis "github.com/go-redis/redis/v8"
+	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -1176,4 +1178,157 @@ func GetMetricSum(metrics PrometheusMetrics, name string) float64 {
 		sum += value
 	}
 	return sum
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TEST SETUP HELPERS (REFACTORED - TDD REFACTOR PHASE)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Priority1TestContext holds common test infrastructure for Priority 1 integration tests
+// Refactored from duplicate BeforeEach/AfterEach blocks across test files
+type Priority1TestContext struct {
+	Ctx         context.Context
+	Cancel      context.CancelFunc
+	TestServer  *httptest.Server
+	RedisClient *RedisTestClient
+	K8sClient   *K8sTestClient
+}
+
+// SetupPriority1Test creates common test infrastructure (Redis, K8s, Gateway, production namespace)
+// Refactored from duplicate BeforeEach blocks in:
+// - priority1_concurrent_operations_test.go
+// - priority1_adapter_patterns_test.go
+// - priority1_error_propagation_test.go
+func SetupPriority1Test() *Priority1TestContext {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+
+	// Setup test infrastructure
+	redisClient := SetupRedisTestClient(ctx)
+	k8sClient := SetupK8sTestClient(ctx)
+
+	// Clean Redis state
+	if redisClient != nil && redisClient.Client != nil {
+		err := redisClient.Client.FlushDB(ctx).Err()
+		if err != nil {
+			panic(fmt.Sprintf("Failed to flush Redis: %v", err))
+		}
+	}
+
+	// Create production namespace with retry logic
+	EnsureProductionNamespace(ctx, k8sClient)
+
+	// Start Gateway server
+	gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to start test gateway: %v", err))
+	}
+	testServer := httptest.NewServer(gatewayServer.Handler())
+
+	return &Priority1TestContext{
+		Ctx:         ctx,
+		Cancel:      cancel,
+		TestServer:  testServer,
+		RedisClient: redisClient,
+		K8sClient:   k8sClient,
+	}
+}
+
+// Cleanup tears down all test infrastructure
+// Refactored from duplicate AfterEach blocks
+// REFACTORED: Proper error handling (TDD REFACTOR phase)
+func (tc *Priority1TestContext) Cleanup() {
+	// Cleanup HTTP server
+	if tc.TestServer != nil {
+		tc.TestServer.Close()
+	}
+
+	// Cleanup production namespace (ignore "not found" errors)
+	if tc.K8sClient != nil {
+		ns := &corev1.Namespace{}
+		ns.Name = "production"
+		err := tc.K8sClient.Client.Delete(tc.Ctx, ns)
+		if err != nil && !strings.Contains(err.Error(), "not found") {
+			// Log warning but don't fail cleanup
+			fmt.Printf("Warning: Failed to delete production namespace during cleanup: %v\n", err)
+		}
+	}
+
+	// Cleanup Redis (log errors but don't fail)
+	if tc.RedisClient != nil && tc.RedisClient.Client != nil {
+		err := tc.RedisClient.Client.FlushDB(tc.Ctx).Err()
+		if err != nil {
+			fmt.Printf("Warning: Failed to flush Redis during cleanup: %v\n", err)
+		}
+	}
+
+	// Cleanup clients
+	if tc.RedisClient != nil {
+		tc.RedisClient.Cleanup(tc.Ctx)
+	}
+	if tc.K8sClient != nil {
+		tc.K8sClient.Cleanup(tc.Ctx)
+	}
+
+	// Cancel context
+	if tc.Cancel != nil {
+		tc.Cancel()
+	}
+}
+
+// EnsureProductionNamespace creates production namespace with proper labels and retry logic
+// Refactored from duplicate namespace creation code
+// REFACTORED: Proper error handling (TDD REFACTOR phase)
+func EnsureProductionNamespace(ctx context.Context, k8sClient *K8sTestClient) {
+	// Delete existing namespace (ignore "not found" errors)
+	ns := &corev1.Namespace{}
+	ns.Name = "production"
+	err := k8sClient.Client.Delete(ctx, ns)
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		panic(fmt.Sprintf("Failed to delete existing production namespace: %v", err))
+	}
+
+	// Wait for deletion to complete
+	Eventually(func() error {
+		checkNs := &corev1.Namespace{}
+		return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
+	}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+
+	// Create fresh namespace with environment label
+	ns = &corev1.Namespace{}
+	ns.Name = "production"
+	ns.Labels = map[string]string{
+		"environment": "production",
+	}
+	err = k8sClient.Client.Create(ctx, ns)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create production namespace: %v", err))
+	}
+}
+
+// SendPrometheusAlert sends a Prometheus alert to the Gateway and returns the response
+// Refactored from duplicate HTTP POST logic across test files
+func SendPrometheusAlert(testServerURL string, alertJSON string) (*http.Response, error) {
+	return http.Post(
+		fmt.Sprintf("%s/api/v1/signals/prometheus", testServerURL),
+		"application/json",
+		strings.NewReader(alertJSON),
+	)
+}
+
+// SendK8sEvent sends a Kubernetes Event to the Gateway and returns the response
+// Refactored from duplicate HTTP POST logic across test files
+func SendK8sEvent(testServerURL string, eventJSON string) (*http.Response, error) {
+	return http.Post(
+		fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServerURL),
+		"application/json",
+		strings.NewReader(eventJSON),
+	)
+}
+
+// DecodeJSONResponse decodes HTTP response body into a map
+// Refactored from duplicate JSON decoding logic
+func DecodeJSONResponse(resp *http.Response) (map[string]interface{}, error) {
+	var response map[string]interface{}
+	err := json.NewDecoder(resp.Body).Decode(&response)
+	return response, err
 }
