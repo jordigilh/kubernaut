@@ -3,6 +3,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -58,20 +59,20 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// Expected: Classified as P0 (highest priority)
 			// Why: Critical + production = immediate operator attention required
 
-			alertJSON := `{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "PaymentServiceDown",
-						"severity": "critical",
-						"namespace": "production",
-						"pod": "payment-api-1"
-					},
-					"annotations": {
-						"summary": "Payment service is down"
-					}
-				}]
-			}`
+			alertJSON := fmt.Sprintf(`{
+			"alerts": [{
+				"status": "firing",
+				"labels": {
+					"alertname": "PaymentServiceDown",
+					"severity": "critical",
+					"namespace": "%s",
+					"pod": "payment-api-1"
+				},
+				"annotations": {
+					"summary": "Payment service is down"
+				}
+			}]
+		}`, testCtx.TestNamespace)
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME VALIDATION: Priority Classification
@@ -95,11 +96,10 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			err = json.NewDecoder(resp.Body).Decode(&response)
 			Expect(err).ToNot(HaveOccurred())
 
-			metadata, ok := response["metadata"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "Response MUST include metadata (BR-001)")
-
-			priority, ok := metadata["priority"].(string)
-			Expect(ok).To(BeTrue(), "Metadata MUST include priority (BR-001)")
+			// TDD GREEN FIX: Priority is a top-level field per API specification
+			// See: docs/services/stateless/gateway-service/api-specification.md:71-80
+			priority, ok := response["priority"].(string)
+			Expect(ok).To(BeTrue(), "Response MUST include priority field (BR-001)")
 			Expect(priority).To(Equal("P0"),
 				"Critical + production MUST be classified as P0 (BR-001)")
 
@@ -169,11 +169,9 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			err = json.NewDecoder(resp.Body).Decode(&response)
 			Expect(err).ToNot(HaveOccurred())
 
-			metadata, ok := response["metadata"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "Response MUST include metadata (BR-002)")
-
-			priority, ok := metadata["priority"].(string)
-			Expect(ok).To(BeTrue(), "Metadata MUST include priority (BR-002)")
+			// TDD FIX: Priority is top-level field per api-specification.md:78
+			priority, ok := response["priority"].(string)
+			Expect(ok).To(BeTrue(), "Response MUST include priority field (BR-002)")
 			Expect(priority).To(Equal("P1"),
 				"Warning + production MUST be classified as P1 (BR-002)")
 
@@ -207,34 +205,34 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// Expected: Both signal types processed independently
 			// Why: Multi-source observability requires concurrent processing
 
-			prometheusJSON := `{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "HighCPU",
-						"severity": "warning",
-						"namespace": "production",
-						"pod": "api-1"
-					},
-					"annotations": {
-						"summary": "High CPU usage"
-					}
-				}]
-			}`
-
-			k8sEventJSON := `{
-				"type": "Warning",
-				"reason": "BackOff",
-				"message": "Back-off restarting failed container",
-				"involvedObject": {
-					"kind": "Pod",
-					"name": "api-1",
-					"namespace": "production"
+			prometheusJSON := fmt.Sprintf(`{
+			"alerts": [{
+				"status": "firing",
+				"labels": {
+					"alertname": "HighCPU",
+					"severity": "warning",
+					"namespace": "%s",
+					"pod": "api-1"
 				},
-				"source": {
-					"component": "kubelet"
+				"annotations": {
+					"summary": "High CPU usage"
 				}
-			}`
+			}]
+		}`, testCtx.TestNamespace)
+
+			k8sEventJSON := fmt.Sprintf(`{
+			"type": "Warning",
+			"reason": "BackOff",
+			"message": "Back-off restarting failed container",
+			"involvedObject": {
+				"kind": "Pod",
+				"name": "api-1",
+				"namespace": "%s"
+			},
+			"source": {
+				"component": "kubelet"
+			}
+		}`, testCtx.TestNamespace)
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME VALIDATION: Multi-Adapter Processing

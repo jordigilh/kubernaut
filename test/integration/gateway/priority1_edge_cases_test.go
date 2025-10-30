@@ -3,6 +3,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -64,18 +65,18 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			//      Maintains data integrity in Redis and Kubernetes
 
 			// Create alert without alertname (will generate empty/invalid fingerprint)
-			alertJSON := `{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"severity": "critical",
-						"namespace": "production"
-					},
-					"annotations": {
-						"summary": "Test alert without alertname"
-					}
-				}]
-			}`
+			alertJSON := fmt.Sprintf(`{
+			"alerts": [{
+				"status": "firing",
+				"labels": {
+					"severity": "critical",
+					"namespace": "%s"
+				},
+				"annotations": {
+					"summary": "Test alert without alertname"
+				}
+			}]
+		}`, testCtx.TestNamespace)
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME VALIDATION
@@ -87,7 +88,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// 4. Operator can immediately fix the issue
 
 			resp, err := http.Post(
-				testCtx.TestServer.URL + "/api/v1/signals/prometheus",
+				testCtx.TestServer.URL+"/api/v1/signals/prometheus",
 				"application/json",
 				strings.NewReader(alertJSON),
 			)
@@ -175,7 +176,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 			resp, err := http.Post(
-				testCtx.TestServer.URL + "/api/v1/signals/prometheus",
+				testCtx.TestServer.URL+"/api/v1/signals/prometheus",
 				"application/json",
 				strings.NewReader(emptyAlertsJSON),
 			)
@@ -249,20 +250,20 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			//      Better to process alert with fallback time than reject entirely
 
 			// Create alert with malformed timestamp
-			alertJSON := `{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "MalformedTimestampTest",
-						"severity": "critical",
-						"namespace": "production"
-					},
-					"annotations": {
-						"summary": "Test alert with malformed timestamp"
-					},
-					"startsAt": "invalid-timestamp-format"
-				}]
-			}`
+			alertJSON := fmt.Sprintf(`{
+			"alerts": [{
+				"status": "firing",
+				"labels": {
+					"alertname": "MalformedTimestampTest",
+					"severity": "critical",
+					"namespace": "%s"
+				},
+				"annotations": {
+					"summary": "Test alert with malformed timestamp"
+				},
+				"startsAt": "invalid-timestamp-format"
+			}]
+		}`, testCtx.TestNamespace)
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME VALIDATION
@@ -270,7 +271,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// Gateway should handle gracefully - either process with fallback or reject clearly
 
 			resp, err := http.Post(
-				testCtx.TestServer.URL + "/api/v1/signals/prometheus",
+				testCtx.TestServer.URL+"/api/v1/signals/prometheus",
 				"application/json",
 				strings.NewReader(alertJSON),
 			)

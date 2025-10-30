@@ -68,19 +68,19 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 			//      Duplicate CRDs waste AI analysis costs and confuse operators
 
 			concurrentRequests := 100
-			alertJSON := `{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "ConcurrentDeduplicationTest",
-						"severity": "critical",
-						"namespace": "production"
-					},
-					"annotations": {
-						"summary": "Test alert for concurrent deduplication"
-					}
-				}]
-			}`
+			alertJSON := fmt.Sprintf(`{
+			"alerts": [{
+				"status": "firing",
+				"labels": {
+					"alertname": "ConcurrentDeduplicationTest",
+					"severity": "critical",
+					"namespace": "%s"
+				},
+				"annotations": {
+					"summary": "Test alert for concurrent deduplication"
+				}
+			}]
+		}`, testCtx.TestNamespace)
 
 			// Track business outcomes across concurrent requests
 			var wg sync.WaitGroup
@@ -208,19 +208,19 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 
 					// Use unique pod names to avoid deduplication
 					alertJSON := fmt.Sprintf(`{
-						"alerts": [{
-							"status": "firing",
-							"labels": {
-								"alertname": "HighMemoryUsage",
-								"severity": "critical",
-								"namespace": "production",
-								"pod": "payment-api-%d"
-							},
-							"annotations": {
-								"summary": "Pod memory usage at 95%%"
-							}
-						}]
-					}`, requestNum)
+					"alerts": [{
+						"status": "firing",
+						"labels": {
+							"alertname": "HighMemoryUsage",
+							"severity": "critical",
+							"namespace": "%s",
+							"pod": "payment-api-%d"
+						},
+						"annotations": {
+							"summary": "Pod memory usage at 95%%"
+						}
+					}]
+				}`, testCtx.TestNamespace, requestNum)
 
 					resp, err := http.Post(
 						fmt.Sprintf("%s/api/v1/signals/prometheus", testCtx.TestServer.URL),
