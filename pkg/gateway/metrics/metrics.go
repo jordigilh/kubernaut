@@ -28,7 +28,7 @@ import (
 // specifications in docs/services/stateless/gateway-service/metrics-slos.md
 //
 // Metrics are organized into categories:
-// 1. Alert ingestion (received, deduplicated, storms)
+// 1. Signal ingestion (received, deduplicated, storms) - multi-source (Prometheus, K8s Events, etc.)
 // 2. CRD creation (success, failures)
 // 3. Performance (HTTP request duration, Redis operation duration)
 // 4. Deduplication (cache hits/misses, deduplication rate)
@@ -40,10 +40,11 @@ import (
 // Metrics holds all Gateway service Prometheus metrics
 // Day 9 Phase 6B Option C1: Centralized metrics structure
 type Metrics struct {
-	// Alert Ingestion Metrics
-	AlertsReceivedTotal      *prometheus.CounterVec
-	AlertsDeduplicatedTotal  *prometheus.CounterVec
-	AlertStormsDetectedTotal *prometheus.CounterVec
+	// Signal Ingestion Metrics (BR-GATEWAY-001: Multi-source signal processing)
+	// Note: Field names kept as "Alerts*" for backward compatibility, but metric names use "signals_"
+	AlertsReceivedTotal      *prometheus.CounterVec // gateway_signals_received_total
+	AlertsDeduplicatedTotal  *prometheus.CounterVec // gateway_signals_deduplicated_total
+	AlertStormsDetectedTotal *prometheus.CounterVec // gateway_signal_storms_detected_total
 
 	// CRD Creation Metrics
 	CRDsCreatedTotal  *prometheus.CounterVec
@@ -131,27 +132,27 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	)
 
 	return &Metrics{
-		// Alert Ingestion Metrics
+		// Signal Ingestion Metrics (BR-GATEWAY-001: Multi-source signal processing)
 		AlertsReceivedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_alerts_received_total",
-				Help: "Total alerts received by source, severity, and environment",
+				Name: "gateway_signals_received_total",
+				Help: "Total signals received by source, severity, and environment (Prometheus alerts, K8s events, etc.)",
 			},
 			[]string{"source", "severity", "environment"},
 		),
 		AlertsDeduplicatedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_alerts_deduplicated_total",
-				Help: "Total alerts deduplicated (duplicate fingerprint detected)",
+				Name: "gateway_signals_deduplicated_total",
+				Help: "Total signals deduplicated (duplicate fingerprint detected)",
 			},
-			[]string{"alertname", "environment"},
+			[]string{"signal_name", "environment"},
 		),
 		AlertStormsDetectedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_alert_storms_detected_total",
-				Help: "Total alert storms detected by type",
+				Name: "gateway_signal_storms_detected_total",
+				Help: "Total signal storms detected by type (rate-based or pattern-based)",
 			},
-			[]string{"storm_type", "alertname"},
+			[]string{"storm_type", "signal_name"},
 		),
 
 		// CRD Creation Metrics
