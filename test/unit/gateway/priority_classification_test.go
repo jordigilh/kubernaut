@@ -434,86 +434,39 @@ var _ = Describe("BR-GATEWAY-020: Custom Priority Rules via Rego Policies", func
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		DescribeTable("assigns reasonable priority for custom environments using fallback logic",
-			func(severity string, customEnv string, businessScenario string, minPriority string, maxPriority string) {
-				// BUSINESS OUTCOME: Gateway handles ANY environment gracefully
-				// Custom environments should get reasonable fallback priorities
-				// critical + unknown env → P1 (treat as important but not production)
-				// warning + unknown env → P2 (treat as moderate)
-				// info + unknown env → P3 (treat as low priority)
+		It("assigns default P2 priority for unknown environments (Rego-only architecture)", func() {
+			// BR-GATEWAY-021: Architecture Decision - Gateway REQUIRES Rego policy
+			// NO hardcoded fallback table - policy-driven configuration only
+			//
+			// BUSINESS OUTCOME: Organizations MUST define custom environment priorities in Rego
+			// If environment not in Rego policy → default P2 (safe default)
+			//
+			// WHY: Policy-driven configuration prevents hardcoded business logic
+			// Organizations define their priority rules explicitly in Rego
 
-				priority := priorityEngine.Assign(ctx, severity, customEnv)
+			// Test various custom environments - all should get default P2
+			customEnvironments := []string{
+				"canary",
+				"qa-eu",
+				"prod-us-east",
+				"blue",
+				"green",
+				"uat",
+				"pre-prod",
+				"completely-unknown-env",
+			}
 
-				// Verify priority is within acceptable range
-				validPriorities := []string{"P0", "P1", "P2", "P3"}
-				Expect(priority).To(BeElementOf(validPriorities),
-					"Gateway must assign valid priority for: %s", businessScenario)
+			for _, customEnv := range customEnvironments {
+				// All custom environments get default P2 (Rego doesn't have rules for them)
+				priority := priorityEngine.Assign(ctx, "critical", customEnv)
+				Expect(priority).To(Equal("P2"),
+					"Custom environment %s should get default P2 (not in Rego policy)", customEnv)
+			}
 
-				// Verify priority makes business sense (not too high, not too low)
-				priorities := map[string]int{"P0": 0, "P1": 1, "P2": 2, "P3": 3}
-				Expect(priorities[priority]).To(BeNumerically(">=", priorities[minPriority]),
-					"Priority should be at least %s for: %s", minPriority, businessScenario)
-				Expect(priorities[priority]).To(BeNumerically("<=", priorities[maxPriority]),
-					"Priority should be at most %s for: %s", maxPriority, businessScenario)
-			},
-
-			Entry("canary deployment - critical",
-				"critical", "canary",
-				"Critical issue in canary deployment (affects subset of users)",
-				"P1", "P1", // Should be P1: Important but not full production impact
-			),
-
-			Entry("canary deployment - warning",
-				"warning", "canary",
-				"Warning in canary deployment",
-				"P2", "P2", // Should be P2: Moderate priority
-			),
-
-			Entry("qa-eu environment - critical",
-				"critical", "qa-eu",
-				"Critical issue in EU QA environment (blocks QA team)",
-				"P1", "P1", // Should be P1: Blocks testing, important
-			),
-
-			Entry("prod-us-east - critical",
-				"critical", "prod-us-east",
-				"Critical issue in US East production (revenue impact)",
-				"P0", "P1", // Could be P0 if pattern matching works, or P1 as fallback
-			),
-
-			Entry("blue environment - critical",
-				"critical", "blue",
-				"Critical issue in blue deployment (current production version)",
-				"P1", "P1", // Should be P1: Important but unknown environment
-			),
-
-			Entry("green environment - warning",
-				"warning", "green",
-				"Warning in green deployment (new version being validated)",
-				"P2", "P2", // Should be P2: Moderate priority
-			),
-
-			Entry("uat environment - critical",
-				"critical", "uat",
-				"Critical issue in UAT (blocks customer validation)",
-				"P1", "P1", // Should be P1: Blocks business process
-			),
-
-			Entry("pre-prod environment - critical",
-				"critical", "pre-prod",
-				"Critical issue in pre-prod (blocks production release)",
-				"P1", "P1", // Should be P1: Important but not full production
-			),
-
-			Entry("unknown environment - info",
-				"info", "completely-unknown-env",
-				"Info alert in unknown environment",
-				"P2", "P3", // Should be P2 or P3: Low priority
-			),
-		)
-
-		// Business capability verified:
-		// Custom environments get sensible priorities even without Rego policy
-		// Gateway never fails due to unknown environment
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ Gateway never fails due to unknown environment (returns safe default P2)
+			// ✅ Organizations must explicitly define custom environment priorities in Rego
+			// ✅ No hidden hardcoded rules - all priority logic visible in Rego policy
+		})
 	})
 })
