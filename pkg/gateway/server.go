@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	goredis "github.com/go-redis/redis/v8"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
@@ -434,19 +435,32 @@ func (s *Server) wrapWithMiddleware(handler http.Handler) http.Handler {
 	return handler
 }
 
-// performanceLoggingMiddleware logs request duration
+// performanceLoggingMiddleware logs request duration and records metrics
 //
-// BUSINESS OUTCOME: Enable operators to analyze performance via logs (BR-109)
+// BUSINESS OUTCOME: Enable operators to analyze performance via logs and metrics (BR-109, BR-104)
 // TDD GREEN: Minimal implementation to log duration_ms
+// REFACTOR: Added HTTP request duration metric observation
 func (s *Server) performanceLoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
+		// Wrap response writer to capture status code
+		ww := chimiddleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
 		// Call next handler
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(ww, r)
+
+		// Calculate duration
+		duration := time.Since(start)
+		
+		// Record HTTP request duration metric (BR-104)
+		s.metricsInstance.HTTPRequestDuration.WithLabelValues(
+			r.URL.Path,                        // endpoint
+			r.Method,                          // method
+			fmt.Sprintf("%d", ww.Status()),    // status
+		).Observe(duration.Seconds())
 
 		// Log request completion with duration
-		duration := time.Since(start)
 		logger := middleware.GetLogger(r.Context())
 		logger.Info("Request completed",
 			zap.Float64("duration_ms", float64(duration.Milliseconds())),
@@ -614,12 +628,13 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 	}
 }
 
-// Start starts the HTTP server
+// Start starts the HTTP server and background health checks
 //
 // This method:
-// 1. Logs startup message
-// 2. Starts HTTP server (blocking)
-// 3. Returns error if server fails to start
+// 1. Starts Redis health check goroutine (BR-106)
+// 2. Logs startup message
+// 3. Starts HTTP server (blocking)
+// 4. Returns error if server fails to start
 //
 // Start should be called in a goroutine:
 //
@@ -629,8 +644,65 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 //	    }
 //	}()
 func (s *Server) Start(ctx context.Context) error {
+	// Start Redis health check goroutine (BR-106: Redis availability monitoring)
+	go s.monitorRedisHealth(ctx)
+	
 	s.logger.Info("Starting Gateway server", zap.String("addr", s.httpServer.Addr))
 	return s.httpServer.ListenAndServe()
+}
+
+// monitorRedisHealth periodically checks Redis availability and updates metrics
+//
+// BUSINESS OUTCOME: Enable operators to track Redis SLO (BR-106)
+// This goroutine runs every 5 seconds and:
+// 1. Pings Redis to check availability
+// 2. Updates gateway_redis_available gauge (1=available, 0=unavailable)
+// 3. Tracks outage duration and count
+//
+// The health check runs independently of request processing to provide
+// continuous visibility into Redis health even during low traffic periods.
+func (s *Server) monitorRedisHealth(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	
+	wasAvailable := true // Assume available at start
+	outageStart := time.Time{}
+	
+	for {
+		select {
+		case <-ctx.Done():
+			s.logger.Info("Redis health monitor stopped")
+			return
+		case <-ticker.C:
+			// Check Redis availability
+			err := s.redisClient.Ping(ctx).Err()
+			isAvailable := (err == nil)
+			
+			// Update availability gauge
+			if isAvailable {
+				s.metricsInstance.RedisAvailable.Set(1)
+				
+				// If recovering from outage, record outage duration
+				if !wasAvailable && !outageStart.IsZero() {
+					outageDuration := time.Since(outageStart).Seconds()
+					s.metricsInstance.RedisOutageDuration.Add(outageDuration)
+					s.logger.Info("Redis recovered from outage",
+						zap.Duration("outage_duration", time.Since(outageStart)))
+				}
+			} else {
+				s.metricsInstance.RedisAvailable.Set(0)
+				
+				// If this is start of new outage, record it
+				if wasAvailable {
+					outageStart = time.Now()
+					s.metricsInstance.RedisOutageCount.Inc()
+					s.logger.Warn("Redis outage detected", zap.Error(err))
+				}
+			}
+			
+			wasAvailable = isAvailable
+		}
+	}
 }
 
 // Stop gracefully stops the HTTP server
