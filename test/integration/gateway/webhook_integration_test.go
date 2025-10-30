@@ -28,7 +28,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -57,6 +56,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
 		logger        *zap.Logger
+		testNamespace string // Unique namespace per test
+		testCounter   int    // Counter to ensure unique namespaces
 	)
 
 	BeforeEach(func() {
@@ -75,25 +76,19 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		err := redisClient.Client.FlushDB(ctx).Err()
 		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
-		// Create production namespace for tests (required for CRD creation)
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
+		// Verify Redis is actually empty (prevent state leakage between tests)
+		keys, err := redisClient.Client.Keys(ctx, "*").Result()
+		Expect(err).ToNot(HaveOccurred(), "Should query Redis keys")
+		Expect(keys).To(BeEmpty(), "Redis should be completely empty after FlushDB")
 
-		// Wait for deletion to complete (namespace deletion is asynchronous)
-		Eventually(func() error {
-			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+		// Create unique production namespace for this test (prevents collisions)
+		// Use counter to ensure uniqueness even when tests run in same second
+		testCounter++
+		testNamespace = fmt.Sprintf("test-prod-%d-%d-%d", time.Now().UnixNano(), GinkgoRandomSeed(), testCounter)
+		EnsureTestNamespace(ctx, k8sClient, testNamespace)
 
-		// Now create fresh namespace with environment label
-		ns = &corev1.Namespace{}
-		ns.Name = "production"
-		ns.Labels = map[string]string{
-			"environment": "production", // Required for EnvironmentClassifier
-		}
-		err = k8sClient.Client.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred(), "Should create production namespace")
+		// Register namespace for suite-level cleanup
+		RegisterTestNamespace(testNamespace)
 
 		// Create Gateway server using helper
 		gatewayServer, err = StartTestGateway(ctx, redisClient, k8sClient)
@@ -106,6 +101,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 		logger.Info("Test setup complete",
 			zap.String("test_server_url", testServer.URL),
+			zap.String("test_namespace", testNamespace),
 			zap.String("redis_addr", redisClient.Client.Options().Addr),
 		)
 	})
@@ -117,10 +113,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
 		}
 
-		// Cleanup namespace (this will cascade delete all CRDs in the namespace)
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
+		// NOTE: Namespace cleanup handled by suite-level AfterSuite (batch cleanup)
+		// This prevents "namespace is being terminated" errors from parallel test execution
 
 		// Cleanup
 		if testServer != nil {
@@ -141,22 +135,22 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// BUSINESS SCENARIO: Production pod memory alert → AI analysis triggered
 			// Expected: CRD created in K8s with correct priority and environment
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "HighMemoryUsage",
 						"severity": "critical",
-						"namespace": "production",
+						"namespace": "%s",
 						"pod": "payment-api-123"
 					},
 					"annotations": {
-						"summary": "Pod payment-api-123 using 95% memory",
+						"summary": "Pod payment-api-123 using 95%% memory",
 						"description": "Memory threshold exceeded, may cause OOM"
 					},
 					"startsAt": "2025-10-22T10:00:00Z"
 				}]
-			}`)
+			}`, testNamespace))
 
 			// Send webhook to Gateway
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
@@ -185,15 +179,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
-			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in production namespace")
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in test namespace")
 			Expect(crdList.Items).To(HaveLen(1), "One CRD should be created")
 
 			crd := crdList.Items[0]
 			Expect(crd.Spec.Priority).To(Equal("P0"),
 				"critical + production = P0 (revenue-impacting)")
 			Expect(crd.Spec.Environment).To(Equal("production"),
-				"Environment should be classified from namespace")
+				"Environment should be classified from namespace label")
 			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"),
 				"Alert name enables AI to understand failure type")
 
@@ -224,13 +218,13 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// BUSINESS SCENARIO: Same alert fires 3 times in 5 seconds
 			// Expected: First = 201 Created, subsequent = 202 Accepted, NO duplicate CRDs
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "CPUThrottling",
 						"severity": "warning",
-						"namespace": "production",
+						"namespace": "%s",
 						"pod": "api-gateway-7"
 					},
 					"annotations": {
@@ -238,7 +232,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 					},
 					"startsAt": "2025-10-22T12:00:00Z"
 				}]
-			}`)
+			}`, testNamespace))
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
@@ -250,12 +244,16 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				"First alert must create CRD")
 
 			// BUSINESS OUTCOME 1: First CRD created
+			// Use Eventually to handle Kubernetes API caching/propagation delays
 			var crdList1 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace("production"))
-			Expect(err).NotTo(HaveOccurred())
-			Expect(crdList1.Items).To(HaveLen(1), "First alert creates CRD")
+			var firstCRDName string
+			Eventually(func() int {
+				err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace(testNamespace))
+				Expect(err).NotTo(HaveOccurred())
+				return len(crdList1.Items)
+			}, "5s", "100ms").Should(Equal(1), "First alert creates CRD")
 
-			firstCRDName := crdList1.Items[0].Name
+			firstCRDName = crdList1.Items[0].Name
 
 			// Second alert: Duplicate (within TTL)
 			resp2, err := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -266,7 +264,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// BUSINESS OUTCOME 2: NO new CRD created
 			var crdList2 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList2, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList2, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList2.Items).To(HaveLen(1),
 				"Duplicate alert must NOT create new CRD")
@@ -282,7 +280,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// BUSINESS OUTCOME 3: Still only 1 CRD
 			var crdList3 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList3, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList3, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList3.Items).To(HaveLen(1),
 				"Third duplicate must NOT create new CRD (still only 1 CRD)")
@@ -297,20 +295,20 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// BUSINESS SCENARIO: Alert fires 5 times → Ops sees escalation pattern
 			// Expected: Redis metadata includes count, first seen, last seen
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
 					"labels": {
 						"alertname": "NetworkLatency",
 						"severity": "critical",
-						"namespace": "production"
+						"namespace": "%s"
 					},
 					"annotations": {
 						"summary": "Network latency > 500ms"
 					},
 					"startsAt": "2025-10-22T13:00:00Z"
 				}]
-			}`)
+			}`, testNamespace))
 
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
@@ -387,7 +385,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 						"labels": {
 							"alertname": "PodNotReady",
 							"severity": "critical",
-							"namespace": "production",
+							"namespace": "%s",
 							"pod": "app-pod-%d",
 							"node": "worker-node-03"
 						},
@@ -396,7 +394,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 						},
 						"startsAt": "2025-10-22T14:00:00Z"
 					}]
-				}`, i))
+				}`, testNamespace, i))
 
 				resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
 				Expect(err).ToNot(HaveOccurred())
@@ -411,7 +409,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// - Alerts 1-2: Individual CRDs (before rate threshold of 2 is exceeded)
 			// - Alerts 3-15: Aggregated into 1 storm CRD (after storm detection kicks in)
 			var crdList remediationv1alpha1.RemediationRequestList
-			err := k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
+			err := k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 
 			// Should have 3 CRDs (2 individual + 1 storm), not 15 individual CRDs
@@ -450,19 +448,19 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// BUSINESS SCENARIO: Pod OOMKilled event → AI analyzes memory issue
 			// Expected: CRD created with event details
 
-			payload := []byte(`{
+			payload := []byte(fmt.Sprintf(`{
 				"type": "Warning",
 				"reason": "OOMKilled",
 				"message": "Container killed due to out of memory",
 				"involvedObject": {
 					"kind": "Pod",
-					"namespace": "production",
+					"namespace": "%s",
 					"name": "payment-processor-42"
 				},
 				"metadata": {
-					"namespace": "production"
+					"namespace": "%s"
 				}
-			}`)
+			}`, testNamespace, testNamespace))
 
 			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL)
 			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
@@ -475,7 +473,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// BUSINESS OUTCOME 2: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace("production"))
+			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList.Items).To(HaveLen(1), "K8s event should create CRD")
 

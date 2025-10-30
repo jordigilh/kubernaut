@@ -41,6 +41,7 @@ build_failures.*
 *_SUMMARY.md
 *_STATUS.md
 *_PLAN.md
+*_CLEANUP.md
 *_IMPLEMENTATION.md
 *_ASSESSMENT.md
 *_ANALYSIS.md
