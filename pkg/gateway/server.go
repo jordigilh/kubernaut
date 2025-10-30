@@ -487,9 +487,13 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	// No rate limiting or authentication middleware
 	// Security now handled at network layer (Network Policies + TLS)
 
-	// Register route directly (no middleware wrapping)
+	// BR-042: Apply Content-Type validation middleware
+	// Rejects non-JSON payloads early, before processing
+	wrappedHandler := middleware.ValidateContentType(handler)
+
+	// Register route with Content-Type validation
 	// BR-109: Use stored mux reference instead of casting httpServer.Handler
-	s.mux.Handle(adapter.GetRoute(), handler)
+	s.mux.Handle(adapter.GetRoute(), wrappedHandler)
 
 	s.logger.Info("Registered adapter route",
 		zap.String("adapter", adapter.Name()),
