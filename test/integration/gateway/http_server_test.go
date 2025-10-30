@@ -14,19 +14,40 @@ import (
 
 var _ = Describe("HTTP Server Integration Tests", func() {
 	var (
-		testServer  *httptest.Server
-		redisClient *RedisTestClient
-		k8sClient   *K8sTestClient
-		ctx         context.Context
-		cancel      context.CancelFunc
+		testServer    *httptest.Server
+		redisClient   *RedisTestClient
+		k8sClient     *K8sTestClient
+		ctx           context.Context
+		cancel        context.CancelFunc
+		testNamespace string
+		testCounter   int
 	)
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithCancel(context.Background())
 
+		// Generate unique namespace for test isolation
+		testCounter++
+		testNamespace = fmt.Sprintf("test-http-%d-%d-%d",
+			time.Now().UnixNano(),
+			GinkgoRandomSeed(),
+			testCounter)
+
 		// Setup test clients
 		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
+
+		// Ensure unique test namespace exists
+		EnsureTestNamespace(ctx, k8sClient, testNamespace)
+
+		// Flush Redis to prevent state leakage
+		err := redisClient.Client.FlushDB(ctx).Err()
+		Expect(err).ToNot(HaveOccurred(), "Should flush Redis")
+
+		// Verify Redis is empty
+		keys, err := redisClient.Client.Keys(ctx, "*").Result()
+		Expect(err).ToNot(HaveOccurred(), "Should query Redis keys")
+		Expect(keys).To(BeEmpty(), "Redis should be empty after flush")
 
 		// Start test Gateway server
 		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
@@ -86,7 +107,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "TestAlert",
-				Namespace: "production",
+				Namespace: testNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
@@ -135,7 +156,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "FastClient",
-				Namespace: "production",
+				Namespace: testNamespace,
 				Severity:  "warning",
 				Resource: ResourceIdentifier{
 					Kind: "Deployment",
@@ -244,7 +265,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			for i := 0; i < 5; i++ {
 				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 					AlertName: fmt.Sprintf("ActiveConnection-%d", i),
-					Namespace: "production",
+					Namespace: testNamespace,
 					Severity:  "warning",
 					Resource: ResourceIdentifier{
 						Kind: "Pod",
@@ -376,7 +397,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "NormalSizePayload",
-				Namespace: "production",
+				Namespace: testNamespace,
 				Severity:  "warning",
 				Resource: ResourceIdentifier{
 					Kind: "Deployment",
@@ -406,7 +427,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "ConcurrentTest",
-				Namespace: "production",
+				Namespace: testNamespace,
 				Severity:  "critical",
 				Resource: ResourceIdentifier{
 					Kind: "Node",
@@ -435,7 +456,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "LatencyTest",
-				Namespace: "production",
+				Namespace: testNamespace,
 				Severity:  "warning",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",

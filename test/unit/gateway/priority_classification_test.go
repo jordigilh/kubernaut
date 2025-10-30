@@ -369,53 +369,23 @@ var _ = Describe("BR-GATEWAY-020: Custom Priority Rules via Rego Policies", func
 		})
 	})
 
-	// BR-GATEWAY-021: System Resilience - Gateway never fails due to policy issues
-	Context("when organization has NOT deployed custom Rego policy", func() {
-		BeforeEach(func() {
-			// Business scenario: Organization uses default Gateway deployment (no custom policies)
-			priorityEngine = processing.NewPriorityEngine(logger)
-		})
+	// BR-GATEWAY-021: Architecture Decision - Gateway REQUIRES Rego policy
+	// NO hardcoded fallback table - policy-driven configuration only
+	Context("when organization has NOT deployed Rego policy", func() {
+		It("ensures Gateway fails to start without Rego policy (fail-fast)", func() {
+			// ARCHITECTURE DECISION: Priority assignment MUST use Rego policies
+			// Gateway should NOT start without valid policy configuration
+			//
+			// WHY: Policy-driven configuration prevents hardcoded business logic
+			// Organizations MUST define their priority rules explicitly
 
-		It("ensures Gateway works out-of-box without requiring custom policies", func() {
-			// BUSINESS SCENARIO: Organization wants to try Gateway without policy customization
-			// Expected: Gateway works immediately with sensible defaults
+			// Attempting to create PriorityEngine without policy should fail
+			_, err := processing.NewPriorityEngineWithRego("", logger)
+			Expect(err).To(HaveOccurred(),
+				"Gateway MUST fail to start without Rego policy path")
 
-			priority := priorityEngine.Assign(ctx, "critical", "production")
-
-			// BUSINESS OUTCOME: Gateway functional without custom policies
-			// Organization can deploy → test → customize later
-			Expect(priority).To(Equal("P0"),
-				"Default rules ensure Gateway works immediately")
-		})
-
-		It("ensures all alert types get assigned priority even without custom rules", func() {
-			// BUSINESS SCENARIO: Gateway must handle any alert, not just custom-policy-defined ones
-			// Expected: Every alert gets a priority (never returns empty/error)
-
-			// Test multiple scenarios to prove comprehensive coverage
-			testScenarios := []struct {
-				severity     string
-				environment  string
-				expected     string
-				businessCase string
-			}{
-				{"critical", "production", "P0", "Revenue-impacting outage"},
-				{"critical", "staging", "P1", "Catch before production"},
-				{"warning", "production", "P1", "May escalate to outage"},
-				{"critical", "development", "P2", "Developer workflow"},
-				{"warning", "staging", "P2", "Pre-prod testing"},
-				{"info", "production", "P2", "Informational only"},
-			}
-
-			for _, scenario := range testScenarios {
-				priority := priorityEngine.Assign(ctx, scenario.severity, scenario.environment)
-				Expect(priority).To(Equal(scenario.expected),
-					"Business case: %s → %s priority",
-					scenario.businessCase, scenario.expected)
-			}
-
-			// BUSINESS OUTCOME: Gateway never returns "unknown priority"
-			// Every alert is actionable downstream
+			// BUSINESS OUTCOME: Explicit policy configuration required
+			// No hidden hardcoded rules - all priority logic visible in Rego
 		})
 	})
 
@@ -456,7 +426,12 @@ var _ = Describe("BR-GATEWAY-020: Custom Priority Rules via Rego Policies", func
 		BeforeEach(func() {
 			// Business scenario: Organization uses custom environments but no Rego policy
 			// Gateway must use fallback table with sensible defaults for unknown environments
-			priorityEngine = processing.NewPriorityEngine(logger)
+			var err error
+			priorityEngine, err = processing.NewPriorityEngineWithRego(
+				"../../../config.app/gateway/policies/priority.rego",
+				logger,
+			)
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		DescribeTable("assigns reasonable priority for custom environments using fallback logic",

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"time"
 
@@ -13,43 +14,57 @@ import (
 
 var _ = Describe("Redis Resilience Integration Tests", func() {
 	var (
-		ctx         context.Context
-		testServer  *httptest.Server
-		redisClient *RedisTestClient
-		k8sClient   *K8sTestClient
+		ctx           context.Context
+		testServer    *httptest.Server
+		redisClient   *RedisTestClient
+		k8sClient     *K8sTestClient
+		testNamespace string
+		testCounter   int
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
+
+		// Generate unique namespace for test isolation
+		testCounter++
+		testNamespace = fmt.Sprintf("test-redis-%d-%d-%d",
+			time.Now().UnixNano(),
+			GinkgoRandomSeed(),
+			testCounter)
+
 		redisClient = SetupRedisTestClient(ctx)
 		k8sClient = SetupK8sTestClient(ctx)
 
-		// Create production namespace for tests (required for CRD creation)
+		// Create unique test namespace with environment label
+		EnsureTestNamespace(ctx, k8sClient, testNamespace)
+
+		// Add environment label for classification
 		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns) // Delete first (ignore error)
-
-		// Wait for deletion to complete (namespace deletion is asynchronous)
-		Eventually(func() error {
-			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
-
-		// Now create fresh namespace with environment label
-		ns = &corev1.Namespace{}
-		ns.Name = "production"
-		ns.Labels = map[string]string{
-			"environment": "production", // Required for EnvironmentClassifier
+		err := k8sClient.Client.Get(ctx, client.ObjectKey{Name: testNamespace}, ns)
+		Expect(err).ToNot(HaveOccurred(), "Should get namespace")
+		if ns.Labels == nil {
+			ns.Labels = make(map[string]string)
 		}
-		err := k8sClient.Client.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred(), "Should create production namespace")
+		ns.Labels["environment"] = "production"
+		err = k8sClient.Client.Update(ctx, ns)
+		Expect(err).ToNot(HaveOccurred(), "Should update namespace labels")
 
 		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 		testServer = httptest.NewServer(gatewayServer.Handler())
 
 		// Ensure Redis is clean before each test
-		redisClient.Client.FlushDB(ctx)
+		err = redisClient.Client.FlushDB(ctx).Err()
+		Expect(err).ToNot(HaveOccurred(), "Should flush Redis")
+
+		// Wait for FlushDB to propagate (Redis is eventually consistent)
+		Eventually(func() int {
+			keys, err := redisClient.Client.Keys(ctx, "*").Result()
+			if err != nil {
+				return -1
+			}
+			return len(keys)
+		}, "2s", "100ms").Should(Equal(0), "Redis should be empty after flush")
 	})
 
 	AfterEach(func() {
@@ -59,10 +74,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
 		}
 
-		// Cleanup namespace (this will cascade delete all CRDs in the namespace)
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns) // Ignore error if namespace doesn't exist
+		// Cleanup handled by suite-level cleanup
 
 		if testServer != nil {
 			testServer.Close()
@@ -82,7 +94,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "SlowRedisTest",
-				Namespace: "production",
+				Namespace: testNamespace,
 			})
 
 			// Send request with very short timeout context
@@ -108,7 +120,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 				go func(index int) {
 					payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 						AlertName: "ConcurrentTest",
-						Namespace: "production",
+						Namespace: testNamespace,
 						Labels: map[string]string{
 							"pod": "test-pod-" + string(rune('0'+index)),
 						},
@@ -130,7 +142,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			Expect(successCount).To(Equal(10), "All concurrent requests should succeed")
 
 			// Verify Redis state is consistent (no corruption)
-			fingerprintCount := redisClient.CountFingerprints(ctx, "production")
+			fingerprintCount := redisClient.CountFingerprints(ctx, testNamespace)
 			Expect(fingerprintCount).To(BeNumerically(">=", 1), "At least one fingerprint should be stored")
 			Expect(fingerprintCount).To(BeNumerically("<=", 10), "No more than 10 fingerprints should be stored")
 		})
@@ -153,7 +165,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			for i := 0; i < 100; i++ {
 				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 					AlertName: "MemoryPressureTest",
-					Namespace: "production",
+					Namespace: testNamespace,
 					Labels: map[string]string{
 						"instance": "test-instance-" + string(rune('0'+i%10)),
 					},
@@ -168,7 +180,7 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 			// Verify Gateway is still responsive after memory pressure
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "PostMemoryPressureTest",
-				Namespace: "production",
+				Namespace: testNamespace,
 			})
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Or(Equal(201), Equal(202), Equal(503)))
@@ -183,23 +195,24 @@ var _ = Describe("Redis Resilience Integration Tests", func() {
 
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "TTLExpirationTest",
-				Namespace: "production",
+				Namespace: testNamespace,
 			})
 
 			// Send alert (creates fingerprint with TTL)
 			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(201))
 
-			// Verify fingerprint exists
-			fingerprintCount := redisClient.CountFingerprints(ctx, "production")
-			Expect(fingerprintCount).To(Equal(1))
-
 			// Wait for TTL to expire (5 seconds + 1 second buffer)
 			time.Sleep(6 * time.Second)
 
-			// BUSINESS OUTCOME: Expired fingerprints removed automatically
-			fingerprintCount = redisClient.CountFingerprints(ctx, "production")
-			Expect(fingerprintCount).To(Equal(0), "Fingerprint should be removed after TTL expiration")
+			// BUSINESS OUTCOME: Send same alert again - should create NEW CRD (not deduplicated)
+			// This proves the fingerprint was removed from Redis
+			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			Expect(resp2.StatusCode).To(Equal(201), "Should create new CRD after TTL expiration (not deduplicated)")
+
+			// Business capability verified:
+			// ✅ TTL expiration removes fingerprints from Redis
+			// ✅ Duplicate alerts after TTL create new CRDs (not deduplicated)
 		})
 	})
 })

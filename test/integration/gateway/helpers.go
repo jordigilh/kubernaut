@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"sync"
 	"time"
 
 	goredis "github.com/go-redis/redis/v8"
@@ -31,6 +32,19 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 )
+
+// Suite-level namespace tracking for batch cleanup
+var (
+	testNamespaces      = make(map[string]bool) // Track all test namespaces
+	testNamespacesMutex sync.Mutex              // Thread-safe access
+)
+
+// RegisterTestNamespace adds a namespace to the suite-level cleanup list
+func RegisterTestNamespace(namespace string) {
+	testNamespacesMutex.Lock()
+	defer testNamespacesMutex.Unlock()
+	testNamespaces[namespace] = true
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TEST INFRASTRUCTURE TYPES
@@ -267,6 +281,9 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 				CacheTTL:           5 * time.Second, // Production: 30 seconds
 				ConfigMapNamespace: "kubernaut-system",
 				ConfigMapName:      "kubernaut-environment-overrides",
+			},
+			Priority: gateway.PrioritySettings{
+				PolicyPath: "../../../config.app/gateway/policies/priority.rego", // Use Rego policy for tests (relative to test/integration/gateway/)
 			},
 		},
 	}

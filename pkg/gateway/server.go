@@ -166,6 +166,13 @@ type ProcessingSettings struct {
 	Deduplication DeduplicationSettings `yaml:"deduplication"`
 	Storm         StormSettings         `yaml:"storm"`
 	Environment   EnvironmentSettings   `yaml:"environment"`
+	Priority      PrioritySettings      `yaml:"priority"`
+}
+
+// PrioritySettings contains priority assignment configuration.
+type PrioritySettings struct {
+	// PolicyPath is the path to the Rego policy file for priority assignment
+	PolicyPath string `yaml:"policy_path"`
 }
 
 // DeduplicationSettings contains deduplication configuration.
@@ -330,7 +337,23 @@ func createServerWithClients(cfg *ServerConfig, logger *zap.Logger, metricsInsta
 	} else {
 		classifier = processing.NewEnvironmentClassifier(ctrlClient, logger)
 	}
-	priorityEngine := processing.NewPriorityEngine(logger)
+
+	// Create priority engine with Rego policy (REQUIRED)
+	// Architecture Decision: Priority assignment MUST use Rego policies
+	// Gateway fails to start if policy cannot be loaded
+	if cfg.Processing.Priority.PolicyPath == "" {
+		return nil, fmt.Errorf("priority policy path is required (cfg.Processing.Priority.PolicyPath)")
+	}
+
+	priorityEngine, err := processing.NewPriorityEngineWithRego(cfg.Processing.Priority.PolicyPath, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load priority Rego policy (fail-fast): %w", err)
+	}
+
+	logger.Info("Loaded Rego policy for priority assignment",
+		zap.String("policy_path", cfg.Processing.Priority.PolicyPath),
+	)
+
 	pathDecider := processing.NewRemediationPathDecider(logger)
 	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance)
 
@@ -662,7 +685,6 @@ func (s *Server) Start(ctx context.Context) error {
 // The health check runs independently of request processing to provide
 // continuous visibility into Redis health even during low traffic periods.
 func (s *Server) monitorRedisHealth(ctx context.Context) {
-	
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
