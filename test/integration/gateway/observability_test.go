@@ -216,11 +216,11 @@ var _ = Describe("Observability Integration Tests", func() {
 			// ✅ Deduplication rate tracking enables TTL tuning
 		})
 
-	PIt("should track storm detection via gateway_signal_storms_detected_total", func() {
-		// PENDING: Storm detection requires 2+ alerts within 1-second window
-		// Sequential webhook calls don't meet timing threshold (each takes ~100ms)
-		// Storm aggregation tests (storm_aggregation_test.go) already validate storm detection
-		// TODO: Refactor to use concurrent goroutines to send alerts simultaneously
+		PIt("should track storm detection via gateway_signal_storms_detected_total", func() {
+			// PENDING: Storm detection requires 2+ alerts within 1-second window
+			// Sequential webhook calls don't meet timing threshold (each takes ~100ms)
+			// Storm aggregation tests (storm_aggregation_test.go) already validate storm detection
+			// TODO: Refactor to use concurrent goroutines to send alerts simultaneously
 			// BUSINESS OUTCOME: Operators can detect signal storms via metrics (any signal type)
 			// BUSINESS SCENARIO: Operator creates alert: increase(gateway_signal_storms_detected_total[5m]) > 0
 
@@ -346,59 +346,59 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Operators can track CRD creation by namespace and priority
 			// BUSINESS SCENARIO: Operator monitors P0 CRD creation rate per namespace
 
-		// Send alerts with different namespaces and priorities (use unique names)
-		uniqueID := time.Now().UnixNano()
-		namespaces := []string{"production", "staging"}
-		successCount := 0
-		for i, ns := range namespaces {
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: fmt.Sprintf("LabelTest-%d-%d", uniqueID, i),
-				Namespace: ns,
-				Severity:  "critical", // P0 in production, P1 in staging
-				Resource: ResourceIdentifier{
-					Kind: "Pod",
-					Name: fmt.Sprintf("app-pod-%d-%d", uniqueID, i),
-				},
-			})
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			if resp.StatusCode == http.StatusCreated {
-				successCount++
+			// Send alerts with different namespaces and priorities (use unique names)
+			uniqueID := time.Now().UnixNano()
+			namespaces := []string{"production", "staging"}
+			successCount := 0
+			for i, ns := range namespaces {
+				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+					AlertName: fmt.Sprintf("LabelTest-%d-%d", uniqueID, i),
+					Namespace: ns,
+					Severity:  "critical", // P0 in production, P1 in staging
+					Resource: ResourceIdentifier{
+						Kind: "Pod",
+						Name: fmt.Sprintf("app-pod-%d-%d", uniqueID, i),
+					},
+				})
+				resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+				if resp.StatusCode == http.StatusCreated {
+					successCount++
+				}
+				// Small delay between requests to avoid timing issues
+				time.Sleep(10 * time.Millisecond)
 			}
-			// Small delay between requests to avoid timing issues
-			time.Sleep(10 * time.Millisecond)
-		}
-		
-		// Verify at least one CRD was created successfully
-		Expect(successCount).To(BeNumerically(">=", 1), 
-			fmt.Sprintf("At least one CRD should be created successfully (got %d)", successCount))
+
+			// Verify at least one CRD was created successfully
+			Expect(successCount).To(BeNumerically(">=", 1),
+				fmt.Sprintf("At least one CRD should be created successfully (got %d)", successCount))
 
 			// Wait for metrics to update
 			time.Sleep(100 * time.Millisecond)
 
-	// Verify metrics include environment and priority labels
-	metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-	Expect(err).ToNot(HaveOccurred())
+			// Verify metrics include environment and priority labels
+			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			Expect(err).ToNot(HaveOccurred())
 
-	crdMetric, exists := metrics["gateway_crds_created_total"]
-	Expect(exists).To(BeTrue(), "CRD creation metric should exist")
+			crdMetric, exists := metrics["gateway_crds_created_total"]
+			Expect(exists).To(BeTrue(), "CRD creation metric should exist")
 
-	// Verify metric has label sets (Prometheus aggregates by unique label combinations)
-	// Both CRDs have same environment="unknown" and priority="P1", so they aggregate into 1 label set
-	Expect(len(crdMetric.Values)).To(BeNumerically(">=", 1),
-		"Should have at least one metric label set")
-	
-	// Verify the metric value reflects both CRD creations
-	totalCRDs := float64(0)
-	for _, val := range crdMetric.Values {
-		totalCRDs += val
-	}
-	Expect(totalCRDs).To(BeNumerically(">=", float64(successCount)),
-		fmt.Sprintf("Total CRDs created should be >= %d", successCount))
+			// Verify metric has label sets (Prometheus aggregates by unique label combinations)
+			// Both CRDs have same environment="unknown" and priority="P1", so they aggregate into 1 label set
+			Expect(len(crdMetric.Values)).To(BeNumerically(">=", 1),
+				"Should have at least one metric label set")
 
-		// BUSINESS CAPABILITY VERIFIED:
-		// ✅ Operators can filter metrics by environment (labels present)
-		// ✅ Operators can filter metrics by priority (labels present)
-		// ✅ Query: rate(gateway_crds_created_total{environment="unknown",priority="P1"}[5m])
+			// Verify the metric value reflects both CRD creations
+			totalCRDs := float64(0)
+			for _, val := range crdMetric.Values {
+				totalCRDs += val
+			}
+			Expect(totalCRDs).To(BeNumerically(">=", float64(successCount)),
+				fmt.Sprintf("Total CRDs created should be >= %d", successCount))
+
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ Operators can filter metrics by environment (labels present)
+			// ✅ Operators can filter metrics by priority (labels present)
+			// ✅ Query: rate(gateway_crds_created_total{environment="unknown",priority="P1"}[5m])
 		})
 	})
 
@@ -411,33 +411,33 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Operators can measure Gateway performance against SLOs
 			// BUSINESS SCENARIO: SLO requires p95 latency < 500ms
 
-		// Send multiple requests to generate latency data (use unique names)
-		uniqueID := time.Now().UnixNano()
-		for i := 0; i < 10; i++ {
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: fmt.Sprintf("LatencyTest-%d-%d", uniqueID, i),
-				Namespace: "production",
-				Severity:  "warning",
-				Resource: ResourceIdentifier{
-					Kind: "Pod",
-					Name: fmt.Sprintf("pod-%d-%d", uniqueID, i),
-				},
-			})
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-				fmt.Sprintf("Request %d should succeed", i))
-		}
+			// Send multiple requests to generate latency data (use unique names)
+			uniqueID := time.Now().UnixNano()
+			for i := 0; i < 10; i++ {
+				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+					AlertName: fmt.Sprintf("LatencyTest-%d-%d", uniqueID, i),
+					Namespace: "production",
+					Severity:  "warning",
+					Resource: ResourceIdentifier{
+						Kind: "Pod",
+						Name: fmt.Sprintf("pod-%d-%d", uniqueID, i),
+					},
+				})
+				resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+				Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+					fmt.Sprintf("Request %d should succeed", i))
+			}
 
-		// Wait for metrics to update
-		time.Sleep(200 * time.Millisecond)
+			// Wait for metrics to update
+			time.Sleep(200 * time.Millisecond)
 
-		// Verify latency histogram exists
-		metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-		Expect(err).ToNot(HaveOccurred())
+			// Verify latency histogram exists
+			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			Expect(err).ToNot(HaveOccurred())
 
-		// Histograms expose _count, _sum, and _bucket metrics
-		_, exists := metrics["gateway_http_request_duration_seconds_count"]
-		Expect(exists).To(BeTrue(), "HTTP duration histogram should exist")
+			// Histograms expose _count, _sum, and _bucket metrics
+			_, exists := metrics["gateway_http_request_duration_seconds_count"]
+			Expect(exists).To(BeTrue(), "HTTP duration histogram should exist")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can track p95 latency
@@ -446,45 +446,45 @@ var _ = Describe("Observability Integration Tests", func() {
 		})
 
 		It("should include endpoint and status code labels in duration metrics", func() {
-		// TDD RED: Test should fail - HTTPRequestDuration metric not being observed
+			// TDD RED: Test should fail - HTTPRequestDuration metric not being observed
 			// BUSINESS OUTCOME: Operators can track latency per endpoint and status code
 			// BUSINESS SCENARIO: Operator identifies slow endpoints or error-prone paths
 
-		// Send requests to different endpoints (use unique name)
-		uniqueID := time.Now().UnixNano()
-		payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-			AlertName: fmt.Sprintf("EndpointTest-%d", uniqueID),
-			Namespace: "production",
-			Severity:  "info",
-			Resource: ResourceIdentifier{
-				Kind: "Service",
-				Name: fmt.Sprintf("api-%d", uniqueID),
-			},
-		})
-		resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-		Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-			"Signal webhook should succeed")
+			// Send requests to different endpoints (use unique name)
+			uniqueID := time.Now().UnixNano()
+			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+				AlertName: fmt.Sprintf("EndpointTest-%d", uniqueID),
+				Namespace: "production",
+				Severity:  "info",
+				Resource: ResourceIdentifier{
+					Kind: "Service",
+					Name: fmt.Sprintf("api-%d", uniqueID),
+				},
+			})
+			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+				"Signal webhook should succeed")
 
-		// Also query health endpoint
-		healthResp, err := http.Get(testServer.URL + "/health")
-		Expect(err).ToNot(HaveOccurred(), "Health endpoint should be accessible")
-		Expect(healthResp.StatusCode).To(Equal(http.StatusOK), "Health endpoint should return 200")
+			// Also query health endpoint
+			healthResp, err := http.Get(testServer.URL + "/health")
+			Expect(err).ToNot(HaveOccurred(), "Health endpoint should be accessible")
+			Expect(healthResp.StatusCode).To(Equal(http.StatusOK), "Health endpoint should return 200")
 
-		// Wait for metrics to update
-		time.Sleep(200 * time.Millisecond)
+			// Wait for metrics to update
+			time.Sleep(200 * time.Millisecond)
 
-		// Verify metrics include endpoint labels
-		metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-		Expect(err).ToNot(HaveOccurred())
+			// Verify metrics include endpoint labels
+			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			Expect(err).ToNot(HaveOccurred())
 
-		// Histograms expose _count, _sum, and _bucket metrics
-		durationCountMetric, exists := metrics["gateway_http_request_duration_seconds_count"]
-		Expect(exists).To(BeTrue(), "HTTP duration count metric should exist")
+			// Histograms expose _count, _sum, and _bucket metrics
+			durationCountMetric, exists := metrics["gateway_http_request_duration_seconds_count"]
+			Expect(exists).To(BeTrue(), "HTTP duration count metric should exist")
 
-		// Verify endpoint labels are present (at least 1 endpoint tracked)
-		// Note: Histogram metrics aggregate by endpoint+method+status labels
-		Expect(len(durationCountMetric.Values)).To(BeNumerically(">=", 1),
-			fmt.Sprintf("Should track at least 1 endpoint (got %d)", len(durationCountMetric.Values)))
+			// Verify endpoint labels are present (at least 1 endpoint tracked)
+			// Note: Histogram metrics aggregate by endpoint+method+status labels
+			Expect(len(durationCountMetric.Values)).To(BeNumerically(">=", 1),
+				fmt.Sprintf("Should track at least 1 endpoint (got %d)", len(durationCountMetric.Values)))
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can identify slow endpoints
@@ -533,7 +533,7 @@ var _ = Describe("Observability Integration Tests", func() {
 		})
 
 		It("should include operation type labels in Redis duration metrics", func() {
-		// TDD RED: Test should fail - RedisOperationDuration metric has no values
+			// TDD RED: Test should fail - RedisOperationDuration metric has no values
 			// BUSINESS OUTCOME: Operators can identify slow Redis operations
 			// BUSINESS SCENARIO: Operator identifies that HGETALL is slow, tunes data structure
 
@@ -555,16 +555,16 @@ var _ = Describe("Observability Integration Tests", func() {
 			time.Sleep(100 * time.Millisecond)
 
 			// Verify metrics include operation labels
-		metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-		Expect(err).ToNot(HaveOccurred())
+			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			Expect(err).ToNot(HaveOccurred())
 
-		// Histograms expose _count, _sum, and _bucket metrics
-		redisCountMetric, exists := metrics["gateway_redis_operation_duration_seconds_count"]
-		Expect(exists).To(BeTrue(), "Redis operation duration count metric should exist")
+			// Histograms expose _count, _sum, and _bucket metrics
+			redisCountMetric, exists := metrics["gateway_redis_operation_duration_seconds_count"]
+			Expect(exists).To(BeTrue(), "Redis operation duration count metric should exist")
 
-		// Verify multiple operations tracked
-		Expect(len(redisCountMetric.Values)).To(BeNumerically(">=", 1),
-			"Should track Redis operations")
+			// Verify multiple operations tracked
+			Expect(len(redisCountMetric.Values)).To(BeNumerically(">=", 1),
+				"Should track Redis operations")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can identify slow operation types
@@ -579,20 +579,21 @@ var _ = Describe("Observability Integration Tests", func() {
 
 	Context("BR-106: Redis Health Metrics", func() {
 		It("should track Redis availability via gateway_redis_available gauge", func() {
-		// TDD RED: Test should fail - RedisAvailable gauge is 0 instead of 1
+			// TDD RED: Test should fail - RedisAvailable gauge is 0 instead of 1
 			// BUSINESS OUTCOME: Operators can track Redis availability SLO (target: 99.9%)
 			// BUSINESS SCENARIO: Redis becomes unavailable, operators detect via metrics
 
-			// Wait for health check to run (runs every 5 seconds)
-			time.Sleep(6 * time.Second)
+			// Poll for Redis availability metric using Eventually
+			// Health check runs every 5 seconds in production, faster in tests
+			Eventually(func() bool {
+				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				if err != nil {
+					return false
+				}
 
-			// Verify Redis is available
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred())
-
-			available, exists := GetMetricValue(metrics, "gateway_redis_available", "")
-			Expect(exists).To(BeTrue(), "Redis availability metric should exist")
-			Expect(available).To(Equal(1.0), "Redis should be available (1)")
+				available, exists := GetMetricValue(metrics, "gateway_redis_available", "")
+				return exists && available == 1.0
+			}, "10s", "500ms").Should(BeTrue(), "Redis should be available (1) after health check runs")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can track Redis availability
