@@ -1,9 +1,26 @@
 # ADR-015: Migrate from "Alert" to "Signal" Naming Convention
 
-**Status**: Proposed
+**Status**: ✅ **ACCEPTED** (2025-10-30)
 **Date**: 2025-10-07
+**Last Updated**: 2025-10-30
 **Deciders**: Development Team, Architecture Review
 **Context**: The Kubernaut system is designed to handle multiple signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch alarms, custom webhooks), but core interfaces and types still use "Alert" prefix, creating semantic confusion and blocking evolution.
+
+---
+
+## 🚨 **MANDATORY IMPLEMENTATION RULE**
+
+**ALL new code MUST use "Signal" terminology, NOT "Alert" terminology.**
+
+This is **NON-NEGOTIABLE** for:
+- ✅ Metric names: `gateway_signals_*` (NOT `gateway_alerts_*`)
+- ✅ Variable names: `signal`, `signalCount` (NOT `alert`, `alertCount`)
+- ✅ Function names: `ProcessSignal()` (NOT `ProcessAlert()`)
+- ✅ Type names: `SignalProcessor` (NOT `AlertProcessor`)
+- ✅ Documentation: "signal processing" (NOT "alert processing")
+- ✅ Comments: "handles signals" (NOT "handles alerts")
+
+**Rationale**: Kubernaut is a **multi-signal remediation platform**, not just an alert handler.
 
 ---
 
