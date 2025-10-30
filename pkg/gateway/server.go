@@ -29,6 +29,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 
+	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
+
 	// "k8s.io/client-go/kubernetes" // DD-GATEWAY-004: No longer needed (authentication removed)
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -1138,20 +1140,11 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 }
 
-// RFC7807Error represents an RFC 7807 Problem Details error response
-// BR-041: RFC 7807 error format
-// TDD GREEN: Implements standards-compliant error responses
-type RFC7807Error struct {
-	Type      string `json:"type"`                // URI reference identifying the problem type
-	Title     string `json:"title"`               // Short, human-readable summary
-	Detail    string `json:"detail"`              // Human-readable explanation
-	Status    int    `json:"status"`              // HTTP status code
-	Instance  string `json:"instance"`            // URI reference to specific occurrence
-	RequestID string `json:"request_id,omitempty"` // BR-109: Request tracing (extension member)
-}
+// TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication
 
 // writeJSONError writes an RFC 7807 compliant error response
 // TDD GREEN: Updated to support BR-041 (RFC 7807 error format)
+// TDD REFACTOR: Now uses shared gwerrors.RFC7807Error struct and constants
 // BR-109: Added request ID extraction for request tracing
 // BR-GATEWAY-078: Added error message sanitization to prevent sensitive data exposure
 // Business Outcome: Clients receive standards-compliant, machine-readable error responses
@@ -1168,7 +1161,7 @@ func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, message 
 	// Determine error type and title based on status code
 	errorType, title := getErrorTypeAndTitle(statusCode)
 
-	errorResponse := RFC7807Error{
+	errorResponse := gwerrors.RFC7807Error{
 		Type:      errorType,
 		Title:     title,
 		Detail:    sanitizedMessage,
@@ -1185,18 +1178,19 @@ func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, message 
 
 // getErrorTypeAndTitle returns the RFC 7807 error type URI and title for a given HTTP status code
 // BR-041: RFC 7807 error format
+// TDD REFACTOR: Now uses shared gwerrors constants
 func getErrorTypeAndTitle(statusCode int) (string, string) {
 	switch statusCode {
 	case http.StatusBadRequest:
-		return "https://kubernaut.io/errors/validation-error", "Bad Request"
+		return gwerrors.ErrorTypeValidationError, gwerrors.TitleBadRequest
 	case http.StatusMethodNotAllowed:
-		return "https://kubernaut.io/errors/method-not-allowed", "Method Not Allowed"
+		return gwerrors.ErrorTypeMethodNotAllowed, gwerrors.TitleMethodNotAllowed
 	case http.StatusInternalServerError:
-		return "https://kubernaut.io/errors/internal-error", "Internal Server Error"
+		return gwerrors.ErrorTypeInternalError, gwerrors.TitleInternalServerError
 	case http.StatusServiceUnavailable:
-		return "https://kubernaut.io/errors/service-unavailable", "Service Unavailable"
+		return gwerrors.ErrorTypeServiceUnavailable, gwerrors.TitleServiceUnavailable
 	default:
-		return "https://kubernaut.io/errors/unknown", "Error"
+		return gwerrors.ErrorTypeUnknown, gwerrors.TitleUnknown
 	}
 }
 
