@@ -99,27 +99,30 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
 				"Gateway MUST reject invalid input with 400 Bad Request (BR-001)")
 
-			// BUSINESS OUTCOME 2: Error response is structured JSON
-			var errorResponse map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-			Expect(err).ToNot(HaveOccurred(),
-				"Error response MUST be valid JSON for operator parsing (BR-001)")
+		// BUSINESS OUTCOME 2: Error response is RFC 7807 structured JSON
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(),
+			"Error response MUST be valid JSON for operator parsing (BR-001)")
 
-			Expect(errorResponse).To(HaveKey("error"),
-				"Error response MUST include 'error' field with description (BR-001)")
-			Expect(errorResponse).To(HaveKey("status"),
-				"Error response MUST include 'status' field with HTTP code (BR-001)")
-			Expect(errorResponse["status"]).To(BeEquivalentTo(http.StatusBadRequest),
-				"Status field MUST match HTTP status code (BR-001)")
+		// BR-041: RFC 7807 format validation
+		Expect(errorResponse).To(HaveKey("detail"),
+			"Error response MUST include 'detail' field with description (BR-041)")
+		Expect(errorResponse).To(HaveKey("status"),
+			"Error response MUST include 'status' field with HTTP code (BR-041)")
+		Expect(errorResponse).To(HaveKey("type"),
+			"Error response MUST include 'type' field with error type URI (BR-041)")
+		Expect(errorResponse["status"]).To(BeEquivalentTo(http.StatusBadRequest),
+			"Status field MUST match HTTP status code (BR-001)")
 
-			// BUSINESS OUTCOME 3: Error message is clear and actionable
-			errorMsg := errorResponse["error"].(string)
-			Expect(errorMsg).To(Or(
-				ContainSubstring("alertname"),
-				ContainSubstring("required"),
-				ContainSubstring("fingerprint"),
-				ContainSubstring("empty"),
-			), "Error message MUST clearly indicate missing alertname so operator can fix it (BR-001)")
+		// BUSINESS OUTCOME 3: Error message is clear and actionable
+		errorDetail := errorResponse["detail"].(string)
+		Expect(errorDetail).To(Or(
+			ContainSubstring("alertname"),
+			ContainSubstring("required"),
+			ContainSubstring("fingerprint"),
+			ContainSubstring("empty"),
+		), "Error detail MUST clearly indicate missing alertname so operator can fix it (BR-001)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// SECURITY OUTCOME VALIDATION (BR-008)
@@ -187,24 +190,25 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
 				"Gateway MUST reject empty webhook payload with 400 Bad Request (BR-001)")
 
-			// BUSINESS OUTCOME 2: Error response is structured and parseable
-			var errorResponse map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-			Expect(err).ToNot(HaveOccurred(),
-				"Error response MUST be valid JSON (BR-001)")
+		// BUSINESS OUTCOME 2: Error response is RFC 7807 structured and parseable
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(),
+			"Error response MUST be valid JSON (BR-001)")
 
-			Expect(errorResponse).To(HaveKey("error"),
-				"Error response MUST include 'error' field (BR-001)")
-			Expect(errorResponse["status"]).To(BeEquivalentTo(http.StatusBadRequest),
-				"Status field MUST match HTTP status code (BR-001)")
+		// BR-041: RFC 7807 format validation
+		Expect(errorResponse).To(HaveKey("detail"),
+			"Error response MUST include 'detail' field (BR-041)")
+		Expect(errorResponse["status"]).To(BeEquivalentTo(http.StatusBadRequest),
+			"Status field MUST match HTTP status code (BR-001)")
 
-			// BUSINESS OUTCOME 3: Error message clearly indicates empty payload
-			errorMsg := errorResponse["error"].(string)
-			Expect(errorMsg).To(Or(
-				ContainSubstring("no alerts"),
-				ContainSubstring("empty"),
-				ContainSubstring("alerts"),
-			), "Error message MUST indicate empty alerts array (BR-001)")
+		// BUSINESS OUTCOME 3: Error message clearly indicates empty payload
+		errorDetail := errorResponse["detail"].(string)
+		Expect(errorDetail).To(Or(
+			ContainSubstring("no alerts"),
+			ContainSubstring("empty"),
+			ContainSubstring("alerts"),
+		), "Error detail MUST indicate empty alerts array (BR-001)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// OPERATIONAL OUTCOME VALIDATION
@@ -303,25 +307,26 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 				// BUSINESS VALUE: Alert was processed despite timestamp issue
 				// System prioritizes alert handling over timestamp perfection
 			} else {
-				// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-				// STRICT VALIDATION APPROACH: Reject with clear error
-				// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-				var errorResponse map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-				Expect(err).ToNot(HaveOccurred())
+			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+			// STRICT VALIDATION APPROACH: Reject with clear RFC 7807 error
+			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(errorResponse).To(HaveKey("error"),
-					"Error response should include error field")
-				errorMsg := errorResponse["error"].(string)
-				Expect(errorMsg).To(Or(
-					ContainSubstring("timestamp"),
-					ContainSubstring("time"),
-					ContainSubstring("invalid"),
-				), "Error message should indicate timestamp issue (BR-001)")
+			// BR-041: RFC 7807 format validation
+			Expect(errorResponse).To(HaveKey("detail"),
+				"Error response should include detail field (BR-041)")
+			errorDetail := errorResponse["detail"].(string)
+			Expect(errorDetail).To(Or(
+				ContainSubstring("timestamp"),
+				ContainSubstring("time"),
+				ContainSubstring("invalid"),
+			), "Error detail should indicate timestamp issue (BR-001)")
 
-				// BUSINESS VALUE: Operator receives clear feedback about timestamp problem
-				// Can fix webhook configuration to prevent future issues
-			}
+			// BUSINESS VALUE: Operator receives clear feedback about timestamp problem
+			// Can fix webhook configuration to prevent future issues
+		}
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS VALUE ACHIEVED
