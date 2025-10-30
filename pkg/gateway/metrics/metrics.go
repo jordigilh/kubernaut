@@ -50,6 +50,9 @@ type Metrics struct {
 	CRDsCreatedTotal  *prometheus.CounterVec
 	CRDCreationErrors *prometheus.CounterVec
 
+	// Internal: Registry for custom metrics exposure
+	registry prometheus.Gatherer // Used by /metrics endpoint to expose custom registry metrics
+
 	// Performance Metrics
 	HTTPRequestDuration    *prometheus.HistogramVec
 	RedisOperationDuration *prometheus.HistogramVec
@@ -122,6 +125,14 @@ func NewMetrics() *Metrics {
 func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	factory := promauto.With(registry)
 
+	// Store registry as Gatherer for /metrics endpoint exposure
+	var gatherer prometheus.Gatherer
+	if reg, ok := registry.(prometheus.Gatherer); ok {
+		gatherer = reg
+	} else {
+		gatherer = prometheus.DefaultGatherer
+	}
+
 	// Create rate limit metric first (used as alias)
 	rateLimitExceeded := factory.NewCounterVec(
 		prometheus.CounterOpts{
@@ -132,6 +143,8 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	)
 
 	return &Metrics{
+		// Store registry for /metrics endpoint
+		registry: gatherer,
 		// Signal Ingestion Metrics (BR-GATEWAY-001: Multi-source signal processing)
 		AlertsReceivedTotal: factory.NewCounterVec(
 			prometheus.CounterOpts{
@@ -354,8 +367,8 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		// Additional Handler Metrics
 		SignalsReceived: factory.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "gateway_signals_received_total",
-				Help: "Total signals received by adapter type",
+				Name: "gateway_signals_received_by_adapter_total",
+				Help: "Total signals received by adapter type (prometheus, kubernetes-event, etc.)",
 			},
 			[]string{"adapter"},
 		),
@@ -427,4 +440,13 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 			[]string{"type"},
 		),
 	}
+}
+
+// Registry returns the Prometheus Gatherer for this metrics instance
+// This is used by the /metrics endpoint to expose metrics from custom registries
+func (m *Metrics) Registry() prometheus.Gatherer {
+	if m.registry != nil {
+		return m.registry
+	}
+	return prometheus.DefaultGatherer
 }
