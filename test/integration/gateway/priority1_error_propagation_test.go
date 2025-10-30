@@ -133,18 +133,18 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 
 			// Send valid alert that will trigger Redis operation
 			alertJSON := `{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "RedisConnectionTest",
-						"severity": "critical",
-						"namespace": "production"
-					},
-					"annotations": {
-						"summary": "Test alert for Redis connection error"
-					}
-				}]
-			}`
+			"alerts": [{
+				"status": "firing",
+				"labels": {
+					"alertname": "RedisConnectionTest",
+					"severity": "critical",
+					"namespace": "production"
+				},
+				"annotations": {
+					"summary": "Test alert for Redis connection error"
+				}
+			}]
+		}`
 
 			// Send request
 			resp, err := http.Post(
@@ -234,18 +234,18 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer resp2.Body.Close()
 
-		// Verify business outcome: Gateway handles "already exists" gracefully
-		// Per crd_creator.go lines 209-230, Gateway fetches existing CRD
-		Expect(resp2.StatusCode).To(Equal(http.StatusCreated),
-			"Gateway should handle 'already exists' by fetching existing CRD")
+			// Verify business outcome: Gateway handles "already exists" gracefully
+			// Per crd_creator.go lines 209-230, Gateway fetches existing CRD
+			Expect(resp2.StatusCode).To(Equal(http.StatusCreated),
+				"Gateway should handle 'already exists' by fetching existing CRD")
 
-		var response map[string]interface{}
-		err = json.NewDecoder(resp2.Body).Decode(&response)
-		Expect(err).ToNot(HaveOccurred())
+			var response map[string]interface{}
+			err = json.NewDecoder(resp2.Body).Decode(&response)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(response).To(HaveKey("remediationRequestName"), "Response should include remediationRequestName")
-		Expect(response).To(HaveKey("remediationRequestNamespace"), "Response should include remediationRequestNamespace")
-		Expect(response["status"]).To(Equal("created"), "Status should be 'created'")
+			Expect(response).To(HaveKey("remediationRequestName"), "Response should include remediationRequestName")
+			Expect(response).To(HaveKey("remediationRequestNamespace"), "Response should include remediationRequestNamespace")
+			Expect(response["status"]).To(Equal("created"), "Status should be 'created'")
 		})
 	})
 
