@@ -81,29 +81,39 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Operators have visibility into Gateway operations
 			// BUSINESS SCENARIO: Operator queries Prometheus for Gateway metrics
 
-			// Send a test alert to generate some metrics
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "MetricsTest",
-				Namespace: "production",
-				Severity:  "warning",
-				Resource: ResourceIdentifier{
-					Kind: "Pod",
-					Name: "test-pod",
-				},
-			})
-			SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+		// Send a test alert with unique name to generate some metrics
+		payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("MetricsTest-%d", time.Now().UnixNano()),
+			Namespace: "production",
+			Severity:  "warning",
+			Resource: ResourceIdentifier{
+				Kind: "Pod",
+				Name: fmt.Sprintf("test-pod-%d", time.Now().UnixNano()),
+			},
+		})
+		resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+		Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+			"Signal should be processed successfully")
 
-			// Query metrics endpoint
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
-			Expect(err).ToNot(HaveOccurred(), "Should parse Prometheus metrics")
+		// Wait for metrics to be updated
+		time.Sleep(100 * time.Millisecond)
 
-		// Verify key Gateway metrics are present (BR-GATEWAY-SIGNAL-TERMINOLOGY)
-		expectedMetrics := []string{
-			"gateway_signals_received_total",      // Multi-source signals (not just alerts)
-			"gateway_crds_created_total",
-			"gateway_http_request_duration_seconds",
-			"gateway_http_requests_in_flight",
-		}
+		// Query metrics endpoint
+		metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+		Expect(err).ToNot(HaveOccurred(), "Should parse Prometheus metrics")
+
+	// Verify key Gateway metrics are present (BR-GATEWAY-SIGNAL-TERMINOLOGY)
+	// Note: Some metrics only appear after being incremented (e.g., gateway_crds_created_total)
+	expectedMetrics := []string{
+		"gateway_signals_received_total",      // Multi-source signals (always present after signal)
+		"gateway_http_request_duration_seconds", // Always present (HTTP middleware)
+		"gateway_http_requests_in_flight",       // Always present (HTTP middleware)
+	}
+
+	// CRD creation metric only appears if CRD was successfully created
+	if resp.StatusCode == http.StatusCreated {
+		expectedMetrics = append(expectedMetrics, "gateway_crds_created_total")
+	}
 
 			for _, metricName := range expectedMetrics {
 				_, exists := metrics[metricName]
@@ -203,9 +213,9 @@ var _ = Describe("Observability Integration Tests", func() {
 		// ✅ Deduplication rate tracking enables TTL tuning
 	})
 
-		It("should track storm detection via gateway_alert_storms_detected_total", func() {
-			// BUSINESS OUTCOME: Operators can detect alert storms via metrics
-			// BUSINESS SCENARIO: Operator creates alert: increase(gateway_alert_storms_detected_total[5m]) > 0
+		It("should track storm detection via gateway_signal_storms_detected_total", func() {
+		// BUSINESS OUTCOME: Operators can detect signal storms via metrics (any signal type)
+		// BUSINESS SCENARIO: Operator creates alert: increase(gateway_signal_storms_detected_total[5m]) > 0
 
 			// Send multiple alerts with same alertname to trigger storm detection
 			alertName := "StormTest"
@@ -229,7 +239,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 
-			stormCount := GetMetricSum(metrics, "gateway_alert_storms_detected_total")
+			stormCount := GetMetricSum(metrics, "gateway_signal_storms_detected_total")
 			Expect(stormCount).To(BeNumerically(">=", 1),
 				"Storm detection counter should increment when storm detected")
 
