@@ -399,7 +399,15 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	mux.HandleFunc("/ready", s.readinessHandler)
 
 	// Prometheus metrics
-	mux.Handle("/metrics", promhttp.Handler())
+	// Expose metrics from custom registry (for test isolation)
+	// If metricsInstance is nil, this will use the default registry
+	var metricsHandler http.Handler
+	if s.metricsInstance != nil && s.metricsInstance.Registry() != nil {
+		metricsHandler = promhttp.HandlerFor(s.metricsInstance.Registry(), promhttp.HandlerOpts{})
+	} else {
+		metricsHandler = promhttp.Handler() // Default registry
+	}
+	mux.Handle("/metrics", metricsHandler)
 
 	return mux
 }
