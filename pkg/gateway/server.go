@@ -236,6 +236,19 @@ func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 //	server, err := gateway.NewServerWithMetrics(cfg, logger, metricsInstance)
 //
 // If metricsInstance is nil, creates a new metrics instance with the default registry.
+// NewServerWithK8sClient creates a Gateway server with an existing K8s client (for testing)
+// This ensures the Gateway uses the same K8s client as the test, avoiding cache synchronization issues
+func NewServerWithK8sClient(cfg *ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
+	// 1. Initialize Redis client
+	redisClient := goredis.NewClient(cfg.Infrastructure.Redis)
+
+	// 2. Use provided Kubernetes client (shared with test)
+	k8sClient := k8s.NewClient(ctrlClient)
+
+	// 3. Initialize processing pipeline components
+	return createServerWithClients(cfg, logger, metricsInstance, redisClient, ctrlClient, k8sClient)
+}
+
 func NewServerWithMetrics(cfg *ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
 	// 1. Initialize Redis client
 	redisClient := goredis.NewClient(cfg.Infrastructure.Redis)
@@ -266,13 +279,18 @@ func NewServerWithMetrics(cfg *ServerConfig, logger *zap.Logger, metricsInstance
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
+	return createServerWithClients(cfg, logger, metricsInstance, redisClient, ctrlClient, k8sClient)
+}
+
+// createServerWithClients is the common server creation logic
+func createServerWithClients(cfg *ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, redisClient *goredis.Client, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
 	// DD-GATEWAY-004: kubernetes clientset removed (no longer needed for authentication)
 	// clientset, err := kubernetes.NewForConfig(kubeConfig) // REMOVED
 	// if err != nil {
 	// 	return nil, fmt.Errorf("failed to create Kubernetes clientset: %w", err)
 	// } // REMOVED
 
-	// 3. Initialize processing pipeline components
+	// Initialize processing pipeline components
 	adapterRegistry := adapters.NewAdapterRegistry(logger)
 
 	// Use provided metrics instance or create new one with default registry
@@ -492,7 +510,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Only accept POST requests
 		if r.Method != http.MethodPost {
-			s.writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed)
+			s.writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed) // TDD REFACTOR: Keep as-is (405 is not common enough for helper)
 			return
 		}
 
@@ -506,7 +524,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			logger.Error("Failed to read request body", zap.Error(err))
-			s.writeJSONError(w, "Failed to read request body", http.StatusBadRequest)
+			s.writeValidationError(w, "Failed to read request body") // TDD REFACTOR: Use typed helper
 			return
 		}
 
@@ -518,13 +536,9 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 				zap.Error(err),
 			)
 
-			// Return 413 for payload size errors, 400 for other parse errors
-			statusCode := http.StatusBadRequest
-			if strings.Contains(err.Error(), "payload too large") {
-				statusCode = http.StatusRequestEntityTooLarge
-			}
-
-			s.writeJSONError(w, fmt.Sprintf("Failed to parse signal: %v", err), statusCode)
+			// TDD REFACTOR: Parse errors are validation errors (400 Bad Request)
+			// Note: Payload size errors (413) are handled by adapter-specific logic
+			s.writeValidationError(w, fmt.Sprintf("Failed to parse signal: %v", err))
 			return
 		}
 
@@ -533,29 +547,29 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 			logger.Warn("Signal validation failed",
 				zap.String("adapter", adapter.Name()),
 				zap.Error(err))
-			s.writeJSONError(w, fmt.Sprintf("Signal validation failed: %v", err), http.StatusBadRequest)
+			s.writeValidationError(w, fmt.Sprintf("Signal validation failed: %v", err)) // TDD REFACTOR: Use typed helper
 			return
 		}
 
-	// Process signal through pipeline
-	response, err := s.ProcessSignal(ctx, signal)
-	if err != nil {
-		logger.Error("Signal processing failed",
-			zap.String("adapter", adapter.Name()),
-			zap.Error(err))
+		// Process signal through pipeline
+		response, err := s.ProcessSignal(ctx, signal)
+		if err != nil {
+			logger.Error("Signal processing failed",
+				zap.String("adapter", adapter.Name()),
+				zap.Error(err))
 
-		// BR-GATEWAY-008, BR-GATEWAY-009: Return 503 when Redis unavailable (per DD-GATEWAY-003)
-		// Check if error is due to Redis unavailability
-		if strings.Contains(err.Error(), "redis unavailable") || strings.Contains(err.Error(), "deduplication check failed") {
-			// Set Retry-After header (30 seconds - allows time for Redis HA failover)
-			w.Header().Set("Retry-After", "30")
-			s.writeJSONError(w, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", http.StatusServiceUnavailable)
+			// BR-GATEWAY-008, BR-GATEWAY-009: Return 503 when Redis unavailable (per DD-GATEWAY-003)
+			// Check if error is due to Redis unavailability
+			// TDD REFACTOR: Use typed helper for consistent error handling
+			if strings.Contains(err.Error(), "redis unavailable") || strings.Contains(err.Error(), "deduplication check failed") {
+				// Set Retry-After header (30 seconds - allows time for Redis HA failover)
+				s.writeServiceUnavailableError(w, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30)
+				return
+			}
+
+			s.writeInternalError(w, "Internal server error") // TDD REFACTOR: Use typed helper
 			return
 		}
-
-		s.writeJSONError(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
 
 		// Determine HTTP status code based on response status
 		// BR-GATEWAY-016: Storm aggregation returns 202 Accepted
@@ -665,10 +679,18 @@ func (s *Server) Stop(ctx context.Context) error {
 //   - Deduplication check: ~3ms
 //   - Redis update: ~3ms
 //   - No CRD creation (fast path)
+//
+// ProcessSignal implements adapters.SignalProcessor interface
+// TDD REFACTOR: Simplified by extracting helper methods
+//
+// This is the main signal processing pipeline orchestrator.
+//
+// Pipeline stages:
+// 1. Deduplication check → processDuplicateSignal() if duplicate
+// 2. Storm detection → processStormAggregation() if storm detected
+// 3. CRD creation → createRemediationRequestCRD() for new signals
 func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSignal) (*ProcessingResponse, error) {
 	start := time.Now()
-
-	// BR-109: Get request-scoped logger from context (includes request_id, source_ip, endpoint)
 	logger := middleware.GetLogger(ctx)
 
 	// Record ingestion metric
@@ -684,22 +706,8 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	}
 
 	if isDuplicate {
-		// Fast path: duplicate signal, no CRD creation needed
-		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
-
-		logger.Debug("Duplicate signal detected",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Int("count", metadata.Count),
-			zap.String("firstSeen", metadata.FirstSeen),
-		)
-
-		return &ProcessingResponse{
-			Status:      StatusDuplicate,
-			Message:     "Duplicate signal (deduplication successful)",
-			Fingerprint: signal.Fingerprint,
-			Duplicate:   true,
-			Metadata:    metadata,
-		}, nil
+		// TDD REFACTOR: Extracted duplicate handling
+		return s.processDuplicateSignal(ctx, signal, metadata), nil
 	}
 
 	// 2. Storm detection
@@ -710,150 +718,23 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.Error(err))
 	} else if isStorm && stormMetadata != nil {
-		s.metricsInstance.AlertStormsDetectedTotal.WithLabelValues(stormMetadata.StormType, signal.AlertName).Inc()
-
-		logger.Warn("Alert storm detected",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("stormType", stormMetadata.StormType),
-			zap.String("stormWindow", stormMetadata.Window),
-			zap.Int("alertCount", stormMetadata.AlertCount))
-
-		// BR-GATEWAY-016: Storm aggregation
-		// Instead of creating individual CRDs during storms, aggregate alerts
-		// into a single CRD after a 1-minute window
-		shouldAggregate, windowID, err := s.stormAggregator.ShouldAggregate(ctx, signal)
-		if err != nil {
-			logger.Warn("Storm aggregation check failed, falling back to individual CRD creation",
-				zap.String("fingerprint", signal.Fingerprint),
-				zap.Error(err))
-			// Fall through to individual CRD creation
-		} else if shouldAggregate {
-			// Add to existing aggregation window
-			if err := s.stormAggregator.AddResource(ctx, windowID, signal); err != nil {
-				logger.Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation",
-					zap.String("fingerprint", signal.Fingerprint),
-					zap.String("windowID", windowID),
-					zap.Error(err))
-				// Fall through to individual CRD creation
-			} else {
-				// Successfully added to aggregation window, return without creating CRD
-				resourceCount, _ := s.stormAggregator.GetResourceCount(ctx, windowID)
-
-				logger.Info("Alert added to storm aggregation window",
-					zap.String("fingerprint", signal.Fingerprint),
-					zap.String("windowID", windowID),
-					zap.Int("resourceCount", resourceCount))
-
-				// Return accepted response (no CRD created yet)
-				return &ProcessingResponse{
-					Status:      StatusAccepted,
-					Message:     fmt.Sprintf("Alert added to storm aggregation window (window ID: %s, %d resources aggregated)", windowID, resourceCount),
-					Fingerprint: signal.Fingerprint,
-					Duplicate:   false,
-					IsStorm:     true,
-					StormType:   stormMetadata.StormType,
-					WindowID:    windowID,
-				}, nil
-			}
-		} else {
-			// Start new aggregation window
-			windowID, err := s.stormAggregator.StartAggregation(ctx, signal, stormMetadata)
-			if err != nil {
-				logger.Warn("Failed to start storm aggregation, falling back to individual CRD creation",
-					zap.String("fingerprint", signal.Fingerprint),
-					zap.Error(err))
-				// Fall through to individual CRD creation
-			} else {
-				// Schedule aggregated CRD creation after window expires
-				// Use background context - HTTP request context gets cancelled after response
-				// but aggregation goroutine needs to run for full window duration (5s-1m)
-				go s.createAggregatedCRDAfterWindow(context.Background(), windowID, signal, stormMetadata)
-
-				logger.Info("Storm aggregation window started",
-					zap.String("fingerprint", signal.Fingerprint),
-					zap.String("windowID", windowID),
-					zap.String("windowTTL", "1 minute"))
-
-				// Return accepted response (CRD will be created after window expires)
-				return &ProcessingResponse{
-					Status:      StatusAccepted,
-					Message:     fmt.Sprintf("Storm aggregation window started (window ID: %s, CRD will be created after 1 minute)", windowID),
-					Fingerprint: signal.Fingerprint,
-					Duplicate:   false,
-					IsStorm:     true,
-					StormType:   stormMetadata.StormType,
-					WindowID:    windowID,
-				}, nil
-			}
+		// TDD REFACTOR: Extracted storm aggregation logic
+		shouldContinue, response := s.processStormAggregation(ctx, signal, stormMetadata)
+		if !shouldContinue {
+			// Storm was aggregated, return response immediately
+			return response, nil
 		}
 
-		// If we reach here, aggregation failed - enrich signal for individual CRD creation
+		// Aggregation failed, enrich signal for individual CRD creation
 		signal.IsStorm = true
 		signal.StormType = stormMetadata.StormType
 		signal.StormWindow = stormMetadata.Window
 		signal.AlertCount = stormMetadata.AlertCount
 	}
 
-	// 3. Environment classification
-	environment := s.classifier.Classify(ctx, signal.Namespace)
-
-	// 4. Priority assignment
-	priority := s.priorityEngine.Assign(ctx, signal.Severity, environment)
-
-	// 5. Remediation path decision
-	signalCtx := &processing.SignalContext{
-		Signal:      signal,
-		Environment: environment,
-		Priority:    priority,
-	}
-	remediationPath := s.pathDecider.DeterminePath(ctx, signalCtx)
-
-	logger.Debug("Remediation path decided",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("environment", environment),
-		zap.String("priority", priority),
-		zap.String("remediationPath", remediationPath))
-
-	// 6. Create RemediationRequest CRD
-	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal, priority, environment)
-	if err != nil {
-		logger.Error("Failed to create RemediationRequest CRD",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
-	}
-
-	// 7. Store deduplication metadata
-	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
-	if err := s.deduplicator.Store(ctx, signal, remediationRequestRef); err != nil {
-		// Non-critical error: CRD already created, log warning
-		logger.Warn("Failed to store deduplication metadata",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("crdName", rr.Name),
-			zap.Error(err))
-	}
-
-	// Record processing duration
-	duration := time.Since(start)
-	logger.Info("Signal processed successfully",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("crdName", rr.Name),
-		zap.String("environment", environment),
-		zap.String("priority", priority),
-		zap.String("remediationPath", remediationPath),
-		zap.Int64("duration_ms", duration.Milliseconds()))
-
-	return &ProcessingResponse{
-		Status:                      StatusCreated,
-		Message:                     "RemediationRequest CRD created successfully",
-		Fingerprint:                 signal.Fingerprint,
-		Duplicate:                   false,
-		RemediationRequestName:      rr.Name,
-		RemediationRequestNamespace: rr.Namespace,
-		Environment:                 environment,
-		Priority:                    priority,
-		RemediationPath:             remediationPath,
-	}, nil
+	// 3. CRD creation pipeline
+	// TDD REFACTOR: Extracted CRD creation logic
+	return s.createRemediationRequestCRD(ctx, signal, start)
 }
 
 // healthHandler handles liveness probes
@@ -922,10 +803,10 @@ type ProcessingResponse struct {
 	Duplicate                   bool                              `json:"duplicate"`
 	RemediationRequestName      string                            `json:"remediationRequestName,omitempty"`
 	RemediationRequestNamespace string                            `json:"remediationRequestNamespace,omitempty"`
-	Environment                 string                            `json:"environment,omitempty"`
-	Priority                    string                            `json:"priority,omitempty"`
+	Environment                 string                            `json:"environment,omitempty"` // TDD FIX: Top-level per API spec
+	Priority                    string                            `json:"priority,omitempty"`    // TDD FIX: Top-level per API spec
 	RemediationPath             string                            `json:"remediationPath,omitempty"`
-	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"`
+	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"` // Deduplication info only
 	// Storm aggregation fields (BR-GATEWAY-016)
 	IsStorm   bool   `json:"isStorm,omitempty"`   // true if alert is part of a storm
 	StormType string `json:"stormType,omitempty"` // "rate" or "pattern"
@@ -938,6 +819,201 @@ const (
 	StatusDuplicate = "duplicate" // Duplicate alert (deduplicated)
 	StatusAccepted  = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
 )
+
+// NewDuplicateResponse creates a ProcessingResponse for duplicate signals
+// TDD REFACTOR: Extracted factory function for duplicate response pattern
+// Business Outcome: Consistent duplicate signal handling (BR-005)
+func NewDuplicateResponse(fingerprint string, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
+	return &ProcessingResponse{
+		Status:      StatusDuplicate,
+		Message:     "Duplicate signal (deduplication successful)",
+		Fingerprint: fingerprint,
+		Duplicate:   true,
+		Metadata:    metadata,
+	}
+}
+
+// NewStormAggregationResponse creates a ProcessingResponse for storm aggregation
+// TDD REFACTOR: Extracted factory function for storm aggregation response pattern
+// Business Outcome: Consistent storm aggregation handling (BR-013)
+func NewStormAggregationResponse(fingerprint, windowID, stormType string, resourceCount int, isNewWindow bool) *ProcessingResponse {
+	var message string
+	if isNewWindow {
+		message = fmt.Sprintf("Storm aggregation window started (window ID: %s, CRD will be created after 1 minute)", windowID)
+	} else {
+		message = fmt.Sprintf("Alert added to storm aggregation window (window ID: %s, %d resources aggregated)", windowID, resourceCount)
+	}
+
+	return &ProcessingResponse{
+		Status:      StatusAccepted,
+		Message:     message,
+		Fingerprint: fingerprint,
+		Duplicate:   false,
+		IsStorm:     true,
+		StormType:   stormType,
+		WindowID:    windowID,
+	}
+}
+
+// NewCRDCreatedResponse creates a ProcessingResponse for successful CRD creation
+// TDD REFACTOR: Extracted factory function for CRD creation response pattern
+// Business Outcome: Consistent CRD creation handling (BR-004)
+func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, environment, priority, remediationPath string) *ProcessingResponse {
+	return &ProcessingResponse{
+		Status:                      StatusCreated,
+		Message:                     "RemediationRequest CRD created successfully",
+		Fingerprint:                 fingerprint,
+		Duplicate:                   false,
+		RemediationRequestName:      crdName,
+		RemediationRequestNamespace: crdNamespace,
+		Environment:                 environment,
+		Priority:                    priority,
+		RemediationPath:             remediationPath,
+	}
+}
+
+// processDuplicateSignal handles the duplicate signal fast path
+// TDD REFACTOR: Extracted from ProcessSignal for clarity
+// Business Outcome: Consistent duplicate handling (BR-005)
+func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.NormalizedSignal, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
+	logger := middleware.GetLogger(ctx)
+
+	// Fast path: duplicate signal, no CRD creation needed
+	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
+
+	logger.Debug("Duplicate signal detected",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.Int("count", metadata.Count),
+		zap.String("firstSeen", metadata.FirstSeen),
+	)
+
+	return NewDuplicateResponse(signal.Fingerprint, metadata)
+}
+
+// processStormAggregation handles storm detection and aggregation logic
+// TDD REFACTOR: Extracted from ProcessSignal for clarity
+// Business Outcome: Consistent storm aggregation (BR-013)
+// Returns: (shouldContinue bool, response *ProcessingResponse)
+//   - shouldContinue=false means storm was aggregated, return response immediately
+//   - shouldContinue=true means fall through to individual CRD creation
+func (s *Server) processStormAggregation(ctx context.Context, signal *types.NormalizedSignal, stormMetadata *processing.StormMetadata) (bool, *ProcessingResponse) {
+	logger := middleware.GetLogger(ctx)
+
+	s.metricsInstance.AlertStormsDetectedTotal.WithLabelValues(stormMetadata.StormType, signal.AlertName).Inc()
+
+	logger.Warn("Alert storm detected",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("stormType", stormMetadata.StormType),
+		zap.String("stormWindow", stormMetadata.Window),
+		zap.Int("alertCount", stormMetadata.AlertCount))
+
+	// BR-GATEWAY-016: Storm aggregation
+	shouldAggregate, windowID, err := s.stormAggregator.ShouldAggregate(ctx, signal)
+	if err != nil {
+		logger.Warn("Storm aggregation check failed, falling back to individual CRD creation",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Error(err))
+		return true, nil // Continue to individual CRD creation
+	}
+
+	if shouldAggregate {
+		// Add to existing aggregation window
+		if err := s.stormAggregator.AddResource(ctx, windowID, signal); err != nil {
+			logger.Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation",
+				zap.String("fingerprint", signal.Fingerprint),
+				zap.String("windowID", windowID),
+				zap.Error(err))
+			return true, nil // Continue to individual CRD creation
+		}
+
+		// Successfully added to aggregation window
+		resourceCount, _ := s.stormAggregator.GetResourceCount(ctx, windowID)
+
+		logger.Info("Alert added to storm aggregation window",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("windowID", windowID),
+			zap.Int("resourceCount", resourceCount))
+
+		return false, NewStormAggregationResponse(signal.Fingerprint, windowID, stormMetadata.StormType, resourceCount, false)
+	}
+
+	// Start new aggregation window
+	windowID, err = s.stormAggregator.StartAggregation(ctx, signal, stormMetadata)
+	if err != nil {
+		logger.Warn("Failed to start storm aggregation, falling back to individual CRD creation",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Error(err))
+		return true, nil // Continue to individual CRD creation
+	}
+
+	// Schedule aggregated CRD creation after window expires
+	go s.createAggregatedCRDAfterWindow(context.Background(), windowID, signal, stormMetadata)
+
+	logger.Info("Storm aggregation window started",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("windowID", windowID),
+		zap.String("windowTTL", "1 minute"))
+
+	return false, NewStormAggregationResponse(signal.Fingerprint, windowID, stormMetadata.StormType, 0, true)
+}
+
+// createRemediationRequestCRD handles the CRD creation pipeline
+// TDD REFACTOR: Extracted from ProcessSignal for clarity
+// Business Outcome: Consistent CRD creation (BR-004)
+func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.NormalizedSignal, start time.Time) (*ProcessingResponse, error) {
+	logger := middleware.GetLogger(ctx)
+
+	// 3. Environment classification
+	environment := s.classifier.Classify(ctx, signal.Namespace)
+
+	// 4. Priority assignment
+	priority := s.priorityEngine.Assign(ctx, signal.Severity, environment)
+
+	// 5. Remediation path decision
+	signalCtx := &processing.SignalContext{
+		Signal:      signal,
+		Environment: environment,
+		Priority:    priority,
+	}
+	remediationPath := s.pathDecider.DeterminePath(ctx, signalCtx)
+
+	logger.Debug("Remediation path decided",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("environment", environment),
+		zap.String("priority", priority),
+		zap.String("remediationPath", remediationPath))
+
+	// 6. Create RemediationRequest CRD
+	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal, priority, environment)
+	if err != nil {
+		logger.Error("Failed to create RemediationRequest CRD",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
+	}
+
+	// 7. Store deduplication metadata
+	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
+	if err := s.deduplicator.Store(ctx, signal, remediationRequestRef); err != nil {
+		// Non-critical error: CRD already created, log warning
+		logger.Warn("Failed to store deduplication metadata",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("crdName", rr.Name),
+			zap.Error(err))
+	}
+
+	// Record processing duration
+	duration := time.Since(start)
+	logger.Info("Signal processed successfully",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("crdName", rr.Name),
+		zap.String("environment", environment),
+		zap.String("priority", priority),
+		zap.String("remediationPath", remediationPath),
+		zap.Int64("duration_ms", duration.Milliseconds()))
+
+	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace, environment, priority, remediationPath), nil
+}
 
 // createAggregatedCRDAfterWindow creates a single aggregated RemediationRequest CRD
 // after the storm aggregation window expires
@@ -1058,20 +1134,51 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 }
 
+// ErrorResponse represents a structured error response
+// TDD REFACTOR: Extracted from writeJSONError for type safety and reusability
+// Business Outcome: Consistent error format across all Gateway endpoints
+type ErrorResponse struct {
+	Error  string `json:"error"`
+	Status int    `json:"status"`
+}
+
 // writeJSONError writes a JSON error response
 // TDD GREEN: Added to support BR-001 (validation error propagation)
+// TDD REFACTOR: Now uses ErrorResponse struct for type safety
 // Business Outcome: Operators receive structured error messages they can parse
 func (s *Server) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
-	errorResponse := map[string]interface{}{
-		"error":  message,
-		"status": statusCode,
+	errorResponse := ErrorResponse{
+		Error:  message,
+		Status: statusCode,
 	}
 
 	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
 		// Fallback to plain text if JSON encoding fails
 		http.Error(w, message, statusCode)
 	}
+}
+
+// writeValidationError writes a 400 Bad Request error response
+// TDD REFACTOR: Extracted common validation error pattern
+// Business Outcome: Consistent validation error handling (BR-001)
+func (s *Server) writeValidationError(w http.ResponseWriter, message string) {
+	s.writeJSONError(w, message, http.StatusBadRequest)
+}
+
+// writeInternalError writes a 500 Internal Server Error response
+// TDD REFACTOR: Extracted common internal error pattern
+// Business Outcome: Consistent internal error handling (BR-001)
+func (s *Server) writeInternalError(w http.ResponseWriter, message string) {
+	s.writeJSONError(w, message, http.StatusInternalServerError)
+}
+
+// writeServiceUnavailableError writes a 503 Service Unavailable error response
+// TDD REFACTOR: Extracted common service unavailable pattern
+// Business Outcome: Consistent service unavailability handling (BR-003)
+func (s *Server) writeServiceUnavailableError(w http.ResponseWriter, message string, retryAfter int) {
+	w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
+	s.writeJSONError(w, message, http.StatusServiceUnavailable)
 }
