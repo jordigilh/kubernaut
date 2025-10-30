@@ -23,45 +23,112 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 		It("should return RFC 7807 format for 400 Bad Request", func() {
 			// BUSINESS OUTCOME: Clients can programmatically handle Gateway errors
 			// BUSINESS SCENARIO: Prometheus sends malformed webhook, needs structured error response
+			// BR-041: RFC 7807 error format
 
-			Skip("Requires Gateway to implement RFC 7807 error responses")
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-			// TODO: Implement when Gateway uses RFC 7807 format
-			// Expected response format:
-			// {
-			//   "type": "https://kubernaut.io/errors/bad-request",
-			//   "title": "Bad Request",
-			//   "detail": "Invalid JSON payload",
-			//   "status": 400,
-			//   "instance": "/api/v1/signals/prometheus"
-			// }
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
 
-			// BUSINESS CAPABILITY TO VERIFY:
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
+
+			// Send invalid JSON payload
+			invalidPayload := []byte(`{"invalid": "json without required fields"}`)
+			req, err := http.NewRequest(http.MethodPost, testServer.URL+"/api/v1/signals/prometheus", bytes.NewReader(invalidPayload))
+			Expect(err).ToNot(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BUSINESS OUTCOME VERIFICATION: RFC 7807 format
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
+
+			// Verify Content-Type is application/problem+json
+			contentType := resp.Header.Get("Content-Type")
+			Expect(contentType).To(Equal("application/problem+json"), "RFC 7807 responses should use application/problem+json")
+
+			// Parse RFC 7807 response
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+
+			// Verify RFC 7807 required fields
+			Expect(errorResponse["type"]).To(ContainSubstring("kubernaut.io/errors"), "type field should be a URI")
+			Expect(errorResponse["title"]).ToNot(BeEmpty(), "title field is required")
+			Expect(errorResponse["detail"]).ToNot(BeEmpty(), "detail field is required")
+			Expect(errorResponse["status"]).To(Equal(float64(400)), "status field should match HTTP status")
+			Expect(errorResponse["instance"]).To(Equal("/api/v1/signals/prometheus"), "instance should be the request path")
+
+			// Verify request_id extension member (BR-109)
+			Expect(errorResponse["request_id"]).ToNot(BeEmpty(), "request_id extension member should be present")
+
+			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Error responses follow RFC 7807 standard
 			// ✅ Clients can parse structured error details
 			// ✅ Error type URLs provide documentation links
 		})
 
-		It("should return RFC 7807 format for 500 Internal Server Error", func() {
-			// BUSINESS OUTCOME: Operators can diagnose Gateway errors via structured responses
-			// BUSINESS SCENARIO: Gateway encounters internal error, returns structured error
+		It("should return RFC 7807 format for 415 Unsupported Media Type", func() {
+			// BUSINESS OUTCOME: Clients receive standards-compliant error responses
+			// BUSINESS SCENARIO: Client sends non-JSON Content-Type, receives RFC 7807 error
+			// BR-041: RFC 7807 error format
+			// BR-042: Content-Type validation
 
-			Skip("Requires Gateway to implement RFC 7807 error responses")
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-			// TODO: Implement when Gateway uses RFC 7807 format
-			// Expected response format:
-			// {
-			//   "type": "https://kubernaut.io/errors/internal-error",
-			//   "title": "Internal Server Error",
-			//   "detail": "Failed to create CRD: connection timeout",
-			//   "status": 500,
-			//   "instance": "/api/v1/signals/prometheus"
-			// }
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
 
-			// BUSINESS CAPABILITY TO VERIFY:
-			// ✅ Internal errors provide actionable details
-			// ✅ Error responses are machine-readable
-			// ✅ Operators can correlate errors with logs
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
+
+			// Send request with non-JSON Content-Type
+			req, err := http.NewRequest(http.MethodPost, testServer.URL+"/api/v1/signals/prometheus", bytes.NewReader([]byte("<xml>test</xml>")))
+			Expect(err).ToNot(HaveOccurred())
+			req.Header.Set("Content-Type", "text/xml")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BUSINESS OUTCOME VERIFICATION: RFC 7807 format
+			Expect(resp.StatusCode).To(Equal(http.StatusUnsupportedMediaType), "Non-JSON content types should return 415")
+
+			// Verify Content-Type is application/problem+json
+			contentType := resp.Header.Get("Content-Type")
+			Expect(contentType).To(Equal("application/problem+json"), "RFC 7807 responses should use application/problem+json")
+
+			// Parse RFC 7807 response
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+
+			// Verify RFC 7807 required fields
+			Expect(errorResponse["type"]).To(ContainSubstring("kubernaut.io/errors"), "type field should be a URI")
+			Expect(errorResponse["title"]).ToNot(BeEmpty(), "title field is required")
+			Expect(errorResponse["detail"]).ToNot(BeEmpty(), "detail field is required")
+			Expect(errorResponse["status"]).To(Equal(float64(415)), "status field should match HTTP status")
+			Expect(errorResponse["instance"]).To(Equal("/api/v1/signals/prometheus"), "instance should be the request path")
+
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ Error responses follow RFC 7807 standard
+			// ✅ Clients can parse structured error details
+			// ✅ Error type URLs provide documentation links
 		})
 
 		It("should sanitize sensitive data in error responses", func() {
@@ -99,23 +166,23 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-			// BUSINESS OUTCOME VERIFICATION: Error response sanitizes sensitive data
-			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
+		// BUSINESS OUTCOME VERIFICATION: Error response sanitizes sensitive data
+		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
 
-			var errorResponse map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-			// Verify error message exists
-			errorMsg, exists := errorResponse["error"]
-			Expect(exists).To(BeTrue(), "Error response should include error field")
+		// Verify RFC 7807 detail field exists
+		errorDetail, exists := errorResponse["detail"]
+		Expect(exists).To(BeTrue(), "RFC 7807 error response should include detail field")
 
-			errorMsgStr, ok := errorMsg.(string)
-			Expect(ok).To(BeTrue(), "Error message should be a string")
+		errorDetailStr, ok := errorDetail.(string)
+		Expect(ok).To(BeTrue(), "Error detail should be a string")
 
-			// CRITICAL SECURITY VERIFICATION: Sensitive data MUST be redacted
-			Expect(errorMsgStr).ToNot(ContainSubstring("secret-api-key-12345"), "API key MUST be redacted from error response")
-			Expect(errorMsgStr).ToNot(ContainSubstring("super-secret-password"), "Password MUST be redacted from error response")
+		// CRITICAL SECURITY VERIFICATION: Sensitive data MUST be redacted
+		Expect(errorDetailStr).ToNot(ContainSubstring("secret-api-key-12345"), "API key MUST be redacted from error response")
+		Expect(errorDetailStr).ToNot(ContainSubstring("super-secret-password"), "Password MUST be redacted from error response")
 
 			// Verify redaction markers are present (if sensitive data was in error message)
 			// Note: The error might not include the sensitive fields at all, which is also acceptable
@@ -207,18 +274,18 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-			// BUSINESS OUTCOME VERIFICATION: Non-JSON content types rejected
-			Expect(resp.StatusCode).To(Equal(http.StatusUnsupportedMediaType), "Non-JSON content types should be rejected with 415")
+		// BUSINESS OUTCOME VERIFICATION: Non-JSON content types rejected
+		Expect(resp.StatusCode).To(Equal(http.StatusUnsupportedMediaType), "Non-JSON content types should be rejected with 415")
 
-			// Verify Accept header guides clients
-			acceptHeader := resp.Header.Get("Accept")
-			Expect(acceptHeader).To(ContainSubstring("application/json"), "Accept header should guide clients to correct format")
+		// Verify Accept header guides clients
+		acceptHeader := resp.Header.Get("Accept")
+		Expect(acceptHeader).To(ContainSubstring("application/json"), "Accept header should guide clients to correct format")
 
-			// Verify error response is JSON
-			var errorResponse map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
-			Expect(errorResponse["error"]).To(ContainSubstring("application/json"), "Error message should explain supported types")
+		// Verify error response is RFC 7807 format
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+		Expect(errorResponse["detail"]).To(ContainSubstring("application/json"), "RFC 7807 detail field should explain supported types")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Invalid payloads rejected before processing
@@ -363,18 +430,18 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-			// BUSINESS OUTCOME VERIFICATION: GET requests rejected with 405
-			Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "GET requests should be rejected with 405")
+		// BUSINESS OUTCOME VERIFICATION: GET requests rejected with 405
+		Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "GET requests should be rejected with 405")
 
-			// Verify error response is JSON
-			var errorResponse map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+		// Verify error response is RFC 7807 format
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-			// Verify error message
-			errorMsg, exists := errorResponse["error"]
-			Expect(exists).To(BeTrue(), "Error response should include error field")
-			Expect(errorMsg).To(ContainSubstring("Method not allowed"), "Error message should indicate method not allowed")
+		// Verify RFC 7807 detail field
+		errorDetail, exists := errorResponse["detail"]
+		Expect(exists).To(BeTrue(), "RFC 7807 error response should include detail field")
+		Expect(errorDetail).To(ContainSubstring("Method not allowed"), "RFC 7807 detail should indicate method not allowed")
 
 			// BUSINESS CAPABILITY TO VERIFY:
 			// ✅ Incorrect methods rejected early
@@ -409,18 +476,18 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-			// BUSINESS OUTCOME VERIFICATION: PUT requests rejected with 405
-			Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "PUT requests should be rejected with 405")
+		// BUSINESS OUTCOME VERIFICATION: PUT requests rejected with 405
+		Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "PUT requests should be rejected with 405")
 
-			// Verify error response is JSON
-			var errorResponse map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+		// Verify error response is RFC 7807 format
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-			// Verify error message
-			errorMsg, exists := errorResponse["error"]
-			Expect(exists).To(BeTrue(), "Error response should include error field")
-			Expect(errorMsg).To(ContainSubstring("Method not allowed"), "Error message should indicate method not allowed")
+		// Verify RFC 7807 detail field
+		errorDetail, exists := errorResponse["detail"]
+		Expect(exists).To(BeTrue(), "RFC 7807 error response should include detail field")
+		Expect(errorDetail).To(ContainSubstring("Method not allowed"), "RFC 7807 detail should indicate method not allowed")
 
 			// BUSINESS CAPABILITY TO VERIFY:
 		// ✅ PUT requests rejected
