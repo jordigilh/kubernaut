@@ -662,6 +662,7 @@ func (s *Server) Start(ctx context.Context) error {
 // The health check runs independently of request processing to provide
 // continuous visibility into Redis health even during low traffic periods.
 func (s *Server) monitorRedisHealth(ctx context.Context) {
+	
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
