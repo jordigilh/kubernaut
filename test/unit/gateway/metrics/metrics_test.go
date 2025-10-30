@@ -82,7 +82,7 @@ var _ = Describe("Gateway Metrics", func() {
 		})
 
 		It("should increment AlertsReceivedTotal with correct labels", func() {
-			// BR-GATEWAY-018: Alert processing metrics
+			// BR-GATEWAY-018: Signal processing metrics (renamed from alerts to signals)
 			// Test counter with multiple labels
 			m.AlertsReceivedTotal.WithLabelValues("prometheus", "critical", "production").Inc()
 			m.AlertsReceivedTotal.WithLabelValues("prometheus", "warning", "staging").Inc()
@@ -92,13 +92,14 @@ var _ = Describe("Gateway Metrics", func() {
 
 			var found bool
 			for _, mf := range metricFamilies {
-				if mf.GetName() == "gateway_alerts_received_total" {
+				// Metric name is gateway_signals_received_total (not alerts)
+				if mf.GetName() == "gateway_signals_received_total" {
 					found = true
 					metrics := mf.GetMetric()
 					Expect(metrics).To(HaveLen(2))
 				}
 			}
-			Expect(found).To(BeTrue())
+			Expect(found).To(BeTrue(), "gateway_signals_received_total metric should exist")
 		})
 	})
 
