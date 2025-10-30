@@ -510,7 +510,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Only accept POST requests
 		if r.Method != http.MethodPost {
-			s.writeJSONError(w, "Method not allowed", http.StatusMethodNotAllowed) // TDD REFACTOR: Keep as-is (405 is not common enough for helper)
+			s.writeJSONError(w, r, "Method not allowed", http.StatusMethodNotAllowed) // TDD REFACTOR: Keep as-is (405 is not common enough for helper)
 			return
 		}
 
@@ -524,7 +524,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			logger.Error("Failed to read request body", zap.Error(err))
-			s.writeValidationError(w, "Failed to read request body") // TDD REFACTOR: Use typed helper
+			s.writeValidationError(w, r, "Failed to read request body") // TDD REFACTOR: Use typed helper, BR-109: Added request
 			return
 		}
 
@@ -538,7 +538,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 
 			// TDD REFACTOR: Parse errors are validation errors (400 Bad Request)
 			// Note: Payload size errors (413) are handled by adapter-specific logic
-			s.writeValidationError(w, fmt.Sprintf("Failed to parse signal: %v", err))
+			s.writeValidationError(w, r, fmt.Sprintf("Failed to parse signal: %v", err)) // BR-109: Added request
 			return
 		}
 
@@ -547,7 +547,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 			logger.Warn("Signal validation failed",
 				zap.String("adapter", adapter.Name()),
 				zap.Error(err))
-			s.writeValidationError(w, fmt.Sprintf("Signal validation failed: %v", err)) // TDD REFACTOR: Use typed helper
+			s.writeValidationError(w, r, fmt.Sprintf("Signal validation failed: %v", err)) // TDD REFACTOR: Use typed helper, BR-109: Added request
 			return
 		}
 
@@ -563,11 +563,11 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 			// TDD REFACTOR: Use typed helper for consistent error handling
 			if strings.Contains(err.Error(), "redis unavailable") || strings.Contains(err.Error(), "deduplication check failed") {
 				// Set Retry-After header (30 seconds - allows time for Redis HA failover)
-				s.writeServiceUnavailableError(w, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30)
+				s.writeServiceUnavailableError(w, r, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30) // BR-109: Added request
 				return
 			}
 
-			s.writeInternalError(w, "Internal server error") // TDD REFACTOR: Use typed helper
+			s.writeInternalError(w, r, "Internal server error") // TDD REFACTOR: Use typed helper, BR-109: Added request
 			return
 		}
 
@@ -1137,22 +1137,29 @@ func (s *Server) createAggregatedCRDAfterWindow(
 // ErrorResponse represents a structured error response
 // TDD REFACTOR: Extracted from writeJSONError for type safety and reusability
 // Business Outcome: Consistent error format across all Gateway endpoints
+// BR-109: Added RequestID for request tracing
 type ErrorResponse struct {
-	Error  string `json:"error"`
-	Status int    `json:"status"`
+	Error     string `json:"error"`
+	Status    int    `json:"status"`
+	RequestID string `json:"request_id,omitempty"` // BR-109: Request tracing
 }
 
 // writeJSONError writes a JSON error response
 // TDD GREEN: Added to support BR-001 (validation error propagation)
 // TDD REFACTOR: Now uses ErrorResponse struct for type safety
-// Business Outcome: Operators receive structured error messages they can parse
-func (s *Server) writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+// BR-109: Added request ID extraction for request tracing
+// Business Outcome: Operators receive structured error messages they can parse and trace
+func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
+	// BR-109: Extract request ID from context for tracing
+	requestID := middleware.GetRequestID(r.Context())
+
 	errorResponse := ErrorResponse{
-		Error:  message,
-		Status: statusCode,
+		Error:     message,
+		Status:    statusCode,
+		RequestID: requestID,
 	}
 
 	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
@@ -1163,22 +1170,25 @@ func (s *Server) writeJSONError(w http.ResponseWriter, message string, statusCod
 
 // writeValidationError writes a 400 Bad Request error response
 // TDD REFACTOR: Extracted common validation error pattern
+// BR-109: Added request parameter for request ID tracing
 // Business Outcome: Consistent validation error handling (BR-001)
-func (s *Server) writeValidationError(w http.ResponseWriter, message string) {
-	s.writeJSONError(w, message, http.StatusBadRequest)
+func (s *Server) writeValidationError(w http.ResponseWriter, r *http.Request, message string) {
+	s.writeJSONError(w, r, message, http.StatusBadRequest)
 }
 
 // writeInternalError writes a 500 Internal Server Error response
 // TDD REFACTOR: Extracted common internal error pattern
+// BR-109: Added request parameter for request ID tracing
 // Business Outcome: Consistent internal error handling (BR-001)
-func (s *Server) writeInternalError(w http.ResponseWriter, message string) {
-	s.writeJSONError(w, message, http.StatusInternalServerError)
+func (s *Server) writeInternalError(w http.ResponseWriter, r *http.Request, message string) {
+	s.writeJSONError(w, r, message, http.StatusInternalServerError)
 }
 
 // writeServiceUnavailableError writes a 503 Service Unavailable error response
 // TDD REFACTOR: Extracted common service unavailable pattern
+// BR-109: Added request parameter for request ID tracing
 // Business Outcome: Consistent service unavailability handling (BR-003)
-func (s *Server) writeServiceUnavailableError(w http.ResponseWriter, message string, retryAfter int) {
+func (s *Server) writeServiceUnavailableError(w http.ResponseWriter, r *http.Request, message string, retryAfter int) {
 	w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
-	s.writeJSONError(w, message, http.StatusServiceUnavailable)
+	s.writeJSONError(w, r, message, http.StatusServiceUnavailable)
 }
