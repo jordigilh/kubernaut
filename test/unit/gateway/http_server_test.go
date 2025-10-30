@@ -182,17 +182,45 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 		It("should reject non-JSON Content-Type with 415 Unsupported Media Type", func() {
 			// BUSINESS OUTCOME: Gateway rejects invalid webhook payloads early
 			// BUSINESS SCENARIO: Misconfigured client sends XML instead of JSON
+			// BR-042: Content-Type validation
 
-			Skip("Requires Gateway to implement Content-Type validation")
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-			// TODO: Implement when Gateway validates Content-Type
-			// Expected behavior:
-			// 1. Send request with Content-Type: text/xml
-			// 2. Expect: 415 Unsupported Media Type
-			// 3. Expect: Response includes Accept: application/json header
-			// 4. Expect: Error message explains supported types
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
 
-			// BUSINESS CAPABILITY TO VERIFY:
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
+
+			// Send request with non-JSON Content-Type
+			req, err := http.NewRequest(http.MethodPost, testServer.URL+"/api/v1/signals/prometheus", bytes.NewReader([]byte("<xml>test</xml>")))
+			Expect(err).ToNot(HaveOccurred())
+			req.Header.Set("Content-Type", "text/xml")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BUSINESS OUTCOME VERIFICATION: Non-JSON content types rejected
+			Expect(resp.StatusCode).To(Equal(http.StatusUnsupportedMediaType), "Non-JSON content types should be rejected with 415")
+
+			// Verify Accept header guides clients
+			acceptHeader := resp.Header.Get("Accept")
+			Expect(acceptHeader).To(ContainSubstring("application/json"), "Accept header should guide clients to correct format")
+
+			// Verify error response is JSON
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+			Expect(errorResponse["error"]).To(ContainSubstring("application/json"), "Error message should explain supported types")
+
+			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Invalid payloads rejected before processing
 			// ✅ Clear error message for misconfigured clients
 			// ✅ Accept header guides clients to correct format
@@ -201,14 +229,51 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 		It("should accept application/json Content-Type", func() {
 			// BUSINESS OUTCOME: Standard JSON webhooks are processed
 			// BUSINESS SCENARIO: Prometheus sends webhook with application/json
+			// BR-042: Content-Type validation
 
-			Skip("Content-Type validation not yet implemented in test helper")
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-			// TODO: Implement when test helper supports Content-Type testing
-			// Expected behavior:
-			// 1. Send request with Content-Type: application/json
-			// 2. Expect: 201 Created or 202 Accepted
-			// 3. Verify: Request processed successfully
+			// Create test namespace
+			gateway.EnsureTestNamespace(ctx, k8sClient, "production")
+
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
+
+			// Send valid Prometheus alert with application/json Content-Type
+			validAlert := []byte(`{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "HighMemoryUsage",
+						"severity": "critical",
+						"namespace": "production",
+						"pod": "payment-api-1"
+					},
+					"annotations": {
+						"summary": "Pod memory usage at 95%"
+					}
+				}]
+			}`)
+
+			req, err := http.NewRequest(http.MethodPost, testServer.URL+"/api/v1/signals/prometheus", bytes.NewReader(validAlert))
+			Expect(err).ToNot(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BUSINESS OUTCOME VERIFICATION: JSON webhooks processed successfully
+			Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusCreated, http.StatusAccepted}), "Valid JSON webhooks should be processed")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Standard JSON webhooks work correctly
@@ -218,14 +283,51 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 		It("should accept application/json with charset parameter", func() {
 			// BUSINESS OUTCOME: Webhooks with charset parameter are processed
 			// BUSINESS SCENARIO: Client sends Content-Type: application/json; charset=utf-8
+			// BR-042: Content-Type validation
 
-			Skip("Content-Type validation not yet implemented in test helper")
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-			// TODO: Implement when test helper supports Content-Type testing
-			// Expected behavior:
-			// 1. Send request with Content-Type: application/json; charset=utf-8
-			// 2. Expect: 201 Created or 202 Accepted
-			// 3. Verify: Request processed successfully
+			// Create test namespace
+			gateway.EnsureTestNamespace(ctx, k8sClient, "production")
+
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
+
+			// Send valid Prometheus alert with charset parameter
+			validAlert := []byte(`{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "HighMemoryUsage",
+						"severity": "critical",
+						"namespace": "production",
+						"pod": "payment-api-1"
+					},
+					"annotations": {
+						"summary": "Pod memory usage at 95%"
+					}
+				}]
+			}`)
+
+			req, err := http.NewRequest(http.MethodPost, testServer.URL+"/api/v1/signals/prometheus", bytes.NewReader(validAlert))
+			Expect(err).ToNot(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BUSINESS OUTCOME VERIFICATION: Charset parameter doesn't break processing
+			Expect(resp.StatusCode).To(BeElementOf([]int{http.StatusCreated, http.StatusAccepted}), "Charset parameter should not break processing")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Charset parameter doesn't break processing
