@@ -129,23 +129,24 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS CONTEXT
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-			// Scenario: Production pod eviction warning
+			// Scenario: Production pod backoff warning (non-critical reason)
 			// Expected: Classified as P1 (high priority, not critical)
-			// Why: Warning + production = needs attention but not immediate
+			// Why: Warning (non-critical reason) + production = needs attention but not immediate
+			// Note: Using "BackOff" instead of "Evicted" because "Evicted" is a critical reason → P0
 
-			eventJSON := `{
+			eventJSON := fmt.Sprintf(`{
 				"type": "Warning",
-				"reason": "Evicted",
-				"message": "Pod evicted due to node pressure",
+				"reason": "BackOff",
+				"message": "Back-off restarting failed container",
 				"involvedObject": {
 					"kind": "Pod",
 					"name": "payment-api-1",
-					"namespace": "production"
+					"namespace": "%s"
 				},
 				"source": {
 					"component": "kubelet"
 				}
-			}`
+			}`, testCtx.TestNamespace)
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME VALIDATION: K8s Event Priority
