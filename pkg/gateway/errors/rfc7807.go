@@ -22,22 +22,21 @@ type RFC7807Error struct {
 // BR-041: RFC 7807 error format
 // These URIs identify the problem type and can link to documentation
 const (
-	ErrorTypeValidationError     = "https://kubernaut.io/errors/validation-error"
+	ErrorTypeValidationError      = "https://kubernaut.io/errors/validation-error"
 	ErrorTypeUnsupportedMediaType = "https://kubernaut.io/errors/unsupported-media-type"
-	ErrorTypeMethodNotAllowed    = "https://kubernaut.io/errors/method-not-allowed"
-	ErrorTypeInternalError       = "https://kubernaut.io/errors/internal-error"
-	ErrorTypeServiceUnavailable  = "https://kubernaut.io/errors/service-unavailable"
-	ErrorTypeUnknown             = "https://kubernaut.io/errors/unknown"
+	ErrorTypeMethodNotAllowed     = "https://kubernaut.io/errors/method-not-allowed"
+	ErrorTypeInternalError        = "https://kubernaut.io/errors/internal-error"
+	ErrorTypeServiceUnavailable   = "https://kubernaut.io/errors/service-unavailable"
+	ErrorTypeUnknown              = "https://kubernaut.io/errors/unknown"
 )
 
 // Error title constants
 // BR-041: RFC 7807 error format
 const (
-	TitleBadRequest            = "Bad Request"
-	TitleUnsupportedMediaType  = "Unsupported Media Type"
-	TitleMethodNotAllowed      = "Method Not Allowed"
-	TitleInternalServerError   = "Internal Server Error"
-	TitleServiceUnavailable    = "Service Unavailable"
-	TitleUnknown               = "Error"
+	TitleBadRequest           = "Bad Request"
+	TitleUnsupportedMediaType = "Unsupported Media Type"
+	TitleMethodNotAllowed     = "Method Not Allowed"
+	TitleInternalServerError  = "Internal Server Error"
+	TitleServiceUnavailable   = "Service Unavailable"
+	TitleUnknown              = "Error"
 )
-
