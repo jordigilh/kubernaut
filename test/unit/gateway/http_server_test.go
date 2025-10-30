@@ -1,7 +1,16 @@
 package gateway
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	gateway "github.com/jordigilh/kubernaut/test/integration/gateway"
 )
 
 var _ = Describe("HTTP Server Unit Tests", func() {
@@ -74,24 +83,48 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 			// ✅ Detailed errors available in logs (not HTTP responses)
 		})
 
-		It("should include request ID in error responses for tracing", func() {
-			// BUSINESS OUTCOME: Operators can trace errors across Gateway components
-			// BUSINESS SCENARIO: Error occurs, operator uses request ID to find logs
+	It("should include request ID in error responses for tracing", func() {
+		// BUSINESS OUTCOME: Operators can trace errors across Gateway components
+		// BUSINESS SCENARIO: Error occurs, operator uses request ID to find logs
+		// BR-109: Request ID propagation to error responses
 
-			Skip("Requires Gateway to implement request ID propagation")
+		// Setup test infrastructure
+		ctx := context.Background()
+		redisClient := gateway.SetupRedisTestClient(ctx)
+		k8sClient := gateway.SetupK8sTestClient(ctx)
+		defer redisClient.ResetRedisConfig(ctx)
 
-			// TODO: Implement when Gateway adds request IDs
-			// Expected response format:
-			// {
-			//   "type": "https://kubernaut.io/errors/processing-error",
-			//   "title": "Processing Error",
-			//   "detail": "Failed to process alert",
-			//   "status": 500,
-			//   "instance": "/api/v1/signals/prometheus",
-			//   "request_id": "req-abc123"
-			// }
+		// Start Gateway server
+		gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+		Expect(err).ToNot(HaveOccurred())
 
-			// BUSINESS CAPABILITY TO VERIFY:
+		testServer := httptest.NewServer(gatewayServer.Handler())
+		defer testServer.Close()
+
+		// Send invalid request to trigger error
+		invalidPayload := []byte(`{"invalid": "json without required fields"}`)
+		resp, err := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", bytes.NewReader(invalidPayload))
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
+
+		// BUSINESS OUTCOME VERIFICATION: Error response includes request_id
+		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
+
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+
+		// Verify request_id field exists
+		requestID, exists := errorResponse["request_id"]
+		Expect(exists).To(BeTrue(), "Error response MUST include request_id field for tracing")
+		Expect(requestID).ToNot(BeEmpty(), "request_id MUST not be empty")
+
+		// Verify request_id format (should be UUID or similar)
+		requestIDStr, ok := requestID.(string)
+		Expect(ok).To(BeTrue(), "request_id should be a string")
+		Expect(len(requestIDStr)).To(BeNumerically(">", 10), "request_id should be meaningful identifier")
+
+		// BUSINESS CAPABILITY TO VERIFY:
 			// ✅ Request ID enables distributed tracing
 			// ✅ Operators can correlate HTTP errors with logs
 			// ✅ Debugging is faster with request context
