@@ -177,20 +177,22 @@ var _ = Describe("Observability Integration Tests", func() {
 		// BUSINESS OUTCOME: Operators can monitor deduplication effectiveness for ALL signal types
 		// BUSINESS SCENARIO: Operator tracks deduplication rate to tune TTL settings
 
-			// Send same alert twice (should be deduplicated)
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "DuplicateAlert",
-				Namespace: "production",
-				Severity:  "critical",
-				Resource: ResourceIdentifier{
-					Kind: "Node",
-					Name: "worker-01",
-				},
-			})
+		// Send same alert twice (should be deduplicated)
+		// Use unique alert name to avoid CRD collisions from previous tests
+		uniqueID := time.Now().UnixNano()
+		payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("DuplicateAlert-%d", uniqueID),
+			Namespace: "production",
+			Severity:  "critical",
+			Resource: ResourceIdentifier{
+				Kind: "Node",
+				Name: fmt.Sprintf("worker-%d", uniqueID),
+			},
+		})
 
-			// First request (creates CRD)
-			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
+		// First request (creates CRD)
+		resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+		Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
 
 			// Second request (deduplicated)
 			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
@@ -217,20 +219,21 @@ var _ = Describe("Observability Integration Tests", func() {
 		// BUSINESS OUTCOME: Operators can detect signal storms via metrics (any signal type)
 		// BUSINESS SCENARIO: Operator creates alert: increase(gateway_signal_storms_detected_total[5m]) > 0
 
-			// Send multiple alerts with same alertname to trigger storm detection
-			alertName := "StormTest"
-			for i := 0; i < 5; i++ {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-					AlertName: alertName,
-					Namespace: "production",
-					Severity:  "critical",
-					Resource: ResourceIdentifier{
-						Kind: "Pod",
-						Name: fmt.Sprintf("pod-%d", i),
-					},
-				})
-				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			}
+		// Send multiple alerts with same alertname to trigger storm detection
+		// Use unique alertname per test run to avoid conflicts
+		alertName := fmt.Sprintf("StormTest-%d", time.Now().UnixNano())
+		for i := 0; i < 5; i++ {
+			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+				AlertName: alertName,
+				Namespace: "production",
+				Severity:  "critical",
+				Resource: ResourceIdentifier{
+					Kind: "Pod",
+					Name: fmt.Sprintf("pod-%d", i),
+				},
+			})
+			SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+		}
 
 			// Wait for metrics to update
 			time.Sleep(100 * time.Millisecond)
@@ -264,18 +267,19 @@ var _ = Describe("Observability Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			initialCount := GetMetricSum(initialMetrics, "gateway_crds_created_total")
 
-			// Send alert to create CRD
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "CRDCreationTest",
-				Namespace: "production",
-				Severity:  "warning",
-				Resource: ResourceIdentifier{
-					Kind: "Deployment",
-					Name: "app",
-				},
-			})
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "CRD should be created")
+		// Send alert to create CRD (use unique name to avoid collisions)
+		uniqueID := time.Now().UnixNano()
+		payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("CRDCreationTest-%d", uniqueID),
+			Namespace: "production",
+			Severity:  "warning",
+			Resource: ResourceIdentifier{
+				Kind: "Deployment",
+				Name: fmt.Sprintf("app-%d", uniqueID),
+			},
+		})
+		resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "CRD should be created")
 
 			// Wait for metrics to update
 			time.Sleep(100 * time.Millisecond)
@@ -317,20 +321,21 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Operators can track CRD creation by namespace and priority
 			// BUSINESS SCENARIO: Operator monitors P0 CRD creation rate per namespace
 
-			// Send alerts with different namespaces and priorities
-			namespaces := []string{"production", "staging"}
-			for _, ns := range namespaces {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-					AlertName: "LabelTest",
-					Namespace: ns,
-					Severity:  "critical", // P0 in production, P1 in staging
-					Resource: ResourceIdentifier{
-						Kind: "Pod",
-						Name: "app-pod",
-					},
-				})
-				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			}
+		// Send alerts with different namespaces and priorities (use unique names)
+		uniqueID := time.Now().UnixNano()
+		namespaces := []string{"production", "staging"}
+		for i, ns := range namespaces {
+			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+				AlertName: fmt.Sprintf("LabelTest-%d-%d", uniqueID, i),
+				Namespace: ns,
+				Severity:  "critical", // P0 in production, P1 in staging
+				Resource: ResourceIdentifier{
+					Kind: "Pod",
+					Name: fmt.Sprintf("app-pod-%d-%d", uniqueID, i),
+				},
+			})
+			SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+		}
 
 			// Wait for metrics to update
 			time.Sleep(100 * time.Millisecond)
@@ -396,17 +401,18 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Operators can track latency per endpoint and status code
 			// BUSINESS SCENARIO: Operator identifies slow endpoints or error-prone paths
 
-			// Send requests to different endpoints
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
-				AlertName: "EndpointTest",
-				Namespace: "production",
-				Severity:  "info",
-				Resource: ResourceIdentifier{
-					Kind: "Service",
-					Name: "api",
-				},
-			})
-			SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+		// Send requests to different endpoints (use unique name)
+		uniqueID := time.Now().UnixNano()
+		payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			AlertName: fmt.Sprintf("EndpointTest-%d", uniqueID),
+			Namespace: "production",
+			Severity:  "info",
+			Resource: ResourceIdentifier{
+				Kind: "Service",
+				Name: fmt.Sprintf("api-%d", uniqueID),
+			},
+		})
+		SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
 
 			// Also query health endpoint
 			http.Get(testServer.URL + "/health")
@@ -702,21 +708,22 @@ var _ = Describe("Observability Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			initialInFlight, _ := GetMetricValue(initialMetrics, "gateway_http_requests_in_flight", "")
 
-			// Send concurrent requests
-			errors := SendConcurrentRequests(
-				testServer.URL+"/api/v1/signals/prometheus",
-				10,
-				GeneratePrometheusAlert(PrometheusAlertOptions{
-					AlertName: "ConcurrentTest",
-					Namespace: "production",
-					Severity:  "warning",
-					Resource: ResourceIdentifier{
-						Kind: "Pod",
-						Name: "test-pod",
-					},
-				}),
-			)
-			Expect(errors).To(BeEmpty(), "All concurrent requests should succeed")
+		// Send concurrent requests (use unique name to avoid CRD collisions)
+		uniqueID := time.Now().UnixNano()
+		errors := SendConcurrentRequests(
+			testServer.URL+"/api/v1/signals/prometheus",
+			10,
+			GeneratePrometheusAlert(PrometheusAlertOptions{
+				AlertName: fmt.Sprintf("ConcurrentTest-%d", uniqueID),
+				Namespace: "production",
+				Severity:  "warning",
+				Resource: ResourceIdentifier{
+					Kind: "Pod",
+					Name: fmt.Sprintf("test-pod-%d", uniqueID),
+				},
+			}),
+		)
+		Expect(errors).To(BeEmpty(), "All concurrent requests should succeed")
 
 			// After requests complete, in-flight should return to baseline
 			Eventually(func() float64 {
