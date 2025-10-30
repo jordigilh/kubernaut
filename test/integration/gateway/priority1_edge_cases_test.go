@@ -2,18 +2,12 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -35,78 +29,15 @@ import (
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
-	var (
-		ctx         context.Context
-		cancel      context.CancelFunc
-		testServer  *httptest.Server
-		redisClient *RedisTestClient
-		k8sClient   *K8sTestClient
-	)
+	var testCtx *Priority1TestContext
 
+	// REFACTORED: Use shared test infrastructure helpers (TDD REFACTOR phase)
 	BeforeEach(func() {
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Minute)
-
-		// Setup test infrastructure
-		redisClient = SetupRedisTestClient(ctx)
-		k8sClient = SetupK8sTestClient(ctx)
-
-		// Clean Redis state
-		if redisClient != nil && redisClient.Client != nil {
-			err := redisClient.Client.FlushDB(ctx).Err()
-			Expect(err).ToNot(HaveOccurred())
-		}
-
-		// Create production namespace
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns)
-
-		Eventually(func() error {
-			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
-
-		ns = &corev1.Namespace{}
-		ns.Name = "production"
-		ns.Labels = map[string]string{
-			"environment": "production",
-		}
-		err := k8sClient.Client.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Start Gateway server
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
-		Expect(err).ToNot(HaveOccurred())
-		testServer = httptest.NewServer(gatewayServer.Handler())
+		testCtx = SetupPriority1Test()
 	})
 
 	AfterEach(func() {
-		// Cleanup
-		if testServer != nil {
-			testServer.Close()
-		}
-
-		// Cleanup namespace
-		if k8sClient != nil {
-			ns := &corev1.Namespace{}
-			ns.Name = "production"
-			_ = k8sClient.Client.Delete(ctx, ns)
-		}
-
-		// Cleanup Redis
-		if redisClient != nil && redisClient.Client != nil {
-			_ = redisClient.Client.FlushDB(ctx)
-		}
-
-		if redisClient != nil {
-			redisClient.Cleanup(ctx)
-		}
-		if k8sClient != nil {
-			k8sClient.Cleanup(ctx)
-		}
-		if cancel != nil {
-			cancel()
-		}
+		testCtx.Cleanup()
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -156,7 +87,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// 4. Operator can immediately fix the issue
 
 			resp, err := http.Post(
-				fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL),
+				testCtx.TestServer.URL + "/api/v1/signals/prometheus",
 				"application/json",
 				strings.NewReader(alertJSON),
 			)
@@ -196,7 +127,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// This is a BUSINESS outcome: data integrity maintained
 
 			// Check Redis: should have NO keys (invalid data rejected before storage)
-			keys, err := redisClient.Client.Keys(ctx, "gateway:dedup:*").Result()
+			keys, err := testCtx.RedisClient.Client.Keys(testCtx.Ctx, "gateway:dedup:*").Result()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(keys).To(BeEmpty(),
 				"Invalid fingerprint MUST NOT enter deduplication system (BR-008 data integrity)")
@@ -244,7 +175,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 			resp, err := http.Post(
-				fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL),
+				testCtx.TestServer.URL + "/api/v1/signals/prometheus",
 				"application/json",
 				strings.NewReader(emptyAlertsJSON),
 			)
@@ -280,7 +211,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// Verify no processing overhead (no Redis keys, no K8s API calls)
 
 			// Check Redis: should have NO keys (no processing occurred)
-			keys, err := redisClient.Client.Keys(ctx, "gateway:*").Result()
+			keys, err := testCtx.RedisClient.Client.Keys(testCtx.Ctx, "gateway:*").Result()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(keys).To(BeEmpty(),
 				"Empty payload MUST NOT trigger any processing (operational efficiency)")
@@ -339,7 +270,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			// Gateway should handle gracefully - either process with fallback or reject clearly
 
 			resp, err := http.Post(
-				fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL),
+				testCtx.TestServer.URL + "/api/v1/signals/prometheus",
 				"application/json",
 				strings.NewReader(alertJSON),
 			)

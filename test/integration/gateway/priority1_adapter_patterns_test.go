@@ -2,18 +2,11 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"strings"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -34,72 +27,15 @@ import (
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests", func() {
-	var (
-		ctx         context.Context
-		cancel      context.CancelFunc
-		testServer  *httptest.Server
-		redisClient *RedisTestClient
-		k8sClient   *K8sTestClient
-	)
+	var testCtx *Priority1TestContext
 
+	// REFACTORED: Use shared test infrastructure helpers (TDD REFACTOR phase)
 	BeforeEach(func() {
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Minute)
-
-		// Setup test infrastructure
-		redisClient = SetupRedisTestClient(ctx)
-		k8sClient = SetupK8sTestClient(ctx)
-
-		// Clean Redis state
-		if redisClient != nil && redisClient.Client != nil {
-			err := redisClient.Client.FlushDB(ctx).Err()
-			Expect(err).ToNot(HaveOccurred())
-		}
-
-		// Create production namespace
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns)
-
-		Eventually(func() error {
-			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred())
-
-		ns = &corev1.Namespace{}
-		ns.Name = "production"
-		ns.Labels = map[string]string{
-			"environment": "production",
-		}
-		err := k8sClient.Client.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Start Gateway server
-		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
-		Expect(err).ToNot(HaveOccurred())
-		testServer = httptest.NewServer(gatewayServer.Handler())
+		testCtx = SetupPriority1Test()
 	})
 
 	AfterEach(func() {
-		// Cleanup
-		if testServer != nil {
-			testServer.Close()
-		}
-
-		// Cleanup namespace
-		if k8sClient != nil {
-			ns := &corev1.Namespace{}
-			ns.Name = "production"
-			_ = k8sClient.Client.Delete(ctx, ns)
-		}
-
-		// Cleanup Redis
-		if redisClient != nil && redisClient.Client != nil {
-			_ = redisClient.Client.FlushDB(ctx)
-		}
-
-		if cancel != nil {
-			cancel()
-		}
+		testCtx.Cleanup()
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -141,11 +77,8 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// BUSINESS OUTCOME VALIDATION: Priority Classification
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-			resp, err := http.Post(
-				fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL),
-				"application/json",
-				strings.NewReader(alertJSON),
-			)
+			// REFACTORED: Use helper function (TDD REFACTOR phase)
+			resp, err := SendPrometheusAlert(testCtx.TestServer.URL, alertJSON)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -218,11 +151,8 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// BUSINESS OUTCOME VALIDATION: K8s Event Priority
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-			resp, err := http.Post(
-				fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL),
-				"application/json",
-				strings.NewReader(eventJSON),
-			)
+			// REFACTORED: Use helper function (TDD REFACTOR phase)
+			resp, err := SendK8sEvent(testCtx.TestServer.URL, eventJSON)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -311,20 +241,14 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 			// Send Prometheus alert
-			prometheusResp, err := http.Post(
-				fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL),
-				"application/json",
-				strings.NewReader(prometheusJSON),
-			)
+			// REFACTORED: Use helper function (TDD REFACTOR phase)
+			prometheusResp, err := SendPrometheusAlert(testCtx.TestServer.URL, prometheusJSON)
 			Expect(err).ToNot(HaveOccurred())
 			defer prometheusResp.Body.Close()
 
 			// Send K8s Event
-			k8sResp, err := http.Post(
-				fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL),
-				"application/json",
-				strings.NewReader(k8sEventJSON),
-			)
+			// REFACTORED: Use helper function (TDD REFACTOR phase)
+			k8sResp, err := SendK8sEvent(testCtx.TestServer.URL, k8sEventJSON)
 			Expect(err).ToNot(HaveOccurred())
 			defer k8sResp.Body.Close()
 
