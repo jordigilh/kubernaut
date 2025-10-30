@@ -452,12 +452,12 @@ func (s *Server) performanceLoggingMiddleware(next http.Handler) http.Handler {
 
 		// Calculate duration
 		duration := time.Since(start)
-		
+
 		// Record HTTP request duration metric (BR-104)
 		s.metricsInstance.HTTPRequestDuration.WithLabelValues(
-			r.URL.Path,                        // endpoint
-			r.Method,                          // method
-			fmt.Sprintf("%d", ww.Status()),    // status
+			r.URL.Path,                     // endpoint
+			r.Method,                       // method
+			fmt.Sprintf("%d", ww.Status()), // status
 		).Observe(duration.Seconds())
 
 		// Log request completion with duration
@@ -646,7 +646,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 func (s *Server) Start(ctx context.Context) error {
 	// Start Redis health check goroutine (BR-106: Redis availability monitoring)
 	go s.monitorRedisHealth(ctx)
-	
+
 	s.logger.Info("Starting Gateway server", zap.String("addr", s.httpServer.Addr))
 	return s.httpServer.ListenAndServe()
 }
@@ -664,10 +664,10 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) monitorRedisHealth(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	
+
 	wasAvailable := true // Assume available at start
 	outageStart := time.Time{}
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -677,11 +677,11 @@ func (s *Server) monitorRedisHealth(ctx context.Context) {
 			// Check Redis availability
 			err := s.redisClient.Ping(ctx).Err()
 			isAvailable := (err == nil)
-			
+
 			// Update availability gauge
 			if isAvailable {
 				s.metricsInstance.RedisAvailable.Set(1)
-				
+
 				// If recovering from outage, record outage duration
 				if !wasAvailable && !outageStart.IsZero() {
 					outageDuration := time.Since(outageStart).Seconds()
@@ -691,7 +691,7 @@ func (s *Server) monitorRedisHealth(ctx context.Context) {
 				}
 			} else {
 				s.metricsInstance.RedisAvailable.Set(0)
-				
+
 				// If this is start of new outage, record it
 				if wasAvailable {
 					outageStart = time.Now()
@@ -699,7 +699,7 @@ func (s *Server) monitorRedisHealth(ctx context.Context) {
 					s.logger.Warn("Redis outage detected", zap.Error(err))
 				}
 			}
-			
+
 			wasAvailable = isAvailable
 		}
 	}

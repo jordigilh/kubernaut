@@ -282,6 +282,10 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 	// multiple Gateway servers are created in the same test suite
 	registry := prometheus.NewRegistry()
 	metricsInstance := metrics.NewMetricsWithRegistry(registry)
+	
+	// Initialize Redis availability gauge to 1 (available) for tests
+	// The monitorRedisHealth goroutine will update this if Redis becomes unavailable
+	metricsInstance.RedisAvailable.Set(1)
 
 	// TDD FIX: Use NewServerWithK8sClient to share K8s client with test
 	// This ensures Gateway and test use the same K8s API cache, preventing
