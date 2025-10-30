@@ -64,28 +64,28 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 			// ✅ Operators can correlate errors with logs
 		})
 
-	It("should sanitize sensitive data in error responses", func() {
-		// BUSINESS OUTCOME: Error responses don't leak sensitive information
-		// BUSINESS SCENARIO: Error occurs with sensitive data, response is sanitized
-		// BR-GATEWAY-078: Error message sanitization
+		It("should sanitize sensitive data in error responses", func() {
+			// BUSINESS OUTCOME: Error responses don't leak sensitive information
+			// BUSINESS SCENARIO: Error occurs with sensitive data, response is sanitized
+			// BR-GATEWAY-078: Error message sanitization
 
-		// Setup test infrastructure
-		ctx := context.Background()
-		redisClient := gateway.SetupRedisTestClient(ctx)
-		k8sClient := gateway.SetupK8sTestClient(ctx)
-		defer redisClient.ResetRedisConfig(ctx)
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-		// Start Gateway server
-		gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
-		Expect(err).ToNot(HaveOccurred())
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
 
-		testServer := httptest.NewServer(gatewayServer.Handler())
-		defer testServer.Close()
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
 
-		// Send malformed payload that contains sensitive data
-		// This will trigger a validation error because required fields are missing
-		// The error message might include the sensitive data from the payload
-		sensitivePayload := []byte(`{
+			// Send malformed payload that contains sensitive data
+			// This will trigger a validation error because required fields are missing
+			// The error message might include the sensitive data from the payload
+			sensitivePayload := []byte(`{
 			"alerts": [{
 				"status": "firing",
 				"labels": {
@@ -95,79 +95,79 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 			}]
 		}`)
 
-		resp, err := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", bytes.NewReader(sensitivePayload))
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+			resp, err := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", bytes.NewReader(sensitivePayload))
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
 
-		// BUSINESS OUTCOME VERIFICATION: Error response sanitizes sensitive data
-		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
+			// BUSINESS OUTCOME VERIFICATION: Error response sanitizes sensitive data
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
 
-		var errorResponse map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-		// Verify error message exists
-		errorMsg, exists := errorResponse["error"]
-		Expect(exists).To(BeTrue(), "Error response should include error field")
+			// Verify error message exists
+			errorMsg, exists := errorResponse["error"]
+			Expect(exists).To(BeTrue(), "Error response should include error field")
 
-		errorMsgStr, ok := errorMsg.(string)
-		Expect(ok).To(BeTrue(), "Error message should be a string")
+			errorMsgStr, ok := errorMsg.(string)
+			Expect(ok).To(BeTrue(), "Error message should be a string")
 
-		// CRITICAL SECURITY VERIFICATION: Sensitive data MUST be redacted
-		Expect(errorMsgStr).ToNot(ContainSubstring("secret-api-key-12345"), "API key MUST be redacted from error response")
-		Expect(errorMsgStr).ToNot(ContainSubstring("super-secret-password"), "Password MUST be redacted from error response")
+			// CRITICAL SECURITY VERIFICATION: Sensitive data MUST be redacted
+			Expect(errorMsgStr).ToNot(ContainSubstring("secret-api-key-12345"), "API key MUST be redacted from error response")
+			Expect(errorMsgStr).ToNot(ContainSubstring("super-secret-password"), "Password MUST be redacted from error response")
 
-		// Verify redaction markers are present (if sensitive data was in error message)
-		// Note: The error might not include the sensitive fields at all, which is also acceptable
+			// Verify redaction markers are present (if sensitive data was in error message)
+			// Note: The error might not include the sensitive fields at all, which is also acceptable
 
-		// BUSINESS CAPABILITY TO VERIFY:
-		// ✅ Sensitive data not exposed in error responses
-		// ✅ Security compliance maintained
-		// ✅ API keys and passwords are redacted
-	})
+			// BUSINESS CAPABILITY TO VERIFY:
+			// ✅ Sensitive data not exposed in error responses
+			// ✅ Security compliance maintained
+			// ✅ API keys and passwords are redacted
+		})
 
-	It("should include request ID in error responses for tracing", func() {
-		// BUSINESS OUTCOME: Operators can trace errors across Gateway components
-		// BUSINESS SCENARIO: Error occurs, operator uses request ID to find logs
-		// BR-109: Request ID propagation to error responses
+		It("should include request ID in error responses for tracing", func() {
+			// BUSINESS OUTCOME: Operators can trace errors across Gateway components
+			// BUSINESS SCENARIO: Error occurs, operator uses request ID to find logs
+			// BR-109: Request ID propagation to error responses
 
-		// Setup test infrastructure
-		ctx := context.Background()
-		redisClient := gateway.SetupRedisTestClient(ctx)
-		k8sClient := gateway.SetupK8sTestClient(ctx)
-		defer redisClient.ResetRedisConfig(ctx)
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-		// Start Gateway server
-		gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
-		Expect(err).ToNot(HaveOccurred())
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
 
-		testServer := httptest.NewServer(gatewayServer.Handler())
-		defer testServer.Close()
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
 
-		// Send invalid request to trigger error
-		invalidPayload := []byte(`{"invalid": "json without required fields"}`)
-		resp, err := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", bytes.NewReader(invalidPayload))
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+			// Send invalid request to trigger error
+			invalidPayload := []byte(`{"invalid": "json without required fields"}`)
+			resp, err := http.Post(testServer.URL+"/api/v1/signals/prometheus", "application/json", bytes.NewReader(invalidPayload))
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
 
-		// BUSINESS OUTCOME VERIFICATION: Error response includes request_id
-		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
+			// BUSINESS OUTCOME VERIFICATION: Error response includes request_id
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Invalid payload should return 400")
 
-		var errorResponse map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-		// Verify request_id field exists
-		requestID, exists := errorResponse["request_id"]
-		Expect(exists).To(BeTrue(), "Error response MUST include request_id field for tracing")
-		Expect(requestID).ToNot(BeEmpty(), "request_id MUST not be empty")
+			// Verify request_id field exists
+			requestID, exists := errorResponse["request_id"]
+			Expect(exists).To(BeTrue(), "Error response MUST include request_id field for tracing")
+			Expect(requestID).ToNot(BeEmpty(), "request_id MUST not be empty")
 
-		// Verify request_id format (should be UUID or similar)
-		requestIDStr, ok := requestID.(string)
-		Expect(ok).To(BeTrue(), "request_id should be a string")
-		Expect(len(requestIDStr)).To(BeNumerically(">", 10), "request_id should be meaningful identifier")
+			// Verify request_id format (should be UUID or similar)
+			requestIDStr, ok := requestID.(string)
+			Expect(ok).To(BeTrue(), "request_id should be a string")
+			Expect(len(requestIDStr)).To(BeNumerically(">", 10), "request_id should be meaningful identifier")
 
-		// BUSINESS CAPABILITY TO VERIFY:
+			// BUSINESS CAPABILITY TO VERIFY:
 			// ✅ Request ID enables distributed tracing
 			// ✅ Operators can correlate HTTP errors with logs
 			// ✅ Debugging is faster with request context
@@ -238,108 +238,95 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("BR-043: HTTP Method Validation", func() {
-	It("should reject GET requests to webhook endpoints with 405", func() {
-		// BUSINESS OUTCOME: Gateway enforces correct webhook usage patterns
-		// BUSINESS SCENARIO: Misconfigured client sends GET instead of POST
-		// BR-043: HTTP Method Validation
+		It("should reject GET requests to webhook endpoints with 405", func() {
+			// BUSINESS OUTCOME: Gateway enforces correct webhook usage patterns
+			// BUSINESS SCENARIO: Misconfigured client sends GET instead of POST
+			// BR-043: HTTP Method Validation
 
-		// Setup test infrastructure
-		ctx := context.Background()
-		redisClient := gateway.SetupRedisTestClient(ctx)
-		k8sClient := gateway.SetupK8sTestClient(ctx)
-		defer redisClient.ResetRedisConfig(ctx)
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-		// Start Gateway server
-		gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
-		Expect(err).ToNot(HaveOccurred())
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
 
-		testServer := httptest.NewServer(gatewayServer.Handler())
-		defer testServer.Close()
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
 
-		// Send GET request to webhook endpoint
-		resp, err := http.Get(testServer.URL + "/api/v1/signals/prometheus")
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+			// Send GET request to webhook endpoint
+			resp, err := http.Get(testServer.URL + "/api/v1/signals/prometheus")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
 
-		// BUSINESS OUTCOME VERIFICATION: GET requests rejected with 405
-		Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "GET requests should be rejected with 405")
+			// BUSINESS OUTCOME VERIFICATION: GET requests rejected with 405
+			Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "GET requests should be rejected with 405")
 
-		// Verify error response is JSON
-		var errorResponse map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+			// Verify error response is JSON
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-		// Verify error message
-		errorMsg, exists := errorResponse["error"]
-		Expect(exists).To(BeTrue(), "Error response should include error field")
-		Expect(errorMsg).To(ContainSubstring("Method not allowed"), "Error message should indicate method not allowed")
+			// Verify error message
+			errorMsg, exists := errorResponse["error"]
+			Expect(exists).To(BeTrue(), "Error response should include error field")
+			Expect(errorMsg).To(ContainSubstring("Method not allowed"), "Error message should indicate method not allowed")
 
-		// BUSINESS CAPABILITY TO VERIFY:
-		// ✅ Incorrect methods rejected early
-		// ✅ Clear error message for misconfigured clients
-		// ✅ Webhook endpoints are POST-only
-	})
+			// BUSINESS CAPABILITY TO VERIFY:
+			// ✅ Incorrect methods rejected early
+			// ✅ Clear error message for misconfigured clients
+			// ✅ Webhook endpoints are POST-only
+		})
 
-	It("should reject PUT requests to webhook endpoints with 405", func() {
-		// BUSINESS OUTCOME: Gateway prevents accidental data modification attempts
-		// BUSINESS SCENARIO: Client mistakenly uses PUT instead of POST
-		// BR-043: HTTP Method Validation
+		It("should reject PUT requests to webhook endpoints with 405", func() {
+			// BUSINESS OUTCOME: Gateway prevents accidental data modification attempts
+			// BUSINESS SCENARIO: Client mistakenly uses PUT instead of POST
+			// BR-043: HTTP Method Validation
 
-		// Setup test infrastructure
-		ctx := context.Background()
-		redisClient := gateway.SetupRedisTestClient(ctx)
-		k8sClient := gateway.SetupK8sTestClient(ctx)
-		defer redisClient.ResetRedisConfig(ctx)
+			// Setup test infrastructure
+			ctx := context.Background()
+			redisClient := gateway.SetupRedisTestClient(ctx)
+			k8sClient := gateway.SetupK8sTestClient(ctx)
+			defer redisClient.ResetRedisConfig(ctx)
 
-		// Start Gateway server
-		gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
-		Expect(err).ToNot(HaveOccurred())
+			// Start Gateway server
+			gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
 
-		testServer := httptest.NewServer(gatewayServer.Handler())
-		defer testServer.Close()
+			testServer := httptest.NewServer(gatewayServer.Handler())
+			defer testServer.Close()
 
-		// Send PUT request to webhook endpoint
-		req, err := http.NewRequest(http.MethodPut, testServer.URL+"/api/v1/signals/prometheus", nil)
-		Expect(err).ToNot(HaveOccurred())
+			// Send PUT request to webhook endpoint
+			req, err := http.NewRequest(http.MethodPut, testServer.URL+"/api/v1/signals/prometheus", nil)
+			Expect(err).ToNot(HaveOccurred())
 
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
 
-		// BUSINESS OUTCOME VERIFICATION: PUT requests rejected with 405
-		Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "PUT requests should be rejected with 405")
+			// BUSINESS OUTCOME VERIFICATION: PUT requests rejected with 405
+			Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "PUT requests should be rejected with 405")
 
-		// Verify error response is JSON
-		var errorResponse map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+			// Verify error response is JSON
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-		// Verify error message
-		errorMsg, exists := errorResponse["error"]
-		Expect(exists).To(BeTrue(), "Error response should include error field")
-		Expect(errorMsg).To(ContainSubstring("Method not allowed"), "Error message should indicate method not allowed")
+			// Verify error message
+			errorMsg, exists := errorResponse["error"]
+			Expect(exists).To(BeTrue(), "Error response should include error field")
+			Expect(errorMsg).To(ContainSubstring("Method not allowed"), "Error message should indicate method not allowed")
 
-		// BUSINESS CAPABILITY TO VERIFY:
+			// BUSINESS CAPABILITY TO VERIFY:
 		// ✅ PUT requests rejected
 		// ✅ Clear error message for misconfigured clients
 	})
 
-		It("should allow GET requests to health endpoints", func() {
-			// BUSINESS OUTCOME: Kubernetes readiness/liveness probes work correctly
-			// BUSINESS SCENARIO: Kubernetes sends GET to /health and /ready
-
-			Skip("Requires access to Gateway HTTP handler for unit testing")
-
-			// Expected behavior:
-			// 1. Send GET to /health
-			// 2. Expect: 200 OK
-			// 3. Send GET to /ready
-			// 4. Expect: 200 OK or 503 Service Unavailable
-
-			// BUSINESS CAPABILITY TO VERIFY:
-			// ✅ Health endpoints support GET method
-			// ✅ Kubernetes probes work correctly
-		})
+	// Note: Health endpoint tests are in integration suite (test/integration/gateway/health_integration_test.go)
+	// Health endpoints are inherently integration-level concerns that require real dependencies (Redis, HTTP server)
+	// Integration tests provide superior coverage with 4 tests covering /health and /ready endpoints
 	})
 })
