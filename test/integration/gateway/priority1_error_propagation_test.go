@@ -163,22 +163,23 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			retryAfter := resp.Header.Get("Retry-After")
 			Expect(retryAfter).ToNot(BeEmpty(), "Response should include Retry-After header")
 
-			// Verify JSON error response
-			var errorResponse map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-			Expect(err).ToNot(HaveOccurred())
+		// Verify RFC 7807 JSON error response
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(errorResponse).To(HaveKey("error"), "Error response should include error field")
-			Expect(errorResponse).To(HaveKey("status"), "Error response should include status field")
-			Expect(errorResponse["status"]).To(BeEquivalentTo(http.StatusServiceUnavailable))
+		// BR-041: RFC 7807 format validation
+		Expect(errorResponse).To(HaveKey("detail"), "Error response should include detail field (BR-041)")
+		Expect(errorResponse).To(HaveKey("status"), "Error response should include status field")
+		Expect(errorResponse["status"]).To(BeEquivalentTo(http.StatusServiceUnavailable))
 
-			errorMsg := errorResponse["error"].(string)
-			Expect(errorMsg).To(Or(
-				ContainSubstring("redis"),
-				ContainSubstring("Redis"),
-				ContainSubstring("unavailable"),
-				ContainSubstring("connection"),
-			), "Error message should indicate Redis connection issue")
+		errorDetail := errorResponse["detail"].(string)
+		Expect(errorDetail).To(Or(
+			ContainSubstring("redis"),
+			ContainSubstring("Redis"),
+			ContainSubstring("unavailable"),
+			ContainSubstring("connection"),
+		), "Error detail should indicate Redis connection issue")
 		})
 	})
 
@@ -276,23 +277,24 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
 				"Invalid input should return 400 Bad Request")
 
-			// Verify error response includes field-level validation details
-			var errorResponse map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-			Expect(err).ToNot(HaveOccurred())
+		// Verify RFC 7807 error response includes field-level validation details
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(errorResponse).To(HaveKey("error"),
-				"Error response should include error field")
+		// BR-041: RFC 7807 format validation
+		Expect(errorResponse).To(HaveKey("detail"),
+			"Error response should include detail field (BR-041)")
 
-			// Error should indicate which fields are missing/invalid
-			errorMsg, ok := errorResponse["error"].(string)
-			Expect(ok).To(BeTrue(), "Error field should be a string")
-			Expect(errorMsg).To(Or(
-				ContainSubstring("alertname"),
-				ContainSubstring("required"),
-				ContainSubstring("invalid"),
-				ContainSubstring("empty"),
-			), "Error message should indicate which fields are problematic")
+		// Error detail should indicate which fields are missing/invalid
+		errorDetail, ok := errorResponse["detail"].(string)
+		Expect(ok).To(BeTrue(), "Detail field should be a string")
+		Expect(errorDetail).To(Or(
+			ContainSubstring("alertname"),
+			ContainSubstring("required"),
+			ContainSubstring("invalid"),
+			ContainSubstring("empty"),
+		), "Error detail should indicate which fields are problematic")
 		})
 	})
 
@@ -334,15 +336,16 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 				Equal(http.StatusInternalServerError),
 			), "Should either create CRD or return error")
 
-			// If error, verify JSON format
-			if resp.StatusCode == http.StatusInternalServerError {
-				var errorResponse map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&errorResponse)
-				Expect(err).ToNot(HaveOccurred())
+		// If error, verify RFC 7807 JSON format
+		if resp.StatusCode == http.StatusInternalServerError {
+			var errorResponse map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(errorResponse).To(HaveKey("error"),
-					"Error response should include error field")
-			}
+			// BR-041: RFC 7807 format validation
+			Expect(errorResponse).To(HaveKey("detail"),
+				"Error response should include detail field (BR-041)")
+		}
 		})
 	})
 })
