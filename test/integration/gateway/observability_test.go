@@ -216,11 +216,9 @@ var _ = Describe("Observability Integration Tests", func() {
 			// ✅ Deduplication rate tracking enables TTL tuning
 		})
 
-		PIt("should track storm detection via gateway_signal_storms_detected_total", func() {
-			// PENDING: Storm detection requires precise timing (2 alerts within 1 second)
-			// Sequential webhook calls may not meet timing threshold
-			// Storm aggregation tests (storm_aggregation_test.go) already validate storm detection
-			// TODO: Refactor to use concurrent requests or adjust test expectations
+	It("should track storm detection via gateway_signal_storms_detected_total", func() {
+		// TDD RED: Test should fail - storm detection metric not being incremented
+		// Storm detection requires: same alertname, different resources (different fingerprints)
 			// BUSINESS OUTCOME: Operators can detect signal storms via metrics (any signal type)
 			// BUSINESS SCENARIO: Operator creates alert: increase(gateway_signal_storms_detected_total[5m]) > 0
 
@@ -455,10 +453,8 @@ var _ = Describe("Observability Integration Tests", func() {
 			// ✅ Performance monitoring enabled
 		})
 
-		PIt("should include endpoint and status code labels in duration metrics", func() {
-		// PENDING: HTTPRequestDuration metric is defined but never observed in code
-		// Missing implementation: Middleware to record HTTP request duration
-		// TODO: Add middleware in server.go to observe HTTPRequestDuration.WithLabelValues(endpoint, method, status).Observe(duration)
+		It("should include endpoint and status code labels in duration metrics", func() {
+		// TDD RED: Test should fail - HTTPRequestDuration metric not being observed
 			// BUSINESS OUTCOME: Operators can track latency per endpoint and status code
 			// BUSINESS SCENARIO: Operator identifies slow endpoints or error-prone paths
 
@@ -543,10 +539,8 @@ var _ = Describe("Observability Integration Tests", func() {
 			// ✅ Redis bottleneck detection enabled
 		})
 
-		PIt("should include operation type labels in Redis duration metrics", func() {
-		// PENDING: RedisOperationDuration metric is defined but never observed in code
-		// Missing implementation: Redis operations (deduplication, storm detection) don't record duration
-		// TODO: Add duration tracking in deduplication.go and storm_detection.go
+		It("should include operation type labels in Redis duration metrics", func() {
+		// TDD RED: Test should fail - RedisOperationDuration metric has no values
 			// BUSINESS OUTCOME: Operators can identify slow Redis operations
 			// BUSINESS SCENARIO: Operator identifies that HGETALL is slow, tunes data structure
 
@@ -590,10 +584,8 @@ var _ = Describe("Observability Integration Tests", func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("BR-106: Redis Health Metrics", func() {
-		PIt("should track Redis availability via gateway_redis_available gauge", func() {
-		// PENDING: RedisAvailable gauge is defined but never set in code
-		// Missing implementation: Need health check mechanism to periodically set gauge
-		// TODO: Add Redis health monitoring in server.go or create dedicated health checker
+		It("should track Redis availability via gateway_redis_available gauge", func() {
+		// TDD RED: Test should fail - RedisAvailable gauge is 0 instead of 1
 			// BUSINESS OUTCOME: Operators can track Redis availability SLO (target: 99.9%)
 			// BUSINESS SCENARIO: Redis becomes unavailable, operators detect via metrics
 
