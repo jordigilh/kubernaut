@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -252,7 +253,7 @@ func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClie
 			Storm: gateway.StormSettings{
 				RateThreshold:     2,               // Production: 10 alerts/minute
 				PatternThreshold:  2,               // Production: 5 similar alerts
-				AggregationWindow: 5 * time.Second, // Production: 1 minute
+				AggregationWindow: 1 * time.Second, // Test: 1s, Production: 1m
 			},
 			Environment: gateway.EnvironmentSettings{
 				CacheTTL:           5 * time.Second, // Production: 30 seconds
@@ -274,8 +275,10 @@ func StartTestGateway(ctx context.Context, redisClient *RedisTestClient, k8sClie
 	registry := prometheus.NewRegistry()
 	metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-	// Create Gateway server with isolated metrics
-	server, err := gateway.NewServerWithMetrics(cfg, logger, metricsInstance)
+	// TDD FIX: Use NewServerWithK8sClient to share K8s client with test
+	// This ensures Gateway and test use the same K8s API cache, preventing
+	// "namespace not found" errors due to cache propagation delays
+	server, err := gateway.NewServerWithK8sClient(cfg, logger, metricsInstance, k8sClient.Client)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gateway server: %w", err)
 	}
@@ -1187,26 +1190,20 @@ func GetMetricSum(metrics PrometheusMetrics, name string) float64 {
 // Priority1TestContext holds common test infrastructure for Priority 1 integration tests
 // Refactored from duplicate BeforeEach/AfterEach blocks across test files
 type Priority1TestContext struct {
-	Ctx         context.Context
-	Cancel      context.CancelFunc
-	TestServer  *httptest.Server
-	RedisClient *RedisTestClient
-	K8sClient   *K8sTestClient
+	Ctx           context.Context
+	Cancel        context.CancelFunc
+	TestServer    *httptest.Server
+	RedisClient   *RedisTestClient
+	K8sClient     *K8sTestClient
+	TestNamespace string // TDD FIX: Unique namespace per test
 }
 
-// SetupPriority1Test creates common test infrastructure (Redis, K8s, Gateway, production namespace)
-// Refactored from duplicate BeforeEach blocks in:
-// - priority1_concurrent_operations_test.go
-// - priority1_adapter_patterns_test.go
-// - priority1_error_propagation_test.go
-func SetupPriority1Test() *Priority1TestContext {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-
-	// Setup test infrastructure
+// createTestRedisClient sets up Redis client and flushes state
+// TDD REFACTOR: Extracted from SetupPriority1Test for better readability
+func createTestRedisClient(ctx context.Context) *RedisTestClient {
 	redisClient := SetupRedisTestClient(ctx)
-	k8sClient := SetupK8sTestClient(ctx)
 
-	// Clean Redis state
+	// Clean Redis state for test isolation
 	if redisClient != nil && redisClient.Client != nil {
 		err := redisClient.Client.FlushDB(ctx).Err()
 		if err != nil {
@@ -1214,22 +1211,57 @@ func SetupPriority1Test() *Priority1TestContext {
 		}
 	}
 
-	// Create production namespace with retry logic
-	EnsureProductionNamespace(ctx, k8sClient)
+	return redisClient
+}
 
-	// Start Gateway server
+// createTestK8sClient sets up K8s client and unique test namespace
+// TDD REFACTOR: Extracted from SetupPriority1Test for better readability
+// Returns K8s client and unique namespace name
+func createTestK8sClient(ctx context.Context) (*K8sTestClient, string) {
+	k8sClient := SetupK8sTestClient(ctx)
+
+	// TDD FIX: Create unique namespace per test to prevent CRD conflicts
+	// Format: test-prod-<timestamp>-<random>
+	uniqueNamespace := fmt.Sprintf("test-prod-%d-%d", time.Now().Unix(), rand.Intn(10000))
+	EnsureTestNamespace(ctx, k8sClient, uniqueNamespace)
+
+	return k8sClient, uniqueNamespace
+}
+
+// createTestGatewayServer starts Gateway server and wraps it in httptest.Server
+// TDD REFACTOR: Extracted from SetupPriority1Test for better readability
+func createTestGatewayServer(ctx context.Context, redisClient *RedisTestClient, k8sClient *K8sTestClient) *httptest.Server {
 	gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to start test gateway: %v", err))
 	}
-	testServer := httptest.NewServer(gatewayServer.Handler())
+
+	return httptest.NewServer(gatewayServer.Handler())
+}
+
+// SetupPriority1Test creates common test infrastructure (Redis, K8s, Gateway, unique test namespace)
+// TDD REFACTOR: Simplified by extracting helper methods
+// Refactored from duplicate BeforeEach blocks in:
+// - priority1_concurrent_operations_test.go
+// - priority1_adapter_patterns_test.go
+// - priority1_error_propagation_test.go
+//
+// TDD FIX: Creates unique namespace per test to prevent CRD conflicts
+func SetupPriority1Test() *Priority1TestContext {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+
+	// TDD REFACTOR: Use extracted helper methods for clarity
+	redisClient := createTestRedisClient(ctx)
+	k8sClient, uniqueNamespace := createTestK8sClient(ctx)
+	testServer := createTestGatewayServer(ctx, redisClient, k8sClient)
 
 	return &Priority1TestContext{
-		Ctx:         ctx,
-		Cancel:      cancel,
-		TestServer:  testServer,
-		RedisClient: redisClient,
-		K8sClient:   k8sClient,
+		Ctx:           ctx,
+		Cancel:        cancel,
+		TestServer:    testServer,
+		RedisClient:   redisClient,
+		K8sClient:     k8sClient,
+		TestNamespace: uniqueNamespace,
 	}
 }
 
@@ -1237,19 +1269,38 @@ func SetupPriority1Test() *Priority1TestContext {
 // Refactored from duplicate AfterEach blocks
 // REFACTORED: Proper error handling (TDD REFACTOR phase)
 func (tc *Priority1TestContext) Cleanup() {
-	// Cleanup HTTP server
+	// TDD FIX: Close HTTP server first to stop accepting new requests
 	if tc.TestServer != nil {
 		tc.TestServer.Close()
 	}
 
-	// Cleanup production namespace (ignore "not found" errors)
-	if tc.K8sClient != nil {
+	// TDD FIX: Wait for Gateway's storm aggregation window to expire before namespace cleanup
+	// This prevents "unable to create new content in namespace X because it is being terminated" errors
+	// that occur when Gateway's background goroutines try to create aggregated CRDs after namespace deletion starts
+	//
+	// Storm aggregation window: 1 second (configured in StartTestGateway)
+	// Buffer: 2 seconds (to ensure all goroutines complete + K8s API propagation)
+	// Total wait: 3 seconds
+	//
+	// Why this is necessary:
+	// 1. Test sends concurrent requests → Gateway starts storm aggregation window
+	// 2. Test completes → closes server (stops new requests)
+	// 3. Gateway's aggregation window expires 1 second later → tries to create CRD
+	// 4. If namespace is already terminating → K8s rejects CRD creation
+	//
+	// Solution: Close server, wait for aggregation window + buffer, then delete namespace
+	// TDD REFACTOR: Increased from 2s to 3s to eliminate flakiness
+	time.Sleep(3 * time.Second)
+
+	// TDD FIX: Cleanup unique test namespace (ignore "not found" errors)
+	// Each test has its own namespace, so deleting it removes all CRDs automatically
+	if tc.K8sClient != nil && tc.TestNamespace != "" {
 		ns := &corev1.Namespace{}
-		ns.Name = "production"
+		ns.Name = tc.TestNamespace
 		err := tc.K8sClient.Client.Delete(tc.Ctx, ns)
 		if err != nil && !strings.Contains(err.Error(), "not found") {
 			// Log warning but don't fail cleanup
-			fmt.Printf("Warning: Failed to delete production namespace during cleanup: %v\n", err)
+			fmt.Printf("Warning: Failed to delete test namespace %s during cleanup: %v\n", tc.TestNamespace, err)
 		}
 	}
 
@@ -1275,35 +1326,49 @@ func (tc *Priority1TestContext) Cleanup() {
 	}
 }
 
-// EnsureProductionNamespace creates production namespace with proper labels and retry logic
+// EnsureTestNamespace creates a test namespace with proper labels
 // Refactored from duplicate namespace creation code
 // REFACTORED: Proper error handling (TDD REFACTOR phase)
-func EnsureProductionNamespace(ctx context.Context, k8sClient *K8sTestClient) {
-	// Delete existing namespace (ignore "not found" errors)
+// TDD FIX: Accepts namespace parameter for unique test namespaces
+// TDD FIX: Waits for namespace to be ready before returning
+func EnsureTestNamespace(ctx context.Context, k8sClient *K8sTestClient, namespaceName string) {
+	// Create namespace with environment label (production environment for priority classification)
 	ns := &corev1.Namespace{}
-	ns.Name = "production"
-	err := k8sClient.Client.Delete(ctx, ns)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
-		panic(fmt.Sprintf("Failed to delete existing production namespace: %v", err))
+	ns.Name = namespaceName
+	ns.Labels = map[string]string{
+		"environment": "production", // Tests simulate production environment
+	}
+	err := k8sClient.Client.Create(ctx, ns)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create test namespace %s: %v", namespaceName, err))
 	}
 
-	// Wait for deletion to complete
+	// TDD FIX: Wait for namespace to be ready (Kubernetes API is async)
+	// This prevents "namespace not found" errors when Gateway tries to create CRDs
 	Eventually(func() error {
 		checkNs := &corev1.Namespace{}
-		return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
-	}, "10s", "100ms").Should(HaveOccurred(), "Namespace should be deleted")
+		err := k8sClient.Client.Get(ctx, client.ObjectKey{Name: namespaceName}, checkNs)
+		if err != nil {
+			return fmt.Errorf("namespace not found: %w", err)
+		}
+		if checkNs.Status.Phase != corev1.NamespaceActive {
+			return fmt.Errorf("namespace not active yet (phase: %s)", checkNs.Status.Phase)
+		}
+		return nil
+	}, "10s", "100ms").Should(Succeed(), "Namespace %s should become active", namespaceName)
 
-	// Create fresh namespace with environment label
-	ns = &corev1.Namespace{}
-	ns.Name = "production"
-	ns.Labels = map[string]string{
-		"environment": "production",
-	}
-	err = k8sClient.Client.Create(ctx, ns)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to create production namespace: %v", err))
-	}
+	// TDD FIX: Since Gateway now shares the same K8s client as the test (via NewServerWithK8sClient),
+	// no additional delay is needed - both use the same API cache
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HTTP REQUEST HELPERS (REFACTORED - TDD REFACTOR PHASE)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Note: JSON payload builders (BuildPrometheusAlertJSON, BuildK8sEventJSON) were considered
+// for refactoring but existing test code already uses inline fmt.Sprintf patterns effectively.
+// The existing PrometheusAlertOptions type is used for more complex test scenarios.
+// TDD REFACTOR: Skipping this refactoring as existing patterns are sufficient.
 
 // SendPrometheusAlert sends a Prometheus alert to the Gateway and returns the response
 // Refactored from duplicate HTTP POST logic across test files
