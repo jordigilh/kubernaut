@@ -195,41 +195,92 @@ var _ = Describe("HTTP Server Unit Tests", func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("BR-043: HTTP Method Validation", func() {
-		It("should reject GET requests to webhook endpoints with 405", func() {
-			// BUSINESS OUTCOME: Gateway enforces correct webhook usage patterns
-			// BUSINESS SCENARIO: Misconfigured client sends GET instead of POST
+	It("should reject GET requests to webhook endpoints with 405", func() {
+		// BUSINESS OUTCOME: Gateway enforces correct webhook usage patterns
+		// BUSINESS SCENARIO: Misconfigured client sends GET instead of POST
+		// BR-043: HTTP Method Validation
 
-			Skip("Requires Gateway to implement method validation")
+		// Setup test infrastructure
+		ctx := context.Background()
+		redisClient := gateway.SetupRedisTestClient(ctx)
+		k8sClient := gateway.SetupK8sTestClient(ctx)
+		defer redisClient.ResetRedisConfig(ctx)
 
-			// TODO: Implement when Gateway validates HTTP methods
-			// Expected behavior:
-			// 1. Send GET request to /api/v1/signals/prometheus
-			// 2. Expect: 405 Method Not Allowed
-			// 3. Expect: Response includes Allow: POST header
-			// 4. Verify: GET request not processed
+		// Start Gateway server
+		gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+		Expect(err).ToNot(HaveOccurred())
 
-			// BUSINESS CAPABILITY TO VERIFY:
-			// ✅ Incorrect methods rejected early
-			// ✅ Allow header guides clients to correct method
-			// ✅ Webhook endpoints are POST-only
-		})
+		testServer := httptest.NewServer(gatewayServer.Handler())
+		defer testServer.Close()
 
-		It("should reject PUT requests to webhook endpoints with 405", func() {
-			// BUSINESS OUTCOME: Gateway prevents accidental data modification attempts
-			// BUSINESS SCENARIO: Client mistakenly uses PUT instead of POST
+		// Send GET request to webhook endpoint
+		resp, err := http.Get(testServer.URL + "/api/v1/signals/prometheus")
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
 
-			Skip("Requires Gateway to implement method validation")
+		// BUSINESS OUTCOME VERIFICATION: GET requests rejected with 405
+		Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "GET requests should be rejected with 405")
 
-			// TODO: Implement when Gateway validates HTTP methods
-			// Expected behavior:
-			// 1. Send PUT request to /api/v1/signals/prometheus
-			// 2. Expect: 405 Method Not Allowed
-			// 3. Expect: Response includes Allow: POST header
+		// Verify error response is JSON
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-			// BUSINESS CAPABILITY TO VERIFY:
-			// ✅ PUT requests rejected
-			// ✅ Clear error message for misconfigured clients
-		})
+		// Verify error message
+		errorMsg, exists := errorResponse["error"]
+		Expect(exists).To(BeTrue(), "Error response should include error field")
+		Expect(errorMsg).To(ContainSubstring("Method not allowed"), "Error message should indicate method not allowed")
+
+		// BUSINESS CAPABILITY TO VERIFY:
+		// ✅ Incorrect methods rejected early
+		// ✅ Clear error message for misconfigured clients
+		// ✅ Webhook endpoints are POST-only
+	})
+
+	It("should reject PUT requests to webhook endpoints with 405", func() {
+		// BUSINESS OUTCOME: Gateway prevents accidental data modification attempts
+		// BUSINESS SCENARIO: Client mistakenly uses PUT instead of POST
+		// BR-043: HTTP Method Validation
+
+		// Setup test infrastructure
+		ctx := context.Background()
+		redisClient := gateway.SetupRedisTestClient(ctx)
+		k8sClient := gateway.SetupK8sTestClient(ctx)
+		defer redisClient.ResetRedisConfig(ctx)
+
+		// Start Gateway server
+		gatewayServer, err := gateway.StartTestGateway(ctx, redisClient, k8sClient)
+		Expect(err).ToNot(HaveOccurred())
+
+		testServer := httptest.NewServer(gatewayServer.Handler())
+		defer testServer.Close()
+
+		// Send PUT request to webhook endpoint
+		req, err := http.NewRequest(http.MethodPut, testServer.URL+"/api/v1/signals/prometheus", nil)
+		Expect(err).ToNot(HaveOccurred())
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		Expect(err).ToNot(HaveOccurred())
+		defer resp.Body.Close()
+
+		// BUSINESS OUTCOME VERIFICATION: PUT requests rejected with 405
+		Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed), "PUT requests should be rejected with 405")
+
+		// Verify error response is JSON
+		var errorResponse map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&errorResponse)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+
+		// Verify error message
+		errorMsg, exists := errorResponse["error"]
+		Expect(exists).To(BeTrue(), "Error response should include error field")
+		Expect(errorMsg).To(ContainSubstring("Method not allowed"), "Error message should indicate method not allowed")
+
+		// BUSINESS CAPABILITY TO VERIFY:
+		// ✅ PUT requests rejected
+		// ✅ Clear error message for misconfigured clients
+	})
 
 		It("should allow GET requests to health endpoints", func() {
 			// BUSINESS OUTCOME: Kubernetes readiness/liveness probes work correctly
