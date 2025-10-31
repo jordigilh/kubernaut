@@ -17,7 +17,7 @@ func TestConfig(t *testing.T) {
 var _ = Describe("Config Loading", func() {
 	Context("when loading from YAML file", func() {
 		It("should load configuration from valid YAML file", func() {
-			cfg, err := config.LoadConfig("testdata/valid-config.yaml")
+			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg).ToNot(BeNil())
 			Expect(cfg.Server.Port).To(Equal(8091))
@@ -30,14 +30,14 @@ var _ = Describe("Config Loading", func() {
 		})
 
 		It("should return error for non-existent file", func() {
-			cfg, err := config.LoadConfig("testdata/non-existent.yaml")
+			cfg, err := config.LoadFromFile("testdata/non-existent.yaml")
 			Expect(err).To(HaveOccurred())
 			Expect(cfg).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("failed to read config file"))
 		})
 
 		It("should return error for malformed YAML", func() {
-			cfg, err := config.LoadConfig("testdata/malformed-config.yaml")
+			cfg, err := config.LoadFromFile("testdata/malformed-config.yaml")
 			Expect(err).To(HaveOccurred())
 			Expect(cfg).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("failed to parse config"))
@@ -55,7 +55,7 @@ var _ = Describe("Config Loading", func() {
 		})
 
 		It("should override YAML with environment variables", func() {
-			cfg, err := config.LoadConfig("testdata/valid-config.yaml")
+			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 			Expect(err).ToNot(HaveOccurred())
 
 			// Set environment variables
@@ -75,7 +75,7 @@ var _ = Describe("Config Loading", func() {
 		})
 
 		It("should not override YAML when env vars are empty", func() {
-			cfg, err := config.LoadConfig("testdata/valid-config.yaml")
+			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 			Expect(err).ToNot(HaveOccurred())
 
 			originalHost := cfg.Database.Host
@@ -90,7 +90,7 @@ var _ = Describe("Config Loading", func() {
 
 	Context("when validating configuration", func() {
 		It("should pass validation for valid config", func() {
-			cfg, err := config.LoadConfig("testdata/valid-config.yaml")
+			cfg, err := config.LoadFromFile("testdata/valid-config.yaml")
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.Validate()

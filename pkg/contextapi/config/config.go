@@ -49,8 +49,8 @@ type LoggingConfig struct {
 	Format string `yaml:"format"`
 }
 
-// LoadConfig loads configuration from a YAML file
-func LoadConfig(path string) (*Config, error) {
+// LoadFromFile loads configuration from a YAML file
+func LoadFromFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
