@@ -56,6 +56,9 @@ RUN useradd -r -u 1001 -g root gateway-user
 # Copy the binary from builder stage
 COPY --from=builder /opt/app-root/src/gateway /usr/local/bin/gateway
 
+# Copy Rego policy file
+COPY --from=builder /opt/app-root/src/config.app/gateway/policies/priority.rego /config.app/gateway/policies/priority.rego
+
 # Set proper permissions
 RUN chmod +x /usr/local/bin/gateway
 

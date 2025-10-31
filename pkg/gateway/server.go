@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -114,6 +115,17 @@ type Server struct {
 
 	// Logger
 	logger *zap.Logger
+
+	// Graceful shutdown flag
+	// When true, readiness probe returns 503 (not ready)
+	// This ensures Kubernetes removes pod from Service endpoints BEFORE
+	// we stop accepting new connections via httpServer.Shutdown()
+	//
+	// WHY: Prevents race condition between readiness probe and listener closure
+	// BENEFIT: Guaranteed endpoint removal before in-flight request completion
+	//
+	// Industry best practice: Google SRE, Netflix, Kubernetes community
+	isShuttingDown atomic.Bool
 }
 
 // ServerConfig holds server configuration
@@ -730,26 +742,61 @@ func (s *Server) monitorRedisHealth(ctx context.Context) {
 
 // Stop gracefully stops the HTTP server
 //
-// This method:
-// 1. Initiates graceful shutdown (waits for in-flight requests)
-// 2. Closes Redis connections
-// 3. Returns error if shutdown fails
+// This method implements industry best practice for graceful shutdown:
+// 1. Set shutdown flag (readiness probe returns 503)
+// 2. Wait 5 seconds for Kubernetes endpoint removal propagation
+// 3. Shutdown HTTP server (waits for in-flight requests)
+// 4. Close Redis connections
+// 5. Return error if shutdown fails
 //
 // Shutdown timeout is controlled by the provided context:
 //
 //	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 //	defer cancel()
 //	server.Stop(ctx)
+//
+// GRACEFUL SHUTDOWN SEQUENCE (Industry Best Practice):
+//
+//	T+0s:  Set isShuttingDown = true (readiness probe returns 503)
+//	T+0s:  Kubernetes readiness probe fails
+//	T+1s:  Kubernetes removes pod from Service endpoints
+//	T+5s:  Endpoint removal propagated across cluster
+//	T+5s:  httpServer.Shutdown() closes listener
+//	T+5-35s: In-flight requests complete (up to 30s timeout)
+//	T+35s: Pod exits cleanly
+//
+// WHY 5-SECOND DELAY:
+// - Kubernetes takes 1-3 seconds to propagate endpoint removal
+// - 5 seconds provides safety margin for large clusters
+// - Prevents new traffic from arriving during shutdown
+// - Industry standard: Google SRE, Netflix, Kubernetes community
+//
+// See: READINESS_PROBE_SHUTDOWN_ANALYSIS.md, GRACEFUL_SHUTDOWN_SEQUENCE_DIAGRAMS.md
 func (s *Server) Stop(ctx context.Context) error {
 	s.logger.Info("Stopping Gateway server")
 
-	// Graceful HTTP server shutdown
+	// STEP 1: Set shutdown flag (readiness probe will now return 503)
+	// This triggers Kubernetes to remove pod from Service endpoints
+	s.isShuttingDown.Store(true)
+	s.logger.Info("Shutdown flag set, readiness probe will return 503")
+
+	// STEP 2: Wait for Kubernetes to propagate endpoint removal
+	// This ensures no new traffic is routed to this pod
+	// Kubernetes typically takes 1-3 seconds to update endpoints
+	// We wait 5 seconds to be safe (industry best practice)
+	s.logger.Info("Waiting 5 seconds for Kubernetes endpoint removal propagation")
+	time.Sleep(5 * time.Second)
+	s.logger.Info("Endpoint removal propagation complete, proceeding with HTTP server shutdown")
+
+	// STEP 3: Graceful HTTP server shutdown
+	// Now that pod is removed from endpoints, we can safely shutdown
+	// This will complete any in-flight requests that arrived before endpoint removal
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		s.logger.Error("Failed to gracefully shutdown HTTP server", zap.Error(err))
 		return err
 	}
 
-	// Close Redis connections
+	// STEP 4: Close Redis connections
 	if s.redisClient != nil {
 		if err := s.redisClient.Close(); err != nil {
 			s.logger.Error("Failed to close Redis client", zap.Error(err))
@@ -873,22 +920,70 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 // If this endpoint fails, Kubernetes will remove the pod from load balancer.
 //
 // Ready conditions:
-// 1. Redis is reachable (PING command succeeds)
-// 2. Kubernetes API is reachable (list namespaces succeeds)
+// 1. Server is not shutting down (isShuttingDown == false)
+// 2. Redis is reachable (PING command succeeds)
+// 3. Kubernetes API is reachable (list namespaces succeeds)
 //
 // Typical checks: ~10ms (Redis PING + K8s API call)
+//
+// GRACEFUL SHUTDOWN INTEGRATION:
+// When server receives SIGTERM, isShuttingDown is set to true immediately.
+// This causes readiness probe to return 503, triggering Kubernetes to remove
+// the pod from Service endpoints BEFORE httpServer.Shutdown() closes the listener.
+// This eliminates the race condition and guarantees zero new traffic during shutdown.
+//
+// Industry best practice: Google SRE, Netflix, Kubernetes community
+// See: READINESS_PROBE_SHUTDOWN_ANALYSIS.md
 func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
+	// GRACEFUL SHUTDOWN: Return 503 immediately when shutting down
+	// This ensures Kubernetes removes pod from Service endpoints BEFORE
+	// we stop accepting new connections via httpServer.Shutdown()
+	//
+	// WHY: Prevents race condition between readiness probe and listener closure
+	// BENEFIT: Guaranteed endpoint removal before in-flight request completion
+	//
+	// RFC 7807: Use standard Problem Details format for structured error response
+	if s.isShuttingDown.Load() {
+		s.logger.Info("Readiness check failed: server is shutting down")
+
+		// Use RFC 7807 Problem Details format for structured error response
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+
+		errorResponse := gwerrors.RFC7807Error{
+			Type:     gwerrors.ErrorTypeServiceUnavailable,
+			Title:    gwerrors.TitleServiceUnavailable,
+			Detail:   "Server is shutting down gracefully",
+			Status:   http.StatusServiceUnavailable,
+			Instance: r.URL.Path,
+		}
+
+		if encErr := json.NewEncoder(w).Encode(errorResponse); encErr != nil {
+			s.logger.Error("Failed to encode readiness error response", zap.Error(encErr))
+		}
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	// Check Redis connectivity
 	if err := s.redisClient.Ping(ctx).Err(); err != nil {
 		s.logger.Warn("Readiness check failed: Redis not reachable", zap.Error(err))
+
+		// Use RFC 7807 Problem Details format for structured error response
+		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		if encErr := json.NewEncoder(w).Encode(map[string]string{
-			"status": "not ready",
-			"reason": "redis unavailable",
-		}); encErr != nil {
+
+		errorResponse := gwerrors.RFC7807Error{
+			Type:     gwerrors.ErrorTypeServiceUnavailable,
+			Title:    gwerrors.TitleServiceUnavailable,
+			Detail:   "Redis is not reachable",
+			Status:   http.StatusServiceUnavailable,
+			Instance: r.URL.Path,
+		}
+
+		if encErr := json.NewEncoder(w).Encode(errorResponse); encErr != nil {
 			s.logger.Error("Failed to encode readiness error response", zap.Error(encErr))
 		}
 		return

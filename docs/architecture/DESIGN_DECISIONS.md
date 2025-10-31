@@ -13,6 +13,7 @@
 | DD-001 | Recovery Context Enrichment (Alternative 2) | ✅ Approved | 2024-10-08 | [PROPOSED_FAILURE_RECOVERY_SEQUENCE.md](PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) |
 | DD-002 | Per-Step Validation Framework (Alternative 2) | ✅ Approved | 2025-10-14 | [STEP_VALIDATION_BUSINESS_REQUIREMENTS.md](../requirements/STEP_VALIDATION_BUSINESS_REQUIREMENTS.md) |
 | DD-003 | Forced Recommendation Manual Override (V2) | ✅ Approved for V2 | 2025-10-20 | [ADR-026](decisions/ADR-026-forced-recommendation-manual-override.md), [BR-RR-001](../requirements/BR-RR-001-FORCED-RECOMMENDATION-MANUAL-OVERRIDE.md) |
+| DD-004 | RFC 7807 Error Response Standard (Alternative 2) | ✅ Approved | 2025-10-30 | [DD-004-RFC7807-ERROR-RESPONSES.md](DD-004-RFC7807-ERROR-RESPONSES.md), [RFC7807_READINESS_UPDATE.md](RFC7807_READINESS_UPDATE.md) |
 | DD-CONTEXT-001 | Cache Stampede Prevention (Alternative A) | ✅ Approved | 2025-10-20 | [Context API Implementation](../services/stateless/context-api/implementation/IMPLEMENTATION_PLAN_V2.3.md) |
 | DD-CONTEXT-002 | Cache Size Limit Configuration (Alternative C) | ✅ Approved | 2025-10-20 | [Context API Implementation](../services/stateless/context-api/implementation/IMPLEMENTATION_PLAN_V2.3.md) |
 
