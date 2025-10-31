@@ -397,7 +397,7 @@ All schema changes go through Data Storage Service migrations:
 ## Related Documentation
 
 - [Data Storage Implementation Plan](../../../../crd-controllers/07-datastorage/implementation/IMPLEMENTATION_PLAN_V1.0.md)
-- [Context API Implementation Plan](./IMPLEMENTATION_PLAN_V2.6.md)
+- [Context API Implementation Plan](./IMPLEMENTATION_PLAN_V2.7.md)
 - [DD-SCHEMA-001: Data Storage Schema Authority](../../../architecture/decisions/DD-SCHEMA-001-data-storage-schema-authority.md)
 - [Migration 008: Context API Compatibility](../../../../../migrations/008_context_api_compatibility.sql)
 
