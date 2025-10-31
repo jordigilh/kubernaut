@@ -51,70 +51,74 @@ func (a *AggregationService) AggregateWithFilters(
 	}
 
 	// Build dynamic query based on filters
+	// DD-SCHEMA-001: Use Data Storage Service schema (resource_action_traces)
 	query := `
 		SELECT
 			COUNT(*) as total_count,
-			COUNT(DISTINCT namespace) as unique_namespaces,
-			COUNT(DISTINCT cluster_name) as unique_clusters,
-			COUNT(DISTINCT action_type) as unique_actions,
+			COUNT(DISTINCT rr.namespace) as unique_namespaces,
+			COUNT(DISTINCT rat.cluster_name) as unique_clusters,
+			COUNT(DISTINCT rat.action_type) as unique_actions,
 			COALESCE(
-				CAST(SUM(CASE WHEN phase = 'completed' AND status = 'success' THEN 1 ELSE 0 END) AS FLOAT) /
+				CAST(SUM(CASE WHEN rat.execution_status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) /
 				NULLIF(COUNT(*), 0),
 				0.0
 			) as overall_success_rate,
-			COALESCE(AVG(duration), 0) as avg_duration_ms
-		FROM remediation_audit
+			COALESCE(AVG(rat.execution_duration_ms), 0) as avg_duration_ms
+		FROM resource_action_traces rat
+		JOIN action_histories ah ON rat.action_history_id = ah.id
+		JOIN resource_references rr ON ah.resource_id = rr.id
 		WHERE 1=1
 	`
 
 	args := []interface{}{}
 	argIdx := 1
 
-	// Apply filters dynamically
+	// Apply filters dynamically (DD-SCHEMA-001: Use correct column names)
 	if filters.Namespace != nil {
-		query += fmt.Sprintf(" AND namespace = $%d", argIdx)
+		query += fmt.Sprintf(" AND rr.namespace = $%d", argIdx)
 		args = append(args, *filters.Namespace)
 		argIdx++
 	}
 
 	if filters.ClusterName != nil {
-		query += fmt.Sprintf(" AND cluster_name = $%d", argIdx)
+		query += fmt.Sprintf(" AND rat.cluster_name = $%d", argIdx)
 		args = append(args, *filters.ClusterName)
 		argIdx++
 	}
 
 	if filters.Environment != nil {
-		query += fmt.Sprintf(" AND environment = $%d", argIdx)
+		query += fmt.Sprintf(" AND rat.environment = $%d", argIdx)
 		args = append(args, *filters.Environment)
 		argIdx++
 	}
 
 	if filters.Severity != nil {
-		query += fmt.Sprintf(" AND severity = $%d", argIdx)
+		query += fmt.Sprintf(" AND rat.alert_severity = $%d", argIdx)
 		args = append(args, *filters.Severity)
 		argIdx++
 	}
 
 	if filters.ActionType != nil {
-		query += fmt.Sprintf(" AND action_type = $%d", argIdx)
+		query += fmt.Sprintf(" AND rat.action_type = $%d", argIdx)
 		args = append(args, *filters.ActionType)
 		argIdx++
 	}
 
 	if filters.Phase != nil {
-		query += fmt.Sprintf(" AND phase = $%d", argIdx)
+		// Phase is derived from execution_status
+		query += fmt.Sprintf(" AND rat.execution_status = $%d", argIdx)
 		args = append(args, *filters.Phase)
 		argIdx++
 	}
 
 	if filters.StartTime != nil {
-		query += fmt.Sprintf(" AND start_time >= $%d", argIdx)
+		query += fmt.Sprintf(" AND rat.action_timestamp >= $%d", argIdx)
 		args = append(args, *filters.StartTime)
 		argIdx++
 	}
 
 	if filters.EndTime != nil {
-		query += fmt.Sprintf(" AND start_time <= $%d", argIdx)
+		query += fmt.Sprintf(" AND rat.action_timestamp <= $%d", argIdx)
 		args = append(args, *filters.EndTime)
 		argIdx++
 	}
@@ -173,15 +177,16 @@ func (a *AggregationService) GetTopFailingActions(
 		return nil, fmt.Errorf("invalid limit: must be between 1 and 100")
 	}
 
+	// DD-SCHEMA-001: Use Data Storage Service schema
 	query := `
 		SELECT
 			action_type,
 			COUNT(*) as total_attempts,
-			SUM(CASE WHEN phase = 'failed' OR status = 'failure' THEN 1 ELSE 0 END) as failed_attempts,
-			CAST(SUM(CASE WHEN phase = 'failed' OR status = 'failure' THEN 1 ELSE 0 END) AS FLOAT) /
+			SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed_attempts,
+			CAST(SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) AS FLOAT) /
 				NULLIF(COUNT(*), 0) as failure_rate
-		FROM remediation_audit
-		WHERE start_time > NOW() - $1::interval
+		FROM resource_action_traces
+		WHERE action_timestamp > NOW() - $1::interval
 		GROUP BY action_type
 		HAVING COUNT(*) >= 5  -- Minimum sample size for statistical relevance
 		ORDER BY failure_rate DESC, total_attempts DESC
@@ -244,21 +249,21 @@ func (a *AggregationService) GetActionComparison(
 		return nil, fmt.Errorf("too many action types: maximum 20 allowed")
 	}
 
-	// Build dynamic query with IN clause
+	// Build dynamic query with IN clause (DD-SCHEMA-001)
 	query := `
 		SELECT
 			action_type,
 			COUNT(*) as total_attempts,
-			SUM(CASE WHEN phase = 'completed' AND status = 'success' THEN 1 ELSE 0 END) as successful_attempts,
+			SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as successful_attempts,
 			COALESCE(
-				CAST(SUM(CASE WHEN phase = 'completed' AND status = 'success' THEN 1 ELSE 0 END) AS FLOAT) /
+				CAST(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) /
 				NULLIF(COUNT(*), 0),
 				0.0
 			) as success_rate,
-			COALESCE(AVG(duration), 0) as avg_execution_time
-		FROM remediation_audit
+			COALESCE(AVG(execution_duration_ms), 0) as avg_execution_time
+		FROM resource_action_traces
 		WHERE action_type = ANY($1)
-		  AND start_time > NOW() - $2::interval
+		  AND action_timestamp > NOW() - $2::interval
 		GROUP BY action_type
 		ORDER BY success_rate DESC, total_attempts DESC
 	`
@@ -299,15 +304,18 @@ func (a *AggregationService) GetNamespaceHealthScore(
 		return 0, fmt.Errorf("namespace cannot be empty")
 	}
 
+	// DD-SCHEMA-001: Join to resource_references for namespace
 	query := `
 		SELECT
 			COUNT(*) as total_incidents,
-			SUM(CASE WHEN phase = 'completed' AND status = 'success' THEN 1 ELSE 0 END) as resolved_incidents,
-			SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as critical_incidents,
-			COALESCE(AVG(duration), 0) as avg_resolution_time_ms
-		FROM remediation_audit
-		WHERE namespace = $1
-		  AND start_time > NOW() - $2::interval
+			SUM(CASE WHEN rat.execution_status = 'completed' THEN 1 ELSE 0 END) as resolved_incidents,
+			SUM(CASE WHEN rat.alert_severity = 'critical' THEN 1 ELSE 0 END) as critical_incidents,
+			COALESCE(AVG(rat.execution_duration_ms), 0) as avg_resolution_time_ms
+		FROM resource_action_traces rat
+		JOIN action_histories ah ON rat.action_history_id = ah.id
+		JOIN resource_references rr ON ah.resource_id = rr.id
+		WHERE rr.namespace = $1
+		  AND rat.action_timestamp > NOW() - $2::interval
 	`
 
 	var (
@@ -359,13 +367,13 @@ func (a *AggregationService) GetNamespaceHealthScore(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // AggregateSuccessRate calculates success rate for a workflow ID
-// v1.x compatibility method - uses direct SQL query
+// v1.x compatibility method - uses direct SQL query (DD-SCHEMA-001)
 func (a *AggregationService) AggregateSuccessRate(ctx context.Context, workflowID string) (map[string]interface{}, error) {
 	query := `
 		SELECT
 			COUNT(*) as total,
-			COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
-		FROM remediation_audit
+			COUNT(CASE WHEN execution_status = 'completed' THEN 1 END) as successful
+		FROM resource_action_traces
 		WHERE 1=1
 	`
 
@@ -389,16 +397,18 @@ func (a *AggregationService) AggregateSuccessRate(ctx context.Context, workflowI
 }
 
 // GroupByNamespace groups incidents by namespace
-// v1.x compatibility method - uses direct SQL query
+// v1.x compatibility method - uses direct SQL query (DD-SCHEMA-001)
 func (a *AggregationService) GroupByNamespace(ctx context.Context) ([]map[string]interface{}, error) {
 	query := `
 		SELECT
-			namespace,
+			rr.namespace,
 			COUNT(*) as count,
-			COUNT(CASE WHEN status = 'completed' THEN 1 END) as successful
-		FROM remediation_audit
-		WHERE namespace IS NOT NULL
-		GROUP BY namespace
+			COUNT(CASE WHEN rat.execution_status = 'completed' THEN 1 END) as successful
+		FROM resource_action_traces rat
+		JOIN action_histories ah ON rat.action_history_id = ah.id
+		JOIN resource_references rr ON ah.resource_id = rr.id
+		WHERE rr.namespace IS NOT NULL
+		GROUP BY rr.namespace
 		ORDER BY count DESC
 	`
 
@@ -431,15 +441,17 @@ func (a *AggregationService) GroupByNamespace(ctx context.Context) ([]map[string
 }
 
 // GetSeverityDistribution gets severity distribution for a namespace
-// v1.x compatibility method - uses direct SQL query
+// v1.x compatibility method - uses direct SQL query (DD-SCHEMA-001)
 func (a *AggregationService) GetSeverityDistribution(ctx context.Context, namespace string) (map[string]interface{}, error) {
 	query := `
 		SELECT
-			severity,
+			rat.alert_severity,
 			COUNT(*) as count
-		FROM remediation_audit
-		WHERE ($1 = '' OR namespace = $1)
-		GROUP BY severity
+		FROM resource_action_traces rat
+		JOIN action_histories ah ON rat.action_history_id = ah.id
+		JOIN resource_references rr ON ah.resource_id = rr.id
+		WHERE ($1 = '' OR rr.namespace = $1)
+		GROUP BY rat.alert_severity
 		ORDER BY count DESC
 	`
 
@@ -473,14 +485,14 @@ func (a *AggregationService) GetSeverityDistribution(ctx context.Context, namesp
 }
 
 // GetIncidentTrend gets incident trend over a number of days
-// v1.x compatibility method - queries incident counts over time
+// v1.x compatibility method - queries incident counts over time (DD-SCHEMA-001)
 func (a *AggregationService) GetIncidentTrend(ctx context.Context, days int) ([]map[string]interface{}, error) {
 	query := `
 		SELECT
 			DATE(created_at) as date,
 			COUNT(*) as count,
-			COUNT(CASE WHEN end_time IS NOT NULL THEN 1 END) as resolved_count
-		FROM remediation_audit
+			COUNT(CASE WHEN execution_end_time IS NOT NULL THEN 1 END) as resolved_count
+		FROM resource_action_traces
 		WHERE created_at >= NOW() - INTERVAL '1 day' * $1
 		GROUP BY DATE(created_at)
 		ORDER BY date DESC
