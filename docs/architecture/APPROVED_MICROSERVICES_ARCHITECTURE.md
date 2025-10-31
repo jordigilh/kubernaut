@@ -1,9 +1,16 @@
 # Kubernaut - Approved Microservices Architecture
 
-**Document Version**: 2.3
-**Date**: October 2025
-**Status**: **V1 IMPLEMENTATION** - Current Architecture Specification (Updated: RemediationOrchestrator Specification & Approval Notification Integration)
+**Document Version**: 2.4
+**Date**: October 31, 2025
+**Status**: **V1 IMPLEMENTATION** - Current Architecture Specification (Updated: Tekton Pipelines Migration)
 **Architecture Type**: V1 Microservices (11 Services) with V2 Roadmap (15 Services)
+
+## 📋 Version History
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| 2.4 | Oct 31, 2025 | Updated 2 sequence diagrams: K8s Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
+| 2.3 | Oct 2025 | RemediationOrchestrator Specification & Approval Notification Integration | - |
 
 ---
 

@@ -1,9 +1,16 @@
 # Kubernaut Architecture Overview
 
-**Document Version**: 3.0
-**Date**: January 2025
-**Status**: V1 Implementation Focus (10 Services)
+**Document Version**: 3.1
+**Date**: October 31, 2025
+**Status**: V1 Implementation Focus (11 Services)
 **Previous**: [Requirements-Based Architecture Diagram Original](REQUIREMENTS_BASED_ARCHITECTURE_DIAGRAM_ORIGINAL.md)
+
+## 📋 Version History
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| 3.1 | Oct 31, 2025 | Updated End-to-End Traceability diagram: Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
+| 3.0 | Jan 2025 | V1 Implementation Focus (10 Services) | - |
 
 ---
 

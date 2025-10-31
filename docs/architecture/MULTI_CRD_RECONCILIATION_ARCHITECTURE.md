@@ -2,6 +2,7 @@
 
 **Status**: 🚫 **DEPRECATED - DO NOT USE**
 **Deprecation Date**: 2025-10-20
+**Last Update**: 2025-10-31 (Diagrams updated: Executor → Tekton Pipelines for historical accuracy)
 **Replacement**: See [KUBERNAUT_CRD_ARCHITECTURE.md](KUBERNAUT_CRD_ARCHITECTURE.md) (coming soon)
 
 **⚠️ CRITICAL WARNING**: This document contains **95+ critical errors** and does not match the current Kubernaut architecture.
