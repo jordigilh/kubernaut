@@ -3231,25 +3231,33 @@ Signal → Adapter → Environment Classifier → Priority Engine → Remediatio
 **APDC Summary**:
 - **Analysis** (1h): Docker best practices, UBI9 requirements (ADR-027), deployment architecture
 - **Plan** (1h): Dockerfile structure, Makefile targets, Kubernetes manifests
-- **Do** (5h): Create Dockerfiles (standard alpine, UBI9), Makefile targets (build-gateway, test-gateway, docker-build-gateway), deployment manifests (RBAC, Service, Deployment, ConfigMap, HPA, ServiceMonitor, NetworkPolicy)
-- **Check** (1h): Verify Docker builds, make targets work, manifests deploy successfully
+- **Do** (5h): Create Dockerfiles (UBI9 multi-arch), Makefile targets (build-gateway, test-gateway, docker-build-gateway), deployment manifests (RBAC, Service, Deployment, ConfigMap, HPA, ServiceMonitor, NetworkPolicy)
+- **Check** (1h): Verify Docker builds, make targets work, manifests deploy successfully, ADR-027 compliance
 
 **Key Deliverables**:
 - `cmd/gateway/main.go` - **Main application entry point** (Go naming convention: no hyphens)
-- `docker/gateway.Dockerfile` - Standard alpine-based image
-- `docker/gateway-ubi9.Dockerfile` - Red Hat UBI9 image (production)
+- `docker/gateway-ubi9.Dockerfile` - **Red Hat UBI9 multi-arch image** (production, ADR-027 compliant)
 - `Makefile` - Gateway-specific targets (build, test, docker-build, deploy)
 - `deploy/gateway/` - Complete Kubernetes manifests (8-10 files)
 - `deploy/gateway/README.md` - Deployment guide
 
+**ADR-027 Compliance** (Multi-Architecture Build Strategy with Red Hat UBI):
+- ✅ **Base Images**: Red Hat UBI9 (build: `ubi9/go-toolset:1.24`, runtime: `ubi9/ubi-minimal:latest`)
+- ✅ **Multi-Architecture**: Supports `linux/amd64` and `linux/arm64` via `podman --platform`
+- ✅ **Location**: `/docker/gateway-ubi9.Dockerfile`
+- ✅ **Build Path**: `./cmd/gateway`
+- ✅ **Red Hat Labels**: 13 required metadata labels included
+- ✅ **Health Check**: HTTP health endpoint included
+- ✅ **Security**: Non-root user (UID 1001), minimal permissions
+
 **Naming Convention Reference**: Per [CRD_SERVICE_CMD_DIRECTORY_GAPS_TRIAGE.md](../../analysis/CRD_SERVICE_CMD_DIRECTORY_GAPS_TRIAGE.md):
 - ✅ **cmd/ directory**: `cmd/gateway/` (Go convention - no hyphens)
 - ✅ **Binary name**: `gateway` or `gateway-service` (via `-o` flag for readability)
-- ✅ **Docker images**: `kubernaut/gateway:latest`
+- ✅ **Docker images**: `kubernaut/gateway:latest` (multi-arch manifest)
 
 **Makefile Targets**:
 ```makefile
-.PHONY: build-gateway test-gateway docker-build-gateway deploy-gateway
+.PHONY: build-gateway test-gateway docker-build-gateway-service deploy-gateway
 
 build-gateway:
 	go build -o bin/gateway cmd/gateway/main.go
@@ -3257,15 +3265,21 @@ build-gateway:
 test-gateway:
 	go test ./pkg/gateway/... ./test/unit/gateway/... -v -cover
 
-docker-build-gateway:
-	docker build -f docker/gateway.Dockerfile -t kubernaut/gateway:latest .
-	docker build -f docker/gateway-ubi9.Dockerfile -t kubernaut/gateway:latest-ubi9 .
+docker-build-gateway-service:
+	# Multi-arch build per ADR-027
+	podman build --platform linux/amd64,linux/arm64 \
+		-f docker/gateway-ubi9.Dockerfile \
+		-t quay.io/jordigilh/kubernaut-gateway:v0.1.0 .
 
 deploy-gateway:
 	kubectl apply -f deploy/gateway/
 ```
 
-**Success Criteria**: Docker images build, Makefile targets execute, manifests deploy to K8s cluster
+**Success Criteria**:
+- ✅ Docker images build for both amd64 and arm64
+- ✅ Makefile targets execute successfully
+- ✅ Manifests deploy to K8s cluster
+- ✅ ADR-027 compliance validated (UBI9 + multi-arch)
 
 **Confidence**: 95% (deployment patterns well-established)
 

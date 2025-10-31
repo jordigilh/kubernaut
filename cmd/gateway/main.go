@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 )
 
 var (
@@ -128,6 +129,9 @@ func main() {
 				ConfigMapNamespace: "kubernaut-system",
 				ConfigMapName:      "kubernaut-environment-overrides",
 			},
+			Priority: gateway.PrioritySettings{
+				PolicyPath: "config.app/gateway/policies/priority.rego",
+			},
 		},
 	}
 
@@ -136,6 +140,23 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to create Gateway server", zap.Error(err))
 	}
+
+	// Register adapters (BR-GATEWAY-001, BR-GATEWAY-002)
+	// Prometheus AlertManager webhook adapter
+	prometheusAdapter := adapters.NewPrometheusAdapter()
+	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
+		logger.Fatal("Failed to register Prometheus adapter", zap.Error(err))
+	}
+
+	// Kubernetes Event webhook adapter
+	k8sEventAdapter := adapters.NewKubernetesEventAdapter()
+	if err := srv.RegisterAdapter(k8sEventAdapter); err != nil {
+		logger.Fatal("Failed to register K8s Event adapter", zap.Error(err))
+	}
+
+	logger.Info("Registered all adapters",
+		zap.Int("adapter_count", 2),
+		zap.Strings("adapters", []string{"prometheus", "kubernetes-event"}))
 
 	// Start server in goroutine
 	errChan := make(chan error, 1)

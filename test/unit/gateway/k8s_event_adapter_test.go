@@ -179,7 +179,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			// BUSINESS OUTCOME: Normal events don't waste AI analysis resources
 			Expect(err).To(HaveOccurred(),
 				"Normal events should be rejected to avoid noise")
-			Expect(err.Error()).To(ContainSubstring("Normal events not processed"),
+			Expect(err.Error()).To(ContainSubstring("normal events not processed"),
 				"Error message helps debugging")
 			Expect(signal).To(BeNil(),
 				"No signal created = no CRD = AI not invoked")
