@@ -1313,7 +1313,7 @@ podman exec context-api ping postgres.kubernaut-system.svc.cluster.local
 ## 🔗 **RELATED DOCUMENTATION**
 
 - [ADR-027: Multi-Architecture Build Strategy](../../../architecture/decisions/ADR-027-multi-architecture-build-strategy.md)
-- [Implementation Plan v2.4.0](implementation/IMPLEMENTATION_PLAN_V2.0.md)
+- [Implementation Plan v2.4.0](implementation/IMPLEMENTATION_PLAN_V2.6.md)
 - [Deployment Guide](DEPLOYMENT.md)
 
 ---
@@ -1461,7 +1461,7 @@ podman exec context-api ping postgres.kubernaut-system.svc.cluster.local
 | Document | Purpose |
 |---|---|
 | [CONTEXT_VS_NOTIFICATION_GAP_ANALYSIS.md](CONTEXT_VS_NOTIFICATION_GAP_ANALYSIS.md) | Gap identification and analysis |
-| [IMPLEMENTATION_PLAN_V2.0.md](IMPLEMENTATION_PLAN_V2.0.md) | Main implementation plan |
+| [IMPLEMENTATION_PLAN_V2.6.md](IMPLEMENTATION_PLAN_V2.6.md) | Main implementation plan |
 | [ADR-027](../../../architecture/decisions/ADR-027-multi-architecture-build-strategy.md) | Multi-arch build standards |
 | [BUILD.md](BUILD.md) | Build and deployment guide |
 

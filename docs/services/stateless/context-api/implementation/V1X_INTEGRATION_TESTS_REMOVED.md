@@ -140,7 +140,7 @@
 
 ## 🔗 References
 
-- **v2.0 Plan**: [IMPLEMENTATION_PLAN_V2.0.md](IMPLEMENTATION_PLAN_V2.0.md) (Day 8 section)
+- **v2.0 Plan**: [IMPLEMENTATION_PLAN_V2.6.md](IMPLEMENTATION_PLAN_V2.6.md) (Day 8 section)
 - **Day 1 Complete**: [phase0/01-day1-foundation-complete.md](phase0/01-day1-foundation-complete.md)
 - **Progress Tracking**: [DAY1_PROGRESS_V2.md](DAY1_PROGRESS_V2.md)
 

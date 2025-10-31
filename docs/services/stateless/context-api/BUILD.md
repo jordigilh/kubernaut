@@ -555,7 +555,7 @@ ls -la pkg/contextapi/config/testdata/
 
 | Document | Purpose |
 |---|---|
-| [IMPLEMENTATION_PLAN_V2.0.md](implementation/IMPLEMENTATION_PLAN_V2.0.md) | Complete implementation roadmap |
+| [IMPLEMENTATION_PLAN_V2.6.md](implementation/IMPLEMENTATION_PLAN_V2.6.md) | Complete implementation roadmap |
 | [CONTEXT_VS_NOTIFICATION_GAP_ANALYSIS.md](implementation/CONTEXT_VS_NOTIFICATION_GAP_ANALYSIS.md) | Gap analysis and remediation |
 | [GAP_REMEDIATION_PLAN.md](implementation/GAP_REMEDIATION_PLAN.md) | Detailed remediation steps |
 | [ADR-027](../../architecture/decisions/ADR-027-multi-architecture-build-strategy.md) | Multi-arch build standards |
