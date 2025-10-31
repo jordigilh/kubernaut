@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
+	"github.com/jordigilh/kubernaut/pkg/contextapi/metrics"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/sqlbuilder"
 )
@@ -48,9 +49,10 @@ type DBExecutor interface {
 // Config holds configuration for CachedExecutor
 // BR-CONTEXT-001: Executor configuration
 type Config struct {
-	Cache cache.CacheManager
-	DB    DBExecutor    // Changed from *sqlx.DB to DBExecutor interface for testability
-	TTL   time.Duration // Default cache TTL
+	Cache   cache.CacheManager
+	DB      DBExecutor         // Changed from *sqlx.DB to DBExecutor interface for testability
+	TTL     time.Duration      // Default cache TTL
+	Metrics *metrics.Metrics // DD-005: Observability metrics (optional for backward compatibility)
 }
 
 // CachedExecutor executes queries with multi-tier caching fallback
@@ -64,12 +66,15 @@ type Config struct {
 //
 // Day 11 Edge Case 1.1: Single-flight pattern prevents cache stampede
 // Multiple concurrent requests for same cache key are deduplicated to single DB query
+//
+// DD-005: Observability - Records metrics for cache hits/misses, query duration, errors
 type CachedExecutor struct {
 	cache        cache.CacheManager
-	db           DBExecutor // Changed from *sqlx.DB to DBExecutor interface for testability
+	db           DBExecutor         // Changed from *sqlx.DB to DBExecutor interface for testability
 	logger       *zap.Logger
 	ttl          time.Duration
 	singleflight singleflight.Group // Day 11: Prevents cache stampede on concurrent cache misses
+	metrics      *metrics.Metrics   // DD-005: Observability metrics (nil-safe for backward compatibility)
 }
 
 // CachedResult wraps query results for caching
@@ -81,6 +86,7 @@ type CachedResult struct {
 
 // NewCachedExecutor creates a new query executor with caching
 // BR-CONTEXT-001: Executor initialization
+// DD-005: Observability - Accepts optional metrics for recording cache/DB operations
 func NewCachedExecutor(cfg *Config) (*CachedExecutor, error) {
 	// Validate config
 	if cfg.Cache == nil {
@@ -99,10 +105,11 @@ func NewCachedExecutor(cfg *Config) (*CachedExecutor, error) {
 	logger, _ := zap.NewProduction() // Use production logger
 
 	return &CachedExecutor{
-		cache:  cfg.Cache,
-		db:     cfg.DB,
-		logger: logger,
-		ttl:    ttl,
+		cache:   cfg.Cache,
+		db:      cfg.DB,
+		logger:  logger,
+		ttl:     ttl,
+		metrics: cfg.Metrics, // DD-005: Metrics are optional (nil-safe)
 	}, nil
 }
 
@@ -111,16 +118,35 @@ func NewCachedExecutor(cfg *Config) (*CachedExecutor, error) {
 // BR-CONTEXT-005: Multi-tier caching
 // Day 11 Edge Case 1.1: Single-flight pattern prevents cache stampede
 func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListIncidentsParams) ([]*models.IncidentEvent, int, error) {
+	// DD-005: Track query duration
+	startTime := time.Now()
+	defer func() {
+		if e.metrics != nil {
+			duration := time.Since(startTime).Seconds()
+			e.metrics.QueryDuration.WithLabelValues("list_incidents").Observe(duration)
+		}
+	}()
+	
 	// Generate cache key from params
 	cacheKey := generateCacheKey(params)
 
 	// Try cache first (L1 → L2)
 	cachedData, err := e.getFromCache(ctx, cacheKey)
 	if err == nil && cachedData != nil {
+		// DD-005: Record cache hit metric
+		if e.metrics != nil {
+			e.metrics.CacheHits.WithLabelValues("redis").Inc() // Assume Redis L1 for now
+		}
+		
 		e.logger.Debug("cache hit",
 			zap.String("key", cacheKey),
 			zap.Int("incidents", len(cachedData.Incidents)))
 		return cachedData.Incidents, cachedData.Total, nil
+	}
+
+	// DD-005: Record cache miss metric
+	if e.metrics != nil {
+		e.metrics.CacheMisses.WithLabelValues("redis").Inc()
 	}
 
 	// Cache miss or error → fallback to database with single-flight deduplication
