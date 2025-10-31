@@ -67,7 +67,8 @@ func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	customRegistry := prometheus.NewRegistry()
 
 	// Create metrics with custom registry
-	metricsInstance := metrics.NewMetricsWithRegistry("contextapi", "test", customRegistry)
+	// DD-005: Use empty subsystem to generate contextapi_* metrics (not contextapi_test_*)
+	metricsInstance := metrics.NewMetricsWithRegistry("contextapi", "", customRegistry)
 
 	// Create server config
 	cfg := &server.Config{
