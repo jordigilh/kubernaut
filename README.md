@@ -77,7 +77,7 @@ Each controller runs as a separate microservice with its own binary:
 
 | Service | Status | Purpose | Port | Docs |
 |---------|--------|---------|------|------|
-| **Gateway Service** | ✅ **v2.23 PRODUCTION-READY** | Multi-signal ingestion (Prometheus + K8s Events) | 8080 | [Implementation Plan v2.23](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) \| [Completion Summary](GATEWAY_V2.23_COMPLETE.md) |
+| **Gateway Service** | ✅ **v2.23 PRODUCTION-READY** | Signal ingestion (Prometheus AlertManager + Kubernetes Events) | 8080 | [Implementation Plan v2.23](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) \| [Completion Summary](GATEWAY_V2.23_COMPLETE.md) |
 | **Dynamic Toolset** | ✅ **COMPLETE** | HolmesGPT toolset configuration | 8080 | [Handoff Summary](docs/services/stateless/dynamic-toolset/implementation/00-HANDOFF-SUMMARY.md) |
 | **Data Storage** | ✅ **COMPLETE** | PostgreSQL + Vector DB management | 8080 | [Handoff Summary](docs/services/stateless/data-storage/implementation/HANDOFF_SUMMARY.md) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel notification delivery (CRD-based) | 8080 | [Service Completion](docs/services/crd-controllers/06-notification/SERVICE_COMPLETION_FINAL.md) |
@@ -212,7 +212,7 @@ sequenceDiagram
 | Phase | Services | Status | Timeline |
 |-------|----------|--------|----------|
 | **Phase 1: Foundation** | Gateway, Dynamic Toolset, Data Storage, Notifications | ✅✅✅✅ | Weeks 1-3 |
-| **Phase 2: Intelligence** | Context API, HolmesGPT API | ⏸️⏸️ | Weeks 3-5 |
+| **Phase 2: Intelligence** | Context API, HolmesGPT API | 🔄⏸️ | Weeks 3-5 |
 | **Phase 3: Core Controllers** | RemediationProcessor, WorkflowExecution | ⏸️⏸️ | Weeks 5-8 |
 | **Phase 4: AI Integration** | AIAnalysis | ⏸️ | Weeks 8-10 |
 | **Phase 5: Orchestration** | RemediationOrchestrator, Effectiveness Monitor | ⏸️⏸️ | Weeks 10-13 |
@@ -224,8 +224,9 @@ sequenceDiagram
 #### ✅ **Gateway Service v2.23** (PRODUCTION-READY)
 - **Status**: Production-ready with comprehensive test coverage and complete documentation
 - **Version**: v2.23 (October 31, 2025)
+- **V1 Scope**: Prometheus AlertManager + Kubernetes Events only (OpenTelemetry and other sources deferred to V1.1+)
 - **Core Features**:
-  - **Multi-Signal Ingestion**: Prometheus AlertManager + Kubernetes Events (adapter-specific endpoints)
+  - **Signal Ingestion**: Prometheus AlertManager + Kubernetes Events via adapter-specific endpoints
   - **Signal Deduplication**: Redis-based with TTL expiration and duplicate counting
   - **Storm Detection & Aggregation**: Rate-based + pattern-based detection with 15-minute aggregation window
   - **Environment Classification**: Production/staging/development via Rego policies
@@ -243,7 +244,7 @@ sequenceDiagram
   - Structured JSON logging with configurable levels
   - Health endpoints (`/health`, `/ready` with RFC 7807 error format)
 - **Testing**: [Implementation Plan v2.23](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) | [Completion Summary](GATEWAY_V2.23_COMPLETE.md)
-- **Test Coverage**: 
+- **Test Coverage**:
   - **Unit Tests**: 120/121 passing (99.2%) - 70%+ BR coverage
   - **Integration Tests**: 113/114 passing (99.1%) - >50% BR coverage
   - **Total**: 233/235 tests passing (99.1% pass rate)
@@ -315,14 +316,16 @@ sequenceDiagram
 When V1 implementation completes (Week 13), Kubernaut will support:
 
 ### **Signal Processing**
-- Prometheus AlertManager webhooks (V1 scope)
-- Note: Multi-signal support (Kubernetes events, CloudWatch alarms, custom webhooks) planned for V2
+- Prometheus AlertManager webhooks
+- Kubernetes Events
+- Signal deduplication and storm detection
+- Note: Additional signal sources (CloudWatch alarms, OpenTelemetry, custom webhooks) planned for V1.1+
 
-### **AI-Powered Analysis**
+### **AI-Powered Analysis** (Phase 4)
 - Root cause analysis via HolmesGPT
 - Historical pattern matching
 - Confidence scoring for recommendations
-- Multi-LLM provider support
+- Note: Multi-LLM provider support (OpenAI, Anthropic, Azure, AWS Bedrock, Ollama) will be implemented in Phase 4 (AIAnalysis service)
 
 ### **Automated Remediation Actions** (29 Canonical Actions)
 Executed by WorkflowExecution via Tekton Pipelines (Phase 3):
@@ -375,7 +378,7 @@ make build
 
 # Build individual services (when available)
 go build -o bin/gateway-service ./cmd/gateway
-go build -o bin/dynamic-toolset ./cmd/dynamictoolset  # Coming soon
+go build -o bin/dynamic-toolset ./cmd/dynamictoolset
 ```
 
 ### **Run Gateway Integration Tests**
@@ -394,8 +397,8 @@ make test-gateway-teardown
 ### **Development Workflow** (When All Services Available)
 
 ```bash
-# Setup Kind cluster with all dependencies
-make bootstrap-dev-kind          # Coming soon - will setup full environment
+# Setup Kind cluster for Gateway testing
+make test-gateway-setup          # Setup Gateway test environment
 
 # Run tests by tier
 make test                        # Unit tests (all services)
@@ -403,7 +406,7 @@ make test-integration           # Integration tests
 make test-e2e                   # End-to-end tests
 
 # Clean up
-make cleanup-dev-kind
+make test-gateway-teardown       # Teardown Gateway test cluster
 ```
 
 ### **Configuration Structure** (Phase 1)
@@ -521,7 +524,7 @@ rules:
 ```
 
 ### **Service-to-Service Authentication**
-- Gateway Service: TokenReview-based bearer token validation
+- Gateway Service: Network-level security (NetworkPolicies + TLS)
 - CRD Controllers: Kubernetes ServiceAccount authentication
 - Inter-service: Service mesh (Istio/Linkerd) with mTLS
 
@@ -580,5 +583,5 @@ Apache License 2.0
 
 **Kubernaut V1 Microservices Architecture** - Building the next evolution of Kubernetes operations through intelligent, CRD-based microservices that learn and adapt.
 
-**Current Status**: Phase 1 (Foundation) - 4 of 12 services implemented (33%) | **Target**: Week 13 for V1 completion
+**Current Status**: Phase 1 (Foundation) - 4 of 11 services implemented (36%) | **Target**: Week 13 for V1 completion
 
