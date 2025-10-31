@@ -93,7 +93,7 @@ This is the **approved and authoritative** sequence diagram for step failure rec
 ```mermaid
 sequenceDiagram
     participant WO as 🔄 WorkflowExecution Controller
-    participant KE as ⚙️ K8s Executor
+    participant TEK as ⚙️ Tekton Pipelines
     participant DS as 💾 Data Storage
     participant RO as 🎯 Remediation Orchestrator
     participant RP as 📊 RemediationProcessing Controller
@@ -102,11 +102,11 @@ sequenceDiagram
     participant HGP as 🧠 HolmesGPT API
     participant NS as 📧 Notification Service
 
-    Note over WO,KE: 🚀 WORKFLOW ALREADY EXECUTING (Steps 1-2 completed)
+    Note over WO,TEK: 🚀 WORKFLOW ALREADY EXECUTING (Steps 1-2 completed)
 
     %% Step Execution Failure
     rect rgb(255, 240, 240)
-        Note over WO,KE: ❌ STEP 1: EXECUTION FAILURE
+        Note over WO,TEK: ❌ STEP 1: EXECUTION FAILURE
 
         WO->>KE: Create KubernetesExecution CRD (Step 3)
         Note over KE: Spec:<br/>• Action: scale-deployment<br/>• Timeout: 5m<br/>• Target: payment-api<br/>• Replicas: 5
@@ -272,7 +272,7 @@ sequenceDiagram
         NS-->>NS: Send notification
 
         WO->>KE: Execute recovery steps...
-        Note over WO,KE: ... executing 3-step recovery workflow ...<br/><br/>Step 1: force-delete-pods ✅ (45s)<br/>Step 2: clear-finalizers ✅ (12s)<br/>Step 3: scale-deployment ✅ (1m 23s)<br/><br/>Total duration: 3m 20s<br/>All steps completed successfully
+        Note over WO,TEK: ... executing 3-step recovery workflow ...<br/><br/>Step 1: force-delete-pods ✅ (45s)<br/>Step 2: clear-finalizers ✅ (12s)<br/>Step 3: scale-deployment ✅ (1m 23s)<br/><br/>Total duration: 3m 20s<br/>All steps completed successfully
 
         KE->>WO: All steps completed ✅
     end

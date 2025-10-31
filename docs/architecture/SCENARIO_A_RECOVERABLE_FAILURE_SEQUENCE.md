@@ -57,7 +57,7 @@ sequenceDiagram
     participant AI as 🤖 AI Analysis Controller
     participant HGP as 🧠 HolmesGPT API
     participant WO as 🔄 Workflow Orchestrator
-    participant KE as ⚙️ K8s Executor
+    participant TEK as ⚙️ Tekton Pipelines
     participant Job as ☸️ Kubernetes Job
     participant NS as 📧 Notification Service
     participant LDB as 💾 Learning Database
