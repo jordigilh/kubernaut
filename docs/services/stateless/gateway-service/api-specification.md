@@ -410,9 +410,76 @@ Each signal goes through:
 6. **Environment Classification** (namespace labels) - ~2-3ms (cached)
 7. **Priority Assignment** (Rego policy) - ~5-8ms
 8. **CRD Creation** (RemediationRequest) - ~10-15ms
+   - **Namespace Handling**: Creates CRD in signal's origin namespace
+   - **Fallback Behavior**: If namespace doesn't exist → creates in `kubernaut-system`
+   - **Cluster-Scoped Signals**: NodeNotReady, ClusterMemoryPressure → `kubernaut-system`
+   - **Labels Added**: `kubernaut.io/origin-namespace`, `kubernaut.io/cluster-scoped`
 9. **Response** - ~1ms
 
 **Total**: 20-50ms (p95)
+
+---
+
+## 🏷️ Namespace Fallback Strategy
+
+**Design Decision**: [DD-GATEWAY-005](../../architecture/DD-GATEWAY-005-fallback-namespace-strategy.md)
+
+When a signal references a namespace that doesn't exist, the Gateway uses a fallback strategy to ensure cluster-scoped signals are handled gracefully:
+
+### Fallback Behavior
+
+**Primary**: Create CRD in signal's origin namespace  
+**Fallback**: If namespace doesn't exist → create in `kubernaut-system`
+
+### Scenarios
+
+**Scenario 1: Valid Namespace**
+```
+Signal namespace: "production"
+CRD created in: "production"
+Labels: (standard labels only)
+```
+
+**Scenario 2: Cluster-Scoped Signal (No Namespace)**
+```
+Signal namespace: "" (empty - e.g., NodeNotReady)
+CRD created in: "kubernaut-system"
+Labels:
+  - kubernaut.io/origin-namespace: ""
+  - kubernaut.io/cluster-scoped: "true"
+```
+
+**Scenario 3: Invalid Namespace (Deleted After Alert)**
+```
+Signal namespace: "deleted-app"
+CRD created in: "kubernaut-system"
+Labels:
+  - kubernaut.io/origin-namespace: "deleted-app"
+  - kubernaut.io/cluster-scoped: "true"
+```
+
+### Querying Fallback CRDs
+
+**Find all cluster-scoped CRDs**:
+```bash
+kubectl get remediationrequests -n kubernaut-system \
+  -l kubernaut.io/cluster-scoped=true
+```
+
+**Find CRDs by origin namespace**:
+```bash
+kubectl get remediationrequests -n kubernaut-system \
+  -l kubernaut.io/origin-namespace=production
+```
+
+### Rationale
+
+- **Infrastructure Consistency**: `kubernaut-system` is the proper home for Kubernaut infrastructure
+- **Audit Trail**: Labels preserve origin namespace for troubleshooting
+- **Cluster-Scoped Support**: Handles cluster-level alerts (NodeNotReady, etc.) gracefully
+- **RBAC Alignment**: Operators already have access to `kubernaut-system`
+
+**See**: [DD-GATEWAY-005](../../architecture/DD-GATEWAY-005-fallback-namespace-strategy.md) for complete analysis
 
 ---
 
@@ -579,6 +646,6 @@ The Gateway service loads configuration from:
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: 2025-10-28 (v2.18 - Configuration refactoring)
+**Last Updated**: 2025-10-31 (v2.22 - Fallback namespace strategy documented)
 **Status**: ✅ Complete Specification
 
