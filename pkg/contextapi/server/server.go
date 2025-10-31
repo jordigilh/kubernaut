@@ -17,6 +17,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/client"
+	"github.com/jordigilh/kubernaut/pkg/contextapi/errors"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/metrics"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/query"
@@ -317,7 +318,7 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 
 	// Validate parameters
 	if params.Limit < 1 || params.Limit > 100 {
-		s.respondError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+		s.respondError(w, r, http.StatusBadRequest, "limit must be between 1 and 100")
 		return
 	}
 
@@ -327,7 +328,7 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Error("Failed to list incidents", zap.Error(err))
 		s.metrics.RecordQueryError("list_incidents")
-		s.respondError(w, http.StatusInternalServerError, "Failed to query incidents")
+		s.respondError(w, r, http.StatusInternalServerError, "Failed to query incidents")
 		return
 	}
 
@@ -352,7 +353,7 @@ func (s *Server) handleGetIncident(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		s.respondError(w, http.StatusBadRequest, "Invalid incident ID")
+		s.respondError(w, r, http.StatusBadRequest, "Invalid incident ID")
 		return
 	}
 
@@ -360,12 +361,12 @@ func (s *Server) handleGetIncident(w http.ResponseWriter, r *http.Request) {
 	incident, err := s.dbClient.GetIncidentByID(ctx, id)
 	if err != nil {
 		if err.Error() == "incident not found" {
-			s.respondError(w, http.StatusNotFound, "Incident not found")
+			s.respondError(w, r, http.StatusNotFound, "Incident not found")
 			return
 		}
 		s.logger.Error("Failed to get incident", zap.Error(err), zap.Int64("id", id))
 		s.metrics.RecordQueryError("get_incident")
-		s.respondError(w, http.StatusInternalServerError, "Failed to query incident")
+		s.respondError(w, r, http.StatusInternalServerError, "Failed to query incident")
 		return
 	}
 
@@ -387,7 +388,7 @@ func (s *Server) handleSuccessRate(w http.ResponseWriter, r *http.Request) {
 
 	workflowID := r.URL.Query().Get("workflow_id")
 	if workflowID == "" {
-		s.respondError(w, http.StatusBadRequest, "workflow_id parameter required")
+		s.respondError(w, r, http.StatusBadRequest, "workflow_id parameter required")
 		return
 	}
 
@@ -396,7 +397,7 @@ func (s *Server) handleSuccessRate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Error("Failed to calculate success rate", zap.Error(err))
 		s.metrics.RecordQueryError("success_rate")
-		s.respondError(w, http.StatusInternalServerError, "Failed to calculate success rate")
+		s.respondError(w, r, http.StatusInternalServerError, "Failed to calculate success rate")
 		return
 	}
 
@@ -415,7 +416,7 @@ func (s *Server) handleNamespaceGrouping(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		s.logger.Error("Failed to group by namespace", zap.Error(err))
 		s.metrics.RecordQueryError("namespace_grouping")
-		s.respondError(w, http.StatusInternalServerError, "Failed to group incidents")
+		s.respondError(w, r, http.StatusInternalServerError, "Failed to group incidents")
 		return
 	}
 
@@ -439,7 +440,7 @@ func (s *Server) handleSeverityDistribution(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		s.logger.Error("Failed to get severity distribution", zap.Error(err))
 		s.metrics.RecordQueryError("severity_distribution")
-		s.respondError(w, http.StatusInternalServerError, "Failed to calculate distribution")
+		s.respondError(w, r, http.StatusInternalServerError, "Failed to calculate distribution")
 		return
 	}
 
@@ -458,7 +459,7 @@ func (s *Server) handleIncidentTrend(w http.ResponseWriter, r *http.Request) {
 
 	days := getIntOrDefault(r.URL.Query().Get("days"), 30)
 	if days < 1 || days > 365 {
-		s.respondError(w, http.StatusBadRequest, "days must be between 1 and 365")
+		s.respondError(w, r, http.StatusBadRequest, "days must be between 1 and 365")
 		return
 	}
 
@@ -467,7 +468,7 @@ func (s *Server) handleIncidentTrend(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Error("Failed to get incident trend", zap.Error(err))
 		s.metrics.RecordQueryError("incident_trend")
-		s.respondError(w, http.StatusInternalServerError, "Failed to calculate trend")
+		s.respondError(w, r, http.StatusInternalServerError, "Failed to calculate trend")
 		return
 	}
 
@@ -494,12 +495,12 @@ func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.respondError(w, http.StatusBadRequest, "Invalid request body")
+		s.respondError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if req.Query == "" {
-		s.respondError(w, http.StatusBadRequest, "query parameter required")
+		s.respondError(w, r, http.StatusBadRequest, "query parameter required")
 		return
 	}
 
@@ -555,12 +556,63 @@ func (s *Server) respondJSON(w http.ResponseWriter, status int, data interface{}
 	json.NewEncoder(w).Encode(data)
 }
 
-func (s *Server) respondError(w http.ResponseWriter, status int, message string) {
-	s.respondJSON(w, status, map[string]string{
-		"error":  message,
-		"status": strconv.Itoa(status),
-		"time":   time.Now().Format(time.RFC3339),
-	})
+// respondError writes an RFC 7807 compliant error response
+// DD-004: RFC 7807 Error Response Standard
+// BR-CONTEXT-009: Consistent error responses
+//
+// GREEN PHASE: Minimal implementation to make tests pass
+func (s *Server) respondError(w http.ResponseWriter, r *http.Request, status int, message string) {
+	// Set RFC 7807 Content-Type header
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+
+	// Extract request ID from middleware for tracing
+	requestID := middleware.GetReqID(r.Context())
+
+	// Determine error type and title based on status code
+	errorType, title := getErrorTypeAndTitle(status)
+
+	// Build RFC 7807 error response
+	errorResponse := errors.RFC7807Error{
+		Type:      errorType,
+		Title:     title,
+		Detail:    message,
+		Status:    status,
+		Instance:  r.URL.Path,
+		RequestID: requestID,
+	}
+
+	// Encode and send response
+	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
+		// Fallback to plain text if JSON encoding fails
+		s.logger.Error("Failed to encode RFC 7807 error response", zap.Error(err))
+		http.Error(w, message, status)
+	}
+}
+
+// getErrorTypeAndTitle maps HTTP status codes to RFC 7807 error types and titles
+// DD-004: Error Type URI Convention
+//
+// GREEN PHASE: Minimal implementation covering test cases
+func getErrorTypeAndTitle(statusCode int) (string, string) {
+	switch statusCode {
+	case http.StatusBadRequest:
+		return errors.ErrorTypeValidationError, errors.TitleBadRequest
+	case http.StatusNotFound:
+		return errors.ErrorTypeNotFound, errors.TitleNotFound
+	case http.StatusMethodNotAllowed:
+		return errors.ErrorTypeMethodNotAllowed, errors.TitleMethodNotAllowed
+	case http.StatusUnsupportedMediaType:
+		return errors.ErrorTypeUnsupportedMediaType, errors.TitleUnsupportedMediaType
+	case http.StatusInternalServerError:
+		return errors.ErrorTypeInternalError, errors.TitleInternalServerError
+	case http.StatusServiceUnavailable:
+		return errors.ErrorTypeServiceUnavailable, errors.TitleServiceUnavailable
+	case http.StatusGatewayTimeout:
+		return errors.ErrorTypeGatewayTimeout, errors.TitleGatewayTimeout
+	default:
+		return errors.ErrorTypeUnknown, errors.TitleUnknown
+	}
 }
 
 func getStringPtr(s string) *string {
