@@ -52,7 +52,7 @@ sequenceDiagram
     participant PFH as 🧠 Production Failure Handler
     participant HGP as 🔍 HolmesGPT-API
     participant WH as 📊 Workflow Health Checker
-    participant K8S as ☸️ Kubernetes Executor
+    participant TEK as ☸️ Tekton Pipelines
     participant CTX as 🌐 Context Orchestrator
     participant DS as 💾 Data Storage
 
