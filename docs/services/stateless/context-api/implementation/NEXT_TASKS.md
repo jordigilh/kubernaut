@@ -3,7 +3,7 @@
 **Service**: Context API (Phase 2 - Intelligence Layer)
 **Status**: 🔄 **v2.2.1 IN PROGRESS** (Schema & Infrastructure Governance - 97% Alignment Achieved)
 **Timeline**: 13 days (104 hours planned, ~58 hours remaining at current efficiency)
-**Implementation Plan**: [IMPLEMENTATION_PLAN_V2.6.md](IMPLEMENTATION_PLAN_V2.6.md) (now v2.2.1)
+**Implementation Plan**: [IMPLEMENTATION_PLAN_V2.7.md](IMPLEMENTATION_PLAN_V2.7.md) (now v2.2.1)
 **Template Alignment**: 97% (improved from 96% in v2.2)
 **Triage Report**: [CONTEXT_API_V2_TRIAGE_VS_TEMPLATE.md](CONTEXT_API_V2_TRIAGE_VS_TEMPLATE.md)
 **Previous Version**: [v1.x Progress](IMPLEMENTATION_PLAN_V1.0.md) (83% complete, replaced by v2.0 for 100% quality)
@@ -406,7 +406,7 @@
 
 ### **⚠️ TDD COMPLIANCE CORRECTION** ✅
 
-**Critical Issue**: Batch activation approach violated TDD principles (see [v2.1 changelog](IMPLEMENTATION_PLAN_V2.6.md))
+**Critical Issue**: Batch activation approach violated TDD principles (see [v2.1 changelog](IMPLEMENTATION_PLAN_V2.7.md))
 
 **Corrective Action Taken**:
 - ❌ Deleted all 43 skipped tests (violated TDD)
