@@ -1,5 +1,11 @@
-# Multi-stage build for webhook service using Red Hat UBI9 Go toolset
+# Gateway Service - Multi-Architecture Dockerfile using Red Hat UBI9
+# Supports: linux/amd64, linux/arm64
+# Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
 FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+
+# Build arguments for multi-architecture support
+ARG TARGETOS=linux
+ARG TARGETARCH
 
 # Switch to root for package installation
 USER root
@@ -25,7 +31,9 @@ RUN go mod download
 COPY --chown=1001:0 . .
 
 # Build the gateway service binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+# CGO_ENABLED=0 for static linking (no C dependencies)
+# GOOS and GOARCH from build args for multi-architecture support
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 	-ldflags='-w -s -extldflags "-static"' \
 	-a -installsuffix cgo \
 	-o gateway \
@@ -65,15 +73,15 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 ENTRYPOINT ["/usr/local/bin/gateway"]
 
 # Red Hat UBI9 compatible metadata labels
-LABEL name="kubernaut-gateway-service" \
+LABEL name="kubernaut-gateway" \
 	vendor="Kubernaut" \
-	version="1.0.0" \
+	version="0.1.0" \
 	release="1" \
-	summary="Kubernaut Gateway Service - HTTP Gateway, Webhook Processing & Security Microservice" \
-	description="A microservice component of Kubernaut that handles HTTP gateway operations, webhook processing (Prometheus AlertManager, Grafana), authentication, authorization, rate limiting, and security enforcement with fault isolation and independent scaling capabilities." \
-	maintainer="kubernaut-team@example.com" \
-	component="gateway-processor" \
+	summary="Kubernaut Gateway Service - Signal Ingestion & Processing" \
+	description="A microservice component of Kubernaut that handles signal ingestion from multiple sources (Prometheus AlertManager, Kubernetes Events), deduplication, storm detection, priority assignment, and CRD creation for the remediation pipeline. Multi-architecture support (amd64/arm64) per ADR-027." \
+	maintainer="jgil@redhat.com" \
+	component="gateway" \
 	part-of="kubernaut" \
-	io.k8s.description="Kubernaut Gateway Service for HTTP gateway, webhook processing, and security" \
+	io.k8s.description="Gateway Service for signal ingestion, deduplication, and CRD creation" \
 	io.k8s.display-name="Kubernaut Gateway Service" \
-	io.openshift.tags="kubernaut,gateway,webhook,security,http,alertmanager,microservice"
+	io.openshift.tags="kubernaut,gateway,webhook,signal,alertmanager,prometheus,kubernetes-events,microservice"

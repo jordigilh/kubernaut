@@ -709,25 +709,21 @@ docker-build-microservices: docker-build-gateway-service docker-build-ai-analysi
 
 .PHONY: docker-build-gateway-service
 docker-build-gateway-service: ## Build gateway service container image (multi-arch UBI9, ADR-027/ADR-028)
-	@echo "🐳 Building multi-architecture Gateway service image..."
-	podman build --platform linux/amd64,linux/arm64 \
-		-f docker/gateway.Dockerfile \
-		-t $(REGISTRY)/kubernaut-gateway:$(VERSION) .
-	@echo "✅ Multi-arch image built: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
-
-.PHONY: docker-build-gateway-ubi9
-docker-build-gateway-ubi9: ## Build gateway service UBI9 image (OpenShift optimized)
-	@echo "🐳 Building UBI9 Gateway service image..."
+	@echo "🔨 Building multi-arch Gateway image (amd64 + arm64) - UBI9 per ADR-027"
 	podman build --platform linux/amd64,linux/arm64 \
 		-f docker/gateway-ubi9.Dockerfile \
-		-t $(REGISTRY)/kubernaut-gateway-ubi9:$(VERSION) .
-	@echo "✅ UBI9 image built: $(REGISTRY)/kubernaut-gateway-ubi9:$(VERSION)"
+		-t $(REGISTRY)/kubernaut-gateway:$(VERSION) .
+	@echo "✅ Multi-arch UBI9 image built: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
+
+.PHONY: docker-build-gateway-ubi9
+docker-build-gateway-ubi9: docker-build-gateway-service ## Build gateway service UBI9 image (alias for docker-build-gateway-service)
+	@echo "🔗 Gateway service uses UBI9 by default (ADR-027)"
 
 .PHONY: docker-build-gateway-single
 docker-build-gateway-single: ## Build single-arch debug image (current platform only)
-	@echo "🔨 Building single-arch debug image..."
+	@echo "🔨 Building single-arch Gateway image for debugging (host arch: $(shell uname -m))"
 	podman build -t $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m) \
-		-f docker/gateway.Dockerfile .
+		-f docker/gateway-ubi9.Dockerfile .
 	@echo "✅ Debug image: $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m)"
 
 .PHONY: docker-build-webhook-service
