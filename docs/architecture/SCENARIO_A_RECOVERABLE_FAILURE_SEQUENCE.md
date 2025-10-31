@@ -1,10 +1,17 @@
 # Scenario A: Recoverable Failure - Detailed Sequence Diagram
 
-**Document Version**: 1.0 (SUPERSEDED)
-**Date**: October 8, 2025
+**Document Version**: 1.1 (SUPERSEDED)
+**Date**: October 31, 2025
 **Purpose**: Detailed sequence diagram for Scenario A (Recoverable Failure - Most Common 92.3% of cases)
 **Scope**: End-to-end flow from alert ingestion through failure recovery to successful completion
 **Status**: ⚠️ **SUPERSEDED BY PROPOSED_FAILURE_RECOVERY_SEQUENCE.md**
+
+## 📋 Version History
+
+| Version | Date | Changes | Status |
+|---------|------|---------|--------|
+| 1.1 | Oct 31, 2025 | Updated diagram: K8s Executor → Tekton Pipelines (per ADR-023, ADR-025) | SUPERSEDED |
+| 1.0 | Oct 8, 2025 | Initial version | SUPERSEDED |
 
 ---
 

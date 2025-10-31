@@ -341,7 +341,7 @@ Kubernaut's architecture consists of:
 
 **Purpose**: Central orchestration CRD that coordinates end-to-end remediation workflow
 
-**Ownership**: 
+**Ownership**:
 - Created by: Gateway Service
 - Owns: RemediationProcessing, AIAnalysis, WorkflowExecution, NotificationRequest
 
@@ -686,9 +686,9 @@ graph TB
 
     GW -->|1. Creates| ORCH
     ORCH -->|2. Creates & Owns| RP
-    ORCH -->|3. Creates & Owns<br/>(after RP complete)| AI
-    ORCH -->|4. Creates & Owns<br/>(after AI complete)| WF
-    ORCH -->|5. Creates & Owns<br/>(on events)| NOT
+    ORCH -->|3. Creates & Owns<br/>after RP complete| AI
+    ORCH -->|4. Creates & Owns<br/>after AI complete| WF
+    ORCH -->|5. Creates & Owns<br/>on events| NOT
     WF -->|6. Creates & Owns| PR
 
     ORCH -.->|Watches Status| RP
