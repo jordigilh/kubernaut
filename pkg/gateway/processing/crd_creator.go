@@ -240,7 +240,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			// Update namespace to kubernaut-system (proper home for Kubernaut infrastructure)
 			rr.Namespace = "kubernaut-system"
-			
+
 			// Add labels to preserve origin namespace information for cluster-scoped signals
 			rr.Labels["kubernaut.io/origin-namespace"] = signal.Namespace
 			rr.Labels["kubernaut.io/cluster-scoped"] = "true"
