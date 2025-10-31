@@ -258,8 +258,8 @@ Expect(crd.Labels["kubernaut.io/origin-namespace"]).To(Equal(originalNamespace))
 - `test/integration/gateway/suite_test.go` (line 44)
 
 ### Documentation
-- [FALLBACK_NAMESPACE_CHANGE_IMPACT.md](../../FALLBACK_NAMESPACE_CHANGE_IMPACT.md) - Impact analysis
-- [GATEWAY_PRIORITY1_TESTS_COMPLETE.md](../../GATEWAY_PRIORITY1_TESTS_COMPLETE.md) - Test implementation summary
+- [FALLBACK_NAMESPACE_CHANGE_IMPACT.md](../services/stateless/gateway-service/FALLBACK_NAMESPACE_CHANGE_IMPACT.md) - Impact analysis
+- [GATEWAY_PRIORITY1_TESTS_COMPLETE.md](../services/stateless/gateway-service/GATEWAY_PRIORITY1_TESTS_COMPLETE.md) - Test implementation summary
 
 ### Business Requirements
 - BR-GATEWAY-011: RemediationRequest CRD creation
