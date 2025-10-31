@@ -298,6 +298,6 @@ if err != nil {
 
 - [Day 8 Suite 1 Complete](./08-day8-suite1-complete.md) - Test completion summary
 - [Redis Isolation Complete](./08-day8-redis-isolation-complete.md) - DB isolation strategy
-- [Implementation Plan v2.2.2](../IMPLEMENTATION_PLAN_V2.6.md) - Updated plan with REFACTOR changelog
+- [Implementation Plan v2.2.2](../IMPLEMENTATION_PLAN_V2.7.md) - Updated plan with REFACTOR changelog
 - [Pure TDD Pivot Summary](./PURE_TDD_PIVOT_SUMMARY.md) - TDD methodology pivot
 

@@ -277,7 +277,7 @@ Continue with additional HTTP API endpoints per Implementation Plan v2.2.1:
 
 ## 📚 **References**
 
-- **Implementation Plan**: `IMPLEMENTATION_PLAN_V2.6.md` v2.2.1
+- **Implementation Plan**: `IMPLEMENTATION_PLAN_V2.7.md` v2.2.1
 - **Test File**: `test/integration/contextapi/05_http_api_test.go` (lines 212-497)
 - **Server Handler**: `pkg/contextapi/server/server.go` (lines 159-164, 262-313)
 - **Cached Executor**: `pkg/contextapi/query/executor.go` (lines 97-250)
