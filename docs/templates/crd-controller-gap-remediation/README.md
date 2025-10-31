@@ -23,22 +23,28 @@ This directory contains templates for rapidly implementing production-ready CRD 
 
 ### Code Templates
 
-1. **`cmd-main-template.go`**: Generic main.go for CRD controllers
+1. **`cmd-main-template.go.template`**: Generic main.go for CRD controllers
    - Configuration loading with YAML + environment overrides
    - Signal handling for graceful shutdown
    - Controller manager setup with leader election
    - Metrics and health check endpoints
 
-2. **`config-template.go`**: Generic config package
+2. **`config-template.go.template`**: Generic config package
    - YAML-based configuration with validation
    - Environment variable overrides
    - Default value management
    - Kubernetes client configuration
 
-3. **`config-test-template.go`**: Config package unit tests
+3. **`config-test-template.go.template`**: Config package unit tests
    - Config loading validation
    - Environment override testing
    - Validation error scenarios
+
+4. **`metrics-template.go.template`**: Prometheus metrics package
+   - DD-005 compliant metric naming conventions
+   - Standard controller metrics (reconciliation, errors, duration)
+   - Helper functions for recording metrics
+   - Proper label usage and cardinality control
 
 ### Infrastructure Templates
 

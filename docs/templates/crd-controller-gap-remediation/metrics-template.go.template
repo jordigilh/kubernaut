@@ -1,0 +1,256 @@
+// Package metrics provides Prometheus metrics for {{CONTROLLER_NAME}} controller
+//
+// ========================================
+// OBSERVABILITY STANDARDS (DD-005)
+// 📋 Design Decision: DD-005 | ✅ Approved Design | Confidence: 95%
+// See: docs/architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md
+//
+// Part of DD-006: Controller Scaffolding Strategy (Custom Templates)
+// See: docs/architecture/decisions/DD-006-controller-scaffolding-strategy.md
+// ========================================
+//
+// METRICS NAMING CONVENTION:
+// Format: {service}_{component}_{metric_name}_{unit}
+//
+// Example: remediationprocessor_reconciliation_duration_seconds
+//
+// CUSTOMIZATION INSTRUCTIONS:
+// 1. Replace {{CONTROLLER_NAME}} with your controller name (lowercase, no hyphens)
+// 2. Replace {{NAMESPACE}} with service namespace (e.g., "kubernaut")
+// 3. Update metric names to match your controller's operations
+// 4. Add controller-specific metrics as needed
+// 5. Keep mandatory labels: environment, service
+//
+// Example:
+//   Controller: remediationprocessor
+//   Namespace: kubernaut
+//   Metrics: remediationprocessor_reconciliation_total
+//
+// ========================================
+package metrics
+
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	// ========================================
+	// RECONCILIATION METRICS
+	// ========================================
+
+	// ReconciliationsTotal counts total reconciliations by result
+	// Labels:
+	//   - result: success|error|requeue
+	//   - environment: prod|staging|dev
+	//   - service: {{CONTROLLER_NAME}}
+	ReconciliationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "{{CONTROLLER_NAME}}_reconciliation_total",
+		Help: "Total number of reconciliations by result",
+	}, []string{"result", "environment", "service"})
+
+	// ReconciliationDuration measures reconciliation duration by phase
+	// Labels:
+	//   - phase: validate|process|finalize (customize for your controller)
+	//   - environment: prod|staging|dev
+	//   - service: {{CONTROLLER_NAME}}
+	// Buckets: 100ms to ~12.8s (exponential)
+	ReconciliationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "{{CONTROLLER_NAME}}_reconciliation_duration_seconds",
+		Help:    "Reconciliation duration in seconds by phase",
+		Buckets: prometheus.ExponentialBuckets(0.1, 2, 8), // 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, 6.4s, 12.8s
+	}, []string{"phase", "environment", "service"})
+
+	// ActiveReconciliations tracks currently in-progress reconciliations
+	ActiveReconciliations = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "{{CONTROLLER_NAME}}_active_reconciliations",
+		Help: "Number of reconciliations currently in progress",
+	})
+
+	// ========================================
+	// ERROR METRICS
+	// ========================================
+
+	// ErrorsTotal counts errors by type and phase
+	// Labels:
+	//   - error_type: validation_error|processing_error|api_error|timeout (customize)
+	//   - phase: validate|process|finalize (customize for your controller)
+	//   - environment: prod|staging|dev
+	//   - service: {{CONTROLLER_NAME}}
+	ErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "{{CONTROLLER_NAME}}_errors_total",
+		Help: "Total errors by type and phase",
+	}, []string{"error_type", "phase", "environment", "service"})
+
+	// ========================================
+	// CRD-SPECIFIC METRICS (CUSTOMIZE)
+	// ========================================
+
+	// TODO: Add controller-specific metrics here
+	// Examples:
+	//
+	// For RemediationProcessor:
+	//   RemediationsProcessedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	//       Name: "remediationprocessor_remediations_processed_total",
+	//       Help: "Total remediations processed by classification",
+	//   }, []string{"classification", "environment", "service"})
+	//
+	// For AIAnalysis:
+	//   AIInvestigationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	//       Name: "aianalysis_investigations_total",
+	//       Help: "Total AI investigations by result",
+	//   }, []string{"result", "confidence_level", "environment", "service"})
+	//
+	//   LLMTokensTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	//       Name: "aianalysis_llm_tokens_total",
+	//       Help: "Total LLM tokens used by operation",
+	//   }, []string{"operation", "model", "environment", "service"})
+	//
+	// For WorkflowExecution:
+	//   WorkflowsExecutedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	//       Name: "workflowexecution_workflows_executed_total",
+	//       Help: "Total workflows executed by status",
+	//   }, []string{"status", "workflow_type", "environment", "service"})
+
+	// ========================================
+	// KUBERNETES CLIENT METRICS (OPTIONAL)
+	// ========================================
+
+	// APICallsTotal counts Kubernetes API calls by operation
+	// Labels:
+	//   - operation: get|list|create|update|patch|delete
+	//   - resource: CRD resource type
+	//   - status: success|error
+	//   - environment: prod|staging|dev
+	//   - service: {{CONTROLLER_NAME}}
+	APICallsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "{{CONTROLLER_NAME}}_api_calls_total",
+		Help: "Total Kubernetes API calls by operation",
+	}, []string{"operation", "resource", "status", "environment", "service"})
+
+	// APICallDuration measures Kubernetes API call duration
+	// Labels:
+	//   - operation: get|list|create|update|patch|delete
+	//   - resource: CRD resource type
+	//   - environment: prod|staging|dev
+	//   - service: {{CONTROLLER_NAME}}
+	// Buckets: 10ms to ~1.28s (exponential)
+	APICallDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "{{CONTROLLER_NAME}}_api_call_duration_seconds",
+		Help:    "Kubernetes API call duration in seconds",
+		Buckets: prometheus.ExponentialBuckets(0.01, 2, 8), // 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.28s
+	}, []string{"operation", "resource", "environment", "service"})
+)
+
+// ========================================
+// HELPER FUNCTIONS
+// ========================================
+
+// RecordReconciliation records a completed reconciliation
+// Usage:
+//   RecordReconciliation("success", env, svc)
+//   RecordReconciliation("error", env, svc)
+//   RecordReconciliation("requeue", env, svc)
+func RecordReconciliation(result string, env string, svc string) {
+	ReconciliationsTotal.WithLabelValues(result, env, svc).Inc()
+}
+
+// RecordReconciliationPhase records duration for a reconciliation phase
+// Usage:
+//   RecordReconciliationPhase("validate", 0.125, env, svc) // 125ms
+//   RecordReconciliationPhase("process", 1.234, env, svc)  // 1.234s
+func RecordReconciliationPhase(phase string, durationSeconds float64, env string, svc string) {
+	ReconciliationDuration.WithLabelValues(phase, env, svc).Observe(durationSeconds)
+}
+
+// RecordError records an error occurrence
+// Usage:
+//   RecordError("validation_error", "validate", env, svc)
+//   RecordError("api_error", "process", env, svc)
+func RecordError(errorType string, phase string, env string, svc string) {
+	ErrorsTotal.WithLabelValues(errorType, phase, env, svc).Inc()
+}
+
+// StartReconciliation increments active reconciliations gauge
+// Call this at the beginning of reconciliation
+func StartReconciliation() {
+	ActiveReconciliations.Inc()
+}
+
+// FinishReconciliation decrements active reconciliations gauge
+// Call this when reconciliation completes (success or error)
+// Use defer to ensure it's always called:
+//   defer metrics.FinishReconciliation()
+func FinishReconciliation() {
+	ActiveReconciliations.Dec()
+}
+
+// RecordAPICall records a Kubernetes API call
+// Usage:
+//   RecordAPICall("get", "RemediationProcessing", "success", env, svc)
+//   RecordAPICall("update", "RemediationProcessing", "error", env, svc)
+func RecordAPICall(operation string, resource string, status string, env string, svc string) {
+	APICallsTotal.WithLabelValues(operation, resource, status, env, svc).Inc()
+}
+
+// RecordAPICallDuration records Kubernetes API call duration
+// Usage:
+//   RecordAPICallDuration("get", "RemediationProcessing", 0.045, env, svc) // 45ms
+func RecordAPICallDuration(operation string, resource string, durationSeconds float64, env string, svc string) {
+	APICallDuration.WithLabelValues(operation, resource, env, svc).Observe(durationSeconds)
+}
+
+// ========================================
+// USAGE EXAMPLES
+// ========================================
+//
+// In your reconciler:
+//
+// func (r *{{CRD_KIND}}Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+//     metrics.StartReconciliation()
+//     defer metrics.FinishReconciliation()
+//
+//     env := os.Getenv("ENVIRONMENT") // or from config
+//     svc := "{{CONTROLLER_NAME}}"
+//
+//     // Phase 1: Validation
+//     startValidate := time.Now()
+//     if err := r.validate(ctx, req); err != nil {
+//         metrics.RecordError("validation_error", "validate", env, svc)
+//         metrics.RecordReconciliation("error", env, svc)
+//         return ctrl.Result{}, err
+//     }
+//     metrics.RecordReconciliationPhase("validate", time.Since(startValidate).Seconds(), env, svc)
+//
+//     // Phase 2: Processing
+//     startProcess := time.Now()
+//     if err := r.process(ctx, req); err != nil {
+//         metrics.RecordError("processing_error", "process", env, svc)
+//         metrics.RecordReconciliation("error", env, svc)
+//         return ctrl.Result{}, err
+//     }
+//     metrics.RecordReconciliationPhase("process", time.Since(startProcess).Seconds(), env, svc)
+//
+//     // Success
+//     metrics.RecordReconciliation("success", env, svc)
+//     return ctrl.Result{}, nil
+// }
+//
+// ========================================
+// PROMETHEUS QUERIES
+// ========================================
+//
+// Reconciliation rate (per second):
+//   rate({{CONTROLLER_NAME}}_reconciliation_total[5m])
+//
+// P95 reconciliation duration by phase:
+//   histogram_quantile(0.95, rate({{CONTROLLER_NAME}}_reconciliation_duration_seconds_bucket[5m]))
+//
+// Error rate by phase:
+//   rate({{CONTROLLER_NAME}}_errors_total[5m]) / rate({{CONTROLLER_NAME}}_reconciliation_total[5m])
+//
+// Active reconciliations (current):
+//   {{CONTROLLER_NAME}}_active_reconciliations
+//
+// ========================================
+
