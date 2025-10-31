@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gateway
-  namespace: kubernaut-gateway
+  namespace: kubernaut-system
   labels:
     app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: gateway
@@ -93,12 +93,24 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
+            - name: rego-policy
+              mountPath: /config.app/gateway/policies
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
         - name: config
           configMap:
             name: gateway-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+        - name: rego-policy
+          configMap:
+            name: gateway-config
+            items:
+              - key: priority.rego
+                path: priority.rego
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
