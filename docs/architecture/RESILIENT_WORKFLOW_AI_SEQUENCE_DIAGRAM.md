@@ -1,9 +1,16 @@
 # Resilient Workflow Engine AI Integration Sequence Diagram (V1)
 
-**Document Version**: 1.0 (SUPERSEDED)
-**Date**: January 2025
+**Document Version**: 1.1 (SUPERSEDED)
+**Date**: October 31, 2025
 **Purpose**: V1 sequence diagram showing HolmesGPT-only AI-powered failure handling and recovery interactions
 **Status**: ⚠️ **SUPERSEDED - HISTORICAL REFERENCE ONLY**
+
+## 📋 Version History
+
+| Version | Date | Changes | Status |
+|---------|------|---------|--------|
+| 1.1 | Oct 31, 2025 | Updated diagram: Kubernetes Executor → Tekton Pipelines (per ADR-023, ADR-025) | SUPERSEDED |
+| 1.0 | Jan 2025 | Initial version | SUPERSEDED |
 
 ---
 
