@@ -33,7 +33,7 @@ type Client interface {
 	SemanticSearch(ctx context.Context, params *models.SemanticSearchParams) ([]*models.IncidentEvent, []float32, error)
 }
 
-// PostgresClient provides read-only access to remediation_audit table
+// PostgresClient provides read-only access to resource_action_traces table (DD-SCHEMA-001)
 // BR-CONTEXT-001: Historical Context Query - core database client
 // BR-CONTEXT-011: Schema Alignment - uses authoritative schema from Data Storage Service
 type PostgresClient struct {

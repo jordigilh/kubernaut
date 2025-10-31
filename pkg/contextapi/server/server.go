@@ -605,7 +605,7 @@ func getIntOrDefault(s string, def int) int {
 // Architecture Alignment:
 // - Read-only operations (no writes)
 // - Integrates with Router and AggregationService from Day 6
-// - Queries remediation_audit table via dbClient
+// - Queries resource_action_traces table via dbClient (DD-SCHEMA-001)
 // - Comprehensive error handling
 // - Performance tracking via Prometheus
 //
