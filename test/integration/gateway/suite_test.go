@@ -41,6 +41,10 @@ var _ = BeforeSuite(func() {
 	// Initialize shared K8s client for cleanup
 	suiteK8sClient = SetupK8sTestClient(suiteCtx)
 	Expect(suiteK8sClient).ToNot(BeNil(), "Failed to setup K8s client for suite")
+
+	// Ensure kubernaut-system namespace exists for fallback tests
+	// This namespace is used when Gateway receives signals for non-existent namespaces
+	EnsureTestNamespace(suiteCtx, suiteK8sClient, "kubernaut-system")
 })
 
 var _ = AfterSuite(func() {
