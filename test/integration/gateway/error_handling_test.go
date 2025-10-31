@@ -268,13 +268,15 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		// ✅ No alerts lost due to brief downtime
 	})
 
-	It("handles namespace not found by using default namespace fallback", func() {
+	It("handles namespace not found by using kubernaut-system namespace fallback", func() {
 		// BUSINESS SCENARIO: Alert references non-existent namespace
-		// Expected: CRD created in default namespace (graceful fallback)
+		// Expected: CRD created in kubernaut-system namespace (graceful fallback)
 		//
 		// WHY THIS MATTERS: Invalid namespace shouldn't block remediation
-		// Example: Namespace deleted after alert fired
+		// Example: Namespace deleted after alert fired, or cluster-scoped signals (NodeNotReady)
 		// Fallback ensures alert still processed
+		//
+		// WHY kubernaut-system? Proper home for Kubernaut infrastructure, not "default"
 
 		nonExistentNamespace := fmt.Sprintf("does-not-exist-%d", time.Now().UnixNano())
 
@@ -304,28 +306,45 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			"Gateway should process alert despite invalid namespace (201 Created)")
 		resp.Body.Close()
 
-		By("Gateway creates CRD in default namespace as fallback")
+		By("Gateway creates CRD in kubernaut-system namespace as fallback")
+		var createdCRD *remediationv1alpha1.RemediationRequest
 		Eventually(func() bool {
-			// Check both the specified namespace and default namespace
+			// Check both the specified namespace and kubernaut-system namespace
 			rrList := &remediationv1alpha1.RemediationRequestList{}
 
 			// Try non-existent namespace first
 			err1 := k8sClient.Client.List(context.Background(), rrList,
 				client.InNamespace(nonExistentNamespace))
 			if err1 == nil && len(rrList.Items) > 0 {
+				createdCRD = &rrList.Items[0]
 				return true
 			}
 
-			// Fall back to default namespace
+			// Fall back to kubernaut-system namespace
 			err2 := k8sClient.Client.List(context.Background(), rrList,
-				client.InNamespace("default"))
-			return err2 == nil && len(rrList.Items) > 0
+				client.InNamespace("kubernaut-system"))
+			if err2 == nil && len(rrList.Items) > 0 {
+				createdCRD = &rrList.Items[0]
+				return true
+			}
+			return false
 		}, 10*time.Second).Should(BeTrue(),
 			"CRD created in fallback namespace")
+
+		By("Verifying cluster-scoped labels are set")
+		Expect(createdCRD).ToNot(BeNil(), "CRD should be created")
+		Expect(createdCRD.Namespace).To(Equal("kubernaut-system"),
+			"CRD should be in kubernaut-system namespace")
+		Expect(createdCRD.Labels["kubernaut.io/cluster-scoped"]).To(Equal("true"),
+			"CRD should have cluster-scoped label")
+		Expect(createdCRD.Labels["kubernaut.io/origin-namespace"]).To(Equal(nonExistentNamespace),
+			"CRD should preserve origin namespace in label")
 
 		// BUSINESS OUTCOME VERIFIED:
 		// ✅ Invalid namespace doesn't block remediation
 		// ✅ Graceful fallback ensures alert processed
+		// ✅ CRD placed in proper infrastructure namespace (kubernaut-system)
+		// ✅ Origin namespace preserved in labels for audit/troubleshooting
 		// ✅ Operator can later investigate and fix
 	})
 })
