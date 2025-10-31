@@ -36,6 +36,10 @@ type Metrics struct {
 	// HTTP metrics
 	HTTPRequests *prometheus.CounterVec   // HTTP requests by method, path, status
 	HTTPDuration *prometheus.HistogramVec // HTTP request duration
+
+	// DD-005: Store registry for custom metrics handlers
+	// This allows the server to expose the custom registry at /metrics endpoint
+	registry prometheus.Gatherer // Interface for collecting metrics
 }
 
 // NewMetrics creates and registers all Prometheus metrics with the default registry
@@ -45,8 +49,18 @@ func NewMetrics(namespace, subsystem string) *Metrics {
 
 // NewMetricsWithRegistry creates and registers all Prometheus metrics with a custom registry
 // This is useful for testing to avoid duplicate registration panics
+// DD-005: Accepts prometheus.Registerer, tries to extract Gatherer for /metrics endpoint
 func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.Registerer) *Metrics {
 	factory := promauto.With(registerer)
+
+	// DD-005: Try to get Gatherer from Registerer (works if it's a *Registry)
+	var gatherer prometheus.Gatherer
+	if reg, ok := registerer.(prometheus.Gatherer); ok {
+		gatherer = reg
+	} else {
+		// Fallback to default gatherer if conversion fails
+		gatherer = prometheus.DefaultGatherer
+	}
 
 	return &Metrics{
 		QueriesTotal: factory.NewCounterVec(
@@ -181,7 +195,17 @@ func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.R
 			},
 			[]string{"method", "path"},
 		),
+
+		// DD-005: Store registry for /metrics endpoint
+		registry: gatherer,
 	}
+}
+
+// Gatherer returns the Prometheus Gatherer for this metrics instance
+// DD-005: This allows the server to expose the custom registry at /metrics endpoint
+// Used by promhttp.HandlerFor() to serve metrics from the correct registry
+func (m *Metrics) Gatherer() prometheus.Gatherer {
+	return m.registry
 }
 
 // RecordQuerySuccess records a successful query
