@@ -133,7 +133,7 @@ sequenceDiagram
     participant HGP as HolmesGPT
     participant CTX as Context API
     participant W as Workflow
-    participant E as Executor
+    participant TEK as Tekton Pipelines
     participant S as Storage
 
     SRC->>G: Signal webhook
@@ -151,8 +151,9 @@ sequenceDiagram
 
     HGP->>AI: Investigation results + recommendations + tracking ID
     AI->>W: Validated recommendations + tracking ID
-    W->>E: Validated actions + tracking ID
-    E->>S: Execution results + tracking ID
+    W->>TEK: Create PipelineRun + tracking ID
+    Note over TEK: Tekton Pipelines executes<br/>action containers via PipelineRuns
+    TEK->>S: Execution results + tracking ID
 
     Note over G,S: Complete audit trail with historical intelligence tracking
 ```

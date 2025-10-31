@@ -247,7 +247,7 @@ sequenceDiagram
     participant RP as Remediation<br/>Processor
     participant AI as AI Analysis<br/>Service
     participant WF as Workflow<br/>Execution
-    participant EX as K8s<br/>Executor
+    participant TEK as Tekton<br/>Pipelines
     participant K8S as Kubernetes<br/>Cluster
     participant ORCH as Remediation<br/>Orchestrator
     participant NOT as Notification<br/>Service
@@ -421,9 +421,7 @@ This diagram shows the detailed workflow execution flow with step orchestration 
 sequenceDiagram
     participant WFC as WorkflowExecution<br/>Controller
     participant ST as Data<br/>Storage
-    participant EX1 as K8s Executor<br/>Step 1
-    participant EX2 as K8s Executor<br/>Step 2
-    participant EX3 as K8s Executor<br/>Step 3
+    participant TEK as Tekton<br/>Pipelines
     participant K8S as Kubernetes<br/>Cluster
     participant ORCC as RemediationOrchestrator<br/>Controller
 
