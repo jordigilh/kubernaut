@@ -37,7 +37,7 @@ type Server struct {
 	metrics        *metrics.Metrics
 	logger         *zap.Logger
 	httpServer     *http.Server
-	
+
 	// DD-007: Graceful shutdown coordination flag
 	// Thread-safe flag for readiness probe coordination during shutdown
 	isShuttingDown atomic.Bool
@@ -122,10 +122,12 @@ func NewServerWithMetrics(
 	}
 
 	// 3. Create cached executor (Day 4)
+	// DD-005: Pass metrics to executor for cache/query observability
 	executorCfg := &query.Config{
-		DB:    dbClient.GetDB(),
-		Cache: cacheManager,
-		TTL:   5 * time.Minute,
+		DB:      dbClient.GetDB(),
+		Cache:   cacheManager,
+		TTL:     5 * time.Minute,
+		Metrics: m, // DD-005: Wire metrics for cache hits/misses, query duration
 	}
 	cachedExecutor, err := query.NewCachedExecutor(executorCfg)
 	if err != nil {
@@ -178,7 +180,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/health/live", s.handleLiveness)
 
 	// Metrics endpoint
-	r.Handle("/metrics", promhttp.Handler())
+	// DD-005: Use custom registry to expose contextapi metrics (not default registry)
+	// This ensures tests see contextapi_* metrics, not just global metrics
+	r.Handle("/metrics", promhttp.HandlerFor(s.metrics.Gatherer(), promhttp.HandlerOpts{}))
 
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
