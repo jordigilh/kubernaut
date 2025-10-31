@@ -1,8 +1,8 @@
 # Fallback Namespace Change Impact Analysis
 
-**Date**: October 31, 2025  
-**Change**: Fallback namespace changed from `default` to `kubernaut-system`  
-**File**: `pkg/gateway/processing/crd_creator.go:233-263`  
+**Date**: October 31, 2025
+**Change**: Fallback namespace changed from `default` to `kubernaut-system`
+**File**: `pkg/gateway/processing/crd_creator.go:233-263`
 **Confidence**: 95%
 
 ---
@@ -38,9 +38,9 @@ rr.Labels["kubernaut.io/cluster-scoped"] = "true"
 ### **IMPACTED TESTS** (1 test requires update)
 
 #### **1. Integration Test: Namespace Fallback**
-**File**: `test/integration/gateway/error_handling_test.go:271-330`  
-**Test**: `"handles namespace not found by using default namespace fallback"`  
-**Impact**: ⚠️ **BREAKING** - Test expects CRD in `default`, but will be in `kubernaut-system`  
+**File**: `test/integration/gateway/error_handling_test.go:271-330`
+**Test**: `"handles namespace not found by using default namespace fallback"`
+**Impact**: ⚠️ **BREAKING** - Test expects CRD in `default`, but will be in `kubernaut-system`
 **Action**: ✅ **UPDATE REQUIRED**
 
 **Current Test Logic**:
@@ -74,14 +74,14 @@ if len(rrList.Items) > 0 {
 ### **NON-IMPACTED TESTS** (tests that use "default" but are NOT affected)
 
 #### **1. Helper Function Default Namespace**
-**File**: `test/integration/gateway/helpers.go:403-406`  
-**Code**: `if opts.Namespace == "" { opts.Namespace = "default" }`  
-**Impact**: ✅ **NO IMPACT** - This is for test alert generation, not fallback logic  
+**File**: `test/integration/gateway/helpers.go:403-406`
+**Code**: `if opts.Namespace == "" { opts.Namespace = "default" }`
+**Impact**: ✅ **NO IMPACT** - This is for test alert generation, not fallback logic
 **Reason**: Tests explicitly set namespace; fallback only triggers for non-existent namespaces
 
 #### **2. Context API Aggregation Tests**
-**File**: `test/integration/contextapi/04_aggregation_test.go`  
-**Impact**: ✅ **NO IMPACT** - Tests use `default` namespace for test data, not fallback  
+**File**: `test/integration/contextapi/04_aggregation_test.go`
+**Impact**: ✅ **NO IMPACT** - Tests use `default` namespace for test data, not fallback
 **Reason**: These tests create valid `default` namespace with test incidents
 
 #### **3. Notification Service Tests**
@@ -89,23 +89,23 @@ if len(rrList.Items) > 0 {
 - `test/integration/notification/edge_cases_v31_test.go:26`
 - `test/integration/notification/notification_delivery_v31_test.go:29`
 
-**Impact**: ✅ **NO IMPACT** - Tests use `default` namespace for test setup  
+**Impact**: ✅ **NO IMPACT** - Tests use `default` namespace for test setup
 **Reason**: These tests don't trigger namespace fallback logic
 
 #### **4. Priority Classification Unit Test**
-**File**: `test/unit/gateway/priority_classification_test.go:188`  
-**Code**: `Entry("unknown namespace → safe default (treat as production)")`  
-**Impact**: ✅ **NO IMPACT** - Test description only, not checking fallback namespace  
+**File**: `test/unit/gateway/priority_classification_test.go:188`
+**Code**: `Entry("unknown namespace → safe default (treat as production)")`
+**Impact**: ✅ **NO IMPACT** - Test description only, not checking fallback namespace
 **Reason**: This tests environment classification, not CRD namespace placement
 
 #### **5. Error Propagation Test**
-**File**: `test/integration/gateway/priority1_error_propagation_test.go:200`  
-**Impact**: ✅ **NO IMPACT** - Uses `default` namespace for test alert  
+**File**: `test/integration/gateway/priority1_error_propagation_test.go:200`
+**Impact**: ✅ **NO IMPACT** - Uses `default` namespace for test alert
 **Reason**: Test creates valid `default` namespace; fallback not triggered
 
 #### **6. Metrics Integration Test (CORRUPTED)**
-**File**: `test/integration/gateway/metrics_integration_test.go.CORRUPTED`  
-**Impact**: ✅ **NO IMPACT** - File is corrupted and not in test suite  
+**File**: `test/integration/gateway/metrics_integration_test.go.CORRUPTED`
+**Impact**: ✅ **NO IMPACT** - File is corrupted and not in test suite
 **Reason**: File marked as CORRUPTED, not executed
 
 ---
@@ -113,8 +113,8 @@ if len(rrList.Items) > 0 {
 ## 🔧 **Implementation Changes Required**
 
 ### **Change 1: Update Integration Test**
-**File**: `test/integration/gateway/error_handling_test.go`  
-**Lines**: 271-330  
+**File**: `test/integration/gateway/error_handling_test.go`
+**Lines**: 271-330
 **Action**: Update test to check `kubernaut-system` instead of `default`
 
 **Changes**:
@@ -124,7 +124,7 @@ if len(rrList.Items) > 0 {
 4. Add label validation for `kubernaut.io/cluster-scoped` and `kubernaut.io/origin-namespace`
 
 ### **Change 2: Ensure kubernaut-system Namespace Exists**
-**File**: `test/integration/gateway/helpers.go` or test setup  
+**File**: `test/integration/gateway/helpers.go` or test setup
 **Action**: Ensure `kubernaut-system` namespace exists in Kind cluster
 
 **Implementation**:

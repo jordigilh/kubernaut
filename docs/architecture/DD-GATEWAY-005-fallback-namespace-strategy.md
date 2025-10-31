@@ -1,8 +1,8 @@
 # DD-GATEWAY-005: Fallback Namespace Strategy for Cluster-Scoped Signals
 
 ## Status
-**✅ APPROVED** (2025-10-31)  
-**Last Reviewed**: 2025-10-31  
+**✅ APPROVED** (2025-10-31)
+**Last Reviewed**: 2025-10-31
 **Confidence**: 95%
 
 ---
@@ -100,7 +100,7 @@ When the Gateway service receives a signal (alert or event) for a Kubernetes nam
 
 ### Primary Implementation Files
 
-**File**: `pkg/gateway/processing/crd_creator.go`  
+**File**: `pkg/gateway/processing/crd_creator.go`
 **Function**: `CreateRemediationRequest()`
 
 **Changes**:
@@ -119,7 +119,7 @@ if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), 
 // After (v2.22+)
 if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), "not found") {
     rr.Namespace = "kubernaut-system"  // ✅ New fallback
-    
+
     // Add labels to preserve origin namespace information
     rr.Labels["kubernaut.io/origin-namespace"] = signal.Namespace
     rr.Labels["kubernaut.io/cluster-scoped"] = "true"
@@ -179,7 +179,7 @@ if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), 
 ## Validation Results
 
 ### Test Coverage
-**File**: `test/integration/gateway/error_handling_test.go`  
+**File**: `test/integration/gateway/error_handling_test.go`
 **Test**: `handles namespace not found by using kubernaut-system namespace fallback`
 
 **Validation Points**:
@@ -267,8 +267,8 @@ Expect(crd.Labels["kubernaut.io/origin-namespace"]).To(Equal(originalNamespace))
 
 ---
 
-**Document Maintainer**: Kubernaut Architecture Team  
-**Created**: 2025-10-31  
-**Status**: ✅ **APPROVED AND IMPLEMENTED**  
+**Document Maintainer**: Kubernaut Architecture Team
+**Created**: 2025-10-31
+**Status**: ✅ **APPROVED AND IMPLEMENTED**
 **Version**: 1.0
 
