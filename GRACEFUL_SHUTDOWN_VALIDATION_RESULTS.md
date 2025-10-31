@@ -1,9 +1,9 @@
 # Graceful Shutdown Manual Validation Results
 
-**Date**: October 30, 2025  
-**Cluster**: Kind (kubernaut-test)  
-**Gateway Version**: localhost/kubernaut-gateway:graceful-shutdown  
-**Test Duration**: ~2 minutes  
+**Date**: October 30, 2025
+**Cluster**: Kind (kubernaut-test)
+**Gateway Version**: localhost/kubernaut-gateway:graceful-shutdown
+**Test Duration**: ~2 minutes
 
 ---
 
@@ -98,7 +98,7 @@ Gateway Pods (3 replicas)
 Rolling Update Triggered
     ↓
 Old Pod 1: Receives SIGTERM → Completes requests → Exits
-Old Pod 2: Receives SIGTERM → Completes requests → Exits  
+Old Pod 2: Receives SIGTERM → Completes requests → Exits
 Old Pod 3: Receives SIGTERM → Completes requests → Exits
     ↓
 New Pod 1: Started → Ready → Handles requests
@@ -168,8 +168,8 @@ Result: 210/210 CRDs created (100% success)
 
 ---
 
-**Validated By**: AI Assistant  
-**Date**: October 30, 2025  
-**Cluster**: Kind (kubernaut-test)  
+**Validated By**: AI Assistant
+**Date**: October 30, 2025
+**Cluster**: Kind (kubernaut-test)
 **Confidence**: 95%
 

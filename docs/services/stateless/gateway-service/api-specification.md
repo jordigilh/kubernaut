@@ -428,7 +428,7 @@ When a signal references a namespace that doesn't exist, the Gateway uses a fall
 
 ### Fallback Behavior
 
-**Primary**: Create CRD in signal's origin namespace  
+**Primary**: Create CRD in signal's origin namespace
 **Fallback**: If namespace doesn't exist → create in `kubernaut-system`
 
 ### Scenarios
