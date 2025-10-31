@@ -422,7 +422,7 @@ Each signal goes through:
 
 ## 🏷️ Namespace Fallback Strategy
 
-**Design Decision**: [DD-GATEWAY-005](../../architecture/DD-GATEWAY-005-fallback-namespace-strategy.md)
+**Design Decision**: [DD-GATEWAY-005](../../architecture/decisions/DD-GATEWAY-007-fallback-namespace-strategy.md)
 
 When a signal references a namespace that doesn't exist, the Gateway uses a fallback strategy to ensure cluster-scoped signals are handled gracefully:
 
@@ -479,7 +479,7 @@ kubectl get remediationrequests -n kubernaut-system \
 - **Cluster-Scoped Support**: Handles cluster-level alerts (NodeNotReady, etc.) gracefully
 - **RBAC Alignment**: Operators already have access to `kubernaut-system`
 
-**See**: [DD-GATEWAY-005](../../architecture/DD-GATEWAY-005-fallback-namespace-strategy.md) for complete analysis
+**See**: [DD-GATEWAY-005](../../architecture/decisions/DD-GATEWAY-007-fallback-namespace-strategy.md) for complete analysis
 
 ---
 

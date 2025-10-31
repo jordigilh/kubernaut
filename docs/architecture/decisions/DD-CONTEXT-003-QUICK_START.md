@@ -21,7 +21,7 @@
 ### If You're Working on HolmesGPT API (3 days)
 
 **Day 1: Plan + RED Phase**
-1. ✅ Read [DD-CONTEXT-001](DD-CONTEXT-001-Context-Enrichment-Placement.md)
+1. ✅ Read [DD-CONTEXT-001](DD-CONTEXT-003-Context-Enrichment-Placement.md)
 2. ✅ Update implementation plan with BR-HAPI-031 to BR-HAPI-035
 3. ✅ Write 15 unit tests (must fail initially)
 
@@ -47,7 +47,7 @@
 ### If You're Working on Context API (1 day)
 
 **Day 1: Documentation Only**
-1. ✅ Read [DD-CONTEXT-001](DD-CONTEXT-001-Context-Enrichment-Placement.md)
+1. ✅ Read [DD-CONTEXT-001](DD-CONTEXT-003-Context-Enrichment-Placement.md)
 2. ✅ Update `context-api/README.md` with tool call section
 3. ✅ Create `context-api/docs/examples/TOOL_CALL_EXAMPLE.md`
 4. ✅ Update `context-api/docs/METRICS.md` with tool call metrics
@@ -513,8 +513,8 @@ The Context API supports LLM-driven tool call patterns. HolmesGPT API can invoke
 ## 📚 Reference Documents
 
 **Must Read**:
-1. [DD-CONTEXT-001: Context Enrichment Placement](DD-CONTEXT-001-Context-Enrichment-Placement.md) - Architectural decision
-2. [DD-CONTEXT-002: BR-AI-002 Ownership](DD-CONTEXT-002-BR-AI-002-Ownership.md) - BR ownership decision
+1. [DD-CONTEXT-001: Context Enrichment Placement](DD-CONTEXT-003-Context-Enrichment-Placement.md) - Architectural decision
+2. [DD-CONTEXT-002: BR-AI-002 Ownership](DD-CONTEXT-004-BR-AI-002-Ownership.md) - BR ownership decision
 3. [DD-CONTEXT-001-ACTION_PLAN](DD-CONTEXT-001-ACTION_PLAN.md) - Detailed action plan
 
 **Optional**:
