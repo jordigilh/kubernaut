@@ -158,7 +158,7 @@ func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.R
 			prometheus.HistogramOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "database_duration_seconds",
+				Name:      "db_query_duration_seconds",
 				Help:      "Database query duration in seconds",
 				Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1.0},
 			},
@@ -170,9 +170,9 @@ func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.R
 				Namespace: namespace,
 				Subsystem: subsystem,
 				Name:      "errors_total",
-				Help:      "Total number of errors by category and operation",
+				Help:      "Total number of errors by type and operation",
 			},
-			[]string{"category", "operation"},
+			[]string{"type", "operation"},
 		),
 
 		HTTPRequests: factory.NewCounterVec(
@@ -189,7 +189,7 @@ func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.R
 			prometheus.HistogramOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "http_request_duration_seconds",
+				Name:      "http_duration_seconds",
 				Help:      "HTTP request duration in seconds",
 				Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1.0, 2.5, 5.0},
 			},
@@ -258,8 +258,8 @@ func (m *Metrics) RecordDatabaseQuery(queryType string, duration float64, succes
 }
 
 // RecordError records an error
-func (m *Metrics) RecordError(category, operation string) {
-	m.ErrorsTotal.WithLabelValues(category, operation).Inc()
+func (m *Metrics) RecordError(errorType, operation string) {
+	m.ErrorsTotal.WithLabelValues(errorType, operation).Inc()
 }
 
 // RecordHTTPRequest records an HTTP request
