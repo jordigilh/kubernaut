@@ -45,7 +45,7 @@ func main() {
 		zap.String("config_path", *configPath))
 
 	// Load configuration
-	cfg, err := config.LoadConfig(*configPath)
+	cfg, err := config.LoadFromFile(*configPath)
 	if err != nil {
 		logger.Fatal("Failed to load configuration",
 			zap.Error(err),
