@@ -353,16 +353,16 @@
   - Created `pkg/contextapi/config/config_test.go` (230 lines)
   - 10/10 unit tests passing ✅
   - LoadFromFile(), Validate(), defaults, helper methods
-- ✅ **Graceful Shutdown**: COMPLETE - DD-007 fully implemented
-  - Modified `pkg/contextapi/server/server.go` (799 lines)
-  - Added `isShuttingDown atomic.Bool` for readiness coordination
-  - Updated `handleReadiness()` to return 503 during shutdown
-  - Implemented 4-step `Shutdown()` method (DD-007 pattern):
-    - STEP 1: Set shutdown flag (readiness → 503)
-    - STEP 2: Wait 5s for Kubernetes endpoint propagation
-    - STEP 3: Drain in-flight HTTP connections
-    - STEP 4: Close external resources (database, cache)
-  - Created `test/integration/contextapi/11_graceful_shutdown_test.go` (335 lines)
+- ✅ **Graceful Shutdown**: COMPLETE - DD-007 fully implemented (TDD: RED-GREEN-REFACTOR)
+  - **RED Phase**: Created `test/integration/contextapi/11_graceful_shutdown_test.go` (349 lines, 6 tests)
+  - **GREEN Phase**: Implemented minimal DD-007 pattern in `pkg/contextapi/server/server.go`
+    - Added `isShuttingDown atomic.Bool` for readiness coordination
+    - Updated `handleReadiness()` to return 503 during shutdown
+    - Implemented 4-step `Shutdown()` method (DD-007 pattern)
+  - **REFACTOR Phase**: Extracted methods and constants for clarity (807 lines)
+    - Constant: `endpointRemovalPropagationDelay` (5s)
+    - Step methods: `shutdownStep1SetFlag()`, `shutdownStep2WaitForPropagation()`, `shutdownStep3DrainConnections()`, `shutdownStep4CloseResources()`
+    - Helper methods: `closeDatabase()`, `closeCache()`
   - 6/6 integration tests passing ✅
   - **Result**: Zero request failures during rolling updates
   - **See**: [DD-007: Kubernetes-Aware Graceful Shutdown](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)
