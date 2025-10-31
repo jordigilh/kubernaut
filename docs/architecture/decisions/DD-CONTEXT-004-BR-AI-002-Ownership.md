@@ -1,9 +1,9 @@
-# DD-CONTEXT-002: BR-AI-002 Ownership - Keep in AIAnalysis or Move to HolmesGPT API?
+# DD-CONTEXT-004: BR-AI-002 Ownership - Keep in AIAnalysis or Move to HolmesGPT API?
 
 **Date**: 2025-10-22
 **Status**: ✅ **DECISION: Keep BR-AI-002 in AIAnalysis (Revised Scope)**
 **Confidence**: 85%
-**Related**: DD-CONTEXT-001 (Context Enrichment Placement)
+**Related**: DD-CONTEXT-003 (Context Enrichment Placement)
 
 ---
 
