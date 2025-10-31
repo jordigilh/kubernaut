@@ -230,26 +230,31 @@ func (c *CRDCreator) CreateRemediationRequest(
 			return existing, nil
 		}
 
-		// Check if namespace doesn't exist - fall back to default namespace
+		// Check if namespace doesn't exist - fall back to kubernaut-system namespace
+		// This handles cluster-scoped signals (e.g., NodeNotReady) that don't have a namespace
 		if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), "not found") {
-			c.logger.Warn("Target namespace not found, creating CRD in default namespace as fallback",
+			c.logger.Warn("Target namespace not found, creating CRD in kubernaut-system as fallback",
 				zap.String("original_namespace", signal.Namespace),
-				zap.String("fallback_namespace", "default"),
+				zap.String("fallback_namespace", "kubernaut-system"),
 				zap.String("crd_name", crdName))
 
-			// Update namespace to default
-			rr.Namespace = "default"
+			// Update namespace to kubernaut-system (proper home for Kubernaut infrastructure)
+			rr.Namespace = "kubernaut-system"
+			
+			// Add labels to preserve origin namespace information for cluster-scoped signals
+			rr.Labels["kubernaut.io/origin-namespace"] = signal.Namespace
+			rr.Labels["kubernaut.io/cluster-scoped"] = "true"
 
-			// Retry creation in default namespace
+			// Retry creation in kubernaut-system namespace
 			if err := c.k8sClient.CreateRemediationRequest(ctx, rr); err != nil {
 				c.metrics.CRDCreationErrors.WithLabelValues("fallback_failed").Inc()
 				return nil, fmt.Errorf("failed to create CRD in fallback namespace: %w", err)
 			}
 
 			// Success with fallback
-			c.logger.Info("Created RemediationRequest CRD in default namespace (fallback)",
+			c.logger.Info("Created RemediationRequest CRD in kubernaut-system (fallback for cluster-scoped signal)",
 				zap.String("name", crdName),
-				zap.String("namespace", "default"),
+				zap.String("namespace", "kubernaut-system"),
 				zap.String("fingerprint", signal.Fingerprint),
 				zap.String("original_ns", signal.Namespace))
 
