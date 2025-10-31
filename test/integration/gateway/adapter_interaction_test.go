@@ -287,4 +287,3 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 		})
 	})
 })
-

@@ -292,4 +292,3 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 		})
 	})
 })
-
