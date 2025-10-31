@@ -34,7 +34,7 @@ During implementation planning for Context API (Phase 2 - Intelligence Layer), t
 **V1 Architecture** (from [APPROVED_MICROSERVICES_ARCHITECTURE.md](../../../architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)):
 
 ```
-AIAnalysis Service (Phase 4)
+AIAnalysis Controller (Phase 4)
     ↓ Calls
 HolmesGPT API Service (Phase 2)
     ↓ Orchestrates LLM + Tools
@@ -73,14 +73,14 @@ LLM: "Pattern detected: memory limit too low. Recommend: Increase to 1Gi"
 |---------|---------------|----------|-------------------|
 | **Context API** | Provide historical data | ❌ No | N/A (is the endpoint) |
 | **HolmesGPT API** | LLM tool orchestration | ✅ Yes (orchestrates) | ✅ Yes (as tool) |
-| **AIAnalysis Service** | CRD-based AI workflow | ❌ No (delegates to HolmesGPT) | ❌ No (HolmesGPT calls it) |
+| **AIAnalysis Controller** | CRD-based AI workflow | ❌ No (delegates to HolmesGPT) | ❌ No (HolmesGPT calls it) |
 | **WorkflowExecution** | Workflow orchestration | ❌ No | ❌ No (reads AIAnalysis CRD) |
 
 **Single Responsibility Principle**:
 - Context API: Data retrieval ✅
 - HolmesGPT API: Tool orchestration ✅
 - LLM: Reasoning and analysis ✅
-- AIAnalysis Service: CRD lifecycle management ✅
+- AIAnalysis Controller: CRD lifecycle management ✅
 
 **If Context API were RAG** (❌ Wrong):
 - Context API: Data retrieval + AI analysis ❌ (violates SRP)
@@ -145,7 +145,7 @@ def investigate_pod_crash(signal):
    - Cannot compose with other tools
 
 2. **❌ Service Responsibility Overlap**
-   - Context API does analysis → Overlaps with AIAnalysis Service
+   - Context API does analysis → Overlaps with AIAnalysis Controller
    - HolmesGPT API receives pre-analyzed data → Redundant analysis
    - Two services doing the same job (AI analysis)
 
@@ -175,7 +175,7 @@ def investigate_pod_crash(signal):
 1. **Clear Service Boundaries**
    - Context API: Data retrieval only
    - HolmesGPT API: LLM orchestration
-   - AIAnalysis Service: CRD management
+   - AIAnalysis Controller: CRD management
    - No service overlap
 
 2. **LLM Autonomy Preserved**
@@ -240,7 +240,7 @@ def investigate_pod_crash(signal):
 
 ### Phase 4: AI Integration
 
-**AIAnalysis Service** (CRD Controller):
+**AIAnalysis Controller** (CRD Controller):
 - Watches AIAnalysis CRD
 - Calls HolmesGPT API /investigate
 - HolmesGPT API orchestrates LLM + tools
