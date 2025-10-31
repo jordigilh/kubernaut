@@ -1050,7 +1050,7 @@ sequenceDiagram
     participant AP as RemediationProcessing Controller
     participant AI as AIAnalysis Controller
     participant WF as Workflow Controller
-    participant EX as Executor Controller
+    participant TEK as Tekton Pipelines
     participant AR as RemediationRequest Controller
     participant K8S as Kubernetes API
 
@@ -1089,7 +1089,7 @@ sequenceDiagram
     participant AP as Remediation Processor
     participant AI as AI Analysis
     participant WF as Workflow
-    participant EX as Executor
+    participant TEK as Tekton Pipelines
     participant ST as Storage Service
     participant CTX as Context Service
     participant NOT as Notification Service
