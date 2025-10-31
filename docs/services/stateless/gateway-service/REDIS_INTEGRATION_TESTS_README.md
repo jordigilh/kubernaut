@@ -226,7 +226,7 @@ redis-cli -h localhost -p 6379 ping
 ## 📚 **Related Documentation**
 
 - **Migration Assessment**: `REDIS_TIMEOUT_TEST_MIGRATION_ASSESSMENT.md`
-- **Day 3 Status**: `DAY3_FINAL_STATUS.md`
+- **Day 3 Status**: `docs/services/stateless/gateway-service/DAY3_FINAL_STATUS.md`
 - **TDD Methodology**: `TDD_REFACTOR_CLARIFICATION.md`
 - **OCP Redis Deployment**: `deploy/context-api/redis-deployment.yaml`
 - **Port-Forward Setup**: `scripts/setup-port-forwarding.sh`
