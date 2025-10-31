@@ -65,3 +65,7 @@ gateway-arm64
 /cmd/*/*
 !/cmd/*/*.go
 !/cmd/*/main.go
+
+# Context API ephemeral development documents
+CONTEXT_API_DEVELOPMENT_KICKOFF.md
+CONTEXT_API_DEFERRED_NEXT_STEPS.md
