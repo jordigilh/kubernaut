@@ -1,8 +1,9 @@
 # Context API Service - Integration Points
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
+**Version**: 1.1
+**Last Updated**: October 31, 2025
 **Service Type**: Stateless HTTP API Service (Read-Only)
+**Architecture Decision**: [DD-CONTEXT-001](../../architecture/decisions/DD-CONTEXT-001-Context-Enrichment-Placement.md) - LLM-Driven Tool Call Pattern
 
 ---
 
@@ -12,8 +13,10 @@
 
 **Use Case**: Historical context for workflow failure recovery analysis
 **Business Requirement**: BR-WF-RECOVERY-011
-**Integration Pattern**: Query Context API → Store in RemediationProcessing.status → RR creates AIAnalysis with all contexts
+**Integration Pattern**: Query Context API → Store in RemediationProcessing.status → Remediation Orchestrator creates AIAnalysis CRD with all contexts
 **Design Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Alternative 2)
+
+**Note**: Per [DD-CONTEXT-001](../../architecture/decisions/DD-CONTEXT-001-Context-Enrichment-Placement.md), AIAnalysis Controller does NOT call Context API directly. Context enrichment happens via HolmesGPT API tool calls (see Section 2 below).
 
 #### Recovery Context Integration (Alternative 2)
 
@@ -172,22 +175,141 @@ func (r *RemediationProcessingReconciler) enrichRecoveryContext(
 
 ### **2. HolmesGPT API Service** (Port 8080) 🔵 **SECONDARY CONSUMER**
 
-**Use Case**: Dynamic context for AI investigations
+**Use Case**: Dynamic context for AI investigations via LLM tool calls
+**Business Requirements**: BR-HAPI-046 to BR-HAPI-050
+**Integration Pattern**: LLM-driven tool call (NOT direct HTTP from AIAnalysis Controller)
+**Architecture Decision**: [DD-CONTEXT-001](../../architecture/decisions/DD-CONTEXT-001-Context-Enrichment-Placement.md) - Approach B (LLM-Driven Tool Call Pattern)
 
+#### LLM-Driven Tool Call Pattern
+
+**Flow**:
+```
+AIAnalysis Controller
+    ↓ (send investigation request)
+HolmesGPT API Service
+    ↓ (LLM decides if context needed)
+LLM (Claude/Vertex AI)
+    ↓ (tool call: get_context)
+HolmesGPT API → Context API Service
+    ↓ (return context to LLM)
+LLM continues investigation with context
+```
+
+**Key Benefits**:
+- ✅ **Multiple Context Queries**: LLM can query historical success rates for MULTIPLE remediation actions (not just pre-selected one)
+- ✅ **Comparative Analysis**: LLM compares success rates across different strategies (e.g., restart-pod 85%, scale-deployment 72%, rollback-deployment 91%)
+- ✅ **Higher Confidence**: LLM increases confidence assessment by evaluating alternatives with real historical data
+- ✅ **Adaptive Investigation**: LLM can request additional context mid-investigation if initial approach seems insufficient
+- ✅ **Cost Optimization**: 36% token cost reduction ($910/year) - context only when LLM requests it
+- ✅ **LLM Autonomy**: LLM decides when context is needed, not forced pre-enrichment
+
+**Trade-off**: +500ms-1s latency for tool call round-trip (acceptable for cost savings and improved decision quality)
+
+#### Tool Call Implementation
+
+**Tool Definition** (from BR-HAPI-046):
 ```python
-# holmesgpt-api/context_integration.py
+{
+    "name": "get_context",
+    "description": "Retrieve historical context for similar incidents. Use when investigation requires understanding of past similar alerts, success rates, or patterns.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "alert_fingerprint": {
+                "type": "string",
+                "description": "Fingerprint of the current alert"
+            },
+            "similarity_threshold": {
+                "type": "number",
+                "description": "Minimum similarity score (0.0-1.0), default 0.70"
+            },
+            "context_types": {
+                "type": "array",
+                "items": {"enum": ["historical_remediations", "cluster_patterns", "success_rates"]},
+                "description": "Types of context to retrieve"
+            }
+        },
+        "required": ["alert_fingerprint"]
+    }
+}
+```
+
+**Tool Call Handler** (HolmesGPT API):
+```python
+# holmesgpt-api/tools/context_tool.py
 from typing import Dict
 import requests
 
 
-def get_investigation_context(alert_id: str) -> Dict:
-    headers = {"Authorization": f"Bearer {get_service_account_token()}"}
-    response = requests.get(
-        f"http://context-api-service:8080/api/v1/context/investigation/{alert_id}",
-        headers=headers
-    )
-    return response.json()
+class ContextTool:
+    def __init__(self, context_api_url: str):
+        self.context_api_url = context_api_url
+        self.client = ContextAPIClient(context_api_url)
+
+    def handle_tool_call(self, investigation_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle LLM tool call request"""
+        try:
+            # LLM can make MULTIPLE calls to compare remediation strategies
+            alert_fingerprint = parameters.get("alert_fingerprint")
+            similarity_threshold = parameters.get("similarity_threshold", 0.70)
+            context_types = parameters.get("context_types")
+
+            # Invoke Context API
+            context = self.client.get_context(
+                alert_fingerprint=alert_fingerprint,
+                similarity_threshold=similarity_threshold,
+                context_types=context_types
+            )
+
+            # Format response for LLM (ultra-compact JSON)
+            return self._format_response(context)
+
+        except Exception as e:
+            # Graceful degradation
+            return {"error": str(e), "fallback": "continue_without_context"}
 ```
+
+**Example: LLM Making Multiple Context Queries**:
+```python
+# Investigation 1: LLM queries context for "restart-pod"
+tool_call_1 = {
+    "name": "get_context",
+    "parameters": {
+        "alert_fingerprint": "mem-spike-api-server-abc123",
+        "context_types": ["success_rates"],
+        "action_type": "restart-pod"  # LLM specifies action
+    }
+}
+# Response: {"success_rate": 0.85, "total_executions": 120}
+
+# Investigation 2: LLM queries context for "scale-deployment"
+tool_call_2 = {
+    "name": "get_context",
+    "parameters": {
+        "alert_fingerprint": "mem-spike-api-server-abc123",
+        "context_types": ["success_rates"],
+        "action_type": "scale-deployment"  # LLM tries alternative
+    }
+}
+# Response: {"success_rate": 0.72, "total_executions": 45}
+
+# Investigation 3: LLM queries context for "rollback-deployment"
+tool_call_3 = {
+    "name": "get_context",
+    "parameters": {
+        "alert_fingerprint": "mem-spike-api-server-abc123",
+        "context_types": ["success_rates"],
+        "action_type": "rollback-deployment"  # LLM tries another alternative
+    }
+}
+# Response: {"success_rate": 0.91, "total_executions": 78}
+
+# Result: LLM chooses "rollback-deployment" with 91% confidence based on comparative historical data
+```
+
+**Related Documentation**:
+- [DD-CONTEXT-001](../../architecture/decisions/DD-CONTEXT-001-Context-Enrichment-Placement.md) - Architectural decision
+- [BR-HAPI-046 to BR-HAPI-050](../holmesgpt-api/BR-HAPI-046-050-CONTEXT-API-TOOL.md) - HolmesGPT API tool integration
 
 ---
 
@@ -262,19 +384,110 @@ LIMIT 10;
 
 ---
 
+## 🏗️ Architecture Clarification: AIAnalysis Integration
+
+**Question**: Why doesn't AIAnalysis Controller call Context API directly?
+
+**Answer**: Per [DD-CONTEXT-001](../../architecture/decisions/DD-CONTEXT-001-Context-Enrichment-Placement.md), context enrichment uses an **LLM-driven tool call pattern** instead of pre-enrichment.
+
+### Pattern Comparison
+
+#### ❌ Approach A: Pre-Enrichment (NOT USED)
+```
+AIAnalysis Controller
+    ↓ (fetch context)
+Context API Service
+    ↓ (return enriched context)
+AIAnalysis Controller
+    ↓ (send investigation request with context)
+HolmesGPT API Service
+    ↓ (investigate with provided context)
+LLM (Claude/Vertex AI)
+```
+
+**Problems**:
+- ❌ Forces context even when not needed
+- ❌ Higher token cost (context in every request)
+- ❌ Wastes LLM intelligence (pre-decides what LLM needs)
+- ❌ Inflexible (cannot adapt to different investigation types)
+- ❌ **Single context query** (only one remediation action evaluated)
+
+---
+
+#### ✅ Approach B: LLM-Driven Tool Call (APPROVED)
+```
+AIAnalysis Controller
+    ↓ (send investigation request)
+HolmesGPT API Service
+    ↓ (LLM decides if context needed)
+LLM (Claude/Vertex AI)
+    ↓ (tool call: get_context)
+HolmesGPT API → Context API Service
+    ↓ (return context to LLM)
+LLM continues investigation with context
+```
+
+**Benefits**:
+- ✅ **36% token cost reduction** ($910/year savings)
+- ✅ **LLM autonomy** - LLM decides when context is needed
+- ✅ **Flexible** - LLM can request different context types
+- ✅ **Aligned with HolmesGPT SDK** - Native tool call pattern
+- ✅ **Multiple context queries** - LLM can compare multiple remediation strategies
+- ✅ **Higher confidence** - LLM evaluates alternatives with real historical data
+
+**Trade-off**: +500ms-1s latency for tool call round-trip (acceptable for cost savings and improved decision quality)
+
+---
+
+### Example: Multiple Context Queries for Comparative Analysis
+
+**Scenario**: Memory spike in API server
+
+**Approach A (Pre-Enrichment)**: AIAnalysis Controller pre-fetches context for "restart-pod" (pre-selected action) and sends to HolmesGPT API
+- **Result**: LLM receives only "restart-pod has 85% success rate"
+- **Problem**: LLM cannot evaluate alternatives, stuck with pre-selected action
+
+**Approach B (Tool Call)**: LLM makes multiple tool calls to compare strategies
+1. **Tool Call 1**: Query "restart-pod" → 85% success rate (120 executions)
+2. **Tool Call 2**: Query "scale-deployment" → 72% success rate (45 executions)
+3. **Tool Call 3**: Query "rollback-deployment" → 91% success rate (78 executions)
+- **Result**: LLM chooses "rollback-deployment" with 91% confidence
+- **Benefit**: Data-driven decision based on comparative historical analysis
+
+---
+
+### Integration Summary
+
+| Service | Calls Context API? | Pattern | Rationale |
+|---|---|---|---|
+| **RemediationProcessing Controller** | ✅ **YES** (direct HTTP) | Recovery context enrichment | Workflow failure recovery (BR-WF-RECOVERY-011) |
+| **HolmesGPT API** | ✅ **YES** (LLM tool calls) | LLM-driven on-demand queries | AI investigation context (BR-HAPI-046 to BR-HAPI-050) |
+| **AIAnalysis Controller** | ❌ **NO** | Sends investigation request to HolmesGPT API | Per DD-CONTEXT-001, context enrichment via HolmesGPT API tool calls |
+| **Effectiveness Monitor** | ✅ **YES** (direct HTTP) | Historical trend analytics | Effectiveness assessment (BR-MONITORING-002) |
+
+---
+
+### Related Documents
+
+- [DD-CONTEXT-001](../../architecture/decisions/DD-CONTEXT-001-Context-Enrichment-Placement.md) - Architectural decision
+- [BR-HAPI-046 to BR-HAPI-050](../holmesgpt-api/BR-HAPI-046-050-CONTEXT-API-TOOL.md) - HolmesGPT API tool integration
+- [PROPOSED_FAILURE_RECOVERY_SEQUENCE.md](../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) - Recovery context flow
+
+---
+
 ## 📊 Data Flow Diagram
 
 ```
-┌─────────────────────────────────────────────┐
-│       Upstream Clients                      │
-│  ┌────────────┐  ┌────────────┐            │
-│  │ AI Analysis│  │ HolmesGPT  │            │
-│  │  Service   │  │    API     │            │
-│  └──────┬─────┘  └──────┬─────┘            │
-│         │                │                   │
-│         │  ┌─────────────┴──────┐           │
-│         └──┤ Effectiveness      │           │
-│            │ Monitor            │           │
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Upstream Clients                                 │
+│                                                                     │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐ │
+│  │ RemediationProc  │  │ HolmesGPT API    │  │ Effectiveness    │ │
+│  │ Controller       │  │ (LLM Tool Calls) │  │ Monitor          │ │
+│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘ │
+│           │                     │                     │             │
+│           │ (PRIMARY)           │ (SECONDARY)         │ (TERTIARY)  │
+│           │ Direct HTTP         │ LLM Tool Call       │ Direct HTTP │
 │            └─────────┬──────────┘           │
 └──────────────────────┼──────────────────────┘
                        │ HTTP GET (Bearer Token)

@@ -1,4 +1,4 @@
-# DD-CONTEXT-001: Context Enrichment Placement - LLM-Driven Tool Call Pattern
+# DD-CONTEXT-003: Context Enrichment Placement - LLM-Driven Tool Call Pattern
 
 **Date**: 2025-10-22
 **Status**: ✅ **APPROVED** (Approach B)

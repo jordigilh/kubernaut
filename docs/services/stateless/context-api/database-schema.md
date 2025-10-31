@@ -15,7 +15,7 @@ This document describes the **ORIGINAL PLAN** which has been superseded by the a
 - **Key Differences**:
   - ❌ Context API does NOT query multiple tables (`remediation_requests`, `ai_analysis`, `workflow_executions`, etc.)
   - ✅ Context API queries ONLY the `remediation_audit` table
-  - ❌ Context API does NOT have LLM configuration (AIAnalysis service handles LLM)
+  - ❌ Context API does NOT have LLM configuration (AIAnalysis Controller handles LLM via HolmesGPT API)
   - ✅ Context API is purely READ-ONLY (queries pre-existing data only)
 
 **Migration Path**: Replace references to this document with [SCHEMA_ALIGNMENT.md](implementation/SCHEMA_ALIGNMENT.md)

@@ -672,7 +672,7 @@ v1.x code is compatible with v2.0 foundation and will be progressively integrate
 
 2. ✅ **Read-Only Service**: Context API ONLY queries data from `remediation_audit` table
    - ❌ Does NOT generate embeddings (Data Storage Service handles generation)
-   - ❌ Does NOT have LLM configuration (AIAnalysis service handles LLM)
+   - ❌ Does NOT have LLM configuration (AIAnalysis Controller handles LLM via HolmesGPT API)
    - ✅ Reuses Data Storage Service embedding interfaces and mocks for testing
 
 3. ✅ **Data Source**: Queries `remediation_audit` table from Data Storage Service
@@ -1264,12 +1264,12 @@ Using `remediation_audit` provides richer data than originally planned `incident
   - Test error handling
   - **Files**: Integration tests in HolmesGPT API
 
-#### 3. AIAnalysis Service Integration (Phase 4)
+#### 3. AIAnalysis Controller Integration (Phase 4)
 - [ ] **End-to-End Validation** (3h)
-  - AIAnalysis → HolmesGPT API → LLM → Context API
+  - AIAnalysis Controller → HolmesGPT API → LLM → Context API
   - Validate CRD-based flow
   - Test multi-tool orchestration
-  - **Files**: E2E tests in AIAnalysis Service
+  - **Files**: E2E tests in AIAnalysis Controller
 
 ---
 
@@ -1294,7 +1294,7 @@ Using `remediation_audit` provides richer data than originally planned `incident
 ### Integration Complete (Phase 4)
 - [ ] Dynamic Toolset integration verified
 - [ ] HolmesGPT API integration working
-- [ ] AIAnalysis Service integration working
+- [ ] AIAnalysis Controller integration working
 - [ ] Multi-tool LLM orchestration validated
 
 ---

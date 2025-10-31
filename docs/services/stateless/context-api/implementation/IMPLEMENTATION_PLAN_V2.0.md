@@ -526,7 +526,7 @@ Context API Service is a **stateless HTTP REST API** providing historical intell
 **Principle 1: Read-Only Data Provider**
 - ✅ Context API ONLY queries data (never writes)
 - ✅ Queries `remediation_audit` table from Data Storage Service
-- ✅ No LLM integration (AIAnalysis service handles LLM)
+- ✅ No LLM integration (AIAnalysis Controller handles LLM via HolmesGPT API)
 - ✅ No embedding generation (Data Storage Service handles embeddings)
 
 **Principle 2: Multi-Client Architecture**
@@ -654,7 +654,7 @@ This v2.0 plan incorporates all Phase 3 quality standards from day one:
 ### **Out of Scope (V1)**
 - ❌ Writing to `remediation_audit` table (Data Storage Service owns writes)
 - ❌ Embedding generation (Data Storage Service handles)
-- ❌ LLM integration (AIAnalysis service handles)
+- ❌ LLM integration (AIAnalysis Controller handles via HolmesGPT API)
 - ❌ CRD-based interfaces (HTTP REST only)
 - ❌ Multi-tenancy (single Kubernetes cluster)
 - ❌ Table partitioning (deferred to Data Storage Service)
@@ -6277,7 +6277,7 @@ var _ = Describe("Performance Validation", func() {
 **Read-Only Design**:
 - ❌ No writes to `remediation_audit` table
 - ❌ No embedding generation (Data Storage Service owns)
-- ❌ No LLM integration (AIAnalysis service owns)
+- ❌ No LLM integration (AIAnalysis Controller owns via HolmesGPT API)
 - ✅ Pure data provider for 3 upstream clients
 
 ---

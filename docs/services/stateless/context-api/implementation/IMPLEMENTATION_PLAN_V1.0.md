@@ -91,7 +91,7 @@
 
 **Architectural Principles**:
 - ✅ **Read-Only Service**: Context API ONLY queries data, never writes or modifies
-- ✅ **No LLM Integration**: Context API has NO LLM connectivity (AIAnalysis service handles LLM)
+- ✅ **No LLM Integration**: Context API has NO LLM connectivity (AIAnalysis Controller handles LLM via HolmesGPT API)
 - ✅ **No Embedding Generation**: Context API queries pre-existing embeddings from remediation_audit table (created by Data Storage Service)
 - ✅ **Stateless HTTP API**: No state management, pure query service
 - ✅ **Multi-Client Architecture**: Serves 3 distinct client services, not dedicated to any single consumer
