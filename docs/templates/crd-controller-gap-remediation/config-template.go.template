@@ -1,6 +1,28 @@
 // Generic config package template for CRD controllers
 //
-// CUSTOMIZATION INSTRUCTIONS:
+// ========================================
+// CONFIGURATION PATTERN (12-Factor App)
+// ========================================
+//
+// This template implements the standard configuration pattern:
+// 1. YAML-based configuration (primary)
+// 2. Environment variable overrides (secondary)
+// 3. Default values (fallback)
+// 4. Validation on load
+//
+// 📋 Standards:
+//   - DD-006: Controller Scaffolding Strategy
+//     See: docs/architecture/decisions/DD-006-controller-scaffolding-strategy.md
+//     Part of approved custom template approach for consistency
+//   - DD-005: Observability Standards
+//     Default ports: :8080 (metrics), :8081 (health/ready)
+//   - 12-Factor App: Configuration via environment
+//   - Fail-fast: Validation errors prevent startup
+//
+// ========================================
+// CUSTOMIZATION INSTRUCTIONS
+// ========================================
+//
 // 1. Replace {{CONTROLLER_NAME}} with your controller name (lowercase)
 // 2. Add controller-specific configuration fields to the Config struct
 // 3. Update setDefaults() with appropriate default values
@@ -11,6 +33,8 @@
 //   - RemediationProcessor: Data Storage Service, Context API, Classification Config
 //   - WorkflowExecution: Kubernetes API, Parallel Limits, Validation Framework
 //   - AIAnalysis: HolmesGPT API, Context API, Approval Thresholds
+//
+// ========================================
 package config
 
 import (

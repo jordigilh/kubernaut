@@ -526,6 +526,20 @@ gateway:
 - **[Testing Strategy Rule](.cursor/rules/03-testing-strategy.mdc)**: Authoritative testing requirements
 - **[HolmesGPT Integration Guide](docs/development/HOLMESGPT_DEPLOYMENT.md)**: AI service integration
 
+### **🛠️ Development Resources**
+
+**CRD Controller Templates** (saves 40-60% development time):
+- **[Template Library](docs/templates/crd-controller-gap-remediation/)**: Production-ready templates for CRD controllers
+  - Main entry point, configuration, metrics (DD-005 compliant)
+  - Health checks, signal handling, controller manager setup
+  - Dockerfile, Makefile, ConfigMap templates
+- **[Gap Remediation Guide](docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md)**: Step-by-step scaffolding guide
+- **[CRD Service Specification Template](docs/development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md)**: Service documentation template
+
+**Standards & Design Decisions**:
+- **[DD-005: Observability Standards](docs/architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md)**: Metrics and logging conventions
+- **[Design Decisions Index](docs/architecture/DESIGN_DECISIONS.md)**: All architectural decisions with alternatives
+
 ---
 
 ## 🛡️ **SECURITY CONSIDERATIONS**

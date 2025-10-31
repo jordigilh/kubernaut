@@ -6,6 +6,19 @@
 
 ---
 
+> **📋 Design Decision: DD-006**
+>
+> **Controller Scaffolding Strategy**: Custom Production Templates (Approved)
+> **See**: [DD-006-controller-scaffolding-strategy.md](../../architecture/decisions/DD-006-controller-scaffolding-strategy.md)
+>
+> These templates implement DD-006's approved scaffolding approach, chosen over Kubebuilder, Operator SDK, and manual creation for:
+> - ✅ Automatic DD-005 Observability Standards enforcement
+> - ✅ 40-60% time savings (4-6 hours per controller)
+> - ✅ Consistency across all Kubernaut controllers
+> - ✅ Centralized standards enforcement
+
+---
+
 ## 📋 Overview
 
 This guide walks you through using the gap remediation templates to rapidly implement production-ready CRD controllers. Following this process will save 40-60% implementation time while ensuring consistent quality across all controllers.
