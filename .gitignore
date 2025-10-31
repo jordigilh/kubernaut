@@ -61,6 +61,8 @@ dynamic-toolset-server
 main
 remediationprocessor
 gateway-arm64
+datastorage
+gateway
 /cmd/*/main
 /cmd/*/*
 !/cmd/*/*.go
