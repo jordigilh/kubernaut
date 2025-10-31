@@ -36,12 +36,12 @@ Comprehensive context understanding and impact assessment before Context API imp
 | BR-CONTEXT-005 | OAuth2 authentication (K8s TokenReview) | HIGH | K8s API access |
 | BR-CONTEXT-006 | Health checks & metrics | HIGH | Prometheus |
 | BR-CONTEXT-007 | Pagination support | MEDIUM | PostgreSQL |
-| BR-CONTEXT-008 | REST API for LLM context | HIGH | AIAnalysis service |
+| BR-CONTEXT-008 | REST API for LLM context | HIGH | AIAnalysis Controller |
 
-**Business Value**: Provides dynamic, queryable context data to AIAnalysis service's LLM for improved remediation decision-making.
+**Business Value**: Provides dynamic, queryable context data to AIAnalysis Controller's LLM (via HolmesGPT API) for improved remediation decision-making.
 
 **Architecture Role**: Data provider in tool-based LLM architecture (not RAG system)
-- Context API → REST endpoints → HolmesGPT API toolset → LLM tool calls → AIAnalysis service
+- Context API → REST endpoints → HolmesGPT API toolset → LLM tool calls → AIAnalysis Controller
 
 ---
 
@@ -545,7 +545,7 @@ Following APDC-TDD methodology from core rules:
 - Kubernaut uses tool-based LLM architecture
 - Context API serves as data provider
 - HolmesGPT API exposes tools to LLM
-- AIAnalysis service handles LLM interactions
+- AIAnalysis Controller handles LLM interactions (via HolmesGPT API)
 - RAG would duplicate AIAnalysis responsibility
 
 ### DD-CONTEXT-002: Cache TTL Strategy (PENDING)
