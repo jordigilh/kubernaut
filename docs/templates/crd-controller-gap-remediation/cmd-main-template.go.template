@@ -1,17 +1,48 @@
 // Generic main.go template for CRD controllers
 //
-// CUSTOMIZATION INSTRUCTIONS:
+// ========================================
+// ARCHITECTURE & STANDARDS COMPLIANCE
+// ========================================
+//
+// This template follows Kubernaut's approved architecture patterns:
+//
+// 📋 Design Decisions:
+//   - DD-006: Controller Scaffolding Strategy (Custom Templates)
+//     See: docs/architecture/decisions/DD-006-controller-scaffolding-strategy.md
+//     - Chosen over Kubebuilder, Operator SDK, manual creation
+//     - Enforces DD-005 Observability Standards automatically
+//     - 40-60% time savings per controller
+//   - DD-005: Observability Standards (Metrics & Logging)
+//     See: docs/architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md
+//     - Uses controller-runtime/pkg/log/zap for structured logging
+//     - Metrics server on :8080 (customize if needed)
+//     - Health/Ready probes on :8081
+//
+// 🏗️ Architecture References:
+//   - Multi-CRD Reconciliation Architecture
+//     See: docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md
+//   - Controller-Runtime Best Practices
+//   - Kubebuilder v3 patterns
+//
+// ========================================
+// CUSTOMIZATION INSTRUCTIONS
+// ========================================
+//
 // 1. Replace {{CONTROLLER_NAME}} with your controller name (e.g., remediationprocessor)
 // 2. Replace {{PACKAGE_PATH}} with full package path
 // 3. Replace {{CRD_GROUP}}/{{CRD_VERSION}}/{{CRD_KIND}} with your CRD details
 // 4. Update import paths for your controller
 // 5. Uncomment and customize the TODO sections after creating packages
+// 6. Add metrics package (see metrics-template.go.template)
+// 7. Update health check endpoints if custom validation needed
 //
 // Example:
 //
 //	Controller Name: remediationprocessor
 //	Package: github.com/jordigilh/kubernaut/pkg/remediationprocessor
 //	CRD: remediation.kubernaut.io/v1alpha1/RemediationProcessing
+//
+// ========================================
 package main
 
 import (

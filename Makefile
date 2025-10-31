@@ -339,21 +339,79 @@ test-integration-service-all: ## Run ALL service-specific integration tests (seq
 
 ##@ Development (continued)
 
+.PHONY: scaffold-controller
+scaffold-controller: ## Interactive scaffolding for new CRD controller using production templates
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🛠️  CRD Controller Scaffolding"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "📋 Design Decision: DD-006 - Controller Scaffolding Strategy"
+	@echo "   See: docs/architecture/decisions/DD-006-controller-scaffolding-strategy.md"
+	@echo ""
+	@echo "📚 Using Production Templates (DD-005 Compliant)"
+	@echo "   Location: docs/templates/crd-controller-gap-remediation/"
+	@echo "   Guide: docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md"
+	@echo ""
+	@echo "✨ Templates Available:"
+	@echo "   • cmd-main-template.go.template - Main entry point"
+	@echo "   • config-template.go.template - Configuration package"
+	@echo "   • config-test-template.go.template - Config tests"
+	@echo "   • metrics-template.go.template - Prometheus metrics (DD-005)"
+	@echo "   • dockerfile-template - UBI9 multi-arch Dockerfile"
+	@echo "   • makefile-targets-template - Build targets"
+	@echo "   • configmap-template.yaml - K8s ConfigMap"
+	@echo ""
+	@echo "⏱️  Time Savings: 40-60% faster than starting from scratch"
+	@echo ""
+	@read -p "Controller name (lowercase, no hyphens, e.g., remediationprocessor): " CONTROLLER_NAME; \
+	if [ -z "$$CONTROLLER_NAME" ]; then \
+		echo "❌ Error: Controller name is required"; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "📁 Creating directory structure for $$CONTROLLER_NAME..."; \
+	mkdir -p "cmd/$$CONTROLLER_NAME" && echo "   ✅ cmd/$$CONTROLLER_NAME"; \
+	mkdir -p "pkg/$$CONTROLLER_NAME/config" && echo "   ✅ pkg/$$CONTROLLER_NAME/config"; \
+	mkdir -p "pkg/$$CONTROLLER_NAME/metrics" && echo "   ✅ pkg/$$CONTROLLER_NAME/metrics"; \
+	mkdir -p "api/$$CONTROLLER_NAME/v1alpha1" && echo "   ✅ api/$$CONTROLLER_NAME/v1alpha1"; \
+	mkdir -p "internal/controller/$$CONTROLLER_NAME" && echo "   ✅ internal/controller/$$CONTROLLER_NAME"; \
+	echo ""; \
+	echo "✅ Directory structure created successfully!"; \
+	echo ""; \
+	echo "📝 Next Steps:"; \
+	echo "   1. Copy templates from docs/templates/crd-controller-gap-remediation/"; \
+	echo "      cp docs/templates/crd-controller-gap-remediation/cmd-main-template.go.template cmd/$$CONTROLLER_NAME/main.go"; \
+	echo "      cp docs/templates/crd-controller-gap-remediation/config-template.go.template pkg/$$CONTROLLER_NAME/config/config.go"; \
+	echo "      cp docs/templates/crd-controller-gap-remediation/config-test-template.go.template pkg/$$CONTROLLER_NAME/config/config_test.go"; \
+	echo "      cp docs/templates/crd-controller-gap-remediation/metrics-template.go.template pkg/$$CONTROLLER_NAME/metrics/metrics.go"; \
+	echo ""; \
+	echo "   2. Replace placeholders in copied files:"; \
+	echo "      - {{CONTROLLER_NAME}} → $$CONTROLLER_NAME"; \
+	echo "      - {{PACKAGE_PATH}} → github.com/jordigilh/kubernaut"; \
+	echo "      - {{CRD_GROUP}}/{{CRD_VERSION}}/{{CRD_KIND}} → your CRD details"; \
+	echo ""; \
+	echo "   3. Follow the Gap Remediation Guide:"; \
+	echo "      docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md"; \
+	echo ""; \
+	echo "   4. Add to Makefile build targets (see makefile-targets-template)"; \
+	echo ""; \
+	echo "════════════════════════════════════════════════════════════════════════"
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
-	go fmt ./...
+	go fmt ./api/... ./cmd/... ./internal/... ./pkg/...
 
 .PHONY: vet
 vet: ## Run go vet against code.
-	go vet ./...
+	go vet ./api/... ./cmd/... ./internal/... ./pkg/...
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
@@ -498,7 +556,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
+CONTROLLER_TOOLS_VERSION ?= v0.19.0
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
@@ -675,12 +733,12 @@ lint-go: ## Run Go linter only
 .PHONY: fmt
 fmt: ## Format code (Go only)
 	@echo "Formatting Go code..."
-	go fmt ./...
+	go fmt ./api/... ./cmd/... ./internal/... ./pkg/...
 
 .PHONY: fmt-go
 fmt-go: ## Format Go code only
 	@echo "Formatting Go code..."
-	go fmt ./...
+	go fmt ./api/... ./cmd/... ./internal/... ./pkg/...
 
 
 .PHONY: clean

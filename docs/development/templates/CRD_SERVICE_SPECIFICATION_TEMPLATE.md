@@ -69,6 +69,39 @@ docs/services/crd-controllers/
 
 ---
 
+## 🛠️ **CRD Controller Templates**
+
+> **📋 Design Decision: DD-006**
+>
+> **Controller Scaffolding Strategy**: Custom Production Templates (Approved)
+> **See**: [DD-006-controller-scaffolding-strategy.md](../../architecture/decisions/DD-006-controller-scaffolding-strategy.md)
+>
+> These templates are the approved scaffolding approach, chosen over Kubebuilder, Operator SDK, and manual creation.
+
+**Rapid Development**: Use gap remediation templates to save 40-60% implementation time.
+
+**Template Library**: [docs/templates/crd-controller-gap-remediation/](../../templates/crd-controller-gap-remediation/)
+
+**Key Templates**:
+1. **`cmd-main-template.go.template`**: Main entry point with configuration, health checks, and controller manager setup
+2. **`config-template.go.template`**: Configuration package with YAML + environment variable overrides
+3. **`config-test-template.go.template`**: Configuration unit tests
+4. **`metrics-template.go.template`**: Prometheus metrics following DD-005 standards
+5. **`dockerfile-template`**: Red Hat UBI9 multi-arch Dockerfile
+6. **`makefile-targets-template`**: Standard Makefile targets for building and deployment
+7. **`configmap-template.yaml`**: Kubernetes ConfigMap for controller configuration
+
+**Usage Guide**: See [GAP_REMEDIATION_GUIDE.md](../../templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md) for step-by-step instructions.
+
+**Standards Compliance**: All templates follow:
+- [DD-005 Observability Standards](../../architecture/decisions/DD-005-OBSERVABILITY-STANDARDS.md) - Metrics and logging
+- [LOGGING_STANDARD.md](../../architecture/LOGGING_STANDARD.md) - Zap structured logging
+- [Controller-Runtime Best Practices](../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) - Architecture patterns
+
+**Time Savings**: ~4-6 hours per controller implementation
+
+---
+
 ## HEADER SECTION [REQUIRED]
 
 **Service Type**: [CRD Controller / Central Coordinator]
