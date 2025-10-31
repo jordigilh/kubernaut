@@ -4,7 +4,7 @@ package models
 import "time"
 
 // IncidentEvent represents a remediation audit record from Data Storage Service
-// Maps to remediation_audit table in PostgreSQL
+// Maps to resource_action_traces table in PostgreSQL (DD-SCHEMA-001)
 //
 // BR-CONTEXT-001: Query incident audit data
 // BR-CONTEXT-004: Namespace/cluster/severity filtering

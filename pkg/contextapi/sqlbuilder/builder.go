@@ -227,7 +227,8 @@ func (b *Builder) WithOffset(offset int) error {
 //
 // Example output:
 //
-//	query: "SELECT * FROM remediation_audit WHERE namespace = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+//	query: "SELECT * FROM resource_action_traces WHERE namespace = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3"
+//  DD-SCHEMA-001: Use Data Storage Service schema (resource_action_traces)
 //	args: ["production", 100, 0]
 //
 // Note: Build() is idempotent - calling it multiple times returns the same result
