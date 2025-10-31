@@ -1,9 +1,16 @@
 # Kubernaut Service Dependency Map
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
+**Version**: 1.1
+**Last Updated**: October 31, 2025
 **Status**: ✅ Authoritative Reference
 **Scope**: All 11 Kubernaut V1 Services
+
+## 📋 Version History
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| 1.1 | Oct 31, 2025 | Updated service dependency diagram: Kubernetes Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
+| 1.0 | Oct 6, 2025 | Initial version | - |
 
 ---
 

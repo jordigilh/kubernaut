@@ -1,12 +1,22 @@
 # Failure Recovery Flow - Approved Sequence Diagram
 
+**Document Version**: 1.1
+**Last Updated**: October 31, 2025
+
+## 📋 Version History
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| 1.1 | Oct 31, 2025 | Updated diagram: K8s Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
+| 1.0 | Oct 8, 2025 | Initial approved version (Alternative 2) | - |
+
 ---
 
 ## 📋 **Design Decision Status**
 
 **Current Implementation**: **Alternative 2** (Approved Design)
 **Status**: ✅ **Production-Ready** | **Authoritative Reference**
-**Last Reviewed**: October 8, 2025
+**Last Reviewed**: October 31, 2025
 **Confidence**: 95%
 **Design Decision**: [DD-001](DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
 
