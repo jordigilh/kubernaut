@@ -47,6 +47,7 @@ build_failures.*
 *_ASSESSMENT.md
 *_ANALYSIS.md
 *_STRATEGY.md
+*_RESULTS.md
 TDD_*.md
 SKIPPED_*.md
 HEALTH_*.md
