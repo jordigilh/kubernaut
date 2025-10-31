@@ -538,7 +538,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
 				"Should return 400 Bad Request for invalid limit")
 
-			// Validate error response contains meaningful message
+			// Validate RFC 7807 error response contains meaningful message
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -546,11 +546,11 @@ var _ = Describe("HTTP API Integration Tests", func() {
 			err = json.Unmarshal(body, &response)
 			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
 
-			// ✅ Business Value Assertion: Error message should be helpful
-			Expect(response).To(HaveKey("error"), "Response should have 'error' field")
+			// ✅ Business Value Assertion: RFC 7807 error should be helpful (DD-004)
+			Expect(response).To(HaveKey("detail"), "RFC 7807 response should have 'detail' field")
 
-			errorMsg, ok := response["error"].(string)
-			Expect(ok).To(BeTrue(), "error field should be a string")
+			errorMsg, ok := response["detail"].(string)
+			Expect(ok).To(BeTrue(), "detail field should be a string")
 			Expect(errorMsg).To(ContainSubstring("limit"),
 				"Error message should mention 'limit' parameter")
 			Expect(errorMsg).To(Or(
