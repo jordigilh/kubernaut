@@ -43,6 +43,14 @@ type Server struct {
 	isShuttingDown atomic.Bool
 }
 
+// DD-007 graceful shutdown constants
+const (
+	// endpointRemovalPropagationDelay is the time to wait for Kubernetes to propagate
+	// endpoint removal across all nodes. Industry best practice is 5 seconds.
+	// Kubernetes typically takes 1-3 seconds, but we wait longer to be safe.
+	endpointRemovalPropagationDelay = 5 * time.Second
+)
+
 // Config contains server configuration
 type Config struct {
 	Port         int
@@ -222,108 +230,85 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("Initiating DD-007 Kubernetes-aware graceful shutdown")
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// STEP 1: Set Shutdown Flag (Readiness Probe → 503)
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// This signals Kubernetes to remove pod from Service endpoints
-	// Readiness probe will now return 503, triggering endpoint removal
-	
+	// STEP 1: Signal Kubernetes to remove pod from endpoints
+	s.shutdownStep1SetFlag()
+
+	// STEP 2: Wait for endpoint removal to propagate
+	s.shutdownStep2WaitForPropagation()
+
+	// STEP 3: Drain in-flight HTTP connections
+	if err := s.shutdownStep3DrainConnections(ctx); err != nil {
+		return err
+	}
+
+	// STEP 4: Close external resources (database, cache)
+	if err := s.shutdownStep4CloseResources(); err != nil {
+		return err
+	}
+
+	s.logger.Info("DD-007 Kubernetes-aware graceful shutdown complete - all resources closed",
+		zap.String("dd", "DD-007-complete-success"))
+	return nil
+}
+
+// shutdownStep1SetFlag sets the shutdown flag to signal readiness probe
+// DD-007 STEP 1: This triggers Kubernetes endpoint removal
+func (s *Server) shutdownStep1SetFlag() {
 	s.isShuttingDown.Store(true)
 	s.logger.Info("Shutdown flag set - readiness probe now returns 503",
 		zap.String("effect", "kubernetes_will_remove_from_endpoints"),
 		zap.String("dd", "DD-007-step-1"))
+}
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// STEP 2: Wait for Kubernetes Endpoint Removal Propagation
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// Kubernetes typically takes 1-3 seconds to update endpoints across all nodes
-	// We wait 5 seconds to be safe (industry best practice)
-	// This ensures no new traffic is routed to this pod before we drain connections
-	
-	const endpointPropagationDelay = 5 * time.Second
+// shutdownStep2WaitForPropagation waits for Kubernetes endpoint removal to propagate
+// DD-007 STEP 2: Industry best practice is 5 seconds (Kubernetes typically takes 1-3s)
+func (s *Server) shutdownStep2WaitForPropagation() {
 	s.logger.Info("Waiting for Kubernetes endpoint removal propagation",
-		zap.Duration("delay", endpointPropagationDelay),
+		zap.Duration("delay", endpointRemovalPropagationDelay),
 		zap.String("reason", "ensure_no_new_traffic"),
 		zap.String("dd", "DD-007-step-2"))
-	
-	time.Sleep(endpointPropagationDelay)
-	
+
+	time.Sleep(endpointRemovalPropagationDelay)
+
 	s.logger.Info("Endpoint removal propagation complete - no new traffic expected",
 		zap.String("next", "drain_in_flight_connections"),
 		zap.String("dd", "DD-007-step-2-complete"))
+}
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// STEP 3: Drain In-Flight HTTP Connections
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// This completes any requests that arrived BEFORE endpoint removal
-	// Uses context timeout from caller (typically 30 seconds from main.go)
-	// http.Server.Shutdown() waits for active connections to complete
-	
+// shutdownStep3DrainConnections drains in-flight HTTP connections
+// DD-007 STEP 3: Uses http.Server.Shutdown() to wait for active connections
+func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 	s.logger.Info("Draining in-flight HTTP connections",
 		zap.String("method", "http.Server.Shutdown"),
 		zap.String("dd", "DD-007-step-3"))
 
 	if err := s.httpServer.Shutdown(ctx); err != nil {
-		s.logger.Error("HTTP server shutdown failed", 
+		s.logger.Error("HTTP server shutdown failed",
 			zap.Error(err),
 			zap.String("dd", "DD-007-step-3-error"))
 		return fmt.Errorf("HTTP shutdown failed (DD-007 step 3): %w", err)
 	}
-	
+
 	s.logger.Info("HTTP connections drained successfully",
 		zap.String("next", "close_resources"),
 		zap.String("dd", "DD-007-step-3-complete"))
+	return nil
+}
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// STEP 4: Close External Resources
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// Continue cleanup even if one step fails (don't return early)
-	// This prevents resource leaks even if one component fails to close
-	
+// shutdownStep4CloseResources closes external resources (database, cache)
+// DD-007 STEP 4: Continue cleanup even if one step fails to prevent resource leaks
+func (s *Server) shutdownStep4CloseResources() error {
 	var shutdownErrors []error
 
 	// Close database connections (CRITICAL: prevents connection pool exhaustion)
-	s.logger.Info("Closing database connections",
-		zap.String("priority", "critical"),
-		zap.String("dd", "DD-007-step-4-database"))
-	
-	if err := s.dbClient.Close(); err != nil {
-		s.logger.Error("Failed to close database", 
-			zap.Error(err),
-			zap.String("dd", "DD-007-step-4-database-error"))
-		shutdownErrors = append(shutdownErrors, fmt.Errorf("database close: %w", err))
-	} else {
-		s.logger.Info("Database connections closed successfully",
-			zap.String("dd", "DD-007-step-4-database-complete"))
+	if err := s.closeDatabase(); err != nil {
+		shutdownErrors = append(shutdownErrors, err)
 	}
 
 	// Close cache connections (HIGH: prevents Redis connection leaks)
-	s.logger.Info("Closing cache connections",
-		zap.String("priority", "high"),
-		zap.String("dd", "DD-007-step-4-cache"))
-	
-	// Note: Cache manager may not have Close() method yet
-	// This is a known gap from implementation plan triage
-	// For now, we log and continue (cache connections will be cleaned up by Redis)
-	if cacheCloser, ok := s.cacheManager.(interface{ Close() error }); ok {
-		if err := cacheCloser.Close(); err != nil {
-			s.logger.Error("Failed to close cache", 
-				zap.Error(err),
-				zap.String("dd", "DD-007-step-4-cache-error"))
-			shutdownErrors = append(shutdownErrors, fmt.Errorf("cache close: %w", err))
-		} else {
-			s.logger.Info("Cache connections closed successfully",
-				zap.String("dd", "DD-007-step-4-cache-complete"))
-		}
-	} else {
-		s.logger.Warn("Cache manager does not implement Close() - skipping cache cleanup",
-			zap.String("note", "cache connections will be cleaned up by Redis timeout"),
-			zap.String("dd", "DD-007-step-4-cache-skip"))
+	if err := s.closeCache(); err != nil {
+		shutdownErrors = append(shutdownErrors, err)
 	}
-
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// Shutdown Complete
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	if len(shutdownErrors) > 0 {
 		s.logger.Error("Graceful shutdown completed with errors",
@@ -332,8 +317,51 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return fmt.Errorf("shutdown errors: %v", shutdownErrors)
 	}
 
-	s.logger.Info("DD-007 Kubernetes-aware graceful shutdown complete - all resources closed",
-		zap.String("dd", "DD-007-complete-success"))
+	return nil
+}
+
+// closeDatabase closes database connections
+func (s *Server) closeDatabase() error {
+	s.logger.Info("Closing database connections",
+		zap.String("priority", "critical"),
+		zap.String("dd", "DD-007-step-4-database"))
+
+	if err := s.dbClient.Close(); err != nil {
+		s.logger.Error("Failed to close database",
+			zap.Error(err),
+			zap.String("dd", "DD-007-step-4-database-error"))
+		return fmt.Errorf("database close: %w", err)
+	}
+
+	s.logger.Info("Database connections closed successfully",
+		zap.String("dd", "DD-007-step-4-database-complete"))
+	return nil
+}
+
+// closeCache closes cache connections
+func (s *Server) closeCache() error {
+	s.logger.Info("Closing cache connections",
+		zap.String("priority", "high"),
+		zap.String("dd", "DD-007-step-4-cache"))
+
+	// Type assertion to check if cache manager implements Close()
+	cacheCloser, ok := s.cacheManager.(interface{ Close() error })
+	if !ok {
+		s.logger.Warn("Cache manager does not implement Close() - skipping cache cleanup",
+			zap.String("note", "cache connections will be cleaned up by Redis timeout"),
+			zap.String("dd", "DD-007-step-4-cache-skip"))
+		return nil
+	}
+
+	if err := cacheCloser.Close(); err != nil {
+		s.logger.Error("Failed to close cache",
+			zap.Error(err),
+			zap.String("dd", "DD-007-step-4-cache-error"))
+		return fmt.Errorf("cache close: %w", err)
+	}
+
+	s.logger.Info("Cache connections closed successfully",
+		zap.String("dd", "DD-007-step-4-cache-complete"))
 	return nil
 }
 
