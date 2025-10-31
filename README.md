@@ -5,7 +5,7 @@
 > Kubernaut is currently undergoing its 3rd major refactoring from monolithic to **microservices+CRD architecture**.
 >
 > **Current Implementation Status**: **Phase 1-2 - 5 of 11 services complete (45%) + 1 in-progress**
-> - ✅ **Gateway Service**: ✅ **PRODUCTION-READY v2.23** ([Implementation Plan](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) | [Completion Summary](GATEWAY_V2.23_COMPLETE.md))
+> - ✅ **Gateway Service**: ✅ **PRODUCTION-READY v2.23** ([Implementation Plan](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) | [Completion Summary](docs/services/stateless/gateway-service/GATEWAY_V2.23_COMPLETE.md))
 >   - 99.1% test pass rate (233/235 tests), 50 BRs, comprehensive documentation
 > - ✅ **Data Storage Service**: COMPLETE ([Handoff Summary](docs/services/stateless/data-storage/implementation/HANDOFF_SUMMARY.md))
 > - ✅ **Dynamic Toolset Service**: COMPLETE ([Handoff Summary](docs/services/stateless/dynamic-toolset/implementation/00-HANDOFF-SUMMARY.md))
@@ -79,7 +79,7 @@ Each controller runs as a separate microservice with its own binary:
 
 | Service | Status | Purpose | Port | Docs |
 |---------|--------|---------|------|------|
-| **Gateway Service** | ✅ **v2.23 PRODUCTION-READY** | Signal ingestion (Prometheus AlertManager + Kubernetes Events) | 8080 | [Implementation Plan v2.23](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) \| [Completion Summary](GATEWAY_V2.23_COMPLETE.md) |
+| **Gateway Service** | ✅ **v2.23 PRODUCTION-READY** | Signal ingestion (Prometheus AlertManager + Kubernetes Events) | 8080 | [Implementation Plan v2.23](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) \| [Completion Summary](docs/services/stateless/gateway-service/GATEWAY_V2.23_COMPLETE.md) |
 | **Dynamic Toolset** | ✅ **COMPLETE** | HolmesGPT toolset configuration | 8080 | [Handoff Summary](docs/services/stateless/dynamic-toolset/implementation/00-HANDOFF-SUMMARY.md) |
 | **Data Storage** | ✅ **COMPLETE** | PostgreSQL + Vector DB management | 8080 | [Handoff Summary](docs/services/stateless/data-storage/implementation/HANDOFF_SUMMARY.md) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel notification delivery (CRD-based) | 8080 | [Service Completion](docs/services/crd-controllers/06-notification/SERVICE_COMPLETION_FINAL.md) |
@@ -245,7 +245,7 @@ sequenceDiagram
   - 17+ Prometheus metrics (signal processing, Redis operations, HTTP requests)
   - Structured JSON logging with configurable levels
   - Health endpoints (`/health`, `/ready` with RFC 7807 error format)
-- **Testing**: [Implementation Plan v2.23](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) | [Completion Summary](GATEWAY_V2.23_COMPLETE.md)
+- **Testing**: [Implementation Plan v2.23](docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md) | [Completion Summary](docs/services/stateless/gateway-service/GATEWAY_V2.23_COMPLETE.md)
 - **Test Coverage**:
   - **Unit Tests**: 120/121 passing (99.2%) - 70%+ BR coverage
   - **Integration Tests**: 113/114 passing (99.1%) - >50% BR coverage
