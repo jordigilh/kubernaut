@@ -479,6 +479,8 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 
 	// Validate parameters
 	if params.Limit < 1 || params.Limit > 100 {
+		// DD-005: Record validation error metrics
+		s.metrics.RecordError("validation", "query")
 		s.respondError(w, r, http.StatusBadRequest, "limit must be between 1 and 100")
 		return
 	}
@@ -489,6 +491,8 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Error("Failed to list incidents", zap.Error(err))
 		s.metrics.RecordQueryError("list_incidents")
+		// DD-005: Record system error metrics
+		s.metrics.RecordError("system", "query")
 		s.respondError(w, r, http.StatusInternalServerError, "Failed to query incidents")
 		return
 	}
