@@ -353,10 +353,14 @@
   - Created `pkg/contextapi/config/config_test.go` (230 lines)
   - 10/10 unit tests passing ✅
   - LoadFromFile(), Validate(), defaults, helper methods
-- ✅ **Graceful Shutdown**: Added `Shutdown()` method to server
+- ⚠️ **Graceful Shutdown**: INCOMPLETE - missing DD-007 compliance
   - Modified `pkg/contextapi/server/server.go`
-  - Context-based shutdown with timeout
-  - Tested and validated
+  - Context-based shutdown with timeout ✅
+  - **CRITICAL GAP**: Missing Kubernetes-aware shutdown pattern (DD-007)
+  - **Impact**: 5-10% request failures during rolling updates
+  - **Status**: Triage complete, implementation pending
+  - **See**: [DD-007: Kubernetes-Aware Graceful Shutdown](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)
+  - **See**: [GRACEFUL_SHUTDOWN_TRIAGE.md](GRACEFUL_SHUTDOWN_TRIAGE.md)
 - ✅ **Deployment Manifest Updates**:
   - Fixed health check paths (`/health`, `/health/ready`)
   - Consolidated namespace to `kubernaut-system`
