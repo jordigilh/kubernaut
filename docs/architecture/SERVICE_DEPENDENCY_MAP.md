@@ -371,7 +371,7 @@ sequenceDiagram
     participant AI as AI Analysis
     participant HG as HolmesGPT
     participant WE as Workflow<br/>Execution
-    participant KE as Kubernetes<br/>Executor
+    participant TEK as Tekton<br/>Pipelines
     participant K8 as Kubernetes API
     participant DS as Data Storage
     participant NS as Notification
