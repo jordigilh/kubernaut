@@ -29,7 +29,7 @@ data:
     # Infrastructure dependencies
     infrastructure:
       redis:
-        addr: redis-gateway.kubernaut-gateway.svc.cluster.local:6379
+        addr: redis-gateway.kubernaut-system.svc.cluster.local:6379
         db: 0
         dial_timeout: 5s
         read_timeout: 3s
