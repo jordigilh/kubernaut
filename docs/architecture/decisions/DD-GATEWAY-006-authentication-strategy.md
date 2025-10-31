@@ -1,4 +1,4 @@
-# DD-GATEWAY-004: Gateway Authentication and Authorization Strategy
+# DD-GATEWAY-006: Gateway Authentication and Authorization Strategy
 
 **Status**: Approved
 **Date**: 2025-10-27

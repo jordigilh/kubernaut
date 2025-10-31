@@ -22,7 +22,7 @@ Please refer to [docs/architecture/decisions/README.md](../architecture/decision
 Having three separate locations for decision documents (docs/decisions/, docs/architecture/, docs/architecture/decisions/) created confusion and duplicate IDs. Consolidating to a single location provides:
 
 - ✅ Clear rule: ALL decisions go in ONE place
-- ✅ No confusion about placement  
+- ✅ No confusion about placement
 - ✅ Easier to maintain index
 - ✅ Consistent with official README
 - ✅ Eliminates duplicate IDs

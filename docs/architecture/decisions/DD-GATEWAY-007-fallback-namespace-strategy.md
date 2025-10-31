@@ -1,4 +1,4 @@
-# DD-GATEWAY-005: Fallback Namespace Strategy for Cluster-Scoped Signals
+# DD-GATEWAY-007: Fallback Namespace Strategy for Cluster-Scoped Signals
 
 ## Status
 **✅ APPROVED** (2025-10-31)

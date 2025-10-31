@@ -34,12 +34,39 @@
 
 ### **Design Decisions (DD-PREFIX)**
 
+#### **Project-Wide Standards**
+
+|| ID | Title | Scope | Status | Date | Impact |
+||---|-------|-------|--------|------|--------|
+|| DD-001 | [Recovery Context Enrichment](./DD-001-recovery-context-enrichment.md) | RemediationProcessing / AIAnalysis | ✅ Approved | 2024-10-08 | Temporal consistency, fresh context for AI recovery |
+|| DD-002 | [Per-Step Validation Framework](./DD-002-per-step-validation-framework.md) | WorkflowExecution / KubernetesExecutor | ✅ Approved | 2025-10-14 | 15-20% effectiveness improvement, cascade failure prevention |
+|| DD-003 | [Forced Recommendation Manual Override](./DD-003-forced-recommendation-manual-override.md) | RemediationOrchestrator | ✅ Approved for V2 | 2025-10-20 | Operator autonomy, complete audit trail (V2 feature) |
+|| DD-004 | [RFC 7807 Error Response Standard](./DD-004-RFC7807-ERROR-RESPONSES.md) | All HTTP Services | ✅ Approved | 2025-10-30 | Consistent error handling across all services |
+|| DD-005 | [Observability Standards](./DD-005-OBSERVABILITY-STANDARDS.md) | All Services | ✅ Approved | 2025-10-31 | Metrics, logging, tracing standards |
+
+#### **Service-Specific Decisions**
+
 || ID | Title | Service/Component | Status | Date | Impact |
 ||---|-------|-------------------|--------|------|--------|
+|| DD-CONTEXT-001 | [Cache Stampede Prevention](./DD-CONTEXT-001-cache-stampede-prevention.md) | Context API | ✅ Approved | 2025-10-20 | 90% DB query reduction, single-flight deduplication |
+|| DD-CONTEXT-002 | [Cache Size Limit Configuration](./DD-CONTEXT-002-cache-size-limit-configuration.md) | Context API | ✅ Approved | 2025-10-20 | OOM prevention, configurable limits |
+|| DD-CONTEXT-003 | [Context Enrichment Placement](./DD-CONTEXT-003-Context-Enrichment-Placement.md) | Context API / HolmesGPT API | ✅ Approved | 2025-10-22 | LLM-driven tool call pattern, 36% token cost reduction |
+|| DD-CONTEXT-004 | [BR-AI-002 Ownership](./DD-CONTEXT-004-BR-AI-002-Ownership.md) | AIAnalysis / Context API | ✅ Approved | 2025-10-22 | Keep BR-AI-002 in AIAnalysis (revised scope) |
 || DD-EFFECTIVENESS-001 | [Hybrid Automated + AI Analysis](./DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) | Effectiveness Monitor | ✅ Approved | 2025-10-16 | 85-90% effectiveness, 11x ROI |
+|| DD-EFFECTIVENESS-002 | [Restart Recovery Idempotency](./DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) | Effectiveness Monitor | ✅ Approved | 2025-10-27 | Idempotent restart recovery |
 || DD-EFFECTIVENESS-003 | [RemediationRequest Watch Strategy](./DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md) | Effectiveness Monitor | ✅ Approved | 2025-10-16 | 92% confidence, future-proof design |
-|| DD-HOLMESGPT-009 | [Self-Documenting JSON Format](./DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md) | HolmesGPT API / All AI Services | ✅ Approved | 2025-10-16 | 60% token reduction, $5,500/year savings, 100% readability, zero legend overhead |
-|| DD-HOLMESGPT-009-ADD | [YAML Evaluation Addendum](./DD-HOLMESGPT-009-ADDENDUM-YAML-Evaluation.md) | HolmesGPT API / All AI Services | ✅ JSON Reaffirmed | 2025-10-16 | YAML evaluated: 17.5% token savings insufficient, JSON proven superior |
+|| DD-GATEWAY-004 | [Redis Memory Optimization](./DD-GATEWAY-004-redis-memory-optimization.md) | Gateway Service | ✅ Approved | 2025-10-24 | 93% memory reduction, lightweight metadata |
+|| DD-GATEWAY-005 | [Redis Cleanup on CRD Deletion](./DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md) | Gateway Service | ✅ Approved | 2025-10-27 | No cleanup needed (TTL-based expiration) |
+|| DD-GATEWAY-006 | [Authentication Strategy](./DD-GATEWAY-006-authentication-strategy.md) | Gateway Service | ✅ Approved | 2025-10-27 | Network-level security, no OAuth2 |
+|| DD-GATEWAY-007 | [Fallback Namespace Strategy](./DD-GATEWAY-007-fallback-namespace-strategy.md) | Gateway Service | ✅ Approved | 2025-10-31 | kubernaut-system fallback for cluster-scoped signals |
+|| DD-HOLMESGPT-005 | [Test Strategy Validation](./DD-HOLMESGPT-005-Test-Strategy-Validation.md) | HolmesGPT API | ✅ Validated | 2025-10-13 | Zero SDK overlap, 211 tests validated |
+|| DD-HOLMESGPT-006 | [Implementation Plan Quality Gate](./DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md) | HolmesGPT API | ✅ Approved | 2025-10-13 | Plan quality validation |
+|| DD-HOLMESGPT-007 | [Service Boundaries Clarification](./DD-HOLMESGPT-007-Service-Boundaries-Clarification.md) | HolmesGPT API | ✅ Approved | 2025-10-13 | Clear service boundaries |
+|| DD-HOLMESGPT-008 | [Safety-Aware Investigation](./DD-HOLMESGPT-008-Safety-Aware-Investigation.md) | HolmesGPT API | ✅ Approved | 2025-10-13 | Safety-aware AI investigations |
+|| DD-HOLMESGPT-009 | [Self-Documenting JSON Format](./DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md) | HolmesGPT API / All AI Services | ✅ Approved | 2025-10-16 | 60% token reduction, $5,500/year savings |
+|| DD-HOLMESGPT-009-ADD | [YAML Evaluation Addendum](./DD-HOLMESGPT-009-ADDENDUM-YAML-Evaluation.md) | HolmesGPT API / All AI Services | ✅ JSON Reaffirmed | 2025-10-16 | YAML evaluated: 17.5% token savings insufficient |
+|| DD-HOLMESGPT-013 | [Vendor Local SDK Copy](./DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md) | HolmesGPT API | ✅ Approved | 2025-10-13 | Stability through vendored SDK |
+|| DD-HOLMESGPT-014 | [MinimalDAL Stateless Architecture](./DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md) | HolmesGPT API | ✅ Approved | 2025-10-13 | Stateless architecture, no Robusta Platform |
 
 **Note**: DD-* prefix is used for detailed design decisions with comprehensive alternatives analysis, implementation strategy, and validation plans. ADR-* prefix is used for architectural records.
 
