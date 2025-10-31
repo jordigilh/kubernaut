@@ -30,7 +30,7 @@ var _ = Describe("RFC 7807 Error Response Compliance - RED PHASE", func() {
 
 	BeforeEach(func() {
 		// Create test server for HTTP API testing
-		testServer, _ = createTestServer()
+		testServer = createHTTPTestServer()
 		Expect(testServer).ToNot(BeNil())
 
 		// Setup test data

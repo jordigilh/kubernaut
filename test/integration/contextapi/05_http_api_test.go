@@ -60,7 +60,9 @@ func clearRedisCache() {
 
 // createTestServer creates a Context API server with a custom Prometheus registry
 // to avoid duplicate metrics registration panics in tests
-func createTestServer() (*httptest.Server, *server.Server) {
+// createTestServerWithAccess creates a test server with access to internal server instance
+// Use this when tests need to call server methods directly (e.g., Shutdown, CloseDatabaseConnection)
+func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	// Create custom registry for this test instance
 	customRegistry := prometheus.NewRegistry()
 
@@ -90,6 +92,13 @@ func createTestServer() (*httptest.Server, *server.Server) {
 	Expect(err).ToNot(HaveOccurred())
 
 	return httptest.NewServer(srv.Handler()), srv
+}
+
+// createHTTPTestServer creates a test server for HTTP-only testing
+// Use this when tests only need HTTP access (don't need server internals)
+func createHTTPTestServer() *httptest.Server {
+	httpServer, _ := createTestServerWithAccess()
+	return httpServer
 }
 
 var _ = Describe("HTTP API Integration Tests", func() {
@@ -146,7 +155,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv // Used for cleanup if needed
 
@@ -163,7 +172,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv // Used for cleanup if needed
 
@@ -213,7 +222,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv
 
@@ -250,7 +259,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv // Used for cleanup if needed
 
@@ -280,7 +289,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv
 
@@ -329,7 +338,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv
 
@@ -391,7 +400,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv
 
@@ -458,7 +467,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv
 
@@ -523,7 +532,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 
 			// Create test server with custom Prometheus registry
 			var srv *server.Server
-			testServer, srv = createTestServer()
+			testServer, srv = createTestServerWithAccess()
 			defer testServer.Close()
 			_ = srv
 
@@ -564,7 +573,7 @@ var _ = Describe("HTTP API Integration Tests", func() {
 	Context("Request ID", func() {
 		It("should log and track request IDs", func() {
 			// Day 8 DO-REFACTOR: Test activated (Batch 9 Conservative)
-			testServer, _ = createTestServer()
+			testServer = createHTTPTestServer()
 			defer testServer.Close()
 
 			// BR-CONTEXT-008: Request tracing

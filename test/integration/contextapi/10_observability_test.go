@@ -94,11 +94,11 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: User makes same query twice
 			// Expected: First query populates cache, second query hits cache and increments counter
 
-		testServer, _ := createTestServer()
-		defer testServer.Close()
-		
-		// Make first query (cache miss + populate)
-		resp1, err := http.Get(testServer.URL + "/api/v1/context/query?limit=10")
+			testServer := createHTTPTestServer()
+			defer testServer.Close()
+
+			// Make first query (cache miss + populate)
+			resp1, err := http.Get(testServer.URL + "/api/v1/context/query?limit=10")
 			Expect(err).ToNot(HaveOccurred())
 			resp1.Body.Close()
 
@@ -125,11 +125,11 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: User makes new query never cached before
 			// Expected: Cache miss counter increments, database counter increments
 
-		testServer, _ := createTestServer()
-		defer testServer.Close()
-		
-		// Make unique query (guaranteed cache miss)
-		uniqueQuery := fmt.Sprintf("/api/v1/context/query?limit=10&offset=%d", time.Now().Unix())
+			testServer := createHTTPTestServer()
+			defer testServer.Close()
+
+			// Make unique query (guaranteed cache miss)
+			uniqueQuery := fmt.Sprintf("/api/v1/context/query?limit=10&offset=%d", time.Now().Unix())
 			resp, err := http.Get(testServer.URL + uniqueQuery)
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
@@ -152,7 +152,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Cache has multi-tier architecture
 			// Expected: Metrics distinguish between L1 Redis, L2 LRU, L3 Database
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Make queries to exercise different cache tiers
@@ -179,7 +179,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Monitor API performance SLAs
 			// Expected: Query duration recorded with type label
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Make query
@@ -205,7 +205,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Identify slow database queries
 			// Expected: Database-specific duration metrics
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Make query that hits database
@@ -234,7 +234,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Track API usage patterns
 			// Expected: Counter increments with method, path, status labels
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Make HTTP request
@@ -262,7 +262,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Monitor end-to-end latency
 			// Expected: Duration histogram with endpoint labels
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Make HTTP request
@@ -270,18 +270,18 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
 
-		// Get metrics and verify HTTP duration histogram
-		metricsResp, err := http.Get(testServer.URL + "/metrics")
-		Expect(err).ToNot(HaveOccurred())
-		defer metricsResp.Body.Close()
-		
-		body, _ := io.ReadAll(metricsResp.Body)
-		metricsText := string(body)
-		
-		// Business Outcome: HTTP duration histogram recorded
-		Expect(metricsText).To(ContainSubstring("contextapi_http_duration_seconds"))
-		Expect(metricsText).To(MatchRegexp(`contextapi_http_duration_seconds_count.*[1-9]`),
-			"HTTP duration histogram MUST record request latency (count > 0)")
+			// Get metrics and verify HTTP duration histogram
+			metricsResp, err := http.Get(testServer.URL + "/metrics")
+			Expect(err).ToNot(HaveOccurred())
+			defer metricsResp.Body.Close()
+
+			body, _ := io.ReadAll(metricsResp.Body)
+			metricsText := string(body)
+
+			// Business Outcome: HTTP duration histogram recorded
+			Expect(metricsText).To(ContainSubstring("contextapi_http_duration_seconds"))
+			Expect(metricsText).To(MatchRegexp(`contextapi_http_duration_seconds_count.*[1-9]`),
+				"HTTP duration histogram MUST record request latency (count > 0)")
 		})
 	})
 
@@ -290,7 +290,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Track error rates for alerting
 			// Expected: Error counter increments with operation and type labels
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Trigger error (invalid parameter)
@@ -298,27 +298,27 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
 
-		// Get metrics and verify error counter
-		metricsResp, err := http.Get(testServer.URL + "/metrics")
-		Expect(err).ToNot(HaveOccurred())
-		defer metricsResp.Body.Close()
-		
-		body, _ := io.ReadAll(metricsResp.Body)
-		metricsText := string(body)
-		
-		// Business Outcome: Error counter incremented
-		Expect(metricsText).To(ContainSubstring("contextapi_errors_total"))
-		Expect(metricsText).To(MatchRegexp(`contextapi_errors_total\{.*operation="query".*\}`),
-			"Error counter MUST track operation label")
-		Expect(metricsText).To(MatchRegexp(`contextapi_errors_total.*[1-9]`),
-			"Error counter MUST increment on query failures (value > 0)")
+			// Get metrics and verify error counter
+			metricsResp, err := http.Get(testServer.URL + "/metrics")
+			Expect(err).ToNot(HaveOccurred())
+			defer metricsResp.Body.Close()
+
+			body, _ := io.ReadAll(metricsResp.Body)
+			metricsText := string(body)
+
+			// Business Outcome: Error counter incremented
+			Expect(metricsText).To(ContainSubstring("contextapi_errors_total"))
+			Expect(metricsText).To(MatchRegexp(`contextapi_errors_total\{.*operation="query".*\}`),
+				"Error counter MUST track operation label")
+			Expect(metricsText).To(MatchRegexp(`contextapi_errors_total.*[1-9]`),
+				"Error counter MUST increment on query failures (value > 0)")
 		})
 
 		It("MUST record different error types separately", func() {
 			// Business Scenario: Distinguish between validation vs system errors
 			// Expected: Error metrics have category labels
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Trigger validation error
@@ -326,18 +326,18 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
 
-		// Get metrics and verify error type labels
-		metricsResp, err := http.Get(testServer.URL + "/metrics")
-		Expect(err).ToNot(HaveOccurred())
-		defer metricsResp.Body.Close()
-		
-		body, _ := io.ReadAll(metricsResp.Body)
-		metricsText := string(body)
-		
-		// Business Outcome: Error metrics distinguish by type
-		Expect(metricsText).To(ContainSubstring("contextapi_errors_total"))
-		Expect(metricsText).To(MatchRegexp(`contextapi_errors_total\{.*type="(validation|system)".*\}`),
-			"Error metrics MUST distinguish validation from system errors using 'type' label")
+			// Get metrics and verify error type labels
+			metricsResp, err := http.Get(testServer.URL + "/metrics")
+			Expect(err).ToNot(HaveOccurred())
+			defer metricsResp.Body.Close()
+
+			body, _ := io.ReadAll(metricsResp.Body)
+			metricsText := string(body)
+
+			// Business Outcome: Error metrics distinguish by type
+			Expect(metricsText).To(ContainSubstring("contextapi_errors_total"))
+			Expect(metricsText).To(MatchRegexp(`contextapi_errors_total\{.*type="(validation|system)".*\}`),
+				"Error metrics MUST distinguish validation from system errors using 'type' label")
 		})
 	})
 
@@ -346,7 +346,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Prometheus scrapes metrics endpoint
 			// Expected: Valid Prometheus text format with all metrics
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			resp, err := http.Get(fmt.Sprintf("%s/metrics", testServer.URL))
@@ -381,7 +381,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Grafana dashboards query by tier
 			// Expected: Labels include 'tier' with values: redis, lru, database
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Make query to trigger cache metrics
@@ -406,7 +406,7 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			// Business Scenario: Monitor specific query patterns
 			// Expected: Labels include 'type' with values: list_incidents, get_incident, etc.
 
-			testServer, _ := createTestServer()
+			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
 			// Make query
