@@ -500,7 +500,66 @@ sequenceDiagram
 
 ---
 
-### **3. Concurrent Request Handling (50+ Requests)**
+### **3. Redis Connection Pool Cleanup (Detailed)**
+
+**Scenario**: Gateway closes Redis connection pool during graceful shutdown
+
+```mermaid
+sequenceDiagram
+    participant Main as main.go
+    participant Server as Gateway Server
+    participant HTTP as http.Server
+    participant Redis as Redis Client
+    participant RedisServer as Redis Server
+    participant Pool as Connection Pool
+
+    Note over Main,Pool: Pod processing requests normally
+
+    Main->>Server: srv.Stop(shutdownCtx)
+    Server->>HTTP: httpServer.Shutdown(ctx)
+
+    Note over HTTP: Wait for in-flight requests
+    HTTP-->>Server: All requests complete
+
+    rect rgb(200, 200, 255)
+        Note over Server: REDIS CLEANUP
+
+        Server->>Redis: redisClient.Close()
+        Redis->>Pool: Close all connections
+
+        par Connection 1
+            Pool->>RedisServer: QUIT command
+            RedisServer-->>Pool: +OK
+        and Connection 2
+            Pool->>RedisServer: QUIT command
+            RedisServer-->>Pool: +OK
+        and Connection N
+            Pool->>RedisServer: QUIT command
+            RedisServer-->>Pool: +OK
+        end
+
+        Pool->>Pool: Release resources
+        Redis-->>Server: Close complete
+    end
+
+    Server-->>Main: Stop complete
+    Main->>Main: Exit cleanly
+
+    Note over Main,Pool: Result: Clean Redis shutdown (no leaked connections)
+```
+
+**Design Decision**: Parallel connection closure with proper QUIT commands
+
+**Rationale**:
+- Redis best practice: Send QUIT before closing connections
+- Parallel closure: Faster shutdown (all connections close simultaneously)
+- Resource cleanup: Prevents connection leaks
+
+**Validation**: Integration tests confirm zero leaked connections after shutdown
+
+---
+
+### **4. Concurrent Request Handling (50+ Requests)**
 
 **Scenario**: Gateway handling 50 concurrent requests when SIGTERM received
 
@@ -545,7 +604,7 @@ sequenceDiagram
 
 ---
 
-### **4. Full Rolling Update Timeline**
+### **5. Full Rolling Update Timeline**
 
 ```mermaid
 gantt
