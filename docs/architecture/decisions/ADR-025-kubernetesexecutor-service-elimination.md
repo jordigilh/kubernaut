@@ -519,13 +519,13 @@ spec:
 
 **Key Insight**: Tekton expects pre-existing ServiceAccounts (CNCF pattern), but we prioritize security over Tekton-native simplicity. Hybrid approach: Kubernaut creates SAs → Tekton uses them → OwnerReferences auto-cleanup.
 
-**Reference**: [Tekton SA Pattern Analysis](./TEKTON_SA_PATTERN_ANALYSIS.md), [RBAC Security Reassessment](./RBAC_STRATEGY_SECURITY_REASSESSMENT.md)
+**Reference**: [Tekton SA Pattern Analysis](../analysis/TEKTON_SA_PATTERN_ANALYSIS.md), [RBAC Security Reassessment](./RBAC_STRATEGY_SECURITY_REASSESSMENT.md)
 
 ---
 
 ### **Decision 2: Policy Distribution Strategy**
-**Selected**: **Option B (ConfigMap-Based for V1)** ✅  
-**Confidence**: **95%**  
+**Selected**: **Option B (ConfigMap-Based for V1)** ✅
+**Confidence**: **95%**
 **Rationale**: **Architectural consistency** - Kubernaut already uses ConfigMap-based Rego policies across other services (Gateway, RemediationProcessor, etc.). Following this established pattern ensures consistency, leverages existing infrastructure, and allows runtime policy updates without container rebuilds.
 
 **Implementation Pattern (Kubernaut Standard)**:
@@ -539,21 +539,21 @@ metadata:
 data:
   scale-deployment.rego: |
     package kubernaut.scale
-    
+
     deny[msg] {
         input.environment == "production"
         input.replicas == 0
         msg = "Cannot scale production to zero"
     }
-    
+
     requires_approval {
         input.current_replicas < 10
         input.replicas >= 50
     }
-  
+
   restart-pod.rego: |
     package kubernaut.restart
-    
+
     deny[msg] {
         input.pod_labels["app"] == "kube-apiserver"
         msg = "Cannot restart kube-apiserver pods"
@@ -634,9 +634,9 @@ kubectl scale deployment $DEPLOYMENT --replicas=$REPLICAS
 
 ---
 
-**ADR Status**: ✅ **Approved with Final Decisions**  
-**Date**: 2025-10-19  
-**Approved By**: Architecture Team + User Input  
-**Implementation Target**: Q4 2025  
+**ADR Status**: ✅ **Approved with Final Decisions**
+**Date**: 2025-10-19
+**Approved By**: Architecture Team + User Input
+**Implementation Target**: Q4 2025
 **Overall Confidence**: **89%** (Weighted average: 85% RBAC + 95% Policy + 95% Dry-Run + 90% Timeline)
 

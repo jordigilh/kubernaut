@@ -146,6 +146,10 @@ What other options did we evaluate?
 
 ## 🔗 Related Documentation
 
+- **Analysis**: Supporting analysis for architectural decisions → [../analysis/](../analysis/)
+  - Comprehensive alternative assessments
+  - Detailed technical comparisons
+  - Security and performance analysis
 - **Specifications**: Cross-service technical specifications → [../specifications/](../specifications/)
 - **References**: Visual diagrams and reference materials → [../references/](../references/)
 - **Service Docs**: Individual service specifications → [../../services/](../../services/)

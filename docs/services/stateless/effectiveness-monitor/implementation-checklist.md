@@ -1,15 +1,89 @@
 # Effectiveness Monitor Service - Implementation Checklist
 
-**Version**: 1.0.1 (Ultra-Compact JSON Format)
-**Last Updated**: October 6, 2025 (Format Update: October 16, 2025)
+**Version**: 1.1.0 - API GATEWAY MIGRATION REFERENCE ADDED
+**Last Updated**: November 2, 2025
 **Service Type**: Stateless HTTP API Service (Assessment & Analysis)
 **Port**: 8080 (REST API + Health), 9090 (Metrics)
+**Status**: 📋 **NOT YET IMPLEMENTED** - Ready for Phase 3 implementation
 
 **Format Optimization (DD-HOLMESGPT-009)**: 🆕
 - **Ultra-Compact JSON Format**: 75% token reduction for HolmesGPT API calls
 - **Cost Savings**: $1,320/year on LLM API calls (~18K post-execution analyses)
 - **Latency Improvement**: 150ms per post-execution analysis
 - **Decision Document**: `docs/architecture/decisions/DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md`
+
+---
+
+## 🔄 **FUTURE ARCHITECTURAL CHANGE: API GATEWAY PATTERN**
+
+**⚠️ CRITICAL - MUST IMPLEMENT THIS PATTERN**
+
+**Decision**: [DD-ARCH-001 Alternative 2 (API Gateway Pattern)](../../../architecture/decisions/DD-ARCH-001-FINAL-DECISION.md)
+
+**What**: Effectiveness Monitor will query audit trail data via **Data Storage Service REST API** (not direct PostgreSQL)
+
+**When**: Phase 3 of API Gateway migration - After Data Storage Service Phase 1 complete
+
+**Implementation Plan**: [implementation/API-GATEWAY-MIGRATION.md](./implementation/API-GATEWAY-MIGRATION.md)
+
+**Timeline**: 2-3 days (HTTP client integration + integration test updates)
+
+**Impact**:
+- **Reads**: Audit trail data → **Data Storage Service REST API** (NEW)
+- **Writes**: Effectiveness assessments → Direct PostgreSQL (unchanged)
+- **Code Pattern**: Similar to Context API migration (HTTP client for reads)
+
+**⚠️ IMPORTANT**: Do NOT implement direct PostgreSQL queries for audit data. Use Data Storage Service REST API.
+
+**Status**: 📋 **APPROVED - Must follow this pattern when implementing service**
+
+**Related**:
+- [Data Storage Service Phase 1 Plan](../data-storage/implementation/API-GATEWAY-MIGRATION.md) - Dependency
+- [Context API Migration Plan](../context-api/implementation/API-GATEWAY-MIGRATION.md) - Similar pattern
+
+---
+
+## 📋 **VERSION HISTORY**
+
+### **v1.1.0** (2025-11-02) - API GATEWAY MIGRATION REFERENCE ADDED
+
+**Purpose**: Document approved architectural pattern (DD-ARCH-001) that MUST be followed during implementation
+
+**Changes**:
+- ✅ **Future Architectural Change section added** (~25 lines)
+  - Documents required pattern: Query audit data via Data Storage Service REST API
+  - Explicitly warns against direct PostgreSQL queries for audit data
+  - Links to [DD-ARCH-001 Final Decision](../../../architecture/decisions/DD-ARCH-001-FINAL-DECISION.md)
+  - References detailed implementation plan: [implementation/API-GATEWAY-MIGRATION.md](./implementation/API-GATEWAY-MIGRATION.md)
+  - Timeline: 2-3 days (Phase 3 - after Data Storage Service Phase 1)
+- ✅ **Implementation plan created**: [implementation/API-GATEWAY-MIGRATION.md](./implementation/API-GATEWAY-MIGRATION.md)
+  - Day-by-day breakdown (HTTP client, integration tests)
+  - Specification updates defined (overview.md, integration-points.md)
+  - Read/Write split pattern (reads via API, writes direct)
+
+**Rationale**:
+- Service not yet implemented, but approved architectural pattern exists
+- Must document in checklist to prevent implementing wrong pattern
+- Effectiveness Monitor is Phase 3 (depends on Data Storage Service Phase 1)
+
+**Impact**:
+- Implementation Guidance: Clear pattern to follow when implementing service
+- Risk Mitigation: Prevents implementing direct PostgreSQL queries (wrong pattern)
+- Coordination: References Data Storage Service as Phase 1 dependency
+
+**Time Investment**: 5 minutes (documentation only)
+
+**Related**:
+- [DD-ARCH-001 Final Decision](../../../architecture/decisions/DD-ARCH-001-FINAL-DECISION.md)
+- [implementation/API-GATEWAY-MIGRATION.md](./implementation/API-GATEWAY-MIGRATION.md) - Phase 3 plan
+
+---
+
+### **v1.0.1** (2025-10-16) - ULTRA-COMPACT JSON FORMAT
+
+**Purpose**: Document format optimization for HolmesGPT API calls
+
+**Changes**: (see above in header)
 
 ---
 
