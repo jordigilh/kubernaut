@@ -729,6 +729,23 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 // Helper Functions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// knownEndpoints defines path segments that should NOT be normalized to :id
+// These are legitimate endpoint names that may contain numbers or hyphens
+// DD-005 § 3.1: Metrics Cardinality Management
+var knownEndpoints = map[string]bool{
+	"health":    true,
+	"ready":     true,
+	"metrics":   true,
+	"query":     true,
+	"search":    true,
+	"context":   true,
+	"incidents": true,
+	"actions":   true,
+	"api":       true,
+	"v1":        true,
+	"v2":        true,
+}
+
 // normalizePath normalizes HTTP paths for Prometheus metrics to prevent cardinality explosion
 // DD-005: Observability Standards - Metric cardinality management
 // BR-CONTEXT-006: Observability and monitoring
@@ -749,7 +766,7 @@ func normalizePath(path string) string {
 		return path
 	}
 
-	// Split path into segments
+	// Split path into segments and normalize ID-like segments
 	segments := strings.Split(path, "/")
 
 	for i, segment := range segments {
@@ -758,15 +775,8 @@ func normalizePath(path string) string {
 			continue
 		}
 
-		// Skip known static segments that might look like IDs
-		if segment == "v1" || segment == "v2" || segment == "api" {
-			continue
-		}
-
-		// Check if segment looks like an ID:
-		// - Contains only alphanumeric, hyphens, underscores
-		// - Has more than 3 characters (to avoid false positives like "api")
-		// - Is not a known endpoint name
+		// Normalize segment if it looks like an ID (UUID, numeric ID, etc.)
+		// Known endpoints (api, v1, health, etc.) are excluded by isIDLikeSegment
 		if isIDLikeSegment(segment) {
 			segments[i] = ":id"
 		}
@@ -776,23 +786,15 @@ func normalizePath(path string) string {
 }
 
 // isIDLikeSegment determines if a path segment looks like an ID
+// Returns true if segment should be normalized to :id placeholder
+//
+// ID characteristics:
+//  1. NOT a known endpoint name (health, api, v1, etc.)
+//  2. Length > 3 characters (avoid false positives)
+//  3. Contains only valid ID chars (alphanumeric, hyphens, underscores)
+//  4. Has at least one number or hyphen (typical of IDs/UUIDs)
 func isIDLikeSegment(segment string) bool {
-	// Known endpoint names that should NOT be normalized
-	knownEndpoints := map[string]bool{
-		"health":    true,
-		"ready":     true,
-		"metrics":   true,
-		"query":     true,
-		"search":    true,
-		"context":   true,
-		"incidents": true,
-		"actions":   true,
-		"api":       true,
-		"v1":        true,
-		"v2":        true,
-	}
-
-	// If it's a known endpoint, don't normalize
+	// Known endpoint names are excluded (uses package-level knownEndpoints map)
 	if knownEndpoints[segment] {
 		return false
 	}
@@ -802,24 +804,34 @@ func isIDLikeSegment(segment string) bool {
 		return false
 	}
 
-	// Check if it contains only valid ID characters: alphanumeric, hyphens, underscores
-	// and has at least one number or hyphen (typical of IDs/UUIDs)
+	// Validate ID characteristics: only valid chars + has numbers/hyphens
 	hasNumberOrHyphen := false
 	for _, ch := range segment {
-		if !((ch >= 'a' && ch <= 'z') ||
-			(ch >= 'A' && ch <= 'Z') ||
-			(ch >= '0' && ch <= '9') ||
-			ch == '-' ||
-			ch == '_') {
-			return false // Contains invalid characters
+		if !isValidIDChar(ch) {
+			return false // Contains invalid characters for an ID
 		}
-		if (ch >= '0' && ch <= '9') || ch == '-' {
+		if isDigit(ch) || ch == '-' {
 			hasNumberOrHyphen = true
 		}
 	}
 
-	// Looks like an ID if it has numbers or hyphens and valid characters
+	// Looks like an ID if it has numbers or hyphens and only valid characters
 	return hasNumberOrHyphen
+}
+
+// isValidIDChar checks if a character is valid in an ID segment
+// Valid ID characters: alphanumeric (a-z, A-Z, 0-9), hyphens (-), underscores (_)
+func isValidIDChar(ch rune) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '-' ||
+		ch == '_'
+}
+
+// isDigit checks if a character is a numeric digit (0-9)
+func isDigit(ch rune) bool {
+	return ch >= '0' && ch <= '9'
 }
 
 func (s *Server) respondJSON(w http.ResponseWriter, status int, data interface{}) {
