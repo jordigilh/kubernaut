@@ -320,17 +320,17 @@ data:
       host: "0.0.0.0"
       read_timeout: "30s"
       write_timeout: "30s"
-    
+
     logging:
       level: "info"
       format: "json"
-    
+
     cache:
       redis_addr: "redis.${NAMESPACE}.svc.cluster.local:6379"
       redis_db: 0
       lru_size: 1000
       default_ttl: "5m"
-    
+
     database:
       host: "postgres.${NAMESPACE}.svc.cluster.local"
       port: 5432
