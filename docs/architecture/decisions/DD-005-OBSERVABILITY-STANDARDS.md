@@ -149,6 +149,140 @@ holmesgpt_api_llm_tokens_total
 
 ---
 
+### **3.1. Metrics Cardinality Management** ⚠️ **CRITICAL**
+
+**Problem**: High-cardinality labels cause Prometheus memory explosion and query degradation.
+
+#### **Path Normalization for HTTP Metrics**
+
+**Requirement**: HTTP path labels MUST be normalized to prevent unbounded cardinality.
+
+**Risk Scenario**:
+```go
+// ❌ DANGEROUS: Raw paths with IDs/query params
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/abc-123", "200")
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/def-456", "200")
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/xyz-789", "200")
+// Result: Millions of unique metrics → Prometheus OOM
+```
+
+**Solution**: Normalize dynamic path segments
+```go
+// ✅ SAFE: Normalized paths with :id placeholder
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/:id", "200")
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/:id", "200")
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/:id", "200")
+// Result: Single metric → Bounded cardinality
+```
+
+#### **Implementation Pattern**
+
+**Mandatory**: All services MUST normalize paths before recording HTTP metrics.
+
+```go
+// Context API Reference Implementation
+// pkg/contextapi/server/server.go
+
+func normalizePath(path string) string {
+    // Already normalized? Return as-is (idempotent)
+    if strings.Contains(path, ":id") {
+        return path
+    }
+    
+    segments := strings.Split(path, "/")
+    for i, segment := range segments {
+        if segment == "" {
+            continue // Skip empty segments
+        }
+        
+        // Skip known endpoint names
+        if isKnownEndpoint(segment) {
+            continue
+        }
+        
+        // Normalize ID-like segments (UUIDs, numeric IDs, etc.)
+        if isIDLikeSegment(segment) {
+            segments[i] = ":id"
+        }
+    }
+    
+    return strings.Join(segments, "/")
+}
+
+func isIDLikeSegment(segment string) bool {
+    // ID characteristics:
+    // 1. More than 3 characters (avoid false positives)
+    // 2. Contains numbers or hyphens
+    // 3. Only alphanumeric + hyphens + underscores
+    // 4. Not a known endpoint name
+    
+    if len(segment) <= 3 {
+        return false
+    }
+    
+    hasNumberOrHyphen := false
+    for _, ch := range segment {
+        if !isValidIDChar(ch) {
+            return false
+        }
+        if (ch >= '0' && ch <= '9') || ch == '-' {
+            hasNumberOrHyphen = true
+        }
+    }
+    
+    return hasNumberOrHyphen
+}
+```
+
+#### **Validation**
+
+**Unit Tests Required**: All services MUST have path normalization tests.
+
+```go
+// Example test cases
+func TestNormalizePath(t *testing.T) {
+    tests := []struct {
+        input    string
+        expected string
+    }{
+        {"/health", "/health"},                                    // Static - unchanged
+        {"/api/v1/incidents/abc-123", "/api/v1/incidents/:id"},  // UUID - normalized
+        {"/api/v1/incidents/123/actions/456", "/api/v1/incidents/:id/actions/:id"}, // Multiple IDs
+        {"/api/v1/context/query", "/api/v1/context/query"},       // Static - unchanged
+    }
+    
+    for _, tt := range tests {
+        result := normalizePath(tt.input)
+        if result != tt.expected {
+            t.Errorf("normalizePath(%q) = %q, want %q", tt.input, result, tt.expected)
+        }
+    }
+}
+```
+
+#### **Monitoring**
+
+**Prometheus Alert**: Alert when cardinality exceeds threshold.
+
+```yaml
+- alert: HighMetricCardinality
+  expr: |
+    count by (job) (
+      {job=~".*-api", __name__=~".*_http_.*"}
+    ) > 5000
+  for: 5m
+  annotations:
+    summary: "High metric cardinality in {{ $labels.job }}"
+    description: "{{ $value }} unique HTTP metrics (threshold: 5000)"
+```
+
+#### **Reference Implementation**
+
+- **Context API**: `pkg/contextapi/server/server.go` - Full implementation with tests
+- **Audit Document**: `docs/services/stateless/context-api/METRICS_CARDINALITY_AUDIT.md`
+
+---
+
 ### **4. Histogram Buckets**
 
 **HTTP Request Duration** (seconds):

@@ -709,8 +709,10 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		duration := time.Since(start).Seconds()
 		status := strconv.Itoa(ww.Status())
 
-		// Record metrics
-		s.metrics.RecordHTTPRequest(r.Method, r.URL.Path, status, duration)
+		// Record metrics with normalized path (prevents cardinality explosion)
+		// DD-005: Observability Standards - Metric cardinality management
+		normalizedPath := normalizePath(r.URL.Path)
+		s.metrics.RecordHTTPRequest(r.Method, normalizedPath, status, duration)
 
 		// Log request
 		s.logger.Info("HTTP request",
@@ -726,6 +728,99 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Helper Functions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// normalizePath normalizes HTTP paths for Prometheus metrics to prevent cardinality explosion
+// DD-005: Observability Standards - Metric cardinality management
+// BR-CONTEXT-006: Observability and monitoring
+//
+// Examples:
+//   - /api/v1/context/query → /api/v1/context/query (unchanged)
+//   - /api/v1/incidents/abc-123 → /api/v1/incidents/:id (ID normalized)
+//   - /health → /health (unchanged)
+//   - /metrics → /metrics (unchanged)
+//
+// Rationale: Dynamic path segments (IDs, UUIDs, timestamps) create unbounded metric cardinality.
+// Prometheus memory usage explodes with millions of unique label combinations.
+//
+// Implementation: Regex-based normalization replaces ID-like segments with :id placeholder
+func normalizePath(path string) string {
+	// Already normalized path - don't process again
+	if strings.Contains(path, ":id") {
+		return path
+	}
+	
+	// Split path into segments
+	segments := strings.Split(path, "/")
+	
+	for i, segment := range segments {
+		// Skip empty segments (from leading/trailing slashes)
+		if segment == "" {
+			continue
+		}
+		
+		// Skip known static segments that might look like IDs
+		if segment == "v1" || segment == "v2" || segment == "api" {
+			continue
+		}
+		
+		// Check if segment looks like an ID:
+		// - Contains only alphanumeric, hyphens, underscores
+		// - Has more than 3 characters (to avoid false positives like "api")
+		// - Is not a known endpoint name
+		if isIDLikeSegment(segment) {
+			segments[i] = ":id"
+		}
+	}
+	
+	return strings.Join(segments, "/")
+}
+
+// isIDLikeSegment determines if a path segment looks like an ID
+func isIDLikeSegment(segment string) bool {
+	// Known endpoint names that should NOT be normalized
+	knownEndpoints := map[string]bool{
+		"health":   true,
+		"ready":    true,
+		"metrics":  true,
+		"query":    true,
+		"search":   true,
+		"context":  true,
+		"incidents": true,
+		"actions":  true,
+		"api":      true,
+		"v1":       true,
+		"v2":       true,
+	}
+	
+	// If it's a known endpoint, don't normalize
+	if knownEndpoints[segment] {
+		return false
+	}
+	
+	// Must have more than 3 characters to avoid false positives
+	if len(segment) <= 3 {
+		return false
+	}
+	
+	// Check if it contains only valid ID characters: alphanumeric, hyphens, underscores
+	// and has at least one number or hyphen (typical of IDs/UUIDs)
+	hasNumberOrHyphen := false
+	for _, ch := range segment {
+		if !((ch >= 'a' && ch <= 'z') || 
+		     (ch >= 'A' && ch <= 'Z') || 
+		     (ch >= '0' && ch <= '9') || 
+		     ch == '-' || 
+		     ch == '_') {
+			return false // Contains invalid characters
+		}
+		if (ch >= '0' && ch <= '9') || ch == '-' {
+			hasNumberOrHyphen = true
+		}
+	}
+	
+	// Looks like an ID if it has numbers or hyphens and valid characters
+	return hasNumberOrHyphen
+}
 
 func (s *Server) respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
