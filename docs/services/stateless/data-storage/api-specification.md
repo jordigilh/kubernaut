@@ -1,22 +1,27 @@
 # Data Storage Service - REST API Specification
 
-**Version**: v1.0
-**Last Updated**: October 6, 2025
+**Version**: v2.0 (Phase 1: Read API ✅ Production-Ready)
+**Last Updated**: November 1, 2025
 **Base URL**: `http://data-storage.kubernaut-system:8080`
-**Authentication**: Bearer Token (Kubernetes ServiceAccount)
+**Authentication**: Bearer Token (Kubernetes ServiceAccount) - *Phase 2*
+**Implementation Status**: Days 1-8 Complete, 75 Tests (38 Unit, 37 Integration)
 
 ---
 
 ## Table of Contents
 
-1. [API Overview](#api-overview)
-2. [Authentication](#authentication)
-3. [Remediation Audit API](#remediation-audit-api)
-4. [AI Analysis Audit API](#ai-analysis-audit-api)
-5. [Workflow Audit API](#workflow-audit-api)
-6. [Execution Audit API](#execution-audit-api)
-7. [Health & Metrics](#health--metrics)
-8. [Error Responses](#error-responses)
+### Phase 1: Read API (✅ Production-Ready)
+1. [Incidents Read API](#incidents-read-api-phase-1)
+   - [List Incidents](#list-incidents)
+   - [Get Incident by ID](#get-incident-by-id)
+2. [Health & Metrics](#health--metrics)
+3. [RFC 7807 Error Responses](#rfc-7807-error-responses)
+
+### Phase 2: Write API (📋 Planned)
+4. [Remediation Audit API](#remediation-audit-api-phase-2)
+5. [AI Analysis Audit API](#ai-analysis-audit-api-phase-2)
+6. [Workflow Audit API](#workflow-audit-api-phase-2)
+7. [Execution Audit API](#execution-audit-api-phase-2)
 
 ---
 
@@ -42,6 +47,213 @@ Content-Type: application/json
 
 ---
 
+## Incidents Read API (Phase 1)
+
+**Status**: ✅ Production-Ready (Days 1-8 Complete)
+**Business Requirements**: BR-STORAGE-021 through BR-STORAGE-028
+**Test Coverage**: 75 tests (38 unit, 37 integration)
+
+### List Incidents
+
+Retrieve a filtered and paginated list of incidents from the `resource_action_traces` table.
+
+#### Request
+
+```http
+GET /api/v1/incidents?severity=critical&limit=100&offset=0
+```
+
+#### Query Parameters
+
+| Parameter | Type | Required | Default | Validation | Description |
+|-----------|------|----------|---------|------------|-------------|
+| `namespace` | string | No | - | Alphanumeric + hyphens | Filter by Kubernetes namespace |
+| `severity` | string | No | - | Enum: `critical`, `high`, `medium`, `low` | Filter by alert severity |
+| `cluster` | string | No | - | Alphanumeric + hyphens | Filter by cluster name |
+| `action_type` | string | No | - | Alphanumeric + hyphens | Filter by remediation action type |
+| `alert_name` | string | No | - | Alphanumeric + hyphens + underscore | Filter by alert name |
+| `limit` | integer | No | 100 | 1-1000 | Maximum results per page |
+| `offset` | integer | No | 0 | ≥0 | Number of records to skip |
+
+#### Response (200 OK)
+
+```json
+{
+  "data": [
+    {
+      "id": 12345,
+      "action_history_id": 1,
+      "action_id": "uuid-string",
+      "alert_name": "HighMemoryUsage",
+      "alert_severity": "critical",
+      "action_type": "scale",
+      "action_timestamp": "2025-11-01T10:00:00Z",
+      "model_used": "gpt-4o",
+      "model_confidence": 0.95,
+      "execution_status": "completed"
+    }
+  ],
+  "pagination": {
+    "limit": 100,
+    "offset": 0,
+    "total": 1
+  }
+}
+```
+
+#### Example Request
+
+```bash
+# List critical incidents
+curl "http://data-storage.kubernaut-system:8080/api/v1/incidents?severity=critical&limit=10"
+
+# Filter by namespace and severity
+curl "http://data-storage.kubernaut-system:8080/api/v1/incidents?namespace=production&severity=high"
+
+# Paginate through results
+curl "http://data-storage.kubernaut-system:8080/api/v1/incidents?limit=100&offset=200"
+```
+
+#### Security Features (BR-STORAGE-025)
+- **SQL Injection Prevention**: Parameterized queries with PostgreSQL `$N` placeholders
+- **Input Validation**: Severity enum validation, limit/offset boundary checks
+- **Unicode Support**: Full UTF-8 support (BR-STORAGE-026)
+
+#### Performance Characteristics (BR-STORAGE-027)
+- **p95 Latency**: <100ms (exceeds <250ms target)
+- **p99 Latency**: <200ms (exceeds <500ms target)
+- **Large Result Sets (1000 records)**: p99 <500ms (exceeds <1s target)
+
+---
+
+### Get Incident by ID
+
+Retrieve a single incident by its unique ID.
+
+#### Request
+
+```http
+GET /api/v1/incidents/:id
+```
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | integer | Yes | Unique incident ID |
+
+#### Response (200 OK)
+
+```json
+{
+  "id": 12345,
+  "action_history_id": 1,
+  "action_id": "uuid-string",
+  "alert_name": "HighMemoryUsage",
+  "alert_severity": "critical",
+  "action_type": "scale",
+  "action_timestamp": "2025-11-01T10:00:00Z",
+  "model_used": "gpt-4o",
+  "model_confidence": 0.95,
+  "execution_status": "completed"
+}
+```
+
+#### Response (404 Not Found)
+
+See [RFC 7807 Error Responses](#rfc-7807-error-responses).
+
+#### Example Request
+
+```bash
+# Get specific incident
+curl "http://data-storage.kubernaut-system:8080/api/v1/incidents/12345"
+```
+
+---
+
+## RFC 7807 Error Responses
+
+All errors follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/html/rfc7807) standard (BR-STORAGE-024).
+
+### 400 Bad Request - Invalid Parameters
+
+```json
+{
+  "type": "https://kubernaut.io/errors/validation",
+  "title": "Invalid Request Parameters",
+  "status": 400,
+  "detail": "Invalid severity value: 'super-critical'. Must be one of: critical, high, medium, low",
+  "instance": "/api/v1/incidents"
+}
+```
+
+### 404 Not Found - Incident Not Found
+
+```json
+{
+  "type": "https://kubernaut.io/errors/not-found",
+  "title": "Incident Not Found",
+  "status": 404,
+  "detail": "Incident with ID 99999 does not exist",
+  "instance": "/api/v1/incidents/99999"
+}
+```
+
+### 500 Internal Server Error - Database Error
+
+```json
+{
+  "type": "https://kubernaut.io/errors/internal",
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "Database query failed",
+  "instance": "/api/v1/incidents"
+}
+```
+
+---
+
+## Health & Metrics
+
+### Health Check Endpoints
+
+```bash
+# Liveness probe (DD-007 compatible)
+GET /health/live
+# Returns 200 OK if service is alive
+
+# Readiness probe (DD-007 graceful shutdown integration)
+GET /health/ready
+# Returns 200 OK if ready to accept traffic
+# Returns 503 Service Unavailable during graceful shutdown
+
+# Combined health check
+GET /health
+# Returns 200 OK if service is healthy
+```
+
+### Prometheus Metrics
+
+```bash
+# Metrics endpoint
+GET /metrics
+# Exposes Prometheus metrics (port 9090)
+```
+
+**Key Metrics**:
+- `http_requests_total{method="GET", path="/api/v1/incidents", status="200"}` - Request count
+- `http_request_duration_seconds{method="GET", path="/api/v1/incidents"}` - Request latency histogram
+- `database_query_duration_seconds{query="list_incidents"}` - Database query latency
+
+---
+
+## Phase 2: Write API (Planned)
+
+The following endpoints are planned for Phase 2 implementation:
+
+---
+
 ## Authentication
 
 ### Bearer Token Authentication
@@ -59,7 +271,9 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ---
 
-## Remediation Audit API
+## Remediation Audit API (Phase 2)
+
+**Status**: 📋 Planned for Phase 2
 
 ### Create Remediation Audit Record
 
