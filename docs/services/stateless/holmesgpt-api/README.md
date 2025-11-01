@@ -1,9 +1,47 @@
 # HolmesGPT API Service - Documentation Hub
 
-**Version**: v3.0 (Minimal Internal Service)
-**Last Updated**: 2025-10-17
+**Version**: v3.1 (Pending Production Enhancements)
+**Last Updated**: 2025-11-01
 **Service Type**: Stateless HTTP API (Python)
-**Status**: ✅ **PRODUCTION READY** (104/104 tests passing, full REFACTOR phase complete)
+**Status**: 🟡 **INCOMPLETE** - 2 Production Blockers (See Pending Enhancements below)
+
+---
+
+## 🚧 **PENDING PRODUCTION ENHANCEMENTS**
+
+**Status**: 🟡 **2 Blockers** - Core functionality complete, production patterns pending
+
+### **Blocker 1: RFC 7807 Error Response Standard**
+- **Requirement**: Implement RFC 7807 Problem Details for HTTP APIs
+- **Current State**: Service returns generic JSON error responses
+- **Target State**: Structured error responses following RFC 7807 standard
+- **Priority**: P0 (Production Standard)
+- **Design Reference**: [DD-004: RFC 7807 Error Response Standard](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md)
+- **Estimated Effort**: 2-3 hours
+- **Dependencies**: None
+- **Impact**: Consistent error handling across all Kubernaut services
+
+### **Blocker 2: Kubernetes-Aware Graceful Shutdown**
+- **Requirement**: Implement 4-step graceful shutdown pattern (DD-007)
+- **Current State**: Service stops immediately on SIGTERM
+- **Target State**: Graceful termination with connection draining
+- **Priority**: P0 (Production Reliability)
+- **Design Reference**: [DD-007: Kubernetes-Aware Graceful Shutdown](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)
+- **Estimated Effort**: 3-4 hours
+- **Dependencies**: None
+- **Impact**: Zero-downtime deployments, reliable rolling updates
+
+### **Blocker 3: Context API Integration (Dependency)**
+- **Requirement**: Integrate with Context API via LLM tool calls
+- **Current State**: Context API uses direct PostgreSQL queries (anti-pattern)
+- **Target State**: Context API exposed via OpenAPI, HolmesGPT consumes as tool
+- **Priority**: P0 (Architecture Compliance)
+- **Design Reference**: [DD-CONTEXT-003: LLM-Driven Tool Call Pattern](../../../architecture/decisions/DD-CONTEXT-003-Context-Enrichment-Placement.md)
+- **Estimated Effort**: 4-6 hours (after Context API migration complete)
+- **Dependencies**: ⏸️ **Context API Migration** (IN PROGRESS)
+- **Impact**: AI-driven historical context enrichment for investigations
+
+**Resume After**: Context API migration to Data Storage Service complete
 
 ---
 
@@ -379,11 +417,39 @@ spec:
 | **v1.1** | Oct 14, 2025 | Comprehensive expansion (7,131 lines, 191 BRs) | ⚠️ Superseded |
 | **v2.0** | Oct 16, 2025 | Token optimization (290 tokens, $2.24M savings, 185 BRs) | ⚠️ Superseded |
 | **v2.1** | Oct 16, 2025 | Safety endpoint removal (185 BRs) | ⚠️ Superseded |
-| **v3.0** | Oct 17, 2025 | **Minimal Internal Service (45 BRs, 104 tests, 100% passing)** | ✅ **PRODUCTION** |
+| **v3.0** | Oct 17, 2025 | Minimal Internal Service (45 BRs, 104 tests, 100% passing) | ⚠️ Superseded |
+| **v3.1** | Nov 01, 2025 | **Production blockers identified: RFC7807 + Graceful Shutdown + Context API integration** | 🟡 **INCOMPLETE** |
+
+---
+
+## 📝 Changelog (v3.1 - November 1, 2025)
+
+### **Pending Enhancements** (Blocking Production Deployment)
+
+1. **RFC 7807 Error Response Standard** (P0)
+   - Implement structured error responses per DD-004
+   - Estimated: 2-3 hours
+   - No dependencies
+
+2. **Kubernetes-Aware Graceful Shutdown** (P0)
+   - Implement 4-step shutdown pattern per DD-007
+   - Estimated: 3-4 hours
+   - No dependencies
+
+3. **Context API Integration** (P0 - Dependency)
+   - Wait for Context API migration to Data Storage Service
+   - Implement Context API OpenAPI client generation
+   - Expose Context API as LLM tool per DD-CONTEXT-003
+   - Estimated: 4-6 hours (after Context API ready)
+   - **Dependency**: ⏸️ Context API migration (IN PROGRESS)
+
+**Total Estimated Effort**: 9-13 hours (6-7 hours immediate, 4-6 hours after Context API)
+
+**Resume Trigger**: Context API migration complete → Generate OpenAPI client → Implement tool integration
 
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: 2025-10-17
-**Status**: ✅ **PRODUCTION READY** (v3.0)
-**Confidence**: 98%
+**Last Updated**: 2025-11-01
+**Status**: 🟡 **INCOMPLETE** - 3 Production Blockers Identified
+**Confidence**: 92% (core functionality complete, patterns pending)
