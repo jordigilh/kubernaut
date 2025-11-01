@@ -1006,3 +1006,72 @@ validate-context-api-build: ## Validate Context API build pipeline
 	@curl -f http://localhost:8091/health && echo "✅ Health check passed" || echo "❌ Health check failed"
 	@podman stop context-api-validate || true
 	@echo "✅ Context API build pipeline validated"
+
+##@ Context API E2E Tests (Podman + Kind)
+# Following DD-008: Integration Test Infrastructure (Podman + Kind)
+# Day 11: End-to-End Testing with real Kubernetes cluster
+
+CONTEXT_API_E2E_CLUSTER ?= kubernaut-contextapi-e2e
+CONTEXT_API_E2E_NAMESPACE ?= contextapi-e2e
+
+.PHONY: test-contextapi-e2e-setup
+test-contextapi-e2e-setup: ## Setup Kind cluster (Podman) for Context API E2E tests (~2min)
+	@KIND_CLUSTER_NAME=$(CONTEXT_API_E2E_CLUSTER) \
+	CONTEXT_API_NAMESPACE=$(CONTEXT_API_E2E_NAMESPACE) \
+	./scripts/test-contextapi-e2e-setup.sh
+
+.PHONY: test-contextapi-e2e-teardown
+test-contextapi-e2e-teardown: ## Teardown Context API E2E infrastructure (keep Kind cluster)
+	@KIND_CLUSTER_NAME=$(CONTEXT_API_E2E_CLUSTER) \
+	CONTEXT_API_NAMESPACE=$(CONTEXT_API_E2E_NAMESPACE) \
+	./scripts/test-contextapi-e2e-teardown.sh
+
+.PHONY: test-contextapi-e2e-teardown-full
+test-contextapi-e2e-teardown-full: ## Complete teardown including Kind cluster
+	@KIND_CLUSTER_NAME=$(CONTEXT_API_E2E_CLUSTER) \
+	CONTEXT_API_NAMESPACE=$(CONTEXT_API_E2E_NAMESPACE) \
+	./scripts/test-contextapi-e2e-teardown.sh --full
+
+.PHONY: test-e2e-contextapi
+test-e2e-contextapi: ## Run Context API E2E tests (setup cluster if needed, ~8-10min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Context API E2E Tests (Podman + Kind)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "📋 Test Scenarios:"
+	@echo "  1. Query Lifecycle (cache miss → DB → cache hit)"
+	@echo "  2. Graceful Shutdown (zero downtime deployments)"
+	@echo "  3. Cache Degradation (Redis failure → LRU fallback)"
+	@echo "  4. Multi-Tier Validation (L1/L2/L3 fallback chain)"
+	@echo ""
+	@if ! kind get clusters 2>/dev/null | grep -q "^$(CONTEXT_API_E2E_CLUSTER)$$"; then \
+		echo "🔧 Kind cluster not found, setting up..."; \
+		$(MAKE) test-contextapi-e2e-setup; \
+	fi
+	@export KUBECONFIG=$$HOME/.kube/kind-config && \
+	export KIND_CLUSTER_NAME=$(CONTEXT_API_E2E_CLUSTER) && \
+	export CONTEXT_API_NAMESPACE=$(CONTEXT_API_E2E_NAMESPACE) && \
+	kubectl config use-context kind-$(CONTEXT_API_E2E_CLUSTER) && \
+	cd test/e2e/contextapi && ginkgo -v
+	@echo ""
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "✅ CONTEXT API E2E TESTS COMPLETE"
+	@echo "════════════════════════════════════════════════════════════════════════"
+
+.PHONY: test-contextapi-e2e-status
+test-contextapi-e2e-status: ## Show Context API E2E infrastructure status
+	@echo "📊 Context API E2E Infrastructure Status"
+	@echo ""
+	@if kind get clusters 2>/dev/null | grep -q "^$(CONTEXT_API_E2E_CLUSTER)$$"; then \
+		echo "✅ Kind cluster: $(CONTEXT_API_E2E_CLUSTER) (running)"; \
+		kubectl config use-context kind-$(CONTEXT_API_E2E_CLUSTER) 2>/dev/null; \
+		echo ""; \
+		echo "📦 Pods in namespace $(CONTEXT_API_E2E_NAMESPACE):"; \
+		kubectl get pods -n $(CONTEXT_API_E2E_NAMESPACE) 2>/dev/null || echo "  Namespace not found"; \
+		echo ""; \
+		echo "🌐 Services:"; \
+		kubectl get svc -n $(CONTEXT_API_E2E_NAMESPACE) 2>/dev/null || echo "  Namespace not found"; \
+	else \
+		echo "❌ Kind cluster: $(CONTEXT_API_E2E_CLUSTER) (not running)"; \
+		echo "   Run 'make test-contextapi-e2e-setup' to create it"; \
+	fi

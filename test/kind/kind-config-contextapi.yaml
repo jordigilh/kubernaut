@@ -1,0 +1,41 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: kubernaut-contextapi-e2e
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      criSocket: unix:///run/containerd/containerd.sock
+  - |
+    kind: KubeletConfiguration
+    serverTLSBootstrap: true
+    cgroupDriver: systemd
+  extraPortMappings:
+  # Context API HTTP endpoint
+  - containerPort: 30800
+    hostPort: 8800
+    protocol: TCP
+  # PostgreSQL (for local access during debugging)
+  - containerPort: 30432
+    hostPort: 5434
+    protocol: TCP
+  # Redis (for local access during debugging)
+  - containerPort: 30379
+    hostPort: 6380
+    protocol: TCP
+  # Metrics endpoint
+  - containerPort: 30900
+    hostPort: 9000
+    protocol: TCP
+
+networking:
+  # Use default podSubnet and serviceSubnet to avoid conflicts
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+
+# Runtime: Kind automatically detects and uses Podman if Docker is not available
+# To explicitly use Podman, set: KIND_EXPERIMENTAL_PROVIDER=podman
+# Or ensure Docker is not in PATH and Podman is available
+
