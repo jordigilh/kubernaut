@@ -2,11 +2,19 @@ package server
 
 import (
 	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
+func TestServerPathNormalization(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Server Path Normalization Suite")
+}
+
 // ============================================================================
-// DD-005: Observability Standards - Metric Cardinality Management
-// TDD RED PHASE: Path normalization tests
+// BR-CONTEXT-006: Observability - Metric Cardinality Management
+// DD-005 § 3.1: Metrics Cardinality Management
 // ============================================================================
 //
 // Business Requirement: BR-CONTEXT-006 (Observability)
@@ -20,161 +28,128 @@ import (
 // 4. Multiple ID segments normalized independently
 // 5. Query parameters don't affect normalization (already stripped by r.URL.Path)
 
-func TestNormalizePath(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		// Static paths - should remain unchanged
-		{
-			name:     "health endpoint",
-			input:    "/health",
-			expected: "/health",
-		},
-		{
-			name:     "ready endpoint",
-			input:    "/ready",
-			expected: "/ready",
-		},
-		{
-			name:     "metrics endpoint",
-			input:    "/metrics",
-			expected: "/metrics",
-		},
-		{
-			name:     "query endpoint",
-			input:    "/api/v1/context/query",
-			expected: "/api/v1/context/query",
-		},
-		{
-			name:     "search endpoint",
-			input:    "/api/v1/context/search",
-			expected: "/api/v1/context/search",
-		},
+var _ = Describe("BR-CONTEXT-006: Path Normalization for Metrics Cardinality", func() {
+	
+	Context("Static paths (no IDs)", func() {
+		DescribeTable("Should preserve static endpoint paths unchanged",
+			func(input, expected string) {
+				result := normalizePath(input)
+				Expect(result).To(Equal(expected))
+			},
+			Entry("health endpoint", "/health", "/health"),
+			Entry("ready endpoint", "/ready", "/ready"),
+			Entry("metrics endpoint", "/metrics", "/metrics"),
+			Entry("query endpoint", "/api/v1/context/query", "/api/v1/context/query"),
+			Entry("search endpoint", "/api/v1/context/search", "/api/v1/context/search"),
+			Entry("root path", "/", "/"),
+		)
+	})
 
-		// UUID-based paths - should be normalized
-		{
-			name:     "incident with UUID",
-			input:    "/api/v1/incidents/550e8400-e29b-41d4-a716-446655440000",
-			expected: "/api/v1/incidents/:id",
-		},
-		{
-			name:     "incident with short UUID",
-			input:    "/api/v1/incidents/abc-123-def",
-			expected: "/api/v1/incidents/:id",
-		},
-		{
-			name:     "incident with alphanumeric ID",
-			input:    "/api/v1/incidents/abc123def456",
-			expected: "/api/v1/incidents/:id",
-		},
+	Context("UUID-based paths", func() {
+		DescribeTable("Should normalize UUID segments to :id placeholder",
+			func(input, expected string) {
+				result := normalizePath(input)
+				Expect(result).To(Equal(expected))
+			},
+			Entry("full UUID", 
+				"/api/v1/incidents/550e8400-e29b-41d4-a716-446655440000",
+				"/api/v1/incidents/:id"),
+			Entry("short UUID with hyphens",
+				"/api/v1/incidents/abc-123-def",
+				"/api/v1/incidents/:id"),
+			Entry("alphanumeric ID",
+				"/api/v1/incidents/abc123def456",
+				"/api/v1/incidents/:id"),
+		)
+	})
 
-		// Numeric IDs - should be normalized
-		{
-			name:     "incident with numeric ID",
-			input:    "/api/v1/incidents/12345",
-			expected: "/api/v1/incidents/:id",
-		},
-		{
-			name:     "context with numeric ID",
-			input:    "/api/v1/context/67890",
-			expected: "/api/v1/context/:id",
-		},
+	Context("Numeric IDs", func() {
+		DescribeTable("Should normalize numeric ID segments to :id placeholder",
+			func(input, expected string) {
+				result := normalizePath(input)
+				Expect(result).To(Equal(expected))
+			},
+			Entry("incident with numeric ID",
+				"/api/v1/incidents/12345",
+				"/api/v1/incidents/:id"),
+			Entry("context with numeric ID",
+				"/api/v1/context/67890",
+				"/api/v1/context/:id"),
+		)
+	})
 
-		// Multiple segments with IDs
-		{
-			name:     "nested resource with UUID",
-			input:    "/api/v1/incidents/550e8400-e29b-41d4-a716-446655440000/actions",
-			expected: "/api/v1/incidents/:id/actions",
-		},
-		{
-			name:     "nested resource with multiple IDs",
-			input:    "/api/v1/incidents/abc-123/actions/def-456",
-			expected: "/api/v1/incidents/:id/actions/:id",
-		},
+	Context("Nested resources with multiple IDs", func() {
+		DescribeTable("Should normalize each ID segment independently",
+			func(input, expected string) {
+				result := normalizePath(input)
+				Expect(result).To(Equal(expected))
+			},
+			Entry("nested resource with single UUID",
+				"/api/v1/incidents/550e8400-e29b-41d4-a716-446655440000/actions",
+				"/api/v1/incidents/:id/actions"),
+			Entry("nested resource with multiple IDs",
+				"/api/v1/incidents/abc-123/actions/def-456",
+				"/api/v1/incidents/:id/actions/:id"),
+		)
+	})
 
-		// Edge cases
-		{
-			name:     "root path",
-			input:    "/",
-			expected: "/",
-		},
-		{
-			name:     "trailing slash",
-			input:    "/api/v1/incidents/abc-123/",
-			expected: "/api/v1/incidents/:id/",
-		},
-		{
-			name:     "path with version that looks like ID",
-			input:    "/api/v1/context/query",
-			expected: "/api/v1/context/query", // v1 should NOT be normalized
-		},
-	}
+	Context("Edge cases", func() {
+		DescribeTable("Should handle edge cases correctly",
+			func(input, expected string) {
+				result := normalizePath(input)
+				Expect(result).To(Equal(expected))
+			},
+			Entry("trailing slash preserved",
+				"/api/v1/incidents/abc-123/",
+				"/api/v1/incidents/:id/"),
+			Entry("version segments not normalized",
+				"/api/v1/context/query",
+				"/api/v1/context/query"),
+		)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := normalizePath(tt.input)
-			if result != tt.expected {
-				t.Errorf("normalizePath(%q) = %q, expected %q", tt.input, result, tt.expected)
-			}
+	Context("Idempotency", func() {
+		It("should be idempotent (normalizing twice produces same result)", func() {
+			input := "/api/v1/incidents/550e8400-e29b-41d4-a716-446655440000"
+			
+			first := normalizePath(input)
+			second := normalizePath(first)
+			
+			Expect(first).To(Equal(second))
+			Expect(second).To(Equal("/api/v1/incidents/:id"))
 		})
-	}
-}
+	})
 
-// TestNormalizePath_Idempotent verifies normalization is idempotent
-func TestNormalizePath_Idempotent(t *testing.T) {
-	input := "/api/v1/incidents/550e8400-e29b-41d4-a716-446655440000"
-
-	first := normalizePath(input)
-	second := normalizePath(first)
-
-	if first != second {
-		t.Errorf("normalizePath is not idempotent: first=%q, second=%q", first, second)
-	}
-
-	if second != "/api/v1/incidents/:id" {
-		t.Errorf("normalizePath(%q) = %q, expected %q", input, second, "/api/v1/incidents/:id")
-	}
-}
-
-// TestNormalizePath_PreservesStructure verifies path structure is preserved
-func TestNormalizePath_PreservesStructure(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected int // number of path segments
-	}{
-		{"/health", 1},
-		{"/api/v1/context/query", 4},
-		{"/api/v1/incidents/abc-123", 4},
-		{"/api/v1/incidents/abc-123/actions", 5},
-		{"/api/v1/incidents/abc-123/actions/def-456", 6},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := normalizePath(tt.input)
-
-			// Count segments (split by '/', filter empty)
-			resultSegments := 0
-			for _, seg := range splitPath(result) {
-				if seg != "" {
-					resultSegments++
+	Context("Path structure preservation", func() {
+		DescribeTable("Should preserve number of path segments",
+			func(input string, expectedSegments int) {
+				result := normalizePath(input)
+				
+				// Count non-empty segments
+				segments := splitPath(result)
+				count := 0
+				for _, seg := range segments {
+					if seg != "" {
+						count++
+					}
 				}
-			}
-
-			if resultSegments != tt.expected {
-				t.Errorf("normalizePath(%q) has %d segments, expected %d", tt.input, resultSegments, tt.expected)
-			}
-		})
-	}
-}
+				
+				Expect(count).To(Equal(expectedSegments))
+			},
+			Entry("single segment", "/health", 1),
+			Entry("four segments", "/api/v1/context/query", 4),
+			Entry("four segments with ID", "/api/v1/incidents/abc-123", 4),
+			Entry("five segments", "/api/v1/incidents/abc-123/actions", 5),
+			Entry("six segments", "/api/v1/incidents/abc-123/actions/def-456", 6),
+		)
+	})
+})
 
 // Helper function to split path (for testing)
 func splitPath(path string) []string {
 	var segments []string
 	var current string
-
+	
 	for _, ch := range path {
 		if ch == '/' {
 			if current != "" {
@@ -185,10 +160,10 @@ func splitPath(path string) []string {
 			current += string(ch)
 		}
 	}
-
+	
 	if current != "" {
 		segments = append(segments, current)
 	}
-
+	
 	return segments
 }
