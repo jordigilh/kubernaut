@@ -212,8 +212,8 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
-			// Make query that hits database
-			uniqueQuery := fmt.Sprintf("/api/v1/context/query?limit=10&offset=%d", time.Now().Unix())
+			// Make query that hits database (use nanoseconds to avoid cache pollution)
+			uniqueQuery := fmt.Sprintf("/api/v1/context/query?limit=10&offset=%d", time.Now().UnixNano())
 			resp, err := http.Get(testServer.URL + uniqueQuery)
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
@@ -352,6 +352,11 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 
 			testServer := createHTTPTestServer()
 			defer testServer.Close()
+
+			// Make a query first to populate query metrics (Prometheus only exports incremented metrics)
+			queryResp, err := http.Get(testServer.URL + "/api/v1/context/query?limit=10")
+			Expect(err).ToNot(HaveOccurred())
+			queryResp.Body.Close()
 
 			resp, err := http.Get(fmt.Sprintf("%s/metrics", testServer.URL))
 			Expect(err).ToNot(HaveOccurred())
