@@ -1,8 +1,8 @@
 # DD-008: Integration Test Infrastructure (Podman + Kind)
 
 ## Status
-**✅ Approved** (2025-11-01)  
-**Last Reviewed**: 2025-11-01  
+**✅ Approved** (2025-11-01)
+**Last Reviewed**: 2025-11-01
 **Confidence**: 90%
 
 ---
@@ -21,7 +21,7 @@
 - Must **respect .gitignore/.cursorignore** for containerization
 - Must support **multi-architecture builds** (AMD64 + ARM64) per ADR-027
 
-**Current State**: 
+**Current State**:
 - 91 integration tests requiring real infrastructure
 - Tests cover: cache behavior, database queries, HTTP API, observability metrics
 - Development on macOS (Darwin 24.6.0)
@@ -261,7 +261,7 @@ uniqueQuery := fmt.Sprintf("?offset=%d", time.Now().UnixNano())
 - 🔄 **Different from typical Go testing** (most use Testcontainers)
   - Trade-off: Testcontainers is slower, heavier, requires Docker
   - Our approach: Faster, lighter, Docker-free
-  
+
 - 🔄 **Infrastructure lifecycle management** (start/stop manually)
   - Trade-off: Manual control vs. automatic
   - Our approach: Developers prefer manual control for debugging
@@ -364,7 +364,7 @@ bootstrap-dev:
 var _ = BeforeSuite(func() {
     // DD-008: PostgreSQL connection
     connStr := "postgres://slm_user:slm_password_dev@localhost:5432/action_history"
-    
+
     // DD-008: Redis connection (different DB per suite)
     redisAddr := "localhost:6379"
     redisDB := 0 // Suite-specific DB number
@@ -381,8 +381,8 @@ resp, err := http.Get(testServer.URL + "/api/v1/context/query" + uniqueQuery)
 
 ---
 
-**Generated**: 2025-11-01  
-**Author**: AI Assistant (Claude Sonnet 4.5) + User Approval  
-**Review Status**: Ready for review  
+**Generated**: 2025-11-01
+**Author**: AI Assistant (Claude Sonnet 4.5) + User Approval
+**Review Status**: Ready for review
 **Implementation Status**: ✅ Complete (91/91 tests passing)
 
