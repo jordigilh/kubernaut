@@ -12,80 +12,61 @@ import (
 // ===================================================================
 
 var _ = Describe("SQL Builder Unicode and Validation", func() {
-	Context("Edge Case 3.1: Unicode and Multi-byte Characters (P3)", func() {
-		It("should handle Unicode namespace names correctly", func() {
-			// Day 11 Scenario 3.1 (Validation Testing)
-			// BR-CONTEXT-001: SQL query construction with international characters
-			//
-			// Production Reality: ✅ Observed in K8s Namespaces
-			// - Users create namespaces with Unicode
-			// - K8s allows it, but requires proper handling
-			// - Observed in international deployments
-			//
-			// Expected Behavior:
-			// - SQL query handles multi-byte chars correctly
-			// - Parameterization prevents encoding errors
+	Context("BR-CONTEXT-001: Edge Case 3.1: Unicode and Multi-byte Characters (P3)", func() {
+		// Day 11 Scenario 3.1 (Validation Testing)
+		// BR-CONTEXT-001: SQL query construction with international characters
+		//
+		// Production Reality: ✅ Observed in K8s Namespaces
+		// - Users create namespaces with Unicode
+		// - K8s allows it, but requires proper handling
+		// - Observed in international deployments
+		//
+		// Expected Behavior:
+		// - SQL query handles multi-byte chars correctly
+		// - Parameterization prevents encoding errors
 
-			testCases := []struct {
-				name      string
-				namespace string
-			}{
-				{"Emoji", "namespace-🚀"},
-				{"Chinese", "命名空间"},
-				{"Arabic", "مساحة-الاسم"},
-				{"Japanese", "ネームスペース"},
-				{"Mixed", "namespace-中文-🎯"},
-			}
-
-			for _, tc := range testCases {
-				By(tc.name)
-
+		DescribeTable("Unicode namespace names should be handled correctly",
+			func(namespace string) {
 				builder := sqlbuilder.NewBuilder()
-				builder.WithNamespace(tc.namespace)
+				builder.WithNamespace(namespace)
 
 				query, args, err := builder.Build()
 
 				// ✅ Business Value Assertion: Multi-byte chars handled correctly
 				Expect(err).ToNot(HaveOccurred(),
-					"SQL builder should handle %s characters", tc.name)
+					"SQL builder should handle Unicode characters")
 
 				// ✅ Assert: Namespace is properly parameterized
-				Expect(args).To(ContainElement(tc.namespace),
+				Expect(args).To(ContainElement(namespace),
 					"Namespace parameter should preserve Unicode characters")
 
 				// ✅ Assert: Query uses parameterization (not string interpolation)
 				Expect(query).To(ContainSubstring("namespace = $"),
 					"Query should use parameterized queries for Unicode safety")
-			}
-		})
+			},
+			Entry("Emoji", "namespace-🚀"),
+			Entry("Chinese", "命名空间"),
+			Entry("Arabic", "مساحة-الاسم"),
+			Entry("Japanese", "ネームスペース"),
+			Entry("Mixed Unicode", "namespace-中文-🎯"),
+		)
 
-		It("should handle Unicode severity values correctly", func() {
-			// Day 11 Scenario 3.1 (Validation Testing)
-			// Validates severity field with Unicode
-
-			testCases := []struct {
-				name     string
-				severity string
-			}{
-				{"Standard ASCII", "critical"},
-				{"Emoji", "critical-🔥"},
-				{"International", "关键-critical"},
-			}
-
-			for _, tc := range testCases {
-				By(tc.name)
-
+		DescribeTable("Unicode severity values should be handled correctly",
+			func(severity string) {
 				builder := sqlbuilder.NewBuilder()
-				builder.WithSeverity(tc.severity)
+				builder.WithSeverity(severity)
 
 				query, args, err := builder.Build()
 
 				// ✅ Business Value Assertion: Severity Unicode handling
 				Expect(err).ToNot(HaveOccurred())
-				Expect(args).To(ContainElement(tc.severity))
+				Expect(args).To(ContainElement(severity))
 				Expect(query).To(ContainSubstring("severity = $"))
-			}
-		})
+			},
+			Entry("Standard ASCII", "critical"),
+			Entry("Emoji", "critical-🔥"),
+			Entry("International", "关键-critical"),
+		)
 
 		It("should reject null bytes in namespace", func() {
 			// Day 11 Scenario 3.1 (Security Validation)
