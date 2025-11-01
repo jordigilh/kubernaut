@@ -353,10 +353,19 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 			testServer := createHTTPTestServer()
 			defer testServer.Close()
 
-			// Make a query first to populate query metrics (Prometheus only exports incremented metrics)
-			queryResp, err := http.Get(testServer.URL + "/api/v1/context/query?limit=10")
+			// Make TWO queries to populate BOTH cache hit and miss metrics
+			// (Prometheus only exports metrics that have been incremented)
+			uniqueOffset := time.Now().UnixNano()
+			
+			// Query 1: Cache MISS (unique offset, not in cache)
+			queryResp1, err := http.Get(fmt.Sprintf("%s/api/v1/context/query?limit=10&offset=%d", testServer.URL, uniqueOffset))
 			Expect(err).ToNot(HaveOccurred())
-			queryResp.Body.Close()
+			queryResp1.Body.Close()
+			
+			// Query 2: Cache HIT (same offset, now in cache)
+			queryResp2, err := http.Get(fmt.Sprintf("%s/api/v1/context/query?limit=10&offset=%d", testServer.URL, uniqueOffset))
+			Expect(err).ToNot(HaveOccurred())
+			queryResp2.Body.Close()
 
 			resp, err := http.Get(fmt.Sprintf("%s/metrics", testServer.URL))
 			Expect(err).ToNot(HaveOccurred())
