@@ -1405,7 +1405,7 @@ func (r *WorkflowExecutionReconciler) createServiceAccountForPipeline(
 }
 ```
 
-**Source**: [ADR-025](decisions/ADR-025-kubernetesexecutor-service-elimination.md), [TEKTON_SA_PATTERN_ANALYSIS.md](decisions/TEKTON_SA_PATTERN_ANALYSIS.md)
+**Source**: [ADR-025](decisions/ADR-025-kubernetesexecutor-service-elimination.md), [TEKTON_SA_PATTERN_ANALYSIS.md](analysis/TEKTON_SA_PATTERN_ANALYSIS.md)
 
 ---
 
