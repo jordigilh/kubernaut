@@ -748,21 +748,21 @@ func normalizePath(path string) string {
 	if strings.Contains(path, ":id") {
 		return path
 	}
-	
+
 	// Split path into segments
 	segments := strings.Split(path, "/")
-	
+
 	for i, segment := range segments {
 		// Skip empty segments (from leading/trailing slashes)
 		if segment == "" {
 			continue
 		}
-		
+
 		// Skip known static segments that might look like IDs
 		if segment == "v1" || segment == "v2" || segment == "api" {
 			continue
 		}
-		
+
 		// Check if segment looks like an ID:
 		// - Contains only alphanumeric, hyphens, underscores
 		// - Has more than 3 characters (to avoid false positives like "api")
@@ -771,7 +771,7 @@ func normalizePath(path string) string {
 			segments[i] = ":id"
 		}
 	}
-	
+
 	return strings.Join(segments, "/")
 }
 
@@ -779,45 +779,45 @@ func normalizePath(path string) string {
 func isIDLikeSegment(segment string) bool {
 	// Known endpoint names that should NOT be normalized
 	knownEndpoints := map[string]bool{
-		"health":   true,
-		"ready":    true,
-		"metrics":  true,
-		"query":    true,
-		"search":   true,
-		"context":  true,
+		"health":    true,
+		"ready":     true,
+		"metrics":   true,
+		"query":     true,
+		"search":    true,
+		"context":   true,
 		"incidents": true,
-		"actions":  true,
-		"api":      true,
-		"v1":       true,
-		"v2":       true,
+		"actions":   true,
+		"api":       true,
+		"v1":        true,
+		"v2":        true,
 	}
-	
+
 	// If it's a known endpoint, don't normalize
 	if knownEndpoints[segment] {
 		return false
 	}
-	
+
 	// Must have more than 3 characters to avoid false positives
 	if len(segment) <= 3 {
 		return false
 	}
-	
+
 	// Check if it contains only valid ID characters: alphanumeric, hyphens, underscores
 	// and has at least one number or hyphen (typical of IDs/UUIDs)
 	hasNumberOrHyphen := false
 	for _, ch := range segment {
-		if !((ch >= 'a' && ch <= 'z') || 
-		     (ch >= 'A' && ch <= 'Z') || 
-		     (ch >= '0' && ch <= '9') || 
-		     ch == '-' || 
-		     ch == '_') {
+		if !((ch >= 'a' && ch <= 'z') ||
+			(ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') ||
+			ch == '-' ||
+			ch == '_') {
 			return false // Contains invalid characters
 		}
 		if (ch >= '0' && ch <= '9') || ch == '-' {
 			hasNumberOrHyphen = true
 		}
 	}
-	
+
 	// Looks like an ID if it has numbers or hyphens and valid characters
 	return hasNumberOrHyphen
 }
