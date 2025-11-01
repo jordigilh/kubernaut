@@ -50,9 +50,9 @@ type DBExecutor interface {
 // BR-CONTEXT-001: Executor configuration
 type Config struct {
 	Cache   cache.CacheManager
-	DB      DBExecutor         // Changed from *sqlx.DB to DBExecutor interface for testability
-	TTL     time.Duration      // Default cache TTL
-	Metrics *metrics.Metrics // DD-005: Observability metrics (optional for backward compatibility)
+	DB      DBExecutor       // Changed from *sqlx.DB to DBExecutor interface for testability
+	TTL     time.Duration    // Default cache TTL
+	Metrics *metrics.Metrics // DD-005: Observability metrics (required - always initialized)
 }
 
 // CachedExecutor executes queries with multi-tier caching fallback
@@ -70,11 +70,11 @@ type Config struct {
 // DD-005: Observability - Records metrics for cache hits/misses, query duration, errors
 type CachedExecutor struct {
 	cache        cache.CacheManager
-	db           DBExecutor         // Changed from *sqlx.DB to DBExecutor interface for testability
+	db           DBExecutor // Changed from *sqlx.DB to DBExecutor interface for testability
 	logger       *zap.Logger
 	ttl          time.Duration
 	singleflight singleflight.Group // Day 11: Prevents cache stampede on concurrent cache misses
-	metrics      *metrics.Metrics   // DD-005: Observability metrics (nil-safe for backward compatibility)
+	metrics      *metrics.Metrics   // DD-005: Observability metrics (required - always initialized)
 }
 
 // CachedResult wraps query results for caching
@@ -86,7 +86,7 @@ type CachedResult struct {
 
 // NewCachedExecutor creates a new query executor with caching
 // BR-CONTEXT-001: Executor initialization
-// DD-005: Observability - Accepts optional metrics for recording cache/DB operations
+// DD-005: Observability - Requires metrics for recording cache/DB operations
 func NewCachedExecutor(cfg *Config) (*CachedExecutor, error) {
 	// Validate config
 	if cfg.Cache == nil {
@@ -94,6 +94,9 @@ func NewCachedExecutor(cfg *Config) (*CachedExecutor, error) {
 	}
 	if cfg.DB == nil {
 		return nil, fmt.Errorf("db cannot be nil")
+	}
+	if cfg.Metrics == nil {
+		return nil, fmt.Errorf("metrics cannot be nil - observability is required")
 	}
 
 	// Default TTL
@@ -121,12 +124,10 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 	// DD-005: Track query duration
 	startTime := time.Now()
 	defer func() {
-		if e.metrics != nil {
-			duration := time.Since(startTime).Seconds()
-			e.metrics.QueryDuration.WithLabelValues("list_incidents").Observe(duration)
-		}
+		duration := time.Since(startTime).Seconds()
+		e.metrics.QueryDuration.WithLabelValues("list_incidents").Observe(duration)
 	}()
-	
+
 	// Generate cache key from params
 	cacheKey := generateCacheKey(params)
 
@@ -134,9 +135,7 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 	cachedData, err := e.getFromCache(ctx, cacheKey)
 	if err == nil && cachedData != nil {
 		// DD-005: Record cache hit metric
-		if e.metrics != nil {
-			e.metrics.CacheHits.WithLabelValues("redis").Inc() // Assume Redis L1 for now
-		}
+		e.metrics.CacheHits.WithLabelValues("redis").Inc() // Assume Redis L1 for now
 		
 		e.logger.Debug("cache hit",
 			zap.String("key", cacheKey),
@@ -145,9 +144,7 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 	}
 
 	// DD-005: Record cache miss metric
-	if e.metrics != nil {
-		e.metrics.CacheMisses.WithLabelValues("redis").Inc()
-	}
+	e.metrics.CacheMisses.WithLabelValues("redis").Inc()
 
 	// Cache miss or error → fallback to database with single-flight deduplication
 	// Day 11 Edge Case 1.1: Multiple concurrent cache misses deduplicated to single DB query
@@ -338,6 +335,13 @@ func (e *CachedExecutor) populateCache(ctx context.Context, key string, incident
 // queryDatabase executes database query with SQL builder
 // BR-CONTEXT-001: Database query execution
 func (e *CachedExecutor) queryDatabase(ctx context.Context, params *models.ListIncidentsParams) ([]*models.IncidentEvent, int, error) {
+	// DD-005: Track database query duration
+	startTime := time.Now()
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		e.metrics.DatabaseDuration.WithLabelValues("list_incidents").Observe(duration)
+	}()
+
 	// Build query using SQL builder
 	builder := sqlbuilder.NewBuilder()
 
