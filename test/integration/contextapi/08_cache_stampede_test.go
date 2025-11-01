@@ -9,10 +9,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
+	"github.com/jordigilh/kubernaut/pkg/contextapi/metrics"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/query"
 )
@@ -54,11 +56,16 @@ func createCachedExecutorForStampede() (*query.CachedExecutor, *dbQueryCounter) 
 	// Wrap db with query counter
 	counter := newDBQueryCounter(db)
 
+	// DD-005: Create metrics for executor (required)
+	registry := prometheus.NewRegistry()
+	metricsInstance := metrics.NewMetricsWithRegistry("contextapi", "", registry)
+
 	// Create cached executor with instrumented DB
 	executorCfg := &query.Config{
-		DB:    counter,
-		Cache: cacheManager,
-		TTL:   5 * time.Minute,
+		DB:      counter,
+		Cache:   cacheManager,
+		TTL:     5 * time.Minute,
+		Metrics: metricsInstance,
 	}
 	executor, err := query.NewCachedExecutor(executorCfg)
 	Expect(err).ToNot(HaveOccurred(), "Cached executor creation should succeed")
