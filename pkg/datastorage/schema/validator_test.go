@@ -38,7 +38,7 @@ var _ = Describe("VersionValidator", func() {
 	})
 
 	AfterEach(func() {
-		mockDB.Close()
+		_ = mockDB.Close()
 	})
 
 	Describe("ValidateHNSWSupport", func() {

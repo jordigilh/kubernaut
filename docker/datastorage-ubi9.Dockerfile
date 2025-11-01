@@ -91,3 +91,4 @@ ENTRYPOINT ["/data-storage"]
 # Default command (can be overridden)
 CMD ["-config", "/etc/datastorage/config.yaml"]
 
+
