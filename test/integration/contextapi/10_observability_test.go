@@ -14,6 +14,7 @@ import (
 	prommodel "github.com/prometheus/client_model/go"
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
+	"github.com/jordigilh/kubernaut/pkg/contextapi/metrics"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/query"
 )
 
@@ -44,7 +45,9 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 
 		// Create custom registry for metric collection
 		registry = prometheus.NewRegistry()
-		_ = registry // Will be used in GREEN phase for metric validation
+
+		// DD-005: Create metrics with custom registry for observability testing
+		metricsInstance := metrics.NewMetricsWithRegistry("contextapi", "", registry)
 
 		// Setup cache manager
 		cacheConfig := &cache.Config{
@@ -58,9 +61,10 @@ var _ = Describe("DD-005 Observability Standards - RED PHASE", func() {
 
 		// Setup cached executor with custom metrics registry
 		executorCfg := &query.Config{
-			DB:    sqlxDB,
-			Cache: cacheManager,
-			TTL:   5 * time.Minute,
+			DB:      sqlxDB,
+			Cache:   cacheManager,
+			TTL:     5 * time.Minute,
+			Metrics: metricsInstance, // DD-005: Metrics now required
 		}
 		cachedExecutor, err = query.NewCachedExecutor(executorCfg)
 		_ = cachedExecutor // Will be used in GREEN phase for executor metrics
