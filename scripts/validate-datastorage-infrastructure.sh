@@ -9,33 +9,34 @@ EXIT_CODE=0
 
 # Check 1: PostgreSQL availability
 echo "Check 1: PostgreSQL availability..."
-if pg_isready -h localhost -p 5432 2>/dev/null; then
-    echo "✅ PostgreSQL is available at localhost:5432"
+if podman ps 2>/dev/null | grep -q "datastorage-postgres"; then
+    echo "✅ PostgreSQL container is running"
 else
-    echo "❌ PostgreSQL is NOT available"
+    echo "❌ PostgreSQL container is NOT running"
     echo "   Fix: podman run -d --name datastorage-postgres -p 5432:5432 \\"
-    echo "        -e POSTGRES_PASSWORD=test -e POSTGRES_DB=action_history \\"
-    echo "        postgres:15-alpine"
+    echo "        -e POSTGRESQL_USER=db_user -e POSTGRESQL_PASSWORD=test \\"
+    echo "        -e POSTGRESQL_DATABASE=action_history -e POSTGRESQL_ADMIN_PASSWORD=test \\"
+    echo "        registry.redhat.io/rhel9/postgresql-16:latest"
     EXIT_CODE=1
 fi
 
 # Check 2: Database schema exists
 echo ""
 echo "Check 2: Database schema validation..."
-if psql -h localhost -U postgres -d action_history -c "\dt" 2>/dev/null | grep -q resource_action_traces; then
+if podman exec -i datastorage-postgres psql -U postgres -d action_history -c "\dt" 2>/dev/null | grep -q resource_action_traces; then
     echo "✅ Database schema exists (resource_action_traces table found)"
 else
     echo "❌ Database schema NOT found"
-    echo "   Fix: psql -h localhost -U postgres -d action_history -f scripts/schema.sql"
+    echo "   Fix: Apply migrations using: podman exec -i datastorage-postgres psql -U postgres -d action_history < migrations/001_initial_schema.sql"
     EXIT_CODE=1
 fi
 
 # Check 3: Required tables exist
 echo ""
 echo "Check 3: Required tables validation..."
-REQUIRED_TABLES=("resource_action_traces" "audit_incidents" "cluster_snapshots")
+REQUIRED_TABLES=("resource_action_traces" "action_histories" "resource_references")
 for table in "${REQUIRED_TABLES[@]}"; do
-    if psql -h localhost -U postgres -d action_history -c "\dt" 2>/dev/null | grep -q "$table"; then
+    if podman exec -i datastorage-postgres psql -U postgres -d action_history -c "\dt" 2>/dev/null | grep -q "$table"; then
         echo "✅ Table '$table' exists"
     else
         echo "❌ Table '$table' NOT found"
@@ -94,11 +95,11 @@ fi
 # Check 8: Build validation
 echo ""
 echo "Check 8: Data Storage Service build validation..."
-if go build -o /dev/null ./cmd/data-storage 2>/dev/null; then
+if go build -o /dev/null ./cmd/datastorage 2>/dev/null; then
     echo "✅ Data Storage Service builds successfully"
 else
     echo "❌ Data Storage Service build FAILED"
-    echo "   Fix: go build ./cmd/data-storage"
+    echo "   Fix: go build ./cmd/datastorage"
     EXIT_CODE=1
 fi
 

@@ -19,10 +19,15 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"go.uber.org/zap"
 )
 
@@ -40,8 +45,8 @@ func main() {
 		addr       = flag.String("addr", getEnv("HTTP_PORT", ":8080"), "HTTP server address")
 		dbHost     = flag.String("db-host", getEnv("DB_HOST", "localhost"), "PostgreSQL host")
 		dbPort     = flag.Int("db-port", 5432, "PostgreSQL port")
-		dbName     = flag.String("db-name", getEnv("DB_NAME", "kubernaut"), "PostgreSQL database name")
-		dbUser     = flag.String("db-user", getEnv("DB_USER", "kubernaut"), "PostgreSQL user")
+		dbName     = flag.String("db-name", getEnv("DB_NAME", "action_history"), "PostgreSQL database name")
+		dbUser     = flag.String("db-user", getEnv("DB_USER", "db_user"), "PostgreSQL user")
 		dbPassword = flag.String("db-password", getEnv("DB_PASSWORD", ""), "PostgreSQL password")
 	)
 	flag.Parse()
@@ -63,24 +68,76 @@ func main() {
 		zap.String("db_user", *dbUser),
 	)
 
-	// Context management
+	// Context management for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// TODO: Day 2 - Initialize database connection
-	// dbConnStr := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
-	//     *dbHost, *dbPort, *dbName, *dbUser, *dbPassword)
-	// TODO: Day 2 - Initialize schema with schema.NewInitializer
-	// TODO: Day 6 - Initialize Data Storage client
-	// TODO: Day 11 - Start HTTP server
+	// Day 2: Initialize database connection
+	dbConnStr := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
+		*dbHost, *dbPort, *dbName, *dbUser, *dbPassword)
 
-	_ = ctx        // Will be used in Day 2
-	_ = dbPassword // Will be used in Day 2
+	// Day 2: Create HTTP server with database connection
+	serverCfg := &server.Config{
+		Port:         getPortFromAddr(*addr),
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+	}
 
-	// Wait for shutdown signal
+	srv, err := server.NewServer(dbConnStr, logger, serverCfg)
+	if err != nil {
+		logger.Fatal("Failed to create server",
+			zap.Error(err),
+		)
+	}
+
+	// Start server in goroutine
+	serverErrors := make(chan error, 1)
+	go func() {
+		logger.Info("HTTP server starting",
+			zap.String("addr", *addr),
+		)
+		serverErrors <- srv.Start()
+	}()
+
+	// Wait for shutdown signal or server error
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
 
-	logger.Info("Shutting down Data Storage service")
+	select {
+	case err := <-serverErrors:
+		logger.Error("Server error",
+			zap.Error(err),
+		)
+	case sig := <-sigChan:
+		logger.Info("Shutdown signal received",
+			zap.String("signal", sig.String()),
+		)
+
+		// DD-007: Graceful shutdown with 35 second timeout
+		// (5s propagation + 30s drain)
+		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 35*time.Second)
+		defer shutdownCancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Graceful shutdown failed",
+				zap.Error(err),
+			)
+		}
+	}
+
+	logger.Info("Data Storage service stopped")
+}
+
+// getPortFromAddr extracts port number from address string (e.g., ":8080" -> 8080)
+func getPortFromAddr(addr string) int {
+	if addr == "" {
+		return 8080
+	}
+	// Remove leading colon if present
+	portStr := strings.TrimPrefix(addr, ":")
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 8080 // Default port
+	}
+	return port
 }
