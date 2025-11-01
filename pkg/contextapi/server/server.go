@@ -467,17 +467,29 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	start := time.Now()
 
+	// DD-005: Validate integer parameters BEFORE parsing
+	// This ensures validation errors are properly recorded
+	limitStr := r.URL.Query().Get("limit")
+	if limitStr != "" {
+		if _, err := strconv.Atoi(limitStr); err != nil {
+			// DD-005: Record validation error metrics
+			s.metrics.RecordError("validation", "query")
+			s.respondError(w, r, http.StatusBadRequest, "limit must be a valid integer")
+			return
+		}
+	}
+
 	// Parse query parameters
 	params := &models.ListIncidentsParams{
 		Namespace: getStringPtr(r.URL.Query().Get("namespace")),
 		Phase:     getStringPtr(r.URL.Query().Get("phase")),
 		Status:    getStringPtr(r.URL.Query().Get("status")),
 		Severity:  getStringPtr(r.URL.Query().Get("severity")),
-		Limit:     getIntOrDefault(r.URL.Query().Get("limit"), 10),
+		Limit:     getIntOrDefault(limitStr, 10),
 		Offset:    getIntOrDefault(r.URL.Query().Get("offset"), 0),
 	}
 
-	// Validate parameters
+	// Validate parameter ranges
 	if params.Limit < 1 || params.Limit > 100 {
 		// DD-005: Record validation error metrics
 		s.metrics.RecordError("validation", "query")
