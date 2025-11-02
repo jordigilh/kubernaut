@@ -749,10 +749,8 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 				"RFC 7807 detail field should be preserved")
 			Expect(rfc7807Err.Status).To(Equal(400),
 				"RFC 7807 status field should be preserved")
-			Expect(rfc7807Err.Instance).ToNot(BeNil(),
+			Expect(rfc7807Err.Instance).To(Equal("/api/v1/incidents?limit=5000"),
 				"RFC 7807 instance field should be preserved")
-			Expect(*rfc7807Err.Instance).To(Equal("/api/v1/incidents?limit=5000"),
-				"RFC 7807 instance value should be preserved")
 
 			// ⭐ BEHAVIOR: Error message should be readable
 			Expect(err.Error()).To(ContainSubstring("Invalid Pagination Parameters"))
