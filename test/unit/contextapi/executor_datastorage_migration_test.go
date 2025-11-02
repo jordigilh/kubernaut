@@ -289,57 +289,52 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 				"ErrorMessage should be nil when Data Storage 'error_message' is null")
 		})
 
-		It("should pass namespace filters to Data Storage API", func() {
-			namespace := "production"
+		// 🔄 REFACTOR: Table-driven filter tests (reduces duplication from 50 lines to 30 lines)
+		type filterTestCase struct {
+			filterName  string
+			queryParam  string
+			filterValue string
+			paramsFunc  func(string) *models.ListIncidentsParams
+		}
 
-			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				query := r.URL.Query()
-				Expect(query.Get("namespace")).To(Equal("production"))
+		DescribeTable("Filter parameter passing to Data Storage API",
+			func(tc filterTestCase) {
+				mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					query := r.URL.Query()
+					Expect(query.Get(tc.queryParam)).To(Equal(tc.filterValue),
+						"should pass %s filter to Data Storage API", tc.filterName)
 
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{
-					"data": [],
-					"pagination": {"total": 0, "limit": 100, "offset": 0, "has_more": false}
-				}`))
-			}))
+					w.WriteHeader(http.StatusOK)
+					_, _ = w.Write([]byte(`{
+						"data": [],
+						"pagination": {"total": 0, "limit": 100, "offset": 0}
+					}`))
+				}))
 
-			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = createTestExecutor(dsClient)
+				dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
+				executor = createTestExecutor(dsClient)
 
-			params := &models.ListIncidentsParams{
-				Namespace: &namespace,
-				Limit:     100,
-			}
-
-			_, _, err := executor.ListIncidents(ctx, params)
-			Expect(err).ToNot(HaveOccurred())
-		})
-
-		It("should pass severity filters to Data Storage API", func() {
-			severity := "critical"
-
-			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				query := r.URL.Query()
-				Expect(query.Get("severity")).To(Equal("critical"))
-
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{
-					"data": [],
-					"pagination": {"total": 0, "limit": 100, "offset": 0, "has_more": false}
-				}`))
-			}))
-
-			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = createTestExecutor(dsClient)
-
-			params := &models.ListIncidentsParams{
-				Severity: &severity,
-				Limit:    100,
-			}
-
-			_, _, err := executor.ListIncidents(ctx, params)
-			Expect(err).ToNot(HaveOccurred())
-		})
+				params := tc.paramsFunc(tc.filterValue)
+				_, _, err := executor.ListIncidents(ctx, params)
+				Expect(err).ToNot(HaveOccurred())
+			},
+			Entry("namespace filter", filterTestCase{
+				filterName:  "namespace",
+				queryParam:  "namespace",
+				filterValue: "production",
+				paramsFunc: func(val string) *models.ListIncidentsParams {
+					return &models.ListIncidentsParams{Namespace: &val, Limit: 100}
+				},
+			}),
+			Entry("severity filter", filterTestCase{
+				filterName:  "severity",
+				queryParam:  "severity",
+				filterValue: "critical",
+				paramsFunc: func(val string) *models.ListIncidentsParams {
+					return &models.ListIncidentsParams{Severity: &val, Limit: 100}
+				},
+			}),
+		)
 
 		It("should get total count from API response pagination metadata", func() {
 			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
