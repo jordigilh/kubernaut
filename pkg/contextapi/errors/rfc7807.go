@@ -14,18 +14,47 @@ import "fmt"
 // This allows Context API consumers to access all error fields, not just the message.
 //
 // Fields:
-// - Type: URI reference identifying the problem type (e.g., "https://kubernaut.io/errors/invalid-pagination")
+// - Type: URI reference identifying the problem type (e.g., "https://api.kubernaut.io/problems/invalid-pagination")
 // - Title: Short, human-readable summary (e.g., "Invalid Pagination Parameters")
 // - Detail: Human-readable explanation specific to this occurrence
 // - Status: HTTP status code from the upstream service
-// - Instance: URI reference to specific occurrence (optional)
+// - Instance: URI reference to specific occurrence
+// - RequestID: Request tracing ID (extension member)
 type RFC7807Error struct {
-	Type     string  `json:"type"`               // URI identifying problem type
-	Title    string  `json:"title"`              // Short summary
-	Detail   string  `json:"detail"`             // Detailed explanation
-	Status   int     `json:"status"`             // HTTP status code
-	Instance *string `json:"instance,omitempty"` // URI to specific occurrence
+	Type      string `json:"type"`                 // URI identifying problem type
+	Title     string `json:"title"`                // Short summary
+	Detail    string `json:"detail"`               // Detailed explanation
+	Status    int    `json:"status"`               // HTTP status code
+	Instance  string `json:"instance,omitempty"`   // URI to specific occurrence
+	RequestID string `json:"request_id,omitempty"` // BR-CONTEXT-012: Request tracing
 }
+
+// Error type URI constants
+// BR-CONTEXT-011: RFC 7807 error format
+// These URIs identify the problem type and can link to documentation
+const (
+	ErrorTypeValidationError      = "https://api.kubernaut.io/problems/validation-error"
+	ErrorTypeNotFound             = "https://api.kubernaut.io/problems/not-found"
+	ErrorTypeMethodNotAllowed     = "https://api.kubernaut.io/problems/method-not-allowed"
+	ErrorTypeUnsupportedMediaType = "https://api.kubernaut.io/problems/unsupported-media-type"
+	ErrorTypeInternalError        = "https://api.kubernaut.io/problems/internal-error"
+	ErrorTypeServiceUnavailable   = "https://api.kubernaut.io/problems/service-unavailable"
+	ErrorTypeGatewayTimeout       = "https://api.kubernaut.io/problems/gateway-timeout"
+	ErrorTypeUnknown              = "https://api.kubernaut.io/problems/unknown"
+)
+
+// Error title constants
+// BR-CONTEXT-011: RFC 7807 error format
+const (
+	TitleBadRequest           = "Bad Request"
+	TitleNotFound             = "Not Found"
+	TitleMethodNotAllowed     = "Method Not Allowed"
+	TitleUnsupportedMediaType = "Unsupported Media Type"
+	TitleInternalServerError  = "Internal Server Error"
+	TitleServiceUnavailable   = "Service Unavailable"
+	TitleGatewayTimeout       = "Gateway Timeout"
+	TitleUnknown              = "Error"
+)
 
 // Error implements the error interface
 // Returns a formatted error message including title and detail
