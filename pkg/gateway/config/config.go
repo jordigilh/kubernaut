@@ -220,3 +220,4 @@ func (c *ServerConfig) Validate() error {
 
 	return nil
 }
+

@@ -20,9 +20,9 @@ func TestDataStorageClient(t *testing.T) {
 
 var _ = Describe("DataStorageClient", func() {
 	var (
-		server     *httptest.Server
-		dsClient   *client.DataStorageClient
-		ctx        context.Context
+		server   *httptest.Server
+		dsClient *client.DataStorageClient
+		ctx      context.Context
 	)
 
 	BeforeEach(func() {
@@ -99,13 +99,14 @@ var _ = Describe("DataStorageClient", func() {
 				BaseURL: server.URL,
 			})
 
-			incidents, err := dsClient.ListIncidents(ctx, nil)
+		result, err := dsClient.ListIncidents(ctx, nil)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(incidents).To(HaveLen(1))
-			Expect(incidents[0].Id).To(Equal(int64(123)))
-			Expect(incidents[0].AlertName).To(Equal("test-alert"))
-			Expect(incidents[0].AlertSeverity).To(Equal(client.IncidentAlertSeverityCritical))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.Incidents).To(HaveLen(1))
+		Expect(result.Total).To(Equal(1))
+		Expect(result.Incidents[0].Id).To(Equal(int64(123)))
+		Expect(result.Incidents[0].AlertName).To(Equal("test-alert"))
+		Expect(result.Incidents[0].AlertSeverity).To(Equal(client.IncidentAlertSeverityCritical))
 		})
 
 		It("should handle RFC 7807 errors", func() {

@@ -209,7 +209,7 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 	if err == nil && cachedData != nil {
 		// DD-005: Record cache hit metric
 		e.metrics.CacheHits.WithLabelValues("redis").Inc() // Assume Redis L1 for now
-		
+
 		e.logger.Debug("cache hit",
 			zap.String("key", cacheKey),
 			zap.Int("incidents", len(cachedData.Incidents)))
@@ -507,37 +507,35 @@ func (e *CachedExecutor) queryDataStorageWithFallback(ctx context.Context, param
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		// Build filters map for Data Storage Service
 		filters := make(map[string]string)
-		
+
 		filters["limit"] = fmt.Sprintf("%d", params.Limit)
 		filters["offset"] = fmt.Sprintf("%d", params.Offset)
 
 		// Map filters
-		if params.Namespace != nil {
-			filters["namespace"] = *params.Namespace
-		}
+		// Note: namespace filtering not yet supported by Data Storage API
+		// TODO: Add namespace support in REFACTOR phase when API is enhanced
 		if params.Severity != nil {
 			filters["severity"] = *params.Severity
 		}
 
 		// Execute API call
-		incidents, err := e.dsClient.ListIncidents(ctx, filters)
+		result, err := e.dsClient.ListIncidents(ctx, filters)
 		if err == nil {
 			// Success! Reset circuit breaker
 			e.consecutiveFailures = 0
 			e.logger.Debug("Data Storage query successful",
-				zap.Int("incidents", len(incidents)),
+				zap.Int("incidents", len(result.Incidents)),
+				zap.Int("total", result.Total),
 				zap.Int("attempt", attempt+1))
 
 			// Convert dsclient.Incident to models.IncidentEvent
-			converted := make([]*models.IncidentEvent, len(incidents))
-			for i, inc := range incidents {
+			converted := make([]*models.IncidentEvent, len(result.Incidents))
+			for i, inc := range result.Incidents {
 				converted[i] = convertIncidentToModel(&inc)
 			}
 
-			// Extract total from pagination (placeholder - actual impl would get from response)
-			total := len(converted)
-
-			return converted, total, nil
+			// Extract total from pagination metadata
+			return converted, result.Total, nil
 		}
 
 		// Record error
