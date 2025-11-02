@@ -265,11 +265,27 @@ Exit code: 0 ✅
 
 ## 📚 **Files Changed**
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `validator_test.go` | 259 | P2-1 regression tests (33 tests) |
-| `errors_test.go` | 301 | P2-2 regression tests (21 tests) |
-| **Total** | **560** | **54 regression tests** |
+| File | Lines | Purpose | Package |
+|------|-------|---------|---------|
+| `pkg/datastorage/validation/validator_test.go` | 259 | P2-1 regression tests (33 tests) | `package validation` ✅ |
+| `pkg/datastorage/dualwrite/errors_test.go` | 301 | P2-2 regression tests (21 tests) | `package dualwrite` ✅ |
+| **Total** | **560** | **54 regression tests** | **Convention: NO `_test` suffix** |
+
+### **Package Naming Convention** (Post-Fix)
+
+**Project Standard** (per `testing-strategy.md`):
+- ✅ **Package Name**: Same as component (NO `_test` suffix)
+- ✅ **Location**: Tests co-located with implementation
+- ✅ **Import**: No import needed (same package)
+
+**Examples in Project**:
+- `test/unit/contextapi/`: `package contextapi`
+- `test/unit/workflow/simulator/`: `package simulator`
+- `test/integration/contextapi/`: `package contextapi`
+
+**Our Tests** (Corrected):
+- `pkg/datastorage/validation/validator_test.go`: `package validation` ✅
+- `pkg/datastorage/dualwrite/errors_test.go`: `package dualwrite` ✅
 
 ---
 
