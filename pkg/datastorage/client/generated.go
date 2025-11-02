@@ -49,11 +49,29 @@ type Incident struct {
 	// ActionType Type of remediation action taken (e.g., scale, restart, check)
 	ActionType string `json:"action_type"`
 
+	// AlertFingerprint Unique alert fingerprint from Prometheus
+	AlertFingerprint *string `json:"alert_fingerprint,omitempty"`
+
 	// AlertName Name of the Prometheus alert or Kubernetes event
 	AlertName string `json:"alert_name"`
 
 	// AlertSeverity Severity level of the alert
 	AlertSeverity IncidentAlertSeverity `json:"alert_severity"`
+
+	// ClusterName Kubernetes cluster identifier
+	ClusterName *string `json:"cluster_name,omitempty"`
+
+	// Duration Duration of the remediation in milliseconds
+	Duration *int64 `json:"duration,omitempty"`
+
+	// EndTime When the remediation completed (ISO 8601)
+	EndTime *time.Time `json:"end_time,omitempty"`
+
+	// Environment Environment (e.g., production, staging, development)
+	Environment *string `json:"environment,omitempty"`
+
+	// ErrorMessage Error message if the remediation failed
+	ErrorMessage *string `json:"error_message,omitempty"`
 
 	// ExecutionStatus Current status of the remediation action
 	ExecutionStatus IncidentExecutionStatus `json:"execution_status"`
@@ -61,11 +79,26 @@ type Incident struct {
 	// Id Unique incident identifier (from resource_action_traces table)
 	Id int64 `json:"id"`
 
+	// Metadata Additional metadata as JSON string
+	Metadata *string `json:"metadata,omitempty"`
+
 	// ModelConfidence Confidence score from the AI model (0.0 to 1.0)
 	ModelConfidence float64 `json:"model_confidence"`
 
 	// ModelUsed AI model used for analysis (e.g., gpt-4, claude-3)
 	ModelUsed string `json:"model_used"`
+
+	// Namespace Kubernetes namespace where the action was taken
+	Namespace *string `json:"namespace,omitempty"`
+
+	// RemediationRequestId Unique remediation request identifier
+	RemediationRequestId *string `json:"remediation_request_id,omitempty"`
+
+	// StartTime When the remediation started (ISO 8601)
+	StartTime *time.Time `json:"start_time,omitempty"`
+
+	// TargetResource Target Kubernetes resource (e.g., deployment/my-app)
+	TargetResource *string `json:"target_resource,omitempty"`
 }
 
 // IncidentAlertSeverity Severity level of the alert

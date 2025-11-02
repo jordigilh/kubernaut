@@ -49,7 +49,7 @@ func newMockCache() *mockCache {
 func (m *mockCache) Get(ctx context.Context, key string) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	if data, ok := m.data[key]; ok {
 		return data, nil
 	}
@@ -59,7 +59,7 @@ func (m *mockCache) Get(ctx context.Context, key string) ([]byte, error) {
 func (m *mockCache) Set(ctx context.Context, key string, value interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Serialize to JSON (matching real cache behavior)
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -96,16 +96,16 @@ func (m *mockCache) Stats() cache.Stats {
 // Helper to create executor with mock cache
 func createTestExecutor(dsClient *dsclient.DataStorageClient) *query.CachedExecutor {
 	mockCache := newMockCache()
-	
+
 	cfg := &query.DataStorageExecutorConfig{
 		DSClient: dsClient,
 		Cache:    mockCache,
 	}
-	
+
 	executor, err := query.NewCachedExecutorWithDataStorage(cfg)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(executor).ToNot(BeNil())
-	
+
 	return executor
 }
 
