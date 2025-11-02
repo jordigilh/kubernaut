@@ -745,7 +745,7 @@ It("should return accurate total count in pagination metadata", func() {
     // Known dataset: 25 records in database
     resp := http.Get("/api/v1/incidents?limit=10")
     pagination := response["pagination"].(map[string]interface{})
-    
+
     // ⭐⭐ CRITICAL ASSERTION - This catches the bug
     Expect(pagination["total"]).To(Equal(float64(25)),
         "pagination.total MUST equal database count (25), not page size (10)")
@@ -772,7 +772,7 @@ It("should return accurate total count in pagination metadata", func() {
 It("should execute independent steps in parallel", func() {
     workflow := NewWorkflow([]Step{step1, step2, step3})
     orchestrator.Execute(workflow)
-    
+
     // ✅ Tests behavior: Steps executed
     Expect(workflow.Status.CompletedSteps).To(Equal(3))
 })
@@ -783,10 +783,10 @@ It("should execute independent steps in parallel", func() {
 It("should execute independent steps in parallel", func() {
     workflow := NewWorkflow([]Step{step1, step2, step3})
     orchestrator.Execute(workflow)
-    
+
     // ✅ Tests behavior: Steps executed
     Expect(workflow.Status.CompletedSteps).To(Equal(3))
-    
+
     // ⭐ Tests correctness: Parallel execution efficiency accurate
     Expect(workflow.Status.ParallelExecutionEfficiency).To(BeNumerically(">", 0.99),
         "3 independent steps should execute in parallel (efficiency ≈ 1.0)")
@@ -799,7 +799,7 @@ It("should execute independent steps in parallel", func() {
 ```go
 It("should return incidents for namespace", func() {
     incidents := db.Query(filters{"namespace": "prod"})
-    
+
     // ✅ Tests behavior: Query returns data
     Expect(incidents).ToNot(BeEmpty())
 })
@@ -810,14 +810,14 @@ It("should return incidents for namespace", func() {
 It("should return incidents for namespace", func() {
     // Known dataset: 5 prod incidents, 3 dev incidents
     incidents := db.Query(filters{"namespace": "prod"})
-    
+
     // ✅ Tests behavior: Query returns data
     Expect(incidents).ToNot(BeEmpty())
-    
+
     // ⭐ Tests correctness: Returns exact count
     Expect(incidents).To(HaveLen(5),
         "Should return exactly 5 prod incidents, not dev incidents")
-    
+
     // ⭐ Tests correctness: All results match filter
     for _, inc := range incidents {
         Expect(inc.Namespace).To(Equal("prod"))
@@ -832,7 +832,7 @@ It("should return incidents for namespace", func() {
 It("should transition from pending to running", func() {
     step := &Step{Status: "pending"}
     orchestrator.TransitionStep(step, "start")
-    
+
     // ✅ Tests behavior: Transition happens
     Expect(step.Status).To(Equal("running"))
 })
@@ -846,17 +846,17 @@ It("should transition from pending to running", func() {
         StartTime:   nil,
         Transitions: []string{},
     }
-    
+
     beforeTime := time.Now()
     orchestrator.TransitionStep(step, "start")
     afterTime := time.Now()
-    
+
     // ✅ Tests behavior: Transition happens
     Expect(step.Status).To(Equal("running"))
-    
+
     // ⭐ Tests correctness: Transition recorded
     Expect(step.Transitions).To(ContainElement("pending→running"))
-    
+
     // ⭐ Tests correctness: Timestamp accurate
     Expect(step.StartTime).ToNot(BeNil())
     Expect(*step.StartTime).To(BeTemporally(">=", beforeTime))
@@ -902,7 +902,7 @@ Before marking a test complete, ask:
 
 ### Summary: The Golden Rule
 
-**🎯 GOLDEN RULE**: 
+**🎯 GOLDEN RULE**:
 ```
 If your test can pass when the output is WRONG,
 you're only testing behavior, not correctness.
