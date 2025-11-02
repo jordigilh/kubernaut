@@ -1,4 +1,4 @@
-package validation_test
+package validation
 
 import (
 	"testing"
@@ -6,8 +6,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 func TestValidator(t *testing.T) {
@@ -17,7 +15,7 @@ func TestValidator(t *testing.T) {
 
 var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 	var (
-		validator *validation.Validator
+		validator *Validator
 		logger    *zap.Logger
 	)
 
@@ -25,7 +23,7 @@ var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 		var err error
 		logger, err = zap.NewDevelopment()
 		Expect(err).ToNot(HaveOccurred())
-		validator = validation.NewValidator(logger)
+		validator = NewValidator(logger)
 	})
 
 	AfterEach(func() {
