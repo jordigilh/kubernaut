@@ -38,7 +38,6 @@ var _ = Describe("Vector Search Integration Tests", func() {
 		registry := prometheus.NewRegistry()
 		metricsInstance := metrics.NewMetricsWithRegistry("contextapi", "", registry)
 
-
 		executorCfg := &query.Config{
 			DB:      sqlxDB,
 			Cache:   cacheManager,

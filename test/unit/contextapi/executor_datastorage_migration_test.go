@@ -111,10 +111,10 @@ func createTestExecutor(dsClient *dsclient.DataStorageClient) *query.CachedExecu
 
 var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 	var (
-		ctx              context.Context
-		mockDataStore    *httptest.Server
-		dsClient         *dsclient.DataStorageClient
-		executor         *query.CachedExecutor
+		ctx           context.Context
+		mockDataStore *httptest.Server
+		dsClient      *dsclient.DataStorageClient
+		executor      *query.CachedExecutor
 	)
 
 	BeforeEach(func() {
@@ -288,12 +288,12 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 				"ErrorMessage should be nil when Data Storage 'error_message' is null")
 		})
 
-	It("should pass namespace filters to Data Storage API", func() {
-		namespace := "production"
+		It("should pass namespace filters to Data Storage API", func() {
+			namespace := "production"
 
-		mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			query := r.URL.Query()
-			Expect(query.Get("namespace")).To(Equal("production"))
+			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				query := r.URL.Query()
+				Expect(query.Get("namespace")).To(Equal("production"))
 
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{
@@ -390,21 +390,21 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			executor = createTestExecutor(dsClient)
 			params := &models.ListIncidentsParams{Limit: 100}
 
-		// First 3 requests should hit the service (each with 3 retry attempts = 9 total HTTP calls)
-		for i := 0; i < 3; i++ {
+			// First 3 requests should hit the service (each with 3 retry attempts = 9 total HTTP calls)
+			for i := 0; i < 3; i++ {
+				_, _, err := executor.ListIncidents(ctx, params)
+				Expect(err).To(HaveOccurred())
+			}
+
+			Expect(failureCount).To(Equal(9)) // 3 requests × 3 retry attempts each
+
+			// 4th request should be rejected by circuit breaker
 			_, _, err := executor.ListIncidents(ctx, params)
 			Expect(err).To(HaveOccurred())
-		}
+			Expect(err.Error()).To(ContainSubstring("circuit breaker open"))
 
-		Expect(failureCount).To(Equal(9)) // 3 requests × 3 retry attempts each
-
-		// 4th request should be rejected by circuit breaker
-		_, _, err := executor.ListIncidents(ctx, params)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("circuit breaker open"))
-
-		// Failure count should still be 9 (circuit breaker prevented 4th call from hitting server)
-		Expect(failureCount).To(Equal(9))
+			// Failure count should still be 9 (circuit breaker prevented 4th call from hitting server)
+			Expect(failureCount).To(Equal(9))
 		})
 
 		It("should close circuit breaker after timeout expires and allow requests through", func() {
@@ -441,7 +441,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			cfg := &query.DataStorageExecutorConfig{
 				DSClient:                dsClient,
 				Cache:                   mockCache,
-				CircuitBreakerThreshold: 3,              // Open after 3 failures
+				CircuitBreakerThreshold: 3,               // Open after 3 failures
 				CircuitBreakerTimeout:   2 * time.Second, // ⭐ TEST: 2s timeout (not 60s)
 			}
 
@@ -740,4 +740,3 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 		})
 	})
 })
-
