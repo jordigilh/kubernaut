@@ -511,9 +511,10 @@ func (e *CachedExecutor) queryDataStorageWithFallback(ctx context.Context, param
 		filters["limit"] = fmt.Sprintf("%d", params.Limit)
 		filters["offset"] = fmt.Sprintf("%d", params.Offset)
 
-		// Map filters
-		// Note: namespace filtering not yet supported by Data Storage API
-		// TODO: Add namespace support in REFACTOR phase when API is enhanced
+		// Map filters (REFACTOR: namespace filtering now supported)
+		if params.Namespace != nil {
+			filters["namespace"] = *params.Namespace
+		}
 		if params.Severity != nil {
 			filters["severity"] = *params.Severity
 		}
