@@ -310,20 +310,40 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 ### New Service: RAR Generator
 - [ ] New microservice: `rar-generator-service` (or add to existing service)
-- [ ] Read audit data from Data Storage Service
+- [ ] **ONLY reads from database** (NOT from CRDs)
+- [ ] Read audit data from Data Storage Service REST API
 - [ ] LLM integration for analysis
 - [ ] Report generation and formatting
 
+### Why RAR Uses Database ONLY (Not CRDs)
+
+**CRDs Deleted After 24h**:
+- CRDs cleaned up to prevent cluster overload
+- RAR needs to analyze remediations from weeks/months/years ago
+- ✅ Database = permanent source (7+ years retention)
+
+**RAR Data Flow** (V2.0):
+```
+RAR Generator Service → Data Storage Service REST API → PostgreSQL
+                        (reads V1.0/V1.1 audit tables)
+                        ↓
+                        LLM Analysis → RAR Generation
+                        
+❌ RAR Generator does NOT query Kubernetes API for CRDs
+✅ RAR Generator ONLY reads database via Data Storage Service
+```
+
 ### REST API Endpoints (V2.0 - NEW)
-- [ ] `GET /api/v2/rar/{remediation_id}` - Generate RAR for specific remediation
-- [ ] `GET /api/v2/rar?start=X&end=Y` - Generate RARs for date range
-- [ ] `POST /api/v2/rar/batch` - Batch RAR generation
+- [ ] `GET /api/v2/rar/{remediation_id}` - Generate RAR for specific remediation (reads DB)
+- [ ] `GET /api/v2/rar?start=X&end=Y` - Generate RARs for date range (reads DB)
+- [ ] `POST /api/v2/rar/batch` - Batch RAR generation (reads DB)
 
 ### NO Database Changes
 - ✅ **Read V1.0/V1.1 audit tables as-is**
 - ✅ **No new tables**
 - ✅ **No schema migrations**
 - ✅ **No production downtime**
+- ✅ **No CRD queries** (database only)
 
 ---
 
@@ -335,11 +355,12 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 | **Capture AI decision audit** | ✅ YES | ✅ YES (same) |
 | **Capture execution audit** | ✅ YES | ✅ YES (same) |
 | **Capture notification audit** | ✅ YES | ✅ YES (same) |
-| **Generate RAR** | ❌ NO | ✅ YES (NEW) |
+| **Generate RAR** | ❌ NO | ✅ YES (NEW - reads DB only) |
 | **LLM analysis** | ❌ NO | ✅ YES (NEW) |
-| **Timeline reconstruction** | ❌ NO | ✅ YES (NEW) |
+| **Timeline reconstruction** | ❌ NO | ✅ YES (NEW - from DB records) |
 | **Effectiveness analysis** | ❌ NO | ✅ YES (NEW) |
 | **Database schema** | ✅ Forward-compatible | ✅ NO CHANGES |
+| **CRD queries for RAR** | N/A | ❌ NO (DB only) |
 
 ---
 
@@ -353,8 +374,9 @@ func (r *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 ### V2.0 Success
 - ✅ **Zero migration**: RAR service deploys without database changes
-- ✅ **Complete history**: RARs generated for all V1.0/V1.1 remediations
+- ✅ **Complete history**: RARs generated for all V1.0/V1.1 remediations (from database records)
 - ✅ **No downtime**: Seamless upgrade from V1.0/V1.1 to V2.0
+- ✅ **Database-only queries**: RAR generator does NOT query CRDs (reads database via Data Storage Service)
 
 ---
 
