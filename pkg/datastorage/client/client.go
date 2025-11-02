@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	contextapierrors "github.com/jordigilh/kubernaut/pkg/contextapi/errors"
 )
 
 // Config holds the configuration for the Data Storage HTTP client
@@ -210,7 +212,15 @@ func (c *DataStorageClient) parseError(resp *http.Response) error {
 	// Try to parse as RFC 7807 error
 	var rfc7807Err RFC7807Error
 	if err := json.Unmarshal(body, &rfc7807Err); err == nil && rfc7807Err.Title != "" {
-		return fmt.Errorf("HTTP %d: %s - %s", resp.StatusCode, rfc7807Err.Title, stringValue(rfc7807Err.Detail))
+		// Return structured RFC 7807 error (Context API errors package)
+		// This preserves all error fields for consumers, not just the message
+		return &contextapierrors.RFC7807Error{
+			Type:     rfc7807Err.Type,
+			Title:    rfc7807Err.Title,
+			Detail:   stringValue(rfc7807Err.Detail),
+			Status:   resp.StatusCode,
+			Instance: rfc7807Err.Instance,
+		}
 	}
 
 	// Fallback to generic error

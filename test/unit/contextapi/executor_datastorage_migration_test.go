@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
+	contextapierrors "github.com/jordigilh/kubernaut/pkg/contextapi/errors"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/query"
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
@@ -716,15 +717,16 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 	// ===========================================
 
 	Context("when Data Storage Service returns RFC 7807 errors", func() {
-		It("should parse and propagate RFC 7807 error details", func() {
+		It("should parse and propagate RFC 7807 error details with structured fields", func() {
 			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte(`{
-					"type": "https://kubernaut.io/errors/invalid-pagination",
+					"type": "https://api.kubernaut.io/problems/invalid-pagination",
 					"title": "Invalid Pagination Parameters",
 					"status": 400,
-					"detail": "Limit must be between 1 and 1000"
+					"detail": "Limit must be between 1 and 1000",
+					"instance": "/api/v1/incidents?limit=5000"
 				}`))
 			}))
 
@@ -735,8 +737,31 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 
 			_, _, err := executor.ListIncidents(ctx, params)
 
+			// ⭐ BEHAVIOR: Error should occur
 			Expect(err).To(HaveOccurred())
+
+			// ⭐⭐ CORRECTNESS: Error should be structured RFC 7807 error
+			rfc7807Err, ok := contextapierrors.IsRFC7807Error(err)
+			Expect(ok).To(BeTrue(), "error should be RFC7807Error type")
+			Expect(rfc7807Err).ToNot(BeNil())
+
+			// ⭐⭐ CORRECTNESS: Validate all RFC 7807 fields are preserved
+			Expect(rfc7807Err.Type).To(Equal("https://api.kubernaut.io/problems/invalid-pagination"),
+				"RFC 7807 type field should be preserved")
+			Expect(rfc7807Err.Title).To(Equal("Invalid Pagination Parameters"),
+				"RFC 7807 title field should be preserved")
+			Expect(rfc7807Err.Detail).To(Equal("Limit must be between 1 and 1000"),
+				"RFC 7807 detail field should be preserved")
+			Expect(rfc7807Err.Status).To(Equal(400),
+				"RFC 7807 status field should be preserved")
+			Expect(rfc7807Err.Instance).ToNot(BeNil(),
+				"RFC 7807 instance field should be preserved")
+			Expect(*rfc7807Err.Instance).To(Equal("/api/v1/incidents?limit=5000"),
+				"RFC 7807 instance value should be preserved")
+
+			// ⭐ BEHAVIOR: Error message should be readable
 			Expect(err.Error()).To(ContainSubstring("Invalid Pagination Parameters"))
+			Expect(err.Error()).To(ContainSubstring("Limit must be between 1 and 1000"))
 		})
 	})
 })
