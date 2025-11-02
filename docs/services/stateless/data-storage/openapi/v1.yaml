@@ -4,10 +4,10 @@ info:
   version: 1.0.0
   description: |
     REST API for querying Kubernetes remediation action history.
-    
+
     This API provides read-only access to incident data stored in PostgreSQL,
     including resource action traces, alert information, and remediation history.
-    
+
     **Phase 1 (Current)**: Read API only
     **Phase 2 (Future)**: Write API for creating incidents
   contact:
@@ -35,7 +35,7 @@ paths:
       summary: List incidents with filters
       description: |
         Retrieve a paginated list of incidents filtered by alert name, severity, action type, etc.
-        
+
         Supports:
         - Filter by alert_name, severity, action_type
         - Pagination with limit/offset
@@ -51,7 +51,7 @@ paths:
             type: string
           description: Filter by alert name pattern (exact match)
           example: "test-integration-prod-cpu-high"
-        
+
         - name: severity
           in: query
           required: false
@@ -60,7 +60,7 @@ paths:
             enum: [low, medium, high, critical]
           description: Filter by alert severity
           example: "critical"
-        
+
         - name: action_type
           in: query
           required: false
@@ -68,7 +68,7 @@ paths:
             type: string
           description: Filter by action type (e.g., scale, restart, check)
           example: "scale"
-        
+
         - name: limit
           in: query
           required: false
@@ -79,7 +79,7 @@ paths:
             default: 100
           description: Maximum number of results to return
           example: 50
-        
+
         - name: offset
           in: query
           required: false
@@ -89,7 +89,7 @@ paths:
             default: 0
           description: Number of results to skip (for pagination)
           example: 100
-      
+
       responses:
         '200':
           description: Successful response with incident list
@@ -115,7 +115,7 @@ paths:
                       limit: 100
                       offset: 0
                       has_more: true
-        
+
         '400':
           description: Bad request - Invalid filter parameters
           content:
@@ -131,7 +131,7 @@ paths:
                     status: 400
                     detail: "The 'severity' filter value must be one of: low, medium, high, critical"
                     instance: "/api/v1/incidents"
-        
+
         '500':
           description: Internal server error
           content:
@@ -164,7 +164,7 @@ paths:
             format: int64
           description: Unique incident ID
           example: 12345
-      
+
       responses:
         '200':
           description: Successful response with incident details
@@ -184,7 +184,7 @@ paths:
                     model_used: "gpt-4"
                     model_confidence: 0.95
                     execution_status: "completed"
-        
+
         '404':
           description: Incident not found
           content:
@@ -200,7 +200,7 @@ paths:
                     status: 404
                     detail: "No incident found with ID: 99999"
                     instance: "/api/v1/incidents/99999"
-        
+
         '500':
           description: Internal server error
           content:
@@ -304,34 +304,34 @@ components:
           format: int64
           description: Unique incident identifier (from resource_action_traces table)
           example: 12345
-        
+
         alert_name:
           type: string
           description: Name of the Prometheus alert or Kubernetes event
           example: "prod-cpu-high"
-        
+
         alert_severity:
           type: string
           enum: [low, medium, high, critical]
           description: Severity level of the alert
           example: "critical"
-        
+
         action_type:
           type: string
           description: Type of remediation action taken (e.g., scale, restart, check)
           example: "scale"
-        
+
         action_timestamp:
           type: string
           format: date-time
           description: Timestamp when the action was executed (ISO 8601)
           example: "2025-11-02T10:30:00Z"
-        
+
         model_used:
           type: string
           description: AI model used for analysis (e.g., gpt-4, claude-3)
           example: "gpt-4"
-        
+
         model_confidence:
           type: number
           format: double
@@ -339,7 +339,7 @@ components:
           maximum: 1.0
           description: Confidence score from the AI model (0.0 to 1.0)
           example: 0.95
-        
+
         execution_status:
           type: string
           enum: [pending, in_progress, completed, failed, cancelled]
@@ -359,17 +359,17 @@ components:
           format: int64
           description: Total number of incidents matching the filter criteria
           example: 1523
-        
+
         limit:
           type: integer
           description: Maximum number of results returned in this response
           example: 100
-        
+
         offset:
           type: integer
           description: Number of results skipped (pagination offset)
           example: 0
-        
+
         has_more:
           type: boolean
           description: Whether there are more results available (for next page)
@@ -387,22 +387,22 @@ components:
           format: uri
           description: URI reference identifying the problem type
           example: "https://kubernaut.io/errors/invalid-filter"
-        
+
         title:
           type: string
           description: Short, human-readable summary of the problem
           example: "Invalid Filter Parameter"
-        
+
         status:
           type: integer
           description: HTTP status code
           example: 400
-        
+
         detail:
           type: string
           description: Human-readable explanation specific to this occurrence
           example: "The 'severity' filter value must be one of: low, medium, high, critical"
-        
+
         instance:
           type: string
           format: uri

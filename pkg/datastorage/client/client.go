@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -84,9 +85,15 @@ func NewDataStorageClient(cfg Config) *DataStorageClient {
 	}
 }
 
+// IncidentsResult holds incidents with pagination metadata
+type IncidentsResult struct {
+	Incidents []Incident
+	Total     int
+}
+
 // ListIncidents retrieves a list of incidents from the Data Storage Service
 // filters can include: alert_name, severity, action_type, limit, offset
-func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[string]string) ([]Incident, error) {
+func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[string]string) (*IncidentsResult, error) {
 	// Build query parameters from filters
 	params := &ListIncidentsParams{}
 
@@ -100,14 +107,17 @@ func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[strin
 	if actionType, ok := filters["action_type"]; ok {
 		params.ActionType = &actionType
 	}
-	if limit, ok := filters["limit"]; ok {
-		// Note: Would need to parse int, but keeping simple for now
-		_ = limit
+	if limitStr, ok := filters["limit"]; ok {
+		if limitInt, err := strconv.Atoi(limitStr); err == nil {
+			params.Limit = &limitInt
+		}
 	}
-	if offset, ok := filters["offset"]; ok {
-		// Note: Would need to parse int, but keeping simple for now
-		_ = offset
+	if offsetStr, ok := filters["offset"]; ok {
+		if offsetInt, err := strconv.Atoi(offsetStr); err == nil {
+			params.Offset = &offsetInt
+		}
 	}
+	// Note: namespace filtering not yet supported by Data Storage API OpenAPI spec
 
 	// Add request ID for tracing
 	requestID := uuid.New().String()
@@ -140,7 +150,13 @@ func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[strin
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return listResp.Data, nil
+	// Extract total from pagination
+	total := int(listResp.Pagination.Total)
+
+	return &IncidentsResult{
+		Incidents: listResp.Data,
+		Total:     total,
+	}, nil
 }
 
 // GetIncidentByID retrieves a single incident by ID from the Data Storage Service
