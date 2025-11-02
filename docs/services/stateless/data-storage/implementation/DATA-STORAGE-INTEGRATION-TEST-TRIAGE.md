@@ -1,9 +1,9 @@
 # Data Storage Service - Integration Test Triage
 
-**Date**: 2025-11-02  
-**Purpose**: Identify gaps, pitfalls, and improvements in integration test coverage  
-**Trigger**: Critical pagination bug discovered (handler.go:178 - len(array) vs COUNT(*))  
-**Scope**: All integration tests in `test/integration/datastorage/`  
+**Date**: 2025-11-02
+**Purpose**: Identify gaps, pitfalls, and improvements in integration test coverage
+**Trigger**: Critical pagination bug discovered (handler.go:178 - len(array) vs COUNT(*))
+**Scope**: All integration tests in `test/integration/datastorage/`
 
 ---
 
@@ -39,14 +39,14 @@ It("should respect offset parameter", func() {
 It("should return accurate total count in pagination metadata", func() {
     // Insert known number of records (e.g., 25)
     // ... insert 25 test records ...
-    
+
     resp, err := http.Get(baseURL + "/api/v1/incidents?alert_name=test-pagination&limit=10")
     // ...
-    
+
     pagination := response["pagination"].(map[string]interface{})
-    
+
     // ❌ THIS ASSERTION WAS MISSING
-    Expect(pagination["total"]).To(Equal(float64(25)), 
+    Expect(pagination["total"]).To(Equal(float64(25)),
         "pagination.total should be database count, not page size")
 })
 ```
@@ -115,11 +115,11 @@ It("should return accurate total count in pagination metadata", func() {
     resp, err := http.Get(baseURL + "/api/v1/incidents?alert_name=test-integration-pagination&limit=10")
     // ...
     pagination := response["pagination"].(map[string]interface{})
-    
+
     // ❌ MISSING ASSERTION
-    Expect(pagination["total"]).To(Equal(float64(25)), 
+    Expect(pagination["total"]).To(Equal(float64(25)),
         "pagination.total must equal database count, not page size")
-    
+
     Expect(pagination["limit"]).To(Equal(float64(10)))  // ✅ This exists
     Expect(pagination["offset"]).To(Equal(float64(0)))  // ✅ This exists
 })
@@ -133,9 +133,9 @@ It("should return accurate total count with filters applied", func() {
     resp, err := http.Get(baseURL + "/api/v1/incidents?severity=critical&limit=1")
     // ...
     pagination := response["pagination"].(map[string]interface{})
-    
+
     // ❌ MISSING ASSERTION
-    Expect(pagination["total"]).To(Equal(float64(2)), 
+    Expect(pagination["total"]).To(Equal(float64(2)),
         "total should reflect filtered count, not page size")
 })
 ```
@@ -149,20 +149,20 @@ It("should update total count when data changes", func() {
     var response1 map[string]interface{}
     json.NewDecoder(resp1.Body).Decode(&response1)
     total1 := response1["pagination"].(map[string]interface{})["total"]
-    
+
     // Insert 3 more records
     for i := 0; i < 3; i++ {
         db.Exec("INSERT INTO resource_action_traces ...")
     }
-    
+
     // Verify total updated
     resp2, _ := http.Get(baseURL + "/api/v1/incidents?limit=10")
     var response2 map[string]interface{}
     json.NewDecoder(resp2.Body).Decode(&response2)
     total2 := response2["pagination"].(map[string]interface{})["total"]
-    
+
     // ❌ MISSING ASSERTION
-    Expect(total2).To(Equal(total1.(float64) + 3), 
+    Expect(total2).To(Equal(total1.(float64) + 3),
         "total should update when records are added")
 })
 ```
@@ -174,7 +174,7 @@ It("should return complete pagination metadata", func() {
     resp, err := http.Get(baseURL + "/api/v1/incidents?limit=10&offset=5")
     // ...
     pagination := response["pagination"].(map[string]interface{})
-    
+
     // ❌ MISSING ASSERTIONS
     Expect(pagination).To(HaveKey("limit"))
     Expect(pagination).To(HaveKey("offset"))
@@ -213,18 +213,18 @@ It("should return complete pagination metadata", func() {
 // MISSING TEST
 It("should return accurate total count for large datasets efficiently", func() {
     // Dataset: 1,000 records from BeforeEach
-    
+
     start := time.Now()
     resp, err := http.Get(baseURL + "/api/v1/incidents?limit=10")
     elapsed := time.Since(start)
     // ...
-    
+
     pagination := response["pagination"].(map[string]interface{})
-    
+
     // ❌ MISSING ASSERTIONS
-    Expect(pagination["total"]).To(Equal(float64(1000)), 
+    Expect(pagination["total"]).To(Equal(float64(1000)),
         "total must be accurate for large datasets")
-    Expect(elapsed).To(BeNumerically("<", 250*time.Millisecond), 
+    Expect(elapsed).To(BeNumerically("<", 250*time.Millisecond),
         "COUNT query should not significantly impact p95 latency")
 })
 ```
@@ -234,7 +234,7 @@ It("should return accurate total count for large datasets efficiently", func() {
 // MISSING TEST - Concurrent total count accuracy
 It("should return consistent total count across concurrent pagination requests", func() {
     totalCounts := make([]interface{}, 10)
-    
+
     // 10 concurrent requests
     for i := 0; i < 10; i++ {
         go func(idx int) {
@@ -244,13 +244,13 @@ It("should return consistent total count across concurrent pagination requests",
             totalCounts[idx] = response["pagination"].(map[string]interface{})["total"]
         }(i)
     }
-    
+
     // Wait for completion...
-    
+
     // ❌ MISSING ASSERTION
     firstTotal := totalCounts[0]
     for _, total := range totalCounts {
-        Expect(total).To(Equal(firstTotal), 
+        Expect(total).To(Equal(firstTotal),
             "pagination.total should be consistent across concurrent requests")
     }
 })
@@ -287,14 +287,14 @@ It("should prevent SQL injection in pagination parameters", func() {
         "10' OR '1'='1",
         "-1 UNION SELECT * FROM pg_shadow --",
     }
-    
+
     for _, input := range maliciousInputs {
         // Test malicious limit
         resp, err := http.Get(fmt.Sprintf("%s/api/v1/incidents?limit=%s", baseURL, url.QueryEscape(input)))
         Expect(err).ToNot(HaveOccurred())
-        Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), 
+        Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
             "Should reject malicious limit parameter")
-        
+
         // ❌ MISSING: Verify pagination.total is still accurate
         // (not corrupted by injection attempt)
     }
@@ -329,21 +329,21 @@ It("should complete paginated queries during graceful shutdown", func() {
         resp, _ := http.Get(baseURL + "/api/v1/incidents?limit=1000")
         var response map[string]interface{}
         json.NewDecoder(resp.Body).Decode(&response)
-        
+
         // ❌ MISSING ASSERTION
         pagination := response["pagination"].(map[string]interface{})
-        Expect(pagination["total"]).To(BeNumerically(">", 0), 
+        Expect(pagination["total"]).To(BeNumerically(">", 0),
             "pagination.total should be accurate even during shutdown")
-        
+
         queryComplete <- true
     }()
-    
+
     // Trigger shutdown while query in progress
     time.Sleep(50 * time.Millisecond)
     shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
     defer cancel()
     go srv.Shutdown(shutdownCtx)
-    
+
     // Wait for query completion
     select {
     case <-queryComplete:
@@ -397,21 +397,21 @@ It("should return accurate total count in pagination metadata", func() {
     resp, err := http.Get(baseURL + "/api/v1/incidents?alert_name=test-integration-pagination&limit=10")
     Expect(err).ToNot(HaveOccurred())
     defer resp.Body.Close()
-    
+
     Expect(resp.StatusCode).To(Equal(http.StatusOK))
-    
+
     var response map[string]interface{}
     err = json.NewDecoder(resp.Body).Decode(&response)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Verify pagination metadata
     pagination, ok := response["pagination"].(map[string]interface{})
     Expect(ok).To(BeTrue(), "Response should have pagination metadata")
-    
+
     // ⭐⭐ CRITICAL ASSERTION - This would have caught the bug
-    Expect(pagination["total"]).To(Equal(float64(25)), 
+    Expect(pagination["total"]).To(Equal(float64(25)),
         "pagination.total MUST equal database count (25), not page size (10)")
-    
+
     // Also verify page size is correct (existing assertion)
     data, ok := response["data"].([]interface{})
     Expect(ok).To(BeTrue())
@@ -425,7 +425,7 @@ It("should return accurate total count with filters applied", func() {
     // Clear and insert known dataset
     _, err := db.Exec("DELETE FROM resource_action_traces WHERE alert_name LIKE 'test-filter-count-%'")
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Insert 2 critical, 1 high, 1 low
     severities := []string{"critical", "critical", "high", "low"}
     for i, severity := range severities {
@@ -436,24 +436,24 @@ It("should return accurate total count with filters applied", func() {
         `, fmt.Sprintf("test-filter-count-%d", i), severity)
         Expect(err).ToNot(HaveOccurred())
     }
-    
+
     // Query with filter and small page size
     resp, err := http.Get(baseURL + "/api/v1/incidents?alert_name=test-filter-count&severity=critical&limit=1")
     Expect(err).ToNot(HaveOccurred())
     defer resp.Body.Close()
-    
+
     Expect(resp.StatusCode).To(Equal(http.StatusOK))
-    
+
     var response map[string]interface{}
     err = json.NewDecoder(resp.Body).Decode(&response)
     Expect(err).ToNot(HaveOccurred())
-    
+
     pagination := response["pagination"].(map[string]interface{})
-    
+
     // ⭐⭐ CRITICAL ASSERTION
-    Expect(pagination["total"]).To(Equal(float64(2)), 
+    Expect(pagination["total"]).To(Equal(float64(2)),
         "pagination.total should reflect filtered count (2 critical), not page size (1)")
-    
+
     // Verify page size is correct
     data := response["data"].([]interface{})
     Expect(data).To(HaveLen(1), "page size should be 1 (limit parameter)")
@@ -466,7 +466,7 @@ It("should update total count when data changes", func() {
     // Clear and insert initial dataset
     _, err := db.Exec("DELETE FROM resource_action_traces WHERE alert_name = 'test-count-update'")
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Insert 5 initial records
     for i := 0; i < 5; i++ {
         _, err := db.Exec(`
@@ -476,20 +476,20 @@ It("should update total count when data changes", func() {
         `)
         Expect(err).ToNot(HaveOccurred())
     }
-    
+
     // Get initial total
     resp1, err := http.Get(baseURL + "/api/v1/incidents?alert_name=test-count-update&limit=10")
     Expect(err).ToNot(HaveOccurred())
     defer resp1.Body.Close()
-    
+
     var response1 map[string]interface{}
     err = json.NewDecoder(resp1.Body).Decode(&response1)
     Expect(err).ToNot(HaveOccurred())
-    
+
     pagination1 := response1["pagination"].(map[string]interface{})
     total1 := pagination1["total"].(float64)
     Expect(total1).To(Equal(float64(5)), "initial total should be 5")
-    
+
     // Insert 3 more records
     for i := 0; i < 3; i++ {
         _, err := db.Exec(`
@@ -499,21 +499,21 @@ It("should update total count when data changes", func() {
         `)
         Expect(err).ToNot(HaveOccurred())
     }
-    
+
     // Get updated total
     resp2, err := http.Get(baseURL + "/api/v1/incidents?alert_name=test-count-update&limit=10")
     Expect(err).ToNot(HaveOccurred())
     defer resp2.Body.Close()
-    
+
     var response2 map[string]interface{}
     err = json.NewDecoder(resp2.Body).Decode(&response2)
     Expect(err).ToNot(HaveOccurred())
-    
+
     pagination2 := response2["pagination"].(map[string]interface{})
     total2 := pagination2["total"].(float64)
-    
+
     // ⭐⭐ CRITICAL ASSERTION
-    Expect(total2).To(Equal(float64(8)), 
+    Expect(total2).To(Equal(float64(8)),
         "total should update from 5 to 8 when 3 records are added")
 })
 ```
@@ -525,35 +525,35 @@ It("should update total count when data changes", func() {
 
 It("should return accurate total count for large datasets efficiently", func() {
     // Uses 1,000 records from BeforeEach
-    
+
     start := time.Now()
     resp, err := http.Get(testBaseURL + "/api/v1/incidents?alert_name=test-pagination-stress-0&limit=10")
     elapsed := time.Since(start)
-    
+
     Expect(err).ToNot(HaveOccurred())
     defer resp.Body.Close()
-    
+
     Expect(resp.StatusCode).To(Equal(http.StatusOK))
-    
+
     var response map[string]interface{}
     err = json.NewDecoder(resp.Body).Decode(&response)
     Expect(err).ToNot(HaveOccurred())
-    
+
     pagination := response["pagination"].(map[string]interface{})
-    
+
     // ⭐⭐ CRITICAL ASSERTION
     // Get actual count from database for verification
     var actualCount int
     err = db.QueryRow("SELECT COUNT(*) FROM resource_action_traces WHERE alert_name LIKE 'test-pagination-stress-%'").Scan(&actualCount)
     Expect(err).ToNot(HaveOccurred())
-    
-    Expect(pagination["total"]).To(Equal(float64(actualCount)), 
+
+    Expect(pagination["total"]).To(Equal(float64(actualCount)),
         "pagination.total must match database COUNT(*) for large datasets")
-    
+
     // Verify performance impact
-    Expect(elapsed).To(BeNumerically("<", 250*time.Millisecond), 
+    Expect(elapsed).To(BeNumerically("<", 250*time.Millisecond),
         "COUNT query should not significantly impact p95 latency target (< 250ms)")
-    
+
     GinkgoWriter.Printf("Large dataset count query latency: %v\n", elapsed)
 })
 ```
@@ -562,32 +562,32 @@ It("should return accurate total count for large datasets efficiently", func() {
 ```go
 It("should return consistent total count across concurrent pagination requests", func() {
     // Uses 1,000 records from BeforeEach
-    
+
     concurrentRequests := 20
     results := make(chan map[string]interface{}, concurrentRequests)
-    
+
     // Launch concurrent requests with different offsets
     for i := 0; i < concurrentRequests; i++ {
         go func(requestNum int) {
             defer GinkgoRecover()
-            
+
             offset := requestNum * 50
             url := fmt.Sprintf("%s/api/v1/incidents?alert_name=test-pagination-stress&limit=10&offset=%d", testBaseURL, offset)
-            
+
             resp, err := http.Get(url)
             Expect(err).ToNot(HaveOccurred())
             defer resp.Body.Close()
-            
+
             Expect(resp.StatusCode).To(Equal(http.StatusOK))
-            
+
             var response map[string]interface{}
             err = json.NewDecoder(resp.Body).Decode(&response)
             Expect(err).ToNot(HaveOccurred())
-            
+
             results <- response
         }(i)
     }
-    
+
     // Collect results
     totals := make([]float64, concurrentRequests)
     for i := 0; i < concurrentRequests; i++ {
@@ -595,17 +595,17 @@ It("should return consistent total count across concurrent pagination requests",
         pagination := response["pagination"].(map[string]interface{})
         totals[i] = pagination["total"].(float64)
     }
-    
+
     // ⭐⭐ CRITICAL ASSERTION
     firstTotal := totals[0]
     for i, total := range totals {
-        Expect(total).To(Equal(firstTotal), 
-            fmt.Sprintf("Request %d: pagination.total (%v) should match first request total (%v)", 
+        Expect(total).To(Equal(firstTotal),
+            fmt.Sprintf("Request %d: pagination.total (%v) should match first request total (%v)",
                 i, total, firstTotal))
     }
-    
+
     // Verify total is reasonable
-    Expect(firstTotal).To(BeNumerically(">=", 1000), 
+    Expect(firstTotal).To(BeNumerically(">=", 1000),
         "total should be at least 1000 (test dataset size)")
 })
 ```
@@ -660,7 +660,7 @@ It("should return consistent total count across concurrent pagination requests",
 
 ---
 
-**Triage Complete**: 2025-11-02  
-**Confidence**: 95% - Comprehensive analysis with actionable recommendations  
+**Triage Complete**: 2025-11-02
+**Confidence**: 95% - Comprehensive analysis with actionable recommendations
 **Status**: ✅ Ready for bug fix implementation
 
