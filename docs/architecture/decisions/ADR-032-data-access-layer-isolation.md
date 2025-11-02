@@ -72,37 +72,76 @@ Kubernaut uses PostgreSQL for persistent storage of incident data, action histor
 ### Architectural Boundaries
 
 ```mermaid
-%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e3f2fd'}}}%%
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#e3f2fd', 'lineColor':'#1976d2', 'primaryBorderColor':'#1976d2', 'edgeLabelBackground':'#ffffff'}}}%%
 flowchart TB
     subgraph APPLICATION_LAYER["🚫 APPLICATION LAYER - NO DIRECT DB ACCESS"]
-        ContextAPI["Context API<br/>(Read Only)"]
-        EffectivenessMonitor["Effectiveness Monitor<br/>(Read + Write)"]
-        WorkflowExecution["WorkflowExecution Controller<br/>(Write Audit Traces)"]
+        direction TB
+        subgraph READ_ONLY["Read-Only Services"]
+            ContextAPI["Context API<br/>(Read Historical Data)"]
+        end
+        subgraph READ_WRITE["Read+Write Services"]
+            EffectivenessMonitor["Effectiveness Monitor<br/>(Read + Write Metrics)"]
+        end
+        subgraph AUDIT_WRITERS["Audit Trail Writers (Real-Time)"]
+            RemediationOrch["RemediationOrchestrator<br/>(Orchestration Audit)"]
+            RemediationProc["RemediationProcessor<br/>(Signal Processing Audit)"]
+            AIAnalysis["AIAnalysis Controller<br/>(AI Decision Audit)"]
+            WorkflowExec["WorkflowExecution Controller<br/>(Execution Audit)"]
+            Notification["Notification Controller<br/>(Delivery Audit)"]
+        end
     end
     
     subgraph DATA_ACCESS_LAYER["✅ DATA ACCESS LAYER - SINGLE POINT OF DB ACCESS"]
-        DataStorage["Data Storage Service<br/>(REST API Gateway)<br/>✅ ONLY SERVICE WITH<br/>DB CREDENTIALS"]
+        DataStorage["Data Storage Service<br/>(REST API Gateway)<br/>✅ ONLY SERVICE WITH DB CREDENTIALS<br/><br/>Audit Endpoints:<br/>POST /api/v1/audit/orchestration<br/>POST /api/v1/audit/signal-processing<br/>POST /api/v1/audit/ai-decisions<br/>POST /api/v1/audit/executions<br/>POST /api/v1/audit/notifications"]
     end
     
-    PostgreSQL[("PostgreSQL<br/>(Single Source<br/>of Truth)")]
+    PostgreSQL[("PostgreSQL<br/>(Single Source of Truth)<br/><br/>Tables:<br/>• orchestration_audit<br/>• signal_processing_audit<br/>• ai_analysis_audit<br/>• workflow_execution_audit<br/>• notification_audit")]
     
-    ContextAPI -.->|"❌ NO DIRECT DB<br/>✅ REST API Read<br/>(HTTP/JSON)"| DataStorage
-    EffectivenessMonitor -.->|"❌ NO DIRECT DB<br/>✅ REST API Read+Write<br/>(HTTP/JSON)"| DataStorage
-    WorkflowExecution -.->|"❌ NO DIRECT DB<br/>✅ REST API Write<br/>(Action Audit Traces)"| DataStorage
+    ContextAPI -->|"❌ NO DIRECT DB<br/>✅ REST API Read"| DataStorage
+    EffectivenessMonitor -->|"❌ NO DIRECT DB<br/>✅ REST API Read+Write"| DataStorage
+    RemediationOrch -->|"❌ NO DIRECT DB<br/>✅ POST Orchestration Audit<br/>(Real-Time)"| DataStorage
+    RemediationProc -->|"❌ NO DIRECT DB<br/>✅ POST Signal Processing Audit<br/>(Real-Time)"| DataStorage
+    AIAnalysis -->|"❌ NO DIRECT DB<br/>✅ POST AI Decision Audit<br/>(Real-Time)"| DataStorage
+    WorkflowExec -->|"❌ NO DIRECT DB<br/>✅ POST Execution Audit<br/>(Real-Time)"| DataStorage
+    Notification -->|"❌ NO DIRECT DB<br/>✅ POST Delivery Audit<br/>(Real-Time)"| DataStorage
     DataStorage ==>|"✅ SQL Queries<br/>(Parameterized)"| PostgreSQL
     
-    style ContextAPI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    style EffectivenessMonitor fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    style WorkflowExecution fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    style DataStorage fill:#c8e6c9,stroke:#388e3c,stroke-width:3px
-    style PostgreSQL fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    style APPLICATION_LAYER fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5
-    style DATA_ACCESS_LAYER fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,stroke-dasharray: 5 5
+    style ContextAPI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
+    style EffectivenessMonitor fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
+    style RemediationOrch fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#000
+    style RemediationProc fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#000
+    style AIAnalysis fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#000
+    style WorkflowExec fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#000
+    style Notification fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#000
+    style DataStorage fill:#c8e6c9,stroke:#388e3c,stroke-width:3px,color:#000
+    style PostgreSQL fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
+    style APPLICATION_LAYER fill:#ffebee,stroke:#c62828,stroke-width:2px,stroke-dasharray: 5 5,color:#000
+    style DATA_ACCESS_LAYER fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,stroke-dasharray: 5 5,color:#000
+    style AUDIT_WRITERS fill:#fffde7,stroke:#f57f17,stroke-width:2px,stroke-dasharray: 3 3,color:#000
+    style READ_ONLY fill:#f3f3f3,stroke:#1976d2,stroke-width:1px,color:#000
+    style READ_WRITE fill:#f3f3f3,stroke:#1976d2,stroke-width:1px,color:#000
+    
+    linkStyle 0 stroke:#1976d2,stroke-width:2px
+    linkStyle 1 stroke:#1976d2,stroke-width:2px
+    linkStyle 2 stroke:#f57f17,stroke-width:2px
+    linkStyle 3 stroke:#f57f17,stroke-width:2px
+    linkStyle 4 stroke:#f57f17,stroke-width:2px
+    linkStyle 5 stroke:#f57f17,stroke-width:2px
+    linkStyle 6 stroke:#f57f17,stroke-width:2px
+    linkStyle 7 stroke:#388e3c,stroke-width:3px
 ```
 
-**Note**: 
-- Gateway service is an HTTP reverse proxy/router and does NOT consume Data Storage Service directly
-- WorkflowExecution controller writes action audit traces via Data Storage Service REST API (per [ADR-024](ADR-024-eliminate-actionexecution-layer.md#L239-L257))
+**Legend**:
+- **Blue boxes**: Read-only or Read+Write services (business logic queries)
+- **Yellow boxes**: Audit trail writers (real-time audit data capture for V2.0 RAR generation)
+- **Green box**: Data Storage Service (ONLY service with database credentials)
+
+**Key Points**:
+1. **Gateway service** is an HTTP reverse proxy/router and does NOT consume Data Storage Service directly
+2. **All 5 CRD controllers** write audit trails in real-time (as soon as CRD status updates)
+3. **Audit data enables V2.0 RAR generation** (BR-REMEDIATION-ANALYSIS-001 to BR-REMEDIATION-ANALYSIS-004)
+4. **CRD + DB contain same audit data** for 24h, then CRDs deleted
+5. **RemediationProcessor captures "front door" audit**: Signal reception, enrichment quality, classification, business priority
 
 ### Mandatory Rules
 
