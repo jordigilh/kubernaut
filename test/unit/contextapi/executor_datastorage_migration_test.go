@@ -18,22 +18,96 @@ package contextapi
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/query"
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 
+// mockCache is a simple in-memory cache for testing
+type mockCache struct {
+	data map[string][]byte
+	mu   sync.RWMutex
+}
+
+func newMockCache() *mockCache {
+	return &mockCache{
+		data: make(map[string][]byte),
+	}
+}
+
+func (m *mockCache) Get(ctx context.Context, key string) ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	if data, ok := m.data[key]; ok {
+		return data, nil
+	}
+	return nil, fmt.Errorf("cache miss")
+}
+
+func (m *mockCache) Set(ctx context.Context, key string, value interface{}) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	// Serialize to JSON (matching real cache behavior)
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	m.data[key] = data
+	return nil
+}
+
+func (m *mockCache) Delete(ctx context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.data, key)
+	return nil
+}
+
+func (m *mockCache) Close() error {
+	return nil
+}
+
+func (m *mockCache) HealthCheck(ctx context.Context) (*cache.HealthStatus, error) {
+	return &cache.HealthStatus{Degraded: false, Message: "mock cache"}, nil
+}
+
+func (m *mockCache) Stats() cache.Stats {
+	return cache.Stats{}
+}
+
 // BR-CONTEXT-007: HTTP client for Data Storage Service REST API
 // BR-CONTEXT-008: Circuit breaker (3 failures → open for 60s)
 // BR-CONTEXT-009: Exponential backoff retry (3 attempts: 100ms, 200ms, 400ms)
 // BR-CONTEXT-010: Graceful degradation (Data Storage down → cached data only)
+
+// Helper to create executor with mock cache
+func createTestExecutor(dsClient *dsclient.DataStorageClient) *query.CachedExecutor {
+	mockCache := newMockCache()
+	
+	cfg := &query.DataStorageExecutorConfig{
+		DSClient: dsClient,
+		Cache:    mockCache,
+	}
+	
+	executor, err := query.NewCachedExecutorWithDataStorage(cfg)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(executor).ToNot(BeNil())
+	
+	return executor
+}
 
 var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 	var (
@@ -99,7 +173,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			})
 
 			// Create executor with Data Storage client
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 
 			// Execute query
 			params := &models.ListIncidentsParams{
@@ -131,7 +205,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			}))
 
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 
 			params := &models.ListIncidentsParams{
 				Namespace: &namespace,
@@ -157,7 +231,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			}))
 
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 
 			params := &models.ListIncidentsParams{
 				Severity: &severity,
@@ -185,7 +259,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			}))
 
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 
 			params := &models.ListIncidentsParams{Limit: 100}
 
@@ -215,7 +289,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 				Timeout: 1 * time.Second,
 			})
 
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 			params := &models.ListIncidentsParams{Limit: 100}
 
 		// First 3 requests should hit the service (each with 3 retry attempts = 9 total HTTP calls)
@@ -265,7 +339,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			}))
 
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 
 			params := &models.ListIncidentsParams{Limit: 100}
 
@@ -294,7 +368,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			}))
 
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 
 			params := &models.ListIncidentsParams{Limit: 100}
 
@@ -311,7 +385,6 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 
 	Context("when Data Storage Service is completely unavailable", func() {
 		It("should return cached data when service is down", func() {
-			Skip("GREEN phase: Cache fallback requires real cache implementation - REFACTOR phase")
 			// First request succeeds and populates cache
 			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
@@ -324,7 +397,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			}))
 
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 
 			params := &models.ListIncidentsParams{Limit: 100}
 
@@ -332,6 +405,9 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			incidents1, _, err1 := executor.ListIncidents(ctx, params)
 			Expect(err1).ToNot(HaveOccurred())
 			Expect(incidents1).To(HaveLen(1))
+
+			// Wait for async cache population to complete
+			time.Sleep(100 * time.Millisecond)
 
 			// Close server to simulate unavailability
 			mockDataStore.Close()
@@ -351,7 +427,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 				Timeout: 100 * time.Millisecond,
 			})
 
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 			params := &models.ListIncidentsParams{Limit: 100}
 
 			_, _, err := executor.ListIncidents(ctx, params)
@@ -382,7 +458,7 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			}))
 
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
-			executor = query.NewCachedExecutorWithDataStorage(dsClient)
+			executor = createTestExecutor(dsClient)
 
 			params := &models.ListIncidentsParams{Limit: 5000} // Invalid
 
