@@ -30,12 +30,17 @@ T6: Notification Controller updates Notification.status → delivery confirmatio
 
 **CRD Dual Purpose**:
 1. **API Contract** (Real-Time): Controllers read/write CRD status for service coordination
-2. **Short-Term Visibility** (24h): Operators query CRDs for live status (no database queries needed)
+2. **Short-Term Visibility** (24h): Operators query CRDs for live status (fast, no database queries needed)
+
+**Database Dual Purpose**:
+1. **Real-Time Redundancy** (0-24h): Same data as CRDs (written immediately, not just before deletion)
+2. **Long-Term Source of Truth** (After 24h): Only source after CRDs deleted
 
 **CRD Retention Strategy**:
 - **During execution**: CRDs serve as API contract between controllers (RemediationOrchestrator propagates info)
-- **24-hour window**: Operators query CRDs for LIVE status and recent history
-- **After 24 hours**: CRDs deleted → Database becomes source of truth for remediation analysis reports
+- **Real-time audit writing**: Controllers write to database AS SOON AS CRD status updates (not just before deletion)
+- **0-24 hour window**: CRD + Database contain SAME data (operators choose: CRDs for speed, DB for rich queries)
+- **After 24 hours**: CRDs deleted → Database becomes ONLY source for remediation analysis reports
 
 **V1.0 & V1.1 Scope** (Foundation - Current):
 - ✅ **Capture COMPLETE audit data** from ALL services (RemediationOrchestrator, AIAnalysis, WorkflowExecution, Notification)
@@ -52,10 +57,12 @@ T6: Notification Controller updates Notification.status → delivery confirmatio
 - ✅ **No schema changes**: V2.0 reads V1.0/V1.1 audit data as-is
 
 **CRITICAL V1.0/V1.1 REQUIREMENTS** (Foundation):
-1. ✅ Database must contain **COMPLETE** timeline data from ALL services
-2. ✅ Data structure must be **forward-compatible** (no schema changes in V2.0)
-3. ✅ All fields for RAR generation must be captured (even if not used yet)
-4. ✅ Audit data persisted **BEFORE** CRD deletion (24h TTL)
+1. ✅ **Real-time audit writing**: Write to database AS SOON AS CRD status updates (not just before deletion)
+2. ✅ **Redundant storage (0-24h)**: CRD + Database contain SAME data during 24h window
+3. ✅ **Complete timeline data**: Database contains ALL timeline data from ALL services
+4. ✅ **Forward-compatible schema**: No database schema changes required for V2.0
+5. ✅ **All RAR fields captured**: Even if not analyzed yet (captured in V1.0/V1.1, analyzed in V2.0)
+6. ✅ **Finalizer guarantee**: Audit persisted BEFORE CRD deletion (eventual consistency via finalizers)
 
 **V2.0 RAR Generation** (Future - No Schema Changes):
 - 🔄 LLM reads V1.0/V1.1 audit data from database
@@ -294,15 +301,19 @@ flowchart TB
 
 **RemediationOrchestrator Role** (RemediationRequest Controller):
 - **During Execution**: Watches child CRD status changes, propagates information between services via CRD API contract
-- **After Completion**: Writes orchestration-level audit (service coordination timeline) to database via Data Storage REST API
-- **Before Cleanup**: Verifies ALL child controllers have written their audits to database (dual audit system compliance)
+- **Real-Time Audit**: Writes orchestration audit AS SOON AS status changes (async, non-blocking)
+- **Before Cleanup**: Finalizer verifies ALL child controllers have audit persisted in database (eventual consistency guarantee)
+- **0-24h Window**: CRD + Database contain same orchestration data (operator choice)
+- **After 24h**: CRD deleted, database remains as only source
 
 **V1.0 & V1.1 Implementation** (Foundation - Current Scope):
-- ✅ **ALL controllers write service-specific audit data** to database via Data Storage REST API
+- ✅ **Real-time audit writing**: Controllers write to DB AS SOON AS CRD status updates (async, non-blocking)
+- ✅ **Redundant storage (0-24h)**: CRD + Database contain SAME data during 24h window
+- ✅ **ALL controllers write service-specific audit**: RemediationOrchestrator, AIAnalysis, WorkflowExecution, Notification
 - ✅ **Complete timeline data capture**: Every field needed for RAR generation
 - ✅ **Forward-compatible schema**: No changes needed for V2.0
-- ✅ **RemediationOrchestrator coordination**: Verifies audit completeness before CRD cleanup
-- ❌ **NO RAR generation yet**: Data captured, reports not generated (V2.0 feature)
+- ✅ **Finalizer guarantee**: Verifies audit persisted before CRD deletion (eventual consistency)
+- ❌ **NO RAR generation yet**: Data captured in real-time, reports not generated (V2.0 feature)
 
 **V2.0 Enhancement** (RAR Generation - Future Scope):
 - 🔄 **LLM-powered RAR generation** reading V1.0/V1.1 audit data (no schema changes)
