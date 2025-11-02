@@ -41,7 +41,6 @@ var _ = Describe("Query Lifecycle Integration Tests", func() {
 		registry := prometheus.NewRegistry()
 		metricsInstance := metrics.NewMetricsWithRegistry("contextapi", "", registry)
 
-
 		executorCfg := &query.Config{
 			DB:      sqlxDB,
 			Cache:   cacheManager,
