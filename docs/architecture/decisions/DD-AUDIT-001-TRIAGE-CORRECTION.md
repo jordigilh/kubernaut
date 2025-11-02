@@ -1,7 +1,7 @@
 # DD-AUDIT-001 TRIAGE: Audit Data Distribution Analysis
 
-**Date**: November 2, 2025  
-**Status**: 🚨 **CRITICAL CORRECTION REQUIRED**  
+**Date**: November 2, 2025
+**Status**: 🚨 **CRITICAL CORRECTION REQUIRED**
 **Triggered By**: User question - "why is the workflowexecutor service the only service capturing the audit trail when every CRD created contains an audit trail of each service's actions?"
 
 ---
@@ -54,7 +54,7 @@ T6: Notification Controller updates Notification.status → delivery confirmatio
 
 ## 🚨 **CRITICAL FINDING: TIMELINE RECONSTRUCTION IMPOSSIBLE**
 
-**Original Decision (DD-AUDIT-001 v1)**: WorkflowExecution Controller writes ALL audit traces  
+**Original Decision (DD-AUDIT-001 v1)**: WorkflowExecution Controller writes ALL audit traces
 **Problem Discovered**: Each CRD contains service-specific timeline data that would be LOST
 
 **Impact**: Cannot reconstruct timeline after 24h because:
@@ -76,12 +76,12 @@ status:
   overallPhase: "executing"  # Orchestration state tracking
   startTime: "2025-11-02T10:00:00Z"
   completedAt: "2025-11-02T10:05:30Z"
-  
+
   # Child CRD lifecycle tracking
   remediationProcessingRef: {name: "...", uid: "..."}
   aiAnalysisRef: {name: "...", uid: "..."}
   workflowExecutionRef: {name: "...", uid: "..."}
-  
+
   # Approval notification decisions
   approvalNotificationSent: true
 ```
@@ -100,7 +100,7 @@ status:
   phase: "Completed"
   startedAt: "2025-11-02T10:01:00Z"
   completedAt: "2025-11-02T10:03:30Z"
-  
+
   # HolmesGPT investigation results
   holmesGPTResults:
     investigation: "High CPU usage due to memory leak in container workload-789"
@@ -113,7 +113,7 @@ status:
       - action: "scale-deployment"
         rationale: "Distribute load"
         confidence: 65.0
-  
+
   # AI decision audit (BR-AI-060)
   approvalStatus: "approved"  # or "rejected" or "pending"
   approvalTime: "2025-11-02T10:02:45Z"
@@ -121,7 +121,7 @@ status:
   approvalMethod: "console"  # or "slack" or "api"
   approvalJustification: "Approved - low risk change in staging environment"
   approvedBy: "ops-engineer@company.com"
-  
+
   # Alternatives considered
   alternativesConsidered:
     - action: "increase-memory-limit"
@@ -144,7 +144,7 @@ status:
   phase: "completed"
   currentStep: 3
   totalSteps: 3
-  
+
   # Step-by-step execution audit
   stepStatuses:
     - stepNumber: 1
@@ -153,7 +153,7 @@ status:
       startTime: "2025-11-02T10:03:35Z"
       endTime: "2025-11-02T10:04:10Z"
       retriesAttempted: 0
-      
+
       # Pre-condition validation results (BR-WF-016)
       preConditionResults:
         - conditionType: "pod_exists"
@@ -162,7 +162,7 @@ status:
         - conditionType: "no_active_connections"
           evaluated: true
           passed: true
-      
+
       # Post-condition validation results (BR-WF-052)
       postConditionResults:
         - conditionType: "pod_running"
@@ -171,14 +171,14 @@ status:
         - conditionType: "health_check_passing"
           evaluated: true
           passed: true
-  
+
   # Execution metrics
   executionMetrics:
     totalDuration: "3m45s"
     stepSuccessRate: 1.0
     rollbacksPerformed: 0
     resourcesAffected: 1
-  
+
   # Adaptive adjustments
   adaptiveAdjustments:
     - timestamp: "2025-11-02T10:04:00Z"
@@ -244,26 +244,26 @@ flowchart TB
         WF["WorkflowExecution Controller"]
         NOT["Notification Controller"]
     end
-    
+
     subgraph DATA_STORAGE["Data Storage Service REST API"]
         OrcAudit["POST /api/v1/audit/orchestration"]
         AIAudit["POST /api/v1/audit/ai-decisions"]
         ExecAudit["POST /api/v1/audit/executions"]
         NotifAudit["POST /api/v1/audit/notifications"]
     end
-    
+
     PostgreSQL[("PostgreSQL<br/>(Complete Audit Trail)")]
-    
+
     RR -->|"Orchestration audit<br/>(service coordination)"| OrcAudit
     AI -->|"AI decision audit<br/>(rationale, approvals)"| AIAudit
     WF -->|"Execution audit<br/>(step-by-step)"| ExecAudit
     NOT -->|"Notification audit<br/>(delivery attempts)"| NotifAudit
-    
+
     OrcAudit --> PostgreSQL
     AIAudit --> PostgreSQL
     ExecAudit --> PostgreSQL
     NotifAudit --> PostgreSQL
-    
+
     style RR fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style AI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style WF fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
@@ -273,8 +273,8 @@ flowchart TB
 
 ### Audit Responsibility Matrix
 
-| Controller | Audit Scope | REST Endpoint | Data Captured | Incident Report Section |
-|------------|-------------|---------------|---------------|------------------------|
+| Controller | Audit Scope | REST Endpoint | Data Captured | Post-Mortem Report Section |
+|------------|-------------|---------------|---------------|----------------------------|
 | **RemediationRequest Controller (RemediationOrchestrator)** | Orchestration timeline | `POST /api/v1/audit/orchestration` | Service invocation order, timing, coordination decisions | Timeline header, service transitions |
 | **AIAnalysis Controller** | AI decisions & approvals | `POST /api/v1/audit/ai-decisions` | HolmesGPT results, recommendations, approval/rejection decisions, alternatives | Root cause, AI reasoning, approval section |
 | **WorkflowExecution Controller** | Step-by-step execution | `POST /api/v1/audit/executions` | Action execution, validation results, adaptive adjustments | Actions taken, execution timeline |
@@ -317,7 +317,7 @@ func (r *RemediationRequestController) ensureAuditPersistence(ctx context.Contex
     if !rr.Status.OrchestrationAuditRecorded {
         return fmt.Errorf("orchestration audit not recorded")
     }
-    
+
     // Verify AIAnalysis audit written (if AIAnalysis was created)
     if rr.Status.AIAnalysisRef != nil {
         aiAnalysis := &aiv1.AIAnalysis{}
@@ -327,7 +327,7 @@ func (r *RemediationRequestController) ensureAuditPersistence(ctx context.Contex
             }
         }
     }
-    
+
     // Verify WorkflowExecution audit written (if WorkflowExecution was created)
     if rr.Status.WorkflowExecutionRef != nil {
         workflow := &workflowv1.WorkflowExecution{}
@@ -337,7 +337,7 @@ func (r *RemediationRequestController) ensureAuditPersistence(ctx context.Contex
             }
         }
     }
-    
+
     return nil
 }
 ```
@@ -346,7 +346,7 @@ func (r *RemediationRequestController) ensureAuditPersistence(ctx context.Contex
 
 ## 📊 **CONFIDENCE ASSESSMENT**
 
-**Original Confidence**: 98% (centralized audit)  
+**Original Confidence**: 98% (centralized audit)
 **Revised Confidence**: **98%** (hybrid audit - SAME confidence, different model)
 
 **Why Confidence Remains High**:
