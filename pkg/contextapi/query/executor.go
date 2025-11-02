@@ -131,63 +131,64 @@ func NewCachedExecutor(cfg *Config) (*CachedExecutor, error) {
 	}, nil
 }
 
+// DataStorageExecutorConfig holds configuration for Context API executor with Data Storage integration
+// REFACTOR: Real cache injection instead of NoOpCache
+type DataStorageExecutorConfig struct {
+	DSClient *dsclient.DataStorageClient
+	Cache    cache.CacheManager // REFACTOR: Real cache manager
+	Logger   *zap.Logger
+	Metrics  *metrics.Metrics
+	TTL      time.Duration
+}
+
 // NewCachedExecutorWithDataStorage creates a new query executor using Data Storage Service
 // BR-CONTEXT-007: HTTP client for Data Storage Service REST API
 // BR-CONTEXT-008: Circuit breaker (3 failures → open for 60s)
 // BR-CONTEXT-009: Exponential backoff retry (3 attempts: 100ms, 200ms, 400ms)
-// BR-CONTEXT-010: Graceful degradation (Data Storage down → cached data only)
-func NewCachedExecutorWithDataStorage(dsClient *dsclient.DataStorageClient) *CachedExecutor {
-	logger, _ := zap.NewProduction() // Use production logger
+// BR-CONTEXT-010: Graceful degradation (Data Storage down → cached data)
+// REFACTOR: Now accepts real cache for graceful degradation
+func NewCachedExecutorWithDataStorage(cfg *DataStorageExecutorConfig) (*CachedExecutor, error) {
+	// Validate required fields
+	if cfg.DSClient == nil {
+		return nil, fmt.Errorf("DSClient cannot be nil")
+	}
 
-	// Create minimal cache for graceful degradation
-	// Note: In production, this would be injected via Config
-	minimalCache := &NoOpCache{} // Placeholder for tests
+	// Set defaults
+	logger := cfg.Logger
+	if logger == nil {
+		logger, _ = zap.NewProduction()
+	}
 
-	// Create metrics with isolated registry to avoid test conflicts
-	// Note: In production, this would be injected via Config
-	testRegistry := prometheus.NewRegistry() // Creates isolated registry for tests
-	minimalMetrics := metrics.NewMetricsWithRegistry("contextapi", "test", testRegistry)
+	cacheManager := cfg.Cache
+	if cacheManager == nil {
+		return nil, fmt.Errorf("Cache cannot be nil - required for graceful degradation")
+	}
+
+	metricsInst := cfg.Metrics
+	if metricsInst == nil {
+		// Create isolated registry for tests
+		testRegistry := prometheus.NewRegistry()
+		metricsInst = metrics.NewMetricsWithRegistry("contextapi", "datastorage", testRegistry)
+	}
+
+	ttl := cfg.TTL
+	if ttl == 0 {
+		ttl = 5 * time.Minute
+	}
 
 	return &CachedExecutor{
-		dsClient: dsClient,
-		cache:    minimalCache,
+		dsClient: cfg.DSClient,
+		cache:    cacheManager,
 		logger:   logger,
-		ttl:      5 * time.Minute,
-		metrics:  minimalMetrics,
+		ttl:      ttl,
+		metrics:  metricsInst,
 
 		// BR-CONTEXT-008: Circuit breaker configuration
-		circuitBreakerThreshold: 3,       // Open after 3 failures
-		circuitBreakerTimeout:   60 * time.Second, // Close after 60s
-	}
+		circuitBreakerThreshold: 3,                    // Open after 3 failures
+		circuitBreakerTimeout:   60 * time.Second,    // Close after 60s
+	}, nil
 }
 
-// NoOpCache is a minimal cache implementation for testing
-// In production, this would be replaced with real cache from config
-type NoOpCache struct{}
-
-func (c *NoOpCache) Get(ctx context.Context, key string) ([]byte, error) {
-	return nil, fmt.Errorf("cache miss")
-}
-
-func (c *NoOpCache) Set(ctx context.Context, key string, value interface{}) error {
-	return nil // No-op
-}
-
-func (c *NoOpCache) Delete(ctx context.Context, key string) error {
-	return nil // No-op
-}
-
-func (c *NoOpCache) Close() error {
-	return nil // No-op
-}
-
-func (c *NoOpCache) HealthCheck(ctx context.Context) (*cache.HealthStatus, error) {
-	return &cache.HealthStatus{Degraded: false, Message: "no-op cache"}, nil
-}
-
-func (c *NoOpCache) Stats() cache.Stats {
-	return cache.Stats{} // Empty stats
-}
 
 // ListIncidents retrieves incidents with multi-tier fallback
 // BR-CONTEXT-001: Query incident audit data
@@ -225,7 +226,7 @@ func (e *CachedExecutor) ListIncidents(ctx context.Context, params *models.ListI
 		e.logger.Debug("cache miss, querying Data Storage Service",
 			zap.String("key", cacheKey))
 
-		return e.queryDataStorageWithFallback(ctx, params)
+		return e.queryDataStorageWithFallback(ctx, cacheKey, params)
 	}
 
 	// Legacy: Cache miss or error → fallback to database with single-flight deduplication
@@ -484,7 +485,8 @@ func (e *CachedExecutor) queryDatabase(ctx context.Context, params *models.ListI
 // BR-CONTEXT-008: Circuit breaker (3 failures → open for 60s)
 // BR-CONTEXT-009: Exponential backoff retry (3 attempts: 100ms, 200ms, 400ms)
 // BR-CONTEXT-010: Graceful degradation (Data Storage down → cached data only)
-func (e *CachedExecutor) queryDataStorageWithFallback(ctx context.Context, params *models.ListIncidentsParams) ([]*models.IncidentEvent, int, error) {
+// REFACTOR: Now accepts cache key to populate cache after successful query
+func (e *CachedExecutor) queryDataStorageWithFallback(ctx context.Context, cacheKey string, params *models.ListIncidentsParams) ([]*models.IncidentEvent, int, error) {
 	// BR-CONTEXT-008: Check circuit breaker state
 	if e.circuitOpen {
 		// Check if timeout elapsed
@@ -534,6 +536,9 @@ func (e *CachedExecutor) queryDataStorageWithFallback(ctx context.Context, param
 			for i, inc := range result.Incidents {
 				converted[i] = convertIncidentToModel(&inc)
 			}
+
+			// REFACTOR: Populate cache after successful query
+			go e.populateCache(ctx, cacheKey, converted, result.Total)
 
 			// Extract total from pagination metadata
 			return converted, result.Total, nil
