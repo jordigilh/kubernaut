@@ -309,8 +309,81 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 		Expect(failureCount).To(Equal(9))
 		})
 
-		It("should close circuit breaker after timeout expires", func() {
-			Skip("Implementation detail: circuit breaker timeout testing")
+		It("should close circuit breaker after timeout expires and allow requests through", func() {
+			// Track HTTP calls
+			callCount := 0
+			var callTimes []time.Time
+
+			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				callCount++
+				callTimes = append(callTimes, time.Now())
+
+				// Fail first 3 requests (9 calls with retries)
+				if callCount <= 9 {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
+				// Succeed after circuit recovery
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{
+					"data": [],
+					"pagination": {"total": 0, "limit": 100, "offset": 0}
+				}`))
+			}))
+
+			// Create client with SHORT timeout for testing (2 seconds instead of 60)
+			dsClient = dsclient.NewDataStorageClient(dsclient.Config{
+				BaseURL: mockDataStore.URL,
+				Timeout: 1 * time.Second,
+			})
+
+			// Create executor with test-specific short circuit breaker timeout
+			mockCache := newMockCache()
+			cfg := &query.DataStorageExecutorConfig{
+				DSClient:                dsClient,
+				Cache:                   mockCache,
+				CircuitBreakerThreshold: 3,              // Open after 3 failures
+				CircuitBreakerTimeout:   2 * time.Second, // ⭐ TEST: 2s timeout (not 60s)
+			}
+
+			executor, err := query.NewCachedExecutorWithDataStorage(cfg)
+			Expect(err).ToNot(HaveOccurred())
+
+			params := &models.ListIncidentsParams{Limit: 100}
+
+			// Step 1: Trigger circuit breaker open (3 failures = 9 HTTP calls with retries)
+			for i := 0; i < 3; i++ {
+				_, _, err := executor.ListIncidents(ctx, params)
+				Expect(err).To(HaveOccurred())
+			}
+
+			// ⭐ CORRECTNESS: Verify exactly 9 calls (3 requests × 3 retries)
+			Expect(callCount).To(Equal(9), "should have 9 calls (3 requests × 3 retries)")
+
+			// Step 2: Verify circuit is open (4th request rejected WITHOUT hitting server)
+			_, _, err = executor.ListIncidents(ctx, params)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("circuit breaker open"))
+			Expect(callCount).To(Equal(9), "circuit breaker should prevent call (still 9)")
+
+			// Step 3: Wait for circuit breaker timeout (2 seconds)
+			time.Sleep(2100 * time.Millisecond) // Slightly more than timeout
+
+			// Step 4: ⭐⭐ CRITICAL TEST: Circuit should close (half-open), allow test request
+			beforeRecoveryCount := callCount
+			_, _, err = executor.ListIncidents(ctx, params)
+
+			// ⭐⭐ CORRECTNESS: Request should succeed (circuit recovered)
+			Expect(err).ToNot(HaveOccurred(), "circuit breaker should have closed after timeout")
+
+			// ⭐⭐ CORRECTNESS: HTTP call should have gone through (call count increased)
+			Expect(callCount).To(BeNumerically(">", beforeRecoveryCount),
+				"circuit breaker recovery should allow HTTP call through")
+
+			// Step 5: Verify subsequent requests continue to succeed (circuit fully closed)
+			_, _, err = executor.ListIncidents(ctx, params)
+			Expect(err).ToNot(HaveOccurred(), "subsequent requests should succeed after recovery")
 		})
 	})
 

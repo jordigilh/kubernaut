@@ -139,6 +139,10 @@ type DataStorageExecutorConfig struct {
 	Logger   *zap.Logger
 	Metrics  *metrics.Metrics
 	TTL      time.Duration
+	
+	// Circuit breaker configuration (for testing)
+	CircuitBreakerThreshold int           // Optional: defaults to 3
+	CircuitBreakerTimeout   time.Duration // Optional: defaults to 60s
 }
 
 // NewCachedExecutorWithDataStorage creates a new query executor using Data Storage Service
@@ -176,6 +180,17 @@ func NewCachedExecutorWithDataStorage(cfg *DataStorageExecutorConfig) (*CachedEx
 		ttl = 5 * time.Minute
 	}
 
+	// BR-CONTEXT-008: Circuit breaker configuration with configurable defaults
+	threshold := cfg.CircuitBreakerThreshold
+	if threshold == 0 {
+		threshold = 3 // Default: open after 3 failures
+	}
+
+	timeout := cfg.CircuitBreakerTimeout
+	if timeout == 0 {
+		timeout = 60 * time.Second // Default: close after 60s
+	}
+
 	return &CachedExecutor{
 		dsClient: cfg.DSClient,
 		cache:    cacheManager,
@@ -183,9 +198,9 @@ func NewCachedExecutorWithDataStorage(cfg *DataStorageExecutorConfig) (*CachedEx
 		ttl:      ttl,
 		metrics:  metricsInst,
 
-		// BR-CONTEXT-008: Circuit breaker configuration
-		circuitBreakerThreshold: 3,                    // Open after 3 failures
-		circuitBreakerTimeout:   60 * time.Second,    // Close after 60s
+		// BR-CONTEXT-008: Circuit breaker configuration (configurable for testing)
+		circuitBreakerThreshold: threshold,
+		circuitBreakerTimeout:   timeout,
 	}, nil
 }
 
