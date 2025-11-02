@@ -64,9 +64,10 @@ T6: Notification Controller updates Notification.status → delivery confirmatio
 5. ✅ **All RAR fields captured**: Even if not analyzed yet (captured in V1.0/V1.1, analyzed in V2.0)
 6. ✅ **Finalizer guarantee**: Audit persisted BEFORE CRD deletion (eventual consistency via finalizers)
 
-**V2.0 RAR Generation** (Future - No Schema Changes):
-- 🔄 LLM reads V1.0/V1.1 audit data from database
-- 🔄 Generates RAR using complete timeline captured in V1.0/V1.1
+**V2.0 RAR Generation** (Future - Database-Only Queries):
+- 🔄 LLM reads V1.0/V1.1 audit data from **database ONLY** (via Data Storage Service REST API)
+- 🔄 Generates RAR using complete timeline captured in V1.0/V1.1 (from database records)
+- ❌ Does NOT query CRDs (CRDs deleted after 24h, database is permanent source)
 - ✅ No database schema changes required
 
 ---
@@ -316,11 +317,12 @@ flowchart TB
 - ❌ **NO RAR generation yet**: Data captured in real-time, reports not generated (V2.0 feature)
 
 **V2.0 Enhancement** (RAR Generation - Future Scope):
-- 🔄 **LLM-powered RAR generation** reading V1.0/V1.1 audit data (no schema changes)
+- 🔄 **LLM-powered RAR generation** reading V1.0/V1.1 audit data from **database ONLY** (no CRD queries)
 - 🔄 **Automated remediation effectiveness analysis** (BR-REMEDIATION-ANALYSIS-001 to BR-REMEDIATION-ANALYSIS-004)
-- 🔄 **Timeline reconstruction**: Signal → Investigation → Approval → Execution → Notification
+- 🔄 **Timeline reconstruction**: Signal → Investigation → Approval → Execution → Notification (from DB records)
 - 🔄 **AI decision analysis**: Why action chosen, alternatives, confidence scores
 - 🔄 **Continuous improvement**: Feed insights back into AI training
+- ❌ **NO CRD queries**: RAR uses database exclusively (CRDs deleted after 24h)
 
 ---
 
