@@ -219,7 +219,7 @@ func (c *DataStorageClient) parseError(resp *http.Response) error {
 			Title:    rfc7807Err.Title,
 			Detail:   stringValue(rfc7807Err.Detail),
 			Status:   resp.StatusCode,
-			Instance: rfc7807Err.Instance,
+			Instance: stringValue(rfc7807Err.Instance),
 		}
 	}
 
