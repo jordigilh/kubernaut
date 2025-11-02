@@ -697,6 +697,228 @@ Describe("BR-WF-030: Step State Transitions", func() {
 
 ---
 
+## 🎯 **CRITICAL PRINCIPLE: Test Both Behavior AND Correctness**
+
+### **The Pagination Bug Lesson** (Data Storage Service - 2025-11-02)
+
+**Always test both:**
+1. **Behavior**: Does the feature work? (functional testing)
+2. **Correctness**: Are the outputs accurate? (data validation testing)
+
+### Why This Matters
+
+**Real Bug Example**: Data Storage pagination bug (handler.go:178)
+
+#### What We Tested (Behavior Only) ❌
+```go
+// ✅ Tests validated pagination WORKS
+It("should respect limit parameter", func() {
+    resp := http.Get("/api/v1/incidents?limit=10")
+    data := response["data"].([]interface{})
+    Expect(data).To(HaveLen(10))  // ✅ Page size correct
+})
+
+It("should respect offset parameter", func() {
+    page1 := getPage(limit=10, offset=0)
+    page2 := getPage(limit=10, offset=10)
+    Expect(page1[0].ID).ToNot(Equal(page2[0].ID))  // ✅ Different pages
+})
+
+// ❌ BUT: We never validated pagination.total was ACCURATE
+```
+
+**Bug**: `pagination.total` returned `len(incidents)` (page size = 10) instead of database `COUNT(*)` (actual = 10,000)
+
+**Impact**: Pagination UI showed "Page 1 of 10" when it should show "Page 1 of 1,000"
+
+#### What We Should Have Tested (Behavior + Correctness) ✅
+```go
+// ✅ Test BEHAVIOR: Does pagination work?
+It("should respect limit parameter", func() {
+    resp := http.Get("/api/v1/incidents?limit=10")
+    data := response["data"].([]interface{})
+    Expect(data).To(HaveLen(10))  // ✅ Page size correct
+})
+
+// ✅ Test CORRECTNESS: Is pagination metadata accurate?
+It("should return accurate total count in pagination metadata", func() {
+    // Known dataset: 25 records in database
+    resp := http.Get("/api/v1/incidents?limit=10")
+    pagination := response["pagination"].(map[string]interface{})
+    
+    // ⭐⭐ CRITICAL ASSERTION - This catches the bug
+    Expect(pagination["total"]).To(Equal(float64(25)),
+        "pagination.total MUST equal database count (25), not page size (10)")
+})
+```
+
+### Decision Framework: Behavior vs Correctness
+
+| Aspect | Behavior Testing | Correctness Testing |
+|--------|-----------------|---------------------|
+| **Question** | Does it work? | Is it accurate? |
+| **Pagination** | Page size correct? Offset works? | Total count = database count? |
+| **Sorting** | Results sorted? | Sort order matches spec? |
+| **Filtering** | Filter applied? | Filtered count accurate? |
+| **Calculations** | Calculation returns value? | Calculated value is correct? |
+| **Aggregations** | Aggregation returns data? | Aggregated totals match source? |
+
+### Examples Across Different Features
+
+#### Example 1: Workflow Parallel Execution
+
+**Behavior Testing** ❌ (Incomplete):
+```go
+It("should execute independent steps in parallel", func() {
+    workflow := NewWorkflow([]Step{step1, step2, step3})
+    orchestrator.Execute(workflow)
+    
+    // ✅ Tests behavior: Steps executed
+    Expect(workflow.Status.CompletedSteps).To(Equal(3))
+})
+```
+
+**Behavior + Correctness Testing** ✅ (Complete):
+```go
+It("should execute independent steps in parallel", func() {
+    workflow := NewWorkflow([]Step{step1, step2, step3})
+    orchestrator.Execute(workflow)
+    
+    // ✅ Tests behavior: Steps executed
+    Expect(workflow.Status.CompletedSteps).To(Equal(3))
+    
+    // ⭐ Tests correctness: Parallel execution efficiency accurate
+    Expect(workflow.Status.ParallelExecutionEfficiency).To(BeNumerically(">", 0.99),
+        "3 independent steps should execute in parallel (efficiency ≈ 1.0)")
+})
+```
+
+#### Example 2: Database Query Results
+
+**Behavior Testing** ❌ (Incomplete):
+```go
+It("should return incidents for namespace", func() {
+    incidents := db.Query(filters{"namespace": "prod"})
+    
+    // ✅ Tests behavior: Query returns data
+    Expect(incidents).ToNot(BeEmpty())
+})
+```
+
+**Behavior + Correctness Testing** ✅ (Complete):
+```go
+It("should return incidents for namespace", func() {
+    // Known dataset: 5 prod incidents, 3 dev incidents
+    incidents := db.Query(filters{"namespace": "prod"})
+    
+    // ✅ Tests behavior: Query returns data
+    Expect(incidents).ToNot(BeEmpty())
+    
+    // ⭐ Tests correctness: Returns exact count
+    Expect(incidents).To(HaveLen(5),
+        "Should return exactly 5 prod incidents, not dev incidents")
+    
+    // ⭐ Tests correctness: All results match filter
+    for _, inc := range incidents {
+        Expect(inc.Namespace).To(Equal("prod"))
+    }
+})
+```
+
+#### Example 3: Step State Machine
+
+**Behavior Testing** ❌ (Incomplete):
+```go
+It("should transition from pending to running", func() {
+    step := &Step{Status: "pending"}
+    orchestrator.TransitionStep(step, "start")
+    
+    // ✅ Tests behavior: Transition happens
+    Expect(step.Status).To(Equal("running"))
+})
+```
+
+**Behavior + Correctness Testing** ✅ (Complete):
+```go
+It("should transition from pending to running", func() {
+    step := &Step{
+        Status:      "pending",
+        StartTime:   nil,
+        Transitions: []string{},
+    }
+    
+    beforeTime := time.Now()
+    orchestrator.TransitionStep(step, "start")
+    afterTime := time.Now()
+    
+    // ✅ Tests behavior: Transition happens
+    Expect(step.Status).To(Equal("running"))
+    
+    // ⭐ Tests correctness: Transition recorded
+    Expect(step.Transitions).To(ContainElement("pending→running"))
+    
+    // ⭐ Tests correctness: Timestamp accurate
+    Expect(step.StartTime).ToNot(BeNil())
+    Expect(*step.StartTime).To(BeTemporally(">=", beforeTime))
+    Expect(*step.StartTime).To(BeTemporally("<=", afterTime))
+})
+```
+
+### Checklist: Have You Tested Correctness?
+
+Before marking a test complete, ask:
+
+1. **Counts & Totals**: Are aggregated counts validated against actual data?
+   - ❌ `Expect(results).ToNot(BeEmpty())` (weak)
+   - ✅ `Expect(results).To(HaveLen(expectedCount))` (strong)
+
+2. **Calculations**: Are calculated values verified for accuracy?
+   - ❌ `Expect(efficiency).To(BeNumerically(">", 0))` (weak)
+   - ✅ `Expect(efficiency).To(BeNumerically("~", 0.99, 0.01))` (strong)
+
+3. **Metadata**: Are metadata fields validated against source data?
+   - ❌ `Expect(pagination).To(HaveKey("total"))` (weak)
+   - ✅ `Expect(pagination["total"]).To(Equal(actualDatabaseCount))` (strong)
+
+4. **Transformations**: Are transformed values verified for correctness?
+   - ❌ `Expect(transformedData).ToNot(BeNil())` (weak)
+   - ✅ `Expect(transformedData).To(Equal(expectedTransformation))` (strong)
+
+5. **Edge Cases**: Are boundary conditions tested with exact values?
+   - ❌ `Expect(result).To(BeTrue())` (weak)
+   - ✅ `Expect(result).To(Equal(expectedBehaviorAtBoundary))` (strong)
+
+### When Correctness Testing is CRITICAL
+
+**High-Risk Areas** (Always test correctness):
+- ✅ **Pagination metadata** (total count, page count)
+- ✅ **Aggregations** (sums, counts, averages)
+- ✅ **Calculated metrics** (efficiency, utilization, success rates)
+- ✅ **Data transformations** (format conversions, mappings)
+- ✅ **Filtered results** (count matches filter criteria)
+- ✅ **State transitions** (history recorded accurately)
+- ✅ **Timestamps** (within expected ranges)
+- ✅ **Resource calculations** (CPU, memory, cost estimates)
+
+### Summary: The Golden Rule
+
+**🎯 GOLDEN RULE**: 
+```
+If your test can pass when the output is WRONG,
+you're only testing behavior, not correctness.
+```
+
+**Example**:
+```go
+// ❌ Passes even when total is wrong
+Expect(pagination["total"]).To(BeNumerically(">", 0))
+
+// ✅ Only passes when total is correct
+Expect(pagination["total"]).To(Equal(actualDatabaseCount))
+```
+
+---
+
 ## ⚠️ Anti-Patterns to AVOID
 
 ### ❌ OVER-EXTENDED UNIT TESTS (Forbidden)
