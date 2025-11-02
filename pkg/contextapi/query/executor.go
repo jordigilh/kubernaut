@@ -583,29 +583,72 @@ func (e *CachedExecutor) queryDataStorageWithFallback(ctx context.Context, cache
 }
 
 // convertIncidentToModel converts Data Storage client incident to Context API model
-// GREEN phase: minimal conversion using available fields only
+// REFACTOR phase: Complete field mapping with all incident data
 func convertIncidentToModel(inc *dsclient.Incident) *models.IncidentEvent {
 	// Map execution status to phase
 	phase := "pending"
 	switch inc.ExecutionStatus {
 	case "completed":
 		phase = "completed"
-	case "failed", "rolled-back":
+	case "failed", "cancelled":
 		phase = "failed"
-	case "executing":
+	case "in_progress":
 		phase = "processing"
 	}
 
-	return &models.IncidentEvent{
-		ID:         inc.Id,
-		Name:       inc.AlertName,
+	result := &models.IncidentEvent{
+		// Primary identification
+		ID:   inc.Id,
+		Name: inc.AlertName,
+
+		// Context (REFACTOR: now available from Data Storage)
+		Namespace:      stringPtrToString(inc.Namespace),
+		ClusterName:    stringPtrToString(inc.ClusterName),
+		Environment:    stringPtrToString(inc.Environment),
+		TargetResource: stringPtrToString(inc.TargetResource),
+
+		// Identifiers (REFACTOR: now available)
+		AlertFingerprint:     stringPtrToString(inc.AlertFingerprint),
+		RemediationRequestID: stringPtrToString(inc.RemediationRequestId),
+
+		// Status
 		Phase:      phase,
 		Status:     string(inc.ExecutionStatus),
 		Severity:   string(inc.AlertSeverity),
 		ActionType: inc.ActionType,
-		// Note: Other fields will be added in REFACTOR phase when Data Storage API
-		// is enhanced to include namespace, cluster_name, etc.
+
+		// Timing (REFACTOR: now available)
+		StartTime: timeToTimePtr(&inc.ActionTimestamp), // action_timestamp as start
+		EndTime:   timeToTimePtr(inc.EndTime),
+		Duration:  int64PtrToInt64(inc.Duration),
+
+		// Error tracking (REFACTOR: now available)
+		ErrorMessage: inc.ErrorMessage,
+
+		// Metadata (REFACTOR: now available)
+		Metadata: stringPtrToString(inc.Metadata),
 	}
+
+	return result
+}
+
+// Helper functions for pointer conversions
+func stringPtrToString(ptr *string) string {
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
+}
+
+func timeToTimePtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	return t
+}
+
+func int64PtrToInt64(ptr *int64) *int64 {
+	return ptr // Keep as pointer for Context API
 }
 
 // getTotalCount executes COUNT(*) query to get total matching incidents

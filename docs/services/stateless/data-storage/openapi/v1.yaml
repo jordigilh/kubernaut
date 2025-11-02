@@ -318,6 +318,11 @@ components:
           description: Name of the Prometheus alert or Kubernetes event
           example: "prod-cpu-high"
 
+        alert_fingerprint:
+          type: string
+          description: Unique alert fingerprint from Prometheus
+          example: "abc123def456"
+
         alert_severity:
           type: string
           enum: [low, medium, high, critical]
@@ -334,6 +339,31 @@ components:
           format: date-time
           description: Timestamp when the action was executed (ISO 8601)
           example: "2025-11-02T10:30:00Z"
+
+        namespace:
+          type: string
+          description: Kubernetes namespace where the action was taken
+          example: "production"
+
+        cluster_name:
+          type: string
+          description: Kubernetes cluster identifier
+          example: "prod-us-west-2"
+
+        environment:
+          type: string
+          description: Environment (e.g., production, staging, development)
+          example: "production"
+
+        target_resource:
+          type: string
+          description: Target Kubernetes resource (e.g., deployment/my-app)
+          example: "deployment/nginx"
+
+        remediation_request_id:
+          type: string
+          description: Unique remediation request identifier
+          example: "req-abc-123"
 
         model_used:
           type: string
@@ -353,6 +383,34 @@ components:
           enum: [pending, in_progress, completed, failed, cancelled]
           description: Current status of the remediation action
           example: "completed"
+
+        start_time:
+          type: string
+          format: date-time
+          description: When the remediation started (ISO 8601)
+          example: "2025-11-02T10:30:00Z"
+
+        end_time:
+          type: string
+          format: date-time
+          description: When the remediation completed (ISO 8601)
+          example: "2025-11-02T10:35:00Z"
+
+        duration:
+          type: integer
+          format: int64
+          description: Duration of the remediation in milliseconds
+          example: 300000
+
+        error_message:
+          type: string
+          description: Error message if the remediation failed
+          example: "Failed to scale deployment: insufficient resources"
+
+        metadata:
+          type: string
+          description: Additional metadata as JSON string
+          example: "{\"replicas_before\":2,\"replicas_after\":5}"
 
     Pagination:
       type: object
