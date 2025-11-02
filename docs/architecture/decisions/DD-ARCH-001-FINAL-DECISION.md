@@ -1,7 +1,19 @@
 # DD-ARCH-001: Data Access Pattern - Final Decision
 
+**⚠️ DEPRECATION NOTICE**: This document has been **SUPERSEDED** by [ADR-032: Data Access Layer Isolation](ADR-032-data-access-layer-isolation.md)
+
+**DO NOT REFERENCE THIS DOCUMENT** - Use ADR-032 as the authoritative source for:
+- Data access patterns (which services connect to PostgreSQL)
+- API Gateway architecture
+- Service-to-service communication via Data Storage Service REST API
+- Migration plans for Context API and Effectiveness Monitor
+
+**This document is retained for historical reference only.**
+
+---
+
 **Decision Date**: November 2, 2025
-**Status**: ✅ **APPROVED**
+**Status**: ✅ **APPROVED** → **⚠️ SUPERSEDED BY ADR-032**
 **Decision Maker**: Project Lead
 **Confidence**: **95%** ⭐⭐⭐
 
