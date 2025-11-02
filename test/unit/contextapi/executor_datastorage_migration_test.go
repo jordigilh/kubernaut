@@ -190,6 +190,104 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			Expect(incidents[0].Name).To(Equal("HighMemoryUsage"))
 		})
 
+		// 🔴 RED: P1 Field Mapping Completeness - Validate ALL 15+ fields mapped correctly
+		It("should map ALL Data Storage API fields to Context API model correctly", func() {
+			// Setup: Mock server with COMPLETE Data Storage API response
+			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				// ⭐ Complete Data Storage API response with all available fields
+				_, _ = w.Write([]byte(`{
+					"data": [
+						{
+							"id": 42,
+							"alert_name": "HighCPUUsage",
+							"alert_fingerprint": "fp-abc123",
+							"alert_severity": "critical",
+							"namespace": "production",
+							"target_resource": "deployment/api-server",
+							"cluster_name": "prod-us-east-1",
+							"environment": "production",
+							"action_type": "scale",
+							"action_timestamp": "2025-11-01T15:30:00Z",
+							"start_time": "2025-11-01T15:30:00Z",
+							"end_time": "2025-11-01T15:35:00Z",
+							"duration": 300000,
+							"model_used": "gpt-4",
+							"model_confidence": 0.95,
+							"execution_status": "completed",
+							"remediation_request_id": "req-xyz-789",
+							"metadata": "{\"replicas\":5,\"reason\":\"high CPU\"}",
+							"error_message": null
+						}
+					],
+					"pagination": {"total": 1, "limit": 100, "offset": 0}
+				}`))
+			}))
+
+			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
+			executor = createTestExecutor(dsClient)
+			params := &models.ListIncidentsParams{Limit: 100}
+
+			// Execute query
+			incidents, total, err := executor.ListIncidents(ctx, params)
+
+			// ⭐ BEHAVIOR: Query should succeed
+			Expect(err).ToNot(HaveOccurred())
+			Expect(incidents).To(HaveLen(1))
+			Expect(total).To(Equal(1))
+
+			// ⭐⭐ CORRECTNESS: Validate ALL fields are mapped correctly
+			incident := incidents[0]
+
+			// Primary identification fields
+			Expect(incident.ID).To(Equal(int64(42)),
+				"ID should be mapped from Data Storage 'id' field")
+			Expect(incident.Name).To(Equal("HighCPUUsage"),
+				"Name should be mapped from Data Storage 'alert_name' field")
+			Expect(incident.AlertFingerprint).To(Equal("fp-abc123"),
+				"AlertFingerprint should be mapped from Data Storage 'alert_fingerprint' field")
+			Expect(incident.RemediationRequestID).To(Equal("req-xyz-789"),
+				"RemediationRequestID should be mapped from Data Storage 'remediation_request_id' field")
+
+			// Kubernetes context fields
+			Expect(incident.Namespace).To(Equal("production"),
+				"Namespace should be mapped from Data Storage 'namespace' field")
+			Expect(incident.TargetResource).To(Equal("deployment/api-server"),
+				"TargetResource should be mapped from Data Storage 'target_resource' field")
+			Expect(incident.ClusterName).To(Equal("prod-us-east-1"),
+				"ClusterName should be mapped from Data Storage 'cluster_name' field")
+			Expect(incident.Environment).To(Equal("production"),
+				"Environment should be mapped from Data Storage 'environment' field")
+
+			// Status and severity fields
+			Expect(incident.Severity).To(Equal("critical"),
+				"Severity should be mapped from Data Storage 'alert_severity' field")
+			Expect(incident.ActionType).To(Equal("scale"),
+				"ActionType should be mapped from Data Storage 'action_type' field")
+			Expect(incident.Status).To(Equal("completed"),
+				"Status should be mapped from Data Storage 'execution_status' field")
+			Expect(incident.Phase).To(Equal("completed"),
+				"Phase should be derived from Data Storage 'execution_status' field")
+
+			// Timing fields
+			Expect(incident.StartTime).ToNot(BeNil(),
+				"StartTime should be mapped from Data Storage 'action_timestamp' field")
+			Expect(incident.EndTime).ToNot(BeNil(),
+				"EndTime should be mapped from Data Storage 'end_time' field")
+			Expect(incident.Duration).ToNot(BeNil(),
+				"Duration should be mapped from Data Storage 'duration' field")
+			Expect(*incident.Duration).To(Equal(int64(300000)),
+				"Duration value should be 300000 milliseconds")
+
+			// Metadata field
+			Expect(incident.Metadata).To(Equal("{\"replicas\":5,\"reason\":\"high CPU\"}"),
+				"Metadata should be mapped from Data Storage 'metadata' field")
+
+			// Null/optional field handling
+			Expect(incident.ErrorMessage).To(BeNil(),
+				"ErrorMessage should be nil when Data Storage 'error_message' is null")
+		})
+
 	It("should pass namespace filters to Data Storage API", func() {
 		namespace := "production"
 
