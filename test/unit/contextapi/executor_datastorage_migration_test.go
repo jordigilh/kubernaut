@@ -493,6 +493,106 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			Expect(incidents2[0].ID).To(Equal(int64(999)))
 		})
 
+		// 🔴 RED: P0 Cache Content Validation - Test ALL fields for correctness
+		It("should return cached data with ALL fields accurate (not just ID)", func() {
+			// Setup: Create mock server with comprehensive incident data
+			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				// ⭐ Use Data Storage API field names (will be converted by convertIncidentToModel)
+				_, _ = w.Write([]byte(`{
+					"data": [
+						{
+							"id": 42,
+							"alert_name": "HighMemoryUsage",
+							"alert_severity": "critical",
+							"namespace": "production",
+							"target_resource": "deployment/api-server-7d9f8b",
+							"cluster_name": "prod-us-east-1",
+							"environment": "production",
+							"action_type": "scale",
+							"action_timestamp": "2025-11-01T15:30:00Z",
+							"model_used": "gpt-4",
+							"model_confidence": 0.95,
+							"execution_status": "completed",
+							"error_message": null,
+							"start_time": "2025-11-01T15:30:00Z",
+							"alert_fingerprint": "abc123",
+							"remediation_request_id": "req-xyz-789"
+						}
+					],
+					"pagination": {"total": 1, "limit": 100, "offset": 0}
+				}`))
+			}))
+
+			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
+			executor = createTestExecutor(dsClient)
+			params := &models.ListIncidentsParams{Limit: 100}
+
+			// Step 1: First call - populates cache from Data Storage Service
+			incidents1, total1, err1 := executor.ListIncidents(ctx, params)
+			Expect(err1).ToNot(HaveOccurred())
+			Expect(incidents1).To(HaveLen(1))
+			Expect(total1).To(Equal(1))
+
+			// Wait for async cache population to complete
+			time.Sleep(150 * time.Millisecond)
+
+			// Step 2: Close server to force cache-only operation
+			mockDataStore.Close()
+			mockDataStore = nil
+
+			// Step 3: Second call - retrieve from cache
+			cachedIncidents, cachedTotal, err2 := executor.ListIncidents(ctx, params)
+
+			// ⭐ BEHAVIOR: Cache hit should succeed
+			Expect(err2).ToNot(HaveOccurred())
+			Expect(cachedIncidents).To(HaveLen(1), "cache should return 1 incident")
+			Expect(cachedTotal).To(Equal(1), "cache should preserve total count")
+
+			// ⭐⭐ CORRECTNESS: Validate ALL critical fields (not just ID)
+			incident := cachedIncidents[0]
+
+			// Core identifiers
+			Expect(incident.ID).To(Equal(int64(42)),
+				"cache should preserve incident ID")
+			Expect(incident.Name).To(Equal("HighMemoryUsage"),
+				"cache should preserve alert name")
+			Expect(incident.AlertFingerprint).To(Equal("abc123"),
+				"cache should preserve alert fingerprint")
+			Expect(incident.RemediationRequestID).To(Equal("req-xyz-789"),
+				"cache should preserve remediation request ID")
+
+			// Kubernetes context
+			Expect(incident.Namespace).To(Equal("production"),
+				"cache should preserve namespace")
+			Expect(incident.TargetResource).To(Equal("deployment/api-server-7d9f8b"),
+				"cache should preserve target resource")
+			Expect(incident.ClusterName).To(Equal("prod-us-east-1"),
+				"cache should preserve cluster name")
+			Expect(incident.Environment).To(Equal("production"),
+				"cache should preserve environment")
+
+			// Severity and action
+			Expect(incident.Severity).To(Equal("critical"),
+				"cache should preserve severity")
+			Expect(incident.ActionType).To(Equal("scale"),
+				"cache should preserve action type")
+			Expect(incident.Status).To(Equal("completed"),
+				"cache should preserve status")
+			Expect(incident.Phase).To(Equal("completed"),
+				"cache should preserve phase")
+
+			// Timestamps (StartTime is critical for chronological ordering)
+			Expect(incident.StartTime).ToNot(BeNil(),
+				"cache should preserve start time (action_timestamp)")
+
+			// Null/optional field handling
+			if incident.ErrorMessage != nil {
+				Expect(*incident.ErrorMessage).To(BeEmpty(),
+					"cache should preserve null error_message as nil or empty")
+			}
+		})
+
 		It("should return error when cache is empty and service unavailable", func() {
 			// Create client pointing to non-existent service
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{
