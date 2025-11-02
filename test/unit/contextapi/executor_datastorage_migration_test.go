@@ -117,8 +117,6 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 		})
 
 	It("should pass namespace filters to Data Storage API", func() {
-		Skip("GREEN phase: Namespace filtering not yet supported by Data Storage API OpenAPI spec - REFACTOR phase")
-		
 		namespace := "production"
 
 		mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

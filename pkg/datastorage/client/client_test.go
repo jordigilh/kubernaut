@@ -99,14 +99,14 @@ var _ = Describe("DataStorageClient", func() {
 				BaseURL: server.URL,
 			})
 
-		result, err := dsClient.ListIncidents(ctx, nil)
+			result, err := dsClient.ListIncidents(ctx, nil)
 
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result.Incidents).To(HaveLen(1))
-		Expect(result.Total).To(Equal(1))
-		Expect(result.Incidents[0].Id).To(Equal(int64(123)))
-		Expect(result.Incidents[0].AlertName).To(Equal("test-alert"))
-		Expect(result.Incidents[0].AlertSeverity).To(Equal(client.IncidentAlertSeverityCritical))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Incidents).To(HaveLen(1))
+			Expect(result.Total).To(Equal(1))
+			Expect(result.Incidents[0].Id).To(Equal(int64(123)))
+			Expect(result.Incidents[0].AlertName).To(Equal("test-alert"))
+			Expect(result.Incidents[0].AlertSeverity).To(Equal(client.IncidentAlertSeverityCritical))
 		})
 
 		It("should handle RFC 7807 errors", func() {

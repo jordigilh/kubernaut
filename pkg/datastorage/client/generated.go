@@ -125,6 +125,9 @@ type ListIncidentsParams struct {
 	// ActionType Filter by action type (e.g., scale, restart, check)
 	ActionType *string `form:"action_type,omitempty" json:"action_type,omitempty"`
 
+	// Namespace Filter by Kubernetes namespace
+	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty"`
+
 	// Limit Maximum number of results to return
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -341,6 +344,22 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 		if params.ActionType != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "action_type", runtime.ParamLocationQuery, *params.ActionType); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Namespace != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "namespace", runtime.ParamLocationQuery, *params.Namespace); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

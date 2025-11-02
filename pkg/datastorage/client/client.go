@@ -117,7 +117,9 @@ func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[strin
 			params.Offset = &offsetInt
 		}
 	}
-	// Note: namespace filtering not yet supported by Data Storage API OpenAPI spec
+	if namespace, ok := filters["namespace"]; ok {
+		params.Namespace = &namespace
+	}
 
 	// Add request ID for tracing
 	requestID := uuid.New().String()
