@@ -134,7 +134,8 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 				zap.Error(err),
 				zap.Int64("postgresql_id", pgID),
 				zap.String("name", audit.Name))
-			return nil, fmt.Errorf("vector DB insert failed: %w", err)
+			// Wrap with typed error for reliable error detection
+			return nil, WrapVectorDBError(err, "Insert")
 		}
 
 		c.logger.Debug("wrote to Vector DB",
@@ -203,8 +204,8 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 		return result, nil
 	}
 
-	// Check if error is Vector DB related
-	if !isVectorDBError(err) {
+	// Check if error is Vector DB related (using typed errors)
+	if !IsVectorDBError(err) {
 		// PostgreSQL error - cannot fall back
 		c.logger.Error("PostgreSQL error, cannot fall back",
 			zap.Error(err),
@@ -322,25 +323,25 @@ func buildMetadata(audit *models.RemediationAudit) map[string]interface{} {
 	}
 }
 
-// isVectorDBError checks if an error is related to Vector DB operations.
-func isVectorDBError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errMsg := err.Error()
-	return containsAny(errMsg, []string{"vector DB", "vector db", "vectordb", "Vector DB"})
-}
-
-// containsAny checks if a string contains any of the given substrings.
-func containsAny(s string, substrings []string) bool {
-	for _, substr := range substrings {
-		if len(s) >= len(substr) {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
+// ========================================
+// ERROR DETECTION: Typed Errors (errors.go)
+// ========================================
+//
+// REMOVED: isVectorDBError() - Fragile string-based error detection
+// REMOVED: containsAny() - Custom substring search (reimplemented strings.Contains)
+//
+// REPLACED WITH: Typed sentinel errors using errors.Is()
+//   - IsVectorDBError(err) - Type-safe Vector DB error detection
+//   - IsPostgreSQLError(err) - Type-safe PostgreSQL error detection
+//   - IsTransactionError(err) - Type-safe transaction error detection
+//
+// Why Typed Errors?
+//   ✅ Type-safe: Works with error wrapping (errors.Is unwraps automatically)
+//   ✅ Reliable: No false positives/negatives from string matching
+//   ✅ Maintainable: Error messages can change without breaking detection
+//   ✅ Standard: Go 1.13+ best practice
+//
+// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-CODE-TRIAGE.md
+// Finding #3: Fragile error detection
+// Finding #4: Inefficient string search
+// ========================================
