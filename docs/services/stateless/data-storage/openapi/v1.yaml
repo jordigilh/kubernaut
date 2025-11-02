@@ -69,6 +69,14 @@ paths:
           description: Filter by action type (e.g., scale, restart, check)
           example: "scale"
 
+        - name: namespace
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by Kubernetes namespace
+          example: "production"
+
         - name: limit
           in: query
           required: false
