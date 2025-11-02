@@ -6,11 +6,11 @@
 
 ---
 
-## 🎯 **PRIMARY GOAL: POST-MORTEM REPORT GENERATION (V2.0)**
+## 🎯 **PRIMARY GOAL: REMEDIATION ANALYSIS REPORT GENERATION (V2.0)**
 
-**Business Requirement**: Generate comprehensive post-mortem reports with COMPLETE timeline from signal to resolution
+**Business Requirement**: Generate comprehensive remediation analysis reports with COMPLETE timeline from signal to resolution
 
-**Post-Mortem Report Requirements** (V2.0 Roadmap - BR-POSTMORTEM-001 to BR-POSTMORTEM-004):
+**Remediation Analysis Report Requirements** (V2.0 Roadmap - BR-REMEDIATION-ANALYSIS-001 to BR-REMEDIATION-ANALYSIS-004):
 - **What happened**: Root cause analysis, AI reasoning, actions taken
 - **When it happened**: Complete timeline from signal ingestion to notification
 - **Who was involved**: Approval decisions, operator actions
@@ -35,20 +35,32 @@ T6: Notification Controller updates Notification.status → delivery confirmatio
 **CRD Retention Strategy**:
 - **During execution**: CRDs serve as API contract between controllers (RemediationOrchestrator propagates info)
 - **24-hour window**: Operators query CRDs for LIVE status and recent history
-- **After 24 hours**: CRDs deleted → Database becomes source of truth for post-mortem reports
+- **After 24 hours**: CRDs deleted → Database becomes source of truth for remediation analysis reports
 
-**V1.0 Scope** (Current):
-- ✅ Capture comprehensive audit data from ALL services
-- ✅ Store complete timeline in database (signal → resolution)
-- ✅ Build foundation for V2.0 post-mortem generation
+**V1.0 & V1.1 Scope** (Foundation - Current):
+- ✅ **Capture COMPLETE audit data** from ALL services (RemediationOrchestrator, AIAnalysis, WorkflowExecution, Notification)
+- ✅ **Store in database** via Data Storage Service REST API (signal → resolution timeline)
+- ✅ **Forward-compatible schema**: No database schema changes required for V2.0
+- ✅ **RAR-ready data structure**: All fields needed for RAR generation captured
+- ❌ **NO RAR generation**: Report generation deferred to V2.0
 
-**V2.0 Scope** (Future):
-- 🔄 LLM-powered post-mortem report generation (BR-POSTMORTEM-001)
-- 🔄 Incident analysis & learning (BR-POSTMORTEM-002)
-- 🔄 Report generation & distribution (BR-POSTMORTEM-003)
-- 🔄 Continuous improvement integration (BR-POSTMORTEM-004)
+**V2.0 Scope** (RAR Generation - Future):
+- 🔄 **LLM-powered RAR generation** using V1.0/V1.1 audit data (BR-REMEDIATION-ANALYSIS-001)
+- 🔄 **Remediation effectiveness analysis** & learning (BR-REMEDIATION-ANALYSIS-002)
+- 🔄 **Report generation & distribution** (BR-REMEDIATION-ANALYSIS-003)
+- 🔄 **Continuous improvement integration** (BR-REMEDIATION-ANALYSIS-004)
+- ✅ **No schema changes**: V2.0 reads V1.0/V1.1 audit data as-is
 
-**CRITICAL REQUIREMENT**: Database must contain COMPLETE timeline data from ALL services to enable V2.0 post-mortem report generation when CRDs are gone.
+**CRITICAL V1.0/V1.1 REQUIREMENTS** (Foundation):
+1. ✅ Database must contain **COMPLETE** timeline data from ALL services
+2. ✅ Data structure must be **forward-compatible** (no schema changes in V2.0)
+3. ✅ All fields for RAR generation must be captured (even if not used yet)
+4. ✅ Audit data persisted **BEFORE** CRD deletion (24h TTL)
+
+**V2.0 RAR Generation** (Future - No Schema Changes):
+- 🔄 LLM reads V1.0/V1.1 audit data from database
+- 🔄 Generates RAR using complete timeline captured in V1.0/V1.1
+- ✅ No database schema changes required
 
 ---
 
@@ -273,8 +285,8 @@ flowchart TB
 
 ### Audit Responsibility Matrix
 
-| Controller | Audit Scope | REST Endpoint | Data Captured | Post-Mortem Report Section |
-|------------|-------------|---------------|---------------|----------------------------|
+| Controller | Audit Scope | REST Endpoint | Data Captured | Remediation Analysis Report Section |
+|------------|-------------|---------------|---------------|-------------------------------------|
 | **RemediationRequest Controller (RemediationOrchestrator)** | Orchestration timeline | `POST /api/v1/audit/orchestration` | Service invocation order, timing, coordination decisions | Timeline header, service transitions |
 | **AIAnalysis Controller** | AI decisions & approvals | `POST /api/v1/audit/ai-decisions` | HolmesGPT results, recommendations, approval/rejection decisions, alternatives | Root cause, AI reasoning, approval section |
 | **WorkflowExecution Controller** | Step-by-step execution | `POST /api/v1/audit/executions` | Action execution, validation results, adaptive adjustments | Actions taken, execution timeline |
@@ -285,14 +297,19 @@ flowchart TB
 - **After Completion**: Writes orchestration-level audit (service coordination timeline) to database via Data Storage REST API
 - **Before Cleanup**: Verifies ALL child controllers have written their audits to database (dual audit system compliance)
 
-**V1.0 Implementation** (Current Scope):
-- ✅ ALL controllers write service-specific audit data to database
-- ✅ Complete timeline reconstruction foundation for V2.0 post-mortem reports
-- ✅ RemediationOrchestrator coordinates audit completeness before CRD cleanup
+**V1.0 & V1.1 Implementation** (Foundation - Current Scope):
+- ✅ **ALL controllers write service-specific audit data** to database via Data Storage REST API
+- ✅ **Complete timeline data capture**: Every field needed for RAR generation
+- ✅ **Forward-compatible schema**: No changes needed for V2.0
+- ✅ **RemediationOrchestrator coordination**: Verifies audit completeness before CRD cleanup
+- ❌ **NO RAR generation yet**: Data captured, reports not generated (V2.0 feature)
 
-**V2.0 Enhancement** (Future Scope):
-- 🔄 LLM-powered post-mortem report generation using complete timeline data
-- 🔄 Automated incident analysis and learning (BR-POSTMORTEM-001 to BR-POSTMORTEM-004)
+**V2.0 Enhancement** (RAR Generation - Future Scope):
+- 🔄 **LLM-powered RAR generation** reading V1.0/V1.1 audit data (no schema changes)
+- 🔄 **Automated remediation effectiveness analysis** (BR-REMEDIATION-ANALYSIS-001 to BR-REMEDIATION-ANALYSIS-004)
+- 🔄 **Timeline reconstruction**: Signal → Investigation → Approval → Execution → Notification
+- 🔄 **AI decision analysis**: Why action chosen, alternatives, confidence scores
+- 🔄 **Continuous improvement**: Feed insights back into AI training
 
 ---
 
@@ -389,7 +406,7 @@ The user correctly identified that:
 - RemediationRequest Controller verifies ALL child audits before cleanup
 - Dual audit system requirement still satisfied (98% confidence)
 
-**Key Benefit**: **COMPLETE TIMELINE RECONSTRUCTION** enabling:
+**Key Benefit**: **COMPLETE TIMELINE RECONSTRUCTION FOR REMEDIATION ANALYSIS** enabling:
 
 1. **End-to-End Timeline** (T0 → T6):
    - Signal ingestion (Gateway) → Investigation (AIAnalysis) → Approval → Execution (WorkflowExecution) → Notification
@@ -412,11 +429,11 @@ The user correctly identified that:
    - Approval latency
    - Execution performance
 
-**Post-Mortem Report Example** (V2.0 Feature - BR-POSTMORTEM-001 to BR-POSTMORTEM-004):
+**Remediation Analysis Report Example** (V2.0 Feature - BR-REMEDIATION-ANALYSIS-001 to BR-REMEDIATION-ANALYSIS-004):
 ```
-Query: "Generate post-mortem report for remediation-abc123 from 3 days ago"
+Query: "Generate remediation analysis report for remediation-abc123 from 3 days ago"
 
-=== POST-MORTEM REPORT ===
+=== REMEDIATION ANALYSIS REPORT ===
 Incident ID: remediation-abc123
 Signal Fingerprint: abc123
 Alert: PodOOMKilled in namespace/production/pod/web-app-789
@@ -458,7 +475,7 @@ Effectiveness Score: 0.95
 ```
 
 **This correction enables:**
-1. ✅ **COMPLETE TIMELINE RECONSTRUCTION** for V2.0 post-mortem reports (BR-POSTMORTEM-001 to BR-POSTMORTEM-004)
+1. ✅ **COMPLETE TIMELINE RECONSTRUCTION** for V2.0 remediation analysis reports (BR-REMEDIATION-ANALYSIS-001 to BR-REMEDIATION-ANALYSIS-004)
 2. ✅ **V1.0 Foundation**: Comprehensive audit data capture from ALL services (current scope)
 3. ✅ **Compliance with BR-AUDIT-001 to BR-AUDIT-007** after the 24-hour CRD retention window
 4. ✅ **Service coordination** via CRD API contract (RemediationOrchestrator propagates info between services)
