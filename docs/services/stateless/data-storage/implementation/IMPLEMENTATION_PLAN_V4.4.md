@@ -1,6 +1,6 @@
-# Data Storage Service - Implementation Plan v4.3
+# Data Storage Service - Implementation Plan v4.4
 
-**Version**: 4.3 - API GATEWAY MIGRATION REFERENCE ADDED
+**Version**: 4.4 - PAGINATION BUG LESSON LEARNED
 **Date**: 2025-11-02
 **Timeline**: 12 days (96 hours)
 **Status**: ✅ Ready for Implementation
@@ -33,6 +33,38 @@
 ---
 
 ## 📋 **VERSION HISTORY**
+
+### **v4.4** (2025-11-02) - PAGINATION BUG LESSON LEARNED
+
+**Purpose**: Document critical pagination bug discovered during Context API integration to prevent recurrence in Write API implementation
+
+**Changes**:
+- ✅ **Common Pitfalls section updated** (#12 added)
+  - **Don't**: Return `len(array)` as pagination total (returns page size, not database count)
+  - **Do**: Execute separate `COUNT(*)` query for pagination metadata
+  - Documents specific bug: `handler.go:178` returned `len(incidents)` instead of database count
+  - Impact: Pagination UI shows "Page 1 of 10" when should show "Page 1 of 100"
+  - Links to bug verification document: [COUNT-QUERY-VERIFICATION.md](../../context-api/implementation/COUNT-QUERY-VERIFICATION.md)
+
+**Rationale**:
+- Critical P0 bug discovered during Context API integration (2025-11-02)
+- Bug was missed by all 37 integration tests because tests validated pagination *behavior* (page size, offset) but not *metadata accuracy*
+- Test Gap: Integration tests lacked assertion: `Expect(pagination.total).To(Equal(actualDatabaseCount))`
+- Prevention: Document anti-pattern before implementing Write API (BR-STORAGE-001 to BR-STORAGE-020)
+
+**Impact**:
+- Write API Implementation: Clear guidance to avoid same bug in POST endpoints
+- Test Strategy: Mandate pagination metadata accuracy tests, not just behavior tests
+- Code Review: Flag any `len(array)` in pagination responses as potential bug
+
+**Time Investment**: 3 minutes (documentation only, no code changes)
+
+**Related**:
+- [COUNT-QUERY-VERIFICATION.md](../../context-api/implementation/COUNT-QUERY-VERIFICATION.md) - Bug discovery and analysis
+- [pkg/datastorage/server/handler.go:178](../../../../pkg/datastorage/server/handler.go#L178) - Bug location (not yet fixed)
+- Context API Integration: Discovered during REFACTOR Task 4 (COUNT query verification)
+
+---
 
 ### **v4.3** (2025-11-02) - API GATEWAY MIGRATION REFERENCE ADDED
 
@@ -3463,6 +3495,7 @@ docs/services/stateless/data-storage/
 9. **Use Testcontainers/envtest** - Contradicts ADR-003 Kind cluster standard
 10. **Missing imports in examples** - Code examples won't compile
 11. **Keep untested legacy code** - Creates confusion, technical debt, and maintenance burden
+12. **🚨 Return `len(array)` as pagination total** - Returns page size (10) instead of database count (10,000), breaks pagination UIs
 
 ### ✅ Do This Instead:
 
@@ -3477,6 +3510,7 @@ docs/services/stateless/data-storage/
 9. **Kind cluster test template** - Use `pkg/testutil/kind/` for all integration tests
 10. **Complete imports** - All code examples copy-pasteable
 11. **Delete legacy code after integration tests (Day 8)** - Clean codebase, no technical debt ⭐
+12. **✅ Execute separate `COUNT(*)` for pagination total** - Query database for actual count, test `pagination.total` accuracy ⭐⭐
 
 ---
 
