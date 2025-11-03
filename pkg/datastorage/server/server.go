@@ -35,7 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver (DD-010: Migrated from lib/pq)
 )
 
 // Server is the HTTP server for Data Storage Service
@@ -92,8 +92,8 @@ func NewServer(
 	logger *zap.Logger,
 	cfg *Config,
 ) (*Server, error) {
-	// Connect to PostgreSQL
-	db, err := sql.Open("postgres", dbConnStr)
+	// Connect to PostgreSQL using pgx driver (DD-010)
+	db, err := sql.Open("pgx", dbConnStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}

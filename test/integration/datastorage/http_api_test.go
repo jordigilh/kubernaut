@@ -30,7 +30,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", func
 
 	BeforeEach(func() {
 		client = &http.Client{Timeout: 10 * time.Second}
-		
+
 		// Create unique notification_id to avoid conflicts
 		validAudit = &models.NotificationAudit{
 			RemediationID:   "test-remediation-1",
@@ -77,10 +77,10 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", func
 			// ✅ CORRECTNESS TEST: Database record matches input
 			var dbRecord models.NotificationAudit
 			err = db.QueryRow(`
-				SELECT id, remediation_id, notification_id, recipient, channel, 
-				       message_summary, status, sent_at, delivery_status, 
+				SELECT id, remediation_id, notification_id, recipient, channel,
+				       message_summary, status, sent_at, delivery_status,
 				       error_message, escalation_level, created_at, updated_at
-				FROM notification_audit 
+				FROM notification_audit
 				WHERE notification_id = $1`,
 				validAudit.NotificationID).Scan(
 				&dbRecord.ID,

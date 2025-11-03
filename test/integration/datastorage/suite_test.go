@@ -7,13 +7,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -205,7 +206,7 @@ func startRedis() {
 func connectPostgreSQL() {
 	connStr := "host=localhost port=5433 user=slm_user password=test_password dbname=action_history sslmode=disable"
 	var err error
-	db, err = sql.Open("postgres", connStr)
+	db, err = sql.Open("pgx", connStr) // DD-010: Using pgx driver
 	Expect(err).ToNot(HaveOccurred())
 
 	// Verify connection
@@ -290,13 +291,15 @@ func applyMigrationsWithPropagation() {
 }
 
 // buildDataStorageService builds the Data Storage Service container image
-// ADR-027: Multi-Architecture Container Build Strategy (UBI base images)
+// Note: Builds for ARM64 (Apple Silicon) for local integration tests
+// Production multi-arch builds handled separately
 func buildDataStorageService() {
 	// Cleanup any existing image
 	exec.Command("podman", "rmi", "-f", "data-storage:test").Run()
 
-	// Build image using authoritative Dockerfile
+	// Build image for ARM64 (local testing on Apple Silicon)
 	buildCmd := exec.Command("podman", "build",
+		"--build-arg", "GOARCH=arm64",
 		"-t", "data-storage:test",
 		"-f", "docker/data-storage.Dockerfile",
 		".")
@@ -317,17 +320,25 @@ func startDataStorageService() {
 	exec.Command("podman", "stop", serviceContainer).Run()
 	exec.Command("podman", "rm", serviceContainer).Run()
 
+	// Get PostgreSQL container IP (they're on the same Podman network)
+	postgresIP := getContainerIP(postgresContainer)
+	redisIP := getContainerIP(redisContainer)
+
+	GinkgoWriter.Printf("  📍 PostgreSQL IP: %s\n", postgresIP)
+	GinkgoWriter.Printf("  📍 Redis IP: %s\n", redisIP)
+
 	// Start service container with DB + Redis connections
-	// Use host.containers.internal to reach PostgreSQL and Redis on host network
+	// Note: Redis shared with Context API (DD-INFRASTRUCTURE-002 - Integration Test Pattern)
+	// Use container IPs to connect (Podman networking)
 	startCmd := exec.Command("podman", "run", "-d",
 		"--name", serviceContainer,
 		"-p", "8080:8080",
-		"-e", "DB_HOST=host.containers.internal",
-		"-e", "DB_PORT=5433",
+		"-e", fmt.Sprintf("DB_HOST=%s", postgresIP),
+		"-e", "DB_PORT=5432", // PostgreSQL internal port
 		"-e", "DB_NAME=action_history",
 		"-e", "DB_USER=slm_user",
 		"-e", "DB_PASSWORD=test_password",
-		"-e", "REDIS_ADDR=host.containers.internal:6379",
+		"-e", fmt.Sprintf("REDIS_ADDR=%s:6379", redisIP), // Redis internal port
 		"-e", "HTTP_PORT=:8080",
 		"data-storage:test")
 
@@ -338,6 +349,20 @@ func startDataStorageService() {
 	}
 
 	GinkgoWriter.Println("  ✅ Data Storage Service container started")
+}
+
+// getContainerIP retrieves the IP address of a Podman container
+func getContainerIP(containerName string) string {
+	cmd := exec.Command("podman", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", containerName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to get IP for container %s: %v", containerName, err))
+	}
+	ip := strings.TrimSpace(string(output))
+	if ip == "" {
+		Fail(fmt.Sprintf("Container %s has no IP address", containerName))
+	}
+	return ip
 }
 
 // waitForServiceReady waits for the Data Storage Service health endpoint to respond
