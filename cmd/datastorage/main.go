@@ -48,6 +48,7 @@ func main() {
 		dbName     = flag.String("db-name", getEnv("DB_NAME", "action_history"), "PostgreSQL database name")
 		dbUser     = flag.String("db-user", getEnv("DB_USER", "db_user"), "PostgreSQL user")
 		dbPassword = flag.String("db-password", getEnv("DB_PASSWORD", ""), "PostgreSQL password")
+		redisAddr  = flag.String("redis-addr", getEnv("REDIS_ADDR", "localhost:6379"), "Redis address for DLQ")
 	)
 	flag.Parse()
 
@@ -66,6 +67,7 @@ func main() {
 		zap.Int("db_port", *dbPort),
 		zap.String("db_name", *dbName),
 		zap.String("db_user", *dbUser),
+		zap.String("redis_addr", *redisAddr),
 	)
 
 	// Context management for graceful shutdown
@@ -76,14 +78,14 @@ func main() {
 	dbConnStr := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
 		*dbHost, *dbPort, *dbName, *dbUser, *dbPassword)
 
-	// Day 2: Create HTTP server with database connection
+	// Day 2: Create HTTP server with database connection + Redis for DLQ
 	serverCfg := &server.Config{
 		Port:         getPortFromAddr(*addr),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 	}
 
-	srv, err := server.NewServer(dbConnStr, logger, serverCfg)
+	srv, err := server.NewServer(dbConnStr, *redisAddr, logger, serverCfg)
 	if err != nil {
 		logger.Fatal("Failed to create server",
 			zap.Error(err),
