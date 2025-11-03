@@ -174,14 +174,14 @@ type ControllerReconciler struct {
 ```go
 func (r *ControllerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     oldStatus := crd.Status.Phase
-    
+
     // ... (business logic) ...
-    
+
     // Update CRD status
     if err := r.Status().Update(ctx, crd); err != nil {
         return ctrl.Result{}, err
     }
-    
+
     // Write audit trace AFTER CRD status update (non-blocking)
     if crd.Status.Phase != oldStatus {
         auditData := r.buildAuditData(crd, oldStatus)
@@ -191,7 +191,7 @@ func (r *ControllerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
             }
         }()
     }
-    
+
     return ctrl.Result{}, nil
 }
 ```
