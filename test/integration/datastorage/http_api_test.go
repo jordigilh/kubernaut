@@ -1,0 +1,227 @@
+package datastorage
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os/exec"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+)
+
+// HTTP API Integration Tests - POST /api/v1/audit/notifications
+// BR-STORAGE-001 to BR-STORAGE-020: Audit write API
+// DD-009: DLQ fallback on database errors
+//
+// These tests validate the complete HTTP → Repository → PostgreSQL flow
+// using a real Data Storage Service container (Podman, ADR-016)
+
+var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", func() {
+	var (
+		client     *http.Client
+		validAudit *models.NotificationAudit
+	)
+
+	BeforeEach(func() {
+		client = &http.Client{Timeout: 10 * time.Second}
+		
+		// Create unique notification_id to avoid conflicts
+		validAudit = &models.NotificationAudit{
+			RemediationID:   "test-remediation-1",
+			NotificationID:  fmt.Sprintf("test-notification-%d", time.Now().UnixNano()),
+			Recipient:       "test@example.com",
+			Channel:         "email",
+			MessageSummary:  "Test notification message",
+			Status:          "sent",
+			SentAt:          time.Now(),
+			DeliveryStatus:  "200 OK",
+			ErrorMessage:    "",
+			EscalationLevel: 0,
+		}
+	})
+
+	Context("Successful write (Behavior + Correctness)", func() {
+		It("should accept valid audit record and persist to PostgreSQL", func() {
+			// ✅ BEHAVIOR TEST: HTTP 201 Created
+			resp := postAudit(client, validAudit)
+			Expect(resp.StatusCode).To(Equal(201), "Expected 201 Created for valid audit")
+			Expect(resp.Header.Get("Content-Type")).To(Equal("application/json"))
+
+			// ✅ CORRECTNESS TEST: Response contains created record
+			var created models.NotificationAudit
+			err := json.NewDecoder(resp.Body).Decode(&created)
+			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
+			Expect(created.ID).To(BeNumerically(">", 0), "Created record should have ID")
+			Expect(created.NotificationID).To(Equal(validAudit.NotificationID))
+			Expect(created.RemediationID).To(Equal(validAudit.RemediationID))
+			Expect(created.Recipient).To(Equal(validAudit.Recipient))
+			Expect(created.Channel).To(Equal(validAudit.Channel))
+			Expect(created.MessageSummary).To(Equal(validAudit.MessageSummary))
+			Expect(created.Status).To(Equal(validAudit.Status))
+			Expect(created.CreatedAt).ToNot(BeZero(), "created_at should be set")
+			Expect(created.UpdatedAt).ToNot(BeZero(), "updated_at should be set")
+
+			// ✅ CORRECTNESS TEST: Data persisted to PostgreSQL
+			var count int
+			err = db.QueryRow("SELECT COUNT(*) FROM notification_audit WHERE notification_id = $1",
+				validAudit.NotificationID).Scan(&count)
+			Expect(err).ToNot(HaveOccurred(), "Database query should succeed")
+			Expect(count).To(Equal(1), "Exactly one record should exist in database")
+
+			// ✅ CORRECTNESS TEST: Database record matches input
+			var dbRecord models.NotificationAudit
+			err = db.QueryRow(`
+				SELECT id, remediation_id, notification_id, recipient, channel, 
+				       message_summary, status, sent_at, delivery_status, 
+				       error_message, escalation_level, created_at, updated_at
+				FROM notification_audit 
+				WHERE notification_id = $1`,
+				validAudit.NotificationID).Scan(
+				&dbRecord.ID,
+				&dbRecord.RemediationID,
+				&dbRecord.NotificationID,
+				&dbRecord.Recipient,
+				&dbRecord.Channel,
+				&dbRecord.MessageSummary,
+				&dbRecord.Status,
+				&dbRecord.SentAt,
+				&dbRecord.DeliveryStatus,
+				&dbRecord.ErrorMessage,
+				&dbRecord.EscalationLevel,
+				&dbRecord.CreatedAt,
+				&dbRecord.UpdatedAt,
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(dbRecord.NotificationID).To(Equal(validAudit.NotificationID))
+			Expect(dbRecord.RemediationID).To(Equal(validAudit.RemediationID))
+			Expect(dbRecord.Recipient).To(Equal(validAudit.Recipient))
+		})
+	})
+
+	Context("Validation errors (RFC 7807)", func() {
+		It("should return RFC 7807 error for missing required fields", func() {
+			invalidAudit := &models.NotificationAudit{
+				// Missing required fields: remediation_id, notification_id
+				Recipient: "test@example.com",
+				Channel:   "email",
+			}
+
+			// ✅ BEHAVIOR TEST: HTTP 400 Bad Request
+			resp := postAudit(client, invalidAudit)
+			Expect(resp.StatusCode).To(Equal(400), "Expected 400 Bad Request for invalid audit")
+			Expect(resp.Header.Get("Content-Type")).To(Equal("application/problem+json"),
+				"RFC 7807 requires application/problem+json content type")
+
+			// ✅ CORRECTNESS TEST: RFC 7807 error structure
+			var errorResp map[string]interface{}
+			err := json.NewDecoder(resp.Body).Decode(&errorResp)
+			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+			Expect(errorResp["type"]).To(Equal("https://kubernaut.io/errors/validation-error"),
+				"RFC 7807 type field should identify error category")
+			Expect(errorResp["title"]).To(Equal("Validation Error"),
+				"RFC 7807 title should be human-readable")
+			Expect(errorResp["status"]).To(BeNumerically("==", 400),
+				"RFC 7807 status should match HTTP status")
+			Expect(errorResp["field_errors"]).ToNot(BeNil(),
+				"Validation errors should include field_errors")
+
+			// ✅ CORRECTNESS TEST: No data persisted
+			var count int
+			db.QueryRow("SELECT COUNT(*) FROM notification_audit WHERE recipient = $1",
+				invalidAudit.Recipient).Scan(&count)
+			Expect(count).To(Equal(0), "Invalid audit should not be persisted")
+		})
+	})
+
+	Context("Conflict errors (RFC 7807)", func() {
+		It("should return RFC 7807 error for duplicate notification_id", func() {
+			// First write - should succeed
+			resp1 := postAudit(client, validAudit)
+			Expect(resp1.StatusCode).To(Equal(201), "First write should succeed")
+
+			// Duplicate write - should fail with 409 Conflict
+			resp2 := postAudit(client, validAudit)
+			Expect(resp2.StatusCode).To(Equal(409), "Duplicate notification_id should return 409 Conflict")
+			Expect(resp2.Header.Get("Content-Type")).To(Equal("application/problem+json"))
+
+			// ✅ CORRECTNESS TEST: RFC 7807 conflict error structure
+			var errorResp map[string]interface{}
+			err := json.NewDecoder(resp2.Body).Decode(&errorResp)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(errorResp["type"]).To(Equal("https://kubernaut.io/errors/conflict"))
+			Expect(errorResp["title"]).To(Equal("Resource Conflict"))
+			Expect(errorResp["status"]).To(BeNumerically("==", 409))
+			Expect(errorResp["resource"]).To(Equal("notification_audit"))
+			Expect(errorResp["field"]).To(Equal("notification_id"))
+			Expect(errorResp["value"]).To(Equal(validAudit.NotificationID))
+
+			// ✅ CORRECTNESS TEST: Only one record in database
+			var count int
+			db.QueryRow("SELECT COUNT(*) FROM notification_audit WHERE notification_id = $1",
+				validAudit.NotificationID).Scan(&count)
+			Expect(count).To(Equal(1), "Duplicate write should not create second record")
+		})
+	})
+
+	Context("DLQ fallback (DD-009)", func() {
+		It("should write to DLQ when PostgreSQL is unavailable", func() {
+			// Stop PostgreSQL container to simulate database failure
+			GinkgoWriter.Println("⚠️  Stopping PostgreSQL to test DLQ fallback...")
+			stopCmd := exec.Command("podman", "stop", "datastorage-postgres-test")
+			stopOutput, err := stopCmd.CombinedOutput()
+			if err != nil {
+				GinkgoWriter.Printf("Warning: Failed to stop PostgreSQL: %v\n%s\n", err, stopOutput)
+			}
+
+			// Wait for PostgreSQL to be fully stopped
+			time.Sleep(2 * time.Second)
+
+			// POST should still succeed with 202 Accepted (async DLQ write)
+			resp := postAudit(client, validAudit)
+			Expect(resp.StatusCode).To(Equal(202), "DLQ fallback should return 202 Accepted")
+
+			var respBody map[string]string
+			json.NewDecoder(resp.Body).Decode(&respBody)
+			Expect(respBody["status"]).To(Equal("accepted"))
+			Expect(respBody["message"]).To(ContainSubstring("queued"))
+
+			// ✅ CORRECTNESS TEST: Message in Redis DLQ
+			depth, err := redisClient.XLen(context.Background(), "audit:dlq:notification").Result()
+			Expect(err).ToNot(HaveOccurred(), "Should be able to query Redis DLQ")
+			Expect(depth).To(BeNumerically(">", 0), "DLQ should contain at least one message")
+
+			// Restart PostgreSQL for subsequent tests
+			GinkgoWriter.Println("✅ Restarting PostgreSQL...")
+			startCmd := exec.Command("podman", "start", "datastorage-postgres-test")
+			startOutput, err := startCmd.CombinedOutput()
+			if err != nil {
+				GinkgoWriter.Printf("Warning: Failed to restart PostgreSQL: %v\n%s\n", err, startOutput)
+			}
+			time.Sleep(3 * time.Second) // Wait for PostgreSQL to be ready
+		})
+	})
+})
+
+// postAudit is a helper function to POST an audit record to the Data Storage Service
+func postAudit(client *http.Client, audit *models.NotificationAudit) *http.Response {
+	payload, err := json.Marshal(audit)
+	Expect(err).ToNot(HaveOccurred(), "Audit should marshal to JSON")
+
+	req, err := http.NewRequest("POST", datastorageURL+"/api/v1/audit/notifications",
+		bytes.NewBuffer(payload))
+	Expect(err).ToNot(HaveOccurred(), "HTTP request should be created")
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
+
+	return resp
+}
+

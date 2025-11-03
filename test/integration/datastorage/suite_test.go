@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"testing"
@@ -46,15 +47,17 @@ func TestDataStorageIntegration(t *testing.T) {
 }
 
 var (
-	db                *sql.DB
-	redisClient       *redis.Client
-	repo              *repository.NotificationAuditRepository
-	dlqClient         *dlq.Client
-	logger            *zap.Logger
-	ctx               context.Context
-	cancel            context.CancelFunc
-	postgresContainer = "datastorage-postgres-test"
-	redisContainer    = "datastorage-redis-test"
+	db                 *sql.DB
+	redisClient        *redis.Client
+	repo               *repository.NotificationAuditRepository
+	dlqClient          *dlq.Client
+	logger             *zap.Logger
+	ctx                context.Context
+	cancel             context.CancelFunc
+	postgresContainer  = "datastorage-postgres-test"
+	redisContainer     = "datastorage-redis-test"
+	serviceContainer   = "datastorage-service-test"
+	datastorageURL     string
 )
 
 var _ = BeforeSuite(func() {
@@ -92,6 +95,16 @@ var _ = BeforeSuite(func() {
 	repo = repository.NewNotificationAuditRepository(db, logger)
 	dlqClient = dlq.NewClient(redisClient, logger)
 
+	// 7. Build and start Data Storage Service container (HTTP API)
+	GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
+	buildDataStorageService()
+
+	GinkgoWriter.Println("🚀 Starting Data Storage Service container...")
+	startDataStorageService()
+
+	GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
+	waitForServiceReady()
+
 	GinkgoWriter.Println("✅ Infrastructure ready!")
 })
 
@@ -111,6 +124,8 @@ var _ = AfterSuite(func() {
 	}
 
 	// Stop and remove containers
+	exec.Command("podman", "stop", serviceContainer).Run()
+	exec.Command("podman", "rm", serviceContainer).Run()
 	exec.Command("podman", "stop", postgresContainer).Run()
 	exec.Command("podman", "rm", postgresContainer).Run()
 	exec.Command("podman", "stop", redisContainer).Run()
@@ -272,4 +287,72 @@ func applyMigrationsWithPropagation() {
 	Expect(count).To(Equal(1), "Expected notification_audit table to exist")
 
 	GinkgoWriter.Println("  ✅ Schema verification complete!")
+}
+
+// buildDataStorageService builds the Data Storage Service container image
+// ADR-027: Multi-Architecture Container Build Strategy (UBI base images)
+func buildDataStorageService() {
+	// Cleanup any existing image
+	exec.Command("podman", "rmi", "-f", "data-storage:test").Run()
+
+	// Build image using authoritative Dockerfile
+	buildCmd := exec.Command("podman", "build",
+		"-t", "data-storage:test",
+		"-f", "docker/data-storage.Dockerfile",
+		".")
+	buildCmd.Dir = "../../../" // Run from workspace root
+
+	output, err := buildCmd.CombinedOutput()
+	if err != nil {
+		GinkgoWriter.Printf("❌ Build output:\n%s\n", string(output))
+		Fail(fmt.Sprintf("Failed to build Data Storage Service image: %v", err))
+	}
+
+	GinkgoWriter.Println("  ✅ Data Storage Service image built successfully")
+}
+
+// startDataStorageService starts the Data Storage Service container
+func startDataStorageService() {
+	// Cleanup existing container
+	exec.Command("podman", "stop", serviceContainer).Run()
+	exec.Command("podman", "rm", serviceContainer).Run()
+
+	// Start service container with DB + Redis connections
+	// Use host.containers.internal to reach PostgreSQL and Redis on host network
+	startCmd := exec.Command("podman", "run", "-d",
+		"--name", serviceContainer,
+		"-p", "8080:8080",
+		"-e", "DB_HOST=host.containers.internal",
+		"-e", "DB_PORT=5433",
+		"-e", "DB_NAME=action_history",
+		"-e", "DB_USER=slm_user",
+		"-e", "DB_PASSWORD=test_password",
+		"-e", "REDIS_ADDR=host.containers.internal:6379",
+		"-e", "HTTP_PORT=:8080",
+		"data-storage:test")
+
+	output, err := startCmd.CombinedOutput()
+	if err != nil {
+		GinkgoWriter.Printf("❌ Start output:\n%s\n", string(output))
+		Fail(fmt.Sprintf("Failed to start Data Storage Service container: %v", err))
+	}
+
+	GinkgoWriter.Println("  ✅ Data Storage Service container started")
+}
+
+// waitForServiceReady waits for the Data Storage Service health endpoint to respond
+func waitForServiceReady() {
+	datastorageURL = "http://localhost:8080"
+
+	// Wait up to 30 seconds for service to be ready
+	Eventually(func() int {
+		resp, err := http.Get(datastorageURL + "/health")
+		if err != nil || resp == nil {
+			return 0
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}, "30s", "1s").Should(Equal(200), "Data Storage Service should be healthy")
+
+	GinkgoWriter.Printf("  ✅ Data Storage Service ready at %s\n", datastorageURL)
 }
