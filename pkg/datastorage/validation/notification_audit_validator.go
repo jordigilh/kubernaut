@@ -44,8 +44,8 @@ func NewNotificationAuditValidator() *NotificationAuditValidator {
 }
 
 // Validate performs comprehensive validation of NotificationAudit.
-// Returns *ValidationError if validation fails, nil if valid.
-func (v *NotificationAuditValidator) Validate(audit *models.NotificationAudit) *ValidationError {
+// Returns error if validation fails, nil if valid.
+func (v *NotificationAuditValidator) Validate(audit *models.NotificationAudit) error {
 	// Nil check
 	if audit == nil {
 		return NewValidationError("notification_audit", "audit record cannot be nil")

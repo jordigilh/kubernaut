@@ -79,10 +79,19 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 			zap.Error(err),
 			zap.String("notification_id", audit.NotificationID))
 
-		// Validator returns ValidationError, convert to RFC 7807
+		// Validator returns ValidationError with field-specific errors
+		// Extract field errors for RFC 7807 response
+		var fieldErrors map[string]string
+		if valErr, ok := err.(*validation.ValidationError); ok {
+			fieldErrors = valErr.FieldErrors
+		} else {
+			// Fallback for unexpected error type
+			fieldErrors = map[string]string{"error": err.Error()}
+		}
+
 		writeRFC7807Error(w, validation.NewValidationErrorProblem(
 			"notification_audit",
-			map[string]string{"error": err.Error()},
+			fieldErrors,
 		))
 		return
 	}
@@ -107,7 +116,16 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 			zap.String("remediation_id", audit.RemediationID))
 
 		// Attempt to enqueue to DLQ
-		if dlqErr := s.dlqClient.EnqueueNotificationAudit(ctx, &audit, err); dlqErr != nil {
+		// Create a FRESH context for DLQ write (not tied to original request timeout)
+		// DD-009: DLQ fallback must succeed even if DB operation timed out
+		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer dlqCancel()
+
+		s.logger.Info("Attempting DLQ fallback",
+			zap.String("notification_id", audit.NotificationID),
+			zap.String("db_error", err.Error()))
+
+		if dlqErr := s.dlqClient.EnqueueNotificationAudit(dlqCtx, &audit, err); dlqErr != nil {
 			s.logger.Error("DLQ fallback also failed - data loss risk",
 				zap.Error(dlqErr),
 				zap.String("notification_id", audit.NotificationID),
@@ -116,6 +134,9 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 				"database and DLQ both unavailable - please retry"))
 			return
 		}
+
+		s.logger.Info("DLQ fallback succeeded",
+			zap.String("notification_id", audit.NotificationID))
 
 		// DLQ success - return 202 Accepted (async processing)
 		s.logger.Info("Audit record queued to DLQ for async processing",
