@@ -86,6 +86,23 @@ const (
 	StatusFailure = "failure"
 )
 
+// Audit write statuses - bounded set for cardinality protection (GAP-10)
+const (
+	AuditStatusSuccess     = "success"
+	AuditStatusFailure     = "failure"
+	AuditStatusDLQFallback = "dlq_fallback" // DD-009: Dead Letter Queue fallback
+)
+
+// Service names - bounded set for cardinality protection (GAP-10)
+const (
+	ServiceNotification      = "notification"
+	ServiceSignalProcessing  = "signal-processing"
+	ServiceOrchestration     = "orchestration"
+	ServiceAIAnalysis        = "ai-analysis"
+	ServiceWorkflowExecution = "workflow-execution"
+	ServiceEffectiveness     = "effectiveness"
+)
+
 // Query operations - bounded set for cardinality protection
 const (
 	OperationList           = "list"

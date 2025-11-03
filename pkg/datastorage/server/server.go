@@ -27,10 +27,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
@@ -57,6 +59,9 @@ type Server struct {
 	repository *repository.NotificationAuditRepository
 	dlqClient  *dlq.Client
 	validator  *validation.NotificationAuditValidator
+
+	// BR-STORAGE-019: Prometheus metrics (GAP-10)
+	metrics *dsmetrics.Metrics
 }
 
 // DD-007 graceful shutdown constants
@@ -133,6 +138,13 @@ func NewServer(
 	dlqClient := dlq.NewClient(redisClient, logger)
 	validator := validation.NewNotificationAuditValidator()
 
+	// Create Prometheus metrics (BR-STORAGE-019, GAP-10)
+	metrics := dsmetrics.NewMetrics("datastorage", "")
+
+	logger.Info("Prometheus metrics initialized",
+		zap.String("namespace", "datastorage"),
+	)
+
 	// Create database wrapper for READ API handlers
 	dbAdapter := &DBAdapter{db: db, logger: logger}
 
@@ -151,6 +163,7 @@ func NewServer(
 		repository: repo,
 		dlqClient:  dlqClient,
 		validator:  validator,
+		metrics:    metrics,
 	}, nil
 }
 
@@ -177,6 +190,14 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/health", s.handleHealth)
 	r.Get("/health/ready", s.handleReadiness)
 	r.Get("/health/live", s.handleLiveness)
+
+	// BR-STORAGE-019: Prometheus metrics endpoint (GAP-10)
+	// Exposes audit-specific metrics:
+	// - datastorage_audit_traces_total{service,status}
+	// - datastorage_audit_lag_seconds{service}
+	// - datastorage_write_duration_seconds{table}
+	// - datastorage_validation_failures_total{field,reason}
+	r.Handle("/metrics", promhttp.Handler())
 
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
