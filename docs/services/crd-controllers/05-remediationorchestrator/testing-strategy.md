@@ -126,7 +126,7 @@ var _ = Describe("BR-AR-001: RemediationRequest Remediation Orchestrator", func(
     })
 
     Context("BR-AR-010: RemediationProcessing Child CRD Creation Phase", func() {
-        It("should create RemediationProcessing CRD with correct owner reference", func() {
+        It("should create SignalProcessing CRD with correct owner reference", func() {
             // Setup RemediationRequest parent CRD
             ar := &alertremediationv1.RemediationRequest{
                 ObjectMeta: metav1.ObjectMeta{
@@ -162,7 +162,7 @@ var _ = Describe("BR-AR-001: RemediationRequest Remediation Orchestrator", func(
             Expect(result.Requeue).To(BeTrue(), "should requeue to watch child status")
             Expect(ar.Status.Phase).To(Equal("processing"))
 
-            // Verify RemediationProcessing CRD was created
+            // Verify SignalProcessing CRD was created
             apList := &alertprocessorv1.RemediationProcessingList{}
             Expect(fakeK8sClient.List(ctx, apList, client.InNamespace("kubernaut-system"))).To(Succeed())
             Expect(apList.Items).To(HaveLen(1))
@@ -185,7 +185,7 @@ var _ = Describe("BR-AR-001: RemediationRequest Remediation Orchestrator", func(
             Expect(ar.Status.ChildCRDs.RemediationProcessing).To(Equal(ap.Name))
         })
 
-        It("BR-AR-011: should handle duplicate RemediationProcessing CRD gracefully", func() {
+        It("BR-AR-011: should handle duplicate SignalProcessing CRD gracefully", func() {
             ar := testutil.NewRemediationRequest("test-duplicate-ap", "kubernaut-system")
 
             // Pre-create RemediationProcessing with same parent
@@ -779,7 +779,7 @@ var _ = Describe("BR-INTEGRATION-AR-001: RemediationRequest Orchestration Integr
             return ar.Status.ChildCRDs.RemediationProcessing != ""
         }, "30s", "1s").Should(BeTrue())
 
-        // Verify RemediationProcessing CRD created with owner reference
+        // Verify SignalProcessing CRD created with owner reference
         apName := ar.Status.ChildCRDs.RemediationProcessing
         ap := &alertprocessorv1.RemediationProcessing{}
         Expect(k8sClient.Get(ctx, client.ObjectKey{Name: apName, Namespace: namespace}, ap)).To(Succeed())

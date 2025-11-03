@@ -59,7 +59,7 @@ kubebuilder create api --group remediation --version v1alpha1 --kind Remediation
 **Service Tests**: Create `test/unit/remediation/controller_test.go`
 ```
 
-**RemediationProcessor** (`docs/services/crd-controllers/01-remediationprocessor/testing-strategy.md:19`):
+**RemediationProcessor** (`docs/services/crd-controllers/01-signalprocessing/testing-strategy.md:19`):
 ```markdown
 **Test Directory**: [test/unit/](../../../test/unit/)
 **Service Tests**: Create `test/unit/remediationprocessing/controller_test.go`

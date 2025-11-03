@@ -18,7 +18,7 @@ This directory contains comprehensive documentation for all **6 CRD controller s
 
 | Service | Directory | Status | Description |
 |---------|-----------|--------|-------------|
-| **Remediation Processor** | [01-remediationprocessor/](./01-remediationprocessor/) | ✅ Active | Alert ingestion and initial processing |
+| **Remediation Processor** | [01-signalprocessing/](./01-signalprocessing/) | ✅ Active | Alert ingestion and initial processing |
 | **AI Analysis** | [02-aianalysis/](./02-aianalysis/) | ✅ Active | Root cause analysis and recommendations |
 | **Workflow Execution** | [03-workflowexecution/](./03-workflowexecution/) | ✅ Active | Workflow planning and orchestration |
 | **Kubernetes Executor** | [04-kubernetesexecutor/](./04-kubernetesexecutor/) | ✅ Active | Safe Kubernetes action execution |
@@ -52,7 +52,7 @@ Each service directory follows a **consistent 14-file structure** for easy navig
 
 ```bash
 # Navigate to a service
-cd 01-remediationprocessor/
+cd 01-signalprocessing/
 
 # Read README first (provides navigation)
 cat README.md
@@ -150,7 +150,7 @@ Resources for developing and maintaining CRD controller documentation:
 
 ### **Understanding a Specific Service**
 
-1. Navigate to service directory: `cd 01-remediationprocessor/`
+1. Navigate to service directory: `cd 01-signalprocessing/`
 2. Read `README.md` for navigation and quick start
 3. Read `overview.md` for architecture and key decisions
 4. Deep dive into specific documents as needed
@@ -162,7 +162,7 @@ Resources for developing and maintaining CRD controller documentation:
 ### **Adding a New CRD Controller Service**
 
 1. Read [Maintenance Guide](./MAINTENANCE_GUIDE.md) → "Adding New Service" section
-2. Copy directory structure from existing service (e.g., `01-remediationprocessor/`)
+2. Copy directory structure from existing service (e.g., `01-signalprocessing/`)
 3. Use [CRD Service Template](../../development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md) for content guidance
 4. Follow the 14-file structure for consistency
 
@@ -180,7 +180,7 @@ Common patterns (testing, security, observability, metrics) are **duplicated acr
 ```
 
 **Process**:
-1. Update pattern in pilot service (`01-remediationprocessor/`)
+1. Update pattern in pilot service (`01-signalprocessing/`)
 2. Propagate to other services using guidance in [Maintenance Guide](./MAINTENANCE_GUIDE.md)
 3. Update `LAST-UPDATED` header in all files
 
@@ -218,7 +218,7 @@ Common patterns (testing, security, observability, metrics) are **duplicated acr
 
 Each service README provides a **navigation hub** with links to all documents. Start there!
 
-Example: [01-remediationprocessor/README.md](./01-remediationprocessor/README.md)
+Example: [01-signalprocessing/README.md](./01-signalprocessing/README.md)
 
 ---
 
@@ -261,8 +261,8 @@ Common patterns duplicated with clear markers for easy maintenance.
 - Contact: Kubernaut Documentation Team
 
 ### **Service Implementation**
-- See service-specific README (e.g., [01-remediationprocessor/README.md](./01-remediationprocessor/README.md))
-- Refer to: [Implementation Checklist](./01-remediationprocessor/implementation-checklist.md)
+- See service-specific README (e.g., [01-signalprocessing/README.md](./01-signalprocessing/README.md))
+- Refer to: [Implementation Checklist](./01-signalprocessing/implementation-checklist.md)
 
 ### **Cross-Service Issues**
 - See: [Triage Report](../../analysis/CRD_CONTROLLERS_TRIAGE_REPORT.md)

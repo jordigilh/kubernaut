@@ -435,7 +435,7 @@ func (h *HistoricalQueryHandler) GetHistoricalPatterns(w http.ResponseWriter, r 
 
 #### Overview
 
-When a workflow fails and Remediation Orchestrator creates a recovery RemediationProcessing CRD, the **RemediationProcessing Controller** queries this endpoint to retrieve historical context about previous failures, related alerts, historical patterns, and successful strategies. This context is stored in `RemediationProcessing.status.enrichmentResults.recoveryContext` (Alternative 2 pattern), then copied to AIAnalysis CRD spec by Remediation Orchestrator, enabling the AIAnalysis controller to generate alternative remediation strategies with complete temporal consistency.
+When a workflow fails and Remediation Orchestrator creates a recovery SignalProcessing CRD, the **RemediationProcessing Controller** queries this endpoint to retrieve historical context about previous failures, related alerts, historical patterns, and successful strategies. This context is stored in `RemediationProcessing.status.enrichmentResults.recoveryContext` (Alternative 2 pattern), then copied to AIAnalysis CRD spec by Remediation Orchestrator, enabling the AIAnalysis controller to generate alternative remediation strategies with complete temporal consistency.
 
 #### Request
 

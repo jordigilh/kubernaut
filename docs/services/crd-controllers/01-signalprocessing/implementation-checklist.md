@@ -19,11 +19,11 @@
 
 - [ ] **ANALYSIS**: Search existing implementations (`codebase_search "AlertProcessor implementations"`)
 - [ ] **ANALYSIS**: Map business requirements across all V1 BRs:
-  - **V1 Scope**: BR-AP-001 to BR-AP-062 (22 BRs total)
-    - BR-AP-001 to 050: Core alert processing (16 BRs)
-    - BR-AP-051 to 053: Environment classification (3 BRs, migrated from BR-ENV-*)
-    - BR-AP-060 to 062: Alert enrichment (3 BRs, migrated from BR-ALERT-*)
-  - **Reserved for V2**: BR-AP-063 to BR-AP-180 (multi-source context, advanced correlation)
+  - **V1 Scope**: BR-SP-001 to BR-SP-062 (22 BRs total)
+    - BR-SP-001 to 050: Core alert processing (16 BRs)
+    - BR-SP-051 to 053: Environment classification (3 BRs, migrated from BR-ENV-*)
+    - BR-SP-060 to 062: Alert enrichment (3 BRs, migrated from BR-ALERT-*)
+  - **Reserved for V2**: BR-SP-063 to BR-SP-180 (multi-source context, advanced correlation)
 
 ### Logging Library
 
@@ -53,7 +53,7 @@
 
 - [ ] **CRD RED**: Write RemediationProcessingReconciler tests (should fail - no controller yet)
 - [ ] **CRD GREEN**: Generate CRD using Kubebuilder + controller skeleton (tests pass)
-  - [ ] Generate RemediationProcessing CRD (`api/remediationprocessing/v1/alertprocessing_types.go`)
+  - [ ] Generate SignalProcessing CRD (`api/remediationprocessing/v1/alertprocessing_types.go`)
   - [ ] Implement RemediationProcessingReconciler with 3 phases (enriching, classifying, routing)
   - [ ] Add owner references and finalizers for cascade deletion
 - [ ] **CRD REFACTOR**: Enhance controller with phase logic and error handling
@@ -95,9 +95,9 @@
 - [ ] **CHECK**: Execute E2E tests for critical workflows (test/e2e/alertprocessor/)
   - [ ] Add E2E tests for complete alert-to-remediation workflow
 - [ ] **CHECK**: Validate business requirement coverage (all 22 V1 BRs)
-  - [ ] BR-AP-001 to 050: Core alert processing
-  - [ ] BR-AP-051 to 053: Environment classification
-  - [ ] BR-AP-060 to 062: Alert enrichment
+  - [ ] BR-SP-001 to 050: Core alert processing
+  - [ ] BR-SP-051 to 053: Environment classification
+  - [ ] BR-SP-060 to 062: Alert enrichment
 - [ ] **CHECK**: Configure RBAC for controller
 - [ ] **CHECK**: Add Prometheus metrics for phase durations
 - [ ] **CHECK**: Provide confidence assessment (85% - high confidence, see Development Methodology)
@@ -105,7 +105,7 @@
 ## Critical Architectural Patterns (from MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
 
 ### 1. Owner References & Cascade Deletion
-**Pattern**: RemediationProcessing CRD owned by RemediationRequest
+**Pattern**: SignalProcessing CRD owned by RemediationRequest
 ```go
 controllerutil.SetControllerReference(&alertRemediation, &alertProcessing, scheme)
 ```
@@ -114,7 +114,7 @@ controllerutil.SetControllerReference(&alertRemediation, &alertProcessing, schem
 ### 2. Finalizers for Cleanup Coordination
 **Pattern**: Add finalizer before processing, remove after cleanup
 ```go
-const alertProcessingFinalizer = "remediationprocessing.kubernaut.io/finalizer"
+const alertProcessingFinalizer = "signalprocessing.kubernaut.io/finalizer"
 ```
 **Purpose**: Ensure audit data persisted before CRD deletion
 

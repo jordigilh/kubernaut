@@ -98,7 +98,7 @@ holmes_client.investigate(
 
 **Kubernetes API Server Validation**: All size and field constraints are enforced at the CRD schema level using OpenAPI v3 validation.
 
-**RemediationProcessing CRD** (where KubernetesContext originates):
+**SignalProcessing CRD** (where KubernetesContext originates):
 ```yaml
 kubernetesContext:
   type: object
@@ -142,12 +142,12 @@ kubernetesContext:
   x-kubernetes-validations:
   - rule: "self.size() <= 10240"  # 10KB CEL validation
     message: "kubernetesContext exceeds 10KB. RemediationProcessing provided too much data."
-  # Inherits same field constraints from RemediationProcessing CRD
+  # Inherits same field constraints from SignalProcessing CRD
 ```
 
 **Validation Flow**:
 1. **RemediationProcessing Controller** → Tries to update `status.enrichmentResults.kubernetesContext`
-2. **API Server** → Validates against RemediationProcessing CRD schema
+2. **API Server** → Validates against SignalProcessing CRD schema
 3. **If validation fails** → API server rejects update, returns error to controller
 4. **If validation passes** → Written to etcd, Remediation Coordinator sees valid object
 
@@ -311,7 +311,7 @@ All field constraints match Kubernetes object specifications:
 ### Reference
 
 For detailed HolmesGPT toolset capabilities and CRD schemas:
-- [RemediationProcessing CRD Schema](../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
+- [SignalProcessing CRD Schema](../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 - [AIAnalysis CRD Schema](../../design/CRD/03_AI_ANALYSIS_CRD.md)
 - [AI Analysis Service Spec - HolmesGPT Toolsets](./02-ai-analysis.md#holmesgpt-toolsets--dynamic-data-fetching)
 - [HolmesGPT Official Documentation](https://github.com/robusta-dev/holmesgpt)

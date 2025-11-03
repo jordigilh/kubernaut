@@ -1189,7 +1189,7 @@ func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) e
 **Pattern**: RemediationOrchestrator owns ALL child CRD creation.
 
 **What RemediationOrchestrator Creates**:
-1. RemediationProcessing CRD (signal enrichment)
+1. SignalProcessing CRD (signal enrichment)
 2. AIAnalysis CRD (after RemediationProcessing completes)
 3. WorkflowExecution CRD (after AIAnalysis completes)
 4. NotificationRequest CRDs (on events: failures, timeouts, completions, approval requests)
@@ -1291,7 +1291,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 4. Gateway assigns priority (Rego policy)
 5. Gateway creates RemediationRequest CRD
 6. RemediationOrchestrator watches RemediationRequest
-7. RemediationOrchestrator creates RemediationProcessing CRD
+7. RemediationOrchestrator creates SignalProcessing CRD
 
 **Latency**: 30-50ms (Gateway), <1s (RemediationOrchestrator watch trigger)
 
@@ -1428,7 +1428,7 @@ func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) e
 
 ### CRD Creation Example
 
-**Example**: RemediationOrchestrator creates RemediationProcessing CRD
+**Example**: RemediationOrchestrator creates SignalProcessing CRD
 
 ```go
 package controller
@@ -1472,11 +1472,11 @@ func (r *RemediationOrchestratorReconciler) createRemediationProcessing(
     }
 
     if err := r.Create(ctx, processing); err != nil {
-        log.Error(err, "Failed to create RemediationProcessing CRD")
+        log.Error(err, "Failed to create SignalProcessing CRD")
         return err
     }
 
-    log.Info("Created RemediationProcessing CRD", "name", processing.Name)
+    log.Info("Created SignalProcessing CRD", "name", processing.Name)
 
     // Update RemediationRequest status with reference
     remediation.Status.RemediationProcessingRef = processing.Name
@@ -1656,10 +1656,10 @@ rules:
   verbs: ["get", "update", "patch"]
 
 # Child CRDs
-- apiGroups: ["remediationprocessing.kubernaut.io"]
+- apiGroups: ["signalprocessing.kubernaut.io"]
   resources: ["remediationprocessings"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["remediationprocessing.kubernaut.io"]
+- apiGroups: ["signalprocessing.kubernaut.io"]
   resources: ["remediationprocessings/status"]
   verbs: ["get", "update", "patch"]
 
@@ -1855,7 +1855,7 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 ### Service Specifications
 
 - [CRD Controllers](../services/crd-controllers/)
-  - [01-remediationprocessor/overview.md](../services/crd-controllers/01-remediationprocessor/overview.md)
+  - [01-signalprocessing/overview.md](../services/crd-controllers/01-signalprocessing/overview.md)
   - [02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md)
   - [03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md)
   - [05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)

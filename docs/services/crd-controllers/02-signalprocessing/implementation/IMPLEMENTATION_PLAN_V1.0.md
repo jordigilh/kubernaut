@@ -27,10 +27,10 @@
 ## ⚠️ **Version 1.0 - Initial Release**
 
 **Scope**:
-- ✅ **CRD-based declarative controller** (RemediationProcessing CRD)
+- ✅ **CRD-based declarative controller** (SignalProcessing CRD)
 - ✅ **Context enrichment from Data Storage Service** (historical remediation data)
 - ✅ **Classification logic** (automated vs AI-required)
-- ✅ **Deduplication using semantic fingerprints** (BR-AP-030)
+- ✅ **Deduplication using semantic fingerprints** (BR-SP-030)
 - ✅ **Integration-first testing** (Kind cluster with PostgreSQL)
 - ✅ **Owner references** (owned by RemediationRequest)
 
@@ -53,14 +53,14 @@
 **Purpose**: Enrich RemediationRequest alerts with historical context and classify remediation approach
 
 **Core Responsibilities**:
-1. **CRD Reconciliation** - Watch and reconcile RemediationProcessing CRDs
+1. **CRD Reconciliation** - Watch and reconcile SignalProcessing CRDs
 2. **Context Enrichment** - Query Data Storage Service for similar historical alerts using semantic search
 3. **Classification** - Determine if remediation requires AI analysis or can be automated
-4. **Deduplication** - Detect duplicate alerts using signal fingerprints (BR-AP-030)
+4. **Deduplication** - Detect duplicate alerts using signal fingerprints (BR-SP-030)
 5. **CRD Creation** - Create AIAnalysis or WorkflowExecution CRDs based on classification
 6. **Status Tracking** - Complete enrichment and classification audit trail in CRD status
 
-**Business Requirements**: BR-AP-001 to BR-AP-067 (27 BRs total for V1 scope)
+**Business Requirements**: BR-SP-001 to BR-SP-067 (27 BRs total for V1 scope)
 
 **Performance Targets**:
 - Context enrichment: < 2s latency (p95)
@@ -96,16 +96,16 @@
 
 Before starting Day 1, ensure:
 - [ ] [CRD_CONTROLLER_DESIGN.md](../CRD_CONTROLLER_DESIGN.md) reviewed (reconciliation loop, state machine)
-- [ ] Business requirements BR-AP-001 to BR-AP-067 understood
+- [ ] Business requirements BR-SP-001 to BR-SP-067 understood
 - [ ] **Context API completed** (BR-CONTEXT-* implemented and tested)
 - [ ] **Data Storage Service operational** (PostgreSQL with pgvector, `remediation_audit` table ready)
 - [ ] **Kind cluster available** (`make kind-setup` completed)
-- [ ] RemediationProcessing CRD API defined (`api/remediationprocessing/v1alpha1/remediationprocessing_types.go`)
+- [ ] SignalProcessing CRD API defined (`api/remediationprocessing/v1alpha1/remediationprocessing_types.go`)
 - [ ] Template patterns understood ([IMPLEMENTATION_PLAN_V3.0.md](../../06-notification/implementation/IMPLEMENTATION_PLAN_V3.0.md))
 - [ ] **Critical Decisions Approved**:
   - Context source: Data Storage Service (PostgreSQL + pgvector)
   - Classification: Rule-based with confidence scoring (V1), ML-enhanced (V2)
-  - Deduplication: Signal fingerprint-based (BR-AP-030)
+  - Deduplication: Signal fingerprint-based (BR-SP-030)
   - Testing: PostgreSQL testcontainers for integration tests
   - Deployment: kubernaut-system namespace (shared with other controllers)
 
@@ -129,17 +129,17 @@ grep -r "datastorage.*Client" pkg/ --include="*.go"
 codebase_search "pgvector semantic search query patterns"
 grep -r "vector.*similarity" pkg/ --include="*.go"
 
-# Check RemediationProcessing CRD
+# Check SignalProcessing CRD
 ls -la api/remediationprocessing/v1alpha1/
 ```
 
 **Map business requirements:**
-- **BR-AP-001**: Alert enrichment with historical context ← Data Storage query
-- **BR-AP-005**: Classification logic (automated vs AI-required) ← Rule-based engine
-- **BR-AP-015**: Context aggregation from multiple sources ← PostgreSQL queries
-- **BR-AP-030**: Signal fingerprint-based deduplication ← SHA-256 hashing
-- **BR-AP-035**: Observability (metrics, events) ← Prometheus + K8s events
-- **BR-AP-050**: Status tracking and audit trail ← CRD status fields
+- **BR-SP-001**: Alert enrichment with historical context ← Data Storage query
+- **BR-SP-005**: Classification logic (automated vs AI-required) ← Rule-based engine
+- **BR-SP-015**: Context aggregation from multiple sources ← PostgreSQL queries
+- **BR-SP-030**: Signal fingerprint-based deduplication ← SHA-256 hashing
+- **BR-SP-035**: Observability (metrics, events) ← Prometheus + K8s events
+- **BR-SP-050**: Status tracking and audit trail ← CRD status fields
 
 **Identify dependencies:**
 - Controller-runtime (manager, client, reconciler)
@@ -184,7 +184,7 @@ ls -la api/remediationprocessing/v1alpha1/
 - Main: `cmd/remediationprocessor/main.go`
 
 **Success criteria:**
-- Controller reconciles RemediationProcessing CRDs
+- Controller reconciles SignalProcessing CRDs
 - Context enrichment: <2s p95 latency
 - Semantic search: <500ms p95 latency
 - Classification accuracy: >90% for automated cases
@@ -212,7 +212,7 @@ mkdir -p test/integration/remediationprocessing
 mkdir -p test/e2e/remediationprocessing
 
 # Documentation
-mkdir -p docs/services/crd-controllers/02-remediationprocessor/implementation/{phase0,testing,design}
+mkdir -p docs/services/crd-controllers/02-signalprocessing/implementation/{phase0,testing,design}
 ```
 
 **Create foundational files:**
@@ -928,7 +928,7 @@ ls -la config/crd/bases/remediationprocessing.kubernaut.ai_remediationprocessing
 - [ ] Main application wires dependencies
 - [ ] Storage client connects to PostgreSQL
 
-**EOD Documentation**: `docs/services/crd-controllers/02-remediationprocessor/implementation/phase0/01-day1-complete.md`
+**EOD Documentation**: `docs/services/crd-controllers/02-signalprocessing/implementation/phase0/01-day1-complete.md`
 
 ---
 
@@ -1248,11 +1248,11 @@ grep -r "RequiresAI\|AIRequired\|NeedsAI" pkg/ --include="*.go"
 ```
 
 **Map business requirements:**
-- **BR-AP-005**: Classification logic (automated vs AI-required) ← Rule-based engine
-- **BR-AP-010**: Confidence scoring for classification decisions ← Threshold algorithms
-- **BR-AP-020**: Automated remediation triggers ← Rule matching engine
-- **BR-AP-025**: AI-required signal detection ← Complexity analysis
-- **BR-AP-040**: Historical success rate weighting ← Statistical confidence
+- **BR-SP-005**: Classification logic (automated vs AI-required) ← Rule-based engine
+- **BR-SP-010**: Confidence scoring for classification decisions ← Threshold algorithms
+- **BR-SP-020**: Automated remediation triggers ← Rule matching engine
+- **BR-SP-025**: AI-required signal detection ← Complexity analysis
+- **BR-SP-040**: Historical success rate weighting ← Statistical confidence
 
 **Identify classification rules:**
 ```
@@ -1337,8 +1337,8 @@ var _ = Describe("Classification Engine", func() {
 	Describe("Automated Remediation Classification", func() {
 		Context("When signal has high historical success rate", func() {
 			It("should classify as automated with high confidence", func() {
-				// BR-AP-005: Classification logic
-				// BR-AP-040: Historical success rate weighting
+				// BR-SP-005: Classification logic
+				// BR-SP-040: Historical success rate weighting
 				historicalData := []storage.RemediationResult{
 					{ID: "rem-001", SignalName: "PodCrashLooping", Status: "Success", ResolutionTime: "2m"},
 					{ID: "rem-002", SignalName: "PodCrashLooping", Status: "Success", ResolutionTime: "1m50s"},
@@ -1363,7 +1363,7 @@ var _ = Describe("Classification Engine", func() {
 
 		Context("When signal is novel", func() {
 			It("should classify as AI-required with moderate confidence", func() {
-				// BR-AP-025: AI-required signal detection
+				// BR-SP-025: AI-required signal detection
 				historicalData := []storage.RemediationResult{} // No historical data
 
 				decision, err := engine.ClassifyRemediation(ctx, classification.ClassificationInput{
@@ -1383,7 +1383,7 @@ var _ = Describe("Classification Engine", func() {
 
 		Context("When historical success rate is low", func() {
 			It("should classify as AI-required", func() {
-				// BR-AP-025: AI-required signal detection
+				// BR-SP-025: AI-required signal detection
 				historicalData := []storage.RemediationResult{
 					{ID: "rem-001", SignalName: "DatabaseDeadlock", Status: "Failed", ResolutionTime: ""},
 					{ID: "rem-002", SignalName: "DatabaseDeadlock", Status: "Success", ResolutionTime: "5m"},
@@ -1408,7 +1408,7 @@ var _ = Describe("Classification Engine", func() {
 
 		Context("When environment requires extra caution", func() {
 			It("should increase AI-required threshold for production", func() {
-				// BR-AP-010: Confidence scoring
+				// BR-SP-010: Confidence scoring
 				historicalData := []storage.RemediationResult{
 					{ID: "rem-001", SignalName: "MemoryLeak", Status: "Success", ResolutionTime: "3m"},
 					{ID: "rem-002", SignalName: "MemoryLeak", Status: "Success", ResolutionTime: "2m50s"},
@@ -1452,7 +1452,7 @@ var _ = Describe("Classification Engine", func() {
 	Describe("Confidence Scoring", func() {
 		Context("When calculating confidence scores", func() {
 			It("should weight historical success rate", func() {
-				// BR-AP-040: Historical success rate weighting
+				// BR-SP-040: Historical success rate weighting
 				testCases := []struct {
 					name           string
 					successCount   int
@@ -1486,7 +1486,7 @@ var _ = Describe("Classification Engine", func() {
 			})
 
 			It("should consider similarity score", func() {
-				// BR-AP-010: Confidence scoring
+				// BR-SP-010: Confidence scoring
 				historicalData := []storage.RemediationResult{
 					{ID: "rem-001", SignalName: "TestSignal", Status: "Success", ResolutionTime: "2m"},
 					{ID: "rem-002", SignalName: "TestSignal", Status: "Success", ResolutionTime: "2m"},
@@ -1515,7 +1515,7 @@ var _ = Describe("Classification Engine", func() {
 			})
 
 			It("should penalize confidence for insufficient historical data", func() {
-				// BR-AP-040: Historical success rate weighting
+				// BR-SP-040: Historical success rate weighting
 				singleSuccess := []storage.RemediationResult{
 					{ID: "rem-001", SignalName: "TestSignal", Status: "Success", ResolutionTime: "2m"},
 				}
@@ -1970,7 +1970,7 @@ e.logger.WithFields(logrus.Fields{
 - [ ] Metrics recording classification decisions
 - [ ] Audit logging for all decisions
 - [ ] Configuration externalized
-- [ ] BR-AP-005, BR-AP-010, BR-AP-025, BR-AP-040 coverage confirmed
+- [ ] BR-SP-005, BR-SP-010, BR-SP-025, BR-SP-040 coverage confirmed
 
 **Confidence assessment:**
 - Implementation: 95%
@@ -2034,10 +2034,10 @@ grep -r "prometheus.*NewCounterVec\|prometheus.*NewHistogramVec" pkg/ --include=
 ```
 
 **Map business requirements:**
-- **BR-AP-050**: Status tracking and audit trail ← CRD status fields
-- **BR-AP-035**: Observability (metrics, events) ← Prometheus + K8s events
-- **BR-AP-055**: Phase transition tracking ← Status.Phase field
-- **BR-AP-060**: Error tracking and retry logic ← Status.Conditions
+- **BR-SP-050**: Status tracking and audit trail ← CRD status fields
+- **BR-SP-035**: Observability (metrics, events) ← Prometheus + K8s events
+- **BR-SP-055**: Phase transition tracking ← Status.Phase field
+- **BR-SP-060**: Error tracking and retry logic ← Status.Conditions
 
 **Identify status phases:**
 ```
@@ -2130,7 +2130,7 @@ var _ = Describe("Status Management", func() {
 
 		Context("When transitioning phases", func() {
 			It("should transition from Pending to Enriching", func() {
-				// BR-AP-055: Phase transition tracking
+				// BR-SP-055: Phase transition tracking
 				err := manager.TransitionPhase(ctx, rp, status.PhaseEnriching)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(rp.Status.Phase).To(Equal(string(status.PhaseEnriching)))
@@ -2162,7 +2162,7 @@ var _ = Describe("Status Management", func() {
 			})
 
 			It("should transition to Failed from any phase", func() {
-				// BR-AP-060: Error tracking
+				// BR-SP-060: Error tracking
 				rp.Status.Phase = string(status.PhaseEnriching)
 
 				err := manager.TransitionPhaseWithError(ctx, rp, status.PhaseFailed, "enrichment failed")
@@ -2202,7 +2202,7 @@ var _ = Describe("Status Management", func() {
 
 		Context("When setting conditions", func() {
 			It("should set Ready condition", func() {
-				// BR-AP-050: Status tracking
+				// BR-SP-050: Status tracking
 				err := manager.SetCondition(ctx, rp, metav1.Condition{
 					Type:    "Ready",
 					Status:  metav1.ConditionTrue,
@@ -2274,7 +2274,7 @@ var _ = Describe("Status Management", func() {
 	Describe("Metrics Recording", func() {
 		Context("When recording metrics", func() {
 			It("should record phase transition metrics", func() {
-				// BR-AP-035: Observability
+				// BR-SP-035: Observability
 				err := manager.RecordPhaseTransitionMetric("Pending", "Enriching", "production")
 				Expect(err).ToNot(HaveOccurred())
 			})
@@ -2336,7 +2336,7 @@ const (
 	PhaseFailed      Phase = "Failed"
 )
 
-// Manager handles status updates for RemediationProcessing CRDs
+// Manager handles status updates for SignalProcessing CRDs
 type Manager struct {
 	logger *logrus.Logger
 }
@@ -2575,7 +2575,7 @@ func (m *Manager) GetStatusSummary(rp *remediationprocessingv1alpha1.Remediation
 - [ ] Metrics exported to Prometheus
 - [ ] Events recorded for key state changes
 - [ ] Audit trail complete in CRD status
-- [ ] BR-AP-035, BR-AP-050, BR-AP-055, BR-AP-060 coverage confirmed
+- [ ] BR-SP-035, BR-SP-050, BR-SP-055, BR-SP-060 coverage confirmed
 
 **Confidence assessment:**
 - Implementation: 95%
@@ -2808,7 +2808,7 @@ var _ = Describe("Complete CRD Lifecycle", func() {
 
 	Context("When creating a RemediationProcessing resource", func() {
 		It("should complete full lifecycle from Pending to Complete", func() {
-			By("Creating RemediationProcessing CRD")
+			By("Creating SignalProcessing CRD")
 			rp := &remediationprocessingv1alpha1.RemediationProcessing{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-lifecycle-complete",
@@ -3700,7 +3700,7 @@ pkg/remediationprocessing/
 - `kubernaut_remediation_processing_reconciliation_duration_seconds{phase}`: Reconciliation duration
 
 ## Integration Points Validated
-- ✅ RemediationProcessing CRD API accessible
+- ✅ SignalProcessing CRD API accessible
 - ✅ PostgreSQL testcontainer working
 - ✅ Envtest K8s API available
 - ✅ Controller-runtime manager setup complete
@@ -3879,7 +3879,7 @@ Where:
 - No training data required for V1
 - Easy to tune thresholds based on production data
 - Fast execution (<100ms)
-- Aligns with BR-AP-005 requirements
+- Aligns with BR-SP-005 requirements
 
 **V2 Enhancement Path**:
 - Collect classification decisions + outcomes
@@ -4147,16 +4147,16 @@ type RemediationProcessingStatus struct {
 ### Core Business Requirements
 | BR ID | Requirement | Implementation | Test Coverage |
 |-------|-------------|----------------|---------------|
-| BR-AP-001 | Alert enrichment with historical context | ✅ `enricher.go` | 4 integration tests |
-| BR-AP-005 | Classification logic (automated vs AI) | ✅ `classifier.go` | 6 integration tests |
-| BR-AP-010 | Confidence scoring | ✅ `classifier.go` | Unit + integration |
-| BR-AP-015 | Context aggregation | ✅ `enricher.go` | 4 integration tests |
-| BR-AP-020 | Automated remediation triggers | ✅ `crd_creator.go` | 4 integration tests |
-| BR-AP-025 | AI-required detection | ✅ `classifier.go` | Unit + integration |
-| BR-AP-030 | Signal fingerprint deduplication | ✅ `fingerprinter.go` | 2 integration tests |
-| BR-AP-035 | Observability (metrics, events) | ✅ `status_manager.go` | Unit tests |
-| BR-AP-040 | Historical success rate weighting | ✅ `classifier.go` | Unit + integration |
-| BR-AP-050 | Status tracking and audit trail | ✅ `status_manager.go` | 3 integration tests |
+| BR-SP-001 | Alert enrichment with historical context | ✅ `enricher.go` | 4 integration tests |
+| BR-SP-005 | Classification logic (automated vs AI) | ✅ `classifier.go` | 6 integration tests |
+| BR-SP-010 | Confidence scoring | ✅ `classifier.go` | Unit + integration |
+| BR-SP-015 | Context aggregation | ✅ `enricher.go` | 4 integration tests |
+| BR-SP-020 | Automated remediation triggers | ✅ `crd_creator.go` | 4 integration tests |
+| BR-SP-025 | AI-required detection | ✅ `classifier.go` | Unit + integration |
+| BR-SP-030 | Signal fingerprint deduplication | ✅ `fingerprinter.go` | 2 integration tests |
+| BR-SP-035 | Observability (metrics, events) | ✅ `status_manager.go` | Unit tests |
+| BR-SP-040 | Historical success rate weighting | ✅ `classifier.go` | Unit + integration |
+| BR-SP-050 | Status tracking and audit trail | ✅ `status_manager.go` | 3 integration tests |
 
 **Complete matrix**: 27 BRs total, full coverage analysis Day 9
 
@@ -4696,7 +4696,7 @@ groups:
 
 ## ✅ Success Criteria
 
-- [ ] Controller reconciles RemediationProcessing CRDs
+- [ ] Controller reconciles SignalProcessing CRDs
 - [ ] Context enrichment: <2s p95 latency
 - [ ] Semantic search: <500ms p95 latency
 - [ ] Classification accuracy: >90% for automated cases
@@ -4723,7 +4723,7 @@ groups:
 
 ---
 
-### BR-AP-001: Alert Enrichment with Historical Context
+### BR-SP-001: Alert Enrichment with Historical Context
 
 **Requirement**: System must enrich incoming remediation alerts with historical context from similar past incidents.
 
@@ -4752,7 +4752,7 @@ groups:
 
 ---
 
-### BR-AP-005: Classification Logic (Automated vs AI-Required)
+### BR-SP-005: Classification Logic (Automated vs AI-Required)
 
 **Requirement**: System must classify remediation requests as either automated or AI-required based on historical success rates and environmental factors.
 
@@ -4784,7 +4784,7 @@ groups:
 
 ---
 
-### BR-AP-010: Confidence Scoring for Classification Decisions
+### BR-SP-010: Confidence Scoring for Classification Decisions
 
 **Requirement**: System must provide confidence scores (0.0-1.0) for classification decisions based on multiple factors.
 
@@ -4799,7 +4799,7 @@ groups:
 - ✅ `test/integration/remediationprocessing/lifecycle_test.go::ConfidenceScoreInRange`
 
 **E2E Test Coverage**:
-- (Implicitly covered by BR-AP-005 E2E tests)
+- (Implicitly covered by BR-SP-005 E2E tests)
 
 **Implementation**: `pkg/remediationprocessing/classification/classifier.go::calculateConfidence()`
 
@@ -4812,7 +4812,7 @@ groups:
 
 ---
 
-### BR-AP-015: Context Aggregation from Multiple Sources
+### BR-SP-015: Context Aggregation from Multiple Sources
 
 **Requirement**: System must aggregate context from multiple historical sources and rank by relevance.
 
@@ -4826,7 +4826,7 @@ groups:
 - ✅ `test/integration/remediationprocessing/enrichment_test.go::SuccessRateCalculation`
 
 **E2E Test Coverage**:
-- (Covered by BR-AP-001 E2E tests)
+- (Covered by BR-SP-001 E2E tests)
 
 **Implementation**: `pkg/remediationprocessing/enrichment/enricher.go::aggregateContext()`
 
@@ -4838,7 +4838,7 @@ groups:
 
 ---
 
-### BR-AP-020: Automated Remediation Triggers
+### BR-SP-020: Automated Remediation Triggers
 
 **Requirement**: System must automatically create WorkflowExecution CRDs for signals classified as automated.
 
@@ -4865,7 +4865,7 @@ groups:
 
 ---
 
-### BR-AP-025: AI-Required Signal Detection
+### BR-SP-025: AI-Required Signal Detection
 
 **Requirement**: System must identify signals requiring AI analysis and create AIAnalysis CRDs.
 
@@ -4894,7 +4894,7 @@ groups:
 
 ---
 
-### BR-AP-030: Signal Fingerprint-Based Deduplication
+### BR-SP-030: Signal Fingerprint-Based Deduplication
 
 **Requirement**: System must detect and suppress duplicate remediation attempts using SHA-256 fingerprints.
 
@@ -4922,7 +4922,7 @@ groups:
 
 ---
 
-### BR-AP-035: Observability (Metrics, Events)
+### BR-SP-035: Observability (Metrics, Events)
 
 **Requirement**: System must export Prometheus metrics and emit Kubernetes events for all major state changes.
 
@@ -4950,7 +4950,7 @@ groups:
 
 ---
 
-### BR-AP-040: Historical Success Rate Weighting
+### BR-SP-040: Historical Success Rate Weighting
 
 **Requirement**: System must weight classification decisions based on historical success rates of similar remediations.
 
@@ -4963,7 +4963,7 @@ groups:
 - ✅ `test/integration/remediationprocessing/enrichment_test.go::SuccessRateCalculation`
 
 **E2E Test Coverage**:
-- (Covered by BR-AP-005 E2E tests)
+- (Covered by BR-SP-005 E2E tests)
 
 **Implementation**: `pkg/remediationprocessing/classification/classifier.go::calculateSuccessRate()`
 
@@ -4975,9 +4975,9 @@ groups:
 
 ---
 
-### BR-AP-050: Status Tracking and Audit Trail
+### BR-SP-050: Status Tracking and Audit Trail
 
-**Requirement**: System must maintain complete status tracking and audit trail in RemediationProcessing CRD status.
+**Requirement**: System must maintain complete status tracking and audit trail in SignalProcessing CRD status.
 
 **Unit Test Coverage**:
 - ✅ `test/unit/remediationprocessing/status_test.go::PhaseTransitions`
@@ -5004,7 +5004,7 @@ groups:
 
 ---
 
-### BR-AP-055: Phase Transition Tracking
+### BR-SP-055: Phase Transition Tracking
 
 **Requirement**: System must track all phase transitions (Pending → Enriching → Classifying → Creating → Complete) with timestamps.
 
@@ -5029,7 +5029,7 @@ groups:
 
 ---
 
-### BR-AP-060: Error Tracking and Retry Logic
+### BR-SP-060: Error Tracking and Retry Logic
 
 **Requirement**: System must track errors, retry transient failures with exponential backoff, and fail permanently on terminal errors.
 
@@ -5056,7 +5056,7 @@ groups:
 
 ---
 
-### BR-AP-065: Owner References for Cascade Deletion
+### BR-SP-065: Owner References for Cascade Deletion
 
 **Requirement**: System must set owner references on created AIAnalysis and WorkflowExecution CRDs for cascade deletion.
 
@@ -5082,7 +5082,7 @@ groups:
 
 ---
 
-### BR-AP-067: Data Snapshot Pattern
+### BR-SP-067: Data Snapshot Pattern
 
 **Requirement**: System must copy complete enrichment and classification data to child CRD specs for independence.
 
@@ -5096,7 +5096,7 @@ groups:
 - ✅ `test/integration/remediationprocessing/classification_test.go::AIAnalysisContainsSnapshot`
 
 **E2E Test Coverage**:
-- (Covered by BR-AP-020 and BR-AP-025 E2E tests)
+- (Covered by BR-SP-020 and BR-SP-025 E2E tests)
 
 **Implementation**: `pkg/remediationprocessing/crd_creator.go::createWithDataSnapshot()`
 
@@ -5110,7 +5110,7 @@ groups:
 
 ### Coverage Summary
 
-**Total Business Requirements**: 27 BRs (BR-AP-001 to BR-AP-067, subset shown above)
+**Total Business Requirements**: 27 BRs (BR-SP-001 to BR-SP-067, subset shown above)
 
 **Unit Test Coverage**: 70% of BRs (19/27 BRs have dedicated unit tests)
 - **Algorithm/Logic BRs**: 100% coverage (classification, enrichment, deduplication algorithms)

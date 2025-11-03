@@ -12,7 +12,7 @@
 **Goal**: Fix self-contained CRD pattern violations to enable complete data flow from Gateway → RemediationProcessor → AIAnalysis
 
 **Success Criteria**:
-1. ✅ RemediationProcessing CRD contains ALL data it needs (no cross-CRD reads)
+1. ✅ SignalProcessing CRD contains ALL data it needs (no cross-CRD reads)
 2. ✅ AIAnalysis receives complete signal identification and payload
 3. ✅ End-to-end pipeline functional from signal ingestion to AI investigation
 
@@ -855,7 +855,7 @@ func TestE2E_PrometheusAlert_Complete_Pipeline(t *testing.T) {
 
 3. **Service Specifications**:
    - [`docs/services/stateless/gateway-service/`](../services/stateless/gateway-service/)
-   - [`docs/services/crd-controllers/01-remediationprocessor/`](../services/crd-controllers/01-remediationprocessor/)
+   - [`docs/services/crd-controllers/01-signalprocessing/`](../services/crd-controllers/01-signalprocessing/)
    - [`docs/services/crd-controllers/05-remediationorchestrator/`](../services/crd-controllers/05-remediationorchestrator/)
 
 ---
@@ -863,7 +863,7 @@ func TestE2E_PrometheusAlert_Complete_Pipeline(t *testing.T) {
 ## 🎯 **Success Criteria**
 
 **Phase 1 is COMPLETE when**:
-1. ✅ RemediationProcessing CRD is self-contained (no cross-CRD reads)
+1. ✅ SignalProcessing CRD is self-contained (no cross-CRD reads)
 2. ✅ AIAnalysis receives complete signal identification and payload
 3. ✅ All unit tests pass
 4. ✅ All integration tests pass

@@ -16,7 +16,7 @@
 | Document | Purpose | Lines | Status |
 |----------|---------|-------|--------|
 | **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ~350 | ✅ Complete |
-| **[CRD Schema](./crd-schema.md)** | RemediationProcessing CRD types, validation, examples | ~800 | ✅ Complete |
+| **[CRD Schema](./crd-schema.md)** | SignalProcessing CRD types, validation, examples | ~800 | ✅ Complete |
 | **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ~450 | ✅ Complete |
 | **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ~350 | ✅ Complete |
 | **[Finalizers & Lifecycle](./finalizers-lifecycle.md)** | Cleanup patterns, CRD lifecycle management, monitoring | ~640 | ✅ Complete |
@@ -36,7 +36,7 @@
 ## 📁 File Organization
 
 ```
-01-remediationprocessor/
+01-signalprocessing/
 ├── 📄 README.md (you are here)              - Service index & navigation
 ├── 📘 overview.md                           - High-level architecture
 ├── 🔧 crd-schema.md                         - CRD type definitions
@@ -102,7 +102,7 @@
 | Service | Relationship | Purpose |
 |---------|--------------|---------|
 | **Gateway Service** | Upstream | Creates RemediationRequest CRD (duplicate detection already done) |
-| **RemediationRequest Controller** | Parent | Creates RemediationProcessing CRD (initial & recovery), watches for completion |
+| **RemediationRequest Controller** | Parent | Creates SignalProcessing CRD (initial & recovery), watches for completion |
 | **AIAnalysis Service** | Downstream | Receives complete enrichment data (monitoring + business + recovery) |
 | **Context Service** | External | Provides Kubernetes context enrichment (monitoring + business contexts) |
 | **Context API** | External | Provides recovery context (ONLY for recovery attempts - DD-001: Alternative 2) |
@@ -118,11 +118,11 @@
 
 | Category | Range | Description |
 |----------|-------|-------------|
-| **Primary** | BR-AP-001 to BR-AP-050 | Alert processing and enrichment logic |
-| **Environment** | BR-AP-051 to BR-AP-053 | Environment classification (production/staging/dev) |
-| **Enrichment** | BR-AP-060 to BR-AP-062 | Alert enrichment, correlation, timeout handling |
+| **Primary** | BR-SP-001 to BR-SP-050 | Alert processing and enrichment logic |
+| **Environment** | BR-SP-051 to BR-SP-053 | Environment classification (production/staging/dev) |
+| **Enrichment** | BR-SP-060 to BR-SP-062 | Alert enrichment, correlation, timeout handling |
 | **Recovery** | BR-WF-RECOVERY-011 | Recovery context enrichment from Context API (DD-001: Alternative 2) |
-| **Tracking** | BR-AP-021 | Alert lifecycle state tracking |
+| **Tracking** | BR-SP-021 | Alert lifecycle state tracking |
 | **Deduplication** | BR-WH-008 | Gateway Service responsibility (NOT Remediation Processor) |
 
 **Notes**:
@@ -154,7 +154,7 @@
 - **Tests**: `test/unit/remediationprocessing/` (needs migration to `test/unit/alertprocessor/`)
 
 ### Gap Analysis
-- ❌ RemediationProcessing CRD schema (need to create)
+- ❌ SignalProcessing CRD schema (need to create)
 - ❌ RemediationProcessingReconciler controller (need to create)
 - ❌ CRD lifecycle management (owner refs, finalizers)
 - ❌ Watch-based status coordination with RemediationRequest
@@ -238,7 +238,7 @@ ANALYSIS → PLAN → DO-RED → DO-GREEN → DO-REFACTOR → CHECK
 **Status**: ✅ Production Ready (98% Confidence)
 
 **Common Pattern Updates**: When updating common patterns (testing, security, observability, metrics), update:
-1. This service (01-remediationprocessor/)
+1. This service (01-signalprocessing/)
 2. AI Analysis (02-aianalysis/)
 3. Workflow Execution (03-workflowexecution/)
 4. Kubernetes Executor (04-kubernetesexecutor/)

@@ -423,7 +423,7 @@ $ ls docs/services/stateless/effectiveness-monitor/
 - `docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md` - CRD coordination
 
 ### Service Specifications (11 services)
-- `docs/services/crd-controllers/01-remediationprocessor/` - Signal enrichment
+- `docs/services/crd-controllers/01-signalprocessing/` - Signal enrichment
 - `docs/services/crd-controllers/02-aianalysis/` - AI analysis
 - `docs/services/crd-controllers/03-workflowexecution/` - Workflow execution
 - `docs/services/crd-controllers/04-kubernetesexecutor/` - Action execution

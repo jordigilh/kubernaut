@@ -351,7 +351,7 @@ It("should retry after transient database error", func() {
 **Naming Convention**:
 ```go
 ✅ CORRECT:
-Describe("BR-AP-001: Historical Alert Enrichment", func() {
+Describe("BR-SP-001: Historical Alert Enrichment", func() {
     It("should enrich with historical data when matches exist", func() {})
 })
 
@@ -410,7 +410,7 @@ package remediationprocessing_test // Don't use _test postfix
 Edge Case Coverage Report: remediationprocessor
 ================================================
 
-BR-AP-001: Historical Alert Enrichment
+BR-SP-001: Historical Alert Enrichment
   ✅ Novel signals (zero historical data)
   ✅ High-similarity matches (>0.95)
   ✅ Low-similarity matches (0.60-0.70)

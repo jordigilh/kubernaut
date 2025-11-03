@@ -77,7 +77,7 @@ CREATE INDEX idx_remediation_audit_environment ON remediation_audit(environment)
 
 ### Remediation Processor CRD Fields Mapping
 
-**RemediationProcessing CRD** → **remediation_audit table**:
+**SignalProcessing CRD** → **remediation_audit table**:
 
 | CRD Field (Spec) | Table Column | Mapping Status | Notes |
 |------------------|--------------|----------------|-------|
@@ -100,7 +100,7 @@ CREATE INDEX idx_remediation_audit_environment ON remediation_audit(environment)
 
 **Implementation Plan Query** (Validated):
 ```go
-// pkg/remediationprocessor/enricher/context_client.go
+// pkg/signalprocessing/enricher/context_client.go
 type ContextAPIClient struct {
     baseURL string
     httpClient *http.Client
@@ -193,7 +193,7 @@ func (c *ContextAPIClient) SemanticSearch(ctx context.Context, queryEmbedding []
 
 **Context API Response** → **Remediation Processor `HistoricalData`**:
 ```go
-// pkg/remediationprocessor/enricher/types.go
+// pkg/signalprocessing/enricher/types.go
 type HistoricalData struct {
     SimilarRemediationsCount  int                         `json:"similar_remediations_count"`
     HistoricalSuccessRate     float64                     `json:"historical_success_rate"`
@@ -490,7 +490,7 @@ var _ = Describe("Context API Integration", Label("BR-REMEDIATION-005", "BR-REME
 
 ### Required Updates to Implementation Plan
 
-**File**: `docs/services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+**File**: `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 
 #### Update 1: Add Missing CRD Fields
 

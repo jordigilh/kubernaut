@@ -18,7 +18,7 @@ Following Kubernaut's defense-in-depth testing strategy:
 
 **Test Directory**: [test/unit/](../../../test/unit/)
 **Service Tests**: Create `test/unit/remediationprocessing/controller_test.go`
-**Coverage Target**: 70%+ of business requirements (BR-AP-001 to BR-AP-050)
+**Coverage Target**: 70%+ of business requirements (BR-SP-001 to BR-SP-050)
 **Confidence**: 85-90%
 **Execution**: `make test`
 
@@ -68,7 +68,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
+var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
     var (
         // Fake K8s client for compile-time API safety
         fakeK8sClient      client.Client
@@ -110,7 +110,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
         }
     })
 
-    Context("BR-AP-010: Alert Enrichment Phase", func() {
+    Context("BR-SP-010: Alert Enrichment Phase", func() {
         It("should enrich alert with kubernetes context and transition to classifying", func() {
             // Setup test alert
             ap := &processingv1.RemediationProcessing{
@@ -136,7 +136,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
                 },
             }
 
-            // Create RemediationProcessing CRD in fake K8s (compile-time safe)
+            // Create SignalProcessing CRD in fake K8s (compile-time safe)
             Expect(fakeK8sClient.Create(ctx, ap)).To(Succeed())
 
             // Mock Context Service response with structured data
@@ -184,7 +184,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
             mockContextService.AssertNumberOfCalls(GinkgoT(), "GetContext", 1)
         })
 
-        It("BR-AP-011: should handle context service failures with degraded mode", func() {
+        It("BR-SP-011: should handle context service failures with degraded mode", func() {
             ap := testutil.NewRemediationProcessing("test-alert-degraded", "default")
 
             mockK8sClient.On("Get", ctx, client.ObjectKeyFromObject(ap), ap).Return(nil)
@@ -207,7 +207,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
         })
     })
 
-    Context("BR-AP-020: Environment Classification Phase", func() {
+    Context("BR-SP-020: Environment Classification Phase", func() {
         It("should classify production environment with high confidence", func() {
             // Setup alert with production indicators
             ap := &processingv1.RemediationProcessing{
@@ -257,7 +257,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
             Expect(ap.Status.EnvironmentClassification.SLARequirement).To(Equal("5m"))
         })
 
-        It("BR-AP-021: should classify staging environment with medium priority", func() {
+        It("BR-SP-021: should classify staging environment with medium priority", func() {
             ap := testutil.NewRemediationProcessingWithPhase("test-staging", "default", "classifying")
             ap.Spec.Alert.Namespace = "staging-api"
             ap.Spec.Alert.Labels = map[string]string{"environment": "staging"}
@@ -273,7 +273,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
         })
     })
 
-    Context("BR-AP-030: Routing Decision Phase", func() {
+    Context("BR-SP-030: Routing Decision Phase", func() {
         It("should create AIAnalysis CRD and mark processing complete", func() {
             ap := testutil.NewRemediationProcessingWithPhase("test-routing", "default", "routing")
             ap.Spec.Signal.Fingerprint = "route-test-456"
@@ -301,7 +301,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
             mockK8sClient.AssertCalled(GinkgoT(), "Create", ctx, mock.Anything)
         })
 
-        It("BR-AP-031: should handle duplicate AIAnalysis CRD gracefully", func() {
+        It("BR-SP-031: should handle duplicate AIAnalysis CRD gracefully", func() {
             ap := testutil.NewRemediationProcessingWithPhase("test-duplicate", "default", "routing")
 
             mockK8sClient.On("Get", ctx, client.ObjectKeyFromObject(ap), ap).Return(nil)
@@ -319,7 +319,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
         })
     })
 
-    Context("BR-AP-040: Performance and Metrics", func() {
+    Context("BR-SP-040: Performance and Metrics", func() {
         It("should complete full processing cycle within performance targets", func() {
             startTime := time.Now()
 
@@ -393,7 +393,7 @@ var _ = Describe("BR-INTEGRATION-AP-001: Alert Processing CRD Integration", func
         alertRemediation := testutil.NewRemediationRequest("integration-test", namespace)
         Expect(k8sClient.Create(ctx, alertRemediation)).To(Succeed())
 
-        // Create RemediationProcessing CRD
+        // Create SignalProcessing CRD
         alertProcessing := testutil.NewRemediationProcessing("integration-alert", namespace)
         alertProcessing.Spec.RemediationRequestRef = testutil.ObjectRefFrom(alertRemediation)
         Expect(k8sClient.Create(ctx, alertProcessing)).To(Succeed())
@@ -466,10 +466,10 @@ var _ = Describe("BR-E2E-AP-001: Complete Alert Processing Workflow", func() {
 ### Test Coverage Requirements
 
 **Business Requirement Mapping**:
-- **BR-AP-001 to BR-AP-015**: Alert enrichment logic (Unit + Integration)
-- **BR-AP-016 to BR-AP-030**: Environment classification (Unit + Integration)
-- **BR-AP-031 to BR-AP-045**: Routing decisions (Unit + Integration)
-- **BR-AP-046 to BR-AP-050**: Error handling and resilience (Unit + E2E)
+- **BR-SP-001 to BR-SP-015**: Alert enrichment logic (Unit + Integration)
+- **BR-SP-016 to BR-SP-030**: Environment classification (Unit + Integration)
+- **BR-SP-031 to BR-SP-045**: Routing decisions (Unit + Integration)
+- **BR-SP-046 to BR-SP-050**: Error handling and resilience (Unit + E2E)
 
 ### Mock Usage Decision Matrix
 
@@ -478,7 +478,7 @@ var _ = Describe("BR-E2E-AP-001: Complete Alert Processing Workflow", func() {
 | **Kubernetes API** | **FAKE K8S CLIENT** (`sigs.k8s.io/controller-runtime/pkg/client/fake`) | REAL (KIND) | REAL (OCP/KIND) | Compile-time API safety, type-safe CRD handling, detect API deprecations at build time |
 | **Context Service HTTP** | **CUSTOM MOCK** (`pkg/testutil/mocks`) | REAL | REAL | External HTTP service dependency - controlled test data |
 | **Environment Classifier** | REAL | REAL | REAL | Core business logic |
-| **RemediationProcessing CRD** | **FAKE K8S CLIENT** | REAL | REAL | Kubernetes resource - type-safe testing |
+| **SignalProcessing CRD** | **FAKE K8S CLIENT** | REAL | REAL | Kubernetes resource - type-safe testing |
 | **Metrics Recording** | REAL | REAL | REAL | Business observability |
 
 **Terminology**:
@@ -652,7 +652,7 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 
 ### RemediationProcessing: Requirement-Driven Coverage
 
-**Business Requirement Analysis** (BR-AP-001 to BR-AP-050):
+**Business Requirement Analysis** (BR-SP-001 to BR-SP-050):
 
 | Input Dimension | Realistic Values | Test Strategy |
 |---|---|---|
@@ -662,7 +662,7 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 | **Context Depth** | detailed, standard, minimal | Test enrichment quality differences |
 
 **Total Possible Combinations**: 4 × 3 × 3 × 3 = 108 combinations
-**Distinct Business Behaviors**: 12 behaviors (per BR-AP-001 to BR-AP-050)
+**Distinct Business Behaviors**: 12 behaviors (per BR-SP-001 to BR-SP-050)
 **Tests Needed**: ~20 tests (covering 12 distinct behaviors with boundaries)
 
 ---
@@ -674,7 +674,7 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 ```go
 // ✅ GOOD: Tests distinct classification behaviors using data table
 // Benefits: Single test function, easy to add cases, clear test matrix
-var _ = Describe("BR-AP-020: Environment Classification", func() {
+var _ = Describe("BR-SP-020: Environment Classification", func() {
     DescribeTable("Environment classification with distinct behaviors",
         func(namespace string, labels map[string]string, expectedEnv string, expectedPriority string, expectedSLA string, minConfidence float64) {
             // Single test function handles all classification scenarios
@@ -686,27 +686,27 @@ var _ = Describe("BR-AP-020: Environment Classification", func() {
             Expect(classification.SLARequirement).To(Equal(expectedSLA))
             Expect(classification.Confidence).To(BeNumerically(">=", minConfidence))
         },
-        // BR-AP-020.1: Explicit production label → P0 priority, 5min SLA, 90%+ confidence
+        // BR-SP-020.1: Explicit production label → P0 priority, 5min SLA, 90%+ confidence
         Entry("explicit production label with high confidence",
             "prod-webapp",
             map[string]string{"environment": "production"},
             "production", "P0", "5m", 0.90),
 
-        // BR-AP-020.2: Namespace pattern matching → P0 priority, 5min SLA, 85%+ confidence
+        // BR-SP-020.2: Namespace pattern matching → P0 priority, 5min SLA, 85%+ confidence
         // DISTINCT behavior: pattern-based vs. label-based classification
         Entry("prod-* namespace pattern with high confidence",
             "prod-api-service",
             map[string]string{},
             "production", "P0", "5m", 0.85),
 
-        // BR-AP-021: Staging → P2 priority, 30min SLA, 85%+ confidence
+        // BR-SP-021: Staging → P2 priority, 30min SLA, 85%+ confidence
         // DISTINCT from production: different priority and SLA
         Entry("staging environment with medium priority",
             "staging-webapp",
             map[string]string{"environment": "staging"},
             "staging", "P2", "30m", 0.85),
 
-        // BR-AP-022: Dev → P3 priority, 2h SLA, 80%+ confidence
+        // BR-SP-022: Dev → P3 priority, 2h SLA, 80%+ confidence
         // DISTINCT from staging: lower priority, relaxed SLA
         Entry("dev environment with low priority",
             "dev-test",
@@ -753,7 +753,7 @@ It("should handle critical alert in staging with detailed context", func() {})
 Ask these 4 questions:
 
 1. **Does this test validate a distinct business requirement aspect?**
-   - ✅ YES: Production classification → P0 priority (BR-AP-020)
+   - ✅ YES: Production classification → P0 priority (BR-SP-020)
    - ❌ NO: Prod-webapp-1 vs prod-webapp-2 (same pattern matching)
 
 2. **Does this combination actually occur in production scenarios?**
@@ -774,14 +774,14 @@ Ask these 4 questions:
 
 ### RemediationProcessing Test Coverage Example with DescribeTable
 
-**BR-AP-020: Environment Classification (8 distinct behaviors)**
+**BR-SP-020: Environment Classification (8 distinct behaviors)**
 
 **ANALYSIS**: 3 environments × 3 namespace patterns × 2 label types = 18 possible combinations
-**REQUIREMENT ANALYSIS**: Only 8 distinct behaviors per BR-AP-020
+**REQUIREMENT ANALYSIS**: Only 8 distinct behaviors per BR-SP-020
 **TEST STRATEGY**: Use DescribeTable for maintainable coverage of 8 behaviors + 2 boundary conditions
 
 ```go
-Describe("BR-AP-020: Environment Classification", func() {
+Describe("BR-SP-020: Environment Classification", func() {
     // Using DescribeTable reduces maintenance cost significantly
     // Single test function, 10 Entry() lines vs. 10 separate It() blocks with duplicated logic
 

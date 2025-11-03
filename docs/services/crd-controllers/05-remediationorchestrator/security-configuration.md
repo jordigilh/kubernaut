@@ -49,11 +49,11 @@ rules:
   resources: ["remediationrequests/finalizers"]
   verbs: ["update"]
 
-# RemediationProcessing CRD (create + watch)
-- apiGroups: ["remediationprocessing.kubernaut.io"]
+# SignalProcessing CRD (create + watch)
+- apiGroups: ["signalprocessing.kubernaut.io"]
   resources: ["remediationprocessings"]
   verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
-- apiGroups: ["remediationprocessing.kubernaut.io"]
+- apiGroups: ["signalprocessing.kubernaut.io"]
   resources: ["remediationprocessings/status"]
   verbs: ["get", "list", "watch"]
 
@@ -416,7 +416,7 @@ rules:
   users: ["system:serviceaccount:kubernaut-system:remediation-orchestrator"]
   verbs: ["create", "delete", "patch", "update"]
   resources:
-  - group: "remediationprocessing.kubernaut.io"
+  - group: "signalprocessing.kubernaut.io"
     resources: ["remediationprocessings"]
   - group: "aianalysis.kubernaut.io"
     resources: ["aianalyses"]

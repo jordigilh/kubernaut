@@ -57,14 +57,14 @@ if alertDataValid {
 
 ---
 
-#### 2. **enriching** Phase (BR-AP-060, BR-WF-RECOVERY-011)
+#### 2. **enriching** Phase (BR-SP-060, BR-WF-RECOVERY-011)
 
 **Purpose**: Enrich alert with Kubernetes context, business metadata, and (if recovery) historical failure context
 
 **Actions**:
 
 **A. ALWAYS (Initial & Recovery)**:
-- Query Context Service for monitoring context (BR-AP-060)
+- Query Context Service for monitoring context (BR-SP-060)
   - Pod states, resource usage, recent events
   - Current cluster metrics
 - Query Context Service for business context
@@ -202,14 +202,14 @@ status:
 
 ---
 
-#### 3. **classifying** Phase (BR-AP-051, BR-AP-052, BR-AP-053)
+#### 3. **classifying** Phase (BR-SP-051, BR-SP-052, BR-SP-053)
 
 **Purpose**: Classify environment tier and finalize enrichment
 
 **Actions**:
-- Detect environment tier from namespace labels (BR-AP-051)
-- Validate environment classification (BR-AP-052)
-- Load environment-specific configuration (BR-AP-053)
+- Detect environment tier from namespace labels (BR-SP-051)
+- Validate environment classification (BR-SP-052)
+- Load environment-specific configuration (BR-SP-053)
 - Finalize enrichment results
 - Prepare for AIAnalysis creation by Remediation Orchestrator
 
@@ -328,7 +328,7 @@ status:
 2. ✅ **Fresh Business Data**: Runbooks/ownership may have changed
 3. ✅ **Historical Context**: AI knows what already failed
 4. ✅ **Temporal Consistency**: All contexts captured at same moment
-5. ✅ **Immutable Audit Trail**: Each RemediationProcessing CRD is separate
+5. ✅ **Immutable Audit Trail**: Each SignalProcessing CRD is separate
 6. ✅ **Pattern Reuse**: Recovery uses same enrichment flow as initial
 
 ---
@@ -344,7 +344,7 @@ status:
 
 **Timeout Configuration**:
 ```yaml
-apiVersion: remediationprocessing.kubernaut.io/v1
+apiVersion: signalprocessing.kubernaut.io/v1
 kind: RemediationProcessing
 metadata:
   annotations:

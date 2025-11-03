@@ -99,7 +99,7 @@ graph TB
     Gateway -->|Create RemediationRequest CRD| RO
 
     %% Orchestrator to Processing Layer
-    RO -->|Create RemediationProcessing CRD| RP
+    RO -->|Create SignalProcessing CRD| RP
     RO -->|Create AIAnalysis CRD| AI
     RO -->|Create WorkflowExecution CRD| WE
 
@@ -389,7 +389,7 @@ sequenceDiagram
 
     alt Unique alert
         GW->>RO: Create RemediationRequest CRD
-        RO->>RP: Create RemediationProcessing CRD
+        RO->>RP: Create SignalProcessing CRD
         RP->>CA: GET /api/v1/context
         CA-->>RP: Context data
         RP->>DS: POST /api/v1/audit

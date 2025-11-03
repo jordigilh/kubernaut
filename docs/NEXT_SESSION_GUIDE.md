@@ -65,7 +65,7 @@ cat docs/architecture/KUBERNAUT_IMPLEMENTATION_ROADMAP.md
 
 | # | Service | Type | Status | Documentation | Files | Confidence |
 |---|---------|------|--------|---------------|-------|------------|
-| 1 | **Remediation Processor** | CRD | ✅ Done | `docs/services/crd-controllers/01-remediationprocessor/` | 13 | 95% |
+| 1 | **Remediation Processor** | CRD | ✅ Done | `docs/services/crd-controllers/01-signalprocessing/` | 13 | 95% |
 | 2 | **AI Analysis** | CRD | ✅ Done | `docs/services/crd-controllers/02-aianalysis/` | 15 | 93% |
 | 3 | **Workflow Execution** | CRD | ✅ Done | `docs/services/crd-controllers/03-workflowexecution/` | 15 | 92% |
 | 4 | **Kubernetes Executor** | CRD | ✅ Done | `docs/services/crd-controllers/04-kubernetesexecutor/` | 15 | 90% |
@@ -521,11 +521,11 @@ var _ = Describe("AlertProcessing Controller", func() {
 - `Alert Remediation Controller` → `Remediation Request Controller`
 
 **Directories**:
-- `01-alertprocessor/` → `01-remediationprocessor/`
+- `01-alertprocessor/` → `01-signalprocessing/`
 
 **API Groups**:
 - `alertremediation.kubernaut.io/v1` → `remediation.kubernaut.io/v1`
-- `alertprocessing.kubernaut.io/v1` → `remediationprocessing.kubernaut.io/v1`
+- `alertprocessing.kubernaut.io/v1` → `signalprocessing.kubernaut.io/v1`
 
 **Go Packages**:
 - `pkg/alertremediation/` → `pkg/remediation/`
@@ -585,7 +585,7 @@ var _ = Describe("AlertProcessing Controller", func() {
 **RBAC Audit Results**: ❌ 2 violations found
 
 **Violations**:
-1. **Remediation Processor** (`01-remediationprocessor/controller-implementation.md:60`):
+1. **Remediation Processor** (`01-signalprocessing/controller-implementation.md:60`):
    ```yaml
    //+kubebuilder:rbac:groups=kubernaut.io,resources=alertremediations/status,verbs=get;update;patch
    ```
@@ -602,9 +602,9 @@ var _ = Describe("AlertProcessing Controller", func() {
 #### DONE-8.4: Fixes Applied
 **Documents**:
 - `docs/todo/services/crd-controllers/CENTRAL_CONTROLLER_VIOLATION_FIX_COMPLETE.md`
-- `01-remediationprocessor/controller-implementation.md` (updated)
+- `01-signalprocessing/controller-implementation.md` (updated)
 - `03-workflowexecution/controller-implementation.md` (updated)
-- `01-remediationprocessor/security-configuration.md` (updated)
+- `01-signalprocessing/security-configuration.md` (updated)
 - `03-workflowexecution/security-configuration.md` (updated)
 
 **Fix 1: RBAC Permissions Removed**
@@ -811,11 +811,11 @@ grep -r "alertremediations/status.*update\|patch" \
 ---
 
 #### DONE-11.2: Directory Structure Pilot
-**Document**: `docs/todo/services/crd-controllers/01-remediationprocessor/` (new structure)
+**Document**: `docs/todo/services/crd-controllers/01-signalprocessing/` (new structure)
 
 **Structure Created**:
 ```
-01-remediationprocessor/
+01-signalprocessing/
 ├── README.md                     # Service overview (300 lines)
 ├── overview.md                   # Architecture + diagrams (400 lines)
 ├── controller-implementation.md  # Reconciliation logic (600 lines)
@@ -1171,8 +1171,8 @@ AIAnalysis Investigation
 
 **5 Services Fully Documented** (9,340+ lines):
 
-1. **01-remediationprocessor/** - Signal enrichment, environment classification
-   - CRD: `RemediationProcessing` (API: `remediationprocessing.kubernaut.io/v1`)
+1. **01-signalprocessing/** - Signal enrichment, environment classification
+   - CRD: `RemediationProcessing` (API: `signalprocessing.kubernaut.io/v1`)
    - Package: `pkg/remediationprocessing/`
    - Cmd: `cmd/remediationprocessor/`
    - Owner: RemediationRequest Controller
@@ -1226,7 +1226,7 @@ AIAnalysis Investigation
 - `AlertRemediation` → `RemediationRequest` (Central Controller CRD)
 - `Alert Processor` → `Remediation Processor` (Service name)
 - `AlertProcessing` → `RemediationProcessing` (Child CRD)
-- `01-alertprocessor/` → `01-remediationprocessor/` (Directory)
+- `01-alertprocessor/` → `01-signalprocessing/` (Directory)
 - API groups updated to match new naming
 
 **Rationale**: Support for both Prometheus Alerts AND Kubernetes Events required more generic naming
@@ -1404,7 +1404,7 @@ These ADRs would formalize existing architectural decisions that are already doc
 cd /Users/jgil/go/src/github.com/jordigilh/kubernaut
 
 # Follow implementation checklist
-cat docs/services/crd-controllers/01-remediationprocessor/implementation-checklist.md
+cat docs/services/crd-controllers/01-signalprocessing/implementation-checklist.md
 
 # Use kubebuilder to generate scaffolds
 kubebuilder create api --group remediation --version v1 --kind RemediationRequest

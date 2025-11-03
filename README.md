@@ -14,7 +14,7 @@
 >   - **Audit Trail Integration** - Writes to Data Storage Service
 > - ✅ **HolmesGPT API**: ✅ **PRODUCTION-READY v3.0** ([Implementation Plan v3.0](docs/services/stateless/holmesgpt-api/IMPLEMENTATION_PLAN_V3.0.md))
 >   - 104/104 tests passing (100%), 45 BRs, minimal internal service architecture, 98% confidence
-> - ⏸️ **5 services pending**: RemediationProcessor, WorkflowExecution, AIAnalysis, RemediationOrchestrator, Effectiveness Monitor
+> - ⏸️ **5 services pending**: SignalProcessing, WorkflowExecution, AIAnalysis, RemediationOrchestrator, Effectiveness Monitor
 >
 > **🎉 Phase 2 Milestone**: API Gateway pattern (ADR-032) complete - All data access centralized through Data Storage Service
 >

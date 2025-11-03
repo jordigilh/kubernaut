@@ -16,7 +16,7 @@ Ensure all CRD controller implementation plans consistently document the defense
 
 ### Files Modified
 
-1. **RemediationProcessor** (`docs/services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md`)
+1. **RemediationProcessor** (`docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`)
    - **Change**: Enhanced existing testing strategy section with controller-specific rationale
    - **Impact**: Clarified why RemediationProcessor requires overlapping coverage due to Data Storage and Context API integration
 
@@ -183,9 +183,9 @@ Result: Confidence in production deployment
 
 | Business Requirement | Unit | Integration | E2E | Total Coverage |
 |---|---|---|---|---|
-| BR-AP-001: Alert Enrichment | ✅ | ✅ | ✅ | 300% |
-| BR-AP-002: Classification | ✅ | ✅ | ❌ | 200% |
-| BR-AP-003: Similarity Search | ✅ | ✅ | ❌ | 200% |
+| BR-SP-001: Alert Enrichment | ✅ | ✅ | ✅ | 300% |
+| BR-SP-002: Classification | ✅ | ✅ | ❌ | 200% |
+| BR-SP-003: Similarity Search | ✅ | ✅ | ❌ | 200% |
 | BR-WF-001: Template Selection | ✅ | ✅ | ✅ | 300% |
 | BR-WF-002: Parallel Execution | ✅ | ✅ | ✅ | 300% |
 | BR-AI-001: HolmesGPT Trigger | ✅ | ✅ | ✅ | 300% |
@@ -221,7 +221,7 @@ Result: Confidence in production deployment
 
 - [03-testing-strategy.mdc](../../../.cursor/rules/03-testing-strategy.mdc) - Mandatory testing strategy
 - [00-core-development-methodology.mdc](../../../.cursor/rules/00-core-development-methodology.mdc) - TDD methodology
-- [RemediationProcessor Implementation Plan](../../services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md)
+- [RemediationProcessor Implementation Plan](../../services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md)
 - [WorkflowExecution Implementation Plan](../../services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md)
 - [AIAnalysis Implementation Plan](../../services/crd-controllers/02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.0.md)
 

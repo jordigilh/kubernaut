@@ -237,7 +237,7 @@
 - ✅ All 3 services ready for immediate implementation
 
 #### **Parallel Track A: RemediationProcessor Controller** - ✅ **PLAN COMPLETE**
-- **Implementation Plan**: `docs/services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+- **Implementation Plan**: `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
   - **Lines**: 5,196 (104% of target, 383% growth from baseline)
   - **Confidence**: **96%** (production-ready)
   - **APDC Days Expanded**: 3 complete days (Days 2, 4, 7)

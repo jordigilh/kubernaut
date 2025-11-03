@@ -1182,7 +1182,7 @@ curl http://localhost:9090/metrics | grep remediation_
 
 **4. Test CRD Reconciliation**:
 ```bash
-# Create test RemediationProcessing CRD
+# Create test SignalProcessing CRD
 kubectl apply -f test/integration/testdata/sample-remediationprocessing.yaml
 
 # Watch reconciliation

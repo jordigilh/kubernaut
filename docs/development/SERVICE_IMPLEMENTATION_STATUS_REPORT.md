@@ -71,7 +71,7 @@
 
 **Status**: 🚧 **SCAFFOLDED ONLY (5%)**
 **Location**: `internal/controller/remediationprocessing/`
-**Documentation**: `docs/services/crd-controllers/01-remediationprocessor/`
+**Documentation**: `docs/services/crd-controllers/01-signalprocessing/`
 
 #### **Current State**
 
