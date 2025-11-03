@@ -66,7 +66,7 @@ Each controller runs as a separate microservice with its own binary:
 | Service | Status | CRD | Purpose | Docs |
 |---------|--------|-----|---------|------|
 | **RemediationOrchestrator** | ⏸️ Phase 5 | RemediationRequest | Cross-CRD coordination & lifecycle management | [docs](docs/services/crd-controllers/05-remediationorchestrator/) |
-| **RemediationProcessor** | ⏸️ Phase 3 | RemediationProcessing | Signal processing and enrichment | [docs](docs/services/crd-controllers/01-remediationprocessor/) |
+| **SignalProcessing** | ⏸️ Phase 3 | SignalProcessing | Signal processing and enrichment | [docs](docs/services/crd-controllers/01-signalprocessing/) |
 | **AIAnalysis** | ⏸️ Phase 4 | AIAnalysis | AI-powered analysis and recommendations | [docs](docs/services/crd-controllers/02-aianalysis/) |
 | **WorkflowExecution** | ⏸️ Phase 3 | WorkflowExecution | Multi-step workflow orchestration with Tekton Pipelines | [docs](docs/services/crd-controllers/03-workflowexecution/) |
 
@@ -130,7 +130,7 @@ Signal Source → Gateway Service → RemediationRequest CRD (created)
 (Prometheus Alerts)       ↓
                     RemediationOrchestrator (watches RemediationRequest)
                           ↓
-                    Creates child CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution)
+                    Creates child CRDs (SignalProcessing, AIAnalysis, WorkflowExecution)
                           ↓
                      Each CRD Controller watches its CRD type
                           ↓
@@ -158,7 +158,7 @@ sequenceDiagram
     participant SRC as Signal Source
     participant GW as Gateway Service
     participant ORCH as RemediationOrchestrator
-    participant RP as RemediationProcessor
+    participant SP as SignalProcessing
     participant AI as AIAnalysis
     participant WF as WorkflowExecution
     participant TEK as Tekton Pipelines
@@ -169,11 +169,11 @@ sequenceDiagram
     GW->>K8S: Create RemediationRequest CRD
 
     Note over ORCH: Watch RemediationRequest CRD
-    ORCH->>K8S: Create RemediationProcessing CRD
+    ORCH->>K8S: Create SignalProcessing CRD
 
-    Note over RP: Watch RemediationProcessing CRD
-    RP->>RP: Reconcile: Enrich signal
-    RP->>K8S: Update status: Completed
+    Note over SP: Watch SignalProcessing CRD
+    SP->>SP: Reconcile: Enrich signal
+    SP->>K8S: Update status: Completed
 
     Note over ORCH: Watch status update
     ORCH->>K8S: Create AIAnalysis CRD
@@ -210,7 +210,7 @@ sequenceDiagram
 |-------|----------|--------|----------|
 | **Phase 1: Foundation** | Gateway, Dynamic Toolset, Data Storage, Notifications | ✅✅✅✅ | Weeks 1-3 |
 | **Phase 2: Intelligence** | Context API, HolmesGPT API | ✅✅ | Weeks 3-5 ✅ **COMPLETE** |
-| **Phase 3: Core Controllers** | RemediationProcessor, WorkflowExecution | ⏸️⏸️ | Weeks 5-8 |
+| **Phase 3: Core Controllers** | SignalProcessing, WorkflowExecution | ⏸️⏸️ | Weeks 5-8 |
 | **Phase 4: AI Integration** | AIAnalysis | ⏸️ | Weeks 8-10 |
 | **Phase 5: Orchestration** | RemediationOrchestrator, Effectiveness Monitor | ⏸️⏸️ | Weeks 10-13 |
 
@@ -328,7 +328,7 @@ sequenceDiagram
 - **HolmesGPT API**: Python wrapper for HolmesGPT SDK with LLM integration
 
 ### **Phase 3: Core Business Logic** (Weeks 5-8)
-- **RemediationProcessor**: Signal enrichment with cluster context
+- **SignalProcessing**: Signal enrichment with cluster context
 - **WorkflowExecution**: Multi-step workflow orchestration with Tekton Pipelines, **step-level precondition/postcondition validation** (DD-002), **per-action validation framework with Rego policies** (DD-002)
 
 ### **Phase 4: AI Integration** (Weeks 8-10)
@@ -404,7 +404,7 @@ make install
 
 # Build all CRD controllers (single binary for development)
 make build
-# Creates: bin/manager (includes RemediationOrchestrator, RemediationProcessor, AIAnalysis, WorkflowExecution)
+# Creates: bin/manager (includes RemediationOrchestrator, SignalProcessing, AIAnalysis, WorkflowExecution)
 
 # Build individual services (when available)
 go build -o bin/gateway-service ./cmd/gateway
@@ -518,7 +518,7 @@ gateway:
 - **[CRD Schemas](docs/architecture/CRD_SCHEMAS.md)**: Authoritative CRD field definitions
 
 ### **Service Documentation**
-- **[CRD Controllers](docs/services/crd-controllers/)**: RemediationOrchestrator, RemediationProcessor, AIAnalysis, WorkflowExecution
+- **[CRD Controllers](docs/services/crd-controllers/)**: RemediationOrchestrator, SignalProcessing, AIAnalysis, WorkflowExecution
 - **[Stateless Services](docs/services/stateless/)**: Gateway, Dynamic Toolset, Data Storage, Context API, HolmesGPT API, Effectiveness Monitor, Notifications
 
 ### **Development Guides**
