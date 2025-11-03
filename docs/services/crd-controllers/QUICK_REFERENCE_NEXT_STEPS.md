@@ -79,7 +79,7 @@ make bootstrap-executor-dev
 ## 📁 Key Documents
 
 ### Implementation Plans
-- Remediation: `docs/services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+- Remediation: `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 - Workflow: `docs/services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 - Executor: `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 

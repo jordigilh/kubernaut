@@ -59,7 +59,7 @@ Context API Service is the **historical intelligence provider** for the Kubernau
 - ❌ No historical patterns to guide alternative approaches
 
 **With Context API** (Alternative 2 Design):
-1. ✅ Remediation Orchestrator creates NEW RemediationProcessing CRD (recovery)
+1. ✅ Remediation Orchestrator creates NEW SignalProcessing CRD (recovery)
 2. ✅ RemediationProcessing Controller queries Context API endpoint: `/api/v1/context/remediation/{id}`
 3. ✅ Context API returns:
    - Previous failures (what failed, why, when)

@@ -1,7 +1,7 @@
 # CRD Data Flow Triage: RemediationProcessor → AIAnalysis
 
 **Date**: October 8, 2025
-**Purpose**: Triage RemediationProcessing CRD status to ensure it provides all data AIAnalysis needs
+**Purpose**: Triage SignalProcessing CRD status to ensure it provides all data AIAnalysis needs
 **Scope**: RemediationOrchestrator creates AIAnalysis with data snapshot from RemediationProcessing.status
 **Architecture Pattern**: **Self-Contained CRDs** (no cross-CRD reads during reconciliation)
 
@@ -28,7 +28,7 @@
 Gateway Service
     ↓ (creates RemediationRequest CRD)
 RemediationOrchestrator
-    ↓ (creates RemediationProcessing CRD with data from RemediationRequest)
+    ↓ (creates SignalProcessing CRD with data from RemediationRequest)
 RemediationProcessor Controller
     ↓ (enriches signal, updates RemediationProcessing.status)
 RemediationOrchestrator (watches RemediationProcessing.status.phase == "completed")
@@ -90,7 +90,7 @@ spec:
 
 ## 📊 Current RemediationProcessing.status Schema
 
-From `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`:
+From `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`:
 
 ```go
 type RemediationProcessingStatus struct {
@@ -345,7 +345,7 @@ RemediationProcessing provides:
 
 ### P0 - CRITICAL: Add Signal Identifiers to Status
 
-**File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+**File**: `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 
 ```go
 type RemediationProcessingStatus struct {
@@ -370,7 +370,7 @@ type RemediationProcessingStatus struct {
 
 ### P0 - CRITICAL: Add OriginalSignal to EnrichmentResults
 
-**File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+**File**: `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 
 ```go
 type EnrichmentResults struct {
@@ -398,7 +398,7 @@ type OriginalSignal struct {
 
 ### P1 - HIGH: Add MonitoringContext to EnrichmentResults
 
-**File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+**File**: `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 
 ```go
 type EnrichmentResults struct {
@@ -455,7 +455,7 @@ type LogEntry struct {
 
 ### P1 - HIGH: Add BusinessContext to EnrichmentResults
 
-**File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+**File**: `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 
 ```go
 type EnrichmentResults struct {
@@ -664,13 +664,13 @@ func (r *RemediationOrchestratorReconciler) createAIAnalysis(
 
 ### Phase 1: P0 Fixes (Estimated: 2 hours)
 
-1. Update `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+1. Update `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
    - Add `signalFingerprint`, `signalName`, `severity` to `RemediationProcessingStatus`
    - Add `OriginalSignal` type definition
    - Add `originalSignal` field to `EnrichmentResults`
 
 2. Update `docs/architecture/CRD_SCHEMAS.md` (if applicable)
-   - Ensure consistency with `01-remediationprocessor/crd-schema.md`
+   - Ensure consistency with `01-signalprocessing/crd-schema.md`
 
 3. Update `docs/services/crd-controllers/05-remediationorchestrator/integration-points.md`
    - Add validation checks for required fields
@@ -678,7 +678,7 @@ func (r *RemediationOrchestratorReconciler) createAIAnalysis(
 
 ### Phase 2: P1 Additions (Estimated: 3 hours)
 
-1. Add `MonitoringContext`, `BusinessContext` types to RemediationProcessing CRD
+1. Add `MonitoringContext`, `BusinessContext` types to SignalProcessing CRD
 2. Update RemediationOrchestrator mapping code to handle new fields
 3. Document implementation requirements for RemediationProcessor controller
 
@@ -692,7 +692,7 @@ func (r *RemediationOrchestratorReconciler) createAIAnalysis(
 
 ## 🔗 Related Documents
 
-- [docs/services/crd-controllers/01-remediationprocessor/crd-schema.md](mdc:docs/services/crd-controllers/01-remediationprocessor/crd-schema.md)
+- [docs/services/crd-controllers/01-signalprocessing/crd-schema.md](mdc:docs/services/crd-controllers/01-signalprocessing/crd-schema.md)
 - [docs/services/crd-controllers/02-aianalysis/crd-schema.md](mdc:docs/services/crd-controllers/02-aianalysis/crd-schema.md)
 - [docs/services/crd-controllers/05-remediationorchestrator/integration-points.md](mdc:docs/services/crd-controllers/05-remediationorchestrator/integration-points.md)
 - [docs/architecture/CRD_SCHEMAS.md](mdc:docs/architecture/CRD_SCHEMAS.md)

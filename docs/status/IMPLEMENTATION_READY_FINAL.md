@@ -392,7 +392,7 @@ These items are **NOT blocking** implementation and can be added as needed:
 11. ✅ `CRITICAL_4_CRD_RETENTION_COMPLETE.md` - Retention policy
 
 ### Service Specifications (11 services)
-1. ✅ `crd-controllers/01-remediationprocessor/` - Signal enrichment
+1. ✅ `crd-controllers/01-signalprocessing/` - Signal enrichment
 2. ✅ `crd-controllers/02-aianalysis/` - AI analysis
 3. ✅ `crd-controllers/03-workflowexecution/` - Workflow execution
 4. ✅ `crd-controllers/04-kubernetesexecutor/` - Action execution

@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-The current RemediationRequest controller implementation is **Phase 1 only** (Task 2.2), implementing RemediationProcessing CRD creation. The documented specifications require a **complete orchestrator** that watches downstream CRD status and creates the next CRD in sequence.
+The current RemediationRequest controller implementation is **Phase 1 only** (Task 2.2), implementing SignalProcessing CRD creation. The documented specifications require a **complete orchestrator** that watches downstream CRD status and creates the next CRD in sequence.
 
 **Architecture Clarification**:
 - ✅ **Each CRD has its own dedicated controller** (RemediationProcessing Controller, AIAnalysis Controller, WorkflowExecution Controller, KubernetesExecution Controller)
@@ -29,7 +29,7 @@ The current RemediationRequest controller implementation is **Phase 1 only** (Ta
 
 **File**: `internal/controller/remediation/remediationrequest_controller.go` (305 lines)
 
-#### 1. RemediationProcessing CRD Creation
+#### 1. SignalProcessing CRD Creation
 ```go
 // Lines 55-116: Reconcile function
 func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -73,8 +73,8 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests/finalizers,verbs=update
-// +kubebuilder:rbac:groups=remediationprocessing.kubernaut.io,resources=remediationprocessings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=remediationprocessing.kubernaut.io,resources=remediationprocessings/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=signalprocessing.kubernaut.io,resources=remediationprocessings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=signalprocessing.kubernaut.io,resources=remediationprocessings/status,verbs=get;update;patch
 ```
 
 **Status**: ✅ **Complete** - Permissions for RemediationRequest and RemediationProcessing
@@ -124,7 +124,7 @@ func (r *RemediationRequestReconciler) reconcileAIAnalysis(
     ctx context.Context,
     remediation *remediationv1alpha1.RemediationRequest,
 ) error {
-    // Fetch RemediationProcessing CRD
+    // Fetch SignalProcessing CRD
     var processing remediationprocessingv1alpha1.RemediationProcessing
     processingName := fmt.Sprintf("%s-processing", remediation.Name)
     if err := r.Get(ctx, client.ObjectKey{
@@ -581,7 +581,7 @@ func (r *RemediationRequestReconciler) sendNotification(
 
 | Feature | Status | Priority | Estimated Effort | Scope |
 |---|---|---|---|---|
-| RemediationProcessing CRD Creation | ✅ Complete | P0 | - | Orchestration |
+| SignalProcessing CRD Creation | ✅ Complete | P0 | - | Orchestration |
 | AIAnalysis CRD Creation | ❌ Missing | P0 | 0.5 day | Orchestration only |
 | WorkflowExecution CRD Creation | ❌ Missing | P0 | 0.5 day | Orchestration only |
 | Status Watching & Phase Progression | ❌ Missing | P0 | 1 day | Orchestration logic |

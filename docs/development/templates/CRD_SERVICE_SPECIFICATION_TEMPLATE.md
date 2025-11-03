@@ -44,7 +44,7 @@ docs/services/crd-controllers/
 
 **Option A: Create Directory Structure** (Recommended ✅):
 1. See [MAINTENANCE_GUIDE.md](./MAINTENANCE_GUIDE.md) → "Adding New Service" section
-2. Copy structure from `01-remediationprocessor/` as a reference
+2. Copy structure from `01-signalprocessing/` as a reference
 3. Use this template as content guidance for each document
 4. Follow the 14-file structure for consistency
 
@@ -55,7 +55,7 @@ docs/services/crd-controllers/
 4. **Note**: Consider migrating to directory structure after completion
 
 **Examples to Follow**:
-- **Directory Structure**: `01-remediationprocessor/`, `02-aianalysis/`, `05-remediationorchestrator/`
+- **Directory Structure**: `01-signalprocessing/`, `02-aianalysis/`, `05-remediationorchestrator/`
 - **Legacy Single File**: `archive/01-alert-processor.md` (archived)
 
 **Section Guidelines**:
@@ -228,7 +228,7 @@ internal/controller/            → CRD controller (INTERNAL)
 | CRD | K8s API Group | Go Package Import | Used By |
 |-----|---------------|-------------------|---------|
 | **RemediationRequest** | `kubernaut.io` | `remediationv1 "...api/remediation/v1"` | Remediation Orchestrator (owns), All services (parent ref) |
-| **RemediationProcessing** | `remediationprocessing.kubernaut.io` | `processingv1 "...api/alertprocessor/v1"` | Remediation Processor (owns), AI Analysis (reads) |
+| **RemediationProcessing** | `signalprocessing.kubernaut.io` | `processingv1 "...api/alertprocessor/v1"` | Remediation Processor (owns), AI Analysis (reads) |
 | **AIAnalysis** | `aianalysis.kubernaut.io` | `aianalysisv1 "...api/aianalysis/v1"` | AI Analysis (owns), Workflow Execution (reads) |
 | **WorkflowExecution** | `workflowexecution.kubernaut.io` | `workflowexecutionv1 "...api/workflowexecution/v1"` | Workflow Execution (owns) |
 | **KubernetesExecution** | `kubernetesexecution.kubernaut.io` | `kubernetesexecutionv1 "...api/kubernetesexecution/v1"` | Kubernetes Executor (owns), Workflow watches |

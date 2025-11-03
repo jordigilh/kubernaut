@@ -73,7 +73,7 @@ GET /health:
 Alert lifecycle management, enrichment, environment classification, and AI coordination
 
 #### **Business Requirements**
-- **Primary**: BR-AP-001 to BR-AP-025
+- **Primary**: BR-SP-001 to BR-SP-025
 - **Enhanced**: BR-AI-COORD-V1-001 to BR-AI-COORD-V1-003
 - **Environment**: BR-ENV-001 to BR-ENV-050 (integrated component)
 
@@ -606,7 +606,7 @@ For detailed business requirement mappings referenced throughout the architectur
 
 | Service Category | Business Requirements | Documentation |
 |------------------|----------------------|---------------|
-| **Gateway & Processing** | BR-WH-001 to BR-WH-026, BR-AP-001 to BR-AP-050 | Alert reception and processing |
+| **Gateway & Processing** | BR-WH-001 to BR-WH-026, BR-SP-001 to BR-SP-050 | Alert reception and processing |
 | **AI & Intelligence** | BR-AI-001 to BR-AI-050, BR-CONTEXT-001 to BR-CONTEXT-180 | AI analysis and context orchestration |
 | **Workflow & Execution** | BR-WF-001 to BR-WF-165, BR-EX-001 to BR-EX-155 | Workflow orchestration and K8s operations |
 | **Data & Storage** | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | Data persistence and vector operations |

@@ -354,7 +354,7 @@ func (p *InvestigatingPhase) Handle(ctx context.Context, aiAnalysis *aianalysisv
 >
 > - ✅ **Temporal consistency**: All contexts captured at same timestamp by RemediationProcessing
 > - ✅ **Fresh contexts**: Recovery gets CURRENT cluster state (not stale from initial attempt)
-> - ✅ **Immutable audit trail**: Each RemediationProcessing CRD is complete snapshot
+> - ✅ **Immutable audit trail**: Each SignalProcessing CRD is complete snapshot
 > - ✅ **Self-contained CRDs**: AIAnalysis reads from spec only (no API calls)
 > - ✅ **Simplified testing**: AIAnalysis has no external dependencies
 >
@@ -368,7 +368,7 @@ func (p *InvestigatingPhase) Handle(ctx context.Context, aiAnalysis *aianalysisv
 
 #### Overview
 
-When AIAnalysis CRD is created for **recovery** (after a workflow failure), the **Remediation Orchestrator** copies complete enrichment data from RemediationProcessing CRD into the AIAnalysis CRD spec. This enrichment data includes:
+When AIAnalysis CRD is created for **recovery** (after a workflow failure), the **Remediation Orchestrator** copies complete enrichment data from SignalProcessing CRD into the AIAnalysis CRD spec. This enrichment data includes:
 - **Fresh monitoring context** (current cluster state)
 - **Fresh business context** (current ownership/runbooks)
 - **Recovery context** (historical failures from Context API)
@@ -404,7 +404,7 @@ The AIAnalysis controller simply reads this enrichment data - no external API ca
 - ✅ AIAnalysis controller is simpler, no external dependencies
 - ✅ Fresh monitoring/business context for each recovery attempt
 - ✅ Temporal consistency (all contexts captured at same timestamp)
-- ✅ Immutable audit trail (separate RemediationProcessing CRDs)
+- ✅ Immutable audit trail (separate SignalProcessing CRDs)
 
 #### AIAnalysis CRD Spec with Enrichment Data (Alternative 2)
 
@@ -414,7 +414,7 @@ type AIAnalysisSpec struct {
     // Existing fields...
     RemediationRequestRef corev1.LocalObjectReference `json:"remediationRequestRef"`
 
-    // NEW: Reference to source RemediationProcessing CRD (Alternative 2)
+    // NEW: Reference to source SignalProcessing CRD (Alternative 2)
     RemediationProcessingRef *corev1.LocalObjectReference `json:"remediationProcessingRef,omitempty"`
 
     // Recovery-specific fields
@@ -432,7 +432,7 @@ type AIAnalysisSpec struct {
 
 // EnrichmentData contains ALL contexts from RemediationProcessing enrichment
 // Copied from RemediationProcessing.status.enrichmentResults
-// See: docs/services/crd-controllers/01-remediationprocessor/crd-schema.md
+// See: docs/services/crd-controllers/01-signalprocessing/crd-schema.md
 type EnrichmentData struct {
     // Monitoring context (FRESH for recovery!)
     MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
@@ -466,7 +466,7 @@ type BusinessContext struct {
 }
 
 // RecoveryContext - Historical failure data from Context API
-// See: docs/services/crd-controllers/01-remediationprocessor/crd-schema.md
+// See: docs/services/crd-controllers/01-signalprocessing/crd-schema.md
 type RecoveryContext struct {
     ContextQuality       string                `json:"contextQuality"`
     PreviousFailures     []PreviousFailure     `json:"previousFailures,omitempty"`
@@ -816,7 +816,7 @@ if aiAnalysis.Spec.EnrichmentData == nil {
 **Where Graceful Degradation Happens (Alternative 2)**:
 - **Location**: RemediationProcessing Controller's `enrichRecoveryContext()` function
 - **Fallback**: Build minimal recovery context from `FailedWorkflowRef` if Context API fails
-- **See**: `docs/services/crd-controllers/01-remediationprocessor/controller-implementation.md`
+- **See**: `docs/services/crd-controllers/01-signalprocessing/controller-implementation.md`
 
 #### AIAnalysis Status Fields for Context Tracking
 

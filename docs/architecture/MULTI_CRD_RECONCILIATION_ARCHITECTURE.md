@@ -90,7 +90,7 @@ graph TB
     end
 
     subgraph "Alert-Processing CRDs (3 CRDs)"
-        APC[RemediationProcessing CRD<br/>Alert Service]
+        APC[SignalProcessing CRD<br/>Alert Service]
         AIC[AIAnalysis CRD<br/>AI Service]
         WFC[WorkflowExecution CRD<br/>Workflow Service<br/>Creates Tekton PipelineRuns]
     end
@@ -225,11 +225,11 @@ status:
       phase: pending
 ```
 
-### 2. RemediationProcessing CRD (Remediation Processor Service)
+### 2. SignalProcessing CRD (Remediation Processor Service)
 
 **Purpose**: Alert enrichment, environment classification, and business priority assignment
 
-**Business Requirements**: BR-AP-001 to BR-AP-050, BR-ENV-001 to BR-ENV-050
+**Business Requirements**: BR-SP-001 to BR-SP-050, BR-ENV-001 to BR-ENV-050
 
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -581,7 +581,7 @@ Service CRD completes → RemediationRequest watches completion → RemediationR
 **CRD Creation Flow**:
 ```
 0. Gateway creates RemediationRequest CRD (with original alert payload)
-   → RemediationRequest controller creates RemediationProcessing CRD
+   → RemediationRequest controller creates SignalProcessing CRD
 
 1. RemediationProcessing.status.phase = "completed"
    → RemediationRequest watches this
@@ -662,7 +662,7 @@ func (r *RemediationRequestController) orchestrateNextPhase(
     remediation *kubernautv1.RemediationRequest,
     serviceStatuses map[string]interface{},
 ) error {
-    // 0. If newly created (no RemediationProcessing yet), create RemediationProcessing CRD
+    // 0. If newly created (no RemediationProcessing yet), create SignalProcessing CRD
     if remediation.Status.RemediationProcessingRef == nil {
         return r.createRemediationProcessing(ctx, remediation)
     }
@@ -700,7 +700,7 @@ func (r *RemediationRequestController) orchestrateNextPhase(
     return nil
 }
 
-// createRemediationProcessing creates RemediationProcessing CRD when RemediationRequest is first created
+// createRemediationProcessing creates SignalProcessing CRD when RemediationRequest is first created
 func (r *RemediationRequestController) createRemediationProcessing(
     ctx context.Context,
     remediation *kubernautv1.RemediationRequest,
@@ -746,7 +746,7 @@ func (r *RemediationRequestController) createAIAnalysis(
     remediation *kubernautv1.RemediationRequest,
     alertProcessingStatus map[string]interface{},
 ) error {
-    // Fetch RemediationProcessing CRD to get enriched data
+    // Fetch SignalProcessing CRD to get enriched data
     var alertProcessing alertprocessorv1.RemediationProcessing
     if err := r.Get(ctx, client.ObjectKey{
         Name:      remediation.Status.RemediationProcessingRef.Name,
@@ -826,7 +826,7 @@ func (g *GatewayService) HandleWebhook(ctx context.Context, payload []byte) erro
     }
 
     // 2. No existing remediation - create ONLY RemediationRequest CRD
-    // RemediationRequest controller will create RemediationProcessing CRD
+    // RemediationRequest controller will create SignalProcessing CRD
     requestID := generateRequestID()
     alertRemediation := &kubernautv1.RemediationRequest{
         ObjectMeta: metav1.ObjectMeta{
@@ -1003,7 +1003,7 @@ Remediation Details: kubectl get alertremediation %s -n kubernaut-system -o yaml
     }
 }
 
-// Remediation Processor Controller - Reconciles RemediationProcessing CRD
+// Remediation Processor Controller - Reconciles SignalProcessing CRD
 // NOTE: This controller does NOT create AIAnalysis CRD - that is RemediationRequest controller's responsibility
 func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     var alertProcessing alertprocessorv1.RemediationProcessing
@@ -1057,7 +1057,7 @@ sequenceDiagram
 
     Note over AR: Watches all service CRDs for changes
 
-    AP->>K8S: Updates RemediationProcessing CRD status
+    AP->>K8S: Updates SignalProcessing CRD status
     K8S->>AR: Watch event: RemediationProcessing changed
     AR->>AR: Reconcile triggered by watch event
     AR->>K8S: Query all service CRD statuses
@@ -1099,7 +1099,7 @@ sequenceDiagram
     GW->>+AR: Creates RemediationRequest CRD
 
     Note over AR: Central Orchestrator - Creates phase CRDs
-    AR->>+AP: Creates RemediationProcessing CRD
+    AR->>+AP: Creates SignalProcessing CRD
 
     Note over AP: Has CRD - Reconciles
     AP->>CTX: Query context (stateless)
@@ -1389,14 +1389,14 @@ func (r *RemediationRequestController) cleanupServiceCRDs(ctx context.Context, a
     remediationName := alertRemediation.Name
     namespace := alertRemediation.Namespace
 
-    // Cleanup RemediationProcessing CRD
+    // Cleanup SignalProcessing CRD
     alertProcessing := &alertprocessorv1.RemediationProcessing{}
     if err := r.Get(ctx, types.NamespacedName{
         Name: fmt.Sprintf("alert-processing-%s", remediationName),
         Namespace: namespace,
     }, alertProcessing); err == nil {
         if err := r.Delete(ctx, alertProcessing); err != nil {
-            return fmt.Errorf("failed to delete RemediationProcessing CRD: %w", err)
+            return fmt.Errorf("failed to delete SignalProcessing CRD: %w", err)
         }
     }
 
@@ -1861,7 +1861,7 @@ Success Criteria:
 
 ```yaml
 Deliverables:
-  - RemediationProcessing CRD and controller
+  - SignalProcessing CRD and controller
   - AIAnalysis CRD and controller
   - Service-specific reconciliation logic
   - Cross-service communication validation
@@ -2078,7 +2078,7 @@ Quality Success:
 - Istio (service mesh integration)
 
 ### Business Requirements Coverage
-- **Alert Processing**: BR-AP-001 to BR-AP-050
+- **Alert Processing**: BR-SP-001 to BR-SP-050
 - **Environment Classification**: BR-ENV-001 to BR-ENV-050
 - **AI Analysis**: BR-AI-001 to BR-AI-050
 - **Workflow Orchestration**: BR-WF-001 to BR-WF-165
@@ -2109,7 +2109,7 @@ Business Value:
   - Maintains audit trail integrity
 ```
 
-#### **BR-AP-021: Alert Lifecycle State Tracking**
+#### **BR-SP-021: Alert Lifecycle State Tracking**
 **Business Requirement**: MUST track alert states throughout processing lifecycle
 **Implementation**: Updates existing remediation with duplicate information instead of creating new lifecycle
 ```yaml
@@ -2163,7 +2163,7 @@ Business Value:
 ### Business-Driven Duplicate Handling Scenarios
 
 #### **Scenario 1: Production Critical Alert Duplication**
-**Business Requirements**: BR-ENV-009 (Business criticality), BR-AP-031 (Priority management)
+**Business Requirements**: BR-ENV-009 (Business criticality), BR-SP-031 (Priority management)
 
 ```yaml
 Business Context:
@@ -2187,7 +2187,7 @@ Business Value Delivered:
 ```
 
 #### **Scenario 2: Development Environment Alert Duplication**
-**Business Requirements**: BR-ENV-014 (Environment-based filtering), BR-AP-026 (Environment-specific routing)
+**Business Requirements**: BR-ENV-014 (Environment-based filtering), BR-SP-026 (Environment-specific routing)
 
 ```yaml
 Business Context:
@@ -2239,12 +2239,12 @@ Business Value Delivered:
 | Business Requirement | Implementation Component | Compliance Status | Business Value |
 |---------------------|-------------------------|-------------------|----------------|
 | **BR-WH-008** | Fingerprint-based duplicate detection | ✅ **FULLY COMPLIANT** | Resource efficiency |
-| **BR-AP-021** | Single alert lifecycle maintenance | ✅ **FULLY COMPLIANT** | Operational simplicity |
+| **BR-SP-021** | Single alert lifecycle maintenance | ✅ **FULLY COMPLIANT** | Operational simplicity |
 | **BR-ALERT-003** | Alert suppression and noise reduction | ✅ **FULLY COMPLIANT** | Reduced alert fatigue |
 | **BR-ALERT-005** | Alert correlation and grouping | ✅ **FULLY COMPLIANT** | Unified incident view |
 | **BR-ALERT-006** | Escalation for problematic patterns | ✅ **FULLY COMPLIANT** | Proactive issue detection |
 | **BR-ENV-009** | Business criticality preservation | ✅ **FULLY COMPLIANT** | Priority-based processing |
-| **BR-AP-031** | Environment-specific priority handling | ✅ **FULLY COMPLIANT** | Context-aware operations |
+| **BR-SP-031** | Environment-specific priority handling | ✅ **FULLY COMPLIANT** | Context-aware operations |
 | **BR-MONITORING-015** | Effectiveness assessment | ✅ **FULLY COMPLIANT** | Continuous improvement |
 
 ### Performance Requirements Compliance
@@ -2256,13 +2256,13 @@ Deduplication Performance (BR-WH-008):
   Achieved: <5ms average duplicate detection time
   Business Impact: Zero processing delay for duplicate alerts
 
-Alert Lifecycle Performance (BR-AP-021):
+Alert Lifecycle Performance (BR-SP-021):
   Target: <100ms tracking record creation
   Implementation: Single lifecycle maintenance with duplicate counters
   Achieved: <50ms duplicate status updates
   Business Impact: Maintains fast alert processing SLAs
 
-Environment-Specific Performance (BR-AP-031):
+Environment-Specific Performance (BR-SP-031):
   Target: Environment-appropriate processing speeds
   Implementation: Priority-preserved duplicate handling
   Achieved: No performance degradation for any environment

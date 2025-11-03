@@ -93,7 +93,7 @@ func (r *RemediationRequestReconciler) orchestratePhase(
 
     switch remediation.Status.OverallPhase {
     case "pending":
-        // Create RemediationProcessing CRD
+        // Create SignalProcessing CRD
         if remediation.Status.RemediationProcessingRef == nil {
             if err := r.createRemediationProcessing(ctx, remediation); err != nil {
                 return ctrl.Result{}, err
@@ -623,7 +623,7 @@ func (r *RemediationRequestReconciler) calculateTerminationRate(
 // See: docs/architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2
 // ========================================
 //
-// Creates new RemediationProcessing CRD for recovery attempt.
+// Creates new SignalProcessing CRD for recovery attempt.
 // RemediationProcessing Controller will enrich with FRESH contexts:
 // - Monitoring context (current cluster state)
 // - Business context (current ownership/runbooks)
@@ -632,7 +632,7 @@ func (r *RemediationRequestReconciler) calculateTerminationRate(
 // WHY Alternative 2?
 // - ✅ Fresh contexts: Recovery gets CURRENT data, not stale from initial attempt
 // - ✅ Temporal consistency: All contexts captured at same timestamp
-// - ✅ Immutable audit trail: Each RemediationProcessing CRD is complete snapshot
+// - ✅ Immutable audit trail: Each SignalProcessing CRD is complete snapshot
 func (r *RemediationRequestReconciler) initiateRecovery(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
@@ -642,7 +642,7 @@ func (r *RemediationRequestReconciler) initiateRecovery(
     log := ctrl.LoggerFrom(ctx)
 
     // ========================================
-    // ALTERNATIVE 2 DESIGN: Create NEW RemediationProcessing CRD
+    // ALTERNATIVE 2 DESIGN: Create NEW SignalProcessing CRD
     // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Version 1.2)
     // See: BR-WF-RECOVERY-011
     // ========================================
@@ -677,7 +677,7 @@ func (r *RemediationRequestReconciler) initiateRecovery(
     }
 
     // ========================================
-    // CREATE NEW RemediationProcessing CRD FOR RECOVERY (Alternative 2)
+    // CREATE NEW SignalProcessing CRD FOR RECOVERY (Alternative 2)
     // ========================================
     recoveryRP := &processingv1.RemediationProcessing{
         ObjectMeta: metav1.ObjectMeta{

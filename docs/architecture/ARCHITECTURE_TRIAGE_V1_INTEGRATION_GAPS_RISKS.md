@@ -53,7 +53,7 @@ internal/controller/workflowexecution/workflowexecution_controller.go:      // T
 | **AIAnalysis** | [IMPLEMENTATION_PLAN_V1.0.md](../services/crd-controllers/02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.0.md) | BR-AI-001 to BR-AI-060 (approval context), BR-AI-016 to BR-AI-030 (approval workflow) | **3-4 weeks** |
 | **WorkflowExecution** | [IMPLEMENTATION_PLAN_V1.0.md](../services/crd-controllers/03-workflowexecution/IMPLEMENTATION_PLAN_V1.0.md) | BR-WF-001 to BR-WF-165 (multi-step workflows) | **3-4 weeks** |
 | **KubernetesExecution** | [IMPLEMENTATION_PLAN_V1.0.md](../services/crd-controllers/04-kubernetesexecution/IMPLEMENTATION_PLAN_V1.0.md) | BR-EX-001 to BR-EX-155 (29 canonical actions) | **2-3 weeks** |
-| **RemediationProcessor** | Needs implementation plan | BR-AP-001 to BR-AP-050 | **1-2 weeks** |
+| **RemediationProcessor** | Needs implementation plan | BR-SP-001 to BR-SP-050 | **1-2 weeks** |
 
 **Total Estimated Effort**: **13-19 weeks** (3.25-4.75 months)
 

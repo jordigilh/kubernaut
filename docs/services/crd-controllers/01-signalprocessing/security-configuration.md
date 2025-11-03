@@ -17,14 +17,14 @@ kind: ClusterRole
 metadata:
   name: alertprocessing-controller
 rules:
-# RemediationProcessing CRD permissions (full control)
-- apiGroups: ["remediationprocessing.kubernaut.io"]
+# SignalProcessing CRD permissions (full control)
+- apiGroups: ["signalprocessing.kubernaut.io"]
   resources: ["alertprocessings"]
   verbs: ["get", "list", "watch", "update", "patch"]
-- apiGroups: ["remediationprocessing.kubernaut.io"]
+- apiGroups: ["signalprocessing.kubernaut.io"]
   resources: ["alertprocessings/status"]
   verbs: ["get", "update", "patch"]
-- apiGroups: ["remediationprocessing.kubernaut.io"]
+- apiGroups: ["signalprocessing.kubernaut.io"]
   resources: ["alertprocessings/finalizers"]
   verbs: ["update"]
 
@@ -66,7 +66,7 @@ subjects:
 
 **Least Privilege Principles**:
 - ✅ Read-only access to Kubernetes resources (no modifications)
-- ✅ Write access ONLY to RemediationProcessing CRDs
+- ✅ Write access ONLY to SignalProcessing CRDs
 - ✅ No Secret modification permissions (read-only for enrichment metadata)
 - ✅ Event creation scoped to RemediationProcessing events only
 
@@ -185,7 +185,7 @@ spec:
 
 ### Secret Management
 
-**No Sensitive Data in RemediationProcessing CRDs**:
+**No Sensitive Data in SignalProcessing CRDs**:
 
 RemediationProcessing controller does NOT handle secrets directly. All sensitive data handling follows these patterns:
 

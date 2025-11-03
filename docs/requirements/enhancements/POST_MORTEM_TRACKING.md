@@ -13,7 +13,7 @@ Enhanced existing alert tracking requirements to capture comprehensive data need
 
 ## 📋 **Enhanced Requirements for Post-Mortem Data Capture**
 
-### **1. Alert Processor Lifecycle Tracking (Enhanced BR-AP-021)**
+### **1. Alert Processor Lifecycle Tracking (Enhanced BR-SP-021)**
 **File**: `docs/requirements/06_INTEGRATION_LAYER.md`
 **Enhancement**: Comprehensive post-mortem data capture
 
@@ -96,7 +96,7 @@ Enhanced existing alert tracking requirements to capture comprehensive data need
 ## 📊 **Post-Mortem Data Flow Architecture**
 
 ```
-1. Alert Reception (Enhanced BR-AP-021)
+1. Alert Reception (Enhanced BR-SP-021)
    ↓
    ├─ Decision rationale & confidence scores
    ├─ Context data & performance metrics

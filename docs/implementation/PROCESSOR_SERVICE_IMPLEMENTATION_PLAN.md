@@ -215,7 +215,7 @@ find pkg/ -name "*processor*" -type f
 **AI-Specific RED Pattern**:
 ```go
 // test/unit/processor/ai_integration_test.go
-var _ = Describe("BR-AP-016: AI Service Integration", func() {
+var _ = Describe("BR-SP-016: AI Service Integration", func() {
     var (
         processor     *processor.Service
         mockLLMClient *mocks.MockLLMClient  // Existing mock
@@ -941,7 +941,7 @@ var _ = Describe("Processor Service Comprehensive Tests", func() {
         )
     })
 
-    Context("BR-AP-001: Alert Processing and Filtering", func() {
+    Context("BR-SP-001: Alert Processing and Filtering", func() {
         It("should filter alerts by severity", func() {
             lowSeverityAlert := types.Alert{
                 Name:     "LowSeverityAlert",
@@ -982,7 +982,7 @@ var _ = Describe("Processor Service Comprehensive Tests", func() {
         })
     })
 
-    Context("BR-AP-016: AI Service Integration", func() {
+    Context("BR-SP-016: AI Service Integration", func() {
         It("should coordinate with AI service for analysis", func() {
             alert := types.Alert{
                 Name:     "ComplexAlert",

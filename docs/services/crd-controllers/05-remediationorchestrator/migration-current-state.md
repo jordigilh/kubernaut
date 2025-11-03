@@ -29,7 +29,7 @@ type RemediationRequestReconciler struct {
     Scheme *runtime.Scheme
 }
 
-// Reconcile creates RemediationProcessing CRD
+// Reconcile creates SignalProcessing CRD
 func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // Fetch RemediationRequest
     var remediationRequest remediationv1alpha1.RemediationRequest
@@ -82,7 +82,7 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
 **What Exists**:
 - ✅ RemediationRequest CRD schema
 - ✅ RemediationRequestReconciler controller
-- ✅ RemediationProcessing CRD creation logic
+- ✅ SignalProcessing CRD creation logic
 - ✅ Field mapping from RemediationRequest to RemediationProcessing
 - ✅ Owner reference management
 - ✅ RBAC permissions
@@ -337,8 +337,8 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests/finalizers,verbs=update
-// +kubebuilder:rbac:groups=remediationprocessing.kubernaut.io,resources=remediationprocessings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=remediationprocessing.kubernaut.io,resources=remediationprocessings/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=signalprocessing.kubernaut.io,resources=remediationprocessings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=signalprocessing.kubernaut.io,resources=remediationprocessings/status,verbs=get;update;patch
 ```
 
 **Missing RBAC**:
@@ -594,7 +594,7 @@ var (
 
 ## Success Criteria
 
-- [ ] RemediationRequest creates RemediationProcessing CRD (✅ Complete)
+- [ ] RemediationRequest creates SignalProcessing CRD (✅ Complete)
 - [ ] RemediationRequest creates AIAnalysis after RemediationProcessing completes
 - [ ] RemediationRequest creates WorkflowExecution after AIAnalysis completes
 - [ ] Status accurately reflects current phase

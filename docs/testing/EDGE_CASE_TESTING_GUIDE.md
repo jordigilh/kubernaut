@@ -263,7 +263,7 @@ Context("invalid state transitions", func() {
 
 **Example**:
 ```go
-var _ = Describe("BR-AP-001: Context Enrichment Edge Cases", func() {
+var _ = Describe("BR-SP-001: Context Enrichment Edge Cases", func() {
     var enricher *ContextEnricher
 
     BeforeEach(func() {
@@ -685,7 +685,7 @@ Use the edge case coverage validator:
 Edge Case Coverage Report: remediationprocessor
 ================================================
 
-BR-AP-001: Historical Alert Enrichment
+BR-SP-001: Historical Alert Enrichment
   ✅ Empty historical context
   ✅ Malformed embedding vectors
   ✅ pgvector query timeout

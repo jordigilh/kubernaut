@@ -20,7 +20,7 @@
 
 ### 1. RemediationProcessor Implementation Plan
 
-**File**: `docs/services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+**File**: `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 
 **Edge Case Coverage**: ✅ **EXCELLENT** (95% quality)
 
@@ -30,7 +30,7 @@
 - ✅ Edge cases organized by BR category
 - ✅ Test coverage mapping (unit, integration, E2E)
 
-**Example Quality** (BR-AP-001: Alert Enrichment):
+**Example Quality** (BR-SP-001: Alert Enrichment):
 ```markdown
 **Edge Cases Covered**:
 - Database connection timeout → Business outcome: Graceful degradation, use in-memory cache
@@ -243,7 +243,7 @@ Focus on critical BRs:
 
 ## 📚 References
 
-- [RemediationProcessor Implementation Plan](../../services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md)
+- [RemediationProcessor Implementation Plan](../../services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md)
 - [WorkflowExecution Implementation Plan](../../services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md)
 - [AIAnalysis Implementation Plan](../../services/crd-controllers/02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.0.md)
 - [03-testing-strategy.mdc](../../.cursor/rules/03-testing-strategy.mdc)

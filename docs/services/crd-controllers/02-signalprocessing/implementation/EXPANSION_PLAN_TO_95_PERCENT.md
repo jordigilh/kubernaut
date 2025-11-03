@@ -197,7 +197,7 @@
 ```go
 var _ = Describe("Integration Test 1: Context Enrichment with pgvector", func() {
     It("should enrich RemediationProcessing with historical context", func() {
-        By("Creating RemediationProcessing CRD")
+        By("Creating SignalProcessing CRD")
         // [Full CRD creation code]
 
         By("Waiting for controller to enrich context")

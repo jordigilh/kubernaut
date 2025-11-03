@@ -29,7 +29,7 @@
 
 ```
 docs/services/crd-controllers/
-├── 01-remediationprocessor/          ← Service documentation ✅
+├── 01-signalprocessing/          ← Service documentation ✅
 ├── 02-aianalysis/                     ← Service documentation ✅
 ├── 03-workflowexecution/              ← Service documentation ✅
 ├── 04-kubernetesexecutor/             ← Service documentation ✅
@@ -393,7 +393,7 @@ mv docs/services/crd-controllers/SERVICE_SPECIFICATION_TEMPLATE.md \
 # CRD Controllers Documentation
 
 ## Service Implementations
-- [01-RemediationProcessor](./01-remediationprocessor/)
+- [01-RemediationProcessor](./01-signalprocessing/)
 - [02-AIAnalysis](./02-aianalysis/)
 - [03-WorkflowExecution](./03-workflowexecution/)
 - [04-KubernetesExecutor](./04-kubernetesexecutor/)

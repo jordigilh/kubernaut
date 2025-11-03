@@ -58,7 +58,7 @@ controller_name: remediationprocessor        # Lowercase, no hyphens
 controller_name_upper: REMEDIATIONPROCESSOR  # Uppercase
 bin_name: remediation-processor              # Hyphenated binary name
 image_name: remediationprocessor             # Container image name
-package_path: github.com/jordigilh/kubernaut/pkg/remediationprocessor
+package_path: github.com/jordigilh/kubernaut/pkg/signalprocessing
 crd_group: remediation.kubernaut.io
 crd_version: v1alpha1
 crd_kind: RemediationProcessing
@@ -152,7 +152,7 @@ cp docs/templates/crd-controller-gap-remediation/config-test-template.go \
    pkg/{{CONTROLLER_NAME}}/config/config_test.go
 
 # 3. Replace placeholders
-sed -i '' 's/{{CONTROLLER_NAME}}/remediationprocessor/g' pkg/remediationprocessor/config/*.go
+sed -i '' 's/{{CONTROLLER_NAME}}/remediationprocessor/g' pkg/signalprocessing/config/*.go
 
 # 4. Add controller-specific config structs
 # Open config.go and add your custom configuration types

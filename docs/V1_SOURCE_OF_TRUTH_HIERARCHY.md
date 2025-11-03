@@ -114,7 +114,7 @@ Tier 2: <service>/crd-schema.md (Implementation Detail)
   > This document shows how Remediation Orchestrator **consumes** the CRD.
 
 #### **Services**:
-1. **01-remediationprocessor/** - Alert ingestion, enrichment, routing
+1. **01-signalprocessing/** - Alert ingestion, enrichment, routing
 2. **02-aianalysis/** - HolmesGPT investigation orchestration
 3. **03-workflowexecution/** - Workflow orchestration and step execution
 4. **04-kubernetesexecutor/** - Safe Kubernetes action execution
@@ -155,7 +155,7 @@ These documents define **data structures and contracts** that implement Tier 1 a
 | Document | Purpose | Authority |
 |----------|---------|-----------|
 | **[01_REMEDIATION_REQUEST_CRD.md](design/CRD/01_REMEDIATION_REQUEST_CRD.md)** | RemediationRequest CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
-| **[02_REMEDIATION_PROCESSING_CRD.md](design/CRD/02_REMEDIATION_PROCESSING_CRD.md)** | RemediationProcessing CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
+| **[02_REMEDIATION_PROCESSING_CRD.md](design/CRD/02_REMEDIATION_PROCESSING_CRD.md)** | SignalProcessing CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[03_AI_ANALYSIS_CRD.md](design/CRD/03_AI_ANALYSIS_CRD.md)** | AIAnalysis CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[04_WORKFLOW_EXECUTION_CRD.md](design/CRD/04_WORKFLOW_EXECUTION_CRD.md)** | WorkflowExecution CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[05_KUBERNETES_EXECUTION_CRD.md](design/CRD/05_KUBERNETES_EXECUTION_CRD.md)** | KubernetesExecution CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |

@@ -559,7 +559,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/healthz"
 
     remediationprocessingv1 "github.com/jordigilh/kubernaut/pkg/apis/remediationprocessing/v1"
-    "github.com/jordigilh/kubernaut/pkg/remediationprocessor"
+    "github.com/jordigilh/kubernaut/pkg/signalprocessing"
 )
 
 var (

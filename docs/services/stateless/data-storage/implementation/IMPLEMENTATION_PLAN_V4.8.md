@@ -70,7 +70,7 @@
 - ✅ **Acceptable**: V1.0 doesn't require full audit trail, RAR is V2.0 feature
 
 **Related Implementation Plans** (NEW - Created in V4.8):
-- `docs/services/crd-controllers/01-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V0.1.md` - TDD workflow with audit table integration
+- `docs/services/crd-controllers/01-signalprocessing/implementation/IMPLEMENTATION_PLAN_V0.1.md` - TDD workflow with audit table integration
 - `docs/services/crd-controllers/05-remediationorchestrator/implementation/IMPLEMENTATION_PLAN_V0.1.md` - TDD workflow with audit table integration
 - `docs/services/crd-controllers/02-aianalysis/implementation/IMPLEMENTATION_PLAN_V0.1.md` - TDD workflow with audit table integration
 - `docs/services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V0.1.md` - TDD workflow with audit table integration

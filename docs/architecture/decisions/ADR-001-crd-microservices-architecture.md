@@ -82,7 +82,7 @@ Separate Kubernetes controllers, each managing its own Custom Resource Definitio
 ```
 5 Microservices, Each with Its Own CRD:
 
-1. Remediation Processor    → RemediationProcessing CRD
+1. Remediation Processor    → SignalProcessing CRD
    - Enriches alerts with context
    - Classifies alert severity
    - Routes to AI Analysis
@@ -211,7 +211,7 @@ graph TB
     end
 
     subgraph "Child Services (Flat Hierarchy)"
-        AP[RemediationProcessing CRD<br/>Remediation Processor]
+        AP[SignalProcessing CRD<br/>Remediation Processor]
         AI[AIAnalysis CRD<br/>AI Analysis]
         WE[WorkflowExecution CRD<br/>Workflow Execution]
         KE[KubernetesExecution CRD<br/>Kubernetes Executor]
@@ -238,7 +238,7 @@ graph TB
 **Coordination Flow**:
 ```
 1. RemediationRequest created (user/webhook)
-2. Remediation Orchestrator creates RemediationProcessing CRD
+2. Remediation Orchestrator creates SignalProcessing CRD
 3. Remediation Processor enriches → updates RemediationProcessing status
 4. Remediation Orchestrator watches status → creates AIAnalysis CRD
 5. AI Analysis investigates → updates AIAnalysis status

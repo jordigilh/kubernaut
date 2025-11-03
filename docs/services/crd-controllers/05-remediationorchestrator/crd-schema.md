@@ -194,11 +194,11 @@ type RemediationRequestStatus struct {
     RecoveryReason          *string     `json:"recoveryReason,omitempty"`          // Why recovery was needed (e.g., "workflow_timeout", "step_failure")
 
     // ========================================
-    // ALTERNATIVE 2: Multiple RemediationProcessing CRD references
+    // ALTERNATIVE 2: Multiple SignalProcessing CRD references
     // See: docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md (Alternative 2)
     // ========================================
 
-    // RemediationProcessingRefs tracks ALL RemediationProcessing CRDs (initial + recovery attempts)
+    // RemediationProcessingRefs tracks ALL SignalProcessing CRDs (initial + recovery attempts)
     RemediationProcessingRefs []RemediationProcessingReference `json:"remediationProcessingRefs,omitempty"` // Array: initial + recovery
 
     // CurrentProcessingRef points to the RemediationProcessing currently being processed
@@ -244,7 +244,7 @@ type RemediationRequestStatus struct {
 }
 
 // Reference types
-// RemediationProcessingReference tracks RemediationProcessing CRD references
+// RemediationProcessingReference tracks SignalProcessing CRD references
 // Enhanced for Alternative 2 to track both initial and recovery attempts
 type RemediationProcessingReference struct {
     Name          string      `json:"name"`
