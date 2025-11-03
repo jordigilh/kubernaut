@@ -611,8 +611,12 @@ graph TB
 
     subgraph SUPPORT["Support Services"]
         GW[Gateway<br/>HTTP Ingestion]
-        ST[Data Storage<br/>PostgreSQL + Vector DB]
+        ST["⭐ Data Storage<br/>REST API Gateway<br/>(ONLY DB Connection)<br/><br/>ADR-032: DB Isolation"]
         EFF[Effectiveness Monitor<br/>Performance Assessment]
+    end
+
+    subgraph DATABASE["🔒 Database Layer (Isolated)"]
+        DB[("PostgreSQL<br/>Action History<br/>Incident Data<br/>Audit Trails<br/>Vectors (pgvector)")]
     end
 
     %% Main flow
@@ -637,10 +641,20 @@ graph TB
     HGP <-.-> DTS
     HGP -.->|queries cluster| K8S
 
-    %% Storage interactions
-    WF -->|writes action records| ST
-    AI -.->|queries patterns| ST
-    EFF -.->|queries action history| ST
+    %% ADR-032: Data Access Layer Isolation
+    %% ONLY Data Storage connects to PostgreSQL
+    ST ==>|"✅ SQL Queries<br/>(ONLY Connection)"| DB
+    
+    %% All other services use REST API
+    CTX -->|"❌ NO DIRECT DB<br/>✅ REST API (Read)"| ST
+    EFF -->|"❌ NO DIRECT DB<br/>✅ REST API (Read+Write)"| ST
+    WF -->|"❌ NO DIRECT DB<br/>✅ REST API (Audit Writes)"| ST
+    AI -->|"❌ NO DIRECT DB<br/>✅ REST API (Pattern Queries)"| ST
+    ORCH -->|"❌ NO DIRECT DB<br/>✅ REST API (Audit Writes)"| ST
+    RP -->|"❌ NO DIRECT DB<br/>✅ REST API (Audit Writes)"| ST
+    NOT -->|"❌ NO DIRECT DB<br/>✅ REST API (Audit Writes)"| ST
+    
+    %% External metrics query
     EFF -.->|queries metrics| PROM
 
     %% Notifications
@@ -650,6 +664,9 @@ graph TB
     style TEKTON fill:#fff3e0,stroke:#e65100,stroke-width:3px
     style INVESTIGATION fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px
     style SUPPORT fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
+    style DATABASE fill:#ffebee,stroke:#c62828,stroke-width:3px,stroke-dasharray: 5 5
+    style ST fill:#c8e6c9,stroke:#2e7d32,stroke-width:4px
+    style DB fill:#ffccbc,stroke:#d84315,stroke-width:3px
 ```
 
 **Architecture Characteristics**:
@@ -658,6 +675,7 @@ graph TB
 - **Event-Driven**: Watch-based coordination (not polling)
 - **Tekton Integration**: WorkflowExecution creates Tekton PipelineRuns directly
 - **Data Separation**: Action history in Data Storage (90+ days), not CRDs (24 hours)
+- **🔒 ADR-032 Compliance**: ONLY Data Storage Service connects to PostgreSQL (all others use REST API)
 
 ---
 
