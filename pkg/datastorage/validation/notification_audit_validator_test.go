@@ -92,21 +92,27 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.RemediationID = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["remediation_id"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for whitespace-only remediation_id", func() {
 			audit.RemediationID = "   "
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["remediation_id"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for remediation_id exceeding 255 characters", func() {
 			audit.RemediationID = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["remediation_id"]).To(ContainSubstring("255 characters"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("255 characters"))
 		})
 
 		It("should pass validation for remediation_id at 255 characters", func() {
@@ -121,21 +127,27 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.NotificationID = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["notification_id"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for whitespace-only notification_id", func() {
 			audit.NotificationID = "   "
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["notification_id"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for notification_id exceeding 255 characters", func() {
 			audit.NotificationID = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["notification_id"]).To(ContainSubstring("255 characters"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("255 characters"))
 		})
 
 		It("should pass validation for notification_id at 255 characters", func() {
@@ -150,21 +162,27 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Recipient = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["recipient"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for whitespace-only recipient", func() {
 			audit.Recipient = "   "
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["recipient"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for recipient exceeding 255 characters", func() {
 			audit.Recipient = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["recipient"]).To(ContainSubstring("255 characters"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("255 characters"))
 		})
 
 		It("should pass validation for recipient at 255 characters", func() {
@@ -179,21 +197,27 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Channel = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["channel"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["channel"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for invalid channel", func() {
 			audit.Channel = "invalid"
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["channel"]).To(ContainSubstring("must be one of"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["channel"]).To(ContainSubstring("must be one of"))
 		})
 
 		It("should fail validation for channel exceeding 50 characters", func() {
 			audit.Channel = strings.Repeat("a", 51)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["channel"]).To(ContainSubstring("50 characters"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["channel"]).To(ContainSubstring("50 characters"))
 		})
 
 		It("should accept case-insensitive channel values", func() {
@@ -211,14 +235,18 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.MessageSummary = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["message_summary"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["message_summary"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for whitespace-only message_summary", func() {
 			audit.MessageSummary = "   "
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["message_summary"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["message_summary"]).To(ContainSubstring("required"))
 		})
 
 		It("should pass validation for long message_summary (TEXT type)", func() {
@@ -233,21 +261,27 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Status = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["status"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for invalid status", func() {
 			audit.Status = "invalid"
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["status"]).To(ContainSubstring("must be one of"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("must be one of"))
 		})
 
 		It("should fail validation for status exceeding 50 characters", func() {
 			audit.Status = strings.Repeat("a", 51)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["status"]).To(ContainSubstring("50 characters"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("50 characters"))
 		})
 
 		It("should accept case-insensitive status values", func() {
@@ -265,14 +299,18 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.SentAt = time.Time{}
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["sent_at"]).To(ContainSubstring("required"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["sent_at"]).To(ContainSubstring("required"))
 		})
 
 		It("should fail validation for future sent_at (beyond clock skew)", func() {
 			audit.SentAt = time.Now().Add(10 * time.Minute)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["sent_at"]).To(ContainSubstring("cannot be in the future"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["sent_at"]).To(ContainSubstring("cannot be in the future"))
 		})
 
 		It("should pass validation for sent_at within clock skew (5 minutes)", func() {
@@ -293,14 +331,18 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.EscalationLevel = -1
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["escalation_level"]).To(ContainSubstring("non-negative"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["escalation_level"]).To(ContainSubstring("non-negative"))
 		})
 
 		It("should fail validation for escalation_level exceeding 100", func() {
 			audit.EscalationLevel = 101
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(err.FieldErrors["escalation_level"]).To(ContainSubstring("at most 100"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(valErr.FieldErrors["escalation_level"]).To(ContainSubstring("at most 100"))
 		})
 
 		It("should pass validation for escalation_level at 0", func() {
@@ -329,15 +371,17 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			Expect(len(err.FieldErrors)).To(Equal(8))
-			Expect(err.FieldErrors).To(HaveKey("remediation_id"))
-			Expect(err.FieldErrors).To(HaveKey("notification_id"))
-			Expect(err.FieldErrors).To(HaveKey("recipient"))
-			Expect(err.FieldErrors).To(HaveKey("channel"))
-			Expect(err.FieldErrors).To(HaveKey("message_summary"))
-			Expect(err.FieldErrors).To(HaveKey("status"))
-			Expect(err.FieldErrors).To(HaveKey("sent_at"))
-			Expect(err.FieldErrors).To(HaveKey("escalation_level"))
+			valErr, ok := err.(*ValidationError)
+			Expect(ok).To(BeTrue(), "Expected ValidationError type")
+			Expect(len(valErr.FieldErrors)).To(Equal(8))
+			Expect(valErr.FieldErrors).To(HaveKey("remediation_id"))
+			Expect(valErr.FieldErrors).To(HaveKey("notification_id"))
+			Expect(valErr.FieldErrors).To(HaveKey("recipient"))
+			Expect(valErr.FieldErrors).To(HaveKey("channel"))
+			Expect(valErr.FieldErrors).To(HaveKey("message_summary"))
+			Expect(valErr.FieldErrors).To(HaveKey("status"))
+			Expect(valErr.FieldErrors).To(HaveKey("sent_at"))
+			Expect(valErr.FieldErrors).To(HaveKey("escalation_level"))
 		})
 	})
 

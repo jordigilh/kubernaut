@@ -22,15 +22,17 @@ import (
 // These tests validate the complete HTTP → Repository → PostgreSQL flow
 // using a real Data Storage Service container (Podman, ADR-016)
 
-var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", func() {
+var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Ordered, func() {
 	var (
 		client     *http.Client
 		validAudit *models.NotificationAudit
 	)
 
-	BeforeEach(func() {
+	BeforeAll(func() {
 		client = &http.Client{Timeout: 10 * time.Second}
+	})
 
+	BeforeEach(func() {
 		// Create unique notification_id to avoid conflicts
 		validAudit = &models.NotificationAudit{
 			RemediationID:   "test-remediation-1",
@@ -75,29 +77,9 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", func
 			Expect(count).To(Equal(1), "Exactly one record should exist in database")
 
 			// ✅ CORRECTNESS TEST: Database record matches input
-			var dbRecord models.NotificationAudit
-			err = db.QueryRow(`
-				SELECT id, remediation_id, notification_id, recipient, channel,
-				       message_summary, status, sent_at, delivery_status,
-				       error_message, escalation_level, created_at, updated_at
-				FROM notification_audit
-				WHERE notification_id = $1`,
-				validAudit.NotificationID).Scan(
-				&dbRecord.ID,
-				&dbRecord.RemediationID,
-				&dbRecord.NotificationID,
-				&dbRecord.Recipient,
-				&dbRecord.Channel,
-				&dbRecord.MessageSummary,
-				&dbRecord.Status,
-				&dbRecord.SentAt,
-				&dbRecord.DeliveryStatus,
-				&dbRecord.ErrorMessage,
-				&dbRecord.EscalationLevel,
-				&dbRecord.CreatedAt,
-				&dbRecord.UpdatedAt,
-			)
-			Expect(err).ToNot(HaveOccurred())
+			// Use repository's GetByNotificationID to properly handle NULL fields
+			dbRecord, err := repo.GetByNotificationID(ctx, validAudit.NotificationID)
+			Expect(err).ToNot(HaveOccurred(), "Repository should retrieve the record")
 			Expect(dbRecord.NotificationID).To(Equal(validAudit.NotificationID))
 			Expect(dbRecord.RemediationID).To(Equal(validAudit.RemediationID))
 			Expect(dbRecord.Recipient).To(Equal(validAudit.Recipient))
@@ -108,7 +90,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", func
 		It("should return RFC 7807 error for missing required fields", func() {
 			invalidAudit := &models.NotificationAudit{
 				// Missing required fields: remediation_id, notification_id
-				Recipient: "test@example.com",
+				Recipient: "invalid-test@example.com", // Unique recipient to avoid collision with valid test
 				Channel:   "email",
 			}
 
@@ -203,7 +185,21 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", func
 			if err != nil {
 				GinkgoWriter.Printf("Warning: Failed to restart PostgreSQL: %v\n%s\n", err, startOutput)
 			}
-			time.Sleep(3 * time.Second) // Wait for PostgreSQL to be ready
+
+			// Wait for PostgreSQL to be fully ready
+			GinkgoWriter.Println("⏳ Waiting for PostgreSQL to be ready...")
+			Eventually(func() error {
+				checkCmd := exec.Command("podman", "exec", "datastorage-postgres-test",
+					"pg_isready", "-U", "slm_user", "-d", "action_history")
+				return checkCmd.Run()
+			}, "30s", "1s").Should(Succeed(), "PostgreSQL should be ready after restart")
+
+			// Reconnect the shared DB connection pool
+			GinkgoWriter.Println("🔌 Reconnecting database...")
+			err = db.PingContext(ctx)
+			Expect(err).ToNot(HaveOccurred(), "Database should be reachable after PostgreSQL restart")
+
+			GinkgoWriter.Println("✅ PostgreSQL restarted and reconnected successfully")
 		})
 	})
 })

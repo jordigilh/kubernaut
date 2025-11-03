@@ -87,6 +87,14 @@ CONTEXT_API_DEFERRED_NEXT_STEPS.md
 /DD-[0-9]*-*-COMPLETE.md
 /TDD-*.md
 
+# Component/service-specific ephemeral session files (e.g., DATA-STORAGE-*-SUMMARY.md)
+# Pattern: Uppercase component name with hyphens followed by ephemeral suffix
+/[A-Z][A-Z-]*-*-SUMMARY.md
+/[A-Z][A-Z-]*-*-COMPLETE.md
+/[A-Z][A-Z-]*-*-STATUS.md
+/[A-Z][A-Z-]*-*-PROGRESS.md
+/[A-Z][A-Z-]*-*-SESSION*.md
+
 # Service binaries (compiled during local development/testing)
 /datastorage
 /contextapi
