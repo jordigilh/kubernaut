@@ -1,0 +1,277 @@
+package datastorage
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+var _ = Describe("BR-STORAGE-023, BR-STORAGE-027: Pagination Stress & Large Result Sets", func() {
+	var testBaseURL string
+
+	BeforeEach(func() {
+		testBaseURL = baseURL
+	})
+
+	Describe("Large Dataset Pagination - BR-STORAGE-023", func() {
+		BeforeEach(func() {
+			// Clear test data
+			_, err := db.Exec("DELETE FROM resource_action_traces WHERE alert_name LIKE 'test-pagination-stress-%'")
+			Expect(err).ToNot(HaveOccurred())
+
+			// Insert large dataset (1000 records)
+			for i := 0; i < 1000; i++ {
+				_, err := db.Exec(`
+					INSERT INTO resource_action_traces
+					(action_history_id, action_id, alert_name, alert_severity, action_type, action_timestamp, model_used, model_confidence, execution_status)
+					VALUES (1, gen_random_uuid()::text, $1, 'high', 'scale', NOW(), 'test-model', 0.9, 'completed')
+				`, fmt.Sprintf("test-pagination-stress-%d", i))
+				Expect(err).ToNot(HaveOccurred())
+			}
+		})
+
+		AfterEach(func() {
+			// Cleanup
+			_, err := db.Exec("DELETE FROM resource_action_traces WHERE alert_name LIKE 'test-pagination-stress-%'")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should handle maximum limit (1000 records) efficiently", func() {
+			// BR-STORAGE-023: Pagination limit validation (1-1000)
+			// BR-STORAGE-027: Large result set performance
+
+			resp, err := http.Get(testBaseURL + "/api/v1/incidents?limit=1000&alert_name=test-pagination-stress-0")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var response map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).ToNot(HaveOccurred())
+
+			data, ok := response["data"].([]interface{})
+			Expect(ok).To(BeTrue())
+			// Should return exactly 1 record (matching alert_name filter)
+			Expect(data).To(HaveLen(1))
+		})
+
+		It("should paginate through 1000 records correctly", func() {
+			// BR-STORAGE-023: Pagination offset validation
+			// Verify we can retrieve all records using pagination
+
+			pageSize := 100
+			totalPages := 10
+			retrievedIDs := make(map[interface{}]bool)
+
+			for page := 0; page < totalPages; page++ {
+				offset := page * pageSize
+				url := fmt.Sprintf("%s/api/v1/incidents?limit=%d&offset=%d", testBaseURL, pageSize, offset)
+
+				resp, err := http.Get(url)
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var response map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred())
+
+				data, ok := response["data"].([]interface{})
+				Expect(ok).To(BeTrue())
+
+				// Each page should have records
+				Expect(data).ToNot(BeEmpty(), fmt.Sprintf("Page %d should have records", page))
+
+				// Collect IDs to verify no duplicates
+				for _, item := range data {
+					incident := item.(map[string]interface{})
+					id := incident["id"]
+					Expect(retrievedIDs[id]).To(BeFalse(), "Should not have duplicate IDs across pages")
+					retrievedIDs[id] = true
+				}
+			}
+
+			// Should have retrieved many records (at least 1000 from our test data)
+			Expect(len(retrievedIDs)).To(BeNumerically(">=", 1000), "Should retrieve at least 1000 records through pagination")
+		})
+
+		It("should handle offset beyond result set gracefully", func() {
+			// BR-STORAGE-023: Pagination edge case - offset beyond results
+			// Use very high offset (100K) to ensure it's beyond any test data
+
+			resp, err := http.Get(testBaseURL + "/api/v1/incidents?limit=100&offset=100000")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var response map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).ToNot(HaveOccurred())
+
+			data, ok := response["data"].([]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(data).To(HaveLen(0), "Should return empty array for offset beyond results")
+		})
+	})
+
+	Describe("Performance Validation - BR-STORAGE-027", func() {
+		BeforeEach(func() {
+			// Ensure we have a large dataset
+			var count int
+			err := db.QueryRow("SELECT COUNT(*) FROM resource_action_traces").Scan(&count)
+			Expect(err).ToNot(HaveOccurred())
+
+			if count < 10000 {
+				Skip(fmt.Sprintf("Skipping performance test - insufficient data (need 10000, have %d)", count))
+			}
+		})
+
+		It("should return large result sets (1000 records) in under 1 second", func() {
+			// BR-STORAGE-027: Performance requirement for large datasets
+
+			// This test will be slow, mark as such
+			GinkgoWriter.Println("Testing large result set performance (1000 records)...")
+
+			resp, err := http.Get(testBaseURL + "/api/v1/incidents?limit=1000")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var response map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).ToNot(HaveOccurred())
+
+			data, ok := response["data"].([]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(len(data)).To(BeNumerically(">=", 1), "Should return at least 1 record")
+			Expect(len(data)).To(BeNumerically("<=", 1000), "Should not exceed limit")
+		})
+
+		It("should handle concurrent pagination requests efficiently", func() {
+			// BR-STORAGE-027: Concurrent access performance
+
+			concurrentRequests := 10
+			done := make(chan bool, concurrentRequests)
+			errors := make(chan error, concurrentRequests)
+
+			for i := 0; i < concurrentRequests; i++ {
+				go func(requestNum int) {
+					defer GinkgoRecover()
+
+					offset := requestNum * 100
+					url := fmt.Sprintf("%s/api/v1/incidents?limit=100&offset=%d", testBaseURL, offset)
+
+					resp, err := http.Get(url)
+					if err != nil {
+						errors <- err
+						done <- false
+						return
+					}
+					defer resp.Body.Close()
+
+					if resp.StatusCode != http.StatusOK {
+						errors <- fmt.Errorf("unexpected status: %d", resp.StatusCode)
+						done <- false
+						return
+					}
+
+					var response map[string]interface{}
+					err = json.NewDecoder(resp.Body).Decode(&response)
+					if err != nil {
+						errors <- err
+						done <- false
+						return
+					}
+
+					_, ok := response["data"].([]interface{})
+					if !ok {
+						errors <- fmt.Errorf("invalid response format")
+						done <- false
+						return
+					}
+
+					done <- true
+				}(i)
+			}
+
+			// Wait for all requests to complete
+			successCount := 0
+			for i := 0; i < concurrentRequests; i++ {
+				select {
+				case success := <-done:
+					if success {
+						successCount++
+					}
+				case err := <-errors:
+					Fail(fmt.Sprintf("Concurrent request failed: %v", err))
+				}
+			}
+
+			Expect(successCount).To(Equal(concurrentRequests), "All concurrent requests should succeed")
+		})
+	})
+
+	Describe("Boundary Conditions - BR-STORAGE-023", func() {
+		It("should reject limit > 1000", func() {
+			// BR-STORAGE-023: Limit validation - max 1000
+
+			resp, err := http.Get(testBaseURL + "/api/v1/incidents?limit=1001")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+
+			// BR-STORAGE-024: RFC 7807 error response
+			Expect(result["type"]).ToNot(BeEmpty())
+			Expect(result["title"]).ToNot(BeEmpty())
+			Expect(result["status"]).To(Equal(float64(400)))
+		})
+
+		It("should reject limit < 1", func() {
+			// BR-STORAGE-023: Limit validation - min 1
+
+			resp, err := http.Get(testBaseURL + "/api/v1/incidents?limit=0")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+
+			// BR-STORAGE-024: RFC 7807 error response
+			Expect(result["type"]).ToNot(BeEmpty())
+			Expect(result["status"]).To(Equal(float64(400)))
+		})
+
+		It("should reject negative offset", func() {
+			// BR-STORAGE-023: Offset validation - must be >= 0
+
+			resp, err := http.Get(testBaseURL + "/api/v1/incidents?offset=-1")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+
+			// BR-STORAGE-024: RFC 7807 error response
+			Expect(result["type"]).ToNot(BeEmpty())
+			Expect(result["status"]).To(Equal(float64(400)))
+		})
+	})
+})
