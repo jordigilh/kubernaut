@@ -1,0 +1,314 @@
+package datastorage
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	"go.uber.org/zap"
+)
+
+var _ = Describe("DD-007 Kubernetes-Aware Graceful Shutdown - BR-STORAGE-028", func() {
+	var (
+		srv        *server.Server
+		baseURL    string
+		dbConnStr  string
+		testLogger *zap.Logger
+	)
+
+	BeforeEach(func() {
+		// Use a unique port for each test to avoid conflicts
+		port := 8090 + GinkgoParallelProcess()
+		baseURL = fmt.Sprintf("http://localhost:%d", port)
+
+		// PostgreSQL connection
+		dbConnStr = "host=localhost port=5432 user=db_user password=test dbname=action_history sslmode=disable"
+
+		// Create logger
+		var err error
+		testLogger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create server
+		srv, err = server.NewServer(
+			dbConnStr,
+			testLogger,
+			&server.Config{
+				Port:         port,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			},
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Start server in background
+		go func() {
+			_ = srv.Start()
+		}()
+
+		// Wait for server to be ready
+		Eventually(func() error {
+			resp, err := http.Get(baseURL + "/health")
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check failed: %d", resp.StatusCode)
+			}
+			return nil
+		}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+	})
+
+	AfterEach(func() {
+		if srv != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+		}
+	})
+
+	Describe("DD-007 Step 1: Shutdown Flag and Readiness Probe", func() {
+		It("should set shutdown flag immediately and readiness probe returns 503", func() {
+			// BR-STORAGE-028: Zero-downtime deployment requirement
+			// DD-007 Step 1: Set isShuttingDown flag immediately
+
+			// Verify readiness returns 200 before shutdown
+			resp, err := http.Get(baseURL + "/health/ready")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var beforeShutdown map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&beforeShutdown)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(beforeShutdown["status"]).To(Equal("ready"))
+
+			// Initiate shutdown in background
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			shutdownDone := make(chan bool)
+			go func() {
+				_ = srv.Shutdown(shutdownCtx)
+				shutdownDone <- true
+			}()
+
+			// Wait a moment for shutdown flag to be set
+			time.Sleep(100 * time.Millisecond)
+
+			// Verify readiness returns 503 (shutdown flag set - DD-007 Step 1)
+			resp2, err := http.Get(baseURL + "/health/ready")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp2.Body.Close()
+			Expect(resp2.StatusCode).To(Equal(http.StatusServiceUnavailable), "Readiness probe should return 503 after shutdown initiated")
+
+			var afterShutdown map[string]interface{}
+			err = json.NewDecoder(resp2.Body).Decode(&afterShutdown)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(afterShutdown["status"]).To(Equal("not_ready"), "Status should indicate shutdown in progress")
+			Expect(afterShutdown["reason"]).To(Equal("shutting_down"), "Reason should indicate shutting_down")
+
+			// Wait for shutdown to complete
+			Eventually(shutdownDone, 15*time.Second).Should(Receive(Equal(true)))
+		})
+	})
+
+	Describe("DD-007 Step 2: Endpoint Removal Propagation Wait", func() {
+		It("should wait at least 5 seconds for Kubernetes endpoint removal to propagate", func() {
+			// BR-STORAGE-028: Zero-downtime deployment requirement
+			// DD-007 Step 2: Wait 5 seconds for endpoint removal propagation
+
+			start := time.Now()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			err := srv.Shutdown(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			duration := time.Since(start)
+
+			// DD-007 requirement: Must wait at least 5 seconds for K8s endpoint propagation
+			Expect(duration).To(BeNumerically(">=", 5*time.Second),
+				"Shutdown should wait at least 5 seconds for Kubernetes endpoint removal propagation (DD-007 Step 2)")
+
+			// Should complete within timeout (shouldn't hang)
+			Expect(duration).To(BeNumerically("<", 15*time.Second),
+				"Shutdown should complete within timeout")
+		})
+	})
+
+	Describe("DD-007 Step 3: Drain In-Flight Connections", func() {
+		It("should complete in-flight requests within drain timeout", func() {
+			// BR-STORAGE-028: Zero-downtime deployment requirement
+			// DD-007 Step 3: Drain in-flight HTTP connections gracefully
+
+			// Start multiple concurrent requests
+			requestCount := 5
+			var wg sync.WaitGroup
+			requestResults := make(chan bool, requestCount)
+
+			for i := 0; i < requestCount; i++ {
+				wg.Add(1)
+				go func(requestNum int) {
+					defer wg.Done()
+					defer GinkgoRecover()
+
+					// Make request that should complete even during shutdown
+					resp, err := http.Get(baseURL + "/api/v1/incidents?limit=10")
+					if err != nil {
+						// Connection might be refused if shutdown already completed
+						// This is acceptable for graceful shutdown
+						requestResults <- false
+						return
+					}
+					defer resp.Body.Close()
+
+					// Request should either succeed or fail cleanly (not timeout)
+					Expect(resp.StatusCode).To(BeNumerically(">=", 200))
+					Expect(resp.StatusCode).To(BeNumerically("<", 600))
+					requestResults <- true
+				}(i)
+			}
+
+			// Wait a moment for requests to start
+			time.Sleep(100 * time.Millisecond)
+
+			// Initiate shutdown while requests are in-flight
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+			defer cancel()
+
+			shutdownDone := make(chan bool)
+			go func() {
+				err := srv.Shutdown(shutdownCtx)
+				Expect(err).ToNot(HaveOccurred())
+				shutdownDone <- true
+			}()
+
+			// Wait for all requests to complete
+			doneChan := make(chan bool)
+			go func() {
+				wg.Wait()
+				close(requestResults)
+				doneChan <- true
+			}()
+
+			// All requests should complete (not timeout or abort)
+			Eventually(doneChan, 35*time.Second).Should(Receive(Equal(true)),
+				"All in-flight requests should complete during graceful shutdown (DD-007 Step 3)")
+
+			// Wait for shutdown to complete
+			Eventually(shutdownDone, 35*time.Second).Should(Receive(Equal(true)))
+		})
+	})
+
+	Describe("DD-007 Step 4: Close External Resources", func() {
+		It("should close database connections cleanly", func() {
+			// BR-STORAGE-028: Zero-downtime deployment requirement
+			// DD-007 Step 4: Close external resources (PostgreSQL)
+
+			// Verify database is accessible before shutdown
+			resp, err := http.Get(baseURL + "/api/v1/incidents?limit=1")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			// Get initial DB connection count
+			db, err := sql.Open("postgres", dbConnStr)
+			Expect(err).ToNot(HaveOccurred())
+			defer db.Close()
+
+			var beforeCount int
+			err = db.QueryRow(`
+				SELECT count(*)
+				FROM pg_stat_activity
+				WHERE datname = 'action_history'
+				AND application_name LIKE '%data-storage%'
+			`).Scan(&beforeCount)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Initiate shutdown
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			err = srv.Shutdown(ctx)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Wait a moment for connections to close
+			time.Sleep(500 * time.Millisecond)
+
+			// Verify database connections are closed
+			var afterCount int
+			err = db.QueryRow(`
+				SELECT count(*)
+				FROM pg_stat_activity
+				WHERE datname = 'action_history'
+				AND application_name LIKE '%data-storage%'
+			`).Scan(&afterCount)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Connection count should decrease (connections closed)
+			Expect(afterCount).To(BeNumerically("<=", beforeCount),
+				"Database connections should be closed during shutdown (DD-007 Step 4)")
+		})
+	})
+
+	Describe("DD-007 Complete Shutdown Sequence", func() {
+		It("should execute all 4 steps in correct order", func() {
+			// BR-STORAGE-028: Zero-downtime deployment requirement
+			// DD-007: Complete 4-step graceful shutdown pattern
+
+			checkpointTimes := make(map[string]time.Time)
+			checkpointTimes["start"] = time.Now()
+
+			// 1. Verify server is healthy before shutdown
+			resp, err := http.Get(baseURL + "/health/ready")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			checkpointTimes["before_shutdown"] = time.Now()
+
+			// 2. Initiate shutdown
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+
+			shutdownDone := make(chan error)
+			go func() {
+				shutdownDone <- srv.Shutdown(shutdownCtx)
+			}()
+
+			// 3. Verify Step 1: Shutdown flag set immediately
+			time.Sleep(50 * time.Millisecond)
+			resp2, err := http.Get(baseURL + "/health/ready")
+			Expect(err).ToNot(HaveOccurred())
+			defer resp2.Body.Close()
+			Expect(resp2.StatusCode).To(Equal(http.StatusServiceUnavailable), "DD-007 Step 1: Readiness should return 503")
+			checkpointTimes["step1_flag_set"] = time.Now()
+
+			// 4. Wait for shutdown to complete
+			var shutdownErr error
+			Eventually(shutdownDone, 15*time.Second).Should(Receive(&shutdownErr))
+			Expect(shutdownErr).ToNot(HaveOccurred())
+			checkpointTimes["shutdown_complete"] = time.Now()
+
+			// 5. Verify total duration includes 5-second propagation wait
+			totalDuration := checkpointTimes["shutdown_complete"].Sub(checkpointTimes["before_shutdown"])
+			Expect(totalDuration).To(BeNumerically(">=", 5*time.Second),
+				"DD-007 Step 2: Total shutdown should include 5-second propagation wait")
+
+			// 6. Verify Step 1 was immediate (< 100ms)
+			step1Duration := checkpointTimes["step1_flag_set"].Sub(checkpointTimes["before_shutdown"])
+			Expect(step1Duration).To(BeNumerically("<", 200*time.Millisecond),
+				"DD-007 Step 1: Shutdown flag should be set immediately")
+		})
+	})
+})
