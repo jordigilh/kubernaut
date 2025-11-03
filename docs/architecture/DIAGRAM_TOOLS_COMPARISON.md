@@ -69,7 +69,7 @@ code --install-extension hediet.vscode-drawio
 # 5. Commit both .drawio and .svg files
 ```
 
-**Best For**: 
+**Best For**:
 - Enterprise architecture diagrams
 - System overviews with professional polish
 - Infrastructure diagrams
@@ -154,7 +154,7 @@ jobs:
 
 **Type**: Hand-drawn style diagrams
 
-**GitHub Integration**: 
+**GitHub Integration**:
 - Export as SVG/PNG and commit to repo
 - GitHub renders SVG natively
 - OR: Use Excalidraw plugin for VSCode
@@ -182,7 +182,7 @@ jobs:
 # 4. Reference in markdown
 ```
 
-**Best For**: 
+**Best For**:
 - Quick concept sketches
 - Internal team brainstorming
 - Blog posts or informal documentation
@@ -493,12 +493,12 @@ jobs:
 
 ## Conclusion
 
-**For Kubernaut** (User-Approved): 
+**For Kubernaut** (User-Approved):
 - **Primary Tool**: **Diagrams.net** ⭐ (architecture diagrams, system overviews)
   - Professional, enterprise-grade appearance
   - Kubernetes icon library
   - VSCode integration for easy editing
-  
+
 - **Secondary Tool**: **Mermaid** (sequence diagrams, flow charts)
   - Native GitHub rendering (zero workflow overhead)
   - Good enough quality for sequences
