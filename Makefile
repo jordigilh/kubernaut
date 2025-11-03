@@ -256,6 +256,27 @@ test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 
 	echo "✅ Cleanup complete"; \
 	exit $$TEST_RESULT
 
+.PHONY: test-integration-contextapi
+test-integration-contextapi: ## Run Context API integration tests (Redis via Podman + PostgreSQL, ADR-016, ~45s)
+	@echo "🔧 Starting Redis for Context API (ADR-016: Podman for stateless services)..."
+	@podman run -d --name contextapi-redis-test -p 6379:6379 redis:7-alpine > /dev/null 2>&1 || \
+		(echo "⚠️  Redis container already exists or failed to start" && \
+		 podman start contextapi-redis-test > /dev/null 2>&1) || true
+	@echo "⏳ Waiting for Redis to be ready..."
+	@sleep 2
+	@podman exec contextapi-redis-test redis-cli ping > /dev/null 2>&1 || \
+		(echo "❌ Redis not ready" && exit 1)
+	@echo "✅ Redis ready"
+	@echo "📝 NOTE: PostgreSQL required - run 'make bootstrap-dev' if not running"
+	@echo "🧪 Running Context API integration tests..."
+	@TEST_RESULT=0; \
+	go test ./test/integration/contextapi/... -v -timeout 5m || TEST_RESULT=$$?; \
+	echo "🧹 Cleaning up Redis container..."; \
+	podman stop contextapi-redis-test > /dev/null 2>&1 || true; \
+	podman rm contextapi-redis-test > /dev/null 2>&1 || true; \
+	echo "✅ Cleanup complete"; \
+	exit $$TEST_RESULT
+
 .PHONY: test-integration-ai
 test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s)
 	@echo "🔧 Starting Redis cache..."
