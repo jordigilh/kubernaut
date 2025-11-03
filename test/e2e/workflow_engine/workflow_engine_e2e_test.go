@@ -42,7 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/workflow/engine"
 	"github.com/sirupsen/logrus"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 )
 
 // BR-WF-E2E-001: End-to-End Workflow Engine Testing - Pyramid Testing (10% E2E Coverage)

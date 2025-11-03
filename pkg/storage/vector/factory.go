@@ -26,7 +26,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	// PostgreSQL driver
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // VectorDatabaseFactory creates vector database instances based on configuration
@@ -419,7 +419,7 @@ func (f *VectorDatabaseFactory) createSeparatePostgreSQLConnection(pgConfig conf
 	}).Debug("Creating separate PostgreSQL connection for vector database")
 
 	// Open database connection
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open PostgreSQL connection: %w", err)
 	}

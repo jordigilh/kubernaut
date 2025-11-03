@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 	. "github.com/onsi/gomega"
 )
 
@@ -90,7 +90,7 @@ func (s *IntegrationSuite) GetPostgreSQLConnection(config PostgreSQLConfig) (*sq
 	)
 
 	// Open connection
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open PostgreSQL connection: %w", err)
 	}

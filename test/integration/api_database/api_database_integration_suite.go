@@ -27,7 +27,7 @@ import (
 	"net/http/httptest"
 	"time"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 	"github.com/sirupsen/logrus"
 
 	"github.com/jordigilh/kubernaut/internal/config"

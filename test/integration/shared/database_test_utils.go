@@ -34,7 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/ai/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/integration/shared/testenv"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/sirupsen/logrus"
 )
 
@@ -113,7 +113,7 @@ func NewDatabaseIntegrationTestUtils(logger *logrus.Logger) (*DatabaseIntegratio
 	)
 
 	// Create database connection
-	db, err := sql.Open("postgres", connectionString)
+	db, err := sql.Open("pgx", connectionString) // DD-010: Using pgx driver
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}

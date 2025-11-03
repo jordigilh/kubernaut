@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"time"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/sirupsen/logrus"
 )
 
@@ -161,7 +161,7 @@ func Connect(config *Config, logger *logrus.Logger) (*sql.DB, error) {
 		return nil, fmt.Errorf("invalid database configuration: %w", err)
 	}
 
-	db, err := sql.Open("postgres", config.ConnectionString())
+	db, err := sql.Open("pgx", config.ConnectionString()) // DD-010: Using pgx driver
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn" // DD-010: Migrated from lib/pq
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -93,9 +93,9 @@ func (r *NotificationAuditRepository) Create(ctx context.Context, audit *models.
 	).Scan(&id, &createdAt, &updatedAt)
 
 	if err != nil {
-		// Check for unique constraint violation
-		if pqErr, ok := err.(*pq.Error); ok {
-			if pqErr.Code == "23505" { // unique_violation
+		// Check for unique constraint violation (DD-010: pgx uses pgconn.PgError)
+		if pgErr, ok := err.(*pgconn.PgError); ok {
+			if pgErr.Code == "23505" { // unique_violation
 				return nil, validation.NewConflictProblem("notification_audit", "notification_id", audit.NotificationID)
 			}
 		}

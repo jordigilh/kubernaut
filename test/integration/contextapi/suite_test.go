@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
@@ -160,7 +160,7 @@ var _ = BeforeSuite(func() {
 	// - Schema authority: Data Storage Service (DD-SCHEMA-001)
 	// - Requires port-forward: oc port-forward -n kubernaut-system svc/postgres 5432:5432
 	connStr := "host=localhost port=5432 user=slm_user password=slm_password_dev dbname=action_history sslmode=disable"
-	db, err = sql.Open("postgres", connStr)
+	db, err = sql.Open("pgx", connStr) // DD-010: Using pgx driver
 	Expect(err).ToNot(HaveOccurred())
 
 	// Wait for PostgreSQL to be ready
@@ -168,8 +168,8 @@ var _ = BeforeSuite(func() {
 		return db.PingContext(ctx)
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready (start with: make bootstrap-dev)")
 
-	// Create sqlx wrapper for query operations
-	sqlxDB = sqlx.NewDb(db, "postgres")
+	// Create sqlx wrapper for query operations (DD-010: use "pgx" driver name)
+	sqlxDB = sqlx.NewDb(db, "pgx")
 
 	// CRITICAL: Verify pgvector extension exists
 	// Extension is created by Data Storage Service migrations (already done in schema application above)
@@ -187,7 +187,7 @@ var _ = BeforeSuite(func() {
 
 	// Verify Data Storage schema tables exist
 	// Use a FRESH connection to ensure schema visibility (avoiding connection pool caching)
-	verifyConn, err := sql.Open("postgres", connStr)
+	verifyConn, err := sql.Open("pgx", connStr) // DD-010: Using pgx driver
 	Expect(err).ToNot(HaveOccurred(), "Failed to open verification connection")
 	defer verifyConn.Close()
 

@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/internal/actionhistory"
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/sirupsen/logrus"
 )
 
