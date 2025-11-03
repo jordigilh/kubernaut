@@ -24,12 +24,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
 
 func TestServerMetricsIntegration(t *testing.T) {
@@ -239,4 +238,3 @@ var _ = Describe("Server Metrics Integration", func() {
 		})
 	})
 })
-
