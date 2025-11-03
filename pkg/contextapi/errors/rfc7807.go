@@ -32,15 +32,16 @@ type RFC7807Error struct {
 // Error type URI constants
 // BR-CONTEXT-011: RFC 7807 error format
 // These URIs identify the problem type and can link to documentation
+// Note: Using kubernaut.io domain (not api.kubernaut.io) per test requirements
 const (
-	ErrorTypeValidationError      = "https://api.kubernaut.io/problems/validation-error"
-	ErrorTypeNotFound             = "https://api.kubernaut.io/problems/not-found"
-	ErrorTypeMethodNotAllowed     = "https://api.kubernaut.io/problems/method-not-allowed"
-	ErrorTypeUnsupportedMediaType = "https://api.kubernaut.io/problems/unsupported-media-type"
-	ErrorTypeInternalError        = "https://api.kubernaut.io/problems/internal-error"
-	ErrorTypeServiceUnavailable   = "https://api.kubernaut.io/problems/service-unavailable"
-	ErrorTypeGatewayTimeout       = "https://api.kubernaut.io/problems/gateway-timeout"
-	ErrorTypeUnknown              = "https://api.kubernaut.io/problems/unknown"
+	ErrorTypeValidationError      = "https://kubernaut.io/errors/validation-error"
+	ErrorTypeNotFound             = "https://kubernaut.io/errors/not-found"
+	ErrorTypeMethodNotAllowed     = "https://kubernaut.io/errors/method-not-allowed"
+	ErrorTypeUnsupportedMediaType = "https://kubernaut.io/errors/unsupported-media-type"
+	ErrorTypeInternalError        = "https://kubernaut.io/errors/internal-error"
+	ErrorTypeServiceUnavailable   = "https://kubernaut.io/errors/service-unavailable"
+	ErrorTypeGatewayTimeout       = "https://kubernaut.io/errors/gateway-timeout"
+	ErrorTypeUnknown              = "https://kubernaut.io/errors/unknown"
 )
 
 // Error title constants
@@ -71,7 +72,7 @@ func IsRFC7807Error(err error) (*RFC7807Error, bool) {
 	if err == nil {
 		return nil, false
 	}
-	
+
 	rfc7807Err, ok := err.(*RFC7807Error)
 	return rfc7807Err, ok
 }
