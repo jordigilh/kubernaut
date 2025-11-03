@@ -31,7 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/storage/vector"
 
 	// Import pq for PostgreSQL testing
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 var _ = Describe("Vector Database Factory Unit Tests", func() {
