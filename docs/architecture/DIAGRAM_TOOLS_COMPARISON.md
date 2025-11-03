@@ -15,43 +15,72 @@
 
 ## Recommended Tools (GitHub-Compatible)
 
-### 1. **Excalidraw** ⭐ **TOP RECOMMENDATION**
+### 1. **Diagrams.net (draw.io)** ⭐ **TOP RECOMMENDATION FOR KUBERNAUT**
 
-**Type**: Hand-drawn style diagrams
+**Type**: Professional WYSIWYG diagram editor
 
-**GitHub Integration**: 
-- Export as SVG/PNG and commit to repo
-- GitHub renders SVG natively
-- OR: Use Excalidraw plugin for VSCode
+**GitHub Integration**:
+- VSCode extension: `hediet.vscode-drawio` (inline editing)
+- Web-based: https://app.diagrams.io
+- Export as SVG (GitHub renders natively)
+- `.drawio` XML source files (version control friendly)
 
 **Pros**:
-- ✅ **Extremely simple and clean** - hand-drawn aesthetic is easy to understand
-- ✅ GitHub renders SVG perfectly
-- ✅ Free and open-source
-- ✅ Web-based (https://excalidraw.com) - no installation
-- ✅ Export as `.excalidraw` JSON (version control friendly)
-- ✅ Collaborative editing
-- ✅ Libraries for common shapes (AWS, K8s, etc.)
+- ✅ **Professional, enterprise-grade appearance** - Perfect for technical documentation
+- ✅ **Extensive icon libraries** - AWS, Azure, GCP, Kubernetes, networking, etc.
+- ✅ **VSCode integration** - Edit diagrams directly in your IDE
+- ✅ **Auto-export to SVG** - No manual export step needed
+- ✅ **Precise alignment and styling** - Professional polish with snap-to-grid
+- ✅ **Free and open-source**
+- ✅ **Industry standard** - Recognized by enterprise architecture teams
+- ✅ **Multiple export formats** - SVG, PNG, PDF
 
 **Cons**:
+- ⚠️ XML-based `.drawio` files (less readable in diffs, but manageable)
 - ⚠️ Not rendered inline in markdown (need separate image file)
-- ⚠️ Manual updates required (not auto-generated from code)
+- ⚠️ Slightly steeper learning curve than Excalidraw
 
-**Example Workflow**:
+**Example Workflow (VSCode)**:
 ```bash
-# 1. Create diagram at https://excalidraw.com
-# 2. Export as SVG: File → Export Image → SVG
-# 3. Save to docs/architecture/diagrams/system-overview.svg
-# 4. Reference in markdown:
+# 1. Install VSCode extension
+code --install-extension hediet.vscode-drawio
+
+# 2. Create diagram
+# File → New → data-access-layer.drawio
+
+# 3. Edit in VSCode (WYSIWYG)
+
+# 4. Auto-exports to SVG (same filename)
+# Result: data-access-layer.drawio + data-access-layer.drawio.svg
+
+# 5. Reference in markdown
 ```
 
 ```markdown
-![System Overview](diagrams/system-overview.svg)
+![Data Access Layer](diagrams/data-access-layer.drawio.svg)
 ```
 
-**Best For**: System overviews, architecture diagrams, flow charts
+**Example Workflow (Web)**:
+```bash
+# 1. Open https://app.diagrams.io
+# 2. Create diagram with Kubernetes icon library
+# 3. File → Export as → SVG
+# 4. Save to docs/architecture/diagrams/
+# 5. Commit both .drawio and .svg files
+```
 
-**Live Demo**: https://excalidraw.com/#json=5701451552210944,5yCXhJFj6jZhqzNr3fF4SA
+**Best For**: 
+- Enterprise architecture diagrams
+- System overviews with professional polish
+- Infrastructure diagrams
+- Service dependency maps
+- **Kubernaut's documentation** (enterprise audience)
+
+**Why For Kubernaut**:
+- ✅ Targets enterprise Kubernetes operations → Professional appearance critical
+- ✅ Kubernetes icon library → Instant credibility
+- ✅ Clean, precise lines → Technical accuracy conveyed visually
+- ✅ Enterprise familiarity → Architecture teams recognize this style
 
 ---
 
@@ -121,36 +150,48 @@ jobs:
 
 ---
 
-### 3. **Diagrams.net (draw.io) with SVG Export**
+### 3. **Excalidraw**
 
-**Type**: Visual diagram editor
+**Type**: Hand-drawn style diagrams
 
-**GitHub Integration**:
-- Web-based or VSCode extension
-- Export as SVG
-- VSCode extension: `hediet.vscode-drawio`
+**GitHub Integration**: 
+- Export as SVG/PNG and commit to repo
+- GitHub renders SVG natively
+- OR: Use Excalidraw plugin for VSCode
 
 **Pros**:
-- ✅ **WYSIWYG editor** - very intuitive
-- ✅ Extensive shape libraries (AWS, Azure, GCP, Kubernetes)
-- ✅ Professional appearance
+- ✅ **Extremely simple and approachable** - hand-drawn aesthetic
+- ✅ **Quick sketching** - Great for brainstorming and concept diagrams
+- ✅ GitHub renders SVG perfectly
 - ✅ Free and open-source
-- ✅ GitHub renders SVG natively
-- ✅ VSCode extension for inline editing
+- ✅ Web-based (https://excalidraw.com) - no installation
+- ✅ Export as `.excalidraw` JSON (version control friendly)
+- ✅ Collaborative editing
 
 **Cons**:
-- ⚠️ XML-based `.drawio` files (less readable in diffs)
-- ⚠️ Not rendered inline (need separate image file)
+- ⚠️ **Informal appearance** - Hand-drawn style less suitable for enterprise documentation
+- ⚠️ **Casual aesthetic** - May not convey professional polish needed for architecture docs
+- ⚠️ Not rendered inline in markdown (need separate image file)
+- ⚠️ Manual updates required (not auto-generated from code)
 
 **Example Workflow**:
 ```bash
-# 1. Install VSCode extension: hediet.vscode-drawio
-# 2. Create diagram: docs/architecture/diagrams/data-flow.drawio
-# 3. Export as SVG automatically
+# 1. Create diagram at https://excalidraw.com
+# 2. Export as SVG: File → Export Image → SVG
+# 3. Save to docs/architecture/diagrams/concept-sketch.svg
 # 4. Reference in markdown
 ```
 
-**Best For**: Complex system diagrams, infrastructure diagrams
+**Best For**: 
+- Quick concept sketches
+- Internal team brainstorming
+- Blog posts or informal documentation
+- When you deliberately want an approachable, casual feel
+
+**NOT Recommended For**:
+- ❌ Enterprise architecture documentation (Kubernaut's primary use case)
+- ❌ Professional presentations
+- ❌ Formal technical specifications
 
 ---
 
@@ -180,32 +221,32 @@ jobs:
 workspace "Kubernaut" "AI-powered Kubernetes remediation platform" {
     model {
         user = person "Operator" "Kubernetes cluster operator"
-        
+
         kubernaut = softwareSystem "Kubernaut" "AI-powered remediation platform" {
             gateway = container "Gateway Service" "Signal ingestion" "Go"
             dataStorage = container "Data Storage Service" "PostgreSQL API Gateway" "Go"
             contextAPI = container "Context API" "Historical intelligence" "Go"
             database = container "PostgreSQL" "Persistent storage" "PostgreSQL"
-            
+
             gateway -> dataStorage "Creates RemediationRequest"
             contextAPI -> dataStorage "Queries incidents via HTTP" "REST API"
             dataStorage -> database "SQL queries" "pgx"
         }
-        
+
         prometheus = softwareSystem "Prometheus" "Monitoring system" {
             tags "External"
         }
-        
+
         user -> kubernaut "Monitors remediation"
         prometheus -> gateway "Sends alerts"
     }
-    
+
     views {
         systemContext kubernaut "SystemContext" {
             include *
             autoLayout
         }
-        
+
         container kubernaut "Containers" {
             include *
             autoLayout
@@ -251,7 +292,7 @@ workspace "Kubernaut" "AI-powered Kubernetes remediation platform" {
                      │  Context API   │
                      │    Service     │
                      └────────────────┘
-                     
+
                      ADR-032: ONLY Data Storage
                      connects to PostgreSQL
 ```
@@ -262,14 +303,14 @@ workspace "Kubernaut" "AI-powered Kubernetes remediation platform" {
 
 ## Comparison Matrix
 
-| Tool | GitHub Inline | Text-Based | Easy to Create | Professional | Learning Curve |
-|------|---------------|------------|----------------|--------------|----------------|
-| **Excalidraw** | ⚠️ (SVG) | ✅ (JSON) | ✅ | ✅ | Low |
-| **PlantUML** | ⚠️ (PNG/SVG) | ✅ | ⚠️ | ✅ | Medium |
-| **Diagrams.net** | ⚠️ (SVG) | ⚠️ (XML) | ✅ | ✅ | Low |
-| **Structurizr** | ⚠️ (Images) | ✅ | ⚠️ | ✅ | High |
-| **ASCII Art** | ✅ | ✅ | ⚠️ | ⚠️ | Low |
-| **Mermaid** | ✅ | ✅ | ⚠️ | ⚠️ | Medium |
+| Tool | GitHub Inline | Text-Based | Easy to Create | Professional | Learning Curve | **Kubernaut Fit** |
+|------|---------------|------------|----------------|--------------|----------------|------------------|
+| **Diagrams.net** | ⚠️ (SVG) | ⚠️ (XML) | ✅ | ✅✅ | Low | ⭐⭐⭐⭐⭐ Architecture |
+| **Mermaid** | ✅ | ✅ | ✅ | ✅ | Medium | ⭐⭐⭐⭐⭐ Sequences |
+| **PlantUML** | ⚠️ (PNG/SVG) | ✅ | ⚠️ | ✅ | Medium | ⭐⭐⭐ (Workflow overhead) |
+| **Excalidraw** | ⚠️ (SVG) | ✅ (JSON) | ✅ | ⚠️ | Low | ⭐⭐ (Too casual) |
+| **Structurizr** | ⚠️ (Images) | ✅ | ⚠️ | ✅ | High | ⭐⭐⭐ (C4 only) |
+| **ASCII Art** | ✅ | ✅ | ⚠️ | ⚠️ | Low | ⭐⭐ (Simple only) |
 
 ---
 
@@ -278,105 +319,137 @@ workspace "Kubernaut" "AI-powered Kubernetes remediation platform" {
 ### For Kubernaut Architecture Documentation
 
 #### **High-Level System Overview** (e.g., KUBERNAUT_CRD_ARCHITECTURE.md)
-**Recommendation**: **Excalidraw** + **PlantUML**
-- Use Excalidraw for system overview (clean, simple)
-- Use PlantUML for sequence diagrams (precise timing)
+**Recommendation**: **Diagrams.net** ⭐
+- Professional, enterprise-grade appearance
+- Kubernetes icon library
+- VSCode integration for easy editing
 
 **Example Directory Structure**:
 ```
 docs/architecture/
 ├── KUBERNAUT_CRD_ARCHITECTURE.md
 ├── diagrams/
-│   ├── system-overview.excalidraw       # Source file
-│   ├── system-overview.svg              # Generated image
-│   ├── crd-lifecycle.puml               # PlantUML source
-│   ├── crd-lifecycle.svg                # Generated image
-│   ├── data-access-pattern.excalidraw
-│   └── data-access-pattern.svg
+│   ├── system-overview.drawio           # Source file (editable in VSCode)
+│   ├── system-overview.drawio.svg       # Auto-exported (commit both)
+│   ├── data-access-pattern.drawio
+│   └── data-access-pattern.drawio.svg
 ```
 
 #### **Data Access Layer (ADR-032)**
-**Recommendation**: **Excalidraw** (simplicity is key)
-- Clear boxes and arrows
-- Hand-drawn style makes DB isolation obvious
+**Recommendation**: **Diagrams.net** ⭐
+- Professional, enterprise-grade appearance
+- Clear boxes and arrows with Kubernetes icons
 - Color coding: Data Storage (green), other services (blue), PostgreSQL (red)
+- VSCode extension for easy editing
 
 #### **Sequence Diagrams**
-**Recommendation**: **PlantUML** (best tool for sequences)
-- Clear timing and actor interactions
-- Auto-layout
-- Text-based for easy updates
+**Recommendation**: **Mermaid** ⭐ (native GitHub rendering)
+- ✅ **Zero workflow overhead** - No GitHub Actions needed
+- ✅ **Inline rendering** - See directly in PR reviews
+- ✅ **Good enough quality** - Handles sequences well
+- ✅ **Text-based** - Easy version control and diffs
+
+**Why Not PlantUML**: Requires GitHub Actions workflow to render, adds unnecessary complexity when Mermaid already works well.
 
 #### **CRD Relationships**
-**Recommendation**: **ASCII Art** or **Mermaid** (keep it simple)
-- Flat hierarchy is easy to show with boxes and arrows
-- ASCII art renders inline in GitHub
+**Recommendation**: **Mermaid** (already in use, works well)
+- Flat hierarchy easy to show with boxes and arrows
+- Native GitHub rendering
+- Text-based for easy updates
 
 ---
 
 ## Implementation Plan
 
-### Phase 1: Replace Complex Diagrams (Immediate)
-1. **System Overview** (lines 584-653 in KUBERNAUT_CRD_ARCHITECTURE.md)
-   - Replace with Excalidraw SVG
-   - Focus on clarity: 11 services, clear groupings, simple arrows
+### Phase 1: Replace Complex Architecture Diagrams (Immediate)
+1. **System Overview** (KUBERNAUT_CRD_ARCHITECTURE.md)
+   - Create professional version in Diagrams.net
+   - Use Kubernetes icon library
+   - Focus on clarity: 11 services, clear groupings, precise arrows
+   - File: `docs/architecture/diagrams/system-overview.drawio`
 
-2. **CRD Relationship** (lines 665-714)
-   - Keep Mermaid but simplify
-   - OR: Use ASCII art for inline rendering
+2. **CRD Relationship** (KUBERNAUT_CRD_ARCHITECTURE.md)
+   - Keep existing Mermaid diagram (it's working well)
+   - Simplify if needed, but native rendering is valuable
 
-3. **Sequence Diagram** (lines 719-771)
-   - Replace with PlantUML
-   - GitHub Actions auto-generate SVG
+3. **Sequence Diagrams** (KUBERNAUT_CRD_ARCHITECTURE.md)
+   - Keep existing Mermaid diagrams (native GitHub rendering)
+   - No PlantUML needed (workflow overhead not justified)
 
 ### Phase 2: Document ADR-032 Data Access (Priority)
-1. Create `docs/architecture/diagrams/data-access-layer-adr-032.excalidraw`
-2. Show:
-   - Data Storage Service (center, green)
-   - PostgreSQL (red, locked)
-   - Context API, Notification Service, Effectiveness Monitor (blue, using HTTP to Data Storage)
-   - Gateway (blue, creates CRDs only)
-3. Export as SVG
+1. Create `docs/architecture/diagrams/data-access-layer-adr-032.drawio`
+2. Show (with professional styling):
+   - Data Storage Service (center, green, ⭐)
+   - PostgreSQL (red, 🔒 locked)
+   - Context API, Notification Service, Effectiveness Monitor (blue, REST API arrows)
+   - Gateway (blue, creates CRDs only, no DB connection)
+3. Auto-exports to `.drawio.svg` (VSCode extension)
 4. Reference in ADR-032 and README.md
 
 ### Phase 3: Standardize Across All Docs
-1. Update all architecture docs to use Excalidraw for system diagrams
-2. Update all sequence diagrams to use PlantUML
-3. Add GitHub Actions for auto-generation
+1. Use **Diagrams.net** for all architecture diagrams (professional polish)
+2. Keep **Mermaid** for all sequence diagrams (native GitHub rendering)
+3. No GitHub Actions needed (Diagrams.net exports SVG, Mermaid renders natively)
 
 ---
 
-## Quick Start: Excalidraw for Kubernaut
+## Quick Start: Diagrams.net for Kubernaut
 
-### Step 1: Create Diagram
-1. Open https://excalidraw.com
-2. Use library: "Software Architecture" (built-in)
-3. Create simple boxes for services
-4. Add arrows with labels
-5. Use colors:
-   - Green: Data Storage Service
-   - Blue: Other services
-   - Red: PostgreSQL (with lock icon)
+### Step 1: Install VSCode Extension (Recommended)
+```bash
+code --install-extension hediet.vscode-drawio
+```
 
-### Step 2: Export
-1. File → Export Image → SVG
-2. Save to `docs/architecture/diagrams/`
+### Step 2: Create Diagram
+1. In VSCode: File → New File → `data-access-layer-adr-032.drawio`
+2. Click to open in diagram editor
+3. Use Kubernetes icon library:
+   - Search: "kubernetes" in shape search
+   - Drag: Pod, Service, Database icons
+4. Create boxes for services:
+   - Green box: Data Storage Service (⭐)
+   - Blue boxes: Context API, CRD Controllers
+   - Red box: PostgreSQL (🔒)
+5. Add arrows with labels:
+   - Thick green: SQL queries
+   - Normal blue: REST API calls
 
-### Step 3: Reference in Markdown
+### Step 3: Auto-Export
+- VSCode extension automatically exports to `.drawio.svg`
+- Result: Both `.drawio` (editable) and `.drawio.svg` (rendered) files
+
+### Step 4: Reference in Markdown
 ```markdown
 ## Data Access Architecture (ADR-032)
 
-![Data Access Layer Isolation](diagrams/data-access-layer-adr-032.svg)
+![Data Access Layer Isolation](diagrams/data-access-layer-adr-032.drawio.svg)
 
 **Key Principle**: ONLY Data Storage Service connects directly to PostgreSQL.
 ```
 
-### Step 4: Commit Both Files
+### Step 5: Commit Both Files
 ```bash
-git add docs/architecture/diagrams/data-access-layer-adr-032.excalidraw
-git add docs/architecture/diagrams/data-access-layer-adr-032.svg
+git add docs/architecture/diagrams/data-access-layer-adr-032.drawio
+git add docs/architecture/diagrams/data-access-layer-adr-032.drawio.svg
 git commit -m "docs: Add Data Access Layer diagram (ADR-032)"
 ```
+
+### Professional Styling Tips
+1. **Color Scheme**:
+   - Green (#4CAF50): Data Storage Service
+   - Blue (#2196F3): Application services
+   - Red (#F44336): PostgreSQL (isolated)
+   - Gray (#9E9E9E): External systems
+
+2. **Icons**:
+   - Use Kubernetes icon library for services
+   - Use database icon for PostgreSQL
+   - Use lock icon for restricted access
+
+3. **Layout**:
+   - Top-to-bottom or left-to-right flow
+   - Clear spacing between layers
+   - Align elements using snap-to-grid
 
 ---
 
@@ -402,12 +475,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-        
+
       - name: Generate PlantUML diagrams
         uses: cloudbees/plantuml-github-action@master
         with:
           args: -v -tsvg -o . docs/**/*.puml
-          
+
       - name: Commit generated diagrams
         if: github.event_name == 'push'
         uses: stefanzweifel/git-auto-commit-action@v4
@@ -420,16 +493,26 @@ jobs:
 
 ## Conclusion
 
-**For Kubernaut**: 
-- **Primary Tool**: Excalidraw (system overviews, architecture diagrams)
-- **Secondary Tool**: PlantUML (sequence diagrams)
-- **Fallback**: Simplified Mermaid (inline rendering for simple diagrams)
+**For Kubernaut** (User-Approved): 
+- **Primary Tool**: **Diagrams.net** ⭐ (architecture diagrams, system overviews)
+  - Professional, enterprise-grade appearance
+  - Kubernetes icon library
+  - VSCode integration for easy editing
+  
+- **Secondary Tool**: **Mermaid** (sequence diagrams, flow charts)
+  - Native GitHub rendering (zero workflow overhead)
+  - Good enough quality for sequences
+  - Text-based for easy version control
+
+**Why NOT**:
+- ❌ **Excalidraw**: Too casual/informal for enterprise architecture docs
+- ❌ **PlantUML**: Workflow overhead not justified when Mermaid works well
 
 **Next Steps**:
-1. Create Data Access Layer diagram in Excalidraw (ADR-032)
-2. Simplify System Overview in KUBERNAUT_CRD_ARCHITECTURE.md
-3. Convert sequence diagrams to PlantUML
-4. Update README.md with new diagrams
+1. Install Diagrams.net VSCode extension: `code --install-extension hediet.vscode-drawio`
+2. Create Data Access Layer diagram (ADR-032) in Diagrams.net
+3. Keep existing Mermaid sequence diagrams
+4. Update complex system diagrams to Diagrams.net for professional polish
 
-**Confidence**: 95% - These tools are battle-tested in enterprise environments and GitHub-compatible.
+**Confidence**: 95% - Battle-tested tools with optimal trade-offs for Kubernaut's enterprise audience.
 
