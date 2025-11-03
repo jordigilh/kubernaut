@@ -178,19 +178,19 @@ CREATE TABLE signal_processing_audit (
 // PLACEHOLDER - Will be finalized during controller TDD
 type RemediationRequestStatus struct {
     OverallPhase string  // pending, processing, analyzing, executing, completed, failed, timeout
-    
+
     // Child CRD references
     RemediationProcessingRef *CRDReference
     AIAnalysisRef            *CRDReference
     WorkflowExecutionRef     *CRDReference
-    
+
     // Service CRD statuses (JSONB for flexibility)
     ServiceCRDStatuses map[string]interface{}
-    
+
     // Timestamps
     StartTime      metav1.Time
     CompletionTime *metav1.Time
-    
+
     // Timeout/Failure tracking
     TimeoutPhase  string
     FailurePhase  string
@@ -253,19 +253,19 @@ CREATE TABLE orchestration_audit (
 // PLACEHOLDER - Will be finalized during controller TDD
 type AIAnalysisStatus struct {
     Phase string  // pending, investigating, investigated, analyzing, analyzed, recommending, completed, failed
-    
+
     // Investigation results
     InvestigationStartTime *metav1.Time
     InvestigationEndTime   *metav1.Time
     RootCauseCount         int
     InvestigationReport    string  // Summary of AI's findings
-    
+
     // Analysis results
     AnalysisStartTime *metav1.Time
     AnalysisEndTime   *metav1.Time
     ConfidenceScore   float64  // 0.0-1.0
     HallucinationDetected bool
-    
+
     // Recommendation results
     RecommendationStartTime *metav1.Time
     RecommendationEndTime   *metav1.Time
@@ -273,11 +273,11 @@ type AIAnalysisStatus struct {
     TopRecommendation       string
     EffectivenessProbability float64
     HistoricalSuccessRate   float64
-    
+
     // Workflow CRD reference (if AI triggered workflow)
     WorkflowCRDName      string
     WorkflowCRDNamespace string
-    
+
     // Completion
     CompletionStatus string  // completed, failed, pending_human_review
     FailureReason    string
@@ -295,21 +295,21 @@ CREATE TABLE ai_analysis_audit (
     alert_fingerprint VARCHAR(255) NOT NULL,
     environment VARCHAR(50) NOT NULL,
     severity VARCHAR(50) NOT NULL,
-    
+
     -- Investigation phase
     investigation_start_time TIMESTAMP WITH TIME ZONE NOT NULL,
     investigation_end_time TIMESTAMP WITH TIME ZONE,
     investigation_duration_ms INTEGER,
     root_cause_count INTEGER,
     investigation_report TEXT,  -- Summary of AI's findings
-    
+
     -- Analysis phase
     analysis_start_time TIMESTAMP WITH TIME ZONE,
     analysis_end_time TIMESTAMP WITH TIME ZONE,
     analysis_duration_ms INTEGER,
     confidence_score FLOAT NOT NULL CHECK (confidence_score BETWEEN 0 AND 1),
     hallucination_detected BOOLEAN DEFAULT FALSE,
-    
+
     -- Recommendation phase
     recommendation_start_time TIMESTAMP WITH TIME ZONE,
     recommendation_end_time TIMESTAMP WITH TIME ZONE,
@@ -317,18 +317,18 @@ CREATE TABLE ai_analysis_audit (
     top_recommendation TEXT,
     effectiveness_probability FLOAT,
     historical_success_rate FLOAT,
-    
+
     -- Workflow CRD reference
     workflow_crd_name VARCHAR(255),
     workflow_crd_namespace VARCHAR(255),
-    
+
     -- Completion
     completion_status VARCHAR(50) NOT NULL,  -- completed, failed, pending_human_review
     failure_reason TEXT,
-    
+
     -- pgvector embedding for semantic search (Decision 1a: AIAnalysis only)
     embedding vector(1536),
-    
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -369,7 +369,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_analysis_audit_embedding ON ai_analysis_audit 
 // PLACEHOLDER - Will be finalized during controller TDD
 type WorkflowExecutionStatus struct {
     Phase string  // pending, running, completed, failed, rolling_back, rolled_back, partial_success
-    
+
     // Execution tracking
     WorkflowName    string
     WorkflowVersion string
@@ -377,18 +377,18 @@ type WorkflowExecutionStatus struct {
     StepsCompleted  int
     StepsFailed     int
     TotalDurationMs int
-    
+
     // Outcome
     Outcome            string  // success, failure, rollback, partial_success
     EffectivenessScore float64  // 0.0-1.0
     RollbacksPerformed int
-    
+
     // Step execution details
     StepExecutions []StepExecution  // Details of each step's execution
-    
+
     // Adaptive adjustments
     AdaptiveAdjustments []AdaptiveAdjustment  // Details of any adaptive changes made
-    
+
     // Completion
     CompletedAt   *metav1.Time
     Status        string  // running, completed, failed, paused
@@ -454,31 +454,31 @@ type EffectivenessAssessment struct {
     AssessmentID   string
     RemediationID  string
     ActionType     string
-    
+
     // Assessment results
     TraditionalScore      float64  // 0.0-1.0
     EnvironmentalImpact   float64  // -1.0 to 1.0
     Confidence            float64  // 0.0-1.0
-    
+
     // Trend analysis
     TrendDirection        string  // improving, declining, stable, insufficient_data
     RecentSuccessRate     float64
     HistoricalSuccessRate float64
-    
+
     // Data quality
     DataQuality string  // sufficient, limited, insufficient
     SampleSize  int
     DataAgeDays int
-    
+
     // Pattern recognition
     PatternDetected     bool
     PatternDescription  string
     TemporalPattern     string
-    
+
     // Side effects
     SideEffectsDetected     bool
     SideEffectsDescription  string
-    
+
     // Metadata
     CompletedAt time.Time
 }
@@ -490,36 +490,36 @@ type EffectivenessAssessment struct {
 -- Migration 015: effectiveness_audit (Created during EffectivenessMonitor service TDD)
 CREATE TABLE effectiveness_audit (
     id BIGSERIAL PRIMARY KEY,
-    
+
     -- Identity
     assessment_id VARCHAR(255) NOT NULL UNIQUE,
     remediation_id VARCHAR(255) NOT NULL,
     action_type VARCHAR(100) NOT NULL,
-    
+
     -- Assessment results
     traditional_score FLOAT NOT NULL CHECK (traditional_score BETWEEN 0 AND 1),
     environmental_impact FLOAT CHECK (environmental_impact BETWEEN -1 AND 1),
     confidence FLOAT NOT NULL CHECK (confidence BETWEEN 0 AND 1),
-    
+
     -- Trend analysis
     trend_direction VARCHAR(20) CHECK (trend_direction IN ('improving', 'declining', 'stable', 'insufficient_data')),
     recent_success_rate FLOAT CHECK (recent_success_rate BETWEEN 0 AND 1),
     historical_success_rate FLOAT CHECK (historical_success_rate BETWEEN 0 AND 1),
-    
+
     -- Data quality
     data_quality VARCHAR(20) CHECK (data_quality IN ('sufficient', 'limited', 'insufficient')),
     sample_size INTEGER,
     data_age_days INTEGER,
-    
+
     -- Pattern recognition
     pattern_detected BOOLEAN DEFAULT FALSE,
     pattern_description TEXT,
     temporal_pattern VARCHAR(50),
-    
+
     -- Side effects
     side_effects_detected BOOLEAN DEFAULT FALSE,
     side_effects_description TEXT,
-    
+
     -- Metadata
     completed_at TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -552,9 +552,9 @@ func (r *ControllerReconciler) SetupWithManager(mgr ctrl.Manager) error {
     if auditServiceURL == "" {
         auditServiceURL = "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
     }
-    
+
     r.auditClient = datastorage.NewAuditClient(auditServiceURL, r.Log)
-    
+
     return ctrl.NewControllerManagedBy(mgr).
         For(&v1.CRD{}).
         Named("controller-name").
@@ -568,18 +568,18 @@ func (r *ControllerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *ControllerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // Store old status for comparison
     oldStatus := crd.Status.Phase
-    
+
     // ... (business logic) ...
-    
+
     // Update CRD status
     if err := r.Status().Update(ctx, crd); err != nil {
         return ctrl.Result{}, err
     }
-    
+
     // Write audit trace AFTER CRD status update (non-blocking)
     if crd.Status.Phase != oldStatus {
         auditData := r.buildAuditData(crd, oldStatus)
-        
+
         go func() {
             if err := r.auditClient.WriteAudit(ctx, auditData); err != nil {
                 r.Log.Error(err, "Failed to write audit (DLQ fallback triggered)",
@@ -588,7 +588,7 @@ func (r *ControllerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
             }
         }()
     }
-    
+
     return ctrl.Result{}, nil
 }
 ```

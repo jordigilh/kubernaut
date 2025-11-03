@@ -159,10 +159,10 @@ package notification
 import (
     "testing"
     "time"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    
+
     notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
     "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -173,7 +173,7 @@ var _ = Describe("Notification Audit Data Transformation", func() {
         reconciler *NotificationRequestReconciler
         nr         *notificationv1.NotificationRequest
     )
-    
+
     BeforeEach(func() {
         reconciler = &NotificationRequestReconciler{}
         nr = &notificationv1.NotificationRequest{
@@ -195,11 +195,11 @@ var _ = Describe("Notification Audit Data Transformation", func() {
             },
         }
     })
-    
+
     Context("buildAuditData", func() {
         It("should correctly transform CRD for 'sent' status", func() {
             auditData := reconciler.buildAuditData(nr)
-            
+
             Expect(auditData.RemediationID).To(Equal("test-remediation-1"))
             Expect(auditData.NotificationID).To(Equal("test-notification-1"))
             Expect(auditData.Recipient).To(Equal("test@example.com"))
@@ -210,33 +210,33 @@ var _ = Describe("Notification Audit Data Transformation", func() {
             Expect(auditData.ErrorMessage).To(BeEmpty())
             Expect(auditData.EscalationLevel).To(Equal(0))
         })
-        
+
         It("should correctly transform CRD for 'failed' status", func() {
             nr.Status.Status = notificationv1.NotificationStatusFailed
             nr.Status.ErrorMessage = "SMTP connection timeout"
-            
+
             auditData := reconciler.buildAuditData(nr)
-            
+
             Expect(auditData.Status).To(Equal("failed"))
             Expect(auditData.ErrorMessage).To(Equal("SMTP connection timeout"))
         })
-        
+
         It("should correctly transform CRD for 'acknowledged' status", func() {
             nr.Status.Status = notificationv1.NotificationStatusAcknowledged
             acknowledgedAt := metav1.Now()
             nr.Status.AcknowledgedAt = &acknowledgedAt
-            
+
             auditData := reconciler.buildAuditData(nr)
-            
+
             Expect(auditData.Status).To(Equal("acknowledged"))
         })
-        
+
         It("should correctly transform CRD for 'escalated' status", func() {
             nr.Status.Status = notificationv1.NotificationStatusEscalated
             nr.Spec.EscalationLevel = 1
-            
+
             auditData := reconciler.buildAuditData(nr)
-            
+
             Expect(auditData.Status).To(Equal("escalated"))
             Expect(auditData.EscalationLevel).To(Equal(1))
         })
@@ -260,7 +260,7 @@ var _ = Describe("Notification Audit Write Triggers", func() {
         nr         *notificationv1.NotificationRequest
         mockAuditClient *MockAuditClient
     )
-    
+
     BeforeEach(func() {
         ctx = context.Background()
         mockAuditClient = NewMockAuditClient()
@@ -280,39 +280,39 @@ var _ = Describe("Notification Audit Write Triggers", func() {
             },
         }
     })
-    
+
     It("should trigger audit write when status changes from pending to sent", func() {
         oldStatus := nr.Status.Status
         nr.Status.Status = notificationv1.NotificationStatusSent
-        
+
         // Simulate reconcile loop audit write logic
         if nr.Status.Status != oldStatus {
             auditData := reconciler.buildAuditData(nr)
             err := reconciler.auditClient.WriteNotificationAudit(ctx, auditData)
             Expect(err).ToNot(HaveOccurred())
         }
-        
+
         Expect(mockAuditClient.WriteCallCount()).To(Equal(1))
     })
-    
+
     It("should NOT trigger audit write when status unchanged", func() {
         oldStatus := nr.Status.Status
         // Status remains pending
-        
+
         if nr.Status.Status != oldStatus {
             auditData := reconciler.buildAuditData(nr)
             _ = reconciler.auditClient.WriteNotificationAudit(ctx, auditData)
         }
-        
+
         Expect(mockAuditClient.WriteCallCount()).To(Equal(0))
     })
-    
+
     It("should NOT fail reconciliation when audit write fails", func() {
         mockAuditClient.SetWriteError(errors.New("Data Storage Service unavailable"))
-        
+
         oldStatus := nr.Status.Status
         nr.Status.Status = notificationv1.NotificationStatusSent
-        
+
         // Simulate reconcile loop with error handling
         if nr.Status.Status != oldStatus {
             auditData := reconciler.buildAuditData(nr)
@@ -323,7 +323,7 @@ var _ = Describe("Notification Audit Write Triggers", func() {
                 }
             }()
         }
-        
+
         // Reconciliation should succeed despite audit write failure
         // (This test validates the non-blocking pattern)
     })
@@ -345,10 +345,10 @@ import (
     "context"
     "testing"
     "time"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    
+
     notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
     "github.com/jordigilh/kubernaut/test/testutil"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -360,11 +360,11 @@ var _ = Describe("Notification Audit Integration", func() {
         nr  *notificationv1.NotificationRequest
         db  *testutil.PostgreSQLTestDB
     )
-    
+
     BeforeEach(func() {
         ctx = context.Background()
         db = testutil.NewPostgreSQLTestDB()
-        
+
         nr = &notificationv1.NotificationRequest{
             ObjectMeta: metav1.ObjectMeta{
                 Name:      "test-notification-1",
@@ -378,21 +378,21 @@ var _ = Describe("Notification Audit Integration", func() {
             },
         }
     })
-    
+
     AfterEach(func() {
         db.Cleanup()
     })
-    
+
     It("should create audit record when notification sent", func() {
         // Create NotificationRequest CRD
         Expect(k8sClient.Create(ctx, nr)).To(Succeed())
-        
+
         // Wait for status update to "sent"
         Eventually(func() notificationv1.NotificationStatus {
             _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), nr)
             return nr.Status.Status
         }, 10*time.Second, 1*time.Second).Should(Equal(notificationv1.NotificationStatusSent))
-        
+
         // Verify audit record in PostgreSQL
         var auditRecord struct {
             NotificationID  string
@@ -401,7 +401,7 @@ var _ = Describe("Notification Audit Integration", func() {
             Channel         string
             MessageSummary  string
         }
-        
+
         err := db.QueryRow(`
             SELECT notification_id, status, recipient, channel, message_summary
             FROM notification_audit
@@ -413,7 +413,7 @@ var _ = Describe("Notification Audit Integration", func() {
             &auditRecord.Channel,
             &auditRecord.MessageSummary,
         )
-        
+
         Expect(err).ToNot(HaveOccurred())
         Expect(auditRecord.NotificationID).To(Equal("test-notification-1"))
         Expect(auditRecord.Status).To(Equal("sent"))
@@ -421,15 +421,15 @@ var _ = Describe("Notification Audit Integration", func() {
         Expect(auditRecord.Channel).To(Equal("email"))
         Expect(auditRecord.MessageSummary).To(Equal("Test notification"))
     })
-    
+
     It("should create audit record with error message when notification fails", func() {
         // Simulate notification failure
         nr.Status.Status = notificationv1.NotificationStatusFailed
         nr.Status.ErrorMessage = "SMTP connection timeout"
-        
+
         Expect(k8sClient.Create(ctx, nr)).To(Succeed())
         Expect(k8sClient.Status().Update(ctx, nr)).To(Succeed())
-        
+
         // Wait for audit record
         Eventually(func() string {
             var errorMsg string
@@ -441,21 +441,21 @@ var _ = Describe("Notification Audit Integration", func() {
             return errorMsg
         }, 10*time.Second, 1*time.Second).Should(Equal("SMTP connection timeout"))
     })
-    
+
     It("should fallback to DLQ when Data Storage Service unavailable", func() {
         // Stop Data Storage Service
         testutil.StopDataStorageService()
         defer testutil.StartDataStorageService()
-        
+
         // Create NotificationRequest CRD
         Expect(k8sClient.Create(ctx, nr)).To(Succeed())
-        
+
         // Wait for status update
         Eventually(func() notificationv1.NotificationStatus {
             _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), nr)
             return nr.Status.Status
         }, 10*time.Second, 1*time.Second).Should(Equal(notificationv1.NotificationStatusSent))
-        
+
         // Verify audit data in Redis DLQ
         dlqData := testutil.GetRedisDLQMessage("notification", nr.Name)
         Expect(dlqData).ToNot(BeNil())
@@ -483,7 +483,7 @@ package notification
 
 import (
     "time"
-    
+
     notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
     "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
@@ -494,7 +494,7 @@ func (r *NotificationRequestReconciler) buildAuditData(nr *notificationv1.Notifi
     if nr.Status.SentAt != nil {
         sentAt = nr.Status.SentAt.Time
     }
-    
+
     return &audit.NotificationAudit{
         RemediationID:   nr.Spec.RemediationID,
         NotificationID:  nr.Name,
@@ -528,12 +528,12 @@ package notification
 import (
     "context"
     "os"
-    
+
     "k8s.io/apimachinery/pkg/runtime"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/log"
-    
+
     notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
     "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
@@ -548,30 +548,30 @@ type NotificationRequestReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     log := log.FromContext(ctx)
-    
+
     // Fetch NotificationRequest CRD
     nr := &notificationv1.NotificationRequest{}
     if err := r.Get(ctx, req.NamespacedName, nr); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
-    
+
     // Store old status for comparison
     oldStatus := nr.Status.Status
-    
+
     // ... (existing business logic for notification processing) ...
-    
+
     // Update CRD status
     if err := r.Status().Update(ctx, nr); err != nil {
         return ctrl.Result{}, err
     }
-    
+
     // ========================================
     // AUDIT TRACE WRITE (NON-BLOCKING)
     // ========================================
     // Write audit trace AFTER CRD status update succeeds
     if r.shouldWriteAudit(oldStatus, nr.Status.Status) {
         auditData := r.buildAuditData(nr)
-        
+
         // Non-blocking audit write with DLQ fallback (DD-009)
         go func() {
             if err := r.auditClient.WriteNotificationAudit(context.Background(), auditData); err != nil {
@@ -582,7 +582,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
             }
         }()
     }
-    
+
     return ctrl.Result{}, nil
 }
 
@@ -593,9 +593,9 @@ func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error
     if auditServiceURL == "" {
         auditServiceURL = "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
     }
-    
+
     r.auditClient = audit.NewClient(auditServiceURL)
-    
+
     return ctrl.NewControllerManagedBy(mgr).
         For(&notificationv1.NotificationRequest{}).
         Named("notificationrequest-notification").
@@ -631,7 +631,7 @@ var (
         },
         []string{"status"},  // success, failure, dlq_fallback
     )
-    
+
     auditWriteDuration = prometheus.NewHistogramVec(
         prometheus.HistogramOpts{
             Name:    "kubernaut_notification_audit_write_duration_seconds",
@@ -657,17 +657,17 @@ func init() {
 // writeAuditAsync writes audit data asynchronously with metrics and error handling
 func (r *NotificationRequestReconciler) writeAuditAsync(ctx context.Context, nr *notificationv1.NotificationRequest) {
     auditData := r.buildAuditData(nr)
-    
+
     go func() {
         startTime := time.Now()
-        
+
         err := r.auditClient.WriteNotificationAudit(context.Background(), auditData)
         duration := time.Since(startTime).Seconds()
-        
+
         if err != nil {
             auditWritesTotal.WithLabelValues("failure").Inc()
             auditWriteDuration.WithLabelValues("failure").Observe(duration)
-            
+
             r.Log.Error(err, "Failed to write notification audit (DLQ fallback triggered)",
                 "notificationID", nr.Name,
                 "status", nr.Status.Status,
