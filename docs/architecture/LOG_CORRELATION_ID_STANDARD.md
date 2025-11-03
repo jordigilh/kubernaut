@@ -933,7 +933,7 @@ RemediationRequest CRD
   ↓ Extract & propagate
 Remediation Orchestrator
   ↓ CRD labels (propagate to 3 child CRDs)
-  ├── RemediationProcessing CRD
+  ├── SignalProcessing CRD
   │     ↓ HTTP header: X-Correlation-ID
   │   Context API (GET /api/v1/context)
   │

@@ -149,7 +149,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 - [x] Status (from `RemediationProcessing.Status.Status`)
 - [x] Error message (from `RemediationProcessing.Status.ErrorMessage`)
 
-**Validation**: ✅ **All required fields available in RemediationProcessing CRD status**
+**Validation**: ✅ **All required fields available in SignalProcessing CRD status**
 
 ---
 
@@ -160,7 +160,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 - [x] Error handling includes DLQ fallback (DD-009)
 - [x] Audit trigger point: After routing phase completes
 
-**Documentation Authority**: `docs/services/crd-controllers/01-remediationprocessor/database-integration.md`
+**Documentation Authority**: `docs/services/crd-controllers/01-signalprocessing/database-integration.md`
 
 **Status**: ✅ **Documentation complete** (Updated for "signal-processing" terminology - Nov 2)
 
@@ -509,7 +509,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 - **Implementation Plan**: `docs/services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V4.7.md`
 - **Service Documentation**:
   - RemediationOrchestrator: `docs/services/crd-controllers/05-remediationorchestrator/database-integration.md`
-  - RemediationProcessor: `docs/services/crd-controllers/01-remediationprocessor/database-integration.md`
+  - RemediationProcessor: `docs/services/crd-controllers/01-signalprocessing/database-integration.md`
   - AIAnalysis Controller: `docs/services/crd-controllers/02-aianalysis/database-integration.md`
   - WorkflowExecution Controller: `docs/services/crd-controllers/03-workflowexecution/database-integration.md`
   - Notification Controller: `docs/services/crd-controllers/06-notification/database-integration.md`

@@ -47,7 +47,7 @@ func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
 }
 ```
 
-**Note**: RemediationRequest controller creates RemediationProcessing CRD when remediation workflow starts.
+**Note**: RemediationRequest controller creates SignalProcessing CRD when remediation workflow starts.
 
 ### 2. Downstream Integration: RemediationRequest Watches RemediationProcessing Status
 
@@ -295,7 +295,7 @@ func (r *RemediationProcessingReconciler) buildFallbackRecoveryContext(
 - ✅ **Fresh Data**: All contexts (monitoring + business + recovery) captured at same timestamp
 - ✅ **Graceful Degradation**: Falls back to minimal context from `failedWorkflowRef` if API unavailable
 - ✅ **Architectural Consistency**: ALL enrichment happens in RemediationProcessing controller
-- ✅ **Immutable Audit Trail**: Each RemediationProcessing CRD contains complete snapshot
+- ✅ **Immutable Audit Trail**: Each SignalProcessing CRD contains complete snapshot
 
 **Graceful Degradation Example**:
 ```yaml
@@ -370,7 +370,7 @@ type RemediationProcessingAudit struct {
 
 **Upstream Services**:
 - **Gateway Service** - Creates RemediationRequest CRD with duplicate detection already performed (BR-WH-008)
-- **RemediationRequest Controller** - Creates RemediationProcessing CRD when workflow starts (initial & recovery)
+- **RemediationRequest Controller** - Creates SignalProcessing CRD when workflow starts (initial & recovery)
 
 **Downstream Services**:
 - **RemediationRequest Controller** - Watches RemediationProcessing status and creates AIAnalysis CRD upon completion

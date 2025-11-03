@@ -408,7 +408,7 @@ make test-remediationprocessor-unit
 
 # Or manually:
 go test -v -race -coverprofile=coverage.out \
-  ./pkg/remediationprocessor/...
+  ./pkg/signalprocessing/...
 
 # View coverage
 go tool cover -html=coverage.out
@@ -430,10 +430,10 @@ go test -v -race \
 
 | Package | Target Coverage |
 |---------|----------------|
-| `pkg/remediationprocessor/config` | 100% (achieved) |
-| `pkg/remediationprocessor/controllers` | 80%+ |
-| `pkg/remediationprocessor/enrichment` | 85%+ |
-| `pkg/remediationprocessor/classification` | 85%+ |
+| `pkg/signalprocessing/config` | 100% (achieved) |
+| `pkg/signalprocessing/controllers` | 80%+ |
+| `pkg/signalprocessing/enrichment` | 85%+ |
+| `pkg/signalprocessing/classification` | 85%+ |
 
 ---
 
@@ -542,10 +542,10 @@ kubectl top pod -n kubernaut-system -l app=remediationprocessor
 **Solution**:
 ```bash
 # Run specific test with verbose output
-go test -v ./pkg/remediationprocessor/config -run TestValidateConfig
+go test -v ./pkg/signalprocessing/config -run TestValidateConfig
 
 # Check test fixtures have all required fields
-grep -r "postgres_password" pkg/remediationprocessor/config/config_test.go
+grep -r "postgres_password" pkg/signalprocessing/config/config_test.go
 ```
 
 #### Issue: Integration tests timeout

@@ -25,7 +25,7 @@ Successfully completed comprehensive import fix for all Go code samples in `docs
 - ✅ Version: v1.1 (with test-specific patterns)
 
 ### Phase 2: Priority 1 - Core Controller Files ✅ COMPLETE
-1. ✅ `01-remediationprocessor/controller-implementation.md` - Fixed 3 alias inconsistencies
+1. ✅ `01-signalprocessing/controller-implementation.md` - Fixed 3 alias inconsistencies
    - Changed `alertprocessorv1` → `processingv1` in 3 functions
 2. ✅ `02-aianalysis/controller-implementation.md` - Added 5 missing imports + fixed aliases
    - Added: `corev1`, `apimeta`, `metav1`, `record`, `workflowexecutionv1`
@@ -93,7 +93,7 @@ Successfully completed comprehensive import fix for all Go code samples in `docs
 #### Controller Implementation Files
 | File | Status | Import Block | Aliases | Notes |
 |------|--------|--------------|---------|-------|
-| `01-remediationprocessor/controller-implementation.md` | ✅ Complete | Yes | Correct | Fixed alias inconsistencies |
+| `01-signalprocessing/controller-implementation.md` | ✅ Complete | Yes | Correct | Fixed alias inconsistencies |
 | `02-aianalysis/controller-implementation.md` | ✅ Complete | Yes | Correct | Added 5 missing imports |
 | `03-workflowexecution/controller-implementation.md` | ✅ Complete | Yes | Correct | Already complete |
 | `04-kubernetesexecutor/controller-implementation.md` | ✅ Complete | Yes | Correct | Added 2 missing imports |
@@ -102,7 +102,7 @@ Successfully completed comprehensive import fix for all Go code samples in `docs
 #### CRD Schema Files
 | File | Status | Import Block | Notes |
 |------|--------|--------------|-------|
-| `01-remediationprocessor/crd-schema.md` | ✅ Complete | Yes | Package + imports present |
+| `01-signalprocessing/crd-schema.md` | ✅ Complete | Yes | Package + imports present |
 | `02-aianalysis/crd-schema.md` | ✅ Complete | Yes | Package + imports present |
 | `03-workflowexecution/crd-schema.md` | ✅ Complete | Yes | Package + imports present |
 | `04-kubernetesexecutor/crd-schema.md` | ✅ Complete | Yes | Package + imports present |

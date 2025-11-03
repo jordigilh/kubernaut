@@ -63,7 +63,7 @@ type RemediationRequestSpec struct {
 
 ### **Change 2: RemediationProcessing Schema** (RemediationProcessor Service)
 
-**File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+**File**: `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 **Priority**: **P0 - CRITICAL**
 **Effort**: 3-4 hours
 
@@ -339,7 +339,7 @@ func extractAnnotations(payload []byte) map[string]string {
 - [ ] Update examples
 
 **Day 3-4: RemediationProcessing Schema** (Owner: RemediationProcessor team)
-- [ ] Update `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+- [ ] Update `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 - [ ] Add 15 new fields
 - [ ] Add ResourceIdentifier type
 - [ ] Add DeduplicationContext type
@@ -423,7 +423,7 @@ func extractAnnotations(payload []byte) map[string]string {
 
 **Schema Definitions**:
 1. ✅ `docs/architecture/CRD_SCHEMAS.md` - RemediationRequest schema
-2. ✅ `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md` - RemediationProcessing schema
+2. ✅ `docs/services/crd-controllers/01-signalprocessing/crd-schema.md` - RemediationProcessing schema
 
 **Service Integration**:
 3. ✅ `docs/services/stateless/gateway-service/crd-integration.md` - Gateway CRD creation

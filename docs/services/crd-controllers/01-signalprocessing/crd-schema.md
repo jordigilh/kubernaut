@@ -64,7 +64,7 @@ type RemediationProcessingSpec struct {
     // FailureReason contains the human-readable failure reason
     FailureReason *string `json:"failureReason,omitempty"`
 
-    // OriginalProcessingRef references the initial RemediationProcessing CRD
+    // OriginalProcessingRef references the initial SignalProcessing CRD
     // (for audit trail - links recovery attempts back to original)
     OriginalProcessingRef *corev1.LocalObjectReference `json:"originalProcessingRef,omitempty"`
 }

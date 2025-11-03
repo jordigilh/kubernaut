@@ -129,7 +129,7 @@ type RemediationProcessingStatus struct {
 CREATE TABLE signal_processing_audit (
     id BIGSERIAL PRIMARY KEY,
     remediation_id VARCHAR(255) NOT NULL,
-    signal_id VARCHAR(255) NOT NULL UNIQUE,  -- RemediationProcessing CRD name
+    signal_id VARCHAR(255) NOT NULL UNIQUE,  -- SignalProcessing CRD name
     alert_fingerprint VARCHAR(255) NOT NULL,
     environment VARCHAR(50) NOT NULL,  -- prod, staging, dev
     severity VARCHAR(50) NOT NULL,  -- critical, warning, info
@@ -210,7 +210,7 @@ CREATE TABLE orchestration_audit (
     overall_phase VARCHAR(50) NOT NULL,  -- pending, processing, analyzing, executing, completed, failed, timeout
     start_time TIMESTAMP WITH TIME ZONE NOT NULL,
     completion_time TIMESTAMP WITH TIME ZONE,
-    remediation_processing_name VARCHAR(255),  -- Link to RemediationProcessing CRD
+    remediation_processing_name VARCHAR(255),  -- Link to SignalProcessing CRD
     ai_analysis_name VARCHAR(255),  -- Link to AIAnalysis CRD
     workflow_execution_name VARCHAR(255),  -- Link to WorkflowExecution CRD
     service_crd_statuses JSONB,  -- Stores status of related CRDs

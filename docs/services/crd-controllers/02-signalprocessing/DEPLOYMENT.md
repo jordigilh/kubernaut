@@ -122,7 +122,7 @@
 ### Required CRDs
 
 ```bash
-# Verify RemediationProcessing CRD is installed
+# Verify SignalProcessing CRD is installed
 kubectl get crds | grep remediationprocessing
 
 # Expected CRD:
@@ -131,7 +131,7 @@ kubectl get crds | grep remediationprocessing
 
 If not installed:
 ```bash
-# Install RemediationProcessing CRD
+# Install SignalProcessing CRD
 kubectl apply -f config/crd/bases/remediation.kubernaut.io_remediationprocessings.yaml
 ```
 
@@ -153,7 +153,7 @@ kubectl apply -f config/crd/bases/remediation.kubernaut.io_remediationprocessing
 git clone https://github.com/jordigilh/kubernaut.git
 cd kubernaut
 
-# 2. Install RemediationProcessing CRD (if not already installed)
+# 2. Install SignalProcessing CRD (if not already installed)
 kubectl apply -f config/crd/bases/remediation.kubernaut.io_remediationprocessings.yaml
 
 # 3. Verify CRD installation
@@ -178,7 +178,7 @@ kubectl get pods -n kubernaut-system -l app=remediationprocessor
 kubectl create namespace kubernaut-system
 ```
 
-#### Step 2: Install RemediationProcessing CRD
+#### Step 2: Install SignalProcessing CRD
 
 ```bash
 kubectl apply -f config/crd/bases/remediation.kubernaut.io_remediationprocessings.yaml
@@ -830,7 +830,7 @@ kubectl delete -f deploy/remediationprocessor/serviceaccount.yaml
 kubectl delete -f deploy/remediationprocessor/configmap.yaml
 kubectl delete secret remediationprocessor-secret -n kubernaut-system
 
-# 2. Delete RemediationProcessing CRD (caution: deletes all CR instances)
+# 2. Delete SignalProcessing CRD (caution: deletes all CR instances)
 kubectl delete crd remediationprocessings.remediation.kubernaut.io
 
 # 3. Verify cleanup

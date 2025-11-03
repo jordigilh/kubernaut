@@ -14,9 +14,9 @@ The service currently named "RemediationProcessing" (formerly "AlertProcessor") 
 ### Current State
 
 - **Service Name**: RemediationProcessing
-- **CRD API Group**: `remediationprocessing.kubernaut.io/v1alpha1`
-- **Business Requirements**: BR-AP-* (Alert Processing)
-- **Directory**: `docs/services/crd-controllers/01-remediationprocessor/`
+- **CRD API Group**: `signalprocessing.kubernaut.io/v1alpha1`
+- **Business Requirements**: BR-SP-* (Alert Processing)
+- **Directory**: `docs/services/crd-controllers/01-signalprocessing/`
 - **Status**: Not yet implemented (documentation phase only)
 
 ---
@@ -57,16 +57,16 @@ The service currently named "RemediationProcessing" (formerly "AlertProcessor") 
 #### 1. Service Identity
 - **Service Name**: RemediationProcessing → **SignalProcessing**
 - **CRD Name**: `RemediationProcessing` → **`SignalProcessing`**
-- **CRD API Group**: `remediationprocessing.kubernaut.io/v1alpha1` → **`signalprocessing.kubernaut.io/v1alpha1`**
+- **CRD API Group**: `signalprocessing.kubernaut.io/v1alpha1` → **`signalprocessing.kubernaut.io/v1alpha1`**
 - **Controller**: `RemediationProcessingReconciler` → **`SignalProcessingReconciler`**
 
 #### 2. Business Requirements
-- **Prefix**: BR-AP-* (Alert Processing) → **BR-SP-*** (Signal Processing)
+- **Prefix**: BR-SP-* (Alert Processing) → **BR-SP-*** (Signal Processing)
 - **Range**: BR-SP-001 to BR-SP-180 (reserved for Signal Processing)
-- **Mapping**: Maintain 1:1 mapping with old BR-AP-* numbers for traceability
+- **Mapping**: Maintain 1:1 mapping with old BR-SP-* numbers for traceability
 
 #### 3. Documentation
-- **Directory**: `docs/services/crd-controllers/01-remediationprocessor/` → **`docs/services/crd-controllers/01-signalprocessing/`**
+- **Directory**: `docs/services/crd-controllers/01-signalprocessing/` → **`docs/services/crd-controllers/01-signalprocessing/`**
 - **All Files**: Update references to SignalProcessing
 - **Architecture Docs**: Update KUBERNAUT_CRD_ARCHITECTURE.md, APPROVED_MICROSERVICES_ARCHITECTURE.md
 
@@ -132,13 +132,13 @@ The service currently named "RemediationProcessing" (formerly "AlertProcessor") 
 - [ ] Update `KUBERNAUT_CRD_ARCHITECTURE.md`
   - Section: "2. RemediationProcessing" → "2. SignalProcessing - Signal Processing & Enrichment"
   - All references to RemediationProcessing → SignalProcessing
-  - Update BR references: BR-AP-* → BR-SP-*
+  - Update BR references: BR-SP-* → BR-SP-*
 
 - [ ] Update `APPROVED_MICROSERVICES_ARCHITECTURE.md`
   - Service catalog entry
   - CRD specifications
 
-- [ ] Rename directory: `01-remediationprocessor/` → `01-signalprocessing/`
+- [ ] Rename directory: `01-signalprocessing/` → `01-signalprocessing/`
 
 - [ ] Update Excalidraw diagram: `kubernaut-layered-architecture.excalidraw`
   - Change "Environment Classification" → "Business Classification"
@@ -197,11 +197,11 @@ The service currently named "RemediationProcessing" (formerly "AlertProcessor") 
 ## Business Requirement Mapping
 
 ### Old → New Prefix
-- BR-AP-001 → BR-SP-001 (K8s Context Enrichment)
-- BR-AP-020 → BR-SP-020 (Recovery Context Integration)
-- BR-AP-031 → BR-SP-031 (Business-Aware Environment Classification)
-- BR-AP-040 → BR-SP-040 (Alert Validation)
-- BR-AP-051 → BR-SP-051 (Status Updates)
+- BR-SP-001 → BR-SP-001 (K8s Context Enrichment)
+- BR-SP-020 → BR-SP-020 (Recovery Context Integration)
+- BR-SP-031 → BR-SP-031 (Business-Aware Environment Classification)
+- BR-SP-040 → BR-SP-040 (Alert Validation)
+- BR-SP-051 → BR-SP-051 (Status Updates)
 - ... (maintains 1:1 mapping for traceability)
 
 ### Traceability
@@ -209,8 +209,8 @@ Maintain cross-reference table in service documentation:
 ```
 | Old BR | New BR | Description |
 |--------|--------|-------------|
-| BR-AP-001 | BR-SP-001 | Enrich signals with K8s context |
-| BR-AP-031 | BR-SP-031 | Business-aware environment classification |
+| BR-SP-001 | BR-SP-001 | Enrich signals with K8s context |
+| BR-SP-031 | BR-SP-031 | Business-aware environment classification |
 ```
 
 ---

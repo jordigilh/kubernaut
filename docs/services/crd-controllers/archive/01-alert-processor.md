@@ -20,9 +20,9 @@ This document provides the detailed CRD schema, controller reconciliation logic,
 
 ## Business Requirements
 
-- **Primary**: BR-AP-001 to BR-AP-050 (Alert Processing Logic)
+- **Primary**: BR-SP-001 to BR-SP-050 (Alert Processing Logic)
 - **Environment**: BR-ENV-001 to BR-ENV-050 (Classification integrated)
-- **Tracking**: BR-AP-021 (Alert lifecycle state tracking)
+- **Tracking**: BR-SP-021 (Alert lifecycle state tracking)
 
 **Deduplication Requirements** (Gateway Service responsibility, NOT Alert Processor):
 - **BR-WH-008**: Fingerprint-based request deduplication for identical alerts
@@ -126,7 +126,7 @@ Environment-based escalation criteria from Gateway Service:
 | **BR-ALERT-005** | Alert correlation and grouping | Gateway Service |
 | **BR-ALERT-006** | Alert storm escalation procedures | Gateway Service |
 | **BR-ENV-009** | Business criticality preservation | Gateway Service |
-| **BR-AP-031** | Environment-specific priority routing | Alert Processor |
+| **BR-SP-031** | Environment-specific priority routing | Alert Processor |
 
 ### Duplicate Handling Flow
 
@@ -219,7 +219,7 @@ internal/controller/          → CRD controller (INTERNAL)
 **ANALYSIS** (5-15 min): Comprehensive context understanding
   - Search existing implementations (`codebase_search "AlertProcessor implementations"`)
   - Identify reusable components in `pkg/alert/` (1,103 lines to migrate)
-  - Map business requirements (BR-AP-001 to BR-AP-050, BR-ENV-001 to BR-ENV-050)
+  - Map business requirements (BR-SP-001 to BR-SP-050, BR-ENV-001 to BR-ENV-050)
   - Identify integration points in `cmd/`
 
 **PLAN** (10-20 min): Detailed implementation strategy
@@ -233,7 +233,7 @@ internal/controller/          → CRD controller (INTERNAL)
   - Use FAKE K8s client (`sigs.k8s.io/controller-runtime/pkg/client/fake`)
   - Mock ONLY Context Service HTTP calls (use `pkg/testutil/mocks`)
   - Use REAL environment classification business logic
-  - Map tests to business requirements (BR-AP-XXX)
+  - Map tests to business requirements (BR-SP-XXX)
 
 **DO-GREEN** (15-20 min): Minimal implementation
   - Define AlertProcessingReconciler interface to make tests compile
@@ -248,7 +248,7 @@ internal/controller/          → CRD controller (INTERNAL)
   - Add degraded mode fallback and performance optimization
 
 **CHECK** (5-10 min): Validation and confidence assessment
-  - Business requirement verification (BR-AP-001 to BR-AP-050 addressed)
+  - Business requirement verification (BR-SP-001 to BR-SP-050 addressed)
   - Integration confirmation (controller in cmd/alertprocessor/)
   - Test coverage validation (70%+ unit, 20% integration, 10% E2E)
   - Performance validation (total processing <5s)
@@ -296,13 +296,13 @@ internal/controller/          → CRD controller (INTERNAL)
 
 ### Reconciliation Flow
 
-#### 1. **processing** Phase (BR-AP-001 to BR-AP-040, BR-ENV-001 to BR-ENV-025)
+#### 1. **processing** Phase (BR-SP-001 to BR-SP-040, BR-ENV-001 to BR-ENV-025)
 
 **Purpose**: Complete alert enrichment, classification, and validation in single reconciliation loop
 
 **Actions** (executed synchronously):
 
-**Step 1: Enrichment** (BR-AP-001 to BR-AP-015)
+**Step 1: Enrichment** (BR-SP-001 to BR-SP-015)
 - Call Context Service with alert labels
 - Retrieve pod details, deployment config, node status
 - Gather related resources (services, ingress, configmaps)
@@ -315,7 +315,7 @@ internal/controller/          → CRD controller (INTERNAL)
 - Apply fallback heuristics if labels missing
 - Assign business priority (p0, p1, p2, p3)
 
-**Step 3: Validation** (BR-AP-031 to BR-AP-040)
+**Step 3: Validation** (BR-SP-031 to BR-SP-040)
 - Validate enriched alert completeness
 - Verify required fields present
 - Check data quality
@@ -625,7 +625,7 @@ import (
 )
 
 // AlertProcessorService defines alert processing operations
-// Business Requirements: BR-AP-001 to BR-AP-050
+// Business Requirements: BR-SP-001 to BR-SP-050
 type AlertProcessorService interface {
     // Core processing
     ProcessAlert(ctx context.Context, alert types.Alert) (*ProcessResult, error)
@@ -2536,7 +2536,7 @@ Following Kubernaut's defense-in-depth testing strategy with expanded unit cover
 
 **Test Directory**: [test/unit/](../../../test/unit/)
 **Service Tests**: Create `test/unit/alertprocessor/controller_test.go`
-**Coverage Target**: 70%+ of business requirements (BR-AP-001 to BR-AP-050)
+**Coverage Target**: 70%+ of business requirements (BR-SP-001 to BR-SP-050)
 **Confidence**: 85-90%
 **Execution**: `make test`
 
@@ -2586,7 +2586,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
+var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
     var (
         // Fake K8s client for compile-time API safety
         fakeK8sClient      client.Client
@@ -2628,7 +2628,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
         }
     })
 
-    Context("BR-AP-010: Alert Enrichment Phase", func() {
+    Context("BR-SP-010: Alert Enrichment Phase", func() {
         It("should enrich alert with kubernetes context and transition to classifying", func() {
             // Setup test alert
             ap := &processingv1.AlertProcessing{
@@ -2702,7 +2702,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
             mockContextService.AssertNumberOfCalls(GinkgoT(), "GetContext", 1)
         })
 
-        It("BR-AP-011: should handle context service failures with degraded mode", func() {
+        It("BR-SP-011: should handle context service failures with degraded mode", func() {
             ap := testutil.NewAlertProcessing("test-alert-degraded", "default")
 
             mockK8sClient.On("Get", ctx, client.ObjectKeyFromObject(ap), ap).Return(nil)
@@ -2725,7 +2725,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
         })
     })
 
-    Context("BR-AP-020: Environment Classification Phase", func() {
+    Context("BR-SP-020: Environment Classification Phase", func() {
         It("should classify production environment with high confidence", func() {
             // Setup alert with production indicators
             ap := &processingv1.AlertProcessing{
@@ -2775,7 +2775,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
             Expect(ap.Status.EnvironmentClassification.SLARequirement).To(Equal("5m"))
         })
 
-        It("BR-AP-021: should classify staging environment with medium priority", func() {
+        It("BR-SP-021: should classify staging environment with medium priority", func() {
             ap := testutil.NewAlertProcessingWithPhase("test-staging", "default", "classifying")
             ap.Spec.Alert.Namespace = "staging-api"
             ap.Spec.Alert.Labels = map[string]string{"environment": "staging"}
@@ -2791,7 +2791,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
         })
     })
 
-    Context("BR-AP-030: Routing Decision Phase", func() {
+    Context("BR-SP-030: Routing Decision Phase", func() {
         It("should create AIAnalysis CRD and mark processing complete", func() {
             ap := testutil.NewAlertProcessingWithPhase("test-routing", "default", "routing")
             ap.Spec.Alert.Fingerprint = "route-test-456"
@@ -2819,7 +2819,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
             mockK8sClient.AssertCalled(GinkgoT(), "Create", ctx, mock.Anything)
         })
 
-        It("BR-AP-031: should handle duplicate AIAnalysis CRD gracefully", func() {
+        It("BR-SP-031: should handle duplicate AIAnalysis CRD gracefully", func() {
             ap := testutil.NewAlertProcessingWithPhase("test-duplicate", "default", "routing")
 
             mockK8sClient.On("Get", ctx, client.ObjectKeyFromObject(ap), ap).Return(nil)
@@ -2837,7 +2837,7 @@ var _ = Describe("BR-AP-001: Alert Processing Controller", func() {
         })
     })
 
-    Context("BR-AP-040: Performance and Metrics", func() {
+    Context("BR-SP-040: Performance and Metrics", func() {
         It("should complete full processing cycle within performance targets", func() {
             startTime := time.Now()
 
@@ -2984,10 +2984,10 @@ var _ = Describe("BR-E2E-AP-001: Complete Alert Processing Workflow", func() {
 ### Test Coverage Requirements
 
 **Business Requirement Mapping**:
-- **BR-AP-001 to BR-AP-015**: Alert enrichment logic (Unit + Integration)
-- **BR-AP-016 to BR-AP-030**: Environment classification (Unit + Integration)
-- **BR-AP-031 to BR-AP-045**: Routing decisions (Unit + Integration)
-- **BR-AP-046 to BR-AP-050**: Error handling and resilience (Unit + E2E)
+- **BR-SP-001 to BR-SP-015**: Alert enrichment logic (Unit + Integration)
+- **BR-SP-016 to BR-SP-030**: Environment classification (Unit + Integration)
+- **BR-SP-031 to BR-SP-045**: Routing decisions (Unit + Integration)
+- **BR-SP-046 to BR-SP-050**: Error handling and resilience (Unit + E2E)
 
 ### Mock Usage Decision Matrix
 
@@ -4804,7 +4804,7 @@ time() - alertprocessing_phase_start_timestamp{phase="enriching"} > 300
 ### Phase 1: ANALYSIS & Package Migration (1-2 days) [RED Phase Preparation]
 
 - [ ] **ANALYSIS**: Search existing implementations (`codebase_search "AlertProcessor implementations"`)
-- [ ] **ANALYSIS**: Map business requirements (BR-AP-001 to BR-AP-050, BR-ENV-001 to BR-ENV-050)
+- [ ] **ANALYSIS**: Map business requirements (BR-SP-001 to BR-SP-050, BR-ENV-001 to BR-ENV-050)
 - [ ] **ANALYSIS**: Identify integration points in cmd/alertprocessor/
 - [ ] **Package Migration RED**: Write tests validating type-safe interfaces (fail with map[string]interface{})
 - [ ] **Package Migration GREEN**: Implement structured types in `pkg/alertprocessor/types.go`
@@ -4857,7 +4857,7 @@ time() - alertprocessing_phase_start_timestamp{phase="enriching"} > 300
   - [ ] Test CRD lifecycle with real K8s API (KIND)
 - [ ] **CHECK**: Execute E2E tests for critical workflows (test/e2e/alertprocessor/)
   - [ ] Add E2E tests for complete alert-to-remediation workflow
-- [ ] **CHECK**: Validate business requirement coverage (BR-AP-001 to BR-AP-050)
+- [ ] **CHECK**: Validate business requirement coverage (BR-SP-001 to BR-SP-050)
 - [ ] **CHECK**: Configure RBAC for controller
 - [ ] **CHECK**: Add Prometheus metrics for phase durations
 - [ ] **CHECK**: Provide confidence assessment (85% - high confidence, see Development Methodology)
@@ -4978,9 +4978,9 @@ Gateway Service → AlertRemediation CRD → AlertProcessing CRD (this service)
 - Cross-cluster enrichment
 
 ### Business Requirements Coverage
-- **BR-AP-001 to BR-AP-050**: Alert processing and enrichment logic
+- **BR-SP-001 to BR-SP-050**: Alert processing and enrichment logic
 - **BR-ENV-001 to BR-ENV-050**: Environment classification (integrated)
-- **BR-AP-021**: Alert lifecycle state tracking
+- **BR-SP-021**: Alert lifecycle state tracking
 - **BR-WH-008**: Duplicate detection (Gateway Service, not Alert Processor)
 
 ### Implementation Status

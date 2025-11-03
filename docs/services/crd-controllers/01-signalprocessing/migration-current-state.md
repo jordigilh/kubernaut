@@ -68,7 +68,7 @@ import (
 )
 
 // AlertProcessorService defines alert processing operations
-// Business Requirements: BR-AP-001 to BR-AP-050
+// Business Requirements: BR-SP-001 to BR-SP-050
 type AlertProcessorService interface {
     // Core processing
     ProcessAlert(ctx context.Context, alert types.Alert) (*ProcessResult, error)
@@ -212,7 +212,7 @@ func (s *ServiceImpl) ProcessAlert(ctx, alert) (*ProcessResult, error) {
 
 // MIGRATED: Asynchronous CRD reconciliation
 func (r *RemediationProcessingReconciler) Reconcile(ctx, req) (ctrl.Result, error) {
-    // RemediationProcessing CRD only created for non-duplicate alerts
+    // SignalProcessing CRD only created for non-duplicate alerts
     // Gateway Service handles duplicate detection and escalation
 
     switch alertProcessing.Status.Phase {
@@ -279,7 +279,7 @@ func (r *RemediationProcessingReconciler) Reconcile(ctx, req) (ctrl.Result, erro
 - ✅ 4-step processing pipeline (deduplication removed)
 
 **What's Missing (CRD V1 Requirements)**:
-- ❌ RemediationProcessing CRD schema (need to create)
+- ❌ SignalProcessing CRD schema (need to create)
 - ❌ RemediationProcessingReconciler controller (need to create)
 - ❌ CRD lifecycle management (owner refs, finalizers)
 - ❌ Watch-based status coordination

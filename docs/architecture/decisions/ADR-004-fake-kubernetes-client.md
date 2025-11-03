@@ -778,7 +778,7 @@ It("should handle optimistic locking conflicts", func() {
   - Fulfilled: ✅ controller-runtime fake client is official K8s tooling
 
 ### **Design Documents**:
-- **Testing Strategy**: `docs/services/crd-controllers/01-remediationprocessor/testing-strategy.md`
+- **Testing Strategy**: `docs/services/crd-controllers/01-signalprocessing/testing-strategy.md`
 - **APDC-TDD Workflow**: `.cursor/rules/00-core-development-methodology.mdc`
 
 ### **Implementation References**:

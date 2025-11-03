@@ -5,7 +5,7 @@
 ### Controller Configuration
 
 **Critical Patterns from [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)**:
-1. **Owner References**: RemediationProcessing CRD owned by RemediationRequest for cascade deletion
+1. **Owner References**: SignalProcessing CRD owned by RemediationRequest for cascade deletion
 2. **Finalizers**: Cleanup coordination before deletion
 3. **Watch Optimization**: Status updates trigger RemediationRequest reconciliation
 4. **Timeout Handling**: Phase-level timeout detection and escalation
@@ -37,7 +37,7 @@ import (
 
 const (
     // Finalizer for cleanup coordination
-    alertProcessingFinalizer = "remediationprocessing.kubernaut.io/finalizer"
+    alertProcessingFinalizer = "signalprocessing.kubernaut.io/finalizer"
 
     // Timeout configuration
     defaultPhaseTimeout = 5 * time.Minute  // Max time per phase
@@ -130,7 +130,7 @@ type SuccessfulStrategyData struct {
 func (r *RemediationProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     log := log.FromContext(ctx)
 
-    // Fetch RemediationProcessing CRD
+    // Fetch SignalProcessing CRD
     var alertProcessing processingv1.RemediationProcessing
     if err := r.Get(ctx, req.NamespacedName, &alertProcessing); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -400,7 +400,7 @@ func (r *RemediationProcessingReconciler) reconcileEnriching(ctx context.Context
     // WHY Alternative 2?
     // - ✅ Temporal consistency: All contexts (monitoring + business + recovery) at same timestamp
     // - ✅ Fresh contexts: Recovery gets CURRENT cluster state, not stale from initial attempt
-    // - ✅ Immutable audit trail: Each RemediationProcessing CRD is complete snapshot
+    // - ✅ Immutable audit trail: Each SignalProcessing CRD is complete snapshot
     // - ✅ Self-contained CRDs: AIAnalysis reads from spec only (no API calls)
     // ========================================
 

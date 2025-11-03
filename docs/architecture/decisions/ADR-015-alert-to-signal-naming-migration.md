@@ -337,7 +337,7 @@ CRDs already use `SignalType` field pattern. Service layer should match.
 - [ ] Validate test coverage maintained (70%+ unit, 20%+ integration)
 
 ### **Phase 4: Documentation Cleanup** (Week 4)
-- [ ] Update `docs/services/crd-controllers/01-remediationprocessor/` docs
+- [ ] Update `docs/services/crd-controllers/01-signalprocessing/` docs
 - [ ] Update `docs/services/crd-controllers/02-aianalysis/` docs
 - [ ] Update `docs/services/stateless/gateway-service/` docs
 - [ ] Add deprecation notice to archive README

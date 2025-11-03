@@ -68,7 +68,7 @@ kubebuilder create api \
 - Provider data fields
 - **Phase 1 NEW**: `SignalLabels`, `SignalAnnotations`
 
-#### **Step 3: Create RemediationProcessing CRD**
+#### **Step 3: Create SignalProcessing CRD**
 
 ```bash
 # Create the API scaffolding
@@ -210,7 +210,7 @@ If Kubebuilder is not available, manually create the directory structure and fil
 - [ ] Kubebuilder markers added
 - [ ] DeepCopy generated
 
-### **RemediationProcessing CRD**
+### **SignalProcessing CRD**
 - [ ] `api/remediationprocessing/v1/remediationprocessing_types.go` exists
 - [ ] Spec fields match documentation
 - [ ] Status fields match documentation
@@ -254,7 +254,7 @@ If Kubebuilder is not available, manually create the directory structure and fil
 - `docs/design/CRD/03_AI_ANALYSIS_CRD.md` - AIAnalysis design
 
 **Service Specifications**:
-- `docs/services/crd-controllers/01-remediationprocessor/` - RemediationProcessor service
+- `docs/services/crd-controllers/01-signalprocessing/` - RemediationProcessor service
 - `docs/services/crd-controllers/02-aianalysis/` - AIAnalysis service
 - `docs/services/crd-controllers/03-workflowexecution/` - WorkflowExecution service
 - `docs/services/crd-controllers/04-kubernetesexecutor/` - KubernetesExecutor service
@@ -268,7 +268,7 @@ If Kubebuilder is not available, manually create the directory structure and fil
 |------|------|
 | Initialize Kubebuilder (if needed) | 15 min |
 | Create RemediationRequest CRD | 30 min |
-| Create RemediationProcessing CRD | 30 min |
+| Create SignalProcessing CRD | 30 min |
 | Create AIAnalysis CRD | 30 min |
 | Create additional 3 CRDs | 45 min |
 | Generate manifests and verify | 15 min |

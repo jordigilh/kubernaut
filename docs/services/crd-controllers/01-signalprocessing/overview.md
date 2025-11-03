@@ -62,15 +62,15 @@ While RemediationProcessor doesn't directly call HolmesGPT, its enrichment quali
 
 **RemediationProcessor** implements alert processing and enrichment for Kubernetes remediation:
 
-### V1 Scope: Alert Processing (BR-AP-001 to BR-AP-062)
+### V1 Scope: Alert Processing (BR-SP-001 to BR-SP-062)
 
-**Range**: BR-AP-001 to BR-AP-180
-**V1 Active**: BR-AP-001 to BR-AP-062 (22 BRs total)
-**V2 Reserved**: BR-AP-063 to BR-AP-180 (multi-source context, advanced correlation)
+**Range**: BR-SP-001 to BR-SP-180
+**V1 Active**: BR-SP-001 to BR-SP-062 (22 BRs total)
+**V2 Reserved**: BR-SP-063 to BR-SP-180 (multi-source context, advanced correlation)
 
 **V1 Business Requirements Breakdown**:
 
-#### Core Alert Processing (BR-AP-001 to BR-AP-050)
+#### Core Alert Processing (BR-SP-001 to BR-SP-050)
 **Count**: 16 BRs
 **Focus**: Alert ingestion, validation, transformation, and Kubernetes context enrichment
 
@@ -81,31 +81,31 @@ While RemediationProcessor doesn't directly call HolmesGPT, its enrichment quali
 - Resource targeting data extraction
 - Status updates for downstream controllers
 
-#### Environment Classification (BR-AP-051 to BR-AP-053)
+#### Environment Classification (BR-SP-051 to BR-SP-053)
 **Count**: 3 BRs (migrated from BR-ENV-*)
 **Focus**: Environment tier classification with business criticality
 
 **Migrated BRs**:
-- BR-AP-051: Environment detection from namespace labels (was BR-ENV-001)
-- BR-AP-052: Environment validation and classification (was BR-ENV-009)
-- BR-AP-053: Environment-specific configuration loading (was BR-ENV-050)
+- BR-SP-051: Environment detection from namespace labels (was BR-ENV-001)
+- BR-SP-052: Environment validation and classification (was BR-ENV-009)
+- BR-SP-053: Environment-specific configuration loading (was BR-ENV-050)
 
 **Rationale**: Gateway Service set precedent by migrating BR-ENV-* → BR-GATEWAY-051 to 053.
 RemediationProcessor followed the same pattern for consistency.
 
-#### Alert Enrichment (BR-AP-060 to BR-AP-062)
+#### Alert Enrichment (BR-SP-060 to BR-SP-062)
 **Count**: 3 BRs (migrated from BR-ALERT-*)
 **Focus**: Alert enrichment, correlation, and timeout handling
 
 **Migrated BRs**:
-- BR-AP-060: Alert enrichment with K8s context (was BR-ALERT-003)
-- BR-AP-061: Alert correlation and deduplication (was BR-ALERT-005)
-- BR-AP-062: Alert timeout and escalation handling (was BR-ALERT-006)
+- BR-SP-060: Alert enrichment with K8s context (was BR-ALERT-003)
+- BR-SP-061: Alert correlation and deduplication (was BR-ALERT-005)
+- BR-SP-062: Alert timeout and escalation handling (was BR-ALERT-006)
 
 **Rationale**: BR-ALERT-* was shared between RemediationProcessor and RemediationOrchestrator.
 RemediationProcessor is the primary owner (first controller in the pipeline handling alert processing).
 
-### V2 Expansion (BR-AP-063 to BR-AP-180)
+### V2 Expansion (BR-SP-063 to BR-SP-180)
 
 **Reserved for Future**:
 - Multi-source context discovery (additional Context Service providers)
@@ -144,7 +144,7 @@ RemediationProcessor is the primary owner (first controller in the pipeline hand
 ```mermaid
 graph TB
     subgraph "Remediation Processor Service"
-        AP[RemediationProcessing CRD]
+        AP[SignalProcessing CRD]
         Controller[RemediationProcessingReconciler]
         Enricher[Context Enricher]
         Classifier[Environment Classifier]
@@ -187,7 +187,7 @@ sequenceDiagram
     participant CTXAPI as Context<br/>API
     participant K8S as Kubernetes<br/>API
 
-    AR->>AP: Create RemediationProcessing CRD<br/>(isRecoveryAttempt flag)
+    AR->>AP: Create SignalProcessing CRD<br/>(isRecoveryAttempt flag)
     activate AP
     AP-->>Ctrl: Watch triggers reconciliation
     activate Ctrl
@@ -290,7 +290,7 @@ stateDiagram-v2
 ┌─────────────────────────────────────────────────────────────────┐
 │ Remediation Processor (CRD Controller) - ALERT ENRICHMENT            │
 ├─────────────────────────────────────────────────────────────────┤
-│ 1. Receives RemediationProcessing CRD (already deduplicated)         │
+│ 1. Receives SignalProcessing CRD (already deduplicated)         │
 │ 2. NO duplicate checking - Gateway handled it                  │
 │ 3. Enriches alert with Kubernetes context                      │
 │ 4. Classifies environment (production/staging/dev)             │
@@ -302,7 +302,7 @@ stateDiagram-v2
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Alert Storm Escalation Thresholds (BR-AP-062)
+### Alert Storm Escalation Thresholds (BR-SP-062)
 
 Environment-based escalation criteria from Gateway Service:
 
@@ -317,11 +317,11 @@ Environment-based escalation criteria from Gateway Service:
 | Requirement | Implementation | Service |
 |------------|---------------|---------|
 | **BR-WH-008** | Fingerprint-based duplicate detection | Gateway Service |
-| **BR-AP-060** | Alert suppression to reduce noise | Gateway Service |
-| **BR-AP-061** | Alert correlation and grouping | Gateway Service |
-| **BR-AP-062** | Alert storm escalation procedures | Gateway Service |
-| **BR-AP-052** | Business criticality preservation | Gateway Service |
-| **BR-AP-031** | Environment-specific priority routing | Remediation Processor |
+| **BR-SP-060** | Alert suppression to reduce noise | Gateway Service |
+| **BR-SP-061** | Alert correlation and grouping | Gateway Service |
+| **BR-SP-062** | Alert storm escalation procedures | Gateway Service |
+| **BR-SP-052** | Business criticality preservation | Gateway Service |
+| **BR-SP-031** | Environment-specific priority routing | Remediation Processor |
 
 ### Duplicate Handling Flow
 
@@ -350,7 +350,7 @@ func (g *GatewayService) HandleWebhook(ctx, payload) error {
 
 // Remediation Processor - NO Duplicate Checking
 func (r *RemediationProcessingReconciler) Reconcile(ctx, req) (ctrl.Result, error) {
-    // RemediationProcessing CRD only exists for non-duplicate alerts
+    // SignalProcessing CRD only exists for non-duplicate alerts
     // Focus on enrichment, classification, and routing
 
     switch ap.Status.Phase {
@@ -385,7 +385,7 @@ Following Go idioms and codebase patterns (`testutil`, `holmesgpt`), the Remedia
 cmd/remediationprocessor/     → Main application entry point
   └── main.go
 
-pkg/remediationprocessor/     → Business logic (PUBLIC API)
+pkg/signalprocessing/     → Business logic (PUBLIC API)
   ├── service.go             → RemediationProcessor Service interface
   ├── implementation.go      → Service implementation
   ├── components.go          → Processing components
@@ -395,7 +395,7 @@ internal/controller/          → CRD controller (INTERNAL)
   └── remediationprocessing_controller.go
 ```
 
-**Migration Complete**: Package migrated from `pkg/alert/` → `pkg/remediationprocessor/` for naming consistency.
+**Migration Complete**: Package migrated from `pkg/alert/` → `pkg/signalprocessing/` for naming consistency.
 
 ---
 
@@ -414,7 +414,7 @@ internal/controller/          → CRD controller (INTERNAL)
 **ANALYSIS** (5-15 min): Comprehensive context understanding
   - Search existing implementations (`codebase_search "AlertProcessor implementations"`)
   - Identify reusable components in `pkg/alert/` (1,103 lines to migrate)
-  - Map business requirements (BR-AP-001 to BR-AP-050, BR-AP-051 to BR-AP-053)
+  - Map business requirements (BR-SP-001 to BR-SP-050, BR-SP-051 to BR-SP-053)
   - Identify integration points in `cmd/`
 
 **PLAN** (10-20 min): Detailed implementation strategy
@@ -428,7 +428,7 @@ internal/controller/          → CRD controller (INTERNAL)
   - Use FAKE K8s client (`sigs.k8s.io/controller-runtime/pkg/client/fake`)
   - Mock ONLY Context Service HTTP calls (use `pkg/testutil/mocks`)
   - Use REAL environment classification business logic
-  - Map tests to business requirements (BR-AP-XXX)
+  - Map tests to business requirements (BR-SP-XXX)
 
 **DO-GREEN** (15-20 min): Minimal implementation
   - Define RemediationProcessingReconciler interface to make tests compile
@@ -443,14 +443,14 @@ internal/controller/          → CRD controller (INTERNAL)
   - Add degraded mode fallback and performance optimization
 
 **CHECK** (5-10 min): Validation and confidence assessment
-  - Business requirement verification (BR-AP-001 to BR-AP-050 addressed)
+  - Business requirement verification (BR-SP-001 to BR-SP-050 addressed)
   - Integration confirmation (controller in cmd/remediationprocessor/)
   - Test coverage validation (70%+ unit, 20% integration, 10% E2E)
   - Performance validation (total processing <5s)
   - Confidence assessment: 85% (high confidence, see Migration Effort section)
 
 **AI Assistant Checkpoints**: See [.cursor/rules/10-ai-assistant-behavioral-constraints.mdc](../../../.cursor/rules/10-ai-assistant-behavioral-constraints.mdc)
-  - **Checkpoint A**: Type Reference Validation (read RemediationProcessing CRD types before referencing)
+  - **Checkpoint A**: Type Reference Validation (read SignalProcessing CRD types before referencing)
   - **Checkpoint B**: Test Creation Validation (reuse existing test patterns)
   - **Checkpoint C**: Business Integration Validation (verify cmd/remediationprocessor/ integration)
   - **Checkpoint D**: Build Error Investigation (complete dependency analysis for migration)
@@ -482,14 +482,14 @@ Alert enrichment, environment classification, and validation service that bridge
 
 ### Key Architectural Decisions
 1. **Single-Phase Synchronous Processing** - Fast operations (~3 seconds) execute in single reconciliation loop (no multi-phase complexity)
-2. **CRD-based State Management** - RemediationProcessing CRD with owner references for cascade deletion
+2. **CRD-based State Management** - SignalProcessing CRD with owner references for cascade deletion
 3. **RemediationRequest Orchestration** - Central controller creates RemediationProcessing and watches for completion to create AIAnalysis
 4. **Degraded Mode Operation** - Context Service unavailability triggers fallback to alert labels
 5. **Duplicate Detection Delegation** - Gateway Service responsibility (BR-WH-008), not Remediation Processor
 
 ### Integration Model
 ```
-Gateway Service → RemediationRequest CRD → RemediationProcessing CRD (this service)
+Gateway Service → RemediationRequest CRD → SignalProcessing CRD (this service)
                                        ↓
            RemediationProcessing enriches (monitoring + business + recovery contexts)
                                        ↓
@@ -519,22 +519,22 @@ Gateway Service → RemediationRequest CRD → RemediationProcessing CRD (this s
 - Cross-cluster enrichment
 
 ### Business Requirements Coverage
-- **BR-AP-001 to BR-AP-050**: Alert processing and enrichment logic
-- **BR-AP-051 to BR-AP-053**: Environment classification (integrated)
-- **BR-AP-060 to BR-AP-062**: Alert enrichment, correlation, timeout handling
+- **BR-SP-001 to BR-SP-050**: Alert processing and enrichment logic
+- **BR-SP-051 to BR-SP-053**: Environment classification (integrated)
+- **BR-SP-060 to BR-SP-062**: Alert enrichment, correlation, timeout handling
 - **BR-WF-RECOVERY-011**: Recovery context enrichment from Context API (Alternative 2)
-- **BR-AP-021**: Alert lifecycle state tracking
+- **BR-SP-021**: Alert lifecycle state tracking
 - **BR-WH-008**: Duplicate detection (Gateway Service, not Remediation Processor)
 
 ### Implementation Status
-- **Package Migration**: Complete - migrated from `pkg/alert/` to `pkg/remediationprocessor/`
+- **Package Migration**: Complete - migrated from `pkg/alert/` to `pkg/signalprocessing/`
 - **CRD Controller**: New implementation following controller-runtime patterns
 - **Database Schema**: Audit table design complete
 - **Next Steps**: Controller implementation and integration testing
 
 ### Next Steps
 1. ✅ **Approved Design Specification** (98% complete)
-2. ✅ **Package Migration Complete**: `pkg/alert/` → `pkg/remediationprocessor/`
+2. ✅ **Package Migration Complete**: `pkg/alert/` → `pkg/signalprocessing/`
 3. **CRD Schema Definition**: RemediationProcessing API types
 4. **Controller Implementation**: Single-phase reconciliation logic
 5. **Integration Testing**: With RemediationRequest controller and Context Service

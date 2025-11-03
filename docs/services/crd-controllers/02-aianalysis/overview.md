@@ -16,7 +16,7 @@
 
 **V1 Scope - HolmesGPT with Complete Enrichment**:
 - Single AI provider: HolmesGPT (port 8080)
-- **Data source**: Complete enrichment from RemediationProcessing CRD (Alternative 2)
+- **Data source**: Complete enrichment from SignalProcessing CRD (Alternative 2)
 - **No API calls during reconciliation** (all contexts in CRD spec)
 - **Fresh contexts for recovery** (monitoring + business + recovery from Context API)
 - No multi-model orchestration
@@ -50,7 +50,7 @@ graph TB
     end
 
     subgraph "Data Sources (Alternative 2)"
-        RP[RemediationProcessing CRD<br/>Enrichment Source<br/>monitoring + business + recovery]
+        RP[SignalProcessing CRD<br/>Enrichment Source<br/>monitoring + business + recovery]
     end
 
     subgraph "Child CRDs"

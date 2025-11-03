@@ -5,13 +5,13 @@
 Following Kubernetes finalizer naming convention:
 
 ```go
-const alertProcessingFinalizer = "remediationprocessing.kubernaut.io/alertprocessing-cleanup"
+const alertProcessingFinalizer = "signalprocessing.kubernaut.io/alertprocessing-cleanup"
 ```
 
 **Naming Pattern**: `{domain}.kubernaut.io/{resource}-cleanup`
 
 **Why This Pattern**:
-- **Domain-Scoped**: `remediationprocessing.kubernaut.io` prevents conflicts with other services
+- **Domain-Scoped**: `signalprocessing.kubernaut.io` prevents conflicts with other services
 - **Resource-Specific**: `alertprocessing-cleanup` clearly indicates what's being cleaned up
 - **Kubernetes Convention**: Follows standard finalizer naming (domain/action format)
 
@@ -36,7 +36,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const alertProcessingFinalizer = "remediationprocessing.kubernaut.io/alertprocessing-cleanup"
+const alertProcessingFinalizer = "signalprocessing.kubernaut.io/alertprocessing-cleanup"
 
 type RemediationProcessingReconciler struct {
     client.Client
@@ -329,7 +329,7 @@ RemediationRequest.status.overallPhase = "pending"
     ↓
 RemediationRequest Controller reconciles
     ↓
-RemediationRequest Controller creates RemediationProcessing CRD
+RemediationRequest Controller creates SignalProcessing CRD
     ↓ (with owner reference)
 RemediationProcessing Controller reconciles (this controller)
     ↓
@@ -462,7 +462,7 @@ Finalizer cleanup executes:
     ↓
 Finalizer removed
     ↓
-Kubernetes deletes RemediationProcessing CRD
+Kubernetes deletes SignalProcessing CRD
 ```
 
 **Parallel Deletion**: All service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) deleted in parallel when RemediationRequest is deleted.
@@ -541,7 +541,7 @@ rate(alertprocessing_created_total[5m])
 # CRD completion time (end-to-end)
 histogram_quantile(0.95, alertprocessing_lifecycle_duration_seconds)
 
-# Active RemediationProcessing CRDs
+# Active SignalProcessing CRDs
 alertprocessing_active_total
 
 # CRD deletion rate
@@ -591,7 +591,7 @@ groups:
       severity: warning
     annotations:
       summary: "RemediationProcessing deletion rate exceeds creation rate"
-      description: "More RemediationProcessing CRDs being deleted than created (possible cascade deletion issue)"
+      description: "More SignalProcessing CRDs being deleted than created (possible cascade deletion issue)"
 
   - alert: RemediationProcessingHighDegradedMode
     expr: sum(alertprocessing_active_total{degraded_mode="true"}) / sum(alertprocessing_active_total) > 0.5
@@ -599,7 +599,7 @@ groups:
     labels:
       severity: critical
     annotations:
-      summary: ">50% of RemediationProcessing CRDs in degraded mode"
+      summary: ">50% of SignalProcessing CRDs in degraded mode"
       description: "Context Service may be unavailable"
 ```
 

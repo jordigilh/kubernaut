@@ -25,7 +25,7 @@ Three comprehensive expansion plans have been created showing exactly what will 
 ## Service-by-Service Breakdown
 
 ### 1. Remediation Processor
-**Plan Location**: `02-remediationprocessor/implementation/EXPANSION_PLAN_TO_95_PERCENT.md`
+**Plan Location**: `02-signalprocessing/implementation/EXPANSION_PLAN_TO_95_PERCENT.md`
 
 **Current**: 1,513 lines, 70% confidence
 **Target**: 5,200 lines, 95% confidence

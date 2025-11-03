@@ -109,7 +109,7 @@
 | Service | Relationship | Purpose |
 |---------|--------------|---------|
 | **Gateway Service** | Upstream | Creates RemediationRequest CRD from alerts |
-| **RemediationProcessing Service** | Child (Sibling) | Enriches alert data |
+| **SignalProcessing Service** | Child (Sibling) | Enriches alert data |
 | **AIAnalysis Service** | Child (Sibling) | Provides AI analysis and recommendations |
 | **WorkflowExecution Service** | Child (Sibling) | Executes remediation workflow |
 | **Notification Service** | External | Sends escalation notifications |

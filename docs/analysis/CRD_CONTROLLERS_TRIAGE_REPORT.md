@@ -219,13 +219,13 @@ BR-INTEGRATION-*
 #### **Issue Description**
 
 RemediationProcessor uses **3 different BR prefixes**:
-- **BR-AP-*** (16 BRs): Alert Processing (RemediationProcessor-specific)
+- **BR-SP-*** (16 BRs): Alert Processing (RemediationProcessor-specific)
 - **BR-ALERT-*** (3 BRs): General alert functionality
 - **BR-ENV-*** (3 BRs): Environment classification
 
 **Example References**:
 ```
-BR-AP-001, BR-AP-010, BR-AP-011, BR-AP-015, BR-AP-016, BR-AP-020
+BR-SP-001, BR-SP-010, BR-SP-011, BR-SP-015, BR-SP-016, BR-SP-020
 BR-ALERT-003, BR-ALERT-005, BR-ALERT-006
 BR-ENV-001, BR-ENV-009, BR-ENV-050
 ```
@@ -241,15 +241,15 @@ BR-ENV-001, BR-ENV-009, BR-ENV-050
 - Gateway Service previously used BR-ENV-* for environment classification
 - Gateway migrated to BR-GATEWAY-051 to BR-GATEWAY-053
 - RemediationProcessor still uses BR-ENV-*
-- **Inconsistency**: Should RemediationProcessor also use BR-AP-* range?
+- **Inconsistency**: Should RemediationProcessor also use BR-SP-* range?
 
 #### **Recommended Resolution**
 
-**Unify Under BR-AP-* Prefix**:
-- BR-AP-001 to BR-AP-180 (RemediationProcessor-specific)
-- Map BR-ENV-* → BR-AP-051 to BR-AP-053 (following Gateway pattern)
+**Unify Under BR-SP-* Prefix**:
+- BR-SP-001 to BR-SP-180 (RemediationProcessor-specific)
+- Map BR-ENV-* → BR-SP-051 to BR-SP-053 (following Gateway pattern)
 - Transfer BR-ALERT-* to owning service:
-  - If RemediationProcessor-specific → BR-AP-060 to BR-AP-070
+  - If RemediationProcessor-specific → BR-SP-060 to BR-SP-070
   - If shared/general → Resolve ownership with RemediationOrchestrator
 
 **Confidence**: 80% - Need clarification on BR-ALERT-* ownership
@@ -408,8 +408,8 @@ Add "Business Requirements Mapping" section to all 5 controller `overview.md` fi
 
 | Business Requirement | Implementation | Validation |
 |---------------------|----------------|------------|
-| **BR-AP-001**: Alert enrichment | `EnrichAlert()` in `enricher.go` | Unit test: K8s context retrieval |
-| **BR-AP-010**: Environment classification | `ClassifyEnvironment()` | Integration test: namespace labels |
+| **BR-SP-001**: Alert enrichment | `EnrichAlert()` in `enricher.go` | Unit test: K8s context retrieval |
+| **BR-SP-010**: Environment classification | `ClassifyEnvironment()` | Integration test: namespace labels |
 | ... | ... | ... |
 ```
 
@@ -446,8 +446,8 @@ Add "Business Requirements Mapping" section to all 5 controller `overview.md` fi
 
 **No Reserved Range Documentation**:
 - What BR ranges are reserved for V2/V3?
-- Can developers safely assume BR-AP-001 to BR-AP-180 are all V1?
-- Or only BR-AP-001 to BR-AP-020 are V1, rest reserved?
+- Can developers safely assume BR-SP-001 to BR-SP-180 are all V1?
+- Or only BR-SP-001 to BR-SP-020 are V1, rest reserved?
 
 #### **Recommended Resolution**
 
@@ -455,9 +455,9 @@ Add V1 scope clarification to each controller's `implementation-checklist.md`:
 
 **Example for RemediationProcessor**:
 ```markdown
-- **Business Requirements**: BR-AP-001 through BR-AP-180
-  - **V1 Scope**: BR-AP-001 to BR-AP-050 (documented in testing-strategy.md)
-  - **Reserved for Future**: BR-AP-051 to BR-AP-180 (V2 multi-source context, advanced correlation)
+- **Business Requirements**: BR-SP-001 through BR-SP-180
+  - **V1 Scope**: BR-SP-001 to BR-SP-050 (documented in testing-strategy.md)
+  - **Reserved for Future**: BR-SP-051 to BR-SP-180 (V2 multi-source context, advanced correlation)
 ```
 
 **Confidence**: 90% - Follows established stateless services pattern
@@ -827,7 +827,7 @@ func (r *Reconciler) MetricsHandler() http.Handler {
 
 ```bash
 # After fixes, verify single prefix per controller
-for dir in 01-remediationprocessor 02-aianalysis 03-workflowexecution \
+for dir in 01-signalprocessing 02-aianalysis 03-workflowexecution \
            04-kubernetesexecutor 05-remediationorchestrator; do
   echo "=== $dir ==="
   grep -roh "BR-[A-Z]*-" docs/services/crd-controllers/$dir/ \
@@ -840,7 +840,7 @@ done
 
 ```bash
 # All controllers should have BR mapping section
-for dir in 01-remediationprocessor 02-aianalysis 03-workflowexecution \
+for dir in 01-signalprocessing 02-aianalysis 03-workflowexecution \
            04-kubernetesexecutor 05-remediationorchestrator; do
   grep -c "Business Requirements Mapping" \
     docs/services/crd-controllers/$dir/overview.md
@@ -852,7 +852,7 @@ done
 
 ```bash
 # All controllers should have V1 scope clarification
-for dir in 01-remediationprocessor 02-aianalysis 03-workflowexecution \
+for dir in 01-signalprocessing 02-aianalysis 03-workflowexecution \
            04-kubernetesexecutor 05-remediationorchestrator; do
   grep -c "V1 Scope" \
     docs/services/crd-controllers/$dir/implementation-checklist.md

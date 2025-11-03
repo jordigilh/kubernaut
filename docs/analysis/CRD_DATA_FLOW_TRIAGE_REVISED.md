@@ -1,15 +1,15 @@
 # CRD Data Flow Triage - REVISED: Self-Contained CRD Pattern
 
 **Date**: October 8, 2025
-**Purpose**: Triage RemediationProcessing CRD to ensure it contains all data needed for self-contained operation
-**Scope**: Gateway Service → RemediationRequest → RemediationProcessing CRD
+**Purpose**: Triage SignalProcessing CRD to ensure it contains all data needed for self-contained operation
+**Scope**: Gateway Service → RemediationRequest → SignalProcessing CRD
 **Architecture Pattern**: **Self-Contained CRDs** (no cross-CRD reads during reconciliation)
 
 ---
 
 ## 🎯 **REVISED UNDERSTANDING**
 
-**Correct Pattern**: RemediationProcessing CRD MUST be **self-contained** with all data it needs copied from RemediationRequest.
+**Correct Pattern**: SignalProcessing CRD MUST be **self-contained** with all data it needs copied from RemediationRequest.
 
 **Rationale**:
 1. ✅ **No Cross-CRD Reads**: Controllers don't fetch parent CRDs during reconciliation
@@ -23,7 +23,7 @@
 
 ## 📊 **REMEDIATIONPROCESSOR CONTROLLER RESPONSIBILITIES**
 
-Based on `docs/services/crd-controllers/01-remediationprocessor/overview.md`:
+Based on `docs/services/crd-controllers/01-signalprocessing/overview.md`:
 
 ### **Core Responsibilities**:
 1. **Enrich alerts with Kubernetes context** (pods, deployments, nodes) → ~8KB context
@@ -82,11 +82,11 @@ Based on `docs/services/crd-controllers/01-remediationprocessor/overview.md`:
 - ⚠️ `signalType` - prometheus/kubernetes-event (may affect enrichment strategy)
 - ⚠️ `targetType` - kubernetes/aws/azure (V1: kubernetes only)
 
-#### **7. Temporal Data** (For timeout handling - BR-AP-062)
+#### **7. Temporal Data** (For timeout handling - BR-SP-062)
 - ⚠️ `firingTime` - When signal started (for age calculation)
 - ⚠️ `receivedTime` - When Gateway received (for latency tracking)
 
-#### **8. Deduplication Context** (For correlation - BR-AP-061)
+#### **8. Deduplication Context** (For correlation - BR-SP-061)
 - ⚠️ `deduplication.occurrenceCount` - How many times seen
 - ⚠️ `deduplication.firstSeen` - First occurrence timestamp
 - ⚠️ `deduplication.lastSeen` - Latest occurrence timestamp
@@ -115,9 +115,9 @@ Based on `docs/services/crd-controllers/01-remediationprocessor/overview.md`:
 | `signalType` | ⚠️ **MAYBE** | Adaptive enrichment strategy | **LOW** |
 | `signalSource` | ❌ **NO** | Not needed for enrichment | **NONE** |
 | `targetType` | ⚠️ **MAYBE** | V1: Always kubernetes | **LOW** |
-| `firingTime` | ✅ **YES** | Timeout handling (BR-AP-062) | **MEDIUM** |
+| `firingTime` | ✅ **YES** | Timeout handling (BR-SP-062) | **MEDIUM** |
 | `receivedTime` | ✅ **YES** | Latency tracking | **MEDIUM** |
-| `deduplication.occurrenceCount` | ✅ **YES** | Correlation (BR-AP-061) | **MEDIUM** |
+| `deduplication.occurrenceCount` | ✅ **YES** | Correlation (BR-SP-061) | **MEDIUM** |
 | `deduplication.firstSeen` | ✅ **YES** | Pattern detection | **LOW** |
 | `deduplication.lastSeen` | ✅ **YES** | Recency tracking | **LOW** |
 | `deduplication.isDuplicate` | ❌ **NO** | Gateway already filtered | **NONE** |
@@ -189,7 +189,7 @@ type RemediationProcessingSpec struct {
     // CORRELATION CONTEXT (From Gateway)
     // ========================================
 
-    // Deduplication context for correlation (BR-AP-061)
+    // Deduplication context for correlation (BR-SP-061)
     Deduplication DeduplicationContext `json:"deduplication"` // ✅ MEDIUM
 
     // Storm detection context
@@ -568,7 +568,7 @@ type RemediationRequestSpec struct {
 
 ### **2. RemediationProcessing Schema Enhancement**
 
-**File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+**File**: `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 
 **Changes**:
 ```go
@@ -663,7 +663,7 @@ type RemediationProcessingSpec struct {
    - Owner: Gateway Service team
 
 2. **Update RemediationProcessing Spec** (3-4 hours)
-   - File: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+   - File: `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
    - Action: Add all fields from recommended spec
    - Owner: RemediationProcessor team
 
@@ -704,11 +704,11 @@ type RemediationProcessingSpec struct {
 
 **CRD Schemas**:
 - `docs/architecture/CRD_SCHEMAS.md` - RemediationRequest schema (needs update)
-- `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md` - RemediationProcessing schema (needs update)
+- `docs/services/crd-controllers/01-signalprocessing/crd-schema.md` - RemediationProcessing schema (needs update)
 
 **Service Specifications**:
 - `docs/services/stateless/gateway-service/crd-integration.md` - Gateway CRD creation (needs update)
-- `docs/services/crd-controllers/01-remediationprocessor/overview.md` - RemediationProcessor responsibilities
+- `docs/services/crd-controllers/01-signalprocessing/overview.md` - RemediationProcessor responsibilities
 - `docs/services/crd-controllers/05-remediationorchestrator/integration-points.md` - Orchestrator mapping (needs update)
 
 ---

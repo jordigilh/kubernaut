@@ -341,7 +341,7 @@ rate(alertprocessing_kubernetes_api_requests_total[5m])
 # 9. CRD Creation Rate
 rate(alertprocessing_created_total[5m])
 
-# 10. Active RemediationProcessing CRDs
+# 10. Active SignalProcessing CRDs
 alertprocessing_active_total
 ```
 

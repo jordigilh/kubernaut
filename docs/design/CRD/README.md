@@ -32,7 +32,7 @@ config/crd/bases/
 ├── kubernetesexecution.kubernaut.io_kubernetesexecutions.yaml
 ├── remediation.kubernaut.io_remediationrequests.yaml
 ├── remediationorchestrator.kubernaut.io_remediationorchestrators.yaml
-├── remediationprocessing.kubernaut.io_remediationprocessings.yaml
+├── signalprocessing.kubernaut.io_remediationprocessings.yaml
 └── workflowexecution.kubernaut.io_workflowexecutions.yaml
 ```
 
@@ -54,7 +54,7 @@ config/crd/bases/
 **Complete Service Documentation**:
 ```
 docs/services/crd-controllers/
-├── 01-remediationprocessor/     (~2,000 lines)
+├── 01-signalprocessing/     (~2,000 lines)
 │   ├── README.md                 - Service index
 │   ├── crd-schema.md             - CRD expectations
 │   ├── controller-implementation.md

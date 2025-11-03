@@ -53,13 +53,13 @@ RemediationRequest.status.overallPhase = "completed"
 - Validate RemediationRequest spec (fingerprint, payload, severity)
 - Initialize status fields
 - Transition to `processing` phase
-- **Create RemediationProcessing CRD** with data snapshot
+- **Create SignalProcessing CRD** with data snapshot
 
 **Transition Criteria**:
 ```go
 if alertRemediation.Spec.AlertFingerprint != "" && alertRemediation.Spec.OriginalPayload != nil {
     phase = "processing"
-    // Create RemediationProcessing CRD
+    // Create SignalProcessing CRD
     createRemediationProcessing(ctx, alertRemediation)
 } else {
     phase = "failed"
@@ -73,12 +73,12 @@ if alertRemediation.Spec.AlertFingerprint != "" && alertRemediation.Spec.Origina
 
 #### 2. **processing** Phase (Alert Enrichment & Classification)
 
-**Purpose**: Wait for RemediationProcessing CRD completion, then create AIAnalysis CRD
+**Purpose**: Wait for SignalProcessing CRD completion, then create AIAnalysis CRD
 
 **Trigger**: RemediationProcessing.status.phase = "completed" (watch event)
 
 **Actions**:
-- **Watch** RemediationProcessing CRD status
+- **Watch** SignalProcessing CRD status
 - When `status.phase = "completed"`:
   - Extract enriched alert data from RemediationProcessing.status
   - **Create AIAnalysis CRD** with data snapshot (enriched context)
@@ -300,7 +300,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 - Record timeout audit to PostgreSQL
 - **Start 24-hour retention timer**
 
-**Escalation Criteria** (BR-AP-062 (RemediationProcessor)):
+**Escalation Criteria** (BR-SP-062 (RemediationProcessor)):
 
 | Phase | Default Timeout | Escalation Channel |
 |-------|----------------|-------------------|
