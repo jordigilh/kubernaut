@@ -1,9 +1,9 @@
 # DD-009: Audit Write Error Recovery - Dead Letter Queue Pattern
 
-**Status**: ✅ Approved (Phase 0 Day 0.1 - User Decision 2c)  
-**Date**: 2025-11-02  
-**Decision Makers**: Development Team, User Approval  
-**Supersedes**: None  
+**Status**: ✅ Approved (Phase 0 Day 0.1 - User Decision 2c)
+**Date**: 2025-11-02
+**Decision Makers**: Development Team, User Approval
+**Supersedes**: None
 **Authority**: ADR-032 v1.1 mandate "No Audit Loss"
 
 ---
@@ -92,7 +92,7 @@ import (
     "encoding/json"
     "fmt"
     "time"
-    
+
     "github.com/redis/go-redis/v9"
 )
 
@@ -112,12 +112,12 @@ func NewClient(redisAddr string) (*Client, error) {
         ReadTimeout:  3 * time.Second,
         WriteTimeout: 3 * time.Second,
     })
-    
+
     // Verify connection
     if err := client.Ping(context.Background()).Err(); err != nil {
         return nil, fmt.Errorf("Redis connection failed: %w", err)
     }
-    
+
     return &Client{
         redisClient: client,
         streamName:  "audit-dlq",
@@ -133,7 +133,7 @@ func (c *Client) WriteAuditMessage(ctx context.Context, auditType string, auditD
     if err != nil {
         return fmt.Errorf("failed to marshal audit data: %w", err)
     }
-    
+
     // Write to Redis Stream with TTL
     _, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
         Stream: c.streamName,
@@ -146,11 +146,11 @@ func (c *Client) WriteAuditMessage(ctx context.Context, auditType string, auditD
             "retry_count": 0,
         },
     }).Result()
-    
+
     if err != nil {
         return fmt.Errorf("failed to write to DLQ: %w", err)
     }
-    
+
     return nil
 }
 
@@ -178,7 +178,7 @@ import (
     "fmt"
     "log"
     "time"
-    
+
     "github.com/redis/go-redis/v9"
     "github.com/jordigilh/kubernaut/pkg/datastorage/client"
     "github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
@@ -198,7 +198,7 @@ func main() {
         consumerGroup: "audit-retry-workers",
         consumerName:  "worker-1",
     }
-    
+
     ctx := context.Background()
     if err := worker.Run(ctx); err != nil {
         log.Fatalf("Retry worker failed: %v", err)
@@ -214,7 +214,7 @@ func (w *RetryWorker) Run(ctx context.Context) error {
             time.Sleep(1 * time.Second)
             continue
         }
-        
+
         for _, msg := range messages {
             if err := w.processMessage(ctx, msg); err != nil {
                 log.Printf("Failed to process message %s: %v", msg.ID, err)
@@ -231,12 +231,12 @@ func (w *RetryWorker) processMessage(ctx context.Context, msg *dlq.Message) erro
     auditType := msg.Values["audit_type"].(string)
     auditDataJSON := msg.Values["audit_data"].(string)
     retryCount := int(msg.Values["retry_count"].(int64))
-    
+
     // Exponential backoff check
     if err := w.checkBackoff(retryCount, msg.CreatedAt); err != nil {
         return err // Not ready for retry yet
     }
-    
+
     // Attempt write to Data Storage Service
     endpoint := fmt.Sprintf("/api/v1/audit/%s", auditType)
     if err := w.storageClient.Post(ctx, endpoint, []byte(auditDataJSON)); err != nil {
@@ -244,7 +244,7 @@ func (w *RetryWorker) processMessage(ctx context.Context, msg *dlq.Message) erro
         msg.Values["retry_count"] = retryCount + 1
         return fmt.Errorf("Data Storage write failed (attempt %d): %w", retryCount+1, err)
     }
-    
+
     return nil
 }
 
@@ -258,23 +258,23 @@ func (w *RetryWorker) checkBackoff(retryCount int, createdAt time.Time) error {
         4 * time.Hour,
         24 * time.Hour,
     }
-    
+
     if retryCount >= len(backoffIntervals) {
         // Max retries exceeded - move to dead letter
         return fmt.Errorf("max retries (%d) exceeded", len(backoffIntervals))
     }
-    
+
     nextRetry := createdAt.Add(backoffIntervals[retryCount])
     if time.Now().Before(nextRetry) {
         return fmt.Errorf("backoff period not elapsed, next retry at %s", nextRetry)
     }
-    
+
     return nil
 }
 
 func (w *RetryWorker) handleRetryFailure(ctx context.Context, msg *dlq.Message) {
     retryCount := int(msg.Values["retry_count"].(int64))
-    
+
     if retryCount >= 6 {
         // Permanent failure - move to dead letter stream for manual investigation
         w.dlqClient.MoveToDeadLetter(ctx, msg)
@@ -609,10 +609,10 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
     if err != nil {
         return err
     }
-    
+
     // Create audit client with DLQ fallback
     r.auditClient = audit.NewClient("http://data-storage:8080", dlqClient)
-    
+
     return ctrl.NewControllerManagedBy(mgr).
         For(&v1alpha1.AIAnalysis{}).
         Complete(r)
@@ -620,7 +620,7 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // ... business logic ...
-    
+
     // Write audit (non-blocking, DLQ fallback on failure)
     auditData := &audit.AIAnalysisAudit{
         ID:            string(analysis.UID),
@@ -628,12 +628,12 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
         Confidence:    analysis.Status.Confidence,
         // ... other fields ...
     }
-    
+
     if err := r.auditClient.WriteAIAnalysisAudit(ctx, auditData); err != nil {
         // Log error but DO NOT FAIL reconciliation
         r.Log.Error(err, "Audit write failed (may be in DLQ)", "analysisID", analysis.UID)
     }
-    
+
     return ctrl.Result{}, nil
 }
 ```
@@ -669,13 +669,13 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 ## ✅ **Phase 0 Day 0.1 - Task 3 Complete**
 
-**Deliverable**: ✅ DD-009 Error Recovery ADR documented  
-**Validation**: User-approved Decision 2c (Dead Letter Queue with async retry)  
+**Deliverable**: ✅ DD-009 Error Recovery ADR documented
+**Validation**: User-approved Decision 2c (Dead Letter Queue with async retry)
 **Confidence**: 100%
 
 ---
 
-**Document Version**: 1.0  
-**Status**: ✅ GAP #5 RESOLVED  
+**Document Version**: 1.0
+**Status**: ✅ GAP #5 RESOLVED
 **Last Updated**: 2025-11-02
 

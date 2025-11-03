@@ -621,7 +621,7 @@ spec:
 1. **Add `Authorization: Bearer <token>` header requirement**
    - Use Kubernetes Service Account tokens
    - Each service uses its own identity (e.g., `context-api` SA, `effectiveness-monitor` SA)
-   
+
 2. **API Versioning maintains backward compatibility**
    - `/api/v1/*` - No auth (V1.0 clients)
    - `/api/v2/*` - Auth required (V1.1 clients)
@@ -648,7 +648,7 @@ func (s *DataStorageServer) AuthMiddleware(next http.Handler) http.Handler {
             http.Error(w, "Authorization required", http.StatusUnauthorized)
             return
         }
-        
+
         // Validate service account token
         token := strings.TrimPrefix(authHeader, "Bearer ")
         identity, err := s.validateServiceAccountToken(token)
@@ -656,7 +656,7 @@ func (s *DataStorageServer) AuthMiddleware(next http.Handler) http.Handler {
             http.Error(w, "Invalid token", http.StatusUnauthorized)
             return
         }
-        
+
         // Inject identity into context for authorization
         ctx := context.WithValue(r.Context(), "serviceIdentity", identity)
         next.ServeHTTP(w, r.WithContext(ctx))
