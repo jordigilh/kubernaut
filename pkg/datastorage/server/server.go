@@ -27,8 +27,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 
 	_ "github.com/lib/pq" // PostgreSQL driver
 )
@@ -47,6 +52,11 @@ type Server struct {
 	// DD-007: Graceful shutdown coordination flag
 	// Thread-safe flag for readiness probe coordination during shutdown
 	isShuttingDown atomic.Bool
+
+	// BR-STORAGE-001 to BR-STORAGE-020: Audit write API dependencies
+	repository *repository.NotificationAuditRepository
+	dlqClient  *dlq.Client
+	validator  *validation.NotificationAuditValidator
 }
 
 // DD-007 graceful shutdown constants
@@ -69,18 +79,21 @@ type Config struct {
 
 // NewServer creates a new Data Storage HTTP server
 // BR-STORAGE-021: REST API Gateway for database access
+// BR-STORAGE-001 to BR-STORAGE-020: Audit write API
 //
 // Parameters:
-// - connStr: PostgreSQL connection string (format: "host=localhost port=5432 dbname=action_history user=slm_user password=xxx sslmode=disable")
+// - dbConnStr: PostgreSQL connection string (format: "host=localhost port=5432 dbname=action_history user=slm_user password=xxx sslmode=disable")
+// - redisAddr: Redis address for DLQ (format: "localhost:6379")
 // - logger: Structured logger
 // - cfg: Server configuration
 func NewServer(
-	connStr string,
+	dbConnStr string,
+	redisAddr string,
 	logger *zap.Logger,
 	cfg *Config,
 ) (*Server, error) {
 	// Connect to PostgreSQL
-	db, err := sql.Open("postgres", connStr)
+	db, err := sql.Open("postgres", dbConnStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
@@ -102,23 +115,42 @@ func NewServer(
 		zap.Int("max_idle_conns", 5),
 	)
 
-	// Create database wrapper for handlers
-	// TODO: Replace MockDB with real database implementation
-	// For now, we'll need to create a real DB adapter
+	// Connect to Redis for DLQ (DD-009)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: redisAddr,
+	})
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		_ = db.Close() // Clean up DB connection
+		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+	}
+
+	logger.Info("Redis connection established",
+		zap.String("addr", redisAddr),
+	)
+
+	// Create audit write dependencies (BR-STORAGE-001 to BR-STORAGE-020)
+	repo := repository.NewNotificationAuditRepository(db, logger)
+	dlqClient := dlq.NewClient(redisClient, logger)
+	validator := validation.NewNotificationAuditValidator()
+
+	// Create database wrapper for READ API handlers
 	dbAdapter := &DBAdapter{db: db, logger: logger}
 
-	// Create handler with logger
+	// Create READ API handler with logger
 	handler := NewHandler(dbAdapter, WithLogger(logger))
 
 	return &Server{
-		handler: handler,
-		db:      db,
-		logger:  logger,
+		handler:    handler,
+		db:         db,
+		logger:     logger,
 		httpServer: &http.Server{
 			Addr:         fmt.Sprintf(":%d", cfg.Port),
 			ReadTimeout:  cfg.ReadTimeout,
 			WriteTimeout: cfg.WriteTimeout,
 		},
+		repository: repo,
+		dlqClient:  dlqClient,
+		validator:  validator,
 	}, nil
 }
 
@@ -148,9 +180,12 @@ func (s *Server) Handler() http.Handler {
 
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// BR-STORAGE-021: Incident query endpoints
+		// BR-STORAGE-021: Incident query endpoints (READ API)
 		r.Get("/incidents", s.handler.ListIncidents)
 		r.Get("/incidents/{id}", s.handler.GetIncident)
+
+		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
+		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
 	})
 
 	return r
