@@ -2,7 +2,7 @@
 
 ## Status
 **✅ APPROVED**
-**Version**: 1.1
+**Version**: 1.2
 **Decision Date**: November 2, 2025
 **Last Reviewed**: November 2, 2025
 **Confidence**: 100%
@@ -11,6 +11,26 @@
 ---
 
 ## Changelog
+
+### Version 1.2 (November 2, 2025) - AUTHENTICATION & SECURITY SECTION ADDED
+**Changes**:
+1. **Authentication Decision Documented**: Added "Authentication & Security (V1.0)" section with Decision 4c (no auth initially)
+2. **Security Controls Specified**: NetworkPolicies, input validation, rate limiting (V1.0); TLS/Auth/RBAC (V1.1+)
+3. **Network Policy Example**: Provided complete NetworkPolicy YAML for Data Storage Service ingress
+4. **V1.1 Migration Path**: Documented authentication migration strategy using Service Account tokens with API versioning
+5. **Decision Justification**: Compared 4 authentication alternatives with scoring
+
+**Rationale**:
+- **V1.0 Simplicity**: Trust internal network with NetworkPolicies (consistent with Context API pattern)
+- **V1.1 Migration**: Clear path to add authentication without breaking V1.0 clients
+- **Production-Ready**: Security controls defined for V1.0 launch
+
+**Impact**:
+- ✅ V1.0 development faster (no auth implementation needed)
+- ✅ Security addressed via NetworkPolicies (K8s-native isolation)
+- ✅ V1.1 migration path documented (gradual service-by-service)
+
+**Confidence**: 90% (based on Context API production experience)
 
 ### Version 1.1 (November 2, 2025)
 **Changes**:
@@ -517,6 +537,147 @@ curl -w "@curl-format.txt" -o /dev/null -s "http://data-storage:8080/api/v1/inci
 - Circuit breaker pattern (Context API has circuit breaker)
 - Exponential backoff retry (Context API has retry logic)
 - Cache fallback (Context API serves stale data if Data Storage unavailable)
+
+---
+
+## Authentication & Security (V1.0)
+
+### **Decision**: No authentication required for internal service-to-service calls
+
+**Rationale** (User-Approved Decision 4c):
+- Consistent with Context API pattern
+- Services run in secure Kubernetes cluster with network policies
+- Trust internal network model (ClusterIP-only communication)
+- Authentication complexity deferred to V1.1 for faster V1.0 delivery
+
+### **Security Controls** (V1.0)
+
+| Control | Implementation | Status |
+|---------|---------------|--------|
+| **Network Isolation** | Kubernetes NetworkPolicies (only allow traffic from known service namespaces) | ✅ REQUIRED |
+| **Input Validation** | RFC 7807 validation prevents injection attacks | ✅ IMPLEMENTED |
+| **Rate Limiting** | 50 req/sec per service IP (Circuit breaker enforcement) | ✅ IMPLEMENTED |
+| **TLS** | Cluster-internal TLS via service mesh (Istio/Linkerd) | ⏸️ V1.1 |
+| **Authentication** | Service Account tokens | ⏸️ V1.1 |
+| **Authorization** | RBAC per service identity | ⏸️ V1.1 |
+
+### **Network Policy Example** (V1.0 Requirement)
+
+```yaml
+# deploy/network-policies/data-storage-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-storage-allow-internal
+  namespace: kubernaut-system
+spec:
+  podSelector:
+    matchLabels:
+      app: data-storage
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow Context API
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kubernaut-system
+      podSelector:
+        matchLabels:
+          app: context-api
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Allow Effectiveness Monitor
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kubernaut-system
+      podSelector:
+        matchLabels:
+          app: effectiveness-monitor
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Allow CRD Controllers
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: kubernaut-system
+      podSelector:
+        matchLabels:
+          component: crd-controller
+    ports:
+    - protocol: TCP
+      port: 8080
+  # Deny all other traffic (implicit)
+```
+
+### **Future Path: Authentication (V1.1+)**
+
+**When**: After V1.0 production deployment (6+ months)
+
+**Migration Plan**:
+1. **Add `Authorization: Bearer <token>` header requirement**
+   - Use Kubernetes Service Account tokens
+   - Each service uses its own identity (e.g., `context-api` SA, `effectiveness-monitor` SA)
+   
+2. **API Versioning maintains backward compatibility**
+   - `/api/v1/*` - No auth (V1.0 clients)
+   - `/api/v2/*` - Auth required (V1.1 clients)
+   - Gradual migration service-by-service
+
+3. **Token Validation**
+   - TokenReview API for service account verification
+   - Cache validated tokens (5 min TTL) to reduce API load
+   - Fallback to local JWKS validation if TokenReview unavailable
+
+**Example V1.1 Auth**:
+```go
+// V1.1 Authentication Middleware (Future)
+func (s *DataStorageServer) AuthMiddleware(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        authHeader := r.Header.Get("Authorization")
+        if authHeader == "" {
+            // V1.0 backwards compatibility - allow no auth for v1 endpoints
+            if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+                next.ServeHTTP(w, r)
+                return
+            }
+            // V1.1 - auth required for v2 endpoints
+            http.Error(w, "Authorization required", http.StatusUnauthorized)
+            return
+        }
+        
+        // Validate service account token
+        token := strings.TrimPrefix(authHeader, "Bearer ")
+        identity, err := s.validateServiceAccountToken(token)
+        if err != nil {
+            http.Error(w, "Invalid token", http.StatusUnauthorized)
+            return
+        }
+        
+        // Inject identity into context for authorization
+        ctx := context.WithValue(r.Context(), "serviceIdentity", identity)
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+```
+
+### **Decision Justification**
+
+**Why no auth in V1.0?**
+
+| Alternative | Pros | Cons | Score |
+|-------------|------|------|-------|
+| **No auth (Decision 4c)** ⭐ | Faster V1.0 delivery, consistent with Context API | Relies on network policies | 9/10 |
+| **Service account tokens** | Industry standard, native K8s | Adds complexity, 2-3 weeks delay | 7/10 |
+| **mTLS** | Strong security, encrypted | High complexity, 4-5 weeks delay | 6/10 |
+| **API keys** | Simple | Not K8s-native, key management burden | 5/10 |
+
+**Decision**: Trust internal network with strict NetworkPolicies (V1.0), add authentication in V1.1 after production validation.
+
+**Confidence**: 90% (based on Context API production experience)
 
 ---
 
