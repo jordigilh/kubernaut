@@ -29,34 +29,26 @@ Kubernaut is an open source Kubernetes AIOps (KAIOps) platform that combines AI-
 
 ---
 
-## 📖 **V1 Microservices Architecture - START HERE**
+## 📖 **Architecture Documentation - START HERE**
 
-**For implementation, always refer to these authoritative V1 documents:**
+### **🎯 New to Kubernaut? Read This First**
 
-- ⭐ **[V1 Source of Truth Hierarchy](docs/V1_SOURCE_OF_TRUTH_HIERARCHY.md)** - **ESSENTIAL READING**
-  - 3-tier documentation hierarchy (Architecture → Services → Design)
-  - Identifies which documents are authoritative vs reference
-  - **95% confidence** - Production-ready documentation
+**[Kubernaut CRD Architecture](docs/architecture/KUBERNAUT_CRD_ARCHITECTURE.md)** ⭐ **PRIMARY REFERENCE**
+- Complete architecture overview (11 services, CRDs, Tekton integration)
+- System diagrams with ADR-032 data access isolation
+- Service specifications and API contracts
+- Code examples and operational guide
+- **Start here** for architecture understanding
 
-- 🏗️ **[Kubernaut Architecture Overview](docs/architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md)**
-  - High-level system design and architectural principles
-  - V1 microservices overview (11 core services)
+### **📚 Supporting Documentation**
 
-- 🏛️ **[Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)** ⭐ **AUTHORITATIVE**
-  - **V1 Implementation Specification**: 11 services (4 CRD controllers + 7 stateless services)
-  - Detailed microservices decomposition and service boundaries
-  - CRD-based communication architecture
-  - Service dependencies and integration patterns
+**For Detailed Implementation**:
+- [Approved Microservices Architecture](docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md) - V1 service boundaries and patterns
+- [CRD Schemas](docs/architecture/CRD_SCHEMAS.md) - Authoritative CRD field definitions
+- [Service Development Order](docs/planning/SERVICE_DEVELOPMENT_ORDER_STRATEGY.md) - Implementation timeline
 
-- 📋 **[Kubernaut Service Catalog](docs/architecture/KUBERNAUT_SERVICE_CATALOG.md)**
-  - Comprehensive service specifications and API contracts
-  - Dependencies for all V1 services
-
-- 📐 **[CRD Schemas](docs/architecture/CRD_SCHEMAS.md)** - **AUTHORITATIVE**
-  - Single source of truth for all CRD field definitions
-  - OpenAPI v3 schemas for RemediationRequest, RemediationProcessing, AIAnalysis, WorkflowExecution
-
-**Quality Assurance**: [V1 Documentation Triage Report](docs/analysis/V1_DOCUMENTATION_TRIAGE_REPORT.md) - 239 files analyzed, 0 critical issues
+**For Documentation Navigation**:
+- [V1 Source of Truth Hierarchy](docs/V1_SOURCE_OF_TRUTH_HIERARCHY.md) - Documentation priority guide (reference only)
 
 ---
 
