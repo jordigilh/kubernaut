@@ -1,9 +1,9 @@
 # Notification Controller - Database Integration (Audit Trail Persistence)
 
-**Version**: 1.0  
-**Date**: 2025-11-02  
-**Service Type**: CRD Controller (Kubernetes Operator)  
-**Status**: ✅ Schema Documented (Phase 0 Day 0.1 - GAP #1 Resolution)  
+**Version**: 1.0
+**Date**: 2025-11-02
+**Service Type**: CRD Controller (Kubernetes Operator)
+**Status**: ✅ Schema Documented (Phase 0 Day 0.1 - GAP #1 Resolution)
 **Authority**: ADR-032 v1.1 - Data Access Layer Isolation
 
 ---
@@ -19,7 +19,7 @@ This document defines the Notification Controller's audit trail persistence stra
 
 **Purpose**: Persist notification delivery status, retries, and channel usage for:
 1. **Real-time monitoring**: Track notification delivery success/failure rates
-2. **Compliance**: 7+ year audit trail for regulatory requirements  
+2. **Compliance**: 7+ year audit trail for regulatory requirements
 3. **V2.0 RAR**: Include notification timeline in Remediation Analysis Reports
 4. **Operations**: Debug stuck notifications and channel performance
 
@@ -42,31 +42,31 @@ type NotificationAudit struct {
     // Identity
     ID             string    `json:"id"`              // Unique notification ID (UUID)
     RemediationID  string    `json:"remediation_id"`  // Links to remediation request
-    
+
     // Notification details
     Channel        string    `json:"channel"`         // slack, pagerduty, email, webhook, teams
     RecipientCount int       `json:"recipient_count"` // Number of recipients
     Recipients     []string  `json:"recipients"`      // Array of recipient identifiers (emails, slack IDs, etc.)
-    
+
     // Message content
     MessageTemplate string    `json:"message_template,omitempty"` // Template name used
     MessagePriority string    `json:"message_priority,omitempty"` // P0, P1, P2, P3
     NotificationType string   `json:"notification_type"`          // alert, escalation, resolution, status_update
-    
+
     // Delivery tracking
     Status             string    `json:"status"`                        // pending, sent, delivered, failed, retrying
     DeliveryTime       *time.Time `json:"delivery_time,omitempty"`      // When notification was delivered
     DeliveryDurationMs int       `json:"delivery_duration_ms,omitempty"` // Total delivery time in milliseconds
-    
+
     // Retry tracking
     RetryCount     int        `json:"retry_count"`               // Current retry attempt (0-based)
     MaxRetries     int        `json:"max_retries"`               // Maximum retry attempts (default: 3)
     LastRetryTime  *time.Time `json:"last_retry_time,omitempty"` // Timestamp of last retry
-    
+
     // Failure tracking
     ErrorMessage string `json:"error_message,omitempty"` // Detailed error message
     ErrorCode    string `json:"error_code,omitempty"`    // Error classification code
-    
+
     // Metadata
     CompletedAt time.Time `json:"completed_at,omitempty"` // When notification lifecycle completed (success or final failure)
     CreatedAt   time.Time `json:"created_at"`             // Record creation timestamp
@@ -110,42 +110,42 @@ const (
 
 ## 🏗️ **PostgreSQL Table Schema**
 
-**Table**: `notification_audit`  
-**Schema Authority**: `migrations/010_audit_write_api.sql`  
+**Table**: `notification_audit`
+**Schema Authority**: `migrations/010_audit_write_api.sql`
 **Managed By**: Data Storage Service (NEVER accessed directly by Notification Controller)
 
 ```sql
 CREATE TABLE IF NOT EXISTS notification_audit (
     id BIGSERIAL PRIMARY KEY,
-    
+
     -- Identity
     notification_id VARCHAR(255) NOT NULL UNIQUE,
     remediation_id VARCHAR(255) NOT NULL,
-    
+
     -- Notification details
     channel VARCHAR(50) NOT NULL CHECK (channel IN ('slack', 'pagerduty', 'email', 'webhook', 'teams')),
     recipient_count INTEGER NOT NULL DEFAULT 0,
     recipients JSONB,  -- Array of recipient identifiers
-    
+
     -- Message content
     message_template VARCHAR(255),
     message_priority VARCHAR(10) CHECK (message_priority IN ('P0', 'P1', 'P2', 'P3')),
     notification_type VARCHAR(50) CHECK (notification_type IN ('alert', 'escalation', 'resolution', 'status_update')),
-    
+
     -- Delivery tracking
     status VARCHAR(50) NOT NULL CHECK (status IN ('pending', 'sent', 'delivered', 'failed', 'retrying')),
     delivery_time TIMESTAMP WITH TIME ZONE,
     delivery_duration_ms INTEGER,
-    
+
     -- Retry tracking
     retry_count INTEGER DEFAULT 0,
     max_retries INTEGER DEFAULT 3,
     last_retry_time TIMESTAMP WITH TIME ZONE,
-    
+
     -- Failure tracking
     error_message TEXT,
     error_code VARCHAR(50),
-    
+
     -- Metadata
     completed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -171,8 +171,8 @@ The Notification Controller writes audit data to Data Storage Service at these l
 
 #### **1. Initial Notification Creation** (Status: `pending`)
 
-**Trigger**: NotificationRequest CRD created  
-**Timing**: Immediately after validation, before delivery attempt  
+**Trigger**: NotificationRequest CRD created
+**Timing**: Immediately after validation, before delivery attempt
 **Status**: `pending`
 
 ```go
@@ -182,7 +182,7 @@ func (r *NotificationReconciler) Reconcile(ctx context.Context, req ctrl.Request
     if err := r.Get(ctx, req.NamespacedName, notification); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
-    
+
     // Create initial audit record
     auditData := &audit.NotificationAudit{
         ID:               string(notification.UID),
@@ -198,36 +198,36 @@ func (r *NotificationReconciler) Reconcile(ctx context.Context, req ctrl.Request
         MaxRetries:       3,
         CreatedAt:        notification.CreationTimestamp.Time,
     }
-    
+
     // Write to Data Storage Service (non-blocking, best-effort)
     if err := r.auditClient.WriteNotificationAudit(ctx, auditData); err != nil {
         r.Log.Error(err, "Failed to write initial audit", "notificationID", notification.UID)
         // DO NOT FAIL RECONCILIATION - audit is best-effort
     }
-    
+
     // Continue with notification delivery...
 }
 ```
 
 #### **2. Delivery Attempt** (Status: `sent` or `failed`)
 
-**Trigger**: After calling notification channel API  
-**Timing**: Immediately after HTTP response received  
+**Trigger**: After calling notification channel API
+**Timing**: Immediately after HTTP response received
 **Status**: `sent` (if successful), `failed` (if error), `retrying` (if retryable error)
 
 ```go
 func (r *NotificationReconciler) deliverNotification(ctx context.Context, notification *v1alpha1.NotificationRequest) error {
     startTime := time.Now()
-    
+
     // Attempt delivery via channel API
     err := r.channelClient.Send(ctx, &ChannelMessage{
         Channel:    notification.Spec.Channel,
         Recipients: notification.Spec.Recipients,
         Message:    notification.Spec.Message,
     })
-    
+
     deliveryDuration := time.Since(startTime).Milliseconds()
-    
+
     // Update audit with delivery result
     auditData := &audit.NotificationAudit{
         ID:                 string(notification.UID),
@@ -238,12 +238,12 @@ func (r *NotificationReconciler) deliverNotification(ctx context.Context, notifi
         ErrorCode:          getErrorCode(err),
         UpdatedAt:          time.Now(),
     }
-    
+
     // Update audit (non-blocking)
     if updateErr := r.auditClient.UpdateNotificationAudit(ctx, auditData); updateErr != nil {
         r.Log.Error(updateErr, "Failed to update delivery audit", "notificationID", notification.UID)
     }
-    
+
     return err
 }
 
@@ -260,8 +260,8 @@ func determineStatus(err error) string {
 
 #### **3. Delivery Confirmation** (Status: `delivered`)
 
-**Trigger**: Webhook callback from channel confirms delivery  
-**Timing**: Asynchronously when channel confirms  
+**Trigger**: Webhook callback from channel confirms delivery
+**Timing**: Asynchronously when channel confirms
 **Status**: `delivered`
 
 ```go
@@ -272,15 +272,15 @@ func (r *NotificationReconciler) HandleDeliveryConfirmation(ctx context.Context,
         CompletedAt: time.Now(),
         UpdatedAt:   time.Now(),
     }
-    
+
     return r.auditClient.UpdateNotificationAudit(ctx, auditData)
 }
 ```
 
 #### **4. Retry Attempt** (Status: `retrying`)
 
-**Trigger**: Exponential backoff retry triggered  
-**Timing**: Before each retry attempt  
+**Trigger**: Exponential backoff retry triggered
+**Timing**: Before each retry attempt
 **Status**: `retrying`
 
 ```go
@@ -292,12 +292,12 @@ func (r *NotificationReconciler) retryDelivery(ctx context.Context, notification
         LastRetryTime: func() *time.Time { t := time.Now(); return &t }(),
         UpdatedAt:     time.Now(),
     }
-    
+
     // Update audit before retry
     if err := r.auditClient.UpdateNotificationAudit(ctx, auditData); err != nil {
         r.Log.Error(err, "Failed to update retry audit", "notificationID", notification.UID)
     }
-    
+
     // Attempt delivery
     return r.deliverNotification(ctx, notification)
 }
@@ -305,8 +305,8 @@ func (r *NotificationReconciler) retryDelivery(ctx context.Context, notification
 
 #### **5. Final Failure** (Status: `failed`)
 
-**Trigger**: Max retries exceeded  
-**Timing**: After final retry attempt fails  
+**Trigger**: Max retries exceeded
+**Timing**: After final retry attempt fails
 **Status**: `failed`
 
 ```go
@@ -319,7 +319,7 @@ func (r *NotificationReconciler) markFinalFailure(ctx context.Context, notificat
         CompletedAt:  time.Now(),
         UpdatedAt:    time.Now(),
     }
-    
+
     return r.auditClient.WriteNotificationAudit(ctx, auditData)
 }
 ```
@@ -368,31 +368,31 @@ func NewClient(storageServiceURL string, dlqClient *DLQClient) *Client {
 // Includes DD-009 DLQ fallback for fault tolerance
 func (c *Client) WriteNotificationAudit(ctx context.Context, audit *NotificationAudit) error {
     url := fmt.Sprintf("%s/api/v1/audit/notifications", c.storageServiceURL)
-    
+
     body, err := json.Marshal(audit)
     if err != nil {
         return fmt.Errorf("failed to marshal audit data: %w", err)
     }
-    
+
     req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
     if err != nil {
         return fmt.Errorf("failed to create HTTP request: %w", err)
     }
-    
+
     req.Header.Set("Content-Type", "application/json")
-    
+
     resp, err := c.httpClient.Do(req)
     if err != nil {
         // Network error - fallback to DLQ (DD-009)
         return c.fallbackToDLQ(ctx, audit, err)
     }
     defer resp.Body.Close()
-    
+
     if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
         // HTTP error - fallback to DLQ
         return c.fallbackToDLQ(ctx, audit, fmt.Errorf("HTTP %d", resp.StatusCode))
     }
-    
+
     return nil
 }
 
@@ -407,11 +407,11 @@ func (c *Client) fallbackToDLQ(ctx context.Context, audit *NotificationAudit, or
     if c.dlqClient == nil {
         return fmt.Errorf("DLQ not configured, audit lost: %w", originalErr)
     }
-    
+
     if err := c.dlqClient.WriteNotificationAudit(ctx, audit); err != nil {
         return fmt.Errorf("Data Storage write failed AND DLQ write failed: %w (original: %v)", err, originalErr)
     }
-    
+
     // Audit written to DLQ successfully - async retry worker will process
     return nil
 }
@@ -490,7 +490,7 @@ POST /api/v1/audit/notifications
 **Query**: Find all pending/failed notifications for a remediation
 
 ```sql
-SELECT 
+SELECT
     notification_id,
     channel,
     status,
@@ -508,7 +508,7 @@ ORDER BY created_at DESC;
 **Query**: Calculate delivery success rate by channel
 
 ```sql
-SELECT 
+SELECT
     channel,
     COUNT(*) FILTER (WHERE status = 'delivered') AS delivered_count,
     COUNT(*) AS total_count,
@@ -525,7 +525,7 @@ ORDER BY success_rate_pct DESC;
 **Query**: Get complete notification timeline for a remediation (for RAR generation)
 
 ```sql
-SELECT 
+SELECT
     notification_id,
     notification_type,
     channel,
@@ -546,7 +546,7 @@ ORDER BY created_at ASC;
 **Query**: Find repeatedly failing notifications (for runbook debugging)
 
 ```sql
-SELECT 
+SELECT
     notification_id,
     remediation_id,
     channel,
@@ -594,13 +594,13 @@ ORDER BY created_at DESC;
 
 ## ✅ **Phase 0 Day 0.1 - Task 2 Complete**
 
-**Deliverable**: ✅ Notification Controller audit schema fully documented  
-**Validation**: Schema aligns with `notification_audit` table in `migrations/010_audit_write_api.sql`  
+**Deliverable**: ✅ Notification Controller audit schema fully documented
+**Validation**: Schema aligns with `notification_audit` table in `migrations/010_audit_write_api.sql`
 **Confidence**: 100%
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: 2025-11-02  
+**Document Version**: 1.0
+**Last Updated**: 2025-11-02
 **Status**: ✅ GAP #1 RESOLVED
 

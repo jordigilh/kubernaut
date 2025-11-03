@@ -1,8 +1,8 @@
 # Data Storage Service - pgvector Embedding Requirements
 
-**Version**: 1.0  
-**Date**: 2025-11-02  
-**Status**: ✅ Validated (Phase 0 Day 0.2 - GAP #3 Resolution)  
+**Version**: 1.0
+**Date**: 2025-11-02
+**Status**: ✅ Validated (Phase 0 Day 0.2 - GAP #3 Resolution)
 **Authority**: User Decision 1a + V2.0 RAR Business Requirements
 
 ---
@@ -59,8 +59,8 @@
 
 ### **Embedding Column Schema**
 
-**Table**: `ai_analysis_audit`  
-**Column**: `embedding vector(1536)`  
+**Table**: `ai_analysis_audit`
+**Column**: `embedding vector(1536)`
 **Index**: HNSW (Hierarchical Navigable Small World) for fast similarity search
 
 ```sql
@@ -68,7 +68,7 @@
 embedding vector(1536),  -- OpenAI text-embedding-3-small or equivalent
 
 -- HNSW index for semantic similarity search (V2.0 RAR generation)
-CREATE INDEX IF NOT EXISTS idx_ai_analysis_audit_embedding ON ai_analysis_audit 
+CREATE INDEX IF NOT EXISTS idx_ai_analysis_audit_embedding ON ai_analysis_audit
     USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 ```
@@ -105,7 +105,7 @@ func GenerateAIAnalysisEmbedding(audit *AIAnalysisAudit) ([]float32, error) {
         audit.ConfidenceScore,
         audit.EffectivenessProbability,
     )
-    
+
     // Generate embedding via OpenAI API
     return openai.CreateEmbedding(textToEmbed, "text-embedding-3-small")
 }
@@ -153,7 +153,7 @@ func GenerateAIAnalysisEmbedding(audit *AIAnalysisAudit) ([]float32, error) {
 
 ```sql
 -- Find top 10 most similar AI investigations
-SELECT 
+SELECT
     alert_fingerprint,
     investigation_report,
     top_recommendation,
@@ -175,7 +175,7 @@ LIMIT 10;
 
 ```sql
 -- Find remediations with similar investigation results but different outcomes
-SELECT 
+SELECT
     a1.alert_fingerprint AS current_alert,
     a2.alert_fingerprint AS similar_historical_alert,
     a1.confidence_score AS current_confidence,
@@ -206,14 +206,14 @@ WITH cluster_centers AS (
         cluster_id,
         embedding AS center_embedding
     FROM (
-        SELECT 
+        SELECT
             ntile(10) OVER (ORDER BY embedding <-> (SELECT AVG(embedding) FROM ai_analysis_audit)) AS cluster_id,
             embedding
         FROM ai_analysis_audit
         WHERE created_at > NOW() - INTERVAL '90 days'
     ) clusters
 )
-SELECT 
+SELECT
     c.cluster_id,
     COUNT(*) AS cluster_size,
     AVG(a.confidence_score) AS avg_confidence,
@@ -404,14 +404,14 @@ ORDER BY completed_at DESC;
 
 ## ✅ **Phase 0 Day 0.2 - Task 1 Complete**
 
-**Deliverable**: ✅ pgvector requirements clarified and validated  
-**Validation**: Decision 1a confirmed - AIAnalysis only needs embeddings (1536 dimensions)  
-**Day 4 Scope**: Reduced from 8h to 4h (embedding generation for 1 audit type)  
+**Deliverable**: ✅ pgvector requirements clarified and validated
+**Validation**: Decision 1a confirmed - AIAnalysis only needs embeddings (1536 dimensions)
+**Day 4 Scope**: Reduced from 8h to 4h (embedding generation for 1 audit type)
 **Confidence**: 90%
 
 ---
 
-**Document Version**: 1.0  
-**Status**: ✅ GAP #3 RESOLVED  
+**Document Version**: 1.0
+**Status**: ✅ GAP #3 RESOLVED
 **Last Updated**: 2025-11-02
 
