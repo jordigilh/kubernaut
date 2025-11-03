@@ -349,7 +349,7 @@ status:
 
 **Integration Pattern**: Audit trail persistence
 
-**Endpoint**: Data Storage Service HTTP POST `/api/v1/audit/alert-processing`
+**Endpoint**: Data Storage Service HTTP POST `/api/v1/audit/signal-processing`
 
 **Audit Record**:
 ```go

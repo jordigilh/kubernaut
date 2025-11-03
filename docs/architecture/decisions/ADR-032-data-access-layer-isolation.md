@@ -1,11 +1,38 @@
 # ADR-032: Data Access Layer Isolation
 
 ## Status
-**✅ APPROVED**  
-**Decision Date**: November 2, 2025  
-**Last Reviewed**: November 2, 2025  
-**Confidence**: 100%  
+**✅ APPROVED**
+**Version**: 1.1
+**Decision Date**: November 2, 2025
+**Last Reviewed**: November 2, 2025
+**Confidence**: 100%
 **Authority Level**: **ARCHITECTURAL** - Supersedes all related Design Decisions
+
+---
+
+## Changelog
+
+### Version 1.1 (November 2, 2025)
+**Changes**:
+1. **Added 6th Audit Endpoint**: `POST /api/v1/audit/effectiveness` for Effectiveness Monitor service
+2. **Terminology Correction**: Fixed `alert-processing` → `signal-processing` endpoint name to align with generic signal processing model
+3. **Database Table Update**: Added `effectiveness_audit` to PostgreSQL tables list
+4. **Service Count Update**: Changed from "5 CRD controllers" to "5 CRD controllers + 1 stateless service" for audit writers
+
+**Rationale**:
+- **Effectiveness Monitor Integration**: Centralizes all audit writes through Data Storage Service (no hybrid direct-DB pattern)
+- **Terminology Consistency**: "Signal" is the generic term; "alert" is Prometheus-specific
+- **Architectural Completeness**: All services now write audit data through single data access layer
+
+**Impact**:
+- ✅ Effectiveness Monitor simplified (no direct PostgreSQL connection for effectiveness assessments)
+- ✅ Consistent audit endpoint naming pattern: `/api/v1/audit/{what-is-being-audited}`
+- ✅ Complete data access layer isolation (100% of writes through Data Storage Service)
+
+**Confidence**: 95% (based on existing audit endpoint pattern analysis)
+
+### Version 1.0 (November 2, 2025)
+**Initial Version**: Established Data Access Layer Isolation architecture with 5 audit endpoints
 
 ---
 
@@ -36,7 +63,7 @@ Kubernaut uses PostgreSQL for persistent storage of incident data, action histor
 - **Monitoring**: Difficulty tracking database access patterns
 - **⚠️ Audit Loss**: Critical audit data lost if services write directly to database without proper coordination
 
-**Key Questions**: 
+**Key Questions**:
 1. Which services should have direct database access?
 2. How do we ensure **audit completeness** for every action and decision?
 
@@ -79,24 +106,22 @@ flowchart TB
         subgraph READ_ONLY["Read-Only Services"]
             ContextAPI["Context API<br/>(Read Historical Data)"]
         end
-        subgraph READ_WRITE["Read+Write Services"]
-            EffectivenessMonitor["Effectiveness Monitor<br/>(Read + Write Metrics)"]
-        end
-        subgraph AUDIT_WRITERS["Audit Trail Writers (Real-Time)"]
+        subgraph AUDIT_WRITERS["Audit Trail Writers (Real-Time) - 5 CRD Controllers + 1 Stateless Service"]
             RemediationOrch["RemediationOrchestrator<br/>(Orchestration Audit)"]
             RemediationProc["RemediationProcessor<br/>(Signal Processing Audit)"]
             AIAnalysis["AIAnalysis Controller<br/>(AI Decision Audit)"]
             WorkflowExec["WorkflowExecution Controller<br/>(Execution Audit)"]
             Notification["Notification Controller<br/>(Delivery Audit)"]
+            EffectivenessMonitor["Effectiveness Monitor<br/>(Effectiveness Assessment Audit)"]
         end
     end
-    
+
     subgraph DATA_ACCESS_LAYER["✅ DATA ACCESS LAYER - SINGLE POINT OF DB ACCESS"]
-        DataStorage["Data Storage Service<br/>(REST API Gateway)<br/>✅ ONLY SERVICE WITH DB CREDENTIALS<br/><br/>Audit Endpoints:<br/>POST /api/v1/audit/orchestration<br/>POST /api/v1/audit/signal-processing<br/>POST /api/v1/audit/ai-decisions<br/>POST /api/v1/audit/executions<br/>POST /api/v1/audit/notifications"]
+        DataStorage["Data Storage Service<br/>(REST API Gateway)<br/>✅ ONLY SERVICE WITH DB CREDENTIALS<br/><br/>Audit Endpoints:<br/>POST /api/v1/audit/orchestration<br/>POST /api/v1/audit/signal-processing<br/>POST /api/v1/audit/ai-decisions<br/>POST /api/v1/audit/executions<br/>POST /api/v1/audit/notifications<br/>POST /api/v1/audit/effectiveness"]
     end
-    
-    PostgreSQL[("PostgreSQL<br/>(Single Source of Truth)<br/><br/>Tables:<br/>• orchestration_audit<br/>• signal_processing_audit<br/>• ai_analysis_audit<br/>• workflow_execution_audit<br/>• notification_audit")]
-    
+
+    PostgreSQL[("PostgreSQL<br/>(Single Source of Truth)<br/><br/>Tables:<br/>• orchestration_audit<br/>• signal_processing_audit<br/>• ai_analysis_audit<br/>• workflow_execution_audit<br/>• notification_audit<br/>• effectiveness_audit")]
+
     ContextAPI -->|"❌ NO DIRECT DB<br/>✅ REST API Read"| DataStorage
     EffectivenessMonitor -->|"❌ NO DIRECT DB<br/>✅ REST API Read+Write"| DataStorage
     RemediationOrch -->|"❌ NO DIRECT DB<br/>✅ POST Orchestration Audit<br/>(Real-Time)"| DataStorage
@@ -105,7 +130,7 @@ flowchart TB
     WorkflowExec -->|"❌ NO DIRECT DB<br/>✅ POST Execution Audit<br/>(Real-Time)"| DataStorage
     Notification -->|"❌ NO DIRECT DB<br/>✅ POST Delivery Audit<br/>(Real-Time)"| DataStorage
     DataStorage ==>|"✅ SQL Queries<br/>(Parameterized)"| PostgreSQL
-    
+
     style ContextAPI fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
     style EffectivenessMonitor fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
     style RemediationOrch fill:#fff9c4,stroke:#f57f17,stroke-width:3px,color:#000
@@ -120,7 +145,7 @@ flowchart TB
     style AUDIT_WRITERS fill:#fffde7,stroke:#f57f17,stroke-width:2px,stroke-dasharray: 3 3,color:#000
     style READ_ONLY fill:#f3f3f3,stroke:#1976d2,stroke-width:1px,color:#000
     style READ_WRITE fill:#f3f3f3,stroke:#1976d2,stroke-width:1px,color:#000
-    
+
     linkStyle 0 stroke:#1976d2,stroke-width:2px
     linkStyle 1 stroke:#1976d2,stroke-width:2px
     linkStyle 2 stroke:#f57f17,stroke-width:2px
@@ -138,10 +163,11 @@ flowchart TB
 
 **Key Points**:
 1. **Gateway service** is an HTTP reverse proxy/router and does NOT consume Data Storage Service directly
-2. **All 5 CRD controllers** write audit trails in real-time (as soon as CRD status updates)
+2. **All 6 audit writers** (5 CRD controllers + Effectiveness Monitor) write audit trails in real-time
 3. **Audit data enables V2.0 RAR generation** (BR-REMEDIATION-ANALYSIS-001 to BR-REMEDIATION-ANALYSIS-004)
-4. **CRD + DB contain same audit data** for 24h, then CRDs deleted
+4. **CRD + DB contain same audit data** for 24h, then CRDs deleted (applies to CRD controllers only)
 5. **RemediationProcessor captures "front door" audit**: Signal reception, enrichment quality, classification, business priority
+6. **Effectiveness Monitor uses Data Storage for ALL writes**: No hybrid direct-DB pattern (v1.1 change)
 
 ### Mandatory Rules
 
@@ -170,7 +196,7 @@ flowchart TB
 - NO SQL queries
 - MUST use Data Storage Service REST API for **action audit trace writes**
 - **Purpose**: Maintain complete audit trail of every action taken during signal remediation (first-class citizen)
-- **Audit Scope** (MANDATORY): 
+- **Audit Scope** (MANDATORY):
   - Action type (restart-pod, scale-deployment, etc.)
   - Target resource (namespace, kind, name)
   - Execution start/end times
@@ -536,15 +562,15 @@ curl -w "@curl-format.txt" -o /dev/null -s "http://data-storage:8080/api/v1/inci
 1. ✅ **Security**
    - Only Data Storage Service has PostgreSQL credentials
    - Context API configuration has NO database credentials
-   
+
 2. ✅ **Architecture**
    - Context API uses Data Storage REST API exclusively
    - No direct SQL queries in Context API code
-   
+
 3. ✅ **Performance**
    - Context API query latency <200ms p95
    - Cache hit rates >80% (L1) and >90% (L1+L2)
-   
+
 4. ✅ **Testing**
    - 13/13 Context API tests passing
    - Integration tests validate REST API consumption
@@ -553,14 +579,14 @@ curl -w "@curl-format.txt" -o /dev/null -s "http://data-storage:8080/api/v1/inci
 
 1. ⏸️ **Security**
    - Effectiveness Monitor configuration has NO database credentials
-   
+
 2. ⏸️ **Architecture**
    - Effectiveness Monitor uses Data Storage REST API exclusively
    - No direct SQL queries in Effectiveness Monitor code
-   
+
 3. ⏸️ **Performance**
    - Assessment latency unchanged (<100ms p95)
-   
+
 4. ⏸️ **Testing**
    - 100% Effectiveness Monitor tests passing
    - Integration tests validate REST API consumption
@@ -569,11 +595,11 @@ curl -w "@curl-format.txt" -o /dev/null -s "http://data-storage:8080/api/v1/inci
 
 1. ⏸️ **Security**
    - WorkflowExecution Controller configuration has NO database credentials
-   
+
 2. ⏸️ **Architecture**
    - WorkflowExecution Controller writes audit traces via Data Storage REST API exclusively
    - No direct SQL queries in WorkflowExecution Controller code
-   
+
 3. ⏸️ **Audit Completeness (MANDATORY - First-Class Citizen)**
    - 100% of remediation actions have corresponding audit records
    - Audit records include: action type, target resource, execution times, results, retry count, status, AI decision rationale, user context
@@ -581,17 +607,17 @@ curl -w "@curl-format.txt" -o /dev/null -s "http://data-storage:8080/api/v1/inci
    - Audit write failure monitoring active (Prometheus metrics + alerts)
    - Audit write failure rate <1% (P1 alert if exceeded)
    - **Zero tolerance for audit loss**: Missing audit records trigger alerts
-   
+
 4. ⏸️ **Performance**
    - Audit write latency <50ms p95 (including retries)
    - Audit write operations do NOT block workflow execution
    - Graceful degradation: Workflow continues even if audit write fails after retries
-   
+
 5. ⏸️ **Compliance & Regulatory**
    - Audit data immutable (append-only, no updates/deletes)
    - Audit data retention policy enforced (7+ years)
    - Audit records include all fields required for compliance
-   
+
 6. ⏸️ **Testing**
    - 100% WorkflowExecution Controller tests passing
    - Integration tests validate audit trail completeness (100% coverage)
@@ -604,8 +630,8 @@ curl -w "@curl-format.txt" -o /dev/null -s "http://data-storage:8080/api/v1/inci
 
 ## Approval
 
-**Decision Approved By**: Project Lead  
-**Approval Date**: November 2, 2025  
+**Decision Approved By**: Project Lead
+**Approval Date**: November 2, 2025
 **Implementation Status**: Phase 1 Complete (Context API) ✅, Phase 2 Pending (Effectiveness Monitor) ⏸️
 
 ---
