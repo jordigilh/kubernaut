@@ -1,0 +1,475 @@
+openapi: 3.0.3
+info:
+  title: Data Storage Service API
+  version: 1.0.0
+  description: |
+    Data Storage Service provides REST API access to audit trail persistence.
+
+    **Business Requirements**:
+    - BR-STORAGE-001 to BR-STORAGE-020: Audit write API
+    - BR-STORAGE-021: Incident query API (READ)
+    - BR-STORAGE-024: RFC 7807 error responses
+
+    **Design Decisions**:
+    - ADR-031: OpenAPI 3.0+ specification for all stateless REST APIs
+    - ADR-032: Data Access Layer Isolation (only Data Storage connects to PostgreSQL)
+    - DD-009: Dead Letter Queue fallback on database errors
+
+    **Architecture**:
+    This service is the **ONLY** service that directly accesses PostgreSQL.
+    All other services (Context API, Effectiveness Monitor, etc.) access data
+    through this REST API Gateway.
+  contact:
+    name: Kubernaut Platform Team
+    url: https://github.com/jordigilh/kubernaut
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: http://data-storage-service.kubernaut.svc.cluster.local:8080
+    description: Kubernetes cluster service
+
+tags:
+  - name: Audit Write API
+    description: |
+      Audit trail persistence for all Kubernaut services.
+      Implements BR-STORAGE-001 to BR-STORAGE-020.
+  - name: Incident Read API
+    description: |
+      Query API for incident data.
+      Implements BR-STORAGE-021.
+  - name: Health
+    description: Health check endpoints (DD-007 graceful shutdown support)
+  - name: Metrics
+    description: Prometheus metrics endpoint (BR-STORAGE-019)
+
+paths:
+  /api/v1/audit/notifications:
+    post:
+      tags:
+        - Audit Write API
+      summary: Create notification audit record
+      description: |
+        Persists a notification delivery attempt audit record.
+
+        **Business Requirement**: BR-STORAGE-001 (Notification audit persistence)
+
+        **Behavior**:
+        - Success: Returns 201 Created with created record
+        - Validation Error: Returns 400 Bad Request (RFC 7807)
+        - Duplicate: Returns 409 Conflict (RFC 7807)
+        - Database Error: Returns 202 Accepted (DLQ fallback, DD-009)
+
+        **Metrics Emitted** (GAP-10):
+        - `datastorage_audit_traces_total{service="notification", status="success|failure|dlq_fallback"}`
+        - `datastorage_audit_lag_seconds{service="notification"}`
+        - `datastorage_write_duration_seconds{table="notification_audit"}`
+        - `datastorage_validation_failures_total{field="...", reason="..."}`
+      operationId: createNotificationAudit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationAudit'
+            examples:
+              successful_delivery:
+                summary: Successful notification delivery
+                value:
+                  remediation_id: "remediation-123"
+                  notification_id: "notification-456"
+                  recipient: "ops-team@example.com"
+                  channel: "email"
+                  message_summary: "Incident alert: High CPU usage on pod xyz"
+                  status: "sent"
+                  sent_at: "2025-11-03T12:00:00Z"
+                  delivery_status: "200 OK"
+                  escalation_level: 0
+              failed_delivery:
+                summary: Failed notification delivery
+                value:
+                  remediation_id: "remediation-789"
+                  notification_id: "notification-abc"
+                  recipient: "ops-team@example.com"
+                  channel: "slack"
+                  message_summary: "Incident alert: Database connection lost"
+                  status: "failed"
+                  sent_at: "2025-11-03T12:05:00Z"
+                  delivery_status: "500 Internal Server Error"
+                  error_message: "Slack API timeout after 30 seconds"
+                  escalation_level: 1
+      responses:
+        '201':
+          description: |
+            Audit record created successfully in PostgreSQL.
+            Record is immediately available for queries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationAuditResponse'
+              example:
+                id: 1
+                remediation_id: "remediation-123"
+                notification_id: "notification-456"
+                recipient: "ops-team@example.com"
+                channel: "email"
+                message_summary: "Incident alert: High CPU usage on pod xyz"
+                status: "sent"
+                sent_at: "2025-11-03T12:00:00Z"
+                delivery_status: "200 OK"
+                escalation_level: 0
+                created_at: "2025-11-03T12:00:01Z"
+                updated_at: "2025-11-03T12:00:01Z"
+        '202':
+          description: |
+            Database write failed, audit record queued to Dead Letter Queue (DD-009).
+            Record will be processed asynchronously.
+
+            **Reason**: PostgreSQL temporarily unavailable or under load.
+            **Recovery**: DLQ consumer will retry write every 30 seconds.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [accepted]
+                  message:
+                    type: string
+                required:
+                  - status
+                  - message
+              example:
+                status: "accepted"
+                message: "audit record queued for processing"
+        '400':
+          description: |
+            Validation error - request body failed validation.
+            Returns RFC 7807 Problem Details format (BR-STORAGE-024).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              example:
+                type: "https://kubernaut.io/problems/validation-error"
+                title: "Validation Error"
+                status: 400
+                detail: "One or more required fields are missing or invalid"
+                instance: "/api/v1/audit/notifications"
+                field_errors:
+                  remediation_id: "remediation_id is required"
+                  notification_id: "notification_id is required"
+        '409':
+          description: |
+            Conflict - duplicate notification_id.
+            Notification audit records use notification_id as unique constraint.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              example:
+                type: "https://kubernaut.io/problems/conflict"
+                title: "Resource Conflict"
+                status: 409
+                detail: "notification_audit already exists with notification_id 'notification-456'"
+                instance: "/api/v1/audit/notifications"
+        '500':
+          description: |
+            Internal server error - both database and DLQ unavailable.
+            This indicates a critical system failure requiring immediate attention.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              example:
+                type: "https://kubernaut.io/problems/service-unavailable"
+                title: "Service Unavailable"
+                status: 500
+                detail: "database and DLQ both unavailable - please retry"
+                instance: "/api/v1/audit/notifications"
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Overall health check
+      description: |
+        Returns 200 if service is healthy (database and Redis reachable).
+        Used by Kubernetes liveness probe (DD-007).
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy]
+                example:
+                  status: "healthy"
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [unhealthy]
+                  error:
+                    type: string
+                example:
+                  status: "unhealthy"
+                  error: "database connection failed"
+
+  /health/ready:
+    get:
+      tags:
+        - Health
+      summary: Readiness check
+      description: |
+        Returns 200 if service is ready to accept traffic.
+        Returns 503 during graceful shutdown (DD-007 4-step pattern).
+        Used by Kubernetes readiness probe.
+      operationId: readinessCheck
+      responses:
+        '200':
+          description: Service is ready
+        '503':
+          description: Service is shutting down (not ready for new requests)
+
+  /health/live:
+    get:
+      tags:
+        - Health
+      summary: Liveness check
+      description: |
+        Returns 200 if service process is alive.
+        Does not check dependencies.
+        Used by Kubernetes liveness probe.
+      operationId: livenessCheck
+      responses:
+        '200':
+          description: Service is alive
+
+  /metrics:
+    get:
+      tags:
+        - Metrics
+      summary: Prometheus metrics
+      description: |
+        Exposes Prometheus metrics in text format.
+
+        **Metrics Exposed** (BR-STORAGE-019, GAP-10):
+        - `datastorage_audit_traces_total{service,status}` - Audit write operations
+        - `datastorage_audit_lag_seconds{service}` - Time between event and audit write
+        - `datastorage_write_duration_seconds{table}` - Database write latency
+        - `datastorage_validation_failures_total{field,reason}` - Validation errors
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP datastorage_audit_traces_total Total number of audit traces written by service and status
+                # TYPE datastorage_audit_traces_total counter
+                datastorage_audit_traces_total{service="notification",status="success"} 42
+                datastorage_audit_traces_total{service="notification",status="dlq_fallback"} 3
+
+                # HELP datastorage_audit_lag_seconds Time lag between event occurrence and audit write in seconds
+                # TYPE datastorage_audit_lag_seconds histogram
+                datastorage_audit_lag_seconds_bucket{service="notification",le="0.1"} 10
+                datastorage_audit_lag_seconds_bucket{service="notification",le="0.5"} 35
+                datastorage_audit_lag_seconds_bucket{service="notification",le="1"} 42
+
+components:
+  schemas:
+    NotificationAudit:
+      type: object
+      description: |
+        Notification audit record for tracking delivery attempts.
+        Maps to `notification_audit` PostgreSQL table.
+      required:
+        - remediation_id
+        - notification_id
+        - recipient
+        - channel
+        - message_summary
+        - status
+        - sent_at
+      properties:
+        remediation_id:
+          type: string
+          maxLength: 255
+          description: |
+            Kubernetes RemediationRequest CRD name.
+            Links notification to originating remediation workflow.
+          example: "remediation-123"
+        notification_id:
+          type: string
+          maxLength: 255
+          description: |
+            Unique notification identifier from Notification Controller.
+            Used as unique constraint to prevent duplicate audit records.
+          example: "notification-456"
+        recipient:
+          type: string
+          maxLength: 500
+          description: |
+            Notification recipient (email address, Slack channel, PagerDuty key, etc.).
+            Format depends on channel type.
+          example: "ops-team@example.com"
+        channel:
+          type: string
+          maxLength: 50
+          enum:
+            - email
+            - slack
+            - pagerduty
+            - webhook
+          description: |
+            Notification delivery channel.
+            Determines recipient format and delivery mechanism.
+          example: "email"
+        message_summary:
+          type: string
+          maxLength: 1000
+          description: |
+            Human-readable summary of notification content.
+            Truncated to 1000 characters for audit purposes.
+          example: "Incident alert: High CPU usage on pod xyz"
+        status:
+          type: string
+          maxLength: 50
+          enum:
+            - sent
+            - failed
+            - pending
+          description: |
+            Notification delivery status from Notification Controller.
+          example: "sent"
+        sent_at:
+          type: string
+          format: date-time
+          description: |
+            Timestamp when notification was sent (RFC 3339 format).
+            Used to calculate audit lag (time between event and audit write).
+          example: "2025-11-03T12:00:00Z"
+        delivery_status:
+          type: string
+          maxLength: 255
+          nullable: true
+          description: |
+            HTTP status code or delivery confirmation from notification channel.
+            Optional - only present for sent notifications.
+          example: "200 OK"
+        error_message:
+          type: string
+          maxLength: 1000
+          nullable: true
+          description: |
+            Error message from notification channel if delivery failed.
+            Optional - only present for failed notifications.
+          example: "Slack API timeout after 30 seconds"
+        escalation_level:
+          type: integer
+          minimum: 0
+          maximum: 5
+          description: |
+            Escalation level for notification (0 = first attempt, 1+ = escalated).
+            Tracks how many times this incident has been escalated.
+          example: 0
+
+    NotificationAuditResponse:
+      allOf:
+        - $ref: '#/components/schemas/NotificationAudit'
+        - type: object
+          required:
+            - id
+            - created_at
+            - updated_at
+          properties:
+            id:
+              type: integer
+              format: int64
+              description: |
+                Auto-generated primary key from PostgreSQL.
+              example: 1
+            created_at:
+              type: string
+              format: date-time
+              description: |
+                Timestamp when record was created in PostgreSQL.
+              example: "2025-11-03T12:00:01Z"
+            updated_at:
+              type: string
+              format: date-time
+              description: |
+                Timestamp when record was last updated in PostgreSQL.
+              example: "2025-11-03T12:00:01Z"
+
+    RFC7807Problem:
+      type: object
+      description: |
+        RFC 7807 Problem Details for HTTP APIs.
+        Standard error response format (BR-STORAGE-024).
+        See: https://www.rfc-editor.org/rfc/rfc7807.html
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: |
+            URI reference identifying the problem type.
+            Dereferenceable URI when possible.
+          example: "https://kubernaut.io/problems/validation-error"
+        title:
+          type: string
+          description: |
+            Short, human-readable summary of the problem type.
+            Should not change from occurrence to occurrence.
+          example: "Validation Error"
+        status:
+          type: integer
+          format: int32
+          description: |
+            HTTP status code for this occurrence.
+          example: 400
+        detail:
+          type: string
+          description: |
+            Human-readable explanation specific to this occurrence.
+          example: "One or more required fields are missing or invalid"
+        instance:
+          type: string
+          format: uri
+          description: |
+            URI reference identifying the specific occurrence.
+          example: "/api/v1/audit/notifications"
+        field_errors:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Map of field names to error messages for validation errors.
+            Only present for 400 Bad Request responses.
+          example:
+            remediation_id: "remediation_id is required"
+            notification_id: "notification_id is required"
+
+  securitySchemes: {}
+
