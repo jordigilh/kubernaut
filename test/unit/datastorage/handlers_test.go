@@ -22,6 +22,10 @@ type PagedResponse struct {
 	Pagination map[string]interface{} `json:"pagination"` // Generic pagination metadata
 }
 
+// ========================================
+// REST API HANDLERS (BR-STORAGE-021 to BR-STORAGE-028)
+// TESTING PRINCIPLE: Behavior + Correctness (Implementation Plan V4.9)
+// ========================================
 var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 	var (
 		handler *server.Handler
@@ -38,20 +42,30 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 	// BR-STORAGE-021: REST API read endpoints
 	Describe("ListIncidents", func() {
-		It("should return incidents with valid filters", func() {
+		// BEHAVIOR: Handler returns HTTP 200 with paginated incident list for valid filters
+		// CORRECTNESS: Response contains non-nil data array and pagination metadata
+		It("should return paginated incidents with valid namespace filter", func() {
+			// ARRANGE: Request with valid namespace filter
 			req = httptest.NewRequest("GET", "/api/v1/incidents?namespace=prod", nil)
 
+			// ACT: Call handler
 			handler.ListIncidents(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusOK))
+			// CORRECTNESS: HTTP 200 OK status
+			Expect(rec.Code).To(Equal(http.StatusOK), "Handler should return 200 OK for valid request")
 
-		var response PagedResponse
-		err := json.Unmarshal(rec.Body.Bytes(), &response)
-		Expect(err).ToNot(HaveOccurred())
+			// CORRECTNESS: Response is valid JSON
+			var response PagedResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
 
-		// Validate response structure (guaranteed by structured type)
-		Expect(response.Data).ToNot(BeNil())
-		Expect(response.Pagination).ToNot(BeNil())
+			// CORRECTNESS: Response has data array (not nil, may be empty)
+			Expect(response.Data).ToNot(BeNil(), "Response.Data should be non-nil array")
+
+			// CORRECTNESS: Response has pagination metadata
+			Expect(response.Pagination).ToNot(BeNil(), "Response.Pagination should be non-nil object")
+			Expect(response.Pagination).To(HaveKey("limit"), "Pagination should include limit")
+			Expect(response.Pagination).To(HaveKey("offset"), "Pagination should include offset")
 		})
 
 		It("should return empty array when no incidents found", func() {
@@ -68,23 +82,51 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 		Expect(response.Data).To(HaveLen(0))
 		})
 
-		// BR-STORAGE-024: RFC 7807 error responses
-		It("should return RFC 7807 error for invalid limit", func() {
-			req = httptest.NewRequest("GET", "/api/v1/incidents?limit=9999", nil)
+		// BEHAVIOR: Handler returns empty array when no incidents match filter
+		// CORRECTNESS: HTTP 200 OK with zero-length data array
+		It("should return empty array when no incidents found", func() {
+			// ARRANGE: Request with non-existent namespace
+			req = httptest.NewRequest("GET", "/api/v1/incidents?namespace=nonexistent", nil)
 
+			// ACT: Call handler
 			handler.ListIncidents(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			// CORRECTNESS: HTTP 200 OK (empty result is not an error)
+			Expect(rec.Code).To(Equal(http.StatusOK), "Handler should return 200 OK even for empty results")
 
-		var problemDetail validation.RFC7807Problem
-		err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
-		Expect(err).ToNot(HaveOccurred())
+			// CORRECTNESS: Response is valid JSON
+			var response PagedResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
 
-		// RFC 7807 required fields (guaranteed by structured type)
-		Expect(problemDetail.Type).ToNot(BeEmpty())
-		Expect(problemDetail.Title).ToNot(BeEmpty())
-		Expect(problemDetail.Status).To(Equal(400))
-		Expect(problemDetail.Detail).ToNot(BeEmpty())
+			// CORRECTNESS: Data array is empty (not nil)
+			Expect(response.Data).To(HaveLen(0), "Response.Data should be empty array for no matches")
+		})
+
+		// BEHAVIOR: Handler rejects invalid limit with RFC 7807 error
+		// CORRECTNESS: HTTP 400 with complete RFC 7807 problem details
+		It("should return RFC 7807 error for invalid limit parameter", func() {
+			// ARRANGE: Request with invalid limit (exceeds maximum)
+			req = httptest.NewRequest("GET", "/api/v1/incidents?limit=9999", nil)
+
+			// ACT: Call handler
+			handler.ListIncidents(rec, req)
+
+			// CORRECTNESS: HTTP 400 Bad Request
+			Expect(rec.Code).To(Equal(http.StatusBadRequest), "Invalid limit should return 400 Bad Request")
+
+			// CORRECTNESS: Response is RFC 7807 problem detail
+			var problemDetail validation.RFC7807Problem
+			err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
+			Expect(err).ToNot(HaveOccurred(), "Response should be valid RFC 7807 JSON")
+
+			// CORRECTNESS: RFC 7807 required fields are populated
+			Expect(problemDetail.Type).ToNot(BeEmpty(), "RFC 7807 Type field is required")
+			Expect(problemDetail.Type).To(ContainSubstring("invalid-limit"), "Type should identify limit validation error")
+			Expect(problemDetail.Title).ToNot(BeEmpty(), "RFC 7807 Title field is required")
+			Expect(problemDetail.Status).To(Equal(400), "RFC 7807 Status should match HTTP status")
+			Expect(problemDetail.Detail).ToNot(BeEmpty(), "RFC 7807 Detail field is required")
+			Expect(problemDetail.Detail).To(ContainSubstring("limit"), "Detail should mention limit parameter")
 		})
 
 		DescribeTable("should validate query parameters",
@@ -125,25 +167,33 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 	// BR-STORAGE-021: Get single incident endpoint
 	Describe("GetIncident", func() {
-		It("should return incident by ID", func() {
+		// BEHAVIOR: Handler returns single incident by ID
+		// CORRECTNESS: HTTP 200 with complete incident details
+		It("should return incident with all required fields populated", func() {
+			// ARRANGE: Request for specific incident ID
 			req = httptest.NewRequest("GET", "/api/v1/incidents/123", nil)
 
+			// ACT: Call handler
 			handler.GetIncident(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusOK))
+			// CORRECTNESS: HTTP 200 OK
+			Expect(rec.Code).To(Equal(http.StatusOK), "Handler should return 200 OK for valid ID")
 
-		// Response is a RemediationAudit - just verify it's valid JSON with expected structure
-		var response struct {
-			ID         int64  `json:"id"`
-			Namespace  string `json:"namespace"`
-			ActionType string `json:"action_type"`
-		}
-		err := json.Unmarshal(rec.Body.Bytes(), &response)
-		Expect(err).ToNot(HaveOccurred())
+			// CORRECTNESS: Response is valid JSON with required fields
+			var response struct {
+				ID         int64  `json:"id"`
+				Namespace  string `json:"namespace"`
+				ActionType string `json:"action_type"`
+			}
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
 
-		Expect(response.ID).To(BeNumerically(">", 0))
-		Expect(response.Namespace).ToNot(BeEmpty())
-		Expect(response.ActionType).ToNot(BeEmpty())
+			// CORRECTNESS: ID matches requested ID
+			Expect(response.ID).To(Equal(int64(123)), "Response ID should match requested ID")
+
+			// CORRECTNESS: Required fields are populated (not empty)
+			Expect(response.Namespace).ToNot(BeEmpty(), "Namespace is a required field")
+			Expect(response.ActionType).ToNot(BeEmpty(), "ActionType is a required field")
 		})
 
 		// BR-STORAGE-024: RFC 7807 for not found
