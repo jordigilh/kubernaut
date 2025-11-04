@@ -804,12 +804,13 @@ func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
 
 	// REFACTOR: Real PostgreSQL GROUP BY query with descending order
 	// ✅ Behavior + Correctness: Returns exact counts per namespace
+	// Note: resource_action_traces uses cluster_name column (schema compatibility)
 	sqlQuery := `
 		SELECT
-			namespace,
+			cluster_name as namespace,
 			COUNT(*) as count
 		FROM resource_action_traces
-		GROUP BY namespace
+		GROUP BY cluster_name
 		ORDER BY count DESC
 	`
 
