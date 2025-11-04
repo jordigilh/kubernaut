@@ -118,6 +118,22 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	GinkgoWriter.Println("🧹 Cleaning up Podman containers...")
 
+	// Capture service logs before cleanup for debugging
+	if serviceContainer != "" {
+		logs, err := exec.Command("podman", "logs", "--tail", "200", serviceContainer).CombinedOutput()
+		if err == nil && len(logs) > 0 {
+			GinkgoWriter.Printf("\n📋 Final Data Storage Service logs (last 200 lines):\n%s\n", string(logs))
+		} else {
+			GinkgoWriter.Printf("\n⚠️  Failed to get final service logs: %v\n", err)
+		}
+		
+		// Check container status
+		status, err := exec.Command("podman", "inspect", "-f", "{{.State.Status}}", serviceContainer).CombinedOutput()
+		if err == nil {
+			GinkgoWriter.Printf("📊 Container status: %s\n", strings.TrimSpace(string(status)))
+		}
+	}
+
 	if cancel != nil {
 		cancel()
 	}

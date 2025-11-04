@@ -115,6 +115,43 @@ var (
 	)
 )
 
+// Audit write API metrics (GAP-10)
+// BR-STORAGE-001 to BR-STORAGE-020: Audit trail metrics
+
+var (
+	// AuditTracesTotal tracks total audit traces written by service and status.
+	//
+	// Labels:
+	//   - service: Service type (notification, gateway, remediation, etc.)
+	//   - status: Operation status (success, failure)
+	//
+	// Example Prometheus query:
+	//   rate(datastorage_audit_traces_total{status="success"}[5m])
+	AuditTracesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "datastorage_audit_traces_total",
+			Help: "Total number of audit traces written by service and status",
+		},
+		[]string{"service", "status"},
+	)
+
+	// AuditLagSeconds tracks time lag between event occurrence and audit write.
+	//
+	// Labels:
+	//   - service: Service type (notification, gateway, remediation, etc.)
+	//
+	// Example Prometheus query:
+	//   histogram_quantile(0.95, rate(datastorage_audit_lag_seconds_bucket[5m]))
+	AuditLagSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "datastorage_audit_lag_seconds",
+			Help:    "Time lag between event occurrence and audit write in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"service"},
+	)
+)
+
 // Embedding generation and caching metrics
 // BR-STORAGE-008, BR-STORAGE-009
 
@@ -318,9 +355,9 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 	if reg == prometheus.DefaultRegisterer {
 		// Production: Use global promauto metrics (already registered)
 		// These are referenced, not created, to avoid duplicate registration
-		m.AuditTracesTotal = nil    // TODO: Add to global metrics
-		m.AuditLagSeconds = nil     // TODO: Add to global metrics  
-		m.WriteDuration = WriteDuration // Reference global
+		m.AuditTracesTotal = AuditTracesTotal     // Reference global
+		m.AuditLagSeconds = AuditLagSeconds       // Reference global
+		m.WriteDuration = WriteDuration           // Reference global
 		m.ValidationFailures = ValidationFailures // Reference global
 	} else {
 		// Testing: Create isolated metrics with custom registry
