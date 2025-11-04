@@ -57,11 +57,17 @@ import (
 // DLQ Fallback Response: 202 Accepted (async processing)
 // Error Responses: 400 Bad Request, 409 Conflict, 500 Internal Server Error (RFC 7807)
 func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Request) {
+	s.logger.Debug("handleCreateNotificationAudit called",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("remote_addr", r.RemoteAddr))
+
 	// Create context with timeout for database operations
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	// 1. Parse request body
+	s.logger.Debug("Parsing request body...")
 	var audit models.NotificationAudit
 	if err := json.NewDecoder(r.Body).Decode(&audit); err != nil {
 		s.logger.Warn("Invalid JSON in request body",
@@ -73,8 +79,12 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		))
 		return
 	}
+	s.logger.Debug("Request body parsed successfully",
+		zap.String("notification_id", audit.NotificationID),
+		zap.String("remediation_id", audit.RemediationID))
 
 	// 2. Validate input using validator
+	s.logger.Debug("Validating audit record...")
 	if err := s.validator.Validate(&audit); err != nil {
 		s.logger.Warn("Validation failed",
 			zap.Error(err),
@@ -102,12 +112,17 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 	}
 
 	// 3. Attempt database write via repository
+	s.logger.Debug("Writing audit record to database...")
 	// GAP-10: Measure write duration
 	writeStart := time.Now()
 	created, err := s.repository.Create(ctx, &audit)
 	writeDuration := time.Since(writeStart).Seconds()
 	
 	if err != nil {
+		s.logger.Error("Database write failed",
+			zap.Error(err),
+			zap.String("notification_id", audit.NotificationID),
+			zap.Float64("write_duration_seconds", writeDuration))
 		// Check if it's a known RFC 7807 error type (validation, conflict, not found)
 		if rfc7807Err, ok := err.(*validation.RFC7807Problem); ok {
 			s.logger.Info("Database write returned RFC 7807 error",
