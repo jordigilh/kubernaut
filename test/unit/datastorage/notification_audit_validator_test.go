@@ -19,6 +19,10 @@ import (
 // 	RunSpecs(t, "...")
 // }
 
+// ========================================
+// NOTIFICATION AUDIT VALIDATOR (BR-STORAGE-006)
+// TESTING PRINCIPLE: Behavior + Correctness (Implementation Plan V4.9)
+// ========================================
 var _ = Describe("NotificationAuditValidator", func() {
 	var (
 		validator *validation.NotificationAuditValidator
@@ -43,141 +47,301 @@ var _ = Describe("NotificationAuditValidator", func() {
 	})
 
 	Context("Valid Audit Records", func() {
+		// BEHAVIOR: Validator accepts complete, well-formed notification audit records
+		// CORRECTNESS: Validation returns no error for valid inputs
 		It("should pass validation for a complete valid record", func() {
+			// ACT: Validate complete audit
 			err := validator.Validate(audit)
-			Expect(err).To(BeNil())
+
+			// CORRECTNESS: No error returned
+			Expect(err).ToNot(HaveOccurred(), "Complete valid audit should pass validation")
 		})
 
+		// BEHAVIOR: Validator accepts minimal required fields (optional fields omitted)
+		// CORRECTNESS: DeliveryStatus and ErrorMessage can be empty strings
 		It("should pass validation with minimal required fields", func() {
+			// ARRANGE: Remove optional fields
 			audit.DeliveryStatus = ""
 			audit.ErrorMessage = ""
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).To(BeNil())
+
+			// CORRECTNESS: No error returned for minimal valid audit
+			Expect(err).ToNot(HaveOccurred(), "Minimal valid audit should pass validation")
 		})
 
-		It("should pass validation with all status values", func() {
-			statuses := []string{"sent", "failed", "acknowledged", "escalated"}
-			for _, status := range statuses {
+		// BEHAVIOR: Validator accepts all defined status values
+		// CORRECTNESS: All status enum values are recognized as valid
+		DescribeTable("should accept all valid status values",
+			func(status string) {
+				// ARRANGE: Set status
 				audit.Status = status
-				err := validator.Validate(audit)
-				Expect(err).To(BeNil(), "status '%s' should be valid", status)
-			}
-		})
 
-		It("should pass validation with all channel values", func() {
-			channels := []string{"email", "slack", "pagerduty", "sms"}
-			for _, channel := range channels {
+				// ACT: Validate
+				err := validator.Validate(audit)
+
+				// CORRECTNESS: Status is valid
+				Expect(err).ToNot(HaveOccurred(), "status %q should be valid", status)
+			},
+			Entry("status: sent", "sent"),
+			Entry("status: failed", "failed"),
+			Entry("status: acknowledged", "acknowledged"),
+			Entry("status: escalated", "escalated"),
+		)
+
+		// BEHAVIOR: Validator accepts all defined channel values
+		// CORRECTNESS: All channel enum values are recognized as valid
+		DescribeTable("should accept all valid channel values",
+			func(channel string) {
+				// ARRANGE: Set channel
 				audit.Channel = channel
-				err := validator.Validate(audit)
-				Expect(err).To(BeNil(), "channel '%s' should be valid", channel)
-			}
-		})
 
-		It("should pass validation with escalation level up to 100", func() {
+				// ACT: Validate
+				err := validator.Validate(audit)
+
+				// CORRECTNESS: Channel is valid
+				Expect(err).ToNot(HaveOccurred(), "channel %q should be valid", channel)
+			},
+			Entry("channel: email", "email"),
+			Entry("channel: slack", "slack"),
+			Entry("channel: pagerduty", "pagerduty"),
+			Entry("channel: sms", "sms"),
+		)
+
+		// BEHAVIOR: Validator accepts escalation levels from 0 to 100
+		// CORRECTNESS: Boundary value 100 is valid
+		It("should accept escalation level at upper boundary (100)", func() {
+			// ARRANGE: Set escalation level to maximum
 			audit.EscalationLevel = 100
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).To(BeNil())
+
+			// CORRECTNESS: Maximum escalation level is valid
+			Expect(err).ToNot(HaveOccurred(), "escalation_level 100 should be valid")
 		})
 	})
 
 	Context("Nil Audit Record", func() {
-		It("should fail validation for nil audit", func() {
+		// BEHAVIOR: Validator rejects nil input
+		// CORRECTNESS: Error message explicitly mentions "cannot be nil"
+		It("should reject nil audit with explicit error message", func() {
+			// ACT: Validate nil audit
 			err := validator.Validate(nil)
-			Expect(err).ToNot(BeNil())
-			Expect(err.Error()).To(ContainSubstring("cannot be nil"))
+
+			// CORRECTNESS: Error occurred
+			Expect(err).To(HaveOccurred(), "Nil audit should be rejected")
+
+			// CORRECTNESS: Error message is specific
+			Expect(err.Error()).To(ContainSubstring("cannot be nil"),
+				"Error should explicitly mention nil audit")
 		})
 	})
 
 	Context("RemediationID Validation", func() {
-		It("should fail validation for empty remediation_id", func() {
+		// BEHAVIOR: Validator rejects empty remediation_id (required field)
+		// CORRECTNESS: ValidationError contains specific field error for remediation_id
+		It("should reject empty remediation_id with field-specific error", func() {
+			// ARRANGE: Empty remediation_id
 			audit.RemediationID = ""
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+
+			// CORRECTNESS: Validation failed
+			Expect(err).To(HaveOccurred(), "Empty remediation_id should be rejected")
+
+			// CORRECTNESS: Error is ValidationError type
 			valErr, ok := err.(*validation.ValidationError)
-			Expect(ok).To(BeTrue(), "Expected ValidationError type")
-			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("required"))
+			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
+
+			// CORRECTNESS: Field error mentions "required"
+			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("required"),
+				"Error should specify remediation_id is required")
 		})
 
-		It("should fail validation for whitespace-only remediation_id", func() {
+		// BEHAVIOR: Validator rejects whitespace-only remediation_id (treated as empty)
+		// CORRECTNESS: Whitespace is normalized/trimmed, then validated as empty
+		It("should reject whitespace-only remediation_id (treated as empty)", func() {
+			// ARRANGE: Whitespace-only remediation_id
 			audit.RemediationID = "   "
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+
+			// CORRECTNESS: Validation failed (whitespace treated as empty)
+			Expect(err).To(HaveOccurred(), "Whitespace-only remediation_id should be rejected")
+
+			// CORRECTNESS: Error is ValidationError type
 			valErr, ok := err.(*validation.ValidationError)
-			Expect(ok).To(BeTrue(), "Expected ValidationError type")
-			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("required"))
+			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
+
+			// CORRECTNESS: Field error mentions "required"
+			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("required"),
+				"Error should specify remediation_id is required")
 		})
 
-		It("should fail validation for remediation_id exceeding 255 characters", func() {
+		// BEHAVIOR: Validator enforces 255 character limit on remediation_id
+		// CORRECTNESS: 256 characters exceeds limit and triggers validation error
+		It("should reject remediation_id exceeding 255 character limit", func() {
+			// ARRANGE: 256 character remediation_id (exceeds limit)
 			audit.RemediationID = strings.Repeat("a", 256)
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+
+			// CORRECTNESS: Validation failed
+			Expect(err).To(HaveOccurred(), "256 character remediation_id should be rejected")
+
+			// CORRECTNESS: Error is ValidationError type
 			valErr, ok := err.(*validation.ValidationError)
-			Expect(ok).To(BeTrue(), "Expected ValidationError type")
-			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("255 characters"))
+			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
+
+			// CORRECTNESS: Field error mentions "255 characters" limit
+			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("255 characters"),
+				"Error should specify 255 character limit")
 		})
 
-		It("should pass validation for remediation_id at 255 characters", func() {
+		// BEHAVIOR: Validator accepts remediation_id at boundary (255 characters)
+		// CORRECTNESS: Exactly 255 characters is valid (boundary test)
+		It("should accept remediation_id at 255 character boundary", func() {
+			// ARRANGE: Exactly 255 character remediation_id
 			audit.RemediationID = strings.Repeat("a", 255)
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).To(BeNil())
+
+			// CORRECTNESS: No error (255 is valid boundary)
+			Expect(err).ToNot(HaveOccurred(), "255 character remediation_id should be valid")
 		})
 	})
 
 	Context("NotificationID Validation", func() {
-		It("should fail validation for empty notification_id", func() {
+		// BEHAVIOR: Validator rejects empty notification_id (required field)
+		// CORRECTNESS: ValidationError contains specific field error
+		It("should reject empty notification_id with field-specific error", func() {
+			// ARRANGE: Empty notification_id
 			audit.NotificationID = ""
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+
+			// CORRECTNESS: Validation failed
+			Expect(err).To(HaveOccurred(), "Empty notification_id should be rejected")
+
+			// CORRECTNESS: Error is ValidationError type
 			valErr, ok := err.(*validation.ValidationError)
-			Expect(ok).To(BeTrue(), "Expected ValidationError type")
-			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("required"))
+			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
+
+			// CORRECTNESS: Field error mentions "required"
+			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("required"),
+				"Error should specify notification_id is required")
 		})
 
-		It("should fail validation for whitespace-only notification_id", func() {
+		// BEHAVIOR: Validator rejects whitespace-only notification_id
+		// CORRECTNESS: Whitespace is treated as empty
+		It("should reject whitespace-only notification_id (treated as empty)", func() {
+			// ARRANGE: Whitespace-only notification_id
 			audit.NotificationID = "   "
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+
+			// CORRECTNESS: Validation failed
+			Expect(err).To(HaveOccurred(), "Whitespace-only notification_id should be rejected")
+
+			// CORRECTNESS: Error is ValidationError type
 			valErr, ok := err.(*validation.ValidationError)
-			Expect(ok).To(BeTrue(), "Expected ValidationError type")
-			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("required"))
+			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
+
+			// CORRECTNESS: Field error mentions "required"
+			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("required"),
+				"Error should specify notification_id is required")
 		})
 
-		It("should fail validation for notification_id exceeding 255 characters", func() {
+		// BEHAVIOR: Validator enforces 255 character limit
+		// CORRECTNESS: 256 characters exceeds limit
+		It("should reject notification_id exceeding 255 character limit", func() {
+			// ARRANGE: 256 character notification_id
 			audit.NotificationID = strings.Repeat("a", 256)
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+
+			// CORRECTNESS: Validation failed
+			Expect(err).To(HaveOccurred(), "256 character notification_id should be rejected")
+
+			// CORRECTNESS: Error is ValidationError type
 			valErr, ok := err.(*validation.ValidationError)
-			Expect(ok).To(BeTrue(), "Expected ValidationError type")
-			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("255 characters"))
+			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
+
+			// CORRECTNESS: Field error mentions limit
+			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("255 characters"),
+				"Error should specify 255 character limit")
 		})
 
-		It("should pass validation for notification_id at 255 characters", func() {
+		// BEHAVIOR: Validator accepts notification_id at boundary (255 characters)
+		// CORRECTNESS: Exactly 255 characters is valid
+		It("should accept notification_id at 255 character boundary", func() {
+			// ARRANGE: Exactly 255 character notification_id
 			audit.NotificationID = strings.Repeat("a", 255)
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).To(BeNil())
+
+			// CORRECTNESS: No error (255 is valid)
+			Expect(err).ToNot(HaveOccurred(), "255 character notification_id should be valid")
 		})
 	})
 
 	Context("Recipient Validation", func() {
-		It("should fail validation for empty recipient", func() {
+		// BEHAVIOR: Validator rejects empty recipient (required field)
+		// CORRECTNESS: ValidationError contains specific field error
+		It("should reject empty recipient with field-specific error", func() {
+			// ARRANGE: Empty recipient
 			audit.Recipient = ""
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+
+			// CORRECTNESS: Validation failed
+			Expect(err).To(HaveOccurred(), "Empty recipient should be rejected")
+
+			// CORRECTNESS: Error is ValidationError type
 			valErr, ok := err.(*validation.ValidationError)
-			Expect(ok).To(BeTrue(), "Expected ValidationError type")
-			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("required"))
+			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
+
+			// CORRECTNESS: Field error mentions "required"
+			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("required"),
+				"Error should specify recipient is required")
 		})
 
-		It("should fail validation for whitespace-only recipient", func() {
+		// BEHAVIOR: Validator rejects whitespace-only recipient
+		// CORRECTNESS: Whitespace is treated as empty
+		It("should reject whitespace-only recipient (treated as empty)", func() {
+			// ARRANGE: Whitespace-only recipient
 			audit.Recipient = "   "
+
+			// ACT: Validate
 			err := validator.Validate(audit)
-			Expect(err).ToNot(BeNil())
+
+			// CORRECTNESS: Validation failed
+			Expect(err).To(HaveOccurred(), "Whitespace-only recipient should be rejected")
+
+			// CORRECTNESS: Error is ValidationError type
 			valErr, ok := err.(*validation.ValidationError)
-			Expect(ok).To(BeTrue(), "Expected ValidationError type")
-			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("required"))
+			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
+
+			// CORRECTNESS: Field error mentions "required"
+			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("required"),
+				"Error should specify recipient is required")
 		})
 
-		It("should fail validation for recipient exceeding 255 characters", func() {
+		// BEHAVIOR: Validator enforces 255 character limit
+		// CORRECTNESS: 256 characters exceeds limit
+		It("should reject recipient exceeding 255 character limit", func() {
+			// ARRANGE: 256 character recipient
 			audit.Recipient = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
@@ -570,23 +734,23 @@ var _ = Describe("RFC7807Problem", func() {
 				},
 			}
 
-		jsonBytes, err := json.Marshal(problem)
-		Expect(err).ToNot(HaveOccurred())
+			jsonBytes, err := json.Marshal(problem)
+			Expect(err).ToNot(HaveOccurred())
 
-		var result validation.RFC7807Problem
-		err = json.Unmarshal(jsonBytes, &result)
-		Expect(err).ToNot(HaveOccurred())
+			var result validation.RFC7807Problem
+			err = json.Unmarshal(jsonBytes, &result)
+			Expect(err).ToNot(HaveOccurred())
 
-		// Verify standard RFC 7807 fields (type-safe access)
-		Expect(result.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
-		Expect(result.Title).To(Equal("Validation Error"))
-		Expect(result.Status).To(Equal(400))
-		Expect(result.Detail).To(Equal("validation failed"))
-		Expect(result.Instance).To(Equal("/audit/notification_audit"))
+			// Verify standard RFC 7807 fields (type-safe access)
+			Expect(result.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
+			Expect(result.Title).To(Equal("Validation Error"))
+			Expect(result.Status).To(Equal(400))
+			Expect(result.Detail).To(Equal("validation failed"))
+			Expect(result.Instance).To(Equal("/audit/notification_audit"))
 
-		// Verify extensions are captured correctly
-		Expect(result.Extensions["resource"]).To(Equal("notification_audit"))
-		Expect(result.Extensions["field_errors"]).ToNot(BeNil())
+			// Verify extensions are captured correctly
+			Expect(result.Extensions["resource"]).To(Equal("notification_audit"))
+			Expect(result.Extensions["field_errors"]).ToNot(BeNil())
 		})
 
 		It("should omit optional fields when empty", func() {
@@ -596,18 +760,18 @@ var _ = Describe("RFC7807Problem", func() {
 				Status: http.StatusInternalServerError,
 			}
 
-		jsonBytes, err := json.Marshal(problem)
-		Expect(err).ToNot(HaveOccurred())
+			jsonBytes, err := json.Marshal(problem)
+			Expect(err).ToNot(HaveOccurred())
 
-		var result validation.RFC7807Problem
-		err = json.Unmarshal(jsonBytes, &result)
-		Expect(err).ToNot(HaveOccurred())
+			var result validation.RFC7807Problem
+			err = json.Unmarshal(jsonBytes, &result)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(result.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
-		Expect(result.Title).To(Equal("Internal Server Error"))
-		Expect(result.Status).To(Equal(500))
-		Expect(result.Detail).To(BeEmpty(), "Optional detail field should be empty")
-		Expect(result.Instance).To(BeEmpty(), "Optional instance field should be empty")
+			Expect(result.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
+			Expect(result.Title).To(Equal("Internal Server Error"))
+			Expect(result.Status).To(Equal(500))
+			Expect(result.Detail).To(BeEmpty(), "Optional detail field should be empty")
+			Expect(result.Instance).To(BeEmpty(), "Optional instance field should be empty")
 		})
 	})
 
