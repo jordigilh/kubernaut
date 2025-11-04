@@ -30,10 +30,11 @@ Kubernaut currently uses a **fully dynamic workflow composition model**:
 Leading AIOps and SRE platforms use a **hybrid approach**:
 
 1. **Playbook Catalog**: 10-20 proven remediation patterns (e.g., "pod-oom-recovery", "database-connection-pool-exhaustion")
-2. **AI Selection**: AI selects best-matching playbook based on incident type and historical success rate
+2. **AI Selection**: AI selects best-matching playbook based on incident type and historical success rate (90-95% of cases)
 3. **Customization**: AI can customize playbook steps with incident-specific parameters
-4. **Fallback**: AI can still compose custom workflows for edge cases
-5. **Learning**: System tracks success rate by playbook + incident type for continuous improvement
+4. **Playbook Chaining**: AI can chain multiple catalog playbooks for complex multi-step incidents (4-9% of cases)
+5. **Manual Escalation**: Novel edge cases escalate to human operators with AI-suggested actions (<1% of cases)
+6. **Learning**: System tracks success rate by playbook + incident type for continuous improvement
 
 **Industry Confidence**: 95% - This is the **universal pattern** across all major AIOps platforms
 
@@ -45,11 +46,36 @@ Leading AIOps and SRE platforms use a **hybrid approach**:
 
 ### Core Components
 
-1. **Playbook Catalog**: Versioned, reusable remediation patterns
+1. **Playbook Catalog**: Versioned, reusable remediation patterns (10-15 initial playbooks)
 2. **Multi-Dimensional Success Tracking**: Track effectiveness by incident type, playbook, and action
-3. **AI Selection Engine**: AI selects from catalog OR composes custom workflows
+3. **AI Selection Engine**: Catalog-based selection (90%) + playbook chaining (9%) + manual escalation (1%)
 4. **Playbook Registry**: Centralized registration and discovery service
 5. **Continuous Learning**: Historical success rates inform AI decisions
+
+### AI Capabilities & Limitations (Hybrid Model)
+
+#### **Catalog-Based Selection** (Primary Path - 90-95% of cases)
+- AI selects a **single playbook** from the catalog based on incident type and historical success rates
+- AI can **customize playbook parameters** (e.g., scale to 5 replicas instead of 3)
+- All actions are **tracked and learned from** in multi-dimensional success tracking
+
+#### **Playbook Chaining** (Complex Incidents - 4-9% of cases)
+- AI can **chain multiple playbooks** from the catalog for complex multi-step remediation
+- Each step is a **catalog playbook** with tracked success rates
+- Example: `scale-deployment` → `wait-for-ready` → `drain-node` → `restart-pods`
+- Chained playbooks are **versioned as composite playbooks** for future reuse
+
+#### **Manual Escalation** (Edge Cases - <1% of cases)
+- When no suitable playbook(s) exist, AI **escalates to human operator**
+- AI provides **non-binding recommendations** based on similar incidents
+- Human can execute manual remediation OR **create new playbook** for catalog
+- New playbooks become **available for future AI selection**
+
+#### **AI Does NOT**
+- ❌ Invent new remediation patterns not in the catalog (defeats success tracking)
+- ❌ Execute unapproved actions outside catalog
+- ❌ Create one-off custom workflows that cannot be reused
+- ❌ Bypass human approval for novel remediation patterns
 
 ---
 
@@ -120,19 +146,22 @@ Leading AIOps and SRE platforms use a **hybrid approach**:
 
 ### Alternative 3: Playbook Catalog with Multi-Dimensional Tracking ✅
 
-**Approach**: Hybrid model - playbook catalog + custom workflows + multi-dimensional tracking
+**Approach**: Hybrid model - playbook catalog (90%) + playbook chaining (9%) + manual escalation (1%) + multi-dimensional tracking
 
 **Pros**:
 - ✅ **Industry standard** (95% alignment)
-- ✅ AI learns from proven patterns
+- ✅ AI learns from proven patterns (catalog-based)
 - ✅ Context-specific effectiveness tracking
-- ✅ Flexibility for edge cases (custom workflows)
+- ✅ Flexibility for complex incidents (playbook chaining)
+- ✅ Human oversight for edge cases (manual escalation)
 - ✅ Continuous improvement through historical data
+- ✅ All remediation patterns are catalog-based (trackable)
 
 **Cons**:
-- ⚠️ Requires playbook catalog creation (10-15 playbooks)
-- ⚠️ Schema changes required
-- ⚠️ Cross-service coordination needed
+- ⚠️ Requires playbook catalog creation (10-15 initial playbooks)
+- ⚠️ Schema changes required (playbook_id, incident_type columns)
+- ⚠️ Cross-service coordination needed (PlaybookRegistry service)
+- ⚠️ Manual escalation workflow required for novel incidents
 
 **Decision**: ✅ **APPROVED** - Maximum business value and industry alignment
 
@@ -311,7 +340,8 @@ CREATE TABLE resource_action_traces (
     model_confidence DECIMAL(4,3) NOT NULL,          -- 0.000-1.000
     model_reasoning TEXT,
     ai_selected_playbook BOOLEAN DEFAULT false,      -- NEW: Did AI select from playbook catalog?
-    ai_custom_workflow BOOLEAN DEFAULT false,        -- NEW: Did AI compose custom workflow?
+    ai_chained_playbooks BOOLEAN DEFAULT false,      -- NEW: Did AI chain multiple playbooks?
+    ai_manual_escalation BOOLEAN DEFAULT false,      -- NEW: Did AI escalate to human operator?
     ai_playbook_customization JSONB,                 -- NEW: Parameters customized by AI
 
     -- ========================================
@@ -480,18 +510,32 @@ func (ps *PlaybookSelector) SelectRemediationApproach(
         }, nil
     }
 
-    // Step 4: No proven playbook - AI composes custom workflow
-    ps.logger.Info("no proven playbook found, generating custom workflow",
+    // Step 4: Try playbook chaining for complex incidents
+    chainedPlaybooks, chainable := ps.tryPlaybookChaining(enrichedCandidates, incident, aiRecommendations)
+    if chainable {
+        ps.logger.Info("chaining multiple playbooks for complex incident",
+            zap.String("incident_type", incident.Type),
+            zap.Int("playbook_count", len(chainedPlaybooks)))
+
+        return &RemediationPlan{
+            Type:               RemediationTypeChained,
+            ChainedPlaybooks:   chainedPlaybooks,
+            ExpectedSuccess:    ps.calculateChainedSuccessRate(chainedPlaybooks),
+            Reasoning:          ps.explainPlaybookChaining(chainedPlaybooks),
+        }, nil
+    }
+
+    // Step 5: No suitable playbook(s) - escalate to human with AI suggestions
+    ps.logger.Warn("no suitable playbook found, escalating to human operator",
         zap.String("incident_type", incident.Type),
         zap.Int("ai_recommendation_count", len(aiRecommendations)))
 
-    customWorkflow := ps.composeCustomWorkflow(aiRecommendations)
-
     return &RemediationPlan{
-        Type:            RemediationTypeCustom,
-        CustomWorkflow:  customWorkflow,
-        ExpectedSuccess: 0.75, // Default confidence for custom workflows
-        Reasoning:       []string{"No matching playbook found in catalog"},
+        Type:            RemediationTypeManualEscalation,
+        AISuggestions:   aiRecommendations,  // Non-binding recommendations
+        ExpectedSuccess: 0.0,                 // Unknown - requires human judgment
+        Reasoning:       []string{"No matching playbook found in catalog - human review required"},
+        RequiresApproval: true,
     }, nil
 }
 
