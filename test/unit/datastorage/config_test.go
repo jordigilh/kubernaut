@@ -1,4 +1,4 @@
-package config
+package datastorage
 
 import (
 	"os"
@@ -7,6 +7,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 )
 
 func TestConfig(t *testing.T) {
@@ -56,7 +58,7 @@ logging:
 			err := os.WriteFile(configPath, []byte(validYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg).ToNot(BeNil())
 			Expect(cfg.Server.Port).To(Equal(8080))
@@ -70,7 +72,7 @@ logging:
 		})
 
 		It("should fail on missing config file", func() {
-			cfg, err := LoadFromFile("/nonexistent/config.yaml")
+			cfg, err := config.LoadFromFile("/nonexistent/config.yaml")
 			Expect(err).To(HaveOccurred())
 			Expect(cfg).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("failed to read config file"))
@@ -85,7 +87,7 @@ server:
 			err := os.WriteFile(configPath, []byte(badYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).To(HaveOccurred())
 			Expect(cfg).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("failed to parse config"))
@@ -141,7 +143,7 @@ password: secretredispass456
 			err = os.WriteFile(redisSecretsFile, []byte(redisSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.Database.Password).To(BeEmpty())
 			Expect(cfg.Redis.Password).To(BeEmpty())
@@ -195,7 +197,7 @@ logging:
 			err = os.WriteFile(redisSecretsFile, []byte(redisSecretJSON), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.LoadSecrets()
@@ -239,7 +241,7 @@ logging:
 			err = os.WriteFile(redisSecretsFile, []byte(redisSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.LoadSecrets()
@@ -282,7 +284,7 @@ logging:
 			err = os.WriteFile(dbSecretsFile, []byte(dbSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.LoadSecrets()
@@ -320,7 +322,7 @@ logging:
 			err := os.WriteFile(configPath, []byte(validYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.Validate()
@@ -354,7 +356,7 @@ logging:
 			err := os.WriteFile(configPath, []byte(invalidYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.Validate()
@@ -389,7 +391,7 @@ logging:
 			err := os.WriteFile(configPath, []byte(invalidYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.Validate()
@@ -424,7 +426,7 @@ logging:
 			err := os.WriteFile(configPath, []byte(invalidYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := LoadFromFile(configPath)
+			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = cfg.Validate()

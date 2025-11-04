@@ -1,9 +1,8 @@
-package schema_test
+package datastorage
 
 import (
 	"context"
 	"database/sql"
-	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	. "github.com/onsi/ginkgo/v2"
@@ -13,10 +12,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 )
 
-func TestSchemaValidator(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Schema Validator Suite")
-}
+// Test entry point moved to schema_validation_test.go to avoid "Rerunning Suite" error
+// func TestSchemaValidator(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "Schema Validator Suite")
+// }
 
 var _ = Describe("VersionValidator", func() {
 	var (

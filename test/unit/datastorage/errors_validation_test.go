@@ -1,18 +1,18 @@
-package validation
+package datastorage
 
 import (
 	"encoding/json"
 	"net/http"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-func TestValidationErrors(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Validation Errors Suite")
-}
+// Test entry point moved to notification_audit_validator_test.go to avoid "Rerunning Suite" error
+// func TestValidationErrors(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "Validation Errors Suite")
+// }
 
 var _ = Describe("ValidationError", func() {
 	var validationErr *ValidationError
