@@ -6,6 +6,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 // Test entry point moved to notification_audit_validator_test.go to avoid "Rerunning Suite" error
@@ -15,10 +17,10 @@ import (
 // }
 
 var _ = Describe("ValidationError", func() {
-	var validationErr *ValidationError
+	var validationErr *validation.ValidationError
 
 	BeforeEach(func() {
-		validationErr = NewValidationError("notification_audit", "validation failed")
+		validationErr = validation.NewValidationError("notification_audit", "validation failed")
 	})
 
 	Context("Error Creation", func() {
@@ -83,14 +85,14 @@ var _ = Describe("ValidationError", func() {
 	})
 })
 
-var _ = Describe("RFC7807Problem", func() {
+var _ = Describe("validation.RFC7807Problem", func() {
 	Context("Validation Error Problem", func() {
 		It("should create validation error problem", func() {
 			fieldErrors := map[string]string{
 				"field1": "error1",
 				"field2": "error2",
 			}
-			problem := NewValidationErrorProblem("notification_audit", fieldErrors)
+			problem := validation.NewValidationErrorProblem("notification_audit", fieldErrors)
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
 			Expect(problem.Title).To(Equal("Validation Error"))
@@ -104,7 +106,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Not Found Problem", func() {
 		It("should create not found problem", func() {
-			problem := NewNotFoundProblem("notification_audit", "test-id-123")
+			problem := validation.NewNotFoundProblem("notification_audit", "test-id-123")
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/not-found"))
 			Expect(problem.Title).To(Equal("Resource Not Found"))
@@ -118,7 +120,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Internal Error Problem", func() {
 		It("should create internal error problem", func() {
-			problem := NewInternalErrorProblem("database connection failed")
+			problem := validation.NewInternalErrorProblem("database connection failed")
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
 			Expect(problem.Title).To(Equal("Internal Server Error"))
@@ -130,7 +132,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Service Unavailable Problem", func() {
 		It("should create service unavailable problem", func() {
-			problem := NewServiceUnavailableProblem("database is down")
+			problem := validation.NewServiceUnavailableProblem("database is down")
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/service-unavailable"))
 			Expect(problem.Title).To(Equal("Service Unavailable"))
@@ -142,7 +144,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Conflict Problem", func() {
 		It("should create conflict problem", func() {
-			problem := NewConflictProblem("notification_audit", "notification_id", "test-id-123")
+			problem := validation.NewConflictProblem("notification_audit", "notification_id", "test-id-123")
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/conflict"))
 			Expect(problem.Title).To(Equal("Resource Conflict"))
@@ -157,7 +159,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("JSON Marshaling", func() {
 		It("should marshal to RFC 7807 compliant JSON", func() {
-			problem := &RFC7807Problem{
+			problem := &validation.RFC7807Problem{
 				Type:     "https://kubernaut.io/errors/validation-error",
 				Title:    "Validation Error",
 				Status:   http.StatusBadRequest,
@@ -191,7 +193,7 @@ var _ = Describe("RFC7807Problem", func() {
 		})
 
 		It("should omit optional fields when empty", func() {
-			problem := &RFC7807Problem{
+			problem := &validation.RFC7807Problem{
 				Type:   "https://kubernaut.io/errors/internal-error",
 				Title:  "Internal Server Error",
 				Status: http.StatusInternalServerError,
@@ -214,7 +216,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Error Interface", func() {
 		It("should return error string", func() {
-			problem := &RFC7807Problem{
+			problem := &validation.RFC7807Problem{
 				Type:   "https://kubernaut.io/errors/validation-error",
 				Title:  "Validation Error",
 				Status: http.StatusBadRequest,

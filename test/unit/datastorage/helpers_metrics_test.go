@@ -19,6 +19,7 @@ package datastorage
 import (
 	"testing"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -32,21 +33,21 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 	Context("SanitizeFailureReason", func() {
 		DescribeTable("should return known reasons unchanged",
 			func(reason string, expected string) {
-				result := SanitizeFailureReason(reason)
+				result := metrics.SanitizeFailureReason(reason)
 				Expect(result).To(Equal(expected))
 			},
 
-			Entry("postgresql_failure", ReasonPostgreSQLFailure, ReasonPostgreSQLFailure),
-			Entry("vectordb_failure", ReasonVectorDBFailure, ReasonVectorDBFailure),
-			Entry("validation_failure", ReasonValidationFailure, ReasonValidationFailure),
-			Entry("context_canceled", ReasonContextCanceled, ReasonContextCanceled),
-			Entry("transaction_rollback", ReasonTransactionRollback, ReasonTransactionRollback),
+			Entry("postgresql_failure", metrics.ReasonPostgreSQLFailure, metrics.ReasonPostgreSQLFailure),
+			Entry("vectordb_failure", metrics.ReasonVectorDBFailure, metrics.ReasonVectorDBFailure),
+			Entry("validation_failure", metrics.ReasonValidationFailure, metrics.ReasonValidationFailure),
+			Entry("context_canceled", metrics.ReasonContextCanceled, metrics.ReasonContextCanceled),
+			Entry("transaction_rollback", metrics.ReasonTransactionRollback, metrics.ReasonTransactionRollback),
 		)
 
 		DescribeTable("should sanitize unknown reasons to 'unknown'",
 			func(unknownReason string) {
-				result := SanitizeFailureReason(unknownReason)
-				Expect(result).To(Equal(ReasonUnknown), "Unknown reason should map to 'unknown'")
+				result := metrics.SanitizeFailureReason(unknownReason)
+				Expect(result).To(Equal(metrics.ReasonUnknown), "Unknown reason should map to 'unknown'")
 			},
 
 			Entry("random error message", "connection timeout: failed to connect to database"),
@@ -69,7 +70,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 					"resource exhausted",
 					// ... many more potential error messages
 				}
-				sanitized := SanitizeFailureReason(errorMessages[i%len(errorMessages)])
+				sanitized := metrics.SanitizeFailureReason(errorMessages[i%len(errorMessages)])
 				uniqueReasons[sanitized] = true
 			}
 
@@ -82,22 +83,22 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 	Context("SanitizeValidationReason", func() {
 		DescribeTable("should return known validation reasons unchanged",
 			func(reason string, expected string) {
-				result := SanitizeValidationReason(reason)
+				result := metrics.SanitizeValidationReason(reason)
 				Expect(result).To(Equal(expected))
 			},
 
-			Entry("required", ValidationReasonRequired, ValidationReasonRequired),
-			Entry("invalid", ValidationReasonInvalid, ValidationReasonInvalid),
-			Entry("length_exceeded", ValidationReasonLengthExceeded, ValidationReasonLengthExceeded),
-			Entry("xss_detected", ValidationReasonXSSDetected, ValidationReasonXSSDetected),
-			Entry("sql_injection_detected", ValidationReasonSQLInjection, ValidationReasonSQLInjection),
-			Entry("whitespace_only", ValidationReasonWhitespaceOnly, ValidationReasonWhitespaceOnly),
+			Entry("required", metrics.ValidationReasonRequired, metrics.ValidationReasonRequired),
+			Entry("invalid", metrics.ValidationReasonInvalid, metrics.ValidationReasonInvalid),
+			Entry("length_exceeded", metrics.ValidationReasonLengthExceeded, metrics.ValidationReasonLengthExceeded),
+			Entry("xss_detected", metrics.ValidationReasonXSSDetected, metrics.ValidationReasonXSSDetected),
+			Entry("sql_injection_detected", metrics.ValidationReasonSQLInjection, metrics.ValidationReasonSQLInjection),
+			Entry("whitespace_only", metrics.ValidationReasonWhitespaceOnly, metrics.ValidationReasonWhitespaceOnly),
 		)
 
 		DescribeTable("should sanitize unknown validation reasons to 'invalid'",
 			func(unknownReason string) {
-				result := SanitizeValidationReason(unknownReason)
-				Expect(result).To(Equal(ValidationReasonInvalid), "Unknown validation reason should map to 'invalid'")
+				result := metrics.SanitizeValidationReason(unknownReason)
+				Expect(result).To(Equal(metrics.ValidationReasonInvalid), "Unknown validation reason should map to 'invalid'")
 			},
 
 			Entry("dynamic validation message", "field must match pattern /[a-z]+/"),
@@ -114,7 +115,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 			for _, field := range fields {
 				// Try various validation reasons
 				for i := 0; i < 20; i++ {
-					reason := SanitizeValidationReason("some dynamic error message")
+					reason := metrics.SanitizeValidationReason("some dynamic error message")
 					combination := field + ":" + reason
 					uniqueCombinations[combination] = true
 				}
@@ -129,19 +130,19 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 	Context("SanitizeTableName", func() {
 		DescribeTable("should return known table names unchanged",
 			func(table string, expected string) {
-				result := SanitizeTableName(table)
+				result := metrics.SanitizeTableName(table)
 				Expect(result).To(Equal(expected))
 			},
 
-			Entry("remediation_audit", TableRemediationAudit, TableRemediationAudit),
-			Entry("aianalysis_audit", TableAIAnalysisAudit, TableAIAnalysisAudit),
-			Entry("workflow_audit", TableWorkflowAudit, TableWorkflowAudit),
-			Entry("execution_audit", TableExecutionAudit, TableExecutionAudit),
+			Entry("remediation_audit", metrics.TableRemediationAudit, metrics.TableRemediationAudit),
+			Entry("aianalysis_audit", metrics.TableAIAnalysisAudit, metrics.TableAIAnalysisAudit),
+			Entry("workflow_audit", metrics.TableWorkflowAudit, metrics.TableWorkflowAudit),
+			Entry("execution_audit", metrics.TableExecutionAudit, metrics.TableExecutionAudit),
 		)
 
 		DescribeTable("should return empty string for unknown tables",
 			func(unknownTable string) {
-				result := SanitizeTableName(unknownTable)
+				result := metrics.SanitizeTableName(unknownTable)
 				Expect(result).To(Equal(""), "Unknown table should return empty string")
 			},
 
@@ -154,7 +155,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 			uniqueTables := make(map[string]bool)
 			// Simulate many different table names
 			for i := 0; i < 100; i++ {
-				table := SanitizeTableName("dynamic_table_" + string(rune(i)))
+				table := metrics.SanitizeTableName("dynamic_table_" + string(rune(i)))
 				if table != "" {
 					uniqueTables[table] = true
 				}
@@ -168,17 +169,17 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 
 	Context("SanitizeStatus", func() {
 		It("should return 'success' for success status", func() {
-			result := SanitizeStatus(StatusSuccess)
-			Expect(result).To(Equal(StatusSuccess))
+			result := metrics.SanitizeStatus(metrics.StatusSuccess)
+			Expect(result).To(Equal(metrics.StatusSuccess))
 		})
 
 		DescribeTable("should return 'failure' for all other statuses",
 			func(status string) {
-				result := SanitizeStatus(status)
-				Expect(result).To(Equal(StatusFailure))
+				result := metrics.SanitizeStatus(status)
+				Expect(result).To(Equal(metrics.StatusFailure))
 			},
 
-			Entry("failure", StatusFailure),
+			Entry("failure", metrics.StatusFailure),
 			Entry("error", "error"),
 			Entry("pending", "pending"),
 			Entry("unknown", "unknown"),
@@ -192,7 +193,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 				"timeout", "retrying", "unknown", "", "404"}
 
 			for i := 0; i < 100; i++ {
-				sanitized := SanitizeStatus(statuses[i%len(statuses)])
+				sanitized := metrics.SanitizeStatus(statuses[i%len(statuses)])
 				uniqueStatuses[sanitized] = true
 			}
 
@@ -205,20 +206,20 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 	Context("SanitizeQueryOperation", func() {
 		DescribeTable("should return known operations unchanged",
 			func(operation string, expected string) {
-				result := SanitizeQueryOperation(operation)
+				result := metrics.SanitizeQueryOperation(operation)
 				Expect(result).To(Equal(expected))
 			},
 
-			Entry("list", OperationList, OperationList),
-			Entry("get", OperationGet, OperationGet),
-			Entry("semantic_search", OperationSemanticSearch, OperationSemanticSearch),
-			Entry("filter", OperationFilter, OperationFilter),
+			Entry("list", metrics.OperationList, metrics.OperationList),
+			Entry("get", metrics.OperationGet, metrics.OperationGet),
+			Entry("semantic_search", metrics.OperationSemanticSearch, metrics.OperationSemanticSearch),
+			Entry("filter", metrics.OperationFilter, metrics.OperationFilter),
 		)
 
 		DescribeTable("should sanitize unknown operations to 'filter'",
 			func(unknownOperation string) {
-				result := SanitizeQueryOperation(unknownOperation)
-				Expect(result).To(Equal(OperationFilter), "Unknown operation should map to 'filter'")
+				result := metrics.SanitizeQueryOperation(unknownOperation)
+				Expect(result).To(Equal(metrics.OperationFilter), "Unknown operation should map to 'filter'")
 			},
 
 			Entry("custom operation", "custom_query"),
@@ -230,7 +231,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 			uniqueOperations := make(map[string]bool)
 			// Simulate many different operation names
 			for i := 0; i < 100; i++ {
-				operation := SanitizeQueryOperation("operation_" + string(rune(i)))
+				operation := metrics.SanitizeQueryOperation("operation_" + string(rune(i)))
 				uniqueOperations[operation] = true
 			}
 
@@ -262,7 +263,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 
 			// 1000 different error messages
 			for i := 0; i < 1000; i++ {
-				reason := SanitizeFailureReason("error message " + string(rune(i)))
+				reason := metrics.SanitizeFailureReason("error message " + string(rune(i)))
 				uniqueLabels[reason] = true
 			}
 

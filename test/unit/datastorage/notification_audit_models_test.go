@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -14,11 +15,11 @@ func TestNotificationAudit(t *testing.T) {
 }
 
 var _ = Describe("NotificationAudit Model", func() {
-	var audit *NotificationAudit
+	var audit *models.NotificationAudit
 
 	BeforeEach(func() {
 		now := time.Now()
-		audit = &NotificationAudit{
+		audit = &models.NotificationAudit{
 			ID:              1,
 			RemediationID:   "test-remediation-1",
 			NotificationID:  "test-notification-1",
@@ -207,4 +208,3 @@ var _ = Describe("NotificationAudit Model", func() {
 		})
 	})
 })
-
