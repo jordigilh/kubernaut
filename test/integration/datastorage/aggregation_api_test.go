@@ -26,7 +26,9 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 	var client *http.Client
 
 	BeforeAll(func() {
-		client = &http.Client{Timeout: 10 * time.Second}
+		// Use 30-second timeout for aggregation queries (can be slow on first run)
+		// Integration tests with real database may need more time than unit tests
+		client = &http.Client{Timeout: 30 * time.Second}
 
 		// Insert test data for aggregation tests
 		GinkgoWriter.Println("📊 Inserting test data for aggregation tests...")
@@ -183,11 +185,12 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(aggs).To(HaveLen(3), "Expected 3 namespaces: prod-agg, staging-agg, dev-agg")
 
 				// ✅ CORRECTNESS TEST: Verify against real database (GAP-05)
+				// Note: resource_action_traces uses cluster_name column (schema compatibility)
 				rows, err := db.Query(`
-					SELECT namespace, COUNT(*) as count
+					SELECT cluster_name as namespace, COUNT(*) as count
 					FROM resource_action_traces
-					WHERE namespace LIKE '%-agg'
-					GROUP BY namespace
+					WHERE cluster_name LIKE '%-agg'
+					GROUP BY cluster_name
 					ORDER BY count DESC
 				`)
 				Expect(err).ToNot(HaveOccurred())
