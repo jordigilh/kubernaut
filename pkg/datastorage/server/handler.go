@@ -35,6 +35,16 @@ type DBInterface interface {
 	// CountTotal returns the total number of records matching the filters (for pagination metadata)
 	// This is used to populate pagination.total with the actual database count, not page size
 	CountTotal(filters map[string]string) (int64, error)
+
+	// BR-STORAGE-030: Aggregation endpoints
+	// AggregateSuccessRate calculates success rate for a workflow
+	AggregateSuccessRate(workflowID string) (map[string]interface{}, error)
+	// AggregateByNamespace groups incidents by namespace
+	AggregateByNamespace() (map[string]interface{}, error)
+	// AggregateBySeverity groups incidents by severity
+	AggregateBySeverity() (map[string]interface{}, error)
+	// AggregateIncidentTrend returns incident counts over time
+	AggregateIncidentTrend(period string) (map[string]interface{}, error)
 }
 
 // Handler handles REST API requests for Data Storage Service
@@ -134,8 +144,8 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	if ns := query.Get("namespace"); ns != "" {
 		filters["namespace"] = ns
 	}
-	if alertName := query.Get("alert_name"); alertName != "" {
-		filters["alert_name"] = alertName
+	if signalName := query.Get("signal_name"); signalName != "" {
+		filters["signal_name"] = signalName
 	}
 	if sev := query.Get("severity"); sev != "" {
 		// BR-STORAGE-025: Validate severity values to prevent invalid input
@@ -396,4 +406,244 @@ func isValidSeverity(severity string) bool {
 		"low":      true,
 	}
 	return validSeverities[severity]
+}
+
+// ========================================
+// AGGREGATION ENDPOINTS (BR-STORAGE-030)
+// ========================================
+
+// AggregateSuccessRate handles GET /api/v1/incidents/aggregate/success-rate
+// BR-STORAGE-031: Success rate aggregation by workflow
+// Returns success/failure counts and success rate for a specific workflow
+//
+// TDD GREEN Phase: Minimal implementation to pass tests
+func (h *Handler) AggregateSuccessRate(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
+	// Extract request ID for tracing
+	requestID := r.Header.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+	}
+
+	h.logger.Info("Handling AggregateSuccessRate request",
+		zap.String("request_id", requestID),
+		zap.String("query", r.URL.RawQuery),
+	)
+
+	// BR-STORAGE-031: Require workflow_id parameter
+	workflowID := r.URL.Query().Get("workflow_id")
+	if workflowID == "" {
+		h.logger.Warn("Missing workflow_id parameter",
+			zap.String("request_id", requestID),
+		)
+		h.writeRFC7807Error(w, http.StatusBadRequest, "missing-parameter", "Missing Parameter", "workflow_id parameter is required")
+		return
+	}
+
+	// Query database for aggregation
+	result, err := h.db.AggregateSuccessRate(workflowID)
+	if err != nil {
+		h.logger.Error("Database aggregation failed",
+			zap.String("request_id", requestID),
+			zap.String("workflow_id", workflowID),
+			zap.Error(err),
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		return
+	}
+
+	// Return aggregated results
+	w.Header().Set("X-Request-ID", requestID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("Failed to encode aggregation response",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	duration := time.Since(startTime)
+	h.logger.Info("AggregateSuccessRate request completed",
+		zap.String("request_id", requestID),
+		zap.String("workflow_id", workflowID),
+		zap.Duration("duration", duration),
+	)
+}
+
+// AggregateByNamespace handles GET /api/v1/incidents/aggregate/by-namespace
+// BR-STORAGE-032: Namespace grouping aggregation
+// Returns incident counts grouped by namespace
+//
+// TDD GREEN Phase: Minimal implementation to pass tests
+func (h *Handler) AggregateByNamespace(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
+	requestID := r.Header.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+	}
+
+	h.logger.Info("Handling AggregateByNamespace request",
+		zap.String("request_id", requestID),
+	)
+
+	// Query database for namespace aggregation
+	result, err := h.db.AggregateByNamespace()
+	if err != nil {
+		h.logger.Error("Database aggregation failed",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		return
+	}
+
+	// Return aggregated results
+	w.Header().Set("X-Request-ID", requestID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("Failed to encode aggregation response",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	duration := time.Since(startTime)
+	h.logger.Info("AggregateByNamespace request completed",
+		zap.String("request_id", requestID),
+		zap.Duration("duration", duration),
+	)
+}
+
+// AggregateBySeverity handles GET /api/v1/incidents/aggregate/by-severity
+// BR-STORAGE-033: Severity distribution aggregation
+// Returns incident counts grouped by severity level
+//
+// TDD GREEN Phase: Minimal implementation to pass tests
+func (h *Handler) AggregateBySeverity(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
+	requestID := r.Header.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+	}
+
+	h.logger.Info("Handling AggregateBySeverity request",
+		zap.String("request_id", requestID),
+	)
+
+	// Query database for severity aggregation
+	result, err := h.db.AggregateBySeverity()
+	if err != nil {
+		h.logger.Error("Database aggregation failed",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		return
+	}
+
+	// Return aggregated results
+	w.Header().Set("X-Request-ID", requestID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("Failed to encode aggregation response",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	duration := time.Since(startTime)
+	h.logger.Info("AggregateBySeverity request completed",
+		zap.String("request_id", requestID),
+		zap.Duration("duration", duration),
+	)
+}
+
+// AggregateIncidentTrend handles GET /api/v1/incidents/aggregate/trend
+// BR-STORAGE-034: Incident trend aggregation
+// Returns incident counts over time for a specified period
+//
+// TDD GREEN Phase: Minimal implementation to pass tests
+func (h *Handler) AggregateIncidentTrend(w http.ResponseWriter, r *http.Request) {
+	startTime := time.Now()
+
+	requestID := r.Header.Get("X-Request-ID")
+	if requestID == "" {
+		requestID = fmt.Sprintf("req-%d", time.Now().UnixNano())
+	}
+
+	h.logger.Info("Handling AggregateIncidentTrend request",
+		zap.String("request_id", requestID),
+		zap.String("query", r.URL.RawQuery),
+	)
+
+	// BR-STORAGE-034: Parse period parameter (default to 7d)
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "7d" // Default to 7 days
+	}
+
+	// Validate period format
+	if !isValidPeriod(period) {
+		h.logger.Warn("Invalid period parameter",
+			zap.String("request_id", requestID),
+			zap.String("period", period),
+		)
+		h.writeRFC7807Error(w, http.StatusBadRequest, "invalid-parameter", "Invalid Parameter", "period must be one of: 7d, 30d, 90d")
+		return
+	}
+
+	// Query database for trend aggregation
+	result, err := h.db.AggregateIncidentTrend(period)
+	if err != nil {
+		h.logger.Error("Database aggregation failed",
+			zap.String("request_id", requestID),
+			zap.String("period", period),
+			zap.Error(err),
+		)
+		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		return
+	}
+
+	// Return aggregated results
+	w.Header().Set("X-Request-ID", requestID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("Failed to encode aggregation response",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+		)
+		return
+	}
+
+	duration := time.Since(startTime)
+	h.logger.Info("AggregateIncidentTrend request completed",
+		zap.String("request_id", requestID),
+		zap.String("period", period),
+		zap.Duration("duration", duration),
+	)
+}
+
+// isValidPeriod checks if the period value is valid
+// BR-STORAGE-034: Input validation for trend periods
+func isValidPeriod(period string) bool {
+	validPeriods := map[string]bool{
+		"7d":  true,
+		"30d": true,
+		"90d": true,
+	}
+	return validPeriods[period]
 }

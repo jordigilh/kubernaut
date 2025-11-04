@@ -19,15 +19,17 @@ package mocks
 // MockDB is a simple mock database for unit testing REST handlers
 // This is a minimal implementation for GREEN phase - will be enhanced in REFACTOR
 type MockDB struct {
-	recordCount int
-	incidents   []map[string]interface{}
+	recordCount     int
+	incidents       []map[string]interface{}
+	aggregationData map[string]map[string]interface{} // For aggregation endpoint mocking
 }
 
 // NewMockDB creates a new mock database
 func NewMockDB() *MockDB {
 	return &MockDB{
-		recordCount: 0,
-		incidents:   make([]map[string]interface{}, 0),
+		recordCount:     0,
+		incidents:       make([]map[string]interface{}, 0),
+		aggregationData: make(map[string]map[string]interface{}),
 	}
 }
 
@@ -126,4 +128,83 @@ func (m *MockDB) CountTotal(filters map[string]string) (int64, error) {
 
 	// Return total count of all incidents (not filtered by limit/offset)
 	return int64(len(m.incidents)), nil
+}
+
+// SetAggregationData configures mock aggregation responses
+// Used for testing aggregation endpoints in unit tests
+func (m *MockDB) SetAggregationData(aggregationType string, data map[string]interface{}) {
+	m.aggregationData[aggregationType] = data
+}
+
+// GetAggregationData retrieves mock aggregation data
+// Returns nil if no data configured for this aggregation type
+func (m *MockDB) GetAggregationData(aggregationType string) map[string]interface{} {
+	return m.aggregationData[aggregationType]
+}
+
+// AggregateSuccessRate calculates success rate for a workflow
+// BR-STORAGE-031: Success rate aggregation
+func (m *MockDB) AggregateSuccessRate(workflowID string) (map[string]interface{}, error) {
+	if data, ok := m.aggregationData["success_rate"]; ok {
+		result := make(map[string]interface{})
+		for k, v := range data {
+			result[k] = v
+		}
+		result["workflow_id"] = workflowID
+		return result, nil
+	}
+
+	// Default: no data
+	return map[string]interface{}{
+		"workflow_id":   workflowID,
+		"total_count":   0,
+		"success_count": 0,
+		"failure_count": 0,
+		"success_rate":  0.0,
+	}, nil
+}
+
+// AggregateByNamespace groups incidents by namespace
+// BR-STORAGE-032: Namespace grouping aggregation
+func (m *MockDB) AggregateByNamespace() (map[string]interface{}, error) {
+	if data, ok := m.aggregationData["by_namespace"]; ok {
+		return data, nil
+	}
+
+	// Default: empty aggregations
+	return map[string]interface{}{
+		"aggregations": []map[string]interface{}{},
+	}, nil
+}
+
+// AggregateBySeverity groups incidents by severity
+// BR-STORAGE-033: Severity distribution aggregation
+func (m *MockDB) AggregateBySeverity() (map[string]interface{}, error) {
+	if data, ok := m.aggregationData["by_severity"]; ok {
+		return data, nil
+	}
+
+	// Default: empty aggregations
+	return map[string]interface{}{
+		"aggregations": []map[string]interface{}{},
+	}, nil
+}
+
+// AggregateIncidentTrend returns incident counts over time
+// BR-STORAGE-034: Incident trend aggregation
+func (m *MockDB) AggregateIncidentTrend(period string) (map[string]interface{}, error) {
+	if data, ok := m.aggregationData["incident_trend"]; ok {
+		result := make(map[string]interface{})
+		for k, v := range data {
+			result[k] = v
+		}
+		result["period"] = period
+		return result, nil
+	}
+
+	// Default: empty data points
+	return map[string]interface{}{
+		"period":      period,
+		"data_points": []map[string]interface{}{},
+	}, nil
 }

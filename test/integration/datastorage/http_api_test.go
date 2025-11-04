@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os/exec"
 	"time"
@@ -52,6 +53,11 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 		It("should accept valid audit record and persist to PostgreSQL", func() {
 			// ✅ BEHAVIOR TEST: HTTP 201 Created
 			resp := postAudit(client, validAudit)
+			if resp.StatusCode != 201 {
+				// Debug: Print response body on failure
+				body, _ := io.ReadAll(resp.Body)
+				GinkgoWriter.Printf("\n❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(body))
+			}
 			Expect(resp.StatusCode).To(Equal(201), "Expected 201 Created for valid audit")
 			Expect(resp.Header.Get("Content-Type")).To(Equal("application/json"))
 
@@ -220,4 +226,3 @@ func postAudit(client *http.Client, audit *models.NotificationAudit) *http.Respo
 
 	return resp
 }
-

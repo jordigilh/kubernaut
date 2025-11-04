@@ -259,7 +259,7 @@ func (s *Service) SemanticSearch(ctx context.Context, queryText string) ([]*Sema
 	sqlQuery := `
 		SELECT
 			id, name, namespace, phase, action_type, status, start_time, end_time,
-			duration, remediation_request_id, alert_fingerprint, severity,
+			duration, remediation_request_id, signal_fingerprint, severity,
 			environment, cluster_name, target_resource, error_message, metadata,
 			embedding, created_at, updated_at,
 			(1 - (embedding <=> $1::vector)) as similarity

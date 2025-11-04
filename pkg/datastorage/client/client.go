@@ -94,13 +94,13 @@ type IncidentsResult struct {
 }
 
 // ListIncidents retrieves a list of incidents from the Data Storage Service
-// filters can include: alert_name, severity, action_type, limit, offset
+// filters can include: signal_name, severity, action_type, limit, offset
 func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[string]string) (*IncidentsResult, error) {
 	// Build query parameters from filters
 	params := &ListIncidentsParams{}
 
-	if alertName, ok := filters["alert_name"]; ok {
-		params.AlertName = &alertName
+	if signalName, ok := filters["signal_name"]; ok {
+		params.SignalName = &signalName
 	}
 	if severity, ok := filters["severity"]; ok {
 		sev := ListIncidentsParamsSeverity(severity)

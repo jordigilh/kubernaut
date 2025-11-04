@@ -7,18 +7,19 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
 // ========================================
@@ -48,17 +49,18 @@ func TestDataStorageIntegration(t *testing.T) {
 }
 
 var (
-	db                 *sql.DB
-	redisClient        *redis.Client
-	repo               *repository.NotificationAuditRepository
-	dlqClient          *dlq.Client
-	logger             *zap.Logger
-	ctx                context.Context
-	cancel             context.CancelFunc
-	postgresContainer  = "datastorage-postgres-test"
-	redisContainer     = "datastorage-redis-test"
-	serviceContainer   = "datastorage-service-test"
-	datastorageURL     string
+	db                *sql.DB
+	redisClient       *redis.Client
+	repo              *repository.NotificationAuditRepository
+	dlqClient         *dlq.Client
+	logger            *zap.Logger
+	ctx               context.Context
+	cancel            context.CancelFunc
+	postgresContainer = "datastorage-postgres-test"
+	redisContainer    = "datastorage-redis-test"
+	serviceContainer  = "datastorage-service-test"
+	datastorageURL    string
+	configDir         string // ADR-030: Directory for config and secret files
 )
 
 var _ = BeforeSuite(func() {
@@ -96,7 +98,11 @@ var _ = BeforeSuite(func() {
 	repo = repository.NewNotificationAuditRepository(db, logger)
 	dlqClient = dlq.NewClient(redisClient, logger)
 
-	// 7. Build and start Data Storage Service container (HTTP API)
+	// 7. Create ADR-030 config files
+	GinkgoWriter.Println("📝 Creating ADR-030 config and secret files...")
+	createConfigFiles()
+
+	// 8. Build and start Data Storage Service container (HTTP API)
 	GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
 	buildDataStorageService()
 
@@ -131,6 +137,11 @@ var _ = AfterSuite(func() {
 	exec.Command("podman", "rm", postgresContainer).Run()
 	exec.Command("podman", "stop", redisContainer).Run()
 	exec.Command("podman", "rm", redisContainer).Run()
+
+	// Remove config directory
+	if configDir != "" {
+		os.RemoveAll(configDir)
+	}
 
 	GinkgoWriter.Println("✅ Cleanup complete")
 })
@@ -242,20 +253,43 @@ func applyMigrationsWithPropagation() {
 	_, err = db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
 	Expect(err).ToNot(HaveOccurred())
 
-	// 3. Apply migration 010_audit_write_api_phase1.sql
-	GinkgoWriter.Println("  📜 Applying migration 010_audit_write_api_phase1.sql...")
-	migrationPath := "../../../migrations/010_audit_write_api_phase1.sql"
-	content, err := os.ReadFile(migrationPath)
-	if err != nil {
-		GinkgoWriter.Printf("  ❌ Migration file not found: %v\n", err)
-		Fail(fmt.Sprintf("Migration file not found: %v", err))
+	// 3. Apply ALL migrations in order (mirrors production)
+	GinkgoWriter.Println("  📜 Applying all migrations in order...")
+	migrations := []string{
+		"001_initial_schema.sql",
+		"002_fix_partitioning.sql",
+		"003_stored_procedures.sql",
+		"004_add_effectiveness_assessment_due.sql",
+		"005_vector_schema.sql",
+		"006_effectiveness_assessment.sql",
+		"006_update_vector_dimensions.sql",
+		"007_add_context_column.sql",
+		"008_context_api_compatibility.sql",
+		"010_audit_write_api_phase1.sql",
+		"011_rename_alert_to_signal.sql",
+		"999_add_nov_2025_partition.sql",
 	}
 
-	_, err = db.ExecContext(ctx, string(content))
-	if err != nil {
-		GinkgoWriter.Printf("  ❌ Migration failed: %v\n", err)
-		Fail(fmt.Sprintf("Migration failed: %v", err))
+	for _, migration := range migrations {
+		GinkgoWriter.Printf("  📜 Applying %s...\n", migration)
+		migrationPath := "../../../migrations/" + migration
+		content, err := os.ReadFile(migrationPath)
+		if err != nil {
+			GinkgoWriter.Printf("  ❌ Migration file not found: %v\n", err)
+			Fail(fmt.Sprintf("Migration file %s not found: %v", migration, err))
+		}
+
+		// Remove CONCURRENTLY keyword for test environment
+		// CONCURRENTLY cannot run inside a transaction block
+		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
+
+		_, err = db.ExecContext(ctx, migrationSQL)
+		if err != nil {
+			GinkgoWriter.Printf("  ❌ Migration %s failed: %v\n", migration, err)
+			Fail(fmt.Sprintf("Migration %s failed: %v", migration, err))
+		}
 	}
+	GinkgoWriter.Println("  ✅ All migrations applied successfully")
 
 	// 4. Grant permissions to test user
 	GinkgoWriter.Println("  🔐 Granting permissions...")
@@ -274,7 +308,23 @@ func applyMigrationsWithPropagation() {
 	// 6. Verify schema using pg_class (handles partitioned tables)
 	// Context API Lesson: information_schema.tables doesn't show partitioned tables
 	GinkgoWriter.Println("  ✅ Verifying schema...")
+
+	// Verify resource_action_traces exists
 	verifySQL := `
+		SELECT COUNT(*)
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'public'
+		  AND c.relkind IN ('r', 'p')  -- 'r' = regular, 'p' = partitioned
+		  AND c.relname = 'resource_action_traces';
+	`
+	var count int
+	err = db.QueryRowContext(ctx, verifySQL).Scan(&count)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(count).To(Equal(1), "Expected resource_action_traces table to exist")
+
+	// Verify notification_audit exists
+	verifySQL2 := `
 		SELECT COUNT(*)
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -282,12 +332,81 @@ func applyMigrationsWithPropagation() {
 		  AND c.relkind IN ('r', 'p')  -- 'r' = regular, 'p' = partitioned
 		  AND c.relname = 'notification_audit';
 	`
-	var count int
-	err = db.QueryRowContext(ctx, verifySQL).Scan(&count)
+	err = db.QueryRowContext(ctx, verifySQL2).Scan(&count)
 	Expect(err).ToNot(HaveOccurred())
 	Expect(count).To(Equal(1), "Expected notification_audit table to exist")
 
 	GinkgoWriter.Println("  ✅ Schema verification complete!")
+}
+
+// createConfigFiles creates ADR-030 compliant config and secret files
+func createConfigFiles() {
+	var err error
+	configDir, err = os.MkdirTemp("", "datastorage-config-*")
+	Expect(err).ToNot(HaveOccurred())
+
+	// Get container IPs (will be used in config)
+	postgresIP := getContainerIP(postgresContainer)
+	redisIP := getContainerIP(redisContainer)
+
+	// Create config.yaml (ADR-030)
+	configYAML := fmt.Sprintf(`
+service:
+  name: data-storage
+  metricsPort: 9090
+  logLevel: debug
+  shutdownTimeout: 30s
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: 30s
+  write_timeout: 30s
+database:
+  host: %s
+  port: 5432
+  name: action_history
+  user: slm_user
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 10m
+  secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+  usernameKey: "username"
+  passwordKey: "password"
+redis:
+  addr: %s:6379
+  db: 0
+  dlq_stream_name: dlq-stream
+  dlq_max_len: 1000
+  dlq_consumer_group: dlq-group
+  secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+  passwordKey: "password"
+logging:
+  level: info
+  format: json
+`, postgresIP, redisIP)
+
+	configPath := filepath.Join(configDir, "config.yaml")
+	err = os.WriteFile(configPath, []byte(configYAML), 0644)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Create database secrets file
+	dbSecretsYAML := `
+username: slm_user
+password: test_password
+`
+	dbSecretsPath := filepath.Join(configDir, "db-secrets.yaml")
+	err = os.WriteFile(dbSecretsPath, []byte(dbSecretsYAML), 0644)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Create Redis secrets file
+	redisSecretsYAML := `password: ""` // Redis without auth in test
+	redisSecretsPath := filepath.Join(configDir, "redis-secrets.yaml")
+	err = os.WriteFile(redisSecretsPath, []byte(redisSecretsYAML), 0644)
+	Expect(err).ToNot(HaveOccurred())
+
+	GinkgoWriter.Printf("  ✅ Config files created in %s\n", configDir)
 }
 
 // buildDataStorageService builds the Data Storage Service container image
@@ -327,19 +446,17 @@ func startDataStorageService() {
 	GinkgoWriter.Printf("  📍 PostgreSQL IP: %s\n", postgresIP)
 	GinkgoWriter.Printf("  📍 Redis IP: %s\n", redisIP)
 
-	// Start service container with DB + Redis connections
-	// Note: Redis shared with Context API (DD-INFRASTRUCTURE-002 - Integration Test Pattern)
-	// Use container IPs to connect (Podman networking)
+	// Mount config files (ADR-030)
+	configMount := fmt.Sprintf("%s/config.yaml:/etc/datastorage/config.yaml:ro", configDir)
+	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", configDir)
+
+	// Start service container with ADR-030 config
 	startCmd := exec.Command("podman", "run", "-d",
 		"--name", serviceContainer,
 		"-p", "8080:8080",
-		"-e", fmt.Sprintf("DB_HOST=%s", postgresIP),
-		"-e", "DB_PORT=5432", // PostgreSQL internal port
-		"-e", "DB_NAME=action_history",
-		"-e", "DB_USER=slm_user",
-		"-e", "DB_PASSWORD=test_password",
-		"-e", fmt.Sprintf("REDIS_ADDR=%s:6379", redisIP), // Redis internal port
-		"-e", "HTTP_PORT=:8080",
+		"-v", configMount,
+		"-v", secretsMount,
+		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
 		"data-storage:test")
 
 	output, err := startCmd.CombinedOutput()
@@ -378,6 +495,12 @@ func waitForServiceReady() {
 		defer resp.Body.Close()
 		return resp.StatusCode
 	}, "30s", "1s").Should(Equal(200), "Data Storage Service should be healthy")
+
+	// Print container logs for debugging (first 100 lines)
+	logs, logErr := exec.Command("podman", "logs", "--tail", "100", serviceContainer).CombinedOutput()
+	if logErr == nil {
+		GinkgoWriter.Printf("\n📋 Data Storage Service logs:\n%s\n", string(logs))
+	}
 
 	GinkgoWriter.Printf("  ✅ Data Storage Service ready at %s\n", datastorageURL)
 }
