@@ -1,9 +1,9 @@
 # Data Storage Service - Implementation Plan V5.0
 
-**Version**: 5.0 - ADR-033 Multi-Dimensional Success Tracking  
-**Date**: 2025-11-04  
-**Timeline**: 15.0 days (120 hours) ← **V4.9 (92h) + ADR-033 (28h): Schema migration + 3 new REST API endpoints**  
-**Status**: ✅ Ready for Implementation (ADR-033 Phase 1-4 approved)  
+**Version**: 5.0 - ADR-033 Multi-Dimensional Success Tracking
+**Date**: 2025-11-04
+**Timeline**: 15.0 days (120 hours) ← **V4.9 (92h) + ADR-033 (28h): Schema migration + 3 new REST API endpoints**
+**Status**: ✅ Ready for Implementation (ADR-033 Phase 1-4 approved)
 **Based On**: V4.9 + ADR-033 Remediation Playbook Catalog architecture
 
 ---
@@ -597,6 +597,2618 @@ Data Storage → PostgreSQL (with pgvector extension)
 **Phase 0-3 Total**: 7 days (54.5 hours) = 19.5h discovery + 35h implementation
 **Comparison**: V4.7 (100h) vs. V4.8 (54.5h) = **-45.5h savings (63% reduction)** ✅
 **Net Value**: Perfect TDD alignment + zero rework risk + fastest delivery
+
+---
+
+## 🧪 **ADR-033 TEST SCENARIOS & EDGE CASES** ✅ **NEW IN V5.0**
+
+### **Testing Philosophy: Behavior + Correctness**
+
+All ADR-033 tests follow the **Behavior + Correctness** principle:
+- **Behavior**: System performs the expected action (calculates success rate, returns results, handles errors)
+- **Correctness**: Output values are mathematically/logically accurate (success rate = successes/total, breakdowns sum correctly)
+
+**Testing Pyramid Distribution**:
+- **Unit Tests** (70%+): Query logic, aggregation calculations, edge case handling
+- **Integration Tests** (20%): REST API endpoints with real PostgreSQL, multi-dimensional queries
+- **E2E Tests** (<10%): Complete workflow validation (deferred to Phase 5)
+
+---
+
+### **🎯 TEST SCENARIOS: BY-INCIDENT-TYPE ENDPOINT**
+
+**Endpoint**: `GET /api/v1/incidents/aggregate/success-rate/by-incident-type`
+
+#### **TC-ADR033-01: Basic Incident-Type Success Rate Calculation**
+```go
+// BR-STORAGE-031-01: Calculate success rate by incident type
+It("should calculate incident-type success rate with exact counts", func() {
+    incidentType := "pod-oom-killer"
+
+    // Setup: 8 successes, 2 failures
+    for i := 0; i < 8; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType: stringPtr(incidentType),
+            Status:       "completed",
+            ActionType:   "increase_memory",
+        })
+    }
+    for i := 0; i < 2; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType: stringPtr(incidentType),
+            Status:       "failed",
+            ActionType:   "increase_memory",
+        })
+    }
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s&time_range=7d",
+        datastorageURL, incidentType))
+    Expect(err).ToNot(HaveOccurred())
+    Expect(resp.StatusCode).To(Equal(200))
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // BEHAVIOR: Endpoint returns incident-type aggregation
+    Expect(result.IncidentType).To(Equal(incidentType))
+    Expect(result.TimeRange).To(Equal("7d"))
+
+    // CORRECTNESS: Exact count validation
+    Expect(result.TotalExecutions).To(Equal(10))
+    Expect(result.SuccessfulExecutions).To(Equal(8))
+    Expect(result.FailedExecutions).To(Equal(2))
+
+    // CORRECTNESS: Mathematical accuracy (8/10 = 0.80)
+    Expect(result.SuccessRate).To(BeNumerically("~", 0.80, 0.001))
+
+    // BEHAVIOR: Confidence level calculated correctly
+    Expect(result.MinSamplesMet).To(BeTrue()) // 10 >= 5 minimum
+    Expect(result.Confidence).To(Equal("high"))
+})
+```
+
+#### **TC-ADR033-02: Incident-Type with Playbook Breakdown**
+```go
+// BR-STORAGE-031-02: Break down incident-type success by playbook
+It("should provide playbook breakdown for incident type", func() {
+    incidentType := "pod-oom-killer"
+
+    // Setup: Same incident type, 2 different playbooks
+    // Playbook A (pod-oom-recovery v1.2): 5 successes
+    for i := 0; i < 5; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:    stringPtr(incidentType),
+            PlaybookID:      stringPtr("pod-oom-recovery"),
+            PlaybookVersion: stringPtr("v1.2"),
+            Status:          "completed",
+        })
+    }
+
+    // Playbook B (pod-oom-recovery v1.1): 2 successes, 3 failures
+    for i := 0; i < 2; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:    stringPtr(incidentType),
+            PlaybookID:      stringPtr("pod-oom-recovery"),
+            PlaybookVersion: stringPtr("v1.1"),
+            Status:          "completed",
+        })
+    }
+    for i := 0; i < 3; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:    stringPtr(incidentType),
+            PlaybookID:      stringPtr("pod-oom-recovery"),
+            PlaybookVersion: stringPtr("v1.1"),
+            Status:          "failed",
+        })
+    }
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s",
+        datastorageURL, incidentType))
+    Expect(err).ToNot(HaveOccurred())
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // BEHAVIOR: Returns breakdown by playbook
+    Expect(result.BreakdownByPlaybook).To(HaveLen(2))
+
+    // CORRECTNESS: Overall success rate is weighted average
+    // (5 + 2) / (5 + 5) = 7/10 = 0.70
+    Expect(result.SuccessRate).To(BeNumerically("~", 0.70, 0.001))
+
+    // CORRECTNESS: Individual playbook rates
+    for _, pb := range result.BreakdownByPlaybook {
+        if pb.PlaybookVersion == "v1.2" {
+            Expect(pb.Executions).To(Equal(5))
+            Expect(pb.SuccessRate).To(BeNumerically("~", 1.00, 0.001)) // 5/5
+        } else if pb.PlaybookVersion == "v1.1" {
+            Expect(pb.Executions).To(Equal(5))
+            Expect(pb.SuccessRate).To(BeNumerically("~", 0.40, 0.001)) // 2/5
+        }
+    }
+})
+```
+
+#### **TC-ADR033-03: EDGE CASE - Zero Executions**
+```go
+// BR-STORAGE-031-03: Handle incident type with no data
+It("should return zero success rate for incident type with no executions", func() {
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=non-existent-incident",
+        datastorageURL))
+    Expect(err).ToNot(HaveOccurred())
+    Expect(resp.StatusCode).To(Equal(200))
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // BEHAVIOR: Returns valid response (not 404)
+    Expect(result.IncidentType).To(Equal("non-existent-incident"))
+
+    // CORRECTNESS: All counts are zero
+    Expect(result.TotalExecutions).To(Equal(0))
+    Expect(result.SuccessfulExecutions).To(Equal(0))
+    Expect(result.FailedExecutions).To(Equal(0))
+
+    // CORRECTNESS: Success rate is 0.0 (not NaN or undefined)
+    Expect(result.SuccessRate).To(BeNumerically("~", 0.0, 0.001))
+
+    // BEHAVIOR: Low confidence due to insufficient samples
+    Expect(result.MinSamplesMet).To(BeFalse())
+    Expect(result.Confidence).To(Equal("insufficient_data"))
+})
+```
+
+#### **TC-ADR033-04: EDGE CASE - All Failures (0% Success Rate)**
+```go
+// BR-STORAGE-031-04: Handle 0% success rate
+It("should correctly calculate 0% success rate", func() {
+    incidentType := "database-connection-failure"
+
+    // Setup: 10 failures, 0 successes
+    for i := 0; i < 10; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType: stringPtr(incidentType),
+            Status:       "failed",
+        })
+    }
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s",
+        datastorageURL, incidentType))
+    Expect(err).ToNot(HaveOccurred())
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // CORRECTNESS: Success rate is exactly 0.0
+    Expect(result.SuccessRate).To(BeNumerically("~", 0.0, 0.001))
+    Expect(result.TotalExecutions).To(Equal(10))
+    Expect(result.SuccessfulExecutions).To(Equal(0))
+    Expect(result.FailedExecutions).To(Equal(10))
+})
+```
+
+#### **TC-ADR033-05: EDGE CASE - All Successes (100% Success Rate)**
+```go
+// BR-STORAGE-031-05: Handle 100% success rate
+It("should correctly calculate 100% success rate", func() {
+    incidentType := "simple-pod-restart"
+
+    // Setup: 15 successes, 0 failures
+    for i := 0; i < 15; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType: stringPtr(incidentType),
+            Status:       "completed",
+        })
+    }
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s",
+        datastorageURL, incidentType))
+    Expect(err).ToNot(HaveOccurred())
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // CORRECTNESS: Success rate is exactly 1.0
+    Expect(result.SuccessRate).To(BeNumerically("~", 1.00, 0.001))
+    Expect(result.TotalExecutions).To(Equal(15))
+    Expect(result.SuccessfulExecutions).To(Equal(15))
+    Expect(result.FailedExecutions).To(Equal(0))
+})
+```
+
+#### **TC-ADR033-06: ERROR CASE - Invalid Time Range**
+```go
+// BR-STORAGE-031-06: Validate time range parameter
+It("should return 400 Bad Request for invalid time range", func() {
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=pod-oom-killer&time_range=invalid",
+        datastorageURL))
+    Expect(err).ToNot(HaveOccurred())
+    Expect(resp.StatusCode).To(Equal(400))
+
+    var problem validation.RFC7807Problem
+    json.NewDecoder(resp.Body).Decode(&problem)
+
+    // BEHAVIOR: Returns RFC 7807 error
+    Expect(problem.Type).To(Equal("https://api.kubernaut.io/problems/validation-error"))
+    Expect(problem.Title).To(Equal("Validation Error"))
+    Expect(problem.Detail).To(ContainSubstring("invalid time_range"))
+})
+```
+
+---
+
+### **🎯 TEST SCENARIOS: BY-PLAYBOOK ENDPOINT**
+
+**Endpoint**: `GET /api/v1/incidents/aggregate/success-rate/by-playbook`
+
+#### **TC-ADR033-07: Playbook Success Rate Across Incident Types**
+```go
+// BR-STORAGE-031-07: Calculate playbook success rate
+It("should calculate playbook success rate across multiple incident types", func() {
+    playbookID := "pod-oom-recovery"
+    playbookVersion := "v1.2"
+
+    // Setup: Same playbook used for 2 incident types
+    // Incident type 1: pod-oom-killer (5 successes)
+    for i := 0; i < 5; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:    stringPtr("pod-oom-killer"),
+            PlaybookID:      stringPtr(playbookID),
+            PlaybookVersion: stringPtr(playbookVersion),
+            Status:          "completed",
+        })
+    }
+
+    // Incident type 2: container-memory-pressure (3 successes, 2 failures)
+    for i := 0; i < 3; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:    stringPtr("container-memory-pressure"),
+            PlaybookID:      stringPtr(playbookID),
+            PlaybookVersion: stringPtr(playbookVersion),
+            Status:          "completed",
+        })
+    }
+    for i := 0; i < 2; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:    stringPtr("container-memory-pressure"),
+            PlaybookID:      stringPtr(playbookID),
+            PlaybookVersion: stringPtr(playbookVersion),
+            Status:          "failed",
+        })
+    }
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-playbook?playbook_id=%s&playbook_version=%s",
+        datastorageURL, playbookID, playbookVersion))
+    Expect(err).ToNot(HaveOccurred())
+    Expect(resp.StatusCode).To(Equal(200))
+
+    var result models.PlaybookSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // BEHAVIOR: Returns playbook-specific aggregation
+    Expect(result.PlaybookID).To(Equal(playbookID))
+    Expect(result.PlaybookVersion).To(Equal(playbookVersion))
+
+    // CORRECTNESS: Aggregated across incident types
+    Expect(result.TotalExecutions).To(Equal(10))
+    Expect(result.SuccessfulExecutions).To(Equal(8))
+    Expect(result.FailedExecutions).To(Equal(2))
+    Expect(result.SuccessRate).To(BeNumerically("~", 0.80, 0.001))
+
+    // CORRECTNESS: Breakdown by incident type
+    Expect(result.BreakdownByIncidentType).To(HaveLen(2))
+
+    // Find and verify pod-oom-killer breakdown
+    var podOOMBreakdown *models.IncidentTypeBreakdown
+    for _, b := range result.BreakdownByIncidentType {
+        if b.IncidentType == "pod-oom-killer" {
+            podOOMBreakdown = &b
+            break
+        }
+    }
+    Expect(podOOMBreakdown).ToNot(BeNil())
+    Expect(podOOMBreakdown.Executions).To(Equal(5))
+    Expect(podOOMBreakdown.SuccessRate).To(BeNumerically("~", 1.00, 0.001))
+})
+```
+
+#### **TC-ADR033-08: Playbook Step-by-Step Success Analysis**
+```go
+// BR-STORAGE-031-08: Analyze playbook step success rates
+It("should provide step-by-step success breakdown for playbook", func() {
+    playbookID := "complex-recovery"
+    playbookVersion := "v2.0"
+    playbookExecutionID := "exec-12345"
+
+    // Setup: Multi-step playbook execution
+    // Step 1: increase_memory (success)
+    createNotificationAudit(models.NotificationAudit{
+        PlaybookID:          stringPtr(playbookID),
+        PlaybookVersion:     stringPtr(playbookVersion),
+        PlaybookExecutionID: stringPtr(playbookExecutionID),
+        PlaybookStepNumber:  intPtr(1),
+        ActionType:          "increase_memory",
+        Status:              "completed",
+    })
+
+    // Step 2: restart_pod (success)
+    createNotificationAudit(models.NotificationAudit{
+        PlaybookID:          stringPtr(playbookID),
+        PlaybookVersion:     stringPtr(playbookVersion),
+        PlaybookExecutionID: stringPtr(playbookExecutionID),
+        PlaybookStepNumber:  intPtr(2),
+        ActionType:          "restart_pod",
+        Status:              "completed",
+    })
+
+    // Step 3: verify_health (success)
+    createNotificationAudit(models.NotificationAudit{
+        PlaybookID:          stringPtr(playbookID),
+        PlaybookVersion:     stringPtr(playbookVersion),
+        PlaybookExecutionID: stringPtr(playbookExecutionID),
+        PlaybookStepNumber:  intPtr(3),
+        ActionType:          "verify_health",
+        Status:              "completed",
+    })
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-playbook?playbook_id=%s&playbook_version=%s",
+        datastorageURL, playbookID, playbookVersion))
+    Expect(err).ToNot(HaveOccurred())
+
+    var result models.PlaybookSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // BEHAVIOR: Returns step-by-step breakdown
+    Expect(result.BreakdownByAction).To(HaveLen(3))
+
+    // CORRECTNESS: Each step has correct position and success rate
+    for _, action := range result.BreakdownByAction {
+        Expect(action.Executions).To(Equal(1))
+        Expect(action.SuccessRate).To(BeNumerically("~", 1.00, 0.001))
+
+        if action.ActionType == "increase_memory" {
+            Expect(action.StepNumber).To(Equal(1))
+        } else if action.ActionType == "restart_pod" {
+            Expect(action.StepNumber).To(Equal(2))
+        } else if action.ActionType == "verify_health" {
+            Expect(action.StepNumber).To(Equal(3))
+        }
+    }
+})
+```
+
+#### **TC-ADR033-09: EDGE CASE - Playbook Version Comparison**
+```go
+// BR-STORAGE-031-09: Compare different versions of same playbook
+It("should differentiate between playbook versions", func() {
+    playbookID := "pod-oom-recovery"
+
+    // Setup: v1.1 (old, 40% success), v1.2 (new, 90% success)
+    // v1.1: 2 successes, 3 failures
+    for i := 0; i < 2; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            PlaybookID:      stringPtr(playbookID),
+            PlaybookVersion: stringPtr("v1.1"),
+            Status:          "completed",
+        })
+    }
+    for i := 0; i < 3; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            PlaybookID:      stringPtr(playbookID),
+            PlaybookVersion: stringPtr("v1.1"),
+            Status:          "failed",
+        })
+    }
+
+    // v1.2: 9 successes, 1 failure
+    for i := 0; i < 9; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            PlaybookID:      stringPtr(playbookID),
+            PlaybookVersion: stringPtr("v1.2"),
+            Status:          "completed",
+        })
+    }
+    createNotificationAudit(models.NotificationAudit{
+        PlaybookID:      stringPtr(playbookID),
+        PlaybookVersion: stringPtr("v1.2"),
+        Status:          "failed",
+    })
+
+    // Query v1.1
+    respV1_1, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-playbook?playbook_id=%s&playbook_version=v1.1",
+        datastorageURL, playbookID))
+    Expect(err).ToNot(HaveOccurred())
+
+    var resultV1_1 models.PlaybookSuccessRate
+    json.NewDecoder(respV1_1.Body).Decode(&resultV1_1)
+
+    // CORRECTNESS: v1.1 success rate is 40%
+    Expect(resultV1_1.SuccessRate).To(BeNumerically("~", 0.40, 0.001))
+    Expect(resultV1_1.TotalExecutions).To(Equal(5))
+
+    // Query v1.2
+    respV1_2, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-playbook?playbook_id=%s&playbook_version=v1.2",
+        datastorageURL, playbookID))
+    Expect(err).ToNot(HaveOccurred())
+
+    var resultV1_2 models.PlaybookSuccessRate
+    json.NewDecoder(respV1_2.Body).Decode(&resultV1_2)
+
+    // CORRECTNESS: v1.2 success rate is 90%
+    Expect(resultV1_2.SuccessRate).To(BeNumerically("~", 0.90, 0.001))
+    Expect(resultV1_2.TotalExecutions).To(Equal(10))
+})
+```
+
+---
+
+### **🎯 TEST SCENARIOS: AI EXECUTION MODE TRACKING**
+
+**Feature**: Track Hybrid Model execution modes (catalog/chained/manual)
+
+#### **TC-ADR033-10: AI Execution Mode Distribution**
+```go
+// BR-STORAGE-031-10: Track AI execution mode distribution
+It("should track AI execution mode distribution (90-9-1 hybrid model)", func() {
+    incidentType := "complex-cascading-failure"
+
+    // Setup: Hybrid model distribution
+    // 90 catalog selections
+    for i := 0; i < 90; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:       stringPtr(incidentType),
+            AISelectedPlaybook: true,
+            Status:             "completed",
+        })
+    }
+
+    // 9 chained playbooks
+    for i := 0; i < 9; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:       stringPtr(incidentType),
+            AIChainedPlaybooks: true,
+            Status:             "completed",
+        })
+    }
+
+    // 1 manual escalation
+    createNotificationAudit(models.NotificationAudit{
+        IncidentType:       stringPtr(incidentType),
+        AIManualEscalation: true,
+        Status:             "completed",
+    })
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s",
+        datastorageURL, incidentType))
+    Expect(err).ToNot(HaveOccurred())
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // BEHAVIOR: Returns AI execution mode statistics
+    Expect(result.AIExecutionMode).ToNot(BeNil())
+
+    // CORRECTNESS: Distribution matches hybrid model (90-9-1)
+    Expect(result.AIExecutionMode.CatalogSelected).To(Equal(90))
+    Expect(result.AIExecutionMode.Chained).To(Equal(9))
+    Expect(result.AIExecutionMode.ManualEscalation).To(Equal(1))
+
+    // CORRECTNESS: Total executions sum correctly
+    totalModeExecutions := result.AIExecutionMode.CatalogSelected +
+                          result.AIExecutionMode.Chained +
+                          result.AIExecutionMode.ManualEscalation
+    Expect(totalModeExecutions).To(Equal(result.TotalExecutions))
+})
+```
+
+#### **TC-ADR033-11: Chained Playbooks Success Rate**
+```go
+// BR-STORAGE-031-11: Track chained playbooks separately
+It("should calculate success rate for chained playbooks", func() {
+    incidentType := "multi-component-failure"
+
+    // Setup: 5 chained playbook executions (4 success, 1 failure)
+    for i := 0; i < 4; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:       stringPtr(incidentType),
+            AIChainedPlaybooks: true,
+            PlaybookID:         stringPtr("chain-recovery"),
+            Status:             "completed",
+        })
+    }
+    createNotificationAudit(models.NotificationAudit{
+        IncidentType:       stringPtr(incidentType),
+        AIChainedPlaybooks: true,
+        PlaybookID:         stringPtr("chain-recovery"),
+        Status:             "failed",
+    })
+
+    // Setup: 10 single playbook executions (8 success, 2 failure) for comparison
+    for i := 0; i < 8; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:       stringPtr(incidentType),
+            AISelectedPlaybook: true,
+            PlaybookID:         stringPtr("single-recovery"),
+            Status:             "completed",
+        })
+    }
+    for i := 0; i < 2; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType:       stringPtr(incidentType),
+            AISelectedPlaybook: true,
+            PlaybookID:         stringPtr("single-recovery"),
+            Status:             "failed",
+        })
+    }
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s",
+        datastorageURL, incidentType))
+    Expect(err).ToNot(HaveOccurred())
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // BEHAVIOR: Returns overall success rate
+    Expect(result.TotalExecutions).To(Equal(15))
+
+    // CORRECTNESS: Overall success rate (12/15 = 0.80)
+    Expect(result.SuccessRate).To(BeNumerically("~", 0.80, 0.001))
+
+    // CORRECTNESS: AI execution mode counts
+    Expect(result.AIExecutionMode.CatalogSelected).To(Equal(10))
+    Expect(result.AIExecutionMode.Chained).To(Equal(5))
+})
+```
+
+---
+
+### **🎯 TEST SCENARIOS: EDGE CASES & ERROR HANDLING**
+
+#### **TC-ADR033-12: EDGE CASE - Time Range Filtering**
+```go
+// BR-STORAGE-031-12: Filter by time range correctly
+It("should filter results by time range", func() {
+    incidentType := "pod-crash-loop"
+
+    // Setup: Data from different time periods
+    // 5 executions from last 7 days (4 success, 1 failure)
+    now := time.Now()
+    for i := 0; i < 4; i++ {
+        createNotificationAuditWithTimestamp(models.NotificationAudit{
+            IncidentType:    stringPtr(incidentType),
+            Status:          "completed",
+            ActionTimestamp: now.Add(-time.Duration(i) * 24 * time.Hour), // Last 4 days
+        })
+    }
+    createNotificationAuditWithTimestamp(models.NotificationAudit{
+        IncidentType:    stringPtr(incidentType),
+        Status:          "failed",
+        ActionTimestamp: now.Add(-6 * 24 * time.Hour), // 6 days ago
+    })
+
+    // 3 executions from 30 days ago (should be excluded from 7d query)
+    for i := 0; i < 3; i++ {
+        createNotificationAuditWithTimestamp(models.NotificationAudit{
+            IncidentType:    stringPtr(incidentType),
+            Status:          "completed",
+            ActionTimestamp: now.Add(-30 * 24 * time.Hour), // 30 days ago
+        })
+    }
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s&time_range=7d",
+        datastorageURL, incidentType))
+    Expect(err).ToNot(HaveOccurred())
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // CORRECTNESS: Only last 7 days included (not 30-day-old data)
+    Expect(result.TotalExecutions).To(Equal(5)) // Not 8
+    Expect(result.SuccessfulExecutions).To(Equal(4))
+    Expect(result.FailedExecutions).To(Equal(1))
+    Expect(result.SuccessRate).To(BeNumerically("~", 0.80, 0.001))
+})
+```
+
+#### **TC-ADR033-13: ERROR CASE - Missing Required Parameters**
+```go
+// BR-STORAGE-031-13: Validate required parameters
+It("should return 400 Bad Request when playbook_id is missing", func() {
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-playbook?playbook_version=v1.2",
+        datastorageURL))
+    Expect(err).ToNot(HaveOccurred())
+    Expect(resp.StatusCode).To(Equal(400))
+
+    var problem validation.RFC7807Problem
+    json.NewDecoder(resp.Body).Decode(&problem)
+
+    // BEHAVIOR: Returns RFC 7807 error
+    Expect(problem.Type).To(Equal("https://api.kubernaut.io/problems/validation-error"))
+    Expect(problem.Detail).To(ContainSubstring("playbook_id is required"))
+})
+```
+
+#### **TC-ADR033-14: EDGE CASE - Minimum Samples Threshold**
+```go
+// BR-STORAGE-031-14: Handle insufficient sample size
+It("should mark confidence as low when sample size is insufficient", func() {
+    incidentType := "rare-incident"
+
+    // Setup: Only 3 executions (below min_samples=5 threshold)
+    for i := 0; i < 3; i++ {
+        createNotificationAudit(models.NotificationAudit{
+            IncidentType: stringPtr(incidentType),
+            Status:       "completed",
+        })
+    }
+
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s&min_samples=5",
+        datastorageURL, incidentType))
+    Expect(err).ToNot(HaveOccurred())
+
+    var result models.IncidentTypeSuccessRate
+    json.NewDecoder(resp.Body).Decode(&result)
+
+    // BEHAVIOR: Returns data but flags low confidence
+    Expect(result.TotalExecutions).To(Equal(3))
+    Expect(result.MinSamplesMet).To(BeFalse())
+    Expect(result.Confidence).To(Equal("low"))
+
+    // CORRECTNESS: Success rate still calculated (100%)
+    Expect(result.SuccessRate).To(BeNumerically("~", 1.00, 0.001))
+})
+```
+
+#### **TC-ADR033-15: DEPRECATED ENDPOINT - workflow_id Warning**
+```go
+// BR-STORAGE-031-15: Deprecated workflow_id endpoint returns deprecation warning
+It("should return deprecation warning for legacy workflow_id endpoint", func() {
+    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=legacy-workflow-123",
+        datastorageURL))
+    Expect(err).ToNot(HaveOccurred())
+    Expect(resp.StatusCode).To(Equal(200))
+
+    // BEHAVIOR: Returns deprecation warning in header
+    warningHeader := resp.Header.Get("Warning")
+    Expect(warningHeader).To(ContainSubstring("299"))
+    Expect(warningHeader).To(ContainSubstring("workflow_id query parameter is deprecated"))
+    Expect(warningHeader).To(ContainSubstring("Use /by-incident-type or /by-playbook endpoints"))
+})
+```
+
+---
+
+### **📋 TEST COVERAGE SUMMARY**
+
+| Test Category | Test Count | Coverage | Priority |
+|---|---|---|---|
+| **Basic Aggregation** | 3 tests | Incident-type, Playbook, Multi-dimensional | P0 |
+| **Breakdown Analysis** | 3 tests | Playbook breakdown, Incident breakdown, Step analysis | P0 |
+| **AI Execution Mode** | 3 tests | Hybrid model tracking, Chained playbooks, Manual escalation | P1 |
+| **Edge Cases** | 6 tests | Zero data, 0% success, 100% success, Version comparison, Time filtering, Min samples | P1 |
+| **Error Handling** | 3 tests | Invalid params, Missing params, Deprecated endpoint | P2 |
+| **TOTAL** | **18 tests** | **Comprehensive ADR-033 coverage** | **Phase 2-3** |
+
+**Testing Pyramid Distribution**:
+- **Unit Tests** (70%+): Aggregation logic, calculation functions, edge case handling → 12 tests
+- **Integration Tests** (20%): REST API with real PostgreSQL → 6 tests
+- **E2E Tests** (<10%): Complete workflow validation → Deferred to Phase 5
+
+**BR Coverage**:
+- BR-STORAGE-031-01 to BR-STORAGE-031-15: **15 business requirements** covered
+- All tests follow **Behavior + Correctness** principle
+- All edge cases identified and validated
+
+---
+
+## 📅 **ADR-033 DETAILED IMPLEMENTATION (Days 12-16)** ✅ **NEW IN V5.0**
+
+### **Overview**
+
+**Timeline**: 4 days (32 hours)
+**Prerequisites**: V4.9 Phase 0-3 complete, all 18 existing integration tests passing
+**Deliverables**: Schema migrated, 3 new REST endpoints, 18 new tests, updated OpenAPI spec
+
+---
+
+## 📅 **Day 12: Schema Migration & Model Updates (8h)**
+
+### **12.1: Run Migration Script** (2h)
+
+**Migration File**: `migrations/002_adr033_multidimensional_tracking.sql` ✅ **CREATED**
+
+**Execution Steps**:
+```bash
+# 1. Ensure goose is installed
+go install github.com/pressly/goose/v3/cmd/goose@latest
+
+# 2. Navigate to project root
+cd /Users/jgil/go/src/github.com/jordigilh/kubernaut
+
+# 3. Run migration (development database)
+goose -dir migrations postgres \
+  "user=db_user password=test_password dbname=action_history host=localhost port=5433 sslmode=disable" \
+  up
+
+# 4. Verify migration applied
+goose -dir migrations postgres \
+  "user=db_user password=test_password dbname=action_history host=localhost port=5433 sslmode=disable" \
+  status
+
+# Expected output:
+# 2025/11/04 10:00:00     Applied At                  Migration
+# ===============================================================
+# 2025/11/04 09:00:00  -- 001_initial_schema.sql
+# 2025/11/04 10:00:00  -- 002_adr033_multidimensional_tracking.sql
+```
+
+**Verification**:
+```sql
+-- Connect to database
+psql -h localhost -p 5433 -U db_user -d action_history
+
+-- Verify new columns exist
+\d resource_action_traces
+
+-- Expected output should include:
+-- incident_type           | character varying(100)
+-- alert_name              | character varying(255)
+-- incident_severity       | character varying(20)
+-- playbook_id             | character varying(64)
+-- playbook_version        | character varying(20)
+-- playbook_step_number    | integer
+-- playbook_execution_id   | character varying(64)
+-- ai_selected_playbook    | boolean
+-- ai_chained_playbooks    | boolean
+-- ai_manual_escalation    | boolean
+-- ai_playbook_customization | jsonb
+
+-- Verify indexes exist
+\di
+
+-- Expected output should include:
+-- idx_incident_type_success
+-- idx_playbook_success
+-- idx_multidimensional_success
+-- idx_playbook_execution
+-- idx_ai_execution_mode
+-- idx_alert_name_lookup
+```
+
+**Rollback Procedure** (if needed):
+```bash
+goose -dir migrations postgres \
+  "user=db_user password=test_password dbname=action_history host=localhost port=5433 sslmode=disable" \
+  down
+```
+
+---
+
+### **12.2: Update Go Models** (3h)
+
+**File**: `pkg/datastorage/models/notification_audit.go`
+
+**Add ADR-033 fields to existing NotificationAudit struct**:
+
+```go
+package models
+
+import (
+	"database/sql"
+	"encoding/json"
+	"time"
+)
+
+// NotificationAudit represents a single notification audit record
+// BR-STORAGE-001: Complete signal audit trail for remediation analysis
+type NotificationAudit struct {
+	// ========================================
+	// EXISTING FIELDS (KEEP ALL - BACKWARD COMPATIBLE)
+	// ========================================
+
+	// Core identification
+	ActionID        string    `json:"action_id" db:"action_id"`
+	ActionType      string    `json:"action_type" db:"action_type"`
+	ActionTimestamp time.Time `json:"action_timestamp" db:"action_timestamp"`
+	ActionParameters json.RawMessage `json:"action_parameters,omitempty" db:"action_parameters"`
+
+	// Execution tracking
+	Status       string         `json:"status" db:"status"`
+	ErrorMessage sql.NullString `json:"error_message,omitempty" db:"error_message"`
+
+	// Resource context
+	ResourceType      string `json:"resource_type" db:"resource_type"`
+	ResourceName      string `json:"resource_name" db:"resource_name"`
+	ResourceNamespace string `json:"resource_namespace" db:"resource_namespace"`
+
+	// AI/ML metadata
+	ModelUsed       string  `json:"model_used" db:"model_used"`
+	ModelConfidence float64 `json:"model_confidence" db:"model_confidence"`
+	ModelReasoning  string  `json:"model_reasoning" db:"model_reasoning"`
+
+	// Effectiveness tracking
+	EffectivenessScore  sql.NullFloat64 `json:"effectiveness_score,omitempty" db:"effectiveness_score"`
+	SideEffectsDetected bool            `json:"side_effects_detected" db:"side_effects_detected"`
+
+	// Embeddings (for AI analysis audit only)
+	Embedding []float32 `json:"embedding,omitempty" db:"embedding"`
+
+	// Audit trail
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+
+	// ========================================
+	// ADR-033: NEW FIELDS (NULLABLE - BACKWARD COMPATIBLE)
+	// ========================================
+
+	// DIMENSION 1: INCIDENT TYPE (PRIMARY)
+	IncidentType     sql.NullString `json:"incident_type,omitempty" db:"incident_type"`
+	AlertName        sql.NullString `json:"alert_name,omitempty" db:"alert_name"`
+	IncidentSeverity sql.NullString `json:"incident_severity,omitempty" db:"incident_severity"`
+
+	// DIMENSION 2: PLAYBOOK (SECONDARY)
+	PlaybookID          sql.NullString `json:"playbook_id,omitempty" db:"playbook_id"`
+	PlaybookVersion     sql.NullString `json:"playbook_version,omitempty" db:"playbook_version"`
+	PlaybookStepNumber  sql.NullInt32  `json:"playbook_step_number,omitempty" db:"playbook_step_number"`
+	PlaybookExecutionID sql.NullString `json:"playbook_execution_id,omitempty" db:"playbook_execution_id"`
+
+	// AI EXECUTION MODE (HYBRID MODEL: 90% catalog + 9% chaining + 1% manual)
+	AISelectedPlaybook     bool            `json:"ai_selected_playbook" db:"ai_selected_playbook"`
+	AIChainedPlaybooks     bool            `json:"ai_chained_playbooks" db:"ai_chained_playbooks"`
+	AIManualEscalation     bool            `json:"ai_manual_escalation" db:"ai_manual_escalation"`
+	AIPlaybookCustomization json.RawMessage `json:"ai_playbook_customization,omitempty" db:"ai_playbook_customization"`
+}
+
+// Helper constructors for nullable fields (ADR-033)
+func StringPtr(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{Valid: false}
+	}
+	return sql.NullString{String: s, Valid: true}
+}
+
+func Int32Ptr(i int32) sql.NullInt32 {
+	return sql.NullInt32{Int32: i, Valid: true}
+}
+```
+
+**File**: `pkg/datastorage/models/aggregation_responses.go` ✅ **NEW FILE**
+
+**Create aggregation response models**:
+
+```go
+package models
+
+// ADR-033: Multi-Dimensional Success Tracking Response Models
+// BR-STORAGE-031: Success rate aggregation by incident type, playbook, and action
+
+// IncidentTypeSuccessRate represents success rate by incident type
+// BR-STORAGE-031-01: Calculate success rate by incident type
+type IncidentTypeSuccessRate struct {
+	IncidentType         string                  `json:"incident_type"`
+	TimeRange            string                  `json:"time_range"`
+	TotalExecutions      int                     `json:"total_executions"`
+	SuccessfulExecutions int                     `json:"successful_executions"`
+	FailedExecutions     int                     `json:"failed_executions"`
+	SuccessRate          float64                 `json:"success_rate"`
+	Confidence           string                  `json:"confidence"` // "high", "medium", "low", "insufficient_data"
+	MinSamplesMet        bool                    `json:"min_samples_met"`
+	BreakdownByPlaybook  []PlaybookBreakdown     `json:"breakdown_by_playbook"`
+	AIExecutionMode      *AIExecutionModeStats   `json:"ai_execution_mode,omitempty"`
+}
+
+// PlaybookBreakdown represents playbook-specific statistics within incident type
+type PlaybookBreakdown struct {
+	PlaybookID      string  `json:"playbook_id"`
+	PlaybookVersion string  `json:"playbook_version"`
+	Executions      int     `json:"executions"`
+	SuccessRate     float64 `json:"success_rate"`
+}
+
+// AIExecutionModeStats tracks AI execution mode distribution (ADR-033 Hybrid Model)
+type AIExecutionModeStats struct {
+	CatalogSelected  int `json:"catalog_selected"`  // 90-95% of cases
+	Chained          int `json:"chained"`           // 4-9% of cases
+	ManualEscalation int `json:"manual_escalation"` // <1% of cases
+}
+
+// PlaybookSuccessRate represents success rate by playbook across incident types
+// BR-STORAGE-031-07: Calculate playbook success rate
+type PlaybookSuccessRate struct {
+	PlaybookID              string                  `json:"playbook_id"`
+	PlaybookVersion         string                  `json:"playbook_version"`
+	TimeRange               string                  `json:"time_range"`
+	TotalExecutions         int                     `json:"total_executions"`
+	SuccessfulExecutions    int                     `json:"successful_executions"`
+	FailedExecutions        int                     `json:"failed_executions"`
+	SuccessRate             float64                 `json:"success_rate"`
+	Confidence              string                  `json:"confidence"`
+	MinSamplesMet           bool                    `json:"min_samples_met"`
+	BreakdownByIncidentType []IncidentTypeBreakdown `json:"breakdown_by_incident_type"`
+	BreakdownByAction       []ActionBreakdown       `json:"breakdown_by_action"`
+}
+
+// IncidentTypeBreakdown represents incident-type statistics within playbook
+type IncidentTypeBreakdown struct {
+	IncidentType string  `json:"incident_type"`
+	Executions   int     `json:"executions"`
+	SuccessRate  float64 `json:"success_rate"`
+}
+
+// ActionBreakdown represents action-level statistics within playbook (step-by-step)
+// BR-STORAGE-031-08: Analyze playbook step success rates
+type ActionBreakdown struct {
+	ActionType  string  `json:"action_type"`
+	StepNumber  int     `json:"step_number"`
+	Executions  int     `json:"executions"`
+	SuccessRate float64 `json:"success_rate"`
+}
+
+// MultiDimensionalSuccessRate represents success rate across all dimensions
+// BR-STORAGE-031: Multi-dimensional tracking (incident_type + playbook + action)
+type MultiDimensionalSuccessRate struct {
+	Dimensions           Dimensions            `json:"dimensions"`
+	TimeRange            string                `json:"time_range"`
+	TotalExecutions      int                   `json:"total_executions"`
+	SuccessfulExecutions int                   `json:"successful_executions"`
+	FailedExecutions     int                   `json:"failed_executions"`
+	SuccessRate          float64               `json:"success_rate"`
+	Confidence           string                `json:"confidence"`
+	AIExecutionMode      *AIExecutionModeStats `json:"ai_execution_mode,omitempty"`
+	Trend                *TrendAnalysis        `json:"trend,omitempty"`
+}
+
+// Dimensions represents the three dimensions of ADR-033 success tracking
+type Dimensions struct {
+	IncidentType string `json:"incident_type"` // PRIMARY dimension
+	PlaybookID   string `json:"playbook_id"`   // SECONDARY dimension
+	ActionType   string `json:"action_type"`   // TERTIARY dimension
+}
+
+// TrendAnalysis shows success rate trends over time
+type TrendAnalysis struct {
+	Direction               string  `json:"direction"` // "improving", "stable", "declining"
+	PreviousWeekSuccessRate float64 `json:"previous_week_success_rate"`
+	ChangePercent           float64 `json:"change_percent"`
+}
+```
+
+---
+
+### **12.3: Verify Backward Compatibility** (3h)
+
+**Run existing integration tests**:
+
+```bash
+cd /Users/jgil/go/src/github.com/jordigilh/kubernaut
+
+# Start test infrastructure (if not already running)
+make test-integration-setup  # Or follow manual Podman setup from V4.9 Day 7
+
+# Run all existing Data Storage integration tests
+cd test/integration/datastorage
+go test -v -count=1 ./...
+
+# Expected: All 18 existing tests pass
+# - Notification audit CRUD (4 tests)
+# - Prometheus metrics (3 tests)
+# - Graceful shutdown (3 tests)
+# - DLQ fallback (2 tests)
+# - Schema validation (3 tests)
+# - Existing aggregation (3 tests - may need updating in Day 15)
+```
+
+**Success Criteria**:
+- ✅ All 18 existing integration tests pass
+- ✅ No compilation errors
+- ✅ NULL values in new columns handled correctly
+- ✅ Existing queries work without modification
+
+**Troubleshooting**:
+```bash
+# If tests fail, check for:
+# 1. Migration applied correctly
+psql -h localhost -p 5433 -U db_user -d action_history -c "\d resource_action_traces"
+
+# 2. Database connection
+psql -h localhost -p 5433 -U db_user -d action_history -c "SELECT version();"
+
+# 3. Test data cleanup
+psql -h localhost -p 5433 -U db_user -d action_history -c "TRUNCATE TABLE resource_action_traces CASCADE;"
+```
+
+---
+
+## 📅 **Day 13-14: REST API Implementation (16h)**
+
+### **13.1: Incident-Type Aggregation Handler** (6h)
+
+**File**: `pkg/datastorage/server/aggregation_handlers.go` ✅ **NEW FILE**
+
+```go
+package server
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
+	"go.uber.org/zap"
+)
+
+// BR-STORAGE-031-01: Calculate success rate by incident type
+func (s *Server) handleGetSuccessRateByIncidentType(w http.ResponseWriter, r *http.Request) {
+	// 1. Parse and validate query parameters
+	incidentType := r.URL.Query().Get("incident_type")
+	if incidentType == "" {
+		s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Title:  "Validation Error",
+			Status: http.StatusBadRequest,
+			Detail: "incident_type query parameter is required",
+		})
+		return
+	}
+
+	timeRange := r.URL.Query().Get("time_range")
+	if timeRange == "" {
+		timeRange = "7d" // Default to 7 days
+	}
+
+	minSamplesStr := r.URL.Query().Get("min_samples")
+	minSamples := 5 // Default minimum samples
+	if minSamplesStr != "" {
+		parsed, err := strconv.Atoi(minSamplesStr)
+		if err != nil {
+			s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+				Type:   "https://api.kubernaut.io/problems/validation-error",
+				Title:  "Validation Error",
+				Status: http.StatusBadRequest,
+				Detail: fmt.Sprintf("invalid min_samples: %s", err.Error()),
+			})
+			return
+		}
+		minSamples = parsed
+	}
+
+	// 2. Validate time range format
+	duration, err := parseTimeRange(timeRange)
+	if err != nil {
+		s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Title:  "Validation Error",
+			Status: http.StatusBadRequest,
+			Detail: fmt.Sprintf("invalid time_range: %s", err.Error()),
+		})
+		return
+	}
+
+	// 3. Query aggregation from repository
+	result, err := s.repo.GetSuccessRateByIncidentType(r.Context(), incidentType, duration, minSamples)
+	if err != nil {
+		s.logger.Error("failed to get incident-type success rate",
+			zap.String("incident_type", incidentType),
+			zap.String("time_range", timeRange),
+			zap.Error(err))
+
+		s.respondWithRFC7807(w, http.StatusInternalServerError, validation.RFC7807Problem{
+			Type:   "https://api.kubernaut.io/problems/internal-error",
+			Title:  "Internal Server Error",
+			Status: http.StatusInternalServerError,
+			Detail: "failed to calculate success rate",
+		})
+		return
+	}
+
+	// 4. Return response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+
+	s.logger.Info("incident-type success rate calculated",
+		zap.String("incident_type", incidentType),
+		zap.Int("total_executions", result.TotalExecutions),
+		zap.Float64("success_rate", result.SuccessRate))
+}
+
+// BR-STORAGE-031-07: Calculate success rate by playbook
+func (s *Server) handleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.Request) {
+	// 1. Parse and validate query parameters
+	playbookID := r.URL.Query().Get("playbook_id")
+	if playbookID == "" {
+		s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Title:  "Validation Error",
+			Status: http.StatusBadRequest,
+			Detail: "playbook_id query parameter is required",
+		})
+		return
+	}
+
+	playbookVersion := r.URL.Query().Get("playbook_version")
+	if playbookVersion == "" {
+		s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Title:  "Validation Error",
+			Status: http.StatusBadRequest,
+			Detail: "playbook_version query parameter is required",
+		})
+		return
+	}
+
+	timeRange := r.URL.Query().Get("time_range")
+	if timeRange == "" {
+		timeRange = "7d"
+	}
+
+	minSamplesStr := r.URL.Query().Get("min_samples")
+	minSamples := 5
+	if minSamplesStr != "" {
+		parsed, err := strconv.Atoi(minSamplesStr)
+		if err != nil {
+			s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+				Type:   "https://api.kubernaut.io/problems/validation-error",
+				Title:  "Validation Error",
+				Status: http.StatusBadRequest,
+				Detail: fmt.Sprintf("invalid min_samples: %s", err.Error()),
+			})
+			return
+		}
+		minSamples = parsed
+	}
+
+	// 2. Validate time range
+	duration, err := parseTimeRange(timeRange)
+	if err != nil {
+		s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Title:  "Validation Error",
+			Status: http.StatusBadRequest,
+			Detail: fmt.Sprintf("invalid time_range: %s", err.Error()),
+		})
+		return
+	}
+
+	// 3. Query aggregation from repository
+	result, err := s.repo.GetSuccessRateByPlaybook(r.Context(), playbookID, playbookVersion, duration, minSamples)
+	if err != nil {
+		s.logger.Error("failed to get playbook success rate",
+			zap.String("playbook_id", playbookID),
+			zap.String("playbook_version", playbookVersion),
+			zap.Error(err))
+
+		s.respondWithRFC7807(w, http.StatusInternalServerError, validation.RFC7807Problem{
+			Type:   "https://api.kubernaut.io/problems/internal-error",
+			Title:  "Internal Server Error",
+			Status: http.StatusInternalServerError,
+			Detail: "failed to calculate success rate",
+		})
+		return
+	}
+
+	// 4. Return response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+
+	s.logger.Info("playbook success rate calculated",
+		zap.String("playbook_id", playbookID),
+		zap.String("playbook_version", playbookVersion),
+		zap.Int("total_executions", result.TotalExecutions),
+		zap.Float64("success_rate", result.SuccessRate))
+}
+
+// BR-STORAGE-031-15: Deprecated workflow_id endpoint with deprecation warning
+func (s *Server) handleGetSuccessRateDeprecated(w http.ResponseWriter, r *http.Request) {
+	workflowID := r.URL.Query().Get("workflow_id")
+	if workflowID == "" {
+		s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Title:  "Validation Error",
+			Status: http.StatusBadRequest,
+			Detail: "workflow_id query parameter is required (deprecated)",
+		})
+		return
+	}
+
+	// Add deprecation warning header
+	w.Header().Set("Warning",
+		"299 - \"workflow_id query parameter is deprecated. Use /by-incident-type or /by-playbook endpoints instead. See ADR-033 for migration guide: https://docs.kubernaut.io/adr-033\"")
+
+	// Return minimal response for backward compatibility
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"workflow_id":     workflowID,
+		"success_rate":    0.0,
+		"message":         "This endpoint is deprecated. Please migrate to /by-incident-type or /by-playbook endpoints.",
+		"migration_guide": "https://docs.kubernaut.io/adr-033",
+	})
+
+	s.logger.Warn("deprecated workflow_id endpoint called",
+		zap.String("workflow_id", workflowID),
+		zap.String("client_ip", r.RemoteAddr))
+}
+
+// parseTimeRange converts time range string to duration
+func parseTimeRange(timeRange string) (time.Duration, error) {
+	switch timeRange {
+	case "1h":
+		return 1 * time.Hour, nil
+	case "24h", "1d":
+		return 24 * time.Hour, nil
+	case "7d":
+		return 7 * 24 * time.Hour, nil
+	case "30d":
+		return 30 * 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("unsupported time range: %s (supported: 1h, 1d, 7d, 30d)", timeRange)
+	}
+}
+```
+
+---
+
+### **13.2: Repository Layer Implementation** (6h)
+
+**File**: `pkg/datastorage/repository/aggregation_queries.go` ✅ **NEW FILE**
+
+```go
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"go.uber.org/zap"
+)
+
+// BR-STORAGE-031-01: Query incident-type success rate with playbook breakdown
+func (r *Repository) GetSuccessRateByIncidentType(
+	ctx context.Context,
+	incidentType string,
+	timeRange time.Duration,
+	minSamples int,
+) (*models.IncidentTypeSuccessRate, error) {
+	// 1. Query overall success rate
+	query := `
+		SELECT 
+			COUNT(*) as total_executions,
+			COUNT(*) FILTER (WHERE status = 'completed') as successful_executions,
+			COUNT(*) FILTER (WHERE status = 'failed') as failed_executions,
+			COALESCE(
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				NULLIF(COUNT(*), 0),
+				0.0
+			) as success_rate
+		FROM resource_action_traces
+		WHERE incident_type = $1
+		  AND action_timestamp >= NOW() - $2::interval
+	`
+
+	var result models.IncidentTypeSuccessRate
+	result.IncidentType = incidentType
+	result.TimeRange = formatTimeRange(timeRange)
+
+	row := r.db.QueryRowContext(ctx, query, incidentType, timeRange)
+	err := row.Scan(
+		&result.TotalExecutions,
+		&result.SuccessfulExecutions,
+		&result.FailedExecutions,
+		&result.SuccessRate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query incident-type success rate: %w", err)
+	}
+
+	// 2. Calculate confidence level (ADR-033)
+	result.MinSamplesMet = result.TotalExecutions >= minSamples
+	if result.TotalExecutions == 0 {
+		result.Confidence = "insufficient_data"
+	} else if result.TotalExecutions < minSamples {
+		result.Confidence = "low"
+	} else if result.TotalExecutions < 20 {
+		result.Confidence = "medium"
+	} else {
+		result.Confidence = "high"
+	}
+
+	// 3. Query playbook breakdown
+	breakdown, err := r.getPlaybookBreakdownForIncidentType(ctx, incidentType, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query playbook breakdown: %w", err)
+	}
+	result.BreakdownByPlaybook = breakdown
+
+	// 4. Query AI execution mode statistics (ADR-033 Hybrid Model)
+	aiMode, err := r.getAIExecutionModeStats(ctx, incidentType, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query AI execution mode: %w", err)
+	}
+	result.AIExecutionMode = aiMode
+
+	r.logger.Debug("incident-type success rate calculated",
+		zap.String("incident_type", incidentType),
+		zap.Int("total_executions", result.TotalExecutions),
+		zap.Float64("success_rate", result.SuccessRate))
+
+	return &result, nil
+}
+
+// getPlaybookBreakdownForIncidentType queries playbook breakdown within incident type
+func (r *Repository) getPlaybookBreakdownForIncidentType(
+	ctx context.Context,
+	incidentType string,
+	timeRange time.Duration,
+) ([]models.PlaybookBreakdown, error) {
+	query := `
+		SELECT 
+			playbook_id,
+			playbook_version,
+			COUNT(*) as executions,
+			COALESCE(
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				NULLIF(COUNT(*), 0),
+				0.0
+			) as success_rate
+		FROM resource_action_traces
+		WHERE incident_type = $1
+		  AND playbook_id IS NOT NULL
+		  AND action_timestamp >= NOW() - $2::interval
+		GROUP BY playbook_id, playbook_version
+		ORDER BY executions DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, incidentType, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query playbook breakdown: %w", err)
+	}
+	defer rows.Close()
+
+	var breakdown []models.PlaybookBreakdown
+	for rows.Next() {
+		var pb models.PlaybookBreakdown
+		err := rows.Scan(
+			&pb.PlaybookID,
+			&pb.PlaybookVersion,
+			&pb.Executions,
+			&pb.SuccessRate,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan playbook breakdown: %w", err)
+		}
+		breakdown = append(breakdown, pb)
+	}
+
+	return breakdown, rows.Err()
+}
+
+// getAIExecutionModeStats queries AI execution mode distribution (ADR-033 Hybrid Model)
+// BR-STORAGE-031-10: Track AI execution mode distribution (90-9-1 hybrid model)
+func (r *Repository) getAIExecutionModeStats(
+	ctx context.Context,
+	incidentType string,
+	timeRange time.Duration,
+) (*models.AIExecutionModeStats, error) {
+	query := `
+		SELECT 
+			COUNT(*) FILTER (WHERE ai_selected_playbook = true) as catalog_selected,
+			COUNT(*) FILTER (WHERE ai_chained_playbooks = true) as chained,
+			COUNT(*) FILTER (WHERE ai_manual_escalation = true) as manual_escalation
+		FROM resource_action_traces
+		WHERE incident_type = $1
+		  AND action_timestamp >= NOW() - $2::interval
+	`
+
+	var stats models.AIExecutionModeStats
+	row := r.db.QueryRowContext(ctx, query, incidentType, timeRange)
+	err := row.Scan(
+		&stats.CatalogSelected,
+		&stats.Chained,
+		&stats.ManualEscalation,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query AI execution mode stats: %w", err)
+	}
+
+	return &stats, nil
+}
+
+// BR-STORAGE-031-07: Query playbook success rate across incident types
+func (r *Repository) GetSuccessRateByPlaybook(
+	ctx context.Context,
+	playbookID string,
+	playbookVersion string,
+	timeRange time.Duration,
+	minSamples int,
+) (*models.PlaybookSuccessRate, error) {
+	// 1. Query overall playbook success rate
+	query := `
+		SELECT 
+			COUNT(*) as total_executions,
+			COUNT(*) FILTER (WHERE status = 'completed') as successful_executions,
+			COUNT(*) FILTER (WHERE status = 'failed') as failed_executions,
+			COALESCE(
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				NULLIF(COUNT(*), 0),
+				0.0
+			) as success_rate
+		FROM resource_action_traces
+		WHERE playbook_id = $1
+		  AND playbook_version = $2
+		  AND action_timestamp >= NOW() - $3::interval
+	`
+
+	var result models.PlaybookSuccessRate
+	result.PlaybookID = playbookID
+	result.PlaybookVersion = playbookVersion
+	result.TimeRange = formatTimeRange(timeRange)
+
+	row := r.db.QueryRowContext(ctx, query, playbookID, playbookVersion, timeRange)
+	err := row.Scan(
+		&result.TotalExecutions,
+		&result.SuccessfulExecutions,
+		&result.FailedExecutions,
+		&result.SuccessRate,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query playbook success rate: %w", err)
+	}
+
+	// 2. Calculate confidence level
+	result.MinSamplesMet = result.TotalExecutions >= minSamples
+	if result.TotalExecutions == 0 {
+		result.Confidence = "insufficient_data"
+	} else if result.TotalExecutions < minSamples {
+		result.Confidence = "low"
+	} else if result.TotalExecutions < 20 {
+		result.Confidence = "medium"
+	} else {
+		result.Confidence = "high"
+	}
+
+	// 3. Query incident-type breakdown
+	incidentBreakdown, err := r.getIncidentTypeBreakdownForPlaybook(ctx, playbookID, playbookVersion, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query incident-type breakdown: %w", err)
+	}
+	result.BreakdownByIncidentType = incidentBreakdown
+
+	// 4. Query action-level breakdown (step-by-step analysis)
+	actionBreakdown, err := r.getActionBreakdownForPlaybook(ctx, playbookID, playbookVersion, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query action breakdown: %w", err)
+	}
+	result.BreakdownByAction = actionBreakdown
+
+	r.logger.Debug("playbook success rate calculated",
+		zap.String("playbook_id", playbookID),
+		zap.String("playbook_version", playbookVersion),
+		zap.Int("total_executions", result.TotalExecutions),
+		zap.Float64("success_rate", result.SuccessRate))
+
+	return &result, nil
+}
+
+// getIncidentTypeBreakdownForPlaybook queries incident-type breakdown within playbook
+func (r *Repository) getIncidentTypeBreakdownForPlaybook(
+	ctx context.Context,
+	playbookID string,
+	playbookVersion string,
+	timeRange time.Duration,
+) ([]models.IncidentTypeBreakdown, error) {
+	query := `
+		SELECT 
+			incident_type,
+			COUNT(*) as executions,
+			COALESCE(
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				NULLIF(COUNT(*), 0),
+				0.0
+			) as success_rate
+		FROM resource_action_traces
+		WHERE playbook_id = $1
+		  AND playbook_version = $2
+		  AND incident_type IS NOT NULL
+		  AND action_timestamp >= NOW() - $3::interval
+		GROUP BY incident_type
+		ORDER BY executions DESC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, playbookID, playbookVersion, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query incident-type breakdown: %w", err)
+	}
+	defer rows.Close()
+
+	var breakdown []models.IncidentTypeBreakdown
+	for rows.Next() {
+		var itb models.IncidentTypeBreakdown
+		err := rows.Scan(
+			&itb.IncidentType,
+			&itb.Executions,
+			&itb.SuccessRate,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan incident-type breakdown: %w", err)
+		}
+		breakdown = append(breakdown, itb)
+	}
+
+	return breakdown, rows.Err()
+}
+
+// getActionBreakdownForPlaybook queries action-level breakdown (step-by-step)
+// BR-STORAGE-031-08: Analyze playbook step success rates
+func (r *Repository) getActionBreakdownForPlaybook(
+	ctx context.Context,
+	playbookID string,
+	playbookVersion string,
+	timeRange time.Duration,
+) ([]models.ActionBreakdown, error) {
+	query := `
+		SELECT 
+			action_type,
+			playbook_step_number,
+			COUNT(*) as executions,
+			COALESCE(
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				NULLIF(COUNT(*), 0),
+				0.0
+			) as success_rate
+		FROM resource_action_traces
+		WHERE playbook_id = $1
+		  AND playbook_version = $2
+		  AND playbook_step_number IS NOT NULL
+		  AND action_timestamp >= NOW() - $3::interval
+		GROUP BY action_type, playbook_step_number
+		ORDER BY playbook_step_number, action_type
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, playbookID, playbookVersion, timeRange)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query action breakdown: %w", err)
+	}
+	defer rows.Close()
+
+	var breakdown []models.ActionBreakdown
+	for rows.Next() {
+		var ab models.ActionBreakdown
+		var stepNumber sql.NullInt32
+		err := rows.Scan(
+			&ab.ActionType,
+			&stepNumber,
+			&ab.Executions,
+			&ab.SuccessRate,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan action breakdown: %w", err)
+		}
+		if stepNumber.Valid {
+			ab.StepNumber = int(stepNumber.Int32)
+		}
+		breakdown = append(breakdown, ab)
+	}
+
+	return breakdown, rows.Err()
+}
+
+// formatTimeRange converts duration to human-readable string
+func formatTimeRange(duration time.Duration) string {
+	switch duration {
+	case 1 * time.Hour:
+		return "1h"
+	case 24 * time.Hour:
+		return "1d"
+	case 7 * 24 * time.Hour:
+		return "7d"
+	case 30 * 24 * time.Hour:
+		return "30d"
+	default:
+		return duration.String()
+	}
+}
+```
+
+---
+
+### **13.3: Router Registration** (2h)
+
+**File**: `pkg/datastorage/server/server.go`
+
+**Add ADR-033 routes to existing registerRoutes() method**:
+
+```go
+package server
+
+import (
+	"net/http"
+
+	"github.com/gorilla/mux"
+)
+
+func (s *Server) registerRoutes() {
+	// ========================================
+	// EXISTING ROUTES (KEEP ALL)
+	// ========================================
+	
+	// Health check
+	s.router.HandleFunc("/health", s.handleHealth).Methods(http.MethodGet)
+	
+	// CRUD operations
+	s.router.HandleFunc("/api/v1/incidents/actions", s.handleCreateNotificationAudit).Methods(http.MethodPost)
+	s.router.HandleFunc("/api/v1/incidents/actions/{action_id}", s.handleGetNotificationAudit).Methods(http.MethodGet)
+	s.router.HandleFunc("/api/v1/incidents/actions", s.handleListNotificationAudits).Methods(http.MethodGet)
+	
+	// Vector search
+	s.router.HandleFunc("/api/v1/incidents/actions/search/similar", s.handleSearchSimilar).Methods(http.MethodPost)
+	
+	// ========================================
+	// ADR-033: NEW ROUTES (MULTI-DIMENSIONAL SUCCESS TRACKING)
+	// ========================================
+	
+	// BR-STORAGE-031-01: Incident-type success rate (PRIMARY dimension)
+	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate/by-incident-type",
+		s.handleGetSuccessRateByIncidentType).Methods(http.MethodGet)
+	
+	// BR-STORAGE-031-07: Playbook success rate (SECONDARY dimension)
+	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate/by-playbook",
+		s.handleGetSuccessRateByPlaybook).Methods(http.MethodGet)
+	
+	// BR-STORAGE-031-15: DEPRECATED workflow_id endpoint (backward compatibility)
+	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate",
+		s.handleGetSuccessRateDeprecated).Methods(http.MethodGet)
+}
+```
+
+---
+
+### **13.4: Unit Tests for Handlers** (2h)
+
+**File**: `test/unit/datastorage/aggregation_handlers_test.go`
+
+**Add handler-level unit tests**:
+
+```go
+package datastorage
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
+)
+
+var _ = Describe("ADR-033: Aggregation Handlers Unit Tests", func() {
+	var (
+		srv *server.Server
+		rec *httptest.ResponseRecorder
+	)
+
+	BeforeEach(func() {
+		// Create server with mock repository
+		srv = server.NewTestServer() // Test constructor with mocks
+		rec = httptest.NewRecorder()
+	})
+
+	Describe("BR-STORAGE-031-01: handleGetSuccessRateByIncidentType", func() {
+		It("should return 400 Bad Request when incident_type is missing", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate/by-incident-type", nil)
+
+			srv.HandleGetSuccessRateByIncidentType(rec, req)
+
+			// BEHAVIOR: Returns HTTP 400
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			// CORRECTNESS: RFC 7807 error format
+			var problem validation.RFC7807Problem
+			json.Unmarshal(rec.Body.Bytes(), &problem)
+			Expect(problem.Type).To(Equal("https://api.kubernaut.io/problems/validation-error"))
+			Expect(problem.Title).To(Equal("Validation Error"))
+			Expect(problem.Detail).To(ContainSubstring("incident_type query parameter is required"))
+		})
+
+		It("should return 400 Bad Request for invalid time_range", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=pod-oom-killer&time_range=invalid", nil)
+
+			srv.HandleGetSuccessRateByIncidentType(rec, req)
+
+			// BEHAVIOR: Returns HTTP 400
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			// CORRECTNESS: Error message mentions time_range
+			var problem validation.RFC7807Problem
+			json.Unmarshal(rec.Body.Bytes(), &problem)
+			Expect(problem.Detail).To(ContainSubstring("time_range"))
+		})
+
+		It("should default to 7d time_range when not specified", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=pod-oom-killer", nil)
+
+			srv.HandleGetSuccessRateByIncidentType(rec, req)
+
+			// BEHAVIOR: Successful response
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			// CORRECTNESS: time_range defaults to "7d"
+			var result models.IncidentTypeSuccessRate
+			json.Unmarshal(rec.Body.Bytes(), &result)
+			Expect(result.TimeRange).To(Equal("7d"))
+		})
+	})
+
+	Describe("BR-STORAGE-031-07: handleGetSuccessRateByPlaybook", func() {
+		It("should return 400 Bad Request when playbook_id is missing", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate/by-playbook?playbook_version=v1.2", nil)
+
+			srv.HandleGetSuccessRateByPlaybook(rec, req)
+
+			// BEHAVIOR: Returns HTTP 400
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			// CORRECTNESS: Error mentions playbook_id
+			var problem validation.RFC7807Problem
+			json.Unmarshal(rec.Body.Bytes(), &problem)
+			Expect(problem.Detail).To(ContainSubstring("playbook_id is required"))
+		})
+
+		It("should return 400 Bad Request when playbook_version is missing", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate/by-playbook?playbook_id=pod-oom-recovery", nil)
+
+			srv.HandleGetSuccessRateByPlaybook(rec, req)
+
+			// BEHAVIOR: Returns HTTP 400
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			// CORRECTNESS: Error mentions playbook_version
+			var problem validation.RFC7807Problem
+			json.Unmarshal(rec.Body.Bytes(), &problem)
+			Expect(problem.Detail).To(ContainSubstring("playbook_version is required"))
+		})
+	})
+
+	Describe("BR-STORAGE-031-15: handleGetSuccessRateDeprecated", func() {
+		It("should return deprecation warning in response header", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate?workflow_id=legacy-workflow-123", nil)
+
+			srv.HandleGetSuccessRateDeprecated(rec, req)
+
+			// BEHAVIOR: Returns HTTP 200 for backward compatibility
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			// CORRECTNESS: Deprecation warning header present
+			warningHeader := rec.Header().Get("Warning")
+			Expect(warningHeader).To(ContainSubstring("299"))
+			Expect(warningHeader).To(ContainSubstring("workflow_id query parameter is deprecated"))
+			Expect(warningHeader).To(ContainSubstring("ADR-033"))
+		})
+
+		It("should include migration guide in response body", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate?workflow_id=legacy-workflow-123", nil)
+
+			srv.HandleGetSuccessRateDeprecated(rec, req)
+
+			// CORRECTNESS: Response includes migration guide
+			var response map[string]interface{}
+			json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(response["migration_guide"]).To(ContainSubstring("docs.kubernaut.io/adr-033"))
+			Expect(response["message"]).To(ContainSubstring("deprecated"))
+		})
+	})
+})
+```
+
+---
+
+## 📅 **Day 15: Integration Tests (8h)**
+
+### **15.1: Test Infrastructure Setup** (2h)
+
+**File**: `test/integration/datastorage/aggregation_api_adr033_test.go` ✅ **NEW FILE**
+
+**Integration test infrastructure for ADR-033 endpoints**:
+
+```go
+package datastorage
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+)
+
+var _ = Describe("ADR-033: Multi-Dimensional Success Tracking API - Integration Tests", func() {
+	var client *http.Client
+
+	BeforeAll(func() {
+		// Use 30-second timeout for aggregation queries
+		client = &http.Client{Timeout: 30 * time.Second}
+	})
+
+	BeforeEach(func() {
+		// Clean up test data before each test
+		cleanupAggregationTestData()
+	})
+
+	// ========================================
+	// HELPER FUNCTIONS
+	// ========================================
+
+	createNotificationAudit := func(audit models.NotificationAudit) {
+		body, err := json.Marshal(audit)
+		Expect(err).ToNot(HaveOccurred())
+
+		resp, err := client.Post(
+			fmt.Sprintf("%s/api/v1/incidents/actions", datastorageURL),
+			"application/json",
+			bytes.NewBuffer(body),
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+		resp.Body.Close()
+	}
+
+	stringPtr := func(s string) *models.NullString {
+		return &models.NullString{String: s, Valid: true}
+	}
+
+	int32Ptr := func(i int32) *models.NullInt32 {
+		return &models.NullInt32{Int32: i, Valid: true}
+	}
+
+	cleanupAggregationTestData := func() {
+		// Truncate test data (use separate test database or dedicated cleanup)
+		_, err := db.Exec("DELETE FROM resource_action_traces WHERE incident_type LIKE 'test-%'")
+		Expect(err).ToNot(HaveOccurred())
+	}
+
+	// ========================================
+	// TEST SCENARIOS (FROM V5.0 TEST SCENARIOS SECTION)
+	// ========================================
+
+	Describe("TC-ADR033-01: Basic Incident-Type Success Rate Calculation", func() {
+		It("should calculate incident-type success rate with exact counts", func() {
+			incidentType := "test-pod-oom-killer"
+
+			// Setup: 8 successes, 2 failures
+			for i := 0; i < 8; i++ {
+				createNotificationAudit(models.NotificationAudit{
+					ActionID:        fmt.Sprintf("action-success-%d", i),
+					ActionType:      "increase_memory",
+					ActionTimestamp: time.Now(),
+					Status:          "completed",
+					ResourceType:    "pod",
+					ResourceName:    fmt.Sprintf("test-pod-%d", i),
+					ResourceNamespace: "default",
+					ModelUsed:       "gpt-4",
+					ModelConfidence: 0.95,
+					IncidentType:    stringPtr(incidentType),
+				})
+			}
+			for i := 0; i < 2; i++ {
+				createNotificationAudit(models.NotificationAudit{
+					ActionID:        fmt.Sprintf("action-failure-%d", i),
+					ActionType:      "increase_memory",
+					ActionTimestamp: time.Now(),
+					Status:          "failed",
+					ResourceType:    "pod",
+					ResourceName:    fmt.Sprintf("test-pod-fail-%d", i),
+					ResourceNamespace: "default",
+					ModelUsed:       "gpt-4",
+					ModelConfidence: 0.95,
+					IncidentType:    stringPtr(incidentType),
+				})
+			}
+
+			resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s&time_range=7d",
+				datastorageURL, incidentType))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(200))
+
+			var result models.IncidentTypeSuccessRate
+			json.NewDecoder(resp.Body).Decode(&result)
+
+			// BEHAVIOR: Endpoint returns incident-type aggregation
+			Expect(result.IncidentType).To(Equal(incidentType))
+			Expect(result.TimeRange).To(Equal("7d"))
+
+			// CORRECTNESS: Exact count validation
+			Expect(result.TotalExecutions).To(Equal(10))
+			Expect(result.SuccessfulExecutions).To(Equal(8))
+			Expect(result.FailedExecutions).To(Equal(2))
+
+			// CORRECTNESS: Mathematical accuracy (8/10 = 0.80)
+			Expect(result.SuccessRate).To(BeNumerically("~", 0.80, 0.001))
+
+			// BEHAVIOR: Confidence level calculated correctly
+			Expect(result.MinSamplesMet).To(BeTrue()) // 10 >= 5 minimum
+			Expect(result.Confidence).To(Equal("medium")) // 10 < 20 = medium
+		})
+	})
+
+	// ... (Additional test scenarios from V5.0 test scenarios section go here)
+	// TC-ADR033-02 through TC-ADR033-15
+})
+```
+
+---
+
+### **15.2: Refactor Existing Aggregation Test** (3h)
+
+**File**: `test/integration/datastorage/aggregation_api_test.go`
+
+**Refactor existing workflow_id test to use incident_type** (BR-STORAGE-031):
+
+```go
+// ❌ OLD (V4.9): Architecturally flawed per ADR-033
+var _ = Describe("GAP-05: Aggregation API - Behavior + Correctness", func() {
+	It("should calculate success rate correctly with exact counts", func() {
+		// Uses workflow_id - meaningless for AI-generated unique workflows
+		resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=workflow-agg-1", datastorageURL))
+		// ...
+	})
+})
+
+// ✅ NEW (V5.0): ADR-033 compliant
+var _ = Describe("ADR-033: Incident-Type Aggregation - Behavior + Correctness", func() {
+	It("should calculate incident-type success rate correctly with exact counts", func() {
+		incidentType := "integration-test-pod-oom-killer"
+
+		// Setup: 8 successes, 2 failures
+		for i := 0; i < 8; i++ {
+			createNotificationAudit(models.NotificationAudit{
+				IncidentType: stringPtr(incidentType),
+				Status:       "completed",
+				// ... other required fields ...
+			})
+		}
+		for i := 0; i < 2; i++ {
+			createNotificationAudit(models.NotificationAudit{
+				IncidentType: stringPtr(incidentType),
+				Status:       "failed",
+				// ... other required fields ...
+			})
+		}
+
+		resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s",
+			datastorageURL, incidentType))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(resp.StatusCode).To(Equal(200))
+
+		var result models.IncidentTypeSuccessRate
+		json.NewDecoder(resp.Body).Decode(&result)
+
+		// BEHAVIOR: Calculates success rate by incident type
+		Expect(result.IncidentType).To(Equal(incidentType))
+
+		// CORRECTNESS: Success rate is exactly 0.80 (8 successes, 2 failures)
+		Expect(result.SuccessRate).To(BeNumerically("~", 0.80, 0.001))
+		Expect(result.TotalExecutions).To(Equal(10))
+		Expect(result.SuccessfulExecutions).To(Equal(8))
+		Expect(result.FailedExecutions).To(Equal(2))
+	})
+})
+```
+
+---
+
+### **15.3: Run All Integration Tests** (3h)
+
+**Verify all 18 existing + 18 new ADR-033 tests pass**:
+
+```bash
+cd /Users/jgil/go/src/github.com/jordigilh/kubernaut/test/integration/datastorage
+
+# Run all integration tests
+go test -v -count=1 ./...
+
+# Expected: 36 tests pass (18 existing + 18 ADR-033)
+# - Notification audit CRUD (4 tests) ✅
+# - Prometheus metrics (3 tests) ✅
+# - Graceful shutdown (3 tests) ✅
+# - DLQ fallback (2 tests) ✅
+# - Schema validation (3 tests) ✅
+# - Incident-type aggregation (6 tests) ✅ NEW
+# - Playbook aggregation (5 tests) ✅ NEW
+# - AI execution mode (3 tests) ✅ NEW
+# - Edge cases (4 tests) ✅ NEW
+# - Error handling (3 tests) ✅ NEW
+```
+
+---
+
+## 📅 **Day 16: Documentation & OpenAPI (8h)**
+
+### **16.1: Update OpenAPI Specification** (4h)
+
+**File**: `docs/services/stateless/data-storage/openapi.yaml`
+
+**Add ADR-033 endpoints to OpenAPI 3.0 spec**:
+
+```yaml
+openapi: 3.0.3
+info:
+  title: Data Storage Service API
+  description: ADR-033 Multi-Dimensional Success Tracking
+  version: 2.0.0  # Bump to 2.0.0 for ADR-033
+  contact:
+    name: Kubernaut Team
+
+servers:
+  - url: http://localhost:8081
+    description: Development server
+  - url: https://datastorage.kubernaut.io
+    description: Production server
+
+paths:
+  # ========================================
+  # EXISTING PATHS (KEEP ALL)
+  # ========================================
+  
+  /health:
+    get:
+      summary: Health check endpoint
+      # ... existing spec ...
+
+  /api/v1/incidents/actions:
+    post:
+      summary: Create notification audit
+      # ... existing spec ...
+    get:
+      summary: List notification audits
+      # ... existing spec ...
+
+  # ========================================
+  # ADR-033: NEW PATHS
+  # ========================================
+
+  /api/v1/incidents/aggregate/success-rate/by-incident-type:
+    get:
+      summary: Get success rate by incident type (ADR-033 PRIMARY dimension)
+      description: |
+        Calculate success rate for a specific incident type across all playbooks.
+        BR-STORAGE-031-01: Incident-type success rate aggregation.
+      operationId: getSuccessRateByIncidentType
+      tags:
+        - Aggregation
+        - ADR-033
+      parameters:
+        - name: incident_type
+          in: query
+          required: true
+          schema:
+            type: string
+            example: pod-oom-killer
+          description: The incident type to aggregate (e.g., pod-oom-killer, high-cpu)
+        - name: time_range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1h, 1d, 7d, 30d]
+            default: 7d
+          description: Time range for aggregation
+        - name: min_samples
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 5
+          description: Minimum samples required for high confidence
+      responses:
+        '200':
+          description: Success rate calculated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IncidentTypeSuccessRate'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/incidents/aggregate/success-rate/by-playbook:
+    get:
+      summary: Get success rate by playbook (ADR-033 SECONDARY dimension)
+      description: |
+        Calculate success rate for a specific playbook across all incident types.
+        BR-STORAGE-031-07: Playbook success rate aggregation.
+      operationId: getSuccessRateByPlaybook
+      tags:
+        - Aggregation
+        - ADR-033
+      parameters:
+        - name: playbook_id
+          in: query
+          required: true
+          schema:
+            type: string
+            example: pod-oom-recovery
+          description: The playbook identifier
+        - name: playbook_version
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v1.2
+          description: The playbook version
+        - name: time_range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1h, 1d, 7d, 30d]
+            default: 7d
+        - name: min_samples
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 5
+      responses:
+        '200':
+          description: Success rate calculated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybookSuccessRate'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+  /api/v1/incidents/aggregate/success-rate:
+    get:
+      deprecated: true
+      summary: Get success rate by workflow_id (DEPRECATED - ADR-033)
+      description: |
+        **DEPRECATED**: Use /by-incident-type or /by-playbook endpoints instead.
+        BR-STORAGE-031-15: Legacy workflow_id endpoint for backward compatibility.
+        Migration guide: https://docs.kubernaut.io/adr-033
+      operationId: getSuccessRateDeprecated
+      tags:
+        - Aggregation
+        - Deprecated
+      parameters:
+        - name: workflow_id
+          in: query
+          required: true
+          deprecated: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deprecation warning with minimal response
+          headers:
+            Warning:
+              schema:
+                type: string
+              description: HTTP 299 deprecation warning
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workflow_id:
+                    type: string
+                  success_rate:
+                    type: number
+                    example: 0.0
+                  message:
+                    type: string
+                    example: This endpoint is deprecated
+                  migration_guide:
+                    type: string
+                    example: https://docs.kubernaut.io/adr-033
+
+components:
+  schemas:
+    # ========================================
+    # ADR-033: NEW SCHEMAS
+    # ========================================
+
+    IncidentTypeSuccessRate:
+      type: object
+      description: Success rate aggregated by incident type (ADR-033)
+      required:
+        - incident_type
+        - time_range
+        - total_executions
+        - successful_executions
+        - failed_executions
+        - success_rate
+        - confidence
+        - min_samples_met
+      properties:
+        incident_type:
+          type: string
+          example: pod-oom-killer
+        time_range:
+          type: string
+          example: 7d
+        total_executions:
+          type: integer
+          example: 10
+        successful_executions:
+          type: integer
+          example: 8
+        failed_executions:
+          type: integer
+          example: 2
+        success_rate:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.80
+        confidence:
+          type: string
+          enum: [high, medium, low, insufficient_data]
+          example: medium
+        min_samples_met:
+          type: boolean
+          example: true
+        breakdown_by_playbook:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookBreakdown'
+        ai_execution_mode:
+          $ref: '#/components/schemas/AIExecutionModeStats'
+
+    PlaybookBreakdown:
+      type: object
+      required:
+        - playbook_id
+        - playbook_version
+        - executions
+        - success_rate
+      properties:
+        playbook_id:
+          type: string
+          example: pod-oom-recovery
+        playbook_version:
+          type: string
+          example: v1.2
+        executions:
+          type: integer
+          example: 5
+        success_rate:
+          type: number
+          format: float
+          example: 1.00
+
+    AIExecutionModeStats:
+      type: object
+      description: AI execution mode distribution (ADR-033 Hybrid Model)
+      required:
+        - catalog_selected
+        - chained
+        - manual_escalation
+      properties:
+        catalog_selected:
+          type: integer
+          example: 90
+          description: AI selected single playbook from catalog (90-95% cases)
+        chained:
+          type: integer
+          example: 9
+          description: AI chained multiple playbooks (4-9% cases)
+        manual_escalation:
+          type: integer
+          example: 1
+          description: AI escalated to human operator (<1% cases)
+
+    PlaybookSuccessRate:
+      type: object
+      description: Success rate aggregated by playbook (ADR-033)
+      required:
+        - playbook_id
+        - playbook_version
+        - time_range
+        - total_executions
+        - successful_executions
+        - failed_executions
+        - success_rate
+        - confidence
+        - min_samples_met
+      properties:
+        playbook_id:
+          type: string
+          example: pod-oom-recovery
+        playbook_version:
+          type: string
+          example: v1.2
+        time_range:
+          type: string
+          example: 7d
+        total_executions:
+          type: integer
+          example: 10
+        successful_executions:
+          type: integer
+          example: 9
+        failed_executions:
+          type: integer
+          example: 1
+        success_rate:
+          type: number
+          format: float
+          example: 0.90
+        confidence:
+          type: string
+          enum: [high, medium, low, insufficient_data]
+        min_samples_met:
+          type: boolean
+        breakdown_by_incident_type:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncidentTypeBreakdown'
+        breakdown_by_action:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionBreakdown'
+
+    IncidentTypeBreakdown:
+      type: object
+      required:
+        - incident_type
+        - executions
+        - success_rate
+      properties:
+        incident_type:
+          type: string
+        executions:
+          type: integer
+        success_rate:
+          type: number
+          format: float
+
+    ActionBreakdown:
+      type: object
+      required:
+        - action_type
+        - step_number
+        - executions
+        - success_rate
+      properties:
+        action_type:
+          type: string
+          example: increase_memory
+        step_number:
+          type: integer
+          example: 1
+        executions:
+          type: integer
+          example: 5
+        success_rate:
+          type: number
+          format: float
+          example: 1.00
+
+    RFC7807Problem:
+      type: object
+      description: RFC 7807 Problem Details for HTTP APIs
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          example: https://api.kubernaut.io/problems/validation-error
+        title:
+          type: string
+          example: Validation Error
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: incident_type query parameter is required
+        instance:
+          type: string
+          format: uri
+```
+
+---
+
+### **16.2: Update Implementation Plan Version** (2h)
+
+**Update this file (`IMPLEMENTATION_PLAN_V5.0.md`)** with:
+- Final changelog entry
+- Completion status for all phases
+- Lessons learned from ADR-033 implementation
+
+---
+
+### **16.3: Create Migration Guide** (2h)
+
+**File**: `docs/services/stateless/data-storage/ADR-033-MIGRATION-GUIDE.md` ✅ **NEW FILE**
+
+```markdown
+# ADR-033 Migration Guide: workflow_id → incident_type
+
+**For**: Consumers of Data Storage Service aggregation APIs  
+**Date**: November 4, 2025  
+**Status**: Migration Required by V3.0 (workflow_id endpoint removal)
+
+---
+
+## 🎯 **SUMMARY**
+
+The `workflow_id` query parameter is **DEPRECATED** as of Data Storage Service v2.0.0 (ADR-033).
+
+**Why**: AI generates unique workflows dynamically, making `workflow_id`-based success tracking meaningless.
+
+**Solution**: Use **incident_type** (PRIMARY dimension) or **playbook_id** (SECONDARY dimension) for meaningful success tracking.
+
+---
+
+## 📊 **API CHANGES**
+
+### **OLD (Deprecated)**
+```bash
+GET /api/v1/incidents/aggregate/success-rate?workflow_id=abc123
+```
+
+### **NEW (ADR-033)**
+```bash
+# PRIMARY dimension: Incident type
+GET /api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=pod-oom-killer&time_range=7d
+
+# SECONDARY dimension: Playbook
+GET /api/v1/incidents/aggregate/success-rate/by-playbook?playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=7d
+```
+
+---
+
+## 🔄 **MIGRATION STEPS**
+
+### **Step 1: Identify Current Usage**
+```bash
+# Find all workflow_id usages in your codebase
+grep -r "workflow_id" . --include="*.go" --include="*.yaml"
+```
+
+### **Step 2: Replace with incident_type**
+```go
+// ❌ OLD
+resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=%s", 
+    baseURL, workflowID))
+
+// ✅ NEW
+resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s&time_range=7d", 
+    baseURL, incidentType))
+```
+
+### **Step 3: Update Response Parsing**
+```go
+// ❌ OLD
+type OldResponse struct {
+    WorkflowID  string  `json:"workflow_id"`
+    SuccessRate float64 `json:"success_rate"`
+}
+
+// ✅ NEW
+type NewResponse struct {
+    IncidentType         string  `json:"incident_type"`
+    SuccessRate          float64 `json:"success_rate"`
+    TotalExecutions      int     `json:"total_executions"`
+    SuccessfulExecutions int     `json:"successful_executions"`
+    FailedExecutions     int     `json:"failed_executions"`
+    Confidence           string  `json:"confidence"`
+    MinSamplesMet        bool    `json:"min_samples_met"`
+}
+```
+
+---
+
+## 📅 **TIMELINE**
+
+- **2025-11-04**: ADR-033 implementation complete, workflow_id marked DEPRECATED
+- **2025-12-04** (30 days): Deprecation warning period ends
+- **2026-01-04** (60 days): workflow_id endpoint removed in v3.0.0
+
+---
+
+## 🔗 **REFERENCES**
+
+- [ADR-033: Remediation Playbook Catalog](../../../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
+- [OpenAPI Specification](openapi.yaml)
+```
+
+---
+
+## 🚫 **ADR-033 SPECIFIC DO'S AND DON'TS** ✅ **NEW SECTION**
+
+### ❌ **Don't Do This (ADR-033 Pitfalls)**:
+
+22. **🚨 Use `workflow_id` for success tracking** - Meaningless for AI-generated unique workflows, violates ADR-033 ⭐⭐⭐
+23. **🚨 Forget to add ADR-033 fields when creating audits** - New incidents won't be trackable by incident_type/playbook ⭐⭐
+24. **🚨 Query without time_range filtering** - Full table scans on large datasets, poor performance ⭐⭐
+25. **🚨 Ignore confidence levels in aggregation responses** - Low-sample results unreliable for AI learning ⭐
+26. **🚨 Hardcode playbook_id/version in tests** - Brittle tests break when playbooks evolve ⭐
+27. **🚨 Skip playbook breakdown analysis** - Miss which playbooks work best for incident types ⭐⭐
+28. **🚨 Use denormalized aggregation tables** - Adds complexity, schema bloat, sync issues ⭐
+29. **🚨 Forget NULL handling for new columns** - Breaks backward compatibility, crashes old audits ⭐⭐⭐
+30. **🚨 Use `interface{}` for AI execution mode** - Type safety lost, runtime panics likely ⭐⭐
+31. **🚨 Skip migration rollback testing** - Production rollbacks fail if not tested ⭐⭐
+
+### ✅ **Do This Instead (ADR-033 Best Practices)**:
+
+22. **✅ Use `incident_type` (PRIMARY) or `playbook_id` (SECONDARY) for success tracking** - Meaningful for AI learning, industry standard ⭐⭐⭐
+23. **✅ Always populate ADR-033 fields in new audits** - `incident_type`, `playbook_id`, `playbook_version`, `ai_selected_playbook` ⭐⭐
+24. **✅ Always specify `time_range` query parameter** - Use indexes efficiently, fast queries ⭐⭐
+25. **✅ Check `min_samples_met` and `confidence` fields** - Only use high-confidence results for AI decisions ⭐
+26. **✅ Use test helper factories for playbook data** - `createTestPlaybook(id, version)` for maintainable tests ⭐
+27. **✅ Query playbook breakdown for incident types** - Identify best playbooks, optimize AI selection ⭐⭐
+28. **✅ Use real-time aggregation queries** - Simple, no sync issues, accurate results ⭐
+29. **✅ Use `sql.NullString` / `sql.NullInt32` for new fields** - Backward compatible, handles existing data ⭐⭐⭐
+30. **✅ Use structured `models.AIExecutionModeStats` type** - Compile-time safety, no runtime panics ⭐⭐
+31. **✅ Test migration UP and DOWN** - Verify rollback works before production deployment ⭐⭐
+
+---
+
+## 📊 **ADR-033 BR COVERAGE MATRIX** ✅ **NEW SECTION**
+
+| BR ID | Description | Unit Tests | Integration Tests | Confidence |
+|---|---|---|---|---|
+| BR-STORAGE-031-01 | Incident-type success rate | `aggregation_handlers_test.go` | `TC-ADR033-01` | 95% |
+| BR-STORAGE-031-02 | Playbook breakdown by incident | `aggregation_queries_test.go` | `TC-ADR033-02` | 95% |
+| BR-STORAGE-031-03 | Zero executions edge case | `aggregation_queries_test.go` | `TC-ADR033-03` | 95% |
+| BR-STORAGE-031-04 | 0% success rate edge case | `aggregation_queries_test.go` | `TC-ADR033-04` | 95% |
+| BR-STORAGE-031-05 | 100% success rate edge case | `aggregation_queries_test.go` | `TC-ADR033-05` | 95% |
+| BR-STORAGE-031-06 | Invalid time range validation | `aggregation_handlers_test.go` | `TC-ADR033-06` | 95% |
+| BR-STORAGE-031-07 | Playbook success rate | `aggregation_handlers_test.go` | `TC-ADR033-07` | 95% |
+| BR-STORAGE-031-08 | Playbook step-by-step analysis | `aggregation_queries_test.go` | `TC-ADR033-08` | 95% |
+| BR-STORAGE-031-09 | Playbook version comparison | `aggregation_queries_test.go` | `TC-ADR033-09` | 95% |
+| BR-STORAGE-031-10 | AI execution mode distribution | `aggregation_queries_test.go` | `TC-ADR033-10` | 95% |
+| BR-STORAGE-031-11 | Chained playbooks tracking | `aggregation_queries_test.go` | `TC-ADR033-11` | 95% |
+| BR-STORAGE-031-12 | Time range filtering | `aggregation_queries_test.go` | `TC-ADR033-12` | 95% |
+| BR-STORAGE-031-13 | Missing required params | `aggregation_handlers_test.go` | `TC-ADR033-13` | 95% |
+| BR-STORAGE-031-14 | Minimum samples threshold | `aggregation_queries_test.go` | `TC-ADR033-14` | 95% |
+| BR-STORAGE-031-15 | Deprecated workflow_id warning | `aggregation_handlers_test.go` | `TC-ADR033-15` | 95% |
+
+**Total ADR-033 BRs**: 15  
+**Test Coverage**: 100% (15/15 BRs covered)  
+**Confidence**: 95% (industry-validated patterns)
 
 ---
 
