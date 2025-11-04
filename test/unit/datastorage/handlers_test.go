@@ -9,9 +9,18 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/mocks"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+// PagedResponse represents a generic paged API response
+// Used for testing list endpoints with data and pagination fields
+// Replaces map[string]interface{} for type safety (IMPLEMENTATION_PLAN_V4.9 #21)
+type PagedResponse struct {
+	Data       []interface{}          `json:"data"`
+	Pagination map[string]interface{} `json:"pagination"` // Generic pagination metadata
+}
 
 var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 	var (
@@ -34,15 +43,15 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.ListIncidents(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Code).To(Equal(http.StatusOK))
 
-			var response map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
+		var response PagedResponse
+		err := json.Unmarshal(rec.Body.Bytes(), &response)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Validate response structure
-			Expect(response).To(HaveKey("data"))
-			Expect(response).To(HaveKey("pagination"))
+		// Validate response structure (guaranteed by structured type)
+		Expect(response.Data).ToNot(BeNil())
+		Expect(response.Pagination).ToNot(BeNil())
 		})
 
 		It("should return empty array when no incidents found", func() {
@@ -50,14 +59,13 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.ListIncidents(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Code).To(Equal(http.StatusOK))
 
-			var response map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
+		var response PagedResponse
+		err := json.Unmarshal(rec.Body.Bytes(), &response)
+		Expect(err).ToNot(HaveOccurred())
 
-			data := response["data"].([]interface{})
-			Expect(data).To(HaveLen(0))
+		Expect(response.Data).To(HaveLen(0))
 		})
 
 		// BR-STORAGE-024: RFC 7807 error responses
@@ -66,18 +74,17 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.ListIncidents(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
 
-			var problemDetail map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
-			Expect(err).ToNot(HaveOccurred())
+		var problemDetail validation.RFC7807Problem
+		err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
+		Expect(err).ToNot(HaveOccurred())
 
-			// RFC 7807 required fields
-			Expect(problemDetail).To(HaveKey("type"))
-			Expect(problemDetail).To(HaveKey("title"))
-			Expect(problemDetail).To(HaveKey("status"))
-			Expect(problemDetail).To(HaveKey("detail"))
-			Expect(problemDetail["status"].(float64)).To(Equal(float64(400)))
+		// RFC 7807 required fields (guaranteed by structured type)
+		Expect(problemDetail.Type).ToNot(BeEmpty())
+		Expect(problemDetail.Title).ToNot(BeEmpty())
+		Expect(problemDetail.Status).To(Equal(400))
+		Expect(problemDetail.Detail).ToNot(BeEmpty())
 		})
 
 		DescribeTable("should validate query parameters",
@@ -86,13 +93,13 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 				handler.ListIncidents(rec, req)
 
-				Expect(rec.Code).To(Equal(expectedStatus))
-				if expectedStatus != http.StatusOK {
-					var problem map[string]interface{}
-					err := json.Unmarshal(rec.Body.Bytes(), &problem)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(problem["type"].(string)).To(ContainSubstring(expectedErrorType))
-				}
+			Expect(rec.Code).To(Equal(expectedStatus))
+			if expectedStatus != http.StatusOK {
+				var problem validation.RFC7807Problem
+				err := json.Unmarshal(rec.Body.Bytes(), &problem)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(problem.Type).To(ContainSubstring(expectedErrorType))
+			}
 			},
 			Entry("negative limit", "limit=-1", http.StatusBadRequest, "invalid-limit"),
 			Entry("zero limit", "limit=0", http.StatusBadRequest, "invalid-limit"),
@@ -123,15 +130,20 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.GetIncident(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Code).To(Equal(http.StatusOK))
 
-			var response map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
+		// Response is a RemediationAudit - just verify it's valid JSON with expected structure
+		var response struct {
+			ID         int64  `json:"id"`
+			Namespace  string `json:"namespace"`
+			ActionType string `json:"action_type"`
+		}
+		err := json.Unmarshal(rec.Body.Bytes(), &response)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(response).To(HaveKey("id"))
-			Expect(response).To(HaveKey("namespace"))
-			Expect(response).To(HaveKey("action_type"))
+		Expect(response.ID).To(BeNumerically(">", 0))
+		Expect(response.Namespace).ToNot(BeEmpty())
+		Expect(response.ActionType).ToNot(BeEmpty())
 		})
 
 		// BR-STORAGE-024: RFC 7807 for not found
@@ -140,14 +152,14 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.GetIncident(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusNotFound))
+		Expect(rec.Code).To(Equal(http.StatusNotFound))
 
-			var problemDetail map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
-			Expect(err).ToNot(HaveOccurred())
+		var problemDetail validation.RFC7807Problem
+		err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(problemDetail["type"].(string)).To(ContainSubstring("not-found"))
-			Expect(problemDetail["status"].(float64)).To(Equal(float64(404)))
+		Expect(problemDetail.Type).To(ContainSubstring("not-found"))
+		Expect(problemDetail.Status).To(Equal(404))
 		})
 
 		It("should return RFC 7807 error for invalid ID format", func() {
@@ -155,13 +167,13 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.GetIncident(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
 
-			var problemDetail map[string]interface{}
-			err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
-			Expect(err).ToNot(HaveOccurred())
+		var problemDetail validation.RFC7807Problem
+		err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(problemDetail["type"].(string)).To(ContainSubstring("invalid-id"))
+		Expect(problemDetail.Type).To(ContainSubstring("invalid-id"))
 		})
 	})
 
