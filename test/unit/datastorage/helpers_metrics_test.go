@@ -17,17 +17,16 @@ limitations under the License.
 package datastorage
 
 import (
-	"testing"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-func TestMetrics(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Metrics Cardinality Protection Suite")
-}
+// func TestMetrics(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "...")
+// }
 
 var _ = Describe("Cardinality Protection Helpers", func() {
 	Context("SanitizeFailureReason", func() {

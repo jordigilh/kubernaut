@@ -1,7 +1,6 @@
 package datastorage
 
 import (
-	"testing"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -9,10 +8,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestNotificationAudit(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "NotificationAudit Model Suite")
-}
+// func TestNotificationAudit(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "...")
+// }
 
 var _ = Describe("NotificationAudit Model", func() {
 	var audit *models.NotificationAudit
