@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,10 +12,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 
-func TestDataStorageClient(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Data Storage Client Test Suite")
-}
+// func TestDataStorageClient(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "...")
+// }
 
 var _ = Describe("DataStorageClient", func() {
 	var (
@@ -36,40 +35,65 @@ var _ = Describe("DataStorageClient", func() {
 	})
 
 	Context("NewDataStorageClient", func() {
-		It("should create client with default values", func() {
+		// BEHAVIOR: Client constructor creates functional client with default configuration
+		// CORRECTNESS: Client is non-nil and can make successful API calls
+		It("should create functional client with default values", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"data": [], "pagination": {"total": 0, "limit": 100, "offset": 0, "has_more": false}}`))
 			}))
 
+			// ARRANGE + ACT: Create client with default config
 			dsClient = client.NewDataStorageClient(client.Config{
 				BaseURL: server.URL,
 			})
 
-			Expect(dsClient).ToNot(BeNil())
+			// CORRECTNESS: Client is created successfully
+			Expect(dsClient).ToNot(BeNil(), "Client should be created successfully")
+
+			// CORRECTNESS: Client can make API calls (validate functionality)
+			result, err := dsClient.ListIncidents(ctx, nil)
+			Expect(err).ToNot(HaveOccurred(), "Client should successfully make API calls")
+			Expect(result).ToNot(BeNil(), "API response should be non-nil")
 		})
 
-		It("should use custom timeout and max connections", func() {
+		// BEHAVIOR: Client respects custom timeout and max connections configuration
+		// CORRECTNESS: Client is created with custom config and is functional
+		It("should create functional client with custom timeout and max connections", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{"data": [], "pagination": {"total": 0, "limit": 100, "offset": 0, "has_more": false}}`))
 			}))
 
+			// ARRANGE + ACT: Create client with custom config
 			dsClient = client.NewDataStorageClient(client.Config{
 				BaseURL:        server.URL,
 				Timeout:        10 * time.Second,
 				MaxConnections: 50,
 			})
 
-			Expect(dsClient).ToNot(BeNil())
+			// CORRECTNESS: Client is created successfully
+			Expect(dsClient).ToNot(BeNil(), "Client should be created with custom config")
+
+			// CORRECTNESS: Client can make API calls (validate functionality)
+			result, err := dsClient.ListIncidents(ctx, nil)
+			Expect(err).ToNot(HaveOccurred(), "Client should successfully make API calls")
+			Expect(result).ToNot(BeNil(), "API response should be non-nil")
 		})
 	})
 
 	Context("ListIncidents", func() {
-		It("should successfully list incidents", func() {
+		// BEHAVIOR: ListIncidents makes GET request with proper headers
+		// CORRECTNESS: X-Request-ID header is UUID format, User-Agent is correct
+		It("should successfully list incidents with proper headers", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				Expect(r.URL.Path).To(Equal("/api/v1/incidents"))
-				Expect(r.Header.Get("X-Request-ID")).ToNot(BeEmpty())
+				
+				// CORRECTNESS: X-Request-ID is UUID format (not just non-empty)
+				requestID := r.Header.Get("X-Request-ID")
+				Expect(requestID).ToNot(BeEmpty(), "X-Request-ID should be present")
+				Expect(requestID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
+					"X-Request-ID should be valid UUID format")
 				Expect(r.Header.Get("User-Agent")).To(ContainSubstring("kubernaut-context-api"))
 
 				w.WriteHeader(http.StatusOK)
@@ -154,12 +178,16 @@ var _ = Describe("DataStorageClient", func() {
 				BaseURL: server.URL,
 			})
 
-			incident, err := dsClient.GetIncidentByID(ctx, 123)
+		// ACT: Get incident by ID
+		incident, err := dsClient.GetIncidentByID(ctx, 123)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(incident).ToNot(BeNil())
-			Expect(incident.Id).To(Equal(int64(123)))
-			Expect(incident.SignalName).To(Equal("test-alert"))
+		// CORRECTNESS: Request succeeds
+		Expect(err).ToNot(HaveOccurred(), "GetIncidentByID should succeed")
+
+		// CORRECTNESS: Incident is non-nil with all expected fields
+		Expect(incident).ToNot(BeNil(), "Incident should be non-nil")
+		Expect(incident.Id).To(Equal(int64(123)), "Incident ID should match requested ID")
+		Expect(incident.SignalName).To(Equal("test-alert"), "Signal name should match response")
 		})
 
 		It("should return nil for non-existent incident", func() {
