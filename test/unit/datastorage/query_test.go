@@ -206,19 +206,30 @@ var _ = Describe("BR-STORAGE-006: Pagination Support", func() {
 			3, 3),
 	)
 
-	It("should include correct pagination metadata", func() {
+	// BEHAVIOR: Query service calculates pagination metadata correctly
+	// CORRECTNESS: All pagination fields have exact expected values
+	It("should include correct pagination metadata with all fields populated", func() {
+		// ARRANGE + ACT: Query with limit 10, offset 20
 		result, err := queryService.PaginatedList(ctx, &queryPkg.ListOptions{
 			Limit:  10,
 			Offset: 20,
 		})
 
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result).ToNot(BeNil())
-		Expect(result.Page).To(Equal(3))
-		Expect(result.PageSize).To(Equal(10))
-		Expect(result.TotalCount).To(Equal(int64(50)))
-		Expect(result.TotalPages).To(Equal(5))
-		Expect(result.Data).ToNot(BeNil())
+		// CORRECTNESS: Query succeeds
+		Expect(err).ToNot(HaveOccurred(), "Query should succeed")
+
+		// CORRECTNESS: Result is non-nil and contains paginated data
+		Expect(result).ToNot(BeNil(), "Result should be non-nil")
+
+		// CORRECTNESS: Pagination metadata is calculated correctly
+		Expect(result.Page).To(Equal(3), "Page should be 3 (offset 20 / limit 10 + 1)")
+		Expect(result.PageSize).To(Equal(10), "PageSize should match limit")
+		Expect(result.TotalCount).To(Equal(int64(50)), "TotalCount should be 50")
+		Expect(result.TotalPages).To(Equal(5), "TotalPages should be 5 (50 / 10)")
+
+		// CORRECTNESS: Data array is non-nil (may be empty, but array exists)
+		Expect(result.Data).ToNot(BeNil(), "Data array should be non-nil")
+		Expect(result.Data).To(HaveLen(10), "Data should contain 10 items (page size)")
 	})
 })
 
