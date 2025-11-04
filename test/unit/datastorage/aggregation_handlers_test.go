@@ -21,8 +21,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/mocks"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -62,31 +64,26 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id=workflow-123", nil)
 				handler.AggregateSuccessRate(rec, req)
 
-				// ✅ BEHAVIOR TEST: API returns 200 OK
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			// ✅ BEHAVIOR TEST: API returns 200 OK
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.SuccessRateAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				// ✅ BEHAVIOR TEST: Response has required structure
-				Expect(response).To(HaveKey("workflow_id"))
-				Expect(response).To(HaveKey("total_count"))
-				Expect(response).To(HaveKey("success_count"))
-				Expect(response).To(HaveKey("failure_count"))
-				Expect(response).To(HaveKey("success_rate"))
+			// ✅ BEHAVIOR TEST: Response structure validated by struct type
 
-				// ✅ CORRECTNESS TEST: Values match database aggregation exactly
-				Expect(response["workflow_id"]).To(Equal("workflow-123"),
-					"workflow_id must match request parameter exactly")
-				Expect(response["total_count"]).To(Equal(float64(4)),
-					"total_count must match database COUNT(*) exactly, not approximation")
-				Expect(response["success_count"]).To(Equal(float64(3)),
-					"success_count must match database WHERE status='completed' COUNT exactly")
-				Expect(response["failure_count"]).To(Equal(float64(1)),
-					"failure_count must match database WHERE status='failed' COUNT exactly")
-				Expect(response["success_rate"]).To(BeNumerically("~", 0.75, 0.01),
-					"success_rate must equal success_count/total_count (3/4 = 0.75) exactly")
+			// ✅ CORRECTNESS TEST: Values match database aggregation exactly
+			Expect(response.WorkflowID).To(Equal("workflow-123"),
+				"workflow_id must match request parameter exactly")
+			Expect(response.TotalCount).To(Equal(4),
+				"total_count must match database COUNT(*) exactly, not approximation")
+			Expect(response.SuccessCount).To(Equal(3),
+				"success_count must match database WHERE status='completed' COUNT exactly")
+			Expect(response.FailureCount).To(Equal(1),
+				"failure_count must match database WHERE status='failed' COUNT exactly")
+			Expect(response.SuccessRate).To(BeNumerically("~", 0.75, 0.01),
+				"success_rate must equal success_count/total_count (3/4 = 0.75) exactly")
 			})
 
 			It("should handle 100% success rate", func() {
@@ -100,13 +97,13 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id=perfect-workflow", nil)
 				handler.AggregateSuccessRate(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.SuccessRateAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(response["success_rate"]).To(Equal(float64(1.0)))
+			Expect(response.SuccessRate).To(Equal(1.0))
 			})
 
 			It("should handle 0% success rate", func() {
@@ -120,13 +117,13 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id=failed-workflow", nil)
 				handler.AggregateSuccessRate(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.SuccessRateAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(response["success_rate"]).To(Equal(float64(0.0)))
+			Expect(response.SuccessRate).To(Equal(0.0))
 			})
 		})
 
@@ -142,14 +139,14 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id=empty-workflow", nil)
 				handler.AggregateSuccessRate(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.SuccessRateAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(response["total_count"]).To(Equal(float64(0)))
-				Expect(response["success_rate"]).To(Equal(float64(0.0)))
+			Expect(response.TotalCount).To(Equal(0))
+			Expect(response.SuccessRate).To(Equal(0.0))
 			})
 		})
 
@@ -161,23 +158,21 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id="+workflowID, nil)
 				handler.AggregateSuccessRate(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.SuccessRateAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				// ✅ CORRECTNESS: Exact success rate match
-				Expect(response["success_rate"]).To(BeNumerically("~", expectedRate, 0.001))
+			// ✅ CORRECTNESS: Exact success rate match
+			Expect(response.SuccessRate).To(BeNumerically("~", expectedRate, 0.001))
 
-				// ✅ CORRECTNESS: Math verification
-				totalCount := response["total_count"].(float64)
-				successCount := response["success_count"].(float64)
-				if totalCount > 0 {
-					calculatedRate := successCount / totalCount
-					Expect(response["success_rate"]).To(BeNumerically("~", calculatedRate, 0.001),
-						"success_rate must equal success_count/total_count exactly")
-				}
+			// ✅ CORRECTNESS: Math verification
+			if response.TotalCount > 0 {
+				calculatedRate := float64(response.SuccessCount) / float64(response.TotalCount)
+				Expect(response.SuccessRate).To(BeNumerically("~", calculatedRate, 0.001),
+					"success_rate must equal success_count/total_count exactly")
+			}
 			},
 			// Edge Case 1: 100% success rate
 			Entry("100% success rate (all incidents completed)",
@@ -240,22 +235,20 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate", nil)
 				handler.AggregateSuccessRate(rec, req)
 
-				// ✅ BEHAVIOR TEST: Returns 400 Bad Request
-				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			// ✅ BEHAVIOR TEST: Returns 400 Bad Request
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 
-				var problem map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &problem)
-				Expect(err).ToNot(HaveOccurred())
+			var problem validation.RFC7807Problem
+			err := json.Unmarshal(rec.Body.Bytes(), &problem)
+			Expect(err).ToNot(HaveOccurred())
 
-				// ✅ CORRECTNESS TEST: RFC 7807 structure is complete
-				Expect(problem).To(HaveKey("type"))
-				Expect(problem["type"]).To(ContainSubstring("missing-parameter"))
-				Expect(problem).To(HaveKey("title"))
-				Expect(problem).To(HaveKey("status"))
-				Expect(problem["status"]).To(Equal(float64(400)))
+			// ✅ CORRECTNESS TEST: RFC 7807 structure is complete (validated by struct type)
+			Expect(problem.Type).To(ContainSubstring("missing-parameter"))
+			Expect(problem.Title).ToNot(BeEmpty())
+			Expect(problem.Status).To(Equal(400))
 
-				// ✅ CORRECTNESS: Error message mentions the specific parameter
-				Expect(problem["detail"]).To(ContainSubstring("workflow_id"))
+			// ✅ CORRECTNESS: Error message mentions the specific parameter
+			Expect(problem.Detail).To(ContainSubstring("workflow_id"))
 			})
 		})
 	})
@@ -275,20 +268,17 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-namespace", nil)
 				handler.AggregateByNamespace(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.NamespaceAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(response).To(HaveKey("aggregations"))
-				aggregations := response["aggregations"].([]interface{})
-				Expect(aggregations).To(HaveLen(3))
+			Expect(response.Aggregations).To(HaveLen(3))
 
-				// Verify first aggregation
-				firstAgg := aggregations[0].(map[string]interface{})
-				Expect(firstAgg["namespace"]).To(Equal("prod"))
-				Expect(firstAgg["count"]).To(Equal(float64(50)))
+			// Verify first aggregation
+			Expect(response.Aggregations[0].Namespace).To(Equal("prod"))
+			Expect(response.Aggregations[0].Count).To(Equal(50))
 			})
 
 			It("should order namespaces by count descending", func() {
@@ -303,17 +293,16 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-namespace", nil)
 				handler.AggregateByNamespace(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.NamespaceAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				aggregations := response["aggregations"].([]interface{})
-				firstCount := aggregations[0].(map[string]interface{})["count"].(float64)
-				lastCount := aggregations[len(aggregations)-1].(map[string]interface{})["count"].(float64)
+			firstCount := response.Aggregations[0].Count
+			lastCount := response.Aggregations[len(response.Aggregations)-1].Count
 
-				Expect(firstCount).To(BeNumerically(">=", lastCount))
+			Expect(firstCount).To(BeNumerically(">=", lastCount))
 			})
 		})
 
@@ -323,17 +312,16 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 					"aggregations": []map[string]interface{}{},
 				})
 
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-namespace", nil)
-				handler.AggregateByNamespace(rec, req)
+		req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-namespace", nil)
+			handler.AggregateByNamespace(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.NamespaceAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				aggregations := response["aggregations"].([]interface{})
-				Expect(aggregations).To(HaveLen(0))
+			Expect(response.Aggregations).To(HaveLen(0))
 			})
 		})
 	})
@@ -351,23 +339,20 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 					},
 				})
 
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-severity", nil)
-				handler.AggregateBySeverity(rec, req)
+		req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-severity", nil)
+			handler.AggregateBySeverity(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.SeverityAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(response).To(HaveKey("aggregations"))
-				aggregations := response["aggregations"].([]interface{})
-				Expect(aggregations).To(HaveLen(4))
+			Expect(response.Aggregations).To(HaveLen(4))
 
-				// Verify critical severity aggregation
-				criticalAgg := aggregations[0].(map[string]interface{})
-				Expect(criticalAgg["severity"]).To(Equal("critical"))
-				Expect(criticalAgg["count"]).To(Equal(float64(10)))
+			// Verify critical severity aggregation
+			Expect(response.Aggregations[0].Severity).To(Equal("critical"))
+			Expect(response.Aggregations[0].Count).To(Equal(10))
 			})
 
 			It("should order severities by severity level (critical first)", func() {
@@ -383,16 +368,13 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-severity", nil)
 				handler.AggregateBySeverity(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.SeverityAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				aggregations := response["aggregations"].([]interface{})
-				firstSeverity := aggregations[0].(map[string]interface{})["severity"].(string)
-
-				Expect(firstSeverity).To(Equal("critical"))
+			Expect(response.Aggregations[0].Severity).To(Equal("critical"))
 			})
 		})
 
@@ -402,17 +384,16 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 					"aggregations": []map[string]interface{}{},
 				})
 
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-severity", nil)
-				handler.AggregateBySeverity(rec, req)
+		req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-severity", nil)
+			handler.AggregateBySeverity(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.SeverityAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				aggregations := response["aggregations"].([]interface{})
-				Expect(aggregations).To(HaveLen(0))
+			Expect(response.Aggregations).To(HaveLen(0))
 			})
 		})
 	})
@@ -437,23 +418,18 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend?period=7d", nil)
 				handler.AggregateIncidentTrend(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.TrendAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(response).To(HaveKey("period"))
-				Expect(response["period"]).To(Equal("7d"))
-				Expect(response).To(HaveKey("data_points"))
+			Expect(response.Period).To(Equal("7d"))
+			Expect(response.DataPoints).To(HaveLen(7))
 
-				dataPoints := response["data_points"].([]interface{})
-				Expect(dataPoints).To(HaveLen(7))
-
-				// Verify first data point
-				firstPoint := dataPoints[0].(map[string]interface{})
-				Expect(firstPoint).To(HaveKey("date"))
-				Expect(firstPoint).To(HaveKey("count"))
+			// Verify first data point structure (guaranteed by struct type)
+			Expect(response.DataPoints[0].Date).ToNot(BeEmpty())
+			Expect(response.DataPoints[0].Count).To(BeNumerically(">=", 0))
 			})
 
 			It("should return daily incident counts for 30d period", func() {
@@ -467,13 +443,12 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 
 				Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.TrendAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(response["period"]).To(Equal("30d"))
-				dataPoints := response["data_points"].([]interface{})
-				Expect(dataPoints).To(HaveLen(30))
+			Expect(response.Period).To(Equal("30d"))
+			Expect(response.DataPoints).To(HaveLen(30))
 			})
 		})
 
@@ -487,13 +462,13 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend", nil)
 				handler.AggregateIncidentTrend(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.TrendAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(response["period"]).To(Equal("7d"))
+			Expect(response.Period).To(Equal("7d"))
 			})
 		})
 
@@ -502,17 +477,16 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend?period=invalid", nil)
 				handler.AggregateIncidentTrend(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 
-				var problem map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &problem)
-				Expect(err).ToNot(HaveOccurred())
+			var problem validation.RFC7807Problem
+			err := json.Unmarshal(rec.Body.Bytes(), &problem)
+			Expect(err).ToNot(HaveOccurred())
 
-				Expect(problem).To(HaveKey("type"))
-				Expect(problem["type"]).To(ContainSubstring("invalid-parameter"))
-				// ✅ CORRECTNESS: Error detail must mention the specific parameter and valid values
-				Expect(problem["detail"]).To(ContainSubstring("period"))
-				Expect(problem["detail"]).To(ContainSubstring("7d"))
+			Expect(problem.Type).To(ContainSubstring("invalid-parameter"))
+			// ✅ CORRECTNESS: Error detail must mention the specific parameter and valid values
+			Expect(problem.Detail).To(ContainSubstring("period"))
+			Expect(problem.Detail).To(ContainSubstring("7d"))
 			})
 		})
 
@@ -526,14 +500,13 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend?period=7d", nil)
 				handler.AggregateIncidentTrend(rec, req)
 
-				Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-				var response map[string]interface{}
-				err := json.Unmarshal(rec.Body.Bytes(), &response)
-				Expect(err).ToNot(HaveOccurred())
+			var response models.TrendAggregationResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-				dataPoints := response["data_points"].([]interface{})
-				Expect(dataPoints).To(HaveLen(0))
+			Expect(response.DataPoints).To(HaveLen(0))
 			})
 		})
 	})
