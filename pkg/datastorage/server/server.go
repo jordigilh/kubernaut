@@ -732,11 +732,12 @@ func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interfac
 	// REFACTOR: Real PostgreSQL aggregation query with CASE statements
 	// ✅ Behavior + Correctness: Returns exact counts from database
 	// Query by action_id (workflow_id) as per schema design
+	// ✅ Edge Case: COALESCE handles NULL from SUM() when no rows match
 	sqlQuery := `
 		SELECT
 			COUNT(*) as total_count,
-			SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as success_count,
-			SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failure_count,
+			COALESCE(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END), 0) as success_count,
+			COALESCE(SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END), 0) as failure_count,
 			CASE
 				WHEN COUNT(*) = 0 THEN 0.0
 				ELSE CAST(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)
