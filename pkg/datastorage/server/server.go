@@ -136,9 +136,15 @@ func NewServer(
 	)
 
 	// Create audit write dependencies (BR-STORAGE-001 to BR-STORAGE-020)
+	logger.Debug("Creating audit write dependencies...")
 	repo := repository.NewNotificationAuditRepository(db, logger)
 	dlqClient := dlq.NewClient(redisClient, logger)
 	validator := validation.NewNotificationAuditValidator()
+	
+	logger.Debug("Audit write dependencies created",
+		zap.Bool("repo_nil", repo == nil),
+		zap.Bool("dlq_client_nil", dlqClient == nil),
+		zap.Bool("validator_nil", validator == nil))
 
 	// Create Prometheus metrics (BR-STORAGE-019, GAP-10)
 	metrics := dsmetrics.NewMetrics("datastorage", "")
@@ -178,7 +184,7 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.RequestID) // Add X-Request-ID
 	r.Use(middleware.RealIP)    // Get real client IP
 	r.Use(s.loggingMiddleware)  // Custom logging middleware
-	r.Use(middleware.Recoverer) // Recover from panics
+	r.Use(s.panicRecoveryMiddleware) // Enhanced panic recovery with logging
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"}, // TODO: Configure in production
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
@@ -202,6 +208,12 @@ func (s *Server) Handler() http.Handler {
 	r.Handle("/metrics", promhttp.Handler())
 
 	// API v1 routes
+	s.logger.Debug("Setting up API v1 routes",
+		zap.Bool("handler_nil", s.handler == nil),
+		zap.Bool("repository_nil", s.repository == nil),
+		zap.Bool("validator_nil", s.validator == nil),
+		zap.Bool("dlq_client_nil", s.dlqClient == nil))
+	
 	r.Route("/api/v1", func(r chi.Router) {
 		// BR-STORAGE-021: Incident query endpoints (READ API)
 		r.Get("/incidents", s.handler.ListIncidents)
@@ -214,8 +226,11 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/incidents/aggregate/trend", s.handler.AggregateIncidentTrend)
 
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
+		s.logger.Debug("Registering POST /api/v1/audit/notifications handler")
 		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
 	})
+	
+	s.logger.Debug("API v1 routes configured successfully")
 
 	return r
 }
@@ -381,6 +396,32 @@ func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
 }
 
 // loggingMiddleware logs HTTP requests with structured logging
+// panicRecoveryMiddleware catches panics and logs detailed information
+func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				requestID := middleware.GetReqID(r.Context())
+				
+				// Log the panic with full details
+				s.logger.Error("🚨 PANIC RECOVERED",
+					zap.String("request_id", requestID),
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+					zap.String("remote_addr", r.RemoteAddr),
+					zap.Any("panic", err),
+					zap.Stack("stack_trace"),
+				)
+				
+				// Let chi's Recoverer handle the response
+				panic(err)
+			}
+		}()
+		
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
