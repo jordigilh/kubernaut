@@ -94,6 +94,7 @@ type Config struct {
 func NewServer(
 	dbConnStr string,
 	redisAddr string,
+	redisPassword string,
 	logger *zap.Logger,
 	cfg *Config,
 ) (*Server, error) {
@@ -122,7 +123,8 @@ func NewServer(
 
 	// Connect to Redis for DLQ (DD-009)
 	redisClient := redis.NewClient(&redis.Options{
-		Addr: redisAddr,
+		Addr:     redisAddr,
+		Password: redisPassword, // ADR-030: Password from mounted secret
 	})
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
 		_ = db.Close() // Clean up DB connection
@@ -152,9 +154,9 @@ func NewServer(
 	handler := NewHandler(dbAdapter, WithLogger(logger))
 
 	return &Server{
-		handler:    handler,
-		db:         db,
-		logger:     logger,
+		handler: handler,
+		db:      db,
+		logger:  logger,
 		httpServer: &http.Server{
 			Addr:         fmt.Sprintf(":%d", cfg.Port),
 			ReadTimeout:  cfg.ReadTimeout,
@@ -204,6 +206,12 @@ func (s *Server) Handler() http.Handler {
 		// BR-STORAGE-021: Incident query endpoints (READ API)
 		r.Get("/incidents", s.handler.ListIncidents)
 		r.Get("/incidents/{id}", s.handler.GetIncident)
+
+		// BR-STORAGE-030: Aggregation endpoints (READ API)
+		r.Get("/incidents/aggregate/success-rate", s.handler.AggregateSuccessRate)
+		r.Get("/incidents/aggregate/by-namespace", s.handler.AggregateByNamespace)
+		r.Get("/incidents/aggregate/by-severity", s.handler.AggregateBySeverity)
+		r.Get("/incidents/aggregate/trend", s.handler.AggregateIncidentTrend)
 
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
 		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
@@ -425,8 +433,8 @@ func (d *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[s
 	if ns, ok := filters["namespace"]; ok && ns != "" {
 		builder = builder.WithNamespace(ns)
 	}
-	if alertName, ok := filters["alert_name"]; ok && alertName != "" {
-		builder = builder.WithAlertName(alertName)
+	if signalName, ok := filters["signal_name"]; ok && signalName != "" {
+		builder = builder.WithSignalName(signalName)
 	}
 	if sev, ok := filters["severity"]; ok && sev != "" {
 		builder = builder.WithSeverity(sev)
@@ -542,8 +550,8 @@ func (d *DBAdapter) CountTotal(filters map[string]string) (int64, error) {
 	if ns, ok := filters["namespace"]; ok && ns != "" {
 		builder = builder.WithNamespace(ns)
 	}
-	if alertName, ok := filters["alert_name"]; ok && alertName != "" {
-		builder = builder.WithAlertName(alertName)
+	if signalName, ok := filters["signal_name"]; ok && signalName != "" {
+		builder = builder.WithSignalName(signalName)
 	}
 	if sev, ok := filters["severity"]; ok && sev != "" {
 		builder = builder.WithSeverity(sev)
@@ -664,6 +672,280 @@ func (d *DBAdapter) Get(id int) (map[string]interface{}, error) {
 	)
 
 	return result, nil
+}
+
+// ========================================
+// AGGREGATION METHODS (BR-STORAGE-030)
+// TDD GREEN Phase: Minimal stub implementations
+// TODO: REFACTOR phase will add real PostgreSQL aggregation SQL
+// ========================================
+
+// AggregateSuccessRate calculates success rate for a workflow
+// BR-STORAGE-031: Success rate aggregation
+// TDD REFACTOR Phase: Real PostgreSQL aggregation with exact count calculations
+func (d *DBAdapter) AggregateSuccessRate(workflowID string) (map[string]interface{}, error) {
+	d.logger.Debug("DBAdapter.AggregateSuccessRate called",
+		zap.String("workflow_id", workflowID),
+	)
+
+	// REFACTOR: Real PostgreSQL aggregation query with CASE statements
+	// ✅ Behavior + Correctness: Returns exact counts from database
+	// Query by action_id (workflow_id) as per schema design
+	sqlQuery := `
+		SELECT
+			COUNT(*) as total_count,
+			SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as success_count,
+			SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failure_count,
+			CASE
+				WHEN COUNT(*) = 0 THEN 0.0
+				ELSE CAST(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)
+			END as success_rate
+		FROM resource_action_traces
+		WHERE action_id = $1
+	`
+
+	rows, err := d.db.Query(sqlQuery, workflowID)
+	if err != nil {
+		d.logger.Error("Failed to execute success rate aggregation",
+			zap.Error(err),
+			zap.String("workflow_id", workflowID),
+		)
+		return nil, fmt.Errorf("database aggregation error: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Parse aggregation results
+	if !rows.Next() {
+		// No rows found - return zero counts
+		return map[string]interface{}{
+			"workflow_id":   workflowID,
+			"total_count":   0,
+			"success_count": 0,
+			"failure_count": 0,
+			"success_rate":  0.0,
+		}, nil
+	}
+
+	var totalCount, successCount, failureCount int
+	var successRate float64
+
+	if err := rows.Scan(&totalCount, &successCount, &failureCount, &successRate); err != nil {
+		d.logger.Error("Failed to scan aggregation results",
+			zap.Error(err),
+			zap.String("workflow_id", workflowID),
+		)
+		return nil, fmt.Errorf("result scan error: %w", err)
+	}
+
+	d.logger.Info("Success rate aggregation completed",
+		zap.String("workflow_id", workflowID),
+		zap.Int("total_count", totalCount),
+		zap.Int("success_count", successCount),
+		zap.Float64("success_rate", successRate),
+	)
+
+	// ✅ CORRECTNESS: Return exact database counts
+	return map[string]interface{}{
+		"workflow_id":   workflowID,
+		"total_count":   totalCount,
+		"success_count": successCount,
+		"failure_count": failureCount,
+		"success_rate":  successRate,
+	}, nil
+}
+
+// AggregateByNamespace groups incidents by namespace
+// BR-STORAGE-032: Namespace grouping aggregation
+// TDD REFACTOR Phase: Real PostgreSQL GROUP BY with ordering
+func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
+	d.logger.Debug("DBAdapter.AggregateByNamespace called")
+
+	// REFACTOR: Real PostgreSQL GROUP BY query with descending order
+	// ✅ Behavior + Correctness: Returns exact counts per namespace
+	sqlQuery := `
+		SELECT
+			namespace,
+			COUNT(*) as count
+		FROM resource_action_traces
+		GROUP BY namespace
+		ORDER BY count DESC
+	`
+
+	rows, err := d.db.Query(sqlQuery)
+	if err != nil {
+		d.logger.Error("Failed to execute namespace aggregation",
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("database aggregation error: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Parse aggregation results
+	aggregations := []map[string]interface{}{}
+
+	for rows.Next() {
+		var namespace string
+		var count int
+
+		if err := rows.Scan(&namespace, &count); err != nil {
+			d.logger.Error("Failed to scan namespace aggregation row",
+				zap.Error(err),
+			)
+			return nil, fmt.Errorf("result scan error: %w", err)
+		}
+
+		aggregations = append(aggregations, map[string]interface{}{
+			"namespace": namespace,
+			"count":     count,
+		})
+	}
+
+	d.logger.Info("Namespace aggregation completed",
+		zap.Int("namespace_count", len(aggregations)),
+	)
+
+	// ✅ CORRECTNESS: Return exact database GROUP BY results
+	return map[string]interface{}{
+		"aggregations": aggregations,
+	}, nil
+}
+
+// AggregateBySeverity groups incidents by severity
+// BR-STORAGE-033: Severity distribution aggregation
+// TDD REFACTOR Phase: Real PostgreSQL GROUP BY with custom severity ordering
+func (d *DBAdapter) AggregateBySeverity() (map[string]interface{}, error) {
+	d.logger.Debug("DBAdapter.AggregateBySeverity called")
+
+	// REFACTOR: Real PostgreSQL GROUP BY with CASE-based severity ordering
+	// ✅ Behavior + Correctness: Returns exact counts per severity level
+	sqlQuery := `
+		SELECT
+			signal_severity as severity,
+			COUNT(*) as count
+		FROM resource_action_traces
+		GROUP BY signal_severity
+		ORDER BY
+			CASE signal_severity
+				WHEN 'critical' THEN 1
+				WHEN 'high' THEN 2
+				WHEN 'medium' THEN 3
+				WHEN 'low' THEN 4
+				ELSE 5
+			END
+	`
+
+	rows, err := d.db.Query(sqlQuery)
+	if err != nil {
+		d.logger.Error("Failed to execute severity aggregation",
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("database aggregation error: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Parse aggregation results
+	aggregations := []map[string]interface{}{}
+
+	for rows.Next() {
+		var severity string
+		var count int
+
+		if err := rows.Scan(&severity, &count); err != nil {
+			d.logger.Error("Failed to scan severity aggregation row",
+				zap.Error(err),
+			)
+			return nil, fmt.Errorf("result scan error: %w", err)
+		}
+
+		aggregations = append(aggregations, map[string]interface{}{
+			"severity": severity,
+			"count":    count,
+		})
+	}
+
+	d.logger.Info("Severity aggregation completed",
+		zap.Int("severity_levels", len(aggregations)),
+	)
+
+	// ✅ CORRECTNESS: Return exact database GROUP BY results
+	return map[string]interface{}{
+		"aggregations": aggregations,
+	}, nil
+}
+
+// AggregateIncidentTrend returns incident counts over time
+// BR-STORAGE-034: Incident trend aggregation
+// TDD REFACTOR Phase: Real PostgreSQL time-series aggregation with interval filtering
+func (d *DBAdapter) AggregateIncidentTrend(period string) (map[string]interface{}, error) {
+	d.logger.Debug("DBAdapter.AggregateIncidentTrend called",
+		zap.String("period", period),
+	)
+
+	// Convert period to PostgreSQL interval
+	var intervalStr string
+	switch period {
+	case "7d":
+		intervalStr = "7 days"
+	case "30d":
+		intervalStr = "30 days"
+	case "90d":
+		intervalStr = "90 days"
+	default:
+		intervalStr = "7 days" // Fallback to 7 days
+	}
+
+	// REFACTOR: Real PostgreSQL time-series aggregation
+	// ✅ Behavior + Correctness: Returns exact daily counts within time period
+	sqlQuery := `
+		SELECT
+			DATE(action_timestamp) as date,
+			COUNT(*) as count
+		FROM resource_action_traces
+		WHERE action_timestamp >= NOW() - INTERVAL '` + intervalStr + `'
+		GROUP BY DATE(action_timestamp)
+		ORDER BY date ASC
+	`
+
+	rows, err := d.db.Query(sqlQuery)
+	if err != nil {
+		d.logger.Error("Failed to execute incident trend aggregation",
+			zap.Error(err),
+			zap.String("period", period),
+		)
+		return nil, fmt.Errorf("database aggregation error: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	// Parse aggregation results
+	dataPoints := []map[string]interface{}{}
+
+	for rows.Next() {
+		var date time.Time
+		var count int
+
+		if err := rows.Scan(&date, &count); err != nil {
+			d.logger.Error("Failed to scan trend aggregation row",
+				zap.Error(err),
+			)
+			return nil, fmt.Errorf("result scan error: %w", err)
+		}
+
+		dataPoints = append(dataPoints, map[string]interface{}{
+			"date":  date.Format("2006-01-02"), // ISO 8601 date format
+			"count": count,
+		})
+	}
+
+	d.logger.Info("Incident trend aggregation completed",
+		zap.String("period", period),
+		zap.Int("data_points", len(dataPoints)),
+	)
+
+	// ✅ CORRECTNESS: Return exact database time-series aggregation
+	return map[string]interface{}{
+		"period":      period,
+		"data_points": dataPoints,
+	}, nil
 }
 
 // convertPlaceholdersToPostgreSQL converts ? placeholders to PostgreSQL $1, $2, etc.

@@ -32,7 +32,7 @@ import (
 // REFACTOR: Enhanced with structured logging and performance optimizations
 type Builder struct {
 	namespace   string
-	alertName   string
+	signalName  string
 	severity    string
 	cluster     string
 	environment string
@@ -45,7 +45,7 @@ type Builder struct {
 // QueryParams represents query filter parameters
 type QueryParams struct {
 	Namespace   string
-	AlertName   string
+	SignalName  string
 	Severity    string
 	Cluster     string
 	Environment string
@@ -85,7 +85,7 @@ func WithLogger(logger *zap.Logger) BuilderOption {
 // WithParams sets query parameters from QueryParams struct
 func (b *Builder) WithParams(params QueryParams) *Builder {
 	b.namespace = params.Namespace
-	b.alertName = params.AlertName
+	b.signalName = params.SignalName
 	b.severity = params.Severity
 	b.cluster = params.Cluster
 	b.environment = params.Environment
@@ -100,9 +100,9 @@ func (b *Builder) WithNamespace(namespace string) *Builder {
 	return b
 }
 
-// WithAlertName sets alert_name filter
-func (b *Builder) WithAlertName(alertName string) *Builder {
-	b.alertName = alertName
+// WithSignalName sets signal_name filter
+func (b *Builder) WithSignalName(signalName string) *Builder {
+	b.signalName = signalName
 	return b
 }
 
@@ -171,7 +171,7 @@ func (b *Builder) Build() (string, []interface{}, error) {
 	// REFACTOR: Log query construction for observability
 	b.logger.Debug("Building SQL query",
 		zap.String("namespace", b.namespace),
-		zap.String("alert_name", b.alertName),
+		zap.String("signal_name", b.signalName),
 		zap.String("severity", b.severity),
 		zap.String("cluster", b.cluster),
 		zap.String("environment", b.environment),
@@ -189,7 +189,7 @@ func (b *Builder) Build() (string, []interface{}, error) {
 	if b.namespace != "" {
 		filterCount++
 	}
-	if b.alertName != "" {
+	if b.signalName != "" {
 		filterCount++
 	}
 	if b.severity != "" {
@@ -215,13 +215,13 @@ func (b *Builder) Build() (string, []interface{}, error) {
 		args = append(args, b.namespace)
 		argIndex++
 	}
-	if b.alertName != "" {
-		sql += fmt.Sprintf(" AND alert_name = $%d", argIndex)
-		args = append(args, b.alertName)
+	if b.signalName != "" {
+		sql += fmt.Sprintf(" AND signal_name = $%d", argIndex)
+		args = append(args, b.signalName)
 		argIndex++
 	}
 	if b.severity != "" {
-		sql += fmt.Sprintf(" AND alert_severity = $%d", argIndex)
+		sql += fmt.Sprintf(" AND signal_severity = $%d", argIndex)
 		args = append(args, b.severity)
 		argIndex++
 	}
@@ -276,7 +276,7 @@ func (b *Builder) BuildCount() (string, []interface{}, error) {
 	// REFACTOR: Log count query construction for observability
 	b.logger.Debug("Building COUNT(*) query",
 		zap.String("namespace", b.namespace),
-		zap.String("alert_name", b.alertName),
+		zap.String("signal_name", b.signalName),
 		zap.String("severity", b.severity),
 		zap.String("cluster", b.cluster),
 		zap.String("environment", b.environment),
@@ -292,7 +292,7 @@ func (b *Builder) BuildCount() (string, []interface{}, error) {
 	if b.namespace != "" {
 		filterCount++
 	}
-	if b.alertName != "" {
+	if b.signalName != "" {
 		filterCount++
 	}
 	if b.severity != "" {
@@ -318,13 +318,13 @@ func (b *Builder) BuildCount() (string, []interface{}, error) {
 		args = append(args, b.namespace)
 		argIndex++
 	}
-	if b.alertName != "" {
-		sql += fmt.Sprintf(" AND alert_name = $%d", argIndex)
-		args = append(args, b.alertName)
+	if b.signalName != "" {
+		sql += fmt.Sprintf(" AND signal_name = $%d", argIndex)
+		args = append(args, b.signalName)
 		argIndex++
 	}
 	if b.severity != "" {
-		sql += fmt.Sprintf(" AND alert_severity = $%d", argIndex)
+		sql += fmt.Sprintf(" AND signal_severity = $%d", argIndex)
 		args = append(args, b.severity)
 		argIndex++
 	}

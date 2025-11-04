@@ -77,8 +77,8 @@ var _ = Describe("DataStorageClient", func() {
 					"data": [
 						{
 							"id": 123,
-							"alert_name": "test-alert",
-							"alert_severity": "critical",
+							"signal_name": "test-alert",
+							"signal_severity": "critical",
 							"action_type": "scale",
 							"action_timestamp": "2025-11-02T10:30:00Z",
 							"model_used": "gpt-4",
@@ -105,8 +105,8 @@ var _ = Describe("DataStorageClient", func() {
 			Expect(result.Incidents).To(HaveLen(1))
 			Expect(result.Total).To(Equal(1))
 			Expect(result.Incidents[0].Id).To(Equal(int64(123)))
-			Expect(result.Incidents[0].AlertName).To(Equal("test-alert"))
-			Expect(result.Incidents[0].AlertSeverity).To(Equal(client.IncidentAlertSeverityCritical))
+			Expect(result.Incidents[0].SignalName).To(Equal("test-alert"))
+			Expect(result.Incidents[0].SignalSeverity).To(Equal(client.IncidentSignalSeverityCritical))
 		})
 
 		It("should handle RFC 7807 errors", func() {
@@ -140,8 +140,8 @@ var _ = Describe("DataStorageClient", func() {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte(`{
 					"id": 123,
-					"alert_name": "test-alert",
-					"alert_severity": "critical",
+					"signal_name": "test-alert",
+					"signal_severity": "critical",
 					"action_type": "scale",
 					"action_timestamp": "2025-11-02T10:30:00Z",
 					"model_used": "gpt-4",
@@ -159,7 +159,7 @@ var _ = Describe("DataStorageClient", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(incident).ToNot(BeNil())
 			Expect(incident.Id).To(Equal(int64(123)))
-			Expect(incident.AlertName).To(Equal("test-alert"))
+			Expect(incident.SignalName).To(Equal("test-alert"))
 		})
 
 		It("should return nil for non-existent incident", func() {

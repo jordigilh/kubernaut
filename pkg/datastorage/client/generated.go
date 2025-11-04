@@ -16,12 +16,12 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
-// Defines values for IncidentAlertSeverity.
+// Defines values for IncidentSignalSeverity.
 const (
-	IncidentAlertSeverityCritical IncidentAlertSeverity = "critical"
-	IncidentAlertSeverityHigh     IncidentAlertSeverity = "high"
-	IncidentAlertSeverityLow      IncidentAlertSeverity = "low"
-	IncidentAlertSeverityMedium   IncidentAlertSeverity = "medium"
+	IncidentSignalSeverityCritical IncidentSignalSeverity = "critical"
+	IncidentSignalSeverityHigh     IncidentSignalSeverity = "high"
+	IncidentSignalSeverityLow      IncidentSignalSeverity = "low"
+	IncidentSignalSeverityMedium   IncidentSignalSeverity = "medium"
 )
 
 // Defines values for IncidentExecutionStatus.
@@ -50,13 +50,13 @@ type Incident struct {
 	ActionType string `json:"action_type"`
 
 	// AlertFingerprint Unique alert fingerprint from Prometheus
-	AlertFingerprint *string `json:"alert_fingerprint,omitempty"`
+	SignalFingerprint *string `json:"signal_fingerprint,omitempty"`
 
-	// AlertName Name of the Prometheus alert or Kubernetes event
-	AlertName string `json:"alert_name"`
+	// SignalName Name of the signal (Prometheus alert, Kubernetes event, etc.)
+	SignalName string `json:"signal_name"`
 
-	// AlertSeverity Severity level of the alert
-	AlertSeverity IncidentAlertSeverity `json:"alert_severity"`
+	// SignalSeverity Severity level of the signal
+	SignalSeverity IncidentSignalSeverity `json:"signal_severity"`
 
 	// ClusterName Kubernetes cluster identifier
 	ClusterName *string `json:"cluster_name,omitempty"`
@@ -101,8 +101,8 @@ type Incident struct {
 	TargetResource *string `json:"target_resource,omitempty"`
 }
 
-// IncidentAlertSeverity Severity level of the alert
-type IncidentAlertSeverity string
+// IncidentSignalSeverity Severity level of the signal
+type IncidentSignalSeverity string
 
 // IncidentExecutionStatus Current status of the remediation action
 type IncidentExecutionStatus string
@@ -149,8 +149,8 @@ type RFC7807Error struct {
 
 // ListIncidentsParams defines parameters for ListIncidents.
 type ListIncidentsParams struct {
-	// AlertName Filter by alert name pattern (exact match)
-	AlertName *string `form:"alert_name,omitempty" json:"alert_name,omitempty"`
+	// SignalName Filter by signal name pattern (exact match)
+	SignalName *string `form:"signal_name,omitempty" json:"signal_name,omitempty"`
 
 	// Severity Filter by alert severity
 	Severity *ListIncidentsParamsSeverity `form:"severity,omitempty" json:"severity,omitempty"`
@@ -342,9 +342,9 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 	if params != nil {
 		queryValues := queryURL.Query()
 
-		if params.AlertName != nil {
+		if params.SignalName != nil {
 
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "alert_name", runtime.ParamLocationQuery, *params.AlertName); err != nil {
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "signal_name", runtime.ParamLocationQuery, *params.SignalName); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err

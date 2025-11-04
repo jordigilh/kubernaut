@@ -252,7 +252,7 @@ func (c *Coordinator) writeToPostgreSQL(tx Tx, audit *models.RemediationAudit, e
 	sqlQuery := `
 		INSERT INTO remediation_audit (
 			name, namespace, phase, action_type, status,
-			start_time, end_time, remediation_request_id, alert_fingerprint,
+			start_time, end_time, remediation_request_id, signal_fingerprint,
 			severity, environment, cluster_name, target_resource,
 			error_message, metadata, embedding
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
@@ -267,7 +267,7 @@ func (c *Coordinator) writeToPostgreSQL(tx Tx, audit *models.RemediationAudit, e
 	var id int64
 	err := tx.QueryRow(sqlQuery,
 		audit.Name, audit.Namespace, audit.Phase, audit.ActionType, audit.Status,
-		audit.StartTime, audit.EndTime, audit.RemediationRequestID, audit.AlertFingerprint,
+		audit.StartTime, audit.EndTime, audit.RemediationRequestID, audit.SignalFingerprint,
 		audit.Severity, audit.Environment, audit.ClusterName, audit.TargetResource,
 		audit.ErrorMessage, audit.Metadata, vectorEmbedding).Scan(&id)
 	if err != nil {
@@ -315,7 +315,7 @@ func buildMetadata(audit *models.RemediationAudit) map[string]interface{} {
 		"action_type":            audit.ActionType,
 		"status":                 audit.Status,
 		"remediation_request_id": audit.RemediationRequestID,
-		"alert_fingerprint":      audit.AlertFingerprint,
+		"signal_fingerprint":     audit.SignalFingerprint,
 		"severity":               audit.Severity,
 		"environment":            audit.Environment,
 		"cluster_name":           audit.ClusterName,
