@@ -20,6 +20,7 @@
 | DD-008 | Integration Test Infrastructure (Podman + Kind) | ✅ Approved | 2025-11-01 | [DD-008-integration-test-infrastructure.md](decisions/DD-008-integration-test-infrastructure.md) |
 | DD-010 | PostgreSQL Driver Migration (lib/pq to pgx) | ✅ Approved | 2025-11-03 | [DD-010-postgresql-driver-migration.md](decisions/DD-010-postgresql-driver-migration.md) |
 | DD-011 | PostgreSQL 16+ and pgvector 0.5.1+ Version Requirements | ✅ Approved | 2025-10-13 | [DD-011-postgresql-version-requirements.md](decisions/DD-011-postgresql-version-requirements.md) |
+|| ADR-033 | Remediation Playbook Catalog & Multi-Dimensional Success Tracking | ✅ Approved | 2025-11-04 | [ADR-033-remediation-playbook-catalog.md](decisions/ADR-033-remediation-playbook-catalog.md) |
 | DD-ARCH-001 | Data Access Pattern - Final Decision (Alternative 2 + REST) | ✅ Approved | 2025-11-02 | [DD-ARCH-001-FINAL-DECISION.md](decisions/DD-ARCH-001-FINAL-DECISION.md) |
 | DD-ARCH-001-A | Data Access Pattern Assessment (3 Alternatives) | 📊 Analysis | 2025-11-01 | [DD-ARCH-001-DATA-ACCESS-PATTERN-ASSESSMENT.md](analysis/DD-ARCH-001-DATA-ACCESS-PATTERN-ASSESSMENT.md) |
 | DD-ARCH-001-B | Interface Options Analysis (REST vs gRPC vs GraphQL) | 📊 Analysis | 2025-11-02 | [DD-ARCH-001-INTERFACE-OPTIONS-ANALYSIS.md](analysis/DD-ARCH-001-INTERFACE-OPTIONS-ANALYSIS.md) |
