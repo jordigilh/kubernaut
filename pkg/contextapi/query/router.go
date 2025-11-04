@@ -9,6 +9,14 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
 )
 
+// VectorSearch is a stub for future semantic search functionality
+// ADR-032: Vector search requires Data Storage Service API support
+type VectorSearch struct{}
+
+// AggregationService is a stub for future aggregation functionality
+// ADR-032: Aggregation requires Data Storage Service API support
+type AggregationService struct{}
+
 // Router routes queries to appropriate backends (CachedExecutor, Vector DB, Aggregation)
 // BR-CONTEXT-004: Query Aggregation and routing logic
 //

@@ -421,6 +421,278 @@ func initLogger(cfg config.LoggingConfig) (*zap.Logger, error) {
 
 ---
 
+### 6. Secret Management via Mounted Files
+
+**Status**: ✅ **APPROVED PATTERN** (Effective November 3, 2025)
+
+**Problem**: Environment variables for secrets have limitations:
+- ❌ Visible in process listings
+- ❌ Limited to string values
+- ❌ No structured data support
+- ❌ Difficult to rotate without restart
+
+**Solution**: Mount Kubernetes Secrets as structured files
+
+#### Configuration Structure
+
+```yaml
+# config/data-storage.yaml
+database:
+  host: "postgres-service"
+  port: 5432
+  user: "slm_user"  # Non-sensitive, can be in YAML
+
+  # Secret file configuration
+  secretsPath: "/etc/secrets/database"  # Mount point (deployment controls)
+  secretsFile: "credentials.yaml"       # Structured secret file name
+  passwordKey: "password"               # Key to extract from secret file
+
+redis:
+  addr: "redis:6379"
+  secretsPath: "/etc/secrets/redis"
+  secretsFile: "credentials.yaml"
+  passwordKey: "password"  # Optional - may not need auth
+```
+
+#### Kubernetes Secret
+
+```yaml
+# deploy/<service>/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: datastorage-db-credentials
+  namespace: kubernaut-system
+type: Opaque
+stringData:
+  credentials.yaml: |
+    username: "slm_user"
+    password: "actual_secure_password"
+    # Can include additional metadata
+    connection_pool: 25
+    ssl_mode: "require"
+```
+
+#### Deployment with Secret Mount
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-storage
+spec:
+  template:
+    spec:
+      containers:
+      - name: data-storage
+        image: kubernaut/data-storage:v1.0.0
+
+        # Mount ConfigMap (non-sensitive config)
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+
+        # Mount Secret as structured file
+        - name: db-secrets
+          mountPath: /etc/secrets/database
+          readOnly: true
+
+        - name: redis-secrets
+          mountPath: /etc/secrets/redis
+          readOnly: true
+
+      volumes:
+      - name: config
+        configMap:
+          name: data-storage-config
+
+      # Secrets mounted as files
+      - name: db-secrets
+        secret:
+          secretName: datastorage-db-credentials
+
+      - name: redis-secrets
+        secret:
+          secretName: datastorage-redis-credentials
+```
+
+#### Config Package Implementation
+
+```go
+// pkg/<service>/config/config.go
+
+// DatabaseConfig with secret file support
+type DatabaseConfig struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"` // Loaded from secret file, not YAML
+
+	// Secret file configuration
+	SecretsPath  string `yaml:"secretsPath"`  // e.g., "/etc/secrets/database"
+	SecretsFile  string `yaml:"secretsFile"`  // e.g., "credentials.yaml"
+	PasswordKey  string `yaml:"passwordKey"`  // e.g., "password"
+	UsernameKey  string `yaml:"usernameKey"`  // Optional override
+}
+
+// LoadSecrets loads secrets from mounted Kubernetes Secret files
+func (c *Config) LoadSecrets() error {
+	// Load database secrets
+	if c.Database.SecretsPath != "" {
+		secrets, err := loadSecretFile(
+			c.Database.SecretsPath,
+			c.Database.SecretsFile,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to load database secrets: %w", err)
+		}
+
+		// Extract password using configured key
+		if password, ok := secrets[c.Database.PasswordKey]; ok {
+			c.Database.Password = password.(string)
+		} else {
+			return fmt.Errorf("password key '%s' not found in secret file", c.Database.PasswordKey)
+		}
+
+		// Optional: Override username from secret if key specified
+		if c.Database.UsernameKey != "" {
+			if username, ok := secrets[c.Database.UsernameKey]; ok {
+				c.Database.User = username.(string)
+			}
+		}
+	}
+
+	// Load Redis secrets (if configured)
+	if c.Redis.SecretsPath != "" {
+		secrets, err := loadSecretFile(
+			c.Redis.SecretsPath,
+			c.Redis.SecretsFile,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to load redis secrets: %w", err)
+		}
+
+		if password, ok := secrets[c.Redis.PasswordKey]; ok {
+			c.Redis.Password = password.(string)
+		}
+	}
+
+	return nil
+}
+
+// loadSecretFile unmarshals a secret file (supports YAML and JSON)
+func loadSecretFile(secretsPath, secretsFile string) (map[string]interface{}, error) {
+	path := filepath.Join(secretsPath, secretsFile)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read secret file %s: %w", path, err)
+	}
+
+	var secrets map[string]interface{}
+
+	// Try YAML first
+	if err := yaml.Unmarshal(data, &secrets); err == nil {
+		return secrets, nil
+	}
+
+	// Fallback to JSON
+	if err := json.Unmarshal(data, &secrets); err != nil {
+		return nil, fmt.Errorf("failed to parse secret file as YAML or JSON: %w", err)
+	}
+
+	return secrets, nil
+}
+```
+
+#### Main Application Integration
+
+```go
+// cmd/<service>/main.go
+
+func main() {
+	logger, _ := zap.NewProduction()
+
+	// 1. Load configuration from YAML (ConfigMap)
+	cfg, err := config.LoadFromFile("/etc/config/config.yaml")
+	if err != nil {
+		logger.Fatal("Failed to load configuration", zap.Error(err))
+	}
+
+	// 2. Load secrets from mounted files (Kubernetes Secrets)
+	if err := cfg.LoadSecrets(); err != nil {
+		logger.Fatal("Failed to load secrets", zap.Error(err))
+	}
+
+	// 3. Override with environment variables (for local dev/testing)
+	cfg.LoadFromEnv()
+
+	// 4. Validate complete configuration
+	if err := cfg.Validate(); err != nil {
+		logger.Fatal("Invalid configuration", zap.Error(err))
+	}
+
+	logger.Info("Configuration loaded successfully",
+		zap.String("database_host", cfg.Database.Host),
+		zap.Bool("secrets_loaded", cfg.Database.Password != ""),
+	)
+
+	// ... start service
+}
+```
+
+#### Benefits of Mounted Secret Files
+
+1. **Security**:
+   - ✅ Secrets not visible in environment variables
+   - ✅ Not exposed in process listings (`ps aux`)
+   - ✅ File permissions enforced (read-only, 0400)
+   - ✅ Automatic rotation support (remount on update)
+
+2. **Flexibility**:
+   - ✅ Structured data (YAML/JSON) supports complex credentials
+   - ✅ Multiple credentials in one file
+   - ✅ Can include metadata (connection pools, timeouts)
+   - ✅ Config specifies which keys to extract
+
+3. **Kubernetes Native**:
+   - ✅ Standard Kubernetes Secret pattern
+   - ✅ Works with secret management tools (Vault, Sealed Secrets)
+   - ✅ Supports secret rotation without env var limits
+   - ✅ Better audit trails (file access logs)
+
+4. **Deterministic**:
+   - ✅ Config YAML specifies WHERE to find secrets (path)
+   - ✅ Config YAML specifies WHAT to extract (keys)
+   - ✅ Deployment controls WHAT secrets are there
+   - ✅ Clear separation of concerns
+
+#### Local Development Support
+
+For local development without Kubernetes:
+
+```go
+// LoadFromEnv as fallback for local development
+func (c *Config) LoadFromEnv() {
+	// Only use environment variables if secret files not available
+	if c.Database.Password == "" {
+		if password := os.Getenv("DB_PASSWORD"); password != "" {
+			c.Database.Password = password
+		}
+	}
+
+	// Other non-secret overrides...
+}
+```
+
+This allows:
+- **Production**: Secrets from mounted files
+- **Local Dev**: Secrets from environment variables
+- **Deterministic**: Behavior controlled by config, not guessing
+
+---
+
 ## Benefits
 
 ### 1. Production Safety
@@ -578,23 +850,112 @@ database:
 
 Before deploying any new service, verify:
 
+### Configuration Package
 - [ ] Configuration package created: `pkg/<service>/config/config.go`
 - [ ] Configuration structs defined with YAML tags
 - [ ] `LoadFromFile()` function implemented
-- [ ] `LoadFromEnv()` function implemented for overrides
+- [ ] `LoadFromEnv()` function implemented for local dev overrides
 - [ ] `Validate()` function implemented with comprehensive checks
+
+### Secret Management (MANDATORY)
+- [ ] `LoadSecrets()` function implemented for mounted secret files
+- [ ] Config structs include `secretsPath`, `secretsFile`, and key fields
+- [ ] `loadSecretFile()` helper supports YAML and JSON parsing
+- [ ] Secrets validated after loading (non-empty check)
+
+### YAML Configuration
 - [ ] YAML configuration file created: `config/<service>-config.yaml`
+- [ ] Config specifies secret paths (e.g., `/etc/secrets/database`)
+- [ ] Config specifies secret file names (e.g., `credentials.yaml`)
+- [ ] Config specifies extraction keys (e.g., `passwordKey: "password"`)
+
+### Kubernetes Resources
 - [ ] ConfigMap manifest created: `deploy/<service>/configmap.yaml`
+- [ ] Secret manifest created: `deploy/<service>/secret.yaml` (structured YAML/JSON)
 - [ ] Deployment mounts ConfigMap at `/etc/config/`
+- [ ] Deployment mounts Secrets at paths specified in config YAML
+- [ ] Secret volumes set to `readOnly: true`
+
+### Application Integration
 - [ ] Main application loads config from `/etc/config/config.yaml`
-- [ ] Secrets separated from ConfigMap (use Kubernetes Secrets)
+- [ ] Main application calls `cfg.LoadSecrets()` after `LoadFromFile()`
+- [ ] Main application calls `cfg.LoadFromEnv()` for local dev fallback
+- [ ] Main application validates complete config before starting
+- [ ] Config file is MANDATORY - fail fast if not found (ADR-030 determinism)
+
+### Testing & Documentation
 - [ ] Environment-specific configurations created (dev, staging, prod)
 - [ ] Unit tests created for config loading and validation
-- [ ] Documentation updated
+- [ ] Unit tests created for secret file loading
+- [ ] Integration tests verify secret mounting works
+- [ ] Documentation updated with secret management approach
 
 ---
 
 ## Anti-Patterns to AVOID
+
+### ❌ **DON'T**: Service Guessing Config File Location
+
+**Problem**: Service code should NOT contain logic to guess where config files are based on environment.
+
+```go
+// ❌ BAD: Business code contains environment detection
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    // Service guessing environment - ANTI-PATTERN!
+    if _, err := os.Stat("config/service.yaml"); err == nil {
+        cfgPath = "config/service.yaml"  // Local dev?
+    } else if _, err := os.Stat("/etc/config/config.yaml"); err == nil {
+        cfgPath = "/etc/config/config.yaml"  // Kubernetes?
+    } else {
+        log.Fatal("Config file not found")
+    }
+}
+```
+
+**Why This is Wrong**:
+1. ❌ **Violates Separation of Concerns**: Business code knows about deployment environments
+2. ❌ **Non-Deterministic**: Behavior changes based on file system state
+3. ❌ **Fragile**: Breaks if deployment uses different paths
+4. ❌ **Hard to Test**: Tests depend on file system layout
+
+### ✅ **DO**: Deployment Controls Config Location
+
+```go
+// ✅ GOOD: Service receives config path from environment
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    log.Fatal("CONFIG_PATH environment variable required",
+        "reason", "Deployment is responsible for setting config file location")
+}
+
+cfg, err := config.LoadFromFile(cfgPath)
+// ... service starts with provided config
+```
+
+**Deployment Responsibility**:
+
+**Local Development** (docker-compose, script):
+```bash
+# Local developer sets CONFIG_PATH
+export CONFIG_PATH=config/data-storage.yaml
+./bin/data-storage
+```
+
+**Kubernetes Deployment**:
+```yaml
+env:
+- name: CONFIG_PATH
+  value: /etc/config/config.yaml  # Deployment controls this
+```
+
+**Benefits**:
+- ✅ **Separation of Concerns**: Service doesn't know about deployment
+- ✅ **Deterministic**: Behavior controlled by environment, not guessing
+- ✅ **Flexible**: Deployment can use any path
+- ✅ **Testable**: Tests set CONFIG_PATH explicitly
+
+---
 
 ### ❌ **DON'T**: Environment Variables in Deployment
 
@@ -656,5 +1017,5 @@ env:
 ---
 
 **Status**: ✅ **APPROVED** - Existing pattern, mandatory for all new services
-**Last Updated**: November 2, 2025
+**Last Updated**: November 3, 2025 (Added Section 6: Secret Management via Mounted Files)
 
