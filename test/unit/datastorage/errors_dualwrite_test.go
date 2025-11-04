@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/dualwrite"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -29,30 +30,30 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 
 	Context("Sentinel Error Constants", func() {
 		It("should have non-nil sentinel errors", func() {
-			Expect(ErrVectorDB).ToNot(BeNil())
-			Expect(ErrPostgreSQL).ToNot(BeNil())
-			Expect(ErrTransaction).ToNot(BeNil())
-			Expect(ErrValidation).ToNot(BeNil())
-			Expect(ErrContextCanceled).ToNot(BeNil())
+			Expect(dualwrite.ErrVectorDB).ToNot(BeNil())
+			Expect(dualwrite.ErrPostgreSQL).ToNot(BeNil())
+			Expect(dualwrite.ErrTransaction).ToNot(BeNil())
+			Expect(dualwrite.ErrValidation).ToNot(BeNil())
+			Expect(dualwrite.ErrContextCanceled).ToNot(BeNil())
 		})
 
 		It("should have distinct error messages", func() {
-			Expect(ErrVectorDB.Error()).To(ContainSubstring("vector DB"))
-			Expect(ErrPostgreSQL.Error()).To(ContainSubstring("postgresql"))
-			Expect(ErrTransaction.Error()).To(ContainSubstring("transaction"))
-			Expect(ErrValidation.Error()).To(ContainSubstring("validation"))
-			Expect(ErrContextCanceled.Error()).To(ContainSubstring("context canceled"))
+			Expect(dualwrite.ErrVectorDB.Error()).To(ContainSubstring("vector DB"))
+			Expect(dualwrite.ErrPostgreSQL.Error()).To(ContainSubstring("postgresql"))
+			Expect(dualwrite.ErrTransaction.Error()).To(ContainSubstring("transaction"))
+			Expect(dualwrite.ErrValidation.Error()).To(ContainSubstring("validation"))
+			Expect(dualwrite.ErrContextCanceled.Error()).To(ContainSubstring("context canceled"))
 		})
 	})
 
 	Context("Error Wrapping Functions", func() {
 		Describe("WrapVectorDBError", func() {
-			It("should wrap error with ErrVectorDB sentinel", func() {
+			It("should wrap error with dualwrite.ErrVectorDB sentinel", func() {
 				baseErr := errors.New("connection timeout")
-				wrapped := WrapVectorDBError(baseErr, "Insert")
+				wrapped := dualwrite.WrapVectorDBError(baseErr, "Insert")
 
 				// Verify wrapped error can be detected with errors.Is
-				Expect(errors.Is(wrapped, ErrVectorDB)).To(BeTrue(),
+				Expect(errors.Is(wrapped, dualwrite.ErrVectorDB)).To(BeTrue(),
 					"wrapped error should be detectable with errors.Is")
 
 				// Verify error message includes context
@@ -62,13 +63,13 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 			})
 
 			It("should handle nil error gracefully", func() {
-				wrapped := WrapVectorDBError(nil, "Insert")
+				wrapped := dualwrite.WrapVectorDBError(nil, "Insert")
 				Expect(wrapped).To(BeNil())
 			})
 
 			It("should preserve error chain for errors.Unwrap", func() {
 				baseErr := errors.New("network failure")
-				wrapped := WrapVectorDBError(baseErr, "Insert")
+				wrapped := dualwrite.WrapVectorDBError(baseErr, "Insert")
 
 				// Verify error can be unwrapped to base error
 				Expect(errors.Unwrap(wrapped)).ToNot(BeNil())
@@ -76,37 +77,37 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 		})
 
 		Describe("WrapPostgreSQLError", func() {
-			It("should wrap error with ErrPostgreSQL sentinel", func() {
+			It("should wrap error with dualwrite.ErrPostgreSQL sentinel", func() {
 				baseErr := errors.New("connection refused")
-				wrapped := WrapPostgreSQLError(baseErr, "BeginTx")
+				wrapped := dualwrite.WrapPostgreSQLError(baseErr, "BeginTx")
 
-				Expect(errors.Is(wrapped, ErrPostgreSQL)).To(BeTrue())
+				Expect(errors.Is(wrapped, dualwrite.ErrPostgreSQL)).To(BeTrue())
 				Expect(wrapped.Error()).To(ContainSubstring("postgresql"))
 				Expect(wrapped.Error()).To(ContainSubstring("BeginTx"))
 			})
 
 			It("should handle nil error gracefully", func() {
-				wrapped := WrapPostgreSQLError(nil, "Query")
+				wrapped := dualwrite.WrapPostgreSQLError(nil, "Query")
 				Expect(wrapped).To(BeNil())
 			})
 		})
 
 		Describe("WrapTransactionError", func() {
-			It("should wrap error with ErrTransaction sentinel", func() {
+			It("should wrap error with dualwrite.ErrTransaction sentinel", func() {
 				baseErr := errors.New("deadlock detected")
-				wrapped := WrapTransactionError(baseErr, "Commit")
+				wrapped := dualwrite.WrapTransactionError(baseErr, "Commit")
 
-				Expect(errors.Is(wrapped, ErrTransaction)).To(BeTrue())
+				Expect(errors.Is(wrapped, dualwrite.ErrTransaction)).To(BeTrue())
 				Expect(wrapped.Error()).To(ContainSubstring("transaction"))
 			})
 		})
 
 		Describe("WrapValidationError", func() {
-			It("should wrap error with ErrValidation sentinel", func() {
+			It("should wrap error with dualwrite.ErrValidation sentinel", func() {
 				baseErr := errors.New("dimension mismatch")
-				wrapped := WrapValidationError(baseErr, "embedding")
+				wrapped := dualwrite.WrapValidationError(baseErr, "embedding")
 
-				Expect(errors.Is(wrapped, ErrValidation)).To(BeTrue())
+				Expect(errors.Is(wrapped, dualwrite.ErrValidation)).To(BeTrue())
 				Expect(wrapped.Error()).To(ContainSubstring("validation"))
 				Expect(wrapped.Error()).To(ContainSubstring("embedding"))
 			})
@@ -118,35 +119,35 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 
 		Describe("IsVectorDBError - Type-Safe Detection", func() {
 			It("should detect direct VectorDB errors", func() {
-				err := ErrVectorDB
-				Expect(IsVectorDBError(err)).To(BeTrue(),
+				err := dualwrite.ErrVectorDB
+				Expect(dualwrite.IsVectorDBError(err)).To(BeTrue(),
 					"direct sentinel error should be detected")
 			})
 
 			It("should detect wrapped VectorDB errors", func() {
 				baseErr := errors.New("connection failed")
-				wrapped := WrapVectorDBError(baseErr, "Insert")
+				wrapped := dualwrite.WrapVectorDBError(baseErr, "Insert")
 
-				Expect(IsVectorDBError(wrapped)).To(BeTrue(),
+				Expect(dualwrite.IsVectorDBError(wrapped)).To(BeTrue(),
 					"wrapped error should be detected with errors.Is")
 			})
 
 			It("should NOT detect PostgreSQL errors as VectorDB errors", func() {
-				err := WrapPostgreSQLError(errors.New("pg error"), "Query")
+				err := dualwrite.WrapPostgreSQLError(errors.New("pg error"), "Query")
 
-				Expect(IsVectorDBError(err)).To(BeFalse(),
+				Expect(dualwrite.IsVectorDBError(err)).To(BeFalse(),
 					"PostgreSQL errors should not be detected as VectorDB errors")
 			})
 
 			It("should NOT detect generic errors as VectorDB errors", func() {
 				err := errors.New("some other error")
 
-				Expect(IsVectorDBError(err)).To(BeFalse(),
+				Expect(dualwrite.IsVectorDBError(err)).To(BeFalse(),
 					"generic errors should not be detected as VectorDB errors")
 			})
 
 			It("should handle nil error gracefully", func() {
-				Expect(IsVectorDBError(nil)).To(BeFalse())
+				Expect(dualwrite.IsVectorDBError(nil)).To(BeFalse())
 			})
 
 			// ========================================
@@ -158,22 +159,22 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 				// After P2-2: Type-safe detection works regardless of message
 
 				// Scenario 1: Error message says "VectorStore" (not "vector DB")
-				err1 := fmt.Errorf("%w: VectorStore unavailable", ErrVectorDB)
-				Expect(IsVectorDBError(err1)).To(BeTrue(),
+				err1 := fmt.Errorf("%w: VectorStore unavailable", dualwrite.ErrVectorDB)
+				Expect(dualwrite.IsVectorDBError(err1)).To(BeTrue(),
 					"should detect even if message doesn't contain 'vector DB'")
 
 				// Scenario 2: Error message in different language
-				err2 := fmt.Errorf("%w: Fehler beim Vektorspeicher", ErrVectorDB)
-				Expect(IsVectorDBError(err2)).To(BeTrue(),
+				err2 := fmt.Errorf("%w: Fehler beim Vektorspeicher", dualwrite.ErrVectorDB)
+				Expect(dualwrite.IsVectorDBError(err2)).To(BeTrue(),
 					"should detect regardless of error message language")
 
 				// Scenario 3: Multiple layers of wrapping
 				baseErr := errors.New("network timeout")
 				layer1 := fmt.Errorf("retry failed: %w", baseErr)
-				layer2 := WrapVectorDBError(layer1, "Insert")
+				layer2 := dualwrite.WrapVectorDBError(layer1, "Insert")
 				layer3 := fmt.Errorf("operation failed: %w", layer2)
 
-				Expect(IsVectorDBError(layer3)).To(BeTrue(),
+				Expect(dualwrite.IsVectorDBError(layer3)).To(BeTrue(),
 					"should detect through multiple wrapping layers")
 			})
 
@@ -184,34 +185,34 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 				// Generic error that mentions "vector DB" in context
 				err := errors.New("query timeout while vector DB was initializing")
 
-				Expect(IsVectorDBError(err)).To(BeFalse(),
+				Expect(dualwrite.IsVectorDBError(err)).To(BeFalse(),
 					"should NOT detect generic errors mentioning 'vector DB' in message")
 			})
 		})
 
 		Describe("IsPostgreSQLError", func() {
 			It("should detect PostgreSQL errors", func() {
-				err := WrapPostgreSQLError(errors.New("connection refused"), "Connect")
-				Expect(IsPostgreSQLError(err)).To(BeTrue())
+				err := dualwrite.WrapPostgreSQLError(errors.New("connection refused"), "Connect")
+				Expect(dualwrite.IsPostgreSQLError(err)).To(BeTrue())
 			})
 
 			It("should NOT detect VectorDB errors as PostgreSQL errors", func() {
-				err := WrapVectorDBError(errors.New("vdb error"), "Insert")
-				Expect(IsPostgreSQLError(err)).To(BeFalse())
+				err := dualwrite.WrapVectorDBError(errors.New("vdb error"), "Insert")
+				Expect(dualwrite.IsPostgreSQLError(err)).To(BeFalse())
 			})
 		})
 
 		Describe("IsTransactionError", func() {
 			It("should detect transaction errors", func() {
-				err := WrapTransactionError(errors.New("deadlock"), "Commit")
-				Expect(IsTransactionError(err)).To(BeTrue())
+				err := dualwrite.WrapTransactionError(errors.New("deadlock"), "Commit")
+				Expect(dualwrite.IsTransactionError(err)).To(BeTrue())
 			})
 		})
 
 		Describe("IsValidationError", func() {
 			It("should detect validation errors", func() {
-				err := WrapValidationError(errors.New("invalid"), "field")
-				Expect(IsValidationError(err)).To(BeTrue())
+				err := dualwrite.WrapValidationError(errors.New("invalid"), "field")
+				Expect(dualwrite.IsValidationError(err)).To(BeTrue())
 			})
 		})
 	})
@@ -223,8 +224,8 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 			// Simulate fallback logic from coordinator.go
 
 			// Scenario 1: VectorDB error → should fall back
-			vdbErr := WrapVectorDBError(errors.New("unavailable"), "Insert")
-			if IsVectorDBError(vdbErr) {
+			vdbErr := dualwrite.WrapVectorDBError(errors.New("unavailable"), "Insert")
+			if dualwrite.IsVectorDBError(vdbErr) {
 				// Fallback to PostgreSQL-only (correct behavior)
 				Expect(true).To(BeTrue(), "VectorDB error correctly triggers fallback")
 			} else {
@@ -232,8 +233,8 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 			}
 
 			// Scenario 2: PostgreSQL error → should NOT fall back
-			pgErr := WrapPostgreSQLError(errors.New("connection refused"), "Connect")
-			if IsVectorDBError(pgErr) {
+			pgErr := dualwrite.WrapPostgreSQLError(errors.New("connection refused"), "Connect")
+			if dualwrite.IsVectorDBError(pgErr) {
 				Fail("PostgreSQL error should NOT trigger VectorDB fallback")
 			} else {
 				// Cannot fall back (correct behavior)
@@ -255,4 +256,3 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 	//
 	// Confidence: 98% - Comprehensive test coverage for P2-2 regression protection
 })
-

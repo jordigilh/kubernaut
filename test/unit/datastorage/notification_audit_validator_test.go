@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -20,12 +22,12 @@ func TestValidation(t *testing.T) {
 
 var _ = Describe("NotificationAuditValidator", func() {
 	var (
-		validator *NotificationAuditValidator
+		validator *validation.NotificationAuditValidator
 		audit     *models.NotificationAudit
 	)
 
 	BeforeEach(func() {
-		validator = NewNotificationAuditValidator()
+		validator = validation.NewNotificationAuditValidator()
 		now := time.Now()
 		audit = &models.NotificationAudit{
 			RemediationID:   "test-remediation-1",
@@ -92,7 +94,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.RemediationID = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("required"))
 		})
@@ -101,7 +103,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.RemediationID = "   "
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("required"))
 		})
@@ -110,7 +112,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.RemediationID = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["remediation_id"]).To(ContainSubstring("255 characters"))
 		})
@@ -127,7 +129,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.NotificationID = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("required"))
 		})
@@ -136,7 +138,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.NotificationID = "   "
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("required"))
 		})
@@ -145,7 +147,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.NotificationID = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["notification_id"]).To(ContainSubstring("255 characters"))
 		})
@@ -162,7 +164,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Recipient = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("required"))
 		})
@@ -171,7 +173,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Recipient = "   "
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("required"))
 		})
@@ -180,7 +182,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Recipient = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("255 characters"))
 		})
@@ -197,7 +199,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Channel = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["channel"]).To(ContainSubstring("required"))
 		})
@@ -206,7 +208,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Channel = "invalid"
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["channel"]).To(ContainSubstring("must be one of"))
 		})
@@ -215,7 +217,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Channel = strings.Repeat("a", 51)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["channel"]).To(ContainSubstring("50 characters"))
 		})
@@ -235,7 +237,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.MessageSummary = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["message_summary"]).To(ContainSubstring("required"))
 		})
@@ -244,7 +246,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.MessageSummary = "   "
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["message_summary"]).To(ContainSubstring("required"))
 		})
@@ -261,7 +263,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Status = ""
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("required"))
 		})
@@ -270,7 +272,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Status = "invalid"
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("must be one of"))
 		})
@@ -279,7 +281,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Status = strings.Repeat("a", 51)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("50 characters"))
 		})
@@ -299,7 +301,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.SentAt = time.Time{}
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["sent_at"]).To(ContainSubstring("required"))
 		})
@@ -308,7 +310,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.SentAt = time.Now().Add(10 * time.Minute)
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["sent_at"]).To(ContainSubstring("cannot be in the future"))
 		})
@@ -331,7 +333,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.EscalationLevel = -1
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["escalation_level"]).To(ContainSubstring("non-negative"))
 		})
@@ -340,7 +342,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.EscalationLevel = 101
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["escalation_level"]).To(ContainSubstring("at most 100"))
 		})
@@ -371,7 +373,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			err := validator.Validate(audit)
 			Expect(err).ToNot(BeNil())
-			valErr, ok := err.(*ValidationError)
+			valErr, ok := err.(*validation.ValidationError)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(len(valErr.FieldErrors)).To(Equal(8))
 			Expect(valErr.FieldErrors).To(HaveKey("remediation_id"))
@@ -413,10 +415,10 @@ var _ = Describe("NotificationAuditValidator", func() {
 })
 
 var _ = Describe("ValidationError", func() {
-	var validationErr *ValidationError
+	var validationErr *validation.ValidationError
 
 	BeforeEach(func() {
-		validationErr = NewValidationError("notification_audit", "validation failed")
+		validationErr = validation.NewValidationError("notification_audit", "validation failed")
 	})
 
 	Context("Error Creation", func() {
@@ -488,7 +490,7 @@ var _ = Describe("RFC7807Problem", func() {
 				"field1": "error1",
 				"field2": "error2",
 			}
-			problem := NewValidationErrorProblem("notification_audit", fieldErrors)
+			problem := validation.NewValidationErrorProblem("notification_audit", fieldErrors)
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
 			Expect(problem.Title).To(Equal("Validation Error"))
@@ -502,7 +504,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Not Found Problem", func() {
 		It("should create not found problem", func() {
-			problem := NewNotFoundProblem("notification_audit", "test-id-123")
+			problem := validation.NewNotFoundProblem("notification_audit", "test-id-123")
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/not-found"))
 			Expect(problem.Title).To(Equal("Resource Not Found"))
@@ -516,7 +518,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Internal Error Problem", func() {
 		It("should create internal error problem", func() {
-			problem := NewInternalErrorProblem("database connection failed")
+			problem := validation.NewInternalErrorProblem("database connection failed")
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
 			Expect(problem.Title).To(Equal("Internal Server Error"))
@@ -528,7 +530,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Service Unavailable Problem", func() {
 		It("should create service unavailable problem", func() {
-			problem := NewServiceUnavailableProblem("database is down")
+			problem := validation.NewServiceUnavailableProblem("database is down")
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/service-unavailable"))
 			Expect(problem.Title).To(Equal("Service Unavailable"))
@@ -540,7 +542,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Conflict Problem", func() {
 		It("should create conflict problem", func() {
-			problem := NewConflictProblem("notification_audit", "notification_id", "test-id-123")
+			problem := validation.NewConflictProblem("notification_audit", "notification_id", "test-id-123")
 
 			Expect(problem.Type).To(Equal("https://kubernaut.io/errors/conflict"))
 			Expect(problem.Title).To(Equal("Resource Conflict"))
@@ -555,7 +557,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("JSON Marshaling", func() {
 		It("should marshal to RFC 7807 compliant JSON", func() {
-			problem := &RFC7807Problem{
+			problem := &validation.RFC7807Problem{
 				Type:     "https://kubernaut.io/errors/validation-error",
 				Title:    "Validation Error",
 				Status:   http.StatusBadRequest,
@@ -589,7 +591,7 @@ var _ = Describe("RFC7807Problem", func() {
 		})
 
 		It("should omit optional fields when empty", func() {
-			problem := &RFC7807Problem{
+			problem := &validation.RFC7807Problem{
 				Type:   "https://kubernaut.io/errors/internal-error",
 				Title:  "Internal Server Error",
 				Status: http.StatusInternalServerError,
@@ -612,7 +614,7 @@ var _ = Describe("RFC7807Problem", func() {
 
 	Context("Error Interface", func() {
 		It("should return error string", func() {
-			problem := &RFC7807Problem{
+			problem := &validation.RFC7807Problem{
 				Type:   "https://kubernaut.io/errors/validation-error",
 				Title:  "Validation Error",
 				Status: http.StatusBadRequest,
@@ -626,4 +628,3 @@ var _ = Describe("RFC7807Problem", func() {
 		})
 	})
 })
-

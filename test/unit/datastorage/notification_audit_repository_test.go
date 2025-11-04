@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
@@ -23,13 +24,13 @@ func TestNotificationAuditRepository(t *testing.T) {
 
 var _ = Describe("NotificationAuditRepository", func() {
 	var (
-		repo    *NotificationAuditRepository
-		mockDB  *sql.DB
-		mock    sqlmock.Sqlmock
-		ctx     context.Context
-		logger  *zap.Logger
-		audit   *models.NotificationAudit
-		now     time.Time
+		repo   *repository.NotificationAuditRepository
+		mockDB *sql.DB
+		mock   sqlmock.Sqlmock
+		ctx    context.Context
+		logger *zap.Logger
+		audit  *models.NotificationAudit
+		now    time.Time
 	)
 
 	BeforeEach(func() {
@@ -38,7 +39,7 @@ var _ = Describe("NotificationAuditRepository", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		logger = zap.NewNop()
-		repo = NewNotificationAuditRepository(mockDB, logger)
+		repo = repository.NewNotificationAuditRepository(mockDB, logger)
 		ctx = context.Background()
 		now = time.Now()
 
@@ -172,12 +173,12 @@ var _ = Describe("NotificationAuditRepository", func() {
 						audit.Channel,
 						audit.MessageSummary,
 						audit.Status,
-					audit.SentAt,
-					sql.NullString{String: audit.DeliveryStatus, Valid: true},
-					sql.NullString{String: audit.ErrorMessage, Valid: false},
-					audit.EscalationLevel,
-				).
-				WillReturnError(&pgconn.PgError{Code: "23505"}) // unique_violation (DD-010)
+						audit.SentAt,
+						sql.NullString{String: audit.DeliveryStatus, Valid: true},
+						sql.NullString{String: audit.ErrorMessage, Valid: false},
+						audit.EscalationLevel,
+					).
+					WillReturnError(&pgconn.PgError{Code: "23505"}) // unique_violation (DD-010)
 
 				result, err := repo.Create(ctx, audit)
 
@@ -334,4 +335,3 @@ var _ = Describe("NotificationAuditRepository", func() {
 		})
 	})
 })
-

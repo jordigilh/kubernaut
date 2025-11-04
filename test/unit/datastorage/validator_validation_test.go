@@ -4,6 +4,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 // Test entry point moved to notification_audit_validator_test.go to avoid "Rerunning Suite" error
@@ -14,7 +16,7 @@ import (
 
 var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 	var (
-		validator *Validator
+		validator *validation.Validator
 		logger    *zap.Logger
 	)
 
@@ -22,7 +24,7 @@ var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 		var err error
 		logger, err = zap.NewDevelopment()
 		Expect(err).ToNot(HaveOccurred())
-		validator = NewValidator(logger)
+		validator = validation.NewValidator(logger)
 	})
 
 	AfterEach(func() {
@@ -200,4 +202,3 @@ var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 	//
 	// Confidence: 98% - Comprehensive test coverage for P2-1 regression protection
 })
-
