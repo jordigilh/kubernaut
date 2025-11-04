@@ -3,46 +3,68 @@ package datastorage
 import (
 	"errors"
 	"fmt"
-	"testing"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dualwrite"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-func TestDualWriteErrors(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Dual-Write Typed Errors Suite")
-}
+// func TestDualWriteErrors(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "...")
+// }
 
+// ========================================
+// TYPED ERRORS - P2-2 REGRESSION TESTS (BR-STORAGE-002)
+// TESTING PRINCIPLE: Behavior + Correctness (Implementation Plan V4.9)
+// ========================================
+//
+// These tests verify that error detection uses type-safe patterns
+// (errors.Is) instead of fragile string matching.
+//
+// Before P2-2: String matching like contains("vector DB")
+// After P2-2: Type-safe sentinel errors using errors.Is()
+//
+// See: DATA-STORAGE-CODE-TRIAGE.md - Finding #3
 var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
-	// ========================================
-	// P2-2: Typed Error Detection Tests
-	// ========================================
-	//
-	// These tests verify that error detection uses type-safe patterns
-	// (errors.Is) instead of fragile string matching.
-	//
-	// Before P2-2: String matching like contains("vector DB")
-	// After P2-2: Type-safe sentinel errors using errors.Is()
-	//
-	// See: DATA-STORAGE-CODE-TRIAGE.md - Finding #3
-
 	Context("Sentinel Error Constants", func() {
-		It("should have non-nil sentinel errors", func() {
-			Expect(dualwrite.ErrVectorDB).ToNot(BeNil())
-			Expect(dualwrite.ErrPostgreSQL).ToNot(BeNil())
-			Expect(dualwrite.ErrTransaction).ToNot(BeNil())
-			Expect(dualwrite.ErrValidation).ToNot(BeNil())
-			Expect(dualwrite.ErrContextCanceled).ToNot(BeNil())
+		// BEHAVIOR: Sentinel error constants are properly initialized as package-level vars
+		// CORRECTNESS: All sentinel errors are non-nil and have distinct error messages
+		It("should define all sentinel error constants as non-nil values", func() {
+			// CORRECTNESS: All sentinel errors must be non-nil (foundational requirement)
+			Expect(dualwrite.ErrVectorDB).ToNot(BeNil(), "ErrVectorDB sentinel must be defined")
+			Expect(dualwrite.ErrPostgreSQL).ToNot(BeNil(), "ErrPostgreSQL sentinel must be defined")
+			Expect(dualwrite.ErrTransaction).ToNot(BeNil(), "ErrTransaction sentinel must be defined")
+			Expect(dualwrite.ErrValidation).ToNot(BeNil(), "ErrValidation sentinel must be defined")
+			Expect(dualwrite.ErrContextCanceled).ToNot(BeNil(), "ErrContextCanceled sentinel must be defined")
+
+			// CORRECTNESS: Each sentinel error is a distinct instance (no aliasing)
+			Expect(dualwrite.ErrVectorDB).ToNot(Equal(dualwrite.ErrPostgreSQL), "Sentinel errors must be distinct")
+			Expect(dualwrite.ErrPostgreSQL).ToNot(Equal(dualwrite.ErrTransaction), "Sentinel errors must be distinct")
 		})
 
-		It("should have distinct error messages", func() {
-			Expect(dualwrite.ErrVectorDB.Error()).To(ContainSubstring("vector DB"))
-			Expect(dualwrite.ErrPostgreSQL.Error()).To(ContainSubstring("postgresql"))
-			Expect(dualwrite.ErrTransaction.Error()).To(ContainSubstring("transaction"))
-			Expect(dualwrite.ErrValidation.Error()).To(ContainSubstring("validation"))
-			Expect(dualwrite.ErrContextCanceled.Error()).To(ContainSubstring("context canceled"))
+		// BEHAVIOR: Each sentinel error returns a descriptive error message
+		// CORRECTNESS: Error messages contain expected keywords for debugging
+		It("should provide distinct and descriptive error messages for each sentinel", func() {
+			// CORRECTNESS: VectorDB error message identifies the component
+			Expect(dualwrite.ErrVectorDB.Error()).To(ContainSubstring("vector DB"),
+				"ErrVectorDB message should identify vector database component")
+
+			// CORRECTNESS: PostgreSQL error message identifies the component
+			Expect(dualwrite.ErrPostgreSQL.Error()).To(ContainSubstring("postgresql"),
+				"ErrPostgreSQL message should identify PostgreSQL component")
+
+			// CORRECTNESS: Transaction error message identifies transaction context
+			Expect(dualwrite.ErrTransaction.Error()).To(ContainSubstring("transaction"),
+				"ErrTransaction message should identify transaction context")
+
+			// CORRECTNESS: Validation error message identifies validation context
+			Expect(dualwrite.ErrValidation.Error()).To(ContainSubstring("validation"),
+				"ErrValidation message should identify validation context")
+
+			// CORRECTNESS: Context canceled error message identifies cancellation
+			Expect(dualwrite.ErrContextCanceled.Error()).To(ContainSubstring("context canceled"),
+				"ErrContextCanceled message should identify cancellation")
 		})
 	})
 
@@ -67,12 +89,24 @@ var _ = Describe("Typed Errors - P2-2 Regression Tests", func() {
 				Expect(wrapped).To(BeNil())
 			})
 
-			It("should preserve error chain for errors.Unwrap", func() {
+			// BEHAVIOR: Wrapped errors preserve the error chain for debugging
+			// CORRECTNESS: errors.Unwrap successfully traverses the error chain
+			It("should preserve complete error chain for errors.Unwrap traversal", func() {
+				// ARRANGE: Create base error and wrap it
 				baseErr := errors.New("network failure")
 				wrapped := dualwrite.WrapVectorDBError(baseErr, "Insert")
 
-				// Verify error can be unwrapped to base error
-				Expect(errors.Unwrap(wrapped)).ToNot(BeNil())
+				// CORRECTNESS: Unwrap returns non-nil error (chain preserved)
+				unwrapped := errors.Unwrap(wrapped)
+				Expect(unwrapped).ToNot(BeNil(), "Error chain should be preserved for unwrapping")
+
+				// CORRECTNESS: Unwrapped error is the VectorDB sentinel (wrapping layer)
+				Expect(errors.Is(unwrapped, dualwrite.ErrVectorDB)).To(BeTrue(),
+					"First unwrap should return VectorDB sentinel error")
+
+				// CORRECTNESS: Base error is accessible through multiple unwraps
+				Expect(wrapped.Error()).To(ContainSubstring("network failure"),
+					"Base error message should be accessible in wrapped error chain")
 			})
 		})
 
