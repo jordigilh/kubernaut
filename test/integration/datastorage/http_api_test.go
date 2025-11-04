@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 // HTTP API Integration Tests - POST /api/v1/audit/notifications
@@ -114,18 +115,18 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			Expect(resp.Header.Get("Content-Type")).To(Equal("application/problem+json"),
 				"RFC 7807 requires application/problem+json content type")
 
-			// ✅ CORRECTNESS TEST: RFC 7807 error structure
-			var errorResp map[string]interface{}
-			err := json.NewDecoder(resp.Body).Decode(&errorResp)
-			Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
-			Expect(errorResp["type"]).To(Equal("https://kubernaut.io/errors/validation-error"),
-				"RFC 7807 type field should identify error category")
-			Expect(errorResp["title"]).To(Equal("Validation Error"),
-				"RFC 7807 title should be human-readable")
-			Expect(errorResp["status"]).To(BeNumerically("==", 400),
-				"RFC 7807 status should match HTTP status")
-			Expect(errorResp["field_errors"]).ToNot(BeNil(),
-				"Validation errors should include field_errors")
+		// ✅ CORRECTNESS TEST: RFC 7807 error structure
+		var errorResp validation.RFC7807Problem
+		err := json.NewDecoder(resp.Body).Decode(&errorResp)
+		Expect(err).ToNot(HaveOccurred(), "Error response should be valid JSON")
+		Expect(errorResp.Type).To(Equal("https://kubernaut.io/errors/validation-error"),
+			"RFC 7807 type field should identify error category")
+		Expect(errorResp.Title).To(Equal("Validation Error"),
+			"RFC 7807 title should be human-readable")
+		Expect(errorResp.Status).To(Equal(400),
+			"RFC 7807 status should match HTTP status")
+		Expect(errorResp.Extensions["field_errors"]).ToNot(BeNil(),
+			"Validation errors should include field_errors extension")
 
 			// ✅ CORRECTNESS TEST: No data persisted
 			var count int
@@ -146,16 +147,16 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			Expect(resp2.StatusCode).To(Equal(409), "Duplicate notification_id should return 409 Conflict")
 			Expect(resp2.Header.Get("Content-Type")).To(Equal("application/problem+json"))
 
-			// ✅ CORRECTNESS TEST: RFC 7807 conflict error structure
-			var errorResp map[string]interface{}
-			err := json.NewDecoder(resp2.Body).Decode(&errorResp)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(errorResp["type"]).To(Equal("https://kubernaut.io/errors/conflict"))
-			Expect(errorResp["title"]).To(Equal("Resource Conflict"))
-			Expect(errorResp["status"]).To(BeNumerically("==", 409))
-			Expect(errorResp["resource"]).To(Equal("notification_audit"))
-			Expect(errorResp["field"]).To(Equal("notification_id"))
-			Expect(errorResp["value"]).To(Equal(validAudit.NotificationID))
+		// ✅ CORRECTNESS TEST: RFC 7807 conflict error structure
+		var errorResp validation.RFC7807Problem
+		err := json.NewDecoder(resp2.Body).Decode(&errorResp)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(errorResp.Type).To(Equal("https://kubernaut.io/errors/conflict"))
+		Expect(errorResp.Title).To(Equal("Resource Conflict"))
+		Expect(errorResp.Status).To(Equal(409))
+		Expect(errorResp.Extensions["resource"]).To(Equal("notification_audit"))
+		Expect(errorResp.Extensions["field"]).To(Equal("notification_id"))
+		Expect(errorResp.Extensions["value"]).To(Equal(validAudit.NotificationID))
 
 			// ✅ CORRECTNESS TEST: Only one record in database
 			var count int
