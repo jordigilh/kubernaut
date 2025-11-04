@@ -139,7 +139,7 @@ type DataStorageExecutorConfig struct {
 	Logger   *zap.Logger
 	Metrics  *metrics.Metrics
 	TTL      time.Duration
-	
+
 	// Circuit breaker configuration (for testing)
 	CircuitBreakerThreshold int           // Optional: defaults to 3
 	CircuitBreakerTimeout   time.Duration // Optional: defaults to 60s
@@ -594,7 +594,7 @@ func (e *CachedExecutor) queryDataStorageWithFallback(ctx context.Context, cache
 
 	// BR-CONTEXT-010: Graceful degradation - return error
 	// (Caller can fallback to cache if available)
-	// 
+	//
 	// BR-CONTEXT-011: Preserve RFC 7807 structured errors
 	// Return error directly to preserve RFC7807Error type for consumers
 	return nil, 0, lastErr

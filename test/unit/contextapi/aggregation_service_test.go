@@ -2,6 +2,7 @@ package contextapi_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +29,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 		ctx = context.Background()
 		mockDSClient = NewMockDataStorageClient()
 		mockCache = &cache.NoOpCache{}
-		
+
 		aggregationService = query.NewAggregationService(mockDSClient, mockCache, logger)
 	})
 
@@ -59,7 +60,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should calculate success rate correctly", func() {
 				result, err := aggregationService.AggregateSuccessRate(ctx, "workflow-123")
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).ToNot(BeNil())
 				Expect(result["workflow_id"]).To(Equal("workflow-123"))
@@ -71,7 +72,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should call Data Storage client with correct filters", func() {
 				_, err := aggregationService.AggregateSuccessRate(ctx, "workflow-123")
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(mockDSClient.ListIncidentsCalled()).To(BeTrue())
 			})
@@ -80,7 +81,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 		Context("when workflow_id is empty", func() {
 			It("should return an error", func() {
 				_, err := aggregationService.AggregateSuccessRate(ctx, "")
-				
+
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("workflow_id cannot be empty"))
 			})
@@ -93,7 +94,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should return the error", func() {
 				_, err := aggregationService.AggregateSuccessRate(ctx, "workflow-123")
-				
+
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("connection failed"))
 			})
@@ -109,7 +110,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should return 100% success rate", func() {
 				result, err := aggregationService.AggregateSuccessRate(ctx, "workflow-123")
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result["success_rate"]).To(Equal(1.0))
 			})
@@ -125,7 +126,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should return 0% success rate", func() {
 				result, err := aggregationService.AggregateSuccessRate(ctx, "workflow-123")
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result["success_rate"]).To(Equal(0.0))
 			})
@@ -146,10 +147,10 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should group incidents by namespace", func() {
 				result, err := aggregationService.GroupByNamespace(ctx)
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(HaveLen(2))
-				
+
 				// Find production namespace
 				var prodStats map[string]interface{}
 				for _, ns := range result {
@@ -158,7 +159,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 						break
 					}
 				}
-				
+
 				Expect(prodStats).ToNot(BeNil())
 				Expect(prodStats["count"]).To(Equal(2))
 				Expect(prodStats["completed_count"]).To(Equal(1))
@@ -168,9 +169,9 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should calculate success rate per namespace", func() {
 				result, err := aggregationService.GroupByNamespace(ctx)
-				
+
 				Expect(err).ToNot(HaveOccurred())
-				
+
 				// Find staging namespace (3 completed out of 3)
 				var stagingStats map[string]interface{}
 				for _, ns := range result {
@@ -179,7 +180,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 						break
 					}
 				}
-				
+
 				Expect(stagingStats).ToNot(BeNil())
 				Expect(stagingStats["count"]).To(Equal(3))
 				Expect(stagingStats["success_rate"]).To(Equal(1.0))
@@ -193,7 +194,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should return empty groups", func() {
 				result, err := aggregationService.GroupByNamespace(ctx)
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(HaveLen(0))
 			})
@@ -214,17 +215,17 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should return severity distribution", func() {
 				result, err := aggregationService.GetSeverityDistribution(ctx, "production")
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result["namespace"]).To(Equal("production"))
 				Expect(result["total_count"]).To(Equal(5))
-				
+
 				distribution := result["distribution"].(map[string]interface{})
-				
+
 				critical := distribution["critical"].(map[string]interface{})
 				Expect(critical["count"]).To(Equal(2))
 				Expect(critical["percentage"]).To(BeNumerically("~", 40.0, 0.1))
-				
+
 				high := distribution["high"].(map[string]interface{})
 				Expect(high["count"]).To(Equal(1))
 				Expect(high["percentage"]).To(BeNumerically("~", 20.0, 0.1))
@@ -232,7 +233,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should call Data Storage with namespace filter", func() {
 				_, err := aggregationService.GetSeverityDistribution(ctx, "production")
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(mockDSClient.LastNamespaceFilter()).To(Equal("production"))
 			})
@@ -247,7 +248,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should fetch all namespaces", func() {
 				result, err := aggregationService.GetSeverityDistribution(ctx, "")
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result["namespace"]).To(Equal(""))
 			})
@@ -271,10 +272,10 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should return incident counts per day", func() {
 				result, err := aggregationService.GetIncidentTrend(ctx, 7)
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(HaveLen(7))
-				
+
 				// Should have entries for each day
 				for _, dayData := range result {
 					Expect(dayData["date"]).ToNot(BeEmpty())
@@ -284,9 +285,9 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 
 			It("should include today's incidents", func() {
 				result, err := aggregationService.GetIncidentTrend(ctx, 7)
-				
+
 				Expect(err).ToNot(HaveOccurred())
-				
+
 				// Find today's entry
 				todayStr := now.Format("2006-01-02")
 				var todayCount int
@@ -296,7 +297,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 						break
 					}
 				}
-				
+
 				Expect(todayCount).To(Equal(2)) // 2 incidents today
 			})
 		})
@@ -304,14 +305,14 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 		Context("when days parameter is invalid", func() {
 			It("should return error for days < 1", func() {
 				_, err := aggregationService.GetIncidentTrend(ctx, 0)
-				
+
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("days must be between 1 and 365"))
 			})
 
 			It("should return error for days > 365", func() {
 				_, err := aggregationService.GetIncidentTrend(ctx, 400)
-				
+
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("days must be between 1 and 365"))
 			})
@@ -326,20 +327,20 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 			BeforeEach(func() {
 				mockDSClient.ListIncidentsReturns([]*models.IncidentEvent{
 					{
-						Name:       "inc-1",
-						Namespace:  "production",
-						Severity:   "critical",
+						Name:        "inc-1",
+						Namespace:   "production",
+						Severity:    "critical",
 						ClusterName: "cluster-1",
-						ActionType: "restart",
-						Status:     "completed",
+						ActionType:  "restart",
+						Status:      "completed",
 					},
 					{
-						Name:       "inc-2",
-						Namespace:  "production",
-						Severity:   "critical",
+						Name:        "inc-2",
+						Namespace:   "production",
+						Severity:    "critical",
 						ClusterName: "cluster-1",
-						ActionType: "scale",
-						Status:     "failed",
+						ActionType:  "scale",
+						Status:      "failed",
 					},
 				}, 2, nil)
 			})
@@ -351,7 +352,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 				}
 
 				result, err := aggregationService.AggregateWithFilters(ctx, filters)
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result["total_count"]).To(Equal(2))
 				Expect(result["unique_namespaces"]).To(Equal(1))
@@ -367,7 +368,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 				}
 
 				_, err := aggregationService.AggregateWithFilters(ctx, filters)
-				
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(mockDSClient.LastNamespaceFilter()).To(Equal("production"))
 				Expect(mockDSClient.LastSeverityFilter()).To(Equal("critical"))
@@ -377,7 +378,7 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 		Context("when filters are nil", func() {
 			It("should return error", func() {
 				_, err := aggregationService.AggregateWithFilters(ctx, nil)
-				
+
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("aggregation filters cannot be nil"))
 			})
@@ -388,20 +389,20 @@ var _ = Describe("AggregationService with Data Storage Client (ADR-032)", func()
 		It("should NOT access PostgreSQL directly", func() {
 			// This test validates that aggregation service uses Data Storage client
 			// instead of direct database access (ADR-032 requirement)
-			
+
 			// Create service with mock Data Storage client
 			service := query.NewAggregationService(mockDSClient, mockCache, logger)
 			Expect(service).ToNot(BeNil())
-			
+
 			// All data should come from Data Storage client, not direct SQL
 			mockDSClient.ListIncidentsReturns([]*models.IncidentEvent{
 				{Name: "test", Status: "completed"},
 			}, 1, nil)
-			
+
 			result, err := service.AggregateSuccessRate(ctx, "test-workflow")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).ToNot(BeNil())
-			
+
 			// Verify Data Storage client was called (not direct DB)
 			Expect(mockDSClient.ListIncidentsCalled()).To(BeTrue())
 		})
@@ -428,7 +429,7 @@ func NewMockDataStorageClient() *MockDataStorageClient {
 
 func (m *MockDataStorageClient) ListIncidents(ctx context.Context, filters *dsclient.ListIncidentsFilters) ([]*models.IncidentEvent, int, error) {
 	m.listIncidentsCalled = true
-	
+
 	if filters != nil {
 		if filters.Namespace != nil {
 			m.lastNamespaceFilter = *filters.Namespace
@@ -440,11 +441,11 @@ func (m *MockDataStorageClient) ListIncidents(ctx context.Context, filters *dscl
 			m.lastClusterFilter = *filters.Cluster
 		}
 	}
-	
+
 	if m.listIncidentsError != nil {
 		return nil, 0, m.listIncidentsError
 	}
-	
+
 	return m.listIncidentsResult, m.listIncidentsTotal, nil
 }
 
@@ -473,4 +474,3 @@ func (m *MockDataStorageClient) LastSeverityFilter() string {
 func (m *MockDataStorageClient) LastClusterFilter() string {
 	return m.lastClusterFilter
 }
-
