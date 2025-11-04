@@ -383,7 +383,7 @@ redis:
   secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
   passwordKey: "password"
 logging:
-  level: info
+  level: debug
   format: json
 `, postgresIP, redisIP)
 
