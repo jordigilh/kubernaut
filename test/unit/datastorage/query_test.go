@@ -520,6 +520,38 @@ func (m *MockQueryDB) SelectContext(ctx context.Context, dest interface{}, query
 	// Assign to dest (slice of pointers)
 	if auditsPtr, ok := dest.(*[]*models.RemediationAudit); ok {
 		*auditsPtr = results
+		return nil
+	}
+
+	// Handle RemediationAuditResult (intermediate query type used by Service)
+	if resultsPtr, ok := dest.(*[]queryPkg.RemediationAuditResult); ok {
+		converted := make([]queryPkg.RemediationAuditResult, len(results))
+		for i, audit := range results {
+			converted[i] = queryPkg.RemediationAuditResult{
+				ID:                   audit.ID,
+				Name:                 audit.Name,
+				Namespace:            audit.Namespace,
+				Phase:                audit.Phase,
+				ActionType:           audit.ActionType,
+				Status:               audit.Status,
+				StartTime:            audit.StartTime,
+				EndTime:              audit.EndTime,
+				Duration:             audit.Duration,
+				RemediationRequestID: audit.RemediationRequestID,
+				SignalFingerprint:    audit.SignalFingerprint,
+				Severity:             audit.Severity,
+				Environment:          audit.Environment,
+				ClusterName:          audit.ClusterName,
+				TargetResource:       audit.TargetResource,
+				ErrorMessage:         audit.ErrorMessage,
+				Metadata:             audit.Metadata,
+				Embedding:            queryPkg.Vector(audit.Embedding),
+				CreatedAt:            audit.CreatedAt,
+				UpdatedAt:            audit.UpdatedAt,
+			}
+		}
+		*resultsPtr = converted
+		return nil
 	}
 
 	return nil
