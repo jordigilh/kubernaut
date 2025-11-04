@@ -19,8 +19,8 @@ var _ = Describe("SQL Query Builder - BR-STORAGE-021, BR-STORAGE-022", func() {
 			Expect(args[filterArgIndex]).To(Equal(expectedFilterValue))
 		},
 		Entry("namespace filter", query.QueryParams{Namespace: "production"}, "namespace = ?", 0, "production"),
-		Entry("severity filter", query.QueryParams{Severity: "high"}, "severity = ?", 0, "high"),
-		Entry("multiple filters", query.QueryParams{Namespace: "prod", Severity: "high"}, "namespace = ? AND severity = ?", 0, "prod"),
+		Entry("severity filter", query.QueryParams{Severity: "high"}, "signal_severity = ?", 0, "high"),
+		Entry("multiple filters", query.QueryParams{Namespace: "prod", Severity: "high"}, "namespace = ? AND signal_severity = ?", 0, "prod"),
 		Entry("cluster filter", query.QueryParams{Cluster: "us-east-1"}, "cluster_name = ?", 0, "us-east-1"),
 		Entry("environment filter", query.QueryParams{Environment: "production"}, "environment = ?", 0, "production"),
 		Entry("action_type filter", query.QueryParams{ActionType: "scale_deployment"}, "action_type = ?", 0, "scale_deployment"),
