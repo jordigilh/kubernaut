@@ -117,7 +117,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 	writeStart := time.Now()
 	created, err := s.repository.Create(ctx, &audit)
 	writeDuration := time.Since(writeStart).Seconds()
-	
+
 	if err != nil {
 		s.logger.Error("Database write failed",
 			zap.Error(err),

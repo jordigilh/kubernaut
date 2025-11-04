@@ -84,7 +84,7 @@ Context API → REST API → Data Storage Service → PostgreSQL
 ```
 Context API → pkg/contextapi/query/ → PostgreSQL
            (Direct SQL)
-           
+
 Data Storage Service → PostgreSQL
                     (Parallel access)
 ```
@@ -279,7 +279,7 @@ Data Storage Service → PostgreSQL
 
 **Question**: Do any Context API BRs require sub-5ms query latency?
 
-**Analysis**: 
+**Analysis**:
 - BR-CTX-001 to BR-CTX-180: Review for latency requirements
 - If YES → Direct DB access justified
 - If NO → REST API migration safe
@@ -450,7 +450,7 @@ Before removing pkg/contextapi/query/:
 
 **Finding**: pkg/contextapi/query/ files are **NOT obsolete** - they are the **current active implementation** of Context API's database access.
 
-**Recommendation**: 
+**Recommendation**:
 1. **Keep files for now** ✅
 2. **Implement Option A** (REST API migration) to complete ADR-032
 3. **Remove files after migration** (2-3 days estimated)
