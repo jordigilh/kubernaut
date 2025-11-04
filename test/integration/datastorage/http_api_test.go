@@ -57,6 +57,14 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 				// Debug: Print response body on failure
 				body, _ := io.ReadAll(resp.Body)
 				GinkgoWriter.Printf("\n❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(body))
+				
+				// Print service logs for debugging
+				logs, logErr := exec.Command("podman", "logs", "--tail", "50", "data-storage-service").CombinedOutput()
+				if logErr == nil {
+					GinkgoWriter.Printf("\n📋 Data Storage Service logs (last 50 lines):\n%s\n", string(logs))
+				} else {
+					GinkgoWriter.Printf("\n⚠️  Failed to get service logs: %v\n", logErr)
+				}
 			}
 			Expect(resp.StatusCode).To(Equal(201), "Expected 201 Created for valid audit")
 			Expect(resp.Header.Get("Content-Type")).To(Equal("application/json"))
@@ -222,6 +230,16 @@ func postAudit(client *http.Client, audit *models.NotificationAudit) *http.Respo
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
+	if err != nil {
+		// Print service logs for debugging when request fails
+		GinkgoWriter.Printf("\n❌ HTTP POST failed with error: %v\n", err)
+		logs, logErr := exec.Command("podman", "logs", "--tail", "100", "data-storage-service").CombinedOutput()
+		if logErr == nil {
+			GinkgoWriter.Printf("\n📋 Data Storage Service logs (last 100 lines):\n%s\n", string(logs))
+		} else {
+			GinkgoWriter.Printf("\n⚠️  Failed to get service logs: %v\n", logErr)
+		}
+	}
 	Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 
 	return resp
