@@ -3,7 +3,6 @@ package datastorage
 import (
 	"os"
 	"path/filepath"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -11,10 +10,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 )
 
-func TestConfig(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Data Storage Config Suite")
-}
+// func TestConfig(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "...")
+// }
 
 var _ = Describe("Config Loading (ADR-030)", func() {
 	var tempDir string
@@ -58,17 +57,21 @@ logging:
 			err := os.WriteFile(configPath, []byte(validYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			cfg, err := config.LoadFromFile(configPath)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(cfg).ToNot(BeNil())
-			Expect(cfg.Server.Port).To(Equal(8080))
-			Expect(cfg.Server.Host).To(Equal("0.0.0.0"))
-			Expect(cfg.Database.Host).To(Equal("localhost"))
-			Expect(cfg.Database.Port).To(Equal(5432))
-			Expect(cfg.Database.Name).To(Equal("testdb"))
-			Expect(cfg.Database.User).To(Equal("testuser"))
-			Expect(cfg.Redis.Addr).To(Equal("localhost:6379"))
-			Expect(cfg.Logging.Level).To(Equal("info"))
+		// ACT: Load config from file
+		cfg, err := config.LoadFromFile(configPath)
+
+		// CORRECTNESS: Load succeeds
+		Expect(err).ToNot(HaveOccurred(), "LoadFromFile should succeed")
+
+		// CORRECTNESS: All config fields have exact expected values
+		Expect(cfg.Server.Port).To(Equal(8080), "Server port should be 8080")
+		Expect(cfg.Server.Host).To(Equal("0.0.0.0"), "Server host should be 0.0.0.0")
+		Expect(cfg.Database.Host).To(Equal("localhost"), "Database host should be localhost")
+		Expect(cfg.Database.Port).To(Equal(5432), "Database port should be 5432")
+		Expect(cfg.Database.Name).To(Equal("testdb"), "Database name should be testdb")
+		Expect(cfg.Database.User).To(Equal("testuser"), "Database user should be testuser")
+		Expect(cfg.Redis.Addr).To(Equal("localhost:6379"), "Redis address should be localhost:6379")
+		Expect(cfg.Logging.Level).To(Equal("info"), "Logging level should be info")
 		})
 
 		It("should fail on missing config file", func() {

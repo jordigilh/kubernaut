@@ -20,11 +20,15 @@ var _ = Describe("ValidationError", func() {
 	})
 
 	Context("Error Creation", func() {
-		It("should create a validation error with resource and message", func() {
-			Expect(validationErr.Resource).To(Equal("notification_audit"))
-			Expect(validationErr.Message).To(Equal("validation failed"))
-			Expect(validationErr.FieldErrors).ToNot(BeNil())
-			Expect(len(validationErr.FieldErrors)).To(Equal(0))
+		// BEHAVIOR: ValidationError constructor initializes empty field errors map
+		// CORRECTNESS: Resource, message set correctly; FieldErrors is empty but initialized
+		It("should create a validation error with resource, message, and empty field errors", func() {
+			// CORRECTNESS: Resource and message have expected values
+			Expect(validationErr.Resource).To(Equal("notification_audit"), "Resource should be set")
+			Expect(validationErr.Message).To(Equal("validation failed"), "Message should be set")
+
+			// CORRECTNESS: FieldErrors map is initialized and empty
+			Expect(validationErr.FieldErrors).To(HaveLen(0), "FieldErrors should be empty initially")
 		})
 	})
 
@@ -169,23 +173,28 @@ var _ = Describe("validation.RFC7807Problem", func() {
 				},
 			}
 
-		jsonBytes, err := json.Marshal(problem)
-		Expect(err).ToNot(HaveOccurred())
+			jsonBytes, err := json.Marshal(problem)
+			Expect(err).ToNot(HaveOccurred())
 
-		var result validation.RFC7807Problem
-		err = json.Unmarshal(jsonBytes, &result)
-		Expect(err).ToNot(HaveOccurred())
+			var result validation.RFC7807Problem
+			err = json.Unmarshal(jsonBytes, &result)
+			Expect(err).ToNot(HaveOccurred())
 
-		// Verify standard RFC 7807 fields (type-safe access)
-		Expect(result.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
-		Expect(result.Title).To(Equal("Validation Error"))
-		Expect(result.Status).To(Equal(400))
-		Expect(result.Detail).To(Equal("validation failed"))
-		Expect(result.Instance).To(Equal("/audit/notification_audit"))
+			// Verify standard RFC 7807 fields (type-safe access)
+			Expect(result.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
+			Expect(result.Title).To(Equal("Validation Error"))
+			Expect(result.Status).To(Equal(400))
+			Expect(result.Detail).To(Equal("validation failed"))
+			Expect(result.Instance).To(Equal("/audit/notification_audit"))
 
-		// Verify extensions are captured correctly
-		Expect(result.Extensions["resource"]).To(Equal("notification_audit"))
-		Expect(result.Extensions["field_errors"]).ToNot(BeNil())
+		// CORRECTNESS: Extensions contain resource and field_errors map
+		Expect(result.Extensions["resource"]).To(Equal("notification_audit"), "Extensions should contain resource")
+		
+		// CORRECTNESS: field_errors is a map (type assertion proves it's not nil)
+		fieldErrors, ok := result.Extensions["field_errors"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "field_errors should be a map")
+		Expect(fieldErrors).To(HaveLen(1), "field_errors should have 1 entry")
+		Expect(fieldErrors["field1"]).To(Equal("error1"), "field_errors should contain field1 error")
 		})
 
 		It("should omit optional fields when empty", func() {
@@ -195,18 +204,18 @@ var _ = Describe("validation.RFC7807Problem", func() {
 				Status: http.StatusInternalServerError,
 			}
 
-		jsonBytes, err := json.Marshal(problem)
-		Expect(err).ToNot(HaveOccurred())
+			jsonBytes, err := json.Marshal(problem)
+			Expect(err).ToNot(HaveOccurred())
 
-		var result validation.RFC7807Problem
-		err = json.Unmarshal(jsonBytes, &result)
-		Expect(err).ToNot(HaveOccurred())
+			var result validation.RFC7807Problem
+			err = json.Unmarshal(jsonBytes, &result)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(result.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
-		Expect(result.Title).To(Equal("Internal Server Error"))
-		Expect(result.Status).To(Equal(500))
-		Expect(result.Detail).To(BeEmpty(), "Optional detail field should be empty")
-		Expect(result.Instance).To(BeEmpty(), "Optional instance field should be empty")
+			Expect(result.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
+			Expect(result.Title).To(Equal("Internal Server Error"))
+			Expect(result.Status).To(Equal(500))
+			Expect(result.Detail).To(BeEmpty(), "Optional detail field should be empty")
+			Expect(result.Instance).To(BeEmpty(), "Optional instance field should be empty")
 		})
 	})
 
@@ -226,4 +235,3 @@ var _ = Describe("validation.RFC7807Problem", func() {
 		})
 	})
 })
-

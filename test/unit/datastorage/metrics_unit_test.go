@@ -42,13 +42,16 @@ var _ = Describe("Metrics Struct", func() {
 		m = metrics.NewMetricsWithRegistry("datastorage", "", registry)
 	})
 
+	// BEHAVIOR: Metrics constructor creates functional metrics with custom registry
+	// CORRECTNESS: All metric fields are initialized and can record observations
 	Context("Metrics Creation", func() {
-		It("should create metrics struct with all required metrics", func() {
-			Expect(m).ToNot(BeNil())
-			Expect(m.AuditTracesTotal).ToNot(BeNil(), "AuditTracesTotal should be initialized")
-			Expect(m.AuditLagSeconds).ToNot(BeNil(), "AuditLagSeconds should be initialized")
-			Expect(m.WriteDuration).ToNot(BeNil(), "WriteDuration should be initialized")
-			Expect(m.ValidationFailures).ToNot(BeNil(), "ValidationFailures should be initialized")
+		It("should create metrics struct with all functional metrics", func() {
+			// CORRECTNESS: All metrics are functional (can record values without panicking)
+			// If any metric were nil, these calls would panic
+			m.AuditTracesTotal.WithLabelValues("test_table", "success").Inc()
+			m.AuditLagSeconds.WithLabelValues("test_table").Observe(0.5)
+			m.WriteDuration.WithLabelValues("test_table").Observe(0.1)
+			m.ValidationFailures.WithLabelValues("test_field", "test_reason").Inc()
 		})
 
 		It("should register metrics with custom registry", func() {
