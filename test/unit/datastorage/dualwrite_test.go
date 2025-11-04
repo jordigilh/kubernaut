@@ -182,36 +182,54 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 		}
 	})
 
+	// ========================================
+	// SUCCESSFUL DUAL-WRITE OPERATIONS (BR-STORAGE-002)
+	// TESTING PRINCIPLE: Behavior + Correctness (Implementation Plan V4.9)
+	// ========================================
 	Context("successful dual-write operations", func() {
-		It("should write to both PostgreSQL and Vector DB atomically", func() {
+		// BEHAVIOR: Coordinator writes to both PostgreSQL and Vector DB in a single atomic transaction
+		// CORRECTNESS: Both writes succeed, PostgreSQL commit happens once, no rollbacks occur
+		It("should write to both PostgreSQL and Vector DB atomically with single commit", func() {
+			// ARRANGE: Context and 384-dimensional embedding
 			ctx := context.Background()
-
-			// Create 384-dimensional embedding
 			embedding := make([]float32, 384)
 			for i := range embedding {
 				embedding[i] = float32(i) * 0.01
 			}
 
+			// ACT: Perform dual-write
 			result, err := coordinator.Write(ctx, testAudit, embedding)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result).ToNot(BeNil())
-			Expect(result.PostgreSQLID).To(Equal(int64(123)))
-			Expect(result.VectorDBSuccess).To(BeTrue())
-			Expect(result.PostgreSQLSuccess).To(BeTrue())
-			Expect(mockDB.commitCalls).To(Equal(1))
-			Expect(mockDB.rollbackCalls).To(Equal(0))
-			Expect(mockVectorDB.insertCalls).To(Equal(1))
+			// CORRECTNESS: Operation succeeds without error
+			Expect(err).ToNot(HaveOccurred(), "Dual-write should succeed when both DBs are available")
+
+			// CORRECTNESS: Result contains expected values
+			Expect(result).ToNot(BeNil(), "Result should be non-nil on success")
+			Expect(result.PostgreSQLID).To(Equal(int64(123)), "PostgreSQL should return mocked ID 123")
+			Expect(result.VectorDBSuccess).To(BeTrue(), "VectorDB write should succeed")
+			Expect(result.PostgreSQLSuccess).To(BeTrue(), "PostgreSQL write should succeed")
+
+			// CORRECTNESS: Transaction behavior is atomic (single commit, no rollback)
+			Expect(mockDB.commitCalls).To(Equal(1), "PostgreSQL should commit exactly once")
+			Expect(mockDB.rollbackCalls).To(Equal(0), "PostgreSQL should not rollback on success")
+			Expect(mockVectorDB.insertCalls).To(Equal(1), "VectorDB should be called exactly once")
 		})
 
-		It("should return valid IDs after successful write", func() {
+		// BEHAVIOR: Successful write returns a valid PostgreSQL ID
+		// CORRECTNESS: PostgreSQL ID is the expected value (123 from mock)
+		It("should return exact PostgreSQL ID from mock on successful write", func() {
+			// ARRANGE: Context and embedding
 			ctx := context.Background()
 			embedding := make([]float32, 384)
 
+			// ACT: Perform dual-write
 			result, err := coordinator.Write(ctx, testAudit, embedding)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.PostgreSQLID).To(BeNumerically(">", 0))
+			// CORRECTNESS: Operation succeeds
+			Expect(err).ToNot(HaveOccurred(), "Write should succeed with both DBs available")
+
+			// CORRECTNESS: PostgreSQL ID matches expected mock value
+			Expect(result.PostgreSQLID).To(Equal(int64(123)), "PostgreSQL ID should be 123 from mock")
 		})
 	})
 
@@ -328,14 +346,17 @@ var _ = Describe("BR-STORAGE-014: Atomic Dual-Write Operations", func() {
 
 					result, err := coordinator.Write(ctx, audit, embedding)
 
+					// CORRECTNESS: Track successful writes
 					if err == nil {
 						mu.Lock()
 						successCount++
 						mu.Unlock()
 
-						Expect(result).ToNot(BeNil())
-						Expect(result.PostgreSQLSuccess).To(BeTrue())
-						Expect(result.VectorDBSuccess).To(BeTrue())
+						// CORRECTNESS: Result is non-nil on success
+						Expect(result).ToNot(BeNil(), "Concurrent write result should be non-nil on success")
+						// CORRECTNESS: Both PostgreSQL and VectorDB succeed
+						Expect(result.PostgreSQLSuccess).To(BeTrue(), "PostgreSQL should succeed in concurrent write")
+						Expect(result.VectorDBSuccess).To(BeTrue(), "VectorDB should succeed in concurrent write")
 					}
 				}(i)
 			}
@@ -417,35 +438,51 @@ var _ = Describe("BR-STORAGE-015: Graceful Degradation", func() {
 	})
 
 	Context("PostgreSQL-only fallback", func() {
+		// BEHAVIOR: Coordinator falls back to PostgreSQL-only when VectorDB is unavailable
+		// CORRECTNESS: PostgreSQL succeeds, VectorDB fails, fallback mode enabled, first attempt rolls back
 		It("should fall back to PostgreSQL-only on Vector DB unavailability", func() {
+			// ARRANGE: Context, embedding, and VectorDB failure
 			ctx := context.Background()
 			embedding := make([]float32, 384)
-
 			mockVectorDB.shouldFail = true
 
+			// ACT: Write with fallback enabled
 			result, err := coordinator.WriteWithFallback(ctx, testAudit, embedding)
 
+			// CORRECTNESS: Operation succeeds despite VectorDB failure
 			Expect(err).ToNot(HaveOccurred(), "WriteWithFallback should succeed with PostgreSQL-only")
-			Expect(result).ToNot(BeNil())
-			Expect(result.PostgreSQLSuccess).To(BeTrue())
-			Expect(result.VectorDBSuccess).To(BeFalse())
-			Expect(result.FallbackMode).To(BeTrue())
-			Expect(mockDB.commitCalls).To(BeNumerically(">=", 1), "PostgreSQL should commit at least once")
+
+			// CORRECTNESS: Result is non-nil and indicates fallback
+			Expect(result).ToNot(BeNil(), "Result should be non-nil when fallback succeeds")
+			Expect(result.PostgreSQLSuccess).To(BeTrue(), "PostgreSQL should succeed in fallback mode")
+			Expect(result.VectorDBSuccess).To(BeFalse(), "VectorDB should fail (triggering fallback)")
+			Expect(result.FallbackMode).To(BeTrue(), "FallbackMode flag should be true")
+
+			// CORRECTNESS: Transaction behavior (first attempt rollback, fallback commit)
+			Expect(mockDB.commitCalls).To(BeNumerically(">=", 1), "PostgreSQL should commit at least once (fallback)")
 			// Note: First dual-write attempt rolls back, then fallback succeeds
-			Expect(mockDB.rollbackCalls).To(BeNumerically(">=", 1), "First attempt should rollback, fallback should not")
+			Expect(mockDB.rollbackCalls).To(BeNumerically(">=", 1), "First attempt should rollback before fallback")
 		})
 
-		It("should record Vector DB as failed in result", func() {
+		// BEHAVIOR: Coordinator records VectorDB failure details in result
+		// CORRECTNESS: Result contains non-empty VectorDB error message
+		It("should record Vector DB failure with descriptive error message", func() {
+			// ARRANGE: Context, embedding, and VectorDB failure
 			ctx := context.Background()
 			embedding := make([]float32, 384)
-
 			mockVectorDB.shouldFail = true
 
+			// ACT: Write with fallback enabled
 			result, err := coordinator.WriteWithFallback(ctx, testAudit, embedding)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(result.VectorDBSuccess).To(BeFalse())
-			Expect(result.VectorDBError).ToNot(BeEmpty())
+			// CORRECTNESS: Operation succeeds (fallback)
+			Expect(err).ToNot(HaveOccurred(), "Fallback should succeed")
+
+			// CORRECTNESS: VectorDB failure is recorded
+			Expect(result.VectorDBSuccess).To(BeFalse(), "VectorDB should be marked as failed")
+			Expect(result.VectorDBError).ToNot(BeEmpty(), "VectorDB error message should be recorded")
+			Expect(result.VectorDBError).To(ContainSubstring("vector"),
+				"Error message should mention VectorDB component")
 		})
 
 		It("should not fall back if PostgreSQL fails", func() {
