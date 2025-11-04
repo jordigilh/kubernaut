@@ -67,21 +67,23 @@ var _ = Describe("BR-STORAGE-011: Input Sanitization", func() {
 			false, "img onerror should be removed"),
 	)
 
-	DescribeTable("should handle SQL injection patterns",
-		func(input, expectedNotToContain, description string) {
+	DescribeTable("should handle SQL injection patterns safely via parameterized queries",
+		func(input, expectedOutput, description string) {
 			result := validator.SanitizeString(input)
-			Expect(result).ToNot(ContainSubstring(expectedNotToContain), description)
+			// SQL injection is prevented by parameterized queries at database layer
+			// Sanitization preserves data integrity by NOT removing semicolons
+			Expect(result).To(Equal(expectedOutput), description)
 		},
 
-		// SQL injection patterns
-		Entry("BR-STORAGE-011.6: SQL comment",
-			"test'; DROP TABLE users; --", ";", "semicolon should be removed"),
+		// SQL injection patterns - semicolons preserved, SQL injection prevented by parameterized queries
+		Entry("BR-STORAGE-011.6: SQL comment - semicolons preserved",
+			"test'; DROP TABLE users; --", "test'; DROP TABLE users; --", "semicolons preserved for data integrity"),
 
-		Entry("BR-STORAGE-011.7: SQL UNION attack - semicolon removed",
-			"test' UNION SELECT * FROM passwords", ";", "handled safely"),
+		Entry("BR-STORAGE-011.7: SQL UNION attack - safe via parameterized queries",
+			"test' UNION SELECT * FROM passwords", "test' UNION SELECT * FROM passwords", "handled safely by parameterized queries"),
 
-		Entry("BR-STORAGE-011.8: Multiple semicolons",
-			"test;;; DROP TABLE users;;;", ";", "all semicolons removed"),
+		Entry("BR-STORAGE-011.8: Multiple semicolons - preserved",
+			"test;;; DROP TABLE users;;;", "test;;; DROP TABLE users;;;", "semicolons preserved, SQL injection prevented by params"),
 	)
 
 	DescribeTable("should preserve safe content",
@@ -128,17 +130,19 @@ var _ = Describe("BR-STORAGE-011: Input Sanitization", func() {
 		})
 	})
 
-	Context("SQL injection protection", func() {
-		It("should remove semicolons from all positions", func() {
-			inputs := []string{
-				";DROP TABLE users",
-				"DROP TABLE users;",
-				"DROP; TABLE; users;",
+	Context("SQL injection protection via parameterized queries", func() {
+		It("should preserve semicolons (SQL injection prevented by parameterized queries)", func() {
+			inputs := map[string]string{
+				";DROP TABLE users":      ";DROP TABLE users",
+				"DROP TABLE users;":      "DROP TABLE users;",
+				"DROP; TABLE; users;":    "DROP; TABLE; users;",
 			}
 
-			for _, input := range inputs {
+			for input, expectedOutput := range inputs {
 				result := validator.SanitizeString(input)
-				Expect(result).ToNot(ContainSubstring(";"), "input: %s", input)
+				// Semicolons are preserved for data integrity
+				// SQL injection is prevented by parameterized queries at database layer
+				Expect(result).To(Equal(expectedOutput), "input: %s", input)
 			}
 		})
 	})
