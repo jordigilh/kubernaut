@@ -33,10 +33,10 @@ type Server struct {
 	router         *query.Router         // v2.0: Query router
 	cachedExecutor *query.CachedExecutor // v2.0: Cache-first executor
 	// ADR-032: NO direct database client - all data access via Data Storage Service
-	cacheManager   cache.CacheManager    // v2.0: Multi-tier cache
-	metrics        *metrics.Metrics
-	logger         *zap.Logger
-	httpServer     *http.Server
+	cacheManager cache.CacheManager // v2.0: Multi-tier cache
+	metrics      *metrics.Metrics
+	logger       *zap.Logger
+	httpServer   *http.Server
 
 	// DD-007: Graceful shutdown coordination flag
 	// Thread-safe flag for readiness probe coordination during shutdown
@@ -103,11 +103,11 @@ func NewServerWithMetrics(
 	// BR-CONTEXT-007: HTTP client for Data Storage Service REST API
 	logger.Info("initializing Context API with Data Storage Service",
 		zap.String("datastorage_url", cfg.DataStorageBaseURL))
-	
+
 	dsClient := dsclient.NewDataStorageClient(dsclient.Config{
 		BaseURL:        cfg.DataStorageBaseURL,
 		Timeout:        10 * time.Second, // BR-CONTEXT-011: Request timeout
-		MaxConnections: 100,               // BR-CONTEXT-012: Connection pooling
+		MaxConnections: 100,              // BR-CONTEXT-012: Connection pooling
 	})
 
 	// 2. Create cache manager (Day 3)
@@ -147,7 +147,7 @@ func NewServerWithMetrics(
 		CircuitBreakerThreshold: 3,
 		CircuitBreakerTimeout:   60 * time.Second,
 	}
-	
+
 	cachedExecutor, err := query.NewCachedExecutorWithDataStorage(executorCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cached executor with Data Storage: %w", err)
@@ -433,10 +433,10 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.respondJSON(w, statusCode, map[string]interface{}{
-		"cache":           cacheReady,
-		"data_storage":    "implicit", // Checked via cache and query success
-		"time":     time.Now().Format(time.RFC3339),
-		"note": "ADR-032: Context API is stateless - no direct database connectivity",
+		"cache":        cacheReady,
+		"data_storage": "implicit", // Checked via cache and query success
+		"time":         time.Now().Format(time.RFC3339),
+		"note":         "ADR-032: Context API is stateless - no direct database connectivity",
 	})
 }
 
@@ -525,12 +525,12 @@ func (s *Server) handleGetIncident(w http.ResponseWriter, r *http.Request) {
 	// ADR-032: Context API queries via Data Storage Service REST API
 	// Currently, Data Storage Service only supports list operations
 	// This endpoint requires a new Data Storage API endpoint for single incident retrieval
-	
+
 	s.logger.Warn("GET /incidents/{id} endpoint not yet implemented",
 		zap.String("note", "ADR-032: Requires Data Storage Service API support"),
 		zap.String("endpoint", r.URL.Path))
-	
-	s.respondError(w, r, http.StatusNotImplemented, 
+
+	s.respondError(w, r, http.StatusNotImplemented,
 		"Single incident retrieval not yet implemented - use /api/v1/incidents with filters")
 }
 
@@ -543,7 +543,7 @@ func (s *Server) handleSuccessRate(w http.ResponseWriter, r *http.Request) {
 	// ADR-032: Aggregation requires Data Storage Service API support
 	s.logger.Warn("Success rate aggregation not yet implemented",
 		zap.String("note", "ADR-032: Requires Data Storage Service aggregation API"))
-	s.respondError(w, r, http.StatusNotImplemented, 
+	s.respondError(w, r, http.StatusNotImplemented,
 		"Success rate aggregation not yet implemented - requires Data Storage Service support")
 }
 
@@ -552,7 +552,7 @@ func (s *Server) handleNamespaceGrouping(w http.ResponseWriter, r *http.Request)
 	// ADR-032: Aggregation requires Data Storage Service API support
 	s.logger.Warn("Namespace grouping not yet implemented",
 		zap.String("note", "ADR-032: Requires Data Storage Service aggregation API"))
-	s.respondError(w, r, http.StatusNotImplemented, 
+	s.respondError(w, r, http.StatusNotImplemented,
 		"Namespace grouping not yet implemented - requires Data Storage Service support")
 }
 
@@ -561,7 +561,7 @@ func (s *Server) handleSeverityDistribution(w http.ResponseWriter, r *http.Reque
 	// ADR-032: Aggregation requires Data Storage Service API support
 	s.logger.Warn("Severity distribution not yet implemented",
 		zap.String("note", "ADR-032: Requires Data Storage Service aggregation API"))
-	s.respondError(w, r, http.StatusNotImplemented, 
+	s.respondError(w, r, http.StatusNotImplemented,
 		"Severity distribution not yet implemented - requires Data Storage Service support")
 }
 
@@ -570,7 +570,7 @@ func (s *Server) handleIncidentTrend(w http.ResponseWriter, r *http.Request) {
 	// ADR-032: Aggregation requires Data Storage Service API support
 	s.logger.Warn("Incident trend not yet implemented",
 		zap.String("note", "ADR-032: Requires Data Storage Service aggregation API"))
-	s.respondError(w, r, http.StatusNotImplemented, 
+	s.respondError(w, r, http.StatusNotImplemented,
 		"Incident trend not yet implemented - requires Data Storage Service support")
 }
 

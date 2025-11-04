@@ -126,7 +126,7 @@ var _ = AfterSuite(func() {
 		} else {
 			GinkgoWriter.Printf("\n⚠️  Failed to get final service logs: %v\n", err)
 		}
-		
+
 		// Check container status
 		status, err := exec.Command("podman", "inspect", "-f", "{{.State.Status}}", serviceContainer).CombinedOutput()
 		if err == nil {
