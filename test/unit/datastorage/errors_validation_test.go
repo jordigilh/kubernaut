@@ -11,10 +11,6 @@ import (
 )
 
 // Test entry point moved to notification_audit_validator_test.go to avoid "Rerunning Suite" error
-// func TestValidationErrors(t *testing.T) {
-// 	RegisterFailHandler(Fail)
-// 	RunSpecs(t, "Validation Errors Suite")
-// }
 
 var _ = Describe("ValidationError", func() {
 	var validationErr *validation.ValidationError
@@ -173,23 +169,23 @@ var _ = Describe("validation.RFC7807Problem", func() {
 				},
 			}
 
-			jsonBytes, err := json.Marshal(problem)
-			Expect(err).ToNot(HaveOccurred())
+		jsonBytes, err := json.Marshal(problem)
+		Expect(err).ToNot(HaveOccurred())
 
-			var result map[string]interface{}
-			err = json.Unmarshal(jsonBytes, &result)
-			Expect(err).ToNot(HaveOccurred())
+		var result validation.RFC7807Problem
+		err = json.Unmarshal(jsonBytes, &result)
+		Expect(err).ToNot(HaveOccurred())
 
-			// Verify standard RFC 7807 fields
-			Expect(result["type"]).To(Equal("https://kubernaut.io/errors/validation-error"))
-			Expect(result["title"]).To(Equal("Validation Error"))
-			Expect(result["status"]).To(BeNumerically("==", 400))
-			Expect(result["detail"]).To(Equal("validation failed"))
-			Expect(result["instance"]).To(Equal("/audit/notification_audit"))
+		// Verify standard RFC 7807 fields (type-safe access)
+		Expect(result.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
+		Expect(result.Title).To(Equal("Validation Error"))
+		Expect(result.Status).To(Equal(400))
+		Expect(result.Detail).To(Equal("validation failed"))
+		Expect(result.Instance).To(Equal("/audit/notification_audit"))
 
-			// Verify extensions are flattened into top-level JSON
-			Expect(result["resource"]).To(Equal("notification_audit"))
-			Expect(result["field_errors"]).ToNot(BeNil())
+		// Verify extensions are captured correctly
+		Expect(result.Extensions["resource"]).To(Equal("notification_audit"))
+		Expect(result.Extensions["field_errors"]).ToNot(BeNil())
 		})
 
 		It("should omit optional fields when empty", func() {
@@ -199,18 +195,18 @@ var _ = Describe("validation.RFC7807Problem", func() {
 				Status: http.StatusInternalServerError,
 			}
 
-			jsonBytes, err := json.Marshal(problem)
-			Expect(err).ToNot(HaveOccurred())
+		jsonBytes, err := json.Marshal(problem)
+		Expect(err).ToNot(HaveOccurred())
 
-			var result map[string]interface{}
-			err = json.Unmarshal(jsonBytes, &result)
-			Expect(err).ToNot(HaveOccurred())
+		var result validation.RFC7807Problem
+		err = json.Unmarshal(jsonBytes, &result)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(result["type"]).To(Equal("https://kubernaut.io/errors/internal-error"))
-			Expect(result["title"]).To(Equal("Internal Server Error"))
-			Expect(result["status"]).To(BeNumerically("==", 500))
-			Expect(result).ToNot(HaveKey("detail"))
-			Expect(result).ToNot(HaveKey("instance"))
+		Expect(result.Type).To(Equal("https://kubernaut.io/errors/internal-error"))
+		Expect(result.Title).To(Equal("Internal Server Error"))
+		Expect(result.Status).To(Equal(500))
+		Expect(result.Detail).To(BeEmpty(), "Optional detail field should be empty")
+		Expect(result.Instance).To(BeEmpty(), "Optional instance field should be empty")
 		})
 	})
 
