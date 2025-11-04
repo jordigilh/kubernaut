@@ -3,7 +3,6 @@ package datastorage
 import (
 	"context"
 	"database/sql"
-	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -17,10 +16,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
-func TestNotificationAuditRepository(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "NotificationAudit Repository Suite")
-}
+// func TestNotificationAuditRepository(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "...")
+// }
 
 var _ = Describe("NotificationAuditRepository", func() {
 	var (
@@ -84,14 +83,19 @@ var _ = Describe("NotificationAuditRepository", func() {
 					WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
 						AddRow(expectedID, expectedCreatedAt, expectedUpdatedAt))
 
-				result, err := repo.Create(ctx, audit)
+			// ACT: Create notification audit
+			result, err := repo.Create(ctx, audit)
 
-				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.ID).To(Equal(expectedID))
-				Expect(result.CreatedAt).To(Equal(expectedCreatedAt))
-				Expect(result.UpdatedAt).To(Equal(expectedUpdatedAt))
-				Expect(mock.ExpectationsWereMet()).To(Succeed())
+			// CORRECTNESS: Create succeeds
+			Expect(err).ToNot(HaveOccurred(), "Create should succeed")
+
+			// CORRECTNESS: Database-generated fields have exact expected values
+			Expect(result.ID).To(Equal(expectedID), "ID should match database-generated value")
+			Expect(result.CreatedAt).To(Equal(expectedCreatedAt), "CreatedAt should match database timestamp")
+			Expect(result.UpdatedAt).To(Equal(expectedUpdatedAt), "UpdatedAt should match database timestamp")
+			
+			// CORRECTNESS: All SQL expectations met
+			Expect(mock.ExpectationsWereMet()).To(Succeed(), "All SQL expectations should be met")
 			})
 
 			It("should handle empty optional fields", func() {
@@ -116,12 +120,17 @@ var _ = Describe("NotificationAuditRepository", func() {
 					WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).
 						AddRow(expectedID, now, now))
 
-				result, err := repo.Create(ctx, audit)
+			// ACT: Create notification audit with empty optional fields
+			result, err := repo.Create(ctx, audit)
 
-				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.ID).To(Equal(expectedID))
-				Expect(mock.ExpectationsWereMet()).To(Succeed())
+			// CORRECTNESS: Create succeeds even with empty optional fields
+			Expect(err).ToNot(HaveOccurred(), "Create should succeed with empty optional fields")
+
+			// CORRECTNESS: ID is populated by database
+			Expect(result.ID).To(Equal(expectedID), "ID should match database-generated value")
+			
+			// CORRECTNESS: All SQL expectations met
+			Expect(mock.ExpectationsWereMet()).To(Succeed(), "All SQL expectations should be met")
 			})
 		})
 
@@ -234,15 +243,20 @@ var _ = Describe("NotificationAuditRepository", func() {
 						0, now, now,
 					))
 
-				result, err := repo.GetByNotificationID(ctx, notificationID)
+			// ACT: Get notification audit by ID
+			result, err := repo.GetByNotificationID(ctx, notificationID)
 
-				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.ID).To(Equal(expectedID))
-				Expect(result.NotificationID).To(Equal(notificationID))
-				Expect(result.DeliveryStatus).To(Equal("200 OK"))
-				Expect(result.ErrorMessage).To(BeEmpty())
-				Expect(mock.ExpectationsWereMet()).To(Succeed())
+			// CORRECTNESS: Query succeeds
+			Expect(err).ToNot(HaveOccurred(), "GetByNotificationID should succeed")
+
+			// CORRECTNESS: All fields have expected values
+			Expect(result.ID).To(Equal(expectedID), "ID should match queried record")
+			Expect(result.NotificationID).To(Equal(notificationID), "NotificationID should match query parameter")
+			Expect(result.DeliveryStatus).To(Equal("200 OK"), "DeliveryStatus should be populated")
+			Expect(result.ErrorMessage).To(BeEmpty(), "ErrorMessage should be empty for successful notification")
+			
+			// CORRECTNESS: All SQL expectations met
+			Expect(mock.ExpectationsWereMet()).To(Succeed(), "All SQL expectations should be met")
 			})
 
 			It("should handle nullable fields correctly", func() {
@@ -261,15 +275,20 @@ var _ = Describe("NotificationAuditRepository", func() {
 						1, now, now,
 					))
 
-				result, err := repo.GetByNotificationID(ctx, notificationID)
+			// ACT: Get notification audit with nullable fields
+			result, err := repo.GetByNotificationID(ctx, notificationID)
 
-				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.ID).To(Equal(expectedID))
-				Expect(result.NotificationID).To(Equal(notificationID))
-				Expect(result.DeliveryStatus).To(BeEmpty())
-				Expect(result.ErrorMessage).To(Equal("Connection timeout"))
-				Expect(mock.ExpectationsWereMet()).To(Succeed())
+			// CORRECTNESS: Query succeeds with NULL fields
+			Expect(err).ToNot(HaveOccurred(), "GetByNotificationID should succeed with NULL fields")
+
+			// CORRECTNESS: Nullable fields are properly handled (NULL → empty string, non-NULL → value)
+			Expect(result.ID).To(Equal(expectedID), "ID should match queried record")
+			Expect(result.NotificationID).To(Equal(notificationID), "NotificationID should match query parameter")
+			Expect(result.DeliveryStatus).To(BeEmpty(), "DeliveryStatus should be empty (NULL in DB)")
+			Expect(result.ErrorMessage).To(Equal("Connection timeout"), "ErrorMessage should be populated")
+			
+			// CORRECTNESS: All SQL expectations met
+			Expect(mock.ExpectationsWereMet()).To(Succeed(), "All SQL expectations should be met")
 			})
 		})
 
