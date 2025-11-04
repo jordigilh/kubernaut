@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -80,21 +81,21 @@ var _ = Describe("DLQ Client Integration", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
 
-				// Verify message structure
-				messageJSON := messages[0].Values["message"].(string)
-				var auditMsg map[string]interface{}
-				err = json.Unmarshal([]byte(messageJSON), &auditMsg)
-				Expect(err).ToNot(HaveOccurred())
+			// Verify message structure
+			messageJSON := messages[0].Values["message"].(string)
+			var auditMsg dlq.AuditMessage
+			err = json.Unmarshal([]byte(messageJSON), &auditMsg)
+			Expect(err).ToNot(HaveOccurred())
 
-				// ✅ CORRECTNESS TEST: Message fields
-				Expect(auditMsg["type"]).To(Equal("notification_audit"))
-				Expect(auditMsg["retry_count"]).To(BeNumerically("==", 0))
-				Expect(auditMsg["last_error"]).To(Equal(testError.Error()))
-				Expect(auditMsg["timestamp"]).ToNot(BeEmpty())
+			// ✅ CORRECTNESS TEST: Message fields (validated by structured type)
+			Expect(auditMsg.Type).To(Equal("notification_audit"))
+			Expect(auditMsg.RetryCount).To(Equal(0))
+			Expect(auditMsg.LastError).To(Equal(testError.Error()))
+			Expect(auditMsg.Timestamp).ToNot(BeZero())
 
-				// ✅ CORRECTNESS TEST: Payload contains audit data
-				payloadJSON, err := json.Marshal(auditMsg["payload"])
-				Expect(err).ToNot(HaveOccurred())
+			// ✅ CORRECTNESS TEST: Payload contains audit data
+			payloadJSON, err := json.Marshal(auditMsg.Payload)
+			Expect(err).ToNot(HaveOccurred())
 				
 				var payloadAudit models.NotificationAudit
 				err = json.Unmarshal(payloadJSON, &payloadAudit)
