@@ -34,7 +34,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 		// Reset metrics before each test
 		metrics.WriteTotal.Reset()
 		metrics.WriteDuration.Reset()
-		metrics.DualWriteSuccess.(prometheus.Counter).Collect(make(chan prometheus.Metric, 10))
+		metrics.DualWriteSuccess.Collect(make(chan prometheus.Metric, 10))
 		// Note: Some metrics don't have Reset(), but we can verify increments
 	})
 
@@ -53,9 +53,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 		It("should track write duration", func() {
 			// BR-STORAGE-019: WriteDuration histogram
 			metrics.WriteDuration.WithLabelValues(metrics.TableRemediationAudit).Observe(0.025) // 25ms
-
-			histogram := metrics.WriteDuration.WithLabelValues(metrics.TableRemediationAudit).(prometheus.Observer)
-			Expect(histogram).ToNot(BeNil())
+			Expect(metrics.WriteDuration.WithLabelValues(metrics.TableRemediationAudit)).ToNot(BeNil())
 		})
 
 		It("should support all table types", func() {
