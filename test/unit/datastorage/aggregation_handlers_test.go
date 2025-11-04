@@ -244,7 +244,9 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 
 			// ✅ CORRECTNESS TEST: RFC 7807 structure is complete (validated by struct type)
 			Expect(problem.Type).To(ContainSubstring("missing-parameter"))
-			Expect(problem.Title).ToNot(BeEmpty())
+			// BEHAVIOR + CORRECTNESS: Title is populated with human-readable error description
+			Expect(problem.Title).ToNot(BeEmpty(), "RFC 7807 Title should be populated")
+			Expect(problem.Title).To(Equal("Missing Parameter"), "Title should be 'Missing Parameter'")
 			Expect(problem.Status).To(Equal(400))
 
 			// ✅ CORRECTNESS: Error message mentions the specific parameter
@@ -427,8 +429,10 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 			Expect(response.Period).To(Equal("7d"))
 			Expect(response.DataPoints).To(HaveLen(7))
 
-			// Verify first data point structure (guaranteed by struct type)
-			Expect(response.DataPoints[0].Date).ToNot(BeEmpty())
+			// BEHAVIOR + CORRECTNESS: Verify first data point has valid date and non-negative count
+			Expect(response.DataPoints[0].Date).ToNot(BeEmpty(), "Date field should be populated")
+			Expect(response.DataPoints[0].Date).To(MatchRegexp(`^\d{4}-\d{2}-\d{2}$`), 
+				"Date should be in YYYY-MM-DD format (ISO 8601)")
 			Expect(response.DataPoints[0].Count).To(BeNumerically(">=", 0))
 			})
 
