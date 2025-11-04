@@ -890,8 +890,6 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 1. **Multi-Channel Delivery** (BR-NOT-001 to BR-NOT-005)
    - Email notifications with rich formatting
    - Slack integration for team collaboration
-   - Microsoft Teams integration
-   - SMS notifications for critical alerts
    - Webhook integrations for custom channels
 
 2. **Escalation Workflows** (BR-NOT-026 to BR-NOT-037)
@@ -899,6 +897,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
    - AI-generated root cause analysis (BR-NOT-028)
    - Recommended remediations sorted by multi-factor ranking (BR-NOT-030)
    - Actionable next steps (last 5 escalation events + historical summary)
+   - Approval notification
 
 3. **Sensitive Data Sanitization** (BR-NOT-034)
    - **CRITICAL SECURITY**: Sanitizes sensitive data before sending notifications
@@ -952,7 +951,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
    - **Method**: Simple 4-tier lookup: namespace labels → ConfigMap override → alert labels → "unknown"
    - **Output**: Simple string value (`"prod"`, `"staging"`, `"dev"`, `"canary"`, etc.)
    - **Use Case**: Immediate routing decisions before CRD creation
-   - **Note**: This is a lightweight lookup; RemediationProcessing performs richer business classification later
+   - **Note**: This is a lightweight lookup; SignalProcessing performs richer business classification later
 
 6. **CRD Creation** (BR-GATEWAY-023, BR-GATEWAY-071 to BR-GATEWAY-072)
    - Creates RemediationRequest CRD for RemediationOrchestrator
@@ -1166,7 +1165,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
         For(&remediationv1.RemediationRequest{}).
-        Owns(&processingv1.RemediationProcessing{}).
+        Owns(&processingv1.SignalProcessing{}).
         Owns(&aianalysisv1.AIAnalysis{}).
         Owns(&workflowv1.WorkflowExecution{}).
         Owns(&notificationv1.NotificationRequest{}).
@@ -1190,12 +1189,12 @@ func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) e
 
 **What RemediationOrchestrator Creates**:
 1. SignalProcessing CRD (signal enrichment)
-2. AIAnalysis CRD (after RemediationProcessing completes)
+2. AIAnalysis CRD (after SignalProcessing completes)
 3. WorkflowExecution CRD (after AIAnalysis completes)
 4. NotificationRequest CRDs (on events: failures, timeouts, completions, approval requests)
 
 **What Child Controllers Do NOT Do**:
-- ❌ RemediationProcessing does NOT create AIAnalysis
+- ❌ SignalProcessing does NOT create AIAnalysis
 - ❌ AIAnalysis does NOT create WorkflowExecution
 - ❌ WorkflowExecution does NOT create NotificationRequest
 - ✅ All child controllers update their OWN status only
@@ -1222,10 +1221,10 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
-    // Watch RemediationProcessing status
-    if remediation.Status.RemediationProcessingRef != "" {
-        processing := &processingv1.RemediationProcessing{}
-        if err := r.Get(ctx, types.NamespacedName{Name: remediation.Status.RemediationProcessingRef, Namespace: remediation.Namespace}, processing); err == nil {
+    // Watch SignalProcessing status
+    if remediation.Status.SignalProcessingRef != "" {
+        processing := &processingv1.SignalProcessing{}
+        if err := r.Get(ctx, types.NamespacedName{Name: remediation.Status.SignalProcessingRef, Namespace: remediation.Namespace}, processing); err == nil {
             if processing.Status.Phase == "Completed" {
                 // Create AIAnalysis CRD
                 return r.createAIAnalysis(ctx, remediation, processing)
@@ -1270,7 +1269,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
    - Strategy: Retry with fresh object
    - Implementation: `updateStatusWithRetry` pattern
 
-6. **Child Failures** (RemediationProcessing, AIAnalysis, WorkflowExecution failed)
+6. **Child Failures** (SignalProcessing, AIAnalysis, WorkflowExecution failed)
    - Strategy: Update parent status, create NotificationRequest
    - Implementation: Watch child status, escalate on failure
 
@@ -1396,7 +1395,7 @@ package controller
 
 import (
     remediationv1 "github.com/jordigilh/kubernaut/api/remediationorchestrator/v1alpha1"
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+    processingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
     aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
     workflowv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
     notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -1414,7 +1413,7 @@ type RemediationOrchestratorReconciler struct {
 func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
         For(&remediationv1.RemediationRequest{}).
-        Owns(&processingv1.RemediationProcessing{}).
+        Owns(&processingv1.SignalProcessing{}).
         Owns(&aianalysisv1.AIAnalysis{}).
         Owns(&workflowv1.WorkflowExecution{}).
         Owns(&notificationv1.NotificationRequest{}).
@@ -1438,18 +1437,18 @@ import (
     "fmt"
 
     remediationv1 "github.com/jordigilh/kubernaut/api/remediationorchestrator/v1alpha1"
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+    processingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func (r *RemediationOrchestratorReconciler) createRemediationProcessing(
+func (r *RemediationOrchestratorReconciler) createSignalProcessing(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
 ) error {
     log := ctrl.LoggerFrom(ctx)
 
-    processing := &processingv1.RemediationProcessing{
+    processing := &processingv1.SignalProcessing{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-processing", remediation.Name),
             Namespace: remediation.Namespace,
@@ -1460,7 +1459,7 @@ func (r *RemediationOrchestratorReconciler) createRemediationProcessing(
                 *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
             },
         },
-        Spec: processingv1.RemediationProcessingSpec{
+        Spec: processingv1.SignalProcessingSpec{
             AlertData: processingv1.AlertData{
                 AlertName: remediation.Spec.AlertName,
                 Namespace: remediation.Spec.Namespace,
@@ -1479,7 +1478,7 @@ func (r *RemediationOrchestratorReconciler) createRemediationProcessing(
     log.Info("Created SignalProcessing CRD", "name", processing.Name)
 
     // Update RemediationRequest status with reference
-    remediation.Status.RemediationProcessingRef = processing.Name
+    remediation.Status.SignalProcessingRef = processing.Name
     remediation.Status.Phase = "Processing"
     if err := r.Status().Update(ctx, remediation); err != nil {
         return err
@@ -1504,7 +1503,7 @@ import (
     "context"
 
     remediationv1 "github.com/jordigilh/kubernaut/api/remediationorchestrator/v1alpha1"
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1alpha1"
+    processingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
     "k8s.io/apimachinery/pkg/types"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
@@ -1521,20 +1520,20 @@ func (r *RemediationOrchestratorReconciler) Reconcile(
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
-    // Watch RemediationProcessing status
-    if remediation.Status.RemediationProcessingRef != "" {
-        processing := &processingv1.RemediationProcessing{}
+    // Watch SignalProcessing status
+    if remediation.Status.SignalProcessingRef != "" {
+        processing := &processingv1.SignalProcessing{}
         processingKey := types.NamespacedName{
-            Name:      remediation.Status.RemediationProcessingRef,
+            Name:      remediation.Status.SignalProcessingRef,
             Namespace: remediation.Namespace,
         }
 
         if err := r.Get(ctx, processingKey, processing); err != nil {
             if client.IgnoreNotFound(err) != nil {
-                log.Error(err, "Failed to get RemediationProcessing")
+                log.Error(err, "Failed to get SignalProcessing")
                 return ctrl.Result{}, err
             }
-            // RemediationProcessing not found (deleted) - handle gracefully
+            // SignalProcessing not found (deleted) - handle gracefully
             return ctrl.Result{}, nil
         }
 
@@ -1547,9 +1546,9 @@ func (r *RemediationOrchestratorReconciler) Reconcile(
         return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
     }
 
-    // No RemediationProcessing yet - create it
+    // No SignalProcessing yet - create it
     if remediation.Status.Phase == "Pending" {
-        return r.createRemediationProcessing(ctx, remediation)
+        return r.createSignalProcessing(ctx, remediation)
     }
 
     return ctrl.Result{}, nil
@@ -1657,10 +1656,10 @@ rules:
 
 # Child CRDs
 - apiGroups: ["signalprocessing.kubernaut.io"]
-  resources: ["remediationprocessings"]
+  resources: ["signalprocessings"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: ["signalprocessing.kubernaut.io"]
-  resources: ["remediationprocessings/status"]
+  resources: ["signalprocessings/status"]
   verbs: ["get", "update", "patch"]
 
 - apiGroups: ["aianalysis.kubernaut.io"]

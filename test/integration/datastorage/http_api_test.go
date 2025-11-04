@@ -57,7 +57,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 				// Debug: Print response body on failure
 				body, _ := io.ReadAll(resp.Body)
 				GinkgoWriter.Printf("\n❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(body))
-				
+
 				// Print service logs for debugging
 				logs, logErr := exec.Command("podman", "logs", "--tail", "50", "data-storage-service").CombinedOutput()
 				if logErr == nil {

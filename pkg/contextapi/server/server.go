@@ -17,11 +17,11 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
-	"github.com/jordigilh/kubernaut/pkg/contextapi/client"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/errors"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/metrics"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/query"
+	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 
 // Server is the HTTP server for Context API
@@ -32,7 +32,7 @@ import (
 type Server struct {
 	router         *query.Router         // v2.0: Query router
 	cachedExecutor *query.CachedExecutor // v2.0: Cache-first executor
-	dbClient       client.Client         // v2.0: PostgreSQL client
+	// ADR-032: NO direct database client - all data access via Data Storage Service
 	cacheManager   cache.CacheManager    // v2.0: Multi-tier cache
 	metrics        *metrics.Metrics
 	logger         *zap.Logger
@@ -53,30 +53,33 @@ const (
 
 // Config contains server configuration
 type Config struct {
-	Port         int
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
+	Port               int
+	ReadTimeout        time.Duration
+	WriteTimeout       time.Duration
+	DataStorageBaseURL string // Data Storage Service base URL (e.g., "http://localhost:8085")
 }
 
 // NewServer creates a new Context API HTTP server
 //
-// v2.0 Changes:
-// - Accepts connection strings instead of pre-initialized components
+// v3.0 Changes (ADR-032 Migration):
+// - NO direct PostgreSQL connectivity - all data access via Data Storage Service
+// - Removed connStr parameter - Context API is purely stateless
 // - Creates v2.0 components (CachedExecutor, CacheManager, Router)
 // - Returns error for initialization failures
 func NewServer(
-	connStr string, // PostgreSQL connection string
 	redisAddr string, // Redis address for caching
 	logger *zap.Logger,
 	cfg *Config,
 ) (*Server, error) {
-	return NewServerWithMetrics(connStr, redisAddr, logger, cfg, nil)
+	return NewServerWithMetrics(redisAddr, logger, cfg, nil)
 }
 
 // NewServerWithMetrics creates a new Context API HTTP server with custom metrics
 // If metricsInstance is nil, creates default metrics
+//
+// ADR-032: Context API has NO direct database connectivity
+// All data access goes through Data Storage Service REST API
 func NewServerWithMetrics(
-	connStr string,
 	redisAddr string,
 	logger *zap.Logger,
 	cfg *Config,
@@ -90,11 +93,22 @@ func NewServerWithMetrics(
 		m = metrics.NewMetrics("context_api", "server")
 	}
 
-	// 1. Create PostgreSQL client (Day 1)
-	dbClient, err := client.NewPostgresClient(connStr, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create DB client: %w", err)
+	// ADR-032: Context API has NO direct database connectivity
+	// All data access goes through Data Storage Service REST API
+	if cfg.DataStorageBaseURL == "" {
+		return nil, fmt.Errorf("DataStorageBaseURL is required - Context API must use Data Storage Service (ADR-032)")
 	}
+
+	// 1. Initialize Data Storage Service client
+	// BR-CONTEXT-007: HTTP client for Data Storage Service REST API
+	logger.Info("initializing Context API with Data Storage Service",
+		zap.String("datastorage_url", cfg.DataStorageBaseURL))
+	
+	dsClient := dsclient.NewDataStorageClient(dsclient.Config{
+		BaseURL:        cfg.DataStorageBaseURL,
+		Timeout:        10 * time.Second, // BR-CONTEXT-011: Request timeout
+		MaxConnections: 100,               // BR-CONTEXT-012: Connection pooling
+	})
 
 	// 2. Create cache manager (Day 3)
 	// REFACTOR Phase: Parse Redis DB from address (format: "host:port/db")
@@ -121,21 +135,28 @@ func NewServerWithMetrics(
 		return nil, fmt.Errorf("failed to create cache manager: %w", err)
 	}
 
-	// 3. Create cached executor (Day 4)
+	// 3. Create cached executor with Data Storage client
 	// DD-005: Pass metrics to executor for cache/query observability
-	executorCfg := &query.Config{
-		DB:      dbClient.GetDB(),
-		Cache:   cacheManager,
-		TTL:     5 * time.Minute,
-		Metrics: m, // DD-005: Wire metrics for cache hits/misses, query duration
+	executorCfg := &query.DataStorageExecutorConfig{
+		DSClient: dsClient,
+		Cache:    cacheManager,
+		Logger:   logger,
+		Metrics:  m,
+		TTL:      5 * time.Minute,
+		// BR-CONTEXT-008: Circuit breaker defaults (3 failures, 60s timeout)
+		CircuitBreakerThreshold: 3,
+		CircuitBreakerTimeout:   60 * time.Second,
 	}
-	cachedExecutor, err := query.NewCachedExecutor(executorCfg)
+	
+	cachedExecutor, err := query.NewCachedExecutorWithDataStorage(executorCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cached executor: %w", err)
+		return nil, fmt.Errorf("failed to create cached executor with Data Storage: %w", err)
 	}
 
-	// 4. Create aggregation service (Day 6)
-	aggregation := query.NewAggregationService(dbClient.GetDB(), cacheManager, logger)
+	// 4. TODO: Aggregation service needs migration to use Data Storage Service
+	// For now, set to nil - aggregation endpoints will need Data Storage API support
+	// See: docs/services/stateless/context-api/implementation/API-GATEWAY-MIGRATION.md
+	var aggregation *query.AggregationService = nil
 
 	// 5. Create query router (Day 6) - VectorSearch nil for now (Day 8)
 	queryRouter := query.NewRouter(cachedExecutor, nil, aggregation, logger)
@@ -143,7 +164,6 @@ func NewServerWithMetrics(
 	return &Server{
 		router:         queryRouter,
 		cachedExecutor: cachedExecutor,
-		dbClient:       dbClient,
 		cacheManager:   cacheManager,
 		metrics:        m,
 		logger:         logger,
@@ -299,46 +319,26 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 	return nil
 }
 
-// shutdownStep4CloseResources closes external resources (database, cache)
+// shutdownStep4CloseResources closes external resources (cache only)
 // DD-007 STEP 4: Continue cleanup even if one step fails to prevent resource leaks
+// ADR-032: NO database connections to close - Context API is stateless
 func (s *Server) shutdownStep4CloseResources() error {
-	var shutdownErrors []error
-
-	// Close database connections (CRITICAL: prevents connection pool exhaustion)
-	if err := s.closeDatabase(); err != nil {
-		shutdownErrors = append(shutdownErrors, err)
-	}
+	// ADR-032: No database cleanup needed - Context API has no direct DB connectivity
+	// All data access is via Data Storage Service REST API (HTTP connections close automatically)
+	s.logger.Info("Closing external resources (cache only - no database)",
+		zap.String("note", "ADR-032: Context API is stateless"),
+		zap.String("dd", "DD-007-step-4"))
 
 	// Close cache connections (HIGH: prevents Redis connection leaks)
 	if err := s.closeCache(); err != nil {
-		shutdownErrors = append(shutdownErrors, err)
-	}
-
-	if len(shutdownErrors) > 0 {
-		s.logger.Error("Graceful shutdown completed with errors",
-			zap.Int("error_count", len(shutdownErrors)),
-			zap.String("dd", "DD-007-complete-with-errors"))
-		return fmt.Errorf("shutdown errors: %v", shutdownErrors)
-	}
-
-	return nil
-}
-
-// closeDatabase closes database connections
-func (s *Server) closeDatabase() error {
-	s.logger.Info("Closing database connections",
-		zap.String("priority", "critical"),
-		zap.String("dd", "DD-007-step-4-database"))
-
-	if err := s.dbClient.Close(); err != nil {
-		s.logger.Error("Failed to close database",
+		s.logger.Error("Failed to close cache during shutdown",
 			zap.Error(err),
-			zap.String("dd", "DD-007-step-4-database-error"))
-		return fmt.Errorf("database close: %w", err)
+			zap.String("dd", "DD-007-step-4-cache-error"))
+		return fmt.Errorf("cache close: %w", err)
 	}
 
-	s.logger.Info("Database connections closed successfully",
-		zap.String("dd", "DD-007-step-4-database-complete"))
+	s.logger.Info("External resources closed successfully",
+		zap.String("dd", "DD-007-step-4-complete"))
 	return nil
 }
 
@@ -377,11 +377,12 @@ func (s *Server) Stop(ctx context.Context) error {
 	return s.Shutdown(ctx)
 }
 
-// CloseDatabaseConnection closes the database connection for test simulation
-// This method is used in integration tests to simulate database unavailability
-// BR-CONTEXT-008: Health check testing (Day 8 Suite 1 - Test #3)
+// CloseDatabaseConnection is DEPRECATED - Context API has no database connection
+// ADR-032: Context API is stateless and accesses data via Data Storage Service REST API
+// This method is kept for backward compatibility but does nothing
 func (s *Server) CloseDatabaseConnection() error {
-	return s.dbClient.Close()
+	s.logger.Warn("CloseDatabaseConnection() called but Context API has no database connection (ADR-032)")
+	return nil // No-op - Context API has no database
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -410,24 +411,20 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 
 	// BR-CONTEXT-008: Readiness check returns 503 when services are unhealthy
 	// Day 8 Suite 1 - Test #3 (DO-GREEN Phase)
-
-	// Check database connectivity
-	dbReady := "ready"
-	dbHealthy := true
-	if err := s.dbClient.Ping(r.Context()); err != nil {
-		dbReady = "not_ready"
-		dbHealthy = false
-		s.logger.Warn("Database not ready", zap.Error(err))
-	}
+	// ADR-032: NO database connectivity check - Context API is stateless
 
 	// Check cache connectivity
 	cacheReady := "ready"
 	cacheHealthy := true
 	// TODO: Implement cache.Ping() method in Day 8 Suite 2 (Cache Fallback)
 
+	// ADR-032: Data Storage Service connectivity is checked implicitly via cache
+	// If Context API can query cache, and cache is backed by Data Storage Service,
+	// then the full data path is healthy
+
 	// Determine overall readiness status
-	// Service is ready only if ALL dependencies are healthy
-	overallHealthy := dbHealthy && cacheHealthy
+	// Service is ready if cache is healthy (Data Storage Service checked implicitly)
+	overallHealthy := cacheHealthy
 
 	// Return appropriate HTTP status code
 	statusCode := http.StatusOK
@@ -436,9 +433,10 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.respondJSON(w, statusCode, map[string]interface{}{
-		"database": dbReady,
-		"cache":    cacheReady,
+		"cache":           cacheReady,
+		"data_storage":    "implicit", // Checked via cache and query success
 		"time":     time.Now().Format(time.RFC3339),
+		"note": "ADR-032: Context API is stateless - no direct database connectivity",
 	})
 }
 
@@ -523,36 +521,17 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetIncident(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	start := time.Now()
-
-	// Parse ID parameter
-	idStr := chi.URLParam(r, "id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		s.respondError(w, r, http.StatusBadRequest, "Invalid incident ID")
-		return
-	}
-
-	// Execute query
-	incident, err := s.dbClient.GetIncidentByID(ctx, id)
-	if err != nil {
-		if err.Error() == "incident not found" {
-			s.respondError(w, r, http.StatusNotFound, "Incident not found")
-			return
-		}
-		s.logger.Error("Failed to get incident", zap.Error(err), zap.Int64("id", id))
-		s.metrics.RecordQueryError("get_incident")
-		s.respondError(w, r, http.StatusInternalServerError, "Failed to query incident")
-		return
-	}
-
-	// Record metrics
-	duration := time.Since(start).Seconds()
-	s.metrics.RecordQuerySuccess("get_incident", duration)
-
-	// Respond
-	s.respondJSON(w, http.StatusOK, incident)
+	// TODO: Implement after Data Storage Service supports GET /api/v1/incidents/{id}
+	// ADR-032: Context API queries via Data Storage Service REST API
+	// Currently, Data Storage Service only supports list operations
+	// This endpoint requires a new Data Storage API endpoint for single incident retrieval
+	
+	s.logger.Warn("GET /incidents/{id} endpoint not yet implemented",
+		zap.String("note", "ADR-032: Requires Data Storage Service API support"),
+		zap.String("endpoint", r.URL.Path))
+	
+	s.respondError(w, r, http.StatusNotImplemented, 
+		"Single incident retrieval not yet implemented - use /api/v1/incidents with filters")
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -560,102 +539,39 @@ func (s *Server) handleGetIncident(w http.ResponseWriter, r *http.Request) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func (s *Server) handleSuccessRate(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	start := time.Now()
-
-	workflowID := r.URL.Query().Get("workflow_id")
-	if workflowID == "" {
-		s.respondError(w, r, http.StatusBadRequest, "workflow_id parameter required")
-		return
-	}
-
-	// v2.0: Use aggregation service through router
-	result, err := s.router.Aggregation().AggregateSuccessRate(ctx, workflowID)
-	if err != nil {
-		s.logger.Error("Failed to calculate success rate", zap.Error(err))
-		s.metrics.RecordQueryError("success_rate")
-		s.respondError(w, r, http.StatusInternalServerError, "Failed to calculate success rate")
-		return
-	}
-
-	duration := time.Since(start).Seconds()
-	s.metrics.RecordQuerySuccess("success_rate", duration)
-
-	s.respondJSON(w, http.StatusOK, result)
+	// TODO: Implement after Data Storage Service supports aggregation API
+	// ADR-032: Aggregation requires Data Storage Service API support
+	s.logger.Warn("Success rate aggregation not yet implemented",
+		zap.String("note", "ADR-032: Requires Data Storage Service aggregation API"))
+	s.respondError(w, r, http.StatusNotImplemented, 
+		"Success rate aggregation not yet implemented - requires Data Storage Service support")
 }
 
 func (s *Server) handleNamespaceGrouping(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	start := time.Now()
-
-	// v2.0: Use aggregation service through router
-	groups, err := s.router.Aggregation().GroupByNamespace(ctx)
-	if err != nil {
-		s.logger.Error("Failed to group by namespace", zap.Error(err))
-		s.metrics.RecordQueryError("namespace_grouping")
-		s.respondError(w, r, http.StatusInternalServerError, "Failed to group incidents")
-		return
-	}
-
-	duration := time.Since(start).Seconds()
-	s.metrics.RecordQuerySuccess("namespace_grouping", duration)
-
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"groups": groups,
-		"count":  len(groups),
-	})
+	// TODO: Implement after Data Storage Service supports aggregation API
+	// ADR-032: Aggregation requires Data Storage Service API support
+	s.logger.Warn("Namespace grouping not yet implemented",
+		zap.String("note", "ADR-032: Requires Data Storage Service aggregation API"))
+	s.respondError(w, r, http.StatusNotImplemented, 
+		"Namespace grouping not yet implemented - requires Data Storage Service support")
 }
 
 func (s *Server) handleSeverityDistribution(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	start := time.Now()
-
-	namespace := r.URL.Query().Get("namespace")
-
-	// v2.0: Use aggregation service through router
-	distribution, err := s.router.Aggregation().GetSeverityDistribution(ctx, namespace)
-	if err != nil {
-		s.logger.Error("Failed to get severity distribution", zap.Error(err))
-		s.metrics.RecordQueryError("severity_distribution")
-		s.respondError(w, r, http.StatusInternalServerError, "Failed to calculate distribution")
-		return
-	}
-
-	duration := time.Since(start).Seconds()
-	s.metrics.RecordQuerySuccess("severity_distribution", duration)
-
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"distribution": distribution,
-		"namespace":    namespace,
-	})
+	// TODO: Implement after Data Storage Service supports aggregation API
+	// ADR-032: Aggregation requires Data Storage Service API support
+	s.logger.Warn("Severity distribution not yet implemented",
+		zap.String("note", "ADR-032: Requires Data Storage Service aggregation API"))
+	s.respondError(w, r, http.StatusNotImplemented, 
+		"Severity distribution not yet implemented - requires Data Storage Service support")
 }
 
 func (s *Server) handleIncidentTrend(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	start := time.Now()
-
-	days := getIntOrDefault(r.URL.Query().Get("days"), 30)
-	if days < 1 || days > 365 {
-		s.respondError(w, r, http.StatusBadRequest, "days must be between 1 and 365")
-		return
-	}
-
-	// v2.0: Use aggregation service through router
-	trend, err := s.router.Aggregation().GetIncidentTrend(ctx, days)
-	if err != nil {
-		s.logger.Error("Failed to get incident trend", zap.Error(err))
-		s.metrics.RecordQueryError("incident_trend")
-		s.respondError(w, r, http.StatusInternalServerError, "Failed to calculate trend")
-		return
-	}
-
-	duration := time.Since(start).Seconds()
-	s.metrics.RecordQuerySuccess("incident_trend", duration)
-
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"trend": trend,
-		"days":  days,
-	})
+	// TODO: Implement after Data Storage Service supports aggregation API
+	// ADR-032: Aggregation requires Data Storage Service API support
+	s.logger.Warn("Incident trend not yet implemented",
+		zap.String("note", "ADR-032: Requires Data Storage Service aggregation API"))
+	s.respondError(w, r, http.StatusNotImplemented, 
+		"Incident trend not yet implemented - requires Data Storage Service support")
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

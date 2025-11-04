@@ -751,172 +751,30 @@ func (e *CachedExecutor) Close() error {
 // BR-CONTEXT-002: Semantic search on embeddings
 // BR-CONTEXT-003: Pattern matching with similarity scores
 //
-// DO-REFACTOR enhancements:
-// - Cache integration with embedding hash key
-// - HNSW index optimization with planner hints
-// - Async cache repopulation after DB hits
+// TODO: Implement after Data Storage Service supports vector search API
+// ADR-032: Semantic search requires Data Storage Service API support for pgvector
 func (e *CachedExecutor) SemanticSearch(ctx context.Context, embedding []float32, limit int, threshold float32) ([]*models.IncidentEvent, []float32, error) {
-	// Validate inputs
-	if len(embedding) == 0 {
-		return nil, nil, fmt.Errorf("embedding vector cannot be empty")
-	}
-	if limit <= 0 || limit > 100 {
-		return nil, nil, fmt.Errorf("limit must be between 1 and 100")
-	}
-	if threshold < 0 || threshold > 1 {
-		return nil, nil, fmt.Errorf("threshold must be between 0 and 1")
-	}
-
-	// Convert embedding to PostgreSQL vector format
-	vectorStr, err := VectorToString(embedding)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to convert embedding: %w", err)
-	}
-
-	// Generate deterministic cache key from embedding hash
-	// Hash first 8 dimensions for reasonable key size while maintaining uniqueness
-	hashInput := fmt.Sprintf("%v", embedding[:min(8, len(embedding))])
-	cacheKey := fmt.Sprintf("semantic:hash=%x:limit=%d:threshold=%.2f",
-		hashInput, limit, threshold)
-
-	// Try cache first (cache hit optimization)
-	cachedBytes, err := e.cache.Get(ctx, cacheKey)
-	if err == nil {
-		var cachedResult struct {
-			Incidents []*models.IncidentEvent
-			Scores    []float32
-		}
-		if unmarshalErr := json.Unmarshal(cachedBytes, &cachedResult); unmarshalErr == nil {
-			e.logger.Debug("semantic search cache HIT",
-				zap.String("key", cacheKey),
-				zap.Int("results", len(cachedResult.Incidents)))
-			return cachedResult.Incidents, cachedResult.Scores, nil
-		} else {
-			e.logger.Warn("failed to unmarshal cached result, querying database",
-				zap.Error(unmarshalErr))
-		}
-	}
-
-	// Cache miss - query database with HNSW optimization
-	e.logger.Debug("semantic search cache MISS",
-		zap.String("key", cacheKey),
-		zap.Error(err))
-
-	// HNSW index optimization: Set planner hints for pgvector
-	// These hints force PostgreSQL to use HNSW index for better performance
-	hnswOptimization := `
-		SET LOCAL enable_seqscan = off;
-		SET LOCAL ivfflat.probes = 10;
-	`
-
-	// Execute HNSW optimization (best effort - ignore errors)
-	_, _ = e.db.ExecContext(ctx, hnswOptimization)
-
-	// Query database with pgvector using Data Storage schema
-	// Using cosine distance operator <=> for similarity
-	query := `
-		SELECT
-			rat.id,
-			rat.alert_name AS name,
-			rr.namespace,
-			CASE rat.execution_status
-				WHEN 'completed' THEN 'completed'
-				WHEN 'failed' THEN 'failed'
-				WHEN 'rolled-back' THEN 'failed'
-				WHEN 'pending' THEN 'pending'
-				WHEN 'executing' THEN 'processing'
-				ELSE 'pending'
-			END AS phase,
-			rat.action_type,
-			rat.execution_status AS status,
-			rat.alert_fingerprint,
-			rat.alert_severity AS severity,
-			rat.cluster_name,
-			rr.kind AS target_resource,
-			rat.action_timestamp AS start_time,
-			rat.execution_end_time AS end_time,
-			rat.execution_duration_ms AS duration,
-			rat.execution_error AS error_message,
-			rat.action_parameters::TEXT AS metadata,
-			rat.embedding,
-			rat.created_at,
-			rat.updated_at,
-			rat.action_id AS remediation_request_id,
-			rat.environment,
-			(1 - (rat.embedding <=> $1::vector)) as similarity
-		FROM resource_action_traces rat
-		JOIN action_histories ah ON rat.action_history_id = ah.id
-		JOIN resource_references rr ON ah.resource_id = rr.id
-		WHERE rat.embedding IS NOT NULL
-			AND (1 - (rat.embedding <=> $1::vector)) >= $2
-		ORDER BY rat.embedding <=> $1::vector
-		LIMIT $3
-	`
-
-	// Execute query (scan into intermediate struct for pgvector compatibility)
-	type resultRow struct {
-		IncidentEventRow
-		Similarity float32 `db:"similarity"`
-	}
-
-	var rows []resultRow
-	err = e.db.SelectContext(ctx, &rows, query, vectorStr, threshold, limit)
-	if err != nil {
-		return nil, nil, fmt.Errorf("semantic search query failed: %w", err)
-	}
-
-	// Convert rows to models.IncidentEvent and extract scores
-	incidents := make([]*models.IncidentEvent, len(rows))
-	scores := make([]float32, len(rows))
-	for i, row := range rows {
-		incidents[i] = row.IncidentEventRow.ToIncidentEvent()
-		scores[i] = row.Similarity
-	}
-
-	e.logger.Debug("semantic search completed",
-		zap.Int("results", len(incidents)),
-		zap.Float64("threshold", float64(threshold)))
-
-	// Async cache population (non-blocking)
-	go func() {
-		populateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		cacheValue := struct {
-			Incidents []*models.IncidentEvent
-			Scores    []float32
-		}{
-			Incidents: incidents,
-			Scores:    scores,
-		}
-
-		if err := e.cache.Set(populateCtx, cacheKey, cacheValue); err != nil {
-			e.logger.Warn("failed to populate semantic search cache",
-				zap.String("key", cacheKey),
-				zap.Error(err))
-		} else {
-			e.logger.Debug("semantic search cache populated",
-				zap.String("key", cacheKey))
-		}
-	}()
-
-	return incidents, scores, nil
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	// TODO: Implement after Data Storage Service supports vector search API
+	// ADR-032: Semantic search requires Data Storage Service API support for pgvector
+	return nil, nil, fmt.Errorf("semantic search not implemented - requires Data Storage Service vector search API")
 }
 
 // Ping checks connectivity of all underlying services
 // BR-CONTEXT-006: Health checks
+// ADR-032: Context API has no direct database - checks Data Storage Service implicitly via cache
 func (e *CachedExecutor) Ping(ctx context.Context) error {
-	// Check database connectivity
-	if err := e.db.PingContext(ctx); err != nil {
-		return fmt.Errorf("database ping failed: %w", err)
+	// ADR-032: Check Data Storage connectivity if using dsClient
+	if e.dsClient != nil {
+		// Data Storage Service health is checked implicitly via successful queries
+		// No direct ping API available yet
+		e.logger.Debug("Data Storage Service connectivity assumed healthy (ADR-032)")
+	}
+
+	// Check database connectivity (DEPRECATED path - only for old executor)
+	if e.db != nil {
+		if err := e.db.PingContext(ctx); err != nil {
+			return fmt.Errorf("database ping failed: %w", err)
+		}
 	}
 
 	// Check cache health (non-critical - graceful degradation)

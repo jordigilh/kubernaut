@@ -140,7 +140,7 @@ func NewServer(
 	repo := repository.NewNotificationAuditRepository(db, logger)
 	dlqClient := dlq.NewClient(redisClient, logger)
 	validator := validation.NewNotificationAuditValidator()
-	
+
 	logger.Debug("Audit write dependencies created",
 		zap.Bool("repo_nil", repo == nil),
 		zap.Bool("dlq_client_nil", dlqClient == nil),
@@ -213,7 +213,7 @@ func (s *Server) Handler() http.Handler {
 		zap.Bool("repository_nil", s.repository == nil),
 		zap.Bool("validator_nil", s.validator == nil),
 		zap.Bool("dlq_client_nil", s.dlqClient == nil))
-	
+
 	r.Route("/api/v1", func(r chi.Router) {
 		// BR-STORAGE-021: Incident query endpoints (READ API)
 		r.Get("/incidents", s.handler.ListIncidents)
@@ -229,7 +229,7 @@ func (s *Server) Handler() http.Handler {
 		s.logger.Debug("Registering POST /api/v1/audit/notifications handler")
 		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
 	})
-	
+
 	s.logger.Debug("API v1 routes configured successfully")
 
 	return r
@@ -402,7 +402,7 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if err := recover(); err != nil {
 				requestID := middleware.GetReqID(r.Context())
-				
+
 				// Log the panic with full details
 				s.logger.Error("🚨 PANIC RECOVERED",
 					zap.String("request_id", requestID),
@@ -412,12 +412,12 @@ func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 					zap.Any("panic", err),
 					zap.Stack("stack_trace"),
 				)
-				
+
 				// Let chi's Recoverer handle the response
 				panic(err)
 			}
 		}()
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
