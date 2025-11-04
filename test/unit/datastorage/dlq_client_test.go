@@ -1,4 +1,4 @@
-package dlq
+package datastorage
 
 import (
 	"context"

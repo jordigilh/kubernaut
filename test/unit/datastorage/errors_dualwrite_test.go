@@ -1,4 +1,4 @@
-package dualwrite
+package datastorage
 
 import (
 	"errors"

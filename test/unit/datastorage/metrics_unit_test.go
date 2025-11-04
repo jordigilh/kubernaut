@@ -14,25 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package datastorage
 
 import (
-	"testing"
-
 	"github.com/prometheus/client_golang/prometheus"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-func TestMetricsStruct(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Data Storage Metrics Struct Suite")
-}
-
 // ========================================
 // TDD RED PHASE: Metrics Struct Tests
 // Business Requirement: BR-STORAGE-019 (Logging and metrics)
 // GAP-10: Audit-specific metrics
+// Test entry point is in helpers_test.go (TestMetrics)
 // ========================================
 
 var _ = Describe("Metrics Struct", func() {

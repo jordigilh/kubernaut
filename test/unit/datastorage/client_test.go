@@ -1,4 +1,4 @@
-package client_test
+package datastorage
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package validation
+package datastorage
 
 import (
 	"encoding/json"
