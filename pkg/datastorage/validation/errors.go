@@ -102,6 +102,43 @@ func (p *RFC7807Problem) MarshalJSON() ([]byte, error) {
 	return json.Marshal(result)
 }
 
+// UnmarshalJSON implements custom JSON unmarshaling to extract standard fields and extensions.
+// This enables tests to use RFC7807Problem for response validation.
+func (p *RFC7807Problem) UnmarshalJSON(data []byte) error {
+	// Unmarshal into a temporary map
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	// Extract standard RFC 7807 fields
+	if v, ok := raw["type"].(string); ok {
+		p.Type = v
+		delete(raw, "type")
+	}
+	if v, ok := raw["title"].(string); ok {
+		p.Title = v
+		delete(raw, "title")
+	}
+	if v, ok := raw["status"].(float64); ok {
+		p.Status = int(v)
+		delete(raw, "status")
+	}
+	if v, ok := raw["detail"].(string); ok {
+		p.Detail = v
+		delete(raw, "detail")
+	}
+	if v, ok := raw["instance"].(string); ok {
+		p.Instance = v
+		delete(raw, "instance")
+	}
+
+	// Remaining fields are extensions
+	p.Extensions = raw
+
+	return nil
+}
+
 // Error implements the error interface.
 func (p *RFC7807Problem) Error() string {
 	return fmt.Sprintf("%s (status %d): %s", p.Title, p.Status, p.Detail)
