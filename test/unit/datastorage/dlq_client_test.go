@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -23,7 +24,7 @@ func TestDLQClient(t *testing.T) {
 
 var _ = Describe("DLQClient", func() {
 	var (
-		client      *Client
+		client      *dlq.Client
 		redisClient *redis.Client
 		miniRedis   *miniredis.Miniredis
 		ctx         context.Context
@@ -40,7 +41,7 @@ var _ = Describe("DLQClient", func() {
 		})
 
 		logger = zap.NewNop()
-		client = NewClient(redisClient, logger)
+		client = dlq.NewClient(redisClient, logger)
 		ctx = context.Background()
 		testError = Errorf("database connection failed")
 
@@ -82,7 +83,7 @@ var _ = Describe("DLQClient", func() {
 				Expect(messages).To(HaveLen(1))
 
 				messageJSON := messages[0].Values["message"].(string)
-				var auditMsg AuditMessage
+				var auditMsg dlq.AuditMessage
 				err = json.Unmarshal([]byte(messageJSON), &auditMsg)
 				Expect(err).ToNot(HaveOccurred())
 

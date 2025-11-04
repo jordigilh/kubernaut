@@ -17,9 +17,10 @@ limitations under the License.
 package datastorage
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ========================================
@@ -31,31 +32,31 @@ import (
 
 var _ = Describe("Metrics Struct", func() {
 	var (
-		metrics  *Metrics
+		m        *metrics.Metrics
 		registry *prometheus.Registry
 	)
 
 	BeforeEach(func() {
 		// Create custom registry for testing (avoids duplicate registration panics)
 		registry = prometheus.NewRegistry()
-		metrics = NewMetricsWithRegistry("datastorage", "", registry)
+		m = metrics.NewMetricsWithRegistry("datastorage", "", registry)
 	})
 
 	Context("Metrics Creation", func() {
 		It("should create metrics struct with all required metrics", func() {
-			Expect(metrics).ToNot(BeNil())
-			Expect(metrics.AuditTracesTotal).ToNot(BeNil(), "AuditTracesTotal should be initialized")
-			Expect(metrics.AuditLagSeconds).ToNot(BeNil(), "AuditLagSeconds should be initialized")
-			Expect(metrics.WriteDuration).ToNot(BeNil(), "WriteDuration should be initialized")
-			Expect(metrics.ValidationFailures).ToNot(BeNil(), "ValidationFailures should be initialized")
+			Expect(m).ToNot(BeNil())
+			Expect(m.AuditTracesTotal).ToNot(BeNil(), "AuditTracesTotal should be initialized")
+			Expect(m.AuditLagSeconds).ToNot(BeNil(), "AuditLagSeconds should be initialized")
+			Expect(m.WriteDuration).ToNot(BeNil(), "WriteDuration should be initialized")
+			Expect(m.ValidationFailures).ToNot(BeNil(), "ValidationFailures should be initialized")
 		})
 
 		It("should register metrics with custom registry", func() {
 			// Record some values to ensure metrics appear in Gather()
-			metrics.AuditTracesTotal.WithLabelValues(ServiceNotification, AuditStatusSuccess).Inc()
-			metrics.AuditLagSeconds.WithLabelValues(ServiceNotification).Observe(0.5)
-			metrics.WriteDuration.WithLabelValues("notification_audit").Observe(0.025)
-			metrics.ValidationFailures.WithLabelValues("notification_id", ValidationReasonRequired).Inc()
+			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusSuccess).Inc()
+			m.AuditLagSeconds.WithLabelValues(metrics.ServiceNotification).Observe(0.5)
+			m.WriteDuration.WithLabelValues("notification_audit").Observe(0.025)
+			m.ValidationFailures.WithLabelValues("notification_id", metrics.ValidationReasonRequired).Inc()
 
 			// Gather metrics from registry
 			families, err := registry.Gather()
@@ -80,7 +81,7 @@ var _ = Describe("Metrics Struct", func() {
 	Context("GAP-10: Audit Traces Total Metric", func() {
 		It("should increment audit traces total with service and status labels", func() {
 			// Increment counter
-			metrics.AuditTracesTotal.WithLabelValues(ServiceNotification, AuditStatusSuccess).Inc()
+			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusSuccess).Inc()
 
 			// Verify metric was incremented
 			families, err := registry.Gather()
@@ -98,14 +99,14 @@ var _ = Describe("Metrics Struct", func() {
 					// Check labels
 					labels := metric.GetLabel()
 					Expect(labels).To(HaveLen(2), "Should have 2 labels: service, status")
-					
+
 					// Verify label values
 					labelMap := make(map[string]string)
 					for _, label := range labels {
 						labelMap[label.GetName()] = label.GetValue()
 					}
-					Expect(labelMap["service"]).To(Equal(ServiceNotification))
-					Expect(labelMap["status"]).To(Equal(AuditStatusSuccess))
+					Expect(labelMap["service"]).To(Equal(metrics.ServiceNotification))
+					Expect(labelMap["status"]).To(Equal(metrics.AuditStatusSuccess))
 					break
 				}
 			}
@@ -114,9 +115,9 @@ var _ = Describe("Metrics Struct", func() {
 
 		It("should support different audit statuses", func() {
 			// Increment for different statuses
-			metrics.AuditTracesTotal.WithLabelValues(ServiceNotification, AuditStatusSuccess).Inc()
-			metrics.AuditTracesTotal.WithLabelValues(ServiceNotification, AuditStatusFailure).Inc()
-			metrics.AuditTracesTotal.WithLabelValues(ServiceNotification, AuditStatusDLQFallback).Inc()
+			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusSuccess).Inc()
+			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusFailure).Inc()
+			m.AuditTracesTotal.WithLabelValues(metrics.ServiceNotification, metrics.AuditStatusDLQFallback).Inc()
 
 			// Verify all statuses recorded
 			families, err := registry.Gather()
@@ -133,9 +134,9 @@ var _ = Describe("Metrics Struct", func() {
 	Context("GAP-10: Audit Lag Seconds Metric", func() {
 		It("should record audit lag observations", func() {
 			// Record lag observations
-			metrics.AuditLagSeconds.WithLabelValues(ServiceNotification).Observe(0.5)
-			metrics.AuditLagSeconds.WithLabelValues(ServiceNotification).Observe(1.2)
-			metrics.AuditLagSeconds.WithLabelValues(ServiceNotification).Observe(0.8)
+			m.AuditLagSeconds.WithLabelValues(metrics.ServiceNotification).Observe(0.5)
+			m.AuditLagSeconds.WithLabelValues(metrics.ServiceNotification).Observe(1.2)
+			m.AuditLagSeconds.WithLabelValues(metrics.ServiceNotification).Observe(0.8)
 
 			// Verify histogram recorded observations
 			families, err := registry.Gather()
@@ -147,15 +148,15 @@ var _ = Describe("Metrics Struct", func() {
 					found = true
 					Expect(family.GetMetric()).To(HaveLen(1), "Should have 1 label combination")
 					metric := family.GetMetric()[0]
-					
+
 					// Histogram should have count
 					Expect(metric.GetHistogram().GetSampleCount()).To(BeNumerically("==", 3))
-					
+
 					// Check labels
 					labels := metric.GetLabel()
 					Expect(labels).To(HaveLen(1), "Should have 1 label: service")
 					Expect(labels[0].GetName()).To(Equal("service"))
-					Expect(labels[0].GetValue()).To(Equal(ServiceNotification))
+					Expect(labels[0].GetValue()).To(Equal(metrics.ServiceNotification))
 					break
 				}
 			}
@@ -166,8 +167,8 @@ var _ = Describe("Metrics Struct", func() {
 	Context("Write Duration Metric", func() {
 		It("should record write duration observations", func() {
 			// Record write durations
-			metrics.WriteDuration.WithLabelValues("notification_audit").Observe(0.025) // 25ms
-			metrics.WriteDuration.WithLabelValues("notification_audit").Observe(0.050) // 50ms
+			m.WriteDuration.WithLabelValues("notification_audit").Observe(0.025) // 25ms
+			m.WriteDuration.WithLabelValues("notification_audit").Observe(0.050) // 50ms
 
 			// Verify histogram recorded observations
 			families, err := registry.Gather()
@@ -189,7 +190,7 @@ var _ = Describe("Metrics Struct", func() {
 	Context("Validation Failures Metric", func() {
 		It("should increment validation failures with field and reason labels", func() {
 			// Increment validation failure
-			metrics.ValidationFailures.WithLabelValues("notification_id", ValidationReasonRequired).Inc()
+			m.ValidationFailures.WithLabelValues("notification_id", metrics.ValidationReasonRequired).Inc()
 
 			// Verify metric was incremented
 			families, err := registry.Gather()
@@ -210,7 +211,7 @@ var _ = Describe("Metrics Struct", func() {
 						labelMap[label.GetName()] = label.GetValue()
 					}
 					Expect(labelMap["field"]).To(Equal("notification_id"))
-					Expect(labelMap["reason"]).To(Equal(ValidationReasonRequired))
+					Expect(labelMap["reason"]).To(Equal(metrics.ValidationReasonRequired))
 					break
 				}
 			}
@@ -218,4 +219,3 @@ var _ = Describe("Metrics Struct", func() {
 		})
 	})
 })
-
