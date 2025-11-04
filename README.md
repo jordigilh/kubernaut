@@ -98,8 +98,8 @@ Kubernaut uses **Tekton Pipelines** as its workflow execution engine **from V1 (
 
 ### **Core Architecture**
 - ✅ **Tekton Pipelines**: DAG orchestration, parallel execution, workspace management
-- ✅ **Generic Meta-Task**: Single Tekton Task executes all 29+ action containers
-- ✅ **ActionExecution Tracking**: Dedicated CRDs for pattern monitoring and effectiveness
+- ✅ **Remediation Playbooks**: Versioned, reusable multi-step remediation patterns (ADR-033)
+- ✅ **Multi-Dimensional Success Tracking**: Effectiveness tracking by incident type, playbook, and action
 - ✅ **Cosign Verification**: Image signatures validated at admission time
 
 ### **Universal Availability**
@@ -108,10 +108,11 @@ Kubernaut uses **Tekton Pipelines** as its workflow execution engine **from V1 (
 - ✅ **On-Premises**: Self-managed Kubernetes clusters supported
 
 ### **Key Benefits**
-- ✅ **Zero throwaway code**: Eliminates 500+ lines of custom orchestration
+- ✅ **Industry-Standard Playbooks**: Matches PagerDuty, Google SRE, BigPanda patterns (95% industry confidence)
+- ✅ **AI-Driven Selection**: Historical success rates inform playbook selection
+- ✅ **Continuous Learning**: Multi-dimensional effectiveness tracking improves over time
+- ✅ **Tekton Integration**: CNCF Graduated project for workflow execution
 - ✅ **50% faster development**: 8 weeks vs 16 weeks (no V1 → V2 migration)
-- ✅ **Industry standard**: Tekton Pipelines (CNCF Graduated project)
-- ✅ **Enterprise ready**: Same trust level as Kubernetes
 
 **Decision**: Using Tekton from V1 eliminates architectural waste (500+ lines of throwaway custom orchestration code) and ensures maximum industrial acceptance through CNCF Graduated Tekton Pipelines.
 
@@ -357,34 +358,34 @@ When V1 implementation completes (Week 13), Kubernaut will support:
 - Confidence scoring for recommendations
 - Note: Multi-LLM provider support (OpenAI, Anthropic, Azure, AWS Bedrock, Ollama) will be implemented in Phase 4 (AIAnalysis service)
 
-### **Automated Remediation Actions** (29 Canonical Actions)
+### **Remediation Playbooks** (ADR-033)
 Executed by WorkflowExecution via Tekton Pipelines (Phase 3):
 
-**Scaling & Resources**:
-- `scale_deployment`, `increase_resources`, `update_hpa`, `scale_statefulset`
+**Playbook-Based Remediation**:
+- Kubernaut uses **Remediation Playbooks** - versioned, reusable multi-step remediation patterns
+- AI selects proven playbooks based on **incident type** and **historical success rates**
+- Playbooks are **industry-standard** approach (used by PagerDuty, Google SRE, BigPanda)
+- **Multi-dimensional success tracking**: Effectiveness measured by incident type, playbook, and action
 
-**Pod & Application Lifecycle**:
-- `restart_pod`, `rollback_deployment`, `quarantine_pod`, `migrate_workload`
+**Key Features**:
+- ✅ **Proven Patterns**: Catalog of battle-tested remediation procedures
+- ✅ **AI Selection**: AI chooses best playbook based on 95% industry-aligned decision framework
+- ✅ **Continuous Learning**: Historical success rates inform future AI decisions
+- ✅ **Flexibility**: AI can still compose custom workflows for edge cases
+- ✅ **Safety**: Comprehensive validation, rollback capabilities, and effectiveness tracking
 
-**Node Operations**:
-- `drain_node`, `cordon_node`, `restart_daemonset`
+**Playbook Catalog** (Phase 3 deliverable):
+- Initial catalog will include 10-15 proven playbooks for common Kubernetes incidents
+- Examples: `pod-oom-recovery`, `pod-crash-recovery`, `high-cpu-scaling`, `disk-pressure-remediation`
+- Each playbook includes multi-step procedures, success criteria, and rollback strategies
+- Playbooks are versioned and continuously improved based on effectiveness data
 
-**Storage Operations**:
-- `expand_pvc`, `cleanup_storage`, `backup_data`, `compact_storage`
+**Registration Mechanisms**:
+- **Kubernetes CRD**: `RemediationPlaybook` custom resource for operator teams
+- **REST API**: Programmatic registration for external systems and AI experimentation
+- **GitOps**: File-based playbook definitions with version control
 
-**Network & Connectivity**:
-- `update_network_policy`, `restart_network`, `reset_service_mesh`
-
-**Database & Stateful Services**:
-- `failover_database`, `repair_database`
-
-**Security & Compliance**:
-- `rotate_secrets`, `audit_logs`
-
-**Diagnostics & Monitoring**:
-- `collect_diagnostics`, `enable_debug_mode`, `create_heap_dump`, `notify_only`
-
-All actions will include comprehensive safety validation, rollback capabilities, and effectiveness tracking.
+**Reference**: [ADR-033: Remediation Playbook Catalog](docs/architecture/decisions/ADR-033-remediation-playbook-catalog.md)
 
 ---
 
