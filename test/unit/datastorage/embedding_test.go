@@ -98,14 +98,17 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 
 			result, err := pipeline.Generate(ctx, audit)
 
-			if shouldSucceed {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.Embedding).To(HaveLen(expectedDimension))
-				Expect(result.Dimension).To(Equal(expectedDimension))
-			} else {
-				Expect(err).To(HaveOccurred())
-			}
+		if shouldSucceed {
+			// CORRECTNESS: Generation succeeds
+			Expect(err).ToNot(HaveOccurred(), "Generate should succeed")
+
+			// CORRECTNESS: Embedding has exact expected dimension
+			Expect(result.Embedding).To(HaveLen(expectedDimension), "Embedding should have expected dimension")
+			Expect(result.Dimension).To(Equal(expectedDimension), "Dimension field should match embedding length")
+		} else {
+			// CORRECTNESS: Generation fails for invalid input
+			Expect(err).To(HaveOccurred(), "Generate should fail for invalid input")
+		}
 		},
 
 		Entry("BR-STORAGE-012.1: Normal audit with all fields",

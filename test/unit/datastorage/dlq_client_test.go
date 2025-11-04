@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -17,10 +16,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
-func TestDLQClient(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "DLQ Client Suite")
-}
+// func TestDLQClient(t *testing.T) {
+// 	RegisterFailHandler(Fail)
+// 	RunSpecs(t, "...")
+// }
 
 var _ = Describe("DLQClient", func() {
 	var (

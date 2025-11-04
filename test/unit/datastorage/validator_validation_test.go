@@ -9,10 +9,6 @@ import (
 )
 
 // Test entry point moved to notification_audit_validator_test.go to avoid "Rerunning Suite" error
-// func TestValidator(t *testing.T) {
-// 	RegisterFailHandler(Fail)
-// 	RunSpecs(t, "Data Storage Validator Suite")
-// }
 
 var _ = Describe("SanitizeString - P2-1 Regression Tests", func() {
 	var (
