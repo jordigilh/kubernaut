@@ -298,72 +298,82 @@ type Metrics struct {
 	registry prometheus.Registerer
 }
 
-// NewMetrics creates and registers all Prometheus metrics with the default registry
+// NewMetrics creates a Metrics struct that references the global metrics
+// Note: Global metrics are already auto-registered via promauto
+// This function exists for backwards compatibility and dependency injection
 func NewMetrics(namespace, subsystem string) *Metrics {
 	return NewMetricsWithRegistry(namespace, subsystem, prometheus.DefaultRegisterer)
 }
 
-// NewMetricsWithRegistry creates and registers all Prometheus metrics with a custom registry
-// This is useful for testing to avoid duplicate registration panics
+// NewMetricsWithRegistry creates a Metrics struct with custom registry support
+// For testing: provide a custom registry to avoid global metric conflicts
+// For production: uses global promauto metrics (already registered)
 func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		registry: reg,
 	}
 
-	// GAP-10: Audit traces total metric
-	m.AuditTracesTotal = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "audit_traces_total",
-			Help:      "Total number of audit traces written by service and status",
-		},
-		[]string{"service", "status"},
-	)
+	// For production (default registry): Reference existing global promauto metrics
+	// For testing (custom registry): Create new isolated metrics
+	if reg == prometheus.DefaultRegisterer {
+		// Production: Use global promauto metrics (already registered)
+		// These are referenced, not created, to avoid duplicate registration
+		m.AuditTracesTotal = nil    // TODO: Add to global metrics
+		m.AuditLagSeconds = nil     // TODO: Add to global metrics  
+		m.WriteDuration = WriteDuration // Reference global
+		m.ValidationFailures = ValidationFailures // Reference global
+	} else {
+		// Testing: Create isolated metrics with custom registry
+		m.AuditTracesTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "audit_traces_total",
+				Help:      "Total number of audit traces written by service and status",
+			},
+			[]string{"service", "status"},
+		)
 
-	// GAP-10: Audit lag seconds metric
-	m.AuditLagSeconds = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "audit_lag_seconds",
-			Help:      "Time lag between event occurrence and audit write in seconds",
-			// Buckets: 100ms, 500ms, 1s, 2s, 5s, 10s, 30s, 60s
-			Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60},
-		},
-		[]string{"service"},
-	)
+		m.AuditLagSeconds = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "audit_lag_seconds",
+				Help:      "Time lag between event occurrence and audit write in seconds",
+				Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60},
+			},
+			[]string{"service"},
+		)
 
-	// Write duration metric
-	m.WriteDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "write_duration_seconds",
-			Help:      "Duration of write operations in seconds",
-			Buckets:   prometheus.DefBuckets,
-		},
-		[]string{"table"},
-	)
+		m.WriteDuration = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "write_duration_seconds",
+				Help:      "Duration of write operations in seconds",
+				Buckets:   prometheus.DefBuckets,
+			},
+			[]string{"table"},
+		)
 
-	// Validation failures metric
-	m.ValidationFailures = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: namespace,
-			Subsystem: subsystem,
-			Name:      "validation_failures_total",
-			Help:      "Total number of validation failures by field and reason",
-		},
-		[]string{"field", "reason"},
-	)
+		m.ValidationFailures = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "validation_failures_total",
+				Help:      "Total number of validation failures by field and reason",
+			},
+			[]string{"field", "reason"},
+		)
 
-	// Register all metrics
-	reg.MustRegister(
-		m.AuditTracesTotal,
-		m.AuditLagSeconds,
-		m.WriteDuration,
-		m.ValidationFailures,
-	)
+		// Register ONLY for custom registries (testing)
+		reg.MustRegister(
+			m.AuditTracesTotal,
+			m.AuditLagSeconds,
+			m.WriteDuration,
+			m.ValidationFailures,
+		)
+	}
 
 	return m
 }

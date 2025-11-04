@@ -77,7 +77,7 @@ type RemediationAudit struct {
 	EndTime              *time.Time `json:"end_time,omitempty" db:"end_time"`
 	Duration             *int64     `json:"duration,omitempty" db:"duration"` // milliseconds
 	RemediationRequestID string     `json:"remediation_request_id" db:"remediation_request_id"`
-	AlertFingerprint     string     `json:"alert_fingerprint" db:"alert_fingerprint"`
+	SignalFingerprint    string     `json:"signal_fingerprint" db:"signal_fingerprint"`
 	Severity             string     `json:"severity" db:"severity"`
 	Environment          string     `json:"environment" db:"environment"`
 	ClusterName          string     `json:"cluster_name" db:"cluster_name"`
