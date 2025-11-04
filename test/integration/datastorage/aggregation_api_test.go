@@ -8,6 +8,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 // Aggregation API Integration Tests
@@ -50,19 +53,19 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				// ✅ BEHAVIOR TEST: HTTP 200 OK
-				Expect(resp.StatusCode).To(Equal(http.StatusOK), "Expected 200 OK for success rate aggregation")
+			// ✅ BEHAVIOR TEST: HTTP 200 OK
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Expected 200 OK for success rate aggregation")
 
-				var result map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&result)
-				Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
+			var result models.SuccessRateAggregationResponse
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
 
-				// ✅ CORRECTNESS TEST: Response structure
-				Expect(result).To(HaveKey("workflow_id"))
-				Expect(result).To(HaveKey("total_count"))
-				Expect(result).To(HaveKey("success_count"))
-				Expect(result).To(HaveKey("failure_count"))
-				Expect(result).To(HaveKey("success_rate"))
+			// ✅ CORRECTNESS TEST: Response structure (validated by structured type)
+			Expect(result.WorkflowID).ToNot(BeEmpty(), "workflow_id should be present")
+			Expect(result.TotalCount).To(BeNumerically(">=", 0), "total_count should be non-negative")
+			Expect(result.SuccessCount).To(BeNumerically(">=", 0), "success_count should be non-negative")
+			Expect(result.FailureCount).To(BeNumerically(">=", 0), "failure_count should be non-negative")
+			Expect(result.SuccessRate).To(BeNumerically(">=", 0), "success_rate should be non-negative")
 
 				// ✅ CORRECTNESS TEST: Verify against real database (GAP-05)
 				var dbTotalCount, dbSuccessCount, dbFailureCount int
@@ -76,23 +79,23 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				`, "workflow-agg-1").Scan(&dbTotalCount, &dbSuccessCount, &dbFailureCount)
 				Expect(err).ToNot(HaveOccurred(), "Database query should succeed")
 
-				// ✅ CORRECTNESS TEST: API response matches database exactly
-				Expect(result["workflow_id"]).To(Equal("workflow-agg-1"),
-					"workflow_id must match request parameter exactly")
-				Expect(result["total_count"]).To(Equal(float64(dbTotalCount)),
-					fmt.Sprintf("total_count must match database COUNT(*) exactly: %d incidents", dbTotalCount))
-				Expect(result["success_count"]).To(Equal(float64(dbSuccessCount)),
-					fmt.Sprintf("success_count must match database WHERE execution_status='completed' COUNT: %d incidents", dbSuccessCount))
-				Expect(result["failure_count"]).To(Equal(float64(dbFailureCount)),
-					fmt.Sprintf("failure_count must match database WHERE execution_status='failed' COUNT: %d incident", dbFailureCount))
+			// ✅ CORRECTNESS TEST: API response matches database exactly
+			Expect(result.WorkflowID).To(Equal("workflow-agg-1"),
+				"workflow_id must match request parameter exactly")
+			Expect(result.TotalCount).To(Equal(dbTotalCount),
+				fmt.Sprintf("total_count must match database COUNT(*) exactly: %d incidents", dbTotalCount))
+			Expect(result.SuccessCount).To(Equal(dbSuccessCount),
+				fmt.Sprintf("success_count must match database WHERE execution_status='completed' COUNT: %d incidents", dbSuccessCount))
+			Expect(result.FailureCount).To(Equal(dbFailureCount),
+				fmt.Sprintf("failure_count must match database WHERE execution_status='failed' COUNT: %d incident", dbFailureCount))
 
-				// ✅ CORRECTNESS TEST: Mathematical accuracy of success rate
-				expectedRate := float64(0)
-				if dbTotalCount > 0 {
-					expectedRate = float64(dbSuccessCount) / float64(dbTotalCount)
-				}
-				Expect(result["success_rate"]).To(BeNumerically("~", expectedRate, 0.01),
-					fmt.Sprintf("success_rate must equal success_count/total_count (%d/%d = %.2f) exactly", dbSuccessCount, dbTotalCount, expectedRate))
+			// ✅ CORRECTNESS TEST: Mathematical accuracy of success rate
+			expectedRate := float64(0)
+			if dbTotalCount > 0 {
+				expectedRate = float64(dbSuccessCount) / float64(dbTotalCount)
+			}
+			Expect(result.SuccessRate).To(BeNumerically("~", expectedRate, 0.01),
+				fmt.Sprintf("success_rate must equal success_count/total_count (%d/%d = %.2f) exactly", dbSuccessCount, dbTotalCount, expectedRate))
 			})
 
 			It("should handle 100% success rate", func() {
@@ -101,15 +104,15 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.SuccessRateAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				Expect(result["total_count"]).To(Equal(float64(2)))
-				Expect(result["success_count"]).To(Equal(float64(2)))
-				Expect(result["failure_count"]).To(Equal(float64(0)))
-				Expect(result["success_rate"]).To(BeNumerically("~", 1.0, 0.01))
+			Expect(result.TotalCount).To(Equal(2))
+			Expect(result.SuccessCount).To(Equal(2))
+			Expect(result.FailureCount).To(Equal(0))
+			Expect(result.SuccessRate).To(BeNumerically("~", 1.0, 0.01))
 			})
 
 			It("should handle 0% success rate", func() {
@@ -118,15 +121,15 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.SuccessRateAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				Expect(result["total_count"]).To(Equal(float64(2)))
-				Expect(result["success_count"]).To(Equal(float64(0)))
-				Expect(result["failure_count"]).To(Equal(float64(2)))
-				Expect(result["success_rate"]).To(BeNumerically("~", 0.0, 0.01))
+			Expect(result.TotalCount).To(Equal(2))
+			Expect(result.SuccessCount).To(Equal(0))
+			Expect(result.FailureCount).To(Equal(2))
+			Expect(result.SuccessRate).To(BeNumerically("~", 0.0, 0.01))
 			})
 
 			It("should handle empty workflow (no incidents)", func() {
@@ -135,15 +138,15 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.SuccessRateAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				Expect(result["total_count"]).To(Equal(float64(0)))
-				Expect(result["success_count"]).To(Equal(float64(0)))
-				Expect(result["failure_count"]).To(Equal(float64(0)))
-				Expect(result["success_rate"]).To(Equal(float64(0.0)))
+			Expect(result.TotalCount).To(Equal(0))
+			Expect(result.SuccessCount).To(Equal(0))
+			Expect(result.FailureCount).To(Equal(0))
+			Expect(result.SuccessRate).To(Equal(0.0))
 			})
 		})
 
@@ -153,14 +156,13 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
-				var problem map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&problem)
+			var problem validation.RFC7807Problem
+			json.NewDecoder(resp.Body).Decode(&problem)
 
-				Expect(problem).To(HaveKey("type"))
-				Expect(problem["type"]).To(ContainSubstring("missing-parameter"))
-				Expect(problem["detail"]).To(ContainSubstring("workflow_id"))
+			Expect(problem.Type).To(ContainSubstring("missing-parameter"))
+			Expect(problem.Detail).To(ContainSubstring("workflow_id"))
 			})
 		})
 	})
@@ -173,16 +175,14 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				// ✅ BEHAVIOR TEST: HTTP 200 OK
-				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			// ✅ BEHAVIOR TEST: HTTP 200 OK
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.NamespaceAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				// ✅ CORRECTNESS TEST: Response structure
-				Expect(result).To(HaveKey("aggregations"))
-				aggs := result["aggregations"].([]interface{})
-				Expect(aggs).To(HaveLen(3), "Expected 3 namespaces: prod-agg, staging-agg, dev-agg")
+			// ✅ CORRECTNESS TEST: Response structure (validated by structured type)
+			Expect(result.Aggregations).To(HaveLen(3), "Expected 3 namespaces: prod-agg, staging-agg, dev-agg")
 
 				// ✅ CORRECTNESS TEST: Verify against real database (GAP-05)
 				// Note: resource_action_traces uses cluster_name column (schema compatibility)
@@ -207,24 +207,21 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 					dbOrder = append(dbOrder, namespace)
 				}
 
-				// ✅ CORRECTNESS TEST: API response matches database exactly
-				aggMap := make(map[string]float64)
-				for _, agg := range aggs {
-					aggData := agg.(map[string]interface{})
-					namespace := aggData["namespace"].(string)
-					count := aggData["count"].(float64)
-					aggMap[namespace] = count
-				}
+			// ✅ CORRECTNESS TEST: API response matches database exactly
+			aggMap := make(map[string]int)
+			for _, agg := range result.Aggregations {
+				aggMap[agg.Namespace] = agg.Count
+			}
 
-				for namespace, dbCount := range dbAggMap {
-					apiCount := aggMap[namespace]
-					Expect(apiCount).To(Equal(float64(dbCount)),
-						fmt.Sprintf("%s should have %d incidents (database count)", namespace, dbCount))
-				}
+			for namespace, dbCount := range dbAggMap {
+				apiCount := aggMap[namespace]
+				Expect(apiCount).To(Equal(dbCount),
+					fmt.Sprintf("%s should have %d incidents (database count)", namespace, dbCount))
+			}
 
-				// ✅ CORRECTNESS TEST: Verify ORDER BY count DESC
-				Expect(aggs[0].(map[string]interface{})["namespace"]).To(Equal(dbOrder[0]),
-					"First namespace should match database ORDER BY count DESC")
+			// ✅ CORRECTNESS TEST: Verify ORDER BY count DESC
+			Expect(result.Aggregations[0].Namespace).To(Equal(dbOrder[0]),
+				"First namespace should match database ORDER BY count DESC")
 			})
 
 			It("should order namespaces by count descending", func() {
@@ -232,13 +229,12 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.NamespaceAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				aggs := result["aggregations"].([]interface{})
-				Expect(aggs[0].(map[string]interface{})["namespace"]).To(Equal("prod-agg"), "First should be prod-agg (highest count)")
-				Expect(aggs[1].(map[string]interface{})["namespace"]).To(Equal("staging-agg"), "Second should be staging-agg")
-				Expect(aggs[2].(map[string]interface{})["namespace"]).To(Equal("dev-agg"), "Third should be dev-agg (lowest count)")
+			Expect(result.Aggregations[0].Namespace).To(Equal("prod-agg"), "First should be prod-agg (highest count)")
+			Expect(result.Aggregations[1].Namespace).To(Equal("staging-agg"), "Second should be staging-agg")
+			Expect(result.Aggregations[2].Namespace).To(Equal("dev-agg"), "Third should be dev-agg (lowest count)")
 			})
 		})
 	})
@@ -251,16 +247,14 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				// ✅ BEHAVIOR TEST: HTTP 200 OK
-				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			// ✅ BEHAVIOR TEST: HTTP 200 OK
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.SeverityAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				// ✅ CORRECTNESS TEST: Response structure
-				Expect(result).To(HaveKey("aggregations"))
-				aggs := result["aggregations"].([]interface{})
-				Expect(aggs).To(HaveLen(4), "Expected 4 severity levels: critical, high, medium, low")
+			// ✅ CORRECTNESS TEST: Response structure (validated by structured type)
+			Expect(result.Aggregations).To(HaveLen(4), "Expected 4 severity levels: critical, high, medium, low")
 
 				// ✅ CORRECTNESS TEST: Verify against real database (GAP-05)
 				rows, err := db.Query(`
@@ -291,24 +285,21 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 					dbOrder = append(dbOrder, severity)
 				}
 
-				// ✅ CORRECTNESS TEST: API response matches database exactly
-				aggMap := make(map[string]float64)
-				for _, agg := range aggs {
-					aggData := agg.(map[string]interface{})
-					severity := aggData["severity"].(string)
-					count := aggData["count"].(float64)
-					aggMap[severity] = count
-				}
+			// ✅ CORRECTNESS TEST: API response matches database exactly
+			aggMap := make(map[string]int)
+			for _, agg := range result.Aggregations {
+				aggMap[agg.Severity] = agg.Count
+			}
 
-				for severity, dbCount := range dbAggMap {
-					apiCount := aggMap[severity]
-					Expect(apiCount).To(Equal(float64(dbCount)),
-						fmt.Sprintf("%s should have %d incidents (database count)", severity, dbCount))
-				}
+			for severity, dbCount := range dbAggMap {
+				apiCount := aggMap[severity]
+				Expect(apiCount).To(Equal(dbCount),
+					fmt.Sprintf("%s should have %d incidents (database count)", severity, dbCount))
+			}
 
-				// ✅ CORRECTNESS TEST: Verify ORDER BY severity level (critical first)
-				Expect(aggs[0].(map[string]interface{})["severity"]).To(Equal("critical"),
-					"First severity should be critical (custom CASE ORDER BY)")
+			// ✅ CORRECTNESS TEST: Verify ORDER BY severity level (critical first)
+			Expect(result.Aggregations[0].Severity).To(Equal("critical"),
+				"First severity should be critical (custom CASE ORDER BY)")
 			})
 
 			It("should order severities by severity level (critical first)", func() {
@@ -316,14 +307,13 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.SeverityAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				aggs := result["aggregations"].([]interface{})
-				Expect(aggs[0].(map[string]interface{})["severity"]).To(Equal("critical"), "First should be critical")
-				Expect(aggs[1].(map[string]interface{})["severity"]).To(Equal("high"), "Second should be high")
-				Expect(aggs[2].(map[string]interface{})["severity"]).To(Equal("medium"), "Third should be medium")
-				Expect(aggs[3].(map[string]interface{})["severity"]).To(Equal("low"), "Fourth should be low")
+			Expect(result.Aggregations[0].Severity).To(Equal("critical"), "First should be critical")
+			Expect(result.Aggregations[1].Severity).To(Equal("high"), "Second should be high")
+			Expect(result.Aggregations[2].Severity).To(Equal("medium"), "Third should be medium")
+			Expect(result.Aggregations[3].Severity).To(Equal("low"), "Fourth should be low")
 			})
 		})
 	})
@@ -336,23 +326,19 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.TrendAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				// ✅ CORRECTNESS TEST: Response structure
-				Expect(result).To(HaveKey("period"))
-				Expect(result["period"]).To(Equal("7d"))
-				Expect(result).To(HaveKey("data_points"))
+			// ✅ CORRECTNESS TEST: Response structure (validated by structured type)
+			Expect(result.Period).To(Equal("7d"))
+			Expect(result.DataPoints).ToNot(BeEmpty(), "Should have at least one data point from test data")
 
-				dataPoints := result["data_points"].([]interface{})
-				Expect(dataPoints).ToNot(BeEmpty(), "Should have at least one data point from test data")
-
-				// ✅ CORRECTNESS TEST: Data point structure
-				firstPoint := dataPoints[0].(map[string]interface{})
-				Expect(firstPoint).To(HaveKey("date"))
-				Expect(firstPoint).To(HaveKey("count"))
+			// ✅ CORRECTNESS TEST: Data point structure (validated by structured type)
+			firstPoint := result.DataPoints[0]
+			Expect(firstPoint.Date).ToNot(BeEmpty(), "date should be present")
+			Expect(firstPoint.Count).To(BeNumerically(">=", 0), "count should be non-negative")
 			})
 
 			It("should return daily incident counts for 30d period", func() {
@@ -360,12 +346,12 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				var result map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&result)
+			var result models.TrendAggregationResponse
+			json.NewDecoder(resp.Body).Decode(&result)
 
-				Expect(result["period"]).To(Equal("30d"))
+			Expect(result.Period).To(Equal("30d"))
 			})
 		})
 
