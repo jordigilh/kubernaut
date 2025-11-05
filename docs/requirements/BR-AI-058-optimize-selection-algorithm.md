@@ -1,10 +1,10 @@
 # BR-AI-058: Optimize Playbook Selection Algorithm
 
-**Business Requirement ID**: BR-AI-058  
-**Category**: AI/LLM Service  
-**Priority**: P2  
-**Target Version**: V2  
-**Status**: ✅ Approved  
+**Business Requirement ID**: BR-AI-058
+**Category**: AI/LLM Service
+**Priority**: P2
+**Target Version**: V2
+**Status**: ✅ Approved
 **Date**: November 5, 2025
 
 ---
@@ -117,15 +117,15 @@ score := (weights.Effectiveness * effectivenessScore) +
 
 ## ✅ **Approval**
 
-**Status**: ✅ **APPROVED FOR V2**  
-**Date**: November 5, 2025  
-**Decision**: Implement as P2 priority (V2 feature)  
-**Rationale**: Enhances AI selection for better remediation outcomes  
+**Status**: ✅ **APPROVED FOR V2**
+**Date**: November 5, 2025
+**Decision**: Implement as P2 priority (V2 feature)
+**Rationale**: Enhances AI selection for better remediation outcomes
 **Approved By**: Architecture Team
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 5, 2025  
+**Document Version**: 1.0
+**Last Updated**: November 5, 2025
 **Status**: ✅ Approved for V2 Implementation
 
