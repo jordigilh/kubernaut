@@ -1,8 +1,8 @@
 # ADR-034: Business Requirement (BR) Template Standard
 
-**Date**: November 5, 2025  
-**Status**: ✅ Approved  
-**Purpose**: Establish standard template for all Kubernaut business requirements  
+**Date**: November 5, 2025
+**Status**: ✅ Approved
+**Purpose**: Establish standard template for all Kubernaut business requirements
 **Rationale**: Ensure consistency, traceability, and comprehensive documentation across all BRs
 
 ---
@@ -333,12 +333,12 @@ It("should calculate incident-type success rate with exact counts", func() {
 
 ## ✅ **APPROVAL**
 
-**Status**: ✅ **APPROVED**  
-**Date**: November 5, 2025  
-**Decision**: Establish BR template as mandatory standard for all new business requirements  
-**Rationale**: Ensures consistency, traceability, and comprehensive documentation  
-**Approved By**: Architecture Team  
-**Effective Date**: November 5, 2025 (all new BRs)  
+**Status**: ✅ **APPROVED**
+**Date**: November 5, 2025
+**Decision**: Establish BR template as mandatory standard for all new business requirements
+**Rationale**: Ensures consistency, traceability, and comprehensive documentation
+**Approved By**: Architecture Team
+**Effective Date**: November 5, 2025 (all new BRs)
 **Migration Plan**: Existing BRs grandfathered, new BRs must follow template
 
 ---
@@ -368,8 +368,8 @@ It("should calculate incident-type success rate with exact counts", func() {
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 5, 2025  
+**Document Version**: 1.0
+**Last Updated**: November 5, 2025
 **Status**: ✅ Approved - Mandatory for all new BRs
 
 

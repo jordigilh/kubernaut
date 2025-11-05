@@ -105,7 +105,7 @@ var _ = Describe("BR-WF-E2E-001: End-to-End Workflow Engine Testing", func() {
 		k8sClient := k8s.NewUnifiedClient(realK8sClient, k8sConfig, realLogger)
 
 		// Create real E2E test dependencies for complete architecture testing
-		// BR-WORKFLOW-001 to BR-WORKFLOW-040: Complete workflow engine functionality
+		// BR-REMEDIATION-001 to BR-REMEDIATION-040: Complete workflow engine functionality
 		// BR-E2E-REAL-001: E2E tests must use real components, not mocks
 
 		// Create real database connection for E2E testing

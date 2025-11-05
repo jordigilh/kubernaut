@@ -4,7 +4,7 @@
 **Status**: ✅ **ACCEPTED**
 **Context**: Kubernaut V1 Testing Strategy
 **Deciders**: Development Team
-**Technical Story**: [BR-WORKFLOW-001, BR-PLATFORM-001, Testing Strategy Rule 03]
+**Technical Story**: [BR-REMEDIATION-001, BR-PLATFORM-001, Testing Strategy Rule 03]
 
 ---
 
@@ -32,7 +32,7 @@ Kubernaut's 5 CRD controllers must be thoroughly tested with unit tests covering
 ## Decision Drivers
 
 ### **Business Requirements**:
-- **BR-WORKFLOW-001**: Modular workflow testing with clear boundaries
+- **BR-REMEDIATION-001**: Modular workflow testing with clear boundaries
 - **BR-PLATFORM-001**: Kubernetes-native patterns (use official tooling)
 - **Testing Strategy Rule 03**: Unit tests 70%+ coverage, <1s execution time
 
@@ -769,7 +769,7 @@ It("should handle optimistic locking conflicts", func() {
 ## Links
 
 ### **Business Requirements**:
-- **BR-WORKFLOW-001**: Modular workflow testing
+- **BR-REMEDIATION-001**: Modular workflow testing
   - Location: `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md`
   - Fulfilled: ✅ Fast unit tests enable TDD workflow
 

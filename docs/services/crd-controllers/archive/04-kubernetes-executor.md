@@ -26,7 +26,7 @@ This document provides the detailed CRD schema, controller reconciliation logic,
 - **Tracking**: BR-EXEC-040 (Execution lifecycle state tracking)
 
 **Related Requirements**:
-- **BR-WORKFLOW-025**: Workflow step execution with rollback capability
+- **BR-REMEDIATION-025**: Workflow step execution with rollback capability
 - **BR-PA-011**: 25+ predefined Kubernetes actions (scale, restart, patch, etc.)
 - **BR-REGO-001 to BR-REGO-010**: Rego-based policy validation
 

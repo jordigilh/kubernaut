@@ -4,7 +4,7 @@
 **Status**: ✅ **ACCEPTED**
 **Context**: Kubernaut V1 Testing Strategy (Microservices Architecture)
 **Deciders**: Development Team
-**Technical Story**: [BR-WORKFLOW-001, BR-INTEGRATION-001, Testing Strategy Rule 03]
+**Technical Story**: [BR-REMEDIATION-001, BR-INTEGRATION-001, Testing Strategy Rule 03]
 
 ---
 
@@ -45,7 +45,7 @@ With a **microservices architecture**, the risk surface changes:
 ## Decision Drivers
 
 ### **Business Requirements**:
-- **BR-WORKFLOW-001**: End-to-end workflow reliability (>95% success rate)
+- **BR-REMEDIATION-001**: End-to-end workflow reliability (>95% success rate)
 - **BR-INTEGRATION-001**: Robust cross-service communication
 - **BR-PLATFORM-001**: Production-ready quality standards
 
@@ -703,7 +703,7 @@ compare-schemas:
 ## Links
 
 ### **Business Requirements**:
-- **BR-WORKFLOW-001**: End-to-end workflow reliability
+- **BR-REMEDIATION-001**: End-to-end workflow reliability
   - Location: `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md`
   - Fulfilled: ✅ >50% integration coverage ensures workflow reliability
 

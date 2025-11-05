@@ -6,7 +6,7 @@ This document describes the comprehensive workflow engine and orchestration arch
 
 ## Business Requirements Addressed
 
-- **BR-WORKFLOW-001 to BR-WORKFLOW-040**: Core workflow engine functionality
+- **BR-REMEDIATION-001 to BR-REMEDIATION-040**: Core workflow engine functionality
 - **BR-ORCHESTRATION-001 to BR-ORCHESTRATION-045**: Adaptive orchestration capabilities
 - **BR-EXECUTION-001 to BR-EXECUTION-035**: Action execution and validation
 - **BR-AUTOMATION-001 to BR-AUTOMATION-030**: Intelligent automation patterns
