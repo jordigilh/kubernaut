@@ -51,17 +51,17 @@ import (
 
 var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	var (
-		handler     *server.Handler
-		req         *http.Request
-		rec         *httptest.ResponseRecorder
-		mockDB      sqlmock.Sqlmock
-		repo        *repository.ActionTraceRepository
-		logger      *zap.Logger
+		handler *server.Handler
+		req     *http.Request
+		rec     *httptest.ResponseRecorder
+		mockDB  sqlmock.Sqlmock
+		repo    *repository.ActionTraceRepository
+		logger  *zap.Logger
 	)
 
 	BeforeEach(func() {
 		// Create mock database and repository for unit tests
-		db, mock, err := sqlmock.New()
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 		Expect(err).ToNot(HaveOccurred())
 		mockDB = mock
 
@@ -124,9 +124,15 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Confidence should be one of the valid values")
 			})
 
-			It("should use default time_range=7d when not specified", func() {
-				// ARRANGE: Request without time_range param
-				req = httptest.NewRequest(
+		It("should use default time_range=7d when not specified", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("HighCPUUsage", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+				WillReturnRows(rows)
+
+			// ARRANGE: Request without time_range param
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage",
 					nil,
@@ -146,9 +152,15 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Handler should default to 7d time range")
 			})
 
-			It("should use default min_samples=5 when not specified", func() {
-				// ARRANGE: Request without min_samples param
-				req = httptest.NewRequest(
+		It("should use default min_samples=5 when not specified", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("HighCPUUsage", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+				WillReturnRows(rows)
+
+			// ARRANGE: Request without min_samples param
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range=7d",
 					nil,
@@ -237,7 +249,13 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	// ========================================
 	Describe("GET /api/v1/success-rate/playbook", func() {
 		Context("with valid query parameters", func() {
-			It("should return 200 OK with playbook success rate data", func() {
+		It("should return 200 OK with playbook success rate data", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("restart-pod-v1", "", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+				WillReturnRows(rows)
+
 				// ARRANGE: Create HTTP request with valid params
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -275,9 +293,15 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Confidence should be one of the valid values")
 			})
 
-			It("should accept optional playbook_version parameter", func() {
-				// ARRANGE: Request with playbook_version
-				req = httptest.NewRequest(
+		It("should accept optional playbook_version parameter", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("restart-pod-v1", "1.2.3", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+				WillReturnRows(rows)
+
+			// ARRANGE: Request with playbook_version
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/playbook?playbook_id=restart-pod-v1&playbook_version=1.2.3&time_range=7d",
 					nil,
@@ -346,10 +370,16 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	// ========================================
 	Describe("Edge Cases", func() {
 		Context("time range parsing", func() {
-			It("should accept valid time range formats: 1h, 24h, 7d, 30d", func() {
-				validRanges := []string{"1h", "24h", "7d", "30d"}
+		It("should accept valid time range formats: 1h, 24h, 7d, 30d", func() {
+			validRanges := []string{"1h", "24h", "7d", "30d"}
 
-				for _, timeRange := range validRanges {
+			for _, timeRange := range validRanges {
+				// Mock expectation for each time range
+				rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+					AddRow("HighCPUUsage", 100, 90, 10)
+				mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+					WillReturnRows(rows)
+
 					req = httptest.NewRequest(
 						http.MethodGet,
 						"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range="+timeRange,
@@ -384,8 +414,14 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		})
 
 		Context("min_samples validation", func() {
-			It("should accept positive integers for min_samples", func() {
-				req = httptest.NewRequest(
+		It("should accept positive integers for min_samples", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("HighCPUUsage", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+				WillReturnRows(rows)
+
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&min_samples=10",
 					nil,
@@ -429,6 +465,12 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		// ========================================
 		Context("edge cases and security", func() {
 			It("should handle incident_type with special characters (Kubernetes naming)", func() {
+				// Mock expectation for this test
+				rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+					AddRow("pod-oom-killer_v2.0", 100, 90, 10)
+				mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+					WillReturnRows(rows)
+
 				// BEHAVIOR: Kubernetes-valid special characters should be accepted
 				// (hyphens, underscores, dots are valid in Kubernetes labels)
 				req = httptest.NewRequest(
@@ -449,9 +491,15 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Incident type with special characters should be preserved")
 			})
 
-			It("should handle incident_type with URL-encoded spaces", func() {
-				// BEHAVIOR: URL-encoded spaces should be decoded correctly
-				req = httptest.NewRequest(
+		It("should handle incident_type with URL-encoded spaces", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("High CPU Usage", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+				WillReturnRows(rows)
+
+			// BEHAVIOR: URL-encoded spaces should be decoded correctly
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/incident-type?incident_type=High%20CPU%20Usage&time_range=7d",
 					nil,
@@ -469,9 +517,15 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Incident type should be URL-decoded")
 			})
 
-			It("should handle very large min_samples value", func() {
-				// BEHAVIOR: Very large min_samples should be accepted (no upper limit in spec)
-				req = httptest.NewRequest(
+		It("should handle very large min_samples value", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("HighCPUUsage", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+				WillReturnRows(rows)
+
+			// BEHAVIOR: Very large min_samples should be accepted (no upper limit in spec)
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&min_samples=1000000",
 					nil,
@@ -484,9 +538,15 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Very large min_samples should be accepted")
 			})
 
-			It("should handle multiple query parameters in different order", func() {
-				// BEHAVIOR: Query parameter order should not matter
-				req = httptest.NewRequest(
+		It("should handle multiple query parameters in different order", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("HighCPUUsage", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+				WillReturnRows(rows)
+
+			// BEHAVIOR: Query parameter order should not matter
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/incident-type?time_range=7d&min_samples=10&incident_type=HighCPUUsage",
 					nil,
@@ -499,10 +559,16 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Query parameter order should not matter")
 			})
 
-			It("should handle case-sensitive incident_type", func() {
-				// BEHAVIOR: incident_type should be case-sensitive
-				// (Kubernetes labels are case-sensitive)
-				req = httptest.NewRequest(
+		It("should handle case-sensitive incident_type", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("HighCPUUsage", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+				WillReturnRows(rows)
+
+			// BEHAVIOR: incident_type should be case-sensitive
+			// (Kubernetes labels are case-sensitive)
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range=7d",
 					nil,
@@ -523,7 +589,13 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 		// EDGE CASES: Playbook Endpoint
 		// ========================================
 		Context("playbook endpoint edge cases", func() {
-			It("should handle playbook_id with special characters", func() {
+		It("should handle playbook_id with special characters", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("pod-oom-recovery_v2.0", "v1.2", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+				WillReturnRows(rows)
+
 				req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/playbook?playbook_id=pod-oom-recovery_v2.0&playbook_version=v1.2&time_range=7d",
@@ -541,11 +613,17 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Playbook ID with special characters should be preserved")
 			})
 
-			It("should handle semantic version formats for playbook_version", func() {
-				// BEHAVIOR: Various semantic version formats should be accepted
-				validVersions := []string{"v1.0", "v1.2.3", "v2.0.0-alpha", "v1.0.0+build123"}
+		It("should handle semantic version formats for playbook_version", func() {
+			// BEHAVIOR: Various semantic version formats should be accepted
+			validVersions := []string{"v1.0", "v1.2.3", "v2.0.0-alpha", "v1.0.0+build123"}
 
-				for _, version := range validVersions {
+			for _, version := range validVersions {
+				// Mock expectation for each version
+				rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
+					AddRow("test-playbook", version, 100, 90, 10)
+				mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+					WillReturnRows(rows)
+
 					rec = httptest.NewRecorder() // Reset recorder for each test
 					req = httptest.NewRequest(
 						http.MethodGet,
@@ -560,9 +638,15 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				}
 			})
 
-			It("should handle playbook_version with URL-encoded plus sign", func() {
-				// BEHAVIOR: URL-encoded + in version (e.g., v1.0.0+build) should be decoded
-				req = httptest.NewRequest(
+		It("should handle playbook_version with URL-encoded plus sign", func() {
+			// Mock expectation for this test
+			rows := sqlmock.NewRows([]string{"playbook_id", "playbook_version", "total_executions", "successful_executions", "failed_executions"}).
+				AddRow("test-playbook", "v1.0.0+build123", 100, 90, 10)
+			mockDB.ExpectQuery(`SELECT\s+playbook_id`).
+				WillReturnRows(rows)
+
+			// BEHAVIOR: URL-encoded + in version (e.g., v1.0.0+build) should be decoded
+			req = httptest.NewRequest(
 					http.MethodGet,
 					"/api/v1/success-rate/playbook?playbook_id=test-playbook&playbook_version=v1.0.0%2Bbuild123&time_range=7d",
 					nil,
