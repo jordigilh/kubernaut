@@ -20,6 +20,7 @@
 | DD-008 | Integration Test Infrastructure (Podman + Kind) | ✅ Approved | 2025-11-01 | [DD-008-integration-test-infrastructure.md](decisions/DD-008-integration-test-infrastructure.md) |
 | DD-010 | PostgreSQL Driver Migration (lib/pq to pgx) | ✅ Approved | 2025-11-03 | [DD-010-postgresql-driver-migration.md](decisions/DD-010-postgresql-driver-migration.md) |
 | DD-011 | PostgreSQL 16+ and pgvector 0.5.1+ Version Requirements | ✅ Approved | 2025-10-13 | [DD-011-postgresql-version-requirements.md](decisions/DD-011-postgresql-version-requirements.md) |
+| DD-012 | Goose Database Migration Management | ✅ Approved | 2025-11-05 | [DD-012-goose-database-migration-management.md](decisions/DD-012-goose-database-migration-management.md) |
 || ADR-033 | Remediation Playbook Catalog & Multi-Dimensional Success Tracking | ✅ Approved | 2025-11-04 | [ADR-033-remediation-playbook-catalog.md](decisions/ADR-033-remediation-playbook-catalog.md) |
 | ADR-033-A | Cross-Service Business Requirements (6 Services, 20 BRs) | ✅ Approved | 2025-11-05 | [ADR-033-CROSS-SERVICE-BRS.md](decisions/ADR-033-CROSS-SERVICE-BRS.md) |
 | ADR-033-B | BR Category Migration Plan (BR-WORKFLOW → BR-REMEDIATION) | 📋 Planned | 2025-11-05 | [ADR-033-BR-CATEGORY-MIGRATION-PLAN.md](decisions/ADR-033-BR-CATEGORY-MIGRATION-PLAN.md) |
