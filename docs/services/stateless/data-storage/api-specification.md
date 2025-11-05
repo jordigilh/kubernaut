@@ -17,6 +17,7 @@
 2. [Success Rate Analytics API](#success-rate-analytics-api-adr-033) **✨ NEW in v2.0**
    - [Get Success Rate by Incident Type](#get-success-rate-by-incident-type)
    - [Get Success Rate by Playbook](#get-success-rate-by-playbook)
+   - [Get Multi-Dimensional Success Rate](#get-multi-dimensional-success-rate) **✨ NEW**
 3. [Health & Metrics](#health--metrics)
 4. [RFC 7807 Error Responses](#rfc-7807-error-responses)
 
@@ -219,9 +220,9 @@ All errors follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/ht
 
 ## Success Rate Analytics API (ADR-033)
 
-**Status**: ✅ Production-Ready (Days 12-15 Complete)  
-**Business Requirements**: BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-10  
-**Test Coverage**: 17 integration tests (100% passing)  
+**Status**: ✅ Production-Ready (Days 12-18 Complete)
+**Business Requirements**: BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-05
+**Test Coverage**: 23 integration tests (6 new multi-dimensional tests)
 **OpenAPI Spec**: [v2.yaml](./openapi/v2.yaml)
 
 **Purpose**: Multi-dimensional success tracking for AI-driven remediation effectiveness analysis.
@@ -467,6 +468,166 @@ Same error response format as incident-type endpoint.
 2. **Version Comparison**: A/B test v1.2 vs v2.0
 3. **Incident-Type Suitability**: Identify which problems a playbook solves best
 4. **Playbook Catalog Optimization**: Remove low-performing playbooks
+
+---
+
+### Get Multi-Dimensional Success Rate
+
+**CROSS-DIMENSIONAL AGGREGATION**: Calculate success rate across any combination of dimensions (incident type, playbook, action type).
+
+**BR-STORAGE-031-05**: Multi-Dimensional Success Rate API
+
+#### Request
+
+```http
+GET /api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=7d&min_samples=5
+```
+
+#### Query Parameters
+
+| Parameter | Type | Required | Default | Validation | Description |
+|-----------|------|----------|---------|------------|-------------|
+| `incident_type` | string | No | - | Non-empty string | Filter to specific incident type |
+| `playbook_id` | string | No | - | Non-empty string | Filter to specific playbook |
+| `playbook_version` | string | No | - | Pattern: `^v[0-9]+\.[0-9]+(\.[0-9]+)?$` | Specific version (requires `playbook_id`) |
+| `action_type` | string | No | - | Non-empty string | Filter to specific action type |
+| `time_range` | string | No | "7d" | Pattern: `^[0-9]+(h\|d)$` | Time window: "1h", "24h", "7d", "30d", "90d" |
+| `min_samples` | integer | No | 5 | ≥1 | Minimum sample size for confidence calculation |
+
+**Validation Rules**:
+- At least one dimension filter must be provided
+- `playbook_version` requires `playbook_id` to be specified
+- All dimension combinations are supported
+
+#### Response (200 OK)
+
+```json
+{
+  "dimensions": {
+    "incident_type": "pod-oom-killer",
+    "playbook_id": "pod-oom-recovery",
+    "playbook_version": "v1.2",
+    "action_type": "increase_memory"
+  },
+  "time_range": "7d",
+  "total_executions": 50,
+  "successful_executions": 45,
+  "failed_executions": 5,
+  "success_rate": 90.0,
+  "confidence": "medium",
+  "min_samples_met": true
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `dimensions` | object | Echo of query dimensions (empty string if not specified) |
+| `dimensions.incident_type` | string | Incident type filter applied |
+| `dimensions.playbook_id` | string | Playbook ID filter applied |
+| `dimensions.playbook_version` | string | Playbook version filter applied |
+| `dimensions.action_type` | string | Action type filter applied |
+| `time_range` | string | Time window for this analysis |
+| `total_executions` | integer | Total executions matching all dimension filters |
+| `successful_executions` | integer | Number of successful executions |
+| `failed_executions` | integer | Number of failed executions |
+| `success_rate` | float | Success rate percentage (0-100%) |
+| `confidence` | string | Confidence level (high/medium/low/insufficient_data) |
+| `min_samples_met` | boolean | Whether minimum sample threshold was met |
+
+#### Example Requests
+
+```bash
+# All three dimensions (most specific)
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory"
+
+# Two dimensions: incident + playbook (all actions)
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_id=pod-oom-recovery&playbook_version=v1.2"
+
+# Single dimension: incident type only
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&time_range=30d"
+
+# Single dimension: playbook only
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/multi-dimensional?playbook_id=pod-oom-recovery"
+
+# Action type effectiveness across all incidents
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/multi-dimensional?action_type=increase_memory&time_range=7d"
+```
+
+#### Error Responses
+
+**400 Bad Request** - Invalid parameters:
+```json
+{
+  "type": "https://api.kubernaut.io/problems/validation-error",
+  "title": "Invalid Query Parameter",
+  "status": 400,
+  "detail": "playbook_version requires playbook_id to be specified",
+  "instance": "/api/v1/success-rate/multi-dimensional"
+}
+```
+
+**400 Bad Request** - Invalid time_range:
+```json
+{
+  "type": "https://api.kubernaut.io/problems/validation-error",
+  "title": "Invalid Query Parameter",
+  "status": 400,
+  "detail": "invalid time_range: invalid (expected: 1h, 1d, 7d, 30d, 90d)",
+  "instance": "/api/v1/success-rate/multi-dimensional"
+}
+```
+
+**500 Internal Server Error** - Database failure:
+```json
+{
+  "type": "https://api.kubernaut.io/problems/internal-error",
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "Failed to retrieve multi-dimensional success rate data",
+  "instance": "/api/v1/success-rate/multi-dimensional"
+}
+```
+
+#### Use Cases
+
+1. **AI Learning**: "What's the success rate of playbook X for incident type Y?"
+2. **Action Effectiveness**: "Does action Z work better for incident A or B?"
+3. **Playbook Optimization**: "Which actions in this playbook are failing?"
+4. **Version Comparison**: "Is v2.0 better than v1.2 for OOM incidents?"
+5. **Incident-Specific Analysis**: "What's the best playbook+action combo for disk-full?"
+6. **Trend Analysis**: "Is our overall success rate improving over time?"
+
+#### Integration Examples
+
+**AI/LLM Service** (Playbook Selection):
+```go
+// Query: "Best playbook for pod-oom-killer?"
+resp, err := client.Get(fmt.Sprintf(
+    "%s/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&time_range=30d",
+    dataStorageURL,
+))
+// AI selects playbook with highest success_rate
+```
+
+**Effectiveness Monitor** (Trend Detection):
+```go
+// Compare last 7 days vs previous 7 days
+current := getSuccessRate("incident_type=pod-oom-killer&time_range=7d")
+previous := getSuccessRate("incident_type=pod-oom-killer&time_range=14d") // Approximate
+trend := current.SuccessRate - previous.SuccessRate
+```
+
+**Context API** (Aggregation Proxy):
+```go
+// Context API exposes this endpoint to other services
+func (s *Server) HandleGetMultiDimensionalSuccessRate(w http.ResponseWriter, r *http.Request) {
+    // Forward to Data Storage with authentication
+    resp, err := s.dataStorageClient.GetMultiDimensionalSuccessRate(r.Context(), r.URL.Query())
+    // Return response
+}
+```
 
 ---
 
