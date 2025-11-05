@@ -617,7 +617,7 @@ func convertIncidentToModel(inc *dsclient.Incident) *models.IncidentEvent {
 	result := &models.IncidentEvent{
 		// Primary identification
 		ID:   inc.Id,
-		Name: inc.AlertName,
+		Name: inc.SignalName,
 
 		// Context (REFACTOR: now available from Data Storage)
 		Namespace:      stringPtrToString(inc.Namespace),
@@ -626,13 +626,13 @@ func convertIncidentToModel(inc *dsclient.Incident) *models.IncidentEvent {
 		TargetResource: stringPtrToString(inc.TargetResource),
 
 		// Identifiers (REFACTOR: now available)
-		AlertFingerprint:     stringPtrToString(inc.AlertFingerprint),
+		AlertFingerprint:     stringPtrToString(inc.SignalFingerprint),
 		RemediationRequestID: stringPtrToString(inc.RemediationRequestId),
 
 		// Status
 		Phase:      phase,
 		Status:     string(inc.ExecutionStatus),
-		Severity:   string(inc.AlertSeverity),
+		Severity:   string(inc.SignalSeverity),
 		ActionType: inc.ActionType,
 
 		// Timing (REFACTOR: now available)
