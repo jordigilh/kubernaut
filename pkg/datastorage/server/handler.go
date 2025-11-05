@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
 // DBInterface defines the database operations required by handlers
@@ -53,8 +55,9 @@ type DBInterface interface {
 //
 // REFACTOR: Enhanced with structured logging, request timing, and observability
 type Handler struct {
-	db     DBInterface
-	logger *zap.Logger
+	db                    DBInterface
+	logger                *zap.Logger
+	actionTraceRepository *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
 }
 
 // HandlerOption is a functional option for configuring the Handler

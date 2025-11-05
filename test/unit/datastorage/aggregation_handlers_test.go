@@ -422,5 +422,162 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Handler should reject zero min_samples")
 			})
 		})
+
+		// ========================================
+		// EDGE CASES: Security, Boundaries, Special Characters
+		// Testing edge cases that integration tests might reveal
+		// ========================================
+		Context("edge cases and security", func() {
+			It("should handle incident_type with special characters (Kubernetes naming)", func() {
+				// BEHAVIOR: Kubernetes-valid special characters should be accepted
+				// (hyphens, underscores, dots are valid in Kubernetes labels)
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=pod-oom-killer_v2.0&time_range=7d",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				// CORRECTNESS: Returns 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Special characters (hyphen, underscore, dot) should be accepted")
+
+				var response models.IncidentTypeSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.IncidentType).To(Equal("pod-oom-killer_v2.0"),
+					"Incident type with special characters should be preserved")
+			})
+
+			It("should handle incident_type with URL-encoded spaces", func() {
+				// BEHAVIOR: URL-encoded spaces should be decoded correctly
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=High%20CPU%20Usage&time_range=7d",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				// CORRECTNESS: Returns 200 OK, incident_type decoded to "High CPU Usage"
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"URL-encoded incident_type should be decoded")
+
+				var response models.IncidentTypeSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.IncidentType).To(Equal("High CPU Usage"),
+					"Incident type should be URL-decoded")
+			})
+
+			It("should handle very large min_samples value", func() {
+				// BEHAVIOR: Very large min_samples should be accepted (no upper limit in spec)
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&min_samples=1000000",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				// CORRECTNESS: Returns 200 OK (valid integer)
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Very large min_samples should be accepted")
+			})
+
+			It("should handle multiple query parameters in different order", func() {
+				// BEHAVIOR: Query parameter order should not matter
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?time_range=7d&min_samples=10&incident_type=HighCPUUsage",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				// CORRECTNESS: Returns 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Query parameter order should not matter")
+			})
+
+			It("should handle case-sensitive incident_type", func() {
+				// BEHAVIOR: incident_type should be case-sensitive
+				// (Kubernetes labels are case-sensitive)
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range=7d",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				var response models.IncidentTypeSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.IncidentType).To(Equal("HighCPUUsage"),
+					"Incident type case should be preserved (case-sensitive)")
+			})
+		})
+
+		// ========================================
+		// EDGE CASES: Playbook Endpoint
+		// ========================================
+		Context("playbook endpoint edge cases", func() {
+			It("should handle playbook_id with special characters", func() {
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/playbook?playbook_id=pod-oom-recovery_v2.0&playbook_version=v1.2&time_range=7d",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByPlaybook(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Special characters in playbook_id should be accepted")
+
+				var response models.PlaybookSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.PlaybookID).To(Equal("pod-oom-recovery_v2.0"),
+					"Playbook ID with special characters should be preserved")
+			})
+
+			It("should handle semantic version formats for playbook_version", func() {
+				// BEHAVIOR: Various semantic version formats should be accepted
+				validVersions := []string{"v1.0", "v1.2.3", "v2.0.0-alpha", "v1.0.0+build123"}
+
+				for _, version := range validVersions {
+					rec = httptest.NewRecorder() // Reset recorder for each test
+					req = httptest.NewRequest(
+						http.MethodGet,
+						"/api/v1/success-rate/playbook?playbook_id=test-playbook&playbook_version="+version+"&time_range=7d",
+						nil,
+					)
+
+					handler.HandleGetSuccessRateByPlaybook(rec, req)
+
+					Expect(rec.Code).To(Equal(http.StatusOK),
+						"Semantic version format %s should be accepted", version)
+				}
+			})
+
+			It("should handle playbook_version with URL-encoded plus sign", func() {
+				// BEHAVIOR: URL-encoded + in version (e.g., v1.0.0+build) should be decoded
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/playbook?playbook_id=test-playbook&playbook_version=v1.0.0%2Bbuild123&time_range=7d",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByPlaybook(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"URL-encoded + in version should be decoded")
+
+				var response models.PlaybookSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.PlaybookVersion).To(Equal("v1.0.0+build123"),
+					"Playbook version with + should be URL-decoded")
+			})
+		})
 	})
 })
