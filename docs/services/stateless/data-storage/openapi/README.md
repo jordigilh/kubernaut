@@ -6,18 +6,37 @@ This directory contains OpenAPI 3.0+ specifications for the Data Storage Service
 
 ## Current Version
 
-**v1** (`v1.yaml`): Phase 1 Read API
-- Status: ✅ Production-ready
+**v2** (`v2.yaml`): ADR-033 Multi-Dimensional Success Tracking
+- Status: ✅ Production-ready (Day 15 complete)
+- Endpoints:
+  - `GET /api/v1/success-rate/incident-type` - **NEW**: Incident-type success rate (BR-STORAGE-031-01)
+  - `GET /api/v1/success-rate/playbook` - **NEW**: Playbook success rate (BR-STORAGE-031-02)
+  - `GET /api/v1/incidents` - List incidents with filters
+  - `GET /api/v1/incidents/{id}` - Get incident by ID
+  - `GET /health`, `/health/ready`, `/health/live` - Health checks
+- Features:
+  - Multi-dimensional success tracking (incident-type, playbook, AI mode)
+  - Confidence-based recommendations (high/medium/low/insufficient_data)
+  - AI execution mode distribution (catalog/chained/manual)
+  - Playbook and incident-type breakdown analytics
+
+---
+
+## Previous Versions
+
+**v1** (`v1.yaml`): Phase 1 Read API (Legacy)
+- Status: ✅ Stable (no longer actively developed)
 - Endpoints:
   - `GET /api/v1/incidents` - List incidents with filters
   - `GET /api/v1/incidents/{id}` - Get incident by ID
   - `GET /health`, `/health/ready`, `/health/live` - Health checks
+- Note: v1 does not include ADR-033 success rate analytics
 
 ---
 
 ## Future Versions
 
-**v2** (`v2.yaml`): Phase 2 Write API (Planned)
+**v3** (`v3.yaml`): Phase 2 Write API (Planned)
 - Status: 🚧 Not yet implemented
 - Additional endpoints:
   - `POST /api/v2/incidents` - Create new incident
@@ -53,23 +72,40 @@ This directory contains OpenAPI 3.0+ specifications for the Data Storage Service
 go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
 ```
 
-### Generate Client
+### Generate Client (v2 - Current)
 ```bash
 # From repository root
 oapi-codegen \
   --package datastorage \
   --generate types,client \
-  docs/services/stateless/data-storage/openapi/v1.yaml \
+  docs/services/stateless/data-storage/openapi/v2.yaml \
   > pkg/datastorage/client/generated.go
 ```
 
-### Generated Code Includes
+### Generated Code Includes (v2)
 - ✅ `Incident` struct
 - ✅ `IncidentListResponse` struct
+- ✅ `IncidentTypeSuccessRateResponse` struct (NEW in v2)
+- ✅ `PlaybookSuccessRateResponse` struct (NEW in v2)
+- ✅ `AIExecutionModeStats` struct (NEW in v2)
+- ✅ `PlaybookBreakdownItem` struct (NEW in v2)
+- ✅ `IncidentTypeBreakdownItem` struct (NEW in v2)
 - ✅ `Pagination` struct
 - ✅ `RFC7807Error` struct
-- ✅ `Client` interface with `ListIncidents()` and `GetIncidentByID()` methods
+- ✅ `Client` interface with all methods:
+  - `ListIncidents()`, `GetIncidentByID()` (v1)
+  - `GetSuccessRateByIncidentType()`, `GetSuccessRateByPlaybook()` (v2)
 - ✅ HTTP client implementation with request/response handling
+
+### Generate Client (v1 - Legacy)
+```bash
+# For legacy v1 client generation
+oapi-codegen \
+  --package datastorage \
+  --generate types,client \
+  docs/services/stateless/data-storage/openapi/v1.yaml \
+  > pkg/datastorage/client/generated_v1.go
+```
 
 ---
 
