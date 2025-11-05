@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 
@@ -490,6 +491,416 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 				Expect(result.TotalExecutions).To(Equal(2))
 				Expect(result.MinSamplesMet).To(BeFalse()) // 2 < 5
 				Expect(result.Confidence).To(Equal("insufficient_data"))
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+		})
+	})
+
+	// ========================================
+	// BR-STORAGE-031-05: Multi-Dimensional Success Rate
+	// TDD RED Phase: Write failing tests for GetSuccessRateMultiDimensional
+	// ========================================
+	Describe("GetSuccessRateMultiDimensional", func() {
+		Context("with all three dimensions specified", func() {
+			It("should query by incident_type + playbook + action_type", func() {
+				// ARRANGE: Mock database response
+				incidentType := "pod-oom-killer"
+				playbookID := "pod-oom-recovery"
+				playbookVersion := "v1.2"
+				actionType := "increase_memory"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					50, 45, 5,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, playbookID, playbookVersion, actionType, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT: Call repository method
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType:    incidentType,
+					PlaybookID:      playbookID,
+					PlaybookVersion: playbookVersion,
+					ActionType:      actionType,
+					TimeRange:       "7d",
+					MinSamples:      minSamples,
+				})
+
+				// ASSERT: No error
+				Expect(err).ToNot(HaveOccurred())
+
+				// BEHAVIOR: Returns multi-dimensional result
+				Expect(result).ToNot(BeNil())
+				Expect(result.Dimensions.IncidentType).To(Equal(incidentType))
+				Expect(result.Dimensions.PlaybookID).To(Equal(playbookID))
+				Expect(result.Dimensions.PlaybookVersion).To(Equal(playbookVersion))
+				Expect(result.Dimensions.ActionType).To(Equal(actionType))
+
+				// CORRECTNESS: Exact count validation
+				Expect(result.TotalExecutions).To(Equal(50))
+				Expect(result.SuccessfulExecutions).To(Equal(45))
+				Expect(result.FailedExecutions).To(Equal(5))
+
+				// CORRECTNESS: Mathematical accuracy (45/50 = 0.90 = 90%)
+				Expect(result.SuccessRate).To(BeNumerically("~", 90.0, 0.1))
+
+				// BEHAVIOR: Confidence level (50 samples = medium, 20-99 range)
+				Expect(result.Confidence).To(Equal("medium"))
+				Expect(result.MinSamplesMet).To(BeTrue())
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+		})
+
+		Context("with partial dimensions (incident_type + playbook only)", func() {
+			It("should query by incident_type + playbook, aggregate across all action_types", func() {
+				// ARRANGE: Mock database response (aggregated across actions)
+				incidentType := "pod-oom-killer"
+				playbookID := "pod-oom-recovery"
+				playbookVersion := "v1.2"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					100, 85, 15,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, playbookID, playbookVersion, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT: Call repository method (no action_type specified)
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType:    incidentType,
+					PlaybookID:      playbookID,
+					PlaybookVersion: playbookVersion,
+					TimeRange:       "7d",
+					MinSamples:      minSamples,
+				})
+
+				// ASSERT: No error
+				Expect(err).ToNot(HaveOccurred())
+
+				// BEHAVIOR: Returns aggregated result across all actions
+				Expect(result.TotalExecutions).To(Equal(100))
+				Expect(result.SuccessfulExecutions).To(Equal(85))
+
+				// CORRECTNESS: Success rate (85/100 = 0.85 = 85%)
+				Expect(result.SuccessRate).To(BeNumerically("~", 85.0, 0.1))
+
+				// BEHAVIOR: Dimensions reflect query
+				Expect(result.Dimensions.IncidentType).To(Equal(incidentType))
+				Expect(result.Dimensions.PlaybookID).To(Equal(playbookID))
+				Expect(result.Dimensions.ActionType).To(BeEmpty())
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+		})
+
+		Context("with only incident_type dimension", func() {
+			It("should query by incident_type only, aggregate across all playbooks and actions", func() {
+				// ARRANGE: Mock database response
+				incidentType := "pod-oom-killer"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					150, 135, 15,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT: Call repository method (only incident_type)
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: incidentType,
+					TimeRange:    "7d",
+					MinSamples:   minSamples,
+				})
+
+				// ASSERT: No error
+				Expect(err).ToNot(HaveOccurred())
+
+				// BEHAVIOR: Returns incident-type aggregation
+				Expect(result.Dimensions.IncidentType).To(Equal(incidentType))
+				Expect(result.Dimensions.PlaybookID).To(BeEmpty())
+				Expect(result.Dimensions.ActionType).To(BeEmpty())
+
+				// CORRECTNESS: Aggregated across all playbooks and actions
+				Expect(result.TotalExecutions).To(Equal(150))
+				Expect(result.SuccessRate).To(BeNumerically("~", 90.0, 0.1))
+
+				// BEHAVIOR: Confidence level (150 samples = high, >=100 range)
+				Expect(result.Confidence).To(Equal("high"))
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+		})
+
+		Context("edge cases", func() {
+			It("should return zero results for non-existent dimension combination", func() {
+				// ARRANGE: Mock empty result
+				incidentType := "non-existent-incident"
+				playbookID := "non-existent-playbook"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					0, 0, 0,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, playbookID, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT: Call repository method
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: incidentType,
+					PlaybookID:   playbookID,
+					TimeRange:    "7d",
+					MinSamples:   minSamples,
+				})
+
+				// ASSERT: No error
+				Expect(err).ToNot(HaveOccurred())
+
+				// BEHAVIOR: Returns zero executions
+				Expect(result.TotalExecutions).To(Equal(0))
+				Expect(result.SuccessfulExecutions).To(Equal(0))
+				Expect(result.FailedExecutions).To(Equal(0))
+
+				// CORRECTNESS: Success rate is 0.0 (no data)
+				Expect(result.SuccessRate).To(Equal(0.0))
+
+				// BEHAVIOR: Confidence is insufficient_data
+				Expect(result.Confidence).To(Equal("insufficient_data"))
+				Expect(result.MinSamplesMet).To(BeFalse())
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+
+			It("should handle playbook_version without playbook_id as validation error", func() {
+				// ACT: Call repository method (invalid: version without ID)
+				_, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType:    "pod-oom-killer",
+					PlaybookVersion: "v1.2", // Version without ID
+					TimeRange:       "7d",
+					MinSamples:      5,
+				})
+
+				// ASSERT: Returns validation error
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("playbook_version requires playbook_id"))
+			})
+
+			It("should handle invalid time_range format", func() {
+				// ACT: Call repository method with invalid time_range
+				_, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: "pod-oom-killer",
+					TimeRange:    "invalid",
+					MinSamples:   5,
+				})
+
+				// ASSERT: Returns validation error
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("invalid time_range"))
+			})
+
+			It("should handle 100% success rate correctly", func() {
+				// ARRANGE: Mock 100% success
+				incidentType := "simple-restart"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					25, 25, 0,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT: Call repository method
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: incidentType,
+					TimeRange:    "7d",
+					MinSamples:   minSamples,
+				})
+
+				// ASSERT: No error
+				Expect(err).ToNot(HaveOccurred())
+
+				// CORRECTNESS: 100% success rate
+				Expect(result.SuccessRate).To(Equal(100.0))
+				Expect(result.TotalExecutions).To(Equal(25))
+				Expect(result.SuccessfulExecutions).To(Equal(25))
+				Expect(result.FailedExecutions).To(Equal(0))
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+
+			It("should handle 0% success rate correctly", func() {
+				// ARRANGE: Mock 0% success
+				incidentType := "failing-action"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					10, 0, 10,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT: Call repository method
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: incidentType,
+					TimeRange:    "7d",
+					MinSamples:   minSamples,
+				})
+
+				// ASSERT: No error
+				Expect(err).ToNot(HaveOccurred())
+
+				// CORRECTNESS: 0% success rate
+				Expect(result.SuccessRate).To(Equal(0.0))
+				Expect(result.TotalExecutions).To(Equal(10))
+				Expect(result.SuccessfulExecutions).To(Equal(0))
+				Expect(result.FailedExecutions).To(Equal(10))
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+		})
+
+		Context("confidence level calculation", func() {
+			It("should return 'high' confidence for >= 100 samples", func() {
+				// ARRANGE: Mock 120 samples
+				incidentType := "high-volume-incident"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					120, 110, 10,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: incidentType,
+					TimeRange:    "7d",
+					MinSamples:   minSamples,
+				})
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.Confidence).To(Equal("high"))
+				Expect(result.MinSamplesMet).To(BeTrue())
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+
+			It("should return 'medium' confidence for 20-99 samples", func() {
+				// ARRANGE: Mock 50 samples
+				incidentType := "medium-volume-incident"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					50, 45, 5,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: incidentType,
+					TimeRange:    "7d",
+					MinSamples:   minSamples,
+				})
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.Confidence).To(Equal("medium"))
+				Expect(result.MinSamplesMet).To(BeTrue())
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+
+			It("should return 'low' confidence for 5-19 samples", func() {
+				// ARRANGE: Mock 10 samples
+				incidentType := "low-volume-incident"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					10, 9, 1,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: incidentType,
+					TimeRange:    "7d",
+					MinSamples:   minSamples,
+				})
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.Confidence).To(Equal("low"))
+				Expect(result.MinSamplesMet).To(BeTrue())
+
+				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
+			})
+
+			It("should return 'insufficient_data' confidence for < 5 samples", func() {
+				// ARRANGE: Mock 3 samples
+				incidentType := "rare-incident"
+				minSamples := 5
+
+				rows := sqlmock.NewRows([]string{
+					"total_executions", "successful_executions", "failed_executions",
+				}).AddRow(
+					3, 3, 0,
+				)
+
+				sqlMock.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WithArgs(incidentType, sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// ACT
+				result, err := repo.GetSuccessRateMultiDimensional(ctx, &models.MultiDimensionalQuery{
+					IncidentType: incidentType,
+					TimeRange:    "7d",
+					MinSamples:   minSamples,
+				})
+
+				// ASSERT
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result.Confidence).To(Equal("insufficient_data"))
+				Expect(result.MinSamplesMet).To(BeFalse())
 
 				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
 			})
