@@ -530,7 +530,10 @@ func parseTimeRange(timeRange string) (time.Duration, error) {
 // ========================================
 
 // GetSuccessRateMultiDimensional calculates success rate across multiple dimensions
-// BR-STORAGE-031-05: Multi-dimensional success rate aggregation
+//
+// BR-STORAGE-031-05: Multi-Dimensional Success Rate API
+// ADR-033: Remediation Playbook Catalog - Multi-dimensional tracking
+//
 // Supports any combination of: incident_type, playbook_id + playbook_version, action_type
 func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 	ctx context.Context,

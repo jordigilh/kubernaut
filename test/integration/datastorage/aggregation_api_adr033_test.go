@@ -691,8 +691,8 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Insert noise data with different combination (should be filtered out)
 				insertADR033ActionTrace("integration-test-other", "completed", "other-playbook", "v2.0", true, false, false)
 
-			// ACT: Query multi-dimensional endpoint with all 3 dimensions
-			resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=1h", datastorageURL))
+				// ACT: Query multi-dimensional endpoint with all 3 dimensions
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -846,6 +846,24 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				Expect(err).ToNot(HaveOccurred())
 				Expect(problem["type"]).To(ContainSubstring("validation-error"))
 				Expect(problem["detail"]).To(ContainSubstring("playbook_version requires playbook_id"))
+			})
+
+			It("should return 400 Bad Request when no dimensions are specified", func() {
+				// ACT: Query with no dimension filters (only time_range)
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?time_range=7d", datastorageURL))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
+					"Should return 400 when no dimensions are specified")
+
+				// CORRECTNESS: RFC 7807 error response
+				var problem map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&problem)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(problem["type"]).To(ContainSubstring("validation-error"))
+				Expect(problem["detail"]).To(ContainSubstring("at least one dimension filter"))
 			})
 
 			It("should return 400 Bad Request for invalid time_range", func() {

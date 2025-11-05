@@ -353,7 +353,10 @@ func (h *Handler) respondWithRFC7807(w http.ResponseWriter, statusCode int, prob
 // ========================================
 
 // HandleGetSuccessRateMultiDimensional handles GET /api/v1/success-rate/multi-dimensional
-// BR-STORAGE-031-05: Multi-dimensional success rate aggregation
+//
+// BR-STORAGE-031-05: Multi-Dimensional Success Rate API
+// ADR-033: Remediation Playbook Catalog - Cross-dimensional aggregation
+//
 // Supports any combination of: incident_type, playbook_id + playbook_version, action_type
 func (h *Handler) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r *http.Request) {
 	// Parse and validate query parameters (REFACTOR: Extracted to helper)
@@ -398,6 +401,11 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 	playbookID := query.Get("playbook_id")
 	playbookVersion := query.Get("playbook_version")
 	actionType := query.Get("action_type")
+
+	// Validate at least one dimension is provided
+	if incidentType == "" && playbookID == "" && actionType == "" {
+		return nil, fmt.Errorf("at least one dimension filter (incident_type, playbook_id, or action_type) must be specified")
+	}
 
 	// Parse time_range with default
 	timeRangeStr := query.Get("time_range")
