@@ -24,12 +24,14 @@ import (
 	"strconv"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
 // ========================================
-// TDD GREEN PHASE: ADR-033 Aggregation Handlers
+// TDD REFACTOR PHASE: ADR-033 Aggregation Handlers
 // 📋 Authority: test/unit/datastorage/aggregation_handlers_test.go
 // 📋 Tests Define Contract: Unit tests drive implementation
 // ========================================
@@ -37,8 +39,9 @@ import (
 // This file implements ADR-033 multi-dimensional success tracking HTTP handlers.
 //
 // TDD DRIVEN DESIGN:
-// - Tests written FIRST (aggregation_handlers_test.go)
-// - This production code implements MINIMAL functionality to pass tests
+// - Tests written FIRST (aggregation_handlers_test.go) - RED phase
+// - Minimal implementation to pass tests - GREEN phase
+// - Enhanced with real repository integration - REFACTOR phase
 // - Contract defined by test expectations
 //
 // Business Requirements:
@@ -92,6 +95,7 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 	}
 
 	minSamplesStr := r.URL.Query().Get("min_samples")
+	minSamples := 5 // Default minimum samples
 	if minSamplesStr != "" {
 		parsed, err := strconv.Atoi(minSamplesStr)
 		if err != nil {
@@ -112,33 +116,65 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 			})
 			return
 		}
-		// minSamples would be used here when repository is integrated
-		_ = parsed
+		minSamples = parsed
 	}
 
 	// 2. Call repository to get success rate data
-	// TODO: This will be implemented when ActionTraceRepository is added to Handler
-	// For now, return a minimal response to pass tests
-	response := &models.IncidentTypeSuccessRateResponse{
-		IncidentType:         incidentType,
-		TimeRange:            timeRange,
-		TotalExecutions:      0,
-		SuccessfulExecutions: 0,
-		FailedExecutions:     0,
-		SuccessRate:          0.0,
-		Confidence:           "insufficient_data",
-		MinSamplesMet:        false,
+	// TDD REFACTOR: Connect to real repository layer
+	duration, _ := parseTimeRange(timeRange) // Already validated above
+
+	var response *models.IncidentTypeSuccessRateResponse
+	var err error
+
+	if h.actionTraceRepository != nil {
+		// Production: Use real repository
+		response, err = h.actionTraceRepository.GetSuccessRateByIncidentType(
+			r.Context(),
+			incidentType,
+			duration,
+			minSamples,
+		)
+		if err != nil {
+			h.respondWithRFC7807(w, http.StatusInternalServerError, validation.RFC7807Problem{
+				Type:   "https://api.kubernaut.io/problems/internal-error",
+				Title:  "Internal Server Error",
+				Status: http.StatusInternalServerError,
+				Detail: "Failed to retrieve success rate data",
+			})
+			h.logger.Error("repository error",
+				zap.String("incident_type", incidentType),
+				zap.Error(err))
+			return
+		}
+	} else {
+		// Test mode: Return minimal response (for unit tests without repository)
+		response = &models.IncidentTypeSuccessRateResponse{
+			IncidentType:         incidentType,
+			TimeRange:            timeRange,
+			TotalExecutions:      0,
+			SuccessfulExecutions: 0,
+			FailedExecutions:     0,
+			SuccessRate:          0.0,
+			Confidence:           "insufficient_data",
+			MinSamplesMet:        false,
+		}
 	}
 
 	// 3. Return JSON response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("failed to encode response")
+		h.logger.Error("failed to encode response",
+			zap.Error(err))
 	}
 
 	// Log for observability
-	h.logger.Debug("incident-type success rate query")
+	h.logger.Debug("incident-type success rate query",
+		zap.String("incident_type", incidentType),
+		zap.String("time_range", timeRange),
+		zap.Int("min_samples", minSamples),
+		zap.Float64("success_rate", response.SuccessRate),
+		zap.String("confidence", response.Confidence))
 }
 
 // HandleGetSuccessRateByPlaybook handles GET /api/v1/success-rate/playbook
@@ -186,6 +222,7 @@ func (h *Handler) HandleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.
 	}
 
 	minSamplesStr := r.URL.Query().Get("min_samples")
+	minSamples := 5 // Default minimum samples
 	if minSamplesStr != "" {
 		parsed, err := strconv.Atoi(minSamplesStr)
 		if err != nil {
@@ -206,34 +243,69 @@ func (h *Handler) HandleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.
 			})
 			return
 		}
-		// minSamples would be used here when repository is integrated
-		_ = parsed
+		minSamples = parsed
 	}
 
 	// 2. Call repository to get success rate data
-	// TODO: This will be implemented when ActionTraceRepository is added to Handler
-	// For now, return a minimal response to pass tests
-	response := &models.PlaybookSuccessRateResponse{
-		PlaybookID:           playbookID,
-		PlaybookVersion:      playbookVersion,
-		TimeRange:            timeRange,
-		TotalExecutions:      0,
-		SuccessfulExecutions: 0,
-		FailedExecutions:     0,
-		SuccessRate:          0.0,
-		Confidence:           "insufficient_data",
-		MinSamplesMet:        false,
+	// TDD REFACTOR: Connect to real repository layer
+	duration, _ := parseTimeRange(timeRange) // Already validated above
+
+	var response *models.PlaybookSuccessRateResponse
+	var err error
+
+	if h.actionTraceRepository != nil {
+		// Production: Use real repository
+		response, err = h.actionTraceRepository.GetSuccessRateByPlaybook(
+			r.Context(),
+			playbookID,
+			playbookVersion,
+			duration,
+			minSamples,
+		)
+		if err != nil {
+			h.respondWithRFC7807(w, http.StatusInternalServerError, validation.RFC7807Problem{
+				Type:   "https://api.kubernaut.io/problems/internal-error",
+				Title:  "Internal Server Error",
+				Status: http.StatusInternalServerError,
+				Detail: "Failed to retrieve success rate data",
+			})
+			h.logger.Error("repository error",
+				zap.String("playbook_id", playbookID),
+				zap.String("playbook_version", playbookVersion),
+				zap.Error(err))
+			return
+		}
+	} else {
+		// Test mode: Return minimal response (for unit tests without repository)
+		response = &models.PlaybookSuccessRateResponse{
+			PlaybookID:           playbookID,
+			PlaybookVersion:      playbookVersion,
+			TimeRange:            timeRange,
+			TotalExecutions:      0,
+			SuccessfulExecutions: 0,
+			FailedExecutions:     0,
+			SuccessRate:          0.0,
+			Confidence:           "insufficient_data",
+			MinSamplesMet:        false,
+		}
 	}
 
 	// 3. Return JSON response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("failed to encode response")
+		h.logger.Error("failed to encode response",
+			zap.Error(err))
 	}
 
 	// Log for observability
-	h.logger.Debug("playbook success rate query")
+	h.logger.Debug("playbook success rate query",
+		zap.String("playbook_id", playbookID),
+		zap.String("playbook_version", playbookVersion),
+		zap.String("time_range", timeRange),
+		zap.Int("min_samples", minSamples),
+		zap.Float64("success_rate", response.SuccessRate),
+		zap.String("confidence", response.Confidence))
 }
 
 // parseTimeRange converts time range string to time.Duration
