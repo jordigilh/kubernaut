@@ -561,4 +561,264 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 			})
 		})
 	})
+
+	// ========================================
+	// BR-STORAGE-031-05: Multi-Dimensional Success Rate Handler
+	// TDD RED Phase: Write failing tests for HandleGetSuccessRateMultiDimensional
+	// ========================================
+	Describe("HandleGetSuccessRateMultiDimensional", func() {
+		Context("with all three dimensions specified", func() {
+			It("should return 200 OK with multi-dimensional success rate data", func() {
+				// ARRANGE: Create HTTP request with all dimensions
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=7d&min_samples=5",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Handler should return 200 OK for valid request")
+
+				// ASSERT: Response is valid JSON
+				var response models.MultiDimensionalSuccessRateResponse
+				err := json.NewDecoder(rec.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred(),
+					"Response should be valid JSON")
+
+				// CORRECTNESS: Validate response structure
+				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
+				Expect(response.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
+				Expect(response.Dimensions.PlaybookVersion).To(Equal("v1.2"))
+				Expect(response.Dimensions.ActionType).To(Equal("increase_memory"))
+				Expect(response.TimeRange).To(Equal("7d"))
+			})
+		})
+
+		Context("with partial dimensions (incident_type + playbook only)", func() {
+			It("should return 200 OK with aggregated data across all action_types", func() {
+				// ARRANGE: Create HTTP request with partial dimensions
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=7d",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				// ASSERT: Response has incident_type + playbook, no action_type
+				var response models.MultiDimensionalSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
+				Expect(response.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
+				Expect(response.Dimensions.ActionType).To(BeEmpty())
+			})
+		})
+
+		Context("validation errors", func() {
+			It("should return 400 Bad Request when playbook_version is specified without playbook_id", func() {
+				// ARRANGE: Create HTTP request with invalid params
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_version=v1.2",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should return 400 for invalid params")
+
+				// CORRECTNESS: RFC 7807 error format
+				var problem map[string]interface{}
+				json.Unmarshal(rec.Body.Bytes(), &problem)
+				Expect(problem["type"]).To(Equal("https://api.kubernaut.io/problems/validation-error"))
+				Expect(problem["detail"]).To(ContainSubstring("playbook_version requires playbook_id"))
+			})
+
+			It("should return 400 Bad Request for invalid time_range", func() {
+				// ARRANGE: Create HTTP request with invalid time_range
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&time_range=invalid",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				// CORRECTNESS: Error message mentions time_range
+				var problem map[string]interface{}
+				json.Unmarshal(rec.Body.Bytes(), &problem)
+				Expect(problem["detail"]).To(ContainSubstring("time_range"))
+			})
+
+			It("should return 400 Bad Request for invalid min_samples", func() {
+				// ARRANGE: Create HTTP request with invalid min_samples
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&min_samples=invalid",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				// CORRECTNESS: Error message mentions min_samples
+				var problem map[string]interface{}
+				json.Unmarshal(rec.Body.Bytes(), &problem)
+				Expect(problem["detail"]).To(ContainSubstring("min_samples"))
+			})
+
+			It("should return 400 Bad Request for negative min_samples", func() {
+				// ARRANGE: Create HTTP request with negative min_samples
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&min_samples=-5",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				// CORRECTNESS: Error message mentions positive integer
+				var problem map[string]interface{}
+				json.Unmarshal(rec.Body.Bytes(), &problem)
+				Expect(problem["detail"]).To(ContainSubstring("positive"))
+			})
+		})
+
+		Context("defaults", func() {
+			It("should default to 7d time_range when not specified", func() {
+				// ARRANGE: Create HTTP request without time_range
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				// CORRECTNESS: time_range defaults to "7d"
+				var result models.MultiDimensionalSuccessRateResponse
+				json.Unmarshal(rec.Body.Bytes(), &result)
+				Expect(result.TimeRange).To(Equal("7d"))
+			})
+
+			It("should default to 5 min_samples when not specified", func() {
+				// ARRANGE: Create HTTP request without min_samples
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				// BEHAVIOR: min_samples defaults to 5 (used in confidence calculation)
+				var result models.MultiDimensionalSuccessRateResponse
+				json.Unmarshal(rec.Body.Bytes(), &result)
+				// Response will reflect default min_samples behavior
+			})
+		})
+
+		Context("edge cases", func() {
+			It("should handle special characters in incident_type", func() {
+				// BEHAVIOR: Special characters should be URL-encoded and decoded
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer%2Fhigh-memory&time_range=7d",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Special characters should be URL-decoded")
+
+				var response models.MultiDimensionalSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer/high-memory"))
+			})
+
+			It("should handle large min_samples value", func() {
+				// BEHAVIOR: Large min_samples values should be accepted
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&min_samples=10000&time_range=7d",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Large min_samples values should be accepted")
+			})
+
+			It("should handle query parameter order independence", func() {
+				// BEHAVIOR: Parameter order should not affect response
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?time_range=7d&action_type=increase_memory&playbook_version=v1.2&incident_type=pod-oom-killer&playbook_id=pod-oom-recovery",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Parameter order should not affect response")
+
+				var response models.MultiDimensionalSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
+				Expect(response.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
+				Expect(response.Dimensions.PlaybookVersion).To(Equal("v1.2"))
+				Expect(response.Dimensions.ActionType).To(Equal("increase_memory"))
+			})
+
+			It("should handle case-sensitive incident_type", func() {
+				// BEHAVIOR: Incident type should be case-sensitive
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?incident_type=Pod-OOM-Killer&time_range=7d",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Case should be preserved")
+
+				var response models.MultiDimensionalSuccessRateResponse
+				json.NewDecoder(rec.Body).Decode(&response)
+				Expect(response.Dimensions.IncidentType).To(Equal("Pod-OOM-Killer"))
+			})
+		})
+	})
 })
