@@ -17,7 +17,7 @@ import (
 
 // ========================================
 // ADR-033 REPOSITORY UNIT TESTS (TDD RED Phase)
-// 📋 Authority: IMPLEMENTATION_PLAN_V5.0.md Day 13.1
+// 📋 Authority: IMPLEMENTATION_PLAN_V5.3.md Day 13.1
 // 📋 Testing Strategy: Behavior + Correctness
 // ========================================
 //

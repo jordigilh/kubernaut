@@ -354,7 +354,7 @@ paths:
       summary: Get success rate across multiple dimensions
       description: |
         **ADR-033 MULTI-DIMENSIONAL AGGREGATION**: Calculate success rate filtered by any combination of dimensions.
-        
+
         **BR-STORAGE-031-05**: Multi-Dimensional Success Rate API
       operationId: getSuccessRateMultiDimensional
       tags:
@@ -842,30 +842,30 @@ components:
       properties:
         dimensions:
           $ref: '#/components/schemas/QueryDimensions'
-        
+
         time_range:
           type: string
           description: Time window for this analysis
           example: "7d"
-        
+
         total_executions:
           type: integer
           minimum: 0
           description: Total number of action executions matching the dimension filters
           example: 50
-        
+
         successful_executions:
           type: integer
           minimum: 0
           description: Number of successful executions
           example: 45
-        
+
         failed_executions:
           type: integer
           minimum: 0
           description: Number of failed executions
           example: 5
-        
+
         success_rate:
           type: number
           format: double
@@ -873,13 +873,13 @@ components:
           maximum: 100.0
           description: Success rate percentage (successful / total * 100)
           example: 90.0
-        
+
         confidence:
           type: string
           enum: [high, medium, low, insufficient_data]
           description: Statistical confidence level based on sample size
           example: "medium"
-        
+
         min_samples_met:
           type: boolean
           description: Whether minimum sample size threshold was met
@@ -892,17 +892,17 @@ components:
           type: string
           description: Incident type filter (empty if not specified)
           example: "pod-oom-killer"
-        
+
         playbook_id:
           type: string
           description: Playbook ID filter (empty if not specified)
           example: "pod-oom-recovery"
-        
+
         playbook_version:
           type: string
           description: Playbook version filter (empty if not specified)
           example: "v1.2"
-        
+
         action_type:
           type: string
           description: Action type filter (empty if not specified)
