@@ -288,10 +288,11 @@ var _ = AfterSuite(func() {
 	GinkgoWriter.Println("✅ Redis container cleaned up")
 
 	// Close Context API client
-	if dbClient != nil {
-		err := dbClient.Close()
-		Expect(err).ToNot(HaveOccurred())
-	}
+	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
+	// if dbClient != nil {
+	// 	err := dbClient.Close()
+	// 	Expect(err).ToNot(HaveOccurred())
+	// }
 
 	// Clean up test data (not schema - we're using Data Storage Service schema)
 	if db != nil {

@@ -1,7 +1,6 @@
 package contextapi
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,10 +9,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
-	"github.com/jordigilh/kubernaut/pkg/contextapi/datastorage"
-	"github.com/jordigilh/kubernaut/pkg/contextapi/query"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/server"
 	dsmodels "github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
