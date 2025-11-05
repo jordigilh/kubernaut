@@ -64,7 +64,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred())
 
 			metricsText := body.String()
-			
+
 			// Validate endpoint returns Prometheus format
 			Expect(metricsText).To(ContainSubstring("go_goroutines"),
 				"Metrics endpoint MUST expose standard Go runtime metrics")
@@ -72,9 +72,9 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				"Metrics MUST be in Prometheus text format with help comments")
 			Expect(metricsText).To(ContainSubstring("# TYPE"),
 				"Metrics MUST be in Prometheus text format with type comments")
-			
-			// Note: Audit-specific metrics (datastorage_audit_traces_total, etc.) 
-			// only appear after they're emitted at least once. They're validated 
+
+			// Note: Audit-specific metrics (datastorage_audit_traces_total, etc.)
+			// only appear after they're emitted at least once. They're validated
 			// in the "Handler Metrics Emission" tests below.
 		})
 	})
@@ -88,26 +88,26 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			baselineResp, err := http.Get(datastorageURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			defer baselineResp.Body.Close()
-			
+
 			var baselineBody bytes.Buffer
 			_, err = baselineBody.ReadFrom(baselineResp.Body)
 			Expect(err).ToNot(HaveOccurred())
 			baselineMetrics := baselineBody.String()
 
-		// Create valid notification audit
-		auditPayload := &models.NotificationAudit{
-			RemediationID:   fmt.Sprintf("test-remediation-%d", time.Now().Unix()),
-			NotificationID:  fmt.Sprintf("test-notification-%d", time.Now().UnixNano()),
-			Recipient:       "test@example.com",
-			Channel:         "email",
-			MessageSummary:  "Test notification message",
-			Status:          "sent",
-			SentAt:          time.Now().UTC(),
-			DeliveryStatus:  "200 OK",
-			EscalationLevel: 0,
-		}
+			// Create valid notification audit
+			auditPayload := &models.NotificationAudit{
+				RemediationID:   fmt.Sprintf("test-remediation-%d", time.Now().Unix()),
+				NotificationID:  fmt.Sprintf("test-notification-%d", time.Now().UnixNano()),
+				Recipient:       "test@example.com",
+				Channel:         "email",
+				MessageSummary:  "Test notification message",
+				Status:          "sent",
+				SentAt:          time.Now().UTC(),
+				DeliveryStatus:  "200 OK",
+				EscalationLevel: 0,
+			}
 
-		payload, _ := json.Marshal(auditPayload)
+			payload, _ := json.Marshal(auditPayload)
 			resp, err := http.Post(
 				datastorageURL+"/api/v1/audit/notifications",
 				"application/json",
@@ -133,13 +133,13 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// Business Outcome: audit_traces_total metric incremented
 			Expect(updatedMetrics).To(ContainSubstring("datastorage_audit_traces_total"),
 				"audit_traces_total metric MUST be present after write")
-			
+
 			// Verify metric increased (baseline should be different from updated)
 			// We can't check exact values due to parallel test execution,
 			// but we can verify the metric exists and has a value
 			baselineHasMetric := strings.Contains(baselineMetrics, "datastorage_audit_traces_total")
 			updatedHasMetric := strings.Contains(updatedMetrics, "datastorage_audit_traces_total")
-			
+
 			if baselineHasMetric {
 				// Metric existed before, should still exist
 				Expect(updatedHasMetric).To(BeTrue(),
@@ -155,21 +155,21 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// Business Scenario: Audit event happened 2 seconds ago
 			// Expected: Metrics track audit lag for observability
 
-		// Create audit event with past timestamp
-		sentAt := time.Now().UTC().Add(-2 * time.Second)
-		auditPayload := &models.NotificationAudit{
-			RemediationID:   fmt.Sprintf("test-remediation-%d", time.Now().Unix()),
-			NotificationID:  fmt.Sprintf("test-notification-%d", time.Now().UnixNano()),
-			Recipient:       "test@example.com",
-			Channel:         "email",
-			MessageSummary:  "Test notification with lag",
-			Status:          "sent",
-			SentAt:          sentAt,
-			DeliveryStatus:  "200 OK",
-			EscalationLevel: 0,
-		}
+			// Create audit event with past timestamp
+			sentAt := time.Now().UTC().Add(-2 * time.Second)
+			auditPayload := &models.NotificationAudit{
+				RemediationID:   fmt.Sprintf("test-remediation-%d", time.Now().Unix()),
+				NotificationID:  fmt.Sprintf("test-notification-%d", time.Now().UnixNano()),
+				Recipient:       "test@example.com",
+				Channel:         "email",
+				MessageSummary:  "Test notification with lag",
+				Status:          "sent",
+				SentAt:          sentAt,
+				DeliveryStatus:  "200 OK",
+				EscalationLevel: 0,
+			}
 
-		payload, _ := json.Marshal(auditPayload)
+			payload, _ := json.Marshal(auditPayload)
 			resp, err := http.Post(
 				datastorageURL+"/api/v1/audit/notifications",
 				"application/json",
@@ -193,7 +193,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// Business Outcome: audit_lag_seconds metric recorded
 			Expect(metricsText).To(ContainSubstring("datastorage_audit_lag_seconds"),
 				"audit_lag_seconds histogram MUST be present for observability")
-			
+
 			// Verify it's a histogram with samples
 			// Prometheus format: datastorage_audit_lag_seconds_count{service="notification"} N
 			Expect(metricsText).To(MatchRegexp(`datastorage_audit_lag_seconds_count\{service="notification"\} \d+`),
@@ -214,14 +214,14 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred())
 			baselineMetrics := baselineBody.String()
 
-		// Invalid audit (missing required fields)
-		// Use structured type but with missing required fields to test validation
-		invalidPayload := &models.NotificationAudit{
-			Recipient: "test@example.com",
-			// Missing: RemediationID, NotificationID, Channel, Status, SentAt
-		}
+			// Invalid audit (missing required fields)
+			// Use structured type but with missing required fields to test validation
+			invalidPayload := &models.NotificationAudit{
+				Recipient: "test@example.com",
+				// Missing: RemediationID, NotificationID, Channel, Status, SentAt
+			}
 
-		payload, _ := json.Marshal(invalidPayload)
+			payload, _ := json.Marshal(invalidPayload)
 			resp, err := http.Post(
 				datastorageURL+"/api/v1/audit/notifications",
 				"application/json",
@@ -267,20 +267,20 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// Business Scenario: Audit write operation
 			// Expected: Metrics track database write performance
 
-		// Create valid audit
-		auditPayload := &models.NotificationAudit{
-			RemediationID:   fmt.Sprintf("test-remediation-%d", time.Now().Unix()),
-			NotificationID:  fmt.Sprintf("test-notification-%d", time.Now().UnixNano()),
-			Recipient:       "test@example.com",
-			Channel:         "email",
-			MessageSummary:  "Test notification for write duration",
-			Status:          "sent",
-			SentAt:          time.Now().UTC(),
-			DeliveryStatus:  "200 OK",
-			EscalationLevel: 0,
-		}
+			// Create valid audit
+			auditPayload := &models.NotificationAudit{
+				RemediationID:   fmt.Sprintf("test-remediation-%d", time.Now().Unix()),
+				NotificationID:  fmt.Sprintf("test-notification-%d", time.Now().UnixNano()),
+				Recipient:       "test@example.com",
+				Channel:         "email",
+				MessageSummary:  "Test notification for write duration",
+				Status:          "sent",
+				SentAt:          time.Now().UTC(),
+				DeliveryStatus:  "200 OK",
+				EscalationLevel: 0,
+			}
 
-		payload, _ := json.Marshal(auditPayload)
+			payload, _ := json.Marshal(auditPayload)
 			resp, err := http.Post(
 				datastorageURL+"/api/v1/audit/notifications",
 				"application/json",
@@ -311,4 +311,3 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 		})
 	})
 })
-

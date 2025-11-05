@@ -1,19 +1,21 @@
 # ADR-033: Cross-Service Business Requirements
 
-**Date**: November 5, 2025  
-**Status**: ✅ Approved  
-**Related ADR**: [ADR-033: Remediation Playbook Catalog](ADR-033-remediation-playbook-catalog.md)  
+**Date**: November 5, 2025
+**Status**: ✅ Approved
+**Related ADR**: [ADR-033: Remediation Playbook Catalog](ADR-033-remediation-playbook-catalog.md)
 **Purpose**: Define business requirements across all services impacted by ADR-033
 
 ---
 
 ## 🎯 **OVERVIEW**
 
-ADR-033 introduces **Multi-Dimensional Success Tracking** for remediation playbooks. This is a **cross-service architectural change** that impacts 5 services, not just Data Storage.
+ADR-033 introduces **Multi-Dimensional Success Tracking** for remediation playbooks. This is a **cross-service architectural change** that impacts **6 services**, not just Data Storage.
 
 **Key Architectural Shift**:
 - ❌ **OLD**: AI dynamically composes unique workflows (no success tracking)
 - ✅ **NEW**: AI selects from catalog of proven playbooks (success tracked by incident_type + playbook)
+
+**Pre-Release Status**: **NO BACKWARD COMPATIBILITY REQUIRED** - All changes are additive with native Go types
 
 ---
 
@@ -26,7 +28,8 @@ ADR-033 introduces **Multi-Dimensional Success Tracking** for remediation playbo
 | **Context API** | BR-INTEGRATION-0XX | Consume aggregation endpoints, expose to clients | 3 BRs |
 | **AI/LLM Service** | BR-AI-0XX | Use success rates for playbook selection | 2 BRs |
 | **Playbook Catalog** | BR-PLAYBOOK-0XX | Manage playbook registry, versioning | 3 BRs |
-| **TOTAL** | **5 categories** | **ADR-033 Cross-Service Requirements** | **17 BRs** |
+| **Effectiveness Monitor** | BR-EFFECTIVENESS-0XX | Consume success rate data for continuous learning | 3 BRs |
+| **TOTAL** | **6 categories** | **ADR-033 Cross-Service Requirements** | **20 BRs** |
 
 ---
 
@@ -36,13 +39,13 @@ ADR-033 introduces **Multi-Dimensional Success Tracking** for remediation playbo
 - Schema migration (7 new columns)
 - Aggregation REST APIs (3 new endpoints)
 - Multi-dimensional success tracking
-- Backward compatibility (schema only - pre-release)
+- **NO backward compatibility required (pre-release)**
 
 ### **Business Requirements**
 
 #### **BR-STORAGE-031-01: Incident-Type Success Rate API**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Expose REST API to calculate success rate aggregated by incident type (PRIMARY dimension)
 
 **Acceptance Criteria**:
@@ -81,8 +84,8 @@ Response:
 ---
 
 #### **BR-STORAGE-031-02: Playbook Success Rate API**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Expose REST API to calculate success rate aggregated by playbook (SECONDARY dimension)
 
 **Acceptance Criteria**:
@@ -116,8 +119,8 @@ Response:
 ---
 
 #### **BR-STORAGE-031-03: Schema Migration (7 New Columns)**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Add 7 new columns to `resource_action_traces` table for multi-dimensional tracking
 
 **Acceptance Criteria**:
@@ -140,8 +143,8 @@ IncidentType sql.NullString `json:"incident_type,omitempty" db:"incident_type"`
 ---
 
 #### **BR-STORAGE-031-04: AI Execution Mode Tracking**
-**Priority**: P1  
-**Status**: Pending  
+**Priority**: P1
+**Status**: Pending
 **Description**: Track which AI execution mode was used (catalog selection, chained playbooks, manual escalation)
 
 **Acceptance Criteria**:
@@ -161,8 +164,8 @@ type AIExecutionModeStats struct {
 ---
 
 #### **BR-STORAGE-031-05: Time-Range Filtering**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Support time-range filtering for all aggregation queries
 
 **Acceptance Criteria**:
@@ -174,8 +177,8 @@ type AIExecutionModeStats struct {
 ---
 
 #### **BR-STORAGE-031-06: Confidence Level Calculation**
-**Priority**: P1  
-**Status**: Pending  
+**Priority**: P1
+**Status**: Pending
 **Description**: Calculate confidence level based on sample size
 
 **Acceptance Criteria**:
@@ -196,8 +199,8 @@ type AIExecutionModeStats struct {
 ### **Business Requirements**
 
 #### **BR-REMEDIATION-015: Populate Incident Type on Audit Creation**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: When creating audit records in Data Storage, populate `incident_type` field
 
 **Acceptance Criteria**:
@@ -221,8 +224,8 @@ audit := models.NotificationAudit{
 ---
 
 #### **BR-REMEDIATION-016: Populate Playbook Metadata**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: When executing playbooks, populate playbook metadata fields in audit records
 
 **Acceptance Criteria**:
@@ -257,8 +260,8 @@ audit2 := models.NotificationAudit{
 ---
 
 #### **BR-REMEDIATION-017: Track AI Execution Mode**
-**Priority**: P1  
-**Status**: Pending  
+**Priority**: P1
+**Status**: Pending
 **Description**: Track which AI execution mode was used for this remediation
 
 **Acceptance Criteria**:
@@ -297,8 +300,8 @@ audit := models.NotificationAudit{
 ### **Business Requirements**
 
 #### **BR-INTEGRATION-008: Expose Incident-Type Success Rate to Clients**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Provide API endpoint for clients to query incident-type success rates
 
 **Acceptance Criteria**:
@@ -310,8 +313,8 @@ audit := models.NotificationAudit{
 ---
 
 #### **BR-INTEGRATION-009: Expose Playbook Success Rate to Clients**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Provide API endpoint for clients to query playbook success rates
 
 **Acceptance Criteria**:
@@ -322,8 +325,8 @@ audit := models.NotificationAudit{
 ---
 
 #### **BR-INTEGRATION-010: Migrate from workflow_id to incident_type**
-**Priority**: P1  
-**Status**: Pending  
+**Priority**: P1
+**Status**: Pending
 **Description**: Update all Context API queries to use `incident_type` instead of `workflow_id`
 
 **Acceptance Criteria**:
@@ -343,8 +346,8 @@ audit := models.NotificationAudit{
 ### **Business Requirements**
 
 #### **BR-AI-057: Select Playbook Based on Incident-Type Success Rates**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Use historical success rates to select optimal playbook for incident
 
 **Acceptance Criteria**:
@@ -371,8 +374,8 @@ return selectPlaybook(bestPlaybook.PlaybookID, bestPlaybook.PlaybookVersion)
 ---
 
 #### **BR-AI-058: Optimize Playbook Selection Using Historical Data**
-**Priority**: P1  
-**Status**: Pending  
+**Priority**: P1
+**Status**: Pending
 **Description**: Continuously improve playbook selection using multi-dimensional success tracking
 
 **Acceptance Criteria**:
@@ -392,8 +395,8 @@ return selectPlaybook(bestPlaybook.PlaybookID, bestPlaybook.PlaybookVersion)
 ### **Business Requirements**
 
 #### **BR-PLAYBOOK-001: Maintain Playbook Registry**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Provide centralized registry of all remediation playbooks
 
 **Acceptance Criteria**:
@@ -428,8 +431,8 @@ spec:
 ---
 
 #### **BR-PLAYBOOK-002: Support Playbook Versioning**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Support semantic versioning for playbooks
 
 **Acceptance Criteria**:
@@ -441,8 +444,8 @@ spec:
 ---
 
 #### **BR-PLAYBOOK-003: Expose Playbook Metadata API**
-**Priority**: P0  
-**Status**: Pending  
+**Priority**: P0
+**Status**: Pending
 **Description**: Provide REST API for services to query playbook metadata
 
 **Acceptance Criteria**:
@@ -450,6 +453,81 @@ spec:
 - Endpoint: `GET /api/v1/playbooks/{id}/versions` (list playbook versions)
 - Endpoint: `GET /api/v1/playbooks/{id}/versions/{version}` (get specific version)
 - Filter by tags, status (active/deprecated)
+
+---
+
+## 📊 **EFFECTIVENESS MONITOR SERVICE** (BR-EFFECTIVENESS-0XX)
+
+### **Primary Responsibilities**
+- Consume success rate data from Context API
+- Calculate playbook effectiveness trends
+- Trigger learning feedback loops
+- Provide effectiveness dashboards
+
+### **Business Requirements**
+
+#### **BR-EFFECTIVENESS-001: Consume Success Rate Data**
+**Priority**: P1
+**Status**: Pending
+**Description**: Query Context API for incident-type and playbook success rates
+
+**Acceptance Criteria**:
+- Poll Context API `/incidents/aggregate/success-rate/by-incident-type` endpoint
+- Poll Context API `/incidents/aggregate/success-rate/by-playbook` endpoint
+- Store historical trend data in internal database
+- Track success rate changes over time (7d, 30d, 90d windows)
+
+---
+
+#### **BR-EFFECTIVENESS-002: Calculate Playbook Effectiveness Trends**
+**Priority**: P1
+**Status**: Pending
+**Description**: Analyze success rate trends to identify improving/declining playbooks
+
+**Acceptance Criteria**:
+- Calculate trend direction (improving/stable/declining)
+- Compare current vs previous period success rates
+- Identify playbooks with statistically significant changes
+- Generate effectiveness scores (0.0-1.0) per playbook
+
+**Example**:
+```json
+{
+  "playbook_id": "pod-oom-recovery",
+  "playbook_version": "v1.2",
+  "current_success_rate": 0.85,
+  "previous_success_rate": 0.75,
+  "trend": "improving",
+  "change_percent": 13.3,
+  "effectiveness_score": 0.90
+}
+```
+
+---
+
+#### **BR-EFFECTIVENESS-003: Trigger Learning Feedback Loops**
+**Priority**: P2
+**Status**: Pending
+**Description**: Notify AI/LLM Service when playbook effectiveness changes significantly
+
+**Acceptance Criteria**:
+- Publish events to AI/LLM Service when success rate drops >10%
+- Publish events when new playbook versions outperform old versions
+- Include trend data and recommendations in event payload
+- Support configurable thresholds for feedback triggers
+
+**Example Event**:
+```json
+{
+  "event_type": "playbook_effectiveness_degradation",
+  "playbook_id": "pod-oom-recovery",
+  "playbook_version": "v1.1",
+  "current_success_rate": 0.40,
+  "previous_success_rate": 0.65,
+  "recommended_action": "deprecate_version",
+  "alternative_version": "v1.2"
+}
+```
 
 ---
 
@@ -462,7 +540,8 @@ spec:
 | **Context API** | 3 | Unit (6) + Integration (3) | Data Storage, AI Service |
 | **AI/LLM Service** | 2 | Unit (6) + Integration (2) | Context API |
 | **Playbook Catalog** | 3 | Unit (9) + Integration (3) | RemediationExecutor, AI Service |
-| **TOTAL** | **17 BRs** | **Unit (48) + Integration (29)** | **5 services** |
+| **Effectiveness Monitor** | 3 | Unit (9) + Integration (3) | Context API, AI Service |
+| **TOTAL** | **20 BRs** | **Unit (57) + Integration (32)** | **6 services** |
 
 ---
 
@@ -472,21 +551,26 @@ spec:
 graph LR
     PC[Playbook Catalog<br/>BR-PLAYBOOK-0XX] --> RE[RemediationExecutor<br/>BR-REMEDIATION-0XX]
     PC --> AI[AI/LLM Service<br/>BR-AI-0XX]
-    
+
     RE --> DS[Data Storage<br/>BR-STORAGE-031-XX]
-    
+
     CA[Context API<br/>BR-INTEGRATION-0XX] --> DS
     AI --> CA
-    
+
+    EM[Effectiveness Monitor<br/>BR-EFFECTIVENESS-0XX] --> CA
+    EM --> AI
+
     classDef catalog fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     classDef execution fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
     classDef storage fill:#fff3e0,stroke:#e65100,stroke-width:2px
     classDef integration fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    
+    classDef monitoring fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+
     class PC catalog
     class RE execution
     class DS storage
     class CA,AI integration
+    class EM monitoring
 ```
 
 ---
@@ -507,9 +591,11 @@ graph LR
 7. BR-INTEGRATION-008: Expose incident-type API ⭐⭐
 8. BR-AI-057: Select playbook using success rates ⭐⭐
 
-### **Wave 4: Optimization** (All Services)
+### **Wave 4: Optimization & Monitoring** (All Services)
 9. BR-REMEDIATION-017: Track AI execution mode ⭐
 10. BR-AI-058: Optimize selection algorithm ⭐
+11. BR-EFFECTIVENESS-001: Consume success rate data ⭐
+12. BR-EFFECTIVENESS-002: Calculate trends ⭐
 
 ---
 

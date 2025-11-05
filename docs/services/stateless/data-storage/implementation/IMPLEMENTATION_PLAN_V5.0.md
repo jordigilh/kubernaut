@@ -1441,16 +1441,16 @@ type NotificationAudit struct {
 	// ADR-033: NEW FIELDS (NULLABLE - BACKWARD COMPATIBLE)
 	// ========================================
 
-	// DIMENSION 1: INCIDENT TYPE (PRIMARY)
-	IncidentType     sql.NullString `json:"incident_type,omitempty" db:"incident_type"`
-	AlertName        sql.NullString `json:"alert_name,omitempty" db:"alert_name"`
-	IncidentSeverity sql.NullString `json:"incident_severity,omitempty" db:"incident_severity"`
+	// DIMENSION 1: INCIDENT TYPE (PRIMARY) - REQUIRED for ADR-033
+	IncidentType     string `json:"incident_type" db:"incident_type"`           // REQUIRED: Primary success tracking dimension
+	AlertName        string `json:"alert_name,omitempty" db:"alert_name"`       // OPTIONAL: Original Prometheus alert name
+	IncidentSeverity string `json:"incident_severity" db:"incident_severity"`   // REQUIRED: critical, warning, info
 
-	// DIMENSION 2: PLAYBOOK (SECONDARY)
-	PlaybookID          sql.NullString `json:"playbook_id,omitempty" db:"playbook_id"`
-	PlaybookVersion     sql.NullString `json:"playbook_version,omitempty" db:"playbook_version"`
-	PlaybookStepNumber  sql.NullInt32  `json:"playbook_step_number,omitempty" db:"playbook_step_number"`
-	PlaybookExecutionID sql.NullString `json:"playbook_execution_id,omitempty" db:"playbook_execution_id"`
+	// DIMENSION 2: PLAYBOOK (SECONDARY) - REQUIRED for ADR-033
+	PlaybookID          string `json:"playbook_id" db:"playbook_id"`                         // REQUIRED: Remediation playbook identifier
+	PlaybookVersion     string `json:"playbook_version" db:"playbook_version"`               // REQUIRED: Playbook version (v1.2, v2.0, etc.)
+	PlaybookStepNumber  int    `json:"playbook_step_number,omitempty" db:"playbook_step_number"` // OPTIONAL: Step position in multi-step playbook
+	PlaybookExecutionID string `json:"playbook_execution_id" db:"playbook_execution_id"`     // REQUIRED: Groups all steps in single playbook run
 
 	// AI EXECUTION MODE (HYBRID MODEL: 90% catalog + 9% chaining + 1% manual)
 	AISelectedPlaybook     bool            `json:"ai_selected_playbook" db:"ai_selected_playbook"`
@@ -1880,12 +1880,12 @@ func (r *Repository) GetSuccessRateByIncidentType(
 ) (*models.IncidentTypeSuccessRate, error) {
 	// 1. Query overall success rate
 	query := `
-		SELECT 
+		SELECT
 			COUNT(*) as total_executions,
 			COUNT(*) FILTER (WHERE status = 'completed') as successful_executions,
 			COUNT(*) FILTER (WHERE status = 'failed') as failed_executions,
 			COALESCE(
-				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) /
 				NULLIF(COUNT(*), 0),
 				0.0
 			) as success_rate
@@ -1950,12 +1950,12 @@ func (r *Repository) getPlaybookBreakdownForIncidentType(
 	timeRange time.Duration,
 ) ([]models.PlaybookBreakdown, error) {
 	query := `
-		SELECT 
+		SELECT
 			playbook_id,
 			playbook_version,
 			COUNT(*) as executions,
 			COALESCE(
-				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) /
 				NULLIF(COUNT(*), 0),
 				0.0
 			) as success_rate
@@ -1999,7 +1999,7 @@ func (r *Repository) getAIExecutionModeStats(
 	timeRange time.Duration,
 ) (*models.AIExecutionModeStats, error) {
 	query := `
-		SELECT 
+		SELECT
 			COUNT(*) FILTER (WHERE ai_selected_playbook = true) as catalog_selected,
 			COUNT(*) FILTER (WHERE ai_chained_playbooks = true) as chained,
 			COUNT(*) FILTER (WHERE ai_manual_escalation = true) as manual_escalation
@@ -2032,12 +2032,12 @@ func (r *Repository) GetSuccessRateByPlaybook(
 ) (*models.PlaybookSuccessRate, error) {
 	// 1. Query overall playbook success rate
 	query := `
-		SELECT 
+		SELECT
 			COUNT(*) as total_executions,
 			COUNT(*) FILTER (WHERE status = 'completed') as successful_executions,
 			COUNT(*) FILTER (WHERE status = 'failed') as failed_executions,
 			COALESCE(
-				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) /
 				NULLIF(COUNT(*), 0),
 				0.0
 			) as success_rate
@@ -2106,11 +2106,11 @@ func (r *Repository) getIncidentTypeBreakdownForPlaybook(
 	timeRange time.Duration,
 ) ([]models.IncidentTypeBreakdown, error) {
 	query := `
-		SELECT 
+		SELECT
 			incident_type,
 			COUNT(*) as executions,
 			COALESCE(
-				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) /
 				NULLIF(COUNT(*), 0),
 				0.0
 			) as success_rate
@@ -2155,12 +2155,12 @@ func (r *Repository) getActionBreakdownForPlaybook(
 	timeRange time.Duration,
 ) ([]models.ActionBreakdown, error) {
 	query := `
-		SELECT 
+		SELECT
 			action_type,
 			playbook_step_number,
 			COUNT(*) as executions,
 			COALESCE(
-				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) / 
+				CAST(COUNT(*) FILTER (WHERE status = 'completed') AS FLOAT) /
 				NULLIF(COUNT(*), 0),
 				0.0
 			) as success_rate
@@ -2232,37 +2232,37 @@ package server
 import (
 	"net/http"
 
-	"github.com/gorilla/mux"
+	"github.com/go-chi/chi/v5"
 )
 
 func (s *Server) registerRoutes() {
 	// ========================================
 	// EXISTING ROUTES (KEEP ALL)
 	// ========================================
-	
+
 	// Health check
 	s.router.HandleFunc("/health", s.handleHealth).Methods(http.MethodGet)
-	
+
 	// CRUD operations
 	s.router.HandleFunc("/api/v1/incidents/actions", s.handleCreateNotificationAudit).Methods(http.MethodPost)
 	s.router.HandleFunc("/api/v1/incidents/actions/{action_id}", s.handleGetNotificationAudit).Methods(http.MethodGet)
 	s.router.HandleFunc("/api/v1/incidents/actions", s.handleListNotificationAudits).Methods(http.MethodGet)
-	
+
 	// Vector search
 	s.router.HandleFunc("/api/v1/incidents/actions/search/similar", s.handleSearchSimilar).Methods(http.MethodPost)
-	
+
 	// ========================================
 	// ADR-033: NEW ROUTES (MULTI-DIMENSIONAL SUCCESS TRACKING)
 	// ========================================
-	
+
 	// BR-STORAGE-031-01: Incident-type success rate (PRIMARY dimension)
 	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate/by-incident-type",
 		s.handleGetSuccessRateByIncidentType).Methods(http.MethodGet)
-	
+
 	// BR-STORAGE-031-07: Playbook success rate (SECONDARY dimension)
 	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate/by-playbook",
 		s.handleGetSuccessRateByPlaybook).Methods(http.MethodGet)
-	
+
 	// BR-STORAGE-031-15: DEPRECATED workflow_id endpoint (backward compatibility)
 	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate",
 		s.handleGetSuccessRateDeprecated).Methods(http.MethodGet)
@@ -2668,7 +2668,7 @@ paths:
   # ========================================
   # EXISTING PATHS (KEEP ALL)
   # ========================================
-  
+
   /health:
     get:
       summary: Health check endpoint
@@ -3065,8 +3065,8 @@ components:
 ```markdown
 # ADR-033 Migration Guide: workflow_id → incident_type
 
-**For**: Consumers of Data Storage Service aggregation APIs  
-**Date**: November 4, 2025  
+**For**: Consumers of Data Storage Service aggregation APIs
+**Date**: November 4, 2025
 **Status**: Migration Required by V3.0 (workflow_id endpoint removal)
 
 ---
@@ -3110,11 +3110,11 @@ grep -r "workflow_id" . --include="*.go" --include="*.yaml"
 ### **Step 2: Replace with incident_type**
 ```go
 // ❌ OLD
-resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=%s", 
+resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=%s",
     baseURL, workflowID))
 
 // ✅ NEW
-resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s&time_range=7d", 
+resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s&time_range=7d",
     baseURL, incidentType))
 ```
 
@@ -3206,8 +3206,8 @@ type NewResponse struct {
 | BR-STORAGE-031-14 | Minimum samples threshold | `aggregation_queries_test.go` | `TC-ADR033-14` | 95% |
 | BR-STORAGE-031-15 | Deprecated workflow_id warning | `aggregation_handlers_test.go` | `TC-ADR033-15` | 95% |
 
-**Total ADR-033 BRs**: 15  
-**Test Coverage**: 100% (15/15 BRs covered)  
+**Total ADR-033 BRs**: 15
+**Test Coverage**: 100% (15/15 BRs covered)
 **Confidence**: 95% (industry-validated patterns)
 
 ---
