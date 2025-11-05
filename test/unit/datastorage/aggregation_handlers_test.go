@@ -764,6 +764,28 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				Expect(problem["detail"]).To(ContainSubstring("playbook_version requires playbook_id"))
 			})
 
+			It("should return 400 Bad Request when no dimensions are specified", func() {
+				// ARRANGE: Request with no dimension filters (only time_range)
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/multi-dimensional?time_range=7d",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateMultiDimensional(rec, req)
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should return 400 when no dimensions are specified")
+
+				// CORRECTNESS: Error message explains the issue
+				var problem map[string]interface{}
+				json.Unmarshal(rec.Body.Bytes(), &problem)
+				Expect(problem["type"]).To(Equal("https://api.kubernaut.io/problems/validation-error"))
+				Expect(problem["detail"]).To(ContainSubstring("at least one dimension filter"))
+			})
+
 			It("should return 400 Bad Request for invalid time_range", func() {
 				// ARRANGE: Create HTTP request with invalid time_range
 				req = httptest.NewRequest(

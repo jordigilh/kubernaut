@@ -405,18 +405,113 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MultiDimensionalSuccessRateResponse'
+              examples:
+                all_three_dimensions:
+                  summary: Success rate for specific incident + playbook + action
+                  value:
+                    dimensions:
+                      incident_type: "pod-oom-killer"
+                      playbook_id: "pod-oom-recovery"
+                      playbook_version: "v1.2"
+                      action_type: "increase_memory"
+                    time_range: "7d"
+                    total_executions: 50
+                    successful_executions: 45
+                    failed_executions: 5
+                    success_rate: 90.0
+                    confidence: "medium"
+                    min_samples_met: true
+
+                partial_dimensions:
+                  summary: Success rate by incident type only
+                  value:
+                    dimensions:
+                      incident_type: "pod-oom-killer"
+                      playbook_id: ""
+                      playbook_version: ""
+                      action_type: ""
+                    time_range: "30d"
+                    total_executions: 150
+                    successful_executions: 135
+                    failed_executions: 15
+                    success_rate: 90.0
+                    confidence: "high"
+                    min_samples_met: true
+
+                insufficient_data:
+                  summary: Insufficient sample size
+                  value:
+                    dimensions:
+                      incident_type: "rare-error"
+                      playbook_id: "experimental-fix"
+                      playbook_version: "v0.1"
+                      action_type: ""
+                    time_range: "7d"
+                    total_executions: 2
+                    successful_executions: 2
+                    failed_executions: 0
+                    success_rate: 100.0
+                    confidence: "insufficient_data"
+                    min_samples_met: false
+
         '400':
           description: Invalid parameters
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Error'
+              examples:
+                no_dimensions:
+                  summary: No dimension filters specified
+                  value:
+                    type: "https://api.kubernaut.io/problems/validation-error"
+                    title: "Invalid Query Parameter"
+                    status: 400
+                    detail: "at least one dimension filter (incident_type, playbook_id, or action_type) must be specified"
+                    instance: "/api/v1/success-rate/multi-dimensional?time_range=7d"
+
+                playbook_version_without_id:
+                  summary: playbook_version requires playbook_id
+                  value:
+                    type: "https://api.kubernaut.io/problems/validation-error"
+                    title: "Invalid Query Parameter"
+                    status: 400
+                    detail: "playbook_version requires playbook_id to be specified"
+                    instance: "/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_version=v1.2"
+
+                invalid_time_range:
+                  summary: Invalid time_range format
+                  value:
+                    type: "https://api.kubernaut.io/problems/validation-error"
+                    title: "Invalid Query Parameter"
+                    status: 400
+                    detail: "invalid time_range: invalid (expected format: 1h, 24h, 7d, 30d)"
+                    instance: "/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&time_range=invalid"
+
+                invalid_min_samples:
+                  summary: Invalid min_samples value
+                  value:
+                    type: "https://api.kubernaut.io/problems/validation-error"
+                    title: "Invalid Query Parameter"
+                    status: 400
+                    detail: "min_samples must be a positive integer"
+                    instance: "/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&min_samples=-5"
+
         '500':
           description: Internal server error
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Error'
+              examples:
+                database_error:
+                  summary: Database query failure
+                  value:
+                    type: "https://api.kubernaut.io/problems/internal-error"
+                    title: "Internal Server Error"
+                    status: 500
+                    detail: "Failed to retrieve multi-dimensional success rate data"
+                    instance: "/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer"
 
   # ========================================
   # EXISTING V1 ENDPOINTS (UNCHANGED)
