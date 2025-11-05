@@ -1,10 +1,10 @@
 # BR-PLAYBOOK-001: Playbook Registry Management
 
-**Business Requirement ID**: BR-PLAYBOOK-001  
-**Category**: Playbook Catalog Service  
-**Priority**: P0  
-**Target Version**: V1  
-**Status**: ✅ Approved  
+**Business Requirement ID**: BR-PLAYBOOK-001
+**Category**: Playbook Catalog Service
+**Priority**: P0
+**Target Version**: V1
+**Status**: ✅ Approved
 **Date**: November 5, 2025
 
 ---
@@ -177,23 +177,23 @@ type RemediationPlaybook struct {
     // Identity
     PlaybookID   string   `json:"playbook_id" db:"playbook_id"`        // e.g., "pod-oom-recovery"
     Version      string   `json:"version" db:"version"`                // e.g., "v1.2"
-    
+
     // Metadata
     Description  string   `json:"description" db:"description"`
     Author       string   `json:"author" db:"author"`                  // user@company.com
     CreatedAt    time.Time `json:"created_at" db:"created_at"`
     UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
-    
+
     // Classification
     IncidentTypes []string  `json:"incident_types" db:"incident_types"` // ["pod-oom-killer", ...]
     Tags         []string  `json:"tags" db:"tags"`                     // ["memory", "kubernetes", "pod"]
-    
+
     // Status
     Status       PlaybookStatus `json:"status" db:"status"`            // draft, active, deprecated
     StatusReason string   `json:"status_reason,omitempty" db:"status_reason"`
     DeprecatedAt *time.Time `json:"deprecated_at,omitempty" db:"deprecated_at"`
     DeprecatedBy string   `json:"deprecated_by,omitempty" db:"deprecated_by"`
-    
+
     // Playbook Definition
     Steps        []PlaybookStep `json:"steps" db:"steps"`              // JSON array of steps
 }
@@ -499,11 +499,11 @@ Response (200 OK):
 
 ## ✅ **Approval**
 
-**Status**: ✅ **APPROVED FOR V1**  
-**Date**: November 5, 2025  
-**Decision**: Implement as P0 priority (foundation for ADR-033 playbook catalog)  
-**Rationale**: Required for AI catalog-based selection (90% of Hybrid Model)  
-**Approved By**: Architecture Team  
+**Status**: ✅ **APPROVED FOR V1**
+**Date**: November 5, 2025
+**Decision**: Implement as P0 priority (foundation for ADR-033 playbook catalog)
+**Rationale**: Required for AI catalog-based selection (90% of Hybrid Model)
+**Approved By**: Architecture Team
 **Related ADR**: [ADR-033: Remediation Playbook Catalog](../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
 
 ---
@@ -523,7 +523,7 @@ Response (200 OK):
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 5, 2025  
+**Document Version**: 1.0
+**Last Updated**: November 5, 2025
 **Status**: ✅ Approved for V1 Implementation
 
