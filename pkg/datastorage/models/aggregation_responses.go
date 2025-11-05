@@ -95,7 +95,7 @@ type TrendAggregationResponse struct {
 //
 // These response types support ADR-033 Multi-Dimensional Success Tracking:
 // 1. Incident Type Success Rate (PRIMARY dimension)
-// 2. Playbook Success Rate (SECONDARY dimension)  
+// 2. Playbook Success Rate (SECONDARY dimension)
 // 3. Multi-Dimensional Aggregation (all 3 dimensions: incident + playbook + action)
 //
 // ========================================

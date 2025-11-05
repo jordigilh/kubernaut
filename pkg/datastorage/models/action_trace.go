@@ -7,7 +7,7 @@ import (
 
 // ========================================
 // ACTION TRACE MODEL (ADR-033: Multi-Dimensional Success Tracking)
-// 📋 Authority: migrations/012_adr033_multidimensional_tracking.sql  
+// 📋 Authority: migrations/012_adr033_multidimensional_tracking.sql
 // 📋 Design Decision: DD-012 (Goose Database Migration Management)
 // ========================================
 //
@@ -214,4 +214,3 @@ func (a *ActionTrace) GetEffectiveIncidentType() string {
 	}
 	return a.AlertName
 }
-
