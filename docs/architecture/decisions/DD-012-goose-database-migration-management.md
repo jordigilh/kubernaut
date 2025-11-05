@@ -5,7 +5,7 @@
 **Decision Makers**: Development Team
 **Priority**: **P1 - FOUNDATIONAL** (Required for Day 12 ADR-033 implementation)
 **Supersedes**: None
-**Related To**: 
+**Related To**:
 - ADR-033 (Remediation Playbook Catalog & Multi-Dimensional Success Tracking)
 - DD-010 (PostgreSQL Driver Migration - pgx)
 - DD-011 (PostgreSQL 16+ Version Requirements)
@@ -274,26 +274,26 @@ func (s *Server) validateSchemaVersion() error {
     // Query goose_db_version table
     var currentVersion int64
     err := s.db.QueryRow(`
-        SELECT version_id 
-        FROM goose_db_version 
-        WHERE is_applied = true 
-        ORDER BY tstamp DESC 
+        SELECT version_id
+        FROM goose_db_version
+        WHERE is_applied = true
+        ORDER BY tstamp DESC
         LIMIT 1
     `).Scan(&currentVersion)
-    
+
     if err != nil {
         return fmt.Errorf("failed to check schema version: %w", err)
     }
-    
+
     if currentVersion < s.requiredSchemaVersion {
         return fmt.Errorf("database schema version %d is too old, required: %d",
             currentVersion, s.requiredSchemaVersion)
     }
-    
-    s.logger.Info("Schema version validated", 
+
+    s.logger.Info("Schema version validated",
         zap.Int64("current_version", currentVersion),
         zap.Int64("required_version", s.requiredSchemaVersion))
-    
+
     return nil
 }
 ```
