@@ -73,6 +73,14 @@ func WithLogger(logger *zap.Logger) HandlerOption {
 	}
 }
 
+// WithActionTraceRepository sets the ADR-033 action trace repository
+// TDD REFACTOR: Connect handlers to real repository layer
+func WithActionTraceRepository(repo *repository.ActionTraceRepository) HandlerOption {
+	return func(h *Handler) {
+		h.actionTraceRepository = repo
+	}
+}
+
 // NewHandler creates a new REST API handler
 // REFACTOR: Supports optional logger for production observability
 // Accepts DBInterface to work with both MockDB (tests) and real database (production)
