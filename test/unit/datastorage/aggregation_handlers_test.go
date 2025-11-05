@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -38,10 +54,9 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	)
 
 	BeforeEach(func() {
-		// TODO: Create handler with mocked ActionTraceRepository
-		// This will be implemented in TDD GREEN phase
-		// For now, handler is nil to ensure tests fail (TDD RED)
-		handler = nil
+		// Create handler with minimal setup for TDD GREEN phase
+		// TODO: Add ActionTraceRepository when repository integration is needed
+		handler = server.NewHandler(nil) // nil DB is fine for now (handlers don't use it yet)
 		rec = httptest.NewRecorder()
 	})
 
