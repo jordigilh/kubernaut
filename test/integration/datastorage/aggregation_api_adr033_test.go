@@ -514,6 +514,143 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 			})
 		})
 	})
+
+	// ========================================
+	// TC-ADR033-09: AI Execution Mode Distribution (ADR-033 Hybrid Model)
+	// BR-STORAGE-031-10: Track AI execution mode distribution
+	// ========================================
+	Describe("TC-ADR033-09: AI Execution Mode Distribution", func() {
+		Context("when querying incident-type with AI execution mode data", func() {
+			It("should track AI execution mode distribution (90-9-1 hybrid model)", func() {
+				incidentType := "integration-test-ai-mode-distribution"
+
+				// Setup: ADR-033 Hybrid Model distribution
+				// 90% catalog selections
+				for i := 0; i < 90; i++ {
+					insertADR033ActionTrace(incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+				}
+				// 9% chained playbooks
+				for i := 0; i < 9; i++ {
+					insertADR033ActionTrace(incidentType, "completed", "chained-playbook", "v1.0", false, true, false)
+				}
+				// 1% manual escalation
+				insertADR033ActionTrace(incidentType, "failed", "manual-escalation", "v1.0", false, false, true)
+
+				// ACT: Query incident-type success rate
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
+					datastorageURL, incidentType))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				// ASSERT: HTTP 200 OK
+				Expect(resp.StatusCode).To(Equal(http.StatusOK),
+					"Handler should return 200 OK for AI mode query")
+
+				var result models.IncidentTypeSuccessRateResponse
+				err = json.NewDecoder(resp.Body).Decode(&result)
+				Expect(err).ToNot(HaveOccurred(),
+					"Response should be valid JSON")
+
+				// BEHAVIOR: Returns AI execution mode statistics
+				Expect(result.AIExecutionMode).ToNot(BeNil(),
+					"AI execution mode should be present in response")
+
+				// CORRECTNESS: Distribution matches hybrid model (90-9-1)
+				Expect(result.AIExecutionMode.CatalogSelected).To(Equal(90),
+					"Catalog selection should be 90% (90 out of 100)")
+				Expect(result.AIExecutionMode.Chained).To(Equal(9),
+					"Chained playbooks should be 9% (9 out of 100)")
+				Expect(result.AIExecutionMode.ManualEscalation).To(Equal(1),
+					"Manual escalation should be 1% (1 out of 100)")
+
+				// CORRECTNESS: Total executions
+				Expect(result.TotalExecutions).To(Equal(100),
+					"Total executions should be 100 (90 + 9 + 1)")
+
+				// CORRECTNESS: Success rate (99% - only manual escalation failed)
+				Expect(result.SuccessRate).To(BeNumerically("~", 99.0, 0.1),
+					"Success rate should be 99% (99 completed out of 100)")
+			})
+
+			It("should handle 100% catalog selection (no chaining or escalation)", func() {
+				incidentType := "integration-test-catalog-only"
+
+				// Setup: 100% catalog selections
+				for i := 0; i < 50; i++ {
+					insertADR033ActionTrace(incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+				}
+
+				// ACT: Query incident-type success rate
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
+					datastorageURL, incidentType))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				var result models.IncidentTypeSuccessRateResponse
+				err = json.NewDecoder(resp.Body).Decode(&result)
+				Expect(err).ToNot(HaveOccurred())
+
+				// CORRECTNESS: 100% catalog selection
+				Expect(result.AIExecutionMode.CatalogSelected).To(Equal(50),
+					"All executions should be catalog selections")
+				Expect(result.AIExecutionMode.Chained).To(Equal(0),
+					"No chained playbooks")
+				Expect(result.AIExecutionMode.ManualEscalation).To(Equal(0),
+					"No manual escalations")
+			})
+
+			It("should handle mixed AI execution modes with failures", func() {
+				incidentType := "integration-test-mixed-ai-modes"
+
+				// Setup: Mixed modes with some failures
+				// 10 catalog selections (8 success, 2 failure)
+				for i := 0; i < 8; i++ {
+					insertADR033ActionTrace(incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+				}
+				for i := 0; i < 2; i++ {
+					insertADR033ActionTrace(incidentType, "failed", "catalog-playbook", "v1.0", true, false, false)
+				}
+				// 5 chained playbooks (all success)
+				for i := 0; i < 5; i++ {
+					insertADR033ActionTrace(incidentType, "completed", "chained-playbook", "v1.0", false, true, false)
+				}
+				// 2 manual escalations (both failure)
+				for i := 0; i < 2; i++ {
+					insertADR033ActionTrace(incidentType, "failed", "manual-escalation", "v1.0", false, false, true)
+				}
+
+				// ACT: Query incident-type success rate
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
+					datastorageURL, incidentType))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				var result models.IncidentTypeSuccessRateResponse
+				err = json.NewDecoder(resp.Body).Decode(&result)
+				Expect(err).ToNot(HaveOccurred())
+
+				// CORRECTNESS: AI execution mode counts
+				Expect(result.AIExecutionMode.CatalogSelected).To(Equal(10),
+					"10 catalog selections (8 success + 2 failure)")
+				Expect(result.AIExecutionMode.Chained).To(Equal(5),
+					"5 chained playbooks (all success)")
+				Expect(result.AIExecutionMode.ManualEscalation).To(Equal(2),
+					"2 manual escalations (both failure)")
+
+				// CORRECTNESS: Total and success counts
+				Expect(result.TotalExecutions).To(Equal(17),
+					"Total: 10 + 5 + 2 = 17")
+				Expect(result.SuccessfulExecutions).To(Equal(13),
+					"Successful: 8 + 5 + 0 = 13")
+				Expect(result.FailedExecutions).To(Equal(4),
+					"Failed: 2 + 0 + 2 = 4")
+
+				// CORRECTNESS: Success rate (13/17 ≈ 76.47%)
+				Expect(result.SuccessRate).To(BeNumerically("~", 76.47, 0.1),
+					"Success rate: 13/17 = 76.47%")
+			})
+		})
+	})
 })
 
 // ========================================
