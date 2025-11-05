@@ -1,9 +1,9 @@
 # Data Storage Service - Documentation Hub
 
-**Version**: 2.0
-**Last Updated**: October 13, 2025
-**Service Type**: Stateless HTTP API (Write & Query)
-**Status**: ✅ **PRODUCTION READY** (Implementation Complete)
+**Version**: 2.0 (ADR-033 Multi-Dimensional Success Tracking)
+**Last Updated**: November 5, 2025
+**Service Type**: Stateless HTTP API (Write & Query + Analytics)
+**Status**: ✅ **PRODUCTION READY** (Days 1-15 Complete)
 
 ---
 
@@ -22,10 +22,13 @@
 
 ## 🎯 Purpose
 
-**Centralized audit storage for all Kubernaut remediation activities.**
+**Centralized audit storage and analytics for all Kubernaut remediation activities.**
 
 The Data Storage Service provides:
 - **Persistent audit trail** for remediation workflows
+- **Multi-dimensional success tracking** (ADR-033) for AI learning
+- **Success rate analytics** by incident type and playbook
+- **AI execution mode tracking** (catalog/chained/manual)
 - **Dual-write coordination** (PostgreSQL + Vector DB)
 - **Semantic search** via vector embeddings
 - **Query API** for historical data retrieval
