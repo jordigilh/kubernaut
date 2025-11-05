@@ -651,6 +651,237 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 			})
 		})
 	})
+
+	// ========================================
+	// BR-STORAGE-031-05: Multi-Dimensional Success Rate API
+	// TDD RED Phase: Integration tests for /api/v1/success-rate/multi-dimensional
+	// ========================================
+	Describe("GET /api/v1/success-rate/multi-dimensional", func() {
+		BeforeEach(func() {
+			cleanupADR033TestData()
+		})
+
+		AfterEach(func() {
+			cleanupADR033TestData()
+		})
+
+		Context("with all three dimensions (incident_type + playbook + action_type)", func() {
+			It("should return aggregated data filtered by all dimensions", func() {
+				// ARRANGE: Insert test data with specific incident_type, playbook, and action_type
+				// Insert 10 completed actions for specific combination
+				for i := 0; i < 10; i++ {
+					insertADR033ActionTrace(
+						"integration-test-pod-oom",
+						"completed",
+						"pod-oom-recovery",
+						"v1.2",
+						true, false, false,
+					)
+				}
+				// Insert 2 failed actions for same combination
+				for i := 0; i < 2; i++ {
+					insertADR033ActionTrace(
+						"integration-test-pod-oom",
+						"failed",
+						"pod-oom-recovery",
+						"v1.2",
+						true, false, false,
+					)
+				}
+				// Insert noise data with different combination (should be filtered out)
+				insertADR033ActionTrace("integration-test-other", "completed", "other-playbook", "v2.0", true, false, false)
+
+				// ACT: Query multi-dimensional endpoint with all 3 dimensions
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=1h", serverURL))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				// ASSERT: HTTP 200 OK
+				Expect(resp.StatusCode).To(Equal(http.StatusOK),
+					"Multi-dimensional endpoint should return 200 OK")
+
+				// ASSERT: Parse response
+				var result models.MultiDimensionalSuccessRateResponse
+				err = json.NewDecoder(resp.Body).Decode(&result)
+				Expect(err).ToNot(HaveOccurred(),
+					"Response should be valid JSON")
+
+				// CORRECTNESS: Validate dimensions echo back
+				Expect(result.Dimensions.IncidentType).To(Equal("integration-test-pod-oom"))
+				Expect(result.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
+				Expect(result.Dimensions.PlaybookVersion).To(Equal("v1.2"))
+				Expect(result.Dimensions.ActionType).To(Equal("increase_memory"))
+
+				// CORRECTNESS: Validate counts (10 completed + 2 failed = 12 total)
+				Expect(result.TotalExecutions).To(Equal(12))
+				Expect(result.SuccessfulExecutions).To(Equal(10))
+				Expect(result.FailedExecutions).To(Equal(2))
+
+				// CORRECTNESS: Validate success rate (10/12 = 83.33%)
+				Expect(result.SuccessRate).To(BeNumerically("~", 83.33, 0.1),
+					"Success rate should be 10/12 = 83.33%")
+
+				// BEHAVIOR: Validate confidence (12 samples = low confidence)
+				Expect(result.Confidence).To(Equal("low"))
+			})
+		})
+
+		Context("with partial dimensions (incident_type + playbook only)", func() {
+			It("should aggregate across all action_types for given incident and playbook", func() {
+				// ARRANGE: Insert data for incident_type + playbook with MULTIPLE action_types
+				// Pod OOM recovery playbook - increase_memory action
+				for i := 0; i < 8; i++ {
+					query := `
+						INSERT INTO resource_action_traces (
+							action_history_id, action_id, action_type, action_timestamp, execution_status,
+							signal_name, signal_severity, model_used, model_confidence,
+							incident_type, alert_name, incident_severity,
+							playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
+							ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
+						) VALUES (
+							999, gen_random_uuid()::text, 'increase_memory', NOW(), 'completed',
+							'TestSignal', 'warning', 'gpt-4', 0.95,
+							'integration-test-pod-oom', 'TestAlert', 'warning',
+							'pod-oom-recovery', 'v1.2', 1, gen_random_uuid()::text,
+							true, false, false
+						)
+					`
+					_, err := db.Exec(query)
+					Expect(err).ToNot(HaveOccurred())
+				}
+				// Pod OOM recovery playbook - restart_pod action
+				for i := 0; i < 5; i++ {
+					query := `
+						INSERT INTO resource_action_traces (
+							action_history_id, action_id, action_type, action_timestamp, execution_status,
+							signal_name, signal_severity, model_used, model_confidence,
+							incident_type, alert_name, incident_severity,
+							playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
+							ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
+						) VALUES (
+							999, gen_random_uuid()::text, 'restart_pod', NOW(), 'completed',
+							'TestSignal', 'warning', 'gpt-4', 0.95,
+							'integration-test-pod-oom', 'TestAlert', 'warning',
+							'pod-oom-recovery', 'v1.2', 2, gen_random_uuid()::text,
+							true, false, false
+						)
+					`
+					_, err := db.Exec(query)
+					Expect(err).ToNot(HaveOccurred())
+				}
+
+				// ACT: Query without action_type (should aggregate both actions)
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=1h", serverURL))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				// ASSERT: HTTP 200 OK
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				// ASSERT: Parse response
+				var result models.MultiDimensionalSuccessRateResponse
+				err = json.NewDecoder(resp.Body).Decode(&result)
+				Expect(err).ToNot(HaveOccurred())
+
+				// CORRECTNESS: Total should be 8 + 5 = 13 actions across both types
+				Expect(result.TotalExecutions).To(Equal(13),
+					"Should aggregate across all action_types when not specified")
+				Expect(result.SuccessfulExecutions).To(Equal(13))
+
+				// CORRECTNESS: action_type dimension should be empty
+				Expect(result.Dimensions.ActionType).To(BeEmpty(),
+					"action_type should be empty when not filtered")
+			})
+		})
+
+		Context("with single dimension (incident_type only)", func() {
+			It("should aggregate across all playbooks and action_types", func() {
+				// ARRANGE: Insert data for single incident_type with MULTIPLE playbooks
+				// Playbook A
+				for i := 0; i < 6; i++ {
+					insertADR033ActionTrace("integration-test-disk-full", "completed", "disk-cleanup", "v1.0", true, false, false)
+				}
+				// Playbook B
+				for i := 0; i < 4; i++ {
+					insertADR033ActionTrace("integration-test-disk-full", "completed", "expand-volume", "v2.1", true, false, false)
+				}
+
+				// ACT: Query with only incident_type
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-disk-full&time_range=1h", serverURL))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				// ASSERT: HTTP 200 OK
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				// ASSERT: Parse response
+				var result models.MultiDimensionalSuccessRateResponse
+				err = json.NewDecoder(resp.Body).Decode(&result)
+				Expect(err).ToNot(HaveOccurred())
+
+				// CORRECTNESS: Total should be 6 + 4 = 10 across all playbooks
+				Expect(result.TotalExecutions).To(Equal(10),
+					"Should aggregate across all playbooks when not specified")
+
+				// CORRECTNESS: playbook dimensions should be empty
+				Expect(result.Dimensions.PlaybookID).To(BeEmpty())
+				Expect(result.Dimensions.PlaybookVersion).To(BeEmpty())
+			})
+		})
+
+		Context("validation errors", func() {
+			It("should return 400 Bad Request when playbook_version without playbook_id", func() {
+				// ACT: Query with invalid parameters
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&playbook_version=v1.0&time_range=7d", serverURL))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
+					"Should return 400 for playbook_version without playbook_id")
+
+				// ASSERT: RFC 7807 Problem Details
+				var problem map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&problem)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(problem["type"]).To(ContainSubstring("validation-error"))
+				Expect(problem["detail"]).To(ContainSubstring("playbook_version requires playbook_id"))
+			})
+
+			It("should return 400 Bad Request for invalid time_range", func() {
+				// ACT: Query with invalid time_range
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&time_range=invalid", serverURL))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+
+				// ASSERT: Error message
+				var problem map[string]interface{}
+				json.NewDecoder(resp.Body).Decode(&problem)
+				Expect(problem["detail"]).To(ContainSubstring("time_range"))
+			})
+		})
+
+		Context("defaults", func() {
+			It("should default to 7d time_range when not specified", func() {
+				// ARRANGE: Insert test data
+				insertADR033ActionTrace("integration-test-defaults", "completed", "test-playbook", "v1.0", true, false, false)
+
+				// ACT: Query without time_range
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-defaults", serverURL))
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				// ASSERT: Response shows default time_range
+				var result models.MultiDimensionalSuccessRateResponse
+				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(result.TimeRange).To(Equal("7d"),
+					"time_range should default to 7d")
+			})
+		})
+	})
 })
 
 // ========================================
