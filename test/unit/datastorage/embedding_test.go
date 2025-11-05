@@ -272,13 +272,10 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Metadata:             "{}",
 			}
 
-			result, err := failingPipeline.Generate(ctx, audit)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("API unavailable"))
-			Expect(result).To(BeNil())
-		})
+		result, err := failingPipeline.Generate(ctx, audit)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("API unavailable"))
+		Expect(result).To(BeNil())
 	})
 })
-
-	})
 })

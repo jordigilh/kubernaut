@@ -1,8 +1,8 @@
 # ADR-035: Remediation Execution Engine - Tekton Pipelines
 
-**Status**: Accepted  
-**Date**: 2025-11-05  
-**Deciders**: Architecture Team  
+**Status**: Accepted
+**Date**: 2025-11-05
+**Deciders**: Architecture Team
 **Related**: ADR-033 (Remediation Playbook Catalog)
 
 ---
@@ -75,13 +75,13 @@ spec:
         kubectl set resources deployment/$(params.pod-name) \
           --limits=memory=$(params.memory-limit) \
           -n $(params.namespace)
-    
+
     - name: restart-pod
       image: bitnami/kubectl:latest
       script: |
         kubectl rollout restart deployment/$(params.pod-name) \
           -n $(params.namespace)
-    
+
     - name: verify-health
       image: bitnami/kubectl:latest
       script: |
@@ -225,13 +225,13 @@ spec:
       image: bitnami/kubectl:latest
       script: |
         kubectl scale deployment/app --replicas=5
-    
+
     # Step 2: VM remediation (Ansible via Tekton)
     - name: restart-vm-service
       image: ansible/ansible-runner:latest
       script: |
         ansible-playbook -i inventory playbooks/restart-service.yml
-    
+
     # Step 3: Cloud resource update (Terraform via Tekton)
     - name: update-cloud-firewall
       image: hashicorp/terraform:latest
@@ -305,8 +305,8 @@ spec:
 
 ## Approval
 
-**Approved By**: Architecture Team  
-**Date**: 2025-11-05  
+**Approved By**: Architecture Team
+**Date**: 2025-11-05
 **Next Review**: 2026-05-05 (6 months post-MVP)
 
 ---
