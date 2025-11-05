@@ -13,9 +13,8 @@ import (
 // ADR-032: Vector search requires Data Storage Service API support
 type VectorSearch struct{}
 
-// AggregationService is a stub for future aggregation functionality
-// ADR-032: Aggregation requires Data Storage Service API support
-type AggregationService struct{}
+// AggregationService is now implemented in aggregation.go
+// ADR-033: Context API Aggregation Layer for AI/LLM Service
 
 // Router routes queries to appropriate backends (CachedExecutor, Vector DB, Aggregation)
 // BR-CONTEXT-004: Query Aggregation and routing logic
