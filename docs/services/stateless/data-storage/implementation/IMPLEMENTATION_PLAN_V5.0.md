@@ -27,7 +27,7 @@
 3. **<1%**: AI escalates to human operator with non-binding recommendations
 4. **AI Does NOT**: Invent new remediation patterns not in catalog (defeats success tracking)
 
-**Schema Changes** (7 new columns - backward compatible):
+**Schema Changes** (7 new columns):
 ```sql
 -- DIMENSION 1: INCIDENT TYPE (PRIMARY)
 incident_type VARCHAR(100)              -- "pod-oom-killer", "high-cpu"
@@ -48,10 +48,9 @@ ai_playbook_customization JSONB         -- AI parameter customizations
 ```
 
 **REST API Changes** (3 new endpoints - non-breaking):
-1. `GET /api/v1/incidents/aggregate/success-rate/by-incident-type` - PRIMARY dimension
-2. `GET /api/v1/incidents/aggregate/success-rate/by-playbook` - SECONDARY dimension
-3. `GET /api/v1/incidents/aggregate/success-rate/multi-dimensional` - ALL dimensions
-4. **DEPRECATED**: `GET /api/v1/incidents/aggregate/success-rate?workflow_id=xyz` (kept for backward compatibility with deprecation warning)
+1. `GET /api/v1/success-rate/incident-type` - PRIMARY dimension (BR-STORAGE-031-01)
+2. `GET /api/v1/success-rate/playbook` - SECONDARY dimension (BR-STORAGE-031-02)
+3. `GET /api/v1/success-rate/multi-dimensional` - ALL dimensions (BR-STORAGE-031-05)
 
 **Integration Test Updates**:
 - ❌ **Fix failing test**: `aggregation_api_test.go` uses `workflow_id` (architecturally invalid per ADR-033)
@@ -82,7 +81,7 @@ ai_playbook_customization JSONB         -- AI parameter customizations
 - ✅ **Industry Alignment**: Matches PagerDuty, BigPanda, Google SRE patterns (95% confidence)
 - ✅ **AI Learning**: Enables continuous improvement through historical success rates
 - ✅ **Multi-Dimensional Tracking**: Understand effectiveness by incident type, playbook, and action
-- ✅ **Backward Compatible**: All new columns nullable, existing queries work without modification
+- ✅ **Pre-Release Simplification**: All new columns use native Go types (no `sql.NullString` needed)
 - ✅ **Context API Safe**: No breaking changes, additive only
 
 **Service Naming Updates** (Related to ADR-033):
@@ -95,7 +94,7 @@ ai_playbook_customization JSONB         -- AI parameter customizations
 - **V5.0**: 15.0 days (120 hours) = V4.9 (92h) + ADR-033 (28h)
 - **Addition**: +3.5 days (+28 hours) for ADR-033 implementation
 
-**Confidence**: **95%** - Industry-validated schema design (PagerDuty, BigPanda patterns), backward compatible
+**Confidence**: **95%** - Industry-validated schema design (PagerDuty, BigPanda patterns)
 
 **References**:
 - [ADR-033: Remediation Playbook Catalog](../../../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
@@ -1259,23 +1258,6 @@ It("should mark confidence as low when sample size is insufficient", func() {
 })
 ```
 
-#### **TC-ADR033-15: DEPRECATED ENDPOINT - workflow_id Warning**
-```go
-// BR-STORAGE-031-15: Deprecated workflow_id endpoint returns deprecation warning
-It("should return deprecation warning for legacy workflow_id endpoint", func() {
-    resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=legacy-workflow-123",
-        datastorageURL))
-    Expect(err).ToNot(HaveOccurred())
-    Expect(resp.StatusCode).To(Equal(200))
-
-    // BEHAVIOR: Returns deprecation warning in header
-    warningHeader := resp.Header.Get("Warning")
-    Expect(warningHeader).To(ContainSubstring("299"))
-    Expect(warningHeader).To(ContainSubstring("workflow_id query parameter is deprecated"))
-    Expect(warningHeader).To(ContainSubstring("Use /by-incident-type or /by-playbook endpoints"))
-})
-```
-
 ---
 
 ### **📋 TEST COVERAGE SUMMARY**
@@ -1286,8 +1268,8 @@ It("should return deprecation warning for legacy workflow_id endpoint", func() {
 | **Breakdown Analysis** | 3 tests | Playbook breakdown, Incident breakdown, Step analysis | P0 |
 | **AI Execution Mode** | 3 tests | Hybrid model tracking, Chained playbooks, Manual escalation | P1 |
 | **Edge Cases** | 6 tests | Zero data, 0% success, 100% success, Version comparison, Time filtering, Min samples | P1 |
-| **Error Handling** | 3 tests | Invalid params, Missing params, Deprecated endpoint | P2 |
-| **TOTAL** | **18 tests** | **Comprehensive ADR-033 coverage** | **Phase 2-3** |
+| **Error Handling** | 2 tests | Invalid params, Missing params | P2 |
+| **TOTAL** | **17 tests** | **Comprehensive ADR-033 coverage** | **Phase 2-3** |
 
 **Testing Pyramid Distribution**:
 - **Unit Tests** (70%+): Aggregation logic, calculation functions, edge case handling → 12 tests
@@ -1295,7 +1277,7 @@ It("should return deprecation warning for legacy workflow_id endpoint", func() {
 - **E2E Tests** (<10%): Complete workflow validation → Deferred to Phase 5
 
 **BR Coverage**:
-- BR-STORAGE-031-01 to BR-STORAGE-031-15: **15 business requirements** covered
+- BR-STORAGE-031-01 to BR-STORAGE-031-05: **5 core business requirements** covered
 - All tests follow **Behavior + Correctness** principle
 - All edge cases identified and validated
 
@@ -1575,7 +1557,7 @@ type TrendAnalysis struct {
 
 ---
 
-### **12.3: Verify Backward Compatibility** (3h)
+### **12.3: Verify Existing Tests Still Pass** (3h)
 
 **Run existing integration tests**:
 
@@ -1589,7 +1571,7 @@ make test-integration-setup  # Or follow manual Podman setup from V4.9 Day 7
 cd test/integration/datastorage
 go test -v -count=1 ./...
 
-# Expected: All 18 existing tests pass
+# Expected: All existing tests pass
 # - Notification audit CRUD (4 tests)
 # - Prometheus metrics (3 tests)
 # - Graceful shutdown (3 tests)
@@ -1599,7 +1581,7 @@ go test -v -count=1 ./...
 ```
 
 **Success Criteria**:
-- ✅ All 18 existing integration tests pass
+- ✅ All existing integration tests pass
 - ✅ No compilation errors
 - ✅ NULL values in new columns handled correctly
 - ✅ Existing queries work without modification
@@ -1801,38 +1783,6 @@ func (s *Server) handleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.R
 		zap.String("playbook_version", playbookVersion),
 		zap.Int("total_executions", result.TotalExecutions),
 		zap.Float64("success_rate", result.SuccessRate))
-}
-
-// BR-STORAGE-031-15: Deprecated workflow_id endpoint with deprecation warning
-func (s *Server) handleGetSuccessRateDeprecated(w http.ResponseWriter, r *http.Request) {
-	workflowID := r.URL.Query().Get("workflow_id")
-	if workflowID == "" {
-		s.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-			Type:   "https://api.kubernaut.io/problems/validation-error",
-			Title:  "Validation Error",
-			Status: http.StatusBadRequest,
-			Detail: "workflow_id query parameter is required (deprecated)",
-		})
-		return
-	}
-
-	// Add deprecation warning header
-	w.Header().Set("Warning",
-		"299 - \"workflow_id query parameter is deprecated. Use /by-incident-type or /by-playbook endpoints instead. See ADR-033 for migration guide: https://docs.kubernaut.io/adr-033\"")
-
-	// Return minimal response for backward compatibility
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"workflow_id":     workflowID,
-		"success_rate":    0.0,
-		"message":         "This endpoint is deprecated. Please migrate to /by-incident-type or /by-playbook endpoints.",
-		"migration_guide": "https://docs.kubernaut.io/adr-033",
-	})
-
-	s.logger.Warn("deprecated workflow_id endpoint called",
-		zap.String("workflow_id", workflowID),
-		zap.String("client_ip", r.RemoteAddr))
 }
 
 // parseTimeRange converts time range string to duration
@@ -2259,13 +2209,9 @@ func (s *Server) registerRoutes() {
 	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate/by-incident-type",
 		s.handleGetSuccessRateByIncidentType).Methods(http.MethodGet)
 
-	// BR-STORAGE-031-07: Playbook success rate (SECONDARY dimension)
-	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate/by-playbook",
+	// BR-STORAGE-031-02: Playbook success rate (SECONDARY dimension)
+	s.router.HandleFunc("/api/v1/success-rate/playbook",
 		s.handleGetSuccessRateByPlaybook).Methods(http.MethodGet)
-
-	// BR-STORAGE-031-15: DEPRECATED workflow_id endpoint (backward compatibility)
-	s.router.HandleFunc("/api/v1/incidents/aggregate/success-rate",
-		s.handleGetSuccessRateDeprecated).Methods(http.MethodGet)
 }
 ```
 
@@ -2384,34 +2330,6 @@ var _ = Describe("ADR-033: Aggregation Handlers Unit Tests", func() {
 		})
 	})
 
-	Describe("BR-STORAGE-031-15: handleGetSuccessRateDeprecated", func() {
-		It("should return deprecation warning in response header", func() {
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate?workflow_id=legacy-workflow-123", nil)
-
-			srv.HandleGetSuccessRateDeprecated(rec, req)
-
-			// BEHAVIOR: Returns HTTP 200 for backward compatibility
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			// CORRECTNESS: Deprecation warning header present
-			warningHeader := rec.Header().Get("Warning")
-			Expect(warningHeader).To(ContainSubstring("299"))
-			Expect(warningHeader).To(ContainSubstring("workflow_id query parameter is deprecated"))
-			Expect(warningHeader).To(ContainSubstring("ADR-033"))
-		})
-
-		It("should include migration guide in response body", func() {
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/aggregate/success-rate?workflow_id=legacy-workflow-123", nil)
-
-			srv.HandleGetSuccessRateDeprecated(rec, req)
-
-			// CORRECTNESS: Response includes migration guide
-			var response map[string]interface{}
-			json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(response["migration_guide"]).To(ContainSubstring("docs.kubernaut.io/adr-033"))
-			Expect(response["message"]).To(ContainSubstring("deprecated"))
-		})
-	})
 })
 ```
 
@@ -2793,50 +2711,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
-  /api/v1/incidents/aggregate/success-rate:
-    get:
-      deprecated: true
-      summary: Get success rate by workflow_id (DEPRECATED - ADR-033)
-      description: |
-        **DEPRECATED**: Use /by-incident-type or /by-playbook endpoints instead.
-        BR-STORAGE-031-15: Legacy workflow_id endpoint for backward compatibility.
-        Migration guide: https://docs.kubernaut.io/adr-033
-      operationId: getSuccessRateDeprecated
-      tags:
-        - Aggregation
-        - Deprecated
-      parameters:
-        - name: workflow_id
-          in: query
-          required: true
-          deprecated: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Deprecation warning with minimal response
-          headers:
-            Warning:
-              schema:
-                type: string
-              description: HTTP 299 deprecation warning
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  workflow_id:
-                    type: string
-                  success_rate:
-                    type: number
-                    example: 0.0
-                  message:
-                    type: string
-                    example: This endpoint is deprecated
-                  migration_guide:
-                    type: string
-                    example: https://docs.kubernaut.io/adr-033
-
 components:
   schemas:
     # ========================================
@@ -3058,116 +2932,35 @@ components:
 
 ---
 
-### **16.3: Create Migration Guide** (2h)
+### **16.3: Verify Documentation Completeness** (2h)
 
-**File**: `docs/services/stateless/data-storage/ADR-033-MIGRATION-GUIDE.md` ✅ **NEW FILE**
+**Checklist**:
+- ✅ OpenAPI spec updated with ADR-033 endpoints
+- ✅ Implementation plan updated to V5.0
+- ✅ All BRs documented (BR-STORAGE-031-01 to BR-STORAGE-031-05)
+- ✅ ADR-033 cross-service BRs created
+- ✅ No backward compatibility burden (pre-release)
 
-```markdown
-# ADR-033 Migration Guide: workflow_id → incident_type
-
-**For**: Consumers of Data Storage Service aggregation APIs
-**Date**: November 4, 2025
-**Status**: Migration Required by V3.0 (workflow_id endpoint removal)
-
----
-
-## 🎯 **SUMMARY**
-
-The `workflow_id` query parameter is **DEPRECATED** as of Data Storage Service v2.0.0 (ADR-033).
-
-**Why**: AI generates unique workflows dynamically, making `workflow_id`-based success tracking meaningless.
-
-**Solution**: Use **incident_type** (PRIMARY dimension) or **playbook_id** (SECONDARY dimension) for meaningful success tracking.
+**Success Criteria**:
+- All ADR-033 documentation complete
+- No references to deprecated `workflow_id` endpoint
+- OpenAPI spec validated
 
 ---
 
-## 📊 **API CHANGES**
-
-### **OLD (Deprecated)**
-```bash
-GET /api/v1/incidents/aggregate/success-rate?workflow_id=abc123
-```
-
-### **NEW (ADR-033)**
-```bash
-# PRIMARY dimension: Incident type
-GET /api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=pod-oom-killer&time_range=7d
-
-# SECONDARY dimension: Playbook
-GET /api/v1/incidents/aggregate/success-rate/by-playbook?playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=7d
-```
-
----
-
-## 🔄 **MIGRATION STEPS**
-
-### **Step 1: Identify Current Usage**
-```bash
-# Find all workflow_id usages in your codebase
-grep -r "workflow_id" . --include="*.go" --include="*.yaml"
-```
-
-### **Step 2: Replace with incident_type**
-```go
-// ❌ OLD
-resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=%s",
-    baseURL, workflowID))
-
-// ✅ NEW
-resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate/by-incident-type?incident_type=%s&time_range=7d",
-    baseURL, incidentType))
-```
-
-### **Step 3: Update Response Parsing**
-```go
-// ❌ OLD
-type OldResponse struct {
-    WorkflowID  string  `json:"workflow_id"`
-    SuccessRate float64 `json:"success_rate"`
-}
-
-// ✅ NEW
-type NewResponse struct {
-    IncidentType         string  `json:"incident_type"`
-    SuccessRate          float64 `json:"success_rate"`
-    TotalExecutions      int     `json:"total_executions"`
-    SuccessfulExecutions int     `json:"successful_executions"`
-    FailedExecutions     int     `json:"failed_executions"`
-    Confidence           string  `json:"confidence"`
-    MinSamplesMet        bool    `json:"min_samples_met"`
-}
-```
-
----
-
-## 📅 **TIMELINE**
-
-- **2025-11-04**: ADR-033 implementation complete, workflow_id marked DEPRECATED
-- **2025-12-04** (30 days): Deprecation warning period ends
-- **2026-01-04** (60 days): workflow_id endpoint removed in v3.0.0
-
----
-
-## 🔗 **REFERENCES**
-
-- [ADR-033: Remediation Playbook Catalog](../../../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
-- [OpenAPI Specification](openapi.yaml)
-```
-
----
 
 ## 🚫 **ADR-033 SPECIFIC DO'S AND DON'TS** ✅ **NEW SECTION**
 
 ### ❌ **Don't Do This (ADR-033 Pitfalls)**:
 
-22. **🚨 Use `workflow_id` for success tracking** - Meaningless for AI-generated unique workflows, violates ADR-033 ⭐⭐⭐
+22. **🚨 Use `workflow_id` for success tracking** - Meaningless for AI-generated unique workflows, use `incident_type` or `playbook_id` instead (ADR-033) ⭐⭐⭐
 23. **🚨 Forget to add ADR-033 fields when creating audits** - New incidents won't be trackable by incident_type/playbook ⭐⭐
 24. **🚨 Query without time_range filtering** - Full table scans on large datasets, poor performance ⭐⭐
 25. **🚨 Ignore confidence levels in aggregation responses** - Low-sample results unreliable for AI learning ⭐
 26. **🚨 Hardcode playbook_id/version in tests** - Brittle tests break when playbooks evolve ⭐
 27. **🚨 Skip playbook breakdown analysis** - Miss which playbooks work best for incident types ⭐⭐
 28. **🚨 Use denormalized aggregation tables** - Adds complexity, schema bloat, sync issues ⭐
-29. **🚨 Forget NULL handling for new columns** - Breaks backward compatibility, crashes old audits ⭐⭐⭐
+29. **🚨 Use `sql.NullString` for new fields in pre-release** - Unnecessary complexity, use native Go types (string, int, bool) ⭐⭐
 30. **🚨 Use `interface{}` for AI execution mode** - Type safety lost, runtime panics likely ⭐⭐
 31. **🚨 Skip migration rollback testing** - Production rollbacks fail if not tested ⭐⭐
 
@@ -3180,7 +2973,7 @@ type NewResponse struct {
 26. **✅ Use test helper factories for playbook data** - `createTestPlaybook(id, version)` for maintainable tests ⭐
 27. **✅ Query playbook breakdown for incident types** - Identify best playbooks, optimize AI selection ⭐⭐
 28. **✅ Use real-time aggregation queries** - Simple, no sync issues, accurate results ⭐
-29. **✅ Use `sql.NullString` / `sql.NullInt32` for new fields** - Backward compatible, handles existing data ⭐⭐⭐
+29. **✅ Use native Go types for new fields in pre-release** - Simpler code, no NULL complexity (string, int, bool) ⭐⭐⭐
 30. **✅ Use structured `models.AIExecutionModeStats` type** - Compile-time safety, no runtime panics ⭐⭐
 31. **✅ Test migration UP and DOWN** - Verify rollback works before production deployment ⭐⭐
 
@@ -3204,10 +2997,8 @@ type NewResponse struct {
 | BR-STORAGE-031-12 | Time range filtering | `aggregation_queries_test.go` | `TC-ADR033-12` | 95% |
 | BR-STORAGE-031-13 | Missing required params | `aggregation_handlers_test.go` | `TC-ADR033-13` | 95% |
 | BR-STORAGE-031-14 | Minimum samples threshold | `aggregation_queries_test.go` | `TC-ADR033-14` | 95% |
-| BR-STORAGE-031-15 | Deprecated workflow_id warning | `aggregation_handlers_test.go` | `TC-ADR033-15` | 95% |
-
-**Total ADR-033 BRs**: 15
-**Test Coverage**: 100% (15/15 BRs covered)
+**Total ADR-033 BRs**: 14
+**Test Coverage**: 100% (14/14 BRs covered)
 **Confidence**: 95% (industry-validated patterns)
 
 ---
