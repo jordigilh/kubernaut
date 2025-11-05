@@ -1,10 +1,10 @@
 # BR-AI-057: Use Success Rates for Playbook Selection
 
-**Business Requirement ID**: BR-AI-057  
-**Category**: AI/LLM Service  
-**Priority**: P0  
-**Target Version**: V1  
-**Status**: ✅ Approved  
+**Business Requirement ID**: BR-AI-057
+**Category**: AI/LLM Service
+**Priority**: P0
+**Target Version**: V1
+**Status**: ✅ Approved
 **Date**: November 5, 2025
 
 ---
@@ -404,11 +404,11 @@ func (s *PlaybookSelectionService) SelectPlaybookWithFallback(ctx context.Contex
 
 ## ✅ **Approval**
 
-**Status**: ✅ **APPROVED FOR V1**  
-**Date**: November 5, 2025  
-**Decision**: Implement as P0 priority (core of ADR-033 Hybrid Model)  
-**Rationale**: Enables 90% of AI decisions to be data-driven (ADR-033 target)  
-**Approved By**: Architecture Team  
+**Status**: ✅ **APPROVED FOR V1**
+**Date**: November 5, 2025
+**Decision**: Implement as P0 priority (core of ADR-033 Hybrid Model)
+**Rationale**: Enables 90% of AI decisions to be data-driven (ADR-033 target)
+**Approved By**: Architecture Team
 **Related ADR**: [ADR-033: Remediation Playbook Catalog](../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
 
 ---
@@ -428,7 +428,7 @@ func (s *PlaybookSelectionService) SelectPlaybookWithFallback(ctx context.Contex
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 5, 2025  
+**Document Version**: 1.0
+**Last Updated**: November 5, 2025
 **Status**: ✅ Approved for V1 Implementation
 
