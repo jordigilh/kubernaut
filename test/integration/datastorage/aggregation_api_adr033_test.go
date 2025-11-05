@@ -691,8 +691,8 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Insert noise data with different combination (should be filtered out)
 				insertADR033ActionTrace("integration-test-other", "completed", "other-playbook", "v2.0", true, false, false)
 
-				// ACT: Query multi-dimensional endpoint with all 3 dimensions
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=1h", serverURL))
+			// ACT: Query multi-dimensional endpoint with all 3 dimensions
+			resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -771,7 +771,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// ACT: Query without action_type (should aggregate both actions)
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=1h", serverURL))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -807,7 +807,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				}
 
 				// ACT: Query with only incident_type
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-disk-full&time_range=1h", serverURL))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-disk-full&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -832,7 +832,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 		Context("validation errors", func() {
 			It("should return 400 Bad Request when playbook_version without playbook_id", func() {
 				// ACT: Query with invalid parameters
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&playbook_version=v1.0&time_range=7d", serverURL))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&playbook_version=v1.0&time_range=7d", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -850,7 +850,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 			It("should return 400 Bad Request for invalid time_range", func() {
 				// ACT: Query with invalid time_range
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&time_range=invalid", serverURL))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&time_range=invalid", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
@@ -870,7 +870,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				insertADR033ActionTrace("integration-test-defaults", "completed", "test-playbook", "v1.0", true, false, false)
 
 				// ACT: Query without time_range
-				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-defaults", serverURL))
+				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-defaults", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
