@@ -16,7 +16,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
-	"github.com/jordigilh/kubernaut/pkg/contextapi/client"
+	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
+	// "github.com/jordigilh/kubernaut/pkg/contextapi/client"
 )
 
 func TestContextAPIIntegration(t *testing.T) {
@@ -31,7 +32,8 @@ var (
 	ctx          context.Context
 	cancel       context.CancelFunc
 	testSchema   string
-	dbClient     *client.PostgresClient
+	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
+	// dbClient     *client.PostgresClient
 	cacheManager cache.CacheManager // ADR-016: Real Redis cache for integration tests
 	redisPort    = "6379"           // Standard Redis port
 )
@@ -251,8 +253,9 @@ var _ = BeforeSuite(func() {
 
 	// BR-CONTEXT-001: Historical Context Query - Create Context API database client
 	// Uses Data Storage Service schema directly (no test schema needed)
-	dbClient, err = client.NewPostgresClient(connStr, logger)
-	Expect(err).ToNot(HaveOccurred())
+	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
+	// dbClient, err = client.NewPostgresClient(connStr, logger)
+	// Expect(err).ToNot(HaveOccurred())
 
 	GinkgoWriter.Println("✅ Context API integration test environment ready (reusing Data Storage infrastructure)!")
 	GinkgoWriter.Println("   - PostgreSQL: localhost:5432 (port-forward from kubernaut-system)")
