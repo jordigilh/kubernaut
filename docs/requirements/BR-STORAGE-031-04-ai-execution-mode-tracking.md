@@ -1,10 +1,10 @@
 # BR-STORAGE-031-04: AI Execution Mode in Aggregation Responses
 
-**Business Requirement ID**: BR-STORAGE-031-04  
-**Category**: Data Storage Service  
-**Priority**: P1  
-**Target Version**: V1  
-**Status**: ✅ Approved  
+**Business Requirement ID**: BR-STORAGE-031-04
+**Category**: Data Storage Service
+**Priority**: P1
+**Target Version**: V1
+**Status**: ✅ Approved
 **Date**: November 5, 2025
 
 ---
@@ -96,15 +96,15 @@ WHERE incident_type = $1
 
 ## ✅ **Approval**
 
-**Status**: ✅ **APPROVED FOR V1**  
-**Date**: November 5, 2025  
-**Decision**: Implement as P1 priority  
-**Rationale**: Enables ADR-033 Hybrid Model compliance validation  
+**Status**: ✅ **APPROVED FOR V1**
+**Date**: November 5, 2025
+**Decision**: Implement as P1 priority
+**Rationale**: Enables ADR-033 Hybrid Model compliance validation
 **Approved By**: Architecture Team
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 5, 2025  
+**Document Version**: 1.0
+**Last Updated**: November 5, 2025
 **Status**: ✅ Approved for V1 Implementation
 

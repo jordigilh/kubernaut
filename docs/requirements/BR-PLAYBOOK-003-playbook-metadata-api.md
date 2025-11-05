@@ -1,10 +1,10 @@
 # BR-PLAYBOOK-003: Playbook Metadata API
 
-**Business Requirement ID**: BR-PLAYBOOK-003  
-**Category**: Playbook Catalog Service  
-**Priority**: P1  
-**Target Version**: V1  
-**Status**: ✅ Approved  
+**Business Requirement ID**: BR-PLAYBOOK-003
+**Category**: Playbook Catalog Service
+**Priority**: P1
+**Target Version**: V1
+**Status**: ✅ Approved
 **Date**: November 5, 2025
 
 ---
@@ -180,15 +180,15 @@ Response (200 OK):
 
 ## ✅ **Approval**
 
-**Status**: ✅ **APPROVED FOR V1**  
-**Date**: November 5, 2025  
-**Decision**: Implement as P1 priority  
-**Rationale**: Enhances playbook discoverability and management  
+**Status**: ✅ **APPROVED FOR V1**
+**Date**: November 5, 2025
+**Decision**: Implement as P1 priority
+**Rationale**: Enhances playbook discoverability and management
 **Approved By**: Architecture Team
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 5, 2025  
+**Document Version**: 1.0
+**Last Updated**: November 5, 2025
 **Status**: ✅ Approved for V1 Implementation
 
