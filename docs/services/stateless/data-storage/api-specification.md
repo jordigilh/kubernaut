@@ -1,10 +1,10 @@
 # Data Storage Service - REST API Specification
 
-**Version**: v2.0 (Phase 1: Read API ✅ Production-Ready)
-**Last Updated**: November 1, 2025
+**Version**: v2.0 (Phase 1: Read API + ADR-033 Success Rate Analytics ✅ Production-Ready)
+**Last Updated**: November 5, 2025
 **Base URL**: `http://data-storage.kubernaut-system:8080`
 **Authentication**: Bearer Token (Kubernetes ServiceAccount) - *Phase 2*
-**Implementation Status**: Days 1-8 Complete, 75 Tests (38 Unit, 37 Integration)
+**Implementation Status**: Days 1-15 Complete, 92 Tests (38 Unit, 54 Integration)
 
 ---
 
@@ -14,14 +14,17 @@
 1. [Incidents Read API](#incidents-read-api-phase-1)
    - [List Incidents](#list-incidents)
    - [Get Incident by ID](#get-incident-by-id)
-2. [Health & Metrics](#health--metrics)
-3. [RFC 7807 Error Responses](#rfc-7807-error-responses)
+2. [Success Rate Analytics API](#success-rate-analytics-api-adr-033) **✨ NEW in v2.0**
+   - [Get Success Rate by Incident Type](#get-success-rate-by-incident-type)
+   - [Get Success Rate by Playbook](#get-success-rate-by-playbook)
+3. [Health & Metrics](#health--metrics)
+4. [RFC 7807 Error Responses](#rfc-7807-error-responses)
 
 ### Phase 2: Write API (📋 Planned)
-4. [Remediation Audit API](#remediation-audit-api-phase-2)
-5. [AI Analysis Audit API](#ai-analysis-audit-api-phase-2)
-6. [Workflow Audit API](#workflow-audit-api-phase-2)
-7. [Execution Audit API](#execution-audit-api-phase-2)
+5. [Remediation Audit API](#remediation-audit-api-phase-2)
+6. [AI Analysis Audit API](#ai-analysis-audit-api-phase-2)
+7. [Workflow Audit API](#workflow-audit-api-phase-2)
+8. [Execution Audit API](#execution-audit-api-phase-2)
 
 ---
 
@@ -211,6 +214,285 @@ All errors follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/ht
   "instance": "/api/v1/incidents"
 }
 ```
+
+---
+
+## Success Rate Analytics API (ADR-033)
+
+**Status**: ✅ Production-Ready (Days 12-15 Complete)  
+**Business Requirements**: BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-10  
+**Test Coverage**: 17 integration tests (100% passing)  
+**OpenAPI Spec**: [v2.yaml](./openapi/v2.yaml)
+
+**Purpose**: Multi-dimensional success tracking for AI-driven remediation effectiveness analysis.
+
+### Overview
+
+ADR-033 introduces multi-dimensional success tracking to enable AI learning and continuous improvement. The system tracks remediation effectiveness across three dimensions:
+
+1. **PRIMARY**: Incident Type (e.g., "pod-oom-killer", "disk-pressure")
+2. **SECONDARY**: Remediation Playbook (e.g., "pod-oom-recovery", "disk-cleanup")
+3. **TERTIARY**: AI Execution Mode (catalog/chained/manual)
+
+### Key Features
+
+- **Confidence-Based Recommendations**: High/medium/low/insufficient_data confidence levels
+- **AI Execution Mode Tracking**: 90-9-1 Hybrid Model (catalog/chained/manual escalation)
+- **Playbook Breakdown**: See which playbooks work best for each incident type
+- **Incident-Type Breakdown**: See which problems each playbook solves best
+- **Time Range Filtering**: Analyze recent (1h) vs historical (30d) data
+- **Minimum Sample Thresholds**: Prevent decisions based on insufficient data
+
+---
+
+### Get Success Rate by Incident Type
+
+**PRIMARY DIMENSION**: Calculate remediation success rate for a specific incident type.
+
+#### Request
+
+```http
+GET /api/v1/success-rate/incident-type?incident_type=pod-oom-killer&time_range=7d&min_samples=5
+```
+
+#### Query Parameters
+
+| Parameter | Type | Required | Default | Validation | Description |
+|-----------|------|----------|---------|------------|-------------|
+| `incident_type` | string | **Yes** | - | Non-empty string | The incident type to analyze (e.g., "pod-oom-killer") |
+| `time_range` | string | No | "7d" | Pattern: `^[0-9]+(h\|d)$` | Time window: "1h", "24h", "7d", "30d" |
+| `min_samples` | integer | No | 5 | ≥1 | Minimum sample size for confidence calculation |
+
+#### Response (200 OK)
+
+```json
+{
+  "incident_type": "pod-oom-killer",
+  "time_range": "7d",
+  "total_executions": 150,
+  "successful_executions": 135,
+  "failed_executions": 15,
+  "success_rate": 90.0,
+  "confidence": "high",
+  "min_samples_met": true,
+  "ai_execution_mode": {
+    "catalog_selected": 135,
+    "chained": 12,
+    "manual_escalation": 3
+  },
+  "playbook_breakdown": [
+    {
+      "playbook_id": "pod-oom-recovery",
+      "playbook_version": "v1.2",
+      "executions": 120,
+      "success_rate": 92.5
+    },
+    {
+      "playbook_id": "memory-limit-increase",
+      "playbook_version": "v2.0",
+      "executions": 30,
+      "success_rate": 80.0
+    }
+  ]
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `incident_type` | string | The incident type being analyzed |
+| `time_range` | string | Time window for this analysis |
+| `total_executions` | integer | Total remediation attempts |
+| `successful_executions` | integer | Number of successful attempts |
+| `failed_executions` | integer | Number of failed attempts |
+| `success_rate` | float | Success rate percentage (0-100%) |
+| `confidence` | string | Confidence level: "high" (≥100 samples), "medium" (20-99), "low" (5-19), "insufficient_data" (<5 or below min_samples) |
+| `min_samples_met` | boolean | Whether minimum sample threshold was met |
+| `ai_execution_mode` | object | AI execution mode distribution (ADR-033 Hybrid Model) |
+| `playbook_breakdown` | array | Breakdown by playbook showing which playbooks were tried |
+
+#### AI Execution Mode (ADR-033 Hybrid Model)
+
+| Field | Type | Expected % | Description |
+|-------|------|-----------|-------------|
+| `catalog_selected` | integer | 90-95% | Single playbook selected from catalog |
+| `chained` | integer | 4-9% | Multiple playbooks chained together |
+| `manual_escalation` | integer | <1% | Escalated to human operator |
+
+#### Example Requests
+
+```bash
+# Basic query with defaults
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/incident-type?incident_type=pod-oom-killer"
+
+# Recent data (last 24 hours)
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/incident-type?incident_type=disk-pressure&time_range=24h"
+
+# Higher confidence threshold
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/incident-type?incident_type=network-timeout&min_samples=20"
+
+# Historical analysis (30 days)
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/incident-type?incident_type=pod-oom-killer&time_range=30d"
+```
+
+#### Error Responses
+
+**400 Bad Request** - Missing or invalid parameters
+
+```json
+{
+  "type": "https://api.kubernaut.io/problems/validation-error",
+  "title": "Validation Error",
+  "status": 400,
+  "detail": "incident_type query parameter is required",
+  "instance": "/api/v1/success-rate/incident-type"
+}
+```
+
+**500 Internal Server Error** - Database or repository error
+
+```json
+{
+  "type": "https://api.kubernaut.io/problems/internal-error",
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "Failed to retrieve success rate data",
+  "instance": "/api/v1/success-rate/incident-type?incident_type=pod-oom-killer"
+}
+```
+
+#### Use Cases
+
+1. **AI Playbook Selection**: Choose most effective playbook for an incident type
+2. **Confidence-Based Decisions**: Only use high-confidence recommendations
+3. **Trend Analysis**: Compare recent (7d) vs historical (30d) success rates
+4. **Playbook Effectiveness**: Identify which playbooks work best for each problem
+
+---
+
+### Get Success Rate by Playbook
+
+**SECONDARY DIMENSION**: Calculate remediation success rate for a specific playbook.
+
+#### Request
+
+```http
+GET /api/v1/success-rate/playbook?playbook_id=pod-oom-recovery&playbook_version=v1.2&time_range=7d&min_samples=5
+```
+
+#### Query Parameters
+
+| Parameter | Type | Required | Default | Validation | Description |
+|-----------|------|----------|---------|------------|-------------|
+| `playbook_id` | string | **Yes** | - | Non-empty string | The playbook identifier to analyze |
+| `playbook_version` | string | No | null | Pattern: `^v[0-9]+\.[0-9]+(\.[0-9]+)?$` | Specific version (e.g., "v1.2") or omit for all versions |
+| `time_range` | string | No | "7d" | Pattern: `^[0-9]+(h\|d)$` | Time window: "1h", "24h", "7d", "30d" |
+| `min_samples` | integer | No | 5 | ≥1 | Minimum sample size for confidence calculation |
+
+#### Response (200 OK)
+
+```json
+{
+  "playbook_id": "pod-oom-recovery",
+  "playbook_version": "v1.2",
+  "time_range": "7d",
+  "total_executions": 200,
+  "successful_executions": 185,
+  "failed_executions": 15,
+  "success_rate": 92.5,
+  "confidence": "high",
+  "min_samples_met": true,
+  "ai_execution_mode": {
+    "catalog_selected": 180,
+    "chained": 15,
+    "manual_escalation": 5
+  },
+  "incident_type_breakdown": [
+    {
+      "incident_type": "pod-oom-killer",
+      "executions": 150,
+      "success_rate": 94.0
+    },
+    {
+      "incident_type": "container-memory-pressure",
+      "executions": 50,
+      "success_rate": 88.0
+    }
+  ]
+}
+```
+
+#### Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `playbook_id` | string | The playbook identifier being analyzed |
+| `playbook_version` | string\|null | Specific version or null if aggregated across all versions |
+| `time_range` | string | Time window for this analysis |
+| `total_executions` | integer | Total times this playbook was executed |
+| `successful_executions` | integer | Number of successful executions |
+| `failed_executions` | integer | Number of failed executions |
+| `success_rate` | float | Success rate percentage (0-100%) |
+| `confidence` | string | Confidence level (same as incident-type endpoint) |
+| `min_samples_met` | boolean | Whether minimum sample threshold was met |
+| `ai_execution_mode` | object | AI execution mode distribution |
+| `incident_type_breakdown` | array | Breakdown by incident type showing which problems this playbook solves |
+
+#### Example Requests
+
+```bash
+# All versions of a playbook
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/playbook?playbook_id=pod-oom-recovery"
+
+# Specific version (A/B testing)
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/playbook?playbook_id=pod-oom-recovery&playbook_version=v2.0"
+
+# Compare versions
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/playbook?playbook_id=pod-oom-recovery&playbook_version=v1.2" > v1.json
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/playbook?playbook_id=pod-oom-recovery&playbook_version=v2.0" > v2.json
+diff v1.json v2.json
+
+# Recent playbook effectiveness
+curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/playbook?playbook_id=disk-cleanup&time_range=24h"
+```
+
+#### Error Responses
+
+Same error response format as incident-type endpoint.
+
+#### Use Cases
+
+1. **Playbook Validation**: Verify new playbook versions are effective
+2. **Version Comparison**: A/B test v1.2 vs v2.0
+3. **Incident-Type Suitability**: Identify which problems a playbook solves best
+4. **Playbook Catalog Optimization**: Remove low-performing playbooks
+
+---
+
+### Confidence Levels
+
+ADR-033 uses sample-size-based confidence levels to prevent decisions based on insufficient data:
+
+| Confidence Level | Sample Size | Recommended Action |
+|-----------------|-------------|-------------------|
+| **high** | ≥100 samples | ✅ Safe to use for automated decisions |
+| **medium** | 20-99 samples | ⚠️ Use with caution, consider manual review |
+| **low** | 5-19 samples | ⚠️ Insufficient for automated decisions, manual review required |
+| **insufficient_data** | <5 samples (or below `min_samples` threshold) | ❌ Do not use for decisions, collect more data |
+
+### Performance Characteristics
+
+- **p95 Latency**: <150ms (incident-type), <200ms (playbook)
+- **p99 Latency**: <300ms (incident-type), <400ms (playbook)
+- **Database Indexes**: Optimized for `incident_type`, `playbook_id`, `action_timestamp`
+- **Cache Strategy**: No caching (real-time aggregation for accuracy)
+
+### Security Features
+
+- **SQL Injection Prevention**: Parameterized queries with PostgreSQL `$N` placeholders
+- **Input Validation**: Time range pattern validation, min_samples boundary checks
+- **Rate Limiting**: Same as other endpoints (500 req/sec per service)
 
 ---
 
