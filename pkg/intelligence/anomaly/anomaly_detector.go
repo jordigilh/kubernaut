@@ -109,7 +109,7 @@ type DetectionMethod struct {
 }
 
 // WorkflowExecutionData represents strongly-typed workflow execution data
-// Business Requirement: BR-WORKFLOW-001 - Type-safe workflow execution data
+// Business Requirement: BR-REMEDIATION-001 - Type-safe workflow execution data
 type WorkflowExecutionData struct {
 	StepCount      int     `json:"step_count"`      // Number of steps in workflow
 	ExecutionTime  float64 `json:"execution_time"`  // Total execution time in seconds
@@ -124,7 +124,7 @@ type WorkflowExecutionData struct {
 }
 
 // WorkflowExecutionContext represents strongly-typed execution context
-// Business Requirement: BR-WORKFLOW-002 - Type-safe execution context
+// Business Requirement: BR-REMEDIATION-002 - Type-safe execution context
 type WorkflowExecutionContext struct {
 	ClusterName     string   `json:"cluster_name"`     // Kubernetes cluster name
 	Namespace       string   `json:"namespace"`        // Target namespace
@@ -139,7 +139,7 @@ type WorkflowExecutionContext struct {
 }
 
 // WorkflowExecutionEvent represents a real-time workflow event
-// Business Requirement: BR-WORKFLOW-003 - Comprehensive workflow event tracking
+// Business Requirement: BR-REMEDIATION-003 - Comprehensive workflow event tracking
 type WorkflowExecutionEvent struct {
 	Type        string                    `json:"type"`
 	WorkflowID  string                    `json:"workflow_id"`
@@ -743,7 +743,7 @@ func (ad *AnomalyDetector) detectTemporalAnomaly(event *WorkflowExecutionEvent, 
 
 				// Use execution success as the temporal metric
 				// Use strongly-typed WorkflowExecutionData for success rate calculation
-				// Business Requirement: BR-WORKFLOW-001 - Type-safe workflow execution data
+				// Business Requirement: BR-REMEDIATION-001 - Type-safe workflow execution data
 				actualValue := 0.0
 				if event.Data != nil {
 					actualValue = event.Data.SuccessRate / 100.0 // Convert percentage to decimal
@@ -799,7 +799,7 @@ func (ad *AnomalyDetector) detectBehavioralAnomaly(event *WorkflowExecutionEvent
 	}
 
 	// Analyze execution patterns using strongly-typed data
-	// Business Requirement: BR-WORKFLOW-001 - Type-safe workflow execution data
+	// Business Requirement: BR-REMEDIATION-001 - Type-safe workflow execution data
 	if event.Data != nil && event.WorkflowID != "" {
 		// Use WorkflowType from strongly-typed data instead of template_id
 		workflowType := event.Data.WorkflowType
@@ -1144,7 +1144,7 @@ func (ad *AnomalyDetector) convertExecutionToEvent(execution *engine.EngineWorkf
 	}
 
 	// Add execution data using strongly-typed fields
-	// Business Requirement: BR-WORKFLOW-001 - Type-safe workflow execution data
+	// Business Requirement: BR-REMEDIATION-001 - Type-safe workflow execution data
 	if execution.Success {
 		event.Data.SuccessRate = 100.0 // 100% success
 	} else {
@@ -1166,7 +1166,7 @@ func (ad *AnomalyDetector) convertExecutionToEvent(execution *engine.EngineWorkf
 
 		// Extract common fields from metadata
 		// Extract common fields from metadata to strongly-typed fields
-		// Business Requirement: BR-WORKFLOW-002 - Type-safe execution context
+		// Business Requirement: BR-REMEDIATION-002 - Type-safe execution context
 		if alertName, exists := execution.Metadata["alert_name"]; exists {
 			if name, ok := alertName.(string); ok {
 				event.Context.AlertSource = name
@@ -1248,7 +1248,7 @@ func (ad *AnomalyDetector) assessImpact(anomaly *AnomalyResult, event *WorkflowE
 
 	// Add affected resources from event context
 	// Use strongly-typed context fields for impact calculation
-	// Business Requirement: BR-WORKFLOW-002 - Type-safe execution context
+	// Business Requirement: BR-REMEDIATION-002 - Type-safe execution context
 	if event.Context != nil {
 		if event.Context.Namespace != "" {
 			impact.AffectedResources = append(impact.AffectedResources, fmt.Sprintf("namespace:%s", event.Context.Namespace))

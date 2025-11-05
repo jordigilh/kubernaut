@@ -32,7 +32,7 @@ import (
 	testshared "github.com/jordigilh/kubernaut/test/integration/shared"
 )
 
-var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence", Ordered, func() {
+var _ = Describe("BR-REMEDIATION-PGVECTOR-001: Workflow State pgvector Persistence", Ordered, func() {
 	var (
 		hooks                    *testshared.TestLifecycleHooks
 		ctx                      context.Context
@@ -138,13 +138,13 @@ var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence"
 			Expect(err).ToNot(HaveOccurred(), "Workflow state persistence should succeed")
 			Expect(checkpoint).ToNot(BeNil(), "Should create a valid checkpoint")
 
-			// BR-WORKFLOW-PGVECTOR-001: Persistence performance validation
-			Expect(persistTime).To(BeNumerically("<", 3*time.Second), "BR-WORKFLOW-PGVECTOR-001: Persistence should be efficient")
+			// BR-REMEDIATION-PGVECTOR-001: Persistence performance validation
+			Expect(persistTime).To(BeNumerically("<", 3*time.Second), "BR-REMEDIATION-PGVECTOR-001: Persistence should be efficient")
 
 			// Validate checkpoint contains essential information
 			Expect(checkpoint.WorkflowID).To(Equal(testWorkflow.ID), "Checkpoint should preserve workflow ID")
 			Expect(checkpoint.StateHash).ToNot(BeEmpty(), "Should generate state hash for integrity")
-			Expect(checkpoint.CompressionRatio).To(BeNumerically("<=", 1.0), "BR-WORKFLOW-PGVECTOR-001: Workflow state compression ratio should be efficient")
+			Expect(checkpoint.CompressionRatio).To(BeNumerically("<=", 1.0), "BR-REMEDIATION-PGVECTOR-001: Workflow state compression ratio should be efficient")
 
 			By("simulating workflow interruption and state loss")
 			// Simulate system restart/failure by clearing in-memory state
@@ -159,8 +159,8 @@ var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence"
 			Expect(err).ToNot(HaveOccurred(), "Workflow state recovery should succeed")
 			Expect(recoveredWorkflow).ToNot(BeNil(), "Should recover valid workflow")
 
-			// BR-WORKFLOW-PGVECTOR-002: Recovery performance validation
-			Expect(recoveryTime).To(BeNumerically("<", 5*time.Second), "BR-WORKFLOW-PGVECTOR-002: Recovery should be timely")
+			// BR-REMEDIATION-PGVECTOR-002: Recovery performance validation
+			Expect(recoveryTime).To(BeNumerically("<", 5*time.Second), "BR-REMEDIATION-PGVECTOR-002: Recovery should be timely")
 
 			By("validating recovered workflow state integrity")
 			// Validate workflow structure
@@ -176,9 +176,9 @@ var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence"
 				Expect(step.Action).To(Equal(originalStep.Action), fmt.Sprintf("Step %d action should be preserved", i))
 			}
 
-			// BR-WORKFLOW-PGVECTOR-003: State integrity validation
+			// BR-REMEDIATION-PGVECTOR-003: State integrity validation
 			stateIntegrityScore := workflowStatePersistence.CalculateStateIntegrity(testWorkflow, recoveredWorkflow)
-			Expect(stateIntegrityScore).To(BeNumerically(">=", 0.95), "BR-WORKFLOW-PGVECTOR-003: Should maintain high state integrity")
+			Expect(stateIntegrityScore).To(BeNumerically(">=", 0.95), "BR-REMEDIATION-PGVECTOR-003: Should maintain high state integrity")
 		})
 
 		It("should handle workflow continuation from vector checkpoints", func() {
@@ -234,8 +234,8 @@ var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence"
 			Expect(err).ToNot(HaveOccurred(), "Workflow continuation should succeed")
 			Expect(continuedWorkflow).ToNot(BeNil(), "Should get valid continued workflow")
 
-			// BR-WORKFLOW-PGVECTOR-004: Continuation performance validation
-			Expect(continuationTime).To(BeNumerically("<", 4*time.Second), "BR-WORKFLOW-PGVECTOR-004: Continuation should be efficient")
+			// BR-REMEDIATION-PGVECTOR-004: Continuation performance validation
+			Expect(continuationTime).To(BeNumerically("<", 4*time.Second), "BR-REMEDIATION-PGVECTOR-004: Continuation should be efficient")
 
 			By("validating workflow continues from correct state")
 			// Should have steps 1-2 completed, step 3 ready to continue
@@ -245,9 +245,9 @@ var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence"
 			// Step 3 should be ready to continue (reset to pending if it was running)
 			Expect(continuedWorkflow.Steps[2].Status).To(BeElementOf([]persistence.StepStatus{persistence.StepStatusPending, persistence.StepStatusRunning}), "Step 3 should be ready to continue")
 
-			// BR-WORKFLOW-PGVECTOR-005: Continuation accuracy validation
+			// BR-REMEDIATION-PGVECTOR-005: Continuation accuracy validation
 			continuationAccuracy := workflowStatePersistence.ValidateContinuationAccuracy(ctx, targetCheckpoint, continuedWorkflow)
-			Expect(continuationAccuracy).To(BeNumerically(">=", 0.9), "BR-WORKFLOW-PGVECTOR-005: Should have high continuation accuracy")
+			Expect(continuationAccuracy).To(BeNumerically(">=", 0.9), "BR-REMEDIATION-PGVECTOR-005: Should have high continuation accuracy")
 		})
 	})
 
@@ -311,13 +311,13 @@ var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence"
 			Expect(err).ToNot(HaveOccurred(), "Vector-based decision should succeed")
 			Expect(decisionResult).ToNot(BeNil(), "Should provide decision result")
 
-			// BR-WORKFLOW-PGVECTOR-006: Decision performance validation
-			Expect(decisionTime).To(BeNumerically("<", 2*time.Second), "BR-WORKFLOW-PGVECTOR-006: Decision should be fast")
+			// BR-REMEDIATION-PGVECTOR-006: Decision performance validation
+			Expect(decisionTime).To(BeNumerically("<", 2*time.Second), "BR-REMEDIATION-PGVECTOR-006: Decision should be fast")
 
-			// BR-WORKFLOW-PGVECTOR-007: Decision quality validation
+			// BR-REMEDIATION-PGVECTOR-007: Decision quality validation
 			Expect(decisionResult.SelectedPattern).ToNot(BeEmpty(), "Should select a pattern")
-			Expect(decisionResult.ConfidenceScore).To(BeNumerically(">=", 0.7), "BR-WORKFLOW-PGVECTOR-007: Should have reasonable confidence")
-			Expect(decisionResult.SimilarityScore).To(BeNumerically(">=", 0.6), "BR-WORKFLOW-PGVECTOR-007: Should have meaningful similarity")
+			Expect(decisionResult.ConfidenceScore).To(BeNumerically(">=", 0.7), "BR-REMEDIATION-PGVECTOR-007: Should have reasonable confidence")
+			Expect(decisionResult.SimilarityScore).To(BeNumerically(">=", 0.6), "BR-REMEDIATION-PGVECTOR-007: Should have meaningful similarity")
 
 			By("validating decision leads to workflow optimization")
 			optimizedWorkflow, err := workflowStatePersistence.ApplyVectorDecision(ctx, adaptiveWorkflow, decisionResult)
@@ -327,10 +327,10 @@ var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence"
 			// Workflow should be enhanced with the selected pattern
 			Expect(len(optimizedWorkflow.Steps)).To(BeNumerically(">", len(adaptiveWorkflow.Steps)), "Should add steps based on pattern")
 
-			// BR-WORKFLOW-PGVECTOR-008: Optimization effectiveness validation
+			// BR-REMEDIATION-PGVECTOR-008: Optimization effectiveness validation
 			optimizationMetrics := workflowStatePersistence.CalculateOptimizationMetrics(adaptiveWorkflow, optimizedWorkflow)
-			Expect(optimizationMetrics.EfficiencyImprovement).To(BeNumerically(">=", 0.1), "BR-WORKFLOW-PGVECTOR-008: Should show efficiency improvement")
-			Expect(optimizationMetrics.CostReduction).To(BeNumerically(">=", 0.05), "BR-WORKFLOW-PGVECTOR-008: Workflow optimization should achieve cost reduction")
+			Expect(optimizationMetrics.EfficiencyImprovement).To(BeNumerically(">=", 0.1), "BR-REMEDIATION-PGVECTOR-008: Should show efficiency improvement")
+			Expect(optimizationMetrics.CostReduction).To(BeNumerically(">=", 0.05), "BR-REMEDIATION-PGVECTOR-008: Workflow optimization should achieve cost reduction")
 		})
 
 		It("should optimize workflow resource allocation using vector insights", func() {
@@ -359,17 +359,17 @@ var _ = Describe("BR-WORKFLOW-PGVECTOR-001: Workflow State pgvector Persistence"
 			Expect(err).ToNot(HaveOccurred(), "Resource optimization should succeed")
 			Expect(optimizationResult).ToNot(BeNil(), "Should provide optimization result")
 
-			// BR-WORKFLOW-PGVECTOR-009: Resource optimization performance validation
-			Expect(optimizationTime).To(BeNumerically("<", 10*time.Second), "BR-WORKFLOW-PGVECTOR-009: Optimization should complete efficiently")
+			// BR-REMEDIATION-PGVECTOR-009: Resource optimization performance validation
+			Expect(optimizationTime).To(BeNumerically("<", 10*time.Second), "BR-REMEDIATION-PGVECTOR-009: Optimization should complete efficiently")
 
 			By("validating cost-optimized resource allocation")
 			// Current milestone focuses on cost over speed
 			Expect(optimizationResult.OptimizedResources.EstimatedCostPerHour).To(BeNumerically("<=", resourceOptimizationRequest.Constraints.MaxCost), "Should respect cost constraints")
 			Expect(optimizationResult.CostReduction).To(BeNumerically(">=", 0.05), "Should achieve meaningful cost reduction")
 
-			// BR-WORKFLOW-PGVECTOR-010: Resource optimization accuracy validation
-			Expect(optimizationResult.AccuracyMaintained).To(BeNumerically(">=", resourceOptimizationRequest.Constraints.AccuracyTarget), "BR-WORKFLOW-PGVECTOR-010: Should maintain accuracy target")
-			Expect(optimizationResult.VectorInsightsUsed).To(BeTrue(), "BR-WORKFLOW-PGVECTOR-010: Should use vector insights for optimization")
+			// BR-REMEDIATION-PGVECTOR-010: Resource optimization accuracy validation
+			Expect(optimizationResult.AccuracyMaintained).To(BeNumerically(">=", resourceOptimizationRequest.Constraints.AccuracyTarget), "BR-REMEDIATION-PGVECTOR-010: Should maintain accuracy target")
+			Expect(optimizationResult.VectorInsightsUsed).To(BeTrue(), "BR-REMEDIATION-PGVECTOR-010: Should use vector insights for optimization")
 
 			// Validate optimization insights are actionable
 			Expect(len(optimizationResult.OptimizationInsights)).To(BeNumerically(">=", 1), "Should provide optimization insights")

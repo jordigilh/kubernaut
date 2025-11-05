@@ -41,7 +41,7 @@ func TestIntelligentWorkflowBuilder(t *testing.T) {
 	RunSpecs(t, "Intelligent Workflow Builder Integration Tests Suite")
 }
 
-// BR-WORKFLOW-INTEGRATION-001: Intelligent Workflow Builder Business Operations
+// BR-REMEDIATION-INTEGRATION-001: Intelligent Workflow Builder Business Operations
 // Business Impact: Ensures AI-powered workflow generation for executive operational efficiency
 // Stakeholder Value: Provides end-to-end workflow automation for business continuity
 
@@ -52,7 +52,7 @@ var _ = Describe("Intelligent Workflow Builder Integration Tests", func() {
 		mockVectorDB    vector.VectorDatabase
 		ctx             context.Context
 		mockLogger      *mocks.MockLogger
-		logger          *logrus.Logger // Business requirement: BR-WORKFLOW-LOG-001 business metrics logging
+		logger          *logrus.Logger // Business requirement: BR-REMEDIATION-LOG-001 business metrics logging
 		testConfig      testshared.IntegrationConfig
 	)
 
@@ -75,7 +75,7 @@ var _ = Describe("Intelligent Workflow Builder Integration Tests", func() {
 			MaxTokens:   1000,
 		}
 		mockLLMClient, err = llm.NewClient(llmConfig, mockLogger.Logger)
-		Expect(err).ToNot(HaveOccurred(), "BR-WORKFLOW-INTEGRATION-001: LLM client creation must succeed for workflow intelligence")
+		Expect(err).ToNot(HaveOccurred(), "BR-REMEDIATION-INTEGRATION-001: LLM client creation must succeed for workflow intelligence")
 
 		// Create vector database for integration testing
 		mockVectorDB = vector.NewMemoryVectorDatabase(mockLogger.Logger)
@@ -94,7 +94,7 @@ var _ = Describe("Intelligent Workflow Builder Integration Tests", func() {
 		Expect(err).ToNot(HaveOccurred(), "Workflow builder creation should not fail")
 	})
 
-	Context("BR-WORKFLOW-INTEGRATION-001: Workflow Generation Operations", func() {
+	Context("BR-REMEDIATION-INTEGRATION-001: Workflow Generation Operations", func() {
 		It("should generate intelligent workflows for business automation", func() {
 			// Business Requirement: Intelligent workflow builder must generate workflows from business objectives
 			// Business Impact: Enables automated workflow creation for executive operational efficiency
@@ -121,17 +121,17 @@ var _ = Describe("Intelligent Workflow Builder Integration Tests", func() {
 			duration := time.Since(startTime)
 
 			// Business requirement validation
-			Expect(err).ToNot(HaveOccurred(), "BR-WORKFLOW-INTEGRATION-001: Workflow generation must succeed for business automation")
-			Expect(workflow).ToNot(BeNil(), "BR-WORKFLOW-INTEGRATION-001: Generated workflow must provide business value")
+			Expect(err).ToNot(HaveOccurred(), "BR-REMEDIATION-INTEGRATION-001: Workflow generation must succeed for business automation")
+			Expect(workflow).ToNot(BeNil(), "BR-REMEDIATION-INTEGRATION-001: Generated workflow must provide business value")
 
 			// Business outcome validation: Workflow contains actionable business logic
 			if workflow != nil {
-				Expect(workflow.ID).ToNot(BeEmpty(), "BR-WORKFLOW-INTEGRATION-001: Generated workflow must have business identifier")
-				Expect(workflow.Steps).ToNot(BeNil(), "BR-WORKFLOW-INTEGRATION-001: Workflow must contain executable business steps")
+				Expect(workflow.ID).ToNot(BeEmpty(), "BR-REMEDIATION-INTEGRATION-001: Generated workflow must have business identifier")
+				Expect(workflow.Steps).ToNot(BeNil(), "BR-REMEDIATION-INTEGRATION-001: Workflow must contain executable business steps")
 			}
 
 			// Performance requirement: Workflow generation must complete within business SLA
-			Expect(duration).To(BeNumerically("<=", testConfig.TestTimeout), "BR-WORKFLOW-INTEGRATION-001: Workflow generation must meet business SLA requirements")
+			Expect(duration).To(BeNumerically("<=", testConfig.TestTimeout), "BR-REMEDIATION-INTEGRATION-001: Workflow generation must meet business SLA requirements")
 
 			workflowID := "nil"
 			if workflow != nil {
@@ -142,7 +142,7 @@ var _ = Describe("Intelligent Workflow Builder Integration Tests", func() {
 				"workflow_id":       workflowID,
 				"generation_time":   duration,
 				"business_priority": businessObjective.Priority,
-			}).Info("BR-WORKFLOW-INTEGRATION-001: Intelligent workflow generation completed successfully")
+			}).Info("BR-REMEDIATION-INTEGRATION-001: Intelligent workflow generation completed successfully")
 		})
 
 		It("should validate workflows for business compliance", func() {
@@ -178,20 +178,20 @@ var _ = Describe("Intelligent Workflow Builder Integration Tests", func() {
 			duration := time.Since(startTime)
 
 			// Business validation requirements
-			Expect(validationReport).ToNot(BeNil(), "BR-WORKFLOW-INTEGRATION-001: Workflow validation must provide business compliance feedback")
+			Expect(validationReport).ToNot(BeNil(), "BR-REMEDIATION-INTEGRATION-001: Workflow validation must provide business compliance feedback")
 
 			// Performance requirement: Validation must complete quickly for business efficiency
-			Expect(duration).To(BeNumerically("<=", 5*time.Second), "BR-WORKFLOW-INTEGRATION-001: Workflow validation must complete within business efficiency requirements")
+			Expect(duration).To(BeNumerically("<=", 5*time.Second), "BR-REMEDIATION-INTEGRATION-001: Workflow validation must complete within business efficiency requirements")
 
 			logger.WithFields(logrus.Fields{
 				"template_id":      testTemplate.ID,
 				"validation_time":  duration,
 				"compliance_check": true,
-			}).Info("BR-WORKFLOW-INTEGRATION-001: Workflow validation completed successfully")
+			}).Info("BR-REMEDIATION-INTEGRATION-001: Workflow validation completed successfully")
 		})
 	})
 
-	Context("BR-WORKFLOW-INTEGRATION-002: End-to-End Business Operations", func() {
+	Context("BR-REMEDIATION-INTEGRATION-002: End-to-End Business Operations", func() {
 		It("should execute complete workflow lifecycle for business continuity", func() {
 			// Business Requirement: Complete workflow lifecycle execution for business operations
 			// Business Impact: Validates end-to-end business automation capabilities
@@ -229,19 +229,19 @@ var _ = Describe("Intelligent Workflow Builder Integration Tests", func() {
 			}
 
 			workflow, err := workflowBuilder.GenerateWorkflow(ctx, objective)
-			Expect(err).ToNot(HaveOccurred(), "BR-WORKFLOW-INTEGRATION-002: Business workflow generation must succeed for operational continuity")
-			Expect(workflow).ToNot(BeNil(), "BR-WORKFLOW-INTEGRATION-002: Business workflow must be generated for incident response")
+			Expect(err).ToNot(HaveOccurred(), "BR-REMEDIATION-INTEGRATION-002: Business workflow generation must succeed for operational continuity")
+			Expect(workflow).ToNot(BeNil(), "BR-REMEDIATION-INTEGRATION-002: Business workflow must be generated for incident response")
 
 			// Step 2: Validate workflow for business compliance
 			if workflow != nil {
 				validationReport := workflowBuilder.ValidateWorkflow(ctx, workflow)
-				Expect(validationReport).ToNot(BeNil(), "BR-WORKFLOW-INTEGRATION-002: Business workflow validation must ensure operational compliance")
+				Expect(validationReport).ToNot(BeNil(), "BR-REMEDIATION-INTEGRATION-002: Business workflow validation must ensure operational compliance")
 			}
 
 			duration := time.Since(startTime)
 
 			// Business outcome validation: Complete lifecycle supports business operations
-			Expect(duration).To(BeNumerically("<=", testConfig.TestTimeout), "BR-WORKFLOW-INTEGRATION-002: Complete workflow lifecycle must meet business SLA requirements")
+			Expect(duration).To(BeNumerically("<=", testConfig.TestTimeout), "BR-REMEDIATION-INTEGRATION-002: Complete workflow lifecycle must meet business SLA requirements")
 
 			workflowIDForLog := "nil"
 			if workflow != nil {
@@ -253,7 +253,7 @@ var _ = Describe("Intelligent Workflow Builder Integration Tests", func() {
 				"workflow_id":        workflowIDForLog,
 				"lifecycle_duration": duration,
 				"business_impact":    "critical",
-			}).Info("BR-WORKFLOW-INTEGRATION-002: Complete workflow lifecycle validation successful")
+			}).Info("BR-REMEDIATION-INTEGRATION-002: Complete workflow lifecycle validation successful")
 		})
 	})
 })

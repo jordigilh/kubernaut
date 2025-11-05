@@ -32,7 +32,7 @@ import (
 // TDD RED PHASE: Write failing tests FIRST before any implementation
 // These tests will FAIL initially until we implement the workflow client
 
-var _ = Describe("BR-WORKFLOW-API-001: Unified Workflow API Client", func() {
+var _ = Describe("BR-REMEDIATION-API-001: Unified Workflow API Client", func() {
 	var (
 		workflowClient workflow.WorkflowClient
 		ctx            context.Context
@@ -53,7 +53,7 @@ var _ = Describe("BR-WORKFLOW-API-001: Unified Workflow API Client", func() {
 
 	Context("When sending alerts to webhook endpoint", func() {
 		It("should send alert and return workflow ID", func() {
-			// BR-WORKFLOW-API-001: Must provide unified alert sending capability
+			// BR-REMEDIATION-API-001: Must provide unified alert sending capability
 			alert := types.Alert{
 				ID:          "test-alert-001",
 				Name:        "TestAlert",
@@ -73,17 +73,17 @@ var _ = Describe("BR-WORKFLOW-API-001: Unified Workflow API Client", func() {
 
 			// Business requirement validation
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-API-001: Alert sending must succeed")
+				"BR-REMEDIATION-API-001: Alert sending must succeed")
 			Expect(response).ToNot(BeNil(),
-				"BR-WORKFLOW-API-001: Must return valid response")
+				"BR-REMEDIATION-API-001: Must return valid response")
 			Expect(response.Success).To(BeTrue(),
-				"BR-WORKFLOW-API-001: Alert processing must succeed")
+				"BR-REMEDIATION-API-001: Alert processing must succeed")
 			Expect(response.WorkflowID).ToNot(BeEmpty(),
-				"BR-WORKFLOW-API-001: Must return valid workflow ID")
+				"BR-REMEDIATION-API-001: Must return valid workflow ID")
 		})
 
 		It("should handle alert sending errors gracefully", func() {
-			// BR-WORKFLOW-API-002: Must handle errors without code duplication
+			// BR-REMEDIATION-API-002: Must handle errors without code duplication
 			invalidAlert := types.Alert{
 				// Missing required fields to test error handling
 				ID: "",
@@ -94,15 +94,15 @@ var _ = Describe("BR-WORKFLOW-API-001: Unified Workflow API Client", func() {
 
 			// Error handling validation
 			Expect(err).To(HaveOccurred(),
-				"BR-WORKFLOW-API-002: Invalid alerts should cause errors")
+				"BR-REMEDIATION-API-002: Invalid alerts should cause errors")
 			Expect(response).To(BeNil(),
-				"BR-WORKFLOW-API-002: Failed requests should return nil response")
+				"BR-REMEDIATION-API-002: Failed requests should return nil response")
 		})
 	})
 
 	Context("When retrieving workflow status", func() {
 		It("should get workflow status by ID", func() {
-			// BR-WORKFLOW-API-001: Must provide unified status retrieval
+			// BR-REMEDIATION-API-001: Must provide unified status retrieval
 			workflowID := "test-workflow-123"
 
 			// TDD RED: This method doesn't exist yet - will cause failure
@@ -110,17 +110,17 @@ var _ = Describe("BR-WORKFLOW-API-001: Unified Workflow API Client", func() {
 
 			// Business requirement validation
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-API-001: Status retrieval must succeed")
+				"BR-REMEDIATION-API-001: Status retrieval must succeed")
 			Expect(status).ToNot(BeNil(),
-				"BR-WORKFLOW-API-001: Must return valid status")
+				"BR-REMEDIATION-API-001: Must return valid status")
 			Expect(status.WorkflowID).To(Equal(workflowID),
-				"BR-WORKFLOW-API-001: Status must match requested workflow ID")
+				"BR-REMEDIATION-API-001: Status must match requested workflow ID")
 			Expect(status.Status).ToNot(BeEmpty(),
-				"BR-WORKFLOW-API-001: Must return valid status value")
+				"BR-REMEDIATION-API-001: Must return valid status value")
 		})
 
 		It("should handle non-existent workflow IDs", func() {
-			// BR-WORKFLOW-API-002: Must handle missing workflows gracefully
+			// BR-REMEDIATION-API-002: Must handle missing workflows gracefully
 			nonExistentID := "non-existent-workflow"
 
 			// TDD RED: This will fail because method doesn't exist
@@ -128,15 +128,15 @@ var _ = Describe("BR-WORKFLOW-API-001: Unified Workflow API Client", func() {
 
 			// Error handling validation
 			Expect(err).To(HaveOccurred(),
-				"BR-WORKFLOW-API-002: Non-existent workflows should cause errors")
+				"BR-REMEDIATION-API-002: Non-existent workflows should cause errors")
 			Expect(status).To(BeNil(),
-				"BR-WORKFLOW-API-002: Failed requests should return nil status")
+				"BR-REMEDIATION-API-002: Failed requests should return nil status")
 		})
 	})
 
 	Context("When retrieving workflow results", func() {
 		It("should get complete workflow results", func() {
-			// BR-WORKFLOW-API-003: Must integrate with existing patterns
+			// BR-REMEDIATION-API-003: Must integrate with existing patterns
 			workflowID := "completed-workflow-456"
 
 			// TDD RED: This method doesn't exist yet - will cause failure
@@ -144,26 +144,26 @@ var _ = Describe("BR-WORKFLOW-API-001: Unified Workflow API Client", func() {
 
 			// Business requirement validation
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-API-003: Result retrieval must succeed")
+				"BR-REMEDIATION-API-003: Result retrieval must succeed")
 			Expect(result).ToNot(BeNil(),
-				"BR-WORKFLOW-API-003: Must return valid result")
+				"BR-REMEDIATION-API-003: Must return valid result")
 			Expect(result.WorkflowID).To(Equal(workflowID),
-				"BR-WORKFLOW-API-003: Result must match requested workflow ID")
+				"BR-REMEDIATION-API-003: Result must match requested workflow ID")
 			Expect(result.Status).ToNot(BeEmpty(),
-				"BR-WORKFLOW-API-003: Must return valid completion status")
+				"BR-REMEDIATION-API-003: Must return valid completion status")
 		})
 	})
 
 	Context("When performing health checks", func() {
 		It("should validate API endpoint health", func() {
-			// BR-WORKFLOW-API-001: Must provide health check capability
+			// BR-REMEDIATION-API-001: Must provide health check capability
 
 			// TDD RED: This method doesn't exist yet - will cause failure
 			err := workflowClient.HealthCheck(ctx)
 
 			// Health check validation
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-API-001: Health check must succeed for healthy endpoints")
+				"BR-REMEDIATION-API-001: Health check must succeed for healthy endpoints")
 		})
 	})
 
