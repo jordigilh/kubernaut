@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS resource_action_traces (
 
 -- Add test data
 INSERT INTO resource_action_traces (action_id, action_type, action_timestamp, status)
-VALUES 
+VALUES
   ('test-action-1', 'restart_pod', NOW(), 'completed'),
   ('test-action-2', 'scale_deployment', NOW(), 'failed');
 
@@ -112,8 +112,8 @@ echo "🔍 Step 5: Verifying schema changes (AFTER first migration)..."
 # Verify columns
 echo "   Checking columns..."
 COLUMNS=$(podman exec -i $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME -t << 'EOSQL'
-SELECT column_name FROM information_schema.columns 
-WHERE table_name = 'resource_action_traces' 
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'resource_action_traces'
   AND column_name IN (
     'incident_type', 'alert_name', 'incident_severity',
     'playbook_id', 'playbook_version', 'playbook_step_number', 'playbook_execution_id',
@@ -137,8 +137,8 @@ echo -e "${GREEN}✅ All 11 ADR-033 columns created${NC}"
 # Verify indexes
 echo "   Checking indexes..."
 INDEXES=$(podman exec -i $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME -t << 'EOSQL'
-SELECT indexname FROM pg_indexes 
-WHERE tablename = 'resource_action_traces' 
+SELECT indexname FROM pg_indexes
+WHERE tablename = 'resource_action_traces'
   AND indexname IN (
     'idx_incident_type_success',
     'idx_playbook_success',
@@ -182,8 +182,8 @@ echo "🔍 Step 7: Verifying idempotency (AFTER second migration)..."
 
 # Verify column count again
 COLUMNS_AFTER=$(podman exec -i $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME -t << 'EOSQL'
-SELECT column_name FROM information_schema.columns 
-WHERE table_name = 'resource_action_traces' 
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'resource_action_traces'
   AND column_name IN (
     'incident_type', 'alert_name', 'incident_severity',
     'playbook_id', 'playbook_version', 'playbook_step_number', 'playbook_execution_id',
@@ -218,8 +218,8 @@ goose -dir migrations down
 
 # Verify columns are removed
 COLUMNS_ROLLBACK=$(podman exec -i $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME -t << 'EOSQL'
-SELECT column_name FROM information_schema.columns 
-WHERE table_name = 'resource_action_traces' 
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'resource_action_traces'
   AND column_name IN (
     'incident_type', 'alert_name', 'incident_severity',
     'playbook_id', 'playbook_version', 'playbook_step_number', 'playbook_execution_id',
