@@ -5,7 +5,7 @@
 **Decision Makers**: Development Team
 **Priority**: **P0 - CRITICAL** (Foundation for vector similarity search)
 **Supersedes**: None
-**Related To**: 
+**Related To**:
 - DD-010 (PostgreSQL Driver Migration - lib/pq to pgx)
 - ADR-016 (Service-Specific Integration Test Infrastructure)
 - DD-008 (Integration Test Infrastructure - Podman + Kind)
@@ -277,11 +277,11 @@ Application Startup
 ## **Related Decisions**
 
 - **Supersedes**: None (first formal version requirement decision)
-- **Builds On**: 
+- **Builds On**:
   - DD-010: PostgreSQL Driver Migration (ensures modern driver for PostgreSQL 16+)
   - ADR-016: Service-Specific Integration Test Infrastructure (Podman for PostgreSQL testing)
   - DD-008: Integration Test Infrastructure (Podman + Kind strategy)
-- **Supports**: 
+- **Supports**:
   - BR-STORAGE-012: Vector Similarity Search
   - BR-AI-056: AI-Powered Pattern Recognition
   - BR-STORAGE-004: High-Performance Vector Search
@@ -338,7 +338,7 @@ Application Startup
 **Decision Makers**: Development Team
 **Priority**: **P0 - CRITICAL** (Foundation for vector similarity search)
 **Supersedes**: None
-**Related To**: 
+**Related To**:
 - DD-010 (PostgreSQL Driver Migration - lib/pq to pgx)
 - ADR-016 (Service-Specific Integration Test Infrastructure)
 - DD-008 (Integration Test Infrastructure - Podman + Kind)
@@ -610,11 +610,11 @@ Application Startup
 ## **Related Decisions**
 
 - **Supersedes**: None (first formal version requirement decision)
-- **Builds On**: 
+- **Builds On**:
   - DD-010: PostgreSQL Driver Migration (ensures modern driver for PostgreSQL 16+)
   - ADR-016: Service-Specific Integration Test Infrastructure (Podman for PostgreSQL testing)
   - DD-008: Integration Test Infrastructure (Podman + Kind strategy)
-- **Supports**: 
+- **Supports**:
   - BR-STORAGE-012: Vector Similarity Search
   - BR-AI-056: AI-Powered Pattern Recognition
   - BR-STORAGE-004: High-Performance Vector Search
