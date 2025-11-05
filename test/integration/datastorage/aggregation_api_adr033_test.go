@@ -278,16 +278,20 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Old data (8 days ago) - should be excluded
 				_, err := db.Exec(`
 					INSERT INTO resource_action_traces (
+						action_history_id,
 						action_id, action_type, action_timestamp, execution_status,
-						resource_type, resource_name, resource_namespace,
+						signal_name, signal_severity,
 						model_used, model_confidence,
-						incident_type, playbook_id, playbook_version,
+						incident_type, alert_name, incident_severity,
+						playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
 						ai_selected_playbook
 					) VALUES (
+						999,
 						gen_random_uuid()::text, 'increase_memory', NOW() - INTERVAL '8 days', 'completed',
-						'pod', 'test-pod', 'default',
+						'TestSignal', 'warning',
 						'gpt-4', 0.95,
-						$1, 'test-playbook', 'v1.0',
+						$1, 'TestAlert', 'warning',
+						'test-playbook', 'v1.0', 1, gen_random_uuid()::text,
 						true
 					)
 				`, incidentType)
