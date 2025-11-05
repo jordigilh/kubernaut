@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"golang.org/x/mod/semver"
 )
 
 // ========================================
@@ -38,7 +39,8 @@ const MinPostgreSQLMajorVersion = 16
 // MinPgvectorVersion is the minimum required pgvector version
 // DD-011: pgvector 0.5.1+ required for HNSW performance optimizations
 // BR-STORAGE-012: Vector similarity search requires HNSW index support
-var MinPgvectorVersion = &SemanticVersion{Major: 0, Minor: 5, Patch: 1}
+// Using golang.org/x/mod/semver (official Go versioning library)
+const MinPgvectorVersion = "v0.5.1"
 
 // RecommendedSharedBuffersBytes is the recommended PostgreSQL shared_buffers size
 // DD-011: 1GB+ recommended for optimal HNSW vector search performance
@@ -204,17 +206,22 @@ func (v *VersionValidator) getPgvectorVersion(ctx context.Context) (string, erro
 // DD-011: Uses SemanticVersion for type-safe version comparison
 // Examples: "0.5.1" → true, "0.6.0" → true, "0.5.0" → false, "0.4.x" → false
 func (v *VersionValidator) isPgvector051OrHigher(versionStr string) bool {
-	// Parse version using SemanticVersion (DD-011 refactor)
-	version, err := ParseSemanticVersion(versionStr)
-	if err != nil {
-		v.logger.Warn("failed to parse pgvector version",
-			zap.String("version", versionStr),
-			zap.Error(err))
+	// Normalize version string to semver format (add "v" prefix if missing)
+	// golang.org/x/mod/semver requires "v" prefix (e.g., "v0.5.1")
+	if !strings.HasPrefix(versionStr, "v") {
+		versionStr = "v" + versionStr
+	}
+
+	// Validate version format
+	if !semver.IsValid(versionStr) {
+		v.logger.Warn("invalid pgvector version format",
+			zap.String("version", versionStr))
 		return false
 	}
 
-	// Compare with DD-011 minimum version (0.5.1)
-	return version.IsGreaterThanOrEqual(MinPgvectorVersion)
+	// Compare with DD-011 minimum version (v0.5.1)
+	// semver.Compare returns: -1 (less), 0 (equal), 1 (greater)
+	return semver.Compare(versionStr, MinPgvectorVersion) >= 0
 }
 
 // testHNSWIndexCreation performs a dry-run test of HNSW index creation
@@ -253,45 +260,6 @@ func (v *VersionValidator) testHNSWIndexCreation(ctx context.Context) error {
 	v.logger.Debug("HNSW index creation test passed")
 	return nil
 }
-
-// parsePostgreSQLSize parses PostgreSQL size strings into bytes
-// Examples: "128MB" → 134217728, "1GB" → 1073741824, "8192kB" → 8388608
-// DD-011: Refactored to method for consistency with other validator methods
-func (v *VersionValidator) parsePostgreSQLSize(size string) (int64, error) {
-	size = strings.TrimSpace(size)
-	re := regexp.MustCompile(`(\d+)\s*(kB|MB|GB|TB)?`)
-	matches := re.FindStringSubmatch(size)
-	if len(matches) < 2 {
-		return 0, fmt.Errorf("invalid size format: %s", size)
-	}
-
-	value, err := strconv.ParseInt(matches[1], 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid numeric value: %s", matches[1])
-	}
-
-	unit := strings.ToUpper(strings.TrimSpace(matches[2]))
-
-	switch unit {
-	case "TB":
-		return value * 1024 * 1024 * 1024 * 1024, nil
-	case "GB":
-		return value * 1024 * 1024 * 1024, nil
-	case "MB", "":
-		return value * 1024 * 1024, nil
-	case "KB":
-		return value * 1024, nil
-	default:
-		// PostgreSQL default unit is 8kB blocks
-		return value * 8192, nil
-	}
-}
-
-
-	v.logger.Debug("HNSW index creation test passed")
-	return nil
-}
-
 // parsePostgreSQLSize parses PostgreSQL size strings into bytes
 // Examples: "128MB" → 134217728, "1GB" → 1073741824, "8192kB" → 8388608
 // DD-011: Refactored to method for consistency with other validator methods

@@ -493,17 +493,13 @@ var _ = Describe("BR-STORAGE-015: Graceful Degradation", func() {
 
 			result, err := coordinator.WriteWithFallback(ctx, testAudit, embedding)
 
-			Expect(err).To(HaveOccurred(), "PostgreSQL failure should fail entire operation")
-			Expect(result).To(BeNil())
-		})
+		Expect(err).To(HaveOccurred(), "PostgreSQL failure should fail entire operation")
+		Expect(result).To(BeNil())
 	})
-})
 
-		})
-
-		// BEHAVIOR: Coordinator records VectorDB failure details in result
-		// CORRECTNESS: Result contains non-empty VectorDB error message
-		It("should record Vector DB failure with descriptive error message", func() {
+	// BEHAVIOR: Coordinator records VectorDB failure details in result
+	// CORRECTNESS: Result contains non-empty VectorDB error message
+	It("should record Vector DB failure with descriptive error message", func() {
 			// ARRANGE: Context, embedding, and VectorDB failure
 			ctx := context.Background()
 			embedding := make([]float32, 384)

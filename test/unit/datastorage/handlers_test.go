@@ -242,70 +242,8 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 				Expect(rec.Code).To(BeNumerically("<", 500))
 			},
 			Entry("SQL injection in namespace", "namespace", "'; DROP TABLE resource_action_traces--"),
-			Entry("SQL injection in severity", "severity", "' OR '1'='1"),
-			Entry("SQL injection in cluster", "cluster", "' UNION SELECT * FROM users--"),
-		)
-	})
+	Entry("SQL injection in severity", "severity", "' OR '1'='1"),
+	Entry("SQL injection in cluster", "cluster", "' UNION SELECT * FROM users--"),
+)
 })
-
-			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
-
-			// CORRECTNESS: ID matches requested ID
-			Expect(response.ID).To(Equal(int64(123)), "Response ID should match requested ID")
-
-			// CORRECTNESS: Required fields are populated (not empty)
-			Expect(response.Namespace).ToNot(BeEmpty(), "Namespace is a required field")
-			Expect(response.ActionType).ToNot(BeEmpty(), "ActionType is a required field")
-		})
-
-		// BR-STORAGE-024: RFC 7807 for not found
-		It("should return RFC 7807 error for non-existent incident", func() {
-			req = httptest.NewRequest("GET", "/api/v1/incidents/999999", nil)
-
-			handler.GetIncident(rec, req)
-
-		Expect(rec.Code).To(Equal(http.StatusNotFound))
-
-		var problemDetail validation.RFC7807Problem
-		err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
-		Expect(err).ToNot(HaveOccurred())
-
-		Expect(problemDetail.Type).To(ContainSubstring("not-found"))
-		Expect(problemDetail.Status).To(Equal(404))
-		})
-
-		It("should return RFC 7807 error for invalid ID format", func() {
-			req = httptest.NewRequest("GET", "/api/v1/incidents/invalid-id", nil)
-
-			handler.GetIncident(rec, req)
-
-		Expect(rec.Code).To(Equal(http.StatusBadRequest))
-
-		var problemDetail validation.RFC7807Problem
-		err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
-		Expect(err).ToNot(HaveOccurred())
-
-		Expect(problemDetail.Type).To(ContainSubstring("invalid-id"))
-		})
-	})
-
-	// BR-STORAGE-025: SQL injection protection at handler level
-	Describe("security validation", func() {
-		DescribeTable("should sanitize malicious input",
-			func(parameter, value string) {
-				// BR-STORAGE-025: URL-encode malicious input
-				encodedValue := url.QueryEscape(value)
-				req = httptest.NewRequest("GET", "/api/v1/incidents?"+parameter+"="+encodedValue, nil)
-
-				handler.ListIncidents(rec, req)
-
-				// Should not crash, should return safe response
-				Expect(rec.Code).To(BeNumerically(">=", 200))
-				Expect(rec.Code).To(BeNumerically("<", 500))
-			},
-			Entry("SQL injection in namespace", "namespace", "'; DROP TABLE resource_action_traces--"),
-			Entry("SQL injection in severity", "severity", "' OR '1'='1"),
-			Entry("SQL injection in cluster", "cluster", "' UNION SELECT * FROM users--"),
-		)
-	})
 })

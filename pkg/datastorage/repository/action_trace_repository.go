@@ -68,7 +68,7 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 
 	// Main aggregation query
 	query := `
-		SELECT 
+		SELECT
 			incident_type,
 			COUNT(*) as total_executions,
 			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_executions,
@@ -80,10 +80,10 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	`
 
 	var (
-		returnedIncidentType  string
-		totalExecutions       int
-		successfulExecutions  int
-		failedExecutions      int
+		returnedIncidentType string
+		totalExecutions      int
+		successfulExecutions int
+		failedExecutions     int
 	)
 
 	err := r.db.QueryRowContext(ctx, query, incidentType, sinceTime).Scan(
@@ -174,7 +174,7 @@ func (r *ActionTraceRepository) getPlaybookBreakdownForIncidentType(
 	sinceTime time.Time,
 ) ([]models.PlaybookBreakdownItem, error) {
 	query := `
-		SELECT 
+		SELECT
 			playbook_id,
 			playbook_version,
 			COUNT(*) as executions,
@@ -217,7 +217,7 @@ func (r *ActionTraceRepository) getAIExecutionModeForIncidentType(
 	sinceTime time.Time,
 ) (*models.AIExecutionModeStats, error) {
 	query := `
-		SELECT 
+		SELECT
 			COUNT(CASE WHEN ai_selected_playbook = true THEN 1 END) as catalog_selected,
 			COUNT(CASE WHEN ai_chained_playbooks = true THEN 1 END) as chained,
 			COUNT(CASE WHEN ai_manual_escalation = true THEN 1 END) as manual_escalation
@@ -263,7 +263,7 @@ func (r *ActionTraceRepository) GetSuccessRateByPlaybook(
 
 	// Main aggregation query
 	query := `
-		SELECT 
+		SELECT
 			playbook_id,
 			playbook_version,
 			COUNT(*) as total_executions,
@@ -376,7 +376,7 @@ func (r *ActionTraceRepository) getIncidentTypeBreakdownForPlaybook(
 	sinceTime time.Time,
 ) ([]models.IncidentTypeBreakdownItem, error) {
 	query := `
-		SELECT 
+		SELECT
 			incident_type,
 			COUNT(*) as executions,
 			CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) as success_rate
@@ -420,7 +420,7 @@ func (r *ActionTraceRepository) getAIExecutionModeForPlaybook(
 	sinceTime time.Time,
 ) (*models.AIExecutionModeStats, error) {
 	query := `
-		SELECT 
+		SELECT
 			COUNT(CASE WHEN ai_selected_playbook = true THEN 1 END) as catalog_selected,
 			COUNT(CASE WHEN ai_chained_playbooks = true THEN 1 END) as chained,
 			COUNT(CASE WHEN ai_manual_escalation = true THEN 1 END) as manual_escalation
@@ -504,4 +504,3 @@ func formatDuration(d time.Duration) string {
 	}
 	return "1h"
 }
-
