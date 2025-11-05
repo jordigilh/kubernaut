@@ -71,8 +71,8 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 		SELECT
 			incident_type,
 			COUNT(*) as total_executions,
-			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_executions,
-			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_executions
+			SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as successful_executions,
+			SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed_executions
 		FROM resource_action_traces
 		WHERE incident_type = $1
 			AND action_timestamp >= $2
@@ -178,7 +178,7 @@ func (r *ActionTraceRepository) getPlaybookBreakdownForIncidentType(
 			playbook_id,
 			playbook_version,
 			COUNT(*) as executions,
-			CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) as success_rate
+			CAST(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) as success_rate
 		FROM resource_action_traces
 		WHERE incident_type = $1
 			AND action_timestamp >= $2
@@ -267,8 +267,8 @@ func (r *ActionTraceRepository) GetSuccessRateByPlaybook(
 			playbook_id,
 			playbook_version,
 			COUNT(*) as total_executions,
-			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_executions,
-			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_executions
+			SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as successful_executions,
+			SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed_executions
 		FROM resource_action_traces
 		WHERE playbook_id = $1
 			AND playbook_version = $2
@@ -379,7 +379,7 @@ func (r *ActionTraceRepository) getIncidentTypeBreakdownForPlaybook(
 		SELECT
 			incident_type,
 			COUNT(*) as executions,
-			CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) as success_rate
+			CAST(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) as success_rate
 		FROM resource_action_traces
 		WHERE playbook_id = $1
 			AND playbook_version = $2

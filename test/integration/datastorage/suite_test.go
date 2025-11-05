@@ -278,7 +278,7 @@ func applyMigrationsWithPropagation() {
 		"004_add_effectiveness_assessment_due.sql",
 		"005_vector_schema.sql",
 		"006_effectiveness_assessment.sql",
-		"006_update_vector_dimensions.sql",
+		"009_update_vector_dimensions.sql",
 		"007_add_context_column.sql",
 		"008_context_api_compatibility.sql",
 		"010_audit_write_api_phase1.sql",
@@ -299,6 +299,14 @@ func applyMigrationsWithPropagation() {
 		// Remove CONCURRENTLY keyword for test environment
 		// CONCURRENTLY cannot run inside a transaction block
 		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
+
+		// Extract only the UP migration (ignore DOWN section)
+		// Goose migrations have "-- +goose Up" and "-- +goose Down" markers
+		if strings.Contains(migrationSQL, "-- +goose Down") {
+			// Split at the DOWN marker and only use the UP part
+			parts := strings.Split(migrationSQL, "-- +goose Down")
+			migrationSQL = parts[0]
+		}
 
 		_, err = db.ExecContext(ctx, migrationSQL)
 		if err != nil {

@@ -87,12 +87,12 @@ COMMENT ON COLUMN resource_action_traces.ai_playbook_customization IS
 
 -- Incident-Type Success Rate (PRIMARY dimension)
 CREATE INDEX IF NOT EXISTS idx_incident_type_success
-ON resource_action_traces(incident_type, status, action_timestamp DESC)
+ON resource_action_traces(incident_type, execution_status, action_timestamp DESC)
 WHERE incident_type IS NOT NULL;
 
 -- Playbook Success Rate (SECONDARY dimension)
 CREATE INDEX IF NOT EXISTS idx_playbook_success
-ON resource_action_traces(playbook_id, playbook_version, status, action_timestamp DESC)
+ON resource_action_traces(playbook_id, playbook_version, execution_status, action_timestamp DESC)
 WHERE playbook_id IS NOT NULL;
 
 -- Action-Type Success Rate (TERTIARY dimension - already have index on action_type)
@@ -100,7 +100,7 @@ WHERE playbook_id IS NOT NULL;
 
 -- Multi-dimensional composite index (incident_type + playbook_id + action_type)
 CREATE INDEX IF NOT EXISTS idx_multidimensional_success
-ON resource_action_traces(incident_type, playbook_id, action_type, status, action_timestamp DESC)
+ON resource_action_traces(incident_type, playbook_id, action_type, execution_status, action_timestamp DESC)
 WHERE incident_type IS NOT NULL AND playbook_id IS NOT NULL;
 
 -- Playbook execution grouping (for chained playbook tracking)
@@ -115,7 +115,7 @@ WHERE incident_type IS NOT NULL;
 
 -- Alert name lookup (for incident-type proxy)
 CREATE INDEX IF NOT EXISTS idx_alert_name_lookup
-ON resource_action_traces(alert_name, status, action_timestamp DESC)
+ON resource_action_traces(alert_name, execution_status, action_timestamp DESC)
 WHERE alert_name IS NOT NULL;
 
 -- ========================================
