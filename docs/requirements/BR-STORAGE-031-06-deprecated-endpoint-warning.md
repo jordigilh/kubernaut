@@ -1,10 +1,10 @@
 # BR-STORAGE-031-06: Deprecated Endpoint Warning Headers
 
-**Business Requirement ID**: BR-STORAGE-031-06  
-**Category**: Data Storage Service  
-**Priority**: P2  
-**Target Version**: V1  
-**Status**: ✅ Approved  
+**Business Requirement ID**: BR-STORAGE-031-06
+**Category**: Data Storage Service
+**Priority**: P2
+**Target Version**: V1
+**Status**: ✅ Approved
 **Date**: November 5, 2025
 
 ---
@@ -101,15 +101,15 @@ datastorage_total_requests_total{endpoint="all"} 10000
 
 ## ✅ **Approval**
 
-**Status**: ✅ **APPROVED FOR V1**  
-**Date**: November 5, 2025  
-**Decision**: Implement as P2 priority  
-**Rationale**: Enables smooth migration from legacy endpoints  
+**Status**: ✅ **APPROVED FOR V1**
+**Date**: November 5, 2025
+**Decision**: Implement as P2 priority
+**Rationale**: Enables smooth migration from legacy endpoints
 **Approved By**: Architecture Team
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 5, 2025  
+**Document Version**: 1.0
+**Last Updated**: November 5, 2025
 **Status**: ✅ Approved for V1 Implementation
 
