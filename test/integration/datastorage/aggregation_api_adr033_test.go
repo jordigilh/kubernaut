@@ -14,7 +14,7 @@ import (
 
 // ========================================
 // ADR-033 HTTP API INTEGRATION TESTS - TDD RED PHASE
-// 📋 Authority: IMPLEMENTATION_PLAN_V5.0.md Day 15
+// 📋 Authority: IMPLEMENTATION_PLAN_V5.3.md Day 15
 // 📋 Testing Strategy: Behavior + Correctness with REAL PostgreSQL + HTTP API
 // ========================================
 //

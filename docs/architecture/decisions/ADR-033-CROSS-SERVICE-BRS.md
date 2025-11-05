@@ -604,7 +604,7 @@ graph LR
 - [ADR-033: Remediation Playbook Catalog](ADR-033-remediation-playbook-catalog.md)
 - [ADR-033: BR Category Migration Plan](ADR-033-BR-CATEGORY-MIGRATION-PLAN.md)
 - [ADR-033: Executor Service Naming](ADR-033-EXECUTOR-SERVICE-NAMING-ASSESSMENT.md)
-- [Data Storage Implementation Plan V5.0](../../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.0.md)
+- [Data Storage Implementation Plan V5.0](../../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.3.md)
 
 ---
 

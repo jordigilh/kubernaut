@@ -410,7 +410,7 @@ type NotificationAudit struct {
 ### **Related Documents**
 - [ADR-033: Remediation Playbook Catalog](../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
 - [DD-011: PostgreSQL 16+ Version Requirements](../architecture/decisions/DD-011-postgresql-version-requirements.md)
-- [Data Storage Implementation Plan V5.0](../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.0.md)
+- [Data Storage Implementation Plan V5.0](../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.3.md)
 - [Migration Script: 002_adr033_multidimensional_tracking.sql](../services/stateless/data-storage/migrations/002_adr033_multidimensional_tracking.sql)
 
 ---

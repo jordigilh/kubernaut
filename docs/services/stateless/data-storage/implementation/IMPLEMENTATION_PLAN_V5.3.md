@@ -61,7 +61,7 @@
 4. **IMPROVEMENT-2: Missing "At Least One Dimension" Validation** (P1 - HIGH)
    - **Problem**: Handler accepts queries with NO dimensions (contradicts api-specification.md)
    - **Impact**: Edge case coverage gap, unexpected behavior
-   - **Files**: 
+   - **Files**:
      - `pkg/datastorage/server/aggregation_handlers.go` (add validation)
      - `test/unit/datastorage/aggregation_handlers_test.go` (add test)
      - `test/integration/datastorage/aggregation_api_adr033_test.go` (add test)
@@ -3243,7 +3243,7 @@ components:
 
 ### **16.2: Update Implementation Plan Version** (2h)
 
-**Update this file (`IMPLEMENTATION_PLAN_V5.0.md`)** with:
+**Update this file (`IMPLEMENTATION_PLAN_V5.3.md`)** with:
 - Final changelog entry
 - Completion status for all phases
 - Lessons learned from ADR-033 implementation

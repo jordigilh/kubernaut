@@ -236,7 +236,7 @@ go test ./test/integration/datastorage/... -v | grep "no dimensions"
                   success_rate: 90.0
                   confidence: "medium"
                   min_samples_met: true
-              
+
               partial_dimensions:
                 summary: Two dimensions (incident + playbook)
                 value:
@@ -268,7 +268,7 @@ go test ./test/integration/datastorage/... -v | grep "no dimensions"
                   status: 400
                   detail: "at least one dimension filter (incident_type, playbook_id, or action_type) must be specified"
                   instance: "/api/v1/success-rate/multi-dimensional"
-              
+
               playbook_version_without_id:
                 summary: playbook_version without playbook_id
                 value:

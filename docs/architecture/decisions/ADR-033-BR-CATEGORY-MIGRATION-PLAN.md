@@ -179,7 +179,7 @@ go build ./pkg/...
 ---
 
 ### **Step 5: Update V5.0 Implementation Plan** 📄
-**File**: `docs/services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.0.md`
+**File**: `docs/services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.3.md`
 
 **Changes**:
 1. Update BR references in test scenarios (lines 1100-1300)
@@ -259,7 +259,7 @@ go build ./pkg/...
 
 - [ADR-033: Remediation Playbook Catalog](ADR-033-remediation-playbook-catalog.md)
 - [ADR-033: Executor Service Naming](ADR-033-EXECUTOR-SERVICE-NAMING-ASSESSMENT.md)
-- [Data Storage Implementation Plan V5.0](../../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.0.md)
+- [Data Storage Implementation Plan V5.0](../../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.3.md)
 
 ---
 
