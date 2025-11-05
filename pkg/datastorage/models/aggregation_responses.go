@@ -245,7 +245,7 @@ type TrendAnalysisData struct {
 // Combines all 3 dimensions: incident type + playbook + action type
 type MultiDimensionalSuccessRateResponse struct {
 	// Dimensions specifies which dimensions are being aggregated
-	Dimensions DimensionsFilter `json:"dimensions"`
+	Dimensions QueryDimensions `json:"dimensions"`
 
 	// TimeRange is the analysis period (e.g., "7d", "30d", "90d")
 	TimeRange string `json:"time_range"`
@@ -281,8 +281,50 @@ type MultiDimensionalSuccessRateResponse struct {
 	AIExecutionMode *AIExecutionModeStats `json:"ai_execution_mode,omitempty"`
 }
 
+// QueryDimensions represents the dimensions used in a multi-dimensional query
+// BR-STORAGE-031-05: Multi-Dimensional Success Rate API
+// Used in MultiDimensionalSuccessRateResponse to echo back query parameters
+type QueryDimensions struct {
+	// IncidentType is the incident type filter (empty if not specified)
+	IncidentType string `json:"incident_type"`
+
+	// PlaybookID is the playbook ID filter (empty if not specified)
+	PlaybookID string `json:"playbook_id"`
+
+	// PlaybookVersion is the playbook version filter (empty if not specified)
+	PlaybookVersion string `json:"playbook_version"`
+
+	// ActionType is the action type filter (empty if not specified)
+	ActionType string `json:"action_type"`
+}
+
+// MultiDimensionalQuery represents the input parameters for multi-dimensional queries
+// BR-STORAGE-031-05: Multi-Dimensional Success Rate API
+// Used by repository layer to construct dynamic WHERE clauses
+type MultiDimensionalQuery struct {
+	// IncidentType filters to specific incident type (empty = all incident types)
+	IncidentType string
+
+	// PlaybookID filters to specific playbook (empty = all playbooks)
+	PlaybookID string
+
+	// PlaybookVersion filters to specific playbook version (empty = all versions)
+	// Requires PlaybookID to be specified
+	PlaybookVersion string
+
+	// ActionType filters to specific action type (empty = all action types)
+	ActionType string
+
+	// TimeRange is the time window for aggregation (e.g., "7d", "30d")
+	TimeRange string
+
+	// MinSamples is the minimum sample size for confidence calculation (default: 5)
+	MinSamples int
+}
+
 // DimensionsFilter specifies which dimensions are included in the aggregation
 // All fields are optional - NULL means "aggregate across all values of this dimension"
+// DEPRECATED: Use QueryDimensions instead for new code
 type DimensionsFilter struct {
 	// IncidentType filters to specific incident type (NULL = all incident types)
 	IncidentType *string `json:"incident_type,omitempty"`
