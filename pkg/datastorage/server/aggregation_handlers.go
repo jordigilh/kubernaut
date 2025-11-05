@@ -348,6 +348,114 @@ func (h *Handler) respondWithRFC7807(w http.ResponseWriter, statusCode int, prob
 }
 
 // ========================================
+// BR-STORAGE-031-05: Multi-Dimensional Success Rate Handler
+// TDD GREEN Phase: Minimal implementation to pass tests
+// ========================================
+
+// HandleGetSuccessRateMultiDimensional handles GET /api/v1/success-rate/multi-dimensional
+// BR-STORAGE-031-05: Multi-dimensional success rate aggregation
+// Supports any combination of: incident_type, playbook_id + playbook_version, action_type
+func (h *Handler) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameters
+	query := r.URL.Query()
+	incidentType := query.Get("incident_type")
+	playbookID := query.Get("playbook_id")
+	playbookVersion := query.Get("playbook_version")
+	actionType := query.Get("action_type")
+	timeRangeStr := query.Get("time_range")
+	minSamplesStr := query.Get("min_samples")
+
+	// Default values
+	if timeRangeStr == "" {
+		timeRangeStr = "7d"
+	}
+
+	minSamples := 5 // Default
+	if minSamplesStr != "" {
+		var err error
+		minSamples, err = strconv.Atoi(minSamplesStr)
+		if err != nil {
+			h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+				Type:     "https://api.kubernaut.io/problems/validation-error",
+				Title:    "Invalid Query Parameter",
+				Status:   http.StatusBadRequest,
+				Detail:   fmt.Sprintf("min_samples must be a valid integer: %v", err),
+				Instance: r.URL.Path,
+			})
+			return
+		}
+
+		if minSamples <= 0 {
+			h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+				Type:     "https://api.kubernaut.io/problems/validation-error",
+				Title:    "Invalid Query Parameter",
+				Status:   http.StatusBadRequest,
+				Detail:   "min_samples must be a positive integer",
+				Instance: r.URL.Path,
+			})
+			return
+		}
+	}
+
+	// Validate time_range format
+	duration, err := parseTimeRange(timeRangeStr)
+	if err != nil {
+		h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
+			Type:     "https://api.kubernaut.io/problems/validation-error",
+			Title:    "Invalid Query Parameter",
+			Status:   http.StatusBadRequest,
+			Detail:   fmt.Sprintf("invalid time_range: %v", err),
+			Instance: r.URL.Path,
+		})
+		return
+	}
+
+	// Call repository method
+	result, err := h.actionTraceRepository.GetSuccessRateMultiDimensional(r.Context(), &models.MultiDimensionalQuery{
+		IncidentType:    incidentType,
+		PlaybookID:      playbookID,
+		PlaybookVersion: playbookVersion,
+		ActionType:      actionType,
+		TimeRange:       timeRangeStr,
+		MinSamples:      minSamples,
+	})
+
+	if err != nil {
+		h.logger.Error("failed to get multi-dimensional success rate",
+			zap.String("incident_type", incidentType),
+			zap.String("playbook_id", playbookID),
+			zap.String("playbook_version", playbookVersion),
+			zap.String("action_type", actionType),
+			zap.Duration("duration", duration),
+			zap.Error(err))
+
+		h.respondWithRFC7807(w, http.StatusInternalServerError, validation.RFC7807Problem{
+			Type:     "https://api.kubernaut.io/problems/internal-error",
+			Title:    "Internal Server Error",
+			Status:   http.StatusInternalServerError,
+			Detail:   "Failed to retrieve multi-dimensional success rate data",
+			Instance: r.URL.Path,
+		})
+		return
+	}
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode multi-dimensional success rate response", zap.Error(err))
+	}
+
+	h.logger.Debug("multi-dimensional success rate query completed",
+		zap.String("incident_type", incidentType),
+		zap.String("playbook_id", playbookID),
+		zap.String("playbook_version", playbookVersion),
+		zap.String("action_type", actionType),
+		zap.Int("total_executions", result.TotalExecutions),
+		zap.Float64("success_rate", result.SuccessRate))
+}
+
+// ========================================
 // TDD REFACTOR COMPLETE (Day 14 + Day 15)
 // ========================================
 //
