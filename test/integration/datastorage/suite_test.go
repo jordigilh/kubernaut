@@ -283,6 +283,7 @@ func applyMigrationsWithPropagation() {
 		"008_context_api_compatibility.sql",
 		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
+		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
 		"999_add_nov_2025_partition.sql",
 	}
 
