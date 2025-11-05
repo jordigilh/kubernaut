@@ -189,9 +189,9 @@ func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware
-	r.Use(middleware.RequestID) // Add X-Request-ID
-	r.Use(middleware.RealIP)    // Get real client IP
-	r.Use(s.loggingMiddleware)  // Custom logging middleware
+	r.Use(middleware.RequestID)      // Add X-Request-ID
+	r.Use(middleware.RealIP)         // Get real client IP
+	r.Use(s.loggingMiddleware)       // Custom logging middleware
 	r.Use(s.panicRecoveryMiddleware) // Enhanced panic recovery with logging
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"}, // TODO: Configure in production
@@ -233,12 +233,12 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/incidents/aggregate/by-severity", s.handler.AggregateBySeverity)
 		r.Get("/incidents/aggregate/trend", s.handler.AggregateIncidentTrend)
 
-	// BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-05: ADR-033 Multi-dimensional Success Tracking (READ API)
-	r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)
-	r.Get("/success-rate/playbook", s.handler.HandleGetSuccessRateByPlaybook)
-	r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)
+		// BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-05: ADR-033 Multi-dimensional Success Tracking (READ API)
+		r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)
+		r.Get("/success-rate/playbook", s.handler.HandleGetSuccessRateByPlaybook)
+		r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)
 
-	// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
+		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
 		s.logger.Debug("Registering POST /api/v1/audit/notifications handler")
 		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
 	})
@@ -1034,4 +1034,3 @@ func replaceFirstOccurrence(s, old, new string) string {
 		i = j + 1
 	}
 }
-
