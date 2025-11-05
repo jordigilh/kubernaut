@@ -504,3 +504,149 @@ func formatDuration(d time.Duration) string {
 	}
 	return "1h"
 }
+
+// parseTimeRange parses a time range string (e.g., "7d", "30d", "1h") into a time.Duration
+// Returns error for invalid format
+func parseTimeRange(timeRange string) (time.Duration, error) {
+	// Common time ranges
+	switch timeRange {
+	case "1h":
+		return 1 * time.Hour, nil
+	case "24h", "1d":
+		return 24 * time.Hour, nil
+	case "7d":
+		return 7 * 24 * time.Hour, nil
+	case "30d":
+		return 30 * 24 * time.Hour, nil
+	case "90d":
+		return 90 * 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("invalid time_range: %s (expected: 1h, 1d, 7d, 30d, 90d)", timeRange)
+	}
+}
+
+// ========================================
+// BR-STORAGE-031-05: Multi-Dimensional Success Rate
+// ========================================
+
+// GetSuccessRateMultiDimensional calculates success rate across multiple dimensions
+// BR-STORAGE-031-05: Multi-dimensional success rate aggregation
+// Supports any combination of: incident_type, playbook_id + playbook_version, action_type
+func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
+	ctx context.Context,
+	query *models.MultiDimensionalQuery,
+) (*models.MultiDimensionalSuccessRateResponse, error) {
+	r.logger.Debug("GetSuccessRateMultiDimensional called",
+		zap.String("incident_type", query.IncidentType),
+		zap.String("playbook_id", query.PlaybookID),
+		zap.String("playbook_version", query.PlaybookVersion),
+		zap.String("action_type", query.ActionType),
+		zap.String("time_range", query.TimeRange),
+		zap.Int("min_samples", query.MinSamples))
+
+	// Validation: playbook_version requires playbook_id
+	if query.PlaybookVersion != "" && query.PlaybookID == "" {
+		return nil, fmt.Errorf("playbook_version requires playbook_id to be specified")
+	}
+
+	// Parse time range
+	duration, err := parseTimeRange(query.TimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate time threshold
+	sinceTime := time.Now().Add(-duration)
+
+	// Build dynamic WHERE clause based on provided dimensions
+	var whereClauses []string
+	var args []interface{}
+	argIndex := 1
+
+	if query.IncidentType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("incident_type = $%d", argIndex))
+		args = append(args, query.IncidentType)
+		argIndex++
+	}
+
+	if query.PlaybookID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("playbook_id = $%d", argIndex))
+		args = append(args, query.PlaybookID)
+		argIndex++
+
+		if query.PlaybookVersion != "" {
+			whereClauses = append(whereClauses, fmt.Sprintf("playbook_version = $%d", argIndex))
+			args = append(args, query.PlaybookVersion)
+			argIndex++
+		}
+	}
+
+	if query.ActionType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("action_type = $%d", argIndex))
+		args = append(args, query.ActionType)
+		argIndex++
+	}
+
+	// Add time range filter
+	whereClauses = append(whereClauses, fmt.Sprintf("action_timestamp >= $%d", argIndex))
+	args = append(args, sinceTime)
+
+	// Build SQL query
+	var whereClause string
+	if len(whereClauses) > 0 {
+		whereClause = "WHERE " + fmt.Sprintf("%s", whereClauses[0])
+		for i := 1; i < len(whereClauses); i++ {
+			whereClause += " AND " + whereClauses[i]
+		}
+	}
+
+	sqlQuery := fmt.Sprintf(`
+		SELECT
+			COUNT(*) AS total_executions,
+			SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS successful_executions,
+			SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) AS failed_executions
+		FROM resource_action_traces
+		%s
+	`, whereClause)
+
+	// Execute query
+	var totalExecutions, successfulExecutions, failedExecutions int
+	err = r.db.QueryRowContext(ctx, sqlQuery, args...).Scan(
+		&totalExecutions,
+		&successfulExecutions,
+		&failedExecutions,
+	)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to query multi-dimensional success rate: %w", err)
+	}
+
+	// Calculate success rate and confidence
+	successRate := calculateSuccessRatePercentage(successfulExecutions, totalExecutions)
+	confidence := calculateConfidence(totalExecutions)
+	minSamplesMet := totalExecutions >= query.MinSamples
+
+	// Build response
+	response := &models.MultiDimensionalSuccessRateResponse{
+		Dimensions: models.QueryDimensions{
+			IncidentType:    query.IncidentType,
+			PlaybookID:      query.PlaybookID,
+			PlaybookVersion: query.PlaybookVersion,
+			ActionType:      query.ActionType,
+		},
+		TimeRange:            query.TimeRange,
+		TotalExecutions:      totalExecutions,
+		SuccessfulExecutions: successfulExecutions,
+		FailedExecutions:     failedExecutions,
+		SuccessRate:          successRate,
+		Confidence:           confidence,
+		MinSamplesMet:        minSamplesMet,
+	}
+
+	r.logger.Debug("GetSuccessRateMultiDimensional result",
+		zap.Int("total_executions", totalExecutions),
+		zap.Int("successful_executions", successfulExecutions),
+		zap.Float64("success_rate", successRate),
+		zap.String("confidence", confidence))
+
+	return response, nil
+}
