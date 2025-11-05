@@ -59,7 +59,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			// CORRECTNESS: Histogram is registered and functional (can be retrieved)
 			histogram := metrics.WriteDuration.WithLabelValues(metrics.TableRemediationAudit)
 			Expect(histogram).ToNot(BeNil(), "WriteDuration histogram should be registered")
-			
+
 			// CORRECTNESS: Can observe multiple values (histogram is functional)
 			histogram.Observe(0.030) // 30ms
 			histogram.Observe(0.020) // 20ms - verify histogram accepts multiple observations

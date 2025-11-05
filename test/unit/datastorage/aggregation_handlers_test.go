@@ -431,7 +431,7 @@ var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
 
 			// BEHAVIOR + CORRECTNESS: Verify first data point has valid date and non-negative count
 			Expect(response.DataPoints[0].Date).ToNot(BeEmpty(), "Date field should be populated")
-			Expect(response.DataPoints[0].Date).To(MatchRegexp(`^\d{4}-\d{2}-\d{2}$`), 
+			Expect(response.DataPoints[0].Date).To(MatchRegexp(`^\d{4}-\d{2}-\d{2}$`),
 				"Date should be in YYYY-MM-DD format (ISO 8601)")
 			Expect(response.DataPoints[0].Count).To(BeNumerically(">=", 0))
 			})

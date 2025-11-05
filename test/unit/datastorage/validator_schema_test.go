@@ -502,7 +502,7 @@ var _ = Describe("VersionValidator", func() {
 					"Recommended buffer size must be positive")
 
 				// CORRECTNESS: Validate it's reasonable (between 512MB and 100GB)
-				const minReasonable = int64(512 * 1024 * 1024)  // 512MB
+				const minReasonable = int64(512 * 1024 * 1024)        // 512MB
 				const maxReasonable = int64(100 * 1024 * 1024 * 1024) // 100GB
 				Expect(schema.RecommendedSharedBuffersBytes).To(BeNumerically(">=", minReasonable),
 					"Recommended buffer size should be at least 512MB")
