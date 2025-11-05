@@ -423,6 +423,11 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 		}
 	}
 
+	// Validate playbook_version requires playbook_id
+	if playbookVersion != "" && playbookID == "" {
+		return nil, fmt.Errorf("playbook_version requires playbook_id to be specified")
+	}
+
 	return &models.MultiDimensionalQuery{
 		IncidentType:    incidentType,
 		PlaybookID:      playbookID,
