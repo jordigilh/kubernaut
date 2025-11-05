@@ -559,4 +559,3 @@ func cleanupADR033TestData() {
 	_, err := db.Exec("DELETE FROM resource_action_traces WHERE incident_type LIKE 'integration-test-%'")
 	Expect(err).ToNot(HaveOccurred())
 }
-
