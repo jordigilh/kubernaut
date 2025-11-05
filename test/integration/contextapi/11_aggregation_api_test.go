@@ -20,11 +20,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/contextapi/server"
 	dsmodels "github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -42,15 +44,63 @@ import (
 // ========================================
 
 var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
-	var contextAPIBaseURL string
+	var contextAPIServer *server.Server
+	var httpTestServer   *httptest.Server
+	var dataStorageBaseURL string
 
 	BeforeAll(func() {
-		// TODO: Start Context API server with Data Storage Service client
-		// For TDD RED phase, we'll skip infrastructure setup and let tests fail on missing routes
-		contextAPIBaseURL = "http://localhost:8080"
+		// Infrastructure requirements (must be running):
+		// 1. PostgreSQL: localhost:5432 (datastorage-postgres container)
+		// 2. Redis: localhost:6379 (contextapi-redis-test container - started by suite_test.go)
+		// 3. Data Storage Service: localhost:8085 (datastorage-service-test container)
+		//
+		// Start infrastructure with: make bootstrap-dev (from workspace root)
+		// Or manually: see test/integration/datastorage/suite_test.go for Podman commands
 
-		// Skip health check for now - will implement in TDD GREEN phase
-		Skip("TDD RED: Infrastructure setup pending - tests should fail on missing routes")
+		dataStorageBaseURL = fmt.Sprintf("http://localhost:%s", dataStoragePort)
+
+		// Verify Data Storage Service is running
+		GinkgoWriter.Println("🔍 Checking Data Storage Service availability...")
+		Eventually(func() error {
+			resp, err := http.Get(dataStorageBaseURL + "/health")
+			if err != nil {
+				return fmt.Errorf("Data Storage Service not reachable: %w (start with: make bootstrap-dev)", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("Data Storage Service unhealthy: %d", resp.StatusCode)
+			}
+			return nil
+		}, 10*time.Second, 1*time.Second).Should(Succeed(), "Data Storage Service must be running on port "+dataStoragePort)
+
+		GinkgoWriter.Println("✅ Data Storage Service is available")
+
+		// Start in-process Context API server
+		GinkgoWriter.Println("🚀 Starting Context API server...")
+		cfg := &server.Config{
+			Port:               8080,
+			ReadTimeout:        30 * time.Second,
+			WriteTimeout:       30 * time.Second,
+			DataStorageBaseURL: dataStorageBaseURL,
+		}
+
+		var err error
+		contextAPIServer, err = server.NewServer(
+			fmt.Sprintf("localhost:%s", redisPort), // Redis from suite_test.go
+			logger,
+			cfg,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Context API server creation should succeed")
+
+		// Create HTTP test server
+		httpTestServer = httptest.NewServer(contextAPIServer.Handler())
+		GinkgoWriter.Printf("✅ Context API server started at %s\n", httpTestServer.URL)
+	})
+
+	AfterAll(func() {
+		if httpTestServer != nil {
+			httpTestServer.Close()
+		}
 	})
 
 	// ========================================
@@ -63,7 +113,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: Response matches expected Data Storage Service format with all required fields
 
 			// Make HTTP request
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=7d&min_samples=5", contextAPIBaseURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=7d&min_samples=5", httpTestServer.URL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -93,7 +143,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: Error response follows RFC 7807 Problem Details format
 
 			// Make HTTP request without incident_type
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?time_range=7d", contextAPIBaseURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?time_range=7d", httpTestServer.URL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -118,7 +168,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: Cached response is identical to original response
 
 			incidentType := "pod-oom-cache-test"
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5", contextAPIBaseURL, incidentType)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5", httpTestServer.URL, incidentType)
 
 			// First request (cache miss)
 			start1 := time.Now()
@@ -163,7 +213,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: Response matches expected Data Storage Service format
 
 			// Make HTTP request
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/playbook?playbook_id=restart-pod-v1&playbook_version=1.0.0&time_range=7d&min_samples=5", contextAPIBaseURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/playbook?playbook_id=restart-pod-v1&playbook_version=1.0.0&time_range=7d&min_samples=5", httpTestServer.URL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -192,7 +242,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: RFC 7807 error response
 
 			// Make HTTP request without playbook_id
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/playbook?playbook_version=1.0.0&time_range=7d", contextAPIBaseURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/playbook?playbook_version=1.0.0&time_range=7d", httpTestServer.URL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -214,7 +264,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: Handler applies default values correctly (7d, 5 samples)
 
 			// Make HTTP request with only required parameter
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/playbook?playbook_id=restart-pod-v1", contextAPIBaseURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/playbook?playbook_id=restart-pod-v1", httpTestServer.URL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -243,7 +293,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: Response includes all query dimensions with accurate aggregation
 
 			// Make HTTP request with all dimensions
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/multi-dimensional?incident_type=pod-oom&playbook_id=restart-pod-v1&playbook_version=1.0.0&action_type=restart&time_range=7d&min_samples=5", contextAPIBaseURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/multi-dimensional?incident_type=pod-oom&playbook_id=restart-pod-v1&playbook_version=1.0.0&action_type=restart&time_range=7d&min_samples=5", httpTestServer.URL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -269,7 +319,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: Response reflects only specified dimensions, others are empty
 
 			// Make HTTP request with only incident_type
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/multi-dimensional?incident_type=pod-oom&time_range=7d", contextAPIBaseURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/multi-dimensional?incident_type=pod-oom&time_range=7d", httpTestServer.URL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
@@ -292,7 +342,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			// CORRECTNESS: RFC 7807 error response with clear message
 
 			// Make HTTP request without any dimensions
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/multi-dimensional?time_range=7d", contextAPIBaseURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/multi-dimensional?time_range=7d", httpTestServer.URL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()

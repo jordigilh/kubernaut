@@ -26,16 +26,22 @@ func TestContextAPIIntegration(t *testing.T) {
 }
 
 var (
-	db           *sql.DB
-	sqlxDB       *sqlx.DB
-	logger       *zap.Logger
-	ctx          context.Context
-	cancel       context.CancelFunc
-	testSchema   string
+	db                     *sql.DB
+	sqlxDB                 *sqlx.DB
+	logger                 *zap.Logger
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	testSchema             string
 	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
 	// dbClient     *client.PostgresClient
-	cacheManager cache.CacheManager // ADR-016: Real Redis cache for integration tests
-	redisPort    = "6379"           // Standard Redis port
+	cacheManager           cache.CacheManager // ADR-016: Real Redis cache for integration tests
+	redisPort              = "6379"           // Standard Redis port
+	postgresContainer      = "datastorage-postgres"
+	redisContainer         = "contextapi-redis-test"
+	dataStorageContainer   = "datastorage-service-test"
+	dataStoragePort        = "8085"
+	contextAPIPort         = "8080"
+	configDir              string // ADR-030: Directory for config and secret files
 )
 
 var _ = BeforeSuite(func() {
