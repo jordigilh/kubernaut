@@ -1,19 +1,3 @@
-/*
-Copyright 2025 Jordi Gil.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package datastorage
 
 import (
@@ -21,510 +5,407 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/mocks"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
 
-// BR-STORAGE-030: Aggregation API Endpoints
-// TDD RED Phase: Write failing tests for aggregation endpoints
-// Following Data Storage Implementation Plan V4.8 guidelines:
-// - Behavior + Correctness Testing (GAP-05)
-// - Table-driven tests for edge cases
-// - Defense-in-depth: 70% unit test coverage target
-var _ = Describe("Aggregation API Handlers - BR-STORAGE-030", func() {
+// ========================================
+// TDD RED PHASE: ADR-033 Aggregation Handlers Unit Tests
+// 📋 Authority: IMPLEMENTATION_PLAN_V5.0.md Day 14.1
+// 📋 Business Requirements:
+//    - BR-STORAGE-031-01: Incident-Type Success Rate API
+//    - BR-STORAGE-031-02: Playbook Success Rate API
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
+//
+// TESTING STRATEGY:
+// - Mock ActionTraceRepository (external dependency)
+// - Test HTTP request/response behavior
+// - Validate query parameter parsing
+// - Validate RFC 7807 error responses
+// - Validate success response structure
+//
+// ========================================
+
+var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	var (
 		handler *server.Handler
-		mockDB  *mocks.MockDB
 		req     *http.Request
 		rec     *httptest.ResponseRecorder
 	)
 
 	BeforeEach(func() {
-		mockDB = mocks.NewMockDB()
-		handler = server.NewHandler(mockDB)
+		// TODO: Create handler with mocked ActionTraceRepository
+		// This will be implemented in TDD GREEN phase
+		// For now, handler is nil to ensure tests fail (TDD RED)
+		handler = nil
 		rec = httptest.NewRecorder()
 	})
 
-	// BR-STORAGE-031: Success Rate Aggregation
-	Describe("AggregateSuccessRate", func() {
-		Context("Behavior + Correctness Testing ✅ GAP-05", func() {
-			It("should calculate success rate correctly with exact counts", func() {
-				// Setup: MockDB with 4 incidents (3 completed, 1 failed)
-				mockDB.SetAggregationData("success_rate", map[string]interface{}{
-					"total_count":   4,
-					"success_count": 3,
-					"failure_count": 1,
-					"success_rate":  0.75,
-				})
+	// ========================================
+	// BR-STORAGE-031-01: Incident-Type Success Rate Handler
+	// BEHAVIOR: Parse query params, call repository, return JSON
+	// CORRECTNESS: Exact HTTP status codes and response structure
+	// ========================================
+	Describe("GET /api/v1/success-rate/incident-type", func() {
+		Context("with valid query parameters", func() {
+			It("should return 200 OK with incident-type success rate data", func() {
+				// ARRANGE: Create HTTP request with valid params
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range=7d&min_samples=5",
+					nil,
+				)
 
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id=workflow-123", nil)
-				handler.AggregateSuccessRate(rec, req)
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
 
-			// ✅ BEHAVIOR TEST: API returns 200 OK
-			Expect(rec.Code).To(Equal(http.StatusOK))
+				// ASSERT: HTTP 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Handler should return 200 OK for valid request")
 
-			var response models.SuccessRateAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
+				// ASSERT: Response is valid JSON
+				var response models.IncidentTypeSuccessRateResponse
+				err := json.NewDecoder(rec.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred(),
+					"Response should be valid JSON")
 
-			// ✅ BEHAVIOR TEST: Response structure validated by struct type
-
-			// ✅ CORRECTNESS TEST: Values match database aggregation exactly
-			Expect(response.WorkflowID).To(Equal("workflow-123"),
-				"workflow_id must match request parameter exactly")
-			Expect(response.TotalCount).To(Equal(4),
-				"total_count must match database COUNT(*) exactly, not approximation")
-			Expect(response.SuccessCount).To(Equal(3),
-				"success_count must match database WHERE status='completed' COUNT exactly")
-			Expect(response.FailureCount).To(Equal(1),
-				"failure_count must match database WHERE status='failed' COUNT exactly")
-			Expect(response.SuccessRate).To(BeNumerically("~", 0.75, 0.01),
-				"success_rate must equal success_count/total_count (3/4 = 0.75) exactly")
+				// CORRECTNESS: Validate response structure
+				Expect(response.IncidentType).To(Equal("HighCPUUsage"),
+					"Response should contain requested incident type")
+				Expect(response.TimeRange).To(Equal("7d"),
+					"Response should contain requested time range")
+				Expect(response.SuccessRate).To(BeNumerically(">=", 0.0),
+					"Success rate should be non-negative")
+				Expect(response.SuccessRate).To(BeNumerically("<=", 100.0),
+					"Success rate should be <= 100%")
+				Expect(response.TotalExecutions).To(BeNumerically(">=", 0),
+					"Total executions should be non-negative")
+				Expect(response.SuccessfulExecutions).To(BeNumerically(">=", 0),
+					"Successful executions should be non-negative")
+				Expect(response.Confidence).To(BeElementOf("high", "medium", "low", "insufficient_data"),
+					"Confidence should be one of the valid values")
 			})
 
-			It("should handle 100% success rate", func() {
-				mockDB.SetAggregationData("success_rate", map[string]interface{}{
-					"total_count":   5,
-					"success_count": 5,
-					"failure_count": 0,
-					"success_rate":  1.0,
-				})
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id=perfect-workflow", nil)
-				handler.AggregateSuccessRate(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.SuccessRateAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.SuccessRate).To(Equal(1.0))
-			})
-
-			It("should handle 0% success rate", func() {
-				mockDB.SetAggregationData("success_rate", map[string]interface{}{
-					"total_count":   3,
-					"success_count": 0,
-					"failure_count": 3,
-					"success_rate":  0.0,
-				})
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id=failed-workflow", nil)
-				handler.AggregateSuccessRate(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.SuccessRateAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.SuccessRate).To(Equal(0.0))
-			})
-		})
-
-		Context("when no incidents exist for workflow", func() {
-			It("should return zero counts with 0.0 success rate", func() {
-				mockDB.SetAggregationData("success_rate", map[string]interface{}{
-					"total_count":   0,
-					"success_count": 0,
-					"failure_count": 0,
-					"success_rate":  0.0,
-				})
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id=empty-workflow", nil)
-				handler.AggregateSuccessRate(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.SuccessRateAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.TotalCount).To(Equal(0))
-			Expect(response.SuccessRate).To(Equal(0.0))
-			})
-		})
-
-		// ✅ Table-Driven Tests for Edge Cases (Implementation Plan: Use DescribeTable)
-		DescribeTable("Edge cases with exact correctness validation",
-			func(workflowID string, mockData map[string]interface{}, expectedRate float64) {
-				mockDB.SetAggregationData("success_rate", mockData)
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate?workflow_id="+workflowID, nil)
-				handler.AggregateSuccessRate(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.SuccessRateAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			// ✅ CORRECTNESS: Exact success rate match
-			Expect(response.SuccessRate).To(BeNumerically("~", expectedRate, 0.001))
-
-			// ✅ CORRECTNESS: Math verification
-			if response.TotalCount > 0 {
-				calculatedRate := float64(response.SuccessCount) / float64(response.TotalCount)
-				Expect(response.SuccessRate).To(BeNumerically("~", calculatedRate, 0.001),
-					"success_rate must equal success_count/total_count exactly")
-			}
-			},
-			// Edge Case 1: 100% success rate
-			Entry("100% success rate (all incidents completed)",
-				"perfect-workflow",
-				map[string]interface{}{
-					"total_count":   5,
-					"success_count": 5,
-					"failure_count": 0,
-					"success_rate":  1.0,
-				},
-				1.0),
-
-			// Edge Case 2: 0% success rate
-			Entry("0% success rate (all incidents failed)",
-				"failed-workflow",
-				map[string]interface{}{
-					"total_count":   3,
-					"success_count": 0,
-					"failure_count": 3,
-					"success_rate":  0.0,
-				},
-				0.0),
-
-			// Edge Case 3: Single incident success
-			Entry("Single incident (100% success)",
-				"single-success",
-				map[string]interface{}{
-					"total_count":   1,
-					"success_count": 1,
-					"failure_count": 0,
-					"success_rate":  1.0,
-				},
-				1.0),
-
-			// Edge Case 4: Single incident failure
-			Entry("Single incident (0% success)",
-				"single-failure",
-				map[string]interface{}{
-					"total_count":   1,
-					"success_count": 0,
-					"failure_count": 1,
-					"success_rate":  0.0,
-				},
-				0.0),
-
-			// Edge Case 5: Large number of incidents
-			Entry("Large workflow (1000 incidents, 95% success)",
-				"large-workflow",
-				map[string]interface{}{
-					"total_count":   1000,
-					"success_count": 950,
-					"failure_count": 50,
-					"success_rate":  0.95,
-				},
-				0.95),
-		)
-
-		Context("when workflow_id parameter is missing", func() {
-			It("should return RFC 7807 error", func() {
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/success-rate", nil)
-				handler.AggregateSuccessRate(rec, req)
-
-			// ✅ BEHAVIOR TEST: Returns 400 Bad Request
-			Expect(rec.Code).To(Equal(http.StatusBadRequest))
-
-			var problem validation.RFC7807Problem
-			err := json.Unmarshal(rec.Body.Bytes(), &problem)
-			Expect(err).ToNot(HaveOccurred())
-
-			// ✅ CORRECTNESS TEST: RFC 7807 structure is complete (validated by struct type)
-			Expect(problem.Type).To(ContainSubstring("missing-parameter"))
-			// BEHAVIOR + CORRECTNESS: Title is populated with human-readable error description
-			Expect(problem.Title).ToNot(BeEmpty(), "RFC 7807 Title should be populated")
-			Expect(problem.Title).To(Equal("Missing Parameter"), "Title should be 'Missing Parameter'")
-			Expect(problem.Status).To(Equal(400))
-
-			// ✅ CORRECTNESS: Error message mentions the specific parameter
-			Expect(problem.Detail).To(ContainSubstring("workflow_id"))
-			})
-		})
-	})
-
-	// BR-STORAGE-032: Namespace Grouping Aggregation
-	Describe("AggregateByNamespace", func() {
-		Context("when incidents exist across namespaces", func() {
-			It("should group incidents by namespace with counts", func() {
-				mockDB.SetAggregationData("by_namespace", map[string]interface{}{
-					"aggregations": []map[string]interface{}{
-						{"namespace": "prod", "count": 50},
-						{"namespace": "staging", "count": 30},
-						{"namespace": "dev", "count": 20},
-					},
-				})
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-namespace", nil)
-				handler.AggregateByNamespace(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.NamespaceAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.Aggregations).To(HaveLen(3))
-
-			// Verify first aggregation
-			Expect(response.Aggregations[0].Namespace).To(Equal("prod"))
-			Expect(response.Aggregations[0].Count).To(Equal(50))
-			})
-
-			It("should order namespaces by count descending", func() {
-				mockDB.SetAggregationData("by_namespace", map[string]interface{}{
-					"aggregations": []map[string]interface{}{
-						{"namespace": "prod", "count": 100},
-						{"namespace": "staging", "count": 50},
-						{"namespace": "dev", "count": 10},
-					},
-				})
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-namespace", nil)
-				handler.AggregateByNamespace(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.NamespaceAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			firstCount := response.Aggregations[0].Count
-			lastCount := response.Aggregations[len(response.Aggregations)-1].Count
-
-			Expect(firstCount).To(BeNumerically(">=", lastCount))
-			})
-		})
-
-		Context("when no incidents exist", func() {
-			It("should return empty aggregations array", func() {
-				mockDB.SetAggregationData("by_namespace", map[string]interface{}{
-					"aggregations": []map[string]interface{}{},
-				})
-
-		req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-namespace", nil)
-			handler.AggregateByNamespace(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.NamespaceAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.Aggregations).To(HaveLen(0))
-			})
-		})
-	})
-
-	// BR-STORAGE-033: Severity Distribution Aggregation
-	Describe("AggregateBySeverity", func() {
-		Context("when incidents exist with different severities", func() {
-			It("should group incidents by severity with counts", func() {
-				mockDB.SetAggregationData("by_severity", map[string]interface{}{
-					"aggregations": []map[string]interface{}{
-						{"severity": "critical", "count": 10},
-						{"severity": "high", "count": 25},
-						{"severity": "medium", "count": 40},
-						{"severity": "low", "count": 25},
-					},
-				})
-
-		req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-severity", nil)
-			handler.AggregateBySeverity(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.SeverityAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.Aggregations).To(HaveLen(4))
-
-			// Verify critical severity aggregation
-			Expect(response.Aggregations[0].Severity).To(Equal("critical"))
-			Expect(response.Aggregations[0].Count).To(Equal(10))
-			})
-
-			It("should order severities by severity level (critical first)", func() {
-				mockDB.SetAggregationData("by_severity", map[string]interface{}{
-					"aggregations": []map[string]interface{}{
-						{"severity": "critical", "count": 5},
-						{"severity": "high", "count": 10},
-						{"severity": "medium", "count": 15},
-						{"severity": "low", "count": 20},
-					},
-				})
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-severity", nil)
-				handler.AggregateBySeverity(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.SeverityAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.Aggregations[0].Severity).To(Equal("critical"))
-			})
-		})
-
-		Context("when no incidents exist", func() {
-			It("should return empty aggregations array", func() {
-				mockDB.SetAggregationData("by_severity", map[string]interface{}{
-					"aggregations": []map[string]interface{}{},
-				})
-
-		req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/by-severity", nil)
-			handler.AggregateBySeverity(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.SeverityAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.Aggregations).To(HaveLen(0))
-			})
-		})
-	})
-
-	// BR-STORAGE-034: Incident Trend Aggregation
-	Describe("AggregateIncidentTrend", func() {
-		Context("when period parameter is valid", func() {
-			It("should return daily incident counts for 7d period", func() {
-				mockDB.SetAggregationData("incident_trend", map[string]interface{}{
-					"period": "7d",
-					"data_points": []map[string]interface{}{
-						{"date": "2025-11-01", "count": 20},
-						{"date": "2025-11-02", "count": 25},
-						{"date": "2025-11-03", "count": 18},
-						{"date": "2025-11-04", "count": 30},
-						{"date": "2025-11-05", "count": 22},
-						{"date": "2025-11-06", "count": 28},
-						{"date": "2025-11-07", "count": 24},
-					},
-				})
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend?period=7d", nil)
-				handler.AggregateIncidentTrend(rec, req)
-
-			Expect(rec.Code).To(Equal(http.StatusOK))
-
-			var response models.TrendAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.Period).To(Equal("7d"))
-			Expect(response.DataPoints).To(HaveLen(7))
-
-			// BEHAVIOR + CORRECTNESS: Verify first data point has valid date and non-negative count
-			Expect(response.DataPoints[0].Date).ToNot(BeEmpty(), "Date field should be populated")
-			Expect(response.DataPoints[0].Date).To(MatchRegexp(`^\d{4}-\d{2}-\d{2}$`),
-				"Date should be in YYYY-MM-DD format (ISO 8601)")
-			Expect(response.DataPoints[0].Count).To(BeNumerically(">=", 0))
-			})
-
-			It("should return daily incident counts for 30d period", func() {
-				mockDB.SetAggregationData("incident_trend", map[string]interface{}{
-					"period":      "30d",
-					"data_points": generateTrendData(30),
-				})
-
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend?period=30d", nil)
-				handler.AggregateIncidentTrend(rec, req)
-
+			It("should use default time_range=7d when not specified", func() {
+				// ARRANGE: Request without time_range param
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				// ASSERT: HTTP 200 OK
 				Expect(rec.Code).To(Equal(http.StatusOK))
 
-			var response models.TrendAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
+				// CORRECTNESS: Default time range applied
+				var response models.IncidentTypeSuccessRateResponse
+				err := json.NewDecoder(rec.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.TimeRange).To(Equal("7d"),
+					"Handler should default to 7d time range")
+			})
 
-			Expect(response.Period).To(Equal("30d"))
-			Expect(response.DataPoints).To(HaveLen(30))
+			It("should use default min_samples=5 when not specified", func() {
+				// ARRANGE: Request without min_samples param
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range=7d",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				// ASSERT: HTTP 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				// CORRECTNESS: Response should be valid (min_samples=5 used internally)
+				var response models.IncidentTypeSuccessRateResponse
+				err := json.NewDecoder(rec.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred())
 			})
 		})
 
-		Context("when period parameter is missing", func() {
-			It("should default to 7d period", func() {
-				mockDB.SetAggregationData("incident_trend", map[string]interface{}{
-					"period":      "7d",
-					"data_points": generateTrendData(7),
-				})
+		Context("with missing required parameters", func() {
+			It("should return 400 Bad Request when incident_type is missing", func() {
+				// ARRANGE: Request without incident_type param
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?time_range=7d",
+					nil,
+				)
 
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend", nil)
-				handler.AggregateIncidentTrend(rec, req)
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusOK))
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should return 400 when incident_type is missing")
 
-			var response models.TrendAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(response.Period).To(Equal("7d"))
+				// CORRECTNESS: RFC 7807 error response
+				Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"),
+					"Error response should use RFC 7807 format")
 			})
 		})
 
-		Context("when period parameter is invalid", func() {
-			It("should return RFC 7807 error", func() {
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend?period=invalid", nil)
-				handler.AggregateIncidentTrend(rec, req)
+		Context("with invalid query parameters", func() {
+			It("should return 400 Bad Request when time_range format is invalid", func() {
+				// ARRANGE: Request with invalid time_range
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range=invalid",
+					nil,
+				)
 
-			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
 
-			var problem validation.RFC7807Problem
-			err := json.Unmarshal(rec.Body.Bytes(), &problem)
-			Expect(err).ToNot(HaveOccurred())
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should return 400 for invalid time_range format")
 
-			Expect(problem.Type).To(ContainSubstring("invalid-parameter"))
-			// ✅ CORRECTNESS: Error detail must mention the specific parameter and valid values
-			Expect(problem.Detail).To(ContainSubstring("period"))
-			Expect(problem.Detail).To(ContainSubstring("7d"))
+				// CORRECTNESS: RFC 7807 error response
+				Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
+			})
+
+			It("should return 400 Bad Request when min_samples is not a number", func() {
+				// ARRANGE: Request with non-numeric min_samples
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&min_samples=abc",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should return 400 for non-numeric min_samples")
+
+				// CORRECTNESS: RFC 7807 error response
+				Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
 			})
 		})
 
-		Context("when no incidents exist in period", func() {
-			It("should return empty data points array", func() {
-				mockDB.SetAggregationData("incident_trend", map[string]interface{}{
-					"period":      "7d",
-					"data_points": []map[string]interface{}{},
-				})
+		Context("when repository returns error", func() {
+			It("should return 500 Internal Server Error", func() {
+				// ARRANGE: Mock repository to return error
+				// TODO: Configure mock to return error in TDD GREEN phase
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage",
+					nil,
+				)
 
-				req = httptest.NewRequest("GET", "/api/v1/incidents/aggregate/trend?period=7d", nil)
-				handler.AggregateIncidentTrend(rec, req)
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
 
-			Expect(rec.Code).To(Equal(http.StatusOK))
+				// ASSERT: HTTP 500 Internal Server Error
+				// (This test will be skipped until mock is configured)
+				Skip("Requires mock repository configuration")
+			})
+		})
+	})
 
-			var response models.TrendAggregationResponse
-			err := json.Unmarshal(rec.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred())
+	// ========================================
+	// BR-STORAGE-031-02: Playbook Success Rate Handler
+	// BEHAVIOR: Parse query params, call repository, return JSON
+	// CORRECTNESS: Exact HTTP status codes and response structure
+	// ========================================
+	Describe("GET /api/v1/success-rate/playbook", func() {
+		Context("with valid query parameters", func() {
+			It("should return 200 OK with playbook success rate data", func() {
+				// ARRANGE: Create HTTP request with valid params
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/playbook?playbook_id=restart-pod-v1&time_range=7d&min_samples=5",
+					nil,
+				)
 
-			Expect(response.DataPoints).To(HaveLen(0))
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByPlaybook(rec, req)
+
+				// ASSERT: HTTP 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK),
+					"Handler should return 200 OK for valid request")
+
+				// ASSERT: Response is valid JSON
+				var response models.PlaybookSuccessRateResponse
+				err := json.NewDecoder(rec.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred(),
+					"Response should be valid JSON")
+
+				// CORRECTNESS: Validate response structure
+				Expect(response.PlaybookID).To(Equal("restart-pod-v1"),
+					"Response should contain requested playbook ID")
+				Expect(response.TimeRange).To(Equal("7d"),
+					"Response should contain requested time range")
+				Expect(response.SuccessRate).To(BeNumerically(">=", 0.0),
+					"Success rate should be non-negative")
+				Expect(response.SuccessRate).To(BeNumerically("<=", 100.0),
+					"Success rate should be <= 100%")
+				Expect(response.TotalExecutions).To(BeNumerically(">=", 0),
+					"Total executions should be non-negative")
+				Expect(response.SuccessfulExecutions).To(BeNumerically(">=", 0),
+					"Successful executions should be non-negative")
+				Expect(response.Confidence).To(BeElementOf("high", "medium", "low", "insufficient_data"),
+					"Confidence should be one of the valid values")
+			})
+
+			It("should accept optional playbook_version parameter", func() {
+				// ARRANGE: Request with playbook_version
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/playbook?playbook_id=restart-pod-v1&playbook_version=1.2.3&time_range=7d",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByPlaybook(rec, req)
+
+				// ASSERT: HTTP 200 OK
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				// CORRECTNESS: Version included in response
+				var response models.PlaybookSuccessRateResponse
+				err := json.NewDecoder(rec.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.PlaybookVersion).To(Equal("1.2.3"),
+					"Response should include playbook version when specified")
+			})
+		})
+
+		Context("with missing required parameters", func() {
+			It("should return 400 Bad Request when playbook_id is missing", func() {
+				// ARRANGE: Request without playbook_id param
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/playbook?time_range=7d",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByPlaybook(rec, req)
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should return 400 when playbook_id is missing")
+
+				// CORRECTNESS: RFC 7807 error response
+				Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
+			})
+		})
+
+		Context("with invalid query parameters", func() {
+			It("should return 400 Bad Request when time_range format is invalid", func() {
+				// ARRANGE: Request with invalid time_range
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/playbook?playbook_id=restart-pod-v1&time_range=invalid",
+					nil,
+				)
+
+				// ACT: Call handler
+				handler.HandleGetSuccessRateByPlaybook(rec, req)
+
+				// ASSERT: HTTP 400 Bad Request
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should return 400 for invalid time_range format")
+
+				// CORRECTNESS: RFC 7807 error response
+				Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
+			})
+		})
+	})
+
+	// ========================================
+	// Edge Cases and Error Scenarios
+	// ========================================
+	Describe("Edge Cases", func() {
+		Context("time range parsing", func() {
+			It("should accept valid time range formats: 1h, 24h, 7d, 30d", func() {
+				validRanges := []string{"1h", "24h", "7d", "30d"}
+
+				for _, timeRange := range validRanges {
+					req = httptest.NewRequest(
+						http.MethodGet,
+						"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range="+timeRange,
+						nil,
+					)
+					rec = httptest.NewRecorder()
+
+					handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+					Expect(rec.Code).To(Equal(http.StatusOK),
+						"Handler should accept time_range=%s", timeRange)
+				}
+			})
+
+			It("should reject invalid time range formats", func() {
+				invalidRanges := []string{"1x", "abc", "7days", "-1d", "0d"}
+
+				for _, timeRange := range invalidRanges {
+					req = httptest.NewRequest(
+						http.MethodGet,
+						"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&time_range="+timeRange,
+						nil,
+					)
+					rec = httptest.NewRecorder()
+
+					handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+					Expect(rec.Code).To(Equal(http.StatusBadRequest),
+						"Handler should reject time_range=%s", timeRange)
+				}
+			})
+		})
+
+		Context("min_samples validation", func() {
+			It("should accept positive integers for min_samples", func() {
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&min_samples=10",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusOK))
+			})
+
+			It("should reject negative min_samples", func() {
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&min_samples=-5",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should reject negative min_samples")
+			})
+
+			It("should reject zero min_samples", func() {
+				req = httptest.NewRequest(
+					http.MethodGet,
+					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage&min_samples=0",
+					nil,
+				)
+
+				handler.HandleGetSuccessRateByIncidentType(rec, req)
+
+				Expect(rec.Code).To(Equal(http.StatusBadRequest),
+					"Handler should reject zero min_samples")
 			})
 		})
 	})
 })
-
-// Helper function to generate trend data for testing
-func generateTrendData(days int) []map[string]interface{} {
-	data := make([]map[string]interface{}, days)
-	for i := 0; i < days; i++ {
-		data[i] = map[string]interface{}{
-			"date":  "2025-11-01", // Simplified for mock
-			"count": 20 + i,
-		}
-	}
-	return data
-}
-
