@@ -6459,7 +6459,7 @@ var _ = Describe("Performance Validation", func() {
 
 **Business Requirements**:
 - **BR-INTEGRATION-008**: Expose Incident-Type Success Rate API
-- **BR-INTEGRATION-009**: Expose Playbook Success Rate API  
+- **BR-INTEGRATION-009**: Expose Playbook Success Rate API
 - **BR-INTEGRATION-010**: Expose Multi-Dimensional Success Rate API
 
 **TDD Phases**:
@@ -6655,13 +6655,13 @@ func (c *Client) GetSuccessRateByIncidentType(
 BeforeSuite(func() {
     // Start PostgreSQL
     postgresContainer = startPostgresContainer()
-    
+
     // Start Redis
     redisContainer = startRedisContainer()
-    
+
     // Start Data Storage Service
     dataStorageContainer = startDataStorageContainer(postgresContainer, redisContainer)
-    
+
     // Start Context API
     contextAPIServer = startContextAPIServer(dataStorageContainer, redisContainer)
 })
@@ -6724,7 +6724,7 @@ func (s *Server) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *ht
 // pkg/contextapi/server/server.go
 func (s *Server) setupRoutes() {
     // Existing routes...
-    
+
     // ADR-033 Aggregation endpoints
     s.router.Get("/api/v1/aggregation/success-rate/incident-type", s.HandleGetSuccessRateByIncidentType)
     s.router.Get("/api/v1/aggregation/success-rate/playbook", s.HandleGetSuccessRateByPlaybook)
