@@ -419,10 +419,10 @@ func (r *WorkflowExecutionReconciler) createPipelineRun(
 ## Links
 
 ### **Business Requirements**:
-- **BR-WORKFLOW-001**: Multi-step workflow orchestration
+- **BR-REMEDIATION-001**: Multi-step workflow orchestration
   - Fulfilled: ✅ Via Tekton Pipelines
 
-- **BR-WORKFLOW-002**: Parallel execution support
+- **BR-REMEDIATION-002**: Parallel execution support
   - Fulfilled: ✅ Via Tekton `runAfter` dependencies
 
 - **BR-MONITORING-001**: Pattern monitoring

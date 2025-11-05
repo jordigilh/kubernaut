@@ -8,12 +8,12 @@
 ---
 
 ## Business Requirements Covered
-- **BR-WORKFLOW-004**: Step execution through KubernetesExecution CRDs
-- **BR-WORKFLOW-005**: Parallel execution support (5 concurrent steps)
-- **BR-WORKFLOW-006**: Step creation with proper parameters
-- **BR-WORKFLOW-007**: Owner reference management for cascade deletion
-- **BR-WORKFLOW-008**: Step monitoring via watch-based coordination
-- **BR-WORKFLOW-021**: Executing phase state machine
+- **BR-REMEDIATION-004**: Step execution through KubernetesExecution CRDs
+- **BR-REMEDIATION-005**: Parallel execution support (5 concurrent steps)
+- **BR-REMEDIATION-006**: Step creation with proper parameters
+- **BR-REMEDIATION-007**: Owner reference management for cascade deletion
+- **BR-REMEDIATION-008**: Step monitoring via watch-based coordination
+- **BR-REMEDIATION-021**: Executing phase state machine
 
 ---
 
@@ -58,7 +58,7 @@ grep -r "Watch.*For" internal/controller/ --include="*.go" -A 5
 ```
 
 ### Analysis Deliverables
-- [x] Business requirements mapped: BR-WORKFLOW-004 through BR-WORKFLOW-008, BR-WORKFLOW-021
+- [x] Business requirements mapped: BR-REMEDIATION-004 through BR-REMEDIATION-008, BR-REMEDIATION-021
 - [x] Existing CRD creation patterns discovered: (to be filled after search)
 - [x] Integration points identified: WorkflowExecution → KubernetesExecution
 - [x] Complexity level: MEDIUM (parent-child CRD pattern, watch coordination)
@@ -66,7 +66,7 @@ grep -r "Watch.*For" internal/controller/ --include="*.go" -A 5
 **🚫 MANDATORY USER APPROVAL - ANALYSIS PHASE**:
 ```
 🎯 ANALYSIS PHASE SUMMARY:
-Business Requirement: BR-WORKFLOW-004 (step execution), BR-WORKFLOW-005 (parallel execution)
+Business Requirement: BR-REMEDIATION-004 (step execution), BR-REMEDIATION-005 (parallel execution)
 Approach: Create child KubernetesExecution CRDs with owner references
 Integration: WorkflowExecution controller creates/monitors child CRDs
 Complexity: MEDIUM (standard parent-child pattern, watch-based coordination)
@@ -301,7 +301,7 @@ import (
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("ExecutionOrchestrator", Label("BR-WORKFLOW-004", "BR-WORKFLOW-005", "BR-WORKFLOW-006"), func() {
+var _ = Describe("ExecutionOrchestrator", Label("BR-REMEDIATION-004", "BR-REMEDIATION-005", "BR-REMEDIATION-006"), func() {
     var (
         orchestrator *engine.ExecutionOrchestrator
         fakeClient   *fake.Client
@@ -490,7 +490,7 @@ import (
     "github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
 
-var _ = Describe("ExecutionMonitor", Label("BR-WORKFLOW-008"), func() {
+var _ = Describe("ExecutionMonitor", Label("BR-REMEDIATION-008"), func() {
     var (
         monitor    *engine.ExecutionMonitor
         fakeClient *fake.Client

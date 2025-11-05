@@ -40,7 +40,7 @@ import (
 )
 
 // Week 3: Workflow Engine Extensions - High-Load Production Workflow Testing
-// Business Requirements: BR-WORKFLOW-032 through BR-WORKFLOW-041
+// Business Requirements: BR-REMEDIATION-032 through BR-REMEDIATION-041
 // Following 00-project-guidelines.mdc: MANDATORY business requirement mapping
 // Following 03-testing-strategy.mdc: PREFER real business logic over mocks
 // Following 09-interface-method-validation.mdc: Interface validation before code generation
@@ -140,7 +140,7 @@ var _ = Describe("High-Load Workflow Extensions - Week 3 Business Requirements",
 		)
 	})
 
-	Context("BR-WORKFLOW-032: High-Throughput Workflow Orchestration", func() {
+	Context("BR-REMEDIATION-032: High-Throughput Workflow Orchestration", func() {
 		It("should orchestrate multiple concurrent workflows under high load", func() {
 			// Create high-throughput workflow scenario
 			highLoadWorkflows := createHighThroughputWorkflows(5) // Start with 5 workflows for testing
@@ -153,26 +153,26 @@ var _ = Describe("High-Load Workflow Extensions - Week 3 Business Requirements",
 			for _, workflow := range highLoadWorkflows {
 				execution, err := realWorkflowEngine.Execute(ctx, workflow)
 				Expect(err).ToNot(HaveOccurred(),
-					"BR-WORKFLOW-032: High-load workflow execution must succeed")
+					"BR-REMEDIATION-032: High-load workflow execution must succeed")
 				executionResults = append(executionResults, execution)
 			}
 
 			orchestrationTime := time.Since(startTime)
 
-			// Business Requirement Validation: BR-WORKFLOW-032
+			// Business Requirement Validation: BR-REMEDIATION-032
 			Expect(len(executionResults)).To(Equal(5),
-				"BR-WORKFLOW-032: Must process all high-throughput workflows")
+				"BR-REMEDIATION-032: Must process all high-throughput workflows")
 
 			// Performance requirements for high-throughput orchestration
 			Expect(orchestrationTime).To(BeNumerically("<", 30*time.Second),
-				"BR-WORKFLOW-032: High-throughput orchestration must complete within 30 seconds")
+				"BR-REMEDIATION-032: High-throughput orchestration must complete within 30 seconds")
 
 			// Validate all workflows completed successfully
 			for _, execution := range executionResults {
 				Expect(execution.OperationalStatus).To(Equal(engine.ExecutionStatusCompleted),
-					"BR-WORKFLOW-032: All high-load workflows must complete successfully")
+					"BR-REMEDIATION-032: All high-load workflows must complete successfully")
 				Expect(execution.Duration).To(BeNumerically("<", 25*time.Second),
-					"BR-WORKFLOW-032: Individual workflows must complete within reasonable time")
+					"BR-REMEDIATION-032: Individual workflows must complete within reasonable time")
 			}
 		})
 
@@ -186,33 +186,33 @@ var _ = Describe("High-Load Workflow Extensions - Week 3 Business Requirements",
 			for _, workflow := range concurrentWorkflows {
 				execution, err := realWorkflowEngine.Execute(ctx, workflow)
 				Expect(err).ToNot(HaveOccurred(),
-					"BR-WORKFLOW-032: Concurrent workflow execution must succeed")
+					"BR-REMEDIATION-032: Concurrent workflow execution must succeed")
 				executionResults = append(executionResults, execution)
 			}
 
-			// Business Requirement Validation: BR-WORKFLOW-032
+			// Business Requirement Validation: BR-REMEDIATION-032
 			Expect(len(executionResults)).To(Equal(3),
-				"BR-WORKFLOW-032: Must handle all concurrent workflows")
+				"BR-REMEDIATION-032: Must handle all concurrent workflows")
 
 			// Validate state consistency across concurrent executions
 			for i, execution := range executionResults {
 				Expect(execution.Context).ToNot(BeNil(),
-					"BR-WORKFLOW-032: Execution context must be maintained")
+					"BR-REMEDIATION-032: Execution context must be maintained")
 				Expect(execution.Context.Variables).ToNot(BeEmpty(),
-					"BR-WORKFLOW-032: Workflow variables must be preserved")
+					"BR-REMEDIATION-032: Workflow variables must be preserved")
 
 				// Validate unique execution IDs (no state collision)
 				for j, otherExecution := range executionResults {
 					if i != j {
 						Expect(execution.ID).ToNot(Equal(otherExecution.ID),
-							"BR-WORKFLOW-032: Execution IDs must be unique for concurrent workflows")
+							"BR-REMEDIATION-032: Execution IDs must be unique for concurrent workflows")
 					}
 				}
 			}
 		})
 	})
 
-	Context("BR-WORKFLOW-033: Production-Scale Step Execution", func() {
+	Context("BR-REMEDIATION-033: Production-Scale Step Execution", func() {
 		It("should execute complex multi-step workflows efficiently", func() {
 			// Create production-scale workflow with complex step dependencies
 			complexWorkflow := createProductionScaleWorkflow(10) // 10 steps with dependencies
@@ -223,30 +223,30 @@ var _ = Describe("High-Load Workflow Extensions - Week 3 Business Requirements",
 			executionTime := time.Since(startTime)
 
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-033: Complex workflow execution must succeed")
+				"BR-REMEDIATION-033: Complex workflow execution must succeed")
 
-			// Business Requirement Validation: BR-WORKFLOW-033
+			// Business Requirement Validation: BR-REMEDIATION-033
 			Expect(execution.OperationalStatus).To(Equal(engine.ExecutionStatusCompleted),
-				"BR-WORKFLOW-033: Production-scale workflow must complete successfully")
+				"BR-REMEDIATION-033: Production-scale workflow must complete successfully")
 
 			// Performance requirements for complex step execution
 			Expect(executionTime).To(BeNumerically("<", 60*time.Second),
-				"BR-WORKFLOW-033: Complex workflow must complete within 60 seconds")
+				"BR-REMEDIATION-033: Complex workflow must complete within 60 seconds")
 
 			// Validate step execution efficiency
 			stepExecutionRate := float64(10) / executionTime.Seconds()
 			Expect(stepExecutionRate).To(BeNumerically(">", 0.1),
-				"BR-WORKFLOW-033: Must execute >0.1 steps per second")
+				"BR-REMEDIATION-033: Must execute >0.1 steps per second")
 
 			// Validate step dependency resolution
 			Expect(execution.Context.Variables).To(HaveKey("dependency_resolution_success"),
-				"BR-WORKFLOW-033: Step dependencies must be resolved correctly")
+				"BR-REMEDIATION-033: Step dependencies must be resolved correctly")
 			Expect(execution.Context.Variables["dependency_resolution_success"]).To(BeTrue(),
-				"BR-WORKFLOW-033: All step dependencies must be satisfied")
+				"BR-REMEDIATION-033: All step dependencies must be satisfied")
 		})
 	})
 
-	Context("BR-WORKFLOW-034: Workflow Performance Optimization", func() {
+	Context("BR-REMEDIATION-034: Workflow Performance Optimization", func() {
 		It("should optimize workflow execution under resource constraints", func() {
 			// Create resource-optimized workflow scenario
 			resourceOptimizedWorkflows := createResourceOptimizedWorkflows(3)
@@ -258,30 +258,30 @@ var _ = Describe("High-Load Workflow Extensions - Week 3 Business Requirements",
 			for _, workflow := range resourceOptimizedWorkflows {
 				execution, err := realWorkflowEngine.Execute(ctx, workflow)
 				Expect(err).ToNot(HaveOccurred(),
-					"BR-WORKFLOW-034: Resource-optimized workflow execution must succeed")
+					"BR-REMEDIATION-034: Resource-optimized workflow execution must succeed")
 				optimizationResults = append(optimizationResults, execution)
 			}
 
 			optimizationTime := time.Since(startTime)
 
-			// Business Requirement Validation: BR-WORKFLOW-034
+			// Business Requirement Validation: BR-REMEDIATION-034
 			Expect(len(optimizationResults)).To(Equal(3),
-				"BR-WORKFLOW-034: Must process all resource-optimized workflows")
+				"BR-REMEDIATION-034: Must process all resource-optimized workflows")
 
 			// Performance optimization requirements
 			Expect(optimizationTime).To(BeNumerically("<", 25*time.Second),
-				"BR-WORKFLOW-034: Resource optimization must not significantly impact performance")
+				"BR-REMEDIATION-034: Resource optimization must not significantly impact performance")
 
 			// Validate resource optimization metrics
 			for _, execution := range optimizationResults {
 				Expect(execution.Context.Variables).To(HaveKey("resource_optimization_applied"),
-					"BR-WORKFLOW-034: Resource optimization must be applied")
+					"BR-REMEDIATION-034: Resource optimization must be applied")
 				Expect(execution.Context.Variables["resource_optimization_applied"]).To(BeTrue(),
-					"BR-WORKFLOW-034: Resource optimization must be active")
+					"BR-REMEDIATION-034: Resource optimization must be active")
 
 				// Validate execution efficiency under optimization
 				Expect(execution.Duration).To(BeNumerically("<", 15*time.Second),
-					"BR-WORKFLOW-034: Optimized workflows must execute efficiently")
+					"BR-REMEDIATION-034: Optimized workflows must execute efficiently")
 			}
 		})
 	})

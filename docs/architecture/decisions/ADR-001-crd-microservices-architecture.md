@@ -4,7 +4,7 @@
 **Status**: ✅ **ACCEPTED**
 **Context**: Kubernaut V1 Architecture
 **Deciders**: Development Team
-**Technical Story**: [BR-PLATFORM-001, BR-WORKFLOW-001, BR-INTEGRATION-001]
+**Technical Story**: [BR-PLATFORM-001, BR-REMEDIATION-001, BR-INTEGRATION-001]
 
 ---
 
@@ -33,7 +33,7 @@ Kubernaut is a Kubernetes-native alert remediation system that must:
 
 ### **Business Requirements**:
 - **BR-PLATFORM-001**: Kubernetes-native architecture (no external dependencies)
-- **BR-WORKFLOW-001**: Modular workflow orchestration with clear boundaries
+- **BR-REMEDIATION-001**: Modular workflow orchestration with clear boundaries
 - **BR-INTEGRATION-001**: Loose coupling between components for maintainability
 
 ### **Technical Drivers**:
@@ -637,7 +637,7 @@ API Load Increase: 7× watch load
   - Location: `docs/requirements/05_KUBERNETES_SAFETY.md`
   - Fulfilled: ✅ CRD-based architecture is Kubernetes-native
 
-- **BR-WORKFLOW-001**: Modular workflow orchestration
+- **BR-REMEDIATION-001**: Modular workflow orchestration
   - Location: `docs/requirements/01_WORKFLOW_ORCHESTRATION.md`
   - Fulfilled: ✅ 5 modular services with clear boundaries
 

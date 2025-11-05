@@ -8,10 +8,10 @@
 ---
 
 ## Business Requirements Covered
-- **BR-WORKFLOW-002**: Step dependency resolution with DAG validation
-- **BR-WORKFLOW-003**: Topological sorting for execution order
-- **BR-WORKFLOW-020**: Planning phase state machine
-- **BR-WORKFLOW-031**: Workflow definition validation (cycles, missing deps)
+- **BR-REMEDIATION-002**: Step dependency resolution with DAG validation
+- **BR-REMEDIATION-003**: Topological sorting for execution order
+- **BR-REMEDIATION-020**: Planning phase state machine
+- **BR-REMEDIATION-031**: Workflow definition validation (cycles, missing deps)
 
 ---
 
@@ -56,7 +56,7 @@ grep -r "cycle\|circular" pkg/ --include="*.go"
 ```
 
 ### Analysis Deliverables
-- [x] Business requirement mapped: BR-WORKFLOW-002, BR-WORKFLOW-003, BR-WORKFLOW-020, BR-WORKFLOW-031
+- [x] Business requirement mapped: BR-REMEDIATION-002, BR-REMEDIATION-003, BR-REMEDIATION-020, BR-REMEDIATION-031
 - [x] Existing implementations discovered: (to be filled after search)
 - [x] Integration points identified: `handlePlanning()` in reconciler
 - [x] Complexity level: MEDIUM (graph algorithms well-understood, cycle detection adds complexity)
@@ -64,7 +64,7 @@ grep -r "cycle\|circular" pkg/ --include="*.go"
 **🚫 MANDATORY USER APPROVAL - ANALYSIS PHASE**:
 ```
 🎯 ANALYSIS PHASE SUMMARY:
-Business Requirement: BR-WORKFLOW-002 (dependency resolution), BR-WORKFLOW-003 (topological sort)
+Business Requirement: BR-REMEDIATION-002 (dependency resolution), BR-REMEDIATION-003 (topological sort)
 Approach: Implement Kahn's algorithm for topological sort with DFS cycle detection
 Integration: Planning phase in reconciler calls DependencyResolver.ResolveSteps()
 Complexity: MEDIUM (standard graph algorithm, robust cycle detection)
@@ -231,7 +231,7 @@ import (
     "github.com/jordigilh/kubernaut/pkg/workflow/engine"
 )
 
-var _ = Describe("DependencyResolver", Label("BR-WORKFLOW-002", "BR-WORKFLOW-003"), func() {
+var _ = Describe("DependencyResolver", Label("BR-REMEDIATION-002", "BR-REMEDIATION-003"), func() {
     var resolver *engine.DependencyResolver
 
     BeforeEach(func() {
@@ -834,16 +834,16 @@ go test -bench=. -benchmem ./test/unit/workflowexecution/dependency_resolver_tes
 ### Validation Checklist
 
 #### 1. Business Alignment
-- [x] **BR-WORKFLOW-002**: Dependency resolution ✅
+- [x] **BR-REMEDIATION-002**: Dependency resolution ✅
   - All dependencies resolved in correct order
   - Multiple independent chains supported
-- [x] **BR-WORKFLOW-003**: Topological sorting ✅
+- [x] **BR-REMEDIATION-003**: Topological sorting ✅
   - Kahn's algorithm correctly orders steps
   - Parallel steps identified
-- [x] **BR-WORKFLOW-020**: Planning phase ✅
+- [x] **BR-REMEDIATION-020**: Planning phase ✅
   - Planning phase updates status correctly
   - Execution plan stored in status
-- [x] **BR-WORKFLOW-031**: Workflow validation ✅
+- [x] **BR-REMEDIATION-031**: Workflow validation ✅
   - Cycles detected and rejected
   - Missing dependencies caught
   - Self-dependencies detected

@@ -1162,7 +1162,7 @@ SRE teams need to learn Tekton debugging.
   - Location: `docs/requirements/03_PLATFORM_KUBERNETES_OPERATIONS.md`
   - Fulfilled: ✅ V1 uses native Jobs, V2 uses Tekton (Kubernetes-native)
 
-- **BR-WORKFLOW-005**: Multi-step workflow orchestration (V1 + V2)
+- **BR-REMEDIATION-005**: Multi-step workflow orchestration (V1 + V2)
   - Location: `docs/requirements/01_WORKFLOW_ORCHESTRATION.md`
   - Fulfilled: ✅ V1 via Job chaining, V2 via Tekton DAG
 
