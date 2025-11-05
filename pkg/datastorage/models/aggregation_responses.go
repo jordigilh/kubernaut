@@ -75,14 +75,13 @@ type SeverityAggregationResponse struct {
 
 // TrendDataPoint represents a single point in a time-series trend
 type TrendDataPoint struct {
-	Date  string `json:"date"`  // Format: "YYYY-MM-DD"
+	Date  string `json:"date"` // Format: "YYYY-MM-DD"
 	Count int    `json:"count"`
 }
 
 // TrendAggregationResponse represents the trend aggregation response
 // BR-STORAGE-034: Incident Trend Aggregation
 type TrendAggregationResponse struct {
-	Period     string            `json:"period"` // e.g., "7d", "30d"
+	Period     string           `json:"period"` // e.g., "7d", "30d"
 	DataPoints []TrendDataPoint `json:"data_points"`
 }
-

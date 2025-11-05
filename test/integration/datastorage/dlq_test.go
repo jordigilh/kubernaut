@@ -96,7 +96,7 @@ var _ = Describe("DLQ Client Integration", func() {
 			// ✅ CORRECTNESS TEST: Payload contains audit data
 			payloadJSON, err := json.Marshal(auditMsg.Payload)
 			Expect(err).ToNot(HaveOccurred())
-				
+
 				var payloadAudit models.NotificationAudit
 				err = json.Unmarshal(payloadJSON, &payloadAudit)
 				Expect(err).ToNot(HaveOccurred())
@@ -178,4 +178,5 @@ var _ = Describe("DLQ Client Integration", func() {
 		})
 	})
 })
+
 

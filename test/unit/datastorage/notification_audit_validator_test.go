@@ -967,14 +967,14 @@ var _ = Describe("RFC7807Problem", func() {
 			Expect(result.Detail).To(Equal("validation failed"))
 			Expect(result.Instance).To(Equal("/audit/notification_audit"))
 
-		// CORRECTNESS: Extensions contain resource and field_errors map
-		Expect(result.Extensions["resource"]).To(Equal("notification_audit"), "Extensions should contain resource")
-		
-		// CORRECTNESS: field_errors is a map (type assertion proves it's not nil)
-		fieldErrors, ok := result.Extensions["field_errors"].(map[string]interface{})
-		Expect(ok).To(BeTrue(), "field_errors should be a map")
-		Expect(fieldErrors).To(HaveLen(1), "field_errors should have 1 entry")
-		Expect(fieldErrors["field1"]).To(Equal("error1"), "field_errors should contain field1 error")
+			// CORRECTNESS: Extensions contain resource and field_errors map
+			Expect(result.Extensions["resource"]).To(Equal("notification_audit"), "Extensions should contain resource")
+
+			// CORRECTNESS: field_errors is a map (type assertion proves it's not nil)
+			fieldErrors, ok := result.Extensions["field_errors"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "field_errors should be a map")
+			Expect(fieldErrors).To(HaveLen(1), "field_errors should have 1 entry")
+			Expect(fieldErrors["field1"]).To(Equal("error1"), "field_errors should contain field1 error")
 		})
 
 		It("should omit optional fields when empty", func() {

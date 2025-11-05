@@ -286,3 +286,41 @@ func (v *VersionValidator) parsePostgreSQLSize(size string) (int64, error) {
 		return value * 8192, nil
 	}
 }
+
+
+	v.logger.Debug("HNSW index creation test passed")
+	return nil
+}
+
+// parsePostgreSQLSize parses PostgreSQL size strings into bytes
+// Examples: "128MB" → 134217728, "1GB" → 1073741824, "8192kB" → 8388608
+// DD-011: Refactored to method for consistency with other validator methods
+func (v *VersionValidator) parsePostgreSQLSize(size string) (int64, error) {
+	size = strings.TrimSpace(size)
+	re := regexp.MustCompile(`(\d+)\s*(kB|MB|GB|TB)?`)
+	matches := re.FindStringSubmatch(size)
+	if len(matches) < 2 {
+		return 0, fmt.Errorf("invalid size format: %s", size)
+	}
+
+	value, err := strconv.ParseInt(matches[1], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid numeric value: %s", matches[1])
+	}
+
+	unit := strings.ToUpper(strings.TrimSpace(matches[2]))
+
+	switch unit {
+	case "TB":
+		return value * 1024 * 1024 * 1024 * 1024, nil
+	case "GB":
+		return value * 1024 * 1024 * 1024, nil
+	case "MB", "":
+		return value * 1024 * 1024, nil
+	case "KB":
+		return value * 1024, nil
+	default:
+		// PostgreSQL default unit is 8kB blocks
+		return value * 8192, nil
+	}
+}

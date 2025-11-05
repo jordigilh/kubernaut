@@ -1,7 +1,7 @@
 # ADR-033: BR Category Migration Plan
 
-**Date**: November 5, 2025  
-**Status**: 📋 Ready for Execution  
+**Date**: November 5, 2025
+**Status**: 📋 Ready for Execution
 **Purpose**: Migrate BR-WORKFLOW-XXX to BR-REMEDIATION-XXX and establish BR-PLAYBOOK-XXX category
 
 ---
@@ -124,7 +124,7 @@ OLD: "Workflow execution business requirements"
 NEW: "Remediation execution business requirements"
 ```
 
-**Manual Review Required**: 
+**Manual Review Required**:
 - Architecture diagrams (verify service names updated)
 - ADR decision rationale (ensure consistency)
 
