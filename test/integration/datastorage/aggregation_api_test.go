@@ -55,7 +55,7 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 				// ⚠️  DEPRECATED: This test uses workflow_id which is architecturally flawed per ADR-033
 				// AI-generated workflows are unique, so workflow_id success rate is meaningless
 				// Use incident-type aggregation instead (see aggregation_api_adr033_test.go)
-				
+
 				// Test data: workflow-agg-1 has 3 completed, 1 failed
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=workflow-agg-1", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
