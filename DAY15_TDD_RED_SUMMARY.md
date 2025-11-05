@@ -1,8 +1,8 @@
 # Day 15: TDD RED Phase - ADR-033 HTTP API Integration Tests
 
-**Date**: November 5, 2025  
-**Phase**: TDD RED (Write Failing Tests)  
-**Status**: ✅ COMPLETE  
+**Date**: November 5, 2025
+**Phase**: TDD RED (Write Failing Tests)
+**Status**: ✅ COMPLETE
 **Confidence**: 95%
 
 ---
@@ -66,26 +66,26 @@ Create comprehensive integration tests for ADR-033 multi-dimensional success tra
 ## 🔧 **Technical Challenges Resolved**
 
 ### Challenge 1: Schema Column Naming Mismatch
-**Problem**: Migration used `status` but schema has `execution_status`  
-**Solution**: Updated migration indexes and repository queries to use `execution_status`  
+**Problem**: Migration used `status` but schema has `execution_status`
+**Solution**: Updated migration indexes and repository queries to use `execution_status`
 **Files Fixed**:
 - `migrations/012_adr033_multidimensional_tracking.sql` (4 index definitions)
 - `pkg/datastorage/repository/action_trace_repository.go` (6 SQL queries)
 
 ### Challenge 2: Goose Migration DOWN Section
-**Problem**: Test suite executed entire migration file, including DOWN section that drops columns  
-**Root Cause**: Migration has `-- +goose Up` and `-- +goose Down` sections, test suite executed both  
-**Solution**: Added logic to extract only UP section before executing migration  
+**Problem**: Test suite executed entire migration file, including DOWN section that drops columns
+**Root Cause**: Migration has `-- +goose Up` and `-- +goose Down` sections, test suite executed both
+**Solution**: Added logic to extract only UP section before executing migration
 **Files Fixed**:
 - `test/integration/datastorage/suite_test.go` (added Goose directive parsing)
 
 ### Challenge 3: Foreign Key Constraints
-**Problem**: `resource_action_traces` requires `action_history_id` which references `action_histories` → `resource_references`  
-**Solution**: Created parent records in `BeforeAll` (id=999 for both tables)  
+**Problem**: `resource_action_traces` requires `action_history_id` which references `action_histories` → `resource_references`
+**Solution**: Created parent records in `BeforeAll` (id=999 for both tables)
 **Implementation**: Helper function creates test data with correct foreign keys
 
 ### Challenge 4: Schema Column Discovery
-**Problem**: Test helper used non-existent columns (`resource_type`, `resource_name`, `resource_namespace`)  
+**Problem**: Test helper used non-existent columns (`resource_type`, `resource_name`, `resource_namespace`)
 **Solution**: Updated helper to use actual schema columns:
 - `action_history_id` (foreign key to action_histories)
 - `signal_name` and `signal_severity` (from 011_rename_alert_to_signal.sql)

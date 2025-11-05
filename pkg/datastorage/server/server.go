@@ -146,6 +146,12 @@ func NewServer(
 		zap.Bool("dlq_client_nil", dlqClient == nil),
 		zap.Bool("validator_nil", validator == nil))
 
+	// Create ADR-033 action trace repository (BR-STORAGE-031-01, BR-STORAGE-031-02)
+	logger.Debug("Creating ADR-033 action trace repository...")
+	actionTraceRepo := repository.NewActionTraceRepository(db, logger)
+	logger.Debug("ADR-033 action trace repository created",
+		zap.Bool("action_trace_repo_nil", actionTraceRepo == nil))
+
 	// Create Prometheus metrics (BR-STORAGE-019, GAP-10)
 	metrics := dsmetrics.NewMetrics("datastorage", "")
 
@@ -156,8 +162,10 @@ func NewServer(
 	// Create database wrapper for READ API handlers
 	dbAdapter := &DBAdapter{db: db, logger: logger}
 
-	// Create READ API handler with logger
-	handler := NewHandler(dbAdapter, WithLogger(logger))
+	// Create READ API handler with logger and ADR-033 repository
+	handler := NewHandler(dbAdapter,
+		WithLogger(logger),
+		WithActionTraceRepository(actionTraceRepo))
 
 	return &Server{
 		handler: handler,
