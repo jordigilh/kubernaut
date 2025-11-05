@@ -14,14 +14,20 @@ import (
 )
 
 // ========================================
-// DAY 11 TDD GREEN: HTTP Aggregation Handlers
+// DAY 11 TDD REFACTOR: HTTP Aggregation Handlers
 // BR-INTEGRATION-008, BR-INTEGRATION-009, BR-INTEGRATION-010
 // ========================================
 //
-// **OBJECTIVE**: Minimal implementation to make unit tests pass
+// **OBJECTIVE**: Extract common patterns, add metrics, improve error handling
 //
-// **TDD GREEN Phase**: Implement only what tests require
+// **TDD REFACTOR Phase**: Improve code quality while maintaining test passage
 // ========================================
+
+// Constants for aggregation endpoints
+const (
+	defaultTimeRange  = "7d"
+	defaultMinSamples = 5
+)
 
 // ========================================
 // BR-INTEGRATION-008: Incident-Type Success Rate API
@@ -29,18 +35,9 @@ import (
 
 // HandleGetSuccessRateByIncidentType handles GET /api/v1/aggregation/success-rate/incident-type
 func (s *Server) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
+	// Parse common parameters
+	timeRange, minSamples := parseAggregationParams(r)
 	incidentType := r.URL.Query().Get("incident_type")
-	timeRange := r.URL.Query().Get("time_range")
-	if timeRange == "" {
-		timeRange = "7d"
-	}
-	minSamples := 5
-	if ms := r.URL.Query().Get("min_samples"); ms != "" {
-		if parsed, err := strconv.Atoi(ms); err == nil {
-			minSamples = parsed
-		}
-	}
 
 	// Validate required parameters
 	if incidentType == "" {
@@ -51,16 +48,8 @@ func (s *Server) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *ht
 	// Call AggregationService
 	result, err := s.aggregationService.GetSuccessRateByIncidentType(r.Context(), incidentType, timeRange, minSamples)
 	if err != nil {
-		s.logger.Error("failed to get success rate by incident type",
-			zap.String("incident_type", incidentType),
-			zap.Error(err))
-
-		if isTimeoutError(err) {
-			respondRFC7807Error(w, http.StatusServiceUnavailable, "service-unavailable", "Data Storage Service timeout")
-			return
-		}
-
-		respondRFC7807Error(w, http.StatusInternalServerError, "internal-server-error", "failed to retrieve success rate data")
+		logAggregationError(s.logger, "incident_type", incidentType, err)
+		handleAggregationError(w, err)
 		return
 	}
 
@@ -73,19 +62,10 @@ func (s *Server) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *ht
 
 // HandleGetSuccessRateByPlaybook handles GET /api/v1/aggregation/success-rate/playbook
 func (s *Server) HandleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
+	// Parse common parameters
+	timeRange, minSamples := parseAggregationParams(r)
 	playbookID := r.URL.Query().Get("playbook_id")
 	playbookVersion := r.URL.Query().Get("playbook_version")
-	timeRange := r.URL.Query().Get("time_range")
-	if timeRange == "" {
-		timeRange = "7d"
-	}
-	minSamples := 5
-	if ms := r.URL.Query().Get("min_samples"); ms != "" {
-		if parsed, err := strconv.Atoi(ms); err == nil {
-			minSamples = parsed
-		}
-	}
 
 	// Validate required parameters
 	if playbookID == "" {
@@ -96,16 +76,8 @@ func (s *Server) HandleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.R
 	// Call AggregationService
 	result, err := s.aggregationService.GetSuccessRateByPlaybook(r.Context(), playbookID, playbookVersion, timeRange, minSamples)
 	if err != nil {
-		s.logger.Error("failed to get success rate by playbook",
-			zap.String("playbook_id", playbookID),
-			zap.Error(err))
-
-		if isTimeoutError(err) {
-			respondRFC7807Error(w, http.StatusServiceUnavailable, "service-unavailable", "Data Storage Service timeout")
-			return
-		}
-
-		respondRFC7807Error(w, http.StatusInternalServerError, "internal-server-error", "failed to retrieve playbook success rate data")
+		logAggregationError(s.logger, "playbook_id", playbookID, err)
+		handleAggregationError(w, err)
 		return
 	}
 
@@ -118,21 +90,12 @@ func (s *Server) HandleGetSuccessRateByPlaybook(w http.ResponseWriter, r *http.R
 
 // HandleGetSuccessRateMultiDimensional handles GET /api/v1/aggregation/success-rate/multi-dimensional
 func (s *Server) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters
+	// Parse common parameters
+	timeRange, minSamples := parseAggregationParams(r)
 	incidentType := r.URL.Query().Get("incident_type")
 	playbookID := r.URL.Query().Get("playbook_id")
 	playbookVersion := r.URL.Query().Get("playbook_version")
 	actionType := r.URL.Query().Get("action_type")
-	timeRange := r.URL.Query().Get("time_range")
-	if timeRange == "" {
-		timeRange = "7d"
-	}
-	minSamples := 5
-	if ms := r.URL.Query().Get("min_samples"); ms != "" {
-		if parsed, err := strconv.Atoi(ms); err == nil {
-			minSamples = parsed
-		}
-	}
 
 	// Validate at least one dimension
 	if incidentType == "" && playbookID == "" && actionType == "" {
@@ -153,16 +116,8 @@ func (s *Server) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r *
 	// Call AggregationService
 	result, err := s.aggregationService.GetSuccessRateMultiDimensional(r.Context(), query)
 	if err != nil {
-		s.logger.Error("failed to get multi-dimensional success rate",
-			zap.String("incident_type", incidentType),
-			zap.Error(err))
-
-		if isTimeoutError(err) {
-			respondRFC7807Error(w, http.StatusServiceUnavailable, "service-unavailable", "Data Storage Service timeout")
-			return
-		}
-
-		respondRFC7807Error(w, http.StatusInternalServerError, "internal-server-error", "failed to retrieve multi-dimensional success rate data")
+		logAggregationError(s.logger, "multi-dimensional", incidentType, err)
+		handleAggregationError(w, err)
 		return
 	}
 
@@ -170,8 +125,47 @@ func (s *Server) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r *
 }
 
 // ========================================
-// Helper Functions (TDD GREEN - Minimal)
+// TDD REFACTOR: Extracted Helper Functions
 // ========================================
+
+// parseAggregationParams extracts common aggregation parameters with defaults
+// TDD REFACTOR: Extracted from individual handlers to reduce duplication
+func parseAggregationParams(r *http.Request) (timeRange string, minSamples int) {
+	timeRange = r.URL.Query().Get("time_range")
+	if timeRange == "" {
+		timeRange = defaultTimeRange
+	}
+
+	minSamples = defaultMinSamples
+	if ms := r.URL.Query().Get("min_samples"); ms != "" {
+		if parsed, err := strconv.Atoi(ms); err == nil {
+			minSamples = parsed
+		}
+	}
+
+	return timeRange, minSamples
+}
+
+// logAggregationError logs aggregation service errors with structured fields
+// TDD REFACTOR: Extracted error logging to reduce duplication
+func logAggregationError(logger *zap.Logger, dimensionType string, dimensionValue string, err error) {
+	logger.Error("aggregation service error",
+		zap.String("dimension_type", dimensionType),
+		zap.String("dimension_value", dimensionValue),
+		zap.Error(err),
+		zap.String("endpoint", "success-rate"))
+}
+
+// handleAggregationError determines error type and sends appropriate RFC 7807 response
+// TDD REFACTOR: Extracted error handling to reduce duplication
+func handleAggregationError(w http.ResponseWriter, err error) {
+	if isTimeoutError(err) {
+		respondRFC7807Error(w, http.StatusServiceUnavailable, "service-unavailable", "Data Storage Service timeout")
+		return
+	}
+
+	respondRFC7807Error(w, http.StatusInternalServerError, "internal-server-error", "failed to retrieve success rate data")
+}
 
 // respondJSON writes JSON response
 func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
