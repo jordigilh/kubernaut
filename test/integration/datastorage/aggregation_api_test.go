@@ -45,9 +45,17 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 	})
 
 	// BR-STORAGE-031: Success Rate Aggregation
-	Describe("GET /api/v1/incidents/aggregate/success-rate", func() {
+	// ⚠️  DEPRECATED: workflow_id endpoint (ADR-033)
+	// This test uses the deprecated workflow_id parameter.
+	// ADR-033 replaces this with incident-type based aggregation.
+	// See: test/integration/datastorage/aggregation_api_adr033_test.go for new tests
+	Describe("GET /api/v1/incidents/aggregate/success-rate [DEPRECATED]", func() {
 		Context("Behavior + Correctness Testing ✅ GAP-05", func() {
-			It("should calculate success rate correctly with exact counts", func() {
+			It("should calculate success rate correctly with exact counts [DEPRECATED - use incident-type]", func() {
+				// ⚠️  DEPRECATED: This test uses workflow_id which is architecturally flawed per ADR-033
+				// AI-generated workflows are unique, so workflow_id success rate is meaningless
+				// Use incident-type aggregation instead (see aggregation_api_adr033_test.go)
+				
 				// Test data: workflow-agg-1 has 3 completed, 1 failed
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/incidents/aggregate/success-rate?workflow_id=workflow-agg-1", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
