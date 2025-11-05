@@ -10,10 +10,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/datastorage"
+	"github.com/jordigilh/kubernaut/pkg/contextapi/metrics"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/query"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/server"
 	dsmodels "github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -36,11 +38,11 @@ import (
 
 var _ = Describe("Aggregation HTTP Handlers", func() {
 	var (
-		testServer         *server.Server
-		mockDataStorage    *mockDataStorageClient
-		mockCache          *mockCacheManager
-		logger             *zap.Logger
-		httpTestServer     *httptest.Server
+		testServer      *server.Server
+		mockDataStorage *mockDataStorageClient
+		mockCache       *mockCacheManager
+		logger          *zap.Logger
+		httpTestServer  *httptest.Server
 	)
 
 	BeforeEach(func() {
@@ -65,20 +67,22 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 			DataStorageBaseURL: "http://localhost:8085", // Mock Data Storage Service
 		}
 
+		// Create unique metrics registry for each test to avoid duplicate registration
+		registry := prometheus.NewRegistry()
+		metricsInstance := metrics.NewMetricsWithRegistry("contextapi", "test", registry)
+
 		// Create test server
-		// NOTE: This will fail until Server has aggregationService field and Handler() method
 		var err error
 		testServer, err = server.NewServerWithAggregationService(
 			"localhost:6379", // Redis address
 			logger,
 			cfg,
-			nil, // metrics (use default)
+			metricsInstance,    // Use unique metrics instance
 			aggregationService, // Inject mock aggregation service
 		)
 		Expect(err).ToNot(HaveOccurred(), "Server creation should succeed")
 
 		// Create HTTP test server
-		// NOTE: This will fail until Handler() method is implemented
 		httpTestServer = httptest.NewServer(testServer.Handler())
 	})
 
@@ -98,14 +102,14 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 
 			// Setup mock response
 			mockDataStorage.incidentTypeResponse = &dsmodels.IncidentTypeSuccessRateResponse{
-				IncidentType: "pod-oom",
-				SuccessRate:  85.0,
-				TotalExecutions: 100,
+				IncidentType:         "pod-oom",
+				SuccessRate:          85.0,
+				TotalExecutions:      100,
 				SuccessfulExecutions: 85,
-				FailedExecutions: 15,
-				TimeRange: "7d",
-				Confidence: "high",
-				MinSamplesMet: true,
+				FailedExecutions:     15,
+				TimeRange:            "7d",
+				Confidence:           "high",
+				MinSamplesMet:        true,
 			}
 
 			// Make HTTP request
@@ -157,14 +161,14 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 
 			// Setup cache with data
 			cachedData := &dsmodels.IncidentTypeSuccessRateResponse{
-				IncidentType: "pod-oom",
-				SuccessRate:  90.0,
-				TotalExecutions: 50,
+				IncidentType:         "pod-oom",
+				SuccessRate:          90.0,
+				TotalExecutions:      50,
 				SuccessfulExecutions: 45,
-				FailedExecutions: 5,
-				TimeRange: "7d",
-				Confidence: "high",
-				MinSamplesMet: true,
+				FailedExecutions:     5,
+				TimeRange:            "7d",
+				Confidence:           "high",
+				MinSamplesMet:        true,
 			}
 			cacheKey := "incident_type:pod-oom:7d:5"
 			cachedBytes, _ := json.Marshal(cachedData)
@@ -200,15 +204,15 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 
 			// Setup mock response
 			mockDataStorage.playbookResponse = &dsmodels.PlaybookSuccessRateResponse{
-				PlaybookID: "restart-pod-v1",
-				PlaybookVersion: "1.0.0",
-				SuccessRate: 92.0,
-				TotalExecutions: 200,
+				PlaybookID:           "restart-pod-v1",
+				PlaybookVersion:      "1.0.0",
+				SuccessRate:          92.0,
+				TotalExecutions:      200,
 				SuccessfulExecutions: 184,
-				FailedExecutions: 16,
-				TimeRange: "7d",
-				Confidence: "high",
-				MinSamplesMet: true,
+				FailedExecutions:     16,
+				TimeRange:            "7d",
+				Confidence:           "high",
+				MinSamplesMet:        true,
 			}
 
 			// Make HTTP request
@@ -227,7 +231,7 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 			// CORRECTNESS: Specific values from mock
 			Expect(result.PlaybookID).To(Equal("restart-pod-v1"), "Should return requested playbook ID")
 			Expect(result.PlaybookVersion).To(Equal("1.0.0"), "Should return requested playbook version")
-			Expect(result.SuccessRate).To(Equal(0.92), "Should return exact success rate")
+			Expect(result.SuccessRate).To(Equal(92.0), "Should return exact success rate")
 			Expect(result.TotalExecutions).To(Equal(200), "Should return exact total executions")
 			Expect(result.SuccessfulExecutions).To(Equal(184), "Should return exact successful executions")
 		})
@@ -257,15 +261,15 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 
 			// Setup mock response
 			mockDataStorage.playbookResponse = &dsmodels.PlaybookSuccessRateResponse{
-				PlaybookID: "restart-pod-v1",
-				PlaybookVersion: "",
-				SuccessRate: 88.0,
-				TotalExecutions: 150,
+				PlaybookID:           "restart-pod-v1",
+				PlaybookVersion:      "",
+				SuccessRate:          88.0,
+				TotalExecutions:      150,
 				SuccessfulExecutions: 132,
-				FailedExecutions: 18,
-				TimeRange: "7d", // Default
-				Confidence: "high",
-				MinSamplesMet: true,
+				FailedExecutions:     18,
+				TimeRange:            "7d", // Default
+				Confidence:           "high",
+				MinSamplesMet:        true,
 			}
 
 			// Make HTTP request with only required parameter
@@ -295,18 +299,18 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 			// Setup mock response
 			mockDataStorage.multiDimensionalResponse = &dsmodels.MultiDimensionalSuccessRateResponse{
 				Dimensions: dsmodels.QueryDimensions{
-					IncidentType: "pod-oom",
-					PlaybookID: "restart-pod-v1",
+					IncidentType:    "pod-oom",
+					PlaybookID:      "restart-pod-v1",
 					PlaybookVersion: "1.0.0",
-					ActionType: "restart",
+					ActionType:      "restart",
 				},
-				SuccessRate: 95.0,
-				TotalExecutions: 300,
+				SuccessRate:          95.0,
+				TotalExecutions:      300,
 				SuccessfulExecutions: 285,
-				FailedExecutions: 15,
-				TimeRange: "7d",
-				Confidence: "high",
-				MinSamplesMet: true,
+				FailedExecutions:     15,
+				TimeRange:            "7d",
+				Confidence:           "high",
+				MinSamplesMet:        true,
 			}
 
 			// Make HTTP request with all dimensions
@@ -334,18 +338,18 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 			// Setup mock response
 			mockDataStorage.multiDimensionalResponse = &dsmodels.MultiDimensionalSuccessRateResponse{
 				Dimensions: dsmodels.QueryDimensions{
-					IncidentType: "pod-oom",
-					PlaybookID: "",
+					IncidentType:    "pod-oom",
+					PlaybookID:      "",
 					PlaybookVersion: "",
-					ActionType: "",
+					ActionType:      "",
 				},
-				SuccessRate: 87.0,
-				TotalExecutions: 120,
+				SuccessRate:          87.0,
+				TotalExecutions:      120,
 				SuccessfulExecutions: 104,
-				FailedExecutions: 16,
-				TimeRange: "7d",
-				Confidence: "medium",
-				MinSamplesMet: true,
+				FailedExecutions:     16,
+				TimeRange:            "7d",
+				Confidence:           "medium",
+				MinSamplesMet:        true,
 			}
 
 			// Make HTTP request with only incident_type
@@ -419,13 +423,13 @@ var _ = Describe("Aggregation HTTP Handlers", func() {
 
 // mockDataStorageClient mocks the Data Storage HTTP client
 type mockDataStorageClient struct {
-	incidentTypeResponse      *dsmodels.IncidentTypeSuccessRateResponse
-	playbookResponse          *dsmodels.PlaybookSuccessRateResponse
-	multiDimensionalResponse  *dsmodels.MultiDimensionalSuccessRateResponse
-	incidentTypeCalled        bool
-	playbookCalled            bool
-	multiDimensionalCalled    bool
-	simulateTimeout           bool
+	incidentTypeResponse     *dsmodels.IncidentTypeSuccessRateResponse
+	playbookResponse         *dsmodels.PlaybookSuccessRateResponse
+	multiDimensionalResponse *dsmodels.MultiDimensionalSuccessRateResponse
+	incidentTypeCalled       bool
+	playbookCalled           bool
+	multiDimensionalCalled   bool
+	simulateTimeout          bool
 }
 
 func (m *mockDataStorageClient) GetSuccessRateByIncidentType(ctx context.Context, incidentType, timeRange string, minSamples int) (*dsmodels.IncidentTypeSuccessRateResponse, error) {
@@ -516,4 +520,3 @@ func (m *mockCacheManager) HealthCheck(ctx context.Context) (*cache.HealthStatus
 func (m *mockCacheManager) Close() error {
 	return nil
 }
-
