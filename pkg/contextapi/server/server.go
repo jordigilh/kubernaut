@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
+	"github.com/jordigilh/kubernaut/pkg/contextapi/datastorage"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/errors"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/metrics"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/models"
@@ -30,8 +31,9 @@ import (
 // v2.0: Uses v2.0 components (CachedExecutor, CacheManager, Router)
 // DD-007: Kubernetes-aware graceful shutdown with 4-step pattern
 type Server struct {
-	router         *query.Router         // v2.0: Query router
-	cachedExecutor *query.CachedExecutor // v2.0: Cache-first executor
+	router             *query.Router              // v2.0: Query router
+	cachedExecutor     *query.CachedExecutor      // v2.0: Cache-first executor
+	aggregationService *query.AggregationService  // Day 11: ADR-033 Aggregation layer
 	// ADR-032: NO direct database client - all data access via Data Storage Service
 	cacheManager cache.CacheManager // v2.0: Multi-tier cache
 	metrics      *metrics.Metrics
@@ -153,20 +155,78 @@ func NewServerWithMetrics(
 		return nil, fmt.Errorf("failed to create cached executor with Data Storage: %w", err)
 	}
 
-	// 4. TODO: Aggregation service needs migration to use Data Storage Service
-	// For now, set to nil - aggregation endpoints will need Data Storage API support
-	// See: docs/services/stateless/context-api/implementation/API-GATEWAY-MIGRATION.md
-	var aggregation *query.AggregationService = nil
+	// 4. Create Data Storage HTTP client for aggregation service (Day 11)
+	// BR-INTEGRATION-008, BR-INTEGRATION-009, BR-INTEGRATION-010
+	dsHTTPClient := datastorage.NewClient(cfg.DataStorageBaseURL, 10*time.Second, logger)
 
-	// 5. Create query router (Day 6) - VectorSearch nil for now (Day 8)
+	// 5. Create aggregation service (Day 11)
+	// ADR-033: Context API aggregates from Data Storage Service REST API
+	aggregation := query.NewAggregationService(dsHTTPClient, cacheManager, logger)
+
+	// 6. Create query router (Day 6) - VectorSearch nil for now (Day 8)
 	queryRouter := query.NewRouter(cachedExecutor, nil, aggregation, logger)
 
 	return &Server{
-		router:         queryRouter,
-		cachedExecutor: cachedExecutor,
-		cacheManager:   cacheManager,
-		metrics:        m,
-		logger:         logger,
+		router:             queryRouter,
+		cachedExecutor:     cachedExecutor,
+		aggregationService: aggregation,
+		cacheManager:       cacheManager,
+		metrics:            m,
+		logger:             logger,
+		httpServer: &http.Server{
+			Addr:         fmt.Sprintf(":%d", cfg.Port),
+			ReadTimeout:  cfg.ReadTimeout,
+			WriteTimeout: cfg.WriteTimeout,
+		},
+	}, nil
+}
+
+// NewServerWithAggregationService creates a server with a custom aggregation service (for testing)
+// Day 11 TDD GREEN: Constructor needed by unit tests to inject mock aggregation service
+func NewServerWithAggregationService(
+	redisAddr string,
+	logger *zap.Logger,
+	cfg *Config,
+	metricsInstance *metrics.Metrics,
+	aggregationService *query.AggregationService,
+) (*Server, error) {
+	// Initialize metrics
+	var m *metrics.Metrics
+	if metricsInstance != nil {
+		m = metricsInstance
+	} else {
+		m = metrics.NewMetrics("context_api", "server")
+	}
+
+	// Create cache manager
+	redisHost := redisAddr
+	redisDB := 0
+	if idx := strings.LastIndex(redisAddr, "/"); idx != -1 {
+		dbStr := redisAddr[idx+1:]
+		if db, err := strconv.Atoi(dbStr); err == nil && db >= 0 && db <= 15 {
+			redisDB = db
+			redisHost = redisAddr[:idx]
+		}
+	}
+
+	cacheConfig := &cache.Config{
+		RedisAddr:  redisHost,
+		RedisDB:    redisDB,
+		LRUSize:    1000,
+		DefaultTTL: 5 * time.Minute,
+	}
+	cacheManager, err := cache.NewCacheManager(cacheConfig, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cache manager: %w", err)
+	}
+
+	return &Server{
+		router:             nil, // Not needed for unit tests
+		cachedExecutor:     nil, // Not needed for unit tests
+		aggregationService: aggregationService,
+		cacheManager:       cacheManager,
+		metrics:            m,
+		logger:             logger,
 		httpServer: &http.Server{
 			Addr:         fmt.Sprintf(":%d", cfg.Port),
 			ReadTimeout:  cfg.ReadTimeout,
@@ -223,6 +283,14 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/namespaces", s.handleNamespaceGrouping)
 			r.Get("/severity", s.handleSeverityDistribution)
 			r.Get("/trend", s.handleIncidentTrend)
+		})
+
+		// Day 11: ADR-033 Aggregation endpoints
+		// BR-INTEGRATION-008, BR-INTEGRATION-009, BR-INTEGRATION-010
+		r.Route("/aggregation/success-rate", func(r chi.Router) {
+			r.Get("/incident-type", s.HandleGetSuccessRateByIncidentType)
+			r.Get("/playbook", s.HandleGetSuccessRateByPlaybook)
+			r.Get("/multi-dimensional", s.HandleGetSuccessRateMultiDimensional)
 		})
 
 		// TODO: Semantic search endpoint (not yet implemented)
