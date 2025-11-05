@@ -58,7 +58,7 @@ Kubernaut's architecture consists of:
 1. **RemediationOrchestrator** - Central lifecycle orchestration
 2. **SignalProcessing** - Signal enrichment and business classification
 3. **AIAnalysis** - HolmesGPT-powered investigation
-4. **WorkflowExecution** - Workflow orchestration with Tekton
+4. **RemediationExecution** - Remediation Playbook orchestration with Tekton
 5. **Notification** - Multi-channel notifications
 
 **Stateless Services** (6):
@@ -80,7 +80,7 @@ Kubernaut's architecture consists of:
 
 1. **Central Orchestration**: RemediationOrchestrator creates and watches all child CRDs
 2. **Watch-Based Coordination**: Event-driven, not polling (Kubernetes watches)
-3. **Sequential CRD Creation**: SignalProcessing → AIAnalysis → WorkflowExecution → Tekton PipelineRuns
+3. **Sequential CRD Creation**: SignalProcessing → AIAnalysis → RemediationExecution → Tekton PipelineRuns
 4. **Owner References**: Automatic cascade deletion via Kubernetes ownership
 5. **24-Hour Retention**: CRDs persist for review window, then auto-cleanup
 6. **Tekton Integration**: Industry-standard execution engine (not custom jobs)
@@ -102,7 +102,7 @@ Kubernaut's architecture consists of:
 
 **Responsibilities**:
 - Create RemediationRequest CRD from Gateway input
-- Sequential CRD creation (SignalProcessing → AIAnalysis → WorkflowExecution)
+- Sequential CRD creation (SignalProcessing → AIAnalysis → RemediationExecution)
 - Watch-based status aggregation from all child CRDs
 - Timeout detection and escalation
 - Notification triggering (via NotificationRequest CRD)
@@ -159,11 +159,11 @@ Kubernaut's architecture consists of:
 
 ---
 
-#### 4. WorkflowExecution
+#### 4. RemediationExecution
 
 **Purpose**: Orchestrate multi-step remediation workflows with Tekton Pipelines
 
-**CRD**: `WorkflowExecution` (workflowexecution.kubernaut.io/v1alpha1)
+**CRD**: `RemediationExecution` (workflowexecution.kubernaut.io/v1alpha1)
 
 **Responsibilities**:
 - Plan workflow execution based on AI recommendations
@@ -343,14 +343,14 @@ Kubernaut's architecture consists of:
 
 **Ownership**:
 - Created by: Gateway Service
-- Owns: SignalProcessing, AIAnalysis, WorkflowExecution, NotificationRequest
+- Owns: SignalProcessing, AIAnalysis, RemediationExecution, NotificationRequest
 
 **Lifecycle**:
 1. Gateway creates RemediationRequest from incoming signal
 2. RemediationOrchestrator watches and creates SignalProcessing CRD
 3. RemediationOrchestrator watches SignalProcessing status → creates AIAnalysis CRD
-4. RemediationOrchestrator watches AIAnalysis status → creates WorkflowExecution CRD
-5. RemediationOrchestrator watches WorkflowExecution status → updates RemediationRequest status
+4. RemediationOrchestrator watches AIAnalysis status → creates RemediationExecution CRD
+5. RemediationOrchestrator watches RemediationExecution status → updates RemediationRequest status
 6. RemediationOrchestrator creates NotificationRequest CRDs for events (failures, timeouts, completions, approval requests)
 7. 24-hour retention → Finalizer removed → Cascade deletion
 
@@ -414,7 +414,7 @@ spec:
     namespace: string
     resource: object
   isRecoveryAttempt: boolean         # Fetch recovery context?
-  failedWorkflowRef: string          # Previous workflow (if recovery)
+  failedRemediationRef: string          # Previous workflow (if recovery)
 
 status:
   phase: string                      # Pending, Enriching, Classifying, Completed, Failed
@@ -448,7 +448,7 @@ status:
 5. AIAnalysis controller evaluates approval policy (Rego)
 6. If manual approval required: AIAnalysis controller creates AIApprovalRequest CRD
 7. AIAnalysis controller updates status to "Ready" (after approval, if needed)
-8. RemediationOrchestrator watches status → creates WorkflowExecution CRD
+8. RemediationOrchestrator watches status → creates RemediationExecution CRD
 
 **Key Fields**:
 ```yaml
@@ -483,7 +483,7 @@ status:
 
 ---
 
-### WorkflowExecution (Workflow Orchestration)
+### RemediationExecution (Remediation Playbook Orchestration)
 
 **API Group**: `workflowexecution.kubernaut.io/v1alpha1`
 
@@ -495,14 +495,14 @@ status:
 - Creates: Tekton PipelineRuns (via Tekton API)
 
 **Lifecycle**:
-1. RemediationOrchestrator creates WorkflowExecution CRD (with AI recommendations)
-2. WorkflowExecution controller parses AI recommendations
-3. WorkflowExecution controller builds dependency graph
-4. WorkflowExecution controller validates safety constraints (Rego policies)
-5. WorkflowExecution controller creates Tekton PipelineRun
-6. WorkflowExecution controller monitors PipelineRun status (via Tekton watch)
-7. WorkflowExecution controller writes action records to Data Storage Service
-8. WorkflowExecution controller updates status to "Completed" or "Failed"
+1. RemediationOrchestrator creates RemediationExecution CRD (with AI recommendations)
+2. RemediationExecution controller parses AI recommendations
+3. RemediationExecution controller builds dependency graph
+4. RemediationExecution controller validates safety constraints (Rego policies)
+5. RemediationExecution controller creates Tekton PipelineRun
+6. RemediationExecution controller monitors PipelineRun status (via Tekton watch)
+7. RemediationExecution controller writes action records to Data Storage Service
+8. RemediationExecution controller updates status to "Completed" or "Failed"
 9. RemediationOrchestrator watches status → updates RemediationRequest
 
 **Key Fields**:
@@ -616,12 +616,12 @@ graph TB
     subgraph "Child CRDs (Flat Sibling Hierarchy)"
         SP[SignalProcessing CRD]
         AI[AIAnalysis CRD]
-        WF[WorkflowExecution CRD]
+        WF[RemediationExecution CRD]
         NOT[NotificationRequest CRD]
     end
 
     subgraph "Tekton Pipelines"
-        PR[PipelineRun<br/>Owned by WorkflowExecution]
+        PR[PipelineRun<br/>Owned by RemediationExecution]
     end
 
     GW -->|1. Creates| ORCH
@@ -663,7 +663,7 @@ sequenceDiagram
     participant ORCH as RemediationOrchestrator
     participant SP as SignalProcessing
     participant AI as AIAnalysis
-    participant WF as WorkflowExecution
+    participant WF as RemediationExecution
     participant TEK as Tekton Pipelines
     participant K8S as Kubernetes
     participant ST as Data Storage
@@ -691,9 +691,9 @@ sequenceDiagram
     AI->>AI: Update status: Ready
     AI->>ORCH: Status update triggers watch
 
-    Note over ORCH,K8S: Phase 4: Workflow Execution
-    ORCH->>WF: Create WorkflowExecution CRD
-    ORCH->>ORCH: Watch WorkflowExecution
+    Note over ORCH,K8S: Phase 4: Remediation Execution
+    ORCH->>WF: Create RemediationExecution CRD
+    ORCH->>ORCH: Watch RemediationExecution
     WF->>WF: Build workflow from AI recommendations
     WF->>WF: Validate safety constraints
     WF->>TEK: Create Tekton PipelineRun
@@ -732,7 +732,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 2. **Sequential CRD Creation** (BR-AR-021 to BR-AR-030)
    - Creates SignalProcessing CRD (signal enrichment)
    - Creates AIAnalysis CRD (after processing completes)
-   - Creates WorkflowExecution CRD (after AI analysis completes)
+   - Creates RemediationExecution CRD (after AI analysis completes)
    - Creates NotificationRequest CRDs (on events)
 
 3. **Watch-Based Status Aggregation** (BR-AR-031 to BR-AR-040)
@@ -823,11 +823,11 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 
 4. **Confidence Scoring** (BR-AI-003, BR-AI-022)
    - Generates confidence scores for analysis results (0.0-1.0)
-   - ≥80%: Auto-approve and create WorkflowExecution CRD
+   - ≥80%: Auto-approve and create RemediationExecution CRD
    - 60-79%: Require manual approval via AIApprovalRequest CRD
    - <60%: Block and escalate to human operator
 
-5. **Approval Workflow** (BR-AI-059 to BR-AI-060)
+5. **Approval Remediation** (BR-AI-059 to BR-AI-060)
    - Creates AIApprovalRequest CRD for medium confidence (60-79%)
    - Populates rich approval context for notifications (ADR-018)
    - Tracks operator approval decisions and timing
@@ -843,7 +843,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 
 ---
 
-#### 4. WorkflowExecution - Workflow Orchestration
+#### 4. RemediationExecution - Remediation Playbook Orchestration
 
 **Key Features**:
 
@@ -892,7 +892,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
    - Slack integration for team collaboration
    - Webhook integrations for custom channels
 
-2. **Escalation Workflows** (BR-NOT-026 to BR-NOT-037)
+2. **Escalation Remediations** (BR-NOT-026 to BR-NOT-037)
    - Comprehensive alert context in escalation notifications
    - AI-generated root cause analysis (BR-NOT-028)
    - Recommended remediations sorted by multi-factor ranking (BR-NOT-030)
@@ -1015,7 +1015,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 
 3. **Action History Storage** (BR-STOR-051 to BR-STOR-080)
    - 90+ day retention for action records
-   - Workflow execution history and outcomes
+   - Remediation Playbooks execution history and outcomes
    - Pattern monitoring and effectiveness tracking
 
 4. **Multi-Level Caching** (BR-STOR-081 to BR-STOR-100)
@@ -1167,7 +1167,7 @@ func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) e
         For(&remediationv1.RemediationRequest{}).
         Owns(&processingv1.SignalProcessing{}).
         Owns(&aianalysisv1.AIAnalysis{}).
-        Owns(&workflowv1.WorkflowExecution{}).
+        Owns(&workflowv1.RemediationExecution{}).
         Owns(&notificationv1.NotificationRequest{}).
         Complete(r)
 }
@@ -1190,13 +1190,13 @@ func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) e
 **What RemediationOrchestrator Creates**:
 1. SignalProcessing CRD (signal enrichment)
 2. AIAnalysis CRD (after SignalProcessing completes)
-3. WorkflowExecution CRD (after AIAnalysis completes)
+3. RemediationExecution CRD (after AIAnalysis completes)
 4. NotificationRequest CRDs (on events: failures, timeouts, completions, approval requests)
 
 **What Child Controllers Do NOT Do**:
 - ❌ SignalProcessing does NOT create AIAnalysis
-- ❌ AIAnalysis does NOT create WorkflowExecution
-- ❌ WorkflowExecution does NOT create NotificationRequest
+- ❌ AIAnalysis does NOT create RemediationExecution
+- ❌ RemediationExecution does NOT create NotificationRequest
 - ✅ All child controllers update their OWN status only
 
 **Rationale**:
@@ -1232,7 +1232,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
         }
     }
 
-    // Similar logic for AIAnalysis → WorkflowExecution
+    // Similar logic for AIAnalysis → RemediationExecution
     // ...
 
     return ctrl.Result{}, nil
@@ -1269,7 +1269,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
    - Strategy: Retry with fresh object
    - Implementation: `updateStatusWithRetry` pattern
 
-6. **Child Failures** (SignalProcessing, AIAnalysis, WorkflowExecution failed)
+6. **Child Failures** (SignalProcessing, AIAnalysis, RemediationExecution failed)
    - Strategy: Update parent status, create NotificationRequest
    - Implementation: Watch child status, escalate on failure
 
@@ -1317,19 +1317,19 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 
 ---
 
-### 3. Workflow Execution (WorkflowExecution → Tekton Pipelines)
+### 3. Remediation Execution (RemediationExecution → Tekton Pipelines)
 
-**Flow**: WorkflowExecution controller → Tekton PipelineRun → Action containers
+**Flow**: RemediationExecution controller → Tekton PipelineRun → Action containers
 
 **Steps**:
-1. WorkflowExecution controller parses AI recommendations
-2. WorkflowExecution controller builds dependency graph
-3. WorkflowExecution controller validates safety constraints (Rego policies via ConfigMaps)
-4. WorkflowExecution controller creates Tekton PipelineRun
+1. RemediationExecution controller parses AI recommendations
+2. RemediationExecution controller builds dependency graph
+3. RemediationExecution controller validates safety constraints (Rego policies via ConfigMaps)
+4. RemediationExecution controller creates Tekton PipelineRun
 5. Tekton executes action containers (parallel or sequential, based on dependencies)
-6. WorkflowExecution controller watches PipelineRun status
-7. WorkflowExecution controller writes action records to Data Storage Service
-8. WorkflowExecution controller updates status to "Completed" or "Failed"
+6. RemediationExecution controller watches PipelineRun status
+7. RemediationExecution controller writes action records to Data Storage Service
+8. RemediationExecution controller updates status to "Completed" or "Failed"
 
 **Latency**: Varies (action-dependent, typically 15-120 seconds)
 
@@ -1362,7 +1362,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 
 ---
 
-### 5. Approval Workflow (AIAnalysis → AIApprovalRequest → NotificationRequest)
+### 5. Approval Remediation (AIAnalysis → AIApprovalRequest → NotificationRequest)
 
 **Flow**: AIAnalysis creates AIApprovalRequest → RemediationOrchestrator creates NotificationRequest → Operator approves → AIAnalysis proceeds
 
@@ -1376,7 +1376,7 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 7. Operator approves or rejects (via kubectl, dashboard, or notification button)
 8. AIApprovalRequest CRD updated with decision
 9. AIAnalysis controller watches AIApprovalRequest → updates status to "Ready" or "Rejected"
-10. RemediationOrchestrator watches AIAnalysis status → creates WorkflowExecution CRD (if approved) or NotificationRequest CRD (if rejected)
+10. RemediationOrchestrator watches AIAnalysis status → creates RemediationExecution CRD (if approved) or NotificationRequest CRD (if rejected)
 
 **Latency**: Human-dependent (minutes to hours)
 
@@ -1415,7 +1415,7 @@ func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) e
         For(&remediationv1.RemediationRequest{}).
         Owns(&processingv1.SignalProcessing{}).
         Owns(&aianalysisv1.AIAnalysis{}).
-        Owns(&workflowv1.WorkflowExecution{}).
+        Owns(&workflowv1.RemediationExecution{}).
         Owns(&notificationv1.NotificationRequest{}).
         Complete(r)
 }
@@ -1466,7 +1466,7 @@ func (r *RemediationOrchestratorReconciler) createSignalProcessing(
                 Resource:  remediation.Spec.Resource,
             },
             IsRecoveryAttempt: remediation.Spec.IsRecoveryAttempt,
-            FailedWorkflowRef: remediation.Spec.FailedWorkflowRef,
+            FailedRemediationRef: remediation.Spec.FailedRemediationRef,
         },
     }
 
@@ -1683,7 +1683,7 @@ rules:
   resources: ["notificationrequests/status"]
   verbs: ["get", "update", "patch"]
 
-# Tekton Pipelines (for WorkflowExecution controller)
+# Tekton Pipelines (for RemediationExecution controller)
 - apiGroups: ["tekton.dev"]
   resources: ["pipelineruns", "taskruns"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
@@ -1708,19 +1708,19 @@ roleRef:
 
 ### ServiceAccount Patterns (Dynamic Creation for Tekton)
 
-**Pattern**: WorkflowExecution controller dynamically creates ServiceAccounts for each Tekton PipelineRun.
+**Pattern**: RemediationExecution controller dynamically creates ServiceAccounts for each Tekton PipelineRun.
 
 **Benefits**:
 - ✅ **99.9% attack surface reduction** vs pre-creating all SAs
 - ✅ **Isolation**: Each PipelineRun has dedicated SA with specific permissions
 - ✅ **Automatic Cleanup**: OwnerReferences delete SA when PipelineRun completes
 
-**Implementation** (WorkflowExecution controller):
+**Implementation** (RemediationExecution controller):
 
 ```go
-func (r *WorkflowExecutionReconciler) createServiceAccountForPipeline(
+func (r *RemediationExecutionReconciler) createServiceAccountForPipeline(
     ctx context.Context,
-    workflow *workflowv1.WorkflowExecution,
+    workflow *workflowv1.RemediationExecution,
     pipelineRun *tektonv1.PipelineRun,
 ) error {
     sa := &corev1.ServiceAccount{
@@ -1805,7 +1805,7 @@ func (r *WorkflowExecutionReconciler) createServiceAccountForPipeline(
 
 **Tekton PipelineRun Scalability**:
 - **Parallel Execution**: Max 5 concurrent TaskRuns per PipelineRun (configurable)
-- **Complexity Approval**: Workflows with >10 total steps require manual approval
+- **Complexity Approval**: Playbooks with >10 total steps require manual approval
 
 **Source**: [ADR-020](decisions/ADR-020-workflow-parallel-execution-limits.md)
 
@@ -1825,7 +1825,7 @@ controller_runtime_reconcile_time_seconds{controller="remediationorchestrator"}
 kubernaut_remediationrequest_phase_total{phase="Pending|Processing|Analyzing|Executing|Completed|Failed"}
 kubernaut_remediationrequest_duration_seconds{phase="Processing|Analyzing|Executing"}
 
-# Workflow Execution Metrics
+# Remediation Execution Metrics
 kubernaut_workflow_steps_total{workflow_type="multi-step-remediation"}
 kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 ```
