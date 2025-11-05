@@ -250,7 +250,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 
 				// CORRECTNESS: Insufficient data flags
 				Expect(result.TotalExecutions).To(Equal(3))
-				Expect(result.MinSamplesMet).To(BeFalse())            // 3 < 5
+				Expect(result.MinSamplesMet).To(BeFalse())               // 3 < 5
 				Expect(result.Confidence).To(Equal("insufficient_data")) // <5 samples
 
 				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
@@ -488,7 +488,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 
 				// CORRECTNESS: Insufficient data handling
 				Expect(result.TotalExecutions).To(Equal(2))
-				Expect(result.MinSamplesMet).To(BeFalse())            // 2 < 5
+				Expect(result.MinSamplesMet).To(BeFalse()) // 2 < 5
 				Expect(result.Confidence).To(Equal("insufficient_data"))
 
 				Expect(sqlMock.ExpectationsWereMet()).To(Succeed())
@@ -496,4 +496,3 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 		})
 	})
 })
-

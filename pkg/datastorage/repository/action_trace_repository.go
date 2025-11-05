@@ -13,8 +13,8 @@ import (
 
 // ========================================
 // ACTION TRACE REPOSITORY (TDD GREEN Phase)
-// 📋 Authority: IMPLEMENTATION_PLAN_V5.0.md Day 13.1
-// 📋 Tests: test/unit/datastorage/repository_adr033_test.go
+// 📋 Authority: test/unit/datastorage/repository_adr033_test.go
+// 📋 Tests Define Contract: Unit tests drive implementation
 // ========================================
 //
 // This file implements ADR-033 multi-dimensional success tracking repository methods.
@@ -68,7 +68,7 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 
 	// Main aggregation query
 	query := `
-		SELECT
+		SELECT 
 			incident_type,
 			COUNT(*) as total_executions,
 			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_executions,
@@ -94,7 +94,7 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 	)
 
 	if err == sql.ErrNoRows {
-		// No data found - return response with zero values (TDD REFACTOR: use constant)
+		// No data found - return response with zero values
 		return &models.IncidentTypeSuccessRateResponse{
 			IncidentType:         incidentType,
 			TimeRange:            formatDuration(duration),
@@ -115,7 +115,7 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 		return nil, fmt.Errorf("failed to query incident-type success rate: %w", err)
 	}
 
-	// Calculate success rate using helper (TDD REFACTOR: extracted duplicate logic)
+	// Calculate success rate using helper
 	successRate := calculateSuccessRatePercentage(successfulExecutions, totalExecutions)
 
 	// Determine confidence level based on sample size
@@ -174,7 +174,7 @@ func (r *ActionTraceRepository) getPlaybookBreakdownForIncidentType(
 	sinceTime time.Time,
 ) ([]models.PlaybookBreakdownItem, error) {
 	query := `
-		SELECT
+		SELECT 
 			playbook_id,
 			playbook_version,
 			COUNT(*) as executions,
@@ -217,7 +217,7 @@ func (r *ActionTraceRepository) getAIExecutionModeForIncidentType(
 	sinceTime time.Time,
 ) (*models.AIExecutionModeStats, error) {
 	query := `
-		SELECT
+		SELECT 
 			COUNT(CASE WHEN ai_selected_playbook = true THEN 1 END) as catalog_selected,
 			COUNT(CASE WHEN ai_chained_playbooks = true THEN 1 END) as chained,
 			COUNT(CASE WHEN ai_manual_escalation = true THEN 1 END) as manual_escalation
@@ -263,7 +263,7 @@ func (r *ActionTraceRepository) GetSuccessRateByPlaybook(
 
 	// Main aggregation query
 	query := `
-		SELECT
+		SELECT 
 			playbook_id,
 			playbook_version,
 			COUNT(*) as total_executions,
@@ -293,7 +293,7 @@ func (r *ActionTraceRepository) GetSuccessRateByPlaybook(
 	)
 
 	if err == sql.ErrNoRows {
-		// No data found (TDD REFACTOR: use constant)
+		// No data found
 		return &models.PlaybookSuccessRateResponse{
 			PlaybookID:              playbookID,
 			PlaybookVersion:         playbookVersion,
@@ -316,7 +316,7 @@ func (r *ActionTraceRepository) GetSuccessRateByPlaybook(
 		return nil, fmt.Errorf("failed to query playbook success rate: %w", err)
 	}
 
-	// Calculate success rate using helper (TDD REFACTOR: extracted duplicate logic)
+	// Calculate success rate using helper
 	successRate := calculateSuccessRatePercentage(successfulExecutions, totalExecutions)
 
 	// Determine confidence level
@@ -376,7 +376,7 @@ func (r *ActionTraceRepository) getIncidentTypeBreakdownForPlaybook(
 	sinceTime time.Time,
 ) ([]models.IncidentTypeBreakdownItem, error) {
 	query := `
-		SELECT
+		SELECT 
 			incident_type,
 			COUNT(*) as executions,
 			CAST(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) as success_rate
@@ -420,7 +420,7 @@ func (r *ActionTraceRepository) getAIExecutionModeForPlaybook(
 	sinceTime time.Time,
 ) (*models.AIExecutionModeStats, error) {
 	query := `
-		SELECT
+		SELECT 
 			COUNT(CASE WHEN ai_selected_playbook = true THEN 1 END) as catalog_selected,
 			COUNT(CASE WHEN ai_chained_playbooks = true THEN 1 END) as chained,
 			COUNT(CASE WHEN ai_manual_escalation = true THEN 1 END) as manual_escalation
@@ -458,9 +458,9 @@ const (
 
 // Confidence level labels
 const (
-	confidenceHigh           = "high"
-	confidenceMedium         = "medium"
-	confidenceLow            = "low"
+	confidenceHigh             = "high"
+	confidenceMedium           = "medium"
+	confidenceLow              = "low"
 	confidenceInsufficientData = "insufficient_data"
 )
 
