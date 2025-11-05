@@ -21,10 +21,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
 
@@ -48,15 +51,25 @@ import (
 
 var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	var (
-		handler *server.Handler
-		req     *http.Request
-		rec     *httptest.ResponseRecorder
+		handler     *server.Handler
+		req         *http.Request
+		rec         *httptest.ResponseRecorder
+		mockDB      sqlmock.Sqlmock
+		repo        *repository.ActionTraceRepository
+		logger      *zap.Logger
 	)
 
 	BeforeEach(func() {
-		// Create handler with minimal setup for TDD GREEN phase
-		// TODO: Add ActionTraceRepository when repository integration is needed
-		handler = server.NewHandler(nil) // nil DB is fine for now (handlers don't use it yet)
+		// Create mock database and repository for unit tests
+		db, mock, err := sqlmock.New()
+		Expect(err).ToNot(HaveOccurred())
+		mockDB = mock
+
+		logger = zap.NewNop()
+		repo = repository.NewActionTraceRepository(db, logger)
+
+		// Create handler with mock repository
+		handler = server.NewHandler(nil, server.WithActionTraceRepository(repo))
 		rec = httptest.NewRecorder()
 	})
 
@@ -68,6 +81,12 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	Describe("GET /api/v1/success-rate/incident-type", func() {
 		Context("with valid query parameters", func() {
 			It("should return 200 OK with incident-type success rate data", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"incident_type", "total_executions", "successful_executions", "failed_executions"}).
+					AddRow("HighCPUUsage", 100, 90, 10)
+				mockDB.ExpectQuery(`SELECT incident_type, COUNT\(\*\) as total_executions`).
+					WillReturnRows(rows)
+
 				// ARRANGE: Create HTTP request with valid params
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -564,11 +583,17 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 	// ========================================
 	// BR-STORAGE-031-05: Multi-Dimensional Success Rate Handler
-	// TDD RED Phase: Write failing tests for HandleGetSuccessRateMultiDimensional
+	// TDD GREEN Phase: Mock database responses for multi-dimensional queries
 	// ========================================
 	Describe("HandleGetSuccessRateMultiDimensional", func() {
 		Context("with all three dimensions specified", func() {
 			It("should return 200 OK with multi-dimensional success rate data", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
+					AddRow(50, 45, 5)
+				mockDB.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WillReturnRows(rows)
+
 				// ARRANGE: Create HTTP request with all dimensions
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -595,11 +620,19 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				Expect(response.Dimensions.PlaybookVersion).To(Equal("v1.2"))
 				Expect(response.Dimensions.ActionType).To(Equal("increase_memory"))
 				Expect(response.TimeRange).To(Equal("7d"))
+
+				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
 			})
 		})
 
 		Context("with partial dimensions (incident_type + playbook only)", func() {
 			It("should return 200 OK with aggregated data across all action_types", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
+					AddRow(30, 27, 3)
+				mockDB.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WillReturnRows(rows)
+
 				// ARRANGE: Create HTTP request with partial dimensions
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -619,6 +652,8 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
 				Expect(response.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
 				Expect(response.Dimensions.ActionType).To(BeEmpty())
+
+				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
 			})
 		})
 
@@ -708,6 +743,12 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 		Context("defaults", func() {
 			It("should default to 7d time_range when not specified", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
+					AddRow(20, 18, 2)
+				mockDB.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WillReturnRows(rows)
+
 				// ARRANGE: Create HTTP request without time_range
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -725,9 +766,17 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				var result models.MultiDimensionalSuccessRateResponse
 				json.Unmarshal(rec.Body.Bytes(), &result)
 				Expect(result.TimeRange).To(Equal("7d"))
+
+				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
 			})
 
 			It("should default to 5 min_samples when not specified", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
+					AddRow(3, 2, 1)
+				mockDB.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WillReturnRows(rows)
+
 				// ARRANGE: Create HTTP request without min_samples
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -744,12 +793,21 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// BEHAVIOR: min_samples defaults to 5 (used in confidence calculation)
 				var result models.MultiDimensionalSuccessRateResponse
 				json.Unmarshal(rec.Body.Bytes(), &result)
-				// Response will reflect default min_samples behavior
+				// Response will reflect default min_samples behavior (3 < 5 = insufficient_data)
+				Expect(result.Confidence).To(Equal("insufficient_data"))
+
+				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
 			})
 		})
 
 		Context("edge cases", func() {
 			It("should handle special characters in incident_type", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
+					AddRow(15, 14, 1)
+				mockDB.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WillReturnRows(rows)
+
 				// BEHAVIOR: Special characters should be URL-encoded and decoded
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -765,9 +823,17 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				var response models.MultiDimensionalSuccessRateResponse
 				json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer/high-memory"))
+
+				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
 			})
 
 			It("should handle large min_samples value", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
+					AddRow(50, 48, 2)
+				mockDB.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WillReturnRows(rows)
+
 				// BEHAVIOR: Large min_samples values should be accepted
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -779,9 +845,17 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				Expect(rec.Code).To(Equal(http.StatusOK),
 					"Large min_samples values should be accepted")
+
+				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
 			})
 
 			It("should handle query parameter order independence", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
+					AddRow(40, 36, 4)
+				mockDB.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WillReturnRows(rows)
+
 				// BEHAVIOR: Parameter order should not affect response
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -800,9 +874,17 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				Expect(response.Dimensions.PlaybookID).To(Equal("pod-oom-recovery"))
 				Expect(response.Dimensions.PlaybookVersion).To(Equal("v1.2"))
 				Expect(response.Dimensions.ActionType).To(Equal("increase_memory"))
+
+				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
 			})
 
 			It("should handle case-sensitive incident_type", func() {
+				// ARRANGE: Mock database response
+				rows := sqlmock.NewRows([]string{"total_executions", "successful_executions", "failed_executions"}).
+					AddRow(25, 23, 2)
+				mockDB.ExpectQuery(`SELECT COUNT\(\*\) AS total_executions`).
+					WillReturnRows(rows)
+
 				// BEHAVIOR: Incident type should be case-sensitive
 				req = httptest.NewRequest(
 					http.MethodGet,
@@ -818,6 +900,8 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				var response models.MultiDimensionalSuccessRateResponse
 				json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.Dimensions.IncidentType).To(Equal("Pod-OOM-Killer"))
+
+				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
 			})
 		})
 	})
