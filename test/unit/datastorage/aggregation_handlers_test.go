@@ -209,25 +209,6 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				Expect(rec.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"))
 			})
 		})
-
-		Context("when repository returns error", func() {
-			It("should return 500 Internal Server Error", func() {
-				// ARRANGE: Mock repository to return error
-				// TODO: Configure mock to return error in TDD GREEN phase
-				req = httptest.NewRequest(
-					http.MethodGet,
-					"/api/v1/success-rate/incident-type?incident_type=HighCPUUsage",
-					nil,
-				)
-
-				// ACT: Call handler
-				handler.HandleGetSuccessRateByIncidentType(rec, req)
-
-				// ASSERT: HTTP 500 Internal Server Error
-				// (This test will be skipped until mock is configured)
-				Skip("Requires mock repository configuration")
-			})
-		})
 	})
 
 	// ========================================
