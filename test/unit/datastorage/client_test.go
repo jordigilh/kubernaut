@@ -88,7 +88,7 @@ var _ = Describe("DataStorageClient", func() {
 		It("should successfully list incidents with proper headers", func() {
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				Expect(r.URL.Path).To(Equal("/api/v1/incidents"))
-				
+
 				// CORRECTNESS: X-Request-ID is UUID format (not just non-empty)
 				requestID := r.Header.Get("X-Request-ID")
 				Expect(requestID).ToNot(BeEmpty(), "X-Request-ID should be present")
@@ -178,16 +178,16 @@ var _ = Describe("DataStorageClient", func() {
 				BaseURL: server.URL,
 			})
 
-		// ACT: Get incident by ID
-		incident, err := dsClient.GetIncidentByID(ctx, 123)
+			// ACT: Get incident by ID
+			incident, err := dsClient.GetIncidentByID(ctx, 123)
 
-		// CORRECTNESS: Request succeeds
-		Expect(err).ToNot(HaveOccurred(), "GetIncidentByID should succeed")
+			// CORRECTNESS: Request succeeds
+			Expect(err).ToNot(HaveOccurred(), "GetIncidentByID should succeed")
 
-		// CORRECTNESS: Incident is non-nil with all expected fields
-		Expect(incident).ToNot(BeNil(), "Incident should be non-nil")
-		Expect(incident.Id).To(Equal(int64(123)), "Incident ID should match requested ID")
-		Expect(incident.SignalName).To(Equal("test-alert"), "Signal name should match response")
+			// CORRECTNESS: Incident is non-nil with all expected fields
+			Expect(incident).ToNot(BeNil(), "Incident should be non-nil")
+			Expect(incident.Id).To(Equal(int64(123)), "Incident ID should match requested ID")
+			Expect(incident.SignalName).To(Equal("test-alert"), "Signal name should match response")
 		})
 
 		It("should return nil for non-existent incident", func() {
