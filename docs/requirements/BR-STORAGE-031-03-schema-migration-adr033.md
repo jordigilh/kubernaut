@@ -1,10 +1,10 @@
 # BR-STORAGE-031-03: Schema Migration for ADR-033 Multi-Dimensional Tracking
 
-**Business Requirement ID**: BR-STORAGE-031-03  
-**Category**: Data Storage Service  
-**Priority**: P0  
-**Target Version**: V1  
-**Status**: ✅ Approved  
+**Business Requirement ID**: BR-STORAGE-031-03
+**Category**: Data Storage Service
+**Priority**: P0
+**Target Version**: V1
+**Status**: ✅ Approved
 **Date**: November 5, 2025
 
 ---
@@ -390,11 +390,11 @@ type NotificationAudit struct {
 
 ## ✅ **Approval**
 
-**Status**: ✅ **APPROVED FOR V1**  
-**Date**: November 5, 2025  
-**Decision**: Implement as P0 priority (foundation for all ADR-033 features)  
-**Rationale**: Required for all other BR-STORAGE-031-XX requirements  
-**Approved By**: Architecture Team  
+**Status**: ✅ **APPROVED FOR V1**
+**Date**: November 5, 2025
+**Decision**: Implement as P0 priority (foundation for all ADR-033 features)
+**Rationale**: Required for all other BR-STORAGE-031-XX requirements
+**Approved By**: Architecture Team
 **Related ADR**: [ADR-033: Remediation Playbook Catalog](../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
 
 ---
@@ -415,7 +415,7 @@ type NotificationAudit struct {
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 5, 2025  
+**Document Version**: 1.0
+**Last Updated**: November 5, 2025
 **Status**: ✅ Approved for V1 Implementation
 
