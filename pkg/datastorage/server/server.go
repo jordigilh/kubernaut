@@ -233,11 +233,12 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/incidents/aggregate/by-severity", s.handler.AggregateBySeverity)
 		r.Get("/incidents/aggregate/trend", s.handler.AggregateIncidentTrend)
 
-		// BR-STORAGE-031-01, BR-STORAGE-031-02: ADR-033 Multi-dimensional Success Tracking (READ API)
-		r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)
-		r.Get("/success-rate/playbook", s.handler.HandleGetSuccessRateByPlaybook)
+	// BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-05: ADR-033 Multi-dimensional Success Tracking (READ API)
+	r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)
+	r.Get("/success-rate/playbook", s.handler.HandleGetSuccessRateByPlaybook)
+	r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)
 
-		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
+	// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
 		s.logger.Debug("Registering POST /api/v1/audit/notifications handler")
 		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
 	})
