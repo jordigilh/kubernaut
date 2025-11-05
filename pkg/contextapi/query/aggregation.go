@@ -55,10 +55,43 @@ func NewAggregationService(
 }
 
 // ========================================
+// TDD REFACTOR: Helper Functions
+// ========================================
+
+// getCachedResult attempts to retrieve and unmarshal cached data
+func (s *AggregationService) getCachedResult(ctx context.Context, cacheKey string, result interface{}) (bool, error) {
+	cachedBytes, err := s.cache.Get(ctx, cacheKey)
+	if err != nil || cachedBytes == nil {
+		return false, nil
+	}
+
+	if err := json.Unmarshal(cachedBytes, result); err != nil {
+		s.logger.Warn("Cache unmarshal error", zap.String("key", cacheKey), zap.Error(err))
+		return false, nil
+	}
+
+	s.logger.Debug("Cache hit", zap.String("key", cacheKey))
+	return true, nil
+}
+
+// setCachedResult stores result in cache with error logging
+func (s *AggregationService) setCachedResult(ctx context.Context, cacheKey string, result interface{}) {
+	if err := s.cache.Set(ctx, cacheKey, result); err != nil {
+		s.logger.Warn("Cache set error", zap.String("key", cacheKey), zap.Error(err))
+	}
+}
+
+// logCacheMiss logs cache miss with structured fields
+func (s *AggregationService) logCacheMiss(fields ...zap.Field) {
+	s.logger.Debug("Cache miss - calling Data Storage Service", fields...)
+}
+
+// ========================================
 // BR-INTEGRATION-008: Incident-Type Success Rate
 // ========================================
 
 // GetSuccessRateByIncidentType retrieves success rate for a specific incident type with caching
+// TDD REFACTOR: Extracted cache operations to helper functions
 func (s *AggregationService) GetSuccessRateByIncidentType(
 	ctx context.Context,
 	incidentType string,
@@ -73,30 +106,29 @@ func (s *AggregationService) GetSuccessRateByIncidentType(
 	// Build cache key
 	cacheKey := fmt.Sprintf("incident_type:%s:%s:%d", incidentType, timeRange, minSamples)
 
-	// Check cache first
-	cachedBytes, err := s.cache.Get(ctx, cacheKey)
-	if err == nil && cachedBytes != nil {
-		var cachedResult dsmodels.IncidentTypeSuccessRateResponse
-		if err := json.Unmarshal(cachedBytes, &cachedResult); err == nil {
-			s.logger.Debug("Cache hit", zap.String("key", cacheKey))
-			return &cachedResult, nil
-		}
+	// Check cache first (REFACTOR: using helper)
+	var cachedResult dsmodels.IncidentTypeSuccessRateResponse
+	if found, _ := s.getCachedResult(ctx, cacheKey, &cachedResult); found {
+		return &cachedResult, nil
 	}
 
-	// Cache miss - call Data Storage Service
-	s.logger.Debug("Cache miss - calling Data Storage Service",
+	// Cache miss - call Data Storage Service (REFACTOR: using helper)
+	s.logCacheMiss(
 		zap.String("incident_type", incidentType),
-		zap.String("time_range", timeRange))
+		zap.String("time_range", timeRange),
+		zap.Int("min_samples", minSamples))
 
 	result, err := s.dataStorageClient.GetSuccessRateByIncidentType(ctx, incidentType, timeRange, minSamples)
 	if err != nil {
+		s.logger.Error("Data Storage Service error",
+			zap.String("method", "GetSuccessRateByIncidentType"),
+			zap.String("incident_type", incidentType),
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to get success rate from Data Storage: %w", err)
 	}
 
-	// Store in cache
-	if err := s.cache.Set(ctx, cacheKey, result); err != nil {
-		s.logger.Warn("Cache set error", zap.String("key", cacheKey), zap.Error(err))
-	}
+	// Store in cache (REFACTOR: using helper)
+	s.setCachedResult(ctx, cacheKey, result)
 
 	return result, nil
 }
@@ -106,6 +138,7 @@ func (s *AggregationService) GetSuccessRateByIncidentType(
 // ========================================
 
 // GetSuccessRateByPlaybook retrieves success rate for a specific playbook with caching
+// TDD REFACTOR: Extracted cache operations to helper functions
 func (s *AggregationService) GetSuccessRateByPlaybook(
 	ctx context.Context,
 	playbookID string,
@@ -121,30 +154,31 @@ func (s *AggregationService) GetSuccessRateByPlaybook(
 	// Build cache key
 	cacheKey := fmt.Sprintf("playbook:%s:%s:%s:%d", playbookID, playbookVersion, timeRange, minSamples)
 
-	// Check cache first
-	cachedBytes, err := s.cache.Get(ctx, cacheKey)
-	if err == nil && cachedBytes != nil {
-		var cachedResult dsmodels.PlaybookSuccessRateResponse
-		if err := json.Unmarshal(cachedBytes, &cachedResult); err == nil {
-			s.logger.Debug("Cache hit", zap.String("key", cacheKey))
-			return &cachedResult, nil
-		}
+	// Check cache first (REFACTOR: using helper)
+	var cachedResult dsmodels.PlaybookSuccessRateResponse
+	if found, _ := s.getCachedResult(ctx, cacheKey, &cachedResult); found {
+		return &cachedResult, nil
 	}
 
-	// Cache miss - call Data Storage Service
-	s.logger.Debug("Cache miss - calling Data Storage Service",
+	// Cache miss - call Data Storage Service (REFACTOR: using helper)
+	s.logCacheMiss(
 		zap.String("playbook_id", playbookID),
-		zap.String("playbook_version", playbookVersion))
+		zap.String("playbook_version", playbookVersion),
+		zap.String("time_range", timeRange),
+		zap.Int("min_samples", minSamples))
 
 	result, err := s.dataStorageClient.GetSuccessRateByPlaybook(ctx, playbookID, playbookVersion, timeRange, minSamples)
 	if err != nil {
+		s.logger.Error("Data Storage Service error",
+			zap.String("method", "GetSuccessRateByPlaybook"),
+			zap.String("playbook_id", playbookID),
+			zap.String("playbook_version", playbookVersion),
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to get playbook success rate from Data Storage: %w", err)
 	}
 
-	// Store in cache
-	if err := s.cache.Set(ctx, cacheKey, result); err != nil {
-		s.logger.Warn("Cache set error", zap.String("key", cacheKey), zap.Error(err))
-	}
+	// Store in cache (REFACTOR: using helper)
+	s.setCachedResult(ctx, cacheKey, result)
 
 	return result, nil
 }
@@ -154,6 +188,7 @@ func (s *AggregationService) GetSuccessRateByPlaybook(
 // ========================================
 
 // GetSuccessRateMultiDimensional retrieves success rate across multiple dimensions with caching
+// TDD REFACTOR: Extracted cache operations to helper functions
 func (s *AggregationService) GetSuccessRateMultiDimensional(
 	ctx context.Context,
 	query *datastorage.MultiDimensionalQuery,
@@ -172,31 +207,34 @@ func (s *AggregationService) GetSuccessRateMultiDimensional(
 		query.TimeRange,
 		query.MinSamples)
 
-	// Check cache first
-	cachedBytes, err := s.cache.Get(ctx, cacheKey)
-	if err == nil && cachedBytes != nil {
-		var cachedResult dsmodels.MultiDimensionalSuccessRateResponse
-		if err := json.Unmarshal(cachedBytes, &cachedResult); err == nil {
-			s.logger.Debug("Cache hit", zap.String("key", cacheKey))
-			return &cachedResult, nil
-		}
+	// Check cache first (REFACTOR: using helper)
+	var cachedResult dsmodels.MultiDimensionalSuccessRateResponse
+	if found, _ := s.getCachedResult(ctx, cacheKey, &cachedResult); found {
+		return &cachedResult, nil
 	}
 
-	// Cache miss - call Data Storage Service
-	s.logger.Debug("Cache miss - calling Data Storage Service",
+	// Cache miss - call Data Storage Service (REFACTOR: using helper)
+	s.logCacheMiss(
 		zap.String("incident_type", query.IncidentType),
 		zap.String("playbook_id", query.PlaybookID),
-		zap.String("action_type", query.ActionType))
+		zap.String("playbook_version", query.PlaybookVersion),
+		zap.String("action_type", query.ActionType),
+		zap.String("time_range", query.TimeRange),
+		zap.Int("min_samples", query.MinSamples))
 
 	result, err := s.dataStorageClient.GetSuccessRateMultiDimensional(ctx, query)
 	if err != nil {
+		s.logger.Error("Data Storage Service error",
+			zap.String("method", "GetSuccessRateMultiDimensional"),
+			zap.String("incident_type", query.IncidentType),
+			zap.String("playbook_id", query.PlaybookID),
+			zap.String("action_type", query.ActionType),
+			zap.Error(err))
 		return nil, fmt.Errorf("failed to get multi-dimensional success rate from Data Storage: %w", err)
 	}
 
-	// Store in cache
-	if err := s.cache.Set(ctx, cacheKey, result); err != nil {
-		s.logger.Warn("Cache set error", zap.String("key", cacheKey), zap.Error(err))
-	}
+	// Store in cache (REFACTOR: using helper)
+	s.setCachedResult(ctx, cacheKey, result)
 
 	return result, nil
 }

@@ -26,7 +26,15 @@ import (
 // ADR-032: No direct PostgreSQL access from Context API
 //
 // TDD GREEN Phase: Minimal implementation to pass unit tests
+// TDD REFACTOR Phase: Extract constants, improve error handling
 // ========================================
+
+// Retry configuration constants
+const (
+	maxRetries        = 3
+	initialRetryDelay = 100 * time.Millisecond
+	retryBackoffFactor = 2
+)
 
 // Client is an HTTP client for Data Storage Service REST API
 type Client struct {
@@ -202,9 +210,9 @@ func (c *Client) GetSuccessRateMultiDimensional(
 // ========================================
 
 // doRequestWithRetry makes HTTP request with retry logic for 503 errors
+// TDD REFACTOR: Use constants for retry configuration
 func (c *Client) doRequestWithRetry(ctx context.Context, method, url string, result interface{}) error {
-	maxRetries := 3
-	retryDelay := 100 * time.Millisecond
+	retryDelay := initialRetryDelay
 
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
@@ -216,24 +224,44 @@ func (c *Client) doRequestWithRetry(ctx context.Context, method, url string, res
 		lastErr = err
 
 		// Retry only on 503 Service Unavailable
-		if strings.Contains(err.Error(), "503") && attempt < maxRetries {
-			c.logger.Warn("Retrying request after 503 error",
+		if c.isRetryableError(err) && attempt < maxRetries {
+			c.logger.Warn("Retrying request after retryable error",
 				zap.String("url", url),
+				zap.String("method", method),
 				zap.Int("attempt", attempt),
-				zap.Duration("delay", retryDelay))
+				zap.Int("max_retries", maxRetries),
+				zap.Duration("delay", retryDelay),
+				zap.Error(err))
 			time.Sleep(retryDelay)
-			retryDelay *= 2 // Exponential backoff
+			retryDelay *= retryBackoffFactor // Exponential backoff
 			continue
 		}
 
 		// Don't retry for other errors
+		c.logger.Error("Non-retryable error",
+			zap.String("url", url),
+			zap.String("method", method),
+			zap.Int("attempt", attempt),
+			zap.Error(err))
 		return err
 	}
 
+	c.logger.Error("Max retries exceeded",
+		zap.String("url", url),
+		zap.String("method", method),
+		zap.Int("max_retries", maxRetries),
+		zap.Error(lastErr))
 	return lastErr
 }
 
+// isRetryableError determines if an error should trigger a retry
+// TDD REFACTOR: Extracted retry logic
+func (c *Client) isRetryableError(err error) bool {
+	return strings.Contains(err.Error(), "503")
+}
+
 // doRequest makes a single HTTP request
+// TDD REFACTOR: Extracted error parsing to helper function
 func (c *Client) doRequest(ctx context.Context, method, url string, result interface{}) error {
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
@@ -248,8 +276,16 @@ func (c *Client) doRequest(ctx context.Context, method, url string, result inter
 	if err != nil {
 		// Check if context was cancelled
 		if ctx.Err() != nil {
+			c.logger.Warn("Request cancelled",
+				zap.String("url", url),
+				zap.String("method", method),
+				zap.Error(ctx.Err()))
 			return fmt.Errorf("request cancelled: %w", ctx.Err())
 		}
+		c.logger.Error("HTTP request failed",
+			zap.String("url", url),
+			zap.String("method", method),
+			zap.Error(err))
 		return fmt.Errorf("HTTP request failed (connection error): %w", err)
 	}
 	defer resp.Body.Close()
@@ -257,27 +293,53 @@ func (c *Client) doRequest(ctx context.Context, method, url string, result inter
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		c.logger.Error("Failed to read response body",
+			zap.String("url", url),
+			zap.Int("status_code", resp.StatusCode),
+			zap.Error(err))
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	// Check HTTP status code
 	if resp.StatusCode != http.StatusOK {
-		// Try to parse RFC 7807 error response
-		var problemDetails map[string]interface{}
-		if json.Unmarshal(body, &problemDetails) == nil {
-			if problemType, ok := problemDetails["type"].(string); ok {
-				return fmt.Errorf("Data Storage API error (HTTP %d): %s - %v",
-					resp.StatusCode, problemType, problemDetails["detail"])
-			}
-		}
-		return fmt.Errorf("Data Storage API error (HTTP %d): %s", resp.StatusCode, string(body))
+		return c.parseErrorResponse(resp.StatusCode, body, url)
 	}
 
 	// Parse JSON response
 	if err := json.Unmarshal(body, result); err != nil {
+		c.logger.Error("Failed to parse JSON response",
+			zap.String("url", url),
+			zap.Int("status_code", resp.StatusCode),
+			zap.Error(err))
 		return fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	return nil
+}
+
+// parseErrorResponse parses RFC 7807 error responses
+// TDD REFACTOR: Extracted RFC 7807 error parsing
+func (c *Client) parseErrorResponse(statusCode int, body []byte, url string) error {
+	// Try to parse RFC 7807 error response
+	var problemDetails map[string]interface{}
+	if json.Unmarshal(body, &problemDetails) == nil {
+		if problemType, ok := problemDetails["type"].(string); ok {
+			detail := problemDetails["detail"]
+			c.logger.Error("Data Storage API error (RFC 7807)",
+				zap.String("url", url),
+				zap.Int("status_code", statusCode),
+				zap.String("problem_type", problemType),
+				zap.Any("detail", detail))
+			return fmt.Errorf("Data Storage API error (HTTP %d): %s - %v",
+				statusCode, problemType, detail)
+		}
+	}
+
+	// Fallback to plain error message
+	c.logger.Error("Data Storage API error",
+		zap.String("url", url),
+		zap.Int("status_code", statusCode),
+		zap.String("body", string(body)))
+	return fmt.Errorf("Data Storage API error (HTTP %d): %s", statusCode, string(body))
 }
 
