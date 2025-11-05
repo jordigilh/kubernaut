@@ -60,18 +60,18 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", fu
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-		Expect(resp.StatusCode).To(Equal(503),
-			"Readiness probe MUST return 503 during shutdown to trigger Kubernetes endpoint removal (DD-007 STEP 1)")
+			Expect(resp.StatusCode).To(Equal(503),
+				"Readiness probe MUST return 503 during shutdown to trigger Kubernetes endpoint removal (DD-007 STEP 1)")
 
-		// Business Outcome 2: Response indicates shutdown status
-		var response models.ReadinessResponse
-		err = json.NewDecoder(resp.Body).Decode(&response)
-		Expect(err).ToNot(HaveOccurred())
+			// Business Outcome 2: Response indicates shutdown status
+			var response models.ReadinessResponse
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(response.Status).To(Equal("not_ready"),
-			"Readiness status MUST indicate not_ready during shutdown")
-		Expect(response.Reason).To(Equal("shutting_down"),
-			"Readiness reason MUST explain shutdown in progress")
+			Expect(response.Status).To(Equal("not_ready"),
+				"Readiness status MUST indicate not_ready during shutdown")
+			Expect(response.Reason).To(Equal("shutting_down"),
+				"Readiness reason MUST explain shutdown in progress")
 
 			// Wait for shutdown to complete
 			err = <-shutdownDone
@@ -684,56 +684,6 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", fu
 		})
 	})
 })
-
-// createTestServerWithAccess creates a test server with access to internal server instance
-// Use this when tests need to call server methods directly (e.g., Shutdown)
-// Pattern adapted from Context API integration tests
-//
-// This creates a new server instance for each test with its own connections
-// to the shared PostgreSQL and Redis infrastructure from suite_test.go
-func createTestServerWithAccess() (*httptest.Server, *server.Server) {
-	// Create server config
-	cfg := &server.Config{
-		Port:         8080,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-	}
-
-	// Connection string for shared PostgreSQL infrastructure
-	// The suite_test.go sets up PostgreSQL at localhost:5433 with password=test_password
-	dbConnStr := "host=localhost port=5433 user=slm_user password=test_password dbname=action_history sslmode=disable"
-
-	// Redis connection details for shared infrastructure
-	// The suite_test.go sets up Redis at localhost:6379 (no password)
-	redisAddr := "localhost:6379"
-	redisPassword := "" // No password in test environment
-
-	// Create server instance (this will create its own DB connection pool)
-	srv, err := server.NewServer(dbConnStr, redisAddr, redisPassword, logger, cfg)
-	Expect(err).ToNot(HaveOccurred(), "Server creation should succeed")
-
-	// Wrap in httptest.Server for HTTP testing
-	httpServer := httptest.NewServer(srv.Handler())
-
-	return httpServer, srv
-}
-
-
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"sync"
-	"time"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-)
 
 // TDD RED PHASE: These tests define DD-007 graceful shutdown requirements
 // DD-007: Kubernetes-Aware Graceful Shutdown Pattern
@@ -779,18 +729,18 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", fu
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-		Expect(resp.StatusCode).To(Equal(503),
-			"Readiness probe MUST return 503 during shutdown to trigger Kubernetes endpoint removal (DD-007 STEP 1)")
+			Expect(resp.StatusCode).To(Equal(503),
+				"Readiness probe MUST return 503 during shutdown to trigger Kubernetes endpoint removal (DD-007 STEP 1)")
 
-		// Business Outcome 2: Response indicates shutdown status
-		var response models.ReadinessResponse
-		err = json.NewDecoder(resp.Body).Decode(&response)
-		Expect(err).ToNot(HaveOccurred())
+			// Business Outcome 2: Response indicates shutdown status
+			var response models.ReadinessResponse
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(response.Status).To(Equal("not_ready"),
-			"Readiness status MUST indicate not_ready during shutdown")
-		Expect(response.Reason).To(Equal("shutting_down"),
-			"Readiness reason MUST explain shutdown in progress")
+			Expect(response.Status).To(Equal("not_ready"),
+				"Readiness status MUST indicate not_ready during shutdown")
+			Expect(response.Reason).To(Equal("shutting_down"),
+				"Readiness reason MUST explain shutdown in progress")
 
 			// Wait for shutdown to complete
 			err = <-shutdownDone
@@ -1436,4 +1386,3 @@ func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 
 	return httpServer, srv
 }
-

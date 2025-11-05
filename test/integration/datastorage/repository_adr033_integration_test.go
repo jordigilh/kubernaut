@@ -2,7 +2,6 @@ package datastorage
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -404,4 +403,3 @@ func findIncidentBreakdown(breakdown []models.IncidentTypeBreakdownItem, inciden
 	}
 	return nil
 }
-
