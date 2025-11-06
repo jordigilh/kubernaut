@@ -119,3 +119,4 @@ TDD-*.md
 # Service binaries (compiled during local development/testing)
 /datastorage
 /contextapi
+PR_DESCRIPTION.md
