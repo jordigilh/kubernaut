@@ -1308,38 +1308,125 @@ GET /metrics
 
 ## Error Responses
 
-### Standard Error Format
+### Standard Error Format (RFC 7807)
 
+Context API uses [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/html/rfc7807) for structured error responses.
+
+**Standard Error Response**:
 ```json
 {
-  "error": {
-    "code": "INVALID_REQUEST",
-    "message": "Missing required parameter: namespace",
-    "details": {
-      "parameter": "namespace",
-      "expected": "string"
-    }
-  },
-  "timestamp": "2025-10-06T10:15:30Z",
-  "path": "/api/v1/context",
-  "correlationId": "req-2025-10-06-abc123"
+  "type": "https://kubernaut.io/problems/invalid-request",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Missing required parameter: namespace"
 }
 ```
 
 ### HTTP Status Codes
 
-| Code | Meaning | Example |
-|------|---------|---------|
-| 200 | Success | Query successful |
-| 400 | Bad Request | Missing required parameter |
-| 401 | Unauthorized | Invalid token |
-| 404 | Not Found | No data found for query |
-| 429 | Too Many Requests | Rate limit exceeded |
-| 500 | Internal Server Error | Database error |
-| 503 | Service Unavailable | Database unavailable |
+| Code | Meaning | Example | Retry Guidance |
+|------|---------|---------|----------------|
+| 200 | Success | Query successful | N/A |
+| 400 | Bad Request | Missing required parameter | Fix request, don't retry |
+| 401 | Unauthorized | Invalid token | Refresh token, retry |
+| 404 | Not Found | No data found for query | Don't retry |
+| 429 | Too Many Requests | Rate limit exceeded | Retry after delay |
+| 500 | Internal Server Error | Database error | Retry with backoff |
+| 503 | Service Unavailable | Data Storage Service unavailable | **Retry after 30s** (see Retry-After header) |
+
+### Service Unavailability (503) - Critical Error Handling
+
+**Scenario**: Data Storage Service is temporarily unavailable
+
+**Response Headers**:
+```
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/problem+json
+Retry-After: 30
+```
+
+**Response Body** (RFC 7807):
+```json
+{
+  "type": "https://kubernaut.io/problems/service-unavailable",
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "Data Storage Service unavailable - please retry"
+}
+```
+
+**Client Behavior**:
+1. **DO NOT** treat as permanent failure
+2. **DO** retry after 30 seconds (per `Retry-After` header)
+3. **DO** implement exponential backoff for repeated failures
+4. **DO** fall back to cached data if available (BR-CONTEXT-010: Graceful degradation)
+
+**Production Impact**: 15-25% of requests during Data Storage Service outages
+
+**Bug Fix (November 6, 2025)**: Previously returned HTTP 500 (Internal Server Error) instead of 503. Now correctly returns 503 with `Retry-After` header for client retry logic.
+
+### Error Response Examples
+
+#### 400 Bad Request - Missing Parameter
+```json
+{
+  "type": "https://kubernaut.io/problems/invalid-request",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Missing required parameter: incident_type"
+}
+```
+
+#### 404 Not Found - No Data
+```json
+{
+  "type": "https://kubernaut.io/problems/not-found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "No data found for incident_type: unknown-incident"
+}
+```
+
+#### 500 Internal Server Error - Unexpected Error
+```json
+{
+  "type": "https://kubernaut.io/problems/internal-server-error",
+  "title": "Internal Server Error",
+  "status": 500,
+  "detail": "failed to retrieve success rate data"
+}
+```
+
+#### 503 Service Unavailable - Upstream Service Down
+```json
+{
+  "type": "https://kubernaut.io/problems/service-unavailable",
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "Data Storage Service unavailable - please retry"
+}
+```
+
+**Headers**:
+```
+Retry-After: 30
+```
+
+### Graceful Degradation (BR-CONTEXT-010)
+
+**Cache Hit During Service Unavailability**:
+- If Redis cache contains valid data, Context API returns **200 OK** with cached data
+- If Redis cache is empty/expired, Context API returns **503 Service Unavailable**
+- Clients should implement retry logic for 503 responses
+
+**Cache Miss Behavior**:
+1. Context API attempts to query Data Storage Service
+2. If Data Storage Service is unavailable → Return 503 with `Retry-After: 30`
+3. If Data Storage Service times out → Return 503 with `Retry-After: 30`
+4. If Data Storage Service returns error → Return 500 with error details
 
 ---
 
 **Document Status**: ✅ Complete
-**Last Updated**: October 6, 2025
-**Version**: 1.0
+**Last Updated**: November 6, 2025
+**Version**: 2.1
