@@ -71,8 +71,8 @@ This PR introduces the **Context API** service - a production-ready, high-perfor
 ## 🐛 Critical Bugs Fixed
 
 ### Production-Critical Bug (Day 12.5)
-**Issue**: Context API returned HTTP 500 instead of 503 when Data Storage Service was unavailable  
-**Impact**: Violated BR-CONTEXT-010 (Graceful degradation) and prevented proper client retry behavior  
+**Issue**: Context API returned HTTP 500 instead of 503 when Data Storage Service was unavailable
+**Impact**: Violated BR-CONTEXT-010 (Graceful degradation) and prevented proper client retry behavior
 **Fix**: Modified `aggregation_handlers.go` to:
 - Detect service unavailability errors (connection refused, timeouts)
 - Return HTTP 503 with RFC 7807 error format
