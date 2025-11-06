@@ -113,33 +113,23 @@ func createContextAPIConfigDir(infra *ContextAPIInfrastructure, writer io.Writer
 
 // createContextAPIConfig creates the config.yaml file for Context API
 func createContextAPIConfig(infra *ContextAPIInfrastructure, cfg *ContextAPIConfig, writer io.Writer) error {
-	configContent := fmt.Sprintf(`# Context API Test Configuration
+	configContent := fmt.Sprintf(`# Context API Test Configuration (ADR-032: No direct DB access)
 server:
   port: %s
+  host: "0.0.0.0"
   read_timeout: 30s
   write_timeout: 30s
-  shutdown_timeout: 10s
-
-redis:
-  address: "localhost:%s"
-  password: ""
-  db: 0
-  pool_size: 10
-
-data_storage:
-  base_url: "http://host.containers.internal:%s"
-  timeout: 30s
-  retry_attempts: 3
-  retry_delay: 1s
 
 cache:
-  ttl: 5m
-  max_entries: 1000
+  redis_addr: "localhost:%s"
+  redis_db: 0
+  lru_size: 1000
+  default_ttl: 5m
 
 logging:
   level: debug
   format: json
-`, cfg.ServicePort, cfg.RedisPort, cfg.DataStoragePort)
+`, cfg.ServicePort, cfg.RedisPort)
 
 	configPath := filepath.Join(infra.ConfigDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
