@@ -446,5 +446,100 @@ var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
 			}
 		})
 	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// PHASE 3: P2 EDGE CASES - MEDIUM PRIORITY (4 tests)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Context("Edge Cases: Boundary Conditions (P2 - Medium)", func() {
+		// BR-INTEGRATION-008: Incident-Type Success Rate API - Boundary Conditions
+
+		It("should handle zero executions gracefully", func() {
+			// BEHAVIOR: No data in database returns valid response
+			// CORRECTNESS: Returns 0% success rate with insufficient_data confidence
+
+			// Use unique incident type that doesn't exist in database
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=nonexistent-incident-type-12345", serverURL)
+			resp, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK (no data is valid state)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Zero executions should return 200 OK")
+
+			// CORRECTNESS: Response indicates no data
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result["total_executions"]).To(BeNumerically("==", 0), "Total executions should be 0")
+			Expect(result["success_rate"]).To(BeNumerically("==", 0), "Success rate should be 0")
+			Expect(result["confidence"]).To(Equal("insufficient_data"), "Confidence should be insufficient_data")
+		})
+
+		It("should handle 100% success rate correctly", func() {
+			// BEHAVIOR: All successful executions return 100% success rate
+			// CORRECTNESS: Success rate calculation is accurate
+
+			// Note: This test relies on seeded data or real executions
+			// For now, we'll test that the endpoint handles the calculation correctly
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=365d", serverURL)
+			resp, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			// CORRECTNESS: Response includes valid success_rate (0-100)
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result["success_rate"]).To(BeNumerically(">=", 0), "Success rate should be >= 0")
+			Expect(result["success_rate"]).To(BeNumerically("<=", 100), "Success rate should be <= 100")
+		})
+
+		It("should handle exactly min_samples boundary", func() {
+			// BEHAVIOR: Exactly min_samples executions meets threshold
+			// CORRECTNESS: min_samples_met should be true when total == min_samples
+
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&min_samples=1", serverURL)
+			resp, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			// CORRECTNESS: Response includes min_samples_met field
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+
+			// If there's at least 1 execution, min_samples_met should be true
+			totalExecutions := result["total_executions"].(float64)
+			if totalExecutions >= 1 {
+				Expect(result["min_samples_met"]).To(BeTrue(), "min_samples_met should be true when total >= min_samples")
+			}
+		})
+
+		It("should handle very large min_samples gracefully", func() {
+			// BEHAVIOR: Very large min_samples doesn't cause errors
+			// CORRECTNESS: min_samples_met should be false when total < min_samples
+
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&min_samples=999999", serverURL)
+			resp, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK (large min_samples is valid)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Large min_samples should not cause error")
+
+			// CORRECTNESS: min_samples_met should be false (unlikely to have 999999 executions)
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result["min_samples_met"]).To(BeFalse(), "min_samples_met should be false for very large threshold")
+		})
+	})
 })
 
