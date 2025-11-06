@@ -126,10 +126,14 @@ cache:
   lru_size: 1000
   default_ttl: 5m
 
+data_storage:
+  base_url: "http://host.containers.internal:%s"
+  timeout: 30s
+
 logging:
   level: debug
   format: json
-`, cfg.ServicePort, cfg.RedisPort)
+`, cfg.ServicePort, cfg.RedisPort, cfg.DataStoragePort)
 
 	configPath := filepath.Join(infra.ConfigDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
