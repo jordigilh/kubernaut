@@ -83,10 +83,10 @@ func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
 			execution_start_time,
 			execution_end_time,
 			execution_duration_ms,
-			alert_name,
-			alert_severity,
-			alert_fingerprint,
-			alert_firing_time,
+			signal_name,
+			signal_severity,
+			signal_fingerprint,
+			signal_firing_time,
 			model_used,
 			model_confidence,
 			action_type,
@@ -112,7 +112,7 @@ func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
 		incident.Name,
 		incident.Severity,
 		incident.AlertFingerprint,
-		incident.StartTime, // alert_firing_time (use start_time as approximation)
+		incident.StartTime, // signal_firing_time (use start_time as approximation)
 		"gpt-4",            // model_used (default for tests)
 		0.9,                // model_confidence (default for tests)
 		incident.ActionType,
