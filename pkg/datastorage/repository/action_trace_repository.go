@@ -606,8 +606,8 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 	sqlQuery := fmt.Sprintf(`
 		SELECT
 			COUNT(*) AS total_executions,
-			SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) AS successful_executions,
-			SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) AS failed_executions
+			COALESCE(SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END), 0) AS successful_executions,
+			COALESCE(SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_executions
 		FROM resource_action_traces
 		%s
 	`, whereClause)
@@ -619,7 +619,28 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 		&successfulExecutions,
 		&failedExecutions,
 	)
-	if err != nil && err != sql.ErrNoRows {
+	
+	// Handle no rows case (empty database or no matching data)
+	if err == sql.ErrNoRows || totalExecutions == 0 {
+		// Return response with zero values and insufficient_data confidence
+		return &models.MultiDimensionalSuccessRateResponse{
+			Dimensions: models.QueryDimensions{
+				IncidentType:    query.IncidentType,
+				PlaybookID:      query.PlaybookID,
+				PlaybookVersion: query.PlaybookVersion,
+				ActionType:      query.ActionType,
+			},
+			TimeRange:            query.TimeRange,
+			TotalExecutions:      0,
+			SuccessfulExecutions: 0,
+			FailedExecutions:     0,
+			SuccessRate:          0.0,
+			Confidence:           confidenceInsufficientData,
+			MinSamplesMet:        false,
+		}, nil
+	}
+	
+	if err != nil {
 		return nil, fmt.Errorf("failed to query multi-dimensional success rate: %w", err)
 	}
 
