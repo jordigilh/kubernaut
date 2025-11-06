@@ -144,8 +144,8 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 				Expect(query.Get("limit")).To(Equal("100"))
 				Expect(query.Get("offset")).To(Equal("0"))
 
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{
 				"data": [
 					{
 						"id": 1,
@@ -592,8 +592,8 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			// Setup: Create mock server with comprehensive incident data
 			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-			// ⭐ Use Data Storage API field names (will be converted by convertIncidentToModel)
-			_, _ = w.Write([]byte(`{
+				// ⭐ Use Data Storage API field names (will be converted by convertIncidentToModel)
+				_, _ = w.Write([]byte(`{
 				"data": [
 					{
 						"id": 42,
