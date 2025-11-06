@@ -376,9 +376,3 @@ func WaitForAsyncOperation(operation func() error, timeout time.Duration, descri
 	EventuallyWithOffset(1, operation, timeout, 100*time.Millisecond).
 		Should(Succeed(), fmt.Sprintf("%s should complete successfully", description))
 }
-
-// strPtr returns a pointer to a string value
-// Helper for creating string pointers inline
-func strPtr(s string) *string {
-	return &s
-}
