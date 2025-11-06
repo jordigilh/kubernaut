@@ -619,7 +619,7 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 		&successfulExecutions,
 		&failedExecutions,
 	)
-	
+
 	// Handle no rows case (empty database or no matching data)
 	if err == sql.ErrNoRows || totalExecutions == 0 {
 		// Return response with zero values and insufficient_data confidence
@@ -639,7 +639,7 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 			MinSamplesMet:        false,
 		}, nil
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to query multi-dimensional success rate: %w", err)
 	}
