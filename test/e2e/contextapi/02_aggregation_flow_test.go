@@ -27,6 +27,34 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// Structured response types (no unstructured data - project anti-pattern)
+
+// NotificationAuditRequest represents the request body for creating a notification audit
+type NotificationAuditRequest struct {
+	SignalName        string `json:"signal_name"`
+	SignalFingerprint string `json:"signal_fingerprint"`
+	Namespace         string `json:"namespace"`
+	ActionType        string `json:"action_type"`
+	ActionStatus      string `json:"action_status"`
+	IncidentType      string `json:"incident_type"`
+	PlaybookID        string `json:"playbook_id"`
+	PlaybookVersion   string `json:"playbook_version"`
+	AIExecutionMode   string `json:"ai_execution_mode"`
+	ExecutedAt        string `json:"executed_at"`
+}
+
+// SuccessRateResponse represents the response from the success rate endpoint
+type SuccessRateResponse struct {
+	IncidentType         string  `json:"incident_type"`
+	TimeRange            string  `json:"time_range"`
+	TotalExecutions      int     `json:"total_executions"`
+	SuccessfulExecutions int     `json:"successful_executions"`
+	FailedExecutions     int     `json:"failed_executions"`
+	SuccessRate          float64 `json:"success_rate"`
+	Confidence           string  `json:"confidence"`
+	MinSamplesMet        bool    `json:"min_samples_met"`
+}
+
 // Test 1: End-to-End Aggregation Flow
 // Validates the complete flow: PostgreSQL → Data Storage Service → Context API
 //
@@ -41,43 +69,44 @@ import (
 var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 	// Test data helpers
 	var seedTestData = func() error {
-		// Seed 3 pod-oom incidents: 2 successful, 1 failed
-		incidents := []map[string]interface{}{
+		// Seed 3 pod-oom incidents: 2 successful, 1 failed (using structured types)
+		now := time.Now().Format(time.RFC3339)
+		incidents := []NotificationAuditRequest{
 			{
-				"signal_name":       "pod-oom",
-				"signal_fingerprint": "pod-oom-e2e-001",
-				"namespace":         "e2e-test",
-				"action_type":       "restart-pod",
-				"action_status":     "success",
-				"incident_type":     "pod-oom",
-				"playbook_id":       "playbook-restart-v1",
-				"playbook_version":  "1.0.0",
-				"ai_execution_mode": "catalog",
-				"executed_at":       time.Now().Format(time.RFC3339),
+				SignalName:        "pod-oom",
+				SignalFingerprint: "pod-oom-e2e-001",
+				Namespace:         "e2e-test",
+				ActionType:        "restart-pod",
+				ActionStatus:      "success",
+				IncidentType:      "pod-oom",
+				PlaybookID:        "playbook-restart-v1",
+				PlaybookVersion:   "1.0.0",
+				AIExecutionMode:   "catalog",
+				ExecutedAt:        now,
 			},
 			{
-				"signal_name":       "pod-oom",
-				"signal_fingerprint": "pod-oom-e2e-002",
-				"namespace":         "e2e-test",
-				"action_type":       "restart-pod",
-				"action_status":     "success",
-				"incident_type":     "pod-oom",
-				"playbook_id":       "playbook-restart-v1",
-				"playbook_version":  "1.0.0",
-				"ai_execution_mode": "catalog",
-				"executed_at":       time.Now().Format(time.RFC3339),
+				SignalName:        "pod-oom",
+				SignalFingerprint: "pod-oom-e2e-002",
+				Namespace:         "e2e-test",
+				ActionType:        "restart-pod",
+				ActionStatus:      "success",
+				IncidentType:      "pod-oom",
+				PlaybookID:        "playbook-restart-v1",
+				PlaybookVersion:   "1.0.0",
+				AIExecutionMode:   "catalog",
+				ExecutedAt:        now,
 			},
 			{
-				"signal_name":       "pod-oom",
-				"signal_fingerprint": "pod-oom-e2e-003",
-				"namespace":         "e2e-test",
-				"action_type":       "restart-pod",
-				"action_status":     "failure",
-				"incident_type":     "pod-oom",
-				"playbook_id":       "playbook-restart-v1",
-				"playbook_version":  "1.0.0",
-				"ai_execution_mode": "catalog",
-				"executed_at":       time.Now().Format(time.RFC3339),
+				SignalName:        "pod-oom",
+				SignalFingerprint: "pod-oom-e2e-003",
+				Namespace:         "e2e-test",
+				ActionType:        "restart-pod",
+				ActionStatus:      "failure",
+				IncidentType:      "pod-oom",
+				PlaybookID:        "playbook-restart-v1",
+				PlaybookVersion:   "1.0.0",
+				AIExecutionMode:   "catalog",
+				ExecutedAt:        now,
 			},
 		}
 
@@ -125,32 +154,28 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 		// BEHAVIOR: Returns HTTP 200 OK
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "E2E flow should succeed")
 
-		// CORRECTNESS: Response contains accurate aggregation
-		var result map[string]interface{}
+		// CORRECTNESS: Response contains accurate aggregation (using structured type)
+		var result SuccessRateResponse
 		err = json.NewDecoder(resp.Body).Decode(&result)
 		Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
 
 		// Validate specific business values (not null testing)
-		Expect(result["incident_type"]).To(Equal("pod-oom"), "Incident type should match query")
-		Expect(result["total_executions"]).To(BeNumerically(">=", 3), "Should aggregate at least 3 seeded incidents")
-		Expect(result["successful_executions"]).To(BeNumerically(">=", 2), "Should count at least 2 successful executions")
+		Expect(result.IncidentType).To(Equal("pod-oom"), "Incident type should match query")
+		Expect(result.TotalExecutions).To(BeNumerically(">=", 3), "Should aggregate at least 3 seeded incidents")
+		Expect(result.SuccessfulExecutions).To(BeNumerically(">=", 2), "Should count at least 2 successful executions")
 
 		// Success rate should be approximately 66.67% (2/3)
-		successRate, ok := result["success_rate"].(float64)
-		Expect(ok).To(BeTrue(), "Success rate should be a number")
-		Expect(successRate).To(BeNumerically(">=", 60), "Success rate should be >= 60%")
-		Expect(successRate).To(BeNumerically("<=", 70), "Success rate should be <= 70%")
+		Expect(result.SuccessRate).To(BeNumerically(">=", 60), "Success rate should be >= 60%")
+		Expect(result.SuccessRate).To(BeNumerically("<=", 70), "Success rate should be <= 70%")
 
-		// Confidence should be present (not null testing - check specific values)
-		confidence, ok := result["confidence"].(string)
-		Expect(ok).To(BeTrue(), "Confidence should be a string")
-		Expect([]string{"low", "medium", "high", "insufficient_data"}).To(ContainElement(confidence),
+		// Confidence should be a valid level
+		Expect([]string{"low", "medium", "high", "insufficient_data"}).To(ContainElement(result.Confidence),
 			"Confidence should be a valid level")
 
 		GinkgoWriter.Printf("✅ E2E Aggregation Flow: %d executions, %.2f%% success rate, %s confidence\n",
-			int(result["total_executions"].(float64)),
-			successRate,
-			confidence)
+			result.TotalExecutions,
+			result.SuccessRate,
+			result.Confidence)
 	})
 
 	It("should handle non-existent incident type gracefully", func() {
@@ -165,14 +190,14 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 		// BEHAVIOR: Returns 200 OK (no data is valid state)
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Non-existent incident type should return 200 OK")
 
-		// CORRECTNESS: Response indicates no data
-		var result map[string]interface{}
+		// CORRECTNESS: Response indicates no data (using structured type)
+		var result SuccessRateResponse
 		err = json.NewDecoder(resp.Body).Decode(&result)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(result["total_executions"]).To(BeNumerically("==", 0), "Total executions should be 0")
-		Expect(result["success_rate"]).To(BeNumerically("==", 0), "Success rate should be 0")
-		Expect(result["confidence"]).To(Equal("insufficient_data"), "Confidence should be insufficient_data")
+		Expect(result.TotalExecutions).To(Equal(0), "Total executions should be 0")
+		Expect(result.SuccessRate).To(Equal(0.0), "Success rate should be 0")
+		Expect(result.Confidence).To(Equal("insufficient_data"), "Confidence should be insufficient_data")
 	})
 
 	It("should validate all 4 services are working together", func() {
@@ -207,4 +232,3 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 		GinkgoWriter.Println("✅ All 4 services operational: PostgreSQL → Data Storage → Context API")
 	})
 })
-
