@@ -144,27 +144,27 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 				Expect(query.Get("limit")).To(Equal("100"))
 				Expect(query.Get("offset")).To(Equal("0"))
 
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{
-					"data": [
-						{
-							"id": 1,
-							"alert_name": "HighMemoryUsage",
-							"alert_severity": "critical",
-							"action_type": "scale",
-							"action_timestamp": "2025-11-01T10:00:00Z",
-							"model_used": "gpt-4",
-							"model_confidence": 0.95,
-							"execution_status": "completed"
-						}
-					],
-					"pagination": {
-						"total": 1,
-						"limit": 100,
-						"offset": 0,
-						"has_more": false
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"data": [
+					{
+						"id": 1,
+						"signal_name": "HighMemoryUsage",
+						"signal_severity": "critical",
+						"action_type": "scale",
+						"action_timestamp": "2025-11-01T10:00:00Z",
+						"model_used": "gpt-4",
+						"model_confidence": 0.95,
+						"execution_status": "completed"
 					}
-				}`))
+				],
+				"pagination": {
+					"total": 1,
+					"limit": 100,
+					"offset": 0,
+					"has_more": false
+				}
+			}`))
 			}))
 
 			// Create Data Storage client
@@ -201,9 +201,9 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 					"data": [
 						{
 							"id": 42,
-							"alert_name": "HighCPUUsage",
-							"alert_fingerprint": "fp-abc123",
-							"alert_severity": "critical",
+							"signal_name": "HighCPUUsage",
+							"signal_fingerprint": "fp-abc123",
+							"signal_severity": "critical",
 							"namespace": "production",
 							"target_resource": "deployment/api-server",
 							"cluster_name": "prod-us-east-1",
@@ -592,30 +592,30 @@ var _ = Describe("CachedExecutor - Data Storage Service Migration", func() {
 			// Setup: Create mock server with comprehensive incident data
 			mockDataStore = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
-				// ⭐ Use Data Storage API field names (will be converted by convertIncidentToModel)
-				_, _ = w.Write([]byte(`{
-					"data": [
-						{
-							"id": 42,
-							"alert_name": "HighMemoryUsage",
-							"alert_severity": "critical",
-							"namespace": "production",
-							"target_resource": "deployment/api-server-7d9f8b",
-							"cluster_name": "prod-us-east-1",
-							"environment": "production",
-							"action_type": "scale",
-							"action_timestamp": "2025-11-01T15:30:00Z",
-							"model_used": "gpt-4",
-							"model_confidence": 0.95,
-							"execution_status": "completed",
-							"error_message": null,
-							"start_time": "2025-11-01T15:30:00Z",
-							"alert_fingerprint": "abc123",
-							"remediation_request_id": "req-xyz-789"
-						}
-					],
-					"pagination": {"total": 1, "limit": 100, "offset": 0}
-				}`))
+			// ⭐ Use Data Storage API field names (will be converted by convertIncidentToModel)
+			_, _ = w.Write([]byte(`{
+				"data": [
+					{
+						"id": 42,
+						"signal_name": "HighMemoryUsage",
+						"signal_severity": "critical",
+						"namespace": "production",
+						"target_resource": "deployment/api-server-7d9f8b",
+						"cluster_name": "prod-us-east-1",
+						"environment": "production",
+						"action_type": "scale",
+						"action_timestamp": "2025-11-01T15:30:00Z",
+						"model_used": "gpt-4",
+						"model_confidence": 0.95,
+						"execution_status": "completed",
+						"error_message": null,
+						"start_time": "2025-11-01T15:30:00Z",
+						"signal_fingerprint": "abc123",
+						"remediation_request_id": "req-xyz-789"
+					}
+				],
+				"pagination": {"total": 1, "limit": 100, "offset": 0}
+			}`))
 			}))
 
 			dsClient = dsclient.NewDataStorageClient(dsclient.Config{BaseURL: mockDataStore.URL})
