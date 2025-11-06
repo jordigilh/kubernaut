@@ -25,7 +25,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/jordigilh/kubernaut/pkg/contextapi/metrics"
 	"github.com/jordigilh/kubernaut/pkg/contextapi/server"
 	dsmodels "github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -84,11 +86,17 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			DataStorageBaseURL: dataStorageBaseURL,
 		}
 
+		// Create custom Prometheus registry for this test suite to avoid duplicate registration panic
+		// This allows multiple test suites to create servers without conflicts
+		customRegistry := prometheus.NewRegistry()
+		customMetrics := metrics.NewMetricsWithRegistry("context_api", "server", customRegistry)
+
 		var err error
-		contextAPIServer, err = server.NewServer(
+		contextAPIServer, err = server.NewServerWithMetrics(
 			fmt.Sprintf("localhost:%d", redisPort), // Redis from suite_test.go
 			logger,
 			cfg,
+			customMetrics, // Use custom metrics with isolated registry
 		)
 		Expect(err).ToNot(HaveOccurred(), "Context API server creation should succeed")
 
