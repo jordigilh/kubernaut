@@ -117,7 +117,7 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 			}
 
 			resp, err := http.Post(
-				dataStorageBaseURL+"/api/v1/notification-audit",
+				dataStorageBaseURL+"/api/v1/audit/notifications",
 				"application/json",
 				bytes.NewReader(body),
 			)
