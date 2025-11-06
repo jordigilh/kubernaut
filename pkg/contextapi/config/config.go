@@ -119,19 +119,9 @@ func (c *Config) LoadFromEnv() {
 
 // Validate checks if the configuration is valid and returns an error if not
 func (c *Config) Validate() error {
-	// Validate database configuration
-	if c.Database.Host == "" {
-		return fmt.Errorf("database host required")
-	}
-	if c.Database.Port == 0 {
-		return fmt.Errorf("database port required")
-	}
-	if c.Database.Name == "" {
-		return fmt.Errorf("database name required")
-	}
-	if c.Database.User == "" {
-		return fmt.Errorf("database user required")
-	}
+	// NOTE: Database validation removed per ADR-032
+	// Context API uses Data Storage Service API Gateway (no direct DB access)
+	// Database config fields remain for backward compatibility but are not validated
 
 	// Validate server configuration
 	if c.Server.Port == 0 {
