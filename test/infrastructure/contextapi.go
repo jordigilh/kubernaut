@@ -181,7 +181,8 @@ func startContextAPIService(infra *ContextAPIInfrastructure, cfg *ContextAPIConf
 	startCmd := exec.Command("podman", "run",
 		"-d",
 		"--name", infra.ServiceContainer,
-		"--network", "host", // Use host network to access Redis and Data Storage
+		"-p", fmt.Sprintf("%s:8091", cfg.ServicePort), // Map service port to host
+		"-p", "9090:9090",                             // Map metrics port
 		"-v", fmt.Sprintf("%s:/etc/contextapi:ro", infra.ConfigDir),
 		"-e", "CONFIG_FILE=/etc/contextapi/config.yaml",
 		"contextapi-test:latest",
