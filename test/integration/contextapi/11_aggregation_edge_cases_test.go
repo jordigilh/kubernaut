@@ -18,9 +18,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/contextapi/server"
 )
 
 // RFC7807Problem represents a Problem Details for HTTP APIs response
@@ -32,11 +36,61 @@ type RFC7807Problem struct {
 	Instance string `json:"instance,omitempty"`
 }
 
-var _ = Describe("Aggregation API Edge Cases", func() {
-	var serverURL string
+var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
+	var contextAPIServer *server.Server
+	var httpTestServer   *httptest.Server
+	var serverURL        string
+	var dataStorageBaseURL string
 
-	BeforeEach(func() {
-		serverURL = fmt.Sprintf("http://127.0.0.1:%d", contextAPIPort)
+	BeforeAll(func() {
+		// Use same infrastructure as Day 11 tests
+		dataStorageBaseURL = fmt.Sprintf("http://localhost:%d", dataStoragePort)
+
+		// Verify Data Storage Service is running
+		GinkgoWriter.Println("🔍 Checking Data Storage Service availability for edge cases...")
+		Eventually(func() error {
+			resp, err := http.Get(dataStorageBaseURL + "/health")
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("Data Storage Service unhealthy: %d", resp.StatusCode)
+			}
+			return nil
+		}, 10*time.Second, 1*time.Second).Should(Succeed(), fmt.Sprintf("Data Storage Service must be running on port %d", dataStoragePort))
+
+		GinkgoWriter.Println("✅ Data Storage Service is available")
+
+		// Start in-process Context API server (same as Day 11)
+		GinkgoWriter.Println("🚀 Starting Context API server for edge case tests...")
+
+		cfg := &server.Config{
+			Port:               8081, // Different port to avoid conflicts
+			ReadTimeout:        30 * time.Second,
+			WriteTimeout:       30 * time.Second,
+			DataStorageBaseURL: dataStorageBaseURL,
+		}
+
+		var err error
+		contextAPIServer, err = server.NewServer(
+			fmt.Sprintf("localhost:%d", redisPort), // Redis from suite_test.go
+			logger,
+			cfg,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Context API server creation should succeed")
+
+		// Create HTTP test server
+		httpTestServer = httptest.NewServer(contextAPIServer.Handler())
+		serverURL = httpTestServer.URL
+		GinkgoWriter.Printf("✅ Context API server started at %s\n", serverURL)
+	})
+
+	AfterAll(func() {
+		if httpTestServer != nil {
+			httpTestServer.Close()
+			GinkgoWriter.Println("✅ Context API test server stopped")
+		}
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
