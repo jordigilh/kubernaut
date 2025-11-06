@@ -289,9 +289,25 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	}
 
 	for _, migration := range migrations {
-		migrationPath := filepath.Join("migrations", migration)
-		content, err := os.ReadFile(migrationPath)
-		if err != nil {
+		// Try multiple paths to find migrations (supports running from different directories)
+		migrationPaths := []string{
+			filepath.Join("migrations", migration),                    // From workspace root
+			filepath.Join("..", "..", "..", "migrations", migration),  // From test/integration/contextapi/
+			filepath.Join("..", "..", "migrations", migration),        // From test/integration/
+		}
+
+		var content []byte
+		var err error
+		found := false
+		for _, migrationPath := range migrationPaths {
+			content, err = os.ReadFile(migrationPath)
+			if err == nil {
+				found = true
+				break
+			}
+		}
+
+		if !found {
 			fmt.Fprintf(writer, "  ❌ Migration file not found: %v\n", err)
 			return fmt.Errorf("migration file %s not found: %w", migration, err)
 		}
