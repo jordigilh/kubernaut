@@ -443,6 +443,12 @@ password: %s
 }
 
 func buildDataStorageService(writer io.Writer) error {
+	// Find workspace root (go.mod location)
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
 	// Cleanup any existing image
 	exec.Command("podman", "rmi", "-f", "data-storage:test").Run()
 
@@ -452,6 +458,7 @@ func buildDataStorageService(writer io.Writer) error {
 		"-t", "data-storage:test",
 		"-f", "docker/data-storage.Dockerfile",
 		".")
+	buildCmd.Dir = workspaceRoot // Run from workspace root
 
 	output, err := buildCmd.CombinedOutput()
 	if err != nil {
@@ -461,6 +468,27 @@ func buildDataStorageService(writer io.Writer) error {
 
 	fmt.Fprintln(writer, "  ✅ Data Storage Service image built successfully")
 	return nil
+}
+
+// findWorkspaceRoot finds the workspace root by looking for go.mod
+func findWorkspaceRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	// Walk up the directory tree looking for go.mod
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("could not find go.mod in any parent directory")
+		}
+		dir = parent
+	}
 }
 
 func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
