@@ -18,6 +18,8 @@ package contextapi
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -55,6 +57,9 @@ var (
 	// Service URLs
 	dataStorageBaseURL string
 	contextAPIBaseURL  string
+
+	// Database connection (for test data seeding)
+	db *sql.DB
 
 	// Test context
 	ctx    context.Context
@@ -97,6 +102,15 @@ var _ = BeforeSuite(func() {
 	dataStorageBaseURL = dataStorageInfra.ServiceURL
 	GinkgoWriter.Printf("✅ Data Storage Infrastructure ready: %s\n", dataStorageBaseURL)
 
+	// Connect to PostgreSQL for test data seeding
+	GinkgoWriter.Println("🔌 Connecting to PostgreSQL for test data seeding...")
+	connStr := fmt.Sprintf("host=localhost port=%s user=slm_user password=test_password_e2e dbname=action_history sslmode=disable", postgresPort)
+	db, err = sql.Open("pgx", connStr)
+	Expect(err).ToNot(HaveOccurred(), "PostgreSQL connection should succeed")
+	err = db.Ping()
+	Expect(err).ToNot(HaveOccurred(), "PostgreSQL ping should succeed")
+	GinkgoWriter.Println("✅ PostgreSQL connection established")
+
 	// Start Context API Service
 	GinkgoWriter.Println("📦 Starting Context API Service...")
 	contextAPICfg := &infrastructure.ContextAPIConfig{
@@ -125,6 +139,13 @@ var _ = AfterSuite(func() {
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("🧹 Cleaning up E2E test infrastructure...")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Close database connection
+	if db != nil {
+		GinkgoWriter.Println("🔌 Closing PostgreSQL connection...")
+		db.Close()
+		GinkgoWriter.Println("✅ PostgreSQL connection closed")
+	}
 
 	// Stop Context API Service
 	if contextAPIInfra != nil {

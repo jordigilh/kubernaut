@@ -17,7 +17,6 @@ limitations under the License.
 package contextapi
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -28,20 +27,6 @@ import (
 )
 
 // Structured response types (no unstructured data - project anti-pattern)
-
-// NotificationAuditRequest represents the request body for creating a notification audit
-type NotificationAuditRequest struct {
-	SignalName        string `json:"signal_name"`
-	SignalFingerprint string `json:"signal_fingerprint"`
-	Namespace         string `json:"namespace"`
-	ActionType        string `json:"action_type"`
-	ActionStatus      string `json:"action_status"`
-	IncidentType      string `json:"incident_type"`
-	PlaybookID        string `json:"playbook_id"`
-	PlaybookVersion   string `json:"playbook_version"`
-	AIExecutionMode   string `json:"ai_execution_mode"`
-	ExecutedAt        string `json:"executed_at"`
-}
 
 // SuccessRateResponse represents the response from the success rate endpoint
 type SuccessRateResponse struct {
@@ -69,66 +54,59 @@ type SuccessRateResponse struct {
 var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 	// Test data helpers
 	var seedTestData = func() error {
-		// Seed 3 pod-oom incidents: 2 successful, 1 failed (using structured types)
-		now := time.Now().Format(time.RFC3339)
-		incidents := []NotificationAuditRequest{
-			{
-				SignalName:        "pod-oom",
-				SignalFingerprint: "pod-oom-e2e-001",
-				Namespace:         "e2e-test",
-				ActionType:        "restart-pod",
-				ActionStatus:      "success",
-				IncidentType:      "pod-oom",
-				PlaybookID:        "playbook-restart-v1",
-				PlaybookVersion:   "1.0.0",
-				AIExecutionMode:   "catalog",
-				ExecutedAt:        now,
-			},
-			{
-				SignalName:        "pod-oom",
-				SignalFingerprint: "pod-oom-e2e-002",
-				Namespace:         "e2e-test",
-				ActionType:        "restart-pod",
-				ActionStatus:      "success",
-				IncidentType:      "pod-oom",
-				PlaybookID:        "playbook-restart-v1",
-				PlaybookVersion:   "1.0.0",
-				AIExecutionMode:   "catalog",
-				ExecutedAt:        now,
-			},
-			{
-				SignalName:        "pod-oom",
-				SignalFingerprint: "pod-oom-e2e-003",
-				Namespace:         "e2e-test",
-				ActionType:        "restart-pod",
-				ActionStatus:      "failure",
-				IncidentType:      "pod-oom",
-				PlaybookID:        "playbook-restart-v1",
-				PlaybookVersion:   "1.0.0",
-				AIExecutionMode:   "catalog",
-				ExecutedAt:        now,
-			},
+		// Seed 3 pod-oom incidents: 2 successful, 1 failed
+		// Use direct database inserts (matches integration test pattern)
+		
+		// Insert 2 successful executions
+		for i := 0; i < 2; i++ {
+			query := `
+				INSERT INTO resource_action_traces (
+					action_history_id,
+					action_id, action_type, action_timestamp, execution_status,
+					signal_name, signal_severity,
+					model_used, model_confidence,
+					incident_type, alert_name, incident_severity,
+					playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
+					ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
+				) VALUES (
+					999,
+					gen_random_uuid()::text, 'restart-pod', NOW(), 'completed',
+					'pod-oom', 'warning',
+					'gpt-4', 0.95,
+					'pod-oom', 'pod-oom-e2e', 'warning',
+					'playbook-restart-v1', '1.0.0', 1, gen_random_uuid()::text,
+					true, false, false
+				)
+			`
+			_, err := db.Exec(query)
+			if err != nil {
+				return fmt.Errorf("failed to insert successful incident: %w", err)
+			}
 		}
 
-		for _, incident := range incidents {
-			body, err := json.Marshal(incident)
-			if err != nil {
-				return fmt.Errorf("failed to marshal incident: %w", err)
-			}
-
-			resp, err := http.Post(
-				dataStorageBaseURL+"/api/v1/audit/notifications",
-				"application/json",
-				bytes.NewReader(body),
+		// Insert 1 failed execution
+		query := `
+			INSERT INTO resource_action_traces (
+				action_history_id,
+				action_id, action_type, action_timestamp, execution_status,
+				signal_name, signal_severity,
+				model_used, model_confidence,
+				incident_type, alert_name, incident_severity,
+				playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
+				ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
+			) VALUES (
+				999,
+				gen_random_uuid()::text, 'restart-pod', NOW(), 'failed',
+				'pod-oom', 'warning',
+				'gpt-4', 0.95,
+				'pod-oom', 'pod-oom-e2e', 'warning',
+				'playbook-restart-v1', '1.0.0', 1, gen_random_uuid()::text,
+				true, false, false
 			)
-			if err != nil {
-				return fmt.Errorf("failed to POST incident: %w", err)
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
-				return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-			}
+		`
+		_, err := db.Exec(query)
+		if err != nil {
+			return fmt.Errorf("failed to insert failed incident: %w", err)
 		}
 
 		// Wait for data to be persisted
