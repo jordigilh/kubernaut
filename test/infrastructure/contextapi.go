@@ -276,4 +276,3 @@ func GetContextAPILogs(containerName string) (string, error) {
 	}
 	return strings.TrimSpace(string(output)), nil
 }
-
