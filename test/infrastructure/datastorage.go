@@ -17,9 +17,10 @@ limitations under the License.
 package infrastructure
 
 import (
-	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -67,7 +68,7 @@ func DefaultDataStorageConfig() *DataStorageConfig {
 
 // StartDataStorageInfrastructure starts all Data Storage Service infrastructure
 // Returns an infrastructure handle that can be used to stop the services
-func StartDataStorageInfrastructure(cfg *DataStorageConfig, writer GinkgoWriterInterface) (*DataStorageInfrastructure, error) {
+func StartDataStorageInfrastructure(cfg *DataStorageConfig, writer io.Writer) (*DataStorageInfrastructure, error) {
 	if cfg == nil {
 		cfg = DefaultDataStorageConfig()
 	}
@@ -79,69 +80,69 @@ func StartDataStorageInfrastructure(cfg *DataStorageConfig, writer GinkgoWriterI
 		ServiceURL:        fmt.Sprintf("http://localhost:%s", cfg.ServicePort),
 	}
 
-	writer.Println("🔧 Setting up Data Storage Service infrastructure (ADR-016: Podman)")
+	fmt.Fprintln(writer, "🔧 Setting up Data Storage Service infrastructure (ADR-016: Podman)")
 
 	// 1. Start PostgreSQL
-	writer.Println("📦 Starting PostgreSQL container...")
+	fmt.Fprintln(writer, "📦 Starting PostgreSQL container...")
 	if err := startPostgreSQL(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
 
 	// 2. Start Redis
-	writer.Println("📦 Starting Redis container...")
+	fmt.Fprintln(writer, "📦 Starting Redis container...")
 	if err := startRedis(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start Redis: %w", err)
 	}
 
 	// 3. Connect to PostgreSQL
-	writer.Println("🔌 Connecting to PostgreSQL...")
+	fmt.Fprintln(writer, "🔌 Connecting to PostgreSQL...")
 	if err := connectPostgreSQL(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
 
 	// 4. Apply migrations
-	writer.Println("📋 Applying schema migrations...")
+	fmt.Fprintln(writer, "📋 Applying schema migrations...")
 	if err := applyMigrations(infra, writer); err != nil {
 		return nil, fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
 	// 5. Connect to Redis
-	writer.Println("🔌 Connecting to Redis...")
+	fmt.Fprintln(writer, "🔌 Connecting to Redis...")
 	if err := connectRedis(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
 	// 6. Create config files
-	writer.Println("📝 Creating ADR-030 config files...")
+	fmt.Fprintln(writer, "📝 Creating ADR-030 config files...")
 	if err := createConfigFiles(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to create config files: %w", err)
 	}
 
 	// 7. Build Data Storage Service image
-	writer.Println("🏗️  Building Data Storage Service image...")
+	fmt.Fprintln(writer, "🏗️  Building Data Storage Service image...")
 	if err := buildDataStorageService(writer); err != nil {
 		return nil, fmt.Errorf("failed to build service: %w", err)
 	}
 
 	// 8. Start Data Storage Service
-	writer.Println("🚀 Starting Data Storage Service container...")
+	fmt.Fprintln(writer, "🚀 Starting Data Storage Service container...")
 	if err := startDataStorageService(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
 
 	// 9. Wait for service to be ready
-	writer.Println("⏳ Waiting for Data Storage Service to be ready...")
+	fmt.Fprintln(writer, "⏳ Waiting for Data Storage Service to be ready...")
 	if err := waitForServiceReady(infra, writer); err != nil {
 		return nil, fmt.Errorf("service not ready: %w", err)
 	}
 
-	writer.Println("✅ Data Storage Service infrastructure ready!")
+	fmt.Fprintln(writer, "✅ Data Storage Service infrastructure ready!")
 	return infra, nil
 }
 
 // StopDataStorageInfrastructure stops all Data Storage Service infrastructure
-func (infra *DataStorageInfrastructure) Stop(writer GinkgoWriterInterface) {
-	writer.Println("🧹 Cleaning up Data Storage Service infrastructure...")
+func (infra *DataStorageInfrastructure) Stop(writer io.Writer) {
+	fmt.Fprintln(writer, "🧹 Cleaning up Data Storage Service infrastructure...")
 
 	// Close connections
 	if infra.DB != nil {
@@ -164,12 +165,12 @@ func (infra *DataStorageInfrastructure) Stop(writer GinkgoWriterInterface) {
 		os.RemoveAll(infra.ConfigDir)
 	}
 
-	writer.Println("✅ Data Storage Service infrastructure cleanup complete")
+	fmt.Fprintln(writer, "✅ Data Storage Service infrastructure cleanup complete")
 }
 
 // Helper functions
 
-func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer GinkgoWriterInterface) error {
+func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	// Cleanup existing container
 	exec.Command("podman", "stop", infra.PostgresContainer).Run()
 	exec.Command("podman", "rm", infra.PostgresContainer).Run()
@@ -185,12 +186,12 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		writer.Printf("❌ Failed to start PostgreSQL: %s\n", output)
+		fmt.Fprintf(writer, "❌ Failed to start PostgreSQL: %s\n", output)
 		return fmt.Errorf("PostgreSQL container failed to start: %w", err)
 	}
 
 	// Wait for PostgreSQL ready
-	writer.Println("  ⏳ Waiting for PostgreSQL to be ready...")
+	fmt.Fprintln(writer, "  ⏳ Waiting for PostgreSQL to be ready...")
 	time.Sleep(3 * time.Second)
 
 	Eventually(func() error {
@@ -198,11 +199,11 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 		return testCmd.Run()
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready")
 
-	writer.Println("  ✅ PostgreSQL started successfully")
+	fmt.Fprintln(writer, "  ✅ PostgreSQL started successfully")
 	return nil
 }
 
-func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer GinkgoWriterInterface) error {
+func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	// Cleanup existing container
 	exec.Command("podman", "stop", infra.RedisContainer).Run()
 	exec.Command("podman", "rm", infra.RedisContainer).Run()
@@ -215,7 +216,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		writer.Printf("❌ Failed to start Redis: %s\n", output)
+		fmt.Fprintf(writer, "❌ Failed to start Redis: %s\n", output)
 		return fmt.Errorf("Redis container failed to start: %w", err)
 	}
 
@@ -231,11 +232,11 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 		return nil
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
 
-	writer.Println("  ✅ Redis started successfully")
+	fmt.Fprintln(writer, "  ✅ Redis started successfully")
 	return nil
 }
 
-func connectPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer GinkgoWriterInterface) error {
+func connectPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	connStr := fmt.Sprintf("host=localhost port=%s user=%s password=%s dbname=%s sslmode=disable",
 		cfg.PostgresPort, cfg.DBUser, cfg.DBPassword, cfg.DBName)
 
@@ -250,27 +251,27 @@ func connectPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig,
 		return infra.DB.Ping()
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be connectable")
 
-	writer.Println("  ✅ PostgreSQL connection established")
+	fmt.Fprintln(writer, "  ✅ PostgreSQL connection established")
 	return nil
 }
 
-func applyMigrations(infra *DataStorageInfrastructure, writer GinkgoWriterInterface) error {
+func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	// Drop and recreate schema
-	writer.Println("  🗑️  Dropping existing schema...")
+	fmt.Fprintln(writer, "  🗑️  Dropping existing schema...")
 	_, err := infra.DB.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	if err != nil {
 		return fmt.Errorf("failed to drop schema: %w", err)
 	}
 
 	// Enable pgvector extension
-	writer.Println("  🔌 Enabling pgvector extension...")
+	fmt.Fprintln(writer, "  🔌 Enabling pgvector extension...")
 	_, err = infra.DB.Exec("CREATE EXTENSION IF NOT EXISTS vector;")
 	if err != nil {
 		return fmt.Errorf("failed to enable pgvector: %w", err)
 	}
 
 	// Apply migrations
-	writer.Println("  📜 Applying all migrations in order...")
+	fmt.Fprintln(writer, "  📜 Applying all migrations in order...")
 	migrations := []string{
 		"001_initial_schema.sql",
 		"002_fix_partitioning.sql",
@@ -291,7 +292,7 @@ func applyMigrations(infra *DataStorageInfrastructure, writer GinkgoWriterInterf
 		migrationPath := filepath.Join("migrations", migration)
 		content, err := os.ReadFile(migrationPath)
 		if err != nil {
-			writer.Printf("  ❌ Migration file not found: %v\n", err)
+			fmt.Fprintf(writer, "  ❌ Migration file not found: %v\n", err)
 			return fmt.Errorf("migration file %s not found: %w", migration, err)
 		}
 
@@ -306,14 +307,14 @@ func applyMigrations(infra *DataStorageInfrastructure, writer GinkgoWriterInterf
 
 		_, err = infra.DB.Exec(migrationSQL)
 		if err != nil {
-			writer.Printf("  ❌ Migration %s failed: %v\n", migration, err)
+			fmt.Fprintf(writer, "  ❌ Migration %s failed: %v\n", migration, err)
 			return fmt.Errorf("migration %s failed: %w", migration, err)
 		}
-		writer.Printf("  ✅ Applied %s\n", migration)
+		fmt.Fprintf(writer, "  ✅ Applied %s\n", migration)
 	}
 
 	// Grant permissions
-	writer.Println("  🔐 Granting permissions...")
+	fmt.Fprintln(writer, "  🔐 Granting permissions...")
 	_, err = infra.DB.Exec(`
 		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
 		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
@@ -324,30 +325,30 @@ func applyMigrations(infra *DataStorageInfrastructure, writer GinkgoWriterInterf
 	}
 
 	// Wait for schema propagation
-	writer.Println("  ⏳ Waiting for PostgreSQL schema propagation (2s)...")
+	fmt.Fprintln(writer, "  ⏳ Waiting for PostgreSQL schema propagation (2s)...")
 	time.Sleep(2 * time.Second)
 
-	writer.Println("  ✅ All migrations applied successfully")
+	fmt.Fprintln(writer, "  ✅ All migrations applied successfully")
 	return nil
 }
 
-func connectRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer GinkgoWriterInterface) error {
+func connectRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	infra.RedisClient = redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("localhost:%s", cfg.RedisPort),
 		DB:   0,
 	})
 
 	// Verify connection
-	err := infra.RedisClient.Ping(infra.RedisClient.Context()).Err()
+	err := infra.RedisClient.Ping(context.Background()).Err()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	writer.Println("  ✅ Redis connection established")
+	fmt.Fprintln(writer, "  ✅ Redis connection established")
 	return nil
 }
 
-func createConfigFiles(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer GinkgoWriterInterface) error {
+func createConfigFiles(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	var err error
 	infra.ConfigDir, err = os.MkdirTemp("", "datastorage-config-*")
 	if err != nil {
@@ -421,11 +422,11 @@ password: %s
 		return fmt.Errorf("failed to write redis-secrets.yaml: %w", err)
 	}
 
-	writer.Printf("  ✅ Config files created in %s\n", infra.ConfigDir)
+	fmt.Fprintf(writer, "  ✅ Config files created in %s\n", infra.ConfigDir)
 	return nil
 }
 
-func buildDataStorageService(writer GinkgoWriterInterface) error {
+func buildDataStorageService(writer io.Writer) error {
 	// Cleanup any existing image
 	exec.Command("podman", "rmi", "-f", "data-storage:test").Run()
 
@@ -438,15 +439,15 @@ func buildDataStorageService(writer GinkgoWriterInterface) error {
 
 	output, err := buildCmd.CombinedOutput()
 	if err != nil {
-		writer.Printf("❌ Build output:\n%s\n", string(output))
+		fmt.Fprintf(writer, "❌ Build output:\n%s\n", string(output))
 		return fmt.Errorf("failed to build Data Storage Service image: %w", err)
 	}
 
-	writer.Println("  ✅ Data Storage Service image built successfully")
+	fmt.Fprintln(writer, "  ✅ Data Storage Service image built successfully")
 	return nil
 }
 
-func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer GinkgoWriterInterface) error {
+func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	// Cleanup existing container
 	exec.Command("podman", "stop", infra.ServiceContainer).Run()
 	exec.Command("podman", "rm", infra.ServiceContainer).Run()
@@ -466,15 +467,15 @@ func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageC
 
 	output, err := startCmd.CombinedOutput()
 	if err != nil {
-		writer.Printf("❌ Start output:\n%s\n", string(output))
+		fmt.Fprintf(writer, "❌ Start output:\n%s\n", string(output))
 		return fmt.Errorf("failed to start Data Storage Service container: %w", err)
 	}
 
-	writer.Println("  ✅ Data Storage Service container started")
+	fmt.Fprintln(writer, "  ✅ Data Storage Service container started")
 	return nil
 }
 
-func waitForServiceReady(infra *DataStorageInfrastructure, writer GinkgoWriterInterface) error {
+func waitForServiceReady(infra *DataStorageInfrastructure, writer io.Writer) error {
 	// Wait up to 30 seconds for service to be ready
 	Eventually(func() int {
 		resp, err := http.Get(infra.ServiceURL + "/health")
@@ -488,10 +489,10 @@ func waitForServiceReady(infra *DataStorageInfrastructure, writer GinkgoWriterIn
 	// Print container logs for debugging (first 100 lines)
 	logs, logErr := exec.Command("podman", "logs", "--tail", "100", infra.ServiceContainer).CombinedOutput()
 	if logErr == nil {
-		writer.Printf("\n📋 Data Storage Service logs:\n%s\n", string(logs))
+		fmt.Fprintf(writer, "\n📋 Data Storage Service logs:\n%s\n", string(logs))
 	}
 
-	writer.Printf("  ✅ Data Storage Service ready at %s\n", infra.ServiceURL)
+	fmt.Fprintf(writer, "  ✅ Data Storage Service ready at %s\n", infra.ServiceURL)
 	return nil
 }
 

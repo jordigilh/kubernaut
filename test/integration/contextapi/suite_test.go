@@ -1,7 +1,6 @@
 package contextapi
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
