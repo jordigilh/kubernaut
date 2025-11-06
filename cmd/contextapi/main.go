@@ -58,20 +58,15 @@ func main() {
 			zap.String("config_path", *configPath))
 	}
 
-	// Override with environment variables
-	cfg.LoadFromEnv()
-
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		logger.Fatal("Invalid configuration", zap.Error(err))
 	}
 
-	logger.Info("Configuration loaded",
+	logger.Info("Configuration loaded (ADR-032: Data Storage Service API Gateway)",
 		zap.Int("server_port", cfg.Server.Port),
 		zap.String("server_host", cfg.Server.Host),
-		zap.String("db_host", cfg.Database.Host),
-		zap.Int("db_port", cfg.Database.Port),
-		zap.String("db_name", cfg.Database.Name),
+		zap.String("data_storage_url", cfg.DataStorage.BaseURL),
 		zap.String("redis_addr", cfg.Cache.RedisAddr),
 		zap.Int("redis_db", cfg.Cache.RedisDB),
 		zap.String("log_level", cfg.Logging.Level))

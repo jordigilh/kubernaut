@@ -25,7 +25,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	
+
 	// Import PostgreSQL driver (required for database connections)
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -50,7 +50,7 @@ var (
 	postgresPort    = "5434"
 	redisPort       = "6381"
 	dataStoragePort = "8087"
-	contextAPIPort  = "8088"
+	contextAPIPort  = "8091" // Context API default port (per Dockerfile EXPOSE)
 
 	// Service URLs
 	dataStorageBaseURL string
