@@ -18,7 +18,6 @@ package contextapi
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
