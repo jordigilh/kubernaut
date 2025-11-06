@@ -182,7 +182,7 @@ func startContextAPIService(infra *ContextAPIInfrastructure, cfg *ContextAPIConf
 		"-d",
 		"--name", infra.ServiceContainer,
 		"-p", fmt.Sprintf("%s:8091", cfg.ServicePort), // Map service port to host
-		"-p", "9090:9090",                             // Map metrics port
+		"-p", "9090:9090", // Map metrics port
 		"-v", fmt.Sprintf("%s:/etc/contextapi:ro", infra.ConfigDir),
 		"-e", "CONFIG_FILE=/etc/contextapi/config.yaml",
 		"contextapi-test:latest",

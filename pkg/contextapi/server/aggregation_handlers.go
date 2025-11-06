@@ -175,9 +175,16 @@ func logAggregationError(logger *zap.Logger, dimensionType string, dimensionValu
 
 // handleAggregationError determines error type and sends appropriate RFC 7807 response
 // TDD REFACTOR: Extracted error handling to reduce duplication
+// BR-CONTEXT-012: Graceful degradation under service failures
 func handleAggregationError(w http.ResponseWriter, err error) {
 	if isTimeoutError(err) {
 		respondRFC7807Error(w, http.StatusServiceUnavailable, "service-unavailable", "Data Storage Service timeout")
+		return
+	}
+
+	// BR-CONTEXT-012: Return 503 for Data Storage Service unavailability
+	if isServiceUnavailableError(err) {
+		respondRFC7807Error(w, http.StatusServiceUnavailable, "service-unavailable", "Data Storage Service unavailable - please retry")
 		return
 	}
 
@@ -192,8 +199,15 @@ func respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
 }
 
 // respondRFC7807Error writes RFC 7807 error response
+// BR-CONTEXT-012: Add Retry-After header for 503 Service Unavailable
 func respondRFC7807Error(w http.ResponseWriter, statusCode int, problemType string, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
+
+	// BR-CONTEXT-012: Add Retry-After header for service unavailability
+	if statusCode == http.StatusServiceUnavailable {
+		w.Header().Set("Retry-After", "30") // Retry after 30 seconds
+	}
+
 	w.WriteHeader(statusCode)
 	errorResp := map[string]interface{}{
 		"type":   fmt.Sprintf("https://kubernaut.io/problems/%s", problemType),
@@ -216,4 +230,17 @@ func isTimeoutError(err error) bool {
 	return strings.Contains(errStr, "timeout") ||
 		strings.Contains(errStr, "deadline exceeded") ||
 		strings.Contains(errStr, "context")
+}
+
+// isServiceUnavailableError checks if error is due to service unavailability
+// BR-CONTEXT-012: Graceful degradation under service failures
+func isServiceUnavailableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection error") ||
+		strings.Contains(errStr, "HTTP request failed") ||
+		strings.Contains(errStr, "circuit breaker open")
 }

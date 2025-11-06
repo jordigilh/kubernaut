@@ -38,7 +38,7 @@ go test ./test/e2e/contextapi/ -v -timeout=30m
 
 **Expected**: 3 E2E tests passing
 - Test 1: E2E Aggregation Flow
-- Test 2: Cache Effectiveness  
+- Test 2: Cache Effectiveness
 - Test 3: Data Storage Failure
 
 #### **2. Update Documentation** (1 hour)
@@ -159,4 +159,5 @@ cd /Users/jgil/go/src/github.com/jordigilh/kubernaut && go test ./test/e2e/conte
 ## ☕ **COFFEE FIRST, THEN CODE!**
 
 Have a great day! 🌟
+
 
