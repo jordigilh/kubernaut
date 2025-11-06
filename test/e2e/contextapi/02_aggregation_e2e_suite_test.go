@@ -25,6 +25,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	
+	// Import PostgreSQL driver (required for database connections)
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // E2E Test Suite for Context API Aggregation (Podman Infrastructure)
