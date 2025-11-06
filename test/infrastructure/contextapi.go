@@ -121,7 +121,7 @@ server:
   write_timeout: 30s
 
 cache:
-  redis_addr: "localhost:%s"
+  redis_addr: "host.containers.internal:%s"
   redis_db: 0
   lru_size: 1000
   default_ttl: 5m
