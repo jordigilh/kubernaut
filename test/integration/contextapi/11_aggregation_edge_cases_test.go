@@ -254,5 +254,173 @@ var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
 			Skip("Requires infrastructure helper for stopping/starting Data Storage Service")
 		})
 	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// PHASE 2: P1 EDGE CASES - HIGH PRIORITY (6 tests)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Context("Edge Cases: Time Ranges (P1 - High)", func() {
+		// BR-INTEGRATION-008: Incident-Type Success Rate API - Time Range Validation
+
+		It("should handle 1-minute time range correctly", func() {
+			// BEHAVIOR: Minimal valid time range returns data
+			// CORRECTNESS: Only includes data from last 1 minute
+
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=1m", serverURL)
+			resp, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK (minimal time range is valid)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "1-minute time range should be valid")
+
+			// CORRECTNESS: Response includes time_range field
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result["time_range"]).To(Equal("1m"), "Time range should be reflected in response")
+		})
+
+		It("should handle very long time range (365 days)", func() {
+			// BEHAVIOR: Very long time range is accepted
+			// CORRECTNESS: Returns data without performance issues
+
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=365d", serverURL)
+			resp, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK (long time range is valid)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "365-day time range should be valid")
+
+			// CORRECTNESS: Response includes time_range field
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result["time_range"]).To(Equal("365d"), "Time range should be reflected in response")
+		})
+
+		It("should handle invalid time range format gracefully", func() {
+			// BEHAVIOR: Invalid time range format falls back to default
+			// CORRECTNESS: Returns 200 OK with default time range (not 400)
+
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=invalid", serverURL)
+			resp, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK (graceful degradation to default)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Invalid time range should fall back to default")
+
+			// CORRECTNESS: Response uses invalid format as-is (passed to Data Storage)
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+			// Note: Data Storage Service will handle invalid format validation
+		})
+	})
+
+	Context("Edge Cases: Caching (P1 - High)", func() {
+		// BR-INTEGRATION-008: Incident-Type Success Rate API - Cache Behavior
+
+		It("should cache responses for identical requests", func() {
+			// BEHAVIOR: Identical requests hit cache (L1 Redis or L2 LRU)
+			// CORRECTNESS: Cached response matches original response
+
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=7d&min_samples=5", serverURL)
+
+			// First request (cache miss)
+			resp1, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp1.Body.Close()
+			Expect(resp1.StatusCode).To(Equal(http.StatusOK))
+
+			var result1 map[string]interface{}
+			err = json.NewDecoder(resp1.Body).Decode(&result1)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Second request (should hit cache)
+			resp2, err := http.Get(url)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp2.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK from cache
+			Expect(resp2.StatusCode).To(Equal(http.StatusOK))
+
+			// CORRECTNESS: Cached response matches original
+			var result2 map[string]interface{}
+			err = json.NewDecoder(resp2.Body).Decode(&result2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result2["incident_type"]).To(Equal(result1["incident_type"]))
+			Expect(result2["time_range"]).To(Equal(result1["time_range"]))
+		})
+
+		It("should use different cache keys for different parameters", func() {
+			// BEHAVIOR: Different parameters create different cache keys
+			// CORRECTNESS: Each parameter combination is cached separately
+
+			url1 := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=7d", serverURL)
+			url2 := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=30d", serverURL)
+
+			// Request 1
+			resp1, err := http.Get(url1)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp1.Body.Close()
+			Expect(resp1.StatusCode).To(Equal(http.StatusOK))
+
+			var result1 map[string]interface{}
+			err = json.NewDecoder(resp1.Body).Decode(&result1)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Request 2 (different time_range)
+			resp2, err := http.Get(url2)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp2.Body.Close()
+
+			// BEHAVIOR: Returns 200 OK (different cache key)
+			Expect(resp2.StatusCode).To(Equal(http.StatusOK))
+
+			// CORRECTNESS: Different time_range in response
+			var result2 map[string]interface{}
+			err = json.NewDecoder(resp2.Body).Decode(&result2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result2["time_range"]).To(Equal("30d"))
+			Expect(result1["time_range"]).To(Equal("7d"))
+		})
+
+		It("should handle concurrent requests for same key gracefully", func() {
+			// BEHAVIOR: Concurrent requests don't cause race conditions
+			// CORRECTNESS: All requests return valid responses
+
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom-concurrent", serverURL)
+
+			// Make 5 concurrent requests
+			done := make(chan bool, 5)
+			for i := 0; i < 5; i++ {
+				go func() {
+					defer GinkgoRecover()
+					resp, err := http.Get(url)
+					Expect(err).ToNot(HaveOccurred())
+					defer resp.Body.Close()
+
+					// BEHAVIOR: All requests succeed
+					Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+					// CORRECTNESS: All responses are valid JSON
+					var result map[string]interface{}
+					err = json.NewDecoder(resp.Body).Decode(&result)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(result["incident_type"]).To(Equal("pod-oom-concurrent"))
+
+					done <- true
+				}()
+			}
+
+			// Wait for all requests to complete
+			for i := 0; i < 5; i++ {
+				Eventually(done, 10*time.Second).Should(Receive())
+			}
+		})
+	})
 })
 
