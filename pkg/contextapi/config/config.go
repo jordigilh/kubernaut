@@ -3,19 +3,18 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config represents the complete Context API service configuration
+// ADR-032: Context API uses Data Storage Service API Gateway (no direct DB access)
 type Config struct {
-	Server             ServerConfig      `yaml:"server"`
-	Database           DatabaseConfig    `yaml:"database"` // Deprecated: Use DataStorage instead (ADR-032)
-	Cache              CacheConfig       `yaml:"cache"`
-	DataStorage        DataStorageConfig `yaml:"data_storage"` // ADR-032: Data Storage Service API Gateway
-	Logging            LoggingConfig     `yaml:"logging"`
+	Server      ServerConfig      `yaml:"server"`
+	Cache       CacheConfig       `yaml:"cache"`
+	DataStorage DataStorageConfig `yaml:"data_storage"` // ADR-032: Data Storage Service API Gateway
+	Logging     LoggingConfig     `yaml:"logging"`
 }
 
 // ServerConfig contains HTTP server configuration
@@ -24,16 +23,6 @@ type ServerConfig struct {
 	Host         string        `yaml:"host"`
 	ReadTimeout  time.Duration `yaml:"read_timeout"`
 	WriteTimeout time.Duration `yaml:"write_timeout"`
-}
-
-// DatabaseConfig contains PostgreSQL database configuration
-type DatabaseConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	Name     string `yaml:"name"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	SSLMode  string `yaml:"ssl_mode"`
 }
 
 // CacheConfig contains Redis and LRU cache configuration
@@ -69,59 +58,6 @@ func LoadFromFile(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
-}
-
-// LoadFromEnv overrides configuration values with environment variables
-func (c *Config) LoadFromEnv() {
-	// Database configuration overrides
-	if host := os.Getenv("DB_HOST"); host != "" {
-		c.Database.Host = host
-	}
-	if port := os.Getenv("DB_PORT"); port != "" {
-		if p, err := strconv.Atoi(port); err == nil {
-			c.Database.Port = p
-		}
-	}
-	if name := os.Getenv("DB_NAME"); name != "" {
-		c.Database.Name = name
-	}
-	if user := os.Getenv("DB_USER"); user != "" {
-		c.Database.User = user
-	}
-	if password := os.Getenv("DB_PASSWORD"); password != "" {
-		c.Database.Password = password
-	}
-	if sslMode := os.Getenv("DB_SSL_MODE"); sslMode != "" {
-		c.Database.SSLMode = sslMode
-	}
-
-	// Redis configuration overrides
-	if redisAddr := os.Getenv("REDIS_ADDR"); redisAddr != "" {
-		c.Cache.RedisAddr = redisAddr
-	}
-	if redisDB := os.Getenv("REDIS_DB"); redisDB != "" {
-		if db, err := strconv.Atoi(redisDB); err == nil {
-			c.Cache.RedisDB = db
-		}
-	}
-
-	// Server configuration overrides
-	if port := os.Getenv("SERVER_PORT"); port != "" {
-		if p, err := strconv.Atoi(port); err == nil {
-			c.Server.Port = p
-		}
-	}
-	if host := os.Getenv("SERVER_HOST"); host != "" {
-		c.Server.Host = host
-	}
-
-	// Logging configuration overrides
-	if level := os.Getenv("LOG_LEVEL"); level != "" {
-		c.Logging.Level = level
-	}
-	if format := os.Getenv("LOG_FORMAT"); format != "" {
-		c.Logging.Format = format
-	}
 }
 
 // Validate checks if the configuration is valid and returns an error if not
