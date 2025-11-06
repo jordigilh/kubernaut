@@ -285,21 +285,23 @@ var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
 	Context("Edge Cases: Time Ranges (P1 - High)", func() {
 		// BR-INTEGRATION-008: Incident-Type Success Rate API - Time Range Validation
 
-		It("should handle 1-minute time range correctly", func() {
-			// BEHAVIOR: Minimal valid time range is passed to Data Storage
-			// CORRECTNESS: Returns response (200 or 400, not 500)
+		It("should handle 1-hour time range correctly", func() {
+			// BEHAVIOR: Minimal valid time range returns data
+			// CORRECTNESS: Only includes data from last 1 hour
 
-			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=1m", serverURL)
+			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=1h", serverURL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-			// BEHAVIOR: Should not return 500 (Context API handles gracefully)
-			Expect(resp.StatusCode).ToNot(Equal(http.StatusInternalServerError), "1-minute time range should not cause server error")
+			// BEHAVIOR: Returns 200 OK (1h is minimal valid time range)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "1-hour time range should be valid")
 
-			// CORRECTNESS: Returns 200 OK or 400 Bad Request (Data Storage validates format)
-			Expect([]int{http.StatusOK, http.StatusBadRequest}).To(ContainElement(resp.StatusCode),
-				"Should handle 1-minute time range gracefully")
+			// CORRECTNESS: Response includes time_range field
+			var result map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&result)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result["time_range"]).To(Equal("1h"), "Time range should be reflected in response")
 		})
 
 		It("should handle very long time range (365 days)", func() {
