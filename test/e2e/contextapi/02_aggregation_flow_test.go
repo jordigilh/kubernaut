@@ -209,8 +209,8 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Data Storage Service should be healthy")
 		resp.Body.Close()
 
-		// 2. Data Storage Service (direct check)
-		resp, err = http.Get(dataStorageBaseURL + "/api/v1/notification-audit?limit=1")
+		// 2. Data Storage Service (aggregation API check)
+		resp, err = http.Get(dataStorageBaseURL + "/api/v1/success-rate/incident-type?incident_type=test&time_range=7d&min_samples=1")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Data Storage API should be accessible")
 		resp.Body.Close()
