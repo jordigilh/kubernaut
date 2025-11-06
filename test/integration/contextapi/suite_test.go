@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
+	"github.com/jmoiron/sqlx"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
@@ -26,20 +26,22 @@ func TestContextAPIIntegration(t *testing.T) {
 }
 
 var (
-	db                   *sql.DB
-	sqlxDB               *sqlx.DB
-	logger               *zap.Logger
-	ctx                  context.Context
-	cancel               context.CancelFunc
-	testSchema           string
+	db         *sql.DB
+	sqlxDB     *sqlx.DB
+	logger     *zap.Logger
+	ctx        context.Context
+	cancel     context.CancelFunc
+	testSchema string
 	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
 	// dbClient     *client.PostgresClient
-	cacheManager         cache.CacheManager                   // ADR-016: Real Redis cache for integration tests
-	redisPort            = 6379                               // Standard Redis port for Context API cache
-	dataStoragePort      = 8085                               // Data Storage Service port
-	contextAPIPort       = 8080                               // Context API port
-	dataStorageInfra     *infrastructure.DataStorageInfrastructure // Shared infrastructure
-	redisContainer       = "contextapi-redis-test"           // Context API's own Redis
+	cacheManager     cache.CacheManager                        // ADR-016: Real Redis cache for integration tests
+	dataStorageInfra *infrastructure.DataStorageInfrastructure // Shared infrastructure
+)
+
+const (
+	redisPort       = 6379                    // Standard Redis port for Context API cache
+	dataStoragePort = 8085                    // Data Storage Service port
+	redisContainer  = "contextapi-redis-test" // Context API's own Redis
 )
 
 var _ = BeforeSuite(func() {
