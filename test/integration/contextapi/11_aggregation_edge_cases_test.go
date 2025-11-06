@@ -265,18 +265,11 @@ var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
 		})
 	})
 
-	Context("Edge Cases: Data Storage Service Failures (P0 - Critical)", func() {
-		// Note: These tests require infrastructure manipulation (stopping/starting Data Storage Service)
-		// Skipping for now as they require additional test infrastructure
-
-		PIt("should return cached data when Data Storage Service is unavailable", func() {
-			// BEHAVIOR: Service degradation - return stale cache instead of failing
-			// CORRECTNESS: Cached data is valid
-
-			// TODO: Implement when infrastructure helper supports service stop/start
-			Skip("Requires infrastructure helper for stopping/starting Data Storage Service")
-		})
-	})
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// NOTE: Data Storage Service unavailability is covered by E2E tests:
+	// - test/e2e/contextapi/03_service_failures_test.go (Test 1)
+	// - test/e2e/contextapi/04_cache_resilience_test.go (Test 5)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// PHASE 2: P1 EDGE CASES - HIGH PRIORITY (6 tests)
