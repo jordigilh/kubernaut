@@ -2,6 +2,7 @@ package contextapi
 
 import (
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -204,6 +205,92 @@ server:
 					// Future enhancement: Stricter validation for production
 				}
 			}
+		})
+	})
+
+	Context("Configuration Validation (Migrated from pkg/)", func() {
+		It("should fail validation when server port is missing", func() {
+			// BR-CONTEXT-007: Configuration management
+			// BEHAVIOR: Server port is mandatory for HTTP server startup
+			// CORRECTNESS: Validate() returns specific error when port is 0
+
+			cfg := &config.Config{
+				Server: config.ServerConfig{
+					Port: 0, // Invalid: port required
+					Host: "0.0.0.0",
+				},
+				Cache: config.CacheConfig{
+					RedisAddr: "localhost:6379",
+				},
+				DataStorage: config.DataStorageConfig{
+					BaseURL: "http://localhost:8080",
+					Timeout: 30 * time.Second,
+				},
+			}
+
+			err := cfg.Validate()
+
+			// ✅ CORRECTNESS: Exact error message validation
+			Expect(err).To(HaveOccurred(),
+				"Validation should fail when server port is 0")
+			Expect(err.Error()).To(Equal("server port required"),
+				"Error message should clearly indicate missing port")
+		})
+
+		It("should fail validation when DataStorage BaseURL is missing", func() {
+			// BR-CONTEXT-007: Configuration management (ADR-032 compliance)
+			// BEHAVIOR: Data Storage Service URL is mandatory per ADR-032
+			// CORRECTNESS: Validate() returns specific error when BaseURL is empty
+
+			cfg := &config.Config{
+				Server: config.ServerConfig{
+					Port: 8091,
+					Host: "0.0.0.0",
+				},
+				Cache: config.CacheConfig{
+					RedisAddr: "localhost:6379",
+				},
+				DataStorage: config.DataStorageConfig{
+					BaseURL: "", // Invalid: BaseURL required per ADR-032
+					Timeout: 30 * time.Second,
+				},
+			}
+
+			err := cfg.Validate()
+
+			// ✅ CORRECTNESS: Exact error message validation
+			Expect(err).To(HaveOccurred(),
+				"Validation should fail when DataStorage BaseURL is empty")
+			Expect(err.Error()).To(ContainSubstring("DataStorageBaseURL is required"),
+				"Error message should reference ADR-032 requirement")
+		})
+
+		It("should fail validation when DataStorage Timeout is missing", func() {
+			// BR-CONTEXT-007: Configuration management
+			// BEHAVIOR: Data Storage Service timeout is mandatory
+			// CORRECTNESS: Validate() returns specific error when Timeout is 0
+
+			cfg := &config.Config{
+				Server: config.ServerConfig{
+					Port: 8091,
+					Host: "0.0.0.0",
+				},
+				Cache: config.CacheConfig{
+					RedisAddr: "localhost:6379",
+				},
+				DataStorage: config.DataStorageConfig{
+					BaseURL: "http://localhost:8080",
+					Timeout: 0, // Invalid: timeout required
+				},
+			}
+
+			err := cfg.Validate()
+
+			// ✅ CORRECTNESS: Exact error message validation
+			Expect(err).To(HaveOccurred(),
+				"Validation should fail when DataStorage Timeout is 0")
+			Expect(err.Error()).To(ContainSubstring("DataStorageTimeout is required"),
+				"Error message should clearly indicate missing timeout")
 		})
 	})
 })

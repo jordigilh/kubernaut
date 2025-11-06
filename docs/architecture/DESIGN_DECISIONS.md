@@ -16,6 +16,21 @@
 | DD-004 | RFC 7807 Error Response Standard | ✅ Approved | 2025-10-30 | [DD-004-RFC7807-ERROR-RESPONSES.md](decisions/DD-004-RFC7807-ERROR-RESPONSES.md) |
 | DD-005 | Observability Standards (Metrics and Logging) | ✅ Approved | 2025-10-31 | [DD-005-OBSERVABILITY-STANDARDS.md](decisions/DD-005-OBSERVABILITY-STANDARDS.md) |
 | DD-006 | Controller Scaffolding Strategy (Custom Templates) | ✅ Approved | 2025-10-31 | [DD-006-controller-scaffolding-strategy.md](decisions/DD-006-controller-scaffolding-strategy.md) |
+| DD-007 | Kubernetes-Aware Graceful Shutdown Pattern | ✅ Approved | 2025-10-31 | [DD-007-kubernetes-aware-graceful-shutdown.md](decisions/DD-007-kubernetes-aware-graceful-shutdown.md) |
+| DD-008 | Integration Test Infrastructure (Podman + Kind) | ✅ Approved | 2025-11-01 | [DD-008-integration-test-infrastructure.md](decisions/DD-008-integration-test-infrastructure.md) |
+| DD-010 | PostgreSQL Driver Migration (lib/pq to pgx) | ✅ Approved | 2025-11-03 | [DD-010-postgresql-driver-migration.md](decisions/DD-010-postgresql-driver-migration.md) |
+| DD-011 | PostgreSQL 16+ and pgvector 0.5.1+ Version Requirements | ✅ Approved | 2025-10-13 | [DD-011-postgresql-version-requirements.md](decisions/DD-011-postgresql-version-requirements.md) |
+| DD-012 | Goose Database Migration Management | ✅ Approved | 2025-11-05 | [DD-012-goose-database-migration-management.md](decisions/DD-012-goose-database-migration-management.md) |
+|| ADR-033 | Remediation Playbook Catalog & Multi-Dimensional Success Tracking | ✅ Approved | 2025-11-04 | [ADR-033-remediation-playbook-catalog.md](decisions/ADR-033-remediation-playbook-catalog.md) |
+| ADR-033-A | Cross-Service Business Requirements (6 Services, 20 BRs) | ✅ Approved | 2025-11-05 | [ADR-033-CROSS-SERVICE-BRS.md](decisions/ADR-033-CROSS-SERVICE-BRS.md) |
+| ADR-033-B | BR Category Migration Plan (BR-WORKFLOW → BR-REMEDIATION) | 📋 Planned | 2025-11-05 | [ADR-033-BR-CATEGORY-MIGRATION-PLAN.md](decisions/ADR-033-BR-CATEGORY-MIGRATION-PLAN.md) |
+| ADR-034 | Business Requirement (BR) Template Standard | ✅ Approved | 2025-11-05 | [ADR-034-business-requirement-template-standard.md](decisions/ADR-034-business-requirement-template-standard.md) |
+| ADR-035 | Remediation Execution Engine (Tekton Pipelines) | ✅ Approved | 2025-11-05 | [ADR-035-remediation-execution-engine.md](decisions/ADR-035-remediation-execution-engine.md) |
+| DD-ARCH-001 | Data Access Pattern - Final Decision (Alternative 2 + REST) | ✅ Approved | 2025-11-02 | [DD-ARCH-001-FINAL-DECISION.md](decisions/DD-ARCH-001-FINAL-DECISION.md) |
+| DD-ARCH-001-A | Data Access Pattern Assessment (3 Alternatives) | 📊 Analysis | 2025-11-01 | [DD-ARCH-001-DATA-ACCESS-PATTERN-ASSESSMENT.md](analysis/DD-ARCH-001-DATA-ACCESS-PATTERN-ASSESSMENT.md) |
+| DD-ARCH-001-B | Interface Options Analysis (REST vs gRPC vs GraphQL) | 📊 Analysis | 2025-11-02 | [DD-ARCH-001-INTERFACE-OPTIONS-ANALYSIS.md](analysis/DD-ARCH-001-INTERFACE-OPTIONS-ANALYSIS.md) |
+| DD-ARCH-002 | GraphQL Query Layer Assessment (V2 Candidate) | 📊 Evaluated for V2 | 2025-11-02 | [DD-ARCH-002-GRAPHQL-QUERY-LAYER-ASSESSMENT.md](decisions/DD-ARCH-002-GRAPHQL-QUERY-LAYER-ASSESSMENT.md) |
+| DD-SCHEMA-001 | Data Storage Schema Authority | ✅ Approved | 2025-10-31 | [DD-SCHEMA-001-data-storage-schema-authority.md](decisions/DD-SCHEMA-001-data-storage-schema-authority.md) |
 | DD-CONTEXT-001 | Cache Stampede Prevention (Alternative A) | ✅ Approved | 2025-10-20 | [DD-CONTEXT-001-cache-stampede-prevention.md](decisions/DD-CONTEXT-001-cache-stampede-prevention.md) |
 | DD-CONTEXT-002 | Cache Size Limit Configuration (Alternative C) | ✅ Approved | 2025-10-20 | [DD-CONTEXT-002-cache-size-limit-configuration.md](decisions/DD-CONTEXT-002-cache-size-limit-configuration.md) |
 | DD-CONTEXT-003 | Context Enrichment Placement (LLM-Driven Tool Call) | ✅ Approved | 2025-10-22 | [DD-CONTEXT-003-Context-Enrichment-Placement.md](decisions/DD-CONTEXT-003-Context-Enrichment-Placement.md) |
@@ -50,11 +65,15 @@ Create a new DD document for decisions that:
 ## 🔗 Related Documentation
 
 - **ADRs**: [docs/architecture/decisions/](decisions/) - Architectural Decision Records (ADR-001 through ADR-028)
+- **Analysis**: [docs/architecture/analysis/](analysis/) - Supporting analysis for architectural decisions
 - **Service-Specific DDs**: Check individual service documentation in `docs/services/`
 - **Business Requirements**: [docs/requirements/](../requirements/)
 - **APDC Methodology**: [.cursor/rules/00-core-development-methodology.mdc](../../.cursor/rules/00-core-development-methodology.mdc)
 
 ---
 
-**Last Updated**: October 31, 2025
+**Last Updated**: November 2, 2025
+**Maintained By**: Kubernaut Architecture Team
+
+**Last Updated**: November 2, 2025
 **Maintained By**: Kubernaut Architecture Team

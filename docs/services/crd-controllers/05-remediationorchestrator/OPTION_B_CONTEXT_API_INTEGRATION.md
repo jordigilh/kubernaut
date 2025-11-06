@@ -17,7 +17,7 @@
 
 1. ✅ **Temporal Consistency**: All contexts (monitoring + business + recovery) captured at same timestamp
 2. ✅ **Fresh Contexts**: Recovery sees CURRENT cluster state (not stale from initial attempt)
-3. ✅ **Immutable Audit Trail**: Each RemediationProcessing CRD is separate and auditable
+3. ✅ **Immutable Audit Trail**: Each SignalProcessing CRD is separate and auditable
 4. ✅ **Architectural Consistency**: ALL enrichment in RemediationProcessing (not split between RP and RR)
 5. ✅ **Pattern Reuse**: Recovery follows same flow as initial (watch → enrich → complete)
 
@@ -29,7 +29,7 @@
 - **Option B**: RR queries Context API → embeds in AIAnalysis
 - **Alternative 2**: RR creates RP #2 (recovery) → RP queries Context API → RR creates AIAnalysis
 
-**Context API Integration Now In**: `docs/services/crd-controllers/01-remediationprocessor/controller-implementation.md`
+**Context API Integration Now In**: `docs/services/crd-controllers/01-signalprocessing/controller-implementation.md`
 
 ---
 

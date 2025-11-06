@@ -1,6 +1,6 @@
 ## Implementation Checklist
 
-**Note**: Follow APDC-TDD phases for each implementation step. See [01-remediationprocessor/implementation-checklist.md](../01-remediationprocessor/implementation-checklist.md) for detailed phase breakdown.
+**Note**: Follow APDC-TDD phases for each implementation step. See [01-signalprocessing/implementation-checklist.md](../01-signalprocessing/implementation-checklist.md) for detailed phase breakdown.
 
 ### Business Requirements
 

@@ -3,21 +3,26 @@ package contextapi
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"os/exec"
 	"testing"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib" // DD-010: Migrated from lib/pq
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
 
-	"github.com/jordigilh/kubernaut/pkg/contextapi/client"
+	"github.com/jordigilh/kubernaut/pkg/contextapi/cache"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
+	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
+	// "github.com/jordigilh/kubernaut/pkg/contextapi/client"
 )
 
 func TestContextAPIIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Context API Integration Suite (Reuses Data Storage Infrastructure)")
+	RunSpecs(t, "Context API Integration Suite (ADR-016: Podman Redis + Data Storage Service + PostgreSQL)")
 }
 
 var (
@@ -27,7 +32,16 @@ var (
 	ctx        context.Context
 	cancel     context.CancelFunc
 	testSchema string
-	dbClient   *client.PostgresClient
+	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
+	// dbClient     *client.PostgresClient
+	cacheManager     cache.CacheManager                        // ADR-016: Real Redis cache for integration tests
+	dataStorageInfra *infrastructure.DataStorageInfrastructure // Shared infrastructure
+)
+
+const (
+	redisPort       = 6379                    // Standard Redis port for Context API cache
+	dataStoragePort = 8085                    // Data Storage Service port
+	redisContainer  = "contextapi-redis-test" // Context API's own Redis
 )
 
 var _ = BeforeSuite(func() {
@@ -38,92 +52,99 @@ var _ = BeforeSuite(func() {
 	logger, err = zap.NewDevelopment()
 	Expect(err).ToNot(HaveOccurred())
 
-	// BR-CONTEXT-011: Schema Alignment - Connect to Data Storage Service PostgreSQL
-	// Uses Data Storage Service infrastructure (deployed in kubernaut-system)
-	// Database: action_history (Data Storage Service database)
-	// User: slm_user
-	// Password: slm_password_dev
-	// Host: localhost:5432 (port-forward to cluster)
-	//
-	// INFRASTRUCTURE SHARING NOTE:
-	// This PostgreSQL instance is SHARED with Data Storage Service
-	// - Context API uses Data Storage schema (resource_action_traces + action_histories + resource_references)
-	// - Schema authority: Data Storage Service (DD-SCHEMA-001)
-	// - Requires port-forward: oc port-forward -n kubernaut-system svc/postgres 5432:5432
-	connStr := "host=localhost port=5432 user=slm_user password=slm_password_dev dbname=action_history sslmode=disable"
-	db, err = sql.Open("postgres", connStr)
-	Expect(err).ToNot(HaveOccurred())
+	// Start Data Storage Service infrastructure using shared helper
+	GinkgoWriter.Println("🚀 Starting Data Storage Service infrastructure (shared helper)...")
+	dsConfig := &infrastructure.DataStorageConfig{
+		PostgresPort: "5433",
+		RedisPort:    "6380",
+		ServicePort:  fmt.Sprintf("%d", dataStoragePort),
+		DBName:       "action_history",
+		DBUser:       "slm_user",
+		DBPassword:   "test_password",
+	}
 
-	// Wait for PostgreSQL to be ready
+	dataStorageInfra, err = infrastructure.StartDataStorageInfrastructure(dsConfig, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Data Storage infrastructure should start successfully")
+
+	// Start Context API's own Redis for caching (separate from Data Storage Redis)
+	GinkgoWriter.Println("🚀 Starting Context API Redis cache (ADR-016)...")
+
+	// Stop and remove existing Redis container (cleanup from previous runs)
+	exec.Command("podman", "stop", redisContainer).Run()
+	exec.Command("podman", "rm", redisContainer).Run()
+
+	// Start Redis container
+	cmd := exec.Command("podman", "run", "-d",
+		"--name", redisContainer,
+		"-p", fmt.Sprintf("%d:6379", redisPort),
+		"redis:7-alpine")
+	output, err := cmd.CombinedOutput()
+	Expect(err).ToNot(HaveOccurred(), "Failed to start Redis container: %s", string(output))
+
+	// Wait for Redis to be ready
+	time.Sleep(2 * time.Second)
+
+	// Verify Redis is accessible
+	redisAddr := fmt.Sprintf("localhost:%d", redisPort)
 	Eventually(func() error {
-		return db.PingContext(ctx)
-	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready (start with: make bootstrap-dev)")
+		testCmd := exec.Command("podman", "exec", redisContainer, "redis-cli", "ping")
+		testOutput, err := testCmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("Redis not ready: %v, output: %s", err, string(testOutput))
+		}
+		return nil
+	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
 
-	// Create sqlx wrapper for query operations
-	sqlxDB = sqlx.NewDb(db, "postgres")
+	GinkgoWriter.Printf("✅ Context API Redis started successfully at %s\n", redisAddr)
 
-	// CRITICAL: Verify pgvector extension exists
-	// Extension is created by Data Storage Service migrations
-	_, err = db.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector")
-	Expect(err).ToNot(HaveOccurred(), "Failed to create pgvector extension")
+	// Create real cache manager with Redis
+	cacheConfig := &cache.Config{
+		RedisAddr:  redisAddr,
+		LRUSize:    1000, // Test cache size
+		DefaultTTL: 5 * time.Minute,
+	}
+	cacheManager, err = cache.NewCacheManager(cacheConfig, logger)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create cache manager")
 
-	// BR-CONTEXT-011: Schema Alignment - Use Data Storage Service schema (public)
-	// Schema Authority: Data Storage Service (DD-SCHEMA-001)
-	// Tables: resource_action_traces, action_histories, resource_references
-	// Test isolation: Use test-uid-* and test-rr-* prefixes, cleaned up in AfterEach
-	testSchema = "public" // Use existing Data Storage schema
-	GinkgoWriter.Println("Using Data Storage Service schema:", testSchema)
+	GinkgoWriter.Println("✅ Cache manager initialized with real Redis")
 
-	// Verify Data Storage schema tables exist
-	var tableCount int
-	err = db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM information_schema.tables
-		WHERE table_schema = 'public'
-		AND table_name IN ('resource_references', 'action_histories', 'resource_action_traces')
-	`).Scan(&tableCount)
-	Expect(err).ToNot(HaveOccurred())
-	Expect(tableCount).To(Equal(3), "Data Storage schema tables must exist (run migrations first)")
-	GinkgoWriter.Println("✅ Verified Data Storage schema tables exist")
+	// Use Data Storage infrastructure's database connection
+	db = dataStorageInfra.DB
+	sqlxDB = sqlx.NewDb(db, "pgx")
+	testSchema = "public" // Use Data Storage schema
 
-	// BR-CONTEXT-001: Historical Context Query - Create Context API database client
-	// Uses Data Storage Service schema directly (no test schema needed)
-	dbClient, err = client.NewPostgresClient(connStr, logger)
-	Expect(err).ToNot(HaveOccurred())
-
-	GinkgoWriter.Println("✅ Context API integration test environment ready (reusing Data Storage infrastructure)!")
-	GinkgoWriter.Println("   - PostgreSQL: localhost:5432 (port-forward from kubernaut-system)")
-	GinkgoWriter.Println("   - Database: action_history (Data Storage Service)")
-	GinkgoWriter.Println("   - Schema: public (Data Storage schema - DD-SCHEMA-001)")
-	GinkgoWriter.Println("   - pgvector extension: enabled")
-	GinkgoWriter.Println("   - Test data isolation: test-uid-* and test-rr-* prefixes")
+	GinkgoWriter.Println("✅ Context API integration test environment ready!")
+	GinkgoWriter.Printf("   - Data Storage Service: %s\n", dataStorageInfra.ServiceURL)
+	GinkgoWriter.Printf("   - PostgreSQL: localhost:%s\n", dsConfig.PostgresPort)
+	GinkgoWriter.Printf("   - Context API Redis: localhost:%d\n", redisPort)
+	GinkgoWriter.Println("   - Schema: public (Data Storage schema - shared infrastructure)")
 })
 
 var _ = AfterSuite(func() {
 	defer cancel()
 
-	// Close Context API client
-	if dbClient != nil {
-		err := dbClient.Close()
-		Expect(err).ToNot(HaveOccurred())
+	// Close cache manager
+	if cacheManager != nil {
+		GinkgoWriter.Println("Closing cache manager...")
+		err := cacheManager.Close()
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Cache manager close failed (non-fatal): %v\n", err)
+		}
 	}
 
-	// Clean up test data (not schema - we're using Data Storage Service schema)
-	if db != nil {
-		GinkgoWriter.Println("Cleaning up test data...")
-		// Delete test data using prefixes (same as init-db.sql cleanup)
-		_, err := db.ExecContext(ctx, `
-			DELETE FROM resource_action_traces WHERE action_id LIKE 'test-rr-%';
-			DELETE FROM action_histories WHERE id IN (
-				SELECT ah.id FROM action_histories ah
-				JOIN resource_references rr ON ah.resource_id = rr.id
-				WHERE rr.resource_uid LIKE 'test-uid-%'
-			);
-			DELETE FROM resource_references WHERE resource_uid LIKE 'test-uid-%';
-		`)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Test data cleanup failed (non-fatal): %v\n", err)
-		}
-		db.Close()
+	// Stop and remove Context API Redis container
+	GinkgoWriter.Println("Stopping Context API Redis container...")
+	if output, err := exec.Command("podman", "stop", redisContainer).CombinedOutput(); err != nil {
+		GinkgoWriter.Printf("⚠️  Failed to stop Redis (non-fatal): %v, output: %s\n", err, string(output))
+	}
+	if output, err := exec.Command("podman", "rm", redisContainer).CombinedOutput(); err != nil {
+		GinkgoWriter.Printf("⚠️  Failed to remove Redis (non-fatal): %v, output: %s\n", err, string(output))
+	}
+	GinkgoWriter.Println("✅ Context API Redis container cleaned up")
+
+	// Stop Data Storage infrastructure using shared helper
+	if dataStorageInfra != nil {
+		dataStorageInfra.Stop(GinkgoWriter)
 	}
 
 	if logger != nil {

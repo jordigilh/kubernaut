@@ -31,7 +31,7 @@ Multiple Context API documentation files contain **dangerously misleading statem
 
 ### **Priority 1: CRITICAL** (Endorses invalid methodology)
 
-1. **`IMPLEMENTATION_PLAN_V2.0.md`** (Lines 13-75)
+1. **`IMPLEMENTATION_PLAN_V2.7.md`** (Lines 13-75)
    - **Issue**: v2.1 changelog presents batch activation as a valid strategy
    - **Current**: "✅ Integration test strategy formalized: Batch activation approach documented"
    - **Should be**: "⚠️ TDD violation documented: Batch activation rejected as invalid methodology"
@@ -64,7 +64,7 @@ Multiple Context API documentation files contain **dangerously misleading statem
 
 ## 🔧 **CORRECTION STRATEGY**
 
-### **Step 1: Rewrite v2.1 Changelog** (IMPLEMENTATION_PLAN_V2.0.md)
+### **Step 1: Rewrite v2.1 Changelog** (IMPLEMENTATION_PLAN_V2.7.md)
 
 **Replace lines 13-75 with**:
 
@@ -187,7 +187,7 @@ Repeat ✅ CORRECT
 **✅ COMPLETED**: Renamed `HYBRID_TDD_APPROACH.md` to `BATCH_ACTIVATION_ANTI_PATTERN.md`
 
 **✅ Updated all references** in other files:
-- ✅ IMPLEMENTATION_PLAN_V2.0.md (v2.1 changelog)
+- ✅ IMPLEMENTATION_PLAN_V2.7.md (v2.1 changelog)
 - ✅ PURE_TDD_PIVOT_SUMMARY.md (references section)
 - ⏳ NEXT_TASKS.md (in progress)
 
@@ -224,7 +224,7 @@ After corrections, verify:
 ### **Batch Activation References**
 
 **CORRECTIONS STATUS**:
-- ✅ `IMPLEMENTATION_PLAN_V2.0.md` - v2.1 changelog corrected (CRITICAL - COMPLETED)
+- ✅ `IMPLEMENTATION_PLAN_V2.7.md` - v2.1 changelog corrected (CRITICAL - COMPLETED)
 - ✅ `BATCH_ACTIVATION_ANTI_PATTERN.md` - Warning banner added, renamed (CRITICAL - COMPLETED)
 - ⏳ `PURE_TDD_PIVOT_SUMMARY.md` - "What Worked Well" section (IMPORTANT - IN PROGRESS)
 - ⏳ `NEXT_TASKS.md` - References to v2.1 strategy (IMPORTANT - IN PROGRESS)
@@ -245,7 +245,7 @@ After corrections, verify:
 - **TDD Methodology**: [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc)
 - **User Decision**: Conversation on October 19, 2025 (Option A: Delete & Rewrite)
 - **TDD Compliance Review**: [TDD_COMPLIANCE_REVIEW.md](TDD_COMPLIANCE_REVIEW.md)
-- **Implementation Plan**: [IMPLEMENTATION_PLAN_V2.0.md](IMPLEMENTATION_PLAN_V2.0.md) (to be corrected)
+- **Implementation Plan**: [IMPLEMENTATION_PLAN_V2.7.md](IMPLEMENTATION_PLAN_V2.7.md) (to be corrected)
 
 ---
 
@@ -281,7 +281,7 @@ After corrections, verify:
 **Duration**: ~110 minutes (within estimated 110-135 minute range)
 
 ### **Phase 1: Documentation Corrections** ✅ COMPLETE
-- ✅ Step 1: Rewrote v2.1 changelog in IMPLEMENTATION_PLAN_V2.0.md
+- ✅ Step 1: Rewrote v2.1 changelog in IMPLEMENTATION_PLAN_V2.7.md
 - ✅ Step 2: Added critical warning banner to BATCH_ACTIVATION_ANTI_PATTERN.md
 - ✅ Step 3: Renamed HYBRID_TDD_APPROACH.md → BATCH_ACTIVATION_ANTI_PATTERN.md
 - ✅ Step 4: Updated all cross-references in affected files
@@ -307,7 +307,7 @@ After corrections, verify:
 - ✅ Ready to proceed with pure TDD for new features
 
 ### **Files Modified**
-1. `docs/services/stateless/context-api/implementation/IMPLEMENTATION_PLAN_V2.0.md`
+1. `docs/services/stateless/context-api/implementation/IMPLEMENTATION_PLAN_V2.7.md`
 2. `docs/services/stateless/context-api/implementation/BATCH_ACTIVATION_ANTI_PATTERN.md` (renamed)
 3. `docs/services/stateless/context-api/implementation/PURE_TDD_PIVOT_SUMMARY.md`
 4. `docs/services/stateless/context-api/implementation/NEXT_TASKS.md`

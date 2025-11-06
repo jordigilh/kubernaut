@@ -3,18 +3,18 @@ package config
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Config represents the complete Context API service configuration
+// ADR-032: Context API uses Data Storage Service API Gateway (no direct DB access)
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Cache    CacheConfig    `yaml:"cache"`
-	Logging  LoggingConfig  `yaml:"logging"`
+	Server      ServerConfig      `yaml:"server"`
+	Cache       CacheConfig       `yaml:"cache"`
+	DataStorage DataStorageConfig `yaml:"data_storage"` // ADR-032: Data Storage Service API Gateway
+	Logging     LoggingConfig     `yaml:"logging"`
 }
 
 // ServerConfig contains HTTP server configuration
@@ -25,16 +25,6 @@ type ServerConfig struct {
 	WriteTimeout time.Duration `yaml:"write_timeout"`
 }
 
-// DatabaseConfig contains PostgreSQL database configuration
-type DatabaseConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	Name     string `yaml:"name"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	SSLMode  string `yaml:"ssl_mode"`
-}
-
 // CacheConfig contains Redis and LRU cache configuration
 type CacheConfig struct {
 	RedisAddr  string        `yaml:"redis_addr"`
@@ -43,14 +33,20 @@ type CacheConfig struct {
 	DefaultTTL time.Duration `yaml:"default_ttl"`
 }
 
+// DataStorageConfig contains Data Storage Service configuration (ADR-032)
+type DataStorageConfig struct {
+	BaseURL string        `yaml:"base_url"` // Data Storage Service base URL
+	Timeout time.Duration `yaml:"timeout"`  // Request timeout
+}
+
 // LoggingConfig contains logging configuration
 type LoggingConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
 }
 
-// LoadConfig loads configuration from a YAML file
-func LoadConfig(path string) (*Config, error) {
+// LoadFromFile loads configuration from a YAML file
+func LoadFromFile(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -64,74 +60,11 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// LoadFromEnv overrides configuration values with environment variables
-func (c *Config) LoadFromEnv() {
-	// Database configuration overrides
-	if host := os.Getenv("DB_HOST"); host != "" {
-		c.Database.Host = host
-	}
-	if port := os.Getenv("DB_PORT"); port != "" {
-		if p, err := strconv.Atoi(port); err == nil {
-			c.Database.Port = p
-		}
-	}
-	if name := os.Getenv("DB_NAME"); name != "" {
-		c.Database.Name = name
-	}
-	if user := os.Getenv("DB_USER"); user != "" {
-		c.Database.User = user
-	}
-	if password := os.Getenv("DB_PASSWORD"); password != "" {
-		c.Database.Password = password
-	}
-	if sslMode := os.Getenv("DB_SSL_MODE"); sslMode != "" {
-		c.Database.SSLMode = sslMode
-	}
-
-	// Redis configuration overrides
-	if redisAddr := os.Getenv("REDIS_ADDR"); redisAddr != "" {
-		c.Cache.RedisAddr = redisAddr
-	}
-	if redisDB := os.Getenv("REDIS_DB"); redisDB != "" {
-		if db, err := strconv.Atoi(redisDB); err == nil {
-			c.Cache.RedisDB = db
-		}
-	}
-
-	// Server configuration overrides
-	if port := os.Getenv("SERVER_PORT"); port != "" {
-		if p, err := strconv.Atoi(port); err == nil {
-			c.Server.Port = p
-		}
-	}
-	if host := os.Getenv("SERVER_HOST"); host != "" {
-		c.Server.Host = host
-	}
-
-	// Logging configuration overrides
-	if level := os.Getenv("LOG_LEVEL"); level != "" {
-		c.Logging.Level = level
-	}
-	if format := os.Getenv("LOG_FORMAT"); format != "" {
-		c.Logging.Format = format
-	}
-}
-
 // Validate checks if the configuration is valid and returns an error if not
 func (c *Config) Validate() error {
-	// Validate database configuration
-	if c.Database.Host == "" {
-		return fmt.Errorf("database host required")
-	}
-	if c.Database.Port == 0 {
-		return fmt.Errorf("database port required")
-	}
-	if c.Database.Name == "" {
-		return fmt.Errorf("database name required")
-	}
-	if c.Database.User == "" {
-		return fmt.Errorf("database user required")
-	}
+	// NOTE: Database validation removed per ADR-032
+	// Context API uses Data Storage Service API Gateway (no direct DB access)
+	// Database config fields remain for backward compatibility but are not validated
 
 	// Validate server configuration
 	if c.Server.Port == 0 {
@@ -147,6 +80,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Cache.LRUSize < 0 {
 		return fmt.Errorf("LRU cache size must be non-negative")
+	}
+
+	// Validate Data Storage configuration (ADR-032: Context API uses Data Storage Service API Gateway)
+	if c.DataStorage.BaseURL == "" {
+		return fmt.Errorf("DataStorageBaseURL is required - Context API must use Data Storage Service (ADR-032)")
+	}
+	if c.DataStorage.Timeout == 0 {
+		return fmt.Errorf("DataStorageTimeout is required")
 	}
 
 	// Validate logging configuration

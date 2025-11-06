@@ -98,14 +98,17 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 
 			result, err := pipeline.Generate(ctx, audit)
 
-			if shouldSucceed {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(result).ToNot(BeNil())
-				Expect(result.Embedding).To(HaveLen(expectedDimension))
-				Expect(result.Dimension).To(Equal(expectedDimension))
-			} else {
-				Expect(err).To(HaveOccurred())
-			}
+		if shouldSucceed {
+			// CORRECTNESS: Generation succeeds
+			Expect(err).ToNot(HaveOccurred(), "Generate should succeed")
+
+			// CORRECTNESS: Embedding has exact expected dimension
+			Expect(result.Embedding).To(HaveLen(expectedDimension), "Embedding should have expected dimension")
+			Expect(result.Dimension).To(Equal(expectedDimension), "Dimension field should match embedding length")
+		} else {
+			// CORRECTNESS: Generation fails for invalid input
+			Expect(err).To(HaveOccurred(), "Generate should fail for invalid input")
+		}
 		},
 
 		Entry("BR-STORAGE-012.1: Normal audit with all fields",
@@ -117,7 +120,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Status:               "success",
 				StartTime:            time.Now(),
 				RemediationRequestID: "req-123",
-				AlertFingerprint:     "alert-abc",
+				SignalFingerprint:     "alert-abc",
 				Severity:             "high",
 				Environment:          "production",
 				ClusterName:          "prod-cluster",
@@ -135,7 +138,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Status:               "pending",
 				StartTime:            time.Now(),
 				RemediationRequestID: "req-456",
-				AlertFingerprint:     "alert-def",
+				SignalFingerprint:     "alert-def",
 				Severity:             "critical",
 				Environment:          "staging",
 				ClusterName:          "stage-cluster",
@@ -153,7 +156,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Status:               "success",
 				StartTime:            time.Now(),
 				RemediationRequestID: strings.Repeat("req", 85),
-				AlertFingerprint:     strings.Repeat("alert", 51),
+				SignalFingerprint:     strings.Repeat("alert", 51),
 				Severity:             "high",
 				Environment:          "production",
 				ClusterName:          strings.Repeat("cluster", 36),
@@ -171,7 +174,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Status:               "failure",
 				StartTime:            time.Now(),
 				RemediationRequestID: "req-!@#$%",
-				AlertFingerprint:     "alert-unicode-用户",
+				SignalFingerprint:     "alert-unicode-用户",
 				Severity:             "low",
 				Environment:          "dev",
 				ClusterName:          "cluster-τεστ",
@@ -189,7 +192,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Status:               "success",
 				StartTime:            time.Now(),
 				RemediationRequestID: "req-789",
-				AlertFingerprint:     "alert-ghi",
+				SignalFingerprint:     "alert-ghi",
 				Severity:             "high",
 				Environment:          "production",
 				ClusterName:          "prod-cluster",
@@ -211,7 +214,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Status:               "success",
 				StartTime:            time.Now(),
 				RemediationRequestID: "req-cache-123",
-				AlertFingerprint:     "alert-cache-abc",
+				SignalFingerprint:     "alert-cache-abc",
 				Severity:             "high",
 				Environment:          "production",
 				ClusterName:          "prod-cluster",
@@ -261,7 +264,7 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Status:               "success",
 				StartTime:            time.Now(),
 				RemediationRequestID: "req-fail-123",
-				AlertFingerprint:     "alert-fail-abc",
+				SignalFingerprint:     "alert-fail-abc",
 				Severity:             "high",
 				Environment:          "production",
 				ClusterName:          "prod-cluster",
@@ -269,10 +272,10 @@ var _ = Describe("BR-STORAGE-012: Embedding Generation", func() {
 				Metadata:             "{}",
 			}
 
-			result, err := failingPipeline.Generate(ctx, audit)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("API unavailable"))
-			Expect(result).To(BeNil())
-		})
+		result, err := failingPipeline.Generate(ctx, audit)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("API unavailable"))
+		Expect(result).To(BeNil())
 	})
+})
 })

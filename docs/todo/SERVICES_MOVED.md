@@ -33,7 +33,7 @@ Service specifications have been moved to:
 ### **All 11 Service Specifications**
 
 #### **CRD Controllers** (5 services)
-1. ✅ [`01-remediationprocessor/`](../services/crd-controllers/01-remediationprocessor/)
+1. ✅ [`01-signalprocessing/`](../services/crd-controllers/01-signalprocessing/)
 2. ✅ [`02-aianalysis/`](../services/crd-controllers/02-aianalysis/)
 3. ✅ [`03-workflowexecution/`](../services/crd-controllers/03-workflowexecution/)
 4. ✅ [`04-kubernetesexecutor/`](../services/crd-controllers/04-kubernetesexecutor/)

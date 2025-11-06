@@ -70,7 +70,7 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 
 #### 2.1.5 Multi-Stage Remediation Processing
 - **BR-WF-017**: MUST process AI-generated JSON workflow responses with primary and secondary actions
-  - **Enhanced**: Inherit alert tracking ID from Remediation Processor (BR-AP-021) for workflow correlation
+  - **Enhanced**: Inherit alert tracking ID from Remediation Processor (BR-SP-021) for workflow correlation
   - **Enhanced**: Propagate alert tracking ID to all workflow steps and action executions
   - **Enhanced**: Maintain alert-to-workflow correlation in workflow metadata
   - **Enhanced**: Support workflow progress tracking linked to original alert lifecycle
@@ -214,7 +214,7 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
       - Related alerts and correlations
       - Successful recovery strategies for similar failures
   - **Implementation Flow (Alternative 2)**:
-    1. **Remediation Orchestrator** creates new RemediationProcessing CRD (recovery)
+    1. **Remediation Orchestrator** creates new SignalProcessing CRD (recovery)
     2. **RemediationProcessing Controller** enriches with:
        - Monitoring context (queries monitoring service - FRESH!)
        - Business context (queries business context service - FRESH!)
@@ -224,10 +224,10 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
     5. **AIAnalysis Controller** reads ALL contexts from spec (no API calls needed)
   - **Graceful Degradation**: If Context API unavailable, RemediationProcessing Controller creates fallback context from `FailedWorkflowRef`
   - **Success Criteria**:
-    - RemediationProcessing CRDs contain complete enrichment (monitoring + business + recovery)
+    - SignalProcessing CRDs contain complete enrichment (monitoring + business + recovery)
     - AIAnalysis CRDs receive ALL contexts from RemediationProcessing
     - Temporal consistency maintained (all contexts captured at same timestamp)
-    - Immutable audit trail (each RemediationProcessing CRD is separate)
+    - Immutable audit trail (each SignalProcessing CRD is separate)
   - **Reference**: See [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Version 1.2 - Alternative 2)
 
 #### 2.3.4 Existing Execution Infrastructure Integration

@@ -148,7 +148,7 @@ docs/services/crd-controllers/
 ├── admin/                                       # NEW
 │   └── document-cleanup-summary.md
 │
-├── 01-remediationprocessor/                     # Existing service dirs
+├── 01-signalprocessing/                     # Existing service dirs
 ├── 02-aianalysis/
 ├── 03-workflowexecution/
 ├── 04-kubernetesexecutor/
@@ -236,7 +236,7 @@ Coding standards, patterns, best practices → [`standards/`](standards/)
 Production deployment and maintenance → [`operations/`](operations/)
 
 ### Service-Specific Documentation
-- [01 - Remediation Processor](01-remediationprocessor/)
+- [01 - Remediation Processor](01-signalprocessing/)
 - [02 - AI Analysis](02-aianalysis/)
 - [03 - Workflow Execution](03-workflowexecution/)
 - [04 - Kubernetes Executor](04-kubernetesexecutor/)

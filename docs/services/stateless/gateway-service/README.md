@@ -276,7 +276,7 @@ Following Kubernaut's APDC-Enhanced TDD methodology:
 
 **Related CRD Services**:
 - [RemediationRequest Controller](../crd-controllers/05-remediationorchestrator/) - Central orchestrator
-- [Remediation Processor](../crd-controllers/01-remediationprocessor/) - Alert enrichment
+- [Remediation Processor](../crd-controllers/01-signalprocessing/) - Alert enrichment
 
 ---
 

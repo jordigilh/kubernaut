@@ -88,14 +88,14 @@ func (r *RemediationRequestReconciler) orchestrateRemediationProcessing(
         "alertFingerprint", ar.Spec.TargetingData.Signal.Fingerprint,
     )
 
-    // Create RemediationProcessing CRD
+    // Create SignalProcessing CRD
     start := time.Now()
     ap, err := r.createRemediationProcessing(ctx, ar)
     if err != nil {
-        log.Error(err, "Failed to create RemediationProcessing CRD")
+        log.Error(err, "Failed to create SignalProcessing CRD")
         return err
     }
-    log.Info("RemediationProcessing CRD created",
+    log.Info("SignalProcessing CRD created",
         "alertprocessing", ap.Name,
         "creationDuration", time.Since(start),
     )
@@ -115,7 +115,7 @@ func (r *RemediationRequestReconciler) watchRemediationProcessingCompletion(
 ) error {
     apLog := log.WithValues("alertprocessing", ar.Status.RemediationProcessingRef.Name)
 
-    // Get RemediationProcessing CRD
+    // Get SignalProcessing CRD
     var ap alertprocessorv1.RemediationProcessing
     if err := r.Get(ctx, client.ObjectKey{
         Name:      ar.Status.RemediationProcessingRef.Name,
@@ -398,7 +398,7 @@ func (r *RemediationRequestReconciler) debugLogTargetingData(
 ```
 INFO    Reconciling RemediationRequest      {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "phase": "processing", "alertFingerprint": "abc123", "environment": "production"}
 INFO    Orchestrating RemediationProcessing phase {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "alertFingerprint": "abc123"}
-INFO    RemediationProcessing CRD created       {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "alertprocessing": "ar-xyz-ap", "creationDuration": "15ms"}
+INFO    SignalProcessing CRD created       {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "alertprocessing": "ar-xyz-ap", "creationDuration": "15ms"}
 DEBUG   Polling RemediationProcessing status    {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "alertprocessing": "ar-xyz-ap", "phase": "enriching", "degradedMode": false, "duration": "150ms"}
 INFO    RemediationProcessing completed         {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "alertprocessing": "ar-xyz-ap", "duration": "234ms", "degradedMode": false}
 INFO    Orchestrating AIAnalysis phase    {"remediationrequest": "default/ar-xyz", "correlationID": "abc-123-def", "alertFingerprint": "abc123"}
@@ -481,7 +481,7 @@ func (r *RemediationRequestReconciler) orchestrateRemediationProcessing(
     )
     defer span.End()
 
-    // Create RemediationProcessing CRD
+    // Create SignalProcessing CRD
     ap, err := r.createRemediationProcessing(ctx, ar)
     if err != nil {
         span.RecordError(err)

@@ -100,7 +100,7 @@ type RemediationAuditResult struct {
 	EndTime              *time.Time `db:"end_time"`
 	Duration             *int64     `db:"duration"`
 	RemediationRequestID string     `db:"remediation_request_id"`
-	AlertFingerprint     string     `db:"alert_fingerprint"`
+	SignalFingerprint    string     `db:"signal_fingerprint"`
 	Severity             string     `db:"severity"`
 	Environment          string     `db:"environment"`
 	ClusterName          string     `db:"cluster_name"`
@@ -125,7 +125,7 @@ func (r *RemediationAuditResult) ToRemediationAudit() *models.RemediationAudit {
 		EndTime:              r.EndTime,
 		Duration:             r.Duration,
 		RemediationRequestID: r.RemediationRequestID,
-		AlertFingerprint:     r.AlertFingerprint,
+		SignalFingerprint:    r.SignalFingerprint,
 		Severity:             r.Severity,
 		Environment:          r.Environment,
 		ClusterName:          r.ClusterName,

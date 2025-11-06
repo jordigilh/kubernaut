@@ -70,7 +70,7 @@
 - Kubernetes context gathering
 - Resource discovery
 - Status phase progression
-- **Deliverable**: RemediationRequest → RemediationProcessing CRD
+- **Deliverable**: RemediationRequest → SignalProcessing CRD
 
 **Week 7-11**: AIAnalysis Controller (Service 02)
 - HolmesGPT integration

@@ -53,7 +53,7 @@ This document defines the implementation of Kubernaut's **approved 10-service mi
 | Service | Responsibility | Port | Business Requirements | External Connections |
 |---------|---------------|------|----------------------|---------------------|
 | **🔗 Gateway** | HTTP Gateway & Security Only | 8080 | BR-WH-001 to BR-WH-015 | Prometheus, Grafana |
-| **🧠 Alert Processor** | Alert Processing Logic Only | 8081 | BR-AP-001 to BR-AP-050 | None (internal only) |
+| **🧠 Alert Processor** | Alert Processing Logic Only | 8081 | BR-SP-001 to BR-SP-050 | None (internal only) |
 | **🤖 AI Analysis** | AI Analysis & Decision Making Only | 8082 | BR-AI-001 to BR-AI-140 | OpenAI, Anthropic, Azure, AWS, Ollama |
 | **🎯 Workflow Orchestrator** | Workflow Execution Only | 8083 | BR-WF-001 to BR-WF-165 | None (internal only) |
 | **⚡ K8s Executor** | Kubernetes Operations Only | 8084 | BR-EX-001 to BR-EX-155 | Kubernetes Clusters |
@@ -257,8 +257,8 @@ Secondary Responsibilities:
 ```
 
 #### 3.2.3 Business Requirements Addressed
-- **BR-AP-001**: Process incoming alerts through configurable filtering rules
-- **BR-AP-016**: Integrate with AI components for intelligent alert analysis
+- **BR-SP-001**: Process incoming alerts through configurable filtering rules
+- **BR-SP-016**: Integrate with AI components for intelligent alert analysis
 - **BR-PA-006**: Analyze alerts using enterprise 20B+ parameter LLM providers
 - **BR-PA-007**: Generate contextual remediation recommendations
 - **BR-PA-011**: Execute 25+ supported Kubernetes remediation actions

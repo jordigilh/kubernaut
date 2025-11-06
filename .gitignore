@@ -47,10 +47,21 @@ build_failures.*
 *_ASSESSMENT.md
 *_ANALYSIS.md
 *_STRATEGY.md
+*_RESULTS.md
+*_AUDIT.md
 TDD_*.md
 SKIPPED_*.md
 HEALTH_*.md
 UNIT_TEST_*.md
+
+# Session and infrastructure ephemeral files
+*SESSION*.md
+*-HOUR-*.md
+*INFRASTRUCTURE-SETUP*.md
+*INFRASTRUCTURE-FINAL*.md
+*INFRASTRUCTURE-ISSUE*.md
+*SUCCESS*.md
+*BREAKTHROUGH*.md
 
 # Build artifacts (large binaries that should never be committed)
 workflowexecutor
@@ -61,7 +72,6 @@ dynamic-toolset-server
 main
 remediationprocessor
 gateway-arm64
-datastorage
 gateway
 /cmd/*/main
 /cmd/*/*
@@ -71,3 +81,42 @@ gateway
 # Context API ephemeral development documents
 CONTEXT_API_DEVELOPMENT_KICKOFF.md
 CONTEXT_API_DEFERRED_NEXT_STEPS.md
+
+# Session documentation (ephemeral files from development sessions - GLOBAL)
+DAY[0-9]*-*.md
+DD-[0-9]*-*-COMPLETE.md
+TDD-*.md
+
+# Component/service-specific ephemeral session files (e.g., DATA-STORAGE-*-SUMMARY.md) - GLOBAL
+# Pattern: Uppercase component name with hyphens/underscores followed by ephemeral suffix
+# Applies to ANY directory in the repository
+[A-Z][A-Z-]*-*-SUMMARY.md
+[A-Z][A-Z-]*-*-COMPLETE.md
+[A-Z][A-Z-]*-*-STATUS.md
+[A-Z][A-Z-]*-*-PROGRESS.md
+[A-Z][A-Z-]*-*-SESSION*.md
+[A-Z][A-Z-]*-*-TRIAGE.md
+[A-Z][A-Z-]*-*-GAP*.md
+[A-Z][A-Z-]*-*-ASSESSMENT.md
+[A-Z][A-Z-]*-*-HANDOFF.md
+[A-Z][A-Z-]*-*-GUIDE.md
+[A-Z][A-Z-]*-*-REPORT.md
+[A-Z][A-Z-]*-*-FINAL*.md
+[A-Z][A-Z-]*-*-MIGRATION*.md
+[A-Z][A-Z-]*-*-FIX*.md
+[A-Z][A-Z-]*-*-BUG*.md
+[A-Z][A-Z-]*-*-RECOVERY*.md
+# Pattern with underscores (e.g., CONTEXT_API_*) - GLOBAL
+[A-Z][A-Z_]*_*_SUMMARY.md
+[A-Z][A-Z_]*_*_COMPLETE.md
+[A-Z][A-Z_]*_*_STATUS.md
+[A-Z][A-Z_]*_*_TRIAGE.md
+[A-Z][A-Z_]*_*_ANALYSIS.md
+[A-Z][A-Z_]*_*_ALIGNMENT*.md
+[A-Z][A-Z_]*_*_UPDATES*.md
+[A-Z][A-Z_]*_*_PLAN*.md
+
+# Service binaries (compiled during local development/testing)
+/datastorage
+/contextapi
+PR_DESCRIPTION.md

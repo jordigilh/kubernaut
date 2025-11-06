@@ -314,7 +314,7 @@ Phase 4: Deployment
 
 ### **Alert Processor Service (Enhanced)**
 ```yaml
-Original Requirements: BR-AP-001 to BR-AP-025
+Original Requirements: BR-SP-001 to BR-SP-025
 Additional Requirements: BR-ENV-001 to BR-ENV-050 (integrated)
 
 Key Capabilities:

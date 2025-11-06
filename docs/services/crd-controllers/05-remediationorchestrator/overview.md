@@ -6,7 +6,7 @@
 1. **CRD Orchestration** - Create service CRDs (RemediationProcessing, AIAnalysis, WorkflowExecution, KubernetesExecution) based on phase progression
 2. **Status Aggregation** - Watch all service CRD statuses and aggregate overall remediation state
 3. **Lifecycle Management** - 24-hour retention with automatic cleanup and cascade deletion
-4. **Timeout Management** - Detect phase timeouts and trigger escalation (BR-AP-062 (RemediationProcessor))
+4. **Timeout Management** - Detect phase timeouts and trigger escalation (BR-SP-062 (RemediationProcessor))
 5. **Event Coordination** - Event-driven phase transitions via Kubernetes watches
 
 **V1 Scope - Remediation Coordination Only**:
@@ -73,7 +73,7 @@
 - BR-AR-066: Remediation completion tracking (was BR-ALERT-028)
 - BR-AR-067: Reserved for future expansion
 
-**Note on BR-ALERT-006**: Originally shared with RemediationProcessor. Primary owner is RemediationProcessor (BR-AP-062) as it handles alert-level timeout/escalation logic. RemediationOrchestrator references BR-AP-062 when needed.
+**Note on BR-ALERT-006**: Originally shared with RemediationProcessor. Primary owner is RemediationProcessor (BR-SP-062) as it handles alert-level timeout/escalation logic. RemediationOrchestrator references BR-SP-062 when needed.
 
 **Rationale**: BR-ALERT-* was shared between RemediationProcessor and RemediationOrchestrator. To follow single-prefix-per-service pattern, all RemediationOrchestrator BRs were migrated to BR-AR-*.
 
@@ -129,7 +129,7 @@ graph TB
     end
 
     subgraph "Child CRDs (Flat Sibling Hierarchy)"
-        AP[RemediationProcessing CRD]
+        AP[SignalProcessing CRD]
         AIA[AIAnalysis CRD]
         WE[WorkflowExecution CRD]
     end
@@ -179,7 +179,7 @@ sequenceDiagram
     activate Ctrl
 
     Note over Ctrl: Phase: Processing
-    Ctrl->>AP: Create RemediationProcessing CRD<br/>(with targeting data + owner ref)
+    Ctrl->>AP: Create SignalProcessing CRD<br/>(with targeting data + owner ref)
     activate AP
     Ctrl-->>AP: Watch for status changes
     AP->>AP: Enrich + Classify
@@ -231,7 +231,7 @@ stateDiagram-v2
     Failed --> [*]: Manual intervention required
 
     note right of Processing
-        Create RemediationProcessing CRD
+        Create SignalProcessing CRD
         Watch for enrichment completion
         Targeting data included
     end note
@@ -342,7 +342,7 @@ Gateway Service → RemediationRequest CRD (this controller)
 - Multi-cluster remediation coordination
 
 ### Business Requirements Coverage
-- **BR-AP-062 (RemediationProcessor)**: Timeout management with escalation
+- **BR-SP-062 (RemediationProcessor)**: Timeout management with escalation
 - **BR-AR-061**: Alert lifecycle state tracking
 - **BR-AR-062**: Remediation workflow orchestration
 - **BR-AR-063**: State persistence across restarts

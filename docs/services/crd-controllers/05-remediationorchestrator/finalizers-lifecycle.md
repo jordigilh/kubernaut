@@ -169,7 +169,7 @@ func (r *RemediationRequestReconciler) cleanupChildCRDs(
 ) error {
     namespace := ar.Namespace
 
-    // Delete RemediationProcessing CRD (if exists)
+    // Delete SignalProcessing CRD (if exists)
     if ar.Status.RemediationProcessingRef != nil {
         apName := ar.Status.RemediationProcessingRef.Name
         ap := &processingv1.RemediationProcessing{}
@@ -177,7 +177,7 @@ func (r *RemediationRequestReconciler) cleanupChildCRDs(
             if err := r.Delete(ctx, ap); err != nil && !apierrors.IsNotFound(err) {
                 r.Log.Error(err, "Failed to delete RemediationProcessing", "name", apName)
             } else {
-                r.Log.Info("Deleted RemediationProcessing CRD", "name", apName)
+                r.Log.Info("Deleted SignalProcessing CRD", "name", apName)
             }
         }
     }
@@ -478,7 +478,7 @@ Gateway Service creates RemediationRequest CRD
     ↓ (sets initial status.overallPhase = "pending")
 RemediationRequest Controller reconciles (this controller)
     ↓
-RemediationRequest creates RemediationProcessing CRD
+RemediationRequest creates SignalProcessing CRD
     ↓ (with owner reference to RemediationRequest)
 RemediationRequest watches child CRD status changes
     ↓
@@ -625,7 +625,7 @@ func (r *RemediationRequestReconciler) emitLifecycleEvents(
     // Child CRD creation events
     if ar.Status.RemediationProcessingRef != nil {
         r.Recorder.Event(ar, "Normal", "RemediationProcessingCreated",
-            fmt.Sprintf("RemediationProcessing CRD created: %s", ar.Status.RemediationProcessingRef.Name))
+            fmt.Sprintf("SignalProcessing CRD created: %s", ar.Status.RemediationProcessingRef.Name))
     }
     if ar.Status.AIAnalysisRef != nil {
         r.Recorder.Event(ar, "Normal", "AIAnalysisCreated",

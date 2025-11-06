@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// BR-WORKFLOW-ORCHESTRATION-E2E-SUITE-001: Workflow Orchestration E2E Test Suite Organization
+// BR-REMEDIATION-ORCHESTRATION-E2E-SUITE-001: Workflow Orchestration E2E Test Suite Organization
 // Business Impact: Ensures comprehensive validation of workflow orchestration and coordination capabilities
 // Stakeholder Value: Executive confidence in complex multi-step workflow automation for business operations
 

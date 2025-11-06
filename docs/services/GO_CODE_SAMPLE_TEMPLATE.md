@@ -610,7 +610,7 @@ var _ = Describe("RemediationRequest Controller Integration", func() {
     })
 
     Context("CRD Creation", func() {
-        It("should create RemediationProcessing CRD when RemediationRequest is created", func() {
+        It("should create SignalProcessing CRD when RemediationRequest is created", func() {
             rr := testutil.NewRemediationRequest("test-rr", "default")
             Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 

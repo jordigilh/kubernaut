@@ -93,7 +93,7 @@
 1. Create package structure (`pkg/ai/analysis/`)
 2. Define `Analyzer` interface (no "Service" suffix)
 3. Implement `AIAnalysisReconciler` (Kubebuilder scaffold)
-4. Setup watches for RemediationProcessing CRD
+4. Setup watches for SignalProcessing CRD
 5. Implement finalizers and owner references
 
 **Deliverable**: Basic controller with empty phase handlers

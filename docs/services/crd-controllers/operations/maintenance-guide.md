@@ -51,7 +51,7 @@ All common pattern files have this header:
 ```markdown
 <!-- COMMON-PATTERN: This file is duplicated across all CRD services -->
 <!-- LAST-UPDATED: 2025-01-15 -->
-<!-- SERVICES: 01-remediationprocessor, 02-aianalysis, 03-workflowexecution, 04-kubernetesexecutor, 05-remediationorchestrator -->
+<!-- SERVICES: 01-signalprocessing, 02-aianalysis, 03-workflowexecution, 04-kubernetesexecutor, 05-remediationorchestrator -->
 ```
 
 **Why the header?**
@@ -65,7 +65,7 @@ All common pattern files have this header:
 
 ### **Step-by-Step Process**
 
-#### **1. Update Pilot Service (01-remediationprocessor/)**
+#### **1. Update Pilot Service (01-signalprocessing/)**
 
 This is the "source of truth" for common patterns.
 
@@ -73,7 +73,7 @@ This is the "source of truth" for common patterns.
 cd /Users/jgil/go/src/github.com/jordigilh/kubernaut/docs/services/crd-controllers
 
 # Edit the common pattern file
-vi 01-remediationprocessor/testing-strategy.md
+vi 01-signalprocessing/testing-strategy.md
 
 # Make your changes to the common pattern
 ```
@@ -93,7 +93,7 @@ Copy the updated file to all other services:
 ```bash
 # Copy to all services
 for service in 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
-  cp 01-remediationprocessor/testing-strategy.md ${service}/
+  cp 01-signalprocessing/testing-strategy.md ${service}/
   echo "Copied to ${service}/"
 done
 ```
@@ -108,7 +108,7 @@ vi 02-aianalysis/testing-strategy.md
 
 # Replace generic examples with service-specific ones:
 # - "RemediationProcessing" → "AIAnalysis"
-# - "BR-AP-001" → "BR-AI-001"
+# - "BR-SP-001" → "BR-AI-001"
 # - Add service-specific test scenarios
 ```
 
@@ -124,7 +124,7 @@ Update the `LAST-UPDATED` date in ALL updated files:
 
 ```bash
 # Update all common pattern files with new date
-for service in 01-remediationprocessor 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
+for service in 01-signalprocessing 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
   for file in testing-strategy security-configuration observability-logging metrics-slos; do
     if [ -f ${service}/${file}.md ]; then
       sed -i '' 's/LAST-UPDATED: [0-9-]*/LAST-UPDATED: 2025-01-15/' ${service}/${file}.md
@@ -162,7 +162,7 @@ mkdir 06-newservice
 ```bash
 # Copy all common pattern files from pilot
 for file in testing-strategy security-configuration observability-logging metrics-slos; do
-  cp 01-remediationprocessor/${file}.md 06-newservice/
+  cp 01-signalprocessing/${file}.md 06-newservice/
 done
 
 echo "Common patterns copied to 06-newservice/"
@@ -174,7 +174,7 @@ Copy and adapt the README template:
 
 ```bash
 # Copy pilot README as template
-cp 01-remediationprocessor/README.md 06-newservice/README.md
+cp 01-signalprocessing/README.md 06-newservice/README.md
 
 # Edit with service-specific information
 vi 06-newservice/README.md
@@ -223,10 +223,10 @@ Use pilot service as a template:
 
 ```bash
 # Copy structure from pilot and adapt
-cp 01-remediationprocessor/overview.md 06-newservice/overview.md
+cp 01-signalprocessing/overview.md 06-newservice/overview.md
 # Edit with new service details
 
-cp 01-remediationprocessor/crd-schema.md 06-newservice/crd-schema.md
+cp 01-signalprocessing/crd-schema.md 06-newservice/crd-schema.md
 # Edit with new CRD structure
 
 # ... repeat for other files
@@ -237,7 +237,7 @@ cp 01-remediationprocessor/crd-schema.md 06-newservice/crd-schema.md
 Add new service to common pattern headers in ALL existing services:
 
 ```bash
-for service in 01-remediationprocessor 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
+for service in 01-signalprocessing 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
   for file in testing-strategy security-configuration observability-logging metrics-slos; do
     sed -i '' 's/05-remediationorchestrator -->/05-remediationorchestrator, 06-newservice -->/' ${service}/${file}.md
   done
@@ -339,7 +339,7 @@ Services MAY have additional unique files:
 Validate links between documents in the same service:
 
 ```bash
-cd 01-remediationprocessor
+cd 01-signalprocessing
 
 # Check all relative links
 grep -r "\[.*\](\./" *.md
@@ -368,7 +368,7 @@ See [CRD Schema](./crd-schema.md) for details.
 
 **To Other Service**:
 ```markdown
-See [01-remediationprocessor/testing-strategy.md](../01-remediationprocessor/testing-strategy.md) for patterns.
+See [01-signalprocessing/testing-strategy.md](../01-signalprocessing/testing-strategy.md) for patterns.
 ```
 
 **To Architecture Docs**:
@@ -387,10 +387,10 @@ See [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../archit
 **Solution**:
 ```bash
 # Diff common patterns across services
-diff 01-remediationprocessor/testing-strategy.md 02-aianalysis/testing-strategy.md
+diff 01-signalprocessing/testing-strategy.md 02-aianalysis/testing-strategy.md
 
 # If differences are unexpected, recopy from pilot
-cp 01-remediationprocessor/testing-strategy.md 02-aianalysis/
+cp 01-signalprocessing/testing-strategy.md 02-aianalysis/
 # Then make service-specific adaptations
 ```
 
@@ -420,7 +420,7 @@ done
 **Solution**:
 ```bash
 # Copy pilot README as template
-cp 01-remediationprocessor/README.md 06-newservice/README.md
+cp 01-signalprocessing/README.md 06-newservice/README.md
 
 # Update service-specific details
 vi 06-newservice/README.md
@@ -433,7 +433,7 @@ vi 06-newservice/README.md
 **Solution**:
 ```bash
 # Find all markdown links in a service
-cd 01-remediationprocessor
+cd 01-signalprocessing
 grep -r "\[.*\](.*\.md)" *.md
 
 # Verify each link exists
@@ -451,11 +451,11 @@ done
 ### **Update Common Pattern**
 ```bash
 # 1. Update pilot
-vi 01-remediationprocessor/testing-strategy.md
+vi 01-signalprocessing/testing-strategy.md
 
 # 2. Copy to others
 for s in 02-aianalysis 03-workflowexecution 04-kubernetesexecutor 05-remediationorchestrator; do
-  cp 01-remediationprocessor/testing-strategy.md $s/
+  cp 01-signalprocessing/testing-strategy.md $s/
 done
 
 # 3. Adapt each service
@@ -472,11 +472,11 @@ mkdir 06-newservice
 
 # 2. Copy common patterns
 for f in testing-strategy security-configuration observability-logging metrics-slos; do
-  cp 01-remediationprocessor/$f.md 06-newservice/
+  cp 01-signalprocessing/$f.md 06-newservice/
 done
 
 # 3. Copy README template
-cp 01-remediationprocessor/README.md 06-newservice/
+cp 01-signalprocessing/README.md 06-newservice/
 
 # 4. Create service-specific files
 cd 06-newservice
@@ -534,7 +534,7 @@ done
 **Questions?** See:
 - [RESTRUCTURE_COMPLETE.md](./RESTRUCTURE_COMPLETE.md) - Full restructure documentation
 - [CRD Service Specification Template](../../development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md) - Service template
-- [01-remediationprocessor/README.md](./01-remediationprocessor/README.md) - Example service navigation
+- [01-signalprocessing/README.md](./01-signalprocessing/README.md) - Example service navigation
 
 **Last Updated**: 2025-01-15
 **Maintained By**: Kubernaut Documentation Team

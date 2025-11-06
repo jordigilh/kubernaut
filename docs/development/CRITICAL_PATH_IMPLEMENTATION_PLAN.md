@@ -118,7 +118,7 @@
 **Timeline**: Week 3-6 (3-4 weeks)
 **Status**: 🚧 5% → ✅ 100%
 **Priority**: ⚡ CRITICAL (Service 01)
-**Documentation**: `docs/services/crd-controllers/01-remediationprocessor/`
+**Documentation**: `docs/services/crd-controllers/01-signalprocessing/`
 
 ### **Current State**
 
@@ -248,7 +248,7 @@
 
 ### **Success Criteria**
 
-✅ RemediationRequest → RemediationProcessing CRD created
+✅ RemediationRequest → SignalProcessing CRD created
 ✅ Kubernetes context enriched (logs, events, status)
 ✅ Signal classified (severity, priority, type)
 ✅ Context data prepared for AIAnalysis

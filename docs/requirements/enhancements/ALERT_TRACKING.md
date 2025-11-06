@@ -29,16 +29,16 @@ Instead of creating a new gateway-level tracking requirement that would conflict
 BR-WH-026: MUST integrate with Alert Processor for immediate tracking initiation
 - Forward validated alerts to Alert Processor within 50ms of receipt
 - Include gateway receipt timestamp and correlation metadata
-- Ensure Alert Processor tracking record creation (BR-AP-021) before HTTP response
+- Ensure Alert Processor tracking record creation (BR-SP-021) before HTTP response
 - Maintain gateway processing logs for audit correlation with processor tracking
 ```
 
-### **2. Alert Lifecycle Management (Enhanced BR-AP-021)**
+### **2. Alert Lifecycle Management (Enhanced BR-SP-021)**
 **File**: `docs/requirements/06_INTEGRATION_LAYER.md`
 **Enhancement**: Comprehensive tracking specification
 
 ```markdown
-BR-AP-021: MUST track alert states throughout processing lifecycle
+BR-SP-021: MUST track alert states throughout processing lifecycle
 - Generate unique alert tracking ID immediately upon receipt from Alert Gateway
 - Initialize alert lifecycle state (received, processing, analyzed, remediated, closed)
 - Capture initial alert metadata (timestamp, source, severity, content, correlation ID)
@@ -54,7 +54,7 @@ BR-AP-021: MUST track alert states throughout processing lifecycle
 
 ```markdown
 BR-HIST-002: MUST capture action context including alert details and cluster state
-- Store alert tracking ID from Alert Processor (BR-AP-021) for end-to-end correlation
+- Store alert tracking ID from Alert Processor (BR-SP-021) for end-to-end correlation
 - Capture complete alert lifecycle state transitions and timestamps
 - Maintain correlation between gateway receipt, processor tracking, and action execution
 - Support audit trail queries linking alerts to all subsequent actions taken
@@ -69,7 +69,7 @@ BR-HIST-002: MUST capture action context including alert details and cluster sta
    ├─ Generates correlation metadata
    └─ Forwards to Alert Processor
 
-2. Alert Processor (Enhanced BR-AP-021)
+2. Alert Processor (Enhanced BR-SP-021)
    ↓ (within 100ms)
    ├─ Creates unique alert tracking ID
    ├─ Initializes lifecycle state (received)
@@ -120,7 +120,7 @@ BR-HIST-002: MUST capture action context including alert details and cluster sta
 ## 📊 **Integration Points**
 
 ### **Existing Requirements Leveraged**
-- **BR-AP-012**: "add historical action context to alerts"
+- **BR-SP-012**: "add historical action context to alerts"
 - **BR-HIST-001**: "record comprehensive history of all remediation actions"
 - **BR-ALERT-011**: "track alert lifecycle from creation to resolution"
 - **BR-INT-003**: "provide platform layer with action history and metrics"

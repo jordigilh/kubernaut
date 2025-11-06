@@ -242,7 +242,7 @@ Status: ⏳ V2 PLANNED
 **Source of Truth**: `docs/architecture/CRD_SCHEMAS.md`
 
 **Referenced By** (12 documents validated):
-1. ✅ `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+1. ✅ `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 2. ✅ `docs/services/crd-controllers/02-aianalysis/crd-schema.md`
 3. ✅ `docs/services/crd-controllers/03-workflowexecution/crd-schema.md`
 4. ✅ `docs/services/crd-controllers/04-kubernetesexecutor/crd-schema.md`
@@ -332,7 +332,7 @@ Status: ⏳ V2 PLANNED
 ### **Services with Complete Documentation** (12/12 = 100%)
 
 #### **CRD Controllers** (5/5 = 100%)
-1. ✅ **01-remediationprocessor/** - 13 docs (complete)
+1. ✅ **01-signalprocessing/** - 13 docs (complete)
 2. ✅ **02-aianalysis/** - 15 docs (complete)
 3. ✅ **03-workflowexecution/** - 14 docs (complete)
 4. ✅ **04-kubernetesexecutor/** - 15 docs (complete)

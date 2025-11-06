@@ -35,9 +35,9 @@ import (
 
 // WorkflowClient defines the interface for workflow API operations
 // Business Requirements:
-// - BR-WORKFLOW-API-001: Unified workflow API access
-// - BR-WORKFLOW-API-002: Eliminate code duplication in HTTP client patterns
-// - BR-WORKFLOW-API-003: Integration with existing webhook response patterns
+// - BR-REMEDIATION-API-001: Unified workflow API access
+// - BR-REMEDIATION-API-002: Eliminate code duplication in HTTP client patterns
+// - BR-REMEDIATION-API-003: Integration with existing webhook response patterns
 // - BR-HAPI-029: SDK error handling and retry mechanisms
 type WorkflowClient interface {
 	SendAlert(ctx context.Context, alert types.Alert) (*AlertResponse, error)

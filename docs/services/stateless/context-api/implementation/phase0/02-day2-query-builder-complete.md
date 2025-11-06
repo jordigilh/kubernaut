@@ -145,7 +145,7 @@
 
 ## 🚀 **Next Steps**
 
-Proceed to **Day 3: Multi-Tier Cache Layer** as per `IMPLEMENTATION_PLAN_V2.0.md`.
+Proceed to **Day 3: Multi-Tier Cache Layer** as per `IMPLEMENTATION_PLAN_V2.7.md`.
 
 **Day 3 Focus**:
 - Redis L1 + LRU L2 cache

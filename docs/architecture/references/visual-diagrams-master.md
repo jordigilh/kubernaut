@@ -12,7 +12,7 @@
 ```mermaid
 graph TB
     subgraph "Remediation Processor Service"
-        AP[RemediationProcessing CRD]
+        AP[SignalProcessing CRD]
         Controller[RemediationProcessingReconciler]
         Enricher[Context Enricher]
         Classifier[Environment Classifier]
@@ -52,7 +52,7 @@ sequenceDiagram
     participant CS as Context<br/>Service
     participant K8S as Kubernetes<br/>API
 
-    AR->>AP: Create RemediationProcessing CRD<br/>(with owner reference)
+    AR->>AP: Create SignalProcessing CRD<br/>(with owner reference)
     activate AP
     AP-->>Ctrl: Watch triggers reconciliation
     activate Ctrl
@@ -531,7 +531,7 @@ graph TB
     end
 
     subgraph "Child CRDs (Flat Sibling Hierarchy)"
-        AP[RemediationProcessing CRD]
+        AP[SignalProcessing CRD]
         AIA[AIAnalysis CRD]
         WE[WorkflowExecution CRD]
     end
@@ -581,7 +581,7 @@ sequenceDiagram
     activate Ctrl
 
     Note over Ctrl: Phase: Processing
-    Ctrl->>AP: Create RemediationProcessing CRD<br/>(with targeting data + owner ref)
+    Ctrl->>AP: Create SignalProcessing CRD<br/>(with targeting data + owner ref)
     activate AP
     Ctrl-->>AP: Watch for status changes
     AP->>AP: Enrich + Classify
@@ -633,7 +633,7 @@ stateDiagram-v2
     Failed --> [*]: Manual intervention required
 
     note right of Processing
-        Create RemediationProcessing CRD
+        Create SignalProcessing CRD
         Watch for enrichment completion
         Targeting data included
     end note

@@ -18,14 +18,14 @@ All 5 CRD services (1-5) are **complete** and follow the same structure. Copy an
 
 ## 📚 **Reference Services (Complete Examples)**
 
-### **Service 1: Remediation Processor** (`01-remediationprocessor/`)
+### **Service 1: Remediation Processor** (`01-signalprocessing/`)
 **Use as template for**: Services that process/enrich data
 
-**Directory**: `docs/services/crd-controllers/01-remediationprocessor/`
+**Directory**: `docs/services/crd-controllers/01-signalprocessing/`
 
 **Structure**:
 ```
-01-remediationprocessor/
+01-signalprocessing/
 ├── overview.md                  # Main document with CRD schema
 ├── security-configuration.md    # RBAC, NetworkPolicy, Secrets
 ├── observability-logging.md     # Structured logging, tracing
@@ -196,7 +196,7 @@ Pick the service most similar to yours:
 cd docs/services/crd-controllers/
 
 # Copy reference service directory
-cp -r 01-remediationprocessor/ 06-<new-service>/
+cp -r 01-signalprocessing/ 06-<new-service>/
 
 # Or use ../development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md to understand structure
 ```
@@ -313,7 +313,7 @@ Update these documents to reference new service:
 
 | # | Service Name | CRD Name | Directory | Status | Documents |
 |---|-------------|----------|-----------|--------|-----------|
-| 1 | Remediation Processor | RemediationProcessing | `01-remediationprocessor/` | ✅ 100% | 8 files |
+| 1 | Remediation Processor | RemediationProcessing | `01-signalprocessing/` | ✅ 100% | 8 files |
 | 2 | AI Analysis | AIAnalysis | `02-aianalysis/` | ✅ 100% | 9 files |
 | 3 | Workflow Execution | WorkflowExecution | `03-workflowexecution/` | ✅ 100% | 8 files |
 | 4 | Kubernetes Executor | KubernetesExecution | `04-kubernetesexecutor/` | ✅ 100% | 8 files |
@@ -453,7 +453,7 @@ Documentation is complete when:
 ### **Service-Specific Testing Strategies with Full Mermaid Diagrams**
 
 **CRD Controllers** (HIGH priority):
-1. [01-remediationprocessor/testing-strategy.md](mdc:docs/services/crd-controllers/01-remediationprocessor/testing-strategy.md) - Alert classification testing
+1. [01-signalprocessing/testing-strategy.md](mdc:docs/services/crd-controllers/01-signalprocessing/testing-strategy.md) - Alert classification testing
 2. [02-aianalysis/testing-strategy.md](mdc:docs/services/crd-controllers/02-aianalysis/testing-strategy.md) - AI/ML and Rego policy testing
 3. [03-workflowexecution/testing-strategy.md](mdc:docs/services/crd-controllers/03-workflowexecution/testing-strategy.md) - Orchestration and dependency testing
 4. [04-kubernetesexecutor/testing-strategy.md](mdc:docs/services/crd-controllers/04-kubernetesexecutor/testing-strategy.md) - Action validation and Job testing

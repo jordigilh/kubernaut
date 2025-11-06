@@ -24,7 +24,7 @@ import (
 )
 
 // WorkflowService defines the interface for workflow orchestration operations
-// Business Requirements: BR-WORKFLOW-001 to BR-WORKFLOW-006
+// Business Requirements: BR-REMEDIATION-001 to BR-REMEDIATION-006
 // Single Responsibility: Workflow creation, execution coordination, and monitoring
 type WorkflowService interface {
 	// Core workflow processing (legacy - for backward compatibility)
@@ -33,27 +33,27 @@ type WorkflowService interface {
 	// MICROSERVICES ARCHITECTURE: Primary method for receiving requests from AI Analysis Service (8082)
 	CreateAndExecuteWorkflow(ctx context.Context, request *WorkflowCreationRequest) (*ExecutionResult, error)
 
-	// BR-WORKFLOW-001: Workflow creation and management
+	// BR-REMEDIATION-001: Workflow creation and management
 	CreateWorkflow(ctx context.Context, alert types.Alert) map[string]interface{}
 	StartWorkflow(ctx context.Context, workflowID string) map[string]interface{}
 	GetWorkflowStatus(workflowID string) map[string]interface{}
 
-	// BR-WORKFLOW-002: Action execution coordination
+	// BR-REMEDIATION-002: Action execution coordination
 	CoordinateActions(ctx context.Context, alert types.Alert) map[string]interface{}
 
-	// BR-WORKFLOW-003: Workflow state management
+	// BR-REMEDIATION-003: Workflow state management
 	PersistWorkflowState(workflowID string, state map[string]interface{}) map[string]interface{}
 	RestoreWorkflowState(workflowID string) map[string]interface{}
 
-	// BR-WORKFLOW-004: Execution monitoring
+	// BR-REMEDIATION-004: Execution monitoring
 	MonitorExecution(workflowID string) map[string]interface{}
 	GetExecutionMetrics() map[string]interface{}
 
-	// BR-WORKFLOW-005: Rollback capabilities
+	// BR-REMEDIATION-005: Rollback capabilities
 	RollbackWorkflow(ctx context.Context, workflowID string) map[string]interface{}
 	GetRollbackHistory(namespace string, duration time.Duration) map[string]interface{}
 
-	// BR-WORKFLOW-006: Service integration
+	// BR-REMEDIATION-006: Service integration
 	ProcessAlertFromService(ctx context.Context, alert types.Alert, sourceService string) map[string]interface{}
 
 	// Service health

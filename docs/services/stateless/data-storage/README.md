@@ -1,9 +1,9 @@
 # Data Storage Service - Documentation Hub
 
-**Version**: 2.0
-**Last Updated**: October 13, 2025
-**Service Type**: Stateless HTTP API (Write & Query)
-**Status**: ✅ **PRODUCTION READY** (Implementation Complete)
+**Version**: 2.0 (ADR-033 Multi-Dimensional Success Tracking)
+**Last Updated**: November 5, 2025
+**Service Type**: Stateless HTTP API (Write & Query + Analytics)
+**Status**: ✅ **PRODUCTION READY** (Days 1-15 Complete)
 
 ---
 
@@ -22,10 +22,13 @@
 
 ## 🎯 Purpose
 
-**Centralized audit storage for all Kubernaut remediation activities.**
+**Centralized audit storage and analytics for all Kubernaut remediation activities.**
 
 The Data Storage Service provides:
 - **Persistent audit trail** for remediation workflows
+- **Multi-dimensional success tracking** (ADR-033) for AI learning
+- **Success rate analytics** by incident type and playbook
+- **AI execution mode tracking** (catalog/chained/manual)
 - **Dual-write coordination** (PostgreSQL + Vector DB)
 - **Semantic search** via vector embeddings
 - **Query API** for historical data retrieval
@@ -80,7 +83,7 @@ docker build -f docker/data-storage-service.Dockerfile -t kubernaut/data-storage
 docker run -d \
   -e DB_HOST=postgres \
   -e DB_PORT=5432 \
-  -e DB_USER=slm_user \
+  -e DB_USER=db_user \
   -e DB_PASSWORD=slm_password \
   -e DB_NAME=action_history \
   -p 8080:8080 \
@@ -126,7 +129,7 @@ curl http://localhost:9090/metrics | grep datastorage
 # PostgreSQL (Required)
 DB_HOST=postgres-service              # PostgreSQL hostname
 DB_PORT=5432                          # PostgreSQL port
-DB_USER=slm_user                      # Database user
+DB_USER=db_user                       # Database user
 DB_PASSWORD=slm_password              # Database password
 DB_NAME=action_history                # Database name
 DB_MAX_CONNECTIONS=50                 # Max connection pool size
@@ -175,7 +178,7 @@ Create `config/data-storage.yaml`:
 database:
   host: postgres-service
   port: 5432
-  user: slm_user
+  user: db_user
   password: slm_password  # Use Kubernetes Secret in production
   name: action_history
   maxConnections: 50
@@ -596,7 +599,7 @@ kubectl get pods -n kubernaut -l app=postgresql
 
 # Test connection
 kubectl exec -it deployment/data-storage-service -n kubernaut -- \
-  psql -h postgres-service -U slm_user -d action_history -c "SELECT 1;"
+  psql -h postgres-service -U db_user -d action_history -c "SELECT 1;"
 ```
 
 **Solutions**:
@@ -694,7 +697,7 @@ curl http://localhost:9090/metrics | grep datastorage
 
 # Check database connectivity
 kubectl exec -it deployment/data-storage-service -n kubernaut -- \
-  psql -h postgres-service -U slm_user -d action_history -c "SELECT count(*) FROM remediation_audit;"
+  psql -h postgres-service -U db_user -d action_history -c "SELECT count(*) FROM remediation_audit;"
 
 # Check resource usage
 kubectl top pod -n kubernaut -l app=data-storage-service
@@ -799,7 +802,7 @@ make lint                            # Run linters
 # Minimal configuration (PostgreSQL only)
 export DB_HOST=postgres-service
 export DB_PORT=5432
-export DB_USER=slm_user
+export DB_USER=db_user
 export DB_PASSWORD=slm_password
 export DB_NAME=action_history
 export LOG_LEVEL=info
@@ -807,7 +810,7 @@ export LOG_LEVEL=info
 # Full configuration (with Vector DB and caching)
 export DB_HOST=postgres-service
 export DB_PORT=5432
-export DB_USER=slm_user
+export DB_USER=db_user
 export DB_PASSWORD=slm_password
 export DB_NAME=action_history
 export VECTOR_DB_ENABLED=true

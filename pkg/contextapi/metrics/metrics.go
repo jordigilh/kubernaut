@@ -36,6 +36,10 @@ type Metrics struct {
 	// HTTP metrics
 	HTTPRequests *prometheus.CounterVec   // HTTP requests by method, path, status
 	HTTPDuration *prometheus.HistogramVec // HTTP request duration
+
+	// DD-005: Store registry for custom metrics handlers
+	// This allows the server to expose the custom registry at /metrics endpoint
+	registry prometheus.Gatherer // Interface for collecting metrics
 }
 
 // NewMetrics creates and registers all Prometheus metrics with the default registry
@@ -45,8 +49,18 @@ func NewMetrics(namespace, subsystem string) *Metrics {
 
 // NewMetricsWithRegistry creates and registers all Prometheus metrics with a custom registry
 // This is useful for testing to avoid duplicate registration panics
+// DD-005: Accepts prometheus.Registerer, tries to extract Gatherer for /metrics endpoint
 func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.Registerer) *Metrics {
 	factory := promauto.With(registerer)
+
+	// DD-005: Try to get Gatherer from Registerer (works if it's a *Registry)
+	var gatherer prometheus.Gatherer
+	if reg, ok := registerer.(prometheus.Gatherer); ok {
+		gatherer = reg
+	} else {
+		// Fallback to default gatherer if conversion fails
+		gatherer = prometheus.DefaultGatherer
+	}
 
 	return &Metrics{
 		QueriesTotal: factory.NewCounterVec(
@@ -144,7 +158,7 @@ func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.R
 			prometheus.HistogramOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "database_duration_seconds",
+				Name:      "db_query_duration_seconds",
 				Help:      "Database query duration in seconds",
 				Buckets:   []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1.0},
 			},
@@ -156,9 +170,9 @@ func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.R
 				Namespace: namespace,
 				Subsystem: subsystem,
 				Name:      "errors_total",
-				Help:      "Total number of errors by category and operation",
+				Help:      "Total number of errors by type and operation",
 			},
-			[]string{"category", "operation"},
+			[]string{"type", "operation"},
 		),
 
 		HTTPRequests: factory.NewCounterVec(
@@ -175,13 +189,23 @@ func NewMetricsWithRegistry(namespace, subsystem string, registerer prometheus.R
 			prometheus.HistogramOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
-				Name:      "http_request_duration_seconds",
+				Name:      "http_duration_seconds",
 				Help:      "HTTP request duration in seconds",
 				Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1.0, 2.5, 5.0},
 			},
 			[]string{"method", "path"},
 		),
+
+		// DD-005: Store registry for /metrics endpoint
+		registry: gatherer,
 	}
+}
+
+// Gatherer returns the Prometheus Gatherer for this metrics instance
+// DD-005: This allows the server to expose the custom registry at /metrics endpoint
+// Used by promhttp.HandlerFor() to serve metrics from the correct registry
+func (m *Metrics) Gatherer() prometheus.Gatherer {
+	return m.registry
 }
 
 // RecordQuerySuccess records a successful query
@@ -234,8 +258,8 @@ func (m *Metrics) RecordDatabaseQuery(queryType string, duration float64, succes
 }
 
 // RecordError records an error
-func (m *Metrics) RecordError(category, operation string) {
-	m.ErrorsTotal.WithLabelValues(category, operation).Inc()
+func (m *Metrics) RecordError(errorType, operation string) {
+	m.ErrorsTotal.WithLabelValues(errorType, operation).Inc()
 }
 
 // RecordHTTPRequest records an HTTP request
