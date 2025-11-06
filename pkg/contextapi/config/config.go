@@ -11,10 +11,11 @@ import (
 
 // Config represents the complete Context API service configuration
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Database DatabaseConfig `yaml:"database"`
-	Cache    CacheConfig    `yaml:"cache"`
-	Logging  LoggingConfig  `yaml:"logging"`
+	Server             ServerConfig      `yaml:"server"`
+	Database           DatabaseConfig    `yaml:"database"` // Deprecated: Use DataStorage instead (ADR-032)
+	Cache              CacheConfig       `yaml:"cache"`
+	DataStorage        DataStorageConfig `yaml:"data_storage"` // ADR-032: Data Storage Service API Gateway
+	Logging            LoggingConfig     `yaml:"logging"`
 }
 
 // ServerConfig contains HTTP server configuration
@@ -41,6 +42,12 @@ type CacheConfig struct {
 	RedisDB    int           `yaml:"redis_db"`
 	LRUSize    int           `yaml:"lru_size"`
 	DefaultTTL time.Duration `yaml:"default_ttl"`
+}
+
+// DataStorageConfig contains Data Storage Service configuration (ADR-032)
+type DataStorageConfig struct {
+	BaseURL string        `yaml:"base_url"` // Data Storage Service base URL
+	Timeout time.Duration `yaml:"timeout"`  // Request timeout
 }
 
 // LoggingConfig contains logging configuration

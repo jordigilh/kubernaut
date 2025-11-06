@@ -79,11 +79,12 @@ func main() {
 	// Build Redis connection string (ADR-032: Context API uses Redis for caching only)
 	redisAddr := fmt.Sprintf("%s/%d", cfg.Cache.RedisAddr, cfg.Cache.RedisDB)
 
-	// Create server configuration
+	// Create server configuration (ADR-032: Data Storage Service API Gateway)
 	serverCfg := &server.Config{
-		Port:         cfg.Server.Port,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		Port:               cfg.Server.Port,
+		ReadTimeout:        cfg.Server.ReadTimeout,
+		WriteTimeout:       cfg.Server.WriteTimeout,
+		DataStorageBaseURL: cfg.DataStorage.BaseURL, // ADR-032: Data Storage Service URL
 	}
 
 	// Create server (ADR-032: No direct database access)
