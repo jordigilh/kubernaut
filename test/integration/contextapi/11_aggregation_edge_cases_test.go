@@ -116,7 +116,7 @@ var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
 			var problem RFC7807Problem
 			err = json.NewDecoder(resp.Body).Decode(&problem)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(problem.Type).To(ContainSubstring("validation-error"), "Error type should indicate validation error")
+			Expect(problem.Type).To(ContainSubstring("bad-request"), "Error type should indicate bad request")
 			Expect(problem.Detail).To(ContainSubstring("incident_type"), "Error detail should mention incident_type")
 			Expect(problem.Status).To(Equal(400), "RFC 7807 status should match HTTP status")
 		})
