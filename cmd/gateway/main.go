@@ -30,6 +30,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 )
 
 var (
@@ -87,53 +88,37 @@ func main() {
 	}
 	logger.Info("Connected to Redis", zap.String("redis_addr", *redisAddr))
 
-	// Create server configuration (nested structure)
-	serverCfg := &gateway.ServerConfig{
-		Server: gateway.ServerSettings{
-			ListenAddr:   *listenAddr,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  120 * time.Second,
-		},
-
-		Middleware: gateway.MiddlewareSettings{
-			RateLimit: gateway.RateLimitSettings{
-				RequestsPerMinute: 100,
-				Burst:             10,
-			},
-		},
-
-		Infrastructure: gateway.InfrastructureSettings{
-			Redis: &goredis.Options{
-				Addr:         *redisAddr,
-				DB:           *redisDB,
-				DialTimeout:  5 * time.Second,
-				ReadTimeout:  3 * time.Second,
-				WriteTimeout: 3 * time.Second,
-				PoolSize:     10,
-				MinIdleConns: 2,
-			},
-		},
-
-		Processing: gateway.ProcessingSettings{
-			Deduplication: gateway.DeduplicationSettings{
-				TTL: 5 * time.Minute,
-			},
-			Storm: gateway.StormSettings{
-				RateThreshold:     10, // 10 alerts/minute
-				PatternThreshold:  5,  // 5 similar alerts
-				AggregationWindow: 1 * time.Minute,
-			},
-			Environment: gateway.EnvironmentSettings{
-				CacheTTL:           30 * time.Second,
-				ConfigMapNamespace: "kubernaut-system",
-				ConfigMapName:      "kubernaut-environment-overrides",
-			},
-			Priority: gateway.PrioritySettings{
-				PolicyPath: "config.app/gateway/policies/priority.rego",
-			},
-		},
+	// Load configuration from YAML file
+	serverCfg, err := config.LoadFromFile(*configPath)
+	if err != nil {
+		logger.Fatal("Failed to load configuration",
+			zap.String("config_path", *configPath),
+			zap.Error(err))
 	}
+
+	// Override configuration with environment variables (e.g., secrets)
+	serverCfg.LoadFromEnv()
+
+	// Override with command-line flags (highest priority)
+	if *listenAddr != ":8080" {
+		serverCfg.Server.ListenAddr = *listenAddr
+	}
+	if *redisAddr != "localhost:6379" {
+		serverCfg.Infrastructure.Redis.Addr = *redisAddr
+	}
+	if *redisDB != 0 {
+		serverCfg.Infrastructure.Redis.DB = *redisDB
+	}
+
+	// Validate configuration
+	if err := serverCfg.Validate(); err != nil {
+		logger.Fatal("Invalid configuration", zap.Error(err))
+	}
+
+	logger.Info("Configuration loaded successfully",
+		zap.String("listen_addr", serverCfg.Server.ListenAddr),
+		zap.String("redis_addr", serverCfg.Infrastructure.Redis.Addr),
+		zap.Int("redis_db", serverCfg.Infrastructure.Redis.DB))
 
 	// Create Gateway server
 	srv, err := gateway.NewServer(serverCfg, logger)

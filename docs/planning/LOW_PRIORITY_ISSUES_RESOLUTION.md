@@ -310,7 +310,7 @@ func (r *RemediationProcessingReconciler) updateRemediationRequestOnError(
     remediation *remediationv1.RemediationRequest,
     err error,
 ) error {
-    // Update RemediationProcessing CRD with error
+    // Update SignalProcessing CRD with error
     processing.Status.Phase = "Failed"
     processing.Status.Error = &processingv1.ErrorInfo{
         Code:      "ENRICHMENT_FAILED",

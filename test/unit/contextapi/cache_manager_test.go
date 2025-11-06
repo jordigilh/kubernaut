@@ -24,58 +24,90 @@ var _ = Describe("Cache Manager", func() {
 		logger, _ = zap.NewDevelopment()
 	})
 
-	Context("NewCacheManager", func() {
-		It("should create a cache manager with Redis and LRU", func() {
-			cfg := &cache.Config{
-				RedisAddr:  "localhost:6379",
-				LRUSize:    100,
-				DefaultTTL: 5 * time.Minute,
-			}
+	Context("BR-CACHE-001: Cache Manager Configuration Validation", func() {
+		type configTestCase struct {
+			description     string
+			redisAddr       string
+			lruSize         int
+			ttl             time.Duration
+			useNilLogger    bool // Flag to explicitly test nil logger
+			shouldSucceed   bool
+			errorSubstring  string
+			expectNilResult bool
+		}
 
-			manager, err := cache.NewCacheManager(cfg, logger)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(manager).ToNot(BeNil())
-			defer manager.Close()
-		})
+		DescribeTable("Configuration validation scenarios",
+			func(tc configTestCase) {
+				// Use logger from outer BeforeEach unless test explicitly wants nil
+				var testLogger *zap.Logger
+				if tc.useNilLogger {
+					testLogger = nil
+				} else {
+					testLogger = logger
+				}
 
-		It("should work even if Redis is unavailable (graceful degradation)", func() {
-			cfg := &cache.Config{
-				RedisAddr:  "invalid:9999", // Invalid Redis address
-				LRUSize:    100,
-				DefaultTTL: 5 * time.Minute,
-			}
+				cfg := &cache.Config{
+					RedisAddr:  tc.redisAddr,
+					LRUSize:    tc.lruSize,
+					DefaultTTL: tc.ttl,
+				}
 
-			manager, err := cache.NewCacheManager(cfg, logger)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(manager).ToNot(BeNil())
-			defer manager.Close()
-		})
+				manager, err := cache.NewCacheManager(cfg, testLogger)
 
-		It("should return error if logger is nil", func() {
-			cfg := &cache.Config{
-				RedisAddr:  "localhost:6379",
-				LRUSize:    100,
-				DefaultTTL: 5 * time.Minute,
-			}
-
-			manager, err := cache.NewCacheManager(cfg, nil)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("logger"))
-			Expect(manager).To(BeNil())
-		})
-
-		It("should return error if LRU size is invalid", func() {
-			cfg := &cache.Config{
-				RedisAddr:  "localhost:6379",
-				LRUSize:    0, // Invalid size
-				DefaultTTL: 5 * time.Minute,
-			}
-
-			manager, err := cache.NewCacheManager(cfg, logger)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("lru size"))
-			Expect(manager).To(BeNil())
-		})
+				if tc.shouldSucceed {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(manager).ToNot(BeNil())
+					if manager != nil {
+						defer manager.Close()
+					}
+				} else {
+					Expect(err).To(HaveOccurred())
+					if tc.errorSubstring != "" {
+						Expect(err.Error()).To(ContainSubstring(tc.errorSubstring))
+					}
+					if tc.expectNilResult {
+						Expect(manager).To(BeNil())
+					}
+				}
+			},
+			Entry("valid config with Redis and LRU", configTestCase{
+				redisAddr:     "localhost:6379",
+				lruSize:       100,
+				ttl:           5 * time.Minute,
+				shouldSucceed: true,
+			}),
+			Entry("graceful degradation when Redis unavailable", configTestCase{
+				redisAddr:     "invalid:9999",
+				lruSize:       100,
+				ttl:           5 * time.Minute,
+				shouldSucceed: true,
+			}),
+			Entry("error when logger is nil", configTestCase{
+				redisAddr:       "localhost:6379",
+				lruSize:         100,
+				ttl:             5 * time.Minute,
+				useNilLogger:    true, // Explicitly test nil logger
+				shouldSucceed:   false,
+				errorSubstring:  "logger",
+				expectNilResult: true,
+			}),
+			Entry("error when LRU size is zero", configTestCase{
+				redisAddr:       "localhost:6379",
+				lruSize:         0,
+				ttl:             5 * time.Minute,
+				shouldSucceed:   false,
+				errorSubstring:  "lru size",
+				expectNilResult: true,
+			}),
+			Entry("error when LRU size is negative", configTestCase{
+				redisAddr:       "localhost:6379",
+				lruSize:         -10,
+				ttl:             5 * time.Minute,
+				shouldSucceed:   false,
+				errorSubstring:  "lru size",
+				expectNilResult: true,
+			}),
+		)
 	})
 
 	Context("Cache Operations - L1 (Redis) Priority", func() {

@@ -762,7 +762,7 @@ kubectl get remediationrequests -l namespace=production,priority=P0
 ### Other Service CRDs
 
 For schemas of CRDs created by Central Controller:
-- **RemediationProcessing**: See `01-remediationprocessor/crd-schema.md`
+- **RemediationProcessing**: See `01-signalprocessing/crd-schema.md`
 - **AIAnalysis**: See `02-aianalysis/crd-schema.md`
 - **WorkflowExecution**: See `03-workflowexecution/crd-schema.md`
 - **KubernetesExecution**: See `04-kubernetesexecutor/crd-schema.md`

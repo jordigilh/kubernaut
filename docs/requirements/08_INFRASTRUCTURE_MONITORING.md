@@ -218,7 +218,7 @@ The Infrastructure & Monitoring layer provides comprehensive observability, metr
 
 #### 7.1.3 Alert Lifecycle
 - **BR-ALERT-011**: MUST track alert lifecycle from creation to resolution
-  - **Enhanced**: Integrate with Remediation Processor tracking system (BR-AP-021) for unified lifecycle view
+  - **Enhanced**: Integrate with Remediation Processor tracking system (BR-SP-021) for unified lifecycle view
   - **Enhanced**: Correlate system-level alert metrics with Remediation Processor tracking IDs
   - **Enhanced**: Avoid duplicate alert lifecycle tracking - defer to Remediation Processor ownership
   - **Enhanced**: Focus on system performance metrics and infrastructure health monitoring

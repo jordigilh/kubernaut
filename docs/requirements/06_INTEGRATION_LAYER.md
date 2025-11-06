@@ -46,7 +46,7 @@ The Integration Layer provides comprehensive connectivity and communication capa
 - **BR-WH-026**: MUST integrate with Remediation Processor for immediate tracking initiation
   - Forward validated alerts to Remediation Processor within 50ms of receipt
   - Include gateway receipt timestamp and correlation metadata
-  - Ensure Remediation Processor tracking record creation (BR-AP-021) before HTTP response
+  - Ensure Remediation Processor tracking record creation (BR-SP-021) before HTTP response
   - Maintain gateway processing logs for audit correlation with processor tracking
 
 #### 2.1.4 Configuration & Flexibility
@@ -70,54 +70,54 @@ The Integration Layer provides comprehensive connectivity and communication capa
 ### 3.1 Business Capabilities
 
 #### 3.1.1 Alert Processing Pipeline
-- **BR-AP-001**: MUST process incoming alerts through configurable filtering rules
-- **BR-AP-002**: MUST enrich alerts with contextual information from multiple sources
-- **BR-AP-003**: MUST normalize alert formats from different monitoring systems
-- **BR-AP-004**: MUST implement alert correlation and grouping logic
-- **BR-AP-005**: MUST support alert transformation and field mapping
+- **BR-SP-001**: MUST process incoming alerts through configurable filtering rules
+- **BR-SP-002**: MUST enrich alerts with contextual information from multiple sources
+- **BR-SP-003**: MUST normalize alert formats from different monitoring systems
+- **BR-SP-004**: MUST implement alert correlation and grouping logic
+- **BR-SP-005**: MUST support alert transformation and field mapping
 
 #### 3.1.2 Intelligent Filtering
-- **BR-AP-006**: MUST implement rule-based filtering with complex conditions
-- **BR-AP-007**: MUST support AI-powered alert relevance scoring
-- **BR-AP-008**: MUST provide alert suppression during maintenance windows
-- **BR-AP-009**: MUST implement alert escalation based on severity and duration
-- **BR-AP-010**: MUST support custom filtering logic through plugins
+- **BR-SP-006**: MUST implement rule-based filtering with complex conditions
+- **BR-SP-007**: MUST support AI-powered alert relevance scoring
+- **BR-SP-008**: MUST provide alert suppression during maintenance windows
+- **BR-SP-009**: MUST implement alert escalation based on severity and duration
+- **BR-SP-010**: MUST support custom filtering logic through plugins
 
 #### 3.1.3 Context Enrichment
-- **BR-AP-011**: MUST enrich alerts with Kubernetes cluster context
-- **BR-AP-012**: MUST add historical action context to alerts
-- **BR-AP-013**: MUST integrate with monitoring systems for additional metrics
-- **BR-AP-014**: MUST provide business context through external API integration
-- **BR-AP-015**: MUST support custom context providers and data sources
+- **BR-SP-011**: MUST enrich alerts with Kubernetes cluster context
+- **BR-SP-012**: MUST add historical action context to alerts
+- **BR-SP-013**: MUST integrate with monitoring systems for additional metrics
+- **BR-SP-014**: MUST provide business context through external API integration
+- **BR-SP-015**: MUST support custom context providers and data sources
 
 #### 3.1.4 Environment Classification & Namespace Management
-- **BR-AP-021**: MUST classify Kubernetes namespaces by business environment type (production, staging, development, testing)
-- **BR-AP-022**: MUST define production namespace identification through configurable business-driven patterns
-- **BR-AP-023**: MUST implement environment-based alert filtering with business-defined priority levels
-- **BR-AP-024**: MUST validate namespace classification against organizational naming standards
-- **BR-AP-025**: MUST support multi-tenant namespace isolation with business unit mapping
-- **BR-AP-026**: MUST provide environment-specific alert routing based on business criticality
-- **BR-AP-027**: MUST implement namespace-based resource allocation and limits aligned with business priorities
-- **BR-AP-028**: MUST support environment promotion workflows with business approval gates
-- **BR-AP-029**: MUST track namespace lifecycle events for business compliance and auditing
-- **BR-AP-030**: MUST integrate with organizational directory services for namespace ownership mapping
+- **BR-SP-021**: MUST classify Kubernetes namespaces by business environment type (production, staging, development, testing)
+- **BR-SP-022**: MUST define production namespace identification through configurable business-driven patterns
+- **BR-SP-023**: MUST implement environment-based alert filtering with business-defined priority levels
+- **BR-SP-024**: MUST validate namespace classification against organizational naming standards
+- **BR-SP-025**: MUST support multi-tenant namespace isolation with business unit mapping
+- **BR-SP-026**: MUST provide environment-specific alert routing based on business criticality
+- **BR-SP-027**: MUST implement namespace-based resource allocation and limits aligned with business priorities
+- **BR-SP-028**: MUST support environment promotion workflows with business approval gates
+- **BR-SP-029**: MUST track namespace lifecycle events for business compliance and auditing
+- **BR-SP-030**: MUST integrate with organizational directory services for namespace ownership mapping
 
 #### 3.1.5 Business Priority & Criticality Management
-- **BR-AP-031**: MUST define business criticality levels for different namespace types and workloads
-- **BR-AP-032**: MUST implement Service Level Objective (SLO) mapping based on business environment classification
-- **BR-AP-033**: MUST support business hours and timezone-aware alert processing priorities
-- **BR-AP-034**: MUST provide cost center and budget allocation tracking per namespace environment
-- **BR-AP-035**: MUST implement compliance and regulatory requirement mapping per environment type
+- **BR-SP-031**: MUST define business criticality levels for different namespace types and workloads
+- **BR-SP-032**: MUST implement Service Level Objective (SLO) mapping based on business environment classification
+- **BR-SP-033**: MUST support business hours and timezone-aware alert processing priorities
+- **BR-SP-034**: MUST provide cost center and budget allocation tracking per namespace environment
+- **BR-SP-035**: MUST implement compliance and regulatory requirement mapping per environment type
 
 #### 3.1.6 Decision Making Integration
-- **BR-AP-016**: MUST integrate with AI components for intelligent alert analysis
-- **BR-AP-017**: MUST coordinate with workflow engine for complex remediation
-- **BR-AP-018**: MUST utilize historical data for decision optimization
-- **BR-AP-019**: MUST support human-in-the-loop decision making workflows
-- **BR-AP-020**: MUST provide decision audit trails and explainability
+- **BR-SP-016**: MUST integrate with AI components for intelligent alert analysis
+- **BR-SP-017**: MUST coordinate with workflow engine for complex remediation
+- **BR-SP-018**: MUST utilize historical data for decision optimization
+- **BR-SP-019**: MUST support human-in-the-loop decision making workflows
+- **BR-SP-020**: MUST provide decision audit trails and explainability
 
 ### 3.2 Alert Lifecycle Management
-- **BR-AP-021**: MUST track alert states throughout processing lifecycle
+- **BR-SP-021**: MUST track alert states throughout processing lifecycle
   - Generate unique alert tracking ID immediately upon receipt from Alert Gateway
   - Initialize alert lifecycle state (received, processing, analyzed, remediated, closed)
   - Capture initial alert metadata (timestamp, source, severity, content, correlation ID)
@@ -132,10 +132,10 @@ The Integration Layer provides comprehensive connectivity and communication capa
   - Support audit trail requirements for compliance and debugging
   - Create tracking record within 100ms of alert reception from gateway
   - Maintain correlation between gateway receipt acknowledgment and processor tracking
-- **BR-AP-022**: MUST implement alert acknowledgment and closure mechanisms
-- **BR-AP-023**: MUST support alert snoozing and temporary suppression
-- **BR-AP-024**: MUST provide alert aging and automatic cleanup
-- **BR-AP-025**: MUST maintain alert processing metrics and analytics
+- **BR-SP-022**: MUST implement alert acknowledgment and closure mechanisms
+- **BR-SP-023**: MUST support alert snoozing and temporary suppression
+- **BR-SP-024**: MUST provide alert aging and automatic cleanup
+- **BR-SP-025**: MUST maintain alert processing metrics and analytics
 
 ---
 

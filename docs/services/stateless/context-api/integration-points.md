@@ -20,7 +20,7 @@
 
 #### Recovery Context Integration (Alternative 2)
 
-When a workflow fails, Remediation Orchestrator creates a NEW RemediationProcessing CRD (recovery). The RemediationProcessing Controller enriches it with:
+When a workflow fails, Remediation Orchestrator creates a NEW SignalProcessing CRD (recovery). The RemediationProcessing Controller enriches it with:
 - **Fresh monitoring context** (current CPU/memory/pod status)
 - **Fresh business context** (current ownership/runbooks)
 - **Recovery context from Context API** (historical failures, patterns, strategies)
@@ -139,7 +139,7 @@ func (r *RemediationProcessingReconciler) enrichRecoveryContext(
    ↓
 2. Remediation Orchestrator:
    - Evaluates recovery viability
-   - Creates NEW RemediationProcessing CRD (recovery)
+   - Creates NEW SignalProcessing CRD (recovery)
    - Sets phase: "recovering"
    ↓
 3. RemediationProcessing Controller:
@@ -167,7 +167,7 @@ func (r *RemediationProcessingReconciler) enrichRecoveryContext(
 ✅ **Fresh Monitoring Context**: Recovery attempts see current cluster state (not 10min old)
 ✅ **Fresh Business Context**: Current ownership/runbooks (may change between attempts)
 ✅ **Fresh Recovery Context**: Latest historical data from Context API
-✅ **Immutable Audit Trail**: Each RemediationProcessing CRD is separate and immutable
+✅ **Immutable Audit Trail**: Each SignalProcessing CRD is separate and immutable
 ✅ **Consistent Enrichment**: ALL enrichment in one place (RemediationProcessing Controller)
 ✅ **Pattern Reuse**: Recovery follows same pattern as initial (watch → enrich → complete)
 

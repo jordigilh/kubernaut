@@ -1,0 +1,32 @@
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: "30s"
+  write_timeout: "30s"
+
+logging:
+  level: "info"
+  format: "json"
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "action_history"
+  user: "slm_user"
+  password: "slm_password_dev"
+  ssl_mode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: "5m"
+  conn_max_idle_time: "10m"
+
+redis:
+  addr: "localhost:6379"
+  db: 0
+  # DD-009: Redis used for Dead Letter Queue (DLQ) fallback
+  # when PostgreSQL is unavailable
+  dlq_stream_name: "audit:dlq:notification"
+  dlq_max_len: 10000
+  dlq_consumer_group: "datastorage-dlq-consumers"
+
+

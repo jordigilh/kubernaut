@@ -149,6 +149,140 @@ holmesgpt_api_llm_tokens_total
 
 ---
 
+### **3.1. Metrics Cardinality Management** ⚠️ **CRITICAL**
+
+**Problem**: High-cardinality labels cause Prometheus memory explosion and query degradation.
+
+#### **Path Normalization for HTTP Metrics**
+
+**Requirement**: HTTP path labels MUST be normalized to prevent unbounded cardinality.
+
+**Risk Scenario**:
+```go
+// ❌ DANGEROUS: Raw paths with IDs/query params
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/abc-123", "200")
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/def-456", "200")
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/xyz-789", "200")
+// Result: Millions of unique metrics → Prometheus OOM
+```
+
+**Solution**: Normalize dynamic path segments
+```go
+// ✅ SAFE: Normalized paths with :id placeholder
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/:id", "200")
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/:id", "200")
+httpRequests.WithLabelValues("GET", "/api/v1/incidents/:id", "200")
+// Result: Single metric → Bounded cardinality
+```
+
+#### **Implementation Pattern**
+
+**Mandatory**: All services MUST normalize paths before recording HTTP metrics.
+
+```go
+// Context API Reference Implementation
+// pkg/contextapi/server/server.go
+
+func normalizePath(path string) string {
+    // Already normalized? Return as-is (idempotent)
+    if strings.Contains(path, ":id") {
+        return path
+    }
+
+    segments := strings.Split(path, "/")
+    for i, segment := range segments {
+        if segment == "" {
+            continue // Skip empty segments
+        }
+
+        // Skip known endpoint names
+        if isKnownEndpoint(segment) {
+            continue
+        }
+
+        // Normalize ID-like segments (UUIDs, numeric IDs, etc.)
+        if isIDLikeSegment(segment) {
+            segments[i] = ":id"
+        }
+    }
+
+    return strings.Join(segments, "/")
+}
+
+func isIDLikeSegment(segment string) bool {
+    // ID characteristics:
+    // 1. More than 3 characters (avoid false positives)
+    // 2. Contains numbers or hyphens
+    // 3. Only alphanumeric + hyphens + underscores
+    // 4. Not a known endpoint name
+
+    if len(segment) <= 3 {
+        return false
+    }
+
+    hasNumberOrHyphen := false
+    for _, ch := range segment {
+        if !isValidIDChar(ch) {
+            return false
+        }
+        if (ch >= '0' && ch <= '9') || ch == '-' {
+            hasNumberOrHyphen = true
+        }
+    }
+
+    return hasNumberOrHyphen
+}
+```
+
+#### **Validation**
+
+**Unit Tests Required**: All services MUST have path normalization tests.
+
+```go
+// Example test cases
+func TestNormalizePath(t *testing.T) {
+    tests := []struct {
+        input    string
+        expected string
+    }{
+        {"/health", "/health"},                                    // Static - unchanged
+        {"/api/v1/incidents/abc-123", "/api/v1/incidents/:id"},  // UUID - normalized
+        {"/api/v1/incidents/123/actions/456", "/api/v1/incidents/:id/actions/:id"}, // Multiple IDs
+        {"/api/v1/context/query", "/api/v1/context/query"},       // Static - unchanged
+    }
+
+    for _, tt := range tests {
+        result := normalizePath(tt.input)
+        if result != tt.expected {
+            t.Errorf("normalizePath(%q) = %q, want %q", tt.input, result, tt.expected)
+        }
+    }
+}
+```
+
+#### **Monitoring**
+
+**Prometheus Alert**: Alert when cardinality exceeds threshold.
+
+```yaml
+- alert: HighMetricCardinality
+  expr: |
+    count by (job) (
+      {job=~".*-api", __name__=~".*_http_.*"}
+    ) > 5000
+  for: 5m
+  annotations:
+    summary: "High metric cardinality in {{ $labels.job }}"
+    description: "{{ $value }} unique HTTP metrics (threshold: 5000)"
+```
+
+#### **Reference Implementation**
+
+- **Context API**: `pkg/contextapi/server/server.go` - Full implementation with tests
+- **Audit Document**: `docs/services/stateless/context-api/METRICS_CARDINALITY_AUDIT.md`
+
+---
+
 ### **4. Histogram Buckets**
 
 **HTTP Request Duration** (seconds):
@@ -295,13 +429,13 @@ logger.Info("Processing webhook",
 func SanitizeForLog(data string) string {
     // Redact passwords
     data = regexp.MustCompile(`"password"\s*:\s*"[^"]*"`).ReplaceAllString(data, `"password":"[REDACTED]"`)
-    
+
     // Redact tokens
     data = regexp.MustCompile(`"token"\s*:\s*"[^"]*"`).ReplaceAllString(data, `"token":"[REDACTED]"`)
-    
+
     // Redact authorization headers
     data = regexp.MustCompile(`"authorization"\s*:\s*"[^"]*"`).ReplaceAllString(data, `"authorization":"[REDACTED]"`)
-    
+
     return data
 }
 ```
@@ -318,7 +452,7 @@ func RequestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
     return func(next http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
             requestID := uuid.New().String()
-            
+
             // Create request-scoped logger
             requestLogger := logger.With(
                 zap.String("request_id", requestID),
@@ -326,16 +460,16 @@ func RequestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
                 zap.String("endpoint", r.URL.Path),
                 zap.String("method", r.Method),
             )
-            
+
             // Store in context
             ctx := context.WithValue(r.Context(), LoggerKey, requestLogger)
-            
+
             // Log incoming request
             requestLogger.Info("Incoming request",
                 zap.String("user_agent", r.UserAgent()),
                 zap.String("content_type", r.Header.Get("Content-Type")),
             )
-            
+
             next.ServeHTTP(w, r.WithContext(ctx))
         })
     }
@@ -358,16 +492,16 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) performanceLoggingMiddleware(next http.Handler) http.Handler {
     return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
         start := time.Now()
-        
+
         // Wrap response writer to capture status code
         ww := chimiddleware.NewWrapResponseWriter(w, r.ProtoMajor)
-        
+
         // Call next handler
         next.ServeHTTP(ww, r)
-        
+
         // Calculate duration
         duration := time.Since(start)
-        
+
         // Log request completion
         logger := middleware.GetLogger(r.Context())
         logger.Info("Request completed",
@@ -484,14 +618,14 @@ type Metrics struct {
     HTTPRequestDuration    *prometheus.HistogramVec
     HTTPRequestsInFlight   prometheus.Gauge
     HTTPRequestsTotal      *prometheus.CounterVec
-    
+
     // Database Metrics
     DatabaseQueryDuration  *prometheus.HistogramVec
     DatabaseConnectionsTotal prometheus.Gauge
-    
+
     // Business Metrics
     SignalsProcessedTotal  *prometheus.CounterVec
-    
+
     registry prometheus.Gatherer
 }
 
@@ -503,14 +637,14 @@ func NewMetrics() *Metrics {
 // NewMetricsWithRegistry creates metrics with custom registry (for testing)
 func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
     factory := promauto.With(registry)
-    
+
     var gatherer prometheus.Gatherer
     if reg, ok := registry.(prometheus.Gatherer); ok {
         gatherer = reg
     } else {
         gatherer = prometheus.DefaultGatherer
     }
-    
+
     return &Metrics{
         registry: gatherer,
         HTTPRequestDuration: factory.NewHistogramVec(
@@ -558,7 +692,7 @@ package middleware
 import (
     "context"
     "net/http"
-    
+
     "github.com/google/uuid"
     "go.uber.org/zap"
 )
@@ -579,10 +713,10 @@ func RequestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
             if requestID == "" {
                 requestID = uuid.New().String()
             }
-            
+
             // Add to response headers
             w.Header().Set("X-Request-ID", requestID)
-            
+
             // Create request-scoped logger
             requestLogger := logger.With(
                 zap.String("request_id", requestID),
@@ -590,17 +724,17 @@ func RequestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
                 zap.String("endpoint", r.URL.Path),
                 zap.String("method", r.Method),
             )
-            
+
             // Store in context
             ctx := context.WithValue(r.Context(), RequestIDKey, requestID)
             ctx = context.WithValue(ctx, LoggerKey, requestLogger)
-            
+
             // Log incoming request
             requestLogger.Info("Incoming request",
                 zap.String("user_agent", r.UserAgent()),
                 zap.String("content_type", r.Header.Get("Content-Type")),
             )
-            
+
             next.ServeHTTP(w, r.WithContext(ctx))
         })
     }
@@ -627,12 +761,12 @@ func getSourceIP(r *http.Request) string {
     if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
         return xff
     }
-    
+
     // Check X-Real-IP header (nginx)
     if xri := r.Header.Get("X-Real-IP"); xri != "" {
         return xri
     }
-    
+
     // Fallback to RemoteAddr
     return r.RemoteAddr
 }
@@ -660,7 +794,7 @@ var (
         "token", "api_key", "secret",
         "authorization", "auth", "bearer",
     }
-    
+
     sanitizationPatterns = []struct {
         pattern     *regexp.Regexp
         replacement string
@@ -700,15 +834,15 @@ func SanitizeForLog(data string) string {
 type Metrics struct {
     // HTTP Metrics
     HTTPRequestDuration    *prometheus.HistogramVec
-    
+
     // Database Metrics
     DatabaseQueryDuration  *prometheus.HistogramVec
     DatabaseConnectionsTotal prometheus.Gauge
-    
+
     // Redis Cache Metrics
     RedisCacheHitsTotal    prometheus.Counter
     RedisCacheMissesTotal  prometheus.Counter
-    
+
     // Business Metrics
     ContextQueriesTotal    *prometheus.CounterVec
     SemanticSearchDuration *prometheus.HistogramVec
@@ -727,17 +861,17 @@ m.SemanticSearchDuration.WithLabelValues("pgvector").Observe(duration.Seconds())
 // In handler
 func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
     logger := middleware.GetLogger(r.Context())
-    
+
     logger.Info("Processing context query",
         zap.String("query_type", "remediation"),
         zap.String("remediation_id", remediationID),
     )
-    
+
     // Query database
     start := time.Now()
     results, err := s.db.QueryContext(r.Context(), query)
     duration := time.Since(start)
-    
+
     if err != nil {
         logger.Error("Database query failed",
             zap.Error(err),
@@ -745,7 +879,7 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
         )
         return
     }
-    
+
     logger.Info("Context query completed",
         zap.Int("result_count", len(results)),
         zap.Float64("duration_ms", float64(duration.Milliseconds())),
@@ -762,18 +896,18 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 func (s *Server) enrichWithContext(ctx context.Context, remediationID string) (*Context, error) {
     logger := middleware.GetLogger(ctx)
     requestID := middleware.GetRequestID(ctx)
-    
+
     // Create HTTP request with request ID
-    req, _ := http.NewRequestWithContext(ctx, "GET", 
-        fmt.Sprintf("http://context-api:8080/api/v1/context/remediation/%s", remediationID), 
+    req, _ := http.NewRequestWithContext(ctx, "GET",
+        fmt.Sprintf("http://context-api:8080/api/v1/context/remediation/%s", remediationID),
         nil)
     req.Header.Set("X-Request-ID", requestID)
-    
+
     logger.Info("Calling Context API",
         zap.String("remediation_id", remediationID),
         zap.String("request_id", requestID),
     )
-    
+
     resp, err := s.httpClient.Do(req)
     // ...
 }
@@ -781,7 +915,7 @@ func (s *Server) enrichWithContext(ctx context.Context, remediationID string) (*
 // Context API receives request
 func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
     logger := middleware.GetLogger(r.Context())
-    
+
     // Request ID automatically extracted by middleware
     logger.Info("Received context query from Gateway",
         zap.String("remediation_id", remediationID),

@@ -208,7 +208,7 @@ Day 8 DO-REFACTOR: Try to complete coverage
 
 ## 📚 **REFERENCES**
 
-- **Implementation Plan v2.1**: [IMPLEMENTATION_PLAN_V2.0.md](IMPLEMENTATION_PLAN_V2.0.md)
+- **Implementation Plan v2.1**: [IMPLEMENTATION_PLAN_V2.7.md](IMPLEMENTATION_PLAN_V2.7.md)
 - **Next Tasks**: [NEXT_TASKS.md](NEXT_TASKS.md)
 - **Day 8 Progress**: See NEXT_TASKS.md sections:
   - Day 8 DO-RED (76 tests written)

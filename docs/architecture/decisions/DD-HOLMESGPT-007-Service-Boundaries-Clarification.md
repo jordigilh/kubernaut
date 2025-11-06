@@ -86,7 +86,7 @@
 │       - recoveryAttempts < 3? ✅                               │
 │       - Same failure pattern? ❌                               │
 │       - Termination rate < 10%? ✅                             │
-│     • Creates NEW RemediationProcessing CRD #2:               │
+│     • Creates NEW SignalProcessing CRD #2:               │
 │       - spec.isRecoveryAttempt: true                          │
 │       - spec.attemptNumber: 1                                 │
 │       - spec.failedWorkflowRef: "workflow-exec-001"           │
@@ -98,7 +98,7 @@
 │                                                                │
 │  4. ENRICHMENT WITH FAILURE CONTEXT                           │
 │     RemediationProcessing Controller:                         │
-│     • Watches RemediationProcessing CRD #2                    │
+│     • Watches SignalProcessing CRD #2                    │
 │     • Enriches with FRESH context:                            │
 │       - Monitoring context (current cluster state)            │
 │       - Business context (environment, criticality)           │
@@ -197,7 +197,7 @@
 - ✅ Watch WorkflowExecution CRD status changes
 - ✅ Detect "failed" status
 - ✅ Evaluate recovery viability (attempts < 3, pattern check, rate check)
-- ✅ Create NEW RemediationProcessing CRD (with failure details in spec)
+- ✅ Create NEW SignalProcessing CRD (with failure details in spec)
 - ✅ Create NEW AIAnalysis CRD (after RemediationProcessing enrichment)
 - ✅ Track recovery attempts in RemediationRequest status
 - ✅ Enforce recovery limits (max 3 attempts)
@@ -207,7 +207,7 @@
 ### RemediationProcessing Controller (NOT HolmesGPT API)
 
 **Responsibilities**:
-- ✅ Watch RemediationProcessing CRD
+- ✅ Watch SignalProcessing CRD
 - ✅ Enrich with FRESH monitoring + business contexts
 - ✅ Enrich with recovery context (failure details from spec)
 - ✅ Query Context API for historical similar failures
@@ -247,7 +247,7 @@
      "kubernetesExecutionRef": "ke-001"
    }
 
-3. RemediationProcessing CRD spec (created by RemediationOrchestrator):
+3. SignalProcessing CRD spec (created by RemediationOrchestrator):
    {
      "isRecoveryAttempt": true,
      "attemptNumber": 1,
@@ -256,7 +256,7 @@
      "failureReason": "OOMKilled"
    }
 
-4. RemediationProcessing CRD status (after enrichment):
+4. SignalProcessing CRD status (after enrichment):
    {
      "phase": "completed",
      "monitoringContext": {...},

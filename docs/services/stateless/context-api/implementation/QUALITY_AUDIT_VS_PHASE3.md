@@ -159,21 +159,21 @@
 **Phase 3 Standard** (Workflow Execution provides 3 templates):
 ```go
 // Template 1: Basic Workflow Execution (200 lines)
-var _ = Describe("BR-WORKFLOW-001: Basic Workflow Execution", func() {
+var _ = Describe("BR-REMEDIATION-001: Basic Workflow Execution", func() {
     // Comprehensive setup with Kind cluster
     // Real Kubernetes API interaction
     // Anti-flaky patterns: EventuallyWithRetry, Barrier, SyncPoint
 })
 
 // Template 2: Parallel Execution (300 lines)
-var _ = Describe("BR-WORKFLOW-015: Parallel Step Execution", func() {
+var _ = Describe("BR-REMEDIATION-015: Parallel Step Execution", func() {
     // Concurrent execution testing
     // Race condition detection
     // Deadlock prevention validation
 })
 
 // Template 3: Rollback Scenarios (250 lines)
-var _ = Describe("BR-WORKFLOW-020: Workflow Rollback", func() {
+var _ = Describe("BR-REMEDIATION-020: Workflow Rollback", func() {
     // Failure injection
     // State cleanup validation
     // Resource leak detection
@@ -252,7 +252,7 @@ var _ = Describe("BR-WORKFLOW-020: Workflow Rollback", func() {
 
 ### Incomplete #2: Test Examples
 
-**Phase 3 Standard**: 
+**Phase 3 Standard**:
 - 60+ production-ready code examples
 - Complete imports and error handling
 - Table-driven tests with DescribeTable/Entry
@@ -399,7 +399,7 @@ Phase 3 Plan Average: 5,062 lines
 - ❌ Missing: Architecture decisions documentation
 - **Gap**: 200 lines
 
-### Day 2: Query Layer  
+### Day 2: Query Layer
 - ✅ Has: Query builder code
 - ❌ Missing: Complete APDC phases
 - ❌ Missing: Table-driven test examples

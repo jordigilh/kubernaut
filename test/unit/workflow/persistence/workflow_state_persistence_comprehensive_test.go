@@ -35,10 +35,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow State Persistence Business Logic Testing
+// BR-REMEDIATION-STATE-PERSISTENCE-001: Comprehensive Workflow State Persistence Business Logic Testing
 // Business Impact: Validates workflow state persistence capabilities for business continuity
 // Stakeholder Value: Ensures reliable workflow state management for operational resilience
-var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow State Persistence Business Logic", func() {
+var _ = Describe("BR-REMEDIATION-STATE-PERSISTENCE-001: Comprehensive Workflow State Persistence Business Logic", func() {
 	var (
 		// Mock ONLY external dependencies per pyramid principles
 		mockVectorDB     *mocks.MockVectorDatabase
@@ -82,7 +82,7 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 	})
 
 	// COMPREHENSIVE scenario testing for workflow state persistence business logic
-	DescribeTable("BR-WORKFLOW-STATE-PERSISTENCE-001: Should handle all workflow state persistence scenarios",
+	DescribeTable("BR-REMEDIATION-STATE-PERSISTENCE-001: Should handle all workflow state persistence scenarios",
 		func(scenarioName string, executionFn func() *engine.RuntimeWorkflowExecution, expectedSuccess bool) {
 			// Setup test data
 			execution := executionFn()
@@ -101,15 +101,15 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 			// Validate REAL business workflow state persistence outcomes
 			if expectedSuccess {
 				Expect(err).ToNot(HaveOccurred(),
-					"BR-WORKFLOW-STATE-PERSISTENCE-001: State persistence must succeed for %s", scenarioName)
+					"BR-REMEDIATION-STATE-PERSISTENCE-001: State persistence must succeed for %s", scenarioName)
 
 				// Verify state was saved - following Rule 11: use existing methods
 				saveCount := mockStateStorage.GetSaveCount()
 				Expect(saveCount).To(BeNumerically(">=", 1),
-					"BR-WORKFLOW-STATE-PERSISTENCE-001: Must save workflow state for %s", scenarioName)
+					"BR-REMEDIATION-STATE-PERSISTENCE-001: Must save workflow state for %s", scenarioName)
 			} else {
 				Expect(err).To(HaveOccurred(),
-					"BR-WORKFLOW-STATE-PERSISTENCE-001: Invalid scenarios must fail gracefully for %s", scenarioName)
+					"BR-REMEDIATION-STATE-PERSISTENCE-001: Invalid scenarios must fail gracefully for %s", scenarioName)
 			}
 		},
 		Entry("Simple workflow execution", "simple_workflow", func() *engine.RuntimeWorkflowExecution {
@@ -136,7 +136,7 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 	)
 
 	// COMPREHENSIVE workflow state loading business logic testing
-	Context("BR-WORKFLOW-STATE-PERSISTENCE-002: Workflow State Loading Business Logic", func() {
+	Context("BR-REMEDIATION-STATE-PERSISTENCE-002: Workflow State Loading Business Logic", func() {
 		It("should load workflow state with complete data integrity", func() {
 			// Test REAL business logic for workflow state loading
 			originalExecution := createComplexWorkflowExecution()
@@ -149,26 +149,26 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 			// Save the workflow state first
 			err := workflowStateStorage.SaveWorkflowState(ctx, originalExecution)
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: State save must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: State save must succeed")
 
 			// Test REAL business workflow state loading
 			loadedExecution, err := workflowStateStorage.LoadWorkflowState(ctx, executionID)
 
 			// Validate REAL business workflow state loading outcomes
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: State loading must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: State loading must succeed")
 			Expect(loadedExecution).ToNot(BeNil(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Must return loaded execution")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Must return loaded execution")
 
 			// Validate data integrity
 			Expect(loadedExecution.ID).To(Equal(originalExecution.ID),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Execution ID must be preserved")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Execution ID must be preserved")
 			Expect(loadedExecution.WorkflowID).To(Equal(originalExecution.WorkflowID),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Workflow ID must be preserved")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Workflow ID must be preserved")
 			Expect(loadedExecution.Status).To(Equal(originalExecution.Status),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Status must be preserved")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Status must be preserved")
 			Expect(len(loadedExecution.Steps)).To(Equal(len(originalExecution.Steps)),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Step count must be preserved")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Step count must be preserved")
 		})
 
 		It("should handle cache integration for performance", func() {
@@ -182,7 +182,7 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 			// Save to populate cache
 			err := workflowStateStorage.SaveWorkflowState(ctx, execution)
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Cache population must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Cache population must succeed")
 
 			// Test REAL business cache utilization
 			startTime := time.Now()
@@ -191,16 +191,16 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 
 			// Validate REAL business cache performance outcomes
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Cache loading must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Cache loading must succeed")
 			Expect(loadedExecution).ToNot(BeNil(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Cache must return execution")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Cache must return execution")
 			Expect(loadTime).To(BeNumerically("<", 100*time.Millisecond),
-				"BR-WORKFLOW-STATE-PERSISTENCE-002: Cache access must be fast")
+				"BR-REMEDIATION-STATE-PERSISTENCE-002: Cache access must be fast")
 		})
 	})
 
 	// COMPREHENSIVE workflow state deletion business logic testing
-	Context("BR-WORKFLOW-STATE-PERSISTENCE-003: Workflow State Deletion Business Logic", func() {
+	Context("BR-REMEDIATION-STATE-PERSISTENCE-003: Workflow State Deletion Business Logic", func() {
 		It("should delete workflow state with complete cleanup", func() {
 			// Test REAL business logic for workflow state deletion
 			execution := createComplexWorkflowExecution()
@@ -212,14 +212,14 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 			// Save the workflow state first
 			err := workflowStateStorage.SaveWorkflowState(ctx, execution)
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-003: State save must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-003: State save must succeed")
 
 			// Test REAL business workflow state deletion
 			err = workflowStateStorage.DeleteWorkflowState(ctx, executionID)
 
 			// Validate REAL business workflow state deletion outcomes
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-003: State deletion must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-003: State deletion must succeed")
 
 			// Verify state was deleted from database - following Rule 11: use existing patterns
 			// Test by attempting to load - should fail after deletion
@@ -227,12 +227,12 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 			// Verify state was removed from cache
 			_, err = workflowStateStorage.LoadWorkflowState(ctx, executionID)
 			Expect(err).To(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-003: Deleted state must not be loadable")
+				"BR-REMEDIATION-STATE-PERSISTENCE-003: Deleted state must not be loadable")
 		})
 	})
 
 	// COMPREHENSIVE workflow state recovery business logic testing
-	Context("BR-WORKFLOW-STATE-PERSISTENCE-004: Workflow State Recovery Business Logic", func() {
+	Context("BR-REMEDIATION-STATE-PERSISTENCE-004: Workflow State Recovery Business Logic", func() {
 		It("should recover workflow states after system restart", func() {
 			// Test REAL business logic for workflow state recovery
 			executions := []*engine.RuntimeWorkflowExecution{
@@ -249,17 +249,17 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 
 			// Validate REAL business workflow state recovery outcomes
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-004: State recovery must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-004: State recovery must succeed")
 			Expect(len(recoveredExecutions)).To(Equal(len(executions)),
-				"BR-WORKFLOW-STATE-PERSISTENCE-004: Must recover all workflow states")
+				"BR-REMEDIATION-STATE-PERSISTENCE-004: Must recover all workflow states")
 
 			// Validate recovery completeness
 			for i, recovered := range recoveredExecutions {
 				original := executions[i]
 				Expect(recovered.ID).To(Equal(original.ID),
-					"BR-WORKFLOW-STATE-PERSISTENCE-004: Recovered execution ID must match")
+					"BR-REMEDIATION-STATE-PERSISTENCE-004: Recovered execution ID must match")
 				Expect(recovered.WorkflowID).To(Equal(original.WorkflowID),
-					"BR-WORKFLOW-STATE-PERSISTENCE-004: Recovered workflow ID must match")
+					"BR-REMEDIATION-STATE-PERSISTENCE-004: Recovered workflow ID must match")
 			}
 		})
 
@@ -280,7 +280,7 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 
 			// Validate REAL business partial recovery outcomes
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-004: Partial recovery must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-004: Partial recovery must succeed")
 
 			// Should recover only valid executions
 			validCount := 0
@@ -290,12 +290,12 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 				}
 			}
 			Expect(validCount).To(BeNumerically(">=", 2),
-				"BR-WORKFLOW-STATE-PERSISTENCE-004: Must recover valid executions")
+				"BR-REMEDIATION-STATE-PERSISTENCE-004: Must recover valid executions")
 		})
 	})
 
 	// COMPREHENSIVE pgvector persistence business logic testing
-	Context("BR-WORKFLOW-STATE-PERSISTENCE-005: PgVector Persistence Business Logic", func() {
+	Context("BR-REMEDIATION-STATE-PERSISTENCE-005: PgVector Persistence Business Logic", func() {
 		It("should store workflow state as vectors for similarity search", func() {
 			// Test REAL business logic for pgvector persistence
 			workflow := createPgVectorWorkflow()
@@ -308,12 +308,12 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 
 			// Validate REAL business pgvector persistence outcomes
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-005: PgVector storage must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-005: PgVector storage must succeed")
 
 			// Verify vector was stored
 			storedPatterns := mockVectorDB.GetStoredPatterns()
 			Expect(len(storedPatterns)).To(BeNumerically(">=", 1),
-				"BR-WORKFLOW-STATE-PERSISTENCE-005: Must store workflow as vector")
+				"BR-REMEDIATION-STATE-PERSISTENCE-005: Must store workflow as vector")
 		})
 
 		It("should enable workflow state recovery", func() {
@@ -327,22 +327,22 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 
 			// Validate REAL business similarity retrieval outcomes
 			Expect(err).ToNot(HaveOccurred(),
-				"BR-WORKFLOW-STATE-PERSISTENCE-005: Workflow recovery must succeed")
+				"BR-REMEDIATION-STATE-PERSISTENCE-005: Workflow recovery must succeed")
 			Expect(len(recoveredWorkflows)).To(BeNumerically(">=", 0),
-				"BR-WORKFLOW-STATE-PERSISTENCE-005: Must return recovered workflows")
+				"BR-REMEDIATION-STATE-PERSISTENCE-005: Must return recovered workflows")
 
 			// Validate recovery quality
 			for _, result := range recoveredWorkflows {
 				Expect(result.ID).ToNot(BeEmpty(),
-					"BR-WORKFLOW-STATE-PERSISTENCE-005: Recovered workflows must have valid IDs")
+					"BR-REMEDIATION-STATE-PERSISTENCE-005: Recovered workflows must have valid IDs")
 				Expect(result.WorkflowID).ToNot(BeEmpty(),
-					"BR-WORKFLOW-STATE-PERSISTENCE-005: Recovered workflows must have workflow IDs")
+					"BR-REMEDIATION-STATE-PERSISTENCE-005: Recovered workflows must have workflow IDs")
 			}
 		})
 	})
 
 	// COMPREHENSIVE checkpoint management business logic testing
-	Context("BR-WORKFLOW-STATE-PERSISTENCE-006: Checkpoint Management Business Logic", func() {
+	Context("BR-REMEDIATION-STATE-PERSISTENCE-006: Checkpoint Management Business Logic", func() {
 		It("should create and restore workflow checkpoints", func() {
 			// Test REAL business logic for checkpoint management
 			execution := createCheckpointableWorkflowExecution()
@@ -357,17 +357,17 @@ var _ = Describe("BR-WORKFLOW-STATE-PERSISTENCE-001: Comprehensive Workflow Stat
 			// Validate REAL business checkpoint creation outcomes
 			if err == nil {
 				Expect(checkpoint).ToNot(BeNil(),
-					"BR-WORKFLOW-STATE-PERSISTENCE-006: Must return checkpoint")
+					"BR-REMEDIATION-STATE-PERSISTENCE-006: Must return checkpoint")
 				Expect(checkpoint.Name).To(Equal(checkpointName),
-					"BR-WORKFLOW-STATE-PERSISTENCE-006: Checkpoint name must match")
+					"BR-REMEDIATION-STATE-PERSISTENCE-006: Checkpoint name must match")
 
 				// Test REAL business checkpoint restoration
 				restoredExecution, err := workflowStateStorage.RestoreFromCheckpoint(ctx, checkpoint.ID)
 				if err == nil {
 					Expect(restoredExecution).ToNot(BeNil(),
-						"BR-WORKFLOW-STATE-PERSISTENCE-006: Must restore from checkpoint")
+						"BR-REMEDIATION-STATE-PERSISTENCE-006: Must restore from checkpoint")
 					Expect(restoredExecution.WorkflowID).To(Equal(execution.WorkflowID),
-						"BR-WORKFLOW-STATE-PERSISTENCE-006: Restored workflow ID must match")
+						"BR-REMEDIATION-STATE-PERSISTENCE-006: Restored workflow ID must match")
 				}
 			}
 		})

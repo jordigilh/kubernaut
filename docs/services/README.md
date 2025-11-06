@@ -11,7 +11,7 @@
 ### **🎯 CRD Controllers** (5 services)
 Kubernetes controllers that reconcile Custom Resource Definitions:
 
-1. **[Remediation Processor](./crd-controllers/01-remediationprocessor/)** - Signal enrichment and context gathering
+1. **[Remediation Processor](./crd-controllers/01-signalprocessing/)** - Signal enrichment and context gathering
 2. **[AI Analysis](./crd-controllers/02-aianalysis/)** - AI-powered root cause analysis
 3. **[Workflow Execution](./crd-controllers/03-workflowexecution/)** - Multi-step workflow orchestration
 4. **[Kubernetes Executor](./crd-controllers/04-kubernetesexecutor/)** - Kubernetes action execution with safety
@@ -97,7 +97,7 @@ Stateless HTTP API services:
 ### **CRD Controllers** (Directory per service)
 ```
 crd-controllers/
-├── 01-remediationprocessor/
+├── 01-signalprocessing/
 │   ├── README.md
 │   ├── overview.md
 │   ├── crd-schema.md

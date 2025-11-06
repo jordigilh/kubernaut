@@ -18,15 +18,15 @@
 ```
 Line 234: GW->>ORCH: Create RemediationRequest CRD
 Line 238: ORCH->>ORCH: Reconcile RemediationRequest
-Line 239: ORCH->>ORCH: Create RemediationProcessing CRD
-Line 240: ORCH->>RP: Watch RemediationProcessing CRD
+Line 239: ORCH->>ORCH: Create SignalProcessing CRD
+Line 240: ORCH->>RP: Watch SignalProcessing CRD
 ```
 
 **Expected (CORRECT)** per `docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md`:
 - Gateway creates RemediationRequest CRD ✅ (Line 234 is correct)
 - RemediationOrchestrator watches RemediationRequest ✅ (Line 238 is correct)
-- RemediationOrchestrator creates RemediationProcessing CRD ✅ (Line 239 is correct)
-- RemediationProcessor controller watches RemediationProcessing CRD ✅ (Line 240 is correct)
+- RemediationOrchestrator creates SignalProcessing CRD ✅ (Line 239 is correct)
+- RemediationProcessor controller watches SignalProcessing CRD ✅ (Line 240 is correct)
 
 **Status**: ✅ **FIXED** - The flow is now correct after recent updates.
 
@@ -43,20 +43,20 @@ Line 240: ORCH->>RP: Watch RemediationProcessing CRD
 | **🧠 Remediation Processor** | Signal Processing Logic + Environment Classification |
 ```
 
-**Service Specification** (`docs/services/crd-controllers/01-remediationprocessor/overview.md`):
-- Package: `pkg/alertprocessor/` (not `pkg/remediationprocessor/`)
+**Service Specification** (`docs/services/crd-controllers/01-signalprocessing/overview.md`):
+- Package: `pkg/alertprocessor/` (not `pkg/signalprocessing/`)
 - CRD: `RemediationProcessing` (correct)
 - Controller: `RemediationProcessingReconciler` (correct)
 
 **Recommendation**:
 - ✅ Keep "Remediation Processor" as the **service display name** (user-facing)
 - ✅ Keep `RemediationProcessing` as the **CRD name** (technical)
-- ⚠️ **DECISION NEEDED**: Should the package be `pkg/remediationprocessor/` or `pkg/alertprocessor/`?
+- ⚠️ **DECISION NEEDED**: Should the package be `pkg/signalprocessing/` or `pkg/alertprocessor/`?
   - Service spec says `pkg/alertprocessor/` (line 334-348)
   - But the service is now called "Remediation Processor", not "Alert Processor"
-  - **Recommendation**: Migrate to `pkg/remediationprocessor/` for consistency
+  - **Recommendation**: Migrate to `pkg/signalprocessing/` for consistency
 
-**Status**: ✅ **RESOLVED** - Package migrated to `pkg/remediationprocessor/`
+**Status**: ✅ **RESOLVED** - Package migrated to `pkg/signalprocessing/`
 
 ---
 
@@ -228,7 +228,7 @@ CTX-->>HGP: Similar incidents + patterns
 ## 📊 **TRIAGE SUMMARY**
 
 ### **Critical Issues** (Must Fix):
-1. ⚠️ **Package naming inconsistency**: `pkg/alertprocessor/` vs `pkg/remediationprocessor/`
+1. ⚠️ **Package naming inconsistency**: `pkg/alertprocessor/` vs `pkg/signalprocessing/`
 2. ⚠️ **Effectiveness Monitor description**: Incomplete description of oscillation detection role
 3. ⚠️ **RemediationOrchestrator diagram**: Doesn't show CRD creation flow
 4. ⚠️ **Notification triggers**: Context API incorrectly listed as notification trigger
@@ -243,7 +243,7 @@ CTX-->>HGP: Similar incidents + patterns
 ### **Recommendations**:
 
 #### **Priority 1 - Critical Fixes**:
-1. **Decide on package naming**: Migrate `pkg/alertprocessor/` → `pkg/remediationprocessor/` for consistency
+1. **Decide on package naming**: Migrate `pkg/alertprocessor/` → `pkg/signalprocessing/` for consistency
 2. **Update Effectiveness Monitor description**: Add "& Oscillation Detection" to service description
 3. **Fix RemediationOrchestrator diagram**: Show CRD creation, not just monitoring
 4. **Remove Context API from notification triggers**: It's read-only and doesn't trigger notifications

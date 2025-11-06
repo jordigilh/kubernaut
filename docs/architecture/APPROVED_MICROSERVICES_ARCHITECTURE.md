@@ -38,7 +38,7 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 | Service | Responsibility | Business Requirements | External Connections |
 |---------|---------------|----------------------|---------------------|
 | **🔗 Gateway** | HTTP Gateway & Security | BR-WH-001 to BR-WH-015 | Multi-Signal Sources |
-| **🧠 Remediation Processor** | Signal Processing Logic + Environment Classification | BR-AP-001 to BR-AP-050, BR-ENV-001 to BR-ENV-050 | None (internal only) |
+| **🔍 Signal Processing** | Signal Enrichment + Business Classification | BR-SP-001 to BR-SP-050, BR-ENV-001 to BR-ENV-050 | None (internal only) |
 | **🤖 AI Analysis** | AI Analysis & Decision Making (HolmesGPT-Only) | BR-AI-001 to BR-AI-050 | HolmesGPT-API |
 | **🎯 Workflow Execution** | Workflow Orchestration with Tekton Pipelines | BR-WF-001 to BR-WF-165 | Tekton Pipelines, Kubernetes Clusters |
 | **🎛️ Remediation Orchestrator** | End-to-End Remediation Lifecycle Management | BR-ORCH-001 to BR-ORCH-050 | None (internal only) |
@@ -50,13 +50,13 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 | **📢 Notifications** | Multi-Channel Notifications | BR-NOTIF-001 to BR-NOTIF-120 | Slack, Teams, Email, PagerDuty |
 
 **Service Breakdown**:
-- **CRD Controllers** (4): Remediation Processor, AI Analysis, Workflow Execution, Remediation Orchestrator
+- **CRD Controllers** (4): Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator
 - **Stateless Services** (7): Gateway, Data Storage, Context API, HolmesGPT API, Dynamic Toolset, Effectiveness Monitor, Notifications
 
 **Important Notes**:
 - **Oscillation detection** (preventing remediation loops) is a capability of the Effectiveness Monitor service (queries PostgreSQL action_history table), not a separate service.
 - **External infrastructure monitoring** (Prometheus, Grafana, Jaeger) are external systems, not Kubernaut microservices.
-- **Package Naming**: Remediation Processor service is implemented in `pkg/remediationprocessor/` for naming consistency with the service name.
+- **Package Naming**: Signal Processing service is implemented in `pkg/signalprocessing/` for naming consistency with the service name.
 
 ### **V2 Future Services - Post V1 Implementation (4 Additional Services)**
 | Service | Responsibility | Business Requirements | Timeline |
@@ -200,7 +200,7 @@ flowchart TB
 
 **V1 Primary Processing Path**:
 ```
-Signal Sources → Gateway → Remediation Processor → AI Analysis → Workflow Execution → K8s Executor → Kubernetes
+Signal Sources → Gateway → Signal Processing → AI Analysis → Workflow Execution → K8s Executor → Kubernetes
 ```
 
 **AI Investigation Loop** (V1):
@@ -236,7 +236,7 @@ AIAnalysis (phase=Approving) → RemediationOrchestrator (watches status) → No
 
 **V2 Enhanced Path** (Future):
 ```
-Signal Sources → Gateway → Remediation Processor → AI Analysis → Multi-Model Orchestration → Workflow Execution → K8s Executor
+Signal Sources → Gateway → Signal Processing → AI Analysis → Multi-Model Orchestration → Workflow Execution → K8s Executor
 ```
 
 ---
@@ -271,8 +271,8 @@ sequenceDiagram
 
     Note over RP,ORCH: Phase 2: Signal Processing
     ORCH->>ORCH: Reconcile RemediationRequest
-    ORCH->>ORCH: Create RemediationProcessing CRD
-    ORCH->>RP: Watch RemediationProcessing CRD
+    ORCH->>ORCH: Create SignalProcessing CRD
+    ORCH->>RP: Watch SignalProcessing CRD
     RP->>RP: Reconcile: Enrich signal
     RP->>RP: Add cluster context
     RP->>ST: Query historical patterns
@@ -568,7 +568,7 @@ This architecture enables efficient, safe, and adaptive workflow execution with 
 - **Alert storm detection and escalation** (BR-ALERT-003, BR-ALERT-006) - **EXCLUSIVE RESPONSIBILITY**
 - Security enforcement and SSL/TLS termination
 
-**Critical Architecture Note**: Gateway Service is the **ONLY** service that performs duplicate alert detection. All downstream services (Remediation Processor, AI Analysis, etc.) receive only non-duplicate alerts via RemediationRequest CRDs.
+**Critical Architecture Note**: Gateway Service is the **ONLY** service that performs duplicate alert detection. All downstream services (Signal Processing, AI Analysis, etc.) receive only non-duplicate alerts via RemediationRequest CRDs.
 
 **External Integrations**:
 - Prometheus AlertManager (webhook endpoint)
@@ -577,15 +577,15 @@ This architecture enables efficient, safe, and adaptive workflow execution with 
 
 ---
 
-### **🧠 Remediation Processor Service**
-**Image**: `quay.io/jordigilh/remediationprocessor`
+### **🔍 Signal Processing Service**
+**Image**: `quay.io/jordigilh/signalprocessing`
 **Port**: 8080 (health/ready), 9090 (metrics)
 **Single Responsibility**: Alert Processing Logic Only
 
 **Capabilities**:
-- Alert filtering and validation (BR-AP-001 to BR-AP-010)
+- Alert filtering and validation (BR-SP-001 to BR-SP-010)
 - Alert enrichment with contextual information
-- Alert lifecycle management and state tracking (BR-AP-021 to BR-AP-025)
+- Alert lifecycle management and state tracking (BR-SP-021 to BR-SP-025)
 - Alert deduplication and correlation
 - Alert routing and prioritization
 - Alert processing metrics and analytics
@@ -626,7 +626,7 @@ This architecture enables efficient, safe, and adaptive workflow execution with 
 - HolmesGPT API for complex investigations
 
 **Internal Dependencies**:
-- Receives processed alerts from Remediation Processor Service
+- Receives processed signals from Signal Processing Service
 - **Performs historical pattern lookup via Data Storage Service**
 - **Queries vector database for similar alert patterns**
 - Sends complex decisions to Multi-Model Orchestration Service
@@ -726,7 +726,7 @@ This architecture enables efficient, safe, and adaptive workflow execution with 
 
 **CRD Watch Configuration**:
 - **Owns**: RemediationRequest CRD (primary reconciliation target)
-- **Watches**: RemediationProcessing CRD (signal enrichment status)
+- **Watches**: SignalProcessing CRD (signal enrichment status)
 - **Watches**: AIAnalysis CRD (investigation status, approval phase detection)
 - **Watches**: WorkflowExecution CRD (execution status)
 - **Creates**: NotificationRequest CRD (approval requests, escalations)
@@ -753,7 +753,7 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 
 **Orchestration Pattern** (Watch-Based Sequential CRD Creation):
 1. Gateway creates RemediationRequest CRD
-2. Orchestrator creates RemediationProcessing CRD, watches status
+2. Orchestrator creates SignalProcessing CRD, watches status
 3. When RP completes, creates AIAnalysis CRD, watches status
 4. **If AIAnalysis phase = "Approving"**: Creates NotificationRequest CRD for approval (NEW in V1.0)
 5. When AI completes, creates WorkflowExecution CRD, watches status
@@ -1008,7 +1008,7 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 - External business systems for priority mapping
 
 **Internal Dependencies**:
-- Receives alert context from Remediation Processor Service
+- Receives signal context from Signal Processing Service
 - Provides environment classification to AI Analysis Service
 - Integrates with Security Service for tenant isolation
 
@@ -1044,8 +1044,8 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 | From Service | To Service | Protocol | Purpose | Business Requirement |
 |--------------|------------|----------|---------|---------------------|
 | **V1 Core Flow** |
-| Gateway | Remediation Processor | HTTP/REST | Route validated signals | BR-WH-001, BR-AP-001 |
-| Remediation Processor | AI Analysis | HTTP/REST | Get AI recommendations | BR-AP-016, BR-AI-001 |
+| Gateway | Signal Processing | HTTP/REST | Route validated signals | BR-WH-001, BR-SP-001 |
+| Signal Processing | AI Analysis | HTTP/REST | Get AI recommendations | BR-SP-016, BR-AI-001 |
 | AI Analysis | Workflow Execution | HTTP/REST | Create workflows from AI recommendations | BR-AI-050, BR-WF-001 |
 | Workflow Execution | K8s Executor | HTTP/REST | Execute K8s actions | BR-WF-010, BR-EX-001 |
 | **V2 Enhanced Core Flow** |
@@ -1058,7 +1058,7 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 | Effectiveness Monitor | Context API | HTTP/REST | Provide assessment context | BR-INS-010, BR-CTX-001 |
 | Context API | Notifications | HTTP/REST | Trigger notifications | BR-CTX-020, BR-NOTIF-001 |
 | **Enterprise Integration Flow** |
-| Remediation Processor | Environment Classification | HTTP/REST | Classify environment | BR-AP-050, BR-ENV-001 |
+| Signal Processing | Environment Classification | HTTP/REST | Classify environment | BR-SP-050, BR-ENV-001 |
 | Environment Classification | AI Analysis | HTTP/REST | Provide business priority | BR-ENV-050, BR-AI-001 |
 | AI Analysis | Enhanced Health Monitoring | HTTP/REST | Health check requests | BR-AI-050, BR-HEALTH-020 |
 | Multi-Model Orchestration | Infrastructure Monitoring | HTTP/REST | Performance metrics | BR-ENSEMBLE-020, BR-MET-001 |
@@ -1148,7 +1148,7 @@ if aiAnalysis.status.phase == "Approving" && !remediation.status.approvalNotific
 
 ### **Phase 1: V1 Core Services (Weeks 1-4) - 12 Services**
 1. Gateway Service - HTTP gateway and security
-2. Remediation Processor Service - Alert processing logic
+2. Signal Processing Service - Signal enrichment and business classification
 3. AI Analysis Service - AI analysis and decision making
 4. Workflow Execution Service - Workflow execution
 5. K8s Executor Service - Kubernetes operations

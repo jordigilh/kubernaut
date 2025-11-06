@@ -79,7 +79,7 @@ sequenceDiagram
         GW->>RO: Create RemediationRequest CRD
         Note over RO: Tracking ID: RR-2025-001<br/>Fingerprint: abc123
 
-        RO->>RP: Create RemediationProcessing CRD
+        RO->>RP: Create SignalProcessing CRD
         Note over RP: Self-contained spec:<br/>• Signal fingerprint<br/>• Target resource<br/>• Original labels
 
         RP->>RP: Enrich signal context
@@ -375,7 +375,7 @@ After Recovery:
 pending → enriching → analyzing → executing → completed
 ```
 
-### **RemediationProcessing CRD**
+### **SignalProcessing CRD**
 ```
 pending → enriching → validating → completed
 ```

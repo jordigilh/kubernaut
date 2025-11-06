@@ -23,7 +23,7 @@ This document uses "Alert" prefix naming, which has been deprecated in favor of 
 **Service**: Alert Processor Service
 **Port**: 8081
 **Image**: quay.io/jordigilh/alert-service
-**Business Requirements**: BR-AP-001 to BR-AP-050
+**Business Requirements**: BR-SP-001 to BR-SP-050
 **Single Responsibility**: Alert Processing Logic ONLY
 
 ---
@@ -53,7 +53,7 @@ This document uses "Alert" prefix naming, which has been deprecated in favor of 
 - ✅ **Port**: 8081 (matches approved spec)
 - ✅ **Image naming**: Follows approved pattern
 - ✅ **Single responsibility**: Alert processing only
-- ✅ **Business requirements**: BR-AP-001 to BR-AP-050 mapped
+- ✅ **Business requirements**: BR-SP-001 to BR-SP-050 mapped
 
 ### **🔧 REUSABLE COMPONENTS (EXTENSIVE)**
 
@@ -418,7 +418,7 @@ go test test/unit/alert/... -v
 - [ ] Prometheus metrics: Enhanced metrics endpoint (MINOR ENHANCEMENT)
 
 ### **Business Success**:
-- [ ] BR-AP-001 to BR-AP-050 implemented ✅ (ALREADY MAPPED IN CODE)
+- [ ] BR-SP-001 to BR-SP-050 implemented ✅ (ALREADY MAPPED IN CODE)
 - [ ] Alert validation working ✅ (ALREADY IMPLEMENTED)
 - [ ] Alert enrichment working ✅ (ALREADY IMPLEMENTED)
 - [ ] Alert routing working ✅ (ALREADY IMPLEMENTED)

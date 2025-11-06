@@ -18,12 +18,12 @@
 ## BR-ALERT-* → BR-AR-* Mapping
 
 **Context**: BR-ALERT-* was shared between RemediationProcessor and RemediationOrchestrator.
-HIGH-1 resolved this by migrating RemediationProcessor's BR-ALERT-* → BR-AP-*.
+HIGH-1 resolved this by migrating RemediationProcessor's BR-ALERT-* → BR-SP-*.
 Now migrating RemediationOrchestrator's BR-ALERT-* → BR-AR-*.
 
 | Old BR (BR-ALERT-*) | New BR (BR-AR-*) | Functionality | Notes |
 |---------------------|------------------|---------------|-------|
-| BR-ALERT-006 | *Removed* | Alert timeout/escalation | **Migrated to RemediationProcessor** (BR-AP-062) - RemediationProcessor is primary owner |
+| BR-ALERT-006 | *Removed* | Alert timeout/escalation | **Migrated to RemediationProcessor** (BR-SP-062) - RemediationProcessor is primary owner |
 | BR-ALERT-021 | BR-AR-061 | CRD lifecycle monitoring | RemediationOrchestrator-specific |
 | BR-ALERT-024 | BR-AR-062 | Status aggregation across CRDs | RemediationOrchestrator-specific |
 | BR-ALERT-025 | BR-AR-063 | Event coordination between controllers | RemediationOrchestrator-specific |
@@ -35,7 +35,7 @@ Now migrating RemediationOrchestrator's BR-ALERT-* → BR-AR-*.
 - Originally shared by both controllers
 - Primary owner: RemediationProcessor (first in pipeline, handles alert processing)
 - Action: **Remove BR-ALERT-006 from RemediationOrchestrator documentation**
-- Replacement: Reference RemediationProcessor's BR-AP-062 if needed
+- Replacement: Reference RemediationProcessor's BR-SP-062 if needed
 
 **Total Migrations**: 6 BRs + 1 removal = 7 changes
 
@@ -70,7 +70,7 @@ Now migrating RemediationOrchestrator's BR-ALERT-* → BR-AR-*.
 grep -r "BR-ALERT-006" docs/services/crd-controllers/05-remediationorchestrator/ \
   --include="*.md" -n
 
-# Remove or replace with reference to RemediationProcessor's BR-AP-062
+# Remove or replace with reference to RemediationProcessor's BR-SP-062
 ```
 
 ### Step 2: Migrate BR-ALERT-* References

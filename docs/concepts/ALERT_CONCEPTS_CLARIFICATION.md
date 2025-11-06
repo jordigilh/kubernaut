@@ -116,14 +116,14 @@ graph TB
 
 #### **Service Identification**
 - **Service Name**: Alert Processor Service
-- **Business Requirements**: BR-AP-001 to BR-AP-050 (Alert processing pipeline)
+- **Business Requirements**: BR-SP-001 to BR-SP-050 (Alert processing pipeline)
 - **Primary Responsibility**: Intelligent alert processing and filtering
 
 #### **Key Capabilities**
-- **Processing Pipeline**: Configurable filtering rules (BR-AP-001)
-- **Context Enrichment**: Kubernetes cluster context, historical actions (BR-AP-011, BR-AP-012)
-- **Environment Classification**: Namespace management and business priority (BR-AP-021 to BR-AP-030)
-- **Intelligent Filtering**: AI-powered relevance scoring (BR-AP-007)
+- **Processing Pipeline**: Configurable filtering rules (BR-SP-001)
+- **Context Enrichment**: Kubernetes cluster context, historical actions (BR-SP-011, BR-SP-012)
+- **Environment Classification**: Namespace management and business priority (BR-SP-021 to BR-SP-030)
+- **Intelligent Filtering**: AI-powered relevance scoring (BR-SP-007)
 
 #### **Alert Processor Data Flow**
 ```mermaid
@@ -185,7 +185,7 @@ graph LR
 | Service | Primary Role | Alert Interaction | Business Requirements |
 |---------|-------------|-------------------|---------------------|
 | **Alert Gateway** | HTTP webhook reception | Receives raw alert events | BR-WH-001 to BR-WH-025 |
-| **Alert Processor** | Processing & enrichment | Transforms alert events | BR-AP-001 to BR-AP-050 |
+| **Alert Processor** | Processing & enrichment | Transforms alert events | BR-SP-001 to BR-SP-050 |
 | **AI Analysis Engine** | Remediation decisions | Consumes processed alerts | BR-AI-001 to BR-AI-025 |
 | **HolmesGPT-API** | Investigation service | Investigates alert context | BR-HAPI-001 to BR-HAPI-073 |
 | **Workflow Engine** | Execution orchestration | Executes alert remediation | BR-WF-001 to BR-WF-100+ |

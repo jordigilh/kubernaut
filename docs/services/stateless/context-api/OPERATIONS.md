@@ -564,7 +564,7 @@ kubectl rollout restart deployment context-api -n kubernaut-system
 
 - **API Documentation**: [api-specification.md](./api-specification.md)
 - **Deployment Guide**: [DEPLOYMENT.md](./DEPLOYMENT.md)
-- **Architecture**: [implementation/IMPLEMENTATION_PLAN_V2.0.md](./implementation/IMPLEMENTATION_PLAN_V2.0.md)
+- **Architecture**: [implementation/IMPLEMENTATION_PLAN_V2.6.md](./implementation/IMPLEMENTATION_PLAN_V2.6.md)
 - **Troubleshooting**: This document (OPERATIONS.md)
 
 ---

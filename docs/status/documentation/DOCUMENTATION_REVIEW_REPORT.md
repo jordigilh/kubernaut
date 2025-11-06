@@ -71,7 +71,7 @@
 
 **Evidence of Correct Naming**:
 - ✅ `docs/services/README.md` - Uses correct names
-- ✅ `docs/services/crd-controllers/01-remediationprocessor/` - Correct directory name
+- ✅ `docs/services/crd-controllers/01-signalprocessing/` - Correct directory name
 - ✅ `docs/services/crd-controllers/05-remediationorchestrator/` - Correct directory name
 - ✅ `docs/architecture/SERVICE_DEPENDENCY_MAP.md` - Uses correct names
 - ✅ `docs/architecture/CRD_SCHEMAS.md` - Uses correct names

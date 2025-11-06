@@ -42,6 +42,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	// "github.com/jordigilh/kubernaut/internal/gateway/redis" // DELETED: internal/gateway/ removed
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware" // BR-109: Request ID middleware
@@ -128,102 +129,8 @@ type Server struct {
 	isShuttingDown atomic.Bool
 }
 
-// ServerConfig holds server configuration
-// ServerConfig is the top-level configuration for the Gateway service.
-// Organized by Single Responsibility Principle for better maintainability.
-type ServerConfig struct {
-	// HTTP Server configuration
-	Server ServerSettings `yaml:"server"`
-
-	// Middleware configuration
-	Middleware MiddlewareSettings `yaml:"middleware"`
-
-	// Infrastructure dependencies
-	Infrastructure InfrastructureSettings `yaml:"infrastructure"`
-
-	// Business logic configuration
-	Processing ProcessingSettings `yaml:"processing"`
-}
-
-// ServerSettings contains HTTP server configuration.
-// Single Responsibility: HTTP server behavior
-type ServerSettings struct {
-	ListenAddr   string        `yaml:"listen_addr"`   // Default: ":8080"
-	ReadTimeout  time.Duration `yaml:"read_timeout"`  // Default: 30s
-	WriteTimeout time.Duration `yaml:"write_timeout"` // Default: 30s
-	IdleTimeout  time.Duration `yaml:"idle_timeout"`  // Default: 120s
-}
-
-// MiddlewareSettings contains middleware configuration.
-// Single Responsibility: Request processing middleware
-type MiddlewareSettings struct {
-	RateLimit RateLimitSettings `yaml:"rate_limit"`
-}
-
-// RateLimitSettings contains rate limiting configuration.
-type RateLimitSettings struct {
-	RequestsPerMinute int `yaml:"requests_per_minute"` // Default: 100
-	Burst             int `yaml:"burst"`               // Default: 10
-}
-
-// InfrastructureSettings contains external dependency configuration.
-// Single Responsibility: Infrastructure connections
-type InfrastructureSettings struct {
-	Redis *goredis.Options `yaml:"redis"`
-}
-
-// ProcessingSettings contains business logic configuration.
-// Single Responsibility: Signal processing behavior
-type ProcessingSettings struct {
-	Deduplication DeduplicationSettings `yaml:"deduplication"`
-	Storm         StormSettings         `yaml:"storm"`
-	Environment   EnvironmentSettings   `yaml:"environment"`
-	Priority      PrioritySettings      `yaml:"priority"`
-}
-
-// PrioritySettings contains priority assignment configuration.
-type PrioritySettings struct {
-	// PolicyPath is the path to the Rego policy file for priority assignment
-	PolicyPath string `yaml:"policy_path"`
-}
-
-// DeduplicationSettings contains deduplication configuration.
-type DeduplicationSettings struct {
-	// TTL for deduplication fingerprints
-	// For testing: set to 5*time.Second for fast tests
-	// For production: use default (0) for 5-minute TTL
-	TTL time.Duration `yaml:"ttl"` // Default: 5m
-}
-
-// StormSettings contains storm detection configuration.
-type StormSettings struct {
-	// Rate threshold for rate-based storm detection
-	// For testing: set to 2-3 for early storm detection in tests
-	// For production: use default (0) for 10 alerts/minute
-	RateThreshold int `yaml:"rate_threshold"` // Default: 10 alerts/minute
-
-	// Pattern threshold for pattern-based storm detection
-	// For testing: set to 2-3 for early storm detection in tests
-	// For production: use default (0) for 5 similar alerts
-	PatternThreshold int `yaml:"pattern_threshold"` // Default: 5 similar alerts
-
-	// Aggregation window for storm aggregation
-	// For testing: set to 5*time.Second for fast integration tests
-	// For production: use default (0) for 1-minute windows
-	AggregationWindow time.Duration `yaml:"aggregation_window"` // Default: 1m
-}
-
-// EnvironmentSettings contains environment classification configuration.
-type EnvironmentSettings struct {
-	// Cache TTL for namespace label cache
-	// For testing: set to 5*time.Second for fast cache expiry in tests
-	// For production: use default (0) for 30-second TTL
-	CacheTTL time.Duration `yaml:"cache_ttl"` // Default: 30s
-
-	// ConfigMap for environment overrides
-	ConfigMapNamespace string `yaml:"configmap_namespace"` // Default: "kubernaut-system"
-	ConfigMapName      string `yaml:"configmap_name"`      // Default: "kubernaut-environment-overrides"
-}
+// Configuration types have been moved to pkg/gateway/config/config.go
+// This improves separation of concerns and allows for better testability
 
 // NewServer creates a new Gateway server with default metrics registry
 //
@@ -241,7 +148,7 @@ type EnvironmentSettings struct {
 // 4. Graceful shutdown on signal: server.Stop(ctx)
 //
 // For testing with isolated metrics, use NewServerWithMetrics() instead.
-func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
+func NewServer(cfg *config.ServerConfig, logger *zap.Logger) (*Server, error) {
 	return NewServerWithMetrics(cfg, logger, nil)
 }
 
@@ -260,9 +167,18 @@ func NewServer(cfg *ServerConfig, logger *zap.Logger) (*Server, error) {
 // If metricsInstance is nil, creates a new metrics instance with the default registry.
 // NewServerWithK8sClient creates a Gateway server with an existing K8s client (for testing)
 // This ensures the Gateway uses the same K8s client as the test, avoiding cache synchronization issues
-func NewServerWithK8sClient(cfg *ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
+func NewServerWithK8sClient(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
 	// 1. Initialize Redis client
-	redisClient := goredis.NewClient(cfg.Infrastructure.Redis)
+	redisClient := goredis.NewClient(&goredis.Options{
+		Addr:         cfg.Infrastructure.Redis.Addr,
+		DB:           cfg.Infrastructure.Redis.DB,
+		Password:     cfg.Infrastructure.Redis.Password,
+		DialTimeout:  cfg.Infrastructure.Redis.DialTimeout,
+		ReadTimeout:  cfg.Infrastructure.Redis.ReadTimeout,
+		WriteTimeout: cfg.Infrastructure.Redis.WriteTimeout,
+		PoolSize:     cfg.Infrastructure.Redis.PoolSize,
+		MinIdleConns: cfg.Infrastructure.Redis.MinIdleConns,
+	})
 
 	// 2. Use provided Kubernetes client (shared with test)
 	k8sClient := k8s.NewClient(ctrlClient)
@@ -271,9 +187,18 @@ func NewServerWithK8sClient(cfg *ServerConfig, logger *zap.Logger, metricsInstan
 	return createServerWithClients(cfg, logger, metricsInstance, redisClient, ctrlClient, k8sClient)
 }
 
-func NewServerWithMetrics(cfg *ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
+func NewServerWithMetrics(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
 	// 1. Initialize Redis client
-	redisClient := goredis.NewClient(cfg.Infrastructure.Redis)
+	redisClient := goredis.NewClient(&goredis.Options{
+		Addr:         cfg.Infrastructure.Redis.Addr,
+		DB:           cfg.Infrastructure.Redis.DB,
+		Password:     cfg.Infrastructure.Redis.Password,
+		DialTimeout:  cfg.Infrastructure.Redis.DialTimeout,
+		ReadTimeout:  cfg.Infrastructure.Redis.ReadTimeout,
+		WriteTimeout: cfg.Infrastructure.Redis.WriteTimeout,
+		PoolSize:     cfg.Infrastructure.Redis.PoolSize,
+		MinIdleConns: cfg.Infrastructure.Redis.MinIdleConns,
+	})
 
 	// 2. Initialize Kubernetes clients
 	// Get kubeconfig with standard Kubernetes precedence:
@@ -305,7 +230,7 @@ func NewServerWithMetrics(cfg *ServerConfig, logger *zap.Logger, metricsInstance
 }
 
 // createServerWithClients is the common server creation logic
-func createServerWithClients(cfg *ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, redisClient *goredis.Client, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
+func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, redisClient *goredis.Client, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
 	// DD-GATEWAY-004: kubernetes clientset removed (no longer needed for authentication)
 	// clientset, err := kubernetes.NewForConfig(kubeConfig) // REMOVED
 	// if err != nil {

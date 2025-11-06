@@ -127,8 +127,8 @@ func auditToText(audit *models.RemediationAudit) string {
 	if audit.RemediationRequestID != "" {
 		parts = append(parts, fmt.Sprintf("request:%s", audit.RemediationRequestID))
 	}
-	if audit.AlertFingerprint != "" {
-		parts = append(parts, fmt.Sprintf("alert:%s", audit.AlertFingerprint))
+	if audit.SignalFingerprint != "" {
+		parts = append(parts, fmt.Sprintf("signal:%s", audit.SignalFingerprint))
 	}
 	if audit.Severity != "" {
 		parts = append(parts, fmt.Sprintf("severity:%s", audit.Severity))

@@ -123,7 +123,7 @@ Continue with Test #5 (namespace filtering) using same pure TDD approach:
 
 ## 📚 **References**
 
-- **Implementation Plan**: `IMPLEMENTATION_PLAN_V2.0.md` v2.2.1
+- **Implementation Plan**: `IMPLEMENTATION_PLAN_V2.7.md` v2.2.1
 - **Test File**: `test/integration/contextapi/05_http_api_test.go` (lines 212-262)
 - **Server Handler**: `pkg/contextapi/server/server.go` (lines 262-272, 274-313)
 - **Cached Executor**: `pkg/contextapi/query/executor.go` (lines 97-198)

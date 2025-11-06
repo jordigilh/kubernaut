@@ -75,8 +75,8 @@
 - ✅ **HTTP endpoints** for ingestion and validation
 
 **🎯 BR Mapping**:
-- **BR-AP-001 to BR-AP-025**: Explicitly implemented
-- **BR-AP-021**: Enhanced with lifecycle tracking
+- **BR-SP-001 to BR-SP-025**: Explicitly implemented
+- **BR-SP-021**: Enhanced with lifecycle tracking
 - **BR-AI-TRACK-001**: AI correlation tracking
 
 **🔧 Implementation Gap**: **Alert tracking ID integration** (2-3 hours)

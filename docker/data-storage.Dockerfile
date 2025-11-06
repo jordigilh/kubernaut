@@ -34,6 +34,7 @@ COPY --chown=1001:0 . .
 
 # Build the Data Storage service binary
 # CGO_ENABLED=0 for static linking (no C dependencies)
+# Uses pgx pure-Go PostgreSQL driver (not lib/pq which requires CGO)
 # GOOS and GOARCH from build args for multi-architecture support
 RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-ldflags='-w -s -extldflags "-static"' \

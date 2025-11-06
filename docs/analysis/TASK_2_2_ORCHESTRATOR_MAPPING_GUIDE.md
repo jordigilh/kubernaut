@@ -1,6 +1,6 @@
 # Task 2.2 Implementation Guide: RemediationOrchestrator Field Mapping
 
-**Task**: Update RemediationOrchestrator to populate 18 self-contained fields in RemediationProcessing CRD
+**Task**: Update RemediationOrchestrator to populate 18 self-contained fields in SignalProcessing CRD
 **Estimated Time**: 1 hour 15 minutes
 **Priority**: HIGH (Critical for Phase 1 self-containment pattern)
 **Status**: Ready for implementation
@@ -16,7 +16,7 @@ Implement the field mapping logic in RemediationOrchestrator controller that cop
 ## 📋 **Prerequisites**
 
 **Completed**:
-- ✅ Task 2.1: RemediationProcessing CRD has 18 fields defined
+- ✅ Task 2.1: SignalProcessing CRD has 18 fields defined
 - ✅ RemediationRequest CRD has complete Phase 1 schema
 - ✅ Both CRDs generated with `make manifests`
 
@@ -65,13 +65,13 @@ Implement the field mapping logic in RemediationOrchestrator controller that cop
 │                                         │
 │ 1. Reads RemediationRequest             │
 │ 2. Extracts all 18 fields              │
-│ 3. Creates RemediationProcessing CRD   │
+│ 3. Creates SignalProcessing CRD   │
 │    with copied data                     │
 └──────────────┬──────────────────────────┘
                │
                ▼
 ┌─────────────────────────────────────────┐
-│ RemediationProcessing CRD               │
+│ SignalProcessing CRD               │
 │ (Self-contained with all data)          │
 │                                         │
 │ RemediationProcessor controller reads   │
@@ -269,7 +269,7 @@ func getDefaultEnrichmentConfig() *remediationprocessingv1alpha1.EnrichmentConfi
 
 ---
 
-### **Step 2: Create RemediationProcessing CRD in Reconcile Loop** (20 min)
+### **Step 2: Create SignalProcessing CRD in Reconcile Loop** (20 min)
 
 ```go
 func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -282,7 +282,7 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Check if RemediationProcessing CRD already exists
+	// Check if SignalProcessing CRD already exists
 	processingName := fmt.Sprintf("%s-processing", remediationRequest.Name)
 	var existingProcessing remediationprocessingv1alpha1.RemediationProcessing
 	err := r.Get(ctx, client.ObjectKey{
@@ -321,13 +321,13 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, err
 		}
 
-		// Create the RemediationProcessing CRD
+		// Create the SignalProcessing CRD
 		if err := r.Create(ctx, processing); err != nil {
 			log.Error(err, "Failed to create RemediationProcessing")
 			return ctrl.Result{}, err
 		}
 
-		log.Info("Created RemediationProcessing CRD",
+		log.Info("Created SignalProcessing CRD",
 			"name", processingName,
 			"signal-fingerprint", remediationRequest.Spec.SignalFingerprint)
 	}
@@ -346,8 +346,8 @@ Add to controller file (above Reconcile function):
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=remediation.kubernaut.io,resources=remediationrequests/finalizers,verbs=update
-// +kubebuilder:rbac:groups=remediationprocessing.kubernaut.io,resources=remediationprocessings,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=remediationprocessing.kubernaut.io,resources=remediationprocessings/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=signalprocessing.kubernaut.io,resources=remediationprocessings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=signalprocessing.kubernaut.io,resources=remediationprocessings/status,verbs=get;update;patch
 ```
 
 ---
@@ -403,7 +403,7 @@ kubectl get remediationprocessing <name> -o yaml | grep -E "signalFingerprint|si
 
 After implementation:
 
-1. ✅ RemediationRequest controller creates RemediationProcessing CRD
+1. ✅ RemediationRequest controller creates SignalProcessing CRD
 2. ✅ All 18 fields copied from RemediationRequest to RemediationProcessing
 3. ✅ Owner reference set (cascade deletion works)
 4. ✅ RemediationProcessing is self-contained (no external reads needed)
@@ -497,7 +497,7 @@ func TestRemediationRequestCreatesProcessing(t *testing.T) {
 
 **Implements**:
 - BR-REM-030 to BR-REM-040: Targeting Data Pattern for child CRDs
-- BR-PROC-001: Self-contained RemediationProcessing CRD
+- BR-PROC-001: Self-contained SignalProcessing CRD
 
 **Enables**:
 - Phase 1 self-containment pattern

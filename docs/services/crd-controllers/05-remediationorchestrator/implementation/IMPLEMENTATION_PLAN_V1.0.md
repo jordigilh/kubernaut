@@ -131,7 +131,7 @@
 | **Day 1** | Foundation + CRD Setup | 8h | Controller skeleton, package structure, CRD integration, `01-day1-complete.md` |
 | **Day 2** | Reconciliation Loop + State Machine | 8h | Reconcile() method, phase transitions, state machine logic |
 | **Day 3** | Targeting Data Pattern | 8h | Data snapshot creation, immutability validation, data propagation, `02-day3-midpoint.md` |
-| **Day 4** | Child CRD Creation (RemediationProcessing) | 8h | RemediationProcessing CRD creation, owner references, watch setup |
+| **Day 4** | Child CRD Creation (RemediationProcessing) | 8h | SignalProcessing CRD creation, owner references, watch setup |
 | **Day 5** | Child CRD Creation (AIAnalysis) | 8h | AIAnalysis CRD creation, conditional creation (if needed), watch setup |
 | **Day 6** | Child CRD Creation (WorkflowExecution) | 8h | WorkflowExecution CRD creation, recommendation translation, watch setup |
 | **Day 7** | Child CRD Creation (KubernetesExecution) | 8h | KubernetesExecution CRD creation, action mapping, watch setup, `03-day7-complete.md` |
@@ -488,7 +488,7 @@ func (r *RemediationRequestReconciler) handleInitializing(ctx context.Context, r
 	// Create RemediationProcessing child CRD (first in chain)
 	processingCRD, err := r.ChildCreator.CreateRemediationProcessing(ctx, rr)
 	if err != nil {
-		log.Error(err, "Failed to create RemediationProcessing CRD")
+		log.Error(err, "Failed to create SignalProcessing CRD")
 		rr.Status.Phase = "Failed"
 		rr.Status.Message = "Failed to create RemediationProcessing"
 		if updateErr := r.Status().Update(ctx, rr); updateErr != nil {
@@ -1982,7 +1982,7 @@ Days 2-16 follow the same APDC pattern covering:
 - Gateway Service (creates RemediationRequest CRDs)
 
 **Downstream**:
-- RemediationProcessor Controller (creates RemediationProcessing CRD)
+- RemediationProcessor Controller (creates SignalProcessing CRD)
 - AIAnalysis Controller (creates AIAnalysis CRD)
 - WorkflowExecution Controller (creates WorkflowExecution CRD)
 - KubernetesExecutor Controller (indirectly via WorkflowExecution)

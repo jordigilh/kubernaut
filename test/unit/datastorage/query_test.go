@@ -206,19 +206,30 @@ var _ = Describe("BR-STORAGE-006: Pagination Support", func() {
 			3, 3),
 	)
 
-	It("should include correct pagination metadata", func() {
+	// BEHAVIOR: Query service calculates pagination metadata correctly
+	// CORRECTNESS: All pagination fields have exact expected values
+	It("should include correct pagination metadata with all fields populated", func() {
+		// ARRANGE + ACT: Query with limit 10, offset 20
 		result, err := queryService.PaginatedList(ctx, &queryPkg.ListOptions{
 			Limit:  10,
 			Offset: 20,
 		})
 
-		Expect(err).ToNot(HaveOccurred())
-		Expect(result).ToNot(BeNil())
-		Expect(result.Page).To(Equal(3))
-		Expect(result.PageSize).To(Equal(10))
-		Expect(result.TotalCount).To(Equal(int64(50)))
-		Expect(result.TotalPages).To(Equal(5))
-		Expect(result.Data).ToNot(BeNil())
+		// CORRECTNESS: Query succeeds
+		Expect(err).ToNot(HaveOccurred(), "Query should succeed")
+
+		// CORRECTNESS: Result is non-nil and contains paginated data
+		Expect(result).ToNot(BeNil(), "Result should be non-nil")
+
+		// CORRECTNESS: Pagination metadata is calculated correctly
+		Expect(result.Page).To(Equal(3), "Page should be 3 (offset 20 / limit 10 + 1)")
+		Expect(result.PageSize).To(Equal(10), "PageSize should match limit")
+		Expect(result.TotalCount).To(Equal(int64(50)), "TotalCount should be 50")
+		Expect(result.TotalPages).To(Equal(5), "TotalPages should be 5 (50 / 10)")
+
+		// CORRECTNESS: Data array is non-nil (may be empty, but array exists)
+		Expect(result.Data).ToNot(BeNil(), "Data array should be non-nil")
+		Expect(result.Data).To(HaveLen(10), "Data should contain 10 items (page size)")
 	})
 })
 
@@ -302,7 +313,7 @@ func (m *MockQueryDB) SeedTestData() {
 			Status:               "success",
 			StartTime:            baseTime.Add(-time.Duration(i) * time.Hour),
 			RemediationRequestID: "req-psc-" + string(rune('a'+i)),
-			AlertFingerprint:     "alert-psc",
+			SignalFingerprint:    "alert-psc",
 			Severity:             "high",
 			Environment:          "production",
 			ClusterName:          "prod-cluster",
@@ -321,7 +332,7 @@ func (m *MockQueryDB) SeedTestData() {
 		Status:               "success",
 		StartTime:            baseTime.Add(-2 * time.Hour),
 		RemediationRequestID: "req-psp",
-		AlertFingerprint:     "alert-psp",
+		SignalFingerprint:    "alert-psp",
 		Severity:             "high",
 		Environment:          "production",
 		ClusterName:          "prod-cluster",
@@ -340,7 +351,7 @@ func (m *MockQueryDB) SeedTestData() {
 			Status:               "failed",
 			StartTime:            baseTime.Add(-time.Duration(i+3) * time.Hour),
 			RemediationRequestID: "req-pfc-" + string(rune('a'+i)),
-			AlertFingerprint:     "alert-pfc",
+			SignalFingerprint:    "alert-pfc",
 			Severity:             "high",
 			Environment:          "production",
 			ClusterName:          "prod-cluster",
@@ -361,7 +372,7 @@ func (m *MockQueryDB) SeedTestData() {
 			Status:               "success",
 			StartTime:            baseTime.Add(-time.Duration(i+5) * time.Hour),
 			RemediationRequestID: "req-ss-" + string(rune('a'+i)),
-			AlertFingerprint:     "alert-ss",
+			SignalFingerprint:    "alert-ss",
 			Severity:             "medium",
 			Environment:          "staging",
 			ClusterName:          "staging-cluster",
@@ -381,7 +392,7 @@ func (m *MockQueryDB) SeedTestData() {
 			Status:               "pending",
 			StartTime:            baseTime.Add(-time.Duration(i+12) * time.Hour),
 			RemediationRequestID: "req-d-" + string(rune('a'+i)),
-			AlertFingerprint:     "alert-default",
+			SignalFingerprint:    "alert-default",
 			Severity:             "low",
 			Environment:          "development",
 			ClusterName:          "dev-cluster",
@@ -413,7 +424,7 @@ func (m *MockQueryDB) SeedLargeDataset(count int) {
 			Status:               "success",
 			StartTime:            baseTime.Add(-time.Duration(i) * time.Minute),
 			RemediationRequestID: "req-" + string(rune('a'+(i%26))),
-			AlertFingerprint:     "alert-test",
+			SignalFingerprint:    "alert-test",
 			Severity:             "medium",
 			Environment:          "test",
 			ClusterName:          "test-cluster",
@@ -443,7 +454,7 @@ func (m *MockQueryDB) SeedWithEmbeddings() {
 			Status:               "success",
 			StartTime:            baseTime.Add(-time.Duration(i) * time.Hour),
 			RemediationRequestID: "req-semantic-" + string(rune('a'+i)),
-			AlertFingerprint:     "alert-semantic",
+			SignalFingerprint:    "alert-semantic",
 			Severity:             "high",
 			Environment:          "production",
 			ClusterName:          "prod-cluster",
@@ -520,6 +531,38 @@ func (m *MockQueryDB) SelectContext(ctx context.Context, dest interface{}, query
 	// Assign to dest (slice of pointers)
 	if auditsPtr, ok := dest.(*[]*models.RemediationAudit); ok {
 		*auditsPtr = results
+		return nil
+	}
+
+	// Handle RemediationAuditResult (intermediate query type used by Service)
+	if resultsPtr, ok := dest.(*[]queryPkg.RemediationAuditResult); ok {
+		converted := make([]queryPkg.RemediationAuditResult, len(results))
+		for i, audit := range results {
+			converted[i] = queryPkg.RemediationAuditResult{
+				ID:                   audit.ID,
+				Name:                 audit.Name,
+				Namespace:            audit.Namespace,
+				Phase:                audit.Phase,
+				ActionType:           audit.ActionType,
+				Status:               audit.Status,
+				StartTime:            audit.StartTime,
+				EndTime:              audit.EndTime,
+				Duration:             audit.Duration,
+				RemediationRequestID: audit.RemediationRequestID,
+				SignalFingerprint:    audit.SignalFingerprint,
+				Severity:             audit.Severity,
+				Environment:          audit.Environment,
+				ClusterName:          audit.ClusterName,
+				TargetResource:       audit.TargetResource,
+				ErrorMessage:         audit.ErrorMessage,
+				Metadata:             audit.Metadata,
+				Embedding:            queryPkg.Vector(audit.Embedding),
+				CreatedAt:            audit.CreatedAt,
+				UpdatedAt:            audit.UpdatedAt,
+			}
+		}
+		*resultsPtr = converted
+		return nil
 	}
 
 	return nil

@@ -60,7 +60,7 @@ docs/services/crd-controllers/
 │   ├── document-cleanup-summary.md
 │   └── document-organization-proposal.md
 │
-├── 01-remediationprocessor/ (service docs)
+├── 01-signalprocessing/ (service docs)
 ├── 02-aianalysis/ (service docs)
 ├── 03-workflowexecution/ (service docs)
 ├── 04-kubernetesexecutor/ (service docs)

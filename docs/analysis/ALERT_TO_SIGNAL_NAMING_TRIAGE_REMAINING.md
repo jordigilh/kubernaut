@@ -236,7 +236,7 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 
 ---
 
-#### **File**: `docs/services/crd-controllers/01-remediationprocessor/testing-strategy.md`
+#### **File**: `docs/services/crd-controllers/01-signalprocessing/testing-strategy.md`
 **References**: 11 occurrences
 **Status**: 🔴 **CRITICAL** - Testing patterns
 
@@ -256,7 +256,7 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 
 ---
 
-#### **File**: `docs/services/crd-controllers/01-remediationprocessor/overview.md`
+#### **File**: `docs/services/crd-controllers/01-signalprocessing/overview.md`
 **References**: 3 occurrences
 **Status**: 🔴 **CRITICAL** - Service overview
 
@@ -272,7 +272,7 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 
 ---
 
-#### **File**: `docs/services/crd-controllers/01-remediationprocessor/integration-points.md`
+#### **File**: `docs/services/crd-controllers/01-signalprocessing/integration-points.md`
 **References**: 26 occurrences
 **Status**: 🔴 **CRITICAL** - Integration documentation
 
@@ -298,7 +298,7 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 
 ---
 
-#### **File**: `docs/services/crd-controllers/01-remediationprocessor/implementation-checklist.md`
+#### **File**: `docs/services/crd-controllers/01-signalprocessing/implementation-checklist.md`
 **References**: 10 occurrences
 **Status**: 🔴 **CRITICAL** - Implementation guide
 
@@ -308,7 +308,7 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 | 30 | `AlertService` → `AlertProcessorService` | `SignalService` → `SignalProcessorService` | Interface Name | **Prometheus signal service** |
 | 31 | `AlertDeduplicatorImpl` | `SignalDeduplicatorImpl` | Type Name | **Prometheus signal component** |
 | 97 | `&alertRemediation, &alertProcessing` | `&remediationRequest, &remediationProcessing` | Variable Name | Consistent variable naming |
-| 104 | `alertprocessing.kubernaut.io/finalizer` | `remediationprocessing.kubernaut.io/finalizer` | Finalizer String | Use current CRD group |
+| 104 | `alertprocessing.kubernaut.io/finalizer` | `signalprocessing.kubernaut.io/finalizer` | Finalizer String | Use current CRD group |
 | 112 | `&alertProcessing` | `&remediationProcessing` | Variable Name | Consistent variable naming |
 | 126 | `&alertProcessing` | `&remediationProcessing` | Variable Name | Consistent variable naming |
 | 142 | `&alertRemediation` | `&remediationRequest` | Variable Name | Consistent variable naming |
@@ -319,7 +319,7 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 
 ---
 
-#### **File**: `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
+#### **File**: `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
 **References**: 5 occurrences
 **Status**: 🔴 **CRITICAL** - CRD schema documentation
 
@@ -336,7 +336,7 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 
 ---
 
-#### **File**: `docs/services/crd-controllers/01-remediationprocessor/controller-implementation.md`
+#### **File**: `docs/services/crd-controllers/01-signalprocessing/controller-implementation.md`
 **References**: 8 occurrences
 **Status**: 🔴 **CRITICAL** - Controller implementation
 
@@ -357,7 +357,7 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 
 ---
 
-#### **File**: `docs/services/crd-controllers/01-remediationprocessor/reconciliation-phases.md`
+#### **File**: `docs/services/crd-controllers/01-signalprocessing/reconciliation-phases.md`
 **References**: 3 occurrences
 **Status**: 🔴 **CRITICAL** - Reconciliation documentation
 
@@ -581,13 +581,13 @@ grep -i 'alert[A-Z]\|Alert[A-Z]' docs/architecture/CRD_SCHEMAS.md
 6. `docs/services/crd-controllers/02-aianalysis/testing-strategy.md`
 7. `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 8. `docs/services/crd-controllers/02-aianalysis/controller-implementation.md`
-9. `docs/services/crd-controllers/01-remediationprocessor/testing-strategy.md`
-10. `docs/services/crd-controllers/01-remediationprocessor/overview.md`
-11. `docs/services/crd-controllers/01-remediationprocessor/integration-points.md`
-12. `docs/services/crd-controllers/01-remediationprocessor/implementation-checklist.md`
-13. `docs/services/crd-controllers/01-remediationprocessor/crd-schema.md`
-14. `docs/services/crd-controllers/01-remediationprocessor/controller-implementation.md`
-15. `docs/services/crd-controllers/01-remediationprocessor/reconciliation-phases.md`
+9. `docs/services/crd-controllers/01-signalprocessing/testing-strategy.md`
+10. `docs/services/crd-controllers/01-signalprocessing/overview.md`
+11. `docs/services/crd-controllers/01-signalprocessing/integration-points.md`
+12. `docs/services/crd-controllers/01-signalprocessing/implementation-checklist.md`
+13. `docs/services/crd-controllers/01-signalprocessing/crd-schema.md`
+14. `docs/services/crd-controllers/01-signalprocessing/controller-implementation.md`
+15. `docs/services/crd-controllers/01-signalprocessing/reconciliation-phases.md`
 
 **Validation**: All controller docs should use Signal terminology matching `docs/architecture/CRD_SCHEMAS.md`
 
@@ -740,7 +740,7 @@ echo "📝 Phase 6: Migrating finalizer strings..."
 
 find $CONTROLLER_DOCS -name "*.md" -type f \
   -exec sed -i.bak \
-    -e 's/alertprocessing\.kubernaut\.io/remediationprocessing.kubernaut.io/g' \
+    -e 's/alertprocessing\.kubernaut\.io/signalprocessing.kubernaut.io/g' \
     {} \;
 
 # Phase 7: Notification-Related Changes (Manual Review Needed)

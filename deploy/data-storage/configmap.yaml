@@ -14,7 +14,7 @@ data:
   DB_HOST: "postgres.kubernaut-system.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "action_history"
-  DB_USER: "slm_user"
+  DB_USER: "db_user"
   DB_MAX_CONNECTIONS: "50"
   DB_SSL_MODE: "disable"
 

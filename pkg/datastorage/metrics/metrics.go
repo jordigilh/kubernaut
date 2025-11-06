@@ -115,6 +115,43 @@ var (
 	)
 )
 
+// Audit write API metrics (GAP-10)
+// BR-STORAGE-001 to BR-STORAGE-020: Audit trail metrics
+
+var (
+	// AuditTracesTotal tracks total audit traces written by service and status.
+	//
+	// Labels:
+	//   - service: Service type (notification, gateway, remediation, etc.)
+	//   - status: Operation status (success, failure)
+	//
+	// Example Prometheus query:
+	//   rate(datastorage_audit_traces_total{status="success"}[5m])
+	AuditTracesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "datastorage_audit_traces_total",
+			Help: "Total number of audit traces written by service and status",
+		},
+		[]string{"service", "status"},
+	)
+
+	// AuditLagSeconds tracks time lag between event occurrence and audit write.
+	//
+	// Labels:
+	//   - service: Service type (notification, gateway, remediation, etc.)
+	//
+	// Example Prometheus query:
+	//   histogram_quantile(0.95, rate(datastorage_audit_lag_seconds_bucket[5m]))
+	AuditLagSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "datastorage_audit_lag_seconds",
+			Help:    "Time lag between event occurrence and audit write in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"service"},
+	)
+)
+
 // Embedding generation and caching metrics
 // BR-STORAGE-008, BR-STORAGE-009
 
@@ -265,3 +302,115 @@ var (
 // - Query operations: 4 values
 //
 // For more information, see helpers.go and helpers_test.go
+
+// ========================================
+// TDD GREEN PHASE: Metrics Struct
+// Tests: pkg/datastorage/metrics/metrics_test.go
+// Authority: GAP-10, BR-STORAGE-019
+// ========================================
+//
+// Metrics struct provides dependency injection for Prometheus metrics
+// following the Context API pattern for testability.
+//
+// Benefits:
+// - Testable: Use custom registry to avoid duplicate registration
+// - Injectable: Pass metrics to handlers via Server struct
+// - Isolated: Each test gets its own metrics instance
+
+// Metrics contains all Prometheus metrics for Data Storage Service
+// BR-STORAGE-019: Logging and metrics for all operations
+// GAP-10: Audit-specific metrics
+type Metrics struct {
+	// GAP-10: Audit-specific metrics
+	AuditTracesTotal *prometheus.CounterVec   // Total audit traces by service and status
+	AuditLagSeconds  *prometheus.HistogramVec // Time lag between event and audit write
+
+	// Write operation metrics
+	WriteDuration *prometheus.HistogramVec // Write operation duration
+
+	// Validation metrics
+	ValidationFailures *prometheus.CounterVec // Validation failures by field and reason
+
+	// Store registry for testing
+	registry prometheus.Registerer
+}
+
+// NewMetrics creates a Metrics struct that references the global metrics
+// Note: Global metrics are already auto-registered via promauto
+// This function exists for backwards compatibility and dependency injection
+func NewMetrics(namespace, subsystem string) *Metrics {
+	return NewMetricsWithRegistry(namespace, subsystem, prometheus.DefaultRegisterer)
+}
+
+// NewMetricsWithRegistry creates a Metrics struct with custom registry support
+// For testing: provide a custom registry to avoid global metric conflicts
+// For production: uses global promauto metrics (already registered)
+func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Registerer) *Metrics {
+	m := &Metrics{
+		registry: reg,
+	}
+
+	// For production (default registry): Reference existing global promauto metrics
+	// For testing (custom registry): Create new isolated metrics
+	if reg == prometheus.DefaultRegisterer {
+		// Production: Use global promauto metrics (already registered)
+		// These are referenced, not created, to avoid duplicate registration
+		m.AuditTracesTotal = AuditTracesTotal     // Reference global
+		m.AuditLagSeconds = AuditLagSeconds       // Reference global
+		m.WriteDuration = WriteDuration           // Reference global
+		m.ValidationFailures = ValidationFailures // Reference global
+	} else {
+		// Testing: Create isolated metrics with custom registry
+		m.AuditTracesTotal = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "audit_traces_total",
+				Help:      "Total number of audit traces written by service and status",
+			},
+			[]string{"service", "status"},
+		)
+
+		m.AuditLagSeconds = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "audit_lag_seconds",
+				Help:      "Time lag between event occurrence and audit write in seconds",
+				Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60},
+			},
+			[]string{"service"},
+		)
+
+		m.WriteDuration = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "write_duration_seconds",
+				Help:      "Duration of write operations in seconds",
+				Buckets:   prometheus.DefBuckets,
+			},
+			[]string{"table"},
+		)
+
+		m.ValidationFailures = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "validation_failures_total",
+				Help:      "Total number of validation failures by field and reason",
+			},
+			[]string{"field", "reason"},
+		)
+
+		// Register ONLY for custom registries (testing)
+		reg.MustRegister(
+			m.AuditTracesTotal,
+			m.AuditLagSeconds,
+			m.WriteDuration,
+			m.ValidationFailures,
+		)
+	}
+
+	return m
+}

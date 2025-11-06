@@ -15,7 +15,7 @@
 - **[`docs/architecture/CRD_SCHEMAS.md`](../../architecture/CRD_SCHEMAS.md)** - Authoritative schema documentation
 
 ### **3. Service Specifications (~2,000 lines)**
-- **[`docs/services/crd-controllers/01-remediationprocessor/`](../../services/crd-controllers/01-remediationprocessor/)** - Complete service specs
+- **[`docs/services/crd-controllers/01-signalprocessing/`](../../services/crd-controllers/01-signalprocessing/)** - Complete service specs
 
 ---
 
@@ -25,12 +25,12 @@
 
 | Issue | Severity | What's Wrong |
 |-------|----------|--------------|
-| **CRD Name** | ⛔ BLOCKER | `alertprocessings.alertprocessor.kubernaut.io` → Should be `remediationprocessings.remediationprocessing.kubernaut.io` |
+| **CRD Name** | ⛔ BLOCKER | `alertprocessings.alertprocessor.kubernaut.io` → Should be `remediationprocessings.signalprocessing.kubernaut.io` |
 | **API Version** | 🟡 MEDIUM | `v1` → Should be `v1alpha1` |
 | **Parent Reference** | 🔴 HIGH | `alertRemediationRef` → Should be `remediationRequestRef` |
 | **Missing Fields** | 🔴 HIGH | Missing 18 Phase 1 self-contained fields (signalLabels, signalAnnotations, targetResource, etc.) |
 | **Field Naming** | ⛔ BLOCKER | Uses deprecated "Alert" prefix (`AlertProcessing`, `alertRemediationRef`) |
-| **Business Reqs** | 🟡 MEDIUM | Wrong BR references (BR-AP-*, BR-ENV-* → Should be BR-PROC-*) |
+| **Business Reqs** | 🟡 MEDIUM | Wrong BR references (BR-SP-*, BR-ENV-* → Should be BR-PROC-*) |
 | **Self-Containment** | 🔴 HIGH | Missing core V1 pattern - RemediationProcessing must be self-contained |
 
 **Schema Completeness**: ~30% of V1 fields present
@@ -45,7 +45,7 @@
 
 ---
 
-# RemediationProcessing CRD Design Document
+# SignalProcessing CRD Design Document
 
 **Document Version**: 1.0
 **Date**: January 2025
@@ -93,19 +93,19 @@ The AlertProcessing CRD manages the first stage of alert processing where raw al
 ## 📋 **BUSINESS REQUIREMENTS ADDRESSED**
 
 ### **Primary Business Requirements**
-- **BR-AP-001 to BR-AP-050**: Complete alert processing capabilities
+- **BR-SP-001 to BR-SP-050**: Complete alert processing capabilities
 - **BR-ENV-001 to BR-ENV-050**: Environment classification and namespace management
 - **BR-ENV-004**: ConfigMap-based classification rules for dynamic configuration
 - **BR-ENV-007**: Hierarchical environment classification support
 - **BR-ENV-019**: Dynamic configuration updates without service restart
 - **BR-CLOUD-002**: Custom organizational labels for business context
-- **BR-AP-031 to BR-AP-033**: Dynamic business priority assignment
+- **BR-SP-031 to BR-SP-033**: Dynamic business priority assignment
 
 ### **Specific Compliance Requirements**
 - **BR-ENV-005**: Fallback classification using namespace pattern matching
 - **BR-ENV-009**: Business criticality levels based on environment classification
 - **BR-ENV-014**: Alert filtering based on environment classification and business priority
-- **BR-AP-026**: Environment-specific alert routing based on business criticality
+- **BR-SP-026**: Environment-specific alert routing based on business criticality
 - **BR-QUAL-ENV-011**: Reasonable fallback defaults for unknown namespaces
 
 ---
@@ -122,7 +122,7 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.13.0
     kubernaut.io/description: "Alert processing CRD for enrichment and fully flexible environment classification"
-    kubernaut.io/business-requirements: "BR-AP-001,BR-ENV-004,BR-ENV-007,BR-ENV-019,BR-CLOUD-002,BR-AP-031"
+    kubernaut.io/business-requirements: "BR-SP-001,BR-ENV-004,BR-ENV-007,BR-ENV-019,BR-CLOUD-002,BR-SP-031"
 spec:
   group: alertprocessor.kubernaut.io
   versions:
@@ -208,7 +208,7 @@ spec:
               processingConfig:
                 type: object
                 properties:
-                  # Context Enrichment Configuration (BR-AP-011 to BR-AP-015)
+                  # Context Enrichment Configuration (BR-SP-011 to BR-SP-015)
                   enrichmentConfig:
                     type: object
                     properties:
@@ -349,7 +349,7 @@ spec:
                         default: "development"
                         description: "Fallback environment when classification fails (BR-ENV-005, BR-QUAL-ENV-011)"
 
-                  # Fully Dynamic Business Priority Configuration (BR-AP-031 to BR-AP-033)
+                  # Fully Dynamic Business Priority Configuration (BR-SP-031 to BR-SP-033)
                   businessPriorityConfig:
                     type: object
                     properties:
@@ -652,7 +652,7 @@ spec:
                     type: string
                     format: date-time
 
-              # Routing Decision (BR-AP-026, BR-ENV-014)
+              # Routing Decision (BR-SP-026, BR-ENV-014)
               routingDecision:
                 type: object
                 properties:
@@ -799,7 +799,7 @@ metadata:
     kubernaut.io/severity: "critical"
   annotations:
     kubernaut.io/created-by: "gateway-service"
-    kubernaut.io/business-requirement: "BR-AP-001,BR-ENV-004"
+    kubernaut.io/business-requirement: "BR-SP-001,BR-ENV-004"
 spec:
   # Reference to parent AlertRemediation
   alertRemediationRef:
