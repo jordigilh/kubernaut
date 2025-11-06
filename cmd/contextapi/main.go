@@ -20,8 +20,14 @@ var (
 )
 
 func main() {
+	// Check for CONFIG_FILE environment variable first (for containerized deployments)
+	defaultConfigPath := os.Getenv("CONFIG_FILE")
+	if defaultConfigPath == "" {
+		defaultConfigPath = "config/context-api.yaml"
+	}
+
 	// Parse command-line flags
-	configPath := flag.String("config", "config/context-api.yaml", "Path to configuration file")
+	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Parse()
 
