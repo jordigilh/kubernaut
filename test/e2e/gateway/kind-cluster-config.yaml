@@ -1,0 +1,65 @@
+# Kind Cluster Configuration for Gateway E2E Testing
+# Purpose: Production-like infrastructure for E2E edge case testing
+# Features: 3-node cluster, Redis HA support, rate limiting enabled
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: gateway-e2e
+
+# Networking configuration
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
+
+# Multi-node cluster for production-like testing
+nodes:
+  # Control plane node with API server rate limiting
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            # Enable rate limiting for testing (P0 Test #3)
+            max-requests-inflight: "100"
+            max-mutating-requests-inflight: "50"
+            # Enable audit logging for debugging
+            audit-log-path: "/var/log/kubernetes/audit.log"
+            audit-log-maxage: "1"
+    # Port mappings for external access
+    extraPortMappings:
+      # Gateway HTTP API
+      - containerPort: 8080
+        hostPort: 8080
+        protocol: TCP
+      # Gateway Metrics (Prometheus)
+      - containerPort: 9090
+        hostPort: 9090
+        protocol: TCP
+      # Redis Sentinel
+      - containerPort: 26379
+        hostPort: 26379
+        protocol: TCP
+      # Prometheus AlertManager
+      - containerPort: 9093
+        hostPort: 9093
+        protocol: TCP
+
+  # Worker node 1: Gateway workloads
+  - role: worker
+    labels:
+      workload: gateway
+      node-role: gateway
+
+  # Worker node 2: Redis HA workloads
+  - role: worker
+    labels:
+      workload: redis
+      node-role: redis
+
+  # Worker node 3: Monitoring workloads
+  - role: worker
+    labels:
+      workload: monitoring
+      node-role: monitoring
+
