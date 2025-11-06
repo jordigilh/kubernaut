@@ -82,6 +82,14 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("LRU cache size must be non-negative")
 	}
 
+	// Validate Data Storage configuration (ADR-032: Context API uses Data Storage Service API Gateway)
+	if c.DataStorage.BaseURL == "" {
+		return fmt.Errorf("DataStorageBaseURL is required - Context API must use Data Storage Service (ADR-032)")
+	}
+	if c.DataStorage.Timeout == 0 {
+		return fmt.Errorf("DataStorageTimeout is required")
+	}
+
 	// Validate logging configuration
 	validLevels := map[string]bool{
 		"debug": true,

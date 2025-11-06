@@ -2,8 +2,8 @@
 
 ## 🚨 **CRITICAL ISSUE: Segmentation Fault in Context API Container**
 
-**Status**: ❌ **BLOCKED** - Cannot proceed with E2E tests  
-**Date**: 2025-11-06  
+**Status**: ❌ **BLOCKED** - Cannot proceed with E2E tests
+**Date**: 2025-11-06
 **Priority**: **P0 - CRITICAL**
 
 ---
@@ -126,20 +126,20 @@ FROM --platform=$TARGETPLATFORM registry.access.redhat.com/ubi9/ubi-minimal:late
 ```go
 func main() {
     // ... existing code ...
-    
+
     logger.Info("About to load config", zap.String("config_path", *configPath))
-    
+
     // Check if file exists
     if _, err := os.Stat(*configPath); err != nil {
         logger.Fatal("Config file does not exist", zap.Error(err))
     }
-    
+
     // Check file permissions
     info, _ := os.Stat(*configPath)
-    logger.Info("Config file info", 
+    logger.Info("Config file info",
         zap.String("size", fmt.Sprintf("%d", info.Size())),
         zap.String("mode", info.Mode().String()))
-    
+
     cfg, err := config.LoadFromFile(*configPath)
     // ... rest of code ...
 }
