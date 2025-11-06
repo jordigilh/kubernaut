@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,6 +42,7 @@ import (
 var (
 	// Infrastructure components
 	dataStorageInfra *infrastructure.DataStorageInfrastructure
+	contextAPIInfra  *infrastructure.ContextAPIInfrastructure
 
 	// Service ports (avoid conflicts with integration tests)
 	postgresPort    = "5434"
@@ -95,19 +95,27 @@ var _ = BeforeSuite(func() {
 	dataStorageBaseURL = dataStorageInfra.ServiceURL
 	GinkgoWriter.Printf("✅ Data Storage Infrastructure ready: %s\n", dataStorageBaseURL)
 
-	// TODO: Start Context API Service (need to add this to infrastructure package)
-	// For now, we'll document this as a pending task
-	contextAPIBaseURL = fmt.Sprintf("http://localhost:%s", contextAPIPort)
-	GinkgoWriter.Printf("⚠️  Context API startup pending (port %s)\n", contextAPIPort)
-	GinkgoWriter.Println("   Note: Context API infrastructure helper needs to be added")
+	// Start Context API Service
+	GinkgoWriter.Println("📦 Starting Context API Service...")
+	contextAPICfg := &infrastructure.ContextAPIConfig{
+		RedisPort:       redisPort,
+		DataStoragePort: dataStoragePort,
+		ServicePort:     contextAPIPort,
+	}
+
+	contextAPIInfra, err = infrastructure.StartContextAPIInfrastructure(contextAPICfg, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Context API should start successfully")
+
+	contextAPIBaseURL = contextAPIInfra.ServiceURL
+	GinkgoWriter.Printf("✅ Context API ready: %s\n", contextAPIBaseURL)
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("✅ E2E Infrastructure Partially Ready - Data Storage running")
+	GinkgoWriter.Println("✅ E2E Infrastructure Ready - All 4 services running")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Printf("   PostgreSQL:     localhost:%s\n", postgresPort)
 	GinkgoWriter.Printf("   Redis:          localhost:%s\n", redisPort)
 	GinkgoWriter.Printf("   Data Storage:   %s\n", dataStorageBaseURL)
-	GinkgoWriter.Printf("   Context API:    %s (pending)\n", contextAPIBaseURL)
+	GinkgoWriter.Printf("   Context API:    %s\n", contextAPIBaseURL)
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 
@@ -116,7 +124,12 @@ var _ = AfterSuite(func() {
 	GinkgoWriter.Println("🧹 Cleaning up E2E test infrastructure...")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// TODO: Stop Context API (when infrastructure helper is added)
+	// Stop Context API Service
+	if contextAPIInfra != nil {
+		GinkgoWriter.Println("🛑 Stopping Context API Service...")
+		contextAPIInfra.Stop(GinkgoWriter)
+		GinkgoWriter.Println("✅ Context API Service stopped")
+	}
 
 	// Stop Data Storage Infrastructure (PostgreSQL + Redis + Data Storage Service)
 	if dataStorageInfra != nil {
@@ -139,4 +152,3 @@ var _ = AfterSuite(func() {
 	GinkgoWriter.Println("✅ E2E cleanup complete")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
-
