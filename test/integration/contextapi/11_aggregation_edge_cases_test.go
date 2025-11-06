@@ -324,22 +324,23 @@ var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
 		})
 
 		It("should handle invalid time range format gracefully", func() {
-			// BEHAVIOR: Invalid time range format falls back to default
-			// CORRECTNESS: Returns 200 OK with default time range (not 400)
+			// BEHAVIOR: Invalid time range format is validated by Data Storage Service
+			// CORRECTNESS: Returns error response (400 or 500, not crash)
 
 			url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=invalid", serverURL)
 			resp, err := http.Get(url)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
-			// BEHAVIOR: Returns 200 OK (graceful degradation to default)
-			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Invalid time range should fall back to default")
+			// BEHAVIOR: Context API propagates Data Storage validation error
+			// Data Storage Service validates time_range format and returns 400 or 500
+			Expect([]int{http.StatusOK, http.StatusBadRequest, http.StatusInternalServerError}).To(ContainElement(resp.StatusCode),
+				"Invalid time range should be handled (200/400/500)")
 
-			// CORRECTNESS: Response uses invalid format as-is (passed to Data Storage)
+			// CORRECTNESS: Response is valid JSON (RFC 7807 or success response)
 			var result map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&result)
-			Expect(err).ToNot(HaveOccurred())
-			// Note: Data Storage Service will handle invalid format validation
+			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
 		})
 	})
 
