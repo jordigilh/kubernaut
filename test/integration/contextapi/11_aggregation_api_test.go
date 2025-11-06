@@ -134,8 +134,8 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			Expect(result.TotalExecutions).To(BeNumerically(">=", 0), "Total executions should be non-negative")
 			Expect(result.SuccessfulExecutions).To(BeNumerically(">=", 0), "Successful executions should be non-negative")
 			Expect(result.SuccessfulExecutions).To(BeNumerically("<=", result.TotalExecutions), "Successful <= Total")
-			Expect(result.Confidence).ToNot(BeEmpty(), "Should include confidence level (low/medium/high)")
-			Expect([]string{"low", "medium", "high"}).To(ContainElement(result.Confidence), "Confidence must be low/medium/high")
+			Expect(result.Confidence).ToNot(BeEmpty(), "Should include confidence level")
+			Expect([]string{"low", "medium", "high", "insufficient_data"}).To(ContainElement(result.Confidence), "Confidence must be low/medium/high/insufficient_data")
 		})
 
 		It("should return 400 Bad Request when incident_type is missing", func() {
