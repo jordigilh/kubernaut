@@ -154,9 +154,10 @@ func parseAggregationParams(r *http.Request) (timeRange string, minSamples int) 
 
 	minSamples = defaultMinSamples
 	if ms := r.URL.Query().Get("min_samples"); ms != "" {
-		if parsed, err := strconv.Atoi(ms); err == nil {
+		if parsed, err := strconv.Atoi(ms); err == nil && parsed >= 0 {
 			minSamples = parsed
 		}
+		// Negative values are silently ignored and default is used
 	}
 
 	return timeRange, minSamples
