@@ -57,7 +57,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 		// Start infrastructure with: make bootstrap-dev (from workspace root)
 		// Or manually: see test/integration/datastorage/suite_test.go for Podman commands
 
-		dataStorageBaseURL = fmt.Sprintf("http://localhost:%s", dataStoragePort)
+		dataStorageBaseURL = fmt.Sprintf("http://localhost:%d", dataStoragePort)
 
 		// Verify Data Storage Service is running
 		GinkgoWriter.Println("🔍 Checking Data Storage Service availability...")
@@ -71,7 +71,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 				return fmt.Errorf("Data Storage Service unhealthy: %d", resp.StatusCode)
 			}
 			return nil
-		}, 10*time.Second, 1*time.Second).Should(Succeed(), "Data Storage Service must be running on port "+dataStoragePort)
+		}, 10*time.Second, 1*time.Second).Should(Succeed(), fmt.Sprintf("Data Storage Service must be running on port %d", dataStoragePort))
 
 		GinkgoWriter.Println("✅ Data Storage Service is available")
 

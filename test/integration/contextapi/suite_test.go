@@ -35,9 +35,9 @@ var (
 	// TODO: Remove direct DB access - use Data Storage REST API per ADR-032
 	// dbClient     *client.PostgresClient
 	cacheManager         cache.CacheManager                   // ADR-016: Real Redis cache for integration tests
-	redisPort            = "6379"                             // Standard Redis port for Context API cache
-	dataStoragePort      = "8085"                             // Data Storage Service port
-	contextAPIPort       = "8080"                             // Context API port
+	redisPort            = 6379                               // Standard Redis port for Context API cache
+	dataStoragePort      = 8085                               // Data Storage Service port
+	contextAPIPort       = 8080                               // Context API port
 	dataStorageInfra     *infrastructure.DataStorageInfrastructure // Shared infrastructure
 	redisContainer       = "contextapi-redis-test"           // Context API's own Redis
 )
@@ -55,7 +55,7 @@ var _ = BeforeSuite(func() {
 	dsConfig := &infrastructure.DataStorageConfig{
 		PostgresPort: "5433",
 		RedisPort:    "6380",
-		ServicePort:  dataStoragePort,
+		ServicePort:  fmt.Sprintf("%d", dataStoragePort),
 		DBName:       "action_history",
 		DBUser:       "slm_user",
 		DBPassword:   "test_password",
@@ -74,7 +74,7 @@ var _ = BeforeSuite(func() {
 	// Start Redis container
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", redisContainer,
-		"-p", fmt.Sprintf("%s:6379", redisPort),
+		"-p", fmt.Sprintf("%d:6379", redisPort),
 		"redis:7-alpine")
 	output, err := cmd.CombinedOutput()
 	Expect(err).ToNot(HaveOccurred(), "Failed to start Redis container: %s", string(output))
@@ -83,7 +83,7 @@ var _ = BeforeSuite(func() {
 	time.Sleep(2 * time.Second)
 
 	// Verify Redis is accessible
-	redisAddr := fmt.Sprintf("localhost:%s", redisPort)
+	redisAddr := fmt.Sprintf("localhost:%d", redisPort)
 	Eventually(func() error {
 		testCmd := exec.Command("podman", "exec", redisContainer, "redis-cli", "ping")
 		testOutput, err := testCmd.CombinedOutput()
@@ -114,7 +114,7 @@ var _ = BeforeSuite(func() {
 	GinkgoWriter.Println("✅ Context API integration test environment ready!")
 	GinkgoWriter.Printf("   - Data Storage Service: %s\n", dataStorageInfra.ServiceURL)
 	GinkgoWriter.Printf("   - PostgreSQL: localhost:%s\n", dsConfig.PostgresPort)
-	GinkgoWriter.Printf("   - Context API Redis: localhost:%s\n", redisPort)
+	GinkgoWriter.Printf("   - Context API Redis: localhost:%d\n", redisPort)
 	GinkgoWriter.Println("   - Schema: public (Data Storage schema - shared infrastructure)")
 })
 
