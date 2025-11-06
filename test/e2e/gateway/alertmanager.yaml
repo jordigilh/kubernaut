@@ -1,0 +1,90 @@
+# Prometheus AlertManager Deployment for Gateway E2E Testing
+# Purpose: Webhook source for testing Gateway alert ingestion
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: kubernaut-system
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+    
+    route:
+      group_by: ['alertname']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: 'gateway-webhook'
+    
+    receivers:
+      - name: 'gateway-webhook'
+        webhook_configs:
+          - url: 'http://gateway-service:8080/api/v1/webhook/prometheus'
+            send_resolved: true
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  ports:
+    - port: 9093
+      targetPort: 9093
+      nodePort: 30093
+      name: web
+  selector:
+    app: alertmanager
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      nodeSelector:
+        workload: monitoring
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.27.0
+          args:
+            - '--config.file=/etc/alertmanager/alertmanager.yml'
+            - '--storage.path=/alertmanager'
+            - '--web.listen-address=:9093'
+          ports:
+            - containerPort: 9093
+              name: web
+          volumeMounts:
+            - name: config
+              mountPath: /etc/alertmanager
+            - name: storage
+              mountPath: /alertmanager
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+      volumes:
+        - name: config
+          configMap:
+            name: alertmanager-config
+        - name: storage
+          emptyDir: {}
+
