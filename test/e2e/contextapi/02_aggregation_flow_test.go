@@ -134,7 +134,7 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 		Expect(result["incident_type"]).To(Equal("pod-oom"), "Incident type should match query")
 		Expect(result["total_executions"]).To(BeNumerically(">=", 3), "Should aggregate at least 3 seeded incidents")
 		Expect(result["successful_executions"]).To(BeNumerically(">=", 2), "Should count at least 2 successful executions")
-		
+
 		// Success rate should be approximately 66.67% (2/3)
 		successRate, ok := result["success_rate"].(float64)
 		Expect(ok).To(BeTrue(), "Success rate should be a number")
