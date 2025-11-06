@@ -6,8 +6,10 @@
 FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
 
 # Build arguments for multi-architecture support
+# NOTE: Currently building for ARM64 for local development/testing
+# TODO: Switch to multi-arch build (amd64 + arm64) for staging/production
 ARG GOOS=linux
-ARG GOARCH=amd64
+ARG GOARCH=arm64
 
 # Switch to root for package installation
 USER root

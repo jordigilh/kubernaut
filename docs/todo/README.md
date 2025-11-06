@@ -36,7 +36,7 @@ This guide provides the **complete implementation roadmap** for Kubernaut's V1 C
 
 Alert enrichment, environment classification, and routing with reconciliation phases: `enriching → classifying → routing → completed`
 
-**Business Requirements**: BR-AP-001 to BR-AP-050, BR-ENV-001 to BR-ENV-050
+**Business Requirements**: BR-SP-001 to BR-SP-050, BR-ENV-001 to BR-ENV-050
 **Priority**: **P0 - HIGH** | **Effort**: 1 week
 
 ---
@@ -322,7 +322,7 @@ make run
 - [KUBERNAUT_ARCHITECTURE_OVERVIEW.md](../architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md) - High-level system design
 
 **Business Requirements**:
-- Alert Processing: BR-AP-001 to BR-AP-050
+- Alert Processing: BR-SP-001 to BR-SP-050
 - Environment Classification: BR-ENV-001 to BR-ENV-050
 - AI Analysis: BR-AI-001 to BR-AI-050
 - Workflow: BR-WF-001 to BR-WF-165

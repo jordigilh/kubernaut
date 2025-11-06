@@ -9,7 +9,7 @@ You may obtain a copy of the License at
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF THE KIND, either express or implied.
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
@@ -18,35 +18,35 @@ package main
 
 import (
 	"context"
-	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"go.uber.org/zap"
 )
 
+// ========================================
+// DATA STORAGE SERVICE - MAIN ENTRY POINT
+// 📋 Implementation Plan: Day 11 - ADR-030 + DD-007
+// Authority: config/data-storage.yaml (source of truth)
+// Pattern: Context API main.go (authoritative reference)
+// ========================================
+//
+// ADR-030 Configuration Management:
+// 1. Load from YAML file (ConfigMap in Kubernetes)
+// 2. Override with environment variables (secrets only)
+// 3. Validate configuration before startup
+//
+// DD-007 Graceful Shutdown:
+// 4-step Kubernetes-aware shutdown pattern
+// ========================================
+
 func main() {
-	// Read from environment variables first, then flags
-	getEnv := func(key, fallback string) string {
-		if value := os.Getenv(key); value != "" {
-			return value
-		}
-		return fallback
-	}
-
-	// Flag parsing with environment variable defaults
-	var (
-		addr       = flag.String("addr", getEnv("HTTP_PORT", ":8080"), "HTTP server address")
-		dbHost     = flag.String("db-host", getEnv("DB_HOST", "localhost"), "PostgreSQL host")
-		dbPort     = flag.Int("db-port", 5432, "PostgreSQL port")
-		dbName     = flag.String("db-name", getEnv("DB_NAME", "kubernaut"), "PostgreSQL database name")
-		dbUser     = flag.String("db-user", getEnv("DB_USER", "kubernaut"), "PostgreSQL user")
-		dbPassword = flag.String("db-password", getEnv("DB_PASSWORD", ""), "PostgreSQL password")
-	)
-	flag.Parse()
-
-	// Logger setup
+	// Initialize logger first (before config loading for error reporting)
 	logger, err := zap.NewProduction()
 	if err != nil {
 		panic("failed to create logger: " + err.Error())
@@ -55,32 +55,126 @@ func main() {
 		_ = logger.Sync() // Ignore sync errors on shutdown
 	}()
 
-	logger.Info("Starting Data Storage service",
-		zap.String("addr", *addr),
-		zap.String("db_host", *dbHost),
-		zap.Int("db_port", *dbPort),
-		zap.String("db_name", *dbName),
-		zap.String("db_user", *dbUser),
+	// ADR-030: Load configuration from YAML file (ConfigMap)
+	// CONFIG_PATH environment variable is MANDATORY
+	// Deployment/environment is responsible for setting this
+	cfgPath := os.Getenv("CONFIG_PATH")
+	if cfgPath == "" {
+		logger.Fatal("CONFIG_PATH environment variable required (ADR-030)",
+			zap.String("env_var", "CONFIG_PATH"),
+			zap.String("reason", "Service must not guess config file location - deployment controls this"),
+			zap.String("example_local", "export CONFIG_PATH=config/data-storage.yaml"),
+			zap.String("example_k8s", "Set in Deployment manifest"),
+		)
+	}
+
+	logger.Info("Loading configuration from YAML file (ADR-030)",
+		zap.String("config_path", cfgPath),
 	)
 
-	// Context management
+	cfg, err := config.LoadFromFile(cfgPath)
+	if err != nil {
+		logger.Fatal("Failed to load configuration file (ADR-030)",
+			zap.Error(err),
+			zap.String("config_path", cfgPath),
+		)
+	}
+
+	// ADR-030 Section 6: Load secrets from mounted files
+	logger.Info("Loading secrets from mounted files (ADR-030 Section 6)")
+	if err := cfg.LoadSecrets(); err != nil {
+		logger.Fatal("Failed to load secrets (ADR-030 Section 6)",
+			zap.Error(err),
+		)
+	}
+
+	// Validate configuration (after secrets are loaded)
+	if err := cfg.Validate(); err != nil {
+		logger.Fatal("Invalid configuration (ADR-030)",
+			zap.Error(err),
+		)
+	}
+
+	logger.Info("Configuration loaded successfully (ADR-030)",
+		zap.String("service", "data-storage"),
+		zap.Int("port", cfg.Server.Port),
+		zap.String("database_host", cfg.Database.Host),
+		zap.Int("database_port", cfg.Database.Port),
+		zap.String("redis_addr", cfg.Redis.Addr),
+		zap.String("log_level", cfg.Logging.Level),
+	)
+
+	// Context management for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// TODO: Day 2 - Initialize database connection
-	// dbConnStr := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
-	//     *dbHost, *dbPort, *dbName, *dbUser, *dbPassword)
-	// TODO: Day 2 - Initialize schema with schema.NewInitializer
-	// TODO: Day 6 - Initialize Data Storage client
-	// TODO: Day 11 - Start HTTP server
+	// Build PostgreSQL connection string from config
+	dbConnStr := cfg.Database.GetConnectionString()
 
-	_ = ctx        // Will be used in Day 2
-	_ = dbPassword // Will be used in Day 2
+	// Create HTTP server with database connection + Redis for DLQ
+	serverCfg := &server.Config{
+		Port:         cfg.Server.Port,
+		ReadTimeout:  cfg.Server.GetReadTimeout(),
+		WriteTimeout: cfg.Server.GetWriteTimeout(),
+	}
 
-	// Wait for shutdown signal
+	srv, err := server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, serverCfg)
+	if err != nil {
+		logger.Fatal("Failed to create server",
+			zap.Error(err),
+		)
+	}
+
+	// DD-007: Graceful shutdown timeout (Kubernetes terminationGracePeriodSeconds)
+	// Default: 30 seconds to allow endpoint removal + connection drain
+	shutdownTimeout := 30 * time.Second
+	if timeoutEnv := os.Getenv("SHUTDOWN_TIMEOUT"); timeoutEnv != "" {
+		if timeout, err := time.ParseDuration(timeoutEnv); err == nil {
+			shutdownTimeout = timeout
+		}
+	}
+
+	logger.Info("Starting Data Storage service (ADR-030 + DD-007)",
+		zap.Int("port", cfg.Server.Port),
+		zap.String("host", cfg.Server.Host),
+		zap.Duration("shutdown_timeout", shutdownTimeout),
+	)
+
+	// Start server in goroutine
+	serverErrors := make(chan error, 1)
+	go func() {
+		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+		logger.Info("HTTP server listening",
+			zap.String("addr", addr),
+		)
+		serverErrors <- srv.Start()
+	}()
+
+	// Wait for shutdown signal or server error
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
 
-	logger.Info("Shutting down Data Storage service")
+	select {
+	case err := <-serverErrors:
+		logger.Error("Server error",
+			zap.Error(err),
+		)
+	case sig := <-sigChan:
+		logger.Info("Shutdown signal received (DD-007)",
+			zap.String("signal", sig.String()),
+		)
+
+		// DD-007: Graceful shutdown (already implemented in server.Shutdown)
+		// 4-step pattern: flag set → endpoint propagation → drain → close resources
+		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, shutdownTimeout)
+		defer shutdownCancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Graceful shutdown failed (DD-007)",
+				zap.Error(err),
+			)
+		}
+	}
+
+	logger.Info("Data Storage service stopped (ADR-030 + DD-007)")
 }

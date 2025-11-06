@@ -577,11 +577,11 @@ kubectl apply -f https://storage.googleapis.com/tekton-releases/dashboard/latest
 ## Links
 
 ### **Business Requirements**:
-- **BR-WORKFLOW-001**: Multi-step workflow orchestration
+- **BR-REMEDIATION-001**: Multi-step workflow orchestration
   - Location: `docs/requirements/01_WORKFLOW_ORCHESTRATION.md`
   - Fulfilled: ✅ Via Tekton Pipelines
 
-- **BR-WORKFLOW-002**: Parallel execution support
+- **BR-REMEDIATION-002**: Parallel execution support
   - Location: `docs/requirements/01_WORKFLOW_ORCHESTRATION.md`
   - Fulfilled: ✅ Via Tekton `runAfter` dependencies
 

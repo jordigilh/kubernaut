@@ -54,7 +54,7 @@ func (g *GatewayService) HandleWebhook(ctx context.Context, payload []byte) erro
 
 **Integration Pattern**: Watch-based event-driven coordination
 
-#### **2.1. RemediationProcessing CRD Creation**
+#### **2.1. SignalProcessing CRD Creation**
 
 ```go
 // In RemediationRequestReconciler

@@ -4,7 +4,7 @@
 **Status**: ✅ **ACCEPTED**
 **Context**: Kubernaut V1 Architecture
 **Deciders**: Development Team
-**Technical Story**: [BR-PLATFORM-001, BR-WORKFLOW-001, BR-INTEGRATION-001]
+**Technical Story**: [BR-PLATFORM-001, BR-REMEDIATION-001, BR-INTEGRATION-001]
 
 ---
 
@@ -33,7 +33,7 @@ Kubernaut is a Kubernetes-native alert remediation system that must:
 
 ### **Business Requirements**:
 - **BR-PLATFORM-001**: Kubernetes-native architecture (no external dependencies)
-- **BR-WORKFLOW-001**: Modular workflow orchestration with clear boundaries
+- **BR-REMEDIATION-001**: Modular workflow orchestration with clear boundaries
 - **BR-INTEGRATION-001**: Loose coupling between components for maintainability
 
 ### **Technical Drivers**:
@@ -82,7 +82,7 @@ Separate Kubernetes controllers, each managing its own Custom Resource Definitio
 ```
 5 Microservices, Each with Its Own CRD:
 
-1. Remediation Processor    → RemediationProcessing CRD
+1. Remediation Processor    → SignalProcessing CRD
    - Enriches alerts with context
    - Classifies alert severity
    - Routes to AI Analysis
@@ -211,7 +211,7 @@ graph TB
     end
 
     subgraph "Child Services (Flat Hierarchy)"
-        AP[RemediationProcessing CRD<br/>Remediation Processor]
+        AP[SignalProcessing CRD<br/>Remediation Processor]
         AI[AIAnalysis CRD<br/>AI Analysis]
         WE[WorkflowExecution CRD<br/>Workflow Execution]
         KE[KubernetesExecution CRD<br/>Kubernetes Executor]
@@ -238,7 +238,7 @@ graph TB
 **Coordination Flow**:
 ```
 1. RemediationRequest created (user/webhook)
-2. Remediation Orchestrator creates RemediationProcessing CRD
+2. Remediation Orchestrator creates SignalProcessing CRD
 3. Remediation Processor enriches → updates RemediationProcessing status
 4. Remediation Orchestrator watches status → creates AIAnalysis CRD
 5. AI Analysis investigates → updates AIAnalysis status
@@ -637,7 +637,7 @@ API Load Increase: 7× watch load
   - Location: `docs/requirements/05_KUBERNETES_SAFETY.md`
   - Fulfilled: ✅ CRD-based architecture is Kubernetes-native
 
-- **BR-WORKFLOW-001**: Modular workflow orchestration
+- **BR-REMEDIATION-001**: Modular workflow orchestration
   - Location: `docs/requirements/01_WORKFLOW_ORCHESTRATION.md`
   - Fulfilled: ✅ 5 modular services with clear boundaries
 

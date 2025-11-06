@@ -62,8 +62,8 @@ package remediationprocessing_test  // DO NOT use _test postfix
 
 ```go
 ✅ CORRECT:
-Describe("BR-AP-001: Historical Alert Enrichment", func() {
-    // All tests in this block validate BR-AP-001
+Describe("BR-SP-001: Historical Alert Enrichment", func() {
+    // All tests in this block validate BR-SP-001
 })
 
 ❌ INCORRECT:
@@ -137,8 +137,8 @@ Context("Case 1", func() {})  // Unclear
 
 ```go
 ✅ CORRECT:
-Describe("BR-AP-001: Historical Alert Enrichment", func() {
-    // Test implements business requirement BR-AP-001
+Describe("BR-SP-001: Historical Alert Enrichment", func() {
+    // Test implements business requirement BR-SP-001
 })
 
 Describe("BR-WF-023: Parallel Step Execution", func() {
@@ -155,10 +155,10 @@ Describe("BR-1: Tests", func() {})  // Missing category
 Add BR reference in comments for complex tests:
 
 ```go
-// BR-AP-005: Classification Logic
+// BR-SP-005: Classification Logic
 // Tests automated vs AI-required classification based on
 // historical success rates and environmental factors
-var _ = Describe("BR-AP-005: Classification Logic", func() {
+var _ = Describe("BR-SP-005: Classification Logic", func() {
     ...
 })
 ```
@@ -264,7 +264,7 @@ func TestRemediationProcessing(t *testing.T) {
     RunSpecs(t, "Remediation Processing Suite")
 }
 
-var _ = Describe("BR-AP-001: Historical Alert Enrichment", func() {
+var _ = Describe("BR-SP-001: Historical Alert Enrichment", func() {
     var (
         // Mock external dependencies
         mockDB      *mocks.MockDatabase
@@ -358,8 +358,8 @@ var _ = AfterSuite(func() {
     Expect(testEnv.Stop()).To(Succeed())
 })
 
-var _ = Describe("BR-AP-012: CRD Lifecycle Management", func() {
-    It("should create and update RemediationProcessing CRD", func() {
+var _ = Describe("BR-SP-012: CRD Lifecycle Management", func() {
+    It("should create and update SignalProcessing CRD", func() {
         // Integration test with real Kubernetes API
     })
 })
@@ -507,9 +507,9 @@ Add comments for:
 - BR-specific behavior
 
 ```go
-// BR-AP-005: Classification uses environment-specific thresholds
+// BR-SP-005: Classification uses environment-specific thresholds
 // Production requires 90% success rate, staging 70%
-var _ = Describe("BR-AP-005: Classification Logic", func() {
+var _ = Describe("BR-SP-005: Classification Logic", func() {
     It("should use 90% threshold in production", func() {
         // Production environments require higher confidence
         // to minimize risk of incorrect automated remediation

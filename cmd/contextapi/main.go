@@ -20,8 +20,14 @@ var (
 )
 
 func main() {
+	// Check for CONFIG_FILE environment variable first (for containerized deployments)
+	defaultConfigPath := os.Getenv("CONFIG_FILE")
+	if defaultConfigPath == "" {
+		defaultConfigPath = "config/context-api.yaml"
+	}
+
 	// Parse command-line flags
-	configPath := flag.String("config", "config/context-api.yaml", "Path to configuration file")
+	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Parse()
 
@@ -45,47 +51,39 @@ func main() {
 		zap.String("config_path", *configPath))
 
 	// Load configuration
-	cfg, err := config.LoadConfig(*configPath)
+	cfg, err := config.LoadFromFile(*configPath)
 	if err != nil {
 		logger.Fatal("Failed to load configuration",
 			zap.Error(err),
 			zap.String("config_path", *configPath))
 	}
 
-	// Override with environment variables
-	cfg.LoadFromEnv()
-
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		logger.Fatal("Invalid configuration", zap.Error(err))
 	}
 
-	logger.Info("Configuration loaded",
+	logger.Info("Configuration loaded (ADR-032: Data Storage Service API Gateway)",
 		zap.Int("server_port", cfg.Server.Port),
 		zap.String("server_host", cfg.Server.Host),
-		zap.String("db_host", cfg.Database.Host),
-		zap.Int("db_port", cfg.Database.Port),
-		zap.String("db_name", cfg.Database.Name),
+		zap.String("data_storage_url", cfg.DataStorage.BaseURL),
 		zap.String("redis_addr", cfg.Cache.RedisAddr),
 		zap.Int("redis_db", cfg.Cache.RedisDB),
 		zap.String("log_level", cfg.Logging.Level))
 
-	// Build connection strings
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Database.Host, cfg.Database.Port, cfg.Database.User,
-		cfg.Database.Password, cfg.Database.Name, cfg.Database.SSLMode)
-
+	// Build Redis connection string (ADR-032: Context API uses Redis for caching only)
 	redisAddr := fmt.Sprintf("%s/%d", cfg.Cache.RedisAddr, cfg.Cache.RedisDB)
 
-	// Create server configuration
+	// Create server configuration (ADR-032: Data Storage Service API Gateway)
 	serverCfg := &server.Config{
-		Port:         cfg.Server.Port,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		Port:               cfg.Server.Port,
+		ReadTimeout:        cfg.Server.ReadTimeout,
+		WriteTimeout:       cfg.Server.WriteTimeout,
+		DataStorageBaseURL: cfg.DataStorage.BaseURL, // ADR-032: Data Storage Service URL
 	}
 
-	// Create server
-	srv, err := server.NewServer(connStr, redisAddr, logger, serverCfg)
+	// Create server (ADR-032: No direct database access)
+	srv, err := server.NewServer(redisAddr, logger, serverCfg)
 	if err != nil {
 		logger.Fatal("Failed to create server", zap.Error(err))
 	}

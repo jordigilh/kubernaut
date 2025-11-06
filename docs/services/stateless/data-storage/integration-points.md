@@ -1,20 +1,248 @@
 # Data Storage Service - Integration Points
 
-**Version**: v1.0
-**Last Updated**: October 6, 2025
-**Service Type**: Stateless HTTP API Service (Write-Focused)
+**Version**: v2.0 (Phase 1: Read API ✅ Production-Ready)
+**Last Updated**: November 1, 2025
+**Service Type**: Stateless HTTP REST API Gateway (Read + Write)
 **Port**: 8080 (REST API + Health), 9090 (Metrics)
+**Implementation Status**: Days 1-8 Complete, 75 Tests (38 Unit, 37 Integration)
 
 ---
 
 ## Table of Contents
 
-1. [Integration Overview](#integration-overview)
-2. [Upstream Services (Writers)](#upstream-services-writers)
-3. [Downstream Services (Databases)](#downstream-services-databases)
-4. [Integration Patterns](#integration-patterns)
-5. [Error Handling](#error-handling)
-6. [Data Flow Diagrams](#data-flow-diagrams)
+### Phase 1: Read API Integration (✅ Production-Ready)
+1. [Phase 1 Integration Overview](#phase-1-read-api-integration)
+2. [Downstream Services (Readers)](#downstream-services-readers-phase-1)
+3. [Database Integration](#database-integration-phase-1)
+
+### Phase 2: Write API Integration (📋 Planned)
+4. [Phase 2 Integration Overview](#phase-2-write-api-integration)
+5. [Upstream Services (Writers)](#upstream-services-writers-phase-2)
+6. [Downstream Services (Databases)](#downstream-services-databases-phase-2)
+7. [Integration Patterns](#integration-patterns-phase-2)
+8. [Error Handling](#error-handling)
+9. [Data Flow Diagrams](#data-flow-diagrams)
+
+---
+
+## Phase 1: Read API Integration
+
+**Status**: ✅ Production-Ready (Days 1-8 Complete)
+**Business Requirements**: BR-STORAGE-021 through BR-STORAGE-028
+
+### **Service Position in Architecture (Phase 1)**
+
+Data Storage Service acts as the **REST API Gateway for Database Access** in Phase 1:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              Downstream Services (Readers)                  │
+│  (Read incident data via Data Storage API)                  │
+│                                                             │
+│  • Context API Service (planned)                            │
+│  • Effectiveness Monitor Service (planned)                  │
+│  • Analytics Dashboard (planned)                            │
+│  • External API Clients                                     │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     │ HTTP GET /api/v1/incidents
+                     │ HTTP GET /api/v1/incidents/:id
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Data Storage Service (Port 8080)               │
+│                                                             │
+│  1. Validate query parameters (severity, limit, offset)     │
+│  2. Build parameterized SQL query (prevent injection)       │
+│  3. Execute query against PostgreSQL                        │
+│  4. Format response (RFC 7807 for errors)                   │
+│  5. Return JSON response with pagination metadata           │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     │ SQL SELECT with $N placeholders
+                     │ (Parameterized queries)
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Database Service                            │
+│                                                             │
+│  • PostgreSQL 16 (resource_action_traces table)             │
+│    - Partitioned by action_timestamp                        │
+│    - Indexed for query performance                          │
+│    - Connection pooling (max 50 connections)                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Downstream Services (Readers - Phase 1)
+
+### **1. Context API Service (Planned Integration)**
+
+**Purpose**: Query historical incident data for AI context enrichment
+
+**Integration Pattern**: HTTP GET
+**Endpoint**: `GET /api/v1/incidents?alert_name=HighMemoryUsage&limit=10`
+
+#### **Read Flow**
+
+```go
+// In Context API Service (planned)
+import (
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "net/url"
+)
+
+type IncidentsResponse struct {
+    Data       []Incident           `json:"data"`
+    Pagination PaginationMetadata   `json:"pagination"`
+}
+
+type Incident struct {
+    ID               int       `json:"id"`
+    AlertName        string    `json:"alert_name"`
+    AlertSeverity    string    `json:"alert_severity"`
+    ActionType       string    `json:"action_type"`
+    ActionTimestamp  string    `json:"action_timestamp"`
+    ExecutionStatus  string    `json:"execution_status"`
+}
+
+func queryHistoricalIncidents(alertName string) ([]Incident, error) {
+    // Build query URL with filters
+    params := url.Values{}
+    params.Add("alert_name", alertName)
+    params.Add("limit", "10")
+    params.Add("severity", "critical")
+
+    url := fmt.Sprintf("http://data-storage.kubernaut-system:8080/api/v1/incidents?%s", params.Encode())
+
+    resp, err := http.Get(url)
+    if err != nil {
+        return nil, fmt.Errorf("failed to query Data Storage API: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("API returned non-OK status: %d", resp.StatusCode)
+    }
+
+    var response IncidentsResponse
+    if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+        return nil, fmt.Errorf("failed to decode response: %w", err)
+    }
+
+    return response.Data, nil
+}
+```
+
+### **2. Effectiveness Monitor Service (Planned Integration)**
+
+**Purpose**: Analyze remediation effectiveness over time
+
+**Integration Pattern**: HTTP GET with filters
+**Endpoint**: `GET /api/v1/incidents?action_type=scale&limit=1000`
+
+#### **Analysis Flow**
+
+```go
+// In Effectiveness Monitor Service (planned)
+func analyzeRemediationEffectiveness(actionType string) (*EffectivenessReport, error) {
+    // Query all incidents of specific action type
+    url := fmt.Sprintf(
+        "http://data-storage.kubernaut-system:8080/api/v1/incidents?action_type=%s&limit=1000",
+        url.QueryEscape(actionType),
+    )
+
+    incidents, err := fetchIncidents(url)
+    if err != nil {
+        return nil, err
+    }
+
+    // Analyze success rate, avg resolution time, etc.
+    report := analyzeIncidents(incidents)
+    return report, nil
+}
+```
+
+---
+
+## Database Integration (Phase 1)
+
+### **PostgreSQL Connection**
+
+**Database**: `action_history`
+**Table**: `resource_action_traces`
+**Connection Pool**: 50 max connections
+**SSL Mode**: Configurable (default: disable for dev)
+
+#### **Connection Configuration**
+
+```go
+// pkg/datastorage/server/server.go
+import (
+    "database/sql"
+    "fmt"
+    _ "github.com/lib/pq"
+)
+
+func connectDatabase(connStr string) (*sql.DB, error) {
+    db, err := sql.Open("postgres", connStr)
+    if err != nil {
+        return nil, fmt.Errorf("failed to open database: %w", err)
+    }
+
+    // Configure connection pool
+    db.SetMaxOpenConns(50)
+    db.SetMaxIdleConns(10)
+    db.SetConnMaxLifetime(5 * time.Minute)
+
+    // Verify connection
+    if err := db.Ping(); err != nil {
+        db.Close()
+        return nil, fmt.Errorf("failed to ping database: %w", err)
+    }
+
+    return db, nil
+}
+```
+
+#### **Query Execution Pattern**
+
+All queries use **parameterized statements** to prevent SQL injection (BR-STORAGE-025):
+
+```go
+// pkg/datastorage/server/server.go (DBAdapter)
+func (a *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[string]interface{}, error) {
+    // Build query with $N placeholders
+    sql, args := buildQuery(filters, limit, offset)
+    // Example SQL: "SELECT * FROM resource_action_traces WHERE alert_severity = $1 LIMIT $2 OFFSET $3"
+    // Example args: ["critical", 100, 0]
+
+    rows, err := a.db.Query(sql, args...)
+    if err != nil {
+        return nil, fmt.Errorf("query execution failed: %w", err)
+    }
+    defer rows.Close()
+
+    // Dynamic column scanning for flexible schema support
+    results := scanRowsToMaps(rows)
+    return results, nil
+}
+```
+
+### **Performance Optimizations**
+
+1. **Connection Pooling**: Reuse database connections (50 max, 10 idle)
+2. **Prepared Statements**: Parameterized queries for SQL injection prevention
+3. **Dynamic Scanning**: Flexible schema support without hardcoded structs
+4. **Pagination**: Limit/offset to prevent large result sets
+5. **Indexing**: Table indexes on `alert_severity`, `action_type`, `alert_name` (assumed)
+
+---
+
+## Phase 2: Write API Integration
+
+**Status**: 📋 Planned for Phase 2
 
 ---
 

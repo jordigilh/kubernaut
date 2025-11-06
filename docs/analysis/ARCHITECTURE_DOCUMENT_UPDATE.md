@@ -71,9 +71,9 @@ After comprehensive analysis of the current architecture document against the **
 ```markdown
 #### **2. Alert Processor Service**
 - **Single Responsibility**: Alert lifecycle management and enrichment
-- **Business Requirements**: BR-AP-001 to BR-AP-025
+- **Business Requirements**: BR-SP-001 to BR-SP-025
 - **Key Capabilities**:
-  - **Enhanced**: Unique alert tracking ID generation (BR-AP-021)
+  - **Enhanced**: Unique alert tracking ID generation (BR-SP-021)
   - **Enhanced**: Complete lifecycle state management (received → processing → analyzed → remediated → closed)
   - **Enhanced**: <100ms tracking record creation with correlation metadata
   - Alert filtering and normalization with 90% accuracy
@@ -85,9 +85,9 @@ After comprehensive analysis of the current architecture document against the **
 ```markdown
 #### **2. Alert Processor Service**
 - **Single Responsibility**: Alert lifecycle management, enrichment, and AI coordination
-- **Business Requirements**: BR-AP-001 to BR-AP-025, BR-AI-COORD-V1-001 to BR-AI-COORD-V1-003
+- **Business Requirements**: BR-SP-001 to BR-SP-025, BR-AI-COORD-V1-001 to BR-AI-COORD-V1-003
 - **Key Capabilities**:
-  - **Enhanced**: Unique alert tracking ID generation (BR-AP-021)
+  - **Enhanced**: Unique alert tracking ID generation (BR-SP-021)
   - **Enhanced**: Complete lifecycle state management (received → processing → analyzed → remediated → closed)
   - **Enhanced**: <100ms tracking record creation with correlation metadata
   - Alert filtering and normalization with 90% accuracy
@@ -107,7 +107,7 @@ After comprehensive analysis of the current architecture document against the **
 ```markdown
 #### **3. Environment Classifier Service**
 - **Single Responsibility**: Namespace environment classification
-- **Business Requirements**: BR-ENV-001 to BR-ENV-050, BR-AP-021 to BR-AP-050
+- **Business Requirements**: BR-ENV-001 to BR-ENV-050, BR-SP-021 to BR-SP-050
 - **Key Capabilities**:
   - Production/staging/dev/test classification
   - Business priority mapping
@@ -118,7 +118,7 @@ After comprehensive analysis of the current architecture document against the **
 ```markdown
 #### **3. Environment Classifier Service**
 - **Single Responsibility**: Intelligent namespace environment classification and detection
-- **Business Requirements**: BR-ENV-001 to BR-ENV-050, BR-AP-021 to BR-AP-050, BR-ENV-DETECT-001 to BR-ENV-DETECT-005
+- **Business Requirements**: BR-ENV-001 to BR-ENV-050, BR-SP-021 to BR-SP-050, BR-ENV-DETECT-001 to BR-ENV-DETECT-005
 - **Key Capabilities**:
   - Production/staging/dev/test classification
   - Business priority mapping
@@ -305,7 +305,7 @@ After comprehensive analysis of the current architecture document against the **
 - **Single Responsibility**: Alert tracking correlation and data persistence
 - **Business Requirements**: BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030
 - **Key Capabilities**:
-  - **Enhanced**: Alert tracking ID correlation and lifecycle management (BR-AP-021, BR-WF-ALERT-001)
+  - **Enhanced**: Alert tracking ID correlation and lifecycle management (BR-SP-021, BR-WF-ALERT-001)
   - **Enhanced**: End-to-end audit trail storage for compliance and debugging
   - **Enhanced**: Cross-service correlation data for comprehensive tracking
   - Vector database operations for similarity search
@@ -320,7 +320,7 @@ After comprehensive analysis of the current architecture document against the **
 - **Single Responsibility**: Alert tracking correlation, data persistence, and vector operations
 - **Business Requirements**: BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030, BR-VECTOR-V1-001 to BR-VECTOR-V1-003
 - **Key Capabilities**:
-  - **Enhanced**: Alert tracking ID correlation and lifecycle management (BR-AP-021, BR-WF-ALERT-001)
+  - **Enhanced**: Alert tracking ID correlation and lifecycle management (BR-SP-021, BR-WF-ALERT-001)
   - **Enhanced**: End-to-end audit trail storage for compliance and debugging
   - **Enhanced**: Cross-service correlation data for comprehensive tracking
   - Vector database operations for similarity search

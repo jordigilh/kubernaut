@@ -3,7 +3,7 @@
 **Document Version**: 1.0
 **Date**: September 27, 2025
 **Status**: **READY FOR TDD IMPLEMENTATION**
-**Business Requirements**: BR-AP-021, BR-PA-009, BR-INS-001, BR-CTX-020, BR-NOTIF-001
+**Business Requirements**: BR-SP-021, BR-PA-009, BR-INS-001, BR-CTX-020, BR-NOTIF-001
 **Methodology**: **MANDATORY TDD Workflow with AI Integration**
 
 ---
@@ -18,7 +18,7 @@ Implement event-driven callback system to track remediation completion across Ku
 - AI Analysis Service cannot learn from action outcomes (BR-PA-009)
 - Effectiveness Monitor Service cannot trigger assessments (BR-INS-001)
 - Notification Service lacks completion triggers (BR-NOTIF-001)
-- Alert Processor cannot track lifecycle completion (BR-AP-021)
+- Alert Processor cannot track lifecycle completion (BR-SP-021)
 
 ---
 
@@ -87,7 +87,7 @@ grep -r "callback\|event" cmd/ --include="*.go"
 
 ### **TDD RED Phase: Failing Completion Tests**
 
-**Business Requirement**: BR-AP-021, BR-PA-009, BR-INS-001
+**Business Requirement**: BR-SP-021, BR-PA-009, BR-INS-001
 
 **Test Files to Create** (following TDD RED):
 
@@ -105,7 +105,7 @@ import (
     "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-var _ = Describe("BR-AP-021: Completion Event Bus", func() {
+var _ = Describe("BR-SP-021: Completion Event Bus", func() {
     var (
         eventBus completion.EventBus
         ctx      context.Context
@@ -117,7 +117,7 @@ var _ = Describe("BR-AP-021: Completion Event Bus", func() {
     })
 
     It("should publish workflow completion events", func() {
-        // BR-AP-021: Track alert states and lifecycle
+        // BR-SP-021: Track alert states and lifecycle
         event := completion.WorkflowCompleteEvent{
             WorkflowID: "test-workflow-123",
             Status:     "success",

@@ -670,7 +670,7 @@ Phase 3 (Future): Ensemble models and advanced AI orchestration
 ### 16.3 Data Requirements for Post-Mortem Analysis
 
 #### 16.3.1 Alert Tracking Data Sources
-- **Enhanced BR-AP-021**: Decision rationale, confidence scores, context data
+- **Enhanced BR-SP-021**: Decision rationale, confidence scores, context data
 - **Enhanced BR-HIST-002**: Performance metrics, error conditions, human interventions
 - **Enhanced BR-AI-TRACK-001**: AI reasoning, model responses, alternative options
 - **Enhanced BR-WF-ALERT-001**: Workflow execution paths, timing, effectiveness metrics

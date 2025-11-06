@@ -31,7 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/workflow/shared"
 )
 
-// WorkflowStatePgVectorPersistence implements BR-WORKFLOW-PGVECTOR-001 through BR-WORKFLOW-PGVECTOR-010
+// WorkflowStatePgVectorPersistence implements BR-REMEDIATION-PGVECTOR-001 through BR-REMEDIATION-PGVECTOR-010
 // Manages workflow state persistence in pgvector with focus on recovery and optimization
 type WorkflowStatePgVectorPersistence struct {
 	vectorDB        vector.VectorDatabase
@@ -78,7 +78,7 @@ const (
 	StepStatusFailed    StepStatus = "failed"
 )
 
-// WorkflowCheckpoint represents a workflow checkpoint stored in vectors (BR-WORKFLOW-PGVECTOR-001)
+// WorkflowCheckpoint represents a workflow checkpoint stored in vectors (BR-REMEDIATION-PGVECTOR-001)
 type WorkflowCheckpoint struct {
 	CheckpointID     string                 `json:"checkpoint_id"`
 	WorkflowID       string                 `json:"workflow_id"`
@@ -88,7 +88,7 @@ type WorkflowCheckpoint struct {
 	Metadata         map[string]interface{} `json:"metadata"`
 }
 
-// WorkflowPattern represents a historical workflow pattern (BR-WORKFLOW-PGVECTOR-006)
+// WorkflowPattern represents a historical workflow pattern (BR-REMEDIATION-PGVECTOR-006)
 type WorkflowPattern struct {
 	ID       string                 `json:"id"`
 	Name     string                 `json:"name"`
@@ -97,7 +97,7 @@ type WorkflowPattern struct {
 	Metadata map[string]interface{} `json:"metadata"`
 }
 
-// VectorDecisionResult represents the result of vector-based decision making (BR-WORKFLOW-PGVECTOR-007)
+// VectorDecisionResult represents the result of vector-based decision making (BR-REMEDIATION-PGVECTOR-007)
 type VectorDecisionResult struct {
 	SelectedPattern string    `json:"selected_pattern"`
 	ConfidenceScore float64   `json:"confidence_score"`
@@ -105,7 +105,7 @@ type VectorDecisionResult struct {
 	ReasoningVector []float32 `json:"reasoning_vector"`
 }
 
-// WorkflowResourceOptimizationRequest represents a resource optimization request (BR-WORKFLOW-PGVECTOR-009)
+// WorkflowResourceOptimizationRequest represents a resource optimization request (BR-REMEDIATION-PGVECTOR-009)
 type WorkflowResourceOptimizationRequest struct {
 	WorkflowID       string                `json:"workflow_id"`
 	CurrentResources WorkflowResourceUsage `json:"current_resources"`
@@ -129,7 +129,7 @@ type ResourceConstraints struct {
 	AccuracyTarget float64       `json:"accuracy_target"`
 }
 
-// WorkflowResourceOptimizationResult represents optimization results (BR-WORKFLOW-PGVECTOR-010)
+// WorkflowResourceOptimizationResult represents optimization results (BR-REMEDIATION-PGVECTOR-010)
 type WorkflowResourceOptimizationResult struct {
 	OptimizedResources   OptimizedResourceAllocation `json:"optimized_resources"`
 	CostReduction        float64                     `json:"cost_reduction"`
@@ -188,10 +188,10 @@ func NewWorkflowStatePgVectorPersistence(vectorDB vector.VectorDatabase, workflo
 func (w *WorkflowStatePgVectorPersistence) SaveWorkflowState(ctx context.Context, execution *engine.RuntimeWorkflowExecution) error {
 	// Following guideline: Always handle errors, never ignore them
 	if execution == nil {
-		return fmt.Errorf("BR-WORKFLOW-PGVECTOR-001: execution cannot be nil")
+		return fmt.Errorf("BR-REMEDIATION-PGVECTOR-001: execution cannot be nil")
 	}
 	if execution.ID == "" {
-		return fmt.Errorf("BR-WORKFLOW-PGVECTOR-001: execution ID cannot be empty")
+		return fmt.Errorf("BR-REMEDIATION-PGVECTOR-001: execution ID cannot be empty")
 	}
 
 	w.logger.WithFields(logrus.Fields{
@@ -199,20 +199,20 @@ func (w *WorkflowStatePgVectorPersistence) SaveWorkflowState(ctx context.Context
 		"workflow_id":  execution.WorkflowID,
 		"step_count":   len(execution.Steps),
 		"status":       execution.OperationalStatus,
-	}).Info("BR-WORKFLOW-PGVECTOR-001: Starting workflow state persistence with accuracy optimization")
+	}).Info("BR-REMEDIATION-PGVECTOR-001: Starting workflow state persistence with accuracy optimization")
 
 	// Check context cancellation
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("BR-WORKFLOW-PGVECTOR-001: workflow persistence cancelled: %w", ctx.Err())
+		return fmt.Errorf("BR-REMEDIATION-PGVECTOR-001: workflow persistence cancelled: %w", ctx.Err())
 	default:
 	}
 
 	// Serialize execution state for storage
 	executionData, err := json.Marshal(execution)
 	if err != nil {
-		w.logger.WithError(err).Error("BR-WORKFLOW-PGVECTOR-001: Failed to serialize execution state")
-		return fmt.Errorf("BR-WORKFLOW-PGVECTOR-001: failed to serialize execution: %w", err)
+		w.logger.WithError(err).Error("BR-REMEDIATION-PGVECTOR-001: Failed to serialize execution state")
+		return fmt.Errorf("BR-REMEDIATION-PGVECTOR-001: failed to serialize execution: %w", err)
 	}
 
 	// Generate state hash for integrity validation
@@ -238,8 +238,8 @@ func (w *WorkflowStatePgVectorPersistence) SaveWorkflowState(ctx context.Context
 
 	err = w.vectorDB.StoreActionPattern(ctx, actionPattern)
 	if err != nil {
-		w.logger.WithError(err).Errorf("BR-WORKFLOW-PGVECTOR-001: Failed to store execution state in pgvector")
-		return fmt.Errorf("BR-WORKFLOW-PGVECTOR-001: failed to store execution state: %w", err)
+		w.logger.WithError(err).Errorf("BR-REMEDIATION-PGVECTOR-001: Failed to store execution state in pgvector")
+		return fmt.Errorf("BR-REMEDIATION-PGVECTOR-001: failed to store execution state: %w", err)
 	}
 
 	w.logger.WithField("execution_id", execution.ID).Info("Workflow state saved in pgvector successfully")

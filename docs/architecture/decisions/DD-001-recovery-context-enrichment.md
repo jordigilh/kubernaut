@@ -43,7 +43,7 @@ When a workflow execution fails, the system must create a recovery attempt with 
 - ✅ **Fresh contexts**: Recovery attempt gets FRESH monitoring/business data (not stale from initial attempt)
 - ✅ **Complete enrichment pattern**: RP enriches → RR copies → AIAnalysis reads from spec
 - ✅ **Self-contained CRDs**: AIAnalysis has all data in spec (no API calls during reconciliation)
-- ✅ **Immutable audit trail**: Each RemediationProcessing CRD contains complete snapshot
+- ✅ **Immutable audit trail**: Each SignalProcessing CRD contains complete snapshot
 - ✅ **Graceful degradation in RP**: Single point for Context API fallback logic
 - ✅ **Simplified AIAnalysis**: No external dependencies, pure data transformation
 
@@ -82,7 +82,7 @@ When a workflow execution fails, the system must create a recovery attempt with 
 **Rationale**:
 1. **Temporal Consistency is Critical**: AI analysis quality depends on all contexts being from the same point in time
 2. **Fresh Contexts Drive Better Decisions**: Recovery needs current cluster state, not stale data from initial attempt
-3. **Complete Audit Trail**: Each RemediationProcessing CRD is immutable snapshot of attempt
+3. **Complete Audit Trail**: Each SignalProcessing CRD is immutable snapshot of attempt
 4. **Architectural Consistency**: Follows established self-contained CRD pattern
 5. **Simplified AIAnalysis**: No external dependencies = easier testing and maintenance
 
@@ -93,12 +93,12 @@ When a workflow execution fails, the system must create a recovery attempt with 
 **Primary Implementation Files**:
 - [PROPOSED_FAILURE_RECOVERY_SEQUENCE.md](PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) - Authoritative sequence diagram
 - [04_WORKFLOW_ENGINE_ORCHESTRATION.md](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md) - BR-WF-RECOVERY-011
-- [remediationprocessor/controller-implementation.md](../services/crd-controllers/01-remediationprocessor/controller-implementation.md) - RP enrichment logic
+- [remediationprocessor/controller-implementation.md](../services/crd-controllers/01-signalprocessing/controller-implementation.md) - RP enrichment logic
 - [remediationorchestrator/controller-implementation.md](../services/crd-controllers/05-remediationorchestrator/controller-implementation.md) - Recovery initiation
 - [aianalysis/controller-implementation.md](../services/crd-controllers/02-aianalysis/controller-implementation.md) - EnrichmentData consumption
 
 **Data Flow**:
-1. **Remediation Orchestrator** creates new RemediationProcessing CRD (recovery=true)
+1. **Remediation Orchestrator** creates new SignalProcessing CRD (recovery=true)
 2. **RemediationProcessing Controller** enriches with ALL contexts:
    - Monitoring context (FRESH from monitoring service)
    - Business context (FRESH from business context service)

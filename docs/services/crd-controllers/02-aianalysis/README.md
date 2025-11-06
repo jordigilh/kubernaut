@@ -104,7 +104,7 @@
 | Service | Relationship | Purpose |
 |---------|--------------|---------|
 | **RemediationRequest Controller** | Parent | Creates AIAnalysis CRD, watches for completion |
-| **RemediationProcessing Service** | Sibling | Provides enriched alert data |
+| **SignalProcessing Service** | Sibling | Provides enriched alert data |
 | **WorkflowExecution Service** | Downstream | Receives workflow definition |
 | **HolmesGPT-API Service** | External | Provides AI analysis (HolmesGPT + LLM) |
 | **Data Storage Service** | External | Persists audit trail, historical success rates |

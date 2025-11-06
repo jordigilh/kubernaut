@@ -44,7 +44,7 @@
 ### ANALYSIS Phase (1h)
 - Search existing rollback patterns in workflow engines
 - Review Kubernetes Deployment rollback mechanisms
-- Map BR-WORKFLOW-013 (Rollback on Failure) requirements
+- Map BR-REMEDIATION-013 (Rollback on Failure) requirements
 - Identify dependencies (KubernetesExecution controller)
 
 ### PLAN Phase (1h)
@@ -55,11 +55,11 @@
 
 ### DO-RED: Rollback Tests (2h)
 **File**: `test/unit/workflowexecution/rollback_test.go`
-**BR Coverage**: BR-WORKFLOW-013, BR-WORKFLOW-014
+**BR Coverage**: BR-REMEDIATION-013, BR-REMEDIATION-014
 
 [~350 lines of complete Ginkgo test code]
 ```go
-var _ = Describe("BR-WORKFLOW-013: Rollback Logic", func() {
+var _ = Describe("BR-REMEDIATION-013: Rollback Logic", func() {
     var (
         rollbackManager *rollback.Manager
         workflow        *workflowv1alpha1.WorkflowExecution
@@ -146,7 +146,7 @@ var _ = Describe("BR-WORKFLOW-013: Rollback Logic", func() {
 
 ### DO-GREEN: Minimal Rollback Manager (3h)
 **File**: `pkg/workflowexecution/rollback/manager.go`
-**BR Coverage**: BR-WORKFLOW-013
+**BR Coverage**: BR-REMEDIATION-013
 
 [~350 lines of complete implementation code]
 ```go
@@ -535,8 +535,8 @@ var _ = Describe("Integration Test 3: Rollback Cascade with Parent Deletion", fu
 
 ## Executive Summary
 Workflow-specific error handling for:
-- BR-WORKFLOW-013: Rollback on failure
-- BR-WORKFLOW-016: Step timeout handling
+- BR-REMEDIATION-013: Rollback on failure
+- BR-REMEDIATION-016: Step timeout handling
 - Operational excellence
 
 ## Error Classification Taxonomy

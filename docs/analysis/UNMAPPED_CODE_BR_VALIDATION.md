@@ -82,19 +82,19 @@ BR-GATEWAY-METRICS-005 → Optimizes → BR-WH-006 (concurrent requests)
 
 #### **2. Alert Processor - AI Coordination**
 **Architectural Context**: Integration Layer (`pkg/integration/`)
-**Existing Requirements**: BR-AP-001 to BR-AP-021 (Alert Processing)
+**Existing Requirements**: BR-SP-001 to BR-SP-021 (Alert Processing)
 
 **✅ Alignment Analysis**:
-- **Enhances**: BR-AP-016 (AI analysis coordination) with single-provider optimization
+- **Enhances**: BR-SP-016 (AI analysis coordination) with single-provider optimization
 - **Extends**: BR-AI-TRACK-001 (tracking integration) with coordination intelligence
-- **Complements**: BR-AP-021 (tracking record creation) with AI coordination metadata
+- **Complements**: BR-SP-021 (tracking record creation) with AI coordination metadata
 - **No Conflicts**: Coordination logic enhances existing processing workflow
 
 **Integration Points**:
 ```markdown
-BR-AI-COORD-V1-001 → Enhances → BR-AP-016 (AI analysis coordination)
+BR-AI-COORD-V1-001 → Enhances → BR-SP-016 (AI analysis coordination)
 BR-AI-COORD-V1-002 → Extends → BR-AI-TRACK-001 (tracking integration)
-BR-AI-COORD-V1-003 → Optimizes → BR-AP-021 (tracking record creation)
+BR-AI-COORD-V1-003 → Optimizes → BR-SP-021 (tracking record creation)
 ```
 
 ---

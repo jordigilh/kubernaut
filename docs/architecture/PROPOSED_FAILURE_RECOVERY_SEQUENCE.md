@@ -74,7 +74,7 @@ This is the **approved and authoritative** sequence diagram for step failure rec
 
 1. ⚙️ **Step Execution Fails** - KubernetesExecutor detects failure and updates status
 2. 🔄 **Workflow Orchestrator Detection** - Detects failure, updates WorkflowExecution status to `failed`
-3. 🎯 **Remediation Orchestrator Recovery Coordination** - Evaluates recovery viability, **creates new RemediationProcessing CRD** (recovery)
+3. 🎯 **Remediation Orchestrator Recovery Coordination** - Evaluates recovery viability, **creates new SignalProcessing CRD** (recovery)
 4. 📊 **RemediationProcessing Enrichment** - Enriches with **fresh monitoring + business + recovery context** (queries Context API)
 5. 🧠 **AIAnalysis Processing** - Reads all contexts from AIAnalysis spec, sends enriched prompt to HolmesGPT
 6. ✅ **Recovery Workflow Execution** - New workflow created from recovery analysis, execution continues
@@ -83,7 +83,7 @@ This is the **approved and authoritative** sequence diagram for step failure rec
 - ✅ Recovery loop prevention (max 3 attempts)
 - ✅ **Complete enrichment in RemediationProcessing Controller** (ALL contexts in one place)
 - ✅ **Fresh monitoring + business + recovery context** (temporal consistency)
-- ✅ **Immutable audit trail** (each RemediationProcessing CRD is separate)
+- ✅ **Immutable audit trail** (each SignalProcessing CRD is separate)
 - ✅ **Context API integration in RemediationProcessing** (consistent enrichment pattern)
 - ✅ Multiple CRD references for audit trail
 - ✅ Enhanced prompt engineering for recovery
@@ -166,8 +166,8 @@ sequenceDiagram
         Note over RO: 🔒 RECOVERY LOOP PREVENTION<br/><br/>Check 1: Recovery attempts<br/>Current: 0, Max: 3 ✅<br/><br/>Check 2: Failure pattern<br/>Pattern: "scale_timeout"<br/>Same pattern count: 0 ✅<br/><br/>Check 3: Termination rate<br/>Current: 8.2%, Limit: 10% ✅<br/><br/>DECISION: SAFE TO RECOVER ✅
 
         alt Recovery Attempts < 3 AND Pattern Not Repeated
-            %% ALTERNATIVE 2: RO creates NEW RemediationProcessing CRD
-            RO->>RP: Create RemediationProcessing CRD #2 (recovery)
+            %% ALTERNATIVE 2: RO creates NEW SignalProcessing CRD
+            RO->>RP: Create SignalProcessing CRD #2 (recovery)
             Note over RP: Recovery processing spec:<br/>• RemediationRequestRef<br/>• Alert: {copied from original RP}<br/>• IsRecoveryAttempt: true ✅<br/>• AttemptNumber: 1<br/>• FailedWorkflowRef: wf-001<br/>• FailedStep: 3<br/>• FailureReason: timeout
 
             RO->>RO: Update RemediationRequest
@@ -191,7 +191,7 @@ sequenceDiagram
     rect rgb(240, 250, 255)
         Note over RP,CTX: 📊 STEP 4: REMEDIATION PROCESSING ENRICHMENT (ALTERNATIVE 2)
 
-        RP->>RP: Receive RemediationProcessing CRD #2
+        RP->>RP: Receive SignalProcessing CRD #2
         Note over RP: Reconcile recovery RP:<br/>• IsRecoveryAttempt: true ✅<br/>• AttemptNumber: 1<br/>• FailedWorkflowRef: wf-001<br/>• Phase: enriching
 
         RP->>DS: Query monitoring context (FRESH!)
@@ -378,7 +378,7 @@ Your question: *"When the original workflow fails 3 times, does the workflow orc
 
 ### **Key Points (Alternative 2)**
 
-1. **Each Workflow Failure Triggers Evaluation**: Every time a WorkflowExecution status changes to "failed", the Remediation Orchestrator evaluates whether to create a new RemediationProcessing CRD for recovery
+1. **Each Workflow Failure Triggers Evaluation**: Every time a WorkflowExecution status changes to "failed", the Remediation Orchestrator evaluates whether to create a new SignalProcessing CRD for recovery
 
 2. **Maximum 3 Recovery Attempts**: The system allows up to 3 recovery attempts (4 total workflow executions: 1 initial + 3 recovery)
 
@@ -386,7 +386,7 @@ Your question: *"When the original workflow fails 3 times, does the workflow orc
 
 4. **Fresh Contexts Each Time**: Each RemediationProcessing enriches with CURRENT monitoring + business data, ensuring temporal consistency and accurate recovery analysis
 
-5. **Terminal State on Limit**: When the limit is reached, the Remediation Orchestrator stops creating new RemediationProcessing CRDs and updates the RemediationRequest to a terminal "failed" state
+5. **Terminal State on Limit**: When the limit is reached, the Remediation Orchestrator stops creating new SignalProcessing CRDs and updates the RemediationRequest to a terminal "failed" state
 
 6. **Pattern Detection Can Stop Earlier**: Even before 3 attempts, if the same failure pattern repeats twice, the system escalates to manual review to avoid wasting resources
 

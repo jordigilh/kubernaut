@@ -856,7 +856,7 @@ func (c *ClientImpl) Investigate(
 
 #### Overview
 
-AIAnalysis CRD receives **complete enrichment data** from RemediationProcessing CRD, including:
+AIAnalysis CRD receives **complete enrichment data** from SignalProcessing CRD, including:
 - **Monitoring Context** (FRESH current cluster state)
 - **Business Context** (FRESH ownership/runbooks)
 - **Recovery Context** (Historical failures from Context API - ONLY for recovery attempts)
@@ -887,7 +887,7 @@ type AIAnalysisSpec struct {
     // Parent reference
     RemediationRequestRef corev1.LocalObjectReference `json:"remediationRequestRef"`
 
-    // NEW: Reference to source RemediationProcessing CRD
+    // NEW: Reference to source SignalProcessing CRD
     RemediationProcessingRef *corev1.LocalObjectReference `json:"remediationProcessingRef,omitempty"`
 
     // Recovery-specific fields

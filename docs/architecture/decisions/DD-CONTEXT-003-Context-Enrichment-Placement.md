@@ -42,7 +42,7 @@ Two approaches were considered:
 
 **Architecture**:
 ```
-RemediationProcessing CRD
+SignalProcessing CRD
     ↓
 AIAnalysis Controller
     ↓ (fetch context)
@@ -77,7 +77,7 @@ LLM (Claude/Vertex AI)
 
 **Architecture**:
 ```
-RemediationProcessing CRD
+SignalProcessing CRD
     ↓
 AIAnalysis Controller
     ↓ (send investigation request)

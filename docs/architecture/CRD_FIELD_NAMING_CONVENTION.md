@@ -366,7 +366,7 @@ type RemediationRequest struct {
 
 ---
 
-### RemediationProcessing CRD
+### SignalProcessing CRD
 
 **Location**: Created by Remediation Orchestrator
 **Purpose**: Signal enrichment and context gathering

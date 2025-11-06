@@ -75,7 +75,7 @@ rate(datastorage_dualwrite_failure_total{reason="validation_failure"}[5m])
 ```bash
 # PostgreSQL connection test
 kubectl exec -it deployment/data-storage-service -- \
-  psql -h postgres-service -U slm_user -d action_history -c "SELECT 1;"
+  psql -h postgres-service -U db_user -d action_history -c "SELECT 1;"
 
 # Check PostgreSQL logs
 kubectl logs -n kubernaut statefulset/postgresql
@@ -117,7 +117,7 @@ kubectl rollout restart deployment/vector-db -n kubernaut
 ```bash
 # Check active connections
 kubectl exec -it deployment/data-storage-service -- \
-  psql -h postgres-service -U slm_user -d action_history -c \
+  psql -h postgres-service -U db_user -d action_history -c \
   "SELECT count(*) FROM pg_stat_activity WHERE datname = 'action_history';"
 
 # Increase max_connections if needed (requires PostgreSQL restart)
@@ -179,7 +179,7 @@ kubectl logs -n kubernaut statefulset/postgresql --tail=100
 ```bash
 # Connection test from data-storage pod
 kubectl exec -it deployment/data-storage-service -n kubernaut -- \
-  psql -h postgres-service -U slm_user -d action_history -c "SELECT version();"
+  psql -h postgres-service -U db_user -d action_history -c "SELECT version();"
 ```
 
 3. **Check disk space**:
@@ -192,7 +192,7 @@ kubectl exec -it statefulset/postgresql-0 -n kubernaut -- df -h /var/lib/postgre
 ```bash
 # Active connections
 kubectl exec -it deployment/data-storage-service -n kubernaut -- \
-  psql -h postgres-service -U slm_user -d action_history -c \
+  psql -h postgres-service -U db_user -d action_history -c \
   "SELECT count(*), state FROM pg_stat_activity GROUP BY state;"
 ```
 
@@ -675,7 +675,7 @@ kubectl get servicemonitor -n kubernaut data-storage-service -o yaml
 ```bash
 # PostgreSQL test
 kubectl exec -it deployment/data-storage-service -n kubernaut -- \
-  psql -h postgres-service -U slm_user -d action_history -c "SELECT 1;"
+  psql -h postgres-service -U db_user -d action_history -c "SELECT 1;"
 
 # Vector DB test (if used)
 kubectl exec -it deployment/data-storage-service -n kubernaut -- \

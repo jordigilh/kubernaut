@@ -4,7 +4,7 @@
 **Status**: ✅ **APPROVED**
 **Context**: Kubernaut V1 Architecture - Controller Development Tooling
 **Deciders**: Development Team
-**Technical Story**: [BR-PLATFORM-001, BR-WORKFLOW-001]
+**Technical Story**: [BR-PLATFORM-001, BR-REMEDIATION-001]
 
 ---
 
@@ -37,7 +37,7 @@ Kubernaut requires building **10+ CRD-based controllers** following a microservi
 
 ### **Business Requirements**:
 - **BR-PLATFORM-001**: Kubernetes-native architecture with consistent controller patterns
-- **BR-WORKFLOW-001**: Rapid development of 5+ remaining controllers
+- **BR-REMEDIATION-001**: Rapid development of 5+ remaining controllers
 
 ### **Technical Drivers**:
 - **Consistency**: All controllers must follow same configuration, logging, metrics patterns
@@ -354,7 +354,7 @@ Project-specific templates enforcing Kubernaut standards.
 - **Builds On**: [DD-005: Observability Standards](DD-005-OBSERVABILITY-STANDARDS.md) - Templates enforce DD-005 metrics and logging
 - **Builds On**: [ADR-001: CRD-Based Microservices Architecture](ADR-001-crd-microservices-architecture.md) - Templates support microservices pattern
 - **Supports**: [BR-PLATFORM-001](../../requirements/01_OVERALL_SYSTEM_ARCHITECTURE.md) - Kubernetes-native controller patterns
-- **Supports**: [BR-WORKFLOW-001](../../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md) - Rapid controller development
+- **Supports**: [BR-REMEDIATION-001](../../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md) - Rapid controller development
 
 **References**:
 - **Architecture**: `docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md`

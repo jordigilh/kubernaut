@@ -91,34 +91,34 @@ func (v *Validator) ValidateRemediationAudit(audit *models.RemediationAudit) err
 	return nil
 }
 
-// SanitizeString removes potentially malicious content
-// BR-STORAGE-011: XSS and SQL injection protection
+// SanitizeString removes potentially malicious HTML/XSS content
+// BR-STORAGE-011: XSS protection
+//
+// SQL Injection Prevention: Handled by parameterized queries (not string sanitization)
+// All database queries use PostgreSQL parameterized queries ($1, $2, etc.) which treat
+// all input as data, never as SQL code. String sanitization for SQL keywords would:
+// - Remove legitimate data (e.g., "my-app-delete-jobs" → "my-app--jobs")
+// - Provide false sense of security (blacklist approach incomplete)
+// - Add performance overhead (regex compilation)
+//
+// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-CODE-TRIAGE.md
+// Finding #2: Unnecessary SQL keyword removal
 func (v *Validator) SanitizeString(input string) string {
 	result := input
 
 	// Remove script tags (case-insensitive, handles attributes)
+	// XSS Protection: Prevents <script> tag injection
 	scriptRegex := regexp.MustCompile(`(?i)<script[^>]*>.*?</script>`)
 	result = scriptRegex.ReplaceAllString(result, "")
 
 	// Remove all HTML tags
+	// XSS Protection: Prevents HTML tag injection
 	htmlRegex := regexp.MustCompile(`<[^>]+>`)
 	result = htmlRegex.ReplaceAllString(result, "")
 
-	// Remove SQL keywords and special characters (case-insensitive)
-	// BR-STORAGE-011: Protect against SQL injection
-	sqlKeywords := []string{
-		"DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "CREATE", "TRUNCATE", "TABLE",
-		"EXEC", "EXECUTE", "UNION", "SELECT", "--", "/*", "*/", "xp_", "sp_",
-	}
-	for _, keyword := range sqlKeywords {
-		// Case-insensitive replacement
-		result = regexp.MustCompile(`(?i)`+regexp.QuoteMeta(keyword)).ReplaceAllString(result, "")
-	}
-
-	// Escape SQL special characters
-	result = strings.ReplaceAll(result, ";", "")
-	result = strings.ReplaceAll(result, "'", "")
-	result = strings.ReplaceAll(result, "\"", "")
+	// ✅ SQL Injection Prevention: Parameterized queries (database layer)
+	// ✅ XSS Prevention: HTML/script tag removal (above)
+	// ✅ Data Preservation: Legitimate strings like "delete-pod", "select-namespace" preserved
 
 	return strings.TrimSpace(result)
 }

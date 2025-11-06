@@ -83,10 +83,10 @@ func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
 			execution_start_time,
 			execution_end_time,
 			execution_duration_ms,
-			alert_name,
-			alert_severity,
-			alert_fingerprint,
-			alert_firing_time,
+			signal_name,
+			signal_severity,
+			signal_fingerprint,
+			signal_firing_time,
 			model_used,
 			model_confidence,
 			action_type,
@@ -112,7 +112,7 @@ func InsertTestIncident(db *sqlx.DB, incident *models.IncidentEvent) error {
 		incident.Name,
 		incident.Severity,
 		incident.AlertFingerprint,
-		incident.StartTime, // alert_firing_time (use start_time as approximation)
+		incident.StartTime, // signal_firing_time (use start_time as approximation)
 		"gpt-4",            // model_used (default for tests)
 		0.9,                // model_confidence (default for tests)
 		incident.ActionType,
@@ -375,10 +375,4 @@ func CreateIncidentWithEmbedding(id int64, namespace string) *models.IncidentEve
 func WaitForAsyncOperation(operation func() error, timeout time.Duration, description string) {
 	EventuallyWithOffset(1, operation, timeout, 100*time.Millisecond).
 		Should(Succeed(), fmt.Sprintf("%s should complete successfully", description))
-}
-
-// strPtr returns a pointer to a string value
-// Helper for creating string pointers inline
-func strPtr(s string) *string {
-	return &s
 }

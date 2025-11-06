@@ -50,7 +50,7 @@ The AlertRemediation CRD serves as the central coordination point for all alert 
 - **BR-PA-003**: Process alerts within 5 seconds (coordination and tracking)
 - **BR-PA-010**: Support dry-run mode for testing decisions without executing actions
 - **BR-WH-008**: Request deduplication for identical alerts
-- **BR-AP-021**: Alert lifecycle state tracking throughout processing
+- **BR-SP-021**: Alert lifecycle state tracking throughout processing
 - **BR-ALERT-003**: Alert suppression to reduce noise through duplicate handling
 - **BR-ALERT-005**: Alert correlation and grouping under single remediation context
 
@@ -74,7 +74,7 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.13.0
     kubernaut.io/description: "Central coordination CRD for alert remediation lifecycle"
-    kubernaut.io/business-requirements: "BR-PA-001,BR-PA-003,BR-WH-008,BR-AP-021"
+    kubernaut.io/business-requirements: "BR-PA-001,BR-PA-003,BR-WH-008,BR-SP-021"
 spec:
   group: kubernaut.io
   versions:

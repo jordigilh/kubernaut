@@ -224,7 +224,7 @@ The BR Coverage Matrices created for Phase 3 services show a **simple pyramid** 
    - Add 6-9 integration tests to reach 56%+ minimum
    - Add 1-2 E2E tests to reach 11%+ minimum
    - Document overlapping coverage
-   - **File**: `docs/services/crd-controllers/02-remediationprocessor/implementation/testing/BR_COVERAGE_MATRIX_V2.md`
+   - **File**: `docs/services/crd-controllers/02-signalprocessing/implementation/testing/BR_COVERAGE_MATRIX_V2.md`
 
 3. **Kubernetes Executor BR Coverage Matrix**
    - Add 4-11 unit tests to reach 72%+ minimum

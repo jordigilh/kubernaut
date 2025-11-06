@@ -118,7 +118,7 @@ The Storage & Data Management layer provides comprehensive data persistence, ret
 #### 4.1.1 Action Tracking
 - **BR-HIST-001**: MUST record comprehensive history of all remediation actions
 - **BR-HIST-002**: MUST capture action context including alert details and cluster state
-  - Store alert tracking ID from Remediation Processor (BR-AP-021) for end-to-end correlation
+  - Store alert tracking ID from Remediation Processor (BR-SP-021) for end-to-end correlation
   - Capture complete alert lifecycle state transitions and timestamps
   - **Enhanced for Post-Mortem**: Store AI decision rationale, confidence scores, and context data used
   - **Enhanced for Post-Mortem**: Record performance metrics, error conditions, and recovery actions

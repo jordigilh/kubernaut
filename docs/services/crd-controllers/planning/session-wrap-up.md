@@ -97,7 +97,7 @@
 ## 🎯 What Was Delivered
 
 ### Implementation Plans (3 Complete)
-1. **Remediation Processor**: `docs/services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+1. **Remediation Processor**: `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 2. **Workflow Execution**: `docs/services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 3. **Kubernetes Executor**: `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 
@@ -115,7 +115,7 @@
 - `deploy/remediation-processor/deployment.yaml`
 - `deploy/remediation-processor/rbac.yaml`
 - `deploy/remediation-processor/servicemonitor.yaml`
-- `docs/services/crd-controllers/02-remediationprocessor/PRODUCTION_RUNBOOK.md`
+- `docs/services/crd-controllers/02-signalprocessing/PRODUCTION_RUNBOOK.md`
 
 **Workflow Execution**:
 - `deploy/workflow-execution/deployment.yaml`
@@ -271,7 +271,7 @@ make bootstrap-executor-dev
 ## 📚 Document Index
 
 ### Implementation Plans
-- `docs/services/crd-controllers/02-remediationprocessor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
+- `docs/services/crd-controllers/02-signalprocessing/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 - `docs/services/crd-controllers/03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 - `docs/services/crd-controllers/04-kubernetesexecutor/implementation/IMPLEMENTATION_PLAN_V1.0.md`
 

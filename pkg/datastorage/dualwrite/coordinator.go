@@ -134,7 +134,8 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.RemediationAudit,
 				zap.Error(err),
 				zap.Int64("postgresql_id", pgID),
 				zap.String("name", audit.Name))
-			return nil, fmt.Errorf("vector DB insert failed: %w", err)
+			// Wrap with typed error for reliable error detection
+			return nil, WrapVectorDBError(err, "Insert")
 		}
 
 		c.logger.Debug("wrote to Vector DB",
@@ -203,8 +204,8 @@ func (c *Coordinator) WriteWithFallback(ctx context.Context, audit *models.Remed
 		return result, nil
 	}
 
-	// Check if error is Vector DB related
-	if !isVectorDBError(err) {
+	// Check if error is Vector DB related (using typed errors)
+	if !IsVectorDBError(err) {
 		// PostgreSQL error - cannot fall back
 		c.logger.Error("PostgreSQL error, cannot fall back",
 			zap.Error(err),
@@ -251,7 +252,7 @@ func (c *Coordinator) writeToPostgreSQL(tx Tx, audit *models.RemediationAudit, e
 	sqlQuery := `
 		INSERT INTO remediation_audit (
 			name, namespace, phase, action_type, status,
-			start_time, end_time, remediation_request_id, alert_fingerprint,
+			start_time, end_time, remediation_request_id, signal_fingerprint,
 			severity, environment, cluster_name, target_resource,
 			error_message, metadata, embedding
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
@@ -266,7 +267,7 @@ func (c *Coordinator) writeToPostgreSQL(tx Tx, audit *models.RemediationAudit, e
 	var id int64
 	err := tx.QueryRow(sqlQuery,
 		audit.Name, audit.Namespace, audit.Phase, audit.ActionType, audit.Status,
-		audit.StartTime, audit.EndTime, audit.RemediationRequestID, audit.AlertFingerprint,
+		audit.StartTime, audit.EndTime, audit.RemediationRequestID, audit.SignalFingerprint,
 		audit.Severity, audit.Environment, audit.ClusterName, audit.TargetResource,
 		audit.ErrorMessage, audit.Metadata, vectorEmbedding).Scan(&id)
 	if err != nil {
@@ -314,7 +315,7 @@ func buildMetadata(audit *models.RemediationAudit) map[string]interface{} {
 		"action_type":            audit.ActionType,
 		"status":                 audit.Status,
 		"remediation_request_id": audit.RemediationRequestID,
-		"alert_fingerprint":      audit.AlertFingerprint,
+		"signal_fingerprint":     audit.SignalFingerprint,
 		"severity":               audit.Severity,
 		"environment":            audit.Environment,
 		"cluster_name":           audit.ClusterName,
@@ -322,25 +323,25 @@ func buildMetadata(audit *models.RemediationAudit) map[string]interface{} {
 	}
 }
 
-// isVectorDBError checks if an error is related to Vector DB operations.
-func isVectorDBError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errMsg := err.Error()
-	return containsAny(errMsg, []string{"vector DB", "vector db", "vectordb", "Vector DB"})
-}
-
-// containsAny checks if a string contains any of the given substrings.
-func containsAny(s string, substrings []string) bool {
-	for _, substr := range substrings {
-		if len(s) >= len(substr) {
-			for i := 0; i <= len(s)-len(substr); i++ {
-				if s[i:i+len(substr)] == substr {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
+// ========================================
+// ERROR DETECTION: Typed Errors (errors.go)
+// ========================================
+//
+// REMOVED: isVectorDBError() - Fragile string-based error detection
+// REMOVED: containsAny() - Custom substring search (reimplemented strings.Contains)
+//
+// REPLACED WITH: Typed sentinel errors using errors.Is()
+//   - IsVectorDBError(err) - Type-safe Vector DB error detection
+//   - IsPostgreSQLError(err) - Type-safe PostgreSQL error detection
+//   - IsTransactionError(err) - Type-safe transaction error detection
+//
+// Why Typed Errors?
+//   ✅ Type-safe: Works with error wrapping (errors.Is unwraps automatically)
+//   ✅ Reliable: No false positives/negatives from string matching
+//   ✅ Maintainable: Error messages can change without breaking detection
+//   ✅ Standard: Go 1.13+ best practice
+//
+// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-CODE-TRIAGE.md
+// Finding #3: Fragile error detection
+// Finding #4: Inefficient string search
+// ========================================

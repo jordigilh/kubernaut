@@ -21,8 +21,8 @@ This document defines the **approved service connectivity patterns** for Kuberna
 
 | **From Service** | **To Service** | **Protocol** | **Endpoint** | **Purpose** | **Business Requirement** |
 |------------------|----------------|--------------|--------------|-------------|-------------------------|
-| **🔗 Gateway** | **🧠 Remediation Processor** | HTTP/REST | `POST /process-alert` | Route validated alerts for processing | **BR-WH-001** (receive alerts) → **BR-AP-001** (process alerts) |
-| **🧠 Remediation Processor** | **🤖 AI Analysis** | HTTP/REST | `POST /analyze-alert` | Get AI-powered remediation recommendations | **BR-AP-016** (AI integration) → **BR-AI-001** (AI analysis) |
+| **🔗 Gateway** | **🧠 Remediation Processor** | HTTP/REST | `POST /process-alert` | Route validated alerts for processing | **BR-WH-001** (receive alerts) → **BR-SP-001** (process alerts) |
+| **🧠 Remediation Processor** | **🤖 AI Analysis** | HTTP/REST | `POST /analyze-alert` | Get AI-powered remediation recommendations | **BR-SP-016** (AI integration) → **BR-AI-001** (AI analysis) |
 | **🤖 AI Analysis** | **🎯 Workflow Orchestrator** | HTTP/REST | `POST /create-workflow` | Convert AI recommendations into executable workflows | **BR-AI-007** (workflow generation) → **BR-WF-001** (workflow execution) |
 | **🎯 Workflow Orchestrator** | **⚡ K8s Executor** | HTTP/REST | `POST /execute-action` | Execute individual workflow steps as K8s actions | **BR-WF-010** (action execution) → **BR-EX-001** (K8s operations) |
 | **⚡ K8s Executor** | **📊 Data Storage** | HTTP/REST | `POST /store-action` | Store action execution results and history | **BR-EX-020** (result tracking) → **BR-STOR-001** (data persistence) |

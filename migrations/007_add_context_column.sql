@@ -10,7 +10,10 @@ ADD COLUMN IF NOT EXISTS context TEXT;
 CREATE INDEX IF NOT EXISTS action_patterns_context_idx ON action_patterns(context);
 
 -- Update view to include context information
-CREATE OR REPLACE VIEW pattern_analytics_summary AS
+-- Must DROP first because column order/names changed
+DROP VIEW IF EXISTS pattern_analytics_summary;
+
+CREATE VIEW pattern_analytics_summary AS
 SELECT
     COUNT(*) as total_patterns,
     COUNT(DISTINCT action_type) as unique_action_types,
