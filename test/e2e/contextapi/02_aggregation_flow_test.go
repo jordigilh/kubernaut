@@ -60,8 +60,8 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 		// Create parent records first (to satisfy foreign key constraints)
 		// 1. Create resource_references record
 		_, err := db.Exec(`
-			INSERT INTO resource_references (id, resource_type, namespace, name, cluster_name)
-			VALUES (999, 'Pod', 'e2e-test', 'test-pod', 'e2e-cluster')
+			INSERT INTO resource_references (id, resource_uid, api_version, kind, namespace, name)
+			VALUES (999, 'e2e-test-uid-999', 'v1', 'Pod', 'e2e-test', 'test-pod')
 			ON CONFLICT (id) DO NOTHING
 		`)
 		if err != nil {
