@@ -380,7 +380,7 @@ func (h *Handler) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r 
 			Type:     "https://api.kubernaut.io/problems/internal-error",
 			Title:    "Internal Server Error",
 			Status:   http.StatusInternalServerError,
-			Detail:   "Failed to retrieve multi-dimensional success rate data",
+			Detail:   fmt.Sprintf("Failed to retrieve multi-dimensional success rate data: %v", err), // Include actual error for debugging
 			Instance: r.URL.Path,
 		})
 		return
