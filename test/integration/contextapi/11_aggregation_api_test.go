@@ -367,16 +367,12 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 			Expect(errorResp["detail"]).To(ContainSubstring("at least one dimension"), "Should mention missing dimensions")
 		})
 
-		It("should return 503 Service Unavailable when Data Storage Service is unavailable", func() {
-			// BEHAVIOR: Data Storage Service unavailable results in 503 from Context API
-			// CORRECTNESS: RFC 7807 error response with service-unavailable type
-
-			// This test requires stopping the Data Storage Service temporarily
-			// For now, we'll skip this test and implement it in a future iteration
-			// when we have infrastructure control to stop/start services
-
-			Skip("Requires infrastructure control to stop Data Storage Service - implement in future iteration")
-		})
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// NOTE: Data Storage Service unavailability (503 response) is covered by:
+		// - Unit tests: test/unit/contextapi/aggregation_handlers_test.go (mocked)
+		// - E2E tests: test/e2e/contextapi/03_service_failures_test.go (real infrastructure)
+		// Integration tier doesn't need this test (sits between unit and E2E)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	})
 })
 
