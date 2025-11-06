@@ -57,6 +57,27 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 		// Seed 3 pod-oom incidents: 2 successful, 1 failed
 		// Use direct database inserts (matches integration test pattern)
 		
+		// Create parent records first (to satisfy foreign key constraints)
+		// 1. Create resource_references record
+		_, err := db.Exec(`
+			INSERT INTO resource_references (id, resource_type, namespace, name, cluster_name)
+			VALUES (999, 'Pod', 'e2e-test', 'test-pod', 'e2e-cluster')
+			ON CONFLICT (id) DO NOTHING
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to insert resource_references: %w", err)
+		}
+
+		// 2. Create action_histories record
+		_, err = db.Exec(`
+			INSERT INTO action_histories (id, resource_id)
+			VALUES (999, 999)
+			ON CONFLICT (id) DO NOTHING
+		`)
+		if err != nil {
+			return fmt.Errorf("failed to insert action_histories: %w", err)
+		}
+
 		// Insert 2 successful executions
 		for i := 0; i < 2; i++ {
 			query := `
@@ -104,7 +125,7 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 				true, false, false
 			)
 		`
-		_, err := db.Exec(query)
+		_, err = db.Exec(query)
 		if err != nil {
 			return fmt.Errorf("failed to insert failed incident: %w", err)
 		}
