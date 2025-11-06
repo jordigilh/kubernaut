@@ -256,25 +256,7 @@ func (infra *ContextAPIInfrastructure) Stop(writer io.Writer) {
 	fmt.Fprintln(writer, "✅ Context API Service infrastructure stopped")
 }
 
-// findWorkspaceRoot finds the workspace root by looking for go.mod
-func findWorkspaceRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("workspace root not found (no go.mod)")
-		}
-		dir = parent
-	}
-}
+// Note: findWorkspaceRoot is defined in datastorage.go (shared helper)
 
 // IsContextAPIReady checks if the Context API Service is ready
 func IsContextAPIReady(serviceURL string) error {
