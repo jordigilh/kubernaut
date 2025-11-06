@@ -70,11 +70,7 @@ func main() {
 		zap.Int("redis_db", cfg.Cache.RedisDB),
 		zap.String("log_level", cfg.Logging.Level))
 
-	// Build connection strings
-	connStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Database.Host, cfg.Database.Port, cfg.Database.User,
-		cfg.Database.Password, cfg.Database.Name, cfg.Database.SSLMode)
-
+	// Build Redis connection string (ADR-032: Context API uses Redis for caching only)
 	redisAddr := fmt.Sprintf("%s/%d", cfg.Cache.RedisAddr, cfg.Cache.RedisDB)
 
 	// Create server configuration
@@ -84,8 +80,8 @@ func main() {
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
-	// Create server
-	srv, err := server.NewServer(connStr, redisAddr, logger, serverCfg)
+	// Create server (ADR-032: No direct database access)
+	srv, err := server.NewServer(redisAddr, logger, serverCfg)
 	if err != nil {
 		logger.Fatal("Failed to create server", zap.Error(err))
 	}
