@@ -56,7 +56,7 @@ var _ = Describe("E2E: Aggregation Flow", Ordered, func() {
 	var seedTestData = func() error {
 		// Seed 3 pod-oom incidents: 2 successful, 1 failed
 		// Use direct database inserts (matches integration test pattern)
-		
+
 		// Create parent records first (to satisfy foreign key constraints)
 		// 1. Create resource_references record
 		_, err := db.Exec(`
