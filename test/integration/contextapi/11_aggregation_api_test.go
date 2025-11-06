@@ -86,7 +86,7 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 
 		var err error
 		contextAPIServer, err = server.NewServer(
-			fmt.Sprintf("localhost:%s", redisPort), // Redis from suite_test.go
+			fmt.Sprintf("localhost:%d", redisPort), // Redis from suite_test.go
 			logger,
 			cfg,
 		)
