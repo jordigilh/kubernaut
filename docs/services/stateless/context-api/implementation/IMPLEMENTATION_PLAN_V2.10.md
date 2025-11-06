@@ -6865,15 +6865,15 @@ func (s *Server) setupRoutes() {
 It("should return 400 Bad Request for empty incident_type", func() {
     // BEHAVIOR: Empty required parameter triggers validation error
     // CORRECTNESS: RFC 7807 error response with specific validation message
-    
+
     url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=", serverURL)
     resp, err := http.Get(url)
     Expect(err).ToNot(HaveOccurred())
     defer resp.Body.Close()
-    
+
     // BEHAVIOR: Returns 400 Bad Request
     Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Empty incident_type should return 400")
-    
+
     // CORRECTNESS: RFC 7807 problem details
     var problem validation.RFC7807Problem
     err = json.NewDecoder(resp.Body).Decode(&problem)
@@ -6900,18 +6900,18 @@ It("should return 400 Bad Request for empty incident_type", func() {
 It("should handle 1-minute time range correctly", func() {
     // BEHAVIOR: Minimal valid time range returns data
     // CORRECTNESS: Only includes data from last 1 minute
-    
+
     url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&time_range=1m", serverURL)
     resp, err := http.Get(url)
     Expect(err).ToNot(HaveOccurred())
     defer resp.Body.Close()
-    
+
     Expect(resp.StatusCode).To(Equal(http.StatusOK))
-    
+
     var result dsmodels.IncidentTypeSuccessRateResponse
     err = json.NewDecoder(resp.Body).Decode(&result)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // CORRECTNESS: Time range reflected in response
     Expect(result.TimeRange).To(Equal("1m"))
     // CORRECTNESS: Data is from last minute only (likely 0 executions)
@@ -6935,27 +6935,27 @@ It("should handle 1-minute time range correctly", func() {
 It("should not use stale cache after TTL expiration", func() {
     // BEHAVIOR: Cache expires after configured TTL
     // CORRECTNESS: Fresh data retrieved after expiration
-    
+
     // First request (cache miss)
     url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom", serverURL)
     resp1, err := http.Get(url)
     Expect(err).ToNot(HaveOccurred())
     defer resp1.Body.Close()
-    
+
     var result1 dsmodels.IncidentTypeSuccessRateResponse
     json.NewDecoder(resp1.Body).Decode(&result1)
-    
+
     // Wait for cache TTL to expire (default 5 minutes - use shorter TTL for test)
     time.Sleep(6 * time.Minute)
-    
+
     // Second request (cache expired, should fetch fresh data)
     resp2, err := http.Get(url)
     Expect(err).ToNot(HaveOccurred())
     defer resp2.Body.Close()
-    
+
     // BEHAVIOR: Request succeeds after cache expiration
     Expect(resp2.StatusCode).To(Equal(http.StatusOK))
-    
+
     // CORRECTNESS: Fresh data retrieved (may differ from cached data)
     var result2 dsmodels.IncidentTypeSuccessRateResponse
     json.NewDecoder(resp2.Body).Decode(&result2)
@@ -6979,31 +6979,31 @@ It("should not use stale cache after TTL expiration", func() {
 It("should return cached data when Data Storage Service is unavailable", func() {
     // BEHAVIOR: Service degradation - return stale cache instead of failing
     // CORRECTNESS: Cached data is valid and includes cache metadata
-    
+
     // First request to populate cache
     url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom", serverURL)
     resp1, err := http.Get(url)
     Expect(err).ToNot(HaveOccurred())
     resp1.Body.Close()
-    
+
     // Stop Data Storage Service to simulate failure
     stopDataStorageService()
     defer startDataStorageService()
-    
+
     // Second request (Data Storage unavailable, should use cache)
     resp2, err := http.Get(url)
     Expect(err).ToNot(HaveOccurred())
     defer resp2.Body.Close()
-    
+
     // BEHAVIOR: Returns 200 OK with cached data (graceful degradation)
     Expect(resp2.StatusCode).To(Equal(http.StatusOK))
-    
+
     // CORRECTNESS: Response includes cache metadata
     var result dsmodels.IncidentTypeSuccessRateResponse
     err = json.NewDecoder(resp2.Body).Decode(&result)
     Expect(err).ToNot(HaveOccurred())
     Expect(result.IncidentType).To(Equal("pod-oom"))
-    
+
     // TODO: Add cache metadata to response (age, stale indicator)
 })
 ```
@@ -7025,19 +7025,19 @@ It("should return cached data when Data Storage Service is unavailable", func() 
 It("should handle 100% success rate correctly", func() {
     // BEHAVIOR: All successful executions return 100% success rate
     // CORRECTNESS: Success rate calculation is accurate
-    
+
     // Seed database with 100% successful executions
     seedSuccessfulExecutions("pod-oom", 10)
-    
+
     url := fmt.Sprintf("%s/api/v1/aggregation/success-rate/incident-type?incident_type=pod-oom&min_samples=5", serverURL)
     resp, err := http.Get(url)
     Expect(err).ToNot(HaveOccurred())
     defer resp.Body.Close()
-    
+
     var result dsmodels.IncidentTypeSuccessRateResponse
     err = json.NewDecoder(resp.Body).Decode(&result)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // CORRECTNESS: 100% success rate
     Expect(result.SuccessRate).To(Equal(100.0))
     Expect(result.TotalExecutions).To(Equal(10))
