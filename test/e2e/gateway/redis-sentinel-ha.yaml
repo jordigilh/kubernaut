@@ -1,0 +1,212 @@
+# Redis Sentinel HA Deployment for Gateway E2E Testing
+# Architecture: 1 master + 2 replicas + 3 Sentinels
+# Purpose: Production-like Redis HA for E2E edge case testing
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-system
+  labels:
+    name: kubernaut-system
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-sentinel-config
+  namespace: kubernaut-system
+data:
+  sentinel.conf: |
+    sentinel monitor mymaster redis-master.kubernaut-system.svc.cluster.local 6379 2
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel parallel-syncs mymaster 1
+    sentinel failover-timeout mymaster 10000
+    sentinel resolve-hostnames yes
+    sentinel announce-hostnames yes
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-master
+  namespace: kubernaut-system
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: redis
+    role: master
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-replica
+  namespace: kubernaut-system
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: redis
+    role: replica
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  ports:
+    - port: 26379
+      targetPort: 26379
+      nodePort: 30379
+  selector:
+    app: redis-sentinel
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-master
+  namespace: kubernaut-system
+spec:
+  serviceName: redis-master
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+      role: master
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: master
+    spec:
+      nodeSelector:
+        workload: redis
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-replica
+  namespace: kubernaut-system
+spec:
+  serviceName: redis-replica
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redis
+      role: replica
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: replica
+    spec:
+      nodeSelector:
+        workload: redis
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: ["redis-server", "--replicaof", "redis-master", "6379"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-sentinel
+  namespace: kubernaut-system
+spec:
+  serviceName: redis-sentinel
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis-sentinel
+  template:
+    metadata:
+      labels:
+        app: redis-sentinel
+    spec:
+      nodeSelector:
+        workload: monitoring
+      initContainers:
+        - name: config-copy
+          image: redis:7-alpine
+          command: ['sh', '-c', 'cp /readonly-config/sentinel.conf /etc/redis/sentinel.conf']
+          volumeMounts:
+            - name: readonly-config
+              mountPath: /readonly-config
+            - name: config
+              mountPath: /etc/redis
+      containers:
+        - name: sentinel
+          image: redis:7-alpine
+          command: ["redis-sentinel", "/etc/redis/sentinel.conf"]
+          ports:
+            - containerPort: 26379
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+      volumes:
+        - name: readonly-config
+          configMap:
+            name: redis-sentinel-config
+        - name: config
+          emptyDir: {}
+

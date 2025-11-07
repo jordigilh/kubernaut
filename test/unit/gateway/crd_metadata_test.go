@@ -29,6 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
+
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
@@ -42,7 +44,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 		crdCreator    *processing.CRDCreator
 		ctx           context.Context
 		logger        *zap.Logger
-		fakeK8sClient *FakeK8sClient // We'll use a fake since this is unit test
+		fakeK8sClient *k8s.Client
 	)
 
 	BeforeEach(func() {
@@ -51,8 +53,9 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 		// Create fake K8s client for unit testing
 		fakeClient := NewFakeControllerRuntimeClient()
-		fakeK8sClient = NewFakeK8sClientWrapper(fakeClient)
-		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, nil) // nil metrics for unit tests
+		fakeK8sClient = k8s.NewClient(fakeClient)
+		retryConfig := config.DefaultRetrySettings()
+		crdCreator = processing.NewCRDCreator(fakeK8sClient, logger, nil, "default", &retryConfig)
 	})
 
 	// BUSINESS CAPABILITY: Notification service needs complete context to alert humans
@@ -495,9 +498,5 @@ func (f *FakeControllerRuntimeClient) IsObjectNamespaced(obj runtime.Object) (bo
 	return false, nil
 }
 
-// FakeK8sClient wraps FakeControllerRuntimeClient (mimics pkg/gateway/k8s/Client)
-type FakeK8sClient = k8s.Client
+// No wrapper needed - k8s.NewClient() directly accepts controller-runtime client
 
-func NewFakeK8sClientWrapper(fakeClient *FakeControllerRuntimeClient) *FakeK8sClient {
-	return k8s.NewClient(fakeClient)
-}
