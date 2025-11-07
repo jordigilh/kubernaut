@@ -19,31 +19,77 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Suite-level resources for cleanup
 var (
 	suiteK8sClient *K8sTestClient  // Shared K8s client for cleanup
 	suiteCtx       context.Context // Suite context
+	suiteLogger    *zap.Logger     // Suite logger
+	clusterName    string          // Cluster name
+	kubeconfigPath string          // Kubeconfig path
 )
 
 var _ = BeforeSuite(func() {
 	// Initialize suite context
 	suiteCtx = context.Background()
 
-	// Initialize shared K8s client for cleanup
+	// Initialize logger
+	var err error
+	suiteLogger, err = zap.NewDevelopment()
+	Expect(err).ToNot(HaveOccurred())
+
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Setup")
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	suiteLogger.Info("Creating Kind cluster + Redis for integration tests...")
+	suiteLogger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
+	suiteLogger.Info("  • RemediationRequest CRD (cluster-wide)")
+	suiteLogger.Info("  • Redis container (localhost:6379)")
+	suiteLogger.Info("  • Kubeconfig: ~/.kube/kind-config")
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Set cluster configuration
+	clusterName = "gateway-integration"
+	homeDir, err := os.UserHomeDir()
+	Expect(err).ToNot(HaveOccurred())
+	kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config", homeDir)
+
+	// Create Kind cluster (same as E2E tests)
+	err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Set KUBECONFIG environment variable
+	err = os.Setenv("KUBECONFIG", kubeconfigPath)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Start Redis container for integration tests
+	suiteLogger.Info("Starting Redis container...")
+	err = infrastructure.StartRedisContainer("redis-integration", 6379, GinkgoWriter)
+	if err != nil {
+		suiteLogger.Warn("Failed to start Redis container, may already be running", zap.Error(err))
+	}
+
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	suiteLogger.Info("Infrastructure Setup Complete")
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Initialize shared K8s client for tests
 	suiteK8sClient = SetupK8sTestClient(suiteCtx)
 	Expect(suiteK8sClient).ToNot(BeNil(), "Failed to setup K8s client for suite")
 
 	// Ensure kubernaut-system namespace exists for fallback tests
-	// This namespace is used when Gateway receives signals for non-existent namespaces
 	EnsureTestNamespace(suiteCtx, suiteK8sClient, "kubernaut-system")
 })
 
@@ -95,6 +141,34 @@ var _ = AfterSuite(func() {
 	if suiteK8sClient != nil {
 		suiteK8sClient.Cleanup(suiteCtx)
 	}
+
+	// Cleanup infrastructure
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Teardown")
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Stop Redis container
+	suiteLogger.Info("Stopping Redis container...")
+	err := infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
+	if err != nil {
+		suiteLogger.Warn("Failed to stop Redis container", zap.Error(err))
+	}
+
+	// Delete Kind cluster
+	suiteLogger.Info("Deleting Kind cluster...")
+	err = infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+	if err != nil {
+		suiteLogger.Warn("Failed to delete cluster", zap.Error(err))
+	}
+
+	// Sync logger
+	if suiteLogger != nil {
+		_ = suiteLogger.Sync()
+	}
+
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	suiteLogger.Info("Infrastructure Teardown Complete")
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 
 func TestGatewayIntegration(t *testing.T) {

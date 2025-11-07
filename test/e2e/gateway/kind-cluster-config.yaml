@@ -1,6 +1,7 @@
 # Kind Cluster Configuration for Gateway E2E Testing
-# Purpose: Production-like infrastructure for E2E edge case testing
-# Features: 3-node cluster, Redis HA support, rate limiting enabled
+# Purpose: Lightweight multi-node cluster for E2E testing
+# Features: 2-node cluster (control-plane + worker), API rate limiting enabled
+# Resource Usage: ~1.5GB RAM (vs 3GB with 4 nodes)
 
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -11,9 +12,10 @@ networking:
   apiServerAddress: "127.0.0.1"
   apiServerPort: 6443
 
-# Multi-node cluster for production-like testing
+# Minimal multi-node cluster for E2E testing
 nodes:
   # Control plane node with API server rate limiting
+  # Also runs application workloads (Gateway, Redis, AlertManager)
   - role: control-plane
     kubeadmConfigPatches:
       - |
@@ -26,40 +28,25 @@ nodes:
             # Enable audit logging for debugging
             audit-log-path: "/var/log/kubernetes/audit.log"
             audit-log-maxage: "1"
+        # Allow workloads on control-plane for E2E testing
+        nodeRegistration:
+          taints: []
     # Port mappings for external access
     extraPortMappings:
-      # Gateway HTTP API
-      - containerPort: 8080
-        hostPort: 8080
+      # Gateway HTTP API (NodePort 30080)
+      - containerPort: 30080
+        hostPort: 30080
         protocol: TCP
-      # Gateway Metrics (Prometheus)
-      - containerPort: 9090
-        hostPort: 9090
+      # Gateway Metrics (NodePort 30090)
+      - containerPort: 30090
+        hostPort: 30090
         protocol: TCP
-      # Redis Sentinel
-      - containerPort: 26379
-        hostPort: 26379
-        protocol: TCP
-      # Prometheus AlertManager
-      - containerPort: 9093
-        hostPort: 9093
+      # Prometheus AlertManager (NodePort 30093)
+      - containerPort: 30093
+        hostPort: 30093
         protocol: TCP
 
-  # Worker node 1: Gateway workloads
+  # Worker node for backup/testing
+  # Provides multi-node cluster for realistic testing
   - role: worker
-    labels:
-      workload: gateway
-      node-role: gateway
-
-  # Worker node 2: Redis HA workloads
-  - role: worker
-    labels:
-      workload: redis
-      node-role: redis
-
-  # Worker node 3: Monitoring workloads
-  - role: worker
-    labels:
-      workload: monitoring
-      node-role: monitoring
 

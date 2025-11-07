@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -88,6 +89,8 @@ type ProcessingSettings struct {
 	Storm         StormSettings         `yaml:"storm"`
 	Environment   EnvironmentSettings   `yaml:"environment"`
 	Priority      PrioritySettings      `yaml:"priority"`
+	CRD           CRDSettings           `yaml:"crd"`
+	Retry         RetrySettings         `yaml:"retry"` // BR-GATEWAY-111: K8s API retry configuration
 }
 
 // PrioritySettings contains priority assignment configuration.
@@ -134,6 +137,99 @@ type EnvironmentSettings struct {
 	ConfigMapName      string `yaml:"configmap_name"`      // Default: "kubernaut-environment-overrides"
 }
 
+// CRDSettings contains CRD creation configuration.
+type CRDSettings struct {
+	// Fallback namespace for CRD creation when target namespace doesn't exist
+	// This handles cluster-scoped signals (e.g., NodeNotReady) that don't have a namespace
+	// Default: auto-detect from pod's namespace (/var/run/secrets/kubernetes.io/serviceaccount/namespace)
+	// Override: set explicitly for multi-tenant or special scenarios
+	// If auto-detect fails (non-K8s environment), falls back to "kubernaut-system"
+	FallbackNamespace string `yaml:"fallback_namespace"` // Default: auto-detect pod namespace
+}
+
+// RetrySettings configures retry behavior for transient K8s API errors.
+// BR-GATEWAY-111: Retry Configuration
+// BR-GATEWAY-112: Error Classification
+// BR-GATEWAY-113: Exponential Backoff
+type RetrySettings struct {
+	// Maximum number of retry attempts for transient K8s API errors
+	// Example: MaxAttempts=3 means 1 original attempt + 2 retries
+	// Default: 3
+	// Reliability-First: Always retry transient errors (429, 503, 504, timeouts, network errors)
+	MaxAttempts int `yaml:"max_attempts"`
+
+	// Initial backoff duration (doubles with each retry)
+	// Example: 100ms → 200ms → 400ms → 800ms (exponential backoff)
+	// Default: 100ms
+	// Reliability-First: Fast initial retry, exponential backoff for persistent failures
+	InitialBackoff time.Duration `yaml:"initial_backoff"`
+
+	// Maximum backoff duration (cap for exponential backoff)
+	// Prevents excessive wait times during retry storms
+	// Default: 5s
+	// Reliability-First: Reasonable cap to avoid blocking too long
+	MaxBackoff time.Duration `yaml:"max_backoff"`
+}
+
+// DefaultRetrySettings returns sensible defaults for Phase 1 (synchronous retry).
+// BR-GATEWAY-111: Default Configuration (Reliability-First Design)
+//
+// Design Philosophy: Maximize reliability by default. These defaults work for 99% of use cases.
+// Only tune if you have specific performance requirements or constraints.
+func DefaultRetrySettings() RetrySettings {
+	return RetrySettings{
+		MaxAttempts:    3,                      // 1 original + 2 retries
+		InitialBackoff: 100 * time.Millisecond, // Fast initial retry
+		MaxBackoff:     5 * time.Second,        // Reasonable cap
+	}
+}
+
+// Validate checks if retry settings are valid.
+// GAP 8: Configuration Validation (Reliability-First Design)
+func (r *RetrySettings) Validate() error {
+	// MaxAttempts validation
+	if r.MaxAttempts < 1 {
+		return fmt.Errorf("retry.max_attempts must be >= 1, got %d", r.MaxAttempts)
+	}
+
+	// Backoff duration validation
+	if r.InitialBackoff < 0 {
+		return fmt.Errorf("retry.initial_backoff must be >= 0, got %v", r.InitialBackoff)
+	}
+	if r.MaxBackoff < r.InitialBackoff {
+		return fmt.Errorf("retry.max_backoff (%v) must be >= initial_backoff (%v)",
+			r.MaxBackoff, r.InitialBackoff)
+	}
+
+	return nil
+}
+
+// GetPodNamespace auto-detects the pod's namespace from the service account mount.
+// This is the standard Kubernetes pattern for in-cluster namespace detection.
+//
+// Returns:
+//   - Pod's namespace if running in Kubernetes cluster
+//   - "kubernaut-system" as fallback for non-K8s environments (e.g., local dev)
+func GetPodNamespace() string {
+	// Standard Kubernetes service account namespace file
+	const namespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+	data, err := os.ReadFile(namespaceFile)
+	if err != nil {
+		// Not running in Kubernetes cluster (e.g., local development)
+		// Fall back to default production namespace
+		return "kubernaut-system"
+	}
+
+	namespace := strings.TrimSpace(string(data))
+	if namespace == "" {
+		// Empty namespace file (should never happen, but be defensive)
+		return "kubernaut-system"
+	}
+
+	return namespace
+}
+
 // LoadFromFile loads configuration from a YAML file
 func LoadFromFile(path string) (*ServerConfig, error) {
 	data, err := os.ReadFile(path)
@@ -144,6 +240,19 @@ func LoadFromFile(path string) (*ServerConfig, error) {
 	var cfg ServerConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Apply smart defaults for CRD fallback namespace
+	// If not explicitly configured, auto-detect from pod's namespace
+	if cfg.Processing.CRD.FallbackNamespace == "" {
+		cfg.Processing.CRD.FallbackNamespace = GetPodNamespace()
+	}
+
+	// Apply retry defaults if not configured
+	// BR-GATEWAY-111: Default retry configuration
+	if cfg.Processing.Retry.MaxAttempts == 0 {
+		defaults := DefaultRetrySettings()
+		cfg.Processing.Retry = defaults
 	}
 
 	return &cfg, nil
@@ -218,6 +327,10 @@ func (c *ServerConfig) Validate() error {
 		return fmt.Errorf("processing.storm.pattern_threshold must be positive")
 	}
 
+	// Retry validation (GAP 8: Configuration Validation)
+	if err := c.Processing.Retry.Validate(); err != nil {
+		return fmt.Errorf("retry configuration invalid: %w", err)
+	}
+
 	return nil
 }
-

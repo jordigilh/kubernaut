@@ -292,7 +292,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 	)
 
 	pathDecider := processing.NewRemediationPathDecider(logger)
-	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance)
+	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
 
 	// 4. Initialize middleware
 	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
