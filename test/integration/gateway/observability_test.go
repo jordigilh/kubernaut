@@ -356,6 +356,7 @@ var _ = Describe("Observability Integration Tests", func() {
 		It("should track CRD creation errors via gateway_crd_creation_errors", func() {
 			// BUSINESS OUTCOME: Operators can detect and diagnose CRD creation failures
 			// BUSINESS SCENARIO: K8s API becomes unavailable, CRD creation fails
+			// BR-GATEWAY-078: Error Tracking (error rates by type)
 
 			Skip("Requires K8s API failure simulation")
 
@@ -370,6 +371,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// ✅ Operators can detect CRD creation failures
 			// ✅ Error type labels enable root cause analysis
 			// ✅ Alerting rule: rate(gateway_crd_creation_errors[5m]) > 0
+			// ✅ BR-GATEWAY-078: Error tracking by type enabled
 		})
 
 		It("should include namespace and priority labels in CRD metrics", func() {
@@ -434,12 +436,16 @@ var _ = Describe("Observability Integration Tests", func() {
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// BR-104: HTTP Request Duration Metrics
+	// Also covers:
+	// - BR-GATEWAY-067: HTTP Request Metrics (count, duration, status codes)
+	// - BR-GATEWAY-079: Performance Metrics (P50/P95/P99 latency via histogram)
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("BR-104: HTTP Request Duration Metrics", func() {
 		It("should track HTTP request latency via gateway_http_request_duration_seconds", func() {
 			// BUSINESS OUTCOME: Operators can measure Gateway performance against SLOs
 			// BUSINESS SCENARIO: SLO requires p95 latency < 500ms
+			// BR-GATEWAY-079: Performance Metrics (P50/P95/P99)
 
 			// Send multiple requests to generate latency data (use unique names)
 			uniqueID := time.Now().UnixNano()

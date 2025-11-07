@@ -50,6 +50,12 @@ type Metrics struct {
 	CRDsCreatedTotal  *prometheus.CounterVec
 	CRDCreationErrors *prometheus.CounterVec
 
+	// K8s API Retry Metrics (BR-GATEWAY-114: Retry observability)
+	RetryAttemptsTotal   *prometheus.CounterVec   // Total retry attempts by error type
+	RetryDuration        *prometheus.HistogramVec // Retry duration by error type
+	RetryExhaustedTotal  *prometheus.CounterVec   // Retries exhausted by error type
+	RetrySuccessTotal    *prometheus.CounterVec   // Successful retries by error type and attempt number
+
 	// Internal: Registry for custom metrics exposure
 	registry prometheus.Gatherer // Used by /metrics endpoint to expose custom registry metrics
 
@@ -182,6 +188,37 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Help: "Total CRD creation errors by error type",
 			},
 			[]string{"error_type"},
+		),
+
+		// K8s API Retry Metrics (BR-GATEWAY-114: Retry observability)
+		RetryAttemptsTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "gateway_retry_attempts_total",
+				Help: "Total K8s API retry attempts by error type and HTTP status code",
+			},
+			[]string{"error_type", "status_code"},
+		),
+		RetryDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "gateway_retry_duration_seconds",
+				Help:    "Duration of retry attempts (including backoff) by error type",
+				Buckets: prometheus.ExponentialBuckets(0.1, 2, 8), // 100ms to ~25s
+			},
+			[]string{"error_type"},
+		),
+		RetryExhaustedTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "gateway_retry_exhausted_total",
+				Help: "Total retries exhausted (max attempts reached) by error type and HTTP status code",
+			},
+			[]string{"error_type", "status_code"},
+		),
+		RetrySuccessTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "gateway_retry_success_total",
+				Help: "Total successful retries by error type and attempt number",
+			},
+			[]string{"error_type", "attempt"},
 		),
 
 		// Performance Metrics
