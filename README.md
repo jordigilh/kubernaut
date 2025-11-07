@@ -57,21 +57,25 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 **Current Phase**: Phase 2 Complete - 6 of 11 services production-ready (55%)
 
-| Service | Status | Purpose |
-|---------|--------|---------|
-| **Gateway Service** | ✅ **v2.23 PRODUCTION-READY** | Signal ingestion & deduplication |
-| **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) |
-| **Context API** | ✅ **PRODUCTION-READY** | AI context aggregation |
-| **Dynamic Toolset Service** | ✅ **COMPLETE** | HolmesGPT toolset configuration |
-| **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery |
-| **HolmesGPT API** | ✅ **v3.0 PRODUCTION-READY** | AI investigation wrapper |
-| **Signal Processing** | ⏸️ Phase 3 | Signal enrichment |
-| **AI Analysis** | ⏸️ Phase 4 | AI-powered analysis |
-| **Remediation Execution** | ⏸️ Phase 3 | Tekton workflow orchestration |
-| **Remediation Orchestrator** | ⏸️ Phase 5 | Cross-CRD coordination |
-| **Effectiveness Monitor** | ⏸️ Phase 5 | Outcome assessment & learning |
+| Service | Status | Purpose | BR Coverage |
+|---------|--------|---------|-------------|
+| **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 62/62 P0/P1 (100%) |
+| **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | TBD |
+| **Context API** | ✅ **v1.0 PRODUCTION-READY** | AI context aggregation | 42/42 (100%) |
+| **Dynamic Toolset Service** | ✅ **COMPLETE** | HolmesGPT toolset configuration | TBD |
+| **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | TBD |
+| **HolmesGPT API** | ✅ **v3.0 PRODUCTION-READY** | AI investigation wrapper | TBD |
+| **Signal Processing** | ⏸️ Phase 3 | Signal enrichment | - |
+| **AI Analysis** | ⏸️ Phase 4 | AI-powered analysis | - |
+| **Remediation Execution** | ⏸️ Phase 3 | Tekton workflow orchestration | - |
+| **Remediation Orchestrator** | ⏸️ Phase 5 | Cross-CRD coordination | - |
+| **Effectiveness Monitor** | ⏸️ Phase 5 | Outcome assessment & learning | - |
 
 **Timeline**: 13-week development plan (currently in Week 2-3)
+
+**Recent Updates** (November 7, 2025):
+- ✅ Gateway Service v1.0: 240/240 tests passing, 62 P0/P1 BRs, production-ready
+- ✅ Context API v1.0: 133/133 tests passing, 42 BRs documented, ADR-032 compliant
 
 ---
 
@@ -166,16 +170,16 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 - **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows
 - **E2E Tests**: **<10% coverage** - Critical end-to-end user journeys
 
-**Current Test Status**: 289 tests passing (100% pass rate)
+**Current Test Status**: 373+ tests passing (100% pass rate)
 
-| Service | Unit | Integration | E2E | Confidence |
-|---------|------|-------------|-----|------------|
-| Gateway v2.23 | 120/121 (99.2%) | 113/114 (99.1%) | ✅ Manual | 95% |
-| Data Storage | 167 tests | 18 tests | ✅ Complete | 98% |
-| Context API | 47 tests | 42 tests | 10 tests | 99% |
-| Dynamic Toolset | 194 tests | 38 tests | ⏸️ V2 | 95% |
-| Notification Service | 19 tests | 21 tests | ⏸️ Deferred | 95% |
-| HolmesGPT API v3.0 | 74 tests | 30 tests | ⏸️ Requires LLM | 98% |
+| Service | Unit | Integration | E2E | Total | Confidence |
+|---------|------|-------------|-----|-------|------------|
+| **Gateway v1.0** | 120/120 (100%) | 114/114 (100%) | 6/6 (100%) | **240** | **100%** |
+| **Context API v1.0** | 45/45 (100%) | 76/76 (100%) | 12/12 (100%) | **133** | **100%** |
+| Data Storage | 167 tests | 18 tests | ✅ Complete | 185+ | 98% |
+| Dynamic Toolset | 194 tests | 38 tests | ⏸️ V2 | 232+ | 95% |
+| Notification Service | 19 tests | 21 tests | ⏸️ Deferred | 40+ | 95% |
+| HolmesGPT API v3.0 | 74 tests | 30 tests | ⏸️ Requires LLM | 104+ | 98% |
 
 ---
 
