@@ -30,6 +30,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	gatewayconfig "github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 )
 
@@ -249,42 +250,52 @@ func StartTestGatewayWithLogger(ctx context.Context, redisClient *RedisTestClien
 
 	// Create ServerConfig for tests (nested structure)
 	// Uses fast TTLs and low thresholds for rapid test execution
-	cfg := &gateway.ServerConfig{
-		Server: gateway.ServerSettings{
+	cfg := &gatewayconfig.ServerConfig{
+		Server: gatewayconfig.ServerSettings{
 			ListenAddr:   ":8080",
 			ReadTimeout:  5 * time.Second,
 			WriteTimeout: 10 * time.Second,
 			IdleTimeout:  120 * time.Second,
 		},
 
-		Middleware: gateway.MiddlewareSettings{
-			RateLimit: gateway.RateLimitSettings{
+		Middleware: gatewayconfig.MiddlewareSettings{
+			RateLimit: gatewayconfig.RateLimitSettings{
 				RequestsPerMinute: 20, // Production: 100
 				Burst:             5,  // Production: 10
 			},
 		},
 
-		Infrastructure: gateway.InfrastructureSettings{
-			Redis: redisClient.Client.Options(),
+		Infrastructure: gatewayconfig.InfrastructureSettings{
+			Redis: &gatewayconfig.RedisOptions{
+				Addr:         redisClient.Client.Options().Addr,
+				DB:           redisClient.Client.Options().DB,
+				Password:     redisClient.Client.Options().Password,
+				DialTimeout:  redisClient.Client.Options().DialTimeout,
+				ReadTimeout:  redisClient.Client.Options().ReadTimeout,
+				WriteTimeout: redisClient.Client.Options().WriteTimeout,
+				PoolSize:     redisClient.Client.Options().PoolSize,
+				MinIdleConns: redisClient.Client.Options().MinIdleConns,
+			},
 		},
 
-		Processing: gateway.ProcessingSettings{
-			Deduplication: gateway.DeduplicationSettings{
+		Processing: gatewayconfig.ProcessingSettings{
+			Deduplication: gatewayconfig.DeduplicationSettings{
 				TTL: 5 * time.Second, // Production: 5 minutes
 			},
-			Storm: gateway.StormSettings{
+			Storm: gatewayconfig.StormSettings{
 				RateThreshold:     2,               // Production: 10 alerts/minute
 				PatternThreshold:  2,               // Production: 5 similar alerts
 				AggregationWindow: 1 * time.Second, // Test: 1s, Production: 1m
 			},
-			Environment: gateway.EnvironmentSettings{
+			Environment: gatewayconfig.EnvironmentSettings{
 				CacheTTL:           5 * time.Second, // Production: 30 seconds
 				ConfigMapNamespace: "kubernaut-system",
 				ConfigMapName:      "kubernaut-environment-overrides",
 			},
-			Priority: gateway.PrioritySettings{
+			Priority: gatewayconfig.PrioritySettings{
 				PolicyPath: "../../../config.app/gateway/policies/priority.rego", // Use Rego policy for tests (relative to test/integration/gateway/)
 			},
+			Retry: gatewayconfig.DefaultRetrySettings(), // BR-GATEWAY-111: K8s API retry configuration
 		},
 	}
 

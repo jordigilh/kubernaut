@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -47,23 +48,190 @@ import (
 // - Example: rr-a1b2c3d4e5f6789
 // - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
 type CRDCreator struct {
-	k8sClient *k8s.Client
-	logger    *zap.Logger
-	metrics   *metrics.Metrics // Day 9 Phase 6B Option C1: Centralized metrics
+	k8sClient         *k8s.Client
+	logger            *zap.Logger
+	metrics           *metrics.Metrics  // Day 9 Phase 6B Option C1: Centralized metrics
+	fallbackNamespace string            // Configurable fallback namespace for CRD creation
+	retryConfig       *config.RetrySettings // BR-GATEWAY-111: Retry configuration
 }
 
 // NewCRDCreator creates a new CRD creator
-func NewCRDCreator(k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *CRDCreator {
+// BR-GATEWAY-111: Accepts retry configuration for K8s API retry logic
+func NewCRDCreator(k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
 		// Use custom registry to avoid "duplicate metrics collector registration" in tests
 		registry := prometheus.NewRegistry()
 		metricsInstance = metrics.NewMetricsWithRegistry(registry)
 	}
+
+	// Fallback namespace validation
+	if fallbackNamespace == "" {
+		fallbackNamespace = "kubernaut-system" // Safe default
+	}
+
+	// Default retry config if not provided
+	if retryConfig == nil {
+		defaultConfig := config.DefaultRetrySettings()
+		retryConfig = &defaultConfig
+	}
+
 	return &CRDCreator{
-		k8sClient: k8sClient,
-		logger:    logger,
-		metrics:   metricsInstance,
+		k8sClient:         k8sClient,
+		logger:            logger,
+		metrics:           metricsInstance,
+		fallbackNamespace: fallbackNamespace,
+		retryConfig:       retryConfig,
+	}
+}
+
+// createCRDWithRetry implements retry logic with exponential backoff for transient K8s API errors.
+// BR-GATEWAY-112: Error Classification (retryable vs non-retryable)
+// BR-GATEWAY-113: Exponential Backoff
+// BR-GATEWAY-114: Retry Metrics
+func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
+	backoff := c.retryConfig.InitialBackoff
+	startTime := time.Now()
+
+	for attempt := 0; attempt < c.retryConfig.MaxAttempts; attempt++ {
+		// Attempt CRD creation
+		err := c.k8sClient.CreateRemediationRequest(ctx, rr)
+
+		// Success
+		if err == nil {
+			// Record success metrics if this was a retry (attempt > 0)
+			if attempt > 0 {
+				errorType := "success" // Success after retry
+				attemptStr := fmt.Sprintf("%d", attempt+1)
+
+				// Record successful retry
+				c.metrics.RetrySuccessTotal.WithLabelValues(errorType, attemptStr).Inc()
+
+				// Record retry duration
+				duration := time.Since(startTime).Seconds()
+				c.metrics.RetryDuration.WithLabelValues(errorType).Observe(duration)
+
+				c.logger.Info("CRD creation succeeded after retry",
+					zap.Int("attempt", attempt+1),
+					zap.Duration("total_duration", time.Since(startTime)),
+					zap.String("name", rr.Name),
+					zap.String("namespace", rr.Namespace))
+			}
+			return nil
+		}
+
+		// Get error classification info for metrics
+		errorType := getErrorTypeString(err)
+		statusCode := fmt.Sprintf("%d", GetErrorCode(err))
+
+		// Non-retryable error (validation, RBAC, etc.)
+		if IsNonRetryableError(err) {
+			c.logger.Error("CRD creation failed with non-retryable error",
+				zap.Error(err),
+				zap.String("name", rr.Name),
+				zap.String("namespace", rr.Namespace))
+			return err
+		}
+
+		// Check if error is retryable (Reliability-First: always retry transient errors)
+		if !IsRetryableError(err) {
+			c.logger.Error("CRD creation failed with non-retryable error",
+				zap.Error(err),
+				zap.String("name", rr.Name),
+				zap.String("namespace", rr.Namespace))
+			return err
+		}
+
+		// Record retry attempt metric
+		c.metrics.RetryAttemptsTotal.WithLabelValues(errorType, statusCode).Inc()
+
+		// Check if this was the last attempt
+		if attempt == c.retryConfig.MaxAttempts-1 {
+			// Exhausted all retries - record metrics and return error immediately
+			c.metrics.RetryExhaustedTotal.WithLabelValues(errorType, statusCode).Inc()
+
+			// Record retry duration
+			duration := time.Since(startTime).Seconds()
+			c.metrics.RetryDuration.WithLabelValues(errorType).Observe(duration)
+
+			c.logger.Error("CRD creation failed after max retries",
+				zap.Int("max_attempts", c.retryConfig.MaxAttempts),
+				zap.Duration("total_duration", time.Since(startTime)),
+				zap.Error(err),
+				zap.String("name", rr.Name),
+				zap.String("namespace", rr.Namespace))
+
+			// Wrap error with retry context (GAP 10: Error Wrapping)
+			return &RetryError{
+				Attempt:      attempt + 1,
+				MaxAttempts:  c.retryConfig.MaxAttempts,
+				OriginalErr:  err,
+				ErrorType:    "retryable",
+				ErrorCode:    GetErrorCode(err),
+				ErrorMessage: GetErrorMessage(err),
+			}
+		}
+
+		// Not the last attempt - retry with exponential backoff
+		c.logger.Warn("CRD creation failed, retrying...",
+			zap.Int("attempt", attempt+1),
+			zap.Int("max_attempts", c.retryConfig.MaxAttempts),
+			zap.Duration("backoff", backoff),
+			zap.Error(err),
+			zap.String("name", rr.Name),
+			zap.String("namespace", rr.Namespace))
+
+		// Sleep with backoff (context-aware for graceful shutdown - GAP 6)
+		select {
+		case <-time.After(backoff):
+			// Continue to next attempt
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		// Exponential backoff (double each time, capped at max)
+		backoff *= 2
+		if backoff > c.retryConfig.MaxBackoff {
+			backoff = c.retryConfig.MaxBackoff
+		}
+	}
+
+	// Defensive: This should never be reached due to the last attempt check above
+	// If we reach here, it indicates a logic error in the retry loop
+	return fmt.Errorf("retry logic error: loop completed without explicit return (max_attempts=%d)", c.retryConfig.MaxAttempts)
+}
+
+// getErrorTypeString returns a human-readable error type for metrics labels
+func getErrorTypeString(err error) string {
+	if err == nil {
+		return "success"
+	}
+
+	statusCode := GetErrorCode(err)
+	switch statusCode {
+	case 429:
+		return "rate_limited"
+	case 503:
+		return "service_unavailable"
+	case 504:
+		return "gateway_timeout"
+	case 400:
+		return "bad_request"
+	case 403:
+		return "forbidden"
+	case 422:
+		return "unprocessable_entity"
+	case 409:
+		return "conflict"
+	default:
+		errStr := err.Error()
+		if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline exceeded") {
+			return "timeout"
+		}
+		if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "connection reset") {
+			return "network_error"
+		}
+		return "unknown"
 	}
 }
 
@@ -202,8 +370,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 		rr.Labels["kubernaut.io/storm"] = "true"
 	}
 
-	// Create CRD in Kubernetes
-	if err := c.k8sClient.CreateRemediationRequest(ctx, rr); err != nil {
+	// Create CRD in Kubernetes with retry logic
+	// BR-GATEWAY-112: Retry logic for transient K8s API errors
+	if err := c.createCRDWithRetry(ctx, rr); err != nil {
 		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
 		// This is normal behavior - Redis TTL is shorter than CRD lifecycle
 		if strings.Contains(err.Error(), "already exists") {
@@ -230,31 +399,32 @@ func (c *CRDCreator) CreateRemediationRequest(
 			return existing, nil
 		}
 
-		// Check if namespace doesn't exist - fall back to kubernaut-system namespace
+		// Check if namespace doesn't exist - fall back to configured fallback namespace
 		// This handles cluster-scoped signals (e.g., NodeNotReady) that don't have a namespace
 		if strings.Contains(err.Error(), "namespaces") && strings.Contains(err.Error(), "not found") {
-			c.logger.Warn("Target namespace not found, creating CRD in kubernaut-system as fallback",
+			c.logger.Warn("Target namespace not found, creating CRD in fallback namespace",
 				zap.String("original_namespace", signal.Namespace),
-				zap.String("fallback_namespace", "kubernaut-system"),
+				zap.String("fallback_namespace", c.fallbackNamespace),
 				zap.String("crd_name", crdName))
 
-			// Update namespace to kubernaut-system (proper home for Kubernaut infrastructure)
-			rr.Namespace = "kubernaut-system"
+			// Update namespace to configured fallback namespace
+			rr.Namespace = c.fallbackNamespace
 
 			// Add labels to preserve origin namespace information for cluster-scoped signals
 			rr.Labels["kubernaut.io/origin-namespace"] = signal.Namespace
 			rr.Labels["kubernaut.io/cluster-scoped"] = "true"
 
-			// Retry creation in kubernaut-system namespace
-			if err := c.k8sClient.CreateRemediationRequest(ctx, rr); err != nil {
+			// Retry creation in fallback namespace with retry logic
+			// BR-GATEWAY-112: Retry logic for transient K8s API errors
+			if err := c.createCRDWithRetry(ctx, rr); err != nil {
 				c.metrics.CRDCreationErrors.WithLabelValues("fallback_failed").Inc()
 				return nil, fmt.Errorf("failed to create CRD in fallback namespace: %w", err)
 			}
 
 			// Success with fallback
-			c.logger.Info("Created RemediationRequest CRD in kubernaut-system (fallback for cluster-scoped signal)",
+			c.logger.Info("Created RemediationRequest CRD in fallback namespace (cluster-scoped signal)",
 				zap.String("name", crdName),
-				zap.String("namespace", "kubernaut-system"),
+				zap.String("namespace", c.fallbackNamespace),
 				zap.String("fingerprint", signal.Fingerprint),
 				zap.String("original_ns", signal.Namespace))
 

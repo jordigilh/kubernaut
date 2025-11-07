@@ -28,6 +28,7 @@ import (
 	// DD-GATEWAY-004: kubernetes import removed - no longer needed
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
@@ -82,11 +83,12 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			errorMsg:   "connection refused: Kubernetes API server unreachable",
 		}
 
-		// Wrap failing client in k8s.Client
-		wrappedK8sClient := k8s.NewClient(failingK8sClient)
+	// Wrap failing client in k8s.Client
+	wrappedK8sClient := k8s.NewClient(failingK8sClient)
 
-		// Create CRD creator with failing client
-		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, nil)
+	// Create CRD creator with failing client
+	retryConfig := config.DefaultRetrySettings()
+	crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, nil, "default", &retryConfig)
 
 		// Test signal
 		testSignal = &types.NormalizedSignal{

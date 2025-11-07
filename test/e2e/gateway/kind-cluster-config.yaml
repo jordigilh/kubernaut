@@ -1,0 +1,52 @@
+# Kind Cluster Configuration for Gateway E2E Testing
+# Purpose: Lightweight multi-node cluster for E2E testing
+# Features: 2-node cluster (control-plane + worker), API rate limiting enabled
+# Resource Usage: ~1.5GB RAM (vs 3GB with 4 nodes)
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: gateway-e2e
+
+# Networking configuration
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
+
+# Minimal multi-node cluster for E2E testing
+nodes:
+  # Control plane node with API server rate limiting
+  # Also runs application workloads (Gateway, Redis, AlertManager)
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraArgs:
+            # Enable rate limiting for testing (P0 Test #3)
+            max-requests-inflight: "100"
+            max-mutating-requests-inflight: "50"
+            # Enable audit logging for debugging
+            audit-log-path: "/var/log/kubernetes/audit.log"
+            audit-log-maxage: "1"
+        # Allow workloads on control-plane for E2E testing
+        nodeRegistration:
+          taints: []
+    # Port mappings for external access
+    extraPortMappings:
+      # Gateway HTTP API (NodePort 30080)
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP
+      # Gateway Metrics (NodePort 30090)
+      - containerPort: 30090
+        hostPort: 30090
+        protocol: TCP
+      # Prometheus AlertManager (NodePort 30093)
+      - containerPort: 30093
+        hostPort: 30093
+        protocol: TCP
+
+  # Worker node for backup/testing
+  # Provides multi-node cluster for realistic testing
+  - role: worker
+
