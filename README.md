@@ -61,7 +61,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 |---------|--------|---------|-------------|
 | **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 62/62 P0/P1 (100%) |
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | TBD |
-| **Context API** | ✅ **v1.0 PRODUCTION-READY** | AI context aggregation | 42/42 (100%) |
+| **Context API** | ✅ **v1.0 PRODUCTION-READY** | Historical intelligence REST API | 12/15 Active (80%) |
 | **Dynamic Toolset Service** | ✅ **COMPLETE** | HolmesGPT toolset configuration | TBD |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | TBD |
 | **HolmesGPT API** | ✅ **v3.0 PRODUCTION-READY** | AI investigation wrapper | TBD |
@@ -73,9 +73,9 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 **Timeline**: 13-week development plan (currently in Week 2-3)
 
-**Recent Updates** (November 7, 2025):
+**Recent Updates** (November 8, 2025):
 - ✅ Gateway Service v1.0: 240/240 tests passing, 62 P0/P1 BRs, production-ready
-- ✅ Context API v1.0: 133/133 tests passing, 42 BRs documented, ADR-032 compliant
+- ✅ Context API v1.0: 100% P0 2x coverage, 12 active BRs (3 deprecated per ADR-032), 11 BRs migrated to AI/ML Service
 
 ---
 
@@ -174,8 +174,8 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 
 | Service | Unit | Integration | E2E | Total | Confidence |
 |---------|------|-------------|-----|-------|------------|
-| **Gateway v1.0** | 120/120 (100%) | 114/114 (100%) | 6/6 (100%) | **240** | **100%** |
-| **Context API v1.0** | 45/45 (100%) | 76/76 (100%) | 12/12 (100%) | **133** | **100%** |
+| **Gateway v1.0** | 31 (100%) | 124 (100%) | 3 (100%) | **158** | **100%** |
+| **Context API v1.0** | 81% coverage | 53% coverage | 19% coverage | **147+** | **100%** |
 | Data Storage | 167 tests | 18 tests | ✅ Complete | 185+ | 98% |
 | Dynamic Toolset | 194 tests | 38 tests | ⏸️ V2 | 232+ | 95% |
 | Notification Service | 19 tests | 21 tests | ⏸️ Deferred | 40+ | 95% |
