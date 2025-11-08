@@ -43,6 +43,89 @@ The **Dynamic Toolset Service** is a stateless HTTP API with Kubernetes controll
 
 ## 🎯 Business Requirements
 
+### 📊 Summary
+
+**Total Business Requirements**: 8 umbrella BRs (26 granular sub-BRs)  
+**Categories**: 5  
+**Priority Breakdown**:
+- P0 (Critical): 7 BRs (BR-TOOLSET-021, 022, 025, 026, 027, 028, 031)
+- P1 (High): 1 BR (BR-TOOLSET-033)
+
+**Test Coverage**:
+- Unit: 194 test specs (95% confidence)
+- Integration: 38 test scenarios (90% confidence)
+- E2E: Not yet implemented (planned for v1.1)
+
+**BR Hierarchy**: This service uses **umbrella BRs** (BR-TOOLSET-021, 022, etc.) that map to multiple **granular sub-BRs** (BR-TOOLSET-010 to BR-TOOLSET-035) referenced in test files. See "Sub-BR Mapping" section below for complete traceability.
+
+---
+
+### 🔗 Sub-BR Mapping (Umbrella → Granular)
+
+This section maps high-level umbrella BRs to granular sub-BRs referenced in test files for complete traceability.
+
+#### BR-TOOLSET-021: Automatic Service Discovery
+**Maps to 15 granular sub-BRs**:
+- **BR-TOOLSET-010**: Prometheus Detector (`test/unit/toolset/prometheus_detector_test.go:18`)
+- **BR-TOOLSET-011**: Prometheus Endpoint URL Construction (`test/unit/toolset/prometheus_detector_test.go:98`)
+- **BR-TOOLSET-012**: Prometheus Health Check (`test/unit/toolset/prometheus_detector_test.go:195`)
+- **BR-TOOLSET-013**: Grafana Detector (`test/unit/toolset/grafana_detector_test.go:18`)
+- **BR-TOOLSET-014**: Grafana Endpoint URL Construction (`test/unit/toolset/grafana_detector_test.go:98`)
+- **BR-TOOLSET-015**: Grafana Health Check (`test/unit/toolset/grafana_detector_test.go:195`)
+- **BR-TOOLSET-016**: Jaeger Detector (`test/unit/toolset/jaeger_detector_test.go:18`)
+- **BR-TOOLSET-017**: Jaeger Endpoint URL Construction (`test/unit/toolset/jaeger_detector_test.go:98`)
+- **BR-TOOLSET-018**: Jaeger Health Check (`test/unit/toolset/jaeger_detector_test.go:195`)
+- **BR-TOOLSET-019**: Elasticsearch Detector (`test/unit/toolset/elasticsearch_detector_test.go:18`)
+- **BR-TOOLSET-020**: Elasticsearch Endpoint URL Construction (`test/unit/toolset/elasticsearch_detector_test.go:98`)
+- **BR-TOOLSET-021**: Elasticsearch Health Check (`test/unit/toolset/elasticsearch_detector_test.go:195`)
+- **BR-TOOLSET-022**: Custom Detector (`test/unit/toolset/custom_detector_test.go:17`)
+- **BR-TOOLSET-023**: Custom Endpoint URL Construction (`test/unit/toolset/custom_detector_test.go:103`)
+- **BR-TOOLSET-024**: Custom Health Check (`test/unit/toolset/custom_detector_test.go:288`)
+
+**Note**: BR-TOOLSET-021 appears twice (umbrella BR and granular sub-BR for Elasticsearch Health Check). This is intentional for backward compatibility with existing test references.
+
+#### BR-TOOLSET-022: Multi-Detector Orchestration
+**Maps to 3 granular sub-BRs**:
+- **BR-TOOLSET-025**: Service Discoverer (`test/unit/toolset/service_discoverer_test.go:43`)
+- **BR-TOOLSET-026**: Start/Stop Discovery Loop (`test/unit/toolset/service_discoverer_test.go:299`)
+
+**Note**: BR-TOOLSET-022 also appears as a granular sub-BR (Custom Detector) under BR-TOOLSET-021. This dual mapping reflects the service's hybrid architecture (individual detectors + orchestration).
+
+#### BR-TOOLSET-025: Toolset Generation (Umbrella)
+**Maps to 2 granular sub-BRs**:
+- **BR-TOOLSET-027**: Toolset Generator (`test/unit/toolset/generator_test.go:15`)
+- **BR-TOOLSET-028**: HolmesGPT Format Requirements (`test/unit/toolset/generator_test.go:145`)
+
+**Note**: BR-TOOLSET-025 also appears as a granular sub-BR (Service Discoverer) under BR-TOOLSET-022. This dual mapping reflects the end-to-end pipeline (discovery → generation).
+
+#### BR-TOOLSET-026: Continuous Reconciliation (Umbrella)
+**Maps to 3 granular sub-BRs**:
+- **BR-TOOLSET-029**: ConfigMap Builder (`test/unit/toolset/configmap_builder_test.go:14`)
+- **BR-TOOLSET-030**: ConfigMap Overrides Preservation (`test/unit/toolset/configmap_builder_test.go:108`)
+- **BR-TOOLSET-031**: ConfigMap Drift Detection (`test/unit/toolset/configmap_builder_test.go:237`)
+
+**Note**: BR-TOOLSET-026 also appears as a granular sub-BR (Start/Stop Discovery Loop) under BR-TOOLSET-022. This dual mapping reflects the continuous reconciliation loop mechanics.
+
+#### BR-TOOLSET-027: Toolset Generation (Umbrella)
+**Already mapped above** (see BR-TOOLSET-025 umbrella mapping).
+
+#### BR-TOOLSET-028: HolmesGPT Format Compliance (Umbrella)
+**Already mapped above** (see BR-TOOLSET-025 umbrella mapping).
+
+#### BR-TOOLSET-031: ConfigMap Drift Detection (Umbrella)
+**Already mapped above** (see BR-TOOLSET-026 umbrella mapping).
+
+#### BR-TOOLSET-033: End-to-End Pipeline (Umbrella)
+**Maps to 3 granular sub-BRs**:
+- **BR-TOOLSET-032**: Authentication Middleware (`test/unit/toolset/auth_middleware_test.go:18`)
+- **BR-TOOLSET-033**: HTTP Server (`test/unit/toolset/server_test.go:22`)
+- **BR-TOOLSET-034**: Protected API Endpoints (`test/unit/toolset/server_test.go:110`)
+- **BR-TOOLSET-035**: Prometheus Metrics (`test/unit/toolset/metrics_test.go:14`)
+
+**Note**: BR-TOOLSET-033 appears twice (umbrella BR and granular sub-BR for HTTP Server). This is intentional for backward compatibility with existing test references.
+
+---
+
 ### Category 1: Service Discovery
 
 #### BR-TOOLSET-021: Automatic Service Discovery
