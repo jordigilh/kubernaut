@@ -3,7 +3,7 @@
 **Service**: Dynamic Toolset Service
 **Version**: 1.0
 **Last Updated**: November 8, 2025
-**Total BRs**: 8
+**Total BRs**: 8 umbrella BRs (26 granular sub-BRs)
 
 ---
 
@@ -11,13 +11,26 @@
 
 This document maps high-level business requirements to their detailed sub-requirements and corresponding test files. It provides traceability from business needs to implementation and test coverage.
 
+### BR Hierarchy Structure
+
+**Dynamic Toolset Service uses a hybrid BR structure**:
+- **8 Umbrella BRs** (BR-TOOLSET-021, 022, 025, 026, 027, 028, 031, 033): High-level business capabilities documented in `BUSINESS_REQUIREMENTS.md`
+- **26 Granular Sub-BRs** (BR-TOOLSET-010 to BR-TOOLSET-035): Detailed technical requirements referenced in test files
+
+**Why This Structure?**
+- **Umbrella BRs**: Provide business-level understanding (e.g., "Automatic Service Discovery")
+- **Granular Sub-BRs**: Enable precise test traceability (e.g., "Prometheus Detector", "Grafana Endpoint URL Construction")
+- **Dual Mapping**: Some BRs appear in both levels for backward compatibility (e.g., BR-TOOLSET-021, BR-TOOLSET-022, BR-TOOLSET-033)
+
+**Complete Sub-BR Mapping**: See `BUSINESS_REQUIREMENTS.md` → "Sub-BR Mapping" section for full umbrella → granular traceability.
+
 ---
 
 ## 🎯 Business Requirement Hierarchy
 
 ### BR-TOOLSET-021: Automatic Service Discovery
-**Category**: Service Discovery  
-**Priority**: P0 (CRITICAL)  
+**Category**: Service Discovery
+**Priority**: P0 (CRITICAL)
 **Description**: Automatically discover services using labels and annotations
 
 **Test Coverage**:
@@ -56,8 +69,8 @@ This document maps high-level business requirements to their detailed sub-requir
 ---
 
 ### BR-TOOLSET-022: Multi-Detector Discovery Orchestration
-**Category**: Service Discovery  
-**Priority**: P0 (CRITICAL)  
+**Category**: Service Discovery
+**Priority**: P0 (CRITICAL)
 **Description**: Orchestrate multiple detectors in parallel with deduplication
 
 **Test Coverage**:
@@ -93,8 +106,8 @@ This document maps high-level business requirements to their detailed sub-requir
 ---
 
 ### BR-TOOLSET-025: Advanced Multi-Detector Orchestration
-**Category**: Discovery Lifecycle  
-**Priority**: P1 (HIGH)  
+**Category**: Discovery Lifecycle
+**Priority**: P1 (HIGH)
 **Description**: Handle edge cases (duplicates, errors, empty clusters)
 
 **Test Coverage**:
@@ -125,8 +138,8 @@ This document maps high-level business requirements to their detailed sub-requir
 ---
 
 ### BR-TOOLSET-026: Discovery Loop Lifecycle Management
-**Category**: Discovery Lifecycle  
-**Priority**: P1 (HIGH)  
+**Category**: Discovery Lifecycle
+**Priority**: P1 (HIGH)
 **Description**: Continuous discovery with service additions, deletions, updates
 
 **Test Coverage**:
@@ -160,8 +173,8 @@ This document maps high-level business requirements to their detailed sub-requir
 ---
 
 ### BR-TOOLSET-027: HolmesGPT Toolset Generation
-**Category**: Toolset Generation  
-**Priority**: P0 (CRITICAL)  
+**Category**: Toolset Generation
+**Priority**: P0 (CRITICAL)
 **Description**: Generate HolmesGPT-compatible toolset JSON
 
 **Test Coverage**:
@@ -196,8 +209,8 @@ This document maps high-level business requirements to their detailed sub-requir
 ---
 
 ### BR-TOOLSET-028: HolmesGPT Tool Structure Requirements
-**Category**: Toolset Generation  
-**Priority**: P0 (CRITICAL)  
+**Category**: Toolset Generation
+**Priority**: P0 (CRITICAL)
 **Description**: Ensure all required fields present with correct types
 
 **Test Coverage**:
@@ -231,8 +244,8 @@ This document maps high-level business requirements to their detailed sub-requir
 ---
 
 ### BR-TOOLSET-031: ConfigMap Creation and Reconciliation
-**Category**: ConfigMap Management  
-**Priority**: P1 (HIGH)  
+**Category**: ConfigMap Management
+**Priority**: P1 (HIGH)
 **Description**: Create and reconcile ConfigMaps with override preservation
 
 **Test Coverage**:
@@ -267,8 +280,8 @@ This document maps high-level business requirements to their detailed sub-requir
 ---
 
 ### BR-TOOLSET-033: Complete Discovery-to-ConfigMap Pipeline
-**Category**: End-to-End Workflows  
-**Priority**: P0 (CRITICAL)  
+**Category**: End-to-End Workflows
+**Priority**: P0 (CRITICAL)
 **Description**: End-to-end workflow with error recovery and state management
 
 **Test Coverage**:
@@ -324,8 +337,8 @@ This document maps high-level business requirements to their detailed sub-requir
 | `test/integration/toolset/generator_integration_test.go` | BR-TOOLSET-027, 028 | 8 scenarios | 92% |
 | `test/integration/toolset/configmap_test.go` | BR-TOOLSET-031 | 5 scenarios | 92% |
 
-**Total Unit Tests**: 194 scenarios  
-**Total Integration Tests**: 38 scenarios  
+**Total Unit Tests**: 194 scenarios
+**Total Integration Tests**: 38 scenarios
 **Overall Confidence**: 95% (Production-Ready)
 
 ---
@@ -339,8 +352,8 @@ This document maps high-level business requirements to their detailed sub-requir
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 8, 2025  
-**Maintained By**: Kubernaut Architecture Team  
+**Document Version**: 1.0
+**Last Updated**: November 8, 2025
+**Maintained By**: Kubernaut Architecture Team
 **Status**: Production-Ready
 
