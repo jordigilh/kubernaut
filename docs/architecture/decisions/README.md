@@ -19,6 +19,9 @@
 || 005 | [Owner Reference Architecture](./005-owner-reference-architecture.md) | ✅ Accepted | 2025 | CRD lifecycle and ownership patterns |
 || 006 | [Effectiveness Monitor V1 Inclusion](./006-effectiveness-monitor-v1-inclusion.md) | ✅ Accepted | 2025-10 | Moving Effectiveness Monitor from V2 to V1 |
 || 027 | [Multi-Architecture Build Strategy](./ADR-027-multi-architecture-build-strategy.md) | ✅ Accepted | 2025-10-20 | All services built for amd64 + arm64 by default |
+|| 032 | [Data Access Layer Isolation](./ADR-032-data-access-layer-isolation.md) | ✅ Accepted | 2025-10-31 | All services access DB via Data Storage Service REST API |
+|| 034 | [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) | ✅ Approved | 2025-11-08 | Event sourcing pattern with JSONB for audit traces |
+|| 035 | [Asynchronous Buffered Audit Ingestion](./ADR-035-async-buffered-audit-ingestion.md) | ✅ Approved | 2025-11-08 | Async buffered writes for zero latency impact |
 
 ### **Business Requirement (BR) Migration Decisions**
 
@@ -43,6 +46,9 @@
 || DD-003 | [Forced Recommendation Manual Override](./DD-003-forced-recommendation-manual-override.md) | RemediationOrchestrator | ✅ Approved for V2 | 2025-10-20 | Operator autonomy, complete audit trail (V2 feature) |
 || DD-004 | [RFC 7807 Error Response Standard](./DD-004-RFC7807-ERROR-RESPONSES.md) | All HTTP Services | ✅ Approved | 2025-10-30 | Consistent error handling across all services |
 || DD-005 | [Observability Standards](./DD-005-OBSERVABILITY-STANDARDS.md) | All Services | ✅ Approved | 2025-10-31 | Metrics, logging, tracing standards |
+|| DD-AUDIT-001 | [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) | All Services | ✅ Approved | 2025-11-02 | Distributed audit pattern (services write their own traces) |
+|| DD-AUDIT-002 | [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) | All Services | ✅ Approved | 2025-11-08 | Shared library (`pkg/audit/`) for async buffered writes |
+|| DD-AUDIT-003 | [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) | All Services | ✅ Approved | 2025-11-08 | Defines which 8 of 11 services must generate audit traces |
 
 #### **Service-Specific Decisions**
 
