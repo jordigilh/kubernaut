@@ -29,7 +29,7 @@ func TestServerPathNormalization(t *testing.T) {
 // 5. Query parameters don't affect normalization (already stripped by r.URL.Path)
 
 var _ = Describe("BR-CONTEXT-013: Path Normalization for Metrics Cardinality", func() {
-	
+
 	Context("Static paths (no IDs)", func() {
 		DescribeTable("Should preserve static endpoint paths unchanged",
 			func(input, expected string) {
@@ -51,7 +51,7 @@ var _ = Describe("BR-CONTEXT-013: Path Normalization for Metrics Cardinality", f
 				result := normalizePath(input)
 				Expect(result).To(Equal(expected))
 			},
-			Entry("full UUID", 
+			Entry("full UUID",
 				"/api/v1/incidents/550e8400-e29b-41d4-a716-446655440000",
 				"/api/v1/incidents/:id"),
 			Entry("short UUID with hyphens",
@@ -111,10 +111,10 @@ var _ = Describe("BR-CONTEXT-013: Path Normalization for Metrics Cardinality", f
 	Context("Idempotency", func() {
 		It("should be idempotent (normalizing twice produces same result)", func() {
 			input := "/api/v1/incidents/550e8400-e29b-41d4-a716-446655440000"
-			
+
 			first := normalizePath(input)
 			second := normalizePath(first)
-			
+
 			Expect(first).To(Equal(second))
 			Expect(second).To(Equal("/api/v1/incidents/:id"))
 		})
@@ -124,7 +124,7 @@ var _ = Describe("BR-CONTEXT-013: Path Normalization for Metrics Cardinality", f
 		DescribeTable("Should preserve number of path segments",
 			func(input string, expectedSegments int) {
 				result := normalizePath(input)
-				
+
 				// Count non-empty segments
 				segments := splitPath(result)
 				count := 0
@@ -133,7 +133,7 @@ var _ = Describe("BR-CONTEXT-013: Path Normalization for Metrics Cardinality", f
 						count++
 					}
 				}
-				
+
 				Expect(count).To(Equal(expectedSegments))
 			},
 			Entry("single segment", "/health", 1),
@@ -149,7 +149,7 @@ var _ = Describe("BR-CONTEXT-013: Path Normalization for Metrics Cardinality", f
 func splitPath(path string) []string {
 	var segments []string
 	var current string
-	
+
 	for _, ch := range path {
 		if ch == '/' {
 			if current != "" {
@@ -160,10 +160,10 @@ func splitPath(path string) []string {
 			current += string(ch)
 		}
 	}
-	
+
 	if current != "" {
 		segments = append(segments, current)
 	}
-	
+
 	return segments
 }
