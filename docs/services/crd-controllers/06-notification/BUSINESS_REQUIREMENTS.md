@@ -44,6 +44,21 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ## 🎯 Business Requirements
 
+### 📊 Summary
+
+**Total Business Requirements**: 12  
+**Categories**: 8  
+**Priority Breakdown**:
+- P0 (Critical): 8 BRs (BR-NOT-050, 051, 052, 053, 054, 055, 058, 060, 061)
+- P1 (High): 4 BRs (BR-NOT-056, 057, 059)
+
+**Test Coverage**:
+- Unit: 82 test specs (95% confidence)
+- Integration: 21 test scenarios (90% confidence)
+- E2E: Not yet implemented (planned for v1.1)
+
+---
+
 ### Category 1: Data Integrity & Persistence
 
 #### BR-NOT-050: Data Loss Prevention
@@ -344,6 +359,105 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 - E2E: End-to-end sanitization with real secret patterns
 
 **Related BRs**: BR-NOT-054 (Observability)
+
+---
+
+### Category 8: Performance & Scalability
+
+#### BR-NOT-059: Large Payload Support
+
+**Description**: The Notification Service MUST handle large notification payloads (up to 10KB) without performance degradation or controller crashes, ensuring graceful degradation for oversized payloads.
+
+**Priority**: P1 (HIGH)
+
+**Rationale**: Production notifications may include large stack traces, log excerpts, or detailed error messages. The controller must handle large payloads gracefully without impacting other notifications.
+
+**Implementation**:
+- **Payload Size Limit**: Support payloads up to 10KB (10,240 bytes)
+- **Validation**: Reject payloads exceeding 10KB with clear error message
+- **Performance**: No degradation for payloads up to 10KB
+- **Memory Management**: Efficient memory handling for large payloads
+- **Graceful Degradation**: Truncate oversized payloads with warning
+
+**Acceptance Criteria**:
+- ✅ Payloads up to 10KB processed without performance degradation
+- ✅ Oversized payloads (>10KB) rejected with clear error
+- ✅ Memory usage stable with large payloads
+- ✅ No controller crashes with large payloads
+- ✅ Warning logged for truncated payloads
+
+**Test Coverage**:
+- Unit: Payload size validation and truncation logic
+- Integration: `test/integration/notification/INTEGRATION_TEST_FAILURES_TRIAGE.md:228, 334` (Large payload scenarios)
+- E2E: End-to-end delivery with 10KB payloads
+
+**Related BRs**: BR-NOT-058 (Validation), BR-NOT-060 (Concurrent Delivery)
+
+---
+
+#### BR-NOT-060: Concurrent Delivery Safety
+
+**Description**: The Notification Service MUST safely handle concurrent notification deliveries (10+ simultaneous notifications) without race conditions, data corruption, or performance degradation.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: Production environments generate multiple notifications simultaneously. Race conditions in concurrent delivery can cause data corruption, duplicate deliveries, or controller crashes.
+
+**Implementation**:
+- **Thread-Safe Delivery**: Proper locking and synchronization for shared resources
+- **Concurrent CRD Updates**: Optimistic concurrency control for status updates
+- **Channel Isolation**: Per-channel delivery isolation to prevent cross-contamination
+- **Resource Pooling**: Connection pooling for external services (Slack, email)
+- **Race Detection**: Validated with Go race detector (`go test -race`)
+
+**Acceptance Criteria**:
+- ✅ 10+ concurrent notifications delivered without race conditions
+- ✅ No data corruption in CRD status updates
+- ✅ No duplicate deliveries
+- ✅ Performance scales linearly with concurrency
+- ✅ Race detector reports zero races
+
+**Test Coverage**:
+- Unit: Concurrent delivery logic with race detection
+- Integration: `test/integration/notification/INTEGRATION_TEST_FAILURES_TRIAGE.md:384` (Concurrent delivery scenarios)
+- E2E: High-load concurrent delivery testing
+
+**Related BRs**: BR-NOT-051 (Audit Trail), BR-NOT-059 (Large Payload Support)
+
+---
+
+#### BR-NOT-061: Circuit Breaker Protection
+
+**Description**: The Notification Service MUST use circuit breakers to prevent cascading failures during rate limiting or service unavailability, failing fast instead of accumulating retry attempts.
+
+**Priority**: P0 (CRITICAL)
+
+**Rationale**: When downstream services (Slack, email) are rate-limiting or unavailable, continued retry attempts waste resources and delay failure detection. Circuit breakers prevent cascading failures and enable fast recovery.
+
+**Implementation**:
+- **Per-Channel Circuit Breakers**: Independent circuit breakers for each delivery channel
+- **Fast Failure**: Fail immediately when circuit is open (no retry attempts)
+- **Circuit States**: Closed (healthy), Open (failing), Half-Open (testing recovery)
+- **Failure Threshold**: Circuit opens after 5 consecutive failures
+- **Recovery Timeout**: Circuit half-opens after 60 seconds
+- **Success Threshold**: Circuit closes after 2 consecutive successes
+
+**Acceptance Criteria**:
+- ✅ Circuit breaker opens after 5 consecutive failures
+- ✅ Fast failure when circuit is open (no retry attempts)
+- ✅ Circuit half-opens after 60 seconds
+- ✅ Circuit closes after 2 consecutive successes
+- ✅ Prevents cascading failures during rate limiting
+- ✅ Circuit breaker state exposed via Prometheus metrics
+
+**Test Coverage**:
+- Unit: `test/unit/notification/retry_test.go:100-187` (Circuit breaker state machine)
+- Integration: `test/integration/notification/INTEGRATION_TEST_FAILURES_TRIAGE.md:472` (Circuit breaker activation)
+- E2E: Circuit breaker behavior under sustained failures
+
+**Related BRs**: BR-NOT-052 (Automatic Retry), BR-NOT-055 (Graceful Degradation)
+
+**Note**: This BR complements BR-NOT-055 (Graceful Degradation). BR-NOT-055 focuses on partial delivery success, while BR-NOT-061 focuses on fast failure and cascading failure prevention.
 
 ---
 
