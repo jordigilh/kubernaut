@@ -13,11 +13,11 @@ func TestServerPathNormalization(t *testing.T) {
 }
 
 // ============================================================================
-// BR-CONTEXT-006: Observability - Metric Cardinality Management
+// BR-CONTEXT-013: Observability - Metric Cardinality Management
 // DD-005 § 3.1: Metrics Cardinality Management
 // ============================================================================
 //
-// Business Requirement: BR-CONTEXT-006 (Observability)
+// Business Requirement: BR-CONTEXT-013 (Observability)
 // - Metrics must not cause Prometheus cardinality explosion
 // - Dynamic path segments (IDs, UUIDs) must be normalized
 //
@@ -28,7 +28,7 @@ func TestServerPathNormalization(t *testing.T) {
 // 4. Multiple ID segments normalized independently
 // 5. Query parameters don't affect normalization (already stripped by r.URL.Path)
 
-var _ = Describe("BR-CONTEXT-006: Path Normalization for Metrics Cardinality", func() {
+var _ = Describe("BR-CONTEXT-013: Path Normalization for Metrics Cardinality", func() {
 	
 	Context("Static paths (no IDs)", func() {
 		DescribeTable("Should preserve static endpoint paths unchanged",

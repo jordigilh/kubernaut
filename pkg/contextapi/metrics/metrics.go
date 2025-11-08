@@ -6,7 +6,7 @@ import (
 )
 
 // Metrics contains all Prometheus metrics for Context API
-// BR-CONTEXT-006: Observability and monitoring
+// BR-CONTEXT-013: Observability and monitoring
 type Metrics struct {
 	// Query metrics
 	QueriesTotal  *prometheus.CounterVec   // Total queries by type and status
@@ -272,7 +272,7 @@ func (m *Metrics) RecordHTTPRequest(method, path, status string, duration float6
 // PROMETHEUS METRICS IMPLEMENTATION NOTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Business Requirements:
-// - BR-CONTEXT-006: Observability (metrics, health checks)
+// - BR-CONTEXT-013: Observability (metrics, health checks)
 //
 // Metrics Categories:
 // 1. Query Metrics: Track query performance and success rates

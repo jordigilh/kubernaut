@@ -1,8 +1,12 @@
 # Context API Service - BR Mapping Table
 
-**Version**: v1.0
-**Last Updated**: November 7, 2025
+**Version**: v1.1
+**Last Updated**: November 8, 2025
 **Purpose**: Maps umbrella BRs to sub-BRs and test files for traceability
+
+**Total BRs**: 17 (BR-CONTEXT-001 to BR-CONTEXT-014, BR-INTEGRATION-008 to BR-INTEGRATION-010)
+**Active BRs**: 12 (71%)
+**Deprecated BRs**: 5 (29%)
 
 ---
 
@@ -140,6 +144,59 @@ This document provides detailed mapping between high-level umbrella BRs and more
 | `test/integration/contextapi/13_graceful_shutdown_test.go` | Shutdown Logging | 406-434 | ✅ Integration |
 
 **Coverage**: ✅ Integration (100%)
+
+---
+
+### **BR-CONTEXT-013: Observability & Monitoring**
+**Umbrella BR**: BR-CONTEXT-013
+**Sub-BRs**: Metric cardinality management (path normalization), Health check endpoints, Prometheus metrics, Data Storage Service connectivity monitoring, Cache hit/miss tracking, Request latency tracking, Structured logging, Request ID propagation, Configurable log levels
+**Test Files**:
+| Test File | Test Context | Lines | Coverage |
+|-----------|--------------|-------|----------|
+| `pkg/contextapi/server/server_test.go` | Path Normalization for Metrics Cardinality | 31-169 | ✅ Unit |
+| `test/integration/contextapi/10_observability_test.go` | Observability Integration (if exists) | TBD | ⏳ Integration |
+
+**Coverage**: ✅ Unit (100%), ⏳ Integration (pending)
+
+**Implementation Files**:
+- `pkg/contextapi/metrics/metrics.go` - Prometheus metrics implementation
+- `pkg/contextapi/server/server.go` - Observability middleware
+- `pkg/contextapi/models/incident.go` - Health check integration
+- `pkg/contextapi/query/executor.go` - Health check logic
+
+**ADR/DD References**:
+- [ADR-032: Data Access Layer Isolation](../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
+- [DD-005: Observability Standards](../../architecture/decisions/DD-005-observability-standards.md)
+
+---
+
+### **BR-CONTEXT-014: RFC 7807 Error Propagation & Request Timeout**
+**Umbrella BR**: BR-CONTEXT-014
+**Sub-BRs**: RFC 7807 error format preservation, Structured error propagation from Data Storage Service, HTTP request timeout enforcement (10s), Error context maintenance, Error type preservation for consumers, Content-Type header for errors, Standard RFC 7807 fields
+**Test Files**:
+| Test File | Test Context | Lines | Coverage |
+|-----------|--------------|-------|----------|
+| `test/integration/contextapi/09_rfc7807_compliance_test.go` | RFC 7807 Compliance (deleted - need to verify) | TBD | ⏳ Integration |
+
+**Coverage**: ⏳ Integration (pending verification)
+
+**Implementation Files**:
+- `pkg/contextapi/errors/rfc7807.go` - RFC 7807 types and helpers
+- `pkg/contextapi/query/executor.go` - Error preservation logic
+- `pkg/contextapi/server/server.go` - Request timeout configuration
+
+**ADR/DD References**:
+- [ADR-032: Data Access Layer Isolation](../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
+- [DD-004: RFC 7807 Error Response Standard](../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md)
+
+**Critical Pattern** (from `COMMON-PITFALLS.md`):
+```go
+// ❌ WRONG: Wraps RFC7807Error, breaking type assertion
+return nil, 0, fmt.Errorf("Data Storage unavailable: %w", rfc7807Err)
+
+// ✅ CORRECT: Return RFC7807Error directly to preserve type
+return nil, 0, rfc7807Err
+```
 
 ---
 
