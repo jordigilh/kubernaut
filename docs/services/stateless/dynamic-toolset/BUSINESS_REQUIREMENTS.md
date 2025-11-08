@@ -45,8 +45,8 @@ The **Dynamic Toolset Service** is a stateless HTTP API with Kubernetes controll
 
 ### 📊 Summary
 
-**Total Business Requirements**: 8 umbrella BRs (26 granular sub-BRs)  
-**Categories**: 5  
+**Total Business Requirements**: 8 umbrella BRs (26 granular sub-BRs)
+**Categories**: 5
 **Priority Breakdown**:
 - P0 (Critical): 7 BRs (BR-TOOLSET-021, 022, 025, 026, 027, 028, 031)
 - P1 (High): 1 BR (BR-TOOLSET-033)
@@ -457,8 +457,8 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 8, 2025  
-**Maintained By**: Kubernaut Architecture Team  
+**Document Version**: 1.0
+**Last Updated**: November 8, 2025
+**Maintained By**: Kubernaut Architecture Team
 **Status**: Production-Ready
 

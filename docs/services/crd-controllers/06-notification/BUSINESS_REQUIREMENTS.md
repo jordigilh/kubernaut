@@ -46,8 +46,8 @@ The **Notification Service** is a Kubernetes CRD controller that delivers multi-
 
 ### 📊 Summary
 
-**Total Business Requirements**: 12  
-**Categories**: 8  
+**Total Business Requirements**: 12
+**Categories**: 8
 **Priority Breakdown**:
 - P0 (Critical): 8 BRs (BR-NOT-050, 051, 052, 053, 054, 055, 058, 060, 061)
 - P1 (High): 4 BRs (BR-NOT-056, 057, 059)
