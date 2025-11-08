@@ -1,11 +1,11 @@
 # Context API Service - Business Requirements
 
-**Version**: v1.2 (Post-ADR-032 + AI/ML BR Migration)
+**Version**: v1.3 (Post-ADR-032 + AI/ML BR Migration + BR-CONTEXT-006/011 Deprecation)
 **Last Updated**: November 8, 2025
 **Service Type**: Stateless HTTP API Service
 **Total BRs**: 15 Context API BRs (BR-CONTEXT-001 through BR-CONTEXT-012, BR-INTEGRATION-008 to BR-INTEGRATION-010)
-**Active BRs**: 12 (80%)
-**Deprecated BRs**: 3 (20% - Post-ADR-032)
+**Active BRs**: 10 (67%)
+**Deprecated BRs**: 5 (33% - Post-ADR-032: BR-CONTEXT-001, 004, 006, 008 partial, 011)
 **Migrated BRs**: 11 (Migrated to AI/ML Service - see below)
 
 ---
@@ -17,9 +17,10 @@
 > **"All services MUST use Data Storage Service REST API exclusively for database access"**
 
 **Impact on Context API**:
-- ⏳ **3 BRs DEPRECATED**: Direct PostgreSQL access patterns (BR-CONTEXT-001, BR-CONTEXT-004, BR-CONTEXT-008 partial)
+- ⏳ **5 BRs DEPRECATED**: Direct PostgreSQL access patterns (BR-CONTEXT-001, BR-CONTEXT-004, BR-CONTEXT-006, BR-CONTEXT-008 partial, BR-CONTEXT-011)
 - ✅ **BR-CONTEXT-007 PRIMARY**: Data Storage Service REST API integration (ADR-032 implementation)
-- 🎯 **Migration Required**: Remove legacy SQL builder code after full migration
+- ✅ **BR-CONTEXT-009 SECONDARY**: Exponential backoff retry for REST API resilience
+- 🎯 **Migration Complete**: Legacy SQL builder code removed (v1.0)
 
 ---
 
@@ -150,8 +151,28 @@ This document provides a comprehensive list of all business requirements for the
 
 ---
 
-### **BR-CONTEXT-006: (Reserved)**
-**Status**: Number reserved, not yet documented in tests
+### **BR-CONTEXT-006: Historical Data Fetching (DEPRECATED)**
+**Status**: ⏳ **DEPRECATED** (Post-ADR-032)
+**Description**: ~~Context API must fetch historical Kubernetes cluster intelligence via direct PostgreSQL queries~~
+**Priority**: ~~P0 (Critical)~~ → ⏳ **DEPRECATED**
+**Superseded By**: BR-CONTEXT-007 (Data Storage Service REST API integration)
+**ADR Reference**: [ADR-032: Data Access Layer Isolation](../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
+
+**Deprecation Rationale**:
+- ❌ **ADR-032 Violation**: Direct PostgreSQL access for historical data fetching
+- ✅ **Replacement**: BR-CONTEXT-007 implements ADR-032 mandate via REST API
+- 🎯 **Architectural Mandate**: ADR-032 requires all DB access via Data Storage Service REST API
+
+**Replacement Path**:
+1. **ADR-032**: Mandates Data Storage Service REST API for all DB access (system-wide)
+2. **BR-CONTEXT-007**: Implements ADR-032 for Context API (service-specific)
+3. **Tests**: `test/unit/contextapi/executor_datastorage_migration_test.go` validates BR-CONTEXT-007
+
+**Original Details** (for historical reference):
+- ~~Must fetch historical Kubernetes cluster intelligence on-demand~~
+- ~~Must optimize PostgreSQL queries for performance~~
+- ~~Must support namespace and resource-based filtering~~
+- ~~Must use proper indexes for fast lookups~~
 
 ---
 
@@ -169,7 +190,9 @@ This document provides a comprehensive list of all business requirements for the
 **ADR-032 Compliance**:
 - ✅ **Replaces BR-CONTEXT-001**: SQL query construction now handled by Data Storage Service
 - ✅ **Replaces BR-CONTEXT-004**: Query filtering now via REST API query parameters
+- ✅ **Replaces BR-CONTEXT-006**: Historical data fetching via REST API (not direct PostgreSQL)
 - ✅ **Replaces BR-CONTEXT-008 (partial)**: Field selection/JOINs now handled by Data Storage Service
+- ✅ **Replaces BR-CONTEXT-011**: HTTP client connection pooling (not PostgreSQL connection pooling)
 - ✅ **Architectural Mandate**: This BR implements ADR-032's requirement for REST API-only database access
 
 **Details**:
@@ -254,8 +277,31 @@ This document provides a comprehensive list of all business requirements for the
 
 ---
 
-### **BR-CONTEXT-011: (Reserved)**
-**Status**: Number reserved, not yet documented in tests
+### **BR-CONTEXT-011: Schema Alignment & Connection Pooling (DEPRECATED)**
+**Status**: ⏳ **DEPRECATED** (Post-ADR-032)
+**Description**: ~~Context API must manage PostgreSQL connection pooling and schema alignment~~
+**Priority**: ~~P0 (Critical)~~ → ⏳ **DEPRECATED**
+**Superseded By**: BR-CONTEXT-007 (HTTP client), BR-CONTEXT-009 (Retry logic)
+**ADR Reference**: [ADR-032: Data Access Layer Isolation](../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
+
+**Deprecation Rationale**:
+- ❌ **ADR-032 Violation**: Direct PostgreSQL connection pool management
+- ✅ **Replacement**: BR-CONTEXT-007 (HTTP client connection pooling for Data Storage REST API)
+- ✅ **Replacement**: BR-CONTEXT-009 (Exponential backoff retry for REST API resilience)
+- ✅ **Schema Authority**: Data Storage Service owns schema (DD-SCHEMA-001)
+- 🎯 **Architectural Mandate**: ADR-032 eliminates direct PostgreSQL connections from Context API
+
+**Replacement Path**:
+1. **ADR-032**: Mandates Data Storage Service REST API (eliminates direct PostgreSQL)
+2. **BR-CONTEXT-007**: Implements HTTP client connection pooling (not PostgreSQL)
+3. **BR-CONTEXT-009**: Implements retry logic for REST API resilience
+4. **Tests**: `test/unit/contextapi/executor_datastorage_migration_test.go` validates both BRs
+
+**Original Details** (for historical reference):
+- ~~Must configure PostgreSQL connection pool (max connections, idle timeout)~~
+- ~~Must align schema with Data Storage Service authoritative schema~~
+- ~~Must monitor connection health and reconnect on failures~~
+- ~~Must validate context data freshness before serving~~
 
 ---
 
