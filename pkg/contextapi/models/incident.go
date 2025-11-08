@@ -140,7 +140,7 @@ type SemanticSearchResponse struct {
 
 // HealthResponse represents the health check response
 //
-// BR-CONTEXT-006: Health checks & metrics
+// BR-CONTEXT-013: Health checks & metrics
 type HealthResponse struct {
 	Status  string `json:"status"`  // "healthy" or "unhealthy"
 	Message string `json:"message"` // Optional message

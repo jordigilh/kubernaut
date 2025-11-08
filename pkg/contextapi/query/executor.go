@@ -337,7 +337,7 @@ func (e *CachedExecutor) queryDataStorageWithFallback(ctx context.Context, cache
 	// BR-CONTEXT-010: Graceful degradation - return error
 	// (Caller can fallback to cache if available)
 	//
-	// BR-CONTEXT-011: Preserve RFC 7807 structured errors
+	// BR-CONTEXT-014: Preserve RFC 7807 structured errors
 	// Return error directly to preserve RFC7807Error type for consumers
 	return nil, 0, lastErr
 }
@@ -459,7 +459,7 @@ func (e *CachedExecutor) SemanticSearch(ctx context.Context, embedding []float32
 }
 
 // Ping checks connectivity of all underlying services
-// BR-CONTEXT-006: Health checks
+// BR-CONTEXT-013: Health checks
 // ADR-032: Context API has no direct database - checks Data Storage Service implicitly via cache
 func (e *CachedExecutor) Ping(ctx context.Context) error {
 	// ADR-032: Data Storage Service health is checked implicitly via successful queries
