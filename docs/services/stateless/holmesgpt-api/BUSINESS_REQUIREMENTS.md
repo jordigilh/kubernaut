@@ -45,8 +45,8 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### 📊 Summary
 
-**Total Business Requirements**: 45 essential BRs (140 deferred BRs for v2.0)  
-**Categories**: 7  
+**Total Business Requirements**: 45 essential BRs (140 deferred BRs for v2.0)
+**Categories**: 7
 **Priority Breakdown**:
 - P0 (Critical): 43 BRs (core business logic)
 - P1 (High): 2 BRs (pending enhancements)
@@ -502,12 +502,12 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 ## 🚧 Pending Enhancements (2 Blockers)
 
 ### 1. RFC 7807 Error Response Standard (BR-HAPI-036-PENDING-1)
-**Status**: ⏸️ Pending  
-**Priority**: P1 (HIGH)  
-**Estimated Effort**: 2-3 hours  
+**Status**: ⏸️ Pending
+**Priority**: P1 (HIGH)
+**Estimated Effort**: 2-3 hours
 **Design Reference**: [DD-004: RFC 7807 Error Response Standard](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md)
 
-**Current State**: Service returns generic JSON error responses  
+**Current State**: Service returns generic JSON error responses
 **Target State**: Structured error responses following RFC 7807 standard
 
 **Impact**: Consistent error handling across all Kubernaut services
@@ -515,12 +515,12 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 ---
 
 ### 2. Kubernetes-Aware Graceful Shutdown (BR-HAPI-036-PENDING-2)
-**Status**: ⏸️ Pending  
-**Priority**: P1 (HIGH)  
-**Estimated Effort**: 3-4 hours  
+**Status**: ⏸️ Pending
+**Priority**: P1 (HIGH)
+**Estimated Effort**: 3-4 hours
 **Design Reference**: [DD-007: Kubernetes-Aware Graceful Shutdown](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)
 
-**Current State**: Service stops immediately on SIGTERM  
+**Current State**: Service stops immediately on SIGTERM
 **Target State**: Graceful termination with connection draining (4-step pattern)
 
 **Impact**: Zero-downtime deployments, reliable rolling updates
@@ -608,8 +608,8 @@ The following 140 BRs are deferred to v2.0 and only needed if the service become
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: November 8, 2025  
-**Maintained By**: Kubernaut Architecture Team  
+**Document Version**: 1.0
+**Last Updated**: November 8, 2025
+**Maintained By**: Kubernaut Architecture Team
 **Status**: Production-Ready (with 2 pending enhancements)
 
