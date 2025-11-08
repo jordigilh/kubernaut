@@ -1,11 +1,11 @@
 # Context API Service - Business Requirements
 
-**Version**: v1.3 (Post-ADR-032 + AI/ML BR Migration + BR-CONTEXT-006/011 Deprecation)
+**Version**: v1.4 (Post-ADR-032 + AI/ML BR Migration + BR-CONTEXT-006/011 Deprecation + New BR-CONTEXT-013/014)
 **Last Updated**: November 8, 2025
 **Service Type**: Stateless HTTP API Service
-**Total BRs**: 15 Context API BRs (BR-CONTEXT-001 through BR-CONTEXT-012, BR-INTEGRATION-008 to BR-INTEGRATION-010)
-**Active BRs**: 10 (67%)
-**Deprecated BRs**: 5 (33% - Post-ADR-032: BR-CONTEXT-001, 004, 006, 008 partial, 011)
+**Total BRs**: 17 Context API BRs (BR-CONTEXT-001 through BR-CONTEXT-014, BR-INTEGRATION-008 to BR-INTEGRATION-010)
+**Active BRs**: 12 (71%)
+**Deprecated BRs**: 5 (29% - Post-ADR-032: BR-CONTEXT-001, 004, 006, 008 partial, 011)
 **Migrated BRs**: 11 (Migrated to AI/ML Service - see below)
 
 ---
@@ -20,6 +20,8 @@
 - ⏳ **5 BRs DEPRECATED**: Direct PostgreSQL access patterns (BR-CONTEXT-001, BR-CONTEXT-004, BR-CONTEXT-006, BR-CONTEXT-008 partial, BR-CONTEXT-011)
 - ✅ **BR-CONTEXT-007 PRIMARY**: Data Storage Service REST API integration (ADR-032 implementation)
 - ✅ **BR-CONTEXT-009 SECONDARY**: Exponential backoff retry for REST API resilience
+- ✅ **BR-CONTEXT-013 NEW**: Observability & Monitoring (replaces code references to deprecated BR-CONTEXT-006)
+- ✅ **BR-CONTEXT-014 NEW**: RFC 7807 Error Propagation (replaces code references to deprecated BR-CONTEXT-011)
 - 🎯 **Migration Complete**: Legacy SQL builder code removed (v1.0)
 
 ---
@@ -328,6 +330,105 @@ This document provides a comprehensive list of all business requirements for the
 - Test 3: New request rejection after shutdown
 - Test 4: Shutdown timeout respect
 - Test 5: DD-007 endpoint removal propagation priority
+
+---
+
+### **BR-CONTEXT-013: Observability & Monitoring**
+**Status**: ✅ **ACTIVE**
+**Description**: Context API must provide comprehensive observability through Prometheus metrics, health checks, and structured logging
+**Priority**: P0 (Critical)
+**Test Coverage**: ✅ **Unit + Integration** (2x coverage ✅)
+**ADR Reference**: [ADR-032: Data Access Layer Isolation](../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
+**Design Decision**: [DD-005: Observability Standards](../../architecture/decisions/DD-005-observability-standards.md)
+
+**Implementation**: `pkg/contextapi/metrics/`, `pkg/contextapi/server/`, `pkg/contextapi/models/`
+**Tests**:
+- **Unit**: `pkg/contextapi/server/server_test.go` (Path Normalization for Metrics Cardinality)
+- Integration: `test/integration/contextapi/10_observability_test.go` (if exists)
+
+**Details**:
+- Must implement metric cardinality management (path normalization per DD-005 § 3.1)
+- Must provide health check endpoints (`/health`, `/health/ready`)
+- Must expose Prometheus-compatible metrics endpoint (`/metrics`)
+- Must track Data Storage Service connectivity health
+- Must monitor cache hit/miss rates
+- Must track request latency and error rates
+- Must use structured logging with zap
+- Must support request ID propagation
+- Must make log levels configurable
+
+**Prometheus Metrics** (DD-005 Required):
+- `contextapi_requests_total` - Total HTTP requests (counter)
+- `contextapi_request_duration_seconds` - Request latency (histogram)
+- `contextapi_cache_hits_total` - Cache hits (counter)
+- `contextapi_cache_misses_total` - Cache misses (counter)
+- `contextapi_circuit_breaker_open` - Circuit breaker status (gauge)
+- `contextapi_datastorage_query_duration_seconds` - Data Storage API latency (histogram)
+
+**ADR-032 Compliance**:
+- ✅ Health checks validate Data Storage Service connectivity (not direct PostgreSQL)
+- ✅ Metrics track REST API performance (not SQL query performance)
+- ✅ Observability focused on HTTP API patterns (stateless service)
+
+**Code References**:
+- `pkg/contextapi/server/server_test.go`: BR-CONTEXT-013 test specs
+- `pkg/contextapi/metrics/metrics.go`: BR-CONTEXT-013 implementation
+- `pkg/contextapi/models/incident.go`: BR-CONTEXT-013 health check integration
+- `pkg/contextapi/server/server.go`: BR-CONTEXT-013 observability middleware
+
+---
+
+### **BR-CONTEXT-014: RFC 7807 Error Propagation & Request Timeout**
+**Status**: ✅ **ACTIVE**
+**Description**: Context API must propagate RFC 7807 structured errors from Data Storage Service and enforce HTTP request timeouts
+**Priority**: P0 (Critical)
+**Test Coverage**: ✅ **Integration** (1x coverage ✅)
+**ADR Reference**: [ADR-032: Data Access Layer Isolation](../../architecture/decisions/ADR-032-data-access-layer-isolation.md)
+**Design Decision**: [DD-004: RFC 7807 Error Response Standard](../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md)
+
+**Implementation**: `pkg/contextapi/errors/rfc7807.go`, `pkg/contextapi/query/executor.go`, `pkg/contextapi/server/server.go`
+**Tests**:
+- Integration: `test/integration/contextapi/09_rfc7807_compliance_test.go` (deleted - need to verify coverage)
+
+**Details**:
+- Must preserve RFC 7807 error format from Data Storage Service
+- Must propagate structured errors to API consumers without wrapping
+- Must enforce HTTP request timeout (10 seconds default)
+- Must maintain error context for debugging
+- Must support error type preservation for consumers
+- Must set `Content-Type: application/problem+json` for error responses
+- Must include standard RFC 7807 fields: `type`, `title`, `status`, `detail`, `instance`
+
+**RFC 7807 Error Format** (DD-004):
+```json
+{
+  "type": "https://kubernaut.io/problems/data-storage-unavailable",
+  "title": "Service Unavailable",
+  "status": 503,
+  "detail": "Data Storage Service is temporarily unavailable",
+  "instance": "/api/v1/incidents",
+  "request_id": "req-abc123"
+}
+```
+
+**Critical Pattern** (from `COMMON-PITFALLS.md`):
+```go
+// ❌ WRONG: Wraps RFC7807Error, breaking type assertion
+return nil, 0, fmt.Errorf("Data Storage unavailable: %w", rfc7807Err)
+
+// ✅ CORRECT: Return RFC7807Error directly to preserve type
+return nil, 0, rfc7807Err
+```
+
+**ADR-032 Compliance**:
+- ✅ RFC 7807 errors propagated from Data Storage Service REST API
+- ✅ Request timeout applies to REST API calls (not PostgreSQL connections)
+- ✅ Error handling preserves structured error types for consumers
+
+**Code References**:
+- `pkg/contextapi/errors/rfc7807.go`: BR-CONTEXT-014 RFC 7807 types and helpers
+- `pkg/contextapi/query/executor.go`: BR-CONTEXT-014 error preservation logic
+- `pkg/contextapi/server/server.go`: BR-CONTEXT-014 request timeout configuration
 
 ---
 

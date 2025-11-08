@@ -8,7 +8,7 @@ import "fmt"
 // This package provides structured RFC 7807 error handling for Context API,
 // maintaining quality parity with Gateway and Data Storage services.
 //
-// BR-CONTEXT-011: RFC 7807 error propagation from Data Storage Service
+// BR-CONTEXT-014: RFC 7807 error propagation from Data Storage Service
 
 // RFC7807Error represents a structured RFC 7807 Problem Details error
 // This allows Context API consumers to access all error fields, not just the message.
@@ -30,7 +30,7 @@ type RFC7807Error struct {
 }
 
 // Error type URI constants
-// BR-CONTEXT-011: RFC 7807 error format
+// BR-CONTEXT-014: RFC 7807 error format
 // These URIs identify the problem type and can link to documentation
 // Note: Using kubernaut.io domain (not api.kubernaut.io) per test requirements
 const (
@@ -45,7 +45,7 @@ const (
 )
 
 // Error title constants
-// BR-CONTEXT-011: RFC 7807 error format
+// BR-CONTEXT-014: RFC 7807 error format
 const (
 	TitleBadRequest           = "Bad Request"
 	TitleNotFound             = "Not Found"
