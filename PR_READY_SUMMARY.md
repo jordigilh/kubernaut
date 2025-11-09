@@ -61,6 +61,13 @@
 - **BR-TOOLSET-038**: Namespace Requirement (Dynamic Toolset)
 - **Result**: 100% BR documentation coverage, zero Ghost BRs remaining
 
+### 7. Makefile Cleanup (Maintainability)
+- **Removed 18 legacy build targets** for non-existent services
+- **Added 3 new build targets** for actual services (datastorage, dynamictoolset, notification)
+- **Updated build-all-services** to only build existing services
+- **Removed test-integration-remediation** (test directory deleted)
+- **Result**: Makefile now accurately reflects current architecture (5 Go + 1 Python services)
+
 ---
 
 ## 🔍 Files Changed Breakdown
@@ -71,7 +78,7 @@
 - `pkg/k8sutil/README.md` - Usage documentation
 - `docs/architecture/decisions/DD-013-kubernetes-client-initialization-standard.md`
 
-### Modified Files (Build Fixes + BR Docs)
+### Modified Files (Build Fixes + BR Docs + Makefile)
 - `cmd/notification/main.go` - Removed logrus, uses controller-runtime logger
 - `cmd/dynamictoolset/main.go` - Uses new k8sutil helper
 - `test/integration/notification/suite_test.go` - Removed logrus
@@ -83,6 +90,7 @@
 - `docs/services/stateless/context-api/BUSINESS_REQUIREMENTS.md` - Added BR-CONTEXT-015
 - `docs/services/stateless/dynamic-toolset/BUSINESS_REQUIREMENTS.md` - Added BR-TOOLSET-038
 - `docs/architecture/DESIGN_DECISIONS.md` - Added DD-013 index entry
+- `Makefile` - Removed 18 legacy targets, added 3 new targets for actual services
 
 ### Deleted Files (Legacy Cleanup)
 **127 test files** including:
