@@ -70,8 +70,10 @@ var _ = BeforeSuite(func() {
 	GinkgoWriter.Println("🚀 Starting Context API Redis cache (ADR-016)...")
 
 	// Stop and remove existing Redis container (cleanup from previous runs)
-	exec.Command("podman", "stop", redisContainer).Run()
-	exec.Command("podman", "rm", redisContainer).Run()
+	stopCmd := exec.Command("podman", "stop", redisContainer)
+	stopCmd.Run() // Ignore error if container doesn't exist
+	rmCmd := exec.Command("podman", "rm", redisContainer)
+	rmCmd.Run() // Ignore error if container doesn't exist
 
 	// Start Redis container
 	cmd := exec.Command("podman", "run", "-d",

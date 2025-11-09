@@ -2,7 +2,6 @@ package notification
 
 import (
 	"errors"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -10,11 +9,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/notification/retry"
 )
-
-func TestRetry(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Retry Policy Suite")
-}
 
 var _ = Describe("BR-NOT-052: Retry Policy", func() {
 	var policy *retry.Policy

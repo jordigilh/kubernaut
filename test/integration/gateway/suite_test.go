@@ -74,12 +74,13 @@ var _ = BeforeSuite(func() {
 	err = os.Setenv("KUBECONFIG", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Start Redis container for integration tests
+	// Start Redis container for integration tests (with cleanup first)
+	suiteLogger.Info("Cleaning up existing Redis container...")
+	_ = infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
+
 	suiteLogger.Info("Starting Redis container...")
 	err = infrastructure.StartRedisContainer("redis-integration", 6379, GinkgoWriter)
-	if err != nil {
-		suiteLogger.Warn("Failed to start Redis container, may already be running", zap.Error(err))
-	}
+	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests")
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Infrastructure Setup Complete")
