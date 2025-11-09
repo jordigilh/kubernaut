@@ -521,19 +521,47 @@ func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageC
 
 func waitForServiceReady(infra *DataStorageInfrastructure, writer io.Writer) error {
 	// Wait up to 30 seconds for service to be ready
+	var lastStatusCode int
+	var lastError error
+
 	Eventually(func() int {
 		resp, err := http.Get(infra.ServiceURL + "/health")
-		if err != nil || resp == nil {
+		if err != nil {
+			lastError = err
+			lastStatusCode = 0
+			fmt.Fprintf(writer, "    Health check attempt failed: %v\n", err)
+			return 0
+		}
+		if resp == nil {
+			lastStatusCode = 0
 			return 0
 		}
 		defer resp.Body.Close()
-		return resp.StatusCode
+		lastStatusCode = resp.StatusCode
+		if lastStatusCode != 200 {
+			fmt.Fprintf(writer, "    Health check returned status %d (expected 200)\n", lastStatusCode)
+		}
+		return lastStatusCode
 	}, "30s", "1s").Should(Equal(200), "Data Storage Service should be healthy")
 
-	// Print container logs for debugging (first 100 lines)
-	logs, logErr := exec.Command("podman", "logs", "--tail", "100", infra.ServiceContainer).CombinedOutput()
-	if logErr == nil {
-		fmt.Fprintf(writer, "\n📋 Data Storage Service logs:\n%s\n", string(logs))
+	// If we got here and status is not 200, print diagnostics
+	if lastStatusCode != 200 {
+		fmt.Fprintf(writer, "\n❌ Data Storage Service health check failed\n")
+		fmt.Fprintf(writer, "  Last status code: %d\n", lastStatusCode)
+		if lastError != nil {
+			fmt.Fprintf(writer, "  Last error: %v\n", lastError)
+		}
+
+		// Print container logs for debugging
+		logs, logErr := exec.Command("podman", "logs", "--tail", "200", infra.ServiceContainer).CombinedOutput()
+		if logErr == nil {
+			fmt.Fprintf(writer, "\n📋 Data Storage Service logs (last 200 lines):\n%s\n", string(logs))
+		}
+
+		// Check if container is running
+		statusCmd := exec.Command("podman", "ps", "--filter", fmt.Sprintf("name=%s", infra.ServiceContainer), "--format", "{{.Status}}")
+		statusOutput, _ := statusCmd.CombinedOutput()
+		fmt.Fprintf(writer, "  Container status: %s\n", strings.TrimSpace(string(statusOutput)))
 	}
 
 	fmt.Fprintf(writer, "  ✅ Data Storage Service ready at %s\n", infra.ServiceURL)

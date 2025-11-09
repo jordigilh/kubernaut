@@ -41,10 +41,8 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/sirupsen/logrus"
-
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	notificationctrl "github.com/jordigilh/kubernaut/internal/controller/notification"
+	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
 	// +kubebuilder:scaffold:imports
@@ -144,13 +142,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	By("Setting up the Notification controller with delivery services")
-	// Create test logger
-	testLogger := logrus.New()
-	testLogger.SetOutput(GinkgoWriter)
-	testLogger.SetLevel(logrus.InfoLevel)
-
-	// Create console delivery service
-	consoleService := delivery.NewConsoleDeliveryService(testLogger)
+	// Create console delivery service (no logger needed per DD-013 logging standard)
+	consoleService := delivery.NewConsoleDeliveryService()
 
 	// Create Slack delivery service with mock webhook URL
 	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
@@ -159,7 +152,7 @@ var _ = BeforeSuite(func() {
 	sanitizer := sanitization.NewSanitizer()
 
 	// Create controller with all dependencies
-	err = (&notificationctrl.NotificationRequestReconciler{
+	err = (&notification.NotificationRequestReconciler{
 		Client:         k8sManager.GetClient(),
 		Scheme:         k8sManager.GetScheme(),
 		ConsoleService: consoleService,

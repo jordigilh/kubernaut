@@ -108,7 +108,7 @@ func NewServerWithMetrics(
 
 	dsClient := dsclient.NewDataStorageClient(dsclient.Config{
 		BaseURL:        cfg.DataStorageBaseURL,
-		Timeout:        10 * time.Second, // BR-CONTEXT-011: Request timeout
+		Timeout:        10 * time.Second, // BR-CONTEXT-014: Request timeout
 		MaxConnections: 100,              // BR-CONTEXT-012: Connection pooling
 	})
 
@@ -732,7 +732,7 @@ var knownEndpoints = map[string]bool{
 
 // normalizePath normalizes HTTP paths for Prometheus metrics to prevent cardinality explosion
 // DD-005: Observability Standards - Metric cardinality management
-// BR-CONTEXT-006: Observability and monitoring
+// BR-CONTEXT-013: Observability and monitoring
 //
 // Examples:
 //   - /api/v1/context/query → /api/v1/context/query (unchanged)
@@ -906,7 +906,7 @@ func getIntOrDefault(s string, def int) int {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Business Requirements:
 // - BR-CONTEXT-008: REST API for LLM context (fully implemented)
-// - BR-CONTEXT-006: Observability (metrics + health checks)
+// - BR-CONTEXT-013: Observability (metrics + health checks)
 //
 // Endpoints Implemented:
 // 1. Health: /health, /health/ready, /health/live

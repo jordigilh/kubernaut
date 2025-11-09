@@ -116,12 +116,15 @@
 
 ## 📋 Business Requirements Coverage
 
-| Category | Range | Description |
-|----------|-------|-------------|
-| **Primary** | BR-AI-001 to BR-AI-050 | AI analysis and HolmesGPT integration |
-| **Approval** | BR-AI-025, BR-AI-026, BR-AI-039 to BR-AI-046 | Rego-based approval policies |
-| **HolmesGPT** | BR-AI-031, BR-AI-048 to BR-AI-050 | Dynamic toolsets, confidence thresholds |
-| **Historical** | BR-AI-033 to BR-AI-036 | Success rate fallback mechanisms |
+**Status**: ⏸️ **Not Yet Available**
+
+> **Note**: Business Requirements documentation will be created after AI Analysis Controller implementation is complete and tested in production. The controller is currently in design phase and not yet implemented.
+
+**Planned Coverage**:
+- BR-AI-001 to BR-AI-050: AI analysis and HolmesGPT integration
+- BR-AI-025, BR-AI-026, BR-AI-039 to BR-AI-046: Rego-based approval policies
+- BR-AI-031, BR-AI-048 to BR-AI-050: Dynamic toolsets, confidence thresholds
+- BR-AI-033 to BR-AI-036: Success rate fallback mechanisms
 
 ---
 

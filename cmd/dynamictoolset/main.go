@@ -10,7 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/jordigilh/kubernaut/internal/toolset/k8s"
+	"github.com/jordigilh/kubernaut/pkg/k8sutil"
 	"github.com/jordigilh/kubernaut/pkg/toolset/server"
 )
 
@@ -35,18 +35,14 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	// Create Kubernetes client
-	k8sConfig := k8s.Config{
-		InCluster: true, // Production: use in-cluster config
-	}
-
-	client, err := k8s.NewClient(k8sConfig, logger)
+	// Create Kubernetes client using standard helper (DD-013)
+	clientset, err := k8sutil.NewClientset()
 	if err != nil {
 		logger.Fatal("Failed to create Kubernetes client", zap.Error(err))
 	}
 
 	// Verify client is working by checking API server version
-	serverVersion, err := client.Discovery().ServerVersion()
+	serverVersion, err := clientset.Discovery().ServerVersion()
 	if err != nil {
 		logger.Fatal("Failed to connect to Kubernetes API server", zap.Error(err))
 	}
@@ -63,7 +59,7 @@ func main() {
 		DiscoveryInterval: 5 * time.Minute,
 	}
 
-	srv, err := server.NewServer(serverConfig, client)
+	srv, err := server.NewServer(serverConfig, clientset)
 	if err != nil {
 		logger.Fatal("Failed to create HTTP server", zap.Error(err))
 	}

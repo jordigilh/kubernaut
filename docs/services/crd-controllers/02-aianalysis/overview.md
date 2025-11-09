@@ -329,18 +329,37 @@ aiAnalysis := &aianalysisv1.AIAnalysis{
 - **Port 8080**: Health probes (follows kube-apiserver pattern)
 - **Endpoint**: `/metrics`
 - **Format**: Prometheus text format
-- **Authentication**: Kubernetes TokenReviewer API (validates ServiceAccount tokens)
-  - **See**: [METRICS_AUTHENTICATION.md](../METRICS_AUTHENTICATION.md) for complete implementation examples
+- **Authentication**: Sidecar-based (deployment-time configuration)
+  - **See**: [DD-GATEWAY-006](../../../architecture/decisions/DD-GATEWAY-006-authentication-strategy.md) for layered security approach
+
+### Security Architecture (per DD-GATEWAY-006)
+
+**Layer 1: Network Isolation (MANDATORY)**
+- Kubernetes Network Policies restrict Prometheus access to metrics endpoint
+- Namespace isolation with strict ingress rules
+- Service-level TLS for traffic encryption
+
+**Layer 2: Transport Security (MANDATORY)**
+- TLS encryption for all traffic (Service TLS or reverse proxy)
+- Certificate management via cert-manager
+- Strong TLS 1.3 cipher suites
+
+**Layer 3: Application Authentication (OPTIONAL, Deployment-Specific)**
+- Sidecar containers for custom authentication (Envoy/Istio)
+- Protocol flexibility: mTLS, OAuth2, API keys, or custom protocols
+- No in-code authentication middleware
 
 ### ServiceAccount
 - **Name**: `ai-analysis-sa`
 - **Namespace**: `kubernaut-system`
-- **Purpose**: Controller authentication and authorization
+- **Purpose**: Controller authorization for Kubernetes API operations (CRD management, RBAC)
+- **Note**: NOT used for metrics endpoint authentication (handled by Network Policies + optional sidecar)
 
 ### Notes
 - CRD controllers do not expose REST APIs
 - Health checks (`/healthz`, `/readyz`) are for Kubernetes liveness/readiness probes
-- Metrics endpoint requires valid Kubernetes ServiceAccount token
+- Metrics endpoint security via Network Policies (mandatory) + optional sidecar authentication
+- No in-code authentication middleware per DD-GATEWAY-006
 
 ---
 
