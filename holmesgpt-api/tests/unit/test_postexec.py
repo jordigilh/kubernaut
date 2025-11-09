@@ -64,7 +64,7 @@ class TestPostExecEndpoint:
             # Missing required fields
         }
         response = client.post("/api/v1/postexec/analyze", json=invalid_request)
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400  # RFC 7807: Validation errors return 400 Bad Request
 
 
 class TestPostExecAnalysisLogic:

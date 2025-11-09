@@ -103,10 +103,32 @@ async def readiness_check():
     """
     Readiness probe endpoint
 
-    Business Requirement: BR-HAPI-127 (Readiness check endpoint)
+    Business Requirements:
+    - BR-HAPI-127 (Readiness check endpoint)
+    - BR-HAPI-201 (Graceful shutdown with DD-007 pattern)
 
+    TDD GREEN Phase: Check shutdown flag first
     REFACTOR phase: Real dependency health checks
     """
+    # Import shutdown flag from main module
+    # BR-HAPI-201: Return 503 during graceful shutdown
+    import src.main as main_module
+    
+    # Check if service is shutting down (DD-007 readiness coordination)
+    if hasattr(main_module, 'is_shutting_down') and main_module.is_shutting_down:
+        logger.info({
+            "event": "readiness_check_shutting_down",
+            "dd": "DD-007-readiness-503"
+        })
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "shutting_down",
+                "reason": "Service is gracefully shutting down"
+            }
+        )
+    
+    # Check dependencies
     dependencies = _check_dependencies()
 
     # Check if all critical dependencies are up
