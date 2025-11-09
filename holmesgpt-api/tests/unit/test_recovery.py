@@ -72,7 +72,7 @@ class TestRecoveryEndpoint:
             # Missing failed_action and failure_context
         }
         response = client.post("/api/v1/recovery/analyze", json=invalid_request)
-        assert response.status_code == 422  # Validation error
+        assert response.status_code == 400  # RFC 7807: Validation errors return 400 Bad Request
 
 
 class TestRecoveryAnalysisLogic:
