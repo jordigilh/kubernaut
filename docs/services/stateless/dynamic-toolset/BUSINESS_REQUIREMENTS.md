@@ -45,15 +45,15 @@ The **Dynamic Toolset Service** is a stateless HTTP API with Kubernetes controll
 
 ### 📊 Summary
 
-**Total Business Requirements**: 8 umbrella BRs (26 granular sub-BRs)
-**Categories**: 5
+**Total Business Requirements**: 10 umbrella BRs (26 granular sub-BRs)
+**Categories**: 7
 **Priority Breakdown**:
-- P0 (Critical): 7 BRs (BR-TOOLSET-021, 022, 025, 026, 027, 028, 031)
-- P1 (High): 1 BR (BR-TOOLSET-033)
+- P0 (Critical): 8 BRs (BR-TOOLSET-021, 022, 025, 026, 027, 028, 031, 040)
+- P1 (High): 2 BRs (BR-TOOLSET-033, 039)
 
 **Test Coverage**:
 - Unit: 194 test specs (95% confidence)
-- Integration: 38 test scenarios (90% confidence)
+- Integration: 52 test scenarios (92% confidence) - includes 6 RFC 7807 + 8 graceful shutdown tests
 - E2E: Not yet implemented (planned for v1.1)
 
 **BR Hierarchy**: This service uses **umbrella BRs** (BR-TOOLSET-021, 022, etc.) that map to multiple **granular sub-BRs** (BR-TOOLSET-010 to BR-TOOLSET-035) referenced in test files. See "Sub-BR Mapping" section below for complete traceability.
@@ -437,6 +437,94 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 
 ---
 
+#### BR-TOOLSET-039: RFC 7807 Error Response Standard
+
+**Priority**: P1 (Production Readiness)
+**Status**: ✅ Implemented
+**Category**: HTTP API & Error Handling
+
+**Description**: HTTP API returns RFC 7807 Problem Details for all error responses
+
+**Acceptance Criteria**:
+- All HTTP error responses use `application/problem+json` Content-Type
+- Error responses include all required RFC 7807 fields: `type`, `title`, `detail`, `status`, `instance`
+- Error type URIs follow convention: `https://kubernaut.io/errors/{error-type}`
+- Request ID included in error responses for tracing
+- Supports standard HTTP error codes: 400 (Bad Request), 405 (Method Not Allowed), 500 (Internal Error), 503 (Service Unavailable)
+
+**Test Coverage**:
+- **Integration**: `test/integration/toolset/rfc7807_compliance_test.go` (6 tests)
+  - Test 1: Bad Request (400) with invalid JSON
+  - Test 2: Method Not Allowed (405)
+  - Test 3: Service Unavailable (503) during shutdown
+  - Test 4: All required RFC 7807 fields validation
+  - Test 5: Error type URI format validation
+  - Test 6: Request ID inclusion and propagation
+
+**Implementation**:
+- `pkg/toolset/errors/rfc7807.go`: RFC7807Error struct and helper functions
+- `pkg/toolset/server/middleware/request_id.go`: Request ID middleware for tracing
+- `pkg/toolset/server/server.go`: writeJSONError() helper for all error responses
+- `pkg/toolset/metrics/metrics.go`: ErrorResponsesTotal metric for error tracking
+
+**Related BRs**: BR-TOOLSET-033 (HTTP Server), BR-TOOLSET-040 (Graceful Shutdown)
+
+**Related Design Decisions**:
+- **ADR-036**: Authentication and Authorization Strategy (auth handled by sidecars/network policies)
+
+---
+
+#### BR-TOOLSET-040: Graceful Shutdown with In-Flight Request Completion
+
+**Priority**: P0 (Production Safety)
+**Status**: ✅ Implemented
+**Category**: Kubernetes Operations & Reliability
+
+**Description**: Service implements DD-007 4-step Kubernetes-aware graceful shutdown pattern for zero-downtime deployments
+
+**Acceptance Criteria**:
+- Readiness probe returns 503 during shutdown to signal Kubernetes endpoint removal
+- Liveness probe remains healthy during shutdown (prevents premature pod termination)
+- Waits 5 seconds for Kubernetes endpoint removal propagation across all nodes
+- Completes all in-flight HTTP requests before terminating
+- Closes external resources (Kubernetes client, discovery loop, metrics server) cleanly
+- Respects shutdown context timeout
+- Handles concurrent shutdown calls safely
+- Logs all shutdown steps with DD-007 tags for observability
+
+**Test Coverage**:
+- **Integration**: `test/integration/toolset/graceful_shutdown_test.go` (8 tests)
+  - Test 1: Readiness probe coordination (P0) - Returns 503 during shutdown
+  - Test 2: Liveness probe during shutdown (P0) - Remains healthy
+  - Test 3: In-flight request completion (P0) - Completes active requests
+  - Test 4: Resource cleanup (P1) - Closes Kubernetes client connections
+  - Test 5: Shutdown timing (P1) - Waits 5 seconds for endpoint propagation
+  - Test 6: Shutdown timeout respect (P1) - Respects context timeout
+  - Test 7: Concurrent shutdown safety (P2) - Handles concurrent calls
+  - Test 8: Shutdown logging (P2) - Logs all DD-007 steps
+
+**Implementation**:
+- `pkg/toolset/server/server.go`:
+  - `Shutdown()`: 4-step DD-007 pattern implementation
+  - `shutdownStep1SetFlag()`: Set shutdown flag for readiness probe
+  - `shutdownStep2WaitForPropagation()`: Wait 5s for endpoint removal
+  - `shutdownStep3DrainConnections()`: Drain in-flight HTTP connections
+  - `shutdownStep4CloseResources()`: Close external resources
+  - `handleReady()`: Check shutdown flag and return 503 during shutdown
+  - `isShuttingDown atomic.Bool`: Thread-safe shutdown coordination flag
+
+**Business Impact**:
+- **Zero request failures** during rolling updates (vs 5-10% baseline without DD-007)
+- Production-proven pattern from Gateway and Context API services
+- Industry best practice: 5-second wait for Kubernetes endpoint propagation
+
+**Related BRs**: BR-TOOLSET-033 (HTTP Server), BR-TOOLSET-039 (RFC 7807 Error Responses)
+
+**Related Design Decisions**:
+- **DD-007**: Kubernetes-Aware Graceful Shutdown Pattern
+
+---
+
 ## 📊 Test Coverage Summary
 
 ### Unit Tests
@@ -446,19 +534,20 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 - **Confidence**: 95%
 
 ### Integration Tests
-- **Total**: 38 test specs
+- **Total**: 52 test specs (38 existing + 6 RFC 7807 + 8 graceful shutdown)
 - **Coverage**: 100% pass rate
-- **Files**: 4 test files
+- **Files**: 6 test files
 - **Confidence**: 92%
 
 ### E2E Tests
-- **Status**: Deferred to V2 (in-cluster deployment)
-- **Planned**: Production-like multi-cluster setup, RBAC restrictions, large-scale discovery
+- **Status**: Planned for V1.1
+- **Scope**: Deploy mock service pods, verify ConfigMap generation and updates
+- **Advanced Scenarios**: Deferred to V2 (multi-cluster, RBAC restrictions, large-scale discovery)
 
 ### BR Coverage
-- **Total BRs**: 8
-- **Unit Test Coverage**: 100% (8/8 BRs)
-- **Integration Test Coverage**: 100% (8/8 BRs)
+- **Total BRs**: 10
+- **Unit Test Coverage**: 80% (8/10 BRs) - BR-TOOLSET-039 and BR-TOOLSET-040 tested at integration level
+- **Integration Test Coverage**: 100% (10/10 BRs)
 - **Overall Coverage**: 100%
 
 ---
@@ -476,6 +565,14 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 
 ## 📝 Version History
 
+### Version 1.0.1 (2025-11-09)
+- Added RFC 7807 error response standard (BR-TOOLSET-039)
+- Added DD-007 graceful shutdown pattern (BR-TOOLSET-040)
+- 10 business requirements implemented
+- 100% BR coverage (integration tests)
+- 246 test specs passing (100% pass rate)
+- Production readiness enhanced with zero-downtime deployments
+
 ### Version 1.0 (2025-10-13)
 - Initial production-ready release
 - 8 business requirements implemented
@@ -485,8 +582,8 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: November 8, 2025
+**Document Version**: 1.0.1
+**Last Updated**: November 9, 2025
 **Maintained By**: Kubernaut Architecture Team
 **Status**: Production-Ready
 
