@@ -6,10 +6,15 @@ Design Decision: DD-HOLMESGPT-012 - Minimal Internal Service Architecture
 - Internal-only service (network policies handle access control)
 - Kubernetes RBAC handles authorization
 - Simple authentication (ServiceAccount tokens)
+
+Business Requirements:
+- BR-HAPI-200: RFC 7807 Error Response Standard
+- BR-HAPI-201: Graceful Shutdown with DD-007 Pattern
 """
 
 import logging
 import os
+import signal
 import yaml
 from pathlib import Path
 from typing import Dict, Any
@@ -28,6 +33,54 @@ from src.extensions import recovery, postexec, health
 from src.middleware.auth import AuthenticationMiddleware
 from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
 from src.middleware.rfc7807 import add_rfc7807_exception_handlers
+
+
+# ========================================
+# GRACEFUL SHUTDOWN STATE (GREEN Phase)
+# ========================================
+
+# Global shutdown flag for readiness probe coordination
+# BR-HAPI-201: Graceful shutdown with DD-007 pattern
+# TDD GREEN Phase: Minimal implementation to make tests pass
+is_shutting_down = False
+
+
+def handle_shutdown_signal(signum, frame):
+    """
+    Handle SIGTERM/SIGINT for graceful shutdown
+    
+    Business Requirement: BR-HAPI-201
+    Design Decision: DD-007 - Kubernetes-Aware Graceful Shutdown
+    
+    TDD GREEN Phase: Minimal implementation
+    Sets shutdown flag to signal readiness probe to return 503.
+    uvicorn handles the actual graceful shutdown automatically.
+    """
+    global is_shutting_down
+    
+    signal_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
+    
+    logger.info({
+        "event": "shutdown_signal_received",
+        "signal": signal_name,
+        "dd": "DD-007-step1-signal-received"
+    })
+    
+    # Set shutdown flag - readiness probe will now return 503
+    is_shutting_down = True
+    
+    logger.info({
+        "event": "shutdown_flag_set",
+        "readiness_probe": "will_return_503",
+        "dd": "DD-007-step2-readiness-coordination"
+    })
+
+
+# Register signal handlers
+signal.signal(signal.SIGTERM, handle_shutdown_signal)
+signal.signal(signal.SIGINT, handle_shutdown_signal)
+
+logger.info("Signal handlers registered for graceful shutdown (SIGTERM, SIGINT)")
 
 
 def load_config() -> Dict[str, Any]:
