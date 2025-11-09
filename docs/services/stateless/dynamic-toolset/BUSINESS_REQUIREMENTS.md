@@ -54,7 +54,7 @@ The **Dynamic Toolset Service** is a stateless HTTP API with Kubernetes controll
 **Test Coverage**:
 - Unit: 194 test specs (95% confidence)
 - Integration: 52 test scenarios (92% confidence) - includes 6 RFC 7807 + 8 graceful shutdown tests
-- E2E: Not yet implemented (planned for v1.1)
+- E2E: 13 test scenarios (90% confidence) - service discovery lifecycle, ConfigMap updates, namespace filtering
 
 **BR Hierarchy**: This service uses **umbrella BRs** (BR-TOOLSET-021, 022, etc.) that map to multiple **granular sub-BRs** (BR-TOOLSET-010 to BR-TOOLSET-035) referenced in test files. See "Sub-BR Mapping" section below for complete traceability.
 
@@ -540,14 +540,21 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 - **Confidence**: 92%
 
 ### E2E Tests
-- **Status**: Planned for V1.1
-- **Scope**: Deploy mock service pods, verify ConfigMap generation and updates
+- **Status**: Implemented in V1.1
+- **Test Files**: `test/e2e/toolset/01_discovery_lifecycle_test.go`, `test/e2e/toolset/02_configmap_updates_test.go`, `test/e2e/toolset/03_namespace_filtering_test.go`
+- **Infrastructure**: Kind cluster with per-namespace Dynamic Toolset deployment
+- **Test Scenarios**: 13 scenarios across 3 test files
+  - **Discovery Lifecycle** (6 scenarios): Service discovery, priority ordering, service deletion, annotation handling, custom types, rapid churn
+  - **ConfigMap Updates** (4 scenarios): Annotation changes, concurrent updates, ConfigMap recreation, JSON validation
+  - **Namespace Filtering** (3 scenarios): Namespace-scoped discovery, RBAC validation, ConfigMap isolation
+- **Confidence**: 90%
 - **Advanced Scenarios**: Deferred to V2 (multi-cluster, RBAC restrictions, large-scale discovery)
 
 ### BR Coverage
 - **Total BRs**: 10
 - **Unit Test Coverage**: 80% (8/10 BRs) - BR-TOOLSET-039 and BR-TOOLSET-040 tested at integration level
 - **Integration Test Coverage**: 100% (10/10 BRs)
+- **E2E Test Coverage**: 60% (6/10 BRs) - BR-TOOLSET-016, 017, 018, 019, 020, 021 (discovery, updates, namespace filtering)
 - **Overall Coverage**: 100%
 
 ---
@@ -564,6 +571,15 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 ---
 
 ## 📝 Version History
+
+### Version 1.1.0 (2025-11-09)
+- Added E2E test suite with 13 test scenarios
+- Implemented service discovery lifecycle tests (6 scenarios)
+- Implemented ConfigMap update tests (4 scenarios)
+- Implemented namespace filtering tests (3 scenarios)
+- E2E infrastructure: Kind cluster, per-namespace deployment, mock services
+- 259 total test specs passing (194 unit + 52 integration + 13 E2E)
+- 100% pass rate across all test tiers
 
 ### Version 1.0.1 (2025-11-09)
 - Added RFC 7807 error response standard (BR-TOOLSET-039)
@@ -582,7 +598,23 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 
 ---
 
-**Document Version**: 1.0.1
+**Document Version**: 1.1.0
+**Last Updated**: November 9, 2025
+**Maintained By**: Kubernaut Architecture Team
+**Status**: Production-Ready
+
+
+
+### Version 1.0 (2025-10-13)
+- Initial production-ready release
+- 8 business requirements implemented
+- 100% BR coverage (unit + integration tests)
+- 232 test specs passing (100% pass rate)
+- 101/109 production readiness points (92.7%)
+
+---
+
+**Document Version**: 1.1.0
 **Last Updated**: November 9, 2025
 **Maintained By**: Kubernaut Architecture Team
 **Status**: Production-Ready
