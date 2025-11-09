@@ -1,0 +1,44 @@
+# Mock service template for Dynamic Toolset E2E tests
+# This template is used to deploy nginx pods with HolmesGPT annotations
+# that Dynamic Toolset should discover and generate kubectl tools for
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{SERVICE_NAME}}
+  namespace: {{NAMESPACE}}
+  annotations:
+{{ANNOTATIONS}}
+spec:
+  selector:
+    app: {{SERVICE_NAME}}
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{SERVICE_NAME}}
+  namespace: {{NAMESPACE}}
+  annotations:
+{{ANNOTATIONS}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{SERVICE_NAME}}
+  template:
+    metadata:
+      labels:
+        app: {{SERVICE_NAME}}
+      annotations:
+{{ANNOTATIONS}}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+
