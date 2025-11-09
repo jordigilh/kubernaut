@@ -1,18 +1,11 @@
 package notification
 
 import (
-	"testing"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
 )
-
-func TestSanitization(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Data Sanitization Suite")
-}
 
 var _ = Describe("Data Sanitization", func() {
 	var sanitizer *sanitization.Sanitizer

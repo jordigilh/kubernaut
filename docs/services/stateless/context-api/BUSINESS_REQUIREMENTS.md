@@ -550,6 +550,24 @@ return nil, 0, rfc7807Err
 
 ---
 
+### **BR-CONTEXT-015: Cache Configuration Validation**
+**Description**: Context API must validate cache configuration at startup to prevent runtime failures and ensure performance SLAs (<50ms response time)
+**Priority**: P1 (High)
+**Status**: ✅ Active
+**Test Coverage**: ✅ Unit
+**Implementation**: `pkg/contextapi/cache/`
+**Tests**: `test/unit/contextapi/cache_manager_test.go:27`
+**Details**:
+- **AC-015-01**: Redis address must be validated (format + connectivity)
+- **AC-015-02**: Cache TTL must be validated (1s ≤ TTL ≤ 1h)
+- **AC-015-03**: LRU size must be validated (100 ≤ size ≤ 10,000)
+- **AC-015-04**: Invalid configuration must prevent service startup
+- **AC-015-05**: Configuration errors must be logged with clear guidance
+**Rationale**: Cache misconfiguration causes cascading failures (high latency, database overload). Early validation prevents production incidents.
+**Related BRs**: BR-CONTEXT-005 (Cache fallback), BR-CONTEXT-008 (Performance)
+
+---
+
 ### **BR-CONTEXT-OPT-004: Edge Cases and Boundary Conditions**
 **Description**: Context API must handle edge cases and boundary conditions in context optimization
 **Priority**: P2 (Medium)

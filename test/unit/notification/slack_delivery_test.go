@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,11 +13,6 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 )
-
-func TestSlackDelivery(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Slack Delivery Suite")
-}
 
 var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 	var (

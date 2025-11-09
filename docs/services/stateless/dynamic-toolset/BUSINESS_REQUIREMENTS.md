@@ -266,6 +266,34 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 
 ---
 
+#### BR-TOOLSET-038: Namespace Requirement
+
+**Description**: The Dynamic Toolset Service MUST write ConfigMaps to the `kubernaut-system` namespace for architectural consistency and RBAC security.
+
+**Priority**: P1 (HIGH)
+
+**Status**: ✅ Active
+
+**Rationale**:
+1. **Architectural Consistency**: All kubernaut system components use `kubernaut-system`
+2. **RBAC Security**: Least-privilege principle - service only needs access to one namespace
+3. **HolmesGPT Integration**: HolmesGPT expects ConfigMap in known namespace
+
+**Acceptance Criteria**:
+- **AC-038-01**: ConfigMaps MUST be created in `kubernaut-system` namespace
+- **AC-038-02**: Service MUST reject ConfigMap writes to other namespaces
+- **AC-038-03**: RBAC permissions MUST be scoped to `kubernaut-system` only
+- **AC-038-04**: API specification MUST document namespace requirement
+
+**Test Coverage**:
+- Unit: `test/unit/toolset/configmap_builder_test.go:25`
+
+**Implementation**: `pkg/toolset/configmap/builder.go`
+
+**Related BRs**: BR-TOOLSET-021 (ConfigMap Generation)
+
+---
+
 ### Category 3: Toolset Generation
 
 #### BR-TOOLSET-027: HolmesGPT Toolset Generation
