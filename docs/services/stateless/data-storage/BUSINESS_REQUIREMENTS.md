@@ -419,16 +419,21 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 #### **BR-STORAGE-026: Unicode Support in Query Parameters**
 - **Priority**: P1
 - **Status**: ✅ Active
-- **Description**: Support Unicode characters (Arabic, Chinese, emoji) in query parameters (namespace, status, phase) without SQL injection or data corruption
+- **Description**: Support Unicode characters (Arabic, Chinese, Thai, emoji) in query parameters (namespace, status, phase) without SQL injection or data corruption
 - **Business Value**: Enable global deployments with international namespace names and emoji-based identifiers
 - **Test Coverage**:
-  - Unit: `test/unit/datastorage/query_builder_test.go:69` (Arabic, Chinese, Emoji, Mixed)
+  - Unit: `test/unit/datastorage/query_builder_test.go:69` (Arabic, Chinese, Thai, Emoji, Mixed)
 - **Implementation**: `pkg/datastorage/query/builder.go`
 - **Related BRs**: BR-STORAGE-021 (SQL injection protection), BR-STORAGE-005 (query filtering)
 - **Technical Details**:
   - Parameterized queries prevent SQL injection with Unicode
   - UTF-8 encoding preserved through PostgreSQL
-  - Test cases: Arabic (مساحة-الإنتاج), Chinese (生产环境), Emoji (prod-🚀), Mixed (prod-环境-🔥)
+  - Test cases: 
+    - Arabic (مساحة-الإنتاج)
+    - Chinese (生产环境)
+    - Thai (สภาพแวดล้อม-การผลิต)
+    - Emoji (prod-🚀)
+    - Mixed (prod-环境-🔥)
 
 ---
 
