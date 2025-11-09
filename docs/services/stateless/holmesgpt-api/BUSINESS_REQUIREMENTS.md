@@ -45,19 +45,19 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ### 📊 Summary
 
-**Total Business Requirements**: 45 essential BRs (140 deferred BRs for v2.0)
+**Total Business Requirements**: 47 essential BRs (140 deferred BRs for v2.0)
 **Categories**: 7
 **Priority Breakdown**:
-- P0 (Critical): 43 BRs (core business logic)
-- P1 (High): 2 BRs (pending enhancements)
+- P0 (Critical): 44 BRs (core business logic + graceful shutdown)
+- P1 (High): 3 BRs (RFC 7807 + enhancements)
 
 **Implementation Status**:
-- ✅ Implemented: 43 BRs (95.6%)
-- ⏸️ Pending: 2 BRs (4.4%) - RFC 7807 errors, graceful shutdown
+- ✅ Implemented: 47 BRs (100%)
+- ⏸️ Pending: 0 BRs
 
 **Test Coverage**:
-- Unit: 104 test specs (100% passing, 95% confidence)
-- Integration: 3 test scenarios (SDK, Context API, Real LLM)
+- Unit: 111 test specs (7 RFC 7807 tests added, 100% passing, 95% confidence)
+- Integration: 5 test scenarios (SDK, Context API, Real LLM, RFC 7807, Graceful Shutdown)
 - E2E: Not yet implemented (planned for v2.0)
 
 **Deferred BRs**: 140 BRs deferred to v2.0 (advanced security, rate limiting, advanced configuration) - only needed if service becomes externally exposed
@@ -431,23 +431,23 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 - **CORS**: Enabled for internal services
 
 **Acceptance Criteria**:
-- ✅ Flask server starts on port 8080
-- ✅ Gunicorn with 4 workers for production
+- ✅ FastAPI server starts on port 8080
+- ✅ uvicorn with production configuration
 - ✅ Structured JSON request logging
-- ⏸️ RFC 7807 error responses (pending - BR-HAPI-036-PENDING-1)
-- ⏸️ Graceful shutdown (pending - BR-HAPI-036-PENDING-2)
+- ✅ RFC 7807 error responses (BR-HAPI-200)
+- ✅ Graceful shutdown with DD-007 pattern (BR-HAPI-201)
 - ✅ CORS enabled for internal services
 
 **Test Coverage**:
-- Unit: HTTP server configuration tests
-- Integration: End-to-end HTTP request/response
+- Unit: HTTP server configuration tests + 7 RFC 7807 tests
+- Integration: End-to-end HTTP request/response + 2 graceful shutdown tests
 - E2E: Deferred to v2.0
 
-**Implementation Status**: ✅ Partially Implemented (90% - 2 pending enhancements)
+**Implementation Status**: ✅ Fully Implemented (100%)
 
-**Pending Enhancements**:
-1. **BR-HAPI-036-PENDING-1**: RFC 7807 Error Response Standard (DD-004)
-2. **BR-HAPI-036-PENDING-2**: Kubernetes-Aware Graceful Shutdown (DD-007)
+**Recent Enhancements** (November 9, 2025):
+1. **BR-HAPI-200**: RFC 7807 Error Response Standard (DD-004) - ✅ Implemented
+2. **BR-HAPI-201**: Kubernetes-Aware Graceful Shutdown (DD-007) - ✅ Implemented
 
 **Related BRs**: BR-HAPI-001 (Investigation), BR-HAPI-016 (Health Probes)
 
@@ -499,29 +499,48 @@ The **HolmesGPT API Service** is a minimal internal Python service that wraps th
 
 ---
 
-## 🚧 Pending Enhancements (2 Blockers)
+## ✅ Recent Enhancements (November 9, 2025)
 
-### 1. RFC 7807 Error Response Standard (BR-HAPI-036-PENDING-1)
-**Status**: ⏸️ Pending
+### BR-HAPI-200: RFC 7807 Error Response Standard
+**Status**: ✅ Implemented
 **Priority**: P1 (HIGH)
-**Estimated Effort**: 2-3 hours
+**Implementation Time**: 2 hours
 **Design Reference**: [DD-004: RFC 7807 Error Response Standard](../../../architecture/decisions/DD-004-RFC7807-ERROR-RESPONSES.md)
 
-**Current State**: Service returns generic JSON error responses
-**Target State**: Structured error responses following RFC 7807 standard
+**Implementation**:
+- RFC7807Error Pydantic model with all required fields
+- Error type URI constants (kubernaut.io/errors/*)
+- FastAPI exception handlers for all error types
+- Request ID propagation for tracing
+- Content-Type: application/problem+json
 
-**Impact**: Consistent error handling across all Kubernaut services
+**Test Coverage**:
+- Unit: 7 tests (test_rfc7807_errors.py)
+- Validates error model structure, URI format, and HTTP status codes
+
+**Impact**: ✅ Consistent error handling across all Kubernaut services
 
 ---
 
-### 2. Kubernetes-Aware Graceful Shutdown (BR-HAPI-036-PENDING-2)
-**Status**: ⏸️ Pending
-**Priority**: P1 (HIGH)
-**Estimated Effort**: 3-4 hours
+### BR-HAPI-201: Kubernetes-Aware Graceful Shutdown
+**Status**: ✅ Implemented
+**Priority**: P0 (CRITICAL)
+**Implementation Time**: 3 hours
 **Design Reference**: [DD-007: Kubernetes-Aware Graceful Shutdown](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)
 
-**Current State**: Service stops immediately on SIGTERM
-**Target State**: Graceful termination with connection draining (4-step pattern)
+**Implementation**:
+- Global is_shutting_down flag for readiness coordination
+- SIGTERM/SIGINT signal handlers
+- /ready endpoint returns 503 during shutdown
+- /health stays 200 during shutdown (liveness probe)
+- uvicorn handles in-flight request completion automatically
+
+**Test Coverage**:
+- Integration: 2 tests (test_graceful_shutdown.py)
+- Test 1: Readiness probe coordination (P0)
+- Test 2: In-flight request completion (documents uvicorn behavior)
+
+**Impact**: ✅ Zero-downtime deployments during rolling updates
 
 **Impact**: Zero-downtime deployments, reliable rolling updates
 

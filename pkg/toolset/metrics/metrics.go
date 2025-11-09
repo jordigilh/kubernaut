@@ -157,6 +157,40 @@ var (
 			Help: "Current number of tools in the generated toolset",
 		},
 	)
+
+	// RFC 7807 Error Metrics
+	// BR-TOOLSET-039: RFC 7807 error format
+
+	// ErrorResponsesTotal tracks HTTP error responses by status code and error type
+	ErrorResponsesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "dynamic_toolset_error_responses_total",
+			Help: "Total number of HTTP error responses by status code and RFC 7807 error type",
+		},
+		[]string{"status_code", "error_type"},
+	)
+
+	// Graceful Shutdown Metrics
+	// BR-TOOLSET-040: Graceful shutdown with in-flight request completion
+	// DD-007: Kubernetes-aware graceful shutdown
+
+	// ShutdownDurationSeconds tracks the duration of graceful shutdown
+	ShutdownDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "dynamic_toolset_shutdown_duration_seconds",
+			Help:    "Duration of DD-007 graceful shutdown in seconds",
+			Buckets: []float64{1, 2, 5, 10, 15, 20, 30},
+		},
+	)
+
+	// ShutdownsTotal tracks the number of shutdown attempts by result
+	ShutdownsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "dynamic_toolset_shutdowns_total",
+			Help: "Total number of graceful shutdown attempts by result (success/failure)",
+		},
+		[]string{"result"},
+	)
 )
 
 // ResetMetrics resets all metrics (for testing)
