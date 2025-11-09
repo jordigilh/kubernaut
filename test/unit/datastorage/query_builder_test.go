@@ -77,6 +77,7 @@ var _ = Describe("SQL Query Builder - BR-STORAGE-021, BR-STORAGE-022", func() {
 		},
 		Entry("Arabic", "مساحة-الإنتاج"),
 		Entry("Chinese", "生产环境"),
+		Entry("Thai", "สภาพแวดล้อม-การผลิต"),
 		Entry("Emoji", "prod-🚀"),
 		Entry("Mixed", "prod-环境-🔥"),
 	)
