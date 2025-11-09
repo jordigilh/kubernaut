@@ -32,16 +32,16 @@ from typing import Optional
 def test_rfc7807_error_model_structure():
     """
     Test 1: RFC7807Error Pydantic model has all required fields
-    
+
     BR-HAPI-200: RFC 7807 error format
-    
+
     Validates:
     - All required RFC 7807 fields present: type, title, detail, status, instance
     - Optional request_id field for tracing
     - Correct field types (str for most, int for status)
     """
     from src.errors import RFC7807Error
-    
+
     # Create RFC 7807 error with all fields
     error = RFC7807Error(
         type="https://kubernaut.io/errors/validation-error",
@@ -51,7 +51,7 @@ def test_rfc7807_error_model_structure():
         instance="/api/v1/recovery/analyze",
         request_id="test-request-123"
     )
-    
+
     # Verify all required fields present
     assert error.type == "https://kubernaut.io/errors/validation-error"
     assert error.title == "Bad Request"
@@ -59,7 +59,7 @@ def test_rfc7807_error_model_structure():
     assert error.status == 400
     assert error.instance == "/api/v1/recovery/analyze"
     assert error.request_id == "test-request-123"
-    
+
     # Verify model can be serialized to dict
     error_dict = error.dict()
     assert "type" in error_dict
@@ -77,9 +77,9 @@ def test_rfc7807_error_model_structure():
 def test_error_type_uri_format():
     """
     Test 2: Error type URIs follow kubernaut.io convention
-    
+
     BR-HAPI-200: RFC 7807 error format
-    
+
     Validates:
     - Error type URIs use https://kubernaut.io/errors/{error-type} format
     - Consistent with Gateway, Context API, Dynamic Toolset services
@@ -91,7 +91,7 @@ def test_error_type_uri_format():
         ERROR_TYPE_INTERNAL_ERROR,
         ERROR_TYPE_SERVICE_UNAVAILABLE
     )
-    
+
     # Verify all error type URIs follow convention
     assert ERROR_TYPE_VALIDATION_ERROR == "https://kubernaut.io/errors/validation-error"
     assert ERROR_TYPE_UNAUTHORIZED == "https://kubernaut.io/errors/unauthorized"
@@ -107,9 +107,9 @@ def test_error_type_uri_format():
 def test_bad_request_400_error():
     """
     Test 3: Bad Request (400) returns RFC 7807 error
-    
+
     BR-HAPI-200: RFC 7807 error format
-    
+
     Validates:
     - Status code 400
     - Content-Type: application/problem+json
@@ -117,14 +117,14 @@ def test_bad_request_400_error():
     - Error type: validation-error
     """
     from src.errors import create_rfc7807_error
-    
+
     error = create_rfc7807_error(
         status_code=400,
         detail="Missing required field: 'namespace'",
         instance="/api/v1/recovery/analyze",
         request_id="req-400-test"
     )
-    
+
     assert error.status == 400
     assert error.type == "https://kubernaut.io/errors/validation-error"
     assert error.title == "Bad Request"
@@ -140,23 +140,23 @@ def test_bad_request_400_error():
 def test_unauthorized_401_error():
     """
     Test 4: Unauthorized (401) returns RFC 7807 error
-    
+
     BR-HAPI-200: RFC 7807 error format
-    
+
     Validates:
     - Status code 401
     - Error type: unauthorized
     - Title: "Unauthorized"
     """
     from src.errors import create_rfc7807_error
-    
+
     error = create_rfc7807_error(
         status_code=401,
         detail="Invalid or missing authentication token",
         instance="/api/v1/recovery/analyze",
         request_id="req-401-test"
     )
-    
+
     assert error.status == 401
     assert error.type == "https://kubernaut.io/errors/unauthorized"
     assert error.title == "Unauthorized"
@@ -170,23 +170,23 @@ def test_unauthorized_401_error():
 def test_not_found_404_error():
     """
     Test 5: Not Found (404) returns RFC 7807 error
-    
+
     BR-HAPI-200: RFC 7807 error format
-    
+
     Validates:
     - Status code 404
     - Error type: not-found
     - Title: "Not Found"
     """
     from src.errors import create_rfc7807_error
-    
+
     error = create_rfc7807_error(
         status_code=404,
         detail="Analysis ID 'abc-123' not found",
         instance="/api/v1/recovery/status/abc-123",
         request_id="req-404-test"
     )
-    
+
     assert error.status == 404
     assert error.type == "https://kubernaut.io/errors/not-found"
     assert error.title == "Not Found"
@@ -200,23 +200,23 @@ def test_not_found_404_error():
 def test_internal_server_error_500():
     """
     Test 6: Internal Server Error (500) returns RFC 7807 error
-    
+
     BR-HAPI-200: RFC 7807 error format
-    
+
     Validates:
     - Status code 500
     - Error type: internal-error
     - Title: "Internal Server Error"
     """
     from src.errors import create_rfc7807_error
-    
+
     error = create_rfc7807_error(
         status_code=500,
         detail="Unexpected error during LLM analysis",
         instance="/api/v1/recovery/analyze",
         request_id="req-500-test"
     )
-    
+
     assert error.status == 500
     assert error.type == "https://kubernaut.io/errors/internal-error"
     assert error.title == "Internal Server Error"
@@ -230,9 +230,9 @@ def test_internal_server_error_500():
 def test_service_unavailable_503_error():
     """
     Test 7: Service Unavailable (503) returns RFC 7807 error
-    
+
     BR-HAPI-200: RFC 7807 error format
-    
+
     Validates:
     - Status code 503
     - Error type: service-unavailable
@@ -240,14 +240,14 @@ def test_service_unavailable_503_error():
     - Appropriate during graceful shutdown
     """
     from src.errors import create_rfc7807_error
-    
+
     error = create_rfc7807_error(
         status_code=503,
         detail="Service is shutting down gracefully",
         instance="/api/v1/recovery/analyze",
         request_id="req-503-test"
     )
-    
+
     assert error.status == 503
     assert error.type == "https://kubernaut.io/errors/service-unavailable"
     assert error.title == "Service Unavailable"

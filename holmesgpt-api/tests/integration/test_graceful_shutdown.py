@@ -25,55 +25,55 @@ from fastapi.testclient import TestClient
 def test_readiness_probe_returns_503_during_shutdown():
     """
     Test 1: Readiness probe returns 503 during graceful shutdown
-    
+
     BR-HAPI-201: Graceful shutdown with DD-007 pattern
-    
+
     TDD RED Phase: This test WILL FAIL because:
     - is_shutting_down flag doesn't exist in main.py
     - /ready endpoint doesn't check shutdown flag
-    
+
     Expected behavior:
     - /ready returns 200 before shutdown
     - /ready returns 503 during shutdown (after flag is set)
     - /health still returns 200 during shutdown (liveness stays healthy)
-    
+
     This is the critical coordination mechanism for zero-downtime deployments.
     """
     from src.main import app
-    
+
     # Create test client
     client = TestClient(app)
-    
+
     # STEP 1: Verify readiness probe returns 200 before shutdown
     response = client.get("/ready")
     assert response.status_code == 200, \
         "Readiness probe should return 200 before shutdown"
     assert response.json()["status"] == "ready", \
         "Service should be ready"
-    
+
     # STEP 2: Simulate shutdown by setting flag
     # This will fail because is_shutting_down doesn't exist yet (RED phase)
     try:
         # Try to access the shutdown flag
         import src.main as main_module
-        
+
         # This will raise AttributeError because flag doesn't exist (RED)
         if hasattr(main_module, 'is_shutting_down'):
             # Set shutdown flag
             main_module.is_shutting_down = True
-            
+
             # STEP 3: Verify readiness probe returns 503 during shutdown
             response = client.get("/ready")
             assert response.status_code == 503, \
                 "Readiness probe should return 503 during shutdown"
             assert response.json()["status"] == "shutting_down", \
                 "Status should indicate shutting down"
-            
+
             # STEP 4: Verify liveness probe still returns 200
             response = client.get("/health")
             assert response.status_code == 200, \
                 "Liveness probe should still return 200 during shutdown"
-            
+
             # Reset flag for other tests
             main_module.is_shutting_down = False
         else:
@@ -97,44 +97,44 @@ def test_readiness_probe_returns_503_during_shutdown():
 def test_inflight_request_completion():
     """
     Test 2: In-flight requests complete before shutdown
-    
+
     BR-HAPI-201: Graceful shutdown with DD-007 pattern
-    
+
     TDD RED Phase: This test documents expected behavior.
-    
+
     Note: uvicorn handles in-flight request completion automatically with SIGTERM.
     This test verifies the behavior is documented and understood.
-    
+
     Expected behavior:
     - Long-running requests complete successfully
     - Server waits for in-flight requests before terminating
     - No requests are dropped during graceful shutdown
-    
+
     This ensures zero request failures during rolling updates.
     """
     from src.main import app
     from fastapi import APIRouter
     import time
-    
+
     # Create test client
     client = TestClient(app)
-    
+
     # STEP 1: Verify we can make a request
     response = client.get("/health")
     assert response.status_code == 200, "Health endpoint should be accessible"
-    
+
     # STEP 2: Document uvicorn's graceful shutdown behavior
     # uvicorn automatically:
     # - Waits for in-flight requests to complete (default timeout: 30s)
     # - Closes server socket to prevent new connections
     # - Shuts down gracefully after all requests finish
-    
+
     # This test passes to document that uvicorn handles this automatically
     # No additional implementation needed for in-flight request completion
-    
+
     # The critical part is the readiness probe coordination (Test 1)
     # which prevents new requests from being routed to the shutting-down pod
-    
+
     assert True, "uvicorn handles in-flight request completion automatically"
 
 

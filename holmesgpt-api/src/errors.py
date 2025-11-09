@@ -1,7 +1,7 @@
 """
 Comprehensive Error Handling for HolmesGPT API Service
 
-Business Requirements: 
+Business Requirements:
 - BR-HAPI-146 to 165 (Error Handling)
 - BR-HAPI-200 (RFC 7807 Error Response Standard)
 
@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 class RFC7807Error(BaseModel):
     """
     RFC 7807 Problem Details for HTTP APIs
-    
+
     Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
     Design Decision: DD-004 - RFC 7807 Problem Details
-    
+
     Reference: https://tools.ietf.org/html/rfc7807
     Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
     Reference: Context API (pkg/contextapi/errors/rfc7807.go)
@@ -39,7 +39,7 @@ class RFC7807Error(BaseModel):
     status: int  # HTTP status code
     instance: str  # URI reference to specific occurrence
     request_id: Optional[str] = None  # Request tracing (extension member)
-    
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -70,13 +70,13 @@ def create_rfc7807_error(
 ) -> RFC7807Error:
     """
     Create RFC 7807 error response
-    
+
     Business Requirement: BR-HAPI-200
-    
+
     Maps HTTP status codes to RFC 7807 error types and titles.
     """
     error_type, title = _get_error_type_and_title(status_code)
-    
+
     return RFC7807Error(
         type=error_type,
         title=title,
