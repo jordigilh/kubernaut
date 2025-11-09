@@ -6,6 +6,7 @@ Business Requirements:
 - BR-HAPI-101: Monitor investigation duration
 - BR-HAPI-102: Track LLM API call metrics
 - BR-HAPI-103: Monitor authentication failures
+- BR-HAPI-200: RFC 7807 error response metrics
 
 Design Decision: DD-HOLMESGPT-013 - Observability Strategy
 - Prometheus metrics for production observability
@@ -107,6 +108,15 @@ http_request_duration_seconds = Histogram(
     'HTTP request duration',
     ['method', 'endpoint'],
     buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0)
+)
+
+# RFC 7807 Error Responses
+# BR-HAPI-200: RFC 7807 error response metrics
+# REFACTOR phase: Track error responses by status code and error type
+rfc7807_errors_total = Counter(
+    'holmesgpt_rfc7807_errors_total',
+    'Total RFC 7807 error responses by status code and error type',
+    ['status_code', 'error_type']
 )
 
 
