@@ -2,7 +2,6 @@ package notification
 
 import (
 	"context"
-	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -16,11 +15,6 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/notification/status"
 )
-
-func TestStatus(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "NotificationRequest Status Suite")
-}
 
 var _ = Describe("BR-NOT-051: Status Tracking", func() {
 	var (

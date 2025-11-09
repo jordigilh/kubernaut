@@ -20,7 +20,6 @@ import (
 	"flag"
 	"os"
 
-	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -81,11 +80,7 @@ func main() {
 	}
 
 	// Initialize delivery services
-	logger := logrus.New()
-	logger.SetFormatter(&logrus.JSONFormatter{})
-	logger.SetLevel(logrus.InfoLevel)
-
-	consoleService := delivery.NewConsoleDeliveryService(logger)
+	consoleService := delivery.NewConsoleDeliveryService()
 
 	// TODO: Slack webhook URL should come from Kubernetes Secret in production
 	// For now, we'll use an environment variable for development
