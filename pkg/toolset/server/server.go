@@ -92,9 +92,10 @@ func NewServer(config *Config, clientset kubernetes.Interface) (*Server, error) 
 	// Setup routes
 	s.setupRoutes()
 
-	// Wrap mux with request ID middleware for RFC 7807 error tracing
+	// Wrap mux with middleware chain for RFC 7807 error tracing and Content-Type validation
 	// BR-TOOLSET-039: Request ID tracing
-	s.handler = middleware.RequestIDMiddleware(s.mux)
+	// BR-TOOLSET-043: Content-Type validation
+	s.handler = middleware.RequestIDMiddleware(middleware.ValidateContentType(s.mux))
 
 	// Create HTTP servers
 	s.httpServer = &http.Server{
