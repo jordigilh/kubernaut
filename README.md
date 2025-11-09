@@ -62,9 +62,9 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 | **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (100%) |
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (100%) |
 | **Context API** | ✅ **v1.0 PRODUCTION-READY** | Historical intelligence REST API | 17 BRs (12 active + 5 deprecated, 100%) |
-| **Dynamic Toolset Service** | ✅ **COMPLETE** | HolmesGPT toolset configuration | 8 umbrella + 26 granular BRs (100%) |
+| **Dynamic Toolset Service** | ✅ **v1.0.1 PRODUCTION-READY** | HolmesGPT toolset configuration | 10 BRs (RFC 7807 + Graceful Shutdown, 100%) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | 12 BRs (100%) |
-| **HolmesGPT API** | ✅ **v3.0 PRODUCTION-READY** | AI investigation wrapper | 45 BRs (100%) |
+| **HolmesGPT API** | ✅ **v3.0.1 PRODUCTION-READY** | AI investigation wrapper | 47 BRs (RFC 7807 + Graceful Shutdown, 100%) |
 | **Signal Processing** | ⏸️ Phase 3 | Signal enrichment | - |
 | **AI Analysis** | ⏸️ Phase 4 | AI-powered analysis | - |
 | **Remediation Execution** | ⏸️ Phase 3 | Tekton workflow orchestration | - |
@@ -74,7 +74,8 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 **Timeline**: 13-week development plan (currently in Week 2-3)
 
 **Recent Updates** (November 9, 2025):
-- ✅ **BR Documentation Complete**: 156 BRs documented across 6 services (100% coverage)
+- ✅ **RFC 7807 & Graceful Shutdown**: Implemented for Dynamic Toolset & HolmesGPT API (186 tests, 100% pass rate)
+- ✅ **BR Documentation Complete**: 160 BRs documented across 6 services (100% coverage)
 - ✅ **Ghost BRs Eliminated**: 510 → 0 Ghost BRs (99.4% reduction)
 - ✅ **Legacy Code Cleanup**: 216 files deleted (127 tests + 89 implementation)
 - ✅ Gateway Service v1.0: 240/240 tests passing, 20 BRs, production-ready
@@ -180,11 +181,11 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 | **Gateway v1.0** | 105 specs | 23 files | - | **128+** | **100%** |
 | **Context API v1.0** | 98 specs | 5 files | - | **103+** | **100%** |
 | **Data Storage** | 475 specs | 11 files | - | **486+** | **98%** |
-| **Dynamic Toolset** | 194 specs | - | ⏸️ V2 | **194** | **95%** |
+| **Dynamic Toolset v1.0.1** | 194 specs | 14 tests (RFC 7807 + Graceful Shutdown) | ⏸️ V1.1 | **208** | **95%** |
 | **Notification Service** | 83 specs | 1 file | ⏸️ Deferred | **84+** | **95%** |
-| **HolmesGPT API v3.0** | 104 specs (Python) | 3 scenarios | ⏸️ Requires LLM | **107** | **98%** |
+| **HolmesGPT API v3.0.1** | 153 specs (Python) | 19 tests (RFC 7807 + Graceful Shutdown) | ⏸️ Requires LLM | **172** | **98%** |
 
-**Total**: 1,060 unit test specs + 40 integration test files + 8 E2E test files
+**Total**: 1,213 unit test specs + 54 integration test files + 8 E2E test files
 
 ---
 
