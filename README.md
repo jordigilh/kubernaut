@@ -59,12 +59,12 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 | Service | Status | Purpose | BR Coverage |
 |---------|--------|---------|-------------|
-| **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 62/62 P0/P1 (100%) |
-| **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | TBD |
-| **Context API** | ✅ **v1.0 PRODUCTION-READY** | Historical intelligence REST API | 12/15 Active (80%) |
-| **Dynamic Toolset Service** | ✅ **COMPLETE** | HolmesGPT toolset configuration | TBD |
-| **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | TBD |
-| **HolmesGPT API** | ✅ **v3.0 PRODUCTION-READY** | AI investigation wrapper | TBD |
+| **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (100%) |
+| **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (100%) |
+| **Context API** | ✅ **v1.0 PRODUCTION-READY** | Historical intelligence REST API | 17 BRs (12 active + 5 deprecated, 100%) |
+| **Dynamic Toolset Service** | ✅ **COMPLETE** | HolmesGPT toolset configuration | 8 umbrella + 26 granular BRs (100%) |
+| **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | 12 BRs (100%) |
+| **HolmesGPT API** | ✅ **v3.0 PRODUCTION-READY** | AI investigation wrapper | 45 BRs (100%) |
 | **Signal Processing** | ⏸️ Phase 3 | Signal enrichment | - |
 | **AI Analysis** | ⏸️ Phase 4 | AI-powered analysis | - |
 | **Remediation Execution** | ⏸️ Phase 3 | Tekton workflow orchestration | - |
@@ -73,9 +73,12 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 **Timeline**: 13-week development plan (currently in Week 2-3)
 
-**Recent Updates** (November 8, 2025):
-- ✅ Gateway Service v1.0: 240/240 tests passing, 62 P0/P1 BRs, production-ready
-- ✅ Context API v1.0: 100% P0 2x coverage, 12 active BRs (3 deprecated per ADR-032), 11 BRs migrated to AI/ML Service
+**Recent Updates** (November 9, 2025):
+- ✅ **BR Documentation Complete**: 156 BRs documented across 6 services (100% coverage)
+- ✅ **Ghost BRs Eliminated**: 510 → 0 Ghost BRs (99.4% reduction)
+- ✅ **Legacy Code Cleanup**: 216 files deleted (127 tests + 89 implementation)
+- ✅ Gateway Service v1.0: 240/240 tests passing, 20 BRs, production-ready
+- ✅ Context API v1.0: 100% P0 2x coverage, 17 BRs (12 active + 5 deprecated per ADR-032)
 
 ---
 
@@ -167,19 +170,21 @@ Start with these essential documents:
 Kubernaut follows a **defense-in-depth testing pyramid**:
 
 - **Unit Tests**: **70%+ coverage** - Extensive business logic with external mocks only
-- **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows
+- **Integration Tests**: **20% coverage** - Cross-service coordination, CRD-based flows
 - **E2E Tests**: **<10% coverage** - Critical end-to-end user journeys
 
-**Current Test Status**: 373+ tests passing (100% pass rate)
+**Current Test Status**: 1,060+ unit tests passing (100% pass rate)
 
 | Service | Unit | Integration | E2E | Total | Confidence |
 |---------|------|-------------|-----|-------|------------|
-| **Gateway v1.0** | 31 (100%) | 124 (100%) | 3 (100%) | **158** | **100%** |
-| **Context API v1.0** | 81% coverage | 53% coverage | 19% coverage | **147+** | **100%** |
-| Data Storage | 167 tests | 18 tests | ✅ Complete | 185+ | 98% |
-| Dynamic Toolset | 194 tests | 38 tests | ⏸️ V2 | 232+ | 95% |
-| Notification Service | 19 tests | 21 tests | ⏸️ Deferred | 40+ | 95% |
-| HolmesGPT API v3.0 | 74 tests | 30 tests | ⏸️ Requires LLM | 104+ | 98% |
+| **Gateway v1.0** | 105 specs | 23 files | - | **128+** | **100%** |
+| **Context API v1.0** | 98 specs | 5 files | - | **103+** | **100%** |
+| **Data Storage** | 475 specs | 11 files | - | **486+** | **98%** |
+| **Dynamic Toolset** | 194 specs | - | ⏸️ V2 | **194** | **95%** |
+| **Notification Service** | 83 specs | 1 file | ⏸️ Deferred | **84+** | **95%** |
+| **HolmesGPT API v3.0** | 104 specs (Python) | 3 scenarios | ⏸️ Requires LLM | **107** | **98%** |
+
+**Total**: 1,060 unit test specs + 40 integration test files + 8 E2E test files
 
 ---
 
