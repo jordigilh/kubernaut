@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 from src.extensions import recovery, postexec, health
 from src.middleware.auth import AuthenticationMiddleware
 from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
+from src.middleware.rfc7807 import add_rfc7807_exception_handlers
 
 
 def load_config() -> Dict[str, Any]:
@@ -159,6 +160,10 @@ if config["auth_enabled"]:
     logger.info("Authentication middleware enabled (K8s ServiceAccount tokens)")
 else:
     logger.warning("Authentication middleware DISABLED (dev mode only)")
+
+# Add RFC 7807 exception handlers
+add_rfc7807_exception_handlers(app)
+logger.info("RFC 7807 exception handlers enabled (BR-HAPI-200)")
 
 # Register extension routers
 app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])

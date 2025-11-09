@@ -1,17 +1,102 @@
 """
 Comprehensive Error Handling for HolmesGPT API Service
 
-Business Requirements: BR-HAPI-146 to 165 (Error Handling)
+Business Requirements: 
+- BR-HAPI-146 to 165 (Error Handling)
+- BR-HAPI-200 (RFC 7807 Error Response Standard)
 
 REFACTOR phase: Production-grade error handling with circuit breaker pattern.
-Design Decision: DD-HOLMESGPT-011, DD-HOLMESGPT-012
+Design Decision: DD-HOLMESGPT-011, DD-HOLMESGPT-012, DD-004 (RFC 7807)
 """
 
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+
+# ========================================
+# RFC 7807 PROBLEM DETAILS FOR HTTP APIs
+# ========================================
+
+class RFC7807Error(BaseModel):
+    """
+    RFC 7807 Problem Details for HTTP APIs
+    
+    Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
+    Design Decision: DD-004 - RFC 7807 Problem Details
+    
+    Reference: https://tools.ietf.org/html/rfc7807
+    Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
+    Reference: Context API (pkg/contextapi/errors/rfc7807.go)
+    Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
+    """
+    type: str  # URI reference identifying the problem type
+    title: str  # Short, human-readable summary
+    detail: str  # Detailed explanation
+    status: int  # HTTP status code
+    instance: str  # URI reference to specific occurrence
+    request_id: Optional[str] = None  # Request tracing (extension member)
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "type": "https://kubernaut.io/errors/validation-error",
+                "title": "Bad Request",
+                "detail": "Missing required field: 'namespace'",
+                "status": 400,
+                "instance": "/api/v1/recovery/analyze",
+                "request_id": "abc-123-def-456"
+            }
+        }
+
+
+# Error type URI constants
+# BR-HAPI-200: RFC 7807 error format
+ERROR_TYPE_VALIDATION_ERROR = "https://kubernaut.io/errors/validation-error"
+ERROR_TYPE_UNAUTHORIZED = "https://kubernaut.io/errors/unauthorized"
+ERROR_TYPE_NOT_FOUND = "https://kubernaut.io/errors/not-found"
+ERROR_TYPE_INTERNAL_ERROR = "https://kubernaut.io/errors/internal-error"
+ERROR_TYPE_SERVICE_UNAVAILABLE = "https://kubernaut.io/errors/service-unavailable"
+
+
+def create_rfc7807_error(
+    status_code: int,
+    detail: str,
+    instance: str,
+    request_id: Optional[str] = None
+) -> RFC7807Error:
+    """
+    Create RFC 7807 error response
+    
+    Business Requirement: BR-HAPI-200
+    
+    Maps HTTP status codes to RFC 7807 error types and titles.
+    """
+    error_type, title = _get_error_type_and_title(status_code)
+    
+    return RFC7807Error(
+        type=error_type,
+        title=title,
+        detail=detail,
+        status=status_code,
+        instance=instance,
+        request_id=request_id
+    )
+
+
+def _get_error_type_and_title(status_code: int) -> tuple[str, str]:
+    """Map HTTP status codes to RFC 7807 error types and titles"""
+    mapping = {
+        400: (ERROR_TYPE_VALIDATION_ERROR, "Bad Request"),
+        401: (ERROR_TYPE_UNAUTHORIZED, "Unauthorized"),
+        404: (ERROR_TYPE_NOT_FOUND, "Not Found"),
+        500: (ERROR_TYPE_INTERNAL_ERROR, "Internal Server Error"),
+        503: (ERROR_TYPE_SERVICE_UNAVAILABLE, "Service Unavailable"),
+    }
+    return mapping.get(status_code, (ERROR_TYPE_INTERNAL_ERROR, "Error"))
 
 
 # ========================================
