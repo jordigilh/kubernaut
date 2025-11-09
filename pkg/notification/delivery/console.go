@@ -19,40 +19,22 @@ package delivery
 import (
 	"context"
 	"fmt"
-	"time"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	"github.com/sirupsen/logrus"
 )
 
 // ConsoleDeliveryService delivers notifications to console (stdout)
-type ConsoleDeliveryService struct {
-	logger *logrus.Logger
-}
+// Uses controller-runtime logging via context (ADR: LOGGING_STANDARD.md)
+type ConsoleDeliveryService struct{}
 
 // NewConsoleDeliveryService creates a new console delivery service
-func NewConsoleDeliveryService(logger *logrus.Logger) *ConsoleDeliveryService {
-	if logger == nil {
-		logger = logrus.New()
-	}
-	return &ConsoleDeliveryService{
-		logger: logger,
-	}
+func NewConsoleDeliveryService() *ConsoleDeliveryService {
+	return &ConsoleDeliveryService{}
 }
 
 // Deliver delivers a notification to console (stdout)
 // BR-NOT-053: At-least-once delivery (console always succeeds)
 func (s *ConsoleDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	// Log structured notification data
-	s.logger.WithFields(logrus.Fields{
-		"notification": notification.Name,
-		"namespace":    notification.Namespace,
-		"type":         notification.Spec.Type,
-		"priority":     notification.Spec.Priority,
-		"subject":      notification.Spec.Subject,
-		"timestamp":    time.Now().Format(time.RFC3339),
-	}).Info("Notification delivered to console")
-
 	// Format for console output
 	formattedMessage := fmt.Sprintf(
 		"[%s] [%s] %s\n%s\n",

@@ -438,13 +438,8 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-.PHONY: test-integration-remediation
-test-integration-remediation: manifests generate fmt vet setup-envtest ## Run RemediationRequest controller integration tests
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/integration/remediation/... -v -ginkgo.v
-
-.PHONY: test-integration
-test-integration: manifests generate fmt vet setup-envtest ## Run all integration tests
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./test/integration/... -v
+# Legacy test-integration-remediation removed - test/integration/remediation/ deleted
+# Legacy test-integration removed - replaced by service-specific targets (test-integration-datastorage, etc.)
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
@@ -483,13 +478,8 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 ##@ Build
 
-.PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
-
-.PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+# Legacy build/run targets removed - cmd/main.go deleted
+# Use service-specific targets: build-gateway-service, build-context-api, etc.
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -628,8 +618,17 @@ mv $(1) $(1)-$(3) ;\
 ln -sf $(1)-$(3) $(1)
 endef
 
-##@ Microservices Build - Approved 10-Service Architecture
-build-all-services: build-gateway-service build-alert-service build-ai-analysis build-workflow-service build-executor-service build-storage-service build-intelligence-service build-monitor-service build-context-service build-notification-service ## Build all 10 approved microservices
+##@ Microservices Build - Current Architecture (5 Go Services + 1 Python Service)
+# Active Services:
+# - Gateway (Go)
+# - Context API (Go) 
+# - Data Storage (Go)
+# - Dynamic Toolset (Go)
+# - Notification (Go)
+# - HolmesGPT API (Python)
+
+.PHONY: build-all-services
+build-all-services: build-gateway-service build-context-api build-datastorage build-dynamictoolset build-notification ## Build all Go services
 
 .PHONY: build-microservices
 build-microservices: build-all-services ## Build all microservices (alias for build-all-services)
@@ -639,59 +638,25 @@ build-gateway-service: ## Build gateway service (webhook functionality)
 	@echo "🔨 Building gateway service..."
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/gateway ./cmd/gateway
 
-.PHONY: build-webhook-service
-build-webhook-service: build-gateway-service ## Build webhook service (alias for gateway-service)
-	@echo "🔗 Webhook service is now part of gateway-service"
+# Legacy service build targets removed - services don't exist
+# Removed: build-alert-service, build-workflow-service, build-executor-service,
+#          build-storage-service, build-intelligence-service, build-monitor-service,
+#          build-ai-analysis
 
-.PHONY: build-alert-service
-build-alert-service: ## Build alert processor service
-	@echo "🧠 Building alert processor service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/alert-service ./cmd/alert-service
-
-.PHONY: build-workflow-service
-build-workflow-service: ## Build workflow orchestrator service
-	@echo "🎯 Building workflow orchestrator service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/workflow-service ./cmd/workflow-service
-
-.PHONY: build-executor-service
-build-executor-service: ## Build kubernetes executor service
-	@echo "⚡ Building kubernetes executor service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/executor-service ./cmd/executor-service
-
-.PHONY: build-storage-service
-build-storage-service: ## Build data storage service
+.PHONY: build-datastorage
+build-datastorage: ## Build data storage service
 	@echo "📊 Building data storage service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/storage-service ./cmd/storage-service
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/datastorage ./cmd/datastorage
 
-.PHONY: build-intelligence-service
-build-intelligence-service: ## Build intelligence service
-	@echo "🔍 Building intelligence service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/intelligence-service ./cmd/intelligence-service
+.PHONY: build-dynamictoolset
+build-dynamictoolset: ## Build dynamic toolset service
+	@echo "🔧 Building dynamic toolset service..."
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/dynamictoolset ./cmd/dynamictoolset
 
-.PHONY: build-monitor-service
-build-monitor-service: ## Build effectiveness monitor service
-	@echo "📈 Building effectiveness monitor service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/monitor-service ./cmd/monitor-service
-
-.PHONY: build-context-service
-build-context-service: ## Build context API service
-	@echo "🌐 Building context API service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/context-service ./cmd/context-service
-
-.PHONY: build-notification-service
-build-notification-service: ## Build notification service
+.PHONY: build-notification
+build-notification: ## Build notification service
 	@echo "📢 Building notification service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/notification-service ./cmd/notification-service
-
-.PHONY: build-context-api-service
-build-context-api-service: ## Build context API service (placeholder)
-	@echo "🔨 Building context API service..."
-	@echo "⚠️  Context API service extraction pending - using monolith for now"
-
-.PHONY: build-ai-analysis
-build-ai-analysis: ## Build AI service
-	@echo "🤖 Building AI service..."
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/ai-analysis ./cmd/ai-analysis
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/notification ./cmd/notification
 
 .PHONY: test
 test: ## Run unit tests (Go only) - Auto-discovers all test directories
@@ -784,7 +749,7 @@ docker-build: ## Build monolithic container image
 
 ##@ Microservices Container Build
 .PHONY: docker-build-microservices
-docker-build-microservices: docker-build-gateway-service docker-build-ai-analysis ## Build all microservice container images
+docker-build-microservices: docker-build-gateway-service docker-build-context-api ## Build all microservice container images
 
 .PHONY: docker-build-gateway-service
 docker-build-gateway-service: ## Build gateway service container image (multi-arch UBI9, ADR-027/ADR-028)
@@ -805,18 +770,11 @@ docker-build-gateway-single: ## Build single-arch debug image (current platform 
 		-f docker/gateway-ubi9.Dockerfile .
 	@echo "✅ Debug image: $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m)"
 
-.PHONY: docker-build-webhook-service
-docker-build-webhook-service: docker-build-gateway-service ## Build webhook service container image (alias for gateway-service)
-	@echo "🔗 Webhook service is now part of gateway-service"
-
-.PHONY: docker-build-ai-analysis
-docker-build-ai-analysis: ## Build AI service container image
-	@echo "🤖 Building AI service container..."
-	docker build -f docker/ai-service.Dockerfile -t $(REGISTRY)/kubernaut-ai-service:$(VERSION) .
-	docker tag $(REGISTRY)/kubernaut-ai-service:$(VERSION) $(REGISTRY)/kubernaut-ai-service:latest
+# Legacy docker build targets removed - services don't exist
+# Removed: docker-build-ai-analysis, docker-push-ai-service
 
 .PHONY: docker-push-microservices
-docker-push-microservices: docker-push-webhook-service docker-push-ai-service ## Push all microservice container images
+docker-push-microservices: docker-push-gateway-service docker-push-context-api ## Push all microservice container images
 
 .PHONY: docker-push-gateway-service
 docker-push-gateway-service: docker-build-gateway-service ## Push Gateway service multi-arch image
@@ -824,15 +782,7 @@ docker-push-gateway-service: docker-build-gateway-service ## Push Gateway servic
 	podman manifest push $(REGISTRY)/kubernaut-gateway:$(VERSION) docker://$(REGISTRY)/kubernaut-gateway:$(VERSION)
 	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
 
-.PHONY: docker-push-webhook-service
-docker-push-webhook-service: docker-push-gateway-service ## Push webhook service container image (alias for gateway)
-	@echo "🔗 Webhook service is now part of gateway-service"
-
-.PHONY: docker-push-ai-service
-docker-push-ai-service: ## Push AI service container image
-	@echo "🤖 Pushing AI service container..."
-	docker push $(REGISTRY)/kubernaut-ai-service:$(VERSION)
-	docker push $(REGISTRY)/kubernaut-ai-service:latest
+# Legacy docker-push-ai-service removed - cmd/ai-analysis doesn't exist
 
 .PHONY: docker-push
 docker-push: ## Push container image
