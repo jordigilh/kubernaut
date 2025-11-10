@@ -45,15 +45,15 @@ The **Dynamic Toolset Service** is a stateless HTTP API with Kubernetes controll
 
 ### 📊 Summary
 
-**Total Business Requirements**: 10 umbrella BRs (26 granular sub-BRs)
+**Total Business Requirements**: 11 umbrella BRs (26 granular sub-BRs)
 **Categories**: 7
 **Priority Breakdown**:
 - P0 (Critical): 8 BRs (BR-TOOLSET-021, 022, 025, 026, 027, 028, 031, 040)
-- P1 (High): 2 BRs (BR-TOOLSET-033, 039)
+- P1 (High): 3 BRs (BR-TOOLSET-033, 039, 043)
 
 **Test Coverage**:
-- Unit: 194 test specs (95% confidence)
-- Integration: 52 test scenarios (92% confidence) - includes 6 RFC 7807 + 8 graceful shutdown tests
+- Unit: 202 test specs (95% confidence) - includes 8 Content-Type validation tests
+- Integration: 56 test scenarios (92% confidence) - includes 6 RFC 7807 + 8 graceful shutdown + 4 Content-Type validation tests
 - E2E: 13 test scenarios (90% confidence) - service discovery lifecycle, ConfigMap updates, namespace filtering
 
 **BR Hierarchy**: This service uses **umbrella BRs** (BR-TOOLSET-021, 022, etc.) that map to multiple **granular sub-BRs** (BR-TOOLSET-010 to BR-TOOLSET-035) referenced in test files. See "Sub-BR Mapping" section below for complete traceability.
@@ -120,7 +120,9 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 - **BR-TOOLSET-032**: Authentication Middleware (`test/unit/toolset/auth_middleware_test.go:18`)
 - **BR-TOOLSET-033**: HTTP Server (`test/unit/toolset/server_test.go:22`)
 - **BR-TOOLSET-034**: Protected API Endpoints (`test/unit/toolset/server_test.go:110`)
-- **BR-TOOLSET-035**: Prometheus Metrics (`test/unit/toolset/metrics_test.go:14`)
+- **BR-TOOLSET-035**: Prometheus Metrics - 9 metrics (45% of original 20) (`test/unit/toolset/metrics_test.go:14`)
+  - **DD-TOOLSET-001**: Removed 11 low-value metrics (55%) - REST API disabled, shutdown metrics never scraped
+  - **Remaining Metrics**: Service Discovery (4), ConfigMap (3), Toolset Generation (2)
 
 **Note**: BR-TOOLSET-033 appears twice (umbrella BR and granular sub-BR for HTTP Server). This is intentional for backward compatibility with existing test references.
 
@@ -522,6 +524,78 @@ This section maps high-level umbrella BRs to granular sub-BRs referenced in test
 
 **Related Design Decisions**:
 - **DD-007**: Kubernetes-Aware Graceful Shutdown Pattern
+
+---
+
+#### BR-TOOLSET-043: Content-Type Validation Middleware
+
+**Priority**: P1 (Security & API Standards)
+**Status**: ✅ Implemented
+**Category**: API Security & Standards Compliance
+
+**Description**: All POST, PUT, and PATCH endpoints validate the `Content-Type` header and reject requests with invalid or missing Content-Type with a 415 Unsupported Media Type error in RFC 7807 format
+
+**Business Value**:
+- **Security**: Prevents MIME confusion attacks and malformed request processing
+- **API Contract**: Enforces strict Content-Type requirements per RFC 7231
+- **Client Clarity**: Clear error messages when Content-Type is incorrect
+- **Standards Compliance**: Follows REST API best practices
+
+**Acceptance Criteria**:
+- POST, PUT, PATCH endpoints validate `Content-Type` header
+- Accept `application/json` (with or without `charset` parameter)
+- Reject requests with missing or invalid Content-Type (415 error)
+- Return RFC 7807 error response for invalid Content-Type
+- GET, DELETE, HEAD, OPTIONS requests are not affected
+- Prometheus metrics track Content-Type validation failures
+- Structured logging for all validation failures
+
+**Test Coverage**:
+- **Unit**: `pkg/toolset/server/middleware/content_type_test.go` (8 tests)
+  - Test 1: Valid `application/json` - processed successfully
+  - Test 2: Valid `application/json; charset=utf-8` - processed successfully
+  - Test 3: Invalid `text/plain` - 415 with RFC 7807 error
+  - Test 4: Invalid `text/html` - 415 with RFC 7807 error
+  - Test 5: Invalid `application/xml` - 415 with RFC 7807 error
+  - Test 6: Invalid `multipart/form-data` - 415 with RFC 7807 error
+  - Test 7: Missing Content-Type - 415 with RFC 7807 error
+  - Test 8: GET request - not validated (200 OK)
+- **Integration**: `test/integration/toolset/content_type_validation_test.go` (4 tests)
+  - Test 1: POST with valid `application/json` - processed successfully
+  - Test 2: POST with invalid `text/plain` - 415 with RFC 7807 error
+  - Test 3: POST with missing Content-Type - 415 with RFC 7807 error
+  - Test 4: GET without Content-Type - not validated (200 OK)
+
+**Implementation**:
+- `pkg/toolset/server/middleware/content_type.go`: ValidateContentType middleware
+- `pkg/toolset/metrics/metrics.go`: ContentTypeValidationErrors metric
+- `pkg/toolset/server/server.go`: Middleware registration in chain
+
+**Endpoints Affected**:
+- POST `/api/v1/toolsets/validate` - Toolset validation endpoint
+- POST `/api/v1/toolsets/generate` - Toolset generation endpoint
+- (Future: Any POST/PUT/PATCH endpoints added to the service)
+
+**Error Response Format** (RFC 7807):
+```json
+{
+  "type": "https://kubernaut.io/errors/unsupported-media-type",
+  "title": "Unsupported Media Type",
+  "detail": "Content-Type must be 'application/json', got 'text/plain'",
+  "status": 415,
+  "instance": "/api/v1/toolsets/validate",
+  "request_id": "req-123"
+}
+```
+
+**Related BRs**: BR-TOOLSET-039 (RFC 7807 Error Response Standard), BR-TOOLSET-033 (HTTP Server)
+
+**Related Design Decisions**:
+- **DD-004**: RFC 7807 Problem Details for HTTP APIs
+
+**Reference Implementations**:
+- Gateway Service: `pkg/gateway/middleware/content_type.go`
+- Context API Service: `pkg/contextapi/middleware/content_type.go`
 
 ---
 
