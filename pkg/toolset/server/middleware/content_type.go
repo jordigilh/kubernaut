@@ -21,6 +21,8 @@ import (
 	"mime"
 	"net/http"
 
+	"go.uber.org/zap"
+
 	"github.com/jordigilh/kubernaut/pkg/toolset/errors"
 )
 
@@ -47,6 +49,12 @@ func ValidateContentType(next http.Handler) http.Handler {
 
 		// Missing Content-Type is an error for POST/PUT/PATCH
 		if contentType == "" {
+			// DD-TOOLSET-001: Metrics removed (REST API disabled, no POST/PUT/PATCH endpoints)
+			zap.L().Warn("Content-Type validation failed: missing header",
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+				zap.String("request_id", r.Header.Get("X-Request-ID")),
+			)
 			writeRFC7807Error(w, r, http.StatusUnsupportedMediaType, "Content-Type header is missing; must be 'application/json'")
 			return
 		}
@@ -55,6 +63,14 @@ func ValidateContentType(next http.Handler) http.Handler {
 		mediaType, _, err := mime.ParseMediaType(contentType)
 		if err != nil {
 			// Invalid Content-Type format - return RFC 7807 error
+			// DD-TOOLSET-001: Metrics removed (REST API disabled, no POST/PUT/PATCH endpoints)
+			zap.L().Warn("Content-Type validation failed: invalid format",
+				zap.String("content_type", contentType),
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+				zap.String("request_id", r.Header.Get("X-Request-ID")),
+				zap.Error(err),
+			)
 			writeRFC7807Error(w, r, http.StatusBadRequest, "Invalid Content-Type header format")
 			return
 		}
@@ -62,6 +78,14 @@ func ValidateContentType(next http.Handler) http.Handler {
 		// Validate that media type is application/json
 		if mediaType != "application/json" {
 			// Non-JSON Content-Type - return RFC 7807 error
+			// DD-TOOLSET-001: Metrics removed (REST API disabled, no POST/PUT/PATCH endpoints)
+			zap.L().Warn("Content-Type validation failed: unsupported media type",
+				zap.String("content_type", contentType),
+				zap.String("media_type", mediaType),
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+				zap.String("request_id", r.Header.Get("X-Request-ID")),
+			)
 			detail := "Content-Type must be 'application/json', got '" + contentType + "'"
 			writeRFC7807Error(w, r, http.StatusUnsupportedMediaType, detail)
 			return

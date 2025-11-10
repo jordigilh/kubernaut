@@ -7,12 +7,20 @@ import (
 
 // BR-TOOLSET-035: Prometheus metrics for Dynamic Toolset Service
 //
-// Metrics Categories:
-// 1. Service Discovery - Track discovered services and health checks
-// 2. API Requests - Track HTTP API usage and performance
-// 3. Authentication - Track auth attempts and failures
-// 4. ConfigMap - Track ConfigMap reconciliation
-// 5. Toolset Generation - Track toolset generation
+// DD-TOOLSET-001: REST API Deprecation - Removed 11 low-value metrics (55%)
+// See: docs/architecture/decisions/DD-TOOLSET-001-REST-API-Deprecation.md
+//
+// Metrics Categories (9 metrics - 45% of original 20):
+// 1. Service Discovery - Track discovered services and health checks (4 metrics)
+// 2. ConfigMap - Track ConfigMap reconciliation (3 metrics)
+// 3. Toolset Generation - Track toolset generation (2 metrics)
+//
+// Removed Metrics (11 metrics - 0% business value):
+// - API Request Metrics (3) - REST API disabled
+// - Content-Type Validation (1) - No POST/PUT/PATCH endpoints
+// - RFC 7807 Errors (1) - No REST API errors
+// - Authentication (3) - No authenticated endpoints
+// - Graceful Shutdown (2) - Pod terminates before Prometheus scrapes
 
 var (
 	// Service Discovery Metrics
@@ -51,64 +59,6 @@ var (
 			Help: "Total number of health check failures by service and reason",
 		},
 		[]string{"service_type", "reason"},
-	)
-
-	// API Request Metrics
-
-	// APIRequests tracks API requests by endpoint, method, and status code
-	APIRequests = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "dynamic_toolset_api_requests_total",
-			Help: "Total number of API requests by endpoint, method, and status",
-		},
-		[]string{"endpoint", "method", "status_code"},
-	)
-
-	// APIRequestDuration tracks API request duration
-	APIRequestDuration = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "dynamic_toolset_api_request_duration_seconds",
-			Help:    "API request duration by endpoint and method",
-			Buckets: prometheus.DefBuckets, // 0.005s to 10s
-		},
-		[]string{"endpoint", "method"},
-	)
-
-	// APIErrors tracks API errors by endpoint and error type
-	APIErrors = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "dynamic_toolset_api_errors_total",
-			Help: "Total number of API errors by endpoint and error type",
-		},
-		[]string{"endpoint", "error_type"},
-	)
-
-	// Authentication Metrics
-
-	// AuthAttempts tracks total authentication attempts
-	AuthAttempts = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: "dynamic_toolset_auth_attempts_total",
-			Help: "Total number of authentication attempts",
-		},
-	)
-
-	// AuthFailures tracks authentication failures by reason
-	AuthFailures = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "dynamic_toolset_auth_failures_total",
-			Help: "Total number of authentication failures by reason",
-		},
-		[]string{"reason"},
-	)
-
-	// AuthDuration tracks authentication duration
-	AuthDuration = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "dynamic_toolset_auth_duration_seconds",
-			Help:    "Time taken to authenticate requests",
-			Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s
-		},
 	)
 
 	// ConfigMap Metrics
@@ -157,53 +107,21 @@ var (
 			Help: "Current number of tools in the generated toolset",
 		},
 	)
-
-	// RFC 7807 Error Metrics
-	// BR-TOOLSET-039: RFC 7807 error format
-
-	// ErrorResponsesTotal tracks HTTP error responses by status code and error type
-	ErrorResponsesTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "dynamic_toolset_error_responses_total",
-			Help: "Total number of HTTP error responses by status code and RFC 7807 error type",
-		},
-		[]string{"status_code", "error_type"},
-	)
-
-	// Graceful Shutdown Metrics
-	// BR-TOOLSET-040: Graceful shutdown with in-flight request completion
-	// DD-007: Kubernetes-aware graceful shutdown
-
-	// ShutdownDurationSeconds tracks the duration of graceful shutdown
-	ShutdownDurationSeconds = promauto.NewHistogram(
-		prometheus.HistogramOpts{
-			Name:    "dynamic_toolset_shutdown_duration_seconds",
-			Help:    "Duration of DD-007 graceful shutdown in seconds",
-			Buckets: []float64{1, 2, 5, 10, 15, 20, 30},
-		},
-	)
-
-	// ShutdownsTotal tracks the number of shutdown attempts by result
-	ShutdownsTotal = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "dynamic_toolset_shutdowns_total",
-			Help: "Total number of graceful shutdown attempts by result (success/failure)",
-		},
-		[]string{"result"},
-	)
 )
 
 // ResetMetrics resets all metrics (for testing)
 func ResetMetrics() {
+	// Service Discovery Metrics
 	ServicesDiscovered.Reset()
 	DiscoveryErrors.Reset()
 	HealthCheckFailures.Reset()
-	APIRequests.Reset()
-	APIErrors.Reset()
-	AuthFailures.Reset()
+
+	// ConfigMap Metrics
 	ConfigMapUpdates.Reset()
+
+	// Toolset Generation Metrics
 	ToolsetGenerations.Reset()
 
-	// Note: Histograms and regular counters cannot be reset in prometheus client
+	// Note: Histograms and Gauges cannot be reset in prometheus client
 	// They will be replaced on next registration
 }
