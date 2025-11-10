@@ -179,7 +179,7 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 
 | Service | Unit Specs | Integration Specs | E2E Specs | Total | Confidence |
 |---------|------------|-------------------|-----------|-------|------------|
-| **Gateway v1.0** | 105 | 114 | 2 | **221** | **100%** |
+| **Gateway v1.0** | 105 | 114 | 2 (+12 deferred to v1.1) | **221** | **100%** |
 | **Context API v1.0** | 98 | ~50 | 13 | **~161** | **100%** |
 | **Data Storage** | 475 | ~60 | - | **~535** | **98%** |
 | **Dynamic Toolset v1.0** | 194 | 38 | 13 | **245** | **100%** |
@@ -188,7 +188,7 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 
 **Total**: ~1,108 unit specs + ~291 integration specs + 28 E2E specs = **~1,427 test specs**
 
-*Note: E2E spec counts verified by grep. Gateway has 2 E2E specs (not 6 as previously documented). Integration specs are estimates.*
+*Note: Gateway v1.0 has 2 E2E specs (Storm TTL, K8s API Rate Limiting). 12 additional E2E tests deferred to v1.1 per strategic decision to prioritize integration test coverage (114 specs provide substantial E2E-like validation). Integration spec counts are estimates.*
 
 ---
 
