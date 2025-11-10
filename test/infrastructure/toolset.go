@@ -231,10 +231,36 @@ func DeleteToolsetCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // createToolsetKindCluster creates a Kind cluster for Dynamic Toolset testing
+// If the cluster already exists, it will be deleted and recreated
+// This function is safe for parallel execution - only one process will create the cluster
 func createToolsetKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	// Check if cluster already exists (quick check before cleanup)
+	checkCmd := exec.Command("kind", "get", "clusters")
+	output, err := checkCmd.Output()
+	if err == nil {
+		clusters := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, cluster := range clusters {
+			if cluster == clusterName {
+				fmt.Fprintf(writer, "   ⚠️  Cluster '%s' already exists - deleting it first...\n", clusterName)
+				deleteCmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
+				deleteCmd.Stdout = writer
+				deleteCmd.Stderr = writer
+				if err := deleteCmd.Run(); err != nil {
+					fmt.Fprintf(writer, "   ⚠️  Warning: failed to delete existing cluster: %v\n", err)
+				} else {
+					fmt.Fprintf(writer, "   ✅ Existing cluster deleted\n")
+				}
+				// Also clean up any leftover containers
+				cleanupCmd := exec.Command("podman", "rm", "-f", clusterName+"-control-plane")
+				_ = cleanupCmd.Run() // Ignore errors - container may not exist
+				break
+			}
+		}
 	}
 
 	// Ensure kubeconfig directory exists
@@ -242,6 +268,10 @@ func createToolsetKindCluster(clusterName, kubeconfigPath string, writer io.Writ
 	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
 		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
 	}
+
+	// Remove any leftover kubeconfig lock file
+	lockFile := kubeconfigPath + ".lock"
+	_ = os.Remove(lockFile) // Ignore errors - file may not exist
 
 	// Create Kind cluster
 	kindConfigPath := filepath.Join(workspaceRoot, "test", "e2e", "toolset", "kind-cluster-config.yaml")

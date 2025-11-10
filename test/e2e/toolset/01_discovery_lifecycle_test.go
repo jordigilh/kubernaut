@@ -19,6 +19,7 @@ package toolset
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -43,8 +44,8 @@ var _ = Describe("Discovery Lifecycle", func() {
 	)
 
 	BeforeEach(func() {
-		// Create unique namespace for this test
-		testNamespace = fmt.Sprintf("toolset-discovery-%d", time.Now().Unix())
+		// Create unique namespace for this test (parallel-safe with nanosecond precision + process ID)
+		testNamespace = fmt.Sprintf("toolset-discovery-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 
 		// Deploy Dynamic Toolset in test namespace
@@ -58,10 +59,19 @@ var _ = Describe("Discovery Lifecycle", func() {
 			testCancel()
 		}
 
-		// Delete namespace (cleanup)
-		err := infrastructure.CleanupTestNamespace(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
-		if err != nil {
-			logger.Warn(fmt.Sprintf("Failed to cleanup namespace %s: %v", testNamespace, err))
+		// Only delete namespace if test passed (for debugging failed tests)
+		if !CurrentSpecReport().Failed() {
+			err := infrastructure.CleanupTestNamespace(testCtx, testNamespace, kubeconfigPath, GinkgoWriter)
+			if err != nil {
+				logger.Warn(fmt.Sprintf("Failed to cleanup namespace %s: %v", testNamespace, err))
+			}
+		} else {
+			logger.Warn(fmt.Sprintf("⚠️  Test FAILED - Keeping namespace %s for debugging", testNamespace))
+			logger.Info("To debug:")
+			logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
+			logger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
+			logger.Info(fmt.Sprintf("  kubectl logs -n %s deployment/kubernaut-dynamic-toolsets", testNamespace))
+			logger.Info(fmt.Sprintf("  kubectl get configmap -n %s kubernaut-toolset-config -o yaml", testNamespace))
 		}
 	})
 
@@ -72,33 +82,45 @@ var _ = Describe("Discovery Lifecycle", func() {
 
 			// Deploy mock Prometheus service
 			annotations := map[string]string{
-				"holmesgpt.io/service-type": "prometheus",
-				"holmesgpt.io/priority":     "80",
+				"kubernaut.io/toolset":      "enabled",
+				"kubernaut.io/toolset-type": "prometheus",
 			}
 			err := infrastructure.DeployMockService(testCtx, testNamespace, "mock-prometheus", annotations, kubeconfigPath, GinkgoWriter)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Wait for ConfigMap to be created (Dynamic Toolset should discover service)
-			Eventually(func() error {
-				_, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
-				return err
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			// Wait for ConfigMap to include Prometheus (not just exist)
+			Eventually(func() string {
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
+				if err != nil {
+					return ""
+				}
+				data, ok := configMap["data"].(map[string]interface{})
+				if !ok {
+					return ""
+				}
+				toolsetsJSON, ok := data["toolset.json"].(string)
+				if !ok {
+					return ""
+				}
+				return toolsetsJSON
+			}, 30*time.Second, 2*time.Second).Should(ContainSubstring("prometheus"))
 
 			// Verify ConfigMap contains Prometheus toolset
-			configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
+			configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Validate ConfigMap structure
 			data, ok := configMap["data"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "ConfigMap should have 'data' field")
 
-			toolsetsJSON, ok := data["toolsets.json"].(string)
-			Expect(ok).To(BeTrue(), "ConfigMap should have 'toolsets.json' in data")
-			Expect(toolsetsJSON).ToNot(BeEmpty(), "toolsets.json should not be empty")
+			toolsetsJSON, ok := data["toolset.json"].(string)
+			Expect(ok).To(BeTrue(), "ConfigMap should have 'toolset.json' in data")
+			Expect(toolsetsJSON).ToNot(BeEmpty(), "toolset.json should not be empty")
 
 			// Validate Prometheus toolset is present
 			Expect(toolsetsJSON).To(ContainSubstring("prometheus"), "ConfigMap should contain Prometheus toolset")
-			Expect(toolsetsJSON).To(ContainSubstring("kubectl"), "ConfigMap should contain kubectl commands")
+			Expect(toolsetsJSON).To(ContainSubstring("endpoint"), "ConfigMap should contain endpoint field")
+			Expect(toolsetsJSON).To(ContainSubstring("tools"), "ConfigMap should contain tools array")
 		})
 
 		It("should discover multiple services with correct priority ordering", func() {
@@ -117,8 +139,8 @@ var _ = Describe("Discovery Lifecycle", func() {
 
 			for _, svc := range services {
 				annotations := map[string]string{
-					"holmesgpt.io/service-type": svc.serviceType,
-					"holmesgpt.io/priority":     svc.priority,
+					"kubernaut.io/toolset":      "enabled",
+					"kubernaut.io/toolset-type": svc.serviceType,
 				}
 				err := infrastructure.DeployMockService(testCtx, testNamespace, svc.name, annotations, kubeconfigPath, GinkgoWriter)
 				Expect(err).ToNot(HaveOccurred())
@@ -126,7 +148,7 @@ var _ = Describe("Discovery Lifecycle", func() {
 
 			// Wait for ConfigMap to be updated with all services
 			Eventually(func() string {
-				configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
 				if err != nil {
 					return ""
 				}
@@ -134,7 +156,7 @@ var _ = Describe("Discovery Lifecycle", func() {
 				if !ok {
 					return ""
 				}
-				toolsetsJSON, ok := data["toolsets.json"].(string)
+				toolsetsJSON, ok := data["toolset.json"].(string)
 				if !ok {
 					return ""
 				}
@@ -146,13 +168,13 @@ var _ = Describe("Discovery Lifecycle", func() {
 			))
 
 			// Verify priority ordering (Prometheus > Grafana > Custom)
-			configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
+			configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			data, ok := configMap["data"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
 
-			toolsetsJSON, ok := data["toolsets.json"].(string)
+			toolsetsJSON, ok := data["toolset.json"].(string)
 			Expect(ok).To(BeTrue())
 
 			// Validate all services are present
@@ -169,15 +191,15 @@ var _ = Describe("Discovery Lifecycle", func() {
 
 			// Deploy mock service
 			annotations := map[string]string{
-				"holmesgpt.io/service-type": "prometheus",
-				"holmesgpt.io/priority":     "80",
+				"kubernaut.io/toolset":      "enabled",
+				"kubernaut.io/toolset-type": "prometheus",
 			}
 			err := infrastructure.DeployMockService(testCtx, testNamespace, "mock-prometheus", annotations, kubeconfigPath, GinkgoWriter)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Wait for ConfigMap to include Prometheus
 			Eventually(func() string {
-				configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
 				if err != nil {
 					return ""
 				}
@@ -185,7 +207,7 @@ var _ = Describe("Discovery Lifecycle", func() {
 				if !ok {
 					return ""
 				}
-				toolsetsJSON, ok := data["toolsets.json"].(string)
+				toolsetsJSON, ok := data["toolset.json"].(string)
 				if !ok {
 					return ""
 				}
@@ -197,8 +219,9 @@ var _ = Describe("Discovery Lifecycle", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Wait for ConfigMap to be updated (Prometheus toolset should be removed)
+			// Note: Longer timeout for parallel execution (discovery interval + cluster load)
 			Eventually(func() string {
-				configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
 				if err != nil {
 					return ""
 				}
@@ -206,12 +229,12 @@ var _ = Describe("Discovery Lifecycle", func() {
 				if !ok {
 					return ""
 				}
-				toolsetsJSON, ok := data["toolsets.json"].(string)
+				toolsetsJSON, ok := data["toolset.json"].(string)
 				if !ok {
 					return ""
 				}
 				return toolsetsJSON
-			}, 30*time.Second, 2*time.Second).ShouldNot(ContainSubstring("prometheus"))
+			}, 60*time.Second, 2*time.Second).ShouldNot(ContainSubstring("prometheus"))
 		})
 
 		It("should handle service with missing annotations gracefully", func() {
@@ -226,11 +249,11 @@ var _ = Describe("Discovery Lifecycle", func() {
 			time.Sleep(15 * time.Second)
 
 			// Verify ConfigMap exists but does not contain the unannotated service
-			configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
+			configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
 			if err == nil {
 				data, ok := configMap["data"].(map[string]interface{})
 				if ok {
-					toolsetsJSON, ok := data["toolsets.json"].(string)
+					toolsetsJSON, ok := data["toolset.json"].(string)
 					if ok {
 						// Service without annotations should not be included
 						Expect(toolsetsJSON).ToNot(ContainSubstring("mock-no-annotations"))
@@ -245,15 +268,15 @@ var _ = Describe("Discovery Lifecycle", func() {
 
 			// Deploy mock service with custom type
 			annotations := map[string]string{
-				"holmesgpt.io/service-type": "custom-monitoring",
-				"holmesgpt.io/priority":     "50",
+				"kubernaut.io/toolset":      "enabled",
+				"kubernaut.io/toolset-type": "custom-monitoring",
 			}
 			err := infrastructure.DeployMockService(testCtx, testNamespace, "mock-custom-monitoring", annotations, kubeconfigPath, GinkgoWriter)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Wait for ConfigMap to include custom service
 			Eventually(func() string {
-				configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
 				if err != nil {
 					return ""
 				}
@@ -261,7 +284,7 @@ var _ = Describe("Discovery Lifecycle", func() {
 				if !ok {
 					return ""
 				}
-				toolsetsJSON, ok := data["toolsets.json"].(string)
+				toolsetsJSON, ok := data["toolset.json"].(string)
 				if !ok {
 					return ""
 				}
@@ -269,13 +292,13 @@ var _ = Describe("Discovery Lifecycle", func() {
 			}, 30*time.Second, 2*time.Second).Should(ContainSubstring("custom"))
 
 			// Verify ConfigMap contains custom toolset
-			configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
+			configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
 			Expect(err).ToNot(HaveOccurred())
 
 			data, ok := configMap["data"].(map[string]interface{})
 			Expect(ok).To(BeTrue())
 
-			toolsetsJSON, ok := data["toolsets.json"].(string)
+			toolsetsJSON, ok := data["toolset.json"].(string)
 			Expect(ok).To(BeTrue())
 			Expect(toolsetsJSON).To(ContainSubstring("custom"))
 		})
@@ -287,8 +310,8 @@ var _ = Describe("Discovery Lifecycle", func() {
 			for i := 0; i < 3; i++ {
 				serviceName := fmt.Sprintf("mock-rapid-%d", i)
 				annotations := map[string]string{
-					"holmesgpt.io/service-type": "prometheus",
-					"holmesgpt.io/priority":     "80",
+					"kubernaut.io/toolset":      "enabled",
+					"kubernaut.io/toolset-type": "prometheus",
 				}
 
 				// Deploy service
@@ -303,25 +326,27 @@ var _ = Describe("Discovery Lifecycle", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			// Wait for ConfigMap to stabilize
-			time.Sleep(15 * time.Second)
-
-			// Verify ConfigMap exists and is valid (no rapid services should remain)
-			configMap, err := infrastructure.GetConfigMap(testNamespace, "holmesgpt-dynamic-toolsets", kubeconfigPath)
-			if err == nil {
-				data, ok := configMap["data"].(map[string]interface{})
-				if ok {
-					toolsetsJSON, ok := data["toolsets.json"].(string)
-					if ok {
-						// None of the rapid services should be present
-						Expect(toolsetsJSON).ToNot(ContainSubstring("mock-rapid-0"))
-						Expect(toolsetsJSON).ToNot(ContainSubstring("mock-rapid-1"))
-						Expect(toolsetsJSON).ToNot(ContainSubstring("mock-rapid-2"))
-					}
+			// Wait for ConfigMap to stabilize (use Eventually for parallel execution)
+			// Note: Longer timeout for parallel execution (discovery interval + cluster load)
+			Eventually(func() bool {
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
+				if err != nil {
+					// ConfigMap might not exist if all services deleted - that's OK
+					return true
 				}
-			}
-			// If ConfigMap doesn't exist, that's acceptable (all services deleted)
+				data, ok := configMap["data"].(map[string]interface{})
+				if !ok {
+					return true
+				}
+				toolsetsJSON, ok := data["toolset.json"].(string)
+				if !ok {
+					return true
+				}
+				// None of the rapid services should be present
+				return !strings.Contains(toolsetsJSON, "mock-rapid-0") &&
+					!strings.Contains(toolsetsJSON, "mock-rapid-1") &&
+					!strings.Contains(toolsetsJSON, "mock-rapid-2")
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(), "ConfigMap should not contain any rapid services after deletion")
 		})
 	})
 })
-

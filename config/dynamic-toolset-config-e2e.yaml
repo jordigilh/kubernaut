@@ -1,0 +1,10 @@
+# Dynamic Toolset Service Configuration - E2E Testing
+# This configuration is used for E2E tests to speed up discovery loops
+#
+# Key differences from production config:
+# - discovery_interval: 10s (vs 5m in production) for faster E2E test execution
+
+service_discovery:
+  discovery_interval: "10s"      # E2E: Fast discovery for 30s test timeouts
+  health_check_interval: "5s"    # E2E: Fast health checks
+  namespaces: []                 # Empty means all namespaces

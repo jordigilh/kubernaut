@@ -8,23 +8,24 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/toolset"
 )
 
-// holmesGPTGenerator implements ToolsetGenerator for HolmesGPT format
-// BR-TOOLSET-027: HolmesGPT toolset JSON generation
-type holmesGPTGenerator struct{}
+// jsonToolsetGenerator implements ToolsetGenerator for generic JSON format
+// BR-TOOLSET-027: JSON toolset generation
+// This format is generic and can be consumed by any tool (HolmesGPT API, UI, CLI, etc.)
+type jsonToolsetGenerator struct{}
 
-// NewHolmesGPTGenerator creates a new HolmesGPT toolset generator
-func NewHolmesGPTGenerator() ToolsetGenerator {
-	return &holmesGPTGenerator{}
+// NewJSONGenerator creates a new JSON toolset generator
+func NewJSONGenerator() ToolsetGenerator {
+	return &jsonToolsetGenerator{}
 }
 
-// HolmesGPTToolset represents the root toolset structure
-type HolmesGPTToolset struct {
-	Tools []HolmesGPTTool `json:"tools"`
+// Toolset represents the root toolset structure in generic JSON format
+type Toolset struct {
+	Tools []Tool `json:"tools"`
 }
 
-// HolmesGPTTool represents a single tool in the HolmesGPT format
-// BR-TOOLSET-028: HolmesGPT tool structure requirements
-type HolmesGPTTool struct {
+// Tool represents a single discovered tool/service in generic JSON format
+// BR-TOOLSET-028: Tool structure requirements
+type Tool struct {
 	Name        string            `json:"name"`
 	Type        string            `json:"type"`
 	Endpoint    string            `json:"endpoint"`
@@ -33,15 +34,15 @@ type HolmesGPTTool struct {
 	Metadata    map[string]string `json:"metadata"`
 }
 
-// GenerateToolset creates a HolmesGPT toolset JSON from discovered services
-func (g *holmesGPTGenerator) GenerateToolset(ctx context.Context, services []*toolset.DiscoveredService) (string, error) {
+// GenerateToolset creates a generic JSON toolset from discovered services
+func (g *jsonToolsetGenerator) GenerateToolset(ctx context.Context, services []*toolset.DiscoveredService) (string, error) {
 	// Deduplicate services by name+namespace
 	uniqueServices := g.deduplicateServices(services)
 
-	// Convert to HolmesGPT format
-	tools := make([]HolmesGPTTool, 0, len(uniqueServices))
+	// Convert to generic JSON format
+	tools := make([]Tool, 0, len(uniqueServices))
 	for _, svc := range uniqueServices {
-		tool := HolmesGPTTool{
+		tool := Tool{
 			Name:        svc.Name,
 			Type:        svc.Type,
 			Endpoint:    svc.Endpoint,
@@ -59,7 +60,7 @@ func (g *holmesGPTGenerator) GenerateToolset(ctx context.Context, services []*to
 	}
 
 	// Create toolset structure
-	toolset := HolmesGPTToolset{
+	toolset := Toolset{
 		Tools: tools,
 	}
 
@@ -72,8 +73,8 @@ func (g *holmesGPTGenerator) GenerateToolset(ctx context.Context, services []*to
 	return string(jsonBytes), nil
 }
 
-// ValidateToolset validates that a toolset JSON is well-formed for HolmesGPT
-func (g *holmesGPTGenerator) ValidateToolset(ctx context.Context, toolsetJSON string) error {
+// ValidateToolset validates that a toolset JSON is well-formed
+func (g *jsonToolsetGenerator) ValidateToolset(ctx context.Context, toolsetJSON string) error {
 	// First check if JSON has required structure
 	var rawMap map[string]interface{}
 	if err := json.Unmarshal([]byte(toolsetJSON), &rawMap); err != nil {
@@ -86,7 +87,7 @@ func (g *holmesGPTGenerator) ValidateToolset(ctx context.Context, toolsetJSON st
 	}
 
 	// Parse into struct
-	var toolset HolmesGPTToolset
+	var toolset Toolset
 	if err := json.Unmarshal([]byte(toolsetJSON), &toolset); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
@@ -112,7 +113,7 @@ func (g *holmesGPTGenerator) ValidateToolset(ctx context.Context, toolsetJSON st
 }
 
 // deduplicateServices removes duplicate services based on name+namespace
-func (g *holmesGPTGenerator) deduplicateServices(services []*toolset.DiscoveredService) []*toolset.DiscoveredService {
+func (g *jsonToolsetGenerator) deduplicateServices(services []*toolset.DiscoveredService) []*toolset.DiscoveredService {
 	seen := make(map[string]bool)
 	unique := make([]*toolset.DiscoveredService, 0, len(services))
 
@@ -129,7 +130,10 @@ func (g *holmesGPTGenerator) deduplicateServices(services []*toolset.DiscoveredS
 
 // generateDescription creates a human-readable description for a service
 // BR-TOOLSET-028: Generate human-readable descriptions
-func (g *holmesGPTGenerator) generateDescription(svc *toolset.DiscoveredService) string {
+func (g *jsonToolsetGenerator) generateDescription(svc *toolset.DiscoveredService) string {
 	return fmt.Sprintf("%s service in %s namespace (type: %s)",
 		svc.Name, svc.Namespace, svc.Type)
 }
+
+
+

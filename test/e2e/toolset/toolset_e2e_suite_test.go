@@ -31,9 +31,11 @@ import (
 
 // Test suite for Dynamic Toolset E2E tests
 // This suite sets up a complete production-like environment:
-// - Kind cluster (single control-plane node)
-// - Dynamic Toolset controller (deployed per-namespace)
-// - Mock services (nginx pods with HolmesGPT annotations)
+// - Kind cluster (single control-plane node) - SHARED across parallel tests
+// - Dynamic Toolset controller (deployed per-namespace for isolation)
+// - Mock services (nginx pods with toolset annotations)
+//
+// PARALLEL EXECUTION: Tests run in parallel, each with unique namespace
 //
 // Business Requirements:
 // - BR-TOOLSET-016: Service discovery configuration
@@ -52,7 +54,7 @@ var (
 	cancel context.CancelFunc
 	logger *zap.Logger
 
-	// Cluster configuration (shared across all tests)
+	// Cluster configuration (shared across all parallel test procs)
 	clusterName    string
 	kubeconfigPath string
 
@@ -60,27 +62,23 @@ var (
 	anyTestFailed bool
 )
 
-var _ = BeforeSuite(func() {
-	// Initialize context
-	ctx, cancel = context.WithCancel(context.Background())
-
-	// Initialize logger
+// SynchronizedBeforeSuite runs cluster setup ONCE on proc 1, then shares config with all procs
+// This enables parallel test execution while sharing the same Kind cluster
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// This runs ONCE on proc 1 only
 	var err error
 	logger, err = zap.NewDevelopment()
 	Expect(err).ToNot(HaveOccurred())
 
-	// Initialize failure tracking
-	anyTestFailed = false
-
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Dynamic Toolset E2E Test Suite - Cluster Setup (ONCE)")
+	logger.Info("Dynamic Toolset E2E Test Suite - Cluster Setup (ONCE - Proc 1)")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	logger.Info("Creating Kind cluster for all E2E tests...")
 	logger.Info("  • Kind cluster (single control-plane node)")
 	logger.Info("  • Dynamic Toolset Docker image (build + load)")
 	logger.Info("  • Kubeconfig: ~/.kube/kind-toolset-config")
 	logger.Info("")
-	logger.Info("Note: Each test will deploy Dynamic Toolset in a unique namespace")
+	logger.Info("Note: Tests will run in PARALLEL, each with unique namespace")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Set cluster configuration
@@ -93,16 +91,37 @@ var _ = BeforeSuite(func() {
 	err = infrastructure.CreateToolsetCluster(clusterName, kubeconfigPath, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Set KUBECONFIG environment variable
-	err = os.Setenv("KUBECONFIG", kubeconfigPath)
-	Expect(err).ToNot(HaveOccurred())
-
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("Cluster Setup Complete - Tests can now deploy services per-namespace")
+	logger.Info("Cluster Setup Complete - Sharing config with parallel workers")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	logger.Info(fmt.Sprintf("  • Cluster: %s", clusterName))
 	logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Return kubeconfig path to share with all procs
+	return []byte(kubeconfigPath)
+}, func(data []byte) {
+	// This runs on ALL procs (including proc 1)
+	// Initialize context
+	ctx, cancel = context.WithCancel(context.Background())
+
+	// Initialize logger on each proc
+	var err error
+	logger, err = zap.NewDevelopment()
+	Expect(err).ToNot(HaveOccurred())
+
+	// Initialize failure tracking
+	anyTestFailed = false
+
+	// Get shared kubeconfig path from proc 1
+	kubeconfigPath = string(data)
+	clusterName = "toolset-e2e"
+
+	// Set KUBECONFIG environment variable on each proc
+	err = os.Setenv("KUBECONFIG", kubeconfigPath)
+	Expect(err).ToNot(HaveOccurred())
+
+	logger.Info(fmt.Sprintf("Worker initialized - using cluster: %s", clusterName))
 })
 
 // Track test failures for cluster cleanup decision
@@ -112,7 +131,11 @@ var _ = ReportAfterEach(func(report SpecReport) {
 	}
 })
 
-var _ = AfterSuite(func() {
+var _ = SynchronizedAfterSuite(func() {
+	// This runs on each proc after all its tests complete
+	// Nothing to do here - cleanup happens on proc 1
+}, func() {
+	// This runs ONCE on proc 1 after all procs finish
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	logger.Info("Dynamic Toolset E2E Test Suite - Cluster Teardown")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -153,4 +176,3 @@ var _ = AfterSuite(func() {
 	logger.Info("Cluster Teardown Complete")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
-
