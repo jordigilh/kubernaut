@@ -327,7 +327,12 @@ var _ = Describe("BR-TOOLSET-022: Custom Detector", func() {
 
 		It("should timeout after configured duration", func() {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				time.Sleep(10 * time.Second) // Longer than health check timeout
+				// Sleep with context awareness to allow clean shutdown
+				select {
+				case <-time.After(10 * time.Second):
+				case <-r.Context().Done():
+					return
+				}
 			}))
 			defer server.Close()
 

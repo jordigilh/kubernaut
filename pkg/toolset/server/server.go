@@ -10,8 +10,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/jordigilh/kubernaut/pkg/toolset"
 	"github.com/jordigilh/kubernaut/pkg/toolset/configmap"
 	"github.com/jordigilh/kubernaut/pkg/toolset/discovery"
 	"github.com/jordigilh/kubernaut/pkg/toolset/generator"
@@ -33,6 +36,7 @@ type Config struct {
 	MetricsPort       int
 	ShutdownTimeout   time.Duration
 	DiscoveryInterval time.Duration
+	Namespace         string // Namespace where ConfigMap will be created
 }
 
 // Server represents the Dynamic Toolset HTTP server
@@ -65,12 +69,20 @@ func NewServer(config *Config, clientset kubernetes.Interface) (*Server, error) 
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
+	// Use namespace from config (detected from pod's service account or env var)
+	// For E2E tests, this will be the test namespace
+	// For production, this will be kubernaut-system
+	namespace := config.Namespace
+	if namespace == "" {
+		namespace = "kubernaut-system" // Fallback
+	}
+
 	s := &Server{
 		config:        config,
 		clientset:     clientset,
-		discoverer:    discovery.NewServiceDiscoverer(clientset),
-		generator:     generator.NewHolmesGPTGenerator(),
-		configBuilder: configmap.NewConfigMapBuilder("kubernaut-toolset-config", "kubernaut-system"),
+		discoverer:    discovery.NewServiceDiscoverer(clientset, config.DiscoveryInterval),
+		generator:     generator.NewJSONGenerator(),
+		configBuilder: configmap.NewConfigMapBuilder("kubernaut-toolset-config", namespace),
 		mux:           http.NewServeMux(),
 		logger:        logger,
 	}
@@ -81,6 +93,11 @@ func NewServer(config *Config, clientset kubernetes.Interface) (*Server, error) 
 	s.discoverer.RegisterDetector(discovery.NewJaegerDetector())
 	s.discoverer.RegisterDetector(discovery.NewElasticsearchDetector())
 	s.discoverer.RegisterDetector(discovery.NewCustomDetector())
+
+	// Wire discovery callback to ConfigMap reconciliation
+	// BR-TOOLSET-026: Service discovery with ConfigMap integration
+	// This connects the discovery loop to ConfigMap generation and updates
+	s.discoverer.SetCallback(s.reconcileConfigMap)
 
 	// Setup routes
 	s.setupRoutes()
@@ -113,6 +130,89 @@ func NewServer(config *Config, clientset kubernetes.Interface) (*Server, error) 
 // This allows tests to inject mock detectors with custom health checkers
 func (s *Server) RegisterDetector(detector discovery.ServiceDetector) {
 	s.discoverer.RegisterDetector(detector)
+}
+
+// reconcileConfigMap generates and updates the ConfigMap with discovered services
+// BR-TOOLSET-026: Service discovery with ConfigMap integration
+// BR-TOOLSET-029: ConfigMap builder with override preservation
+//
+// This method is invoked as a callback when the discovery loop finds services.
+// It integrates the discovery → generation → ConfigMap creation pipeline.
+func (s *Server) reconcileConfigMap(ctx context.Context, services []toolset.DiscoveredService) error {
+	s.logger.Info("Reconciling ConfigMap with discovered services",
+		zap.Int("service_count", len(services)))
+
+	// Convert []toolset.DiscoveredService to []*toolset.DiscoveredService
+	servicePointers := make([]*toolset.DiscoveredService, len(services))
+	for i := range services {
+		servicePointers[i] = &services[i]
+	}
+
+	// 1. Generate toolset JSON from discovered services
+	// BR-TOOLSET-028: Generate toolset configuration from discovered services
+	toolsetJSON, err := s.generator.GenerateToolset(ctx, servicePointers)
+	if err != nil {
+		s.logger.Error("Failed to generate toolset JSON",
+			zap.Error(err),
+			zap.Int("service_count", len(services)))
+		return fmt.Errorf("failed to generate toolset: %w", err)
+	}
+
+	s.logger.Debug("Generated toolset JSON",
+		zap.Int("json_length", len(toolsetJSON)))
+
+	// 2. Build ConfigMap from toolset JSON
+	// BR-TOOLSET-029: ConfigMap builder with override preservation
+	configMap, err := s.configBuilder.BuildConfigMap(ctx, toolsetJSON)
+	if err != nil {
+		s.logger.Error("Failed to build ConfigMap",
+			zap.Error(err))
+		return fmt.Errorf("failed to build ConfigMap: %w", err)
+	}
+
+	// 3. Create or update ConfigMap in Kubernetes
+	// BR-TOOLSET-021: ConfigMap generation and management
+	existingCM, err := s.clientset.CoreV1().ConfigMaps(configMap.Namespace).Get(ctx, configMap.Name, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create new ConfigMap
+			_, err = s.clientset.CoreV1().ConfigMaps(configMap.Namespace).Create(ctx, configMap, metav1.CreateOptions{})
+			if err != nil {
+				s.logger.Error("Failed to create ConfigMap",
+					zap.Error(err),
+					zap.String("name", configMap.Name),
+					zap.String("namespace", configMap.Namespace))
+				return fmt.Errorf("failed to create ConfigMap: %w", err)
+			}
+			s.logger.Info("ConfigMap created",
+				zap.String("name", configMap.Name),
+				zap.String("namespace", configMap.Namespace),
+				zap.Int("service_count", len(services)))
+		} else {
+			s.logger.Error("Failed to get ConfigMap",
+				zap.Error(err),
+				zap.String("name", configMap.Name),
+				zap.String("namespace", configMap.Namespace))
+			return fmt.Errorf("failed to get ConfigMap: %w", err)
+		}
+	} else {
+		// Update existing ConfigMap
+		existingCM.Data = configMap.Data
+		_, err = s.clientset.CoreV1().ConfigMaps(configMap.Namespace).Update(ctx, existingCM, metav1.UpdateOptions{})
+		if err != nil {
+			s.logger.Error("Failed to update ConfigMap",
+				zap.Error(err),
+				zap.String("name", configMap.Name),
+				zap.String("namespace", configMap.Namespace))
+			return fmt.Errorf("failed to update ConfigMap: %w", err)
+		}
+		s.logger.Info("ConfigMap updated",
+			zap.String("name", configMap.Name),
+			zap.String("namespace", configMap.Namespace),
+			zap.Int("service_count", len(services)))
+	}
+
+	return nil
 }
 
 // setupRoutes configures HTTP routes
@@ -345,4 +445,12 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 // handleMetrics handles GET /metrics
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	promhttp.Handler().ServeHTTP(w, r)
+}
+
+// SetDiscoverer replaces the server's discoverer (for testing)
+// This allows integration tests to inject a discoverer with nil health checkers
+func (s *Server) SetDiscoverer(discoverer discovery.ServiceDiscoverer) {
+	s.discoverer = discoverer
+	// Re-wire the callback
+	s.discoverer.SetCallback(s.reconcileConfigMap)
 }

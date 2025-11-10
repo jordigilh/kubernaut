@@ -1,6 +1,17 @@
 # Mock service template for Dynamic Toolset E2E tests
-# This template is used to deploy nginx pods with HolmesGPT annotations
-# that Dynamic Toolset should discover and generate kubectl tools for
+# This template is used to deploy nginx pods with kubernaut.io annotations
+# that Dynamic Toolset should discover and generate toolset configurations for
+#
+# IMPORTANT: Service discovery annotations MUST be on the Service object only,
+# NOT on the Deployment or Pod template. The Dynamic Toolset discovers services
+# by reading Service annotations, not Deployment or Pod annotations.
+#
+# Required annotations:
+#   - kubernaut.io/toolset: "enabled" (or "true")
+#   - kubernaut.io/toolset-type: "<service-type>" (e.g., "prometheus", "grafana", "custom")
+# Optional annotations:
+#   - kubernaut.io/toolset-endpoint: "<custom-endpoint-url>"
+#   - kubernaut.io/toolset-health-path: "<custom-health-path>"
 
 apiVersion: v1
 kind: Service
@@ -22,8 +33,6 @@ kind: Deployment
 metadata:
   name: {{SERVICE_NAME}}
   namespace: {{NAMESPACE}}
-  annotations:
-{{ANNOTATIONS}}
 spec:
   replicas: 1
   selector:
@@ -33,12 +42,59 @@ spec:
     metadata:
       labels:
         app: {{SERVICE_NAME}}
-      annotations:
-{{ANNOTATIONS}}
     spec:
       containers:
         - name: nginx
           image: nginx:alpine
           ports:
             - containerPort: 80
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: {{SERVICE_NAME}}-nginx-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{SERVICE_NAME}}-nginx-config
+  namespace: {{NAMESPACE}}
+data:
+  default.conf: |
+    server {
+        listen 80;
+        server_name _;
+
+        # Root path - return 200 OK
+        location / {
+            return 200 'OK';
+            add_header Content-Type text/plain;
+        }
+
+        # Prometheus health check
+        location /-/healthy {
+            return 200 'Healthy';
+            add_header Content-Type text/plain;
+        }
+
+        # Grafana health check
+        location /api/health {
+            return 200 '{"status":"ok"}';
+            add_header Content-Type application/json;
+        }
+
+        # Elasticsearch health check
+        location /_cluster/health {
+            return 200 '{"status":"green"}';
+            add_header Content-Type application/json;
+        }
+
+        # Jaeger health check
+        location = / {
+            return 200 'OK';
+            add_header Content-Type text/plain;
+        }
+    }
 
