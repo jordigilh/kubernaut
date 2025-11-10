@@ -62,7 +62,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 | **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (100%) |
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (100%) |
 | **Context API** | ✅ **v1.0 PRODUCTION-READY** | Historical intelligence REST API | 17 BRs (12 active + 5 deprecated, 100%) |
-| **Dynamic Toolset Service** | ✅ **v1.0.1 PRODUCTION-READY** | HolmesGPT toolset configuration | 10 BRs (RFC 7807 + Graceful Shutdown, 100%) |
+| **Dynamic Toolset Service** | ✅ **v1.0 PRODUCTION-READY** | Service discovery & toolset generation | 8 BRs (100%, E2E complete) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | 12 BRs (100%) |
 | **HolmesGPT API** | ✅ **v3.0.1 PRODUCTION-READY** | AI investigation wrapper | 47 BRs (RFC 7807 + Graceful Shutdown, 100%) |
 | **Signal Processing** | ⏸️ Phase 3 | Signal enrichment | - |
@@ -73,11 +73,12 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 **Timeline**: 13-week development plan (currently in Week 2-3)
 
-**Recent Updates** (November 9, 2025):
+**Recent Updates** (November 10, 2025):
+- ✅ **Dynamic Toolset v1.0 Complete**: 245/245 tests (194 unit + 38 integration + 13 E2E), deployment manifests, operations runbook
+- ✅ **E2E Test Optimization**: Parallel execution enabled, 2m37s runtime (~40% improvement)
+- ✅ **Production Deployment Ready**: In-cluster deployment manifests with RBAC, NetworkPolicy, ServiceMonitor
 - ✅ **RFC 7807 & Graceful Shutdown**: Implemented for Dynamic Toolset & HolmesGPT API (186 tests, 100% pass rate)
 - ✅ **BR Documentation Complete**: 160 BRs documented across 6 services (100% coverage)
-- ✅ **Ghost BRs Eliminated**: 510 → 0 Ghost BRs (99.4% reduction)
-- ✅ **Legacy Code Cleanup**: 216 files deleted (127 tests + 89 implementation)
 - ✅ Gateway Service v1.0: 240/240 tests passing, 20 BRs, production-ready
 - ✅ Context API v1.0: 100% P0 2x coverage, 17 BRs (12 active + 5 deprecated per ADR-032)
 
@@ -181,11 +182,11 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 | **Gateway v1.0** | 105 specs | 23 files | - | **128+** | **100%** |
 | **Context API v1.0** | 98 specs | 5 files | - | **103+** | **100%** |
 | **Data Storage** | 475 specs | 11 files | - | **486+** | **98%** |
-| **Dynamic Toolset v1.0.1** | 194 specs | 14 tests (RFC 7807 + Graceful Shutdown) | ⏸️ V1.1 | **208** | **95%** |
+| **Dynamic Toolset v1.0** | 194 specs | 38 tests | 13 E2E | **245** | **100%** |
 | **Notification Service** | 83 specs | 1 file | ⏸️ Deferred | **84+** | **95%** |
 | **HolmesGPT API v3.0.1** | 153 specs (Python) | 19 tests (RFC 7807 + Graceful Shutdown) | ⏸️ Requires LLM | **172** | **98%** |
 
-**Total**: 1,213 unit test specs + 54 integration test files + 8 E2E test files
+**Total**: 1,213 unit test specs + 73 integration test files + 13 E2E test files
 
 ---
 

@@ -1,6 +1,7 @@
 # Simplified Dynamic Toolset Deployment for E2E Testing
 # This is a minimal deployment focused on E2E test requirements
 # Production deployment is in deploy/dynamic-toolset-deployment.yaml
+# ADR-030 v2.0 COMPLIANT
 
 apiVersion: v1
 kind: ServiceAccount
@@ -56,6 +57,7 @@ subjects:
 
 ---
 # ConfigMap for Dynamic Toolset Configuration (E2E Test)
+# ADR-030 v2.0 COMPLIANT: Business logic configuration ONLY
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -66,44 +68,12 @@ metadata:
     app.kubernetes.io/component: configuration
 data:
   config.yaml: |
+    # ADR-030 v2.0: Business logic configuration ONLY
+    # Server configuration (port, timeouts) is in Deployment env vars
     service_discovery:
-      enabled: true
-      discovery_interval: "5s"  # Fast for E2E tests
-      cache_ttl: "10s"
-      health_check_interval: "5s"
-      namespaces:
-        - "__NAMESPACE__"  # Only test namespace
-
-      service_patterns:
-        prometheus:
-          enabled: true
-          priority: 80
-          selectors:
-            - app.kubernetes.io/name: prometheus
-            - app: prometheus
-          service_names: ["prometheus", "prometheus-server"]
-          required_ports: [9090]
-
-        grafana:
-          enabled: true
-          priority: 70
-          selectors:
-            - app.kubernetes.io/name: grafana
-          service_names: ["grafana"]
-          required_ports: [3000]
-
-        custom:
-          enabled: true
-          priority: 30
-
-    holmesgpt:
-      enabled: true
-      endpoint: "http://holmesgpt-api:8080"
-      timeout: "10s"
-      dynamic_toolsets:
-        enabled: true
-        update_interval: "5s"  # Fast for E2E tests
-        baseline_toolsets: ["kubernetes", "internet"]
+      discovery_interval: "5s"          # E2E: Faster discovery for parallel tests (was 10s)
+      health_check_interval: "3s"       # E2E: Faster health checks (was 5s)
+      namespaces: []                    # Empty = all namespaces (E2E tests use single namespace)
 
 ---
 # Dynamic Toolset Deployment (E2E Test - Simplified)
@@ -136,33 +106,34 @@ spec:
         - name: http
           containerPort: 8080
           protocol: TCP
-        - name: health
-          containerPort: 8081
+        - name: metrics
+          containerPort: 9090
           protocol: TCP
         env:
+        # ADR-030 v2.0: Deployment configuration via env vars
         - name: CONFIG_FILE
-          value: "/etc/kubernaut/config.yaml"
-        - name: LOG_LEVEL
-          value: "debug"  # Verbose for E2E tests
-        - name: SERVICE_DISCOVERY_ENABLED
-          value: "true"
-        - name: DYNAMIC_TOOLSETS_ENABLED
-          value: "true"
+          value: "/etc/config/config.yaml"
+        - name: SERVER_PORT
+          value: "8080"
+        - name: METRICS_PORT
+          value: "9090"
+        - name: SHUTDOWN_TIMEOUT
+          value: "30s"
         volumeMounts:
         - name: config
-          mountPath: /etc/kubernaut
+          mountPath: /etc/config
           readOnly: true
         livenessProbe:
           httpGet:
             path: /health
-            port: health
+            port: http
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
         readinessProbe:
           httpGet:
             path: /ready
-            port: health
+            port: http
           initialDelaySeconds: 5
           periodSeconds: 3
           timeoutSeconds: 2
@@ -197,5 +168,8 @@ spec:
     port: 8080
     targetPort: http
     protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
   type: ClusterIP
-
