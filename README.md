@@ -177,16 +177,18 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 
 **Current Test Status**: 1,060+ unit tests passing (100% pass rate)
 
-| Service | Unit | Integration | E2E | Total | Confidence |
-|---------|------|-------------|-----|-------|------------|
-| **Gateway v1.0** | 105 specs | 23 files | - | **128+** | **100%** |
-| **Context API v1.0** | 98 specs | 5 files | - | **103+** | **100%** |
-| **Data Storage** | 475 specs | 11 files | - | **486+** | **98%** |
-| **Dynamic Toolset v1.0** | 194 specs | 38 tests | 13 E2E | **245** | **100%** |
-| **Notification Service** | 83 specs | 1 file | ⏸️ Deferred | **84+** | **95%** |
-| **HolmesGPT API v3.0.1** | 153 specs (Python) | 19 tests (RFC 7807 + Graceful Shutdown) | ⏸️ Requires LLM | **172** | **98%** |
+| Service | Unit Specs | Integration Specs | E2E Specs | Total | Confidence |
+|---------|------------|-------------------|-----------|-------|------------|
+| **Gateway v1.0** | 105 | 114 | - | **219** | **100%** |
+| **Context API v1.0** | 98 | ~50 | - | **~148** | **100%** |
+| **Data Storage** | 475 | ~60 | - | **~535** | **98%** |
+| **Dynamic Toolset v1.0** | 194 | 38 | 13 | **245** | **100%** |
+| **Notification Service** | 83 | ~10 | - | **~93** | **95%** |
+| **HolmesGPT API v3.0.1** | 153 | 19 | - | **172** | **98%** |
 
-**Total**: 1,213 unit test specs + 73 integration test files + 13 E2E test files
+**Total**: ~1,108 unit specs + ~291 integration specs + 13 E2E specs = **~1,412 test specs**
+
+*Note: Integration spec counts are estimates. Gateway has exact count (114 specs), others estimated from file counts.*
 
 ---
 
