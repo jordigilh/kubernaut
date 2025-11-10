@@ -17,7 +17,6 @@ limitations under the License.
 package infrastructure
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -359,4 +358,3 @@ func waitForToolsetReady(namespace, kubeconfigPath string, writer io.Writer) err
 	fmt.Fprintln(writer, "   Dynamic Toolset controller ready")
 	return nil
 }
-

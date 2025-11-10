@@ -11,7 +11,22 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/toolset/metrics"
 )
 
-var _ = Describe("BR-TOOLSET-035: Prometheus Metrics", func() {
+var _ = Describe("BR-TOOLSET-035: Prometheus Metrics (9 metrics)", func() {
+	// DD-TOOLSET-001: REST API Deprecation - Removed 11 low-value metrics (55%)
+	// See: docs/architecture/decisions/DD-TOOLSET-001-REST-API-Deprecation.md
+	//
+	// Removed Test Suites (11 metrics):
+	// - API Request Metrics (3 tests) - REST API disabled
+	// - Authentication Metrics (3 tests) - No authenticated endpoints
+	// - Graceful Shutdown Metrics (2 tests) - Pod terminates before scrape
+	// - Content-Type Validation (1 test) - No POST/PUT/PATCH endpoints
+	// - RFC 7807 Errors (1 test) - No REST API errors
+	//
+	// Remaining Test Suites (9 metrics):
+	// - Service Discovery Metrics (4 tests)
+	// - ConfigMap Metrics (3 tests)
+	// - Toolset Generation Metrics (2 tests)
+
 	BeforeEach(func() {
 		// Reset metrics before each test
 		metrics.ResetMetrics()
@@ -55,60 +70,6 @@ var _ = Describe("BR-TOOLSET-035: Prometheus Metrics", func() {
 
 			count := testutil.ToFloat64(metrics.HealthCheckFailures.WithLabelValues("prometheus", "timeout"))
 			Expect(count).To(Equal(1.0))
-		})
-	})
-
-	Describe("API Request Metrics", func() {
-		It("should track API requests by endpoint and method", func() {
-			metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "200").Inc()
-			metrics.APIRequests.WithLabelValues("/api/v1/services", "GET", "200").Inc()
-			metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "200").Inc()
-
-			count := testutil.ToFloat64(metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "200"))
-			Expect(count).To(Equal(2.0))
-		})
-
-		It("should track API request duration", func() {
-			timer := prometheus.NewTimer(metrics.APIRequestDuration.WithLabelValues("/api/v1/toolset", "GET"))
-			timer.ObserveDuration()
-
-			count := testutil.CollectAndCount(metrics.APIRequestDuration)
-			Expect(count).To(BeNumerically(">", 0))
-		})
-
-		It("should track API errors", func() {
-			metrics.APIErrors.WithLabelValues("/api/v1/discover", "internal_error").Inc()
-
-			count := testutil.ToFloat64(metrics.APIErrors.WithLabelValues("/api/v1/discover", "internal_error"))
-			Expect(count).To(Equal(1.0))
-		})
-	})
-
-	Describe("Authentication Metrics", func() {
-		It("should track authentication attempts", func() {
-			metrics.AuthAttempts.Inc()
-			metrics.AuthAttempts.Inc()
-			metrics.AuthAttempts.Inc()
-
-			count := testutil.ToFloat64(metrics.AuthAttempts)
-			Expect(count).To(Equal(3.0))
-		})
-
-		It("should track authentication failures by reason", func() {
-			metrics.AuthFailures.WithLabelValues("invalid_token").Inc()
-			metrics.AuthFailures.WithLabelValues("missing_token").Inc()
-			metrics.AuthFailures.WithLabelValues("invalid_token").Inc()
-
-			count := testutil.ToFloat64(metrics.AuthFailures.WithLabelValues("invalid_token"))
-			Expect(count).To(Equal(2.0))
-		})
-
-		It("should track authentication duration", func() {
-			timer := prometheus.NewTimer(metrics.AuthDuration)
-			timer.ObserveDuration()
-
-			count := testutil.CollectAndCount(metrics.AuthDuration)
-			Expect(count).To(BeNumerically(">", 0))
 		})
 	})
 
@@ -162,7 +123,7 @@ var _ = Describe("BR-TOOLSET-035: Prometheus Metrics", func() {
 		It("should export metrics in Prometheus format", func() {
 			// Set some metric values
 			metrics.ServicesDiscovered.WithLabelValues("prometheus").Inc()
-			metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "200").Inc()
+			metrics.ConfigMapUpdates.WithLabelValues("success").Inc()
 
 			// Collect metrics
 			metricFamilies, err := prometheus.DefaultGatherer.Gather()
