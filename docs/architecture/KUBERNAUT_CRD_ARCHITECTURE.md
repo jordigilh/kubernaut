@@ -295,20 +295,24 @@ Kubernaut's architecture consists of:
 
 **Purpose**: HolmesGPT toolset configuration management
 
-**Type**: Stateless HTTP API
+**Type**: Stateless Controller (Discovery Loop)
 
 **Responsibilities**:
-- Dynamic toolset discovery and configuration
-- Toolset registration and lifecycle management
-- ConfigMap-based toolset configuration
-- Hot-reload capabilities for toolset updates
-- Toolset validation and health checking
+- Automatic Kubernetes service discovery (Prometheus, Grafana, Jaeger, Elasticsearch, custom)
+- HolmesGPT toolset generation and ConfigMap updates
+- ConfigMap reconciliation and drift protection
+- Service health validation
+- Discovery loop execution (configurable interval)
 
-**Port**: 8080 (API/health), 9090 (metrics)
+**Port**: 8080 (health/ready), 9090 (metrics)
+
+**V1.0 Note**: REST API endpoints disabled per DD-TOOLSET-001. Use `kubectl` for ConfigMap introspection.
+
+**V1.1 Planned**: ToolsetConfig CRD for configuration management (BR-TOOLSET-044)
 
 **Business Requirements**: BR-TOOLSET-001 to BR-TOOLSET-020
 
-**Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
+**Source**: [docs/services/stateless/dynamic-toolset/](../services/stateless/dynamic-toolset/)
 
 ---
 

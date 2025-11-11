@@ -1,8 +1,128 @@
 # Dynamic Toolset Service - Implementation Details
 
-**Version**: v1.0
-**Last Updated**: October 10, 2025
-**Status**: ✅ Design Complete, Ready for Implementation
+**Version**: v1.2
+**Last Updated**: November 10, 2025
+**Status**: 🚨 **CRITICAL GAPS IDENTIFIED** - ~30% complete, integration missing
+
+---
+
+## 📝 Changelog
+
+### Version 1.2 (November 10, 2025)
+**Major Update**: Integrated gap analysis and implementation guidelines from mature services
+
+**Added**:
+- ✅ **Current State Assessment** section with implementation status
+- ✅ **Implementation Guidelines** section with Do's and Don'ts
+- ✅ **Critical Gaps** section identifying missing integration
+- ✅ **Edge Case Requirements** for each component
+- ✅ **Testing Strategy** with behavior-focused validation
+- ✅ **Anti-Pattern Prevention** checklist
+
+**Changed**:
+- 🔄 Updated V1.0 scope (REST API deprecated, auth middleware not required)
+- 🔄 Simplified reconciliation pattern (callback instead of dedicated controller for V1.0)
+- 🔄 Enhanced testing requirements with defense-in-depth strategy
+
+**Fixed**:
+- ✅ Removed deprecated REST API endpoints
+- ✅ Removed authentication middleware (not required per ADR-036)
+- ✅ Added missing ConfigMap integration pattern
+
+### Version 1.0 (October 10, 2025)
+**Initial Release**: Original implementation specification
+
+---
+
+## 🚨 Current State Assessment
+
+### **Implementation Status** (as of November 10, 2025)
+
+| Component | Documented (Plan) | Implemented (Code) | % Complete | Status |
+|---|---|---|---|---|
+| **Service Discovery** | 275 lines | ~200 lines | 70% | ✅ Core logic exists |
+| **Toolset Generation** | 100 lines | ~60 lines | 60% | ✅ Exists, different structure |
+| **ConfigMap Builder** | 60 lines | ~40 lines | 70% | ✅ Exists, not wired |
+| **ConfigMap Integration** | Required | **MISSING** | 0% | ❌ **P0 - CRITICAL** |
+| **HTTP Server** | 160 lines | ~100 lines | 60% | ✅ Basic server |
+| **Graceful Shutdown** | Required | Implemented | 100% | ✅ DD-007 compliant |
+| **Unit Tests** | 70%+ | 70%+ | 100% | ✅ Passing |
+| **Integration Tests** | >50% | ~30% | 60% | ⚠️ Missing business logic |
+| **E2E Tests** | <10% | 0% | 0% | ❌ 0/13 passing |
+| **Overall** | ~1500 lines | ~400 lines | **~30%** | 🚨 **Incomplete** |
+
+### **Critical Gaps Identified**
+
+#### **Gap 1: Missing ConfigMap Integration** (P0 - CRITICAL)
+**Problem**: Service discovers services and generates toolset JSON, but **NEVER creates/updates ConfigMap**.
+
+**Evidence**:
+```bash
+$ grep -r "s.generator\|s.configBuilder" pkg/toolset/server/
+# ZERO results - components created but never called
+```
+
+**Solution**: Implement callback pattern to connect discovery → generation → ConfigMap update.
+
+#### **Gap 2: Components Not Wired Together** (P0 - CRITICAL)
+**Problem**: `generator` and `configBuilder` exist but are disconnected from discovery loop.
+
+**Solution**: Add `ServiceDiscoveryCallback` and wire in `NewServer()`.
+
+#### **Gap 3: Missing Integration Tests** (P1 - HIGH)
+**Problem**: Integration tests only cover HTTP middleware, not core business logic.
+
+**Solution**: Add tests for Discovery → ConfigMap flow.
+
+---
+
+## 📋 Implementation Guidelines (MANDATORY)
+
+### **🎯 Core Principles** (from Context API and Gateway)
+
+#### **✅ DO's**
+1. **Discover Services Periodically**: 5-minute interval (configurable)
+2. **Validate Annotations**: Require `kubernaut.io/toolset: "enabled"` and `kubernaut.io/toolset-type`
+3. **Health Check with Timeout**: 5-second timeout per service, fail gracefully
+4. **Generate ConfigMap Atomically**: Build entire ConfigMap before updating
+5. **Preserve Manual Overrides**: Merge manual ConfigMap changes with discovered services
+6. **Log Discovery Events**: Structured logging for service add/remove/update
+7. **Use Callback Pattern**: Decouple discovery from ConfigMap generation
+8. **Parallel Health Checks**: Use goroutines for concurrent health validation
+9. **Retry ConfigMap Updates**: Exponential backoff for conflict resolution (3 attempts)
+10. **Test Behavior, Not Implementation**: Focus on business outcomes in tests
+
+#### **❌ DON'Ts**
+1. **Don't Block Discovery Loop**: Use goroutines for health checks (parallel)
+2. **Don't Fail on Single Service**: Continue discovery if one service health check fails
+3. **Don't Update ConfigMap on Every Discovery**: Only update if services changed
+4. **Don't Cache Health Status Forever**: Re-check health on every discovery cycle
+5. **Don't Ignore ConfigMap Update Conflicts**: Retry with exponential backoff
+6. **Don't Skip Validation**: Validate service annotations before including in toolset
+7. **Don't Hardcode ConfigMap Name/Namespace**: Use configuration
+8. **Don't Test Implementation Details**: Test business outcomes, not internal logic
+9. **Don't Create New Components in REFACTOR**: Only enhance existing code
+10. **Don't Skip Integration in GREEN Phase**: Wire components to main app immediately
+
+### **🧪 Testing Requirements** (Defense-in-Depth)
+
+#### **Unit Tests** (70%+ Coverage)
+- **Focus**: Real business logic with external mocks only
+- **Coverage**: Service detection, health checks, toolset generation, ConfigMap building
+- **Edge Cases**: Malformed annotations, health timeouts, empty results
+- **Validation**: Test business behavior (e.g., "only healthy services included"), not implementation
+
+#### **Integration Tests** (<20% Coverage)
+- **Focus**: Component interactions requiring infrastructure
+- **Coverage**: Discovery → ConfigMap flow, ConfigMap updates, conflict resolution
+- **Edge Cases**: Concurrent updates, large service counts (1000+), discovery failures
+- **Validation**: Test end-to-end business flow with real Kubernetes client (fake or envtest)
+
+#### **E2E Tests** (<10% Coverage)
+- **Focus**: Critical user journeys in production-like environment
+- **Coverage**: Full discovery lifecycle, service add/delete/update, ConfigMap synchronization
+- **Edge Cases**: Kind cluster with real services, annotation changes, health failures
+- **Validation**: Test complete system behavior in realistic environment
 
 ---
 
@@ -13,8 +133,10 @@
 3. [HTTP Server Implementation](#http-server-implementation)
 4. [ConfigMap Management](#configmap-management)
 5. [Health Check Implementation](#health-check-implementation)
-6. [Reconciliation Controller](#reconciliation-controller)
+6. [Reconciliation Controller](#reconciliation-controller) *(Simplified to callback for V1.0)*
 7. [Error Handling](#error-handling)
+8. [Edge Cases and Anti-Patterns](#edge-cases-and-anti-patterns) *(NEW)*
+9. [Integration Pattern](#integration-pattern) *(NEW)*
 
 ---
 

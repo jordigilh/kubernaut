@@ -1,9 +1,126 @@
 # Dynamic Toolset Service - Implementation Checklist
 
-**Version**: v1.0
-**Last Updated**: October 6, 2025
-**Service Type**: Stateless HTTP API + Kubernetes Controller
-**Port**: 8080 (REST API + Health), 9090 (Metrics)
+**Version**: v1.2
+**Last Updated**: November 10, 2025
+**Service Type**: Stateless HTTP API (V1.0) → CRD Controller (V1.1+)
+**Port**: 8080 (HTTP + Health), 9090 (Metrics)
+**Status**: 🚨 **CRITICAL GAPS IDENTIFIED** - ~30% complete
+
+---
+
+## 📝 Changelog
+
+### Version 1.2 (November 10, 2025)
+**Major Update**: Integrated gap analysis and implementation guidelines from Context API and Gateway services
+
+**Added**:
+- ✅ **Current State Assessment** with implementation status table
+- ✅ **Implementation Guidelines** (Do's and Don'Ts) integrated into each phase
+- ✅ **Critical Gaps** section (P0, P1, P2 priorities)
+- ✅ **Edge Case Requirements** for each component
+- ✅ **Behavior Testing Examples** for validation
+- ✅ **Anti-Pattern Prevention** checklist
+
+**Changed**:
+- 🔄 Restructured phases by priority (P0 - IMMEDIATE, P1 - HIGH, P2 - FUTURE)
+- 🔄 Updated V1.0 scope (REST API deprecated per DD-TOOLSET-001)
+- 🔄 Removed authentication middleware (not required per ADR-036)
+- 🔄 Simplified reconciliation (callback pattern for V1.0, CRD controller for V1.1)
+
+**Fixed**:
+- ✅ Added missing ConfigMap integration steps
+- ✅ Corrected testing strategy (defense-in-depth, not pyramid)
+- ✅ Updated phase estimates based on actual implementation
+
+### Version 1.0 (October 6, 2025)
+**Initial Release**: Original implementation checklist
+
+---
+
+## 🚨 Current State Assessment
+
+### **Implementation Status** (as of November 10, 2025)
+
+| Component | Documented (Plan) | Implemented (Code) | % Complete | Status |
+|---|---|---|---|---|
+| **Service Discovery** | 275 lines | ~200 lines | 70% | ✅ Core logic exists |
+| **Toolset Generation** | 100 lines | ~60 lines | 60% | ✅ Exists, different structure |
+| **ConfigMap Builder** | 60 lines | ~40 lines | 70% | ✅ Exists, not wired |
+| **ConfigMap Integration** | Required | **MISSING** | 0% | ❌ **P0 - CRITICAL** |
+| **HTTP Server** | 160 lines | ~100 lines | 60% | ✅ Basic server |
+| **Graceful Shutdown** | Required | Implemented | 100% | ✅ DD-007 compliant |
+| **Unit Tests** | 70%+ | 70%+ | 100% | ✅ Passing |
+| **Integration Tests** | >50% | ~30% | 60% | ⚠️ Missing business logic |
+| **E2E Tests** | <10% | 0% | 0% | ❌ 0/13 passing |
+| **Overall** | ~1500 lines | ~400 lines | **~30%** | 🚨 **Incomplete** |
+
+### **V1.0 Scope** (Current Target)
+
+**✅ In Scope**:
+1. Service Discovery (with `kubernaut.io/toolset` annotations)
+2. Health Validation (5-second timeout per service)
+3. Toolset Generation (HolmesGPT-compatible JSON)
+4. ConfigMap Builder (build ConfigMap from JSON)
+5. ConfigMap Integration (create/update ConfigMap) - **MISSING - P0**
+6. HTTP Server (health, readiness, metrics endpoints)
+7. Graceful Shutdown (DD-007 compliant)
+
+**❌ Out of Scope** (Deferred to V1.1+):
+1. REST API Endpoints (deprecated per DD-TOOLSET-001)
+2. Authentication Middleware (not required per ADR-036)
+3. Dedicated Reconciliation Controller (simplified to callback for V1.0)
+4. Leader Election (single replica for V1.0)
+5. ToolsetConfig CRD (BR-TOOLSET-044 - V1.1)
+
+---
+
+## 📋 Implementation Guidelines (MANDATORY)
+
+### **🎯 Core Principles** (from Context API and Gateway)
+
+#### **✅ DO's**
+1. **Discover Services Periodically**: 5-minute interval (configurable)
+2. **Validate Annotations**: Require `kubernaut.io/toolset: "enabled"` and `kubernaut.io/toolset-type`
+3. **Health Check with Timeout**: 5-second timeout per service, fail gracefully
+4. **Generate ConfigMap Atomically**: Build entire ConfigMap before updating
+5. **Preserve Manual Overrides**: Merge manual ConfigMap changes with discovered services
+6. **Log Discovery Events**: Structured logging for service add/remove/update
+7. **Use Callback Pattern**: Decouple discovery from ConfigMap generation
+8. **Parallel Health Checks**: Use goroutines for concurrent health validation
+9. **Retry ConfigMap Updates**: Exponential backoff for conflict resolution (3 attempts)
+10. **Test Behavior, Not Implementation**: Focus on business outcomes in tests
+
+#### **❌ DON'Ts**
+1. **Don't Block Discovery Loop**: Use goroutines for health checks (parallel)
+2. **Don't Fail on Single Service**: Continue discovery if one service health check fails
+3. **Don't Update ConfigMap on Every Discovery**: Only update if services changed
+4. **Don't Cache Health Status Forever**: Re-check health on every discovery cycle
+5. **Don't Ignore ConfigMap Update Conflicts**: Retry with exponential backoff
+6. **Don't Skip Validation**: Validate service annotations before including in toolset
+7. **Don't Hardcode ConfigMap Name/Namespace**: Use configuration
+8. **Don't Test Implementation Details**: Test business outcomes, not internal logic
+9. **Don't Create New Components in REFACTOR**: Only enhance existing code
+10. **Don't Skip Integration in GREEN Phase**: Wire components to main app immediately
+
+### **🧪 Testing Requirements** (Defense-in-Depth)
+
+#### **Unit Tests** (70%+ Coverage)
+- **Focus**: Real business logic with external mocks only
+- **Coverage**: Service detection, health checks, toolset generation, ConfigMap building
+- **Edge Cases**: Malformed annotations, health timeouts, empty results
+- **Validation**: Test business behavior (e.g., "only healthy services included"), not implementation
+
+#### **Integration Tests** (<20% Coverage)
+- **Focus**: Component interactions requiring infrastructure
+- **Coverage**: Discovery → ConfigMap flow, ConfigMap updates, conflict resolution
+- **Edge Cases**: Concurrent updates, large service counts (1000+), discovery failures
+- **Validation**: Test end-to-end business flow with real Kubernetes client (fake or envtest)
+
+#### **E2E Tests** (<10% Coverage)
+- **Focus**: Critical user journeys in production-like environment
+- **Coverage**: Full discovery lifecycle, service add/delete/update, ConfigMap synchronization
+- **Edge Cases**: Kind cluster with real services, annotation changes, health failures
+- **Validation**: Test complete system behavior in realistic environment
 
 ---
 
@@ -11,25 +128,119 @@
 
 **CRITICAL**: Read these documents before starting implementation:
 
-- **Testing Strategy**: [testing-strategy.md](./testing-strategy.md) - Hybrid testing (70%+ unit, >50% integration, controller reconciliation)
-- **Security Configuration**: [security-configuration.md](./security-configuration.md) - TokenReviewer + RBAC for service discovery
-- **Integration Points**: [integration-points.md](./integration-points.md) - K8s Service watch, ConfigMap reconciliation, HolmesGPT API
-- **Core Methodology**: [00-core-development-methodology.mdc](../../.cursor/rules/00-core-development-methodology.mdc) - APDC-Enhanced TDD
-- **Business Requirements**: BR-TOOLSET-001 through BR-TOOLSET-180
-  - **V1 Scope**: BR-TOOLSET-001 to BR-TOOLSET-010 (documented in testing-strategy.md)
-  - **Reserved for Future**: BR-TOOLSET-011 to BR-TOOLSET-180 (V2, V3 expansions)
+### **Core Methodology**
+- [00-core-development-methodology.mdc](../../.cursor/rules/00-core-development-methodology.mdc) - APDC-Enhanced TDD
+- [03-testing-strategy.mdc](../../.cursor/rules/03-testing-strategy.mdc) - Defense-in-Depth testing
+
+### **Service-Specific Documentation**
+- [testing-strategy.md](./testing-strategy.md) - Dynamic Toolset testing approach
+- [integration-points.md](./integration-points.md) - K8s Service watch, ConfigMap reconciliation
+- [implementation.md](./implementation.md) - Detailed technical specification
+
+### **Gap Analysis and Lessons Learned**
+- [IMPLEMENTATION_PLAN_V1.1_UPDATED.md](./IMPLEMENTATION_PLAN_V1.1_UPDATED.md) - Comprehensive gap analysis with lessons from Context API and Gateway
+- [E2E_FAILURE_ROOT_CAUSE_ANALYSIS.md](../../../test/e2e/toolset/E2E_FAILURE_ROOT_CAUSE_ANALYSIS.md) - Root cause of E2E test failures
+- [IMPLEMENTATION_GAP_ANALYSIS.md](../../../test/e2e/toolset/IMPLEMENTATION_GAP_ANALYSIS.md) - Detailed gap comparison
+
+### **Business Requirements**
+- BR-TOOLSET-001 through BR-TOOLSET-043 (V1.0 scope)
+- BR-TOOLSET-044 (ToolsetConfig CRD - V1.1)
+
+### **Architecture Decisions**
+- DD-TOOLSET-001: REST API Deprecation
+- ADR-036: Authentication and Authorization Strategy (no auth middleware required)
+- DD-007: Graceful Shutdown Pattern
 
 ---
 
-## 📋 Implementation Overview
+## 🔧 Phase 1: Critical Gap Closure (P0 - IMMEDIATE)
 
-This checklist ensures complete and correct implementation of the Dynamic Toolset Service following **mandatory** APDC-Enhanced TDD methodology (Analysis → Plan → Do-RED → Do-GREEN → Do-REFACTOR → Check) and project specifications.
-
-**Note**: This is a **hybrid service** (HTTP API + Kubernetes Controller using controller-runtime), so implementation includes both REST API and controller reconciliation components.
+**Priority**: P0 - BLOCKING
+**Estimated Effort**: 8-12 hours
+**Target**: Fix E2E test failures and complete core integration
 
 ---
 
-## ✅ Phase 1: Core Infrastructure (Week 1)
+### **1.1 ConfigMap Integration** (4-6 hours)
+
+**Status**: ✅ **IN PROGRESS** (2025-11-10)
+**Confidence**: 95%
+
+#### **Implementation Steps**
+- [x] Add `ServiceDiscoveryCallback` to `ServiceDiscoverer` interface
+- [x] Implement `reconcileConfigMap()` method in `server.go`
+- [x] Wire callback in `NewServer()` (add `s.discoverer.SetCallback(s.reconcileConfigMap)`)
+- [ ] Add unit tests for `reconcileConfigMap()`
+- [ ] Run unit tests to verify changes
+- [ ] Run E2E tests to verify fix (target: 13/13 passing)
+
+#### **Implementation Guidelines** (MANDATORY)
+**✅ DO**:
+- Use callback pattern to decouple discovery from ConfigMap generation
+- Generate toolset JSON atomically before updating ConfigMap
+- Retry ConfigMap updates with exponential backoff (3 attempts, 100ms base delay)
+- Log all ConfigMap operations with structured fields (name, namespace, service_count)
+- Compare existing ConfigMap data before updating (skip if unchanged)
+
+**❌ DON'T**:
+- Don't block discovery loop on ConfigMap updates
+- Don't fail entire reconciliation if ConfigMap update fails once
+- Don't update ConfigMap without checking if data changed
+- Don't ignore ConfigMap update conflicts (retry with backoff)
+
+#### **Edge Cases to Handle**
+1. **ConfigMap Already Exists**: Handle `AlreadyExists` error during creation
+2. **ConfigMap Update Conflict**: Retry with exponential backoff (3 attempts)
+3. **ConfigMap Not Found**: Create new ConfigMap
+4. **Kubernetes API Failure**: Log error and continue (don't crash service)
+5. **Empty Services List**: Create ConfigMap with empty toolset (valid state)
+
+#### **Validation Checklist**
+- [ ] Unit test: `reconcileConfigMap` creates ConfigMap when not exists
+- [ ] Unit test: `reconcileConfigMap` updates ConfigMap when exists
+- [ ] Unit test: `reconcileConfigMap` handles update conflicts with retry
+- [ ] Unit test: `reconcileConfigMap` skips update if data unchanged
+- [ ] Unit test: `reconcileConfigMap` logs all operations
+- [ ] E2E test: Discovery → ConfigMap creation flow works end-to-end
+- [ ] E2E test: ConfigMap updates when services change
+- [ ] E2E test: ConfigMap updates when services deleted
+
+---
+
+### **1.2 Integration Tests for Business Logic** (4-6 hours)
+
+**Status**: ⏳ **PENDING**
+**Confidence**: 90%
+
+#### **Test Files to Create**
+1. `test/integration/toolset/discovery_configmap_integration_test.go`
+
+#### **Test Coverage Required**
+
+See [IMPLEMENTATION_PLAN_V1.1_UPDATED.md](./IMPLEMENTATION_PLAN_V1.1_UPDATED.md) Section 5.2 for detailed test examples.
+
+**Key Tests**:
+1. Discovery → ConfigMap Creation (happy path)
+2. ConfigMap Updates on Service Changes
+3. ConfigMap Updates on Service Deletion
+4. ConfigMap Update Conflict Resolution
+5. Parallel Health Checks Performance
+
+#### **Validation Checklist**
+- [ ] Test: Discovery → ConfigMap creation (happy path)
+- [ ] Test: ConfigMap updates on service add
+- [ ] Test: ConfigMap updates on service delete
+- [ ] Test: ConfigMap update conflict resolution (retry logic)
+- [ ] Test: Parallel health checks performance (< 10s for 50 services)
+- [ ] Test: Malformed service annotations (graceful skip)
+- [ ] Test: Empty services list (valid ConfigMap with empty toolset)
+- [ ] All integration tests pass with fake Kubernetes client
+
+---
+
+## ✅ Phase 1: Core Infrastructure (Week 1) - DEPRECATED
+
+**NOTE**: This phase is from the original V1.0 plan. Most of this is now out of scope or already implemented. See Phase 1 (P0 - IMMEDIATE) above for current priorities.
 
 ### **1.1 Project Structure**
 - [ ] Create `pkg/dynamictoolset/` directory structure

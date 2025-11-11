@@ -18,6 +18,7 @@ import (
 type serviceDiscoverer struct {
 	client    kubernetes.Interface
 	detectors []ServiceDetector
+	callback  ServiceDiscoveryCallback // BR-TOOLSET-026: Callback for ConfigMap integration
 	mu        sync.RWMutex
 
 	// Discovery loop control
@@ -28,11 +29,15 @@ type serviceDiscoverer struct {
 }
 
 // NewServiceDiscoverer creates a new service discoverer with the given Kubernetes client
-func NewServiceDiscoverer(client kubernetes.Interface) ServiceDiscoverer {
+func NewServiceDiscoverer(client kubernetes.Interface, interval time.Duration) ServiceDiscoverer {
+	// Use provided interval, fallback to 5 minutes if zero
+	if interval == 0 {
+		interval = 5 * time.Minute
+	}
 	return &serviceDiscoverer{
 		client:    client,
 		detectors: make([]ServiceDetector, 0),
-		interval:  5 * time.Minute, // Default discovery interval
+		interval:  interval,
 		stopChan:  make(chan struct{}),
 	}
 }
@@ -43,6 +48,14 @@ func (d *serviceDiscoverer) RegisterDetector(detector ServiceDetector) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.detectors = append(d.detectors, detector)
+}
+
+// SetCallback registers a callback to be invoked when services are discovered
+// BR-TOOLSET-026: Service discovery with ConfigMap integration
+func (d *serviceDiscoverer) SetCallback(callback ServiceDiscoveryCallback) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.callback = callback
 }
 
 // DiscoverServices finds all detectable services in the cluster
@@ -119,8 +132,20 @@ func (d *serviceDiscoverer) Start(ctx context.Context) error {
 	defer ticker.Stop()
 
 	// Run initial discovery
-	if _, err := d.DiscoverServices(ctx); err != nil {
+	discovered, err := d.DiscoverServices(ctx)
+	if err != nil {
 		log.Printf("initial discovery error: %v", err)
+	} else {
+		// Invoke callback with discovered services
+		d.mu.RLock()
+		callback := d.callback
+		d.mu.RUnlock()
+
+		if callback != nil {
+			if err := callback(ctx, discovered); err != nil {
+				log.Printf("discovery callback error: %v", err)
+			}
+		}
 	}
 
 	for {
@@ -131,8 +156,21 @@ func (d *serviceDiscoverer) Start(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 			// Run discovery
-			if _, err := d.DiscoverServices(ctx); err != nil {
+			discovered, err := d.DiscoverServices(ctx)
+			if err != nil {
 				log.Printf("discovery error: %v", err)
+				continue
+			}
+
+			// Invoke callback with discovered services
+			d.mu.RLock()
+			callback := d.callback
+			d.mu.RUnlock()
+
+			if callback != nil {
+				if err := callback(ctx, discovered); err != nil {
+					log.Printf("discovery callback error: %v", err)
+				}
 			}
 		}
 	}
