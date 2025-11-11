@@ -116,8 +116,8 @@ kubectl describe namespace <target-namespace> | grep -A 5 "Resource Quotas"
 # Grant ConfigMap permissions (if missing)
 kubectl patch clusterrole kubernaut-service-discovery --type='json' -p='[
   {"op": "add", "path": "/rules/-", "value": {
-    "apiGroups": [""], 
-    "resources": ["configmaps"], 
+    "apiGroups": [""],
+    "resources": ["configmaps"],
     "verbs": ["get", "list", "watch", "create", "update", "patch"]
   }}
 ]'

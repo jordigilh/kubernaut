@@ -389,12 +389,24 @@ func (os *OptimizationService) OptimizeContext(ctx context.Context, complexity *
 │ └─────────────────────────────────────────────────────────────┘ │
 │                              │                                  │
 │                              ▼                                  │
-│ Toolset Management API                                          │
+│ Toolset Management (V1.0)                                       │
 │ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ GET /api/v1/toolsets          → Available toolsets         │ │
-│ │ GET /api/v1/toolsets/stats    → Toolset statistics         │ │
-│ │ POST /api/v1/toolsets/refresh → Force refresh              │ │
-│ │ GET /api/v1/service-discovery → Service discovery status   │ │
+│ │ kubectl get configmap kubernaut-toolset-config              │ │
+│ │   → View discovered services and generated toolsets        │ │
+│ │                                                             │ │
+│ │ Controller automatically:                                   │ │
+│ │   • Discovers services every 5 minutes (configurable)      │ │
+│ │   • Generates HolmesGPT toolset JSON                       │ │
+│ │   • Updates ConfigMap (kubernaut-toolset-config)           │ │
+│ │   • Reconciles drift and preserves custom keys             │ │
+│ └─────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│ V1.1 Planned: ToolsetConfig CRD (BR-TOOLSET-044)               │
+│ ┌─────────────────────────────────────────────────────────────┐ │
+│ │ • Configurable discovery interval                          │ │
+│ │ • Namespace filtering                                      │ │
+│ │ • Service type filters                                     │ │
+│ │ • Per-service health status                                │ │
 │ └─────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
