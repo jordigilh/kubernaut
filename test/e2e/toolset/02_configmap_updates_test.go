@@ -249,33 +249,33 @@ var _ = Describe("ConfigMap Updates", func() {
 			_, err = infrastructure.RunCommand(deleteCmd, kubeconfigPath)
 			Expect(err).ToNot(HaveOccurred())
 
-		// Wait for ConfigMap to be recreated with Prometheus (not just exist)
-		Eventually(func() string {
+			// Wait for ConfigMap to be recreated with Prometheus (not just exist)
+			Eventually(func() string {
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
+				if err != nil {
+					return ""
+				}
+				data, ok := configMap["data"].(map[string]interface{})
+				if !ok {
+					return ""
+				}
+				toolsetsJSON, ok := data["toolset.json"].(string)
+				if !ok {
+					return ""
+				}
+				return toolsetsJSON
+			}, 30*time.Second, 2*time.Second).Should(ContainSubstring("prometheus"))
+
+			// Verify ConfigMap contains Prometheus toolset
 			configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
-			if err != nil {
-				return ""
-			}
+			Expect(err).ToNot(HaveOccurred())
+
 			data, ok := configMap["data"].(map[string]interface{})
-			if !ok {
-				return ""
-			}
+			Expect(ok).To(BeTrue())
+
 			toolsetsJSON, ok := data["toolset.json"].(string)
-			if !ok {
-				return ""
-			}
-			return toolsetsJSON
-		}, 30*time.Second, 2*time.Second).Should(ContainSubstring("prometheus"))
-
-		// Verify ConfigMap contains Prometheus toolset
-		configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok := configMap["data"].(map[string]interface{})
-		Expect(ok).To(BeTrue())
-
-		toolsetsJSON, ok := data["toolset.json"].(string)
-		Expect(ok).To(BeTrue())
-		Expect(toolsetsJSON).To(ContainSubstring("prometheus"))
+			Expect(ok).To(BeTrue())
+			Expect(toolsetsJSON).To(ContainSubstring("prometheus"))
 		})
 
 		It("should generate valid JSON in ConfigMap toolset.json", func() {
@@ -289,41 +289,41 @@ var _ = Describe("ConfigMap Updates", func() {
 			err := infrastructure.DeployMockService(testCtx, testNamespace, "mock-prometheus", annotations, kubeconfigPath, GinkgoWriter)
 			Expect(err).ToNot(HaveOccurred())
 
-		// Wait for ConfigMap to include Prometheus (not just exist)
-		Eventually(func() string {
+			// Wait for ConfigMap to include Prometheus (not just exist)
+			Eventually(func() string {
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
+				if err != nil {
+					return ""
+				}
+				data, ok := configMap["data"].(map[string]interface{})
+				if !ok {
+					return ""
+				}
+				toolsetsJSON, ok := data["toolset.json"].(string)
+				if !ok {
+					return ""
+				}
+				return toolsetsJSON
+			}, 30*time.Second, 2*time.Second).Should(ContainSubstring("prometheus"))
+
+			// Verify ConfigMap contains valid JSON
 			configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
-			if err != nil {
-				return ""
-			}
+			Expect(err).ToNot(HaveOccurred())
+
 			data, ok := configMap["data"].(map[string]interface{})
-			if !ok {
-				return ""
-			}
+			Expect(ok).To(BeTrue(), "ConfigMap should have 'data' field")
+
 			toolsetsJSON, ok := data["toolset.json"].(string)
-			if !ok {
-				return ""
-			}
-			return toolsetsJSON
-		}, 30*time.Second, 2*time.Second).Should(ContainSubstring("prometheus"))
+			Expect(ok).To(BeTrue(), "ConfigMap should have 'toolset.json' in data")
+			Expect(toolsetsJSON).ToNot(BeEmpty(), "toolset.json should not be empty")
 
-		// Verify ConfigMap contains valid JSON
-		configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok := configMap["data"].(map[string]interface{})
-		Expect(ok).To(BeTrue(), "ConfigMap should have 'data' field")
-
-		toolsetsJSON, ok := data["toolset.json"].(string)
-		Expect(ok).To(BeTrue(), "ConfigMap should have 'toolset.json' in data")
-		Expect(toolsetsJSON).ToNot(BeEmpty(), "toolset.json should not be empty")
-
-		// Validate JSON structure (basic validation)
-		// In a real implementation, this would parse JSON and validate schema
-		Expect(toolsetsJSON).To(ContainSubstring("{"), "toolset.json should be valid JSON (contains {)")
-		Expect(toolsetsJSON).To(ContainSubstring("}"), "toolset.json should be valid JSON (contains })")
-		Expect(toolsetsJSON).To(ContainSubstring("prometheus"), "toolset.json should contain Prometheus toolset")
-		Expect(toolsetsJSON).To(ContainSubstring("endpoint"), "toolset.json should contain endpoint field")
-		Expect(toolsetsJSON).To(ContainSubstring("tools"), "toolset.json should contain tools array")
+			// Validate JSON structure (basic validation)
+			// In a real implementation, this would parse JSON and validate schema
+			Expect(toolsetsJSON).To(ContainSubstring("{"), "toolset.json should be valid JSON (contains {)")
+			Expect(toolsetsJSON).To(ContainSubstring("}"), "toolset.json should be valid JSON (contains })")
+			Expect(toolsetsJSON).To(ContainSubstring("prometheus"), "toolset.json should contain Prometheus toolset")
+			Expect(toolsetsJSON).To(ContainSubstring("endpoint"), "toolset.json should contain endpoint field")
+			Expect(toolsetsJSON).To(ContainSubstring("tools"), "toolset.json should contain tools array")
 
 			// Validate expected fields are present
 			Expect(toolsetsJSON).To(Or(

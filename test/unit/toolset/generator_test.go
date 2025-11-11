@@ -19,7 +19,7 @@ var _ = Describe("BR-TOOLSET-027: Toolset Generator", func() {
 	)
 
 	BeforeEach(func() {
-		gen = generator.NewHolmesGPTGenerator()
+		gen = generator.NewJSONGenerator()
 		ctx = context.Background()
 	})
 
