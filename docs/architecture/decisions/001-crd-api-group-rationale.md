@@ -1,9 +1,10 @@
 # CRD API Group Rationale
 
 **Date**: October 6, 2025
+**Last Updated**: November 10, 2025
 **Status**: ✅ **APPROVED**
 **API Group**: `kubernaut.io`
-**Version**: `/v1`
+**Version**: `/v1alpha1`
 
 ---
 

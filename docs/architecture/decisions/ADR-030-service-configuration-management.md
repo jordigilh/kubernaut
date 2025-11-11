@@ -1,10 +1,42 @@
 # ADR-030: Service Configuration Management via YAML Files
 
 **Status**: ✅ **APPROVED & IMPLEMENTED**
+**Version**: 2.0
 **Date**: November 2, 2025
-**Last Updated**: November 2, 2025 (Gateway refactored to follow Context API pattern)
+**Last Updated**: November 10, 2025 (Added ConfigMap Content Guidelines)
 **Authoritative Implementation**: **Context API Service** ([`pkg/contextapi/config/config.go`](../../pkg/contextapi/config/config.go))
 **Applies To**: All microservices in Kubernaut platform
+
+---
+
+## Changelog
+
+### Version 2.0 (2025-11-10)
+**CRITICAL UPDATE**: Added ConfigMap Content Guidelines (DO's and DON'Ts) + Security Rules
+
+**Changes**:
+- ✅ **Added**: ConfigMap Content Guidelines section with explicit DO's and DON'Ts
+- 🔒 **SECURITY**: Added critical secrets management guidelines (file-based secrets ONLY)
+- ✅ **Clarified**: ConfigMaps should contain **business logic knobs** only
+- ✅ **Prohibited**: Server configuration (port, timeouts) in ConfigMaps
+- ✅ **Prohibited**: Deployment-specific settings (replicas, resources) in ConfigMaps
+- ✅ **Prohibited**: Unnecessary `enabled` flags for core functionality
+- 🔒 **PROHIBITED**: Passwords/secrets in ConfigMaps (even as empty strings with comments)
+- 🔒 **MANDATED**: Secrets MUST be mounted as files from Kubernetes Secrets, NOT env vars
+- ✅ **Updated**: Dynamic Toolset Service marked as ✅ **COMPLIANT** (follows v2.0 guidelines)
+- ✅ **Identified**: Gateway Service as ❌ **NON-COMPLIANT** (requires refactoring)
+
+**Rationale**:
+During Dynamic Toolset Service implementation, we identified a critical anti-pattern: ConfigMaps containing deployment-specific settings (server ports, timeouts, metrics ports) that should be defined in Kubernetes Deployment manifests via environment variables or command-line flags. This violates the separation of concerns between **business logic configuration** (ConfigMap) and **deployment configuration** (Deployment manifest).
+
+**Impact**: All new services MUST follow v2.0 guidelines. Existing services (Gateway, Context API) require refactoring to remove deployment-specific settings from ConfigMaps.
+
+---
+
+### Version 1.0 (2025-11-02)
+- Initial ADR defining structured YAML configuration pattern
+- Established Context API as authoritative reference
+- Defined configuration priority (Env Vars > YAML > Defaults)
 
 ---
 
@@ -29,13 +61,306 @@ All microservices in the Kubernaut platform must have consistent configuration m
 **Authoritative Reference**: ✅ **Context API Service** ([`pkg/contextapi/config/config.go`](../../pkg/contextapi/config/config.go))
 
 This pattern has been **implemented** in:
-- ✅ **Context API Service**: [`pkg/contextapi/config`](../../pkg/contextapi/config/config.go) (AUTHORITATIVE)
-- ✅ **Gateway Service**: [`pkg/gateway/config`](../../pkg/gateway/config/config.go) (Refactored Nov 2, 2025)
-- ✅ **Data Storage Service**: [`pkg/datastorage/server`](../../pkg/datastorage/server/server.go)
+- ✅ **Context API Service**: [`pkg/contextapi/config`](../../pkg/contextapi/config/config.go) (AUTHORITATIVE) - ❌ **Requires v2.0 refactoring**
+- ✅ **Gateway Service**: [`pkg/gateway/config`](../../pkg/gateway/config/config.go) (Refactored Nov 2, 2025) - ❌ **Requires v2.0 refactoring**
+- ✅ **Data Storage Service**: [`pkg/datastorage/server`](../../pkg/datastorage/server/server.go) - ❌ **Requires v2.0 refactoring**
+- ✅ **Dynamic Toolset Service**: [`pkg/toolset/config`](../../pkg/toolset/config/config.go) (Nov 10, 2025) - ✅ **v2.0 COMPLIANT**
 - 🚧 **Notification Service**: Configuration to be refactored
-- 🚧 **Dynamic Toolset Service**: Configuration to be refactored
 
-**New services MUST follow the Context API configuration pattern.**
+**New services MUST follow the v2.0 guidelines (Dynamic Toolset Service pattern).**
+
+---
+
+## 🚨 ConfigMap Content Guidelines (v2.0) - MANDATORY
+
+### **CRITICAL PRINCIPLE**: ConfigMaps = Business Logic Knobs ONLY
+
+ConfigMaps should contain **ONLY** settings that change **business behavior**, not deployment infrastructure.
+
+---
+
+### ✅ **DO: Include in ConfigMaps**
+
+**Business Logic Configuration** (changes how the service behaves):
+
+| Category | Examples | Rationale |
+|---|---|---|
+| **Discovery Behavior** | `discovery_interval: "5m"`, `health_check_interval: "30s"` | Changes when/how services are discovered |
+| **Processing Rules** | `deduplication_ttl: "5m"`, `rate_threshold: 10` | Changes business logic behavior |
+| **Integration Settings** | `redis_addr: "redis:6379"`, `database_host: "postgres"` | Service dependencies (infrastructure addresses) |
+| **Feature Flags** | `enable_semantic_search: true`, `enable_caching: true` | Toggles optional features |
+| **Business Thresholds** | `max_retries: 3`, `timeout: "60s"`, `batch_size: 100` | Business logic parameters |
+| **Namespace Filters** | `namespaces: ["monitoring", "observability"]` | Business scope configuration |
+
+**Why?** These settings change **what the service does**, not **how it's deployed**.
+
+---
+
+### ❌ **DON'T: Include in ConfigMaps**
+
+**Deployment Configuration** (should be in Deployment manifest):
+
+| Category | Examples | Why It's Wrong | Where It Belongs |
+|---|---|---|---|
+| **🔒 Secrets/Passwords** | `password: ""`, `api_key: ""`, `token: ""` | **SECURITY RISK** - ConfigMaps are not encrypted | Kubernetes Secret mounted as file |
+| **Server Ports** | `port: 8080`, `metrics_port: 9090` | Deployment infrastructure | Deployment `env` or `args` |
+| **Server Timeouts** | `read_timeout: "30s"`, `write_timeout: "30s"`, `shutdown_timeout: "30s"` | Deployment infrastructure | Deployment `env` or `args` |
+| **Server Host/Address** | `listen_addr: ":8080"`, `host: "0.0.0.0"` | Deployment infrastructure | Deployment `env` or `args` |
+| **Logging Format** | `format: "json"` | Always JSON in production (per DD-005) | Hardcoded in code (`zap.NewProduction()`) |
+| **Unnecessary `enabled` Flags** | `service_discovery.enabled: true` | If service is deployed, it's enabled | Remove entirely |
+| **Resource Limits** | `max_memory: "512Mi"`, `cpu_limit: "500m"` | Kubernetes resource management | Deployment `resources` |
+| **Replica Count** | `replicas: 3` | Kubernetes scaling | Deployment `replicas` |
+
+**Why?** These settings are **deployment concerns**, not business logic. Changing them doesn't change what the service does, only how it's deployed.
+
+---
+
+### 🔒 **CRITICAL SECURITY RULE: Secrets Management**
+
+**❌ NEVER put passwords/secrets in ConfigMaps**, even as empty strings with comments like `password: ""  # Set via env var`.
+
+**Why?**
+1. **ConfigMaps are NOT encrypted** in etcd
+2. **ConfigMaps are visible** to anyone with `kubectl get configmap` access
+3. **Even empty strings** suggest secrets belong in ConfigMaps (they don't)
+4. **Environment variables** expose secrets in `kubectl describe pod` and process listings
+
+**✅ CORRECT: Use Kubernetes Secrets mounted as files**
+
+```yaml
+# ❌ BAD (ConfigMap)
+redis:
+  addr: "redis:6379"
+  password: ""  # Set via REDIS_PASSWORD env var
+
+# ✅ GOOD (ConfigMap)
+redis:
+  addr: "redis:6379"
+  secrets_path: "/etc/secrets/redis"      # Path to mounted Secret
+  secrets_file: "credentials.yaml"        # Secret file name
+  password_key: "password"                # Key to extract from Secret file
+```
+
+**✅ CORRECT: Kubernetes Secret (mounted as file)**
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+type: Opaque
+stringData:
+  credentials.yaml: |
+    password: "actual-redis-password"
+    username: "redis-user"
+```
+
+**✅ CORRECT: Deployment (mount Secret as file)**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: service
+        volumeMounts:
+        - name: redis-secret
+          mountPath: /etc/secrets/redis
+          readOnly: true
+      volumes:
+      - name: redis-secret
+        secret:
+          secretName: redis-secret
+```
+
+**✅ CORRECT: Load secrets from mounted files in code**
+
+```go
+// pkg/service/config/config.go
+type RedisConfig struct {
+    Addr        string `yaml:"addr"`
+    SecretsPath string `yaml:"secrets_path"`  // "/etc/secrets/redis"
+    SecretsFile string `yaml:"secrets_file"`  // "credentials.yaml"
+    PasswordKey string `yaml:"password_key"`  // "password"
+
+    // Runtime fields (not in YAML)
+    Password string `yaml:"-"`  // Loaded from Secret file
+}
+
+func (c *Config) LoadSecrets() error {
+    secretPath := filepath.Join(c.Redis.SecretsPath, c.Redis.SecretsFile)
+    data, err := os.ReadFile(secretPath)
+    if err != nil {
+        return fmt.Errorf("failed to read secret file: %w", err)
+    }
+
+    var secrets map[string]string
+    if err := yaml.Unmarshal(data, &secrets); err != nil {
+        return fmt.Errorf("failed to parse secrets: %w", err)
+    }
+
+    c.Redis.Password = secrets[c.Redis.PasswordKey]
+    if c.Redis.Password == "" {
+        return fmt.Errorf("password not found in secret file")
+    }
+
+    return nil
+}
+```
+
+**Why file-based secrets are better than env vars:**
+1. ✅ **Not visible** in `kubectl describe pod`
+2. ✅ **Not visible** in process listings (`ps aux`)
+3. ✅ **Encrypted at rest** in etcd (when encryption is enabled)
+4. ✅ **Auditable** - Secret access is logged
+5. ✅ **Rotatable** - Update Secret, restart pod
+
+---
+
+### 📋 **Decision Matrix: ConfigMap vs. Deployment**
+
+**Ask yourself**: "If I change this setting, does it change the **business behavior** of the service?"
+
+| Question | Answer | Location |
+|---|---|---|
+| Does it change **when** the service discovers services? | YES | ✅ ConfigMap |
+| Does it change **which** namespaces are scanned? | YES | ✅ ConfigMap |
+| Does it change **how long** to wait before retrying? | YES | ✅ ConfigMap |
+| Does it change **which port** the server listens on? | NO | ❌ Deployment `env` |
+| Does it change **how many replicas** are running? | NO | ❌ Deployment `replicas` |
+| Does it change **log format** (JSON vs console)? | NO | ❌ Hardcoded (`zap.NewProduction()`) |
+
+---
+
+### 🎯 **Example: Dynamic Toolset Service (v2.0 COMPLIANT)**
+
+#### ✅ **CORRECT ConfigMap** (Business Logic Only)
+
+```yaml
+# config/dynamic-toolset-config.yaml
+service_discovery:
+  discovery_interval: "5m"          # Business: How often to discover
+  health_check_interval: "30s"      # Business: How often to health check
+  namespaces: []                    # Business: Which namespaces to scan
+```
+
+#### ✅ **CORRECT Deployment** (Infrastructure Settings)
+
+```yaml
+# deploy/dynamic-toolset/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-toolset
+spec:
+  replicas: 2                       # Deployment: How many instances
+  template:
+    spec:
+      containers:
+      - name: dynamic-toolset
+        image: kubernaut/dynamic-toolset:v1.0.0
+        env:
+        - name: SERVER_PORT           # Deployment: Which port to listen on
+          value: "8080"
+        - name: METRICS_PORT          # Deployment: Metrics port
+          value: "9090"
+        - name: SHUTDOWN_TIMEOUT      # Deployment: Graceful shutdown time
+          value: "30s"
+        - name: CONFIG_FILE           # Deployment: Config file path
+          value: "/etc/config/config.yaml"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: dynamic-toolset-config
+```
+
+---
+
+### ❌ **INCORRECT ConfigMap** (Contains Deployment Settings)
+
+```yaml
+# ❌ BAD EXAMPLE (Gateway Service - Requires Refactoring)
+server:
+  listen_addr: ":8080"              # ❌ Deployment setting
+  read_timeout: "30s"               # ❌ Deployment setting
+  write_timeout: "30s"              # ❌ Deployment setting
+  idle_timeout: "120s"              # ❌ Deployment setting
+
+service_discovery:
+  enabled: true                     # ❌ Unnecessary flag
+  discovery_interval: "5m"          # ✅ Business logic (KEEP)
+```
+
+**Why This Is Wrong**:
+- `listen_addr`, `read_timeout`, `write_timeout`, `idle_timeout` are **deployment infrastructure**
+- `enabled: true` is unnecessary (if deployed, it's enabled)
+- Only `discovery_interval` is actual business logic
+
+**How to Fix**:
+1. Move `listen_addr`, timeouts to Deployment `env` vars
+2. Remove `enabled` flag
+3. Keep only `discovery_interval` in ConfigMap
+
+---
+
+### 🔧 **Migration Guide: v1.0 → v2.0**
+
+#### Step 1: Identify Deployment Settings in ConfigMap
+
+```bash
+# Search for deployment-specific settings in config files
+grep -r "port:\|timeout:\|listen_addr:\|enabled:" config/
+```
+
+#### Step 2: Move to Deployment Manifest
+
+```yaml
+# Before (v1.0 - ConfigMap)
+server:
+  port: 8080
+  read_timeout: "30s"
+
+# After (v2.0 - Deployment)
+env:
+- name: SERVER_PORT
+  value: "8080"
+- name: READ_TIMEOUT
+  value: "30s"
+```
+
+#### Step 3: Update `main.go` to Read from Env Vars
+
+```go
+// Before (v1.0)
+cfg, _ := config.LoadFromFile(configPath)
+srv := server.NewServer(cfg.Server.Port, ...)
+
+// After (v2.0)
+cfg, _ := config.LoadFromFile(configPath)
+port := getEnvInt("SERVER_PORT", 8080)
+srv := server.NewServer(port, ...)
+```
+
+#### Step 4: Simplify Config Struct
+
+```go
+// Before (v1.0)
+type Config struct {
+	Server           ServerConfig           `yaml:"server"`
+	ServiceDiscovery ServiceDiscoveryConfig `yaml:"service_discovery"`
+}
+
+// After (v2.0)
+type Config struct {
+	ServiceDiscovery ServiceDiscoveryConfig `yaml:"service_discovery"`
+}
+```
 
 ---
 
@@ -694,6 +1019,1306 @@ This allows:
 ---
 
 ## Benefits
+
+### 1. Production Safety
+- ✅ **Secrets Separation**: Passwords in Secrets, config in ConfigMaps
+- ✅ **Fail Fast**: Invalid configuration detected at startup
+- ✅ **Immutable**: Configuration file is read-only in container
+- ✅ **Rollback Friendly**: Easy to revert ConfigMap changes
+
+### 2. Manageability
+- ✅ **Single Source**: All configuration in one YAML file
+- ✅ **Version Controlled**: Configuration tracked in Git
+- ✅ **Human Readable**: YAML format easy to review
+- ✅ **Environment-Specific**: Different files for dev/staging/prod
+
+### 3. Validation
+- ✅ **Schema Validation**: YAML structure enforced at runtime
+- ✅ **Type Safety**: Go structs provide compile-time checking
+- ✅ **Clear Errors**: Detailed error messages for misconfigurations
+- ✅ **Early Detection**: Configuration errors caught at startup
+
+### 4. Flexibility
+- ✅ **Override Support**: Environment variables can override YAML
+- ✅ **Priority System**: Env vars > YAML > Defaults
+- ✅ **Testable**: Easy to create test configurations
+- ✅ **Documented**: YAML file serves as documentation
+
+---
+
+## Gateway Service Configuration Reference
+
+**Gateway** uses a more sophisticated nested structure organized by Single Responsibility Principle.
+
+**See**: [Gateway API Specification - Configuration Section](../../services/stateless/gateway-service/api-specification.md#️-configuration)
+
+### Gateway Configuration Structure
+
+```yaml
+# Gateway Service Configuration
+# Organized by Single Responsibility Principle
+
+# HTTP Server configuration
+server:
+  listen_addr: ":8080"
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+
+# Middleware configuration
+middleware:
+  rate_limit:
+    requests_per_minute: 100
+    burst: 10
+
+# Infrastructure dependencies
+infrastructure:
+  redis:
+    addr: redis-gateway.kubernaut-gateway.svc.cluster.local:6379
+    db: 0
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
+    pool_size: 10
+    min_idle_conns: 2
+
+# Business logic configuration
+processing:
+  deduplication:
+    ttl: 5m
+
+  storm:
+    rate_threshold: 10
+    pattern_threshold: 5
+    aggregation_window: 1m
+
+  environment:
+    cache_ttl: 30s
+    configmap_namespace: kubernaut-system
+    configmap_name: kubernaut-environment-overrides
+```
+
+**Benefits of Gateway's Nested Structure**:
+- **Discoverability**: +90% (clear logical grouping)
+- **Maintainability**: +80% (small, focused structs)
+- **Testability**: +70% (test sections independently)
+- **Scalability**: +60% (organized growth)
+
+---
+
+## Configuration Priority
+
+**Order of Precedence** (highest to lowest):
+1. **Environment Variables** (secrets, runtime overrides)
+2. **YAML Configuration File** (main configuration)
+3. **Code Defaults** (fallback values in struct definitions)
+
+### Example Priority Resolution
+
+```yaml
+# config.yaml
+database:
+  host: "postgres"
+  user: "db_user"
+  password: "default"    # Will be overridden
+```
+
+```yaml
+# deployment.yaml
+env:
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: context-api-secret
+      key: db-password    # This overrides config.yaml password
+```
+
+**Result**: `DB_PASSWORD` from Secret takes precedence over YAML value.
+
+---
+
+## Environment-Specific Configurations
+
+### Development
+```yaml
+# config/context-api-dev.yaml
+server:
+  port: 8091
+
+logging:
+  level: "debug"         # Verbose logging for dev
+  format: "console"      # Human-readable
+
+database:
+  host: "localhost"      # Local database
+  ssl_mode: "disable"
+```
+
+### Production
+```yaml
+# config/context-api-prod.yaml
+server:
+  port: 8091
+
+logging:
+  level: "info"          # Less verbose in production
+  format: "json"         # Structured logging
+
+database:
+  host: "postgres.kubernaut-system.svc.cluster.local"
+  ssl_mode: "require"    # Enforce SSL
+```
+
+---
+
+## Compliance Checklist
+
+Before deploying any new service, verify:
+
+### Configuration Package
+- [ ] Configuration package created: `pkg/<service>/config/config.go`
+- [ ] Configuration structs defined with YAML tags
+- [ ] `LoadFromFile()` function implemented
+- [ ] `LoadFromEnv()` function implemented for local dev overrides
+- [ ] `Validate()` function implemented with comprehensive checks
+
+### Secret Management (MANDATORY)
+- [ ] `LoadSecrets()` function implemented for mounted secret files
+- [ ] Config structs include `secretsPath`, `secretsFile`, and key fields
+- [ ] `loadSecretFile()` helper supports YAML and JSON parsing
+- [ ] Secrets validated after loading (non-empty check)
+
+### YAML Configuration
+- [ ] YAML configuration file created: `config/<service>-config.yaml`
+- [ ] Config specifies secret paths (e.g., `/etc/secrets/database`)
+- [ ] Config specifies secret file names (e.g., `credentials.yaml`)
+- [ ] Config specifies extraction keys (e.g., `passwordKey: "password"`)
+
+### Kubernetes Resources
+- [ ] ConfigMap manifest created: `deploy/<service>/configmap.yaml`
+- [ ] Secret manifest created: `deploy/<service>/secret.yaml` (structured YAML/JSON)
+- [ ] Deployment mounts ConfigMap at `/etc/config/`
+- [ ] Deployment mounts Secrets at paths specified in config YAML
+- [ ] Secret volumes set to `readOnly: true`
+
+### Application Integration
+- [ ] Main application loads config from `/etc/config/config.yaml`
+- [ ] Main application calls `cfg.LoadSecrets()` after `LoadFromFile()`
+- [ ] Main application calls `cfg.LoadFromEnv()` for local dev fallback
+- [ ] Main application validates complete config before starting
+- [ ] Config file is MANDATORY - fail fast if not found (ADR-030 determinism)
+
+### Testing & Documentation
+- [ ] Environment-specific configurations created (dev, staging, prod)
+- [ ] Unit tests created for config loading and validation
+- [ ] Unit tests created for secret file loading
+- [ ] Integration tests verify secret mounting works
+- [ ] Documentation updated with secret management approach
+
+---
+
+## Anti-Patterns to AVOID
+
+### ❌ **DON'T**: Service Guessing Config File Location
+
+**Problem**: Service code should NOT contain logic to guess where config files are based on environment.
+
+```go
+// ❌ BAD: Business code contains environment detection
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    // Service guessing environment - ANTI-PATTERN!
+    if _, err := os.Stat("config/service.yaml"); err == nil {
+        cfgPath = "config/service.yaml"  // Local dev?
+    } else if _, err := os.Stat("/etc/config/config.yaml"); err == nil {
+        cfgPath = "/etc/config/config.yaml"  // Kubernetes?
+    } else {
+        log.Fatal("Config file not found")
+    }
+}
+```
+
+**Why This is Wrong**:
+1. ❌ **Violates Separation of Concerns**: Business code knows about deployment environments
+2. ❌ **Non-Deterministic**: Behavior changes based on file system state
+3. ❌ **Fragile**: Breaks if deployment uses different paths
+4. ❌ **Hard to Test**: Tests depend on file system layout
+
+### ✅ **DO**: Deployment Controls Config Location
+
+```go
+// ✅ GOOD: Service receives config path from environment
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    log.Fatal("CONFIG_PATH environment variable required",
+        "reason", "Deployment is responsible for setting config file location")
+}
+
+cfg, err := config.LoadFromFile(cfgPath)
+// ... service starts with provided config
+```
+
+**Deployment Responsibility**:
+
+**Local Development** (docker-compose, script):
+```bash
+# Local developer sets CONFIG_PATH
+export CONFIG_PATH=config/data-storage.yaml
+./bin/data-storage
+```
+
+**Kubernetes Deployment**:
+```yaml
+env:
+- name: CONFIG_PATH
+  value: /etc/config/config.yaml  # Deployment controls this
+```
+
+**Benefits**:
+- ✅ **Separation of Concerns**: Service doesn't know about deployment
+- ✅ **Deterministic**: Behavior controlled by environment, not guessing
+- ✅ **Flexible**: Deployment can use any path
+- ✅ **Testable**: Tests set CONFIG_PATH explicitly
+
+---
+
+### ❌ **DON'T**: Environment Variables in Deployment
+
+```yaml
+# BAD: Too many env vars, hard to manage
+env:
+- name: SERVER_PORT
+  value: "8091"
+- name: SERVER_HOST
+  value: "0.0.0.0"
+- name: READ_TIMEOUT
+  value: "30s"
+- name: WRITE_TIMEOUT
+  value: "30s"
+- name: REDIS_ADDR
+  value: "redis:6379"
+- name: REDIS_DB
+  value: "0"
+# ... 20 more env vars ...
+```
+
+### ✅ **DO**: ConfigMap with Environment Variable Overrides
+
+```yaml
+# GOOD: Structured config file + secrets in env vars
+volumeMounts:
+- name: config
+  mountPath: /etc/config
+  readOnly: true
+
+env:
+# Only secrets and runtime-specific overrides
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: context-api-secret
+      key: db-password
+```
+
+---
+
+## Related Decisions
+
+- **ADR-027**: Multi-Architecture Docker Images (uses UBI9 base images)
+- **ADR-003**: Kind Integration Environment (used for testing configurations)
+- **DD-007**: Kubernetes-Aware Graceful Shutdown (health endpoints configured in YAML)
+
+---
+
+## References
+
+- **Gateway Service**: [api-specification.md#configuration](../../services/stateless/gateway-service/api-specification.md#️-configuration)
+- **Context API Config**: [`pkg/contextapi/config/config.go`](../../pkg/contextapi/config/config.go)
+- **Context API Example**: [`pkg/contextapi/config/testdata/valid-config.yaml`](../../pkg/contextapi/config/testdata/valid-config.yaml)
+- **Kubernetes ConfigMaps**: https://kubernetes.io/docs/concepts/configuration/configmap/
+- **12-Factor App Config**: https://12factor.net/config
+- **Go YAML Library**: https://github.com/go-yaml/yaml
+
+---
+
+**Status**: ✅ **APPROVED** - Existing pattern, mandatory for all new services
+**Last Updated**: November 3, 2025 (Added Section 6: Secret Management via Mounted Files)
+
+
+### 1. Production Safety
+- ✅ **Secrets Separation**: Passwords in Secrets, config in ConfigMaps
+- ✅ **Fail Fast**: Invalid configuration detected at startup
+- ✅ **Immutable**: Configuration file is read-only in container
+- ✅ **Rollback Friendly**: Easy to revert ConfigMap changes
+
+### 2. Manageability
+- ✅ **Single Source**: All configuration in one YAML file
+- ✅ **Version Controlled**: Configuration tracked in Git
+- ✅ **Human Readable**: YAML format easy to review
+- ✅ **Environment-Specific**: Different files for dev/staging/prod
+
+### 3. Validation
+- ✅ **Schema Validation**: YAML structure enforced at runtime
+- ✅ **Type Safety**: Go structs provide compile-time checking
+- ✅ **Clear Errors**: Detailed error messages for misconfigurations
+- ✅ **Early Detection**: Configuration errors caught at startup
+
+### 4. Flexibility
+- ✅ **Override Support**: Environment variables can override YAML
+- ✅ **Priority System**: Env vars > YAML > Defaults
+- ✅ **Testable**: Easy to create test configurations
+- ✅ **Documented**: YAML file serves as documentation
+
+---
+
+## Gateway Service Configuration Reference
+
+**Gateway** uses a more sophisticated nested structure organized by Single Responsibility Principle.
+
+**See**: [Gateway API Specification - Configuration Section](../../services/stateless/gateway-service/api-specification.md#️-configuration)
+
+### Gateway Configuration Structure
+
+```yaml
+# Gateway Service Configuration
+# Organized by Single Responsibility Principle
+
+# HTTP Server configuration
+server:
+  listen_addr: ":8080"
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+
+# Middleware configuration
+middleware:
+  rate_limit:
+    requests_per_minute: 100
+    burst: 10
+
+# Infrastructure dependencies
+infrastructure:
+  redis:
+    addr: redis-gateway.kubernaut-gateway.svc.cluster.local:6379
+    db: 0
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
+    pool_size: 10
+    min_idle_conns: 2
+
+# Business logic configuration
+processing:
+  deduplication:
+    ttl: 5m
+
+  storm:
+    rate_threshold: 10
+    pattern_threshold: 5
+    aggregation_window: 1m
+
+  environment:
+    cache_ttl: 30s
+    configmap_namespace: kubernaut-system
+    configmap_name: kubernaut-environment-overrides
+```
+
+**Benefits of Gateway's Nested Structure**:
+- **Discoverability**: +90% (clear logical grouping)
+- **Maintainability**: +80% (small, focused structs)
+- **Testability**: +70% (test sections independently)
+- **Scalability**: +60% (organized growth)
+
+---
+
+## Configuration Priority
+
+**Order of Precedence** (highest to lowest):
+1. **Environment Variables** (secrets, runtime overrides)
+2. **YAML Configuration File** (main configuration)
+3. **Code Defaults** (fallback values in struct definitions)
+
+### Example Priority Resolution
+
+```yaml
+# config.yaml
+database:
+  host: "postgres"
+  user: "db_user"
+  password: "default"    # Will be overridden
+```
+
+```yaml
+# deployment.yaml
+env:
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: context-api-secret
+      key: db-password    # This overrides config.yaml password
+```
+
+**Result**: `DB_PASSWORD` from Secret takes precedence over YAML value.
+
+---
+
+## Environment-Specific Configurations
+
+### Development
+```yaml
+# config/context-api-dev.yaml
+server:
+  port: 8091
+
+logging:
+  level: "debug"         # Verbose logging for dev
+  format: "console"      # Human-readable
+
+database:
+  host: "localhost"      # Local database
+  ssl_mode: "disable"
+```
+
+### Production
+```yaml
+# config/context-api-prod.yaml
+server:
+  port: 8091
+
+logging:
+  level: "info"          # Less verbose in production
+  format: "json"         # Structured logging
+
+database:
+  host: "postgres.kubernaut-system.svc.cluster.local"
+  ssl_mode: "require"    # Enforce SSL
+```
+
+---
+
+## Compliance Checklist
+
+Before deploying any new service, verify:
+
+### Configuration Package
+- [ ] Configuration package created: `pkg/<service>/config/config.go`
+- [ ] Configuration structs defined with YAML tags
+- [ ] `LoadFromFile()` function implemented
+- [ ] `LoadFromEnv()` function implemented for local dev overrides
+- [ ] `Validate()` function implemented with comprehensive checks
+
+### Secret Management (MANDATORY)
+- [ ] `LoadSecrets()` function implemented for mounted secret files
+- [ ] Config structs include `secretsPath`, `secretsFile`, and key fields
+- [ ] `loadSecretFile()` helper supports YAML and JSON parsing
+- [ ] Secrets validated after loading (non-empty check)
+
+### YAML Configuration
+- [ ] YAML configuration file created: `config/<service>-config.yaml`
+- [ ] Config specifies secret paths (e.g., `/etc/secrets/database`)
+- [ ] Config specifies secret file names (e.g., `credentials.yaml`)
+- [ ] Config specifies extraction keys (e.g., `passwordKey: "password"`)
+
+### Kubernetes Resources
+- [ ] ConfigMap manifest created: `deploy/<service>/configmap.yaml`
+- [ ] Secret manifest created: `deploy/<service>/secret.yaml` (structured YAML/JSON)
+- [ ] Deployment mounts ConfigMap at `/etc/config/`
+- [ ] Deployment mounts Secrets at paths specified in config YAML
+- [ ] Secret volumes set to `readOnly: true`
+
+### Application Integration
+- [ ] Main application loads config from `/etc/config/config.yaml`
+- [ ] Main application calls `cfg.LoadSecrets()` after `LoadFromFile()`
+- [ ] Main application calls `cfg.LoadFromEnv()` for local dev fallback
+- [ ] Main application validates complete config before starting
+- [ ] Config file is MANDATORY - fail fast if not found (ADR-030 determinism)
+
+### Testing & Documentation
+- [ ] Environment-specific configurations created (dev, staging, prod)
+- [ ] Unit tests created for config loading and validation
+- [ ] Unit tests created for secret file loading
+- [ ] Integration tests verify secret mounting works
+- [ ] Documentation updated with secret management approach
+
+---
+
+## Anti-Patterns to AVOID
+
+### ❌ **DON'T**: Service Guessing Config File Location
+
+**Problem**: Service code should NOT contain logic to guess where config files are based on environment.
+
+```go
+// ❌ BAD: Business code contains environment detection
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    // Service guessing environment - ANTI-PATTERN!
+    if _, err := os.Stat("config/service.yaml"); err == nil {
+        cfgPath = "config/service.yaml"  // Local dev?
+    } else if _, err := os.Stat("/etc/config/config.yaml"); err == nil {
+        cfgPath = "/etc/config/config.yaml"  // Kubernetes?
+    } else {
+        log.Fatal("Config file not found")
+    }
+}
+```
+
+**Why This is Wrong**:
+1. ❌ **Violates Separation of Concerns**: Business code knows about deployment environments
+2. ❌ **Non-Deterministic**: Behavior changes based on file system state
+3. ❌ **Fragile**: Breaks if deployment uses different paths
+4. ❌ **Hard to Test**: Tests depend on file system layout
+
+### ✅ **DO**: Deployment Controls Config Location
+
+```go
+// ✅ GOOD: Service receives config path from environment
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    log.Fatal("CONFIG_PATH environment variable required",
+        "reason", "Deployment is responsible for setting config file location")
+}
+
+cfg, err := config.LoadFromFile(cfgPath)
+// ... service starts with provided config
+```
+
+**Deployment Responsibility**:
+
+**Local Development** (docker-compose, script):
+```bash
+# Local developer sets CONFIG_PATH
+export CONFIG_PATH=config/data-storage.yaml
+./bin/data-storage
+```
+
+**Kubernetes Deployment**:
+```yaml
+env:
+- name: CONFIG_PATH
+  value: /etc/config/config.yaml  # Deployment controls this
+```
+
+**Benefits**:
+- ✅ **Separation of Concerns**: Service doesn't know about deployment
+- ✅ **Deterministic**: Behavior controlled by environment, not guessing
+- ✅ **Flexible**: Deployment can use any path
+- ✅ **Testable**: Tests set CONFIG_PATH explicitly
+
+---
+
+### ❌ **DON'T**: Environment Variables in Deployment
+
+```yaml
+# BAD: Too many env vars, hard to manage
+env:
+- name: SERVER_PORT
+  value: "8091"
+- name: SERVER_HOST
+  value: "0.0.0.0"
+- name: READ_TIMEOUT
+  value: "30s"
+- name: WRITE_TIMEOUT
+  value: "30s"
+- name: REDIS_ADDR
+  value: "redis:6379"
+- name: REDIS_DB
+  value: "0"
+# ... 20 more env vars ...
+```
+
+### ✅ **DO**: ConfigMap with Environment Variable Overrides
+
+```yaml
+# GOOD: Structured config file + secrets in env vars
+volumeMounts:
+- name: config
+  mountPath: /etc/config
+  readOnly: true
+
+env:
+# Only secrets and runtime-specific overrides
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: context-api-secret
+      key: db-password
+```
+
+---
+
+## Related Decisions
+
+- **ADR-027**: Multi-Architecture Docker Images (uses UBI9 base images)
+- **ADR-003**: Kind Integration Environment (used for testing configurations)
+- **DD-007**: Kubernetes-Aware Graceful Shutdown (health endpoints configured in YAML)
+
+---
+
+## References
+
+- **Gateway Service**: [api-specification.md#configuration](../../services/stateless/gateway-service/api-specification.md#️-configuration)
+- **Context API Config**: [`pkg/contextapi/config/config.go`](../../pkg/contextapi/config/config.go)
+- **Context API Example**: [`pkg/contextapi/config/testdata/valid-config.yaml`](../../pkg/contextapi/config/testdata/valid-config.yaml)
+- **Kubernetes ConfigMaps**: https://kubernetes.io/docs/concepts/configuration/configmap/
+- **12-Factor App Config**: https://12factor.net/config
+- **Go YAML Library**: https://github.com/go-yaml/yaml
+
+---
+
+**Status**: ✅ **APPROVED** - Existing pattern, mandatory for all new services
+**Last Updated**: November 3, 2025 (Added Section 6: Secret Management via Mounted Files)
+
+
+### 1. Production Safety
+- ✅ **Secrets Separation**: Passwords in Secrets, config in ConfigMaps
+- ✅ **Fail Fast**: Invalid configuration detected at startup
+- ✅ **Immutable**: Configuration file is read-only in container
+- ✅ **Rollback Friendly**: Easy to revert ConfigMap changes
+
+### 2. Manageability
+- ✅ **Single Source**: All configuration in one YAML file
+- ✅ **Version Controlled**: Configuration tracked in Git
+- ✅ **Human Readable**: YAML format easy to review
+- ✅ **Environment-Specific**: Different files for dev/staging/prod
+
+### 3. Validation
+- ✅ **Schema Validation**: YAML structure enforced at runtime
+- ✅ **Type Safety**: Go structs provide compile-time checking
+- ✅ **Clear Errors**: Detailed error messages for misconfigurations
+- ✅ **Early Detection**: Configuration errors caught at startup
+
+### 4. Flexibility
+- ✅ **Override Support**: Environment variables can override YAML
+- ✅ **Priority System**: Env vars > YAML > Defaults
+- ✅ **Testable**: Easy to create test configurations
+- ✅ **Documented**: YAML file serves as documentation
+
+---
+
+## Gateway Service Configuration Reference
+
+**Gateway** uses a more sophisticated nested structure organized by Single Responsibility Principle.
+
+**See**: [Gateway API Specification - Configuration Section](../../services/stateless/gateway-service/api-specification.md#️-configuration)
+
+### Gateway Configuration Structure
+
+```yaml
+# Gateway Service Configuration
+# Organized by Single Responsibility Principle
+
+# HTTP Server configuration
+server:
+  listen_addr: ":8080"
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+
+# Middleware configuration
+middleware:
+  rate_limit:
+    requests_per_minute: 100
+    burst: 10
+
+# Infrastructure dependencies
+infrastructure:
+  redis:
+    addr: redis-gateway.kubernaut-gateway.svc.cluster.local:6379
+    db: 0
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
+    pool_size: 10
+    min_idle_conns: 2
+
+# Business logic configuration
+processing:
+  deduplication:
+    ttl: 5m
+
+  storm:
+    rate_threshold: 10
+    pattern_threshold: 5
+    aggregation_window: 1m
+
+  environment:
+    cache_ttl: 30s
+    configmap_namespace: kubernaut-system
+    configmap_name: kubernaut-environment-overrides
+```
+
+**Benefits of Gateway's Nested Structure**:
+- **Discoverability**: +90% (clear logical grouping)
+- **Maintainability**: +80% (small, focused structs)
+- **Testability**: +70% (test sections independently)
+- **Scalability**: +60% (organized growth)
+
+---
+
+## Configuration Priority
+
+**Order of Precedence** (highest to lowest):
+1. **Environment Variables** (secrets, runtime overrides)
+2. **YAML Configuration File** (main configuration)
+3. **Code Defaults** (fallback values in struct definitions)
+
+### Example Priority Resolution
+
+```yaml
+# config.yaml
+database:
+  host: "postgres"
+  user: "db_user"
+  password: "default"    # Will be overridden
+```
+
+```yaml
+# deployment.yaml
+env:
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: context-api-secret
+      key: db-password    # This overrides config.yaml password
+```
+
+**Result**: `DB_PASSWORD` from Secret takes precedence over YAML value.
+
+---
+
+## Environment-Specific Configurations
+
+### Development
+```yaml
+# config/context-api-dev.yaml
+server:
+  port: 8091
+
+logging:
+  level: "debug"         # Verbose logging for dev
+  format: "console"      # Human-readable
+
+database:
+  host: "localhost"      # Local database
+  ssl_mode: "disable"
+```
+
+### Production
+```yaml
+# config/context-api-prod.yaml
+server:
+  port: 8091
+
+logging:
+  level: "info"          # Less verbose in production
+  format: "json"         # Structured logging
+
+database:
+  host: "postgres.kubernaut-system.svc.cluster.local"
+  ssl_mode: "require"    # Enforce SSL
+```
+
+---
+
+## Compliance Checklist
+
+Before deploying any new service, verify:
+
+### Configuration Package
+- [ ] Configuration package created: `pkg/<service>/config/config.go`
+- [ ] Configuration structs defined with YAML tags
+- [ ] `LoadFromFile()` function implemented
+- [ ] `LoadFromEnv()` function implemented for local dev overrides
+- [ ] `Validate()` function implemented with comprehensive checks
+
+### Secret Management (MANDATORY)
+- [ ] `LoadSecrets()` function implemented for mounted secret files
+- [ ] Config structs include `secretsPath`, `secretsFile`, and key fields
+- [ ] `loadSecretFile()` helper supports YAML and JSON parsing
+- [ ] Secrets validated after loading (non-empty check)
+
+### YAML Configuration
+- [ ] YAML configuration file created: `config/<service>-config.yaml`
+- [ ] Config specifies secret paths (e.g., `/etc/secrets/database`)
+- [ ] Config specifies secret file names (e.g., `credentials.yaml`)
+- [ ] Config specifies extraction keys (e.g., `passwordKey: "password"`)
+
+### Kubernetes Resources
+- [ ] ConfigMap manifest created: `deploy/<service>/configmap.yaml`
+- [ ] Secret manifest created: `deploy/<service>/secret.yaml` (structured YAML/JSON)
+- [ ] Deployment mounts ConfigMap at `/etc/config/`
+- [ ] Deployment mounts Secrets at paths specified in config YAML
+- [ ] Secret volumes set to `readOnly: true`
+
+### Application Integration
+- [ ] Main application loads config from `/etc/config/config.yaml`
+- [ ] Main application calls `cfg.LoadSecrets()` after `LoadFromFile()`
+- [ ] Main application calls `cfg.LoadFromEnv()` for local dev fallback
+- [ ] Main application validates complete config before starting
+- [ ] Config file is MANDATORY - fail fast if not found (ADR-030 determinism)
+
+### Testing & Documentation
+- [ ] Environment-specific configurations created (dev, staging, prod)
+- [ ] Unit tests created for config loading and validation
+- [ ] Unit tests created for secret file loading
+- [ ] Integration tests verify secret mounting works
+- [ ] Documentation updated with secret management approach
+
+---
+
+## Anti-Patterns to AVOID
+
+### ❌ **DON'T**: Service Guessing Config File Location
+
+**Problem**: Service code should NOT contain logic to guess where config files are based on environment.
+
+```go
+// ❌ BAD: Business code contains environment detection
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    // Service guessing environment - ANTI-PATTERN!
+    if _, err := os.Stat("config/service.yaml"); err == nil {
+        cfgPath = "config/service.yaml"  // Local dev?
+    } else if _, err := os.Stat("/etc/config/config.yaml"); err == nil {
+        cfgPath = "/etc/config/config.yaml"  // Kubernetes?
+    } else {
+        log.Fatal("Config file not found")
+    }
+}
+```
+
+**Why This is Wrong**:
+1. ❌ **Violates Separation of Concerns**: Business code knows about deployment environments
+2. ❌ **Non-Deterministic**: Behavior changes based on file system state
+3. ❌ **Fragile**: Breaks if deployment uses different paths
+4. ❌ **Hard to Test**: Tests depend on file system layout
+
+### ✅ **DO**: Deployment Controls Config Location
+
+```go
+// ✅ GOOD: Service receives config path from environment
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    log.Fatal("CONFIG_PATH environment variable required",
+        "reason", "Deployment is responsible for setting config file location")
+}
+
+cfg, err := config.LoadFromFile(cfgPath)
+// ... service starts with provided config
+```
+
+**Deployment Responsibility**:
+
+**Local Development** (docker-compose, script):
+```bash
+# Local developer sets CONFIG_PATH
+export CONFIG_PATH=config/data-storage.yaml
+./bin/data-storage
+```
+
+**Kubernetes Deployment**:
+```yaml
+env:
+- name: CONFIG_PATH
+  value: /etc/config/config.yaml  # Deployment controls this
+```
+
+**Benefits**:
+- ✅ **Separation of Concerns**: Service doesn't know about deployment
+- ✅ **Deterministic**: Behavior controlled by environment, not guessing
+- ✅ **Flexible**: Deployment can use any path
+- ✅ **Testable**: Tests set CONFIG_PATH explicitly
+
+---
+
+### ❌ **DON'T**: Environment Variables in Deployment
+
+```yaml
+# BAD: Too many env vars, hard to manage
+env:
+- name: SERVER_PORT
+  value: "8091"
+- name: SERVER_HOST
+  value: "0.0.0.0"
+- name: READ_TIMEOUT
+  value: "30s"
+- name: WRITE_TIMEOUT
+  value: "30s"
+- name: REDIS_ADDR
+  value: "redis:6379"
+- name: REDIS_DB
+  value: "0"
+# ... 20 more env vars ...
+```
+
+### ✅ **DO**: ConfigMap with Environment Variable Overrides
+
+```yaml
+# GOOD: Structured config file + secrets in env vars
+volumeMounts:
+- name: config
+  mountPath: /etc/config
+  readOnly: true
+
+env:
+# Only secrets and runtime-specific overrides
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: context-api-secret
+      key: db-password
+```
+
+---
+
+## Related Decisions
+
+- **ADR-027**: Multi-Architecture Docker Images (uses UBI9 base images)
+- **ADR-003**: Kind Integration Environment (used for testing configurations)
+- **DD-007**: Kubernetes-Aware Graceful Shutdown (health endpoints configured in YAML)
+
+---
+
+## References
+
+- **Gateway Service**: [api-specification.md#configuration](../../services/stateless/gateway-service/api-specification.md#️-configuration)
+- **Context API Config**: [`pkg/contextapi/config/config.go`](../../pkg/contextapi/config/config.go)
+- **Context API Example**: [`pkg/contextapi/config/testdata/valid-config.yaml`](../../pkg/contextapi/config/testdata/valid-config.yaml)
+- **Kubernetes ConfigMaps**: https://kubernetes.io/docs/concepts/configuration/configmap/
+- **12-Factor App Config**: https://12factor.net/config
+- **Go YAML Library**: https://github.com/go-yaml/yaml
+
+---
+
+**Status**: ✅ **APPROVED** - Existing pattern, mandatory for all new services
+**Last Updated**: November 3, 2025 (Added Section 6: Secret Management via Mounted Files)
+
+
+### 1. Production Safety
+- ✅ **Secrets Separation**: Passwords in Secrets, config in ConfigMaps
+- ✅ **Fail Fast**: Invalid configuration detected at startup
+- ✅ **Immutable**: Configuration file is read-only in container
+- ✅ **Rollback Friendly**: Easy to revert ConfigMap changes
+
+### 2. Manageability
+- ✅ **Single Source**: All configuration in one YAML file
+- ✅ **Version Controlled**: Configuration tracked in Git
+- ✅ **Human Readable**: YAML format easy to review
+- ✅ **Environment-Specific**: Different files for dev/staging/prod
+
+### 3. Validation
+- ✅ **Schema Validation**: YAML structure enforced at runtime
+- ✅ **Type Safety**: Go structs provide compile-time checking
+- ✅ **Clear Errors**: Detailed error messages for misconfigurations
+- ✅ **Early Detection**: Configuration errors caught at startup
+
+### 4. Flexibility
+- ✅ **Override Support**: Environment variables can override YAML
+- ✅ **Priority System**: Env vars > YAML > Defaults
+- ✅ **Testable**: Easy to create test configurations
+- ✅ **Documented**: YAML file serves as documentation
+
+---
+
+## Gateway Service Configuration Reference
+
+**Gateway** uses a more sophisticated nested structure organized by Single Responsibility Principle.
+
+**See**: [Gateway API Specification - Configuration Section](../../services/stateless/gateway-service/api-specification.md#️-configuration)
+
+### Gateway Configuration Structure
+
+```yaml
+# Gateway Service Configuration
+# Organized by Single Responsibility Principle
+
+# HTTP Server configuration
+server:
+  listen_addr: ":8080"
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+
+# Middleware configuration
+middleware:
+  rate_limit:
+    requests_per_minute: 100
+    burst: 10
+
+# Infrastructure dependencies
+infrastructure:
+  redis:
+    addr: redis-gateway.kubernaut-gateway.svc.cluster.local:6379
+    db: 0
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
+    pool_size: 10
+    min_idle_conns: 2
+
+# Business logic configuration
+processing:
+  deduplication:
+    ttl: 5m
+
+  storm:
+    rate_threshold: 10
+    pattern_threshold: 5
+    aggregation_window: 1m
+
+  environment:
+    cache_ttl: 30s
+    configmap_namespace: kubernaut-system
+    configmap_name: kubernaut-environment-overrides
+```
+
+**Benefits of Gateway's Nested Structure**:
+- **Discoverability**: +90% (clear logical grouping)
+- **Maintainability**: +80% (small, focused structs)
+- **Testability**: +70% (test sections independently)
+- **Scalability**: +60% (organized growth)
+
+---
+
+## Configuration Priority
+
+**Order of Precedence** (highest to lowest):
+1. **Environment Variables** (secrets, runtime overrides)
+2. **YAML Configuration File** (main configuration)
+3. **Code Defaults** (fallback values in struct definitions)
+
+### Example Priority Resolution
+
+```yaml
+# config.yaml
+database:
+  host: "postgres"
+  user: "db_user"
+  password: "default"    # Will be overridden
+```
+
+```yaml
+# deployment.yaml
+env:
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: context-api-secret
+      key: db-password    # This overrides config.yaml password
+```
+
+**Result**: `DB_PASSWORD` from Secret takes precedence over YAML value.
+
+---
+
+## Environment-Specific Configurations
+
+### Development
+```yaml
+# config/context-api-dev.yaml
+server:
+  port: 8091
+
+logging:
+  level: "debug"         # Verbose logging for dev
+  format: "console"      # Human-readable
+
+database:
+  host: "localhost"      # Local database
+  ssl_mode: "disable"
+```
+
+### Production
+```yaml
+# config/context-api-prod.yaml
+server:
+  port: 8091
+
+logging:
+  level: "info"          # Less verbose in production
+  format: "json"         # Structured logging
+
+database:
+  host: "postgres.kubernaut-system.svc.cluster.local"
+  ssl_mode: "require"    # Enforce SSL
+```
+
+---
+
+## Compliance Checklist
+
+Before deploying any new service, verify:
+
+### Configuration Package
+- [ ] Configuration package created: `pkg/<service>/config/config.go`
+- [ ] Configuration structs defined with YAML tags
+- [ ] `LoadFromFile()` function implemented
+- [ ] `LoadFromEnv()` function implemented for local dev overrides
+- [ ] `Validate()` function implemented with comprehensive checks
+
+### Secret Management (MANDATORY)
+- [ ] `LoadSecrets()` function implemented for mounted secret files
+- [ ] Config structs include `secretsPath`, `secretsFile`, and key fields
+- [ ] `loadSecretFile()` helper supports YAML and JSON parsing
+- [ ] Secrets validated after loading (non-empty check)
+
+### YAML Configuration
+- [ ] YAML configuration file created: `config/<service>-config.yaml`
+- [ ] Config specifies secret paths (e.g., `/etc/secrets/database`)
+- [ ] Config specifies secret file names (e.g., `credentials.yaml`)
+- [ ] Config specifies extraction keys (e.g., `passwordKey: "password"`)
+
+### Kubernetes Resources
+- [ ] ConfigMap manifest created: `deploy/<service>/configmap.yaml`
+- [ ] Secret manifest created: `deploy/<service>/secret.yaml` (structured YAML/JSON)
+- [ ] Deployment mounts ConfigMap at `/etc/config/`
+- [ ] Deployment mounts Secrets at paths specified in config YAML
+- [ ] Secret volumes set to `readOnly: true`
+
+### Application Integration
+- [ ] Main application loads config from `/etc/config/config.yaml`
+- [ ] Main application calls `cfg.LoadSecrets()` after `LoadFromFile()`
+- [ ] Main application calls `cfg.LoadFromEnv()` for local dev fallback
+- [ ] Main application validates complete config before starting
+- [ ] Config file is MANDATORY - fail fast if not found (ADR-030 determinism)
+
+### Testing & Documentation
+- [ ] Environment-specific configurations created (dev, staging, prod)
+- [ ] Unit tests created for config loading and validation
+- [ ] Unit tests created for secret file loading
+- [ ] Integration tests verify secret mounting works
+- [ ] Documentation updated with secret management approach
+
+---
+
+## Anti-Patterns to AVOID
+
+### ❌ **DON'T**: Service Guessing Config File Location
+
+**Problem**: Service code should NOT contain logic to guess where config files are based on environment.
+
+```go
+// ❌ BAD: Business code contains environment detection
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    // Service guessing environment - ANTI-PATTERN!
+    if _, err := os.Stat("config/service.yaml"); err == nil {
+        cfgPath = "config/service.yaml"  // Local dev?
+    } else if _, err := os.Stat("/etc/config/config.yaml"); err == nil {
+        cfgPath = "/etc/config/config.yaml"  // Kubernetes?
+    } else {
+        log.Fatal("Config file not found")
+    }
+}
+```
+
+**Why This is Wrong**:
+1. ❌ **Violates Separation of Concerns**: Business code knows about deployment environments
+2. ❌ **Non-Deterministic**: Behavior changes based on file system state
+3. ❌ **Fragile**: Breaks if deployment uses different paths
+4. ❌ **Hard to Test**: Tests depend on file system layout
+
+### ✅ **DO**: Deployment Controls Config Location
+
+```go
+// ✅ GOOD: Service receives config path from environment
+cfgPath := os.Getenv("CONFIG_PATH")
+if cfgPath == "" {
+    log.Fatal("CONFIG_PATH environment variable required",
+        "reason", "Deployment is responsible for setting config file location")
+}
+
+cfg, err := config.LoadFromFile(cfgPath)
+// ... service starts with provided config
+```
+
+**Deployment Responsibility**:
+
+**Local Development** (docker-compose, script):
+```bash
+# Local developer sets CONFIG_PATH
+export CONFIG_PATH=config/data-storage.yaml
+./bin/data-storage
+```
+
+**Kubernetes Deployment**:
+```yaml
+env:
+- name: CONFIG_PATH
+  value: /etc/config/config.yaml  # Deployment controls this
+```
+
+**Benefits**:
+- ✅ **Separation of Concerns**: Service doesn't know about deployment
+- ✅ **Deterministic**: Behavior controlled by environment, not guessing
+- ✅ **Flexible**: Deployment can use any path
+- ✅ **Testable**: Tests set CONFIG_PATH explicitly
+
+---
+
+### ❌ **DON'T**: Environment Variables in Deployment
+
+```yaml
+# BAD: Too many env vars, hard to manage
+env:
+- name: SERVER_PORT
+  value: "8091"
+- name: SERVER_HOST
+  value: "0.0.0.0"
+- name: READ_TIMEOUT
+  value: "30s"
+- name: WRITE_TIMEOUT
+  value: "30s"
+- name: REDIS_ADDR
+  value: "redis:6379"
+- name: REDIS_DB
+  value: "0"
+# ... 20 more env vars ...
+```
+
+### ✅ **DO**: ConfigMap with Environment Variable Overrides
+
+```yaml
+# GOOD: Structured config file + secrets in env vars
+volumeMounts:
+- name: config
+  mountPath: /etc/config
+  readOnly: true
+
+env:
+# Only secrets and runtime-specific overrides
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: context-api-secret
+      key: db-password
+```
+
+---
+
+## Related Decisions
+
+- **ADR-027**: Multi-Architecture Docker Images (uses UBI9 base images)
+- **ADR-003**: Kind Integration Environment (used for testing configurations)
+- **DD-007**: Kubernetes-Aware Graceful Shutdown (health endpoints configured in YAML)
+
+---
+
+## References
+
+- **Gateway Service**: [api-specification.md#configuration](../../services/stateless/gateway-service/api-specification.md#️-configuration)
+- **Context API Config**: [`pkg/contextapi/config/config.go`](../../pkg/contextapi/config/config.go)
+- **Context API Example**: [`pkg/contextapi/config/testdata/valid-config.yaml`](../../pkg/contextapi/config/testdata/valid-config.yaml)
+- **Kubernetes ConfigMaps**: https://kubernetes.io/docs/concepts/configuration/configmap/
+- **12-Factor App Config**: https://12factor.net/config
+- **Go YAML Library**: https://github.com/go-yaml/yaml
+
+---
+
+**Status**: ✅ **APPROVED** - Existing pattern, mandatory for all new services
+**Last Updated**: November 3, 2025 (Added Section 6: Secret Management via Mounted Files)
+
 
 ### 1. Production Safety
 - ✅ **Secrets Separation**: Passwords in Secrets, config in ConfigMaps

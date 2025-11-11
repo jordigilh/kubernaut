@@ -1,10 +1,42 @@
-# ADR-005: >50% Integration Test Coverage for Microservices
+# ADR-005: Defense-in-Depth Testing Strategy for Microservices
 
-**Date**: 2025-10-06
+**Date**: 2025-10-06 (Original), 2025-11-10 (Updated to v2.0)
+**Version**: 2.0
 **Status**: ✅ **ACCEPTED**
 **Context**: Kubernaut V1 Testing Strategy (Microservices Architecture)
 **Deciders**: Development Team
 **Technical Story**: [BR-REMEDIATION-001, BR-INTEGRATION-001, Testing Strategy Rule 03]
+
+---
+
+## Changelog
+
+### Version 2.0 (2025-11-10)
+**CRITICAL CORRECTION**: Updated testing percentages to align with actual production implementations
+
+**Changes**:
+- ✅ **Corrected Unit Test Coverage**: 38% → **≥70%** (aligns with Gateway, Context API, Data Storage)
+- ✅ **Maintained Integration Test Coverage**: **>50%** (unchanged, validated by production services)
+- ✅ **Clarified E2E Test Coverage**: <10% → **<10% (typically 10-15%)** (aligns with Data Storage)
+- ✅ **Added Defense-in-Depth Clarification**: Tests overlap intentionally, percentages do NOT sum to 100%
+- ✅ **Evidence-Based Update**: Based on actual implementation checklists from 3 production services
+
+**Rationale**:
+The original ADR-005 incorrectly stated "Unit Tests: 38%" based on a misunderstanding of defense-in-depth testing. The actual production implementations (Gateway, Context API, Data Storage) all require **≥70% unit test coverage** PLUS **>50% integration test coverage** with **intentional overlap**. This is NOT a traditional test pyramid where layers sum to 100%.
+
+**Evidence**:
+- Gateway Service: `70%+ unit, >50% integration, <10% E2E` (implementation-checklist.md:50-52)
+- Context API: `70%+ unit tests` (implementation-checklist.md:128)
+- Data Storage: `≥70% unit, >50% integration, 10-15% E2E` (implementation-checklist.md:220-237)
+
+**Impact**: All future services must follow the corrected strategy (≥70% unit, >50% integration, <10% E2E).
+
+---
+
+### Version 1.0 (2025-10-06)
+- Initial ADR defining >50% integration test coverage for microservices
+- Established defense-in-depth testing strategy
+- Defined cross-service validation requirements
 
 ---
 
@@ -22,8 +54,10 @@ Kubernaut uses a microservices architecture with 11 independent services (5 CRD 
 ```
 Unit Tests:       70%+  (algorithmic logic)
 Integration Tests: 20%  (cross-component)
-E2E Tests:        10%   (complete workflows)
+E2E Tests:        <10%  (complete workflows)
 ```
+
+**Note**: In traditional test pyramids, these percentages sum to ~100%. In defense-in-depth, they overlap intentionally.
 
 **Key Challenge**:
 With a **microservices architecture**, the risk surface changes:
@@ -91,31 +125,55 @@ Make integration tests the primary validation layer.
 - ✅ **Realistic Failure Modes** - Network timeouts, retries, partial failures tested
 - ✅ **Production Confidence** - >50% coverage gives high deployment confidence
 
-**Updated Testing Strategy**:
+**Updated Testing Strategy** (v2.0 - Corrected):
 ```
-BEFORE (Monolithic):          AFTER (Microservices):
-─────────────────────         ──────────────────────
-Unit Tests:       70%+        Unit Tests:       38%  (focused on algorithmic logic)
-Integration Tests: 20%        Integration Tests: >50% (cross-service validation)
-E2E Tests:        10%         E2E Tests:        <10%  (critical workflows only)
+BEFORE (Monolithic):          AFTER (Microservices - Defense-in-Depth):
+─────────────────────         ──────────────────────────────────────────
+Unit Tests:       70%+        Unit Tests:       ≥70%  (business logic, validation, edge cases)
+Integration Tests: 20%        Integration Tests: >50% (cross-service, real infrastructure)
+E2E Tests:        <10%        E2E Tests:        <10%  (critical workflows, typically 10-15%)
+─────────────────────         ──────────────────────────────────────────
+Total: ~100%                  Total: >130% (INTENTIONAL OVERLAP - Defense-in-Depth)
 ```
 
-**Architecture Overview**:
+**CRITICAL**: These percentages **overlap intentionally**. This is NOT a traditional pyramid where layers sum to 100%.
+
+**Defense-in-Depth Principle**: The same business logic is tested at multiple layers:
+- **Unit Test** (70%): Tests business logic in isolation with mocks
+- **Integration Test** (>50%): Tests same logic with real infrastructure (DB, Redis, K8s)
+- **E2E Test** (<10%): Tests same logic in complete workflow
+
+**Example Overlap**:
+```
+Alert Deduplication Logic:
+├─ Unit Test (70%): Tests fingerprint algorithm with mock data
+├─ Integration Test (>50%): Tests deduplication with real Redis
+└─ E2E Test (<10%): Tests deduplication in full alert → remediation flow
+```
+
+**Production Evidence**:
+- Gateway Service: `70%+ unit, >50% integration, <10% E2E`
+- Context API: `70%+ unit tests` (integration implied)
+- Data Storage: `≥70% unit, >50% integration, 10-15% E2E`
+
+**Architecture Overview** (v2.0 - Corrected):
 ```mermaid
 graph TB
-    subgraph "Testing Pyramid - Microservices Architecture"
-        E2E["E2E Tests (<10%)<br/>Full System + Real Cluster<br/>Example: Alert → Remediation → Success"]
+    subgraph "Defense-in-Depth Testing - Microservices Architecture (OVERLAPPING LAYERS)"
+        E2E["E2E Tests (<10%, typically 10-15%)<br/>Full System + Real Cluster<br/>Example: Alert → Remediation → Success"]
         INT["Integration Tests (>50%)<br/>Multi-Service + Real Infrastructure<br/>Examples: CRD Coordination, API Contracts,<br/>Database Interactions, Failure Handling"]
-        UNIT["Unit Tests (38%)<br/>Single Service + Fake Client<br/>Examples: Business Logic, Validation,<br/>Algorithm Testing"]
+        UNIT["Unit Tests (≥70%)<br/>Single Service + Mocks<br/>Examples: Business Logic, Validation,<br/>Algorithm Testing, Edge Cases"]
     end
 
-    E2E --> INT
-    INT --> UNIT
+    E2E -.->|"Overlaps with"| INT
+    INT -.->|"Overlaps with"| UNIT
 
     style E2E fill:#ffebee,stroke:#c62828,stroke-width:2px
     style INT fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
     style UNIT fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
 ```
+
+**Note**: Dotted arrows indicate intentional overlap. Total coverage >130% by design.
 
 **Key Integration Test Scenarios**:
 ```
@@ -220,19 +278,26 @@ Integration Test Coverage:
 
 **Description**: Significantly increase integration tests to validate cross-service flows.
 
-**Example Test Distribution**:
+**Example Test Distribution** (v2.0 - Corrected with Overlap):
 ```
-Total Tests: 1000 tests
-  - Unit: 380 tests (38% - focused on algorithmic logic)
-  - Integration: 520 tests (>50% - cross-service validation)
-  - E2E: 100 tests (<10% - critical workflows)
+Total Tests: 1300+ tests (>130% coverage due to intentional overlap)
+  - Unit: 700+ tests (≥70% - business logic, validation, edge cases)
+  - Integration: 500+ tests (>50% - cross-service, real infrastructure)
+  - E2E: 100-150 tests (<10%, typically 10-15% - critical workflows)
 
-Integration Test Coverage:
+Test Coverage Breakdown:
+  ✅ Unit Tests (≥70%): Business logic, validation, edge cases, algorithms
+  ✅ Integration Tests (>50%): Cross-service flows, API contracts, database interactions
+  ✅ E2E Tests (<10%): Complete workflows, production-like scenarios
+  ✅ Defense-in-Depth: Same logic tested at multiple layers (intentional overlap)
+  ✅ Total Coverage: >130% (NOT a traditional pyramid)
+
+Integration Test Coverage Details:
   ✅ All critical paths (happy path + edge cases)
   ✅ Comprehensive failure scenario coverage
   ✅ Full API contract validation (all endpoints)
-  ✅ Extensive database interaction tests
-  ✅ Defense-in-depth with intentional overlap
+  ✅ Extensive database interaction tests (PostgreSQL, Redis, Vector DB)
+  ✅ CRD cross-service coordination
 ```
 
 **Pros**:
@@ -416,10 +481,12 @@ Result: Failure handling bugs caught before production
 ```
 Example: Alert Deduplication Logic
 
-Unit Test (38% coverage):
+Unit Test (≥70% coverage):
   - Tests fingerprint generation algorithm
   - Tests time-window calculation
   - Tests Redis key format
+  - Tests edge cases (null values, special characters, Unicode)
+  - Tests validation logic
 
 Integration Test (>50% coverage):
   - Tests Gateway Service + Redis interaction

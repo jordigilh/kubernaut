@@ -24,7 +24,7 @@
         ┌────────────────┼────────────────┬────────────────┬────────────────┐
         │                │                │                │                │
         ▼                ▼                ▼                ▼                ▼
-  RemediationProcessing   AIAnalysis   WorkflowExecution  KubernetesExecution  AIApprovalRequest
+    SignalProcessing      AIAnalysis   WorkflowExecution  KubernetesExecution  AIApprovalRequest
    (Sibling 1)      (Sibling 2)     (Sibling 3)        (Sibling 4)       (Optional)
         │                │                │                │                │
         │                │                │                │                │
@@ -50,11 +50,12 @@
 | CRD | Owned By | Owns | Level | Cascade Delete |
 |-----|----------|------|-------|----------------|
 | **RemediationRequest** | None (root) | ALL service CRDs | 1 | ✅ Deletes all children |
-| **RemediationProcessing** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
+| **SignalProcessing** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
 | **AIAnalysis** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
-| **WorkflowExecution** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
-| **KubernetesExecution** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
+| **RemediationExecution** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
 | **AIApprovalRequest** | RemediationRequest | None | 2 | ✅ Deleted when RemediationRequest deleted |
+
+**Note**: KubernetesExecution was eliminated per [ADR-025](./ADR-025-kubernetesexecutor-service-elimination.md). Tekton PipelineRuns are created directly by RemediationExecution.
 
 **Key Point**: All service CRDs are **siblings** at level 2. RemediationRequest is the **single orchestrator** that creates all service CRDs based on sequential workflow progression.
 
@@ -72,12 +73,12 @@
         ┌───────────────────┼───────────────────┬───────────────────┐
         │ (owns)            │ (owns)            │ (owns)            │ (owns)
         ▼                   ▼                   ▼                   ▼
-  RemediationProcessing      AIAnalysis      WorkflowExecution   KubernetesExecution
-        │                   │                   │                   │
-   status.phase=         status.phase=      status.phase=      status.phase=
-   "completed"          "completed"        "completed"        "completed"
-        │                   │                   │                   │
-        └───────────────────┴───────────────────┴───────────────────┘
+    SignalProcessing        AIAnalysis      RemediationExecution
+        │                   │                   │
+   status.phase=         status.phase=      status.phase=
+   "completed"          "completed"        "completed"
+        │                   │                   │
+        └───────────────────┴───────────────────┘
                             │
                             ▼
               RemediationRequest watches all statuses
@@ -86,10 +87,12 @@
 
 **Data Flow** (without ownership):
 ```
-RemediationProcessing.status ──[data snapshot]──► RemediationRequest ──[creates]──► AIAnalysis.spec
-AIAnalysis.status ──[data snapshot]──► RemediationRequest ──[creates]──► WorkflowExecution.spec
-WorkflowExecution.status ──[data snapshot]──► RemediationRequest ──[creates]──► KubernetesExecution.spec
+SignalProcessing.status ──[data snapshot]──► RemediationRequest ──[creates]──► AIAnalysis.spec
+AIAnalysis.status ──[data snapshot]──► RemediationRequest ──[creates]──► RemediationExecution.spec
+RemediationExecution ──[creates]──► Tekton PipelineRun (action execution)
 ```
+
+**Note**: KubernetesExecution was eliminated. RemediationExecution now creates Tekton PipelineRuns directly.
 
 ### **Why Centralized Orchestration?**
 
@@ -104,9 +107,9 @@ WorkflowExecution.status ──[data snapshot]──► RemediationRequest ─�
    - Service controllers have ZERO knowledge of other services
 
 3. **No Cross-Service Coupling**
-   - RemediationProcessing doesn't know about AIAnalysis
-   - AIAnalysis doesn't know about WorkflowExecution
-   - WorkflowExecution doesn't know about KubernetesExecution
+   - SignalProcessing doesn't know about AIAnalysis
+   - AIAnalysis doesn't know about RemediationExecution
+   - RemediationExecution creates Tekton PipelineRuns (no CRD coupling)
    - Easy to add/remove/reorder services
 
 4. **Flat Sibling Hierarchy**
@@ -123,7 +126,7 @@ WorkflowExecution.status ──[data snapshot]──► RemediationRequest ─�
 **With Centralized Orchestration** (Flat Hierarchy):
 
 ```
-✅ RemediationRequest → RemediationProcessing → (none)
+✅ RemediationRequest → SignalProcessing → (none)
 ✅ RemediationRequest → AIAnalysis → (none)
 ✅ RemediationRequest → WorkflowExecution → (none)
 ✅ RemediationRequest → KubernetesExecution → (none)
@@ -134,7 +137,7 @@ WorkflowExecution.status ──[data snapshot]──► RemediationRequest ─�
 ```
 
 **Ownership Path Validation**:
-1. RemediationRequest → RemediationProcessing ✅ (terminates at level 2)
+1. RemediationRequest → SignalProcessing ✅ (terminates at level 2)
 2. RemediationRequest → AIAnalysis ✅ (terminates at level 2)
 3. RemediationRequest → WorkflowExecution ✅ (terminates at level 2)
 4. RemediationRequest → KubernetesExecution ✅ (terminates at level 2)
