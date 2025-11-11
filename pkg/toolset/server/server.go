@@ -5,23 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/jordigilh/kubernaut/pkg/toolset"
 	"github.com/jordigilh/kubernaut/pkg/toolset/configmap"
 	"github.com/jordigilh/kubernaut/pkg/toolset/discovery"
-	toolseterrors "github.com/jordigilh/kubernaut/pkg/toolset/errors"
 	"github.com/jordigilh/kubernaut/pkg/toolset/generator"
-	"github.com/jordigilh/kubernaut/pkg/toolset/metrics"
 	"github.com/jordigilh/kubernaut/pkg/toolset/server/middleware"
 )
 
@@ -40,6 +36,7 @@ type Config struct {
 	MetricsPort       int
 	ShutdownTimeout   time.Duration
 	DiscoveryInterval time.Duration
+	Namespace         string // Namespace where ConfigMap will be created
 }
 
 // Server represents the Dynamic Toolset HTTP server
@@ -72,12 +69,20 @@ func NewServer(config *Config, clientset kubernetes.Interface) (*Server, error) 
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
+	// Use namespace from config (detected from pod's service account or env var)
+	// For E2E tests, this will be the test namespace
+	// For production, this will be kubernaut-system
+	namespace := config.Namespace
+	if namespace == "" {
+		namespace = "kubernaut-system" // Fallback
+	}
+
 	s := &Server{
 		config:        config,
 		clientset:     clientset,
-		discoverer:    discovery.NewServiceDiscoverer(clientset),
-		generator:     generator.NewHolmesGPTGenerator(),
-		configBuilder: configmap.NewConfigMapBuilder("kubernaut-toolset-config", "kubernaut-system"),
+		discoverer:    discovery.NewServiceDiscoverer(clientset, config.DiscoveryInterval),
+		generator:     generator.NewJSONGenerator(),
+		configBuilder: configmap.NewConfigMapBuilder("kubernaut-toolset-config", namespace),
 		mux:           http.NewServeMux(),
 		logger:        logger,
 	}
@@ -89,12 +94,18 @@ func NewServer(config *Config, clientset kubernetes.Interface) (*Server, error) 
 	s.discoverer.RegisterDetector(discovery.NewElasticsearchDetector())
 	s.discoverer.RegisterDetector(discovery.NewCustomDetector())
 
+	// Wire discovery callback to ConfigMap reconciliation
+	// BR-TOOLSET-026: Service discovery with ConfigMap integration
+	// This connects the discovery loop to ConfigMap generation and updates
+	s.discoverer.SetCallback(s.reconcileConfigMap)
+
 	// Setup routes
 	s.setupRoutes()
 
-	// Wrap mux with request ID middleware for RFC 7807 error tracing
+	// Wrap mux with middleware chain for RFC 7807 error tracing and Content-Type validation
 	// BR-TOOLSET-039: Request ID tracing
-	s.handler = middleware.RequestIDMiddleware(s.mux)
+	// BR-TOOLSET-043: Content-Type validation
+	s.handler = middleware.RequestIDMiddleware(middleware.ValidateContentType(s.mux))
 
 	// Create HTTP servers
 	s.httpServer = &http.Server{
@@ -121,24 +132,129 @@ func (s *Server) RegisterDetector(detector discovery.ServiceDetector) {
 	s.discoverer.RegisterDetector(detector)
 }
 
+// reconcileConfigMap generates and updates the ConfigMap with discovered services
+// BR-TOOLSET-026: Service discovery with ConfigMap integration
+// BR-TOOLSET-029: ConfigMap builder with override preservation
+//
+// This method is invoked as a callback when the discovery loop finds services.
+// It integrates the discovery → generation → ConfigMap creation pipeline.
+func (s *Server) reconcileConfigMap(ctx context.Context, services []toolset.DiscoveredService) error {
+	s.logger.Info("Reconciling ConfigMap with discovered services",
+		zap.Int("service_count", len(services)))
+
+	// Convert []toolset.DiscoveredService to []*toolset.DiscoveredService
+	servicePointers := make([]*toolset.DiscoveredService, len(services))
+	for i := range services {
+		servicePointers[i] = &services[i]
+	}
+
+	// 1. Generate toolset JSON from discovered services
+	// BR-TOOLSET-028: Generate toolset configuration from discovered services
+	toolsetJSON, err := s.generator.GenerateToolset(ctx, servicePointers)
+	if err != nil {
+		s.logger.Error("Failed to generate toolset JSON",
+			zap.Error(err),
+			zap.Int("service_count", len(services)))
+		return fmt.Errorf("failed to generate toolset: %w", err)
+	}
+
+	s.logger.Debug("Generated toolset JSON",
+		zap.Int("json_length", len(toolsetJSON)))
+
+	// 2. Build ConfigMap from toolset JSON
+	// BR-TOOLSET-029: ConfigMap builder with override preservation
+	configMap, err := s.configBuilder.BuildConfigMap(ctx, toolsetJSON)
+	if err != nil {
+		s.logger.Error("Failed to build ConfigMap",
+			zap.Error(err))
+		return fmt.Errorf("failed to build ConfigMap: %w", err)
+	}
+
+	// 3. Create or update ConfigMap in Kubernetes
+	// BR-TOOLSET-021: ConfigMap generation and management
+	existingCM, err := s.clientset.CoreV1().ConfigMaps(configMap.Namespace).Get(ctx, configMap.Name, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create new ConfigMap
+			_, err = s.clientset.CoreV1().ConfigMaps(configMap.Namespace).Create(ctx, configMap, metav1.CreateOptions{})
+			if err != nil {
+				s.logger.Error("Failed to create ConfigMap",
+					zap.Error(err),
+					zap.String("name", configMap.Name),
+					zap.String("namespace", configMap.Namespace))
+				return fmt.Errorf("failed to create ConfigMap: %w", err)
+			}
+			s.logger.Info("ConfigMap created",
+				zap.String("name", configMap.Name),
+				zap.String("namespace", configMap.Namespace),
+				zap.Int("service_count", len(services)))
+		} else {
+			s.logger.Error("Failed to get ConfigMap",
+				zap.Error(err),
+				zap.String("name", configMap.Name),
+				zap.String("namespace", configMap.Namespace))
+			return fmt.Errorf("failed to get ConfigMap: %w", err)
+		}
+	} else {
+		// Update existing ConfigMap
+		existingCM.Data = configMap.Data
+		_, err = s.clientset.CoreV1().ConfigMaps(configMap.Namespace).Update(ctx, existingCM, metav1.UpdateOptions{})
+		if err != nil {
+			s.logger.Error("Failed to update ConfigMap",
+				zap.Error(err),
+				zap.String("name", configMap.Name),
+				zap.String("namespace", configMap.Namespace))
+			return fmt.Errorf("failed to update ConfigMap: %w", err)
+		}
+		s.logger.Info("ConfigMap updated",
+			zap.String("name", configMap.Name),
+			zap.String("namespace", configMap.Namespace),
+			zap.Int("service_count", len(services)))
+	}
+
+	return nil
+}
+
 // setupRoutes configures HTTP routes
 // Note: Auth/authz handled by sidecars and network policies (per ADR-036)
+//
+// DD-TOOLSET-001: REST API Deprecation (V1)
+// ========================================
+// REST API endpoints DISABLED in V1 (0-10% business value)
+// - ConfigMap introspection is sufficient for viewing discovered services
+// - V1.1 will introduce ToolsetConfig CRD for configuration (BR-TOOLSET-044)
+// See: docs/architecture/decisions/DD-TOOLSET-001-REST-API-Deprecation.md
+// ========================================
 func (s *Server) setupRoutes() {
-	// Health endpoints
+	// Health endpoints (KEEP - 100% business value)
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/ready", s.handleReady)
 
-	// API endpoints (auth handled by sidecar/network policies)
-	// Note: More specific routes must be registered first
-	s.mux.HandleFunc("/api/v1/toolsets/validate", s.handleValidateToolset) // BR-TOOLSET-042: Validate toolset
-	s.mux.HandleFunc("/api/v1/toolsets/generate", s.handleGenerateToolset) // BR-TOOLSET-041: Generate toolset
-	s.mux.HandleFunc("/api/v1/toolsets/", s.handleToolsetsRouter)          // BR-TOOLSET-040: Router for list and get operations
-	s.mux.HandleFunc("/api/v1/toolset", s.handleGetLegacyToolset)          // Legacy endpoint for backwards compatibility
-	s.mux.HandleFunc("/api/v1/services", s.handleListServices)
-	s.mux.HandleFunc("/api/v1/discover", s.handleDiscover)
-
-	// Metrics endpoint
+	// Metrics endpoint (KEEP - 100% business value)
 	s.mux.HandleFunc("/metrics", s.handleMetrics)
+
+	// ========================================
+	// REST API endpoints (DISABLED in V1 - DD-TOOLSET-001)
+	// ========================================
+	// TODO(V1.1): Remove these handlers and implement ToolsetConfig CRD (BR-TOOLSET-044)
+	// Reason: ConfigMap introspection is sufficient, REST API has 0-10% business value
+	//
+	// DISABLED ENDPOINTS:
+	// - POST /api/v1/discover (10% value) - Use ConfigMap introspection instead
+	// - POST /api/v1/toolsets/generate (5% value) - Controller auto-generates
+	// - POST /api/v1/toolsets/validate (5% value) - Controller validates
+	// - GET /api/v1/toolsets (0% value) - Use `kubectl get configmap kubernaut-toolset-config`
+	// - GET /api/v1/toolsets/{name} (0% value) - Use `kubectl get configmap kubernaut-toolset-config`
+	// - GET /api/v1/services (0% value) - Use `kubectl get configmap kubernaut-toolset-config`
+	// - GET /api/v1/toolset (0% value) - Legacy endpoint
+	//
+	// s.mux.HandleFunc("/api/v1/toolsets/validate", s.handleValidateToolset) // BR-TOOLSET-042: Validate toolset
+	// s.mux.HandleFunc("/api/v1/toolsets/generate", s.handleGenerateToolset) // BR-TOOLSET-041: Generate toolset
+	// s.mux.HandleFunc("/api/v1/toolsets/", s.handleToolsetsRouter)          // BR-TOOLSET-040: Router for list and get operations
+	// s.mux.HandleFunc("/api/v1/toolset", s.handleGetLegacyToolset)          // Legacy endpoint for backwards compatibility
+	// s.mux.HandleFunc("/api/v1/services", s.handleListServices)
+	// s.mux.HandleFunc("/api/v1/discover", s.handleDiscover)
+	// ========================================
 }
 
 // Start starts the HTTP server and metrics server
@@ -278,32 +394,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// writeJSONError writes an RFC 7807 compliant error response
-// BR-TOOLSET-039: RFC 7807 error format
-func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, statusCode int, detail string) {
-	// Create RFC 7807 error
-	rfc7807Err := toolseterrors.NewRFC7807Error(statusCode, detail, r.URL.Path)
-
-	// Extract request ID from context if available
-	if requestID, ok := r.Context().Value("request_id").(string); ok {
-		rfc7807Err.RequestID = requestID
-	}
-
-	// Record error metric
-	// BR-TOOLSET-039: Track RFC 7807 error responses
-	metrics.ErrorResponsesTotal.WithLabelValues(
-		strconv.Itoa(statusCode),
-		rfc7807Err.Type,
-	).Inc()
-
-	// Set headers
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(statusCode)
-
-	// Write JSON response
-	json.NewEncoder(w).Encode(rfc7807Err)
-}
-
 // handleHealth handles health check requests
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	response := map[string]interface{}{
@@ -352,555 +442,15 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// handleGetLegacyToolset handles GET /api/v1/toolset (legacy endpoint)
-// Returns the current combined toolset JSON
-func (s *Server) handleGetLegacyToolset(w http.ResponseWriter, r *http.Request) {
-	timer := prometheus.NewTimer(metrics.APIRequestDuration.WithLabelValues("/api/v1/toolset", "GET"))
-	defer timer.ObserveDuration()
-
-	if r.Method != http.MethodGet {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "405").Inc()
-		s.writeJSONError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// Discover services
-	services, err := s.discoverer.DiscoverServices(r.Context())
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "500").Inc()
-		metrics.APIErrors.WithLabelValues("/api/v1/toolset", "discovery_failed").Inc()
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to discover services")
-		return
-	}
-
-	// Convert to pointer slice for GenerateToolset
-	servicePointers := make([]*toolset.DiscoveredService, len(services))
-	for i := range services {
-		servicePointers[i] = &services[i]
-	}
-
-	// Generate toolset from discovered services
-	toolsetJSON, err := s.generator.GenerateToolset(r.Context(), servicePointers)
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "500").Inc()
-		metrics.APIErrors.WithLabelValues("/api/v1/toolset", "generation_failed").Inc()
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to generate toolset")
-		return
-	}
-
-	// Parse JSON to ensure it has the "tools" key
-	var toolsetMap map[string]interface{}
-	if err := json.Unmarshal([]byte(toolsetJSON), &toolsetMap); err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "500").Inc()
-		metrics.APIErrors.WithLabelValues("/api/v1/toolset", "json_parse_failed").Inc()
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to parse toolset JSON")
-		return
-	}
-
-	// Ensure "tools" key exists (even if empty)
-	if _, ok := toolsetMap["tools"]; !ok {
-		toolsetMap["tools"] = []interface{}{}
-	}
-
-	metrics.APIRequests.WithLabelValues("/api/v1/toolset", "GET", "200").Inc()
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(toolsetMap)
-}
-
-// handleListToolsets handles GET /api/v1/toolsets with optional filtering
-// BR-TOOLSET-037: Renamed from handleGetToolset to match api-specification.md (plural)
-// BR-TOOLSET-039: List toolsets with query parameter filtering
-func (s *Server) handleListToolsets(w http.ResponseWriter, r *http.Request) {
-	timer := prometheus.NewTimer(metrics.APIRequestDuration.WithLabelValues("/api/v1/toolsets", "GET"))
-	defer timer.ObserveDuration()
-
-	if r.Method != http.MethodGet {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets", "GET", "405").Inc()
-		s.writeJSONError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// Parse query parameters for filtering
-	enabledFilter, err := parseOptionalBool(r.URL.Query().Get("enabled"))
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets", "GET", "400").Inc()
-		s.writeJSONError(w, r, http.StatusBadRequest, "Invalid enabled parameter")
-		return
-	}
-
-	healthyFilter, err := parseOptionalBool(r.URL.Query().Get("healthy"))
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets", "GET", "400").Inc()
-		s.writeJSONError(w, r, http.StatusBadRequest, "Invalid healthy parameter")
-		return
-	}
-
-	// Discover services
-	services, err := s.discoverer.DiscoverServices(r.Context())
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets", "GET", "500").Inc()
-		metrics.APIErrors.WithLabelValues("/api/v1/toolsets", "discovery_failed").Inc()
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to discover services")
-		return
-	}
-
-	// Convert to toolset responses
-	toolsets := s.servicesToToolsets(services)
-
-	// Apply filters
-	filtered := s.filterToolsets(toolsets, enabledFilter, healthyFilter)
-
-	// Build response
-	response := toolset.ToolsetsListResponse{
-		Toolsets:      filtered,
-		Total:         len(filtered),
-		LastDiscovery: time.Now().Format(time.RFC3339),
-	}
-
-	metrics.APIRequests.WithLabelValues("/api/v1/toolsets", "GET", "200").Inc()
-	metrics.ToolsInToolset.Set(float64(len(filtered)))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-}
-
-// handleToolsetsRouter routes between list and get operations
-// BR-TOOLSET-040: Route toolsets API calls based on path
-func (s *Server) handleToolsetsRouter(w http.ResponseWriter, r *http.Request) {
-	// Extract path after /api/v1/toolsets/
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/toolsets")
-	path = strings.Trim(path, "/")
-
-	if path == "" {
-		// GET /api/v1/toolsets - list all
-		s.handleListToolsets(w, r)
-		return
-	}
-
-	// GET /api/v1/toolsets/{name} - get specific toolset
-	s.handleGetToolset(w, r, path)
-}
-
-// handleGetToolset gets a specific toolset by name or type
-// BR-TOOLSET-040: Get toolset by name
-func (s *Server) handleGetToolset(w http.ResponseWriter, r *http.Request, name string) {
-	timer := prometheus.NewTimer(metrics.APIRequestDuration.WithLabelValues("/api/v1/toolsets/{name}", "GET"))
-	defer timer.ObserveDuration()
-
-	if r.Method != http.MethodGet {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets/{name}", "GET", "405").Inc()
-		s.writeJSONError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// Discover services
-	services, err := s.discoverer.DiscoverServices(r.Context())
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets/{name}", "GET", "500").Inc()
-		metrics.APIErrors.WithLabelValues("/api/v1/toolsets/{name}", "discovery_failed").Inc()
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to discover services")
-		return
-	}
-
-	// Convert to toolset responses
-	toolsets := s.servicesToToolsets(services)
-
-	// Find matching toolset (prefer name match, fallback to type match)
-	for _, t := range toolsets {
-		if t.Name == name || t.Type == name {
-			metrics.APIRequests.WithLabelValues("/api/v1/toolsets/{name}", "GET", "200").Inc()
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(t)
-			return
-		}
-	}
-
-	// Not found
-	metrics.APIRequests.WithLabelValues("/api/v1/toolsets/{name}", "GET", "404").Inc()
-	s.writeJSONError(w, r, http.StatusNotFound, fmt.Sprintf("Toolset %s not found", name))
-}
-
-// handleGenerateToolset handles POST /api/v1/toolsets/generate
-// BR-TOOLSET-041: Generate toolset with discovery and ConfigMap update
-func (s *Server) handleGenerateToolset(w http.ResponseWriter, r *http.Request) {
-	timer := prometheus.NewTimer(metrics.APIRequestDuration.WithLabelValues("/api/v1/toolsets/generate", "POST"))
-	defer timer.ObserveDuration()
-
-	if r.Method != http.MethodPost {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets/generate", "POST", "405").Inc()
-		s.writeJSONError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// Trigger service discovery
-	services, err := s.discoverer.DiscoverServices(r.Context())
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets/generate", "POST", "500").Inc()
-		metrics.APIErrors.WithLabelValues("/api/v1/toolsets/generate", "discovery_failed").Inc()
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to discover services")
-		return
-	}
-
-	// Convert to toolset responses
-	toolsets := s.servicesToToolsets(services)
-
-	// Generate toolset JSON
-	servicePointers := make([]*toolset.DiscoveredService, len(services))
-	for i := range services {
-		servicePointers[i] = &services[i]
-	}
-
-	toolsetJSON, err := s.generator.GenerateToolset(r.Context(), servicePointers)
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets/generate", "POST", "500").Inc()
-		metrics.APIErrors.WithLabelValues("/api/v1/toolsets/generate", "generation_failed").Inc()
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to generate toolset")
-		return
-	}
-
-	// Build ConfigMap
-	cm, err := s.configBuilder.BuildConfigMap(r.Context(), toolsetJSON)
-	if err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets/generate", "POST", "500").Inc()
-		metrics.APIErrors.WithLabelValues("/api/v1/toolsets/generate", "configmap_failed").Inc()
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to build ConfigMap")
-		return
-	}
-
-	// Create or update ConfigMap in cluster
-	existingCM, err := s.clientset.CoreV1().ConfigMaps(cm.Namespace).Get(r.Context(), cm.Name, metav1.GetOptions{})
-	if err != nil {
-		// ConfigMap doesn't exist, create it
-		cm, err = s.clientset.CoreV1().ConfigMaps(cm.Namespace).Create(r.Context(), cm, metav1.CreateOptions{})
-		if err != nil {
-			metrics.APIRequests.WithLabelValues("/api/v1/toolsets/generate", "POST", "500").Inc()
-			metrics.APIErrors.WithLabelValues("/api/v1/toolsets/generate", "configmap_create_failed").Inc()
-			s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to create ConfigMap")
-			return
-		}
-	} else {
-		// ConfigMap exists, update it
-		cm.ResourceVersion = existingCM.ResourceVersion
-		cm, err = s.clientset.CoreV1().ConfigMaps(cm.Namespace).Update(r.Context(), cm, metav1.UpdateOptions{})
-		if err != nil {
-			metrics.APIRequests.WithLabelValues("/api/v1/toolsets/generate", "POST", "500").Inc()
-			metrics.APIErrors.WithLabelValues("/api/v1/toolsets/generate", "configmap_update_failed").Inc()
-			s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to update ConfigMap")
-			return
-		}
-	}
-
-	// Build response
-	response := toolset.ToolsetsListResponse{
-		Toolsets:         toolsets,
-		Total:            len(toolsets),
-		LastDiscovery:    time.Now().Format(time.RFC3339),
-		ConfigMapVersion: cm.ResourceVersion,
-	}
-
-	metrics.APIRequests.WithLabelValues("/api/v1/toolsets/generate", "POST", "200").Inc()
-	metrics.ToolsInToolset.Set(float64(len(toolsets)))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-}
-
-// handleListServices handles GET /api/v1/services
-// BR-TOOLSET-034: List discovered services
-func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.writeJSONError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// Discover services
-	services, err := s.discoverer.DiscoverServices(r.Context())
-	if err != nil {
-		s.writeJSONError(w, r, http.StatusInternalServerError, "Failed to discover services")
-		return
-	}
-
-	// Filter by type if specified
-	serviceType := r.URL.Query().Get("type")
-	if serviceType != "" {
-		filtered := []toolset.DiscoveredService{}
-		for _, svc := range services {
-			if svc.Type == serviceType {
-				filtered = append(filtered, svc)
-			}
-		}
-		services = filtered
-	}
-
-	response := map[string]interface{}{
-		"services": services,
-		"count":    len(services),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-}
-
-// handleDiscover handles POST /api/v1/discover
-// BR-TOOLSET-034: Trigger discovery manually
-func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		s.writeJSONError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// Trigger discovery (async)
-	go func() {
-		_, _ = s.discoverer.DiscoverServices(context.Background())
-	}()
-
-	response := map[string]interface{}{
-		"message": "Discovery triggered successfully",
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(response)
-}
-
 // handleMetrics handles GET /metrics
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	promhttp.Handler().ServeHTTP(w, r)
 }
 
-// handleValidateToolset handles POST /api/v1/toolsets/validate
-// BR-TOOLSET-042: Validate toolset JSON structure
-func (s *Server) handleValidateToolset(w http.ResponseWriter, r *http.Request) {
-	timer := prometheus.NewTimer(metrics.APIRequestDuration.WithLabelValues("/api/v1/toolsets/validate", "POST"))
-	defer timer.ObserveDuration()
-
-	if r.Method != http.MethodPost {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets/validate", "POST", "405").Inc()
-		s.writeJSONError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// Read request body
-	var toolsetData map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&toolsetData); err != nil {
-		metrics.APIRequests.WithLabelValues("/api/v1/toolsets/validate", "POST", "400").Inc()
-		s.writeJSONError(w, r, http.StatusBadRequest, "Invalid JSON")
-		return
-	}
-
-	// Validate toolset structure
-	validationErrors := validateToolsetStructure(toolsetData)
-
-	// Build response
-	response := toolset.ValidationResponse{
-		Valid:  len(validationErrors) == 0,
-		Errors: validationErrors,
-	}
-
-	metrics.APIRequests.WithLabelValues("/api/v1/toolsets/validate", "POST", "200").Inc()
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
-}
-
-// parseOptionalBool parses an optional boolean query parameter
-// BR-TOOLSET-039: Query parameter parsing for filtering
-func parseOptionalBool(value string) (*bool, error) {
-	if value == "" {
-		return nil, nil
-	}
-	b, err := strconv.ParseBool(value)
-	if err != nil {
-		return nil, err
-	}
-	return &b, nil
-}
-
-// servicesToToolsets converts discovered services to toolset responses
-// BR-TOOLSET-039: Convert services to API response format
-func (s *Server) servicesToToolsets(services []toolset.DiscoveredService) []toolset.ToolsetResponse {
-	toolsets := make([]toolset.ToolsetResponse, 0, len(services))
-	for _, svc := range services {
-		toolsets = append(toolsets, toolset.ToolsetResponse{
-			Name:            svc.Name,
-			Type:            svc.Type,
-			Enabled:         true, // All discovered services are enabled
-			Healthy:         svc.Healthy,
-			ServiceEndpoint: svc.Endpoint,
-			DiscoveredAt:    svc.DiscoveredAt.Format(time.RFC3339),
-			LastHealthCheck: svc.LastCheck.Format(time.RFC3339),
-			Config: map[string]interface{}{
-				"url": svc.Endpoint,
-			},
-		})
-	}
-	return toolsets
-}
-
-// filterToolsets applies enabled and healthy filters to toolset list
-// BR-TOOLSET-039: Filter toolsets by enabled and healthy status
-func (s *Server) filterToolsets(toolsets []toolset.ToolsetResponse, enabled, healthy *bool) []toolset.ToolsetResponse {
-	filtered := make([]toolset.ToolsetResponse, 0, len(toolsets))
-	for _, t := range toolsets {
-		// Apply enabled filter
-		if enabled != nil && t.Enabled != *enabled {
-			continue
-		}
-		// Apply healthy filter
-		if healthy != nil && t.Healthy != *healthy {
-			continue
-		}
-		filtered = append(filtered, t)
-	}
-	return filtered
-}
-
-// validateToolsetStructure validates toolset JSON structure
-// BR-TOOLSET-042: Toolset validation logic
-func validateToolsetStructure(data map[string]interface{}) []toolset.ValidationError {
-	// Validate tools array exists and is valid
-	tools, err := extractToolsArray(data)
-	if err != nil {
-		return []toolset.ValidationError{*err}
-	}
-
-	// Validate individual tools
-	return validateTools(tools)
-}
-
-// extractToolsArray extracts and validates the tools array from toolset data
-func extractToolsArray(data map[string]interface{}) ([]interface{}, *toolset.ValidationError) {
-	// Check if tools array exists
-	toolsInterface, ok := data["tools"]
-	if !ok {
-		return nil, &toolset.ValidationError{
-			Field:   "tools",
-			Message: "tools array is required",
-		}
-	}
-
-	// Check if tools is an array
-	tools, ok := toolsInterface.([]interface{})
-	if !ok {
-		return nil, &toolset.ValidationError{
-			Field:   "tools",
-			Message: "tools must be an array",
-		}
-	}
-
-	// Check if tools array is empty
-	if len(tools) == 0 {
-		return nil, &toolset.ValidationError{
-			Field:   "tools",
-			Message: "tools array cannot be empty",
-		}
-	}
-
-	return tools, nil
-}
-
-// validateTools validates each tool in the tools array
-func validateTools(tools []interface{}) []toolset.ValidationError {
-	var errors []toolset.ValidationError
-	toolNames := make(map[string]bool)
-
-	for i, toolInterface := range tools {
-		tool, ok := toolInterface.(map[string]interface{})
-		if !ok {
-			errors = append(errors, toolset.ValidationError{
-				Field:   fmt.Sprintf("tools[%d]", i),
-				Message: "tool must be an object",
-			})
-			continue
-		}
-
-		// Validate individual tool fields
-		toolErrors := validateTool(tool, i, toolNames)
-		errors = append(errors, toolErrors...)
-	}
-
-	return errors
-}
-
-// validateTool validates a single tool's fields
-func validateTool(tool map[string]interface{}, index int, seenNames map[string]bool) []toolset.ValidationError {
-	var errors []toolset.ValidationError
-
-	// Validate name
-	if err := validateToolName(tool, index, seenNames); err != nil {
-		errors = append(errors, *err)
-	}
-
-	// Validate type
-	if err := validateToolType(tool, index); err != nil {
-		errors = append(errors, *err)
-	}
-
-	// Validate endpoint
-	if err := validateToolEndpoint(tool, index); err != nil {
-		errors = append(errors, *err)
-	}
-
-	return errors
-}
-
-// validateToolName validates the tool name field
-func validateToolName(tool map[string]interface{}, index int, seenNames map[string]bool) *toolset.ValidationError {
-	name, ok := tool["name"].(string)
-	if !ok || name == "" {
-		return &toolset.ValidationError{
-			Field:   fmt.Sprintf("tools[%d].name", index),
-			Message: "name is required and must be a non-empty string",
-		}
-	}
-
-	// Check for duplicate names
-	if seenNames[name] {
-		return &toolset.ValidationError{
-			Field:   fmt.Sprintf("tools[%d].name", index),
-			Message: fmt.Sprintf("duplicate tool name: %s", name),
-		}
-	}
-
-	seenNames[name] = true
-	return nil
-}
-
-// validateToolType validates the tool type field
-func validateToolType(tool map[string]interface{}, index int) *toolset.ValidationError {
-	toolType, ok := tool["type"].(string)
-	if !ok || toolType == "" {
-		return &toolset.ValidationError{
-			Field:   fmt.Sprintf("tools[%d].type", index),
-			Message: "type is required and must be a non-empty string",
-		}
-	}
-	return nil
-}
-
-// validateToolEndpoint validates the tool endpoint field
-func validateToolEndpoint(tool map[string]interface{}, index int) *toolset.ValidationError {
-	endpoint, ok := tool["endpoint"].(string)
-	if !ok || endpoint == "" {
-		return &toolset.ValidationError{
-			Field:   fmt.Sprintf("tools[%d].endpoint", index),
-			Message: "endpoint is required and must be a non-empty string",
-		}
-	}
-
-	// Validate endpoint is a valid URL
-	if !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
-		return &toolset.ValidationError{
-			Field:   fmt.Sprintf("tools[%d].endpoint", index),
-			Message: "endpoint must be a valid HTTP or HTTPS URL",
-		}
-	}
-
-	return nil
+// SetDiscoverer replaces the server's discoverer (for testing)
+// This allows integration tests to inject a discoverer with nil health checkers
+func (s *Server) SetDiscoverer(discoverer discovery.ServiceDiscoverer) {
+	s.discoverer = discoverer
+	// Re-wire the callback
+	s.discoverer.SetCallback(s.reconcileConfigMap)
 }
