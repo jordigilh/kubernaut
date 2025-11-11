@@ -1,8 +1,0 @@
-# Kubernaut Microservices Container Images
-# Generated on: Sat Sep 27 11:40:16 EDT 2025
-# Version: build
-# Registry: v1.0.0-fixed
-
-v1.0.0-fixed/0:build
-v1.0.0-fixed/1:build
-v1.0.0-fixed/2:build
