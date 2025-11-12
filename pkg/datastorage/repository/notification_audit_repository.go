@@ -176,4 +176,3 @@ func (r *NotificationAuditRepository) HealthCheck(ctx context.Context) error {
 	}
 	return nil
 }
-

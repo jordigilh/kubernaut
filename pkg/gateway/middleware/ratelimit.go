@@ -120,4 +120,3 @@ func extractSourceIP(remoteAddr string) string {
 	}
 	return host
 }
-

@@ -154,7 +154,6 @@ func NewCachedExecutorWithDataStorage(cfg *DataStorageExecutorConfig) (*CachedEx
 	}, nil
 }
 
-
 // ListIncidents retrieves incidents with multi-tier fallback
 // BR-CONTEXT-001: Query incident audit data
 // BR-CONTEXT-005: Multi-tier caching

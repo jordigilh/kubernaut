@@ -31,9 +31,9 @@ import (
 // v2.0: Uses v2.0 components (CachedExecutor, CacheManager, Router)
 // DD-007: Kubernetes-aware graceful shutdown with 4-step pattern
 type Server struct {
-	router             *query.Router              // v2.0: Query router
-	cachedExecutor     *query.CachedExecutor      // v2.0: Cache-first executor
-	aggregationService *query.AggregationService  // Day 11: ADR-033 Aggregation layer
+	router             *query.Router             // v2.0: Query router
+	cachedExecutor     *query.CachedExecutor     // v2.0: Cache-first executor
+	aggregationService *query.AggregationService // Day 11: ADR-033 Aggregation layer
 	// ADR-032: NO direct database client - all data access via Data Storage Service
 	cacheManager cache.CacheManager // v2.0: Multi-tier cache
 	metrics      *metrics.Metrics

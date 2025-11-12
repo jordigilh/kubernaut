@@ -50,8 +50,8 @@ import (
 type CRDCreator struct {
 	k8sClient         *k8s.Client
 	logger            *zap.Logger
-	metrics           *metrics.Metrics  // Day 9 Phase 6B Option C1: Centralized metrics
-	fallbackNamespace string            // Configurable fallback namespace for CRD creation
+	metrics           *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
+	fallbackNamespace string                // Configurable fallback namespace for CRD creation
 	retryConfig       *config.RetrySettings // BR-GATEWAY-111: Retry configuration
 }
 
