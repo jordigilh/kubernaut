@@ -370,12 +370,10 @@ func createConfigFiles() {
 	configDir, err = os.MkdirTemp("", "datastorage-config-*")
 	Expect(err).ToNot(HaveOccurred())
 
-	// Get container IPs (will be used in config)
-	postgresIP := getContainerIP(postgresContainer)
-	redisIP := getContainerIP(redisContainer)
-
 	// Create config.yaml (ADR-030)
-	configYAML := fmt.Sprintf(`
+	// Use host.containers.internal for container-to-host communication
+	// This works in both rootless and rootful Podman
+	configYAML := `
 service:
   name: data-storage
   metricsPort: 9090
@@ -387,8 +385,8 @@ server:
   read_timeout: 30s
   write_timeout: 30s
 database:
-  host: %s
-  port: 5432
+  host: host.containers.internal
+  port: 5433
   name: action_history
   user: slm_user
   ssl_mode: disable
@@ -400,7 +398,7 @@ database:
   usernameKey: "username"
   passwordKey: "password"
 redis:
-  addr: %s:6379
+  addr: host.containers.internal:6379
   db: 0
   dlq_stream_name: dlq-stream
   dlq_max_len: 1000
@@ -410,7 +408,7 @@ redis:
 logging:
   level: debug
   format: json
-`, postgresIP, redisIP)
+`
 
 	configPath := filepath.Join(configDir, "config.yaml")
 	err = os.WriteFile(configPath, []byte(configYAML), 0644)
@@ -464,21 +462,17 @@ func startDataStorageService() {
 	exec.Command("podman", "stop", serviceContainer).Run()
 	exec.Command("podman", "rm", serviceContainer).Run()
 
-	// Get PostgreSQL container IP (they're on the same Podman network)
-	postgresIP := getContainerIP(postgresContainer)
-	redisIP := getContainerIP(redisContainer)
-
-	GinkgoWriter.Printf("  📍 PostgreSQL IP: %s\n", postgresIP)
-	GinkgoWriter.Printf("  📍 Redis IP: %s\n", redisIP)
-
 	// Mount config files (ADR-030)
 	configMount := fmt.Sprintf("%s/config.yaml:/etc/datastorage/config.yaml:ro", configDir)
 	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", configDir)
 
 	// Start service container with ADR-030 config
+	// Use --add-host to enable host.containers.internal for container-to-host communication
+	// This works in both rootless and rootful Podman
 	startCmd := exec.Command("podman", "run", "-d",
 		"--name", serviceContainer,
 		"-p", "8080:8080",
+		"--add-host", "host.containers.internal:host-gateway",
 		"-v", configMount,
 		"-v", secretsMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
@@ -491,20 +485,6 @@ func startDataStorageService() {
 	}
 
 	GinkgoWriter.Println("  ✅ Data Storage Service container started")
-}
-
-// getContainerIP retrieves the IP address of a Podman container
-func getContainerIP(containerName string) string {
-	cmd := exec.Command("podman", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", containerName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		Fail(fmt.Sprintf("Failed to get IP for container %s: %v", containerName, err))
-	}
-	ip := strings.TrimSpace(string(output))
-	if ip == "" {
-		Fail(fmt.Sprintf("Container %s has no IP address", containerName))
-	}
-	return ip
 }
 
 // waitForServiceReady waits for the Data Storage Service health endpoint to respond
