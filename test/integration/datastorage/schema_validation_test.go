@@ -396,6 +396,8 @@ var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered,
 			}
 
 			// Verify critical columns exist with correct types
+			// Note: resource_type, resource_name, resource_namespace are in resource_references table,
+			// not in resource_action_traces. This table references them via action_history_id -> action_histories -> resource_references.
 			expectedColumns := map[string]struct {
 				dataType   string
 				isNullable string
@@ -413,9 +415,6 @@ var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered,
 				"playbook_version":         {"character varying", "YES"},
 				"ai_selected_playbook":     {"boolean", "YES"},
 				"ai_chained_playbooks":     {"boolean", "YES"},
-				"resource_type":            {"character varying", "YES"},
-				"resource_name":            {"character varying", "YES"},
-				"resource_namespace":       {"character varying", "YES"},
 				"effectiveness_score":      {"numeric", "YES"},
 				"effectiveness_assessment": {"character varying", "YES"},
 			}
