@@ -182,7 +182,7 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", cfg.DBName),
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", cfg.DBUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", cfg.DBPassword),
-		"pgvector/pgvector:pg16")
+		"quay.io/jordigilh/pgvector:pg16")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -212,7 +212,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"-p", fmt.Sprintf("%s:6379", cfg.RedisPort),
-		"redis:7-alpine")
+		"registry.redhat.io/rhel9/redis-7:latest")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
