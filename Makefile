@@ -894,7 +894,7 @@ test-container-build: ## Build test runner container
 .PHONY: test-container-unit
 test-container-unit: ## Run unit tests in container
 	@echo "🐳 Running unit tests in container..."
-	podman-compose -f docker-compose.test.yml run --rm \
+	podman-compose -f podman-compose.test.yml run --rm \
 		-e POSTGRES_HOST=postgres \
 		-e POSTGRES_PORT=5432 \
 		-e REDIS_HOST=redis \
@@ -904,7 +904,7 @@ test-container-unit: ## Run unit tests in container
 .PHONY: test-container-integration
 test-container-integration: ## Run integration tests in container
 	@echo "🐳 Running integration tests in container..."
-	podman-compose -f docker-compose.test.yml run --rm \
+	podman-compose -f podman-compose.test.yml run --rm \
 		-e POSTGRES_HOST=postgres \
 		-e POSTGRES_PORT=5432 \
 		-e REDIS_HOST=redis \
@@ -914,7 +914,7 @@ test-container-integration: ## Run integration tests in container
 .PHONY: test-container-e2e
 test-container-e2e: ## Run E2E tests in container
 	@echo "🐳 Running E2E tests in container..."
-	podman-compose -f docker-compose.test.yml run --rm \
+	podman-compose -f podman-compose.test.yml run --rm \
 		-e KIND_EXPERIMENTAL_PROVIDER=podman \
 		-e POSTGRES_HOST=postgres \
 		-e POSTGRES_PORT=5432 \
@@ -925,7 +925,7 @@ test-container-e2e: ## Run E2E tests in container
 .PHONY: test-container-all
 test-container-all: ## Run ALL tests in container
 	@echo "🐳 Running ALL tests in container..."
-	podman-compose -f docker-compose.test.yml run --rm \
+	podman-compose -f podman-compose.test.yml run --rm \
 		-e POSTGRES_HOST=postgres \
 		-e POSTGRES_PORT=5432 \
 		-e REDIS_HOST=redis \
@@ -935,7 +935,7 @@ test-container-all: ## Run ALL tests in container
 .PHONY: test-container-shell
 test-container-shell: ## Open shell in test container for debugging
 	@echo "🐳 Opening shell in test container..."
-	podman-compose -f docker-compose.test.yml run --rm \
+	podman-compose -f podman-compose.test.yml run --rm \
 		-e POSTGRES_HOST=postgres \
 		-e POSTGRES_PORT=5432 \
 		-e REDIS_HOST=redis \
@@ -945,4 +945,4 @@ test-container-shell: ## Open shell in test container for debugging
 .PHONY: test-container-down
 test-container-down: ## Stop and remove all test containers
 	@echo "🐳 Stopping test containers..."
-	podman-compose -f docker-compose.test.yml down -v
+	podman-compose -f podman-compose.test.yml down -v
