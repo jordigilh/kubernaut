@@ -258,4 +258,3 @@ var _ = Describe("Gateway Configuration Loading", func() {
 		})
 	})
 })
-

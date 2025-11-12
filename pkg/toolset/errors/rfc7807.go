@@ -76,4 +76,3 @@ func getErrorTypeAndTitle(statusCode int) (string, string) {
 		return ErrorTypeUnknown, TitleUnknown
 	}
 }
-

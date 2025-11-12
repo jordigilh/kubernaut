@@ -213,4 +213,3 @@ func writeRFC7807Error(w http.ResponseWriter, problem *validation.RFC7807Problem
 	w.WriteHeader(problem.Status)
 	json.NewEncoder(w).Encode(problem)
 }
-
