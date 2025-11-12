@@ -402,20 +402,20 @@ var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered,
 				dataType   string
 				isNullable string
 			}{
-				"id":                       {"bigint", "NO"},
-				"action_history_id":        {"bigint", "NO"},
-				"action_id":                {"character varying", "NO"},
-				"action_type":              {"character varying", "NO"},
-				"action_timestamp":         {"timestamp with time zone", "NO"},
-				"execution_status":         {"character varying", "YES"}, // CRITICAL: execution_status, not status
-				"model_used":               {"character varying", "NO"},
-				"model_confidence":         {"numeric", "NO"},
-				"incident_type":            {"character varying", "YES"},
-				"playbook_id":              {"character varying", "YES"},
-				"playbook_version":         {"character varying", "YES"},
-				"ai_selected_playbook":          {"boolean", "YES"},
-				"ai_chained_playbooks":          {"boolean", "YES"},
-				"effectiveness_score":           {"numeric", "YES"},
+				"id":                              {"bigint", "NO"},
+				"action_history_id":               {"bigint", "NO"},
+				"action_id":                       {"character varying", "NO"},
+				"action_type":                     {"character varying", "NO"},
+				"action_timestamp":                {"timestamp with time zone", "NO"},
+				"execution_status":                {"character varying", "YES"}, // CRITICAL: execution_status, not status
+				"model_used":                      {"character varying", "NO"},
+				"model_confidence":                {"numeric", "NO"},
+				"incident_type":                   {"character varying", "YES"},
+				"playbook_id":                     {"character varying", "YES"},
+				"playbook_version":                {"character varying", "YES"},
+				"ai_selected_playbook":            {"boolean", "YES"},
+				"ai_chained_playbooks":            {"boolean", "YES"},
+				"effectiveness_score":             {"numeric", "YES"},
 				"effectiveness_assessment_method": {"character varying", "YES"},
 			}
 
