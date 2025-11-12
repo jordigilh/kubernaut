@@ -174,7 +174,7 @@ func startPostgreSQL() {
 		if port == "" {
 			port = "5432"
 		}
-		
+
 		GinkgoWriter.Printf("⏳ Waiting for PostgreSQL at %s:%s to be ready...\n", host, port)
 		Eventually(func() error {
 			connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
@@ -185,14 +185,14 @@ func startPostgreSQL() {
 			defer testDB.Close()
 			return testDB.Ping()
 		}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready")
-		
+
 		GinkgoWriter.Println("✅ PostgreSQL is ready")
 		return
 	}
 
 	// Running locally - start our own container
 	GinkgoWriter.Println("🏠 Starting local PostgreSQL container...")
-	
+
 	// Cleanup existing container
 	exec.Command("podman", "stop", postgresContainer).Run()
 	exec.Command("podman", "rm", postgresContainer).Run()
@@ -236,7 +236,7 @@ func startRedis() {
 		if port == "" {
 			port = "6379"
 		}
-		
+
 		GinkgoWriter.Printf("⏳ Waiting for Redis at %s:%s to be ready...\n", host, port)
 		Eventually(func() error {
 			addr := fmt.Sprintf("%s:%s", host, port)
@@ -246,14 +246,14 @@ func startRedis() {
 			defer testClient.Close()
 			return testClient.Ping(ctx).Err()
 		}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
-		
+
 		GinkgoWriter.Println("✅ Redis is ready")
 		return
 	}
 
 	// Running locally - start our own container
 	GinkgoWriter.Println("🏠 Starting local Redis container...")
-	
+
 	// Cleanup existing container
 	exec.Command("podman", "stop", redisContainer).Run()
 	exec.Command("podman", "rm", redisContainer).Run()
