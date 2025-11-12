@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Test runner - runs all tests
+  test-runner:
+    build:
+      context: .
+      dockerfile: docker/test-runner.Dockerfile
+    volumes:
+      - .:/workspace
+      # Podman socket - path varies by platform:
+      # Linux: /run/podman/podman.sock
+      # macOS: Set PODMAN_SOCKET env var to podman machine socket
+      # Example: export PODMAN_SOCKET=$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')
+      - ${PODMAN_SOCKET:-/run/podman/podman.sock}:/var/run/docker.sock
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    environment:
+      - GOFLAGS=-mod=mod
+      - CGO_ENABLED=0
+    networks:
+      - test-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # PostgreSQL for integration tests
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: action_history
+      POSTGRES_USER: slm_user
+      POSTGRES_PASSWORD: test_password
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slm_user -d action_history"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis for integration tests
+  redis:
+    image: redis:7-alpine
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
+
+networks:
+  test-network:
+    driver: bridge
