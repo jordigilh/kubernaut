@@ -914,6 +914,7 @@ test-container-integration: ## Run integration tests in container
 		-e POSTGRES_PORT=5432 \
 		-e REDIS_HOST=redis \
 		-e REDIS_PORT=6379 \
+		-e DATASTORAGE_URL=http://datastorage:8080 \
 		test-runner sh -c "make test-integration-datastorage && make test-integration-notification"
 
 .PHONY: test-container-e2e
