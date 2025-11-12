@@ -63,23 +63,14 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		var resourceID int64
 		err := db.QueryRowContext(testCtx, `
 			INSERT INTO resource_references (
-				resource_type, resource_name, namespace,
-				cluster_id, labels, annotations
+				resource_uid, api_version, kind, name, namespace
 			) VALUES (
-				'pod', 'test-pod', 'default',
-				'test-cluster', '{}', '{}'
+				gen_random_uuid()::text, 'v1', 'Pod', 'test-pod', 'default'
 			)
-			ON CONFLICT DO NOTHING
+			ON CONFLICT (namespace, kind, name) DO UPDATE SET last_seen = NOW()
 			RETURNING id
 		`).Scan(&resourceID)
-		if err != nil {
-			// If conflict, get existing ID
-			err = db.QueryRowContext(testCtx, `
-				SELECT id FROM resource_references
-				WHERE resource_type = 'pod' AND resource_name = 'test-pod' AND namespace = 'default'
-			`).Scan(&resourceID)
-			Expect(err).ToNot(HaveOccurred())
-		}
+		Expect(err).ToNot(HaveOccurred())
 
 		// Create action_history
 		var historyID int64
