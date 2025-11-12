@@ -342,8 +342,8 @@ var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered,
 				"action_type",
 				"action_timestamp",
 				"execution_status", // CRITICAL: Not 'status'
-				"alert_name",
-				"alert_severity",
+				"signal_name",      // Migration 011: renamed from alert_name
+				"signal_severity",  // Migration 011: renamed from alert_severity
 				"model_used",
 				"model_confidence",
 				"incident_type",
