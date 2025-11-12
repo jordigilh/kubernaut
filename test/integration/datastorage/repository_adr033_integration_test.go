@@ -101,13 +101,13 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		query := `
 			INSERT INTO resource_action_traces (
 				action_history_id, action_id, action_type, action_timestamp, execution_status,
-				alert_name, alert_severity,
+				signal_name, signal_severity,
 				model_used, model_confidence,
 				incident_type, playbook_id, playbook_version,
 				ai_selected_playbook, ai_chained_playbooks
 			) VALUES (
 				$1, gen_random_uuid()::text, 'increase_memory', NOW(), $2,
-				'test-alert', 'critical',
+				'test-signal', 'critical',
 				'gpt-4', 0.95,
 				$3, $4, $5,
 				$6, $7
