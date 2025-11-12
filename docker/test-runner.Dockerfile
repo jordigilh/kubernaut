@@ -5,11 +5,11 @@ FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
 USER root
 
 # Install test dependencies
+# Note: curl-minimal is pre-installed in UBI9, no need to install curl
 RUN dnf install -y \
     git \
     make \
     podman \
-    curl \
     gcc \
     && dnf clean all
 
