@@ -231,7 +231,17 @@ func startRedis() {
 
 // connectPostgreSQL establishes PostgreSQL connection
 func connectPostgreSQL() {
-	connStr := "host=localhost port=5433 user=slm_user password=test_password dbname=action_history sslmode=disable"
+	// Use environment variables for Docker Compose compatibility
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5433"
+	}
+
+	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
 	var err error
 	db, err = sql.Open("pgx", connStr) // DD-010: Using pgx driver
 	Expect(err).ToNot(HaveOccurred())
@@ -245,8 +255,18 @@ func connectPostgreSQL() {
 
 // connectRedis establishes Redis connection
 func connectRedis() {
+	// Use environment variables for Docker Compose compatibility
+	host := os.Getenv("REDIS_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("REDIS_PORT")
+	if port == "" {
+		port = "6379"
+	}
+
 	redisClient = redis.NewClient(&redis.Options{
-		Addr: "localhost:6379",
+		Addr: fmt.Sprintf("%s:%s", host, port),
 	})
 
 	// Verify connection
@@ -370,15 +390,25 @@ func createConfigFiles() {
 	configDir, err = os.MkdirTemp("", "datastorage-config-*")
 	Expect(err).ToNot(HaveOccurred())
 
-	// Determine database and redis hosts based on platform
-	// Linux (GitHub Actions): Use --network=host, so localhost works
-	// macOS (local dev): Use host.docker.internal (works in Podman VM)
-	dbHost := "localhost"
-	redisHost := "localhost"
-	if runtime.GOOS == "darwin" {
-		// macOS: Podman runs in VM, use host.docker.internal
-		dbHost = "host.docker.internal"
-		redisHost = "host.docker.internal"
+	// Determine database and redis hosts based on environment
+	// Docker Compose: Use service names (postgres, redis)
+	// Direct execution: Use localhost with mapped ports
+	dbHost := os.Getenv("POSTGRES_HOST")
+	if dbHost == "" {
+		dbHost = "localhost"
+	}
+	dbPort := os.Getenv("POSTGRES_PORT")
+	if dbPort == "" {
+		dbPort = "5433"
+	}
+
+	redisHost := os.Getenv("REDIS_HOST")
+	if redisHost == "" {
+		redisHost = "localhost"
+	}
+	redisPort := os.Getenv("REDIS_PORT")
+	if redisPort == "" {
+		redisPort = "6379"
 	}
 
 	// Create config.yaml (ADR-030)
@@ -395,7 +425,7 @@ server:
   write_timeout: 30s
 database:
   host: %s
-  port: 5433
+  port: %s
   name: action_history
   user: slm_user
   ssl_mode: disable
@@ -407,7 +437,7 @@ database:
   usernameKey: "username"
   passwordKey: "password"
 redis:
-  addr: %s:6379
+  addr: %s:%s
   db: 0
   dlq_stream_name: dlq-stream
   dlq_max_len: 1000
@@ -417,7 +447,7 @@ redis:
 logging:
   level: debug
   format: json
-`, dbHost, redisHost)
+`, dbHost, dbPort, redisHost, redisPort)
 
 	configPath := filepath.Join(configDir, "config.yaml")
 	err = os.WriteFile(configPath, []byte(configYAML), 0644)
