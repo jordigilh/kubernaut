@@ -18,7 +18,7 @@
 
 ## 📋 Document Structure
 
-This design decision follows the **ADR-035 Complex Decision Documentation Pattern** with subdocuments for detailed analysis:
+This design decision follows the **ADR-039 Complex Decision Documentation Pattern** with subdocuments for detailed analysis:
 
 ### **Main Document** (This file)
 - Executive summary and production readiness decision
@@ -178,4 +178,4 @@ This design decision follows the **ADR-035 Complex Decision Documentation Patter
 **Document Maintainer**: Kubernaut Documentation Team
 **Last Updated**: 2025-11-06
 **Version**: 1.0
-**Structure**: ADR-035 Complex Decision Documentation Pattern
+**Structure**: ADR-039 Complex Decision Documentation Pattern

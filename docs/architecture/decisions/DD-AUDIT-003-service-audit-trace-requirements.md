@@ -506,7 +506,7 @@ context_api:
 
 **Implementation**:
 - Use `pkg/audit/` shared library (see [DD-AUDIT-002](./DD-AUDIT-002-audit-shared-library-design.md))
-- Follow async buffered pattern (see [ADR-035](./ADR-035-async-buffered-audit-ingestion.md))
+- Follow async buffered pattern (see [ADR-035](./ADR-038-async-buffered-audit-ingestion.md))
 - Store in unified audit table (see [ADR-034](./ADR-034-unified-audit-table-design.md))
 
 ---
@@ -616,7 +616,7 @@ context_api:
 
 **Audit Architecture**:
 - **ADR-034**: [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) - Database schema for audit events
-- **ADR-035**: [Asynchronous Buffered Audit Ingestion](./ADR-035-async-buffered-audit-ingestion.md) - How services write audit traces
+- **ADR-035**: [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) - How services write audit traces
 - **DD-AUDIT-001**: [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) - Distributed audit pattern (services write their own traces)
 - **DD-AUDIT-002**: [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) - Implementation details for `pkg/audit/` shared library
 

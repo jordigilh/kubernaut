@@ -2,8 +2,10 @@
 
 ### Status
 **✅ Approved Design** (2024-10-08)
-**Last Reviewed**: 2024-10-08
+**Last Reviewed**: 2025-11-11
 **Confidence**: 95% (based on temporal consistency requirements)
+
+**⚠️ IMPORTANT UPDATE (2025-11-11)**: Recovery context enrichment approach has been revised by **DD-CONTEXT-006**. Signal Processor NO LONGER queries Context API for historical recovery data. Instead, Remediation Orchestrator embeds current failure data from WorkflowExecution CRD. See [DD-CONTEXT-006](DD-CONTEXT-006-signal-processor-recovery-data-source.md) for details.
 
 ### Context & Problem
 When a workflow execution fails, the system must create a recovery attempt with fresh context to enable AI-driven alternative strategies. The challenge: **where** should the historical context be enriched, and **how** should it flow to the AI Analysis service?
@@ -97,46 +99,55 @@ When a workflow execution fails, the system must create a recovery attempt with 
 - [remediationorchestrator/controller-implementation.md](../services/crd-controllers/05-remediationorchestrator/controller-implementation.md) - Recovery initiation
 - [aianalysis/controller-implementation.md](../services/crd-controllers/02-aianalysis/controller-implementation.md) - EnrichmentData consumption
 
-**Data Flow**:
-1. **Remediation Orchestrator** creates new SignalProcessing CRD (recovery=true)
-2. **RemediationProcessing Controller** enriches with ALL contexts:
+**Data Flow** (REVISED per DD-CONTEXT-006):
+1. **Remediation Orchestrator** extracts failure data from WorkflowExecution CRD
+2. **Remediation Orchestrator** creates new SignalProcessing CRD with embedded failure data
+3. **RemediationProcessing Controller** enriches with:
    - Monitoring context (FRESH from monitoring service)
    - Business context (FRESH from business context service)
-   - Recovery context (FRESH from Context API)
-3. **Remediation Orchestrator** watches RemediationProcessing completion
-4. **Remediation Orchestrator** creates AIAnalysis CRD, copying enrichment data to spec
-5. **AIAnalysis Controller** reads `spec.enrichmentData` (NO API calls)
-6. **HolmesGPT** receives complete context for optimal recovery recommendations
+   - ~~Recovery context (FRESH from Context API)~~ **REMOVED** - See DD-CONTEXT-006
+4. **Remediation Orchestrator** watches RemediationProcessing completion
+5. **Remediation Orchestrator** creates AIAnalysis CRD, copying enrichment data to spec
+6. **AIAnalysis Controller** reads `spec.enrichmentData` (NO API calls)
+7. **HolmesGPT API** receives current failure context
+8. **LLM** queries Context API for playbooks via tool call (semantic search) if needed
 
-**Graceful Degradation**:
+**Graceful Degradation** (REVISED per DD-CONTEXT-006):
 ```go
 // In RemediationProcessing Controller
-recoveryCtx, err := r.ContextAPIClient.GetRemediationContext(ctx, remediationRequestID)
-if err != nil {
-    // Fallback: Build context from failed workflow reference
-    recoveryCtx = r.buildFallbackRecoveryContext(rp)
+// NO Context API call for recovery context
+// Failure data already embedded in spec by Remediation Orchestrator
+
+if rp.Spec.IsRecoveryAttempt {
+    log.Info("Recovery attempt detected - using embedded failure data",
+        "attemptNumber", rp.Spec.RecoveryAttemptNumber,
+        "failedStep", rp.Spec.FailureData.FailedStep,
+        "errorType", rp.Spec.FailureData.ErrorType)
+
+    // Failure data already in spec - no external call needed
+    rp.Status.EnrichmentResults.FailureContext = rp.Spec.FailureData
 }
-rp.Status.EnrichmentResults.RecoveryContext = recoveryCtx
 ```
 
 ### Consequences
 
-**Positive**:
-- ✅ AI receives optimal context for recovery decisions (fresh + historical)
+**Positive** (REVISED per DD-CONTEXT-006):
+- ✅ AI receives optimal context for recovery decisions (fresh monitoring + business + current failure data)
 - ✅ Complete audit trail for compliance and debugging
 - ✅ Simplified testing (AIAnalysis has no external dependencies)
 - ✅ Consistent with established architectural patterns
-- ✅ Early failure detection (Context API issues caught during enrichment)
+- ✅ No circumstantial historical data (LLM reasons about current situation)
+- ✅ LLM can query Context API for playbooks via tool call if needed
 
-**Negative**:
+**Negative** (REVISED per DD-CONTEXT-006):
 - ⚠️ Recovery initiation takes ~1 minute longer than Alternative 3
   - **Accepted Trade-off**: Better AI decisions worth the time penalty
-- ⚠️ RemediationProcessing Controller has additional responsibility (Context API client)
-  - **Mitigation**: Well-encapsulated with graceful degradation
+- ~~⚠️ RemediationProcessing Controller has additional responsibility (Context API client)~~ **REMOVED** - No longer calls Context API
 
-**Neutral**:
-- 🔄 Must maintain Context API client in RemediationProcessing package
+**Neutral** (REVISED per DD-CONTEXT-006):
+- ~~🔄 Must maintain Context API client in RemediationProcessing package~~ **REMOVED** - No longer needed
 - 🔄 RemediationOrchestrator copies enrichment data (simple data copy, low risk)
+- 🔄 RemediationOrchestrator extracts failure data from WorkflowExecution CRD
 
 ### Validation Results
 

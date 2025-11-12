@@ -378,7 +378,7 @@ This document maps the 30 AI/ML Service business requirements to their test impl
 - Integration: 0 files
 - E2E: 0 files
 
-**Migration Note**: Migrated from BR-CONTEXT-016 per ADR-034
+**Migration Note**: Migrated from BR-CONTEXT-016 per ADR-037
 
 ---
 
@@ -430,7 +430,7 @@ This document maps the 30 AI/ML Service business requirements to their test impl
 - Integration: 1 file (mock)
 - E2E: 0 files
 
-**Migration Note**: Migrated from BR-CONTEXT-022 per ADR-034
+**Migration Note**: Migrated from BR-CONTEXT-022 per ADR-037
 
 ---
 
@@ -464,7 +464,7 @@ This document maps the 30 AI/ML Service business requirements to their test impl
 - Integration: 1 file (mock)
 - E2E: 0 files
 
-**Migration Note**: Migrated from BR-CONTEXT-025 per ADR-034
+**Migration Note**: Migrated from BR-CONTEXT-025 per ADR-037
 
 ---
 

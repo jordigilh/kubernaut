@@ -439,7 +439,7 @@ func (r *RemediationExecutor) CreateNotificationAudit(ctx context.Context, signa
 ### **Related Documents**
 - [ADR-033: Remediation Playbook Catalog](../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
 - [ADR-033: Cross-Service BRs](../architecture/decisions/ADR-033-CROSS-SERVICE-BRS.md)
-- [ADR-034: BR Template Standard](../architecture/decisions/ADR-034-business-requirement-template-standard.md)
+- [ADR-037: BR Template Standard](../architecture/decisions/ADR-037-business-requirement-template-standard.md)
 
 ---
 

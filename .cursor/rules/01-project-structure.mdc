@@ -1,8 +1,6 @@
 ---
-alwaysApply: true
-description: "Project structure and navigation guide for kubernaut"
+alwaysApply: false
 ---
-
 # Kubernaut Project Structure Guide
 
 ## Core Architecture
