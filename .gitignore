@@ -72,7 +72,7 @@ dynamic-toolset-server
 main
 remediationprocessor
 gateway-arm64
-gateway
+/gateway
 /cmd/*/main
 /cmd/*/*
 !/cmd/*/*.go
