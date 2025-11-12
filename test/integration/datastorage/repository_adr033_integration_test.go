@@ -57,6 +57,46 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 	})
 
 	// Helper function to insert test action trace
+	// Ensure parent records exist for foreign key constraints
+	ensureParentRecords := func() int64 {
+		// Create resource_reference
+		var resourceID int64
+		err := db.QueryRowContext(testCtx, `
+			INSERT INTO resource_references (
+				resource_type, resource_name, namespace,
+				cluster_id, labels, annotations
+			) VALUES (
+				'pod', 'test-pod', 'default',
+				'test-cluster', '{}', '{}'
+			)
+			ON CONFLICT DO NOTHING
+			RETURNING id
+		`).Scan(&resourceID)
+		if err != nil {
+			// If conflict, get existing ID
+			err = db.QueryRowContext(testCtx, `
+				SELECT id FROM resource_references
+				WHERE resource_type = 'pod' AND resource_name = 'test-pod' AND namespace = 'default'
+			`).Scan(&resourceID)
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		// Create action_history
+		var historyID int64
+		err = db.QueryRowContext(testCtx, `
+			INSERT INTO action_histories (
+				resource_id, total_actions, successful_actions,
+				failed_actions, last_action_at
+			) VALUES (
+				$1, 0, 0, 0, NOW()
+			)
+			RETURNING id
+		`, resourceID).Scan(&historyID)
+		Expect(err).ToNot(HaveOccurred())
+
+		return historyID
+	}
+
 	insertActionTrace := func(
 		incidentType string,
 		status string,
@@ -65,23 +105,25 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		aiSelectedPlaybook bool,
 		aiChainedPlaybooks bool,
 	) {
+		historyID := ensureParentRecords()
+
 		query := `
 			INSERT INTO resource_action_traces (
-				action_id, action_type, action_timestamp, execution_status,
-				resource_type, resource_name, resource_namespace,
+				action_history_id, action_id, action_type, action_timestamp, execution_status,
+				alert_name, alert_severity,
 				model_used, model_confidence,
 				incident_type, playbook_id, playbook_version,
 				ai_selected_playbook, ai_chained_playbooks
 			) VALUES (
-				gen_random_uuid()::text, 'increase_memory', NOW(), $1,
-				'pod', 'test-pod', 'default',
+				$1, gen_random_uuid()::text, 'increase_memory', NOW(), $2,
+				'test-alert', 'critical',
 				'gpt-4', 0.95,
-				$2, $3, $4,
-				$5, $6
+				$3, $4, $5,
+				$6, $7
 			)
 		`
 		_, err := db.ExecContext(testCtx, query,
-			status, incidentType, playbookID, playbookVersion,
+			historyID, status, incidentType, playbookID, playbookVersion,
 			aiSelectedPlaybook, aiChainedPlaybooks,
 		)
 		Expect(err).ToNot(HaveOccurred())
