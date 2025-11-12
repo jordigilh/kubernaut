@@ -21,7 +21,7 @@
 || 027 | [Multi-Architecture Build Strategy](./ADR-027-multi-architecture-build-strategy.md) | ✅ Accepted | 2025-10-20 | All services built for amd64 + arm64 by default |
 || 032 | [Data Access Layer Isolation](./ADR-032-data-access-layer-isolation.md) | ✅ Accepted | 2025-10-31 | All services access DB via Data Storage Service REST API |
 || 034 | [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) | ✅ Approved | 2025-11-08 | Event sourcing pattern with JSONB for audit traces |
-|| 035 | [Asynchronous Buffered Audit Ingestion](./ADR-035-async-buffered-audit-ingestion.md) | ✅ Approved | 2025-11-08 | Async buffered writes for zero latency impact |
+|| 035 | [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) | ✅ Approved | 2025-11-08 | Async buffered writes for zero latency impact |
 
 ### **Business Requirement (BR) Migration Decisions**
 

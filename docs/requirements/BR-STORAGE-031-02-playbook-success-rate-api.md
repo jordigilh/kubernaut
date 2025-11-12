@@ -430,7 +430,7 @@ if resp_v1_2.SuccessRate > resp_v1_1.SuccessRate {
 ### **Related Documents**
 - [ADR-033: Remediation Playbook Catalog](../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
 - [ADR-033: Cross-Service BRs](../architecture/decisions/ADR-033-CROSS-SERVICE-BRS.md)
-- [ADR-034: BR Template Standard](../architecture/decisions/ADR-034-business-requirement-template-standard.md)
+- [ADR-037: BR Template Standard](../architecture/decisions/ADR-037-business-requirement-template-standard.md)
 - [Data Storage Implementation Plan V5.0](../services/stateless/data-storage/implementation/IMPLEMENTATION_PLAN_V5.3.md)
 
 ---

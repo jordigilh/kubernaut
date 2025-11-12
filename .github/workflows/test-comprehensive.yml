@@ -1,0 +1,260 @@
+name: Comprehensive Test Suite
+
+on:
+  push:
+    branches: [ main, master, 'feature/*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # Job 1: All Unit Tests (Fast, no infrastructure)
+  unit-tests:
+    name: Unit Tests (All Services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run all unit tests
+        run: make test
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: unit-tests-coverage
+        continue-on-error: true
+
+  # Job 2: All Integration Tests (Medium, requires Podman/Kind)
+  integration-tests:
+    name: Integration Tests (All Services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Install Kind
+        run: |
+          go install sigs.k8s.io/kind@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run Data Storage integration tests
+        run: make test-integration-datastorage
+        timeout-minutes: 5
+
+      - name: Run Context API integration tests
+        run: make test-integration-contextapi
+        timeout-minutes: 5
+
+      - name: Run AI Service integration tests
+        run: make test-integration-ai
+        timeout-minutes: 5
+
+      - name: Run Gateway integration tests
+        run: make test-gateway
+        timeout-minutes: 10
+
+      - name: Run Dynamic Toolset integration tests
+        run: make test-integration-toolset
+        timeout-minutes: 10
+
+      - name: Run Notification integration tests
+        run: make test-integration-notification
+        timeout-minutes: 10
+
+  # Job 3: All E2E Tests (Slow, requires full infrastructure)
+  e2e-tests:
+    name: E2E Tests (All Services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install Kind
+        run: |
+          go install sigs.k8s.io/kind@latest
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run Gateway E2E tests
+        run: |
+          cd test/e2e/gateway && go test -v -ginkgo.v -timeout=15m
+        timeout-minutes: 15
+        continue-on-error: true
+
+      - name: Run Context API E2E tests
+        run: make test-e2e-contextapi
+        timeout-minutes: 15
+        continue-on-error: true
+
+      - name: Run Dynamic Toolset E2E tests
+        run: |
+          cd test/e2e/toolset && go test -v -ginkgo.v -timeout=15m
+        timeout-minutes: 15
+        continue-on-error: true
+
+  # Lint and format check
+  lint:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run go fmt
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Go code is not formatted. Run 'make fmt'"
+            gofmt -l .
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+        continue-on-error: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          args: --timeout=5m
+        continue-on-error: true
+
+  # Build verification
+  build:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build all binaries
+        run: |
+          echo "Building all Go binaries..."
+          go build -v ./cmd/...
+
+  # Summary job
+  test-summary:
+    name: Test Suite Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests, e2e-tests, lint, build]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          echo "════════════════════════════════════════════════════════════════════════"
+          echo "📊 Test Results Summary"
+          echo "════════════════════════════════════════════════════════════════════════"
+          echo ""
+          echo "Unit Tests:        ${{ needs.unit-tests.result }}"
+          echo "Integration Tests: ${{ needs.integration-tests.result }}"
+          echo "E2E Tests:         ${{ needs.e2e-tests.result }}"
+          echo "Lint:              ${{ needs.lint.result }}"
+          echo "Build:             ${{ needs.build.result }}"
+          echo ""
+          echo "════════════════════════════════════════════════════════════════════════"
+
+          # Check for blocking failures
+          if [ "${{ needs.unit-tests.result }}" != "success" ]; then
+            echo "❌ Unit tests failed - BLOCKING"
+            exit 1
+          fi
+
+          if [ "${{ needs.integration-tests.result }}" != "success" ]; then
+            echo "❌ Integration tests failed - BLOCKING"
+            exit 1
+          fi
+
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "❌ Build failed - BLOCKING"
+            exit 1
+          fi
+
+          # E2E and lint are informational (continue-on-error)
+          if [ "${{ needs.e2e-tests.result }}" != "success" ]; then
+            echo "⚠️  E2E tests failed - NON-BLOCKING (informational)"
+          fi
+
+          if [ "${{ needs.lint.result }}" != "success" ]; then
+            echo "⚠️  Lint issues detected - NON-BLOCKING (informational)"
+          fi
+
+          echo ""
+          echo "✅ All blocking checks passed!"
+          echo "════════════════════════════════════════════════════════════════════════"
+
