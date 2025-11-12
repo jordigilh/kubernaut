@@ -241,7 +241,7 @@ func startPostgreSQL() {
 		"-e", "POSTGRES_DB=action_history",
 		"-e", "POSTGRES_USER=slm_user",
 		"-e", "POSTGRES_PASSWORD=test_password",
-		"pgvector/pgvector:pg16")
+		"quay.io/jordigilh/pgvector:pg16")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -301,7 +301,7 @@ func startRedis() {
 		"--name", redisContainer,
 		"--network", "datastorage-test",
 		"-p", "6379:6379",
-		"redis:7-alpine")
+		"registry.redhat.io/rhel9/redis-7:latest")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

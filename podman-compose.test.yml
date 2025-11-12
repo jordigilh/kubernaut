@@ -26,8 +26,9 @@ services:
         condition: service_healthy
 
   # PostgreSQL for integration tests
+  # Using self-hosted multi-arch image to avoid Docker Hub rate limits
   postgres:
-    image: pgvector/pgvector:pg16
+    image: quay.io/jordigilh/pgvector:pg16
     environment:
       POSTGRES_DB: action_history
       POSTGRES_USER: slm_user
@@ -42,7 +43,7 @@ services:
 
   # Redis for integration tests
   redis:
-    image: redis:7-alpine
+    image: registry.redhat.io/rhel9/redis-7:latest
     networks:
       - test-network
     healthcheck:
