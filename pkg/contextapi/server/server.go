@@ -646,37 +646,6 @@ func (s *Server) handleIncidentTrend(w http.ResponseWriter, r *http.Request) {
 // Semantic Search Handler
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
-	var req struct {
-		Query     string  `json:"query"`
-		Limit     int     `json:"limit"`
-		Threshold float64 `json:"threshold"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.respondError(w, r, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	if req.Query == "" {
-		s.respondError(w, r, http.StatusBadRequest, "query parameter required")
-		return
-	}
-
-	// TODO: Implement semantic search in Day 8 with vector DB integration
-	// For now, return placeholder response
-	duration := time.Since(start).Seconds()
-	s.metrics.RecordQuerySuccess("semantic_search", duration)
-
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"query":   req.Query,
-		"results": []interface{}{},
-		"message": "Semantic search will be implemented in Day 8 (integration testing)",
-	})
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Middleware
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
