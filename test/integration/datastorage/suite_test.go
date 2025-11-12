@@ -163,7 +163,36 @@ var _ = AfterSuite(func() {
 })
 
 // startPostgreSQL starts PostgreSQL container with pgvector
+// When POSTGRES_HOST is set (e.g., in Docker Compose), skip container creation
 func startPostgreSQL() {
+	// Check if running in Docker Compose environment
+	if os.Getenv("POSTGRES_HOST") != "" {
+		GinkgoWriter.Println("🐳 Using external PostgreSQL (Docker Compose)")
+		// Wait for PostgreSQL to be ready via TCP connection
+		host := os.Getenv("POSTGRES_HOST")
+		port := os.Getenv("POSTGRES_PORT")
+		if port == "" {
+			port = "5432"
+		}
+		
+		GinkgoWriter.Printf("⏳ Waiting for PostgreSQL at %s:%s to be ready...\n", host, port)
+		Eventually(func() error {
+			connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
+			testDB, err := sql.Open("pgx", connStr)
+			if err != nil {
+				return err
+			}
+			defer testDB.Close()
+			return testDB.Ping()
+		}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready")
+		
+		GinkgoWriter.Println("✅ PostgreSQL is ready")
+		return
+	}
+
+	// Running locally - start our own container
+	GinkgoWriter.Println("🏠 Starting local PostgreSQL container...")
+	
 	// Cleanup existing container
 	exec.Command("podman", "stop", postgresContainer).Run()
 	exec.Command("podman", "rm", postgresContainer).Run()
@@ -196,7 +225,35 @@ func startPostgreSQL() {
 }
 
 // startRedis starts Redis container for DLQ
+// When REDIS_HOST is set (e.g., in Docker Compose), skip container creation
 func startRedis() {
+	// Check if running in Docker Compose environment
+	if os.Getenv("REDIS_HOST") != "" {
+		GinkgoWriter.Println("🐳 Using external Redis (Docker Compose)")
+		// Wait for Redis to be ready via TCP connection
+		host := os.Getenv("REDIS_HOST")
+		port := os.Getenv("REDIS_PORT")
+		if port == "" {
+			port = "6379"
+		}
+		
+		GinkgoWriter.Printf("⏳ Waiting for Redis at %s:%s to be ready...\n", host, port)
+		Eventually(func() error {
+			addr := fmt.Sprintf("%s:%s", host, port)
+			testClient := redis.NewClient(&redis.Options{
+				Addr: addr,
+			})
+			defer testClient.Close()
+			return testClient.Ping(ctx).Err()
+		}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
+		
+		GinkgoWriter.Println("✅ Redis is ready")
+		return
+	}
+
+	// Running locally - start our own container
+	GinkgoWriter.Println("🏠 Starting local Redis container...")
+	
 	// Cleanup existing container
 	exec.Command("podman", "stop", redisContainer).Run()
 	exec.Command("podman", "rm", redisContainer).Run()
