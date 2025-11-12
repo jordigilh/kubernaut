@@ -413,10 +413,10 @@ var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered,
 				"incident_type":            {"character varying", "YES"},
 				"playbook_id":              {"character varying", "YES"},
 				"playbook_version":         {"character varying", "YES"},
-				"ai_selected_playbook":     {"boolean", "YES"},
-				"ai_chained_playbooks":     {"boolean", "YES"},
-				"effectiveness_score":      {"numeric", "YES"},
-				"effectiveness_assessment": {"character varying", "YES"},
+				"ai_selected_playbook":          {"boolean", "YES"},
+				"ai_chained_playbooks":          {"boolean", "YES"},
+				"effectiveness_score":           {"numeric", "YES"},
+				"effectiveness_assessment_method": {"character varying", "YES"},
 			}
 
 			for colName, expected := range expectedColumns {
