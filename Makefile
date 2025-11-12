@@ -897,14 +897,13 @@ test-container-build: ## Build test runner container
 	podman build -f docker/test-runner.Dockerfile -t kubernaut-test-runner:latest .
 
 .PHONY: test-container-unit
-test-container-unit: ## Run unit tests in container
-	@echo "🐳 Running unit tests in container..."
-	podman-compose -f podman-compose.test.yml run --rm \
-		-e POSTGRES_HOST=postgres \
-		-e POSTGRES_PORT=5432 \
-		-e REDIS_HOST=redis \
-		-e REDIS_PORT=6379 \
-		test-runner make test
+test-container-unit: ## Run unit tests in container (no external dependencies)
+	@echo "🐳 Running unit tests in container (standalone, no external services)..."
+	podman run --rm \
+		-v $(PWD):/workspace:Z \
+		-w /workspace \
+		kubernaut-test-runner:latest \
+		make test
 
 .PHONY: test-container-integration
 test-container-integration: ## Run integration tests in container
