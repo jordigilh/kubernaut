@@ -8,11 +8,8 @@ services:
       dockerfile: docker/test-runner.Dockerfile
     volumes:
       - .:/workspace
-      # Podman socket - path varies by platform:
-      # Linux: /run/podman/podman.sock
-      # macOS: Set PODMAN_SOCKET env var to podman machine socket
-      # Example: export PODMAN_SOCKET=$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')
-      - ${PODMAN_SOCKET:-/run/podman/podman.sock}:/var/run/docker.sock
+      # Note: Podman socket mount removed - not needed for unit/integration tests
+      # E2E tests that need Kind will run on host, not in container
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     environment:
