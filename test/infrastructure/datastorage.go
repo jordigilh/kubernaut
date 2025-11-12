@@ -212,7 +212,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"-p", fmt.Sprintf("%s:6379", cfg.RedisPort),
-		"registry.redhat.io/rhel9/redis-7:latest")
+		"quay.io/jordigilh/redis:7-alpine")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
