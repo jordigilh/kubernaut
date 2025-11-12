@@ -98,19 +98,23 @@ var _ = BeforeSuite(func() {
 	repo = repository.NewNotificationAuditRepository(db, logger)
 	dlqClient = dlq.NewClient(redisClient, logger)
 
-	// 7. Create ADR-030 config files
-	GinkgoWriter.Println("📝 Creating ADR-030 config and secret files...")
-	createConfigFiles()
+	// 7. Create ADR-030 config files (only for local execution)
+	if os.Getenv("POSTGRES_HOST") == "" {
+		GinkgoWriter.Println("📝 Creating ADR-030 config and secret files...")
+		createConfigFiles()
 
-	// 8. Build and start Data Storage Service container (HTTP API)
-	GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
-	buildDataStorageService()
+		// 8. Build and start Data Storage Service container (HTTP API)
+		GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
+		buildDataStorageService()
 
-	GinkgoWriter.Println("🚀 Starting Data Storage Service container...")
-	startDataStorageService()
+		GinkgoWriter.Println("🚀 Starting Data Storage Service container...")
+		startDataStorageService()
 
-	GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
-	waitForServiceReady()
+		GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
+		waitForServiceReady()
+	} else {
+		GinkgoWriter.Println("🐳 Skipping service container (using Docker Compose environment)")
+	}
 
 	GinkgoWriter.Println("✅ Infrastructure ready!")
 })
