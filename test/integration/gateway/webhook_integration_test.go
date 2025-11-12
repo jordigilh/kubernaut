@@ -310,25 +310,27 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}]
 			}`, testNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+		url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
-			// First alert
-			resp1, _ := http.Post(url, "application/json", bytes.NewReader(payload))
-			defer resp1.Body.Close()
+		// First alert
+		resp1, err := http.Post(url, "application/json", bytes.NewReader(payload))
+		Expect(err).NotTo(HaveOccurred(), "Should send first alert")
+		defer resp1.Body.Close()
 
-			// Parse response to get full fingerprint (before K8s label truncation)
-			var response map[string]interface{}
-			err := json.NewDecoder(resp1.Body).Decode(&response)
+		// Parse response to get full fingerprint (before K8s label truncation)
+		var response map[string]interface{}
+		err = json.NewDecoder(resp1.Body).Decode(&response)
 			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
 			fingerprint, ok := response["fingerprint"].(string)
 			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
 			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
 
-			// Send 4 more duplicates
-			for i := 0; i < 4; i++ {
-				resp, _ := http.Post(url, "application/json", bytes.NewReader(payload))
-				resp.Body.Close()
-			}
+		// Send 4 more duplicates
+		for i := 0; i < 4; i++ {
+			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			Expect(err).NotTo(HaveOccurred(), "Should send duplicate alert")
+			resp.Body.Close()
+		}
 
 			// BUSINESS OUTCOME: Redis metadata tracks duplicate count
 			// Use Eventually because Redis writes are async
