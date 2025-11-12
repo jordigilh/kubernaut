@@ -533,7 +533,7 @@ func StartRedisContainer(containerName string, port int, writer io.Writer) error
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", containerName,
 		"-p", fmt.Sprintf("%d:6379", port),
-		"registry.redhat.io/rhel9/redis-7:latest")
+		"quay.io/jordigilh/redis:7-alpine")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

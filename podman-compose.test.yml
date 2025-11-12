@@ -42,8 +42,9 @@ services:
       retries: 10
 
   # Redis for integration tests
+  # Using self-hosted multi-arch image to avoid Docker Hub rate limits
   redis:
-    image: registry.redhat.io/rhel9/redis-7:latest
+    image: quay.io/jordigilh/redis:7-alpine
     networks:
       - test-network
     healthcheck:
