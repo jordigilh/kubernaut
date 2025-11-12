@@ -67,7 +67,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 	) {
 		query := `
 			INSERT INTO resource_action_traces (
-				action_id, action_type, action_timestamp, status,
+				action_id, action_type, action_timestamp, execution_status,
 				resource_type, resource_name, resource_namespace,
 				model_used, model_confidence,
 				incident_type, playbook_id, playbook_version,
