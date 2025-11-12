@@ -38,7 +38,7 @@ type RFC7807Problem struct {
 
 var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
 	var contextAPIServer *server.Server
-	var serverURL        string
+	var serverURL string
 	var dataStorageBaseURL string
 
 	BeforeAll(func() {
@@ -535,4 +535,3 @@ var _ = Describe("Aggregation API Edge Cases", Ordered, func() {
 		})
 	})
 })
-

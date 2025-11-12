@@ -133,9 +133,9 @@ var _ = Describe("BR-STORAGE-011: Input Sanitization", func() {
 	Context("SQL injection protection via parameterized queries", func() {
 		It("should preserve semicolons (SQL injection prevented by parameterized queries)", func() {
 			inputs := map[string]string{
-				";DROP TABLE users":      ";DROP TABLE users",
-				"DROP TABLE users;":      "DROP TABLE users;",
-				"DROP; TABLE; users;":    "DROP; TABLE; users;",
+				";DROP TABLE users":   ";DROP TABLE users",
+				"DROP TABLE users;":   "DROP TABLE users;",
+				"DROP; TABLE; users;": "DROP; TABLE; users;",
 			}
 
 			for input, expectedOutput := range inputs {

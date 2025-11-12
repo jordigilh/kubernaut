@@ -52,22 +52,22 @@ var _ = Describe("BR-STORAGE-003: Notification Audit Table Schema", Ordered, fun
 				ORDER BY ordinal_position
 			`
 			rows, err := db.Query(query)
-		Expect(err).ToNot(HaveOccurred())
-		defer rows.Close()
-
-		columns := make(map[string]ColumnMetadata)
-		for rows.Next() {
-			var colName, dataType, isNullable string
-			var maxLength sql.NullInt64
-			err := rows.Scan(&colName, &dataType, &isNullable, &maxLength)
 			Expect(err).ToNot(HaveOccurred())
+			defer rows.Close()
 
-			columns[colName] = ColumnMetadata{
-				DataType:   dataType,
-				IsNullable: isNullable,
-				MaxLength:  maxLength,
+			columns := make(map[string]ColumnMetadata)
+			for rows.Next() {
+				var colName, dataType, isNullable string
+				var maxLength sql.NullInt64
+				err := rows.Scan(&colName, &dataType, &isNullable, &maxLength)
+				Expect(err).ToNot(HaveOccurred())
+
+				columns[colName] = ColumnMetadata{
+					DataType:   dataType,
+					IsNullable: isNullable,
+					MaxLength:  maxLength,
+				}
 			}
-		}
 
 			// Verify required columns exist with correct types
 			expectedColumns := map[string]struct {
@@ -75,37 +75,37 @@ var _ = Describe("BR-STORAGE-003: Notification Audit Table Schema", Ordered, fun
 				isNullable string
 				maxLength  int64
 			}{
-				"id":                {"bigint", "NO", 0},
-				"remediation_id":    {"character varying", "NO", 255},
-				"notification_id":   {"character varying", "NO", 255},
-				"recipient":         {"character varying", "NO", 255},
-				"channel":           {"character varying", "NO", 50},
-				"message_summary":   {"text", "NO", 0},
-				"status":            {"character varying", "NO", 50},
-				"sent_at":           {"timestamp with time zone", "NO", 0},
-				"delivery_status":   {"text", "YES", 0},
-				"error_message":     {"text", "YES", 0},
-				"escalation_level":  {"integer", "YES", 0},
-				"created_at":        {"timestamp with time zone", "YES", 0},
-				"updated_at":        {"timestamp with time zone", "YES", 0},
+				"id":               {"bigint", "NO", 0},
+				"remediation_id":   {"character varying", "NO", 255},
+				"notification_id":  {"character varying", "NO", 255},
+				"recipient":        {"character varying", "NO", 255},
+				"channel":          {"character varying", "NO", 50},
+				"message_summary":  {"text", "NO", 0},
+				"status":           {"character varying", "NO", 50},
+				"sent_at":          {"timestamp with time zone", "NO", 0},
+				"delivery_status":  {"text", "YES", 0},
+				"error_message":    {"text", "YES", 0},
+				"escalation_level": {"integer", "YES", 0},
+				"created_at":       {"timestamp with time zone", "YES", 0},
+				"updated_at":       {"timestamp with time zone", "YES", 0},
 			}
 
-		for colName, expected := range expectedColumns {
-			col, exists := columns[colName]
-			Expect(exists).To(BeTrue(), fmt.Sprintf("Column %s should exist", colName))
+			for colName, expected := range expectedColumns {
+				col, exists := columns[colName]
+				Expect(exists).To(BeTrue(), fmt.Sprintf("Column %s should exist", colName))
 
-			Expect(col.DataType).To(Equal(expected.dataType),
-				fmt.Sprintf("Column %s should have type %s", colName, expected.dataType))
+				Expect(col.DataType).To(Equal(expected.dataType),
+					fmt.Sprintf("Column %s should have type %s", colName, expected.dataType))
 
-			Expect(col.IsNullable).To(Equal(expected.isNullable),
-				fmt.Sprintf("Column %s nullable should be %s", colName, expected.isNullable))
+				Expect(col.IsNullable).To(Equal(expected.isNullable),
+					fmt.Sprintf("Column %s nullable should be %s", colName, expected.isNullable))
 
-			if expected.maxLength > 0 {
-				Expect(col.MaxLength.Valid).To(BeTrue())
-				Expect(col.MaxLength.Int64).To(Equal(expected.maxLength),
-					fmt.Sprintf("Column %s should have max length %d", colName, expected.maxLength))
+				if expected.maxLength > 0 {
+					Expect(col.MaxLength.Valid).To(BeTrue())
+					Expect(col.MaxLength.Int64).To(Equal(expected.maxLength),
+						fmt.Sprintf("Column %s should have max length %d", colName, expected.maxLength))
+				}
 			}
-		}
 		})
 	})
 
@@ -277,4 +277,3 @@ var _ = Describe("BR-STORAGE-003: Notification Audit Table Schema", Ordered, fun
 		})
 	})
 })
-

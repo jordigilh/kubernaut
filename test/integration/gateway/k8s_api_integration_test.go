@@ -85,21 +85,21 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			namespace := &corev1.Namespace{}
 			namespace.Name = ns.name
 
-		// Wait for deletion to complete (namespace deletion is asynchronous)
-		Eventually(func() error {
-			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
+			// Wait for deletion to complete (namespace deletion is asynchronous)
+			Eventually(func() error {
+				checkNs := &corev1.Namespace{}
+				return k8sClient.Client.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
+			}, "10s", "100ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
 
-		// Recreate with correct label
-		namespace = &corev1.Namespace{}
-		namespace.Name = ns.name
-		namespace.Labels = map[string]string{
-			"environment": ns.label, // Required for EnvironmentClassifier
+			// Recreate with correct label
+			namespace = &corev1.Namespace{}
+			namespace.Name = ns.name
+			namespace.Labels = map[string]string{
+				"environment": ns.label, // Required for EnvironmentClassifier
+			}
+			err := k8sClient.Client.Create(ctx, namespace)
+			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
 		}
-		err := k8sClient.Client.Create(ctx, namespace)
-		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
-	}
 
 		// Start Gateway server
 		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
