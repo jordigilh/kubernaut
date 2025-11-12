@@ -31,9 +31,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: Download dependencies
-        run: go mod download
-
       - name: Run all unit tests
         env:
           GOFLAGS: -mod=mod
@@ -81,9 +78,6 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
 
       - name: Run Data Storage integration tests
         env:
@@ -149,9 +143,6 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-
-      - name: Download dependencies
-        run: go mod download
 
       - name: Run Gateway E2E tests
         env:
@@ -224,9 +215,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-
-      - name: Download dependencies
-        run: go mod download
 
       - name: Build all binaries
         env:
