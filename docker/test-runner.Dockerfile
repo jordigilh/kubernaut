@@ -1,6 +1,6 @@
 # ADR-027: Multi-Architecture Container Build Strategy with Red Hat UBI Base Images
-# Build Stage: Red Hat UBI9 Go Toolset 1.23
-FROM registry.access.redhat.com/ubi9/go-toolset:1.23 AS builder
+# Build Stage: Red Hat UBI9 Go Toolset 1.24 (matches go.mod: go 1.24.6)
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
 
 USER root
 
@@ -22,7 +22,7 @@ RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/s
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/
 
-# Install ginkgo CLI (compatible with Go 1.23+)
+# Install ginkgo CLI (compatible with Go 1.24+)
 RUN go install github.com/onsi/ginkgo/v2/ginkgo@latest && \
     cp /opt/app-root/src/go/bin/ginkgo /usr/local/bin/
 
