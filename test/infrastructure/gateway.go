@@ -571,4 +571,3 @@ func StopRedisContainer(containerName string, writer io.Writer) error {
 	fmt.Fprintf(writer, "✅ Redis container '%s' stopped and removed\n", containerName)
 	return nil
 }
-

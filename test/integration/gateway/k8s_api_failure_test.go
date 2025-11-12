@@ -83,12 +83,12 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			errorMsg:   "connection refused: Kubernetes API server unreachable",
 		}
 
-	// Wrap failing client in k8s.Client
-	wrappedK8sClient := k8s.NewClient(failingK8sClient)
+		// Wrap failing client in k8s.Client
+		wrappedK8sClient := k8s.NewClient(failingK8sClient)
 
-	// Create CRD creator with failing client
-	retryConfig := config.DefaultRetrySettings()
-	crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, nil, "default", &retryConfig)
+		// Create CRD creator with failing client
+		retryConfig := config.DefaultRetrySettings()
+		crdCreator = processing.NewCRDCreator(wrappedK8sClient, logger, nil, "default", &retryConfig)
 
 		// Test signal
 		testSignal = &types.NormalizedSignal{

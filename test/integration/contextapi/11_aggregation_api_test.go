@@ -47,7 +47,7 @@ import (
 
 var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 	var contextAPIServer *server.Server
-	var httpTestServer   *httptest.Server
+	var httpTestServer *httptest.Server
 	var dataStorageBaseURL string
 
 	BeforeAll(func() {
@@ -375,4 +375,3 @@ var _ = Describe("Aggregation API Integration Tests", Ordered, func() {
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	})
 })
-

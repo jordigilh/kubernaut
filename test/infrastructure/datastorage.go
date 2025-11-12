@@ -291,9 +291,9 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	for _, migration := range migrations {
 		// Try multiple paths to find migrations (supports running from different directories)
 		migrationPaths := []string{
-			filepath.Join("migrations", migration),                    // From workspace root
-			filepath.Join("..", "..", "..", "migrations", migration),  // From test/integration/contextapi/
-			filepath.Join("..", "..", "migrations", migration),        // From test/integration/
+			filepath.Join("migrations", migration),                   // From workspace root
+			filepath.Join("..", "..", "..", "migrations", migration), // From test/integration/contextapi/
+			filepath.Join("..", "..", "migrations", migration),       // From test/integration/
 		}
 
 		var content []byte
@@ -580,4 +580,3 @@ func getContainerIP(containerName string) string {
 	}
 	return ip
 }
-
