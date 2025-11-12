@@ -171,31 +171,3 @@ func IsRetryableError(err error) bool {
 // When: Slack webhook timeout, rate limiting, 5xx errors
 // Action: Exponential backoff (30s → 60s → 120s → 240s → 480s)
 // Recovery: Automatic retry up to 5 attempts, then mark as failed
-func isRetryableSlackError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// Check if it's a RetryableError
-	return IsRetryableError(err)
-}
-
-// calculateBackoff calculates exponential backoff based on delivery attempts
-// Implements v3.1 exponential backoff: 30s → 60s → 120s → 240s → 480s
-func calculateBackoff(attempts []notificationv1alpha1.DeliveryAttempt) time.Duration {
-	attemptCount := len(attempts)
-	if attemptCount == 0 {
-		return 30 * time.Second
-	}
-
-	// Exponential backoff: 30s * 2^attemptCount, capped at 480s
-	backoff := 30 * time.Second
-	for i := 0; i < attemptCount; i++ {
-		backoff *= 2
-		if backoff > 480*time.Second {
-			return 480 * time.Second
-		}
-	}
-
-	return backoff
-}
