@@ -35,6 +35,8 @@ jobs:
         run: go mod download
 
       - name: Run all unit tests
+        env:
+          GOFLAGS: -mod=mod
         run: make test
 
       - name: Upload coverage
@@ -84,26 +86,38 @@ jobs:
         run: go mod download
 
       - name: Run Data Storage integration tests
+        env:
+          GOFLAGS: -mod=mod
         run: make test-integration-datastorage
         timeout-minutes: 5
 
       - name: Run Context API integration tests
+        env:
+          GOFLAGS: -mod=mod
         run: make test-integration-contextapi
         timeout-minutes: 5
 
       - name: Run AI Service integration tests
+        env:
+          GOFLAGS: -mod=mod
         run: make test-integration-ai
         timeout-minutes: 5
 
       - name: Run Gateway integration tests
+        env:
+          GOFLAGS: -mod=mod
         run: make test-gateway
         timeout-minutes: 10
 
       - name: Run Dynamic Toolset integration tests
+        env:
+          GOFLAGS: -mod=mod
         run: make test-integration-toolset
         timeout-minutes: 10
 
       - name: Run Notification integration tests
+        env:
+          GOFLAGS: -mod=mod
         run: make test-integration-notification
         timeout-minutes: 10
 
@@ -140,17 +154,23 @@ jobs:
         run: go mod download
 
       - name: Run Gateway E2E tests
+        env:
+          GOFLAGS: -mod=mod
         run: |
           cd test/e2e/gateway && go test -v -ginkgo.v -timeout=15m
         timeout-minutes: 15
         continue-on-error: true
 
       - name: Run Context API E2E tests
+        env:
+          GOFLAGS: -mod=mod
         run: make test-e2e-contextapi
         timeout-minutes: 15
         continue-on-error: true
 
       - name: Run Dynamic Toolset E2E tests
+        env:
+          GOFLAGS: -mod=mod
         run: |
           cd test/e2e/toolset && go test -v -ginkgo.v -timeout=15m
         timeout-minutes: 15
@@ -179,6 +199,8 @@ jobs:
           fi
 
       - name: Run go vet
+        env:
+          GOFLAGS: -mod=mod
         run: go vet ./...
         continue-on-error: true
 
@@ -203,7 +225,12 @@ jobs:
         with:
           go-version: '1.21'
 
+      - name: Download dependencies
+        run: go mod download
+
       - name: Build all binaries
+        env:
+          GOFLAGS: -mod=mod
         run: |
           echo "Building all Go binaries..."
           go build -v ./cmd/...
