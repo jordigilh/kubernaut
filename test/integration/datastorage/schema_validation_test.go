@@ -337,13 +337,13 @@ var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered,
 		It("should have all columns used in ADR-033 test inserts", func() {
 			// These are the columns used in repository_adr033_integration_test.go
 			requiredColumns := []string{
+				"action_history_id",
 				"action_id",
 				"action_type",
 				"action_timestamp",
 				"execution_status", // CRITICAL: Not 'status'
-				"resource_type",
-				"resource_name",
-				"resource_namespace",
+				"alert_name",
+				"alert_severity",
 				"model_used",
 				"model_confidence",
 				"incident_type",
