@@ -16,11 +16,11 @@ jobs:
       fail-fast: false
       matrix:
         test-tier: [unit, integration]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Install Podman and podman-compose
         run: |
           sudo apt-get update
@@ -29,15 +29,15 @@ jobs:
           pip3 install podman-compose
           podman --version
           podman-compose --version
-      
+
       - name: Build test runner image
         run: |
           podman build -f docker/test-runner.Dockerfile -t kubernaut-test-runner:latest .
-      
+
       - name: Run ${{ matrix.test-tier }} tests
         run: |
           make test-container-${{ matrix.test-tier }}
-      
+
       - name: Cleanup
         if: always()
         run: |
@@ -48,14 +48,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-      
+
       - name: Clean Go cache
         run: go clean -cache -modcache
-      
+
       - name: Run go fmt
         run: |
           if [ -n "$(gofmt -l .)" ]; then
@@ -63,12 +63,12 @@ jobs:
             gofmt -l .
             exit 1
           fi
-      
+
       - name: Run go vet
         env:
           GOFLAGS: -mod=mod
         run: go vet ./...
-      
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v4
         with:
@@ -81,14 +81,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-      
+
       - name: Clean Go cache
         run: go clean -cache -modcache
-      
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -98,7 +98,7 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      
+
       - name: Build all binaries
         env:
           GOFLAGS: -mod=mod
@@ -116,7 +116,7 @@ jobs:
         run: |
           echo "Test Suite Summary"
           echo "=================="
-          
+
           if [ "${{ needs.test-containerized.result }}" == "success" ] && \
              [ "${{ needs.lint.result }}" == "success" ] && \
              [ "${{ needs.build.result }}" == "success" ]; then
