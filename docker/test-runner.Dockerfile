@@ -1,14 +1,17 @@
-FROM golang:1.23-alpine
+# ADR-027: Multi-Architecture Container Build Strategy with Red Hat UBI Base Images
+# Build Stage: Red Hat UBI9 Go Toolset 1.23
+FROM registry.access.redhat.com/ubi9/go-toolset:1.23 AS builder
+
+USER root
 
 # Install test dependencies
-RUN apk add --no-cache \
+RUN dnf install -y \
     git \
     make \
     podman \
-    bash \
     curl \
     gcc \
-    musl-dev
+    && dnf clean all
 
 # Install Kind (for E2E tests)
 RUN curl -Lo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64 && \
@@ -20,13 +23,15 @@ RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/s
     mv kubectl /usr/local/bin/
 
 # Install ginkgo CLI (compatible with Go 1.23+)
-RUN go install github.com/onsi/ginkgo/v2/ginkgo@latest
+RUN go install github.com/onsi/ginkgo/v2/ginkgo@latest && \
+    cp /opt/app-root/src/go/bin/ginkgo /usr/local/bin/
 
 WORKDIR /workspace
 
 # Set Go environment
 ENV GOFLAGS="-mod=mod"
 ENV CGO_ENABLED=0
+ENV PATH="/usr/local/bin:${PATH}"
 
 # Default: Run all tests
 CMD ["make", "test-all-services"]
