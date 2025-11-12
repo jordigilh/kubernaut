@@ -301,7 +301,7 @@ func startRedis() {
 		"--name", redisContainer,
 		"--network", "datastorage-test",
 		"-p", "6379:6379",
-		"registry.redhat.io/rhel9/redis-7:latest")
+		"quay.io/jordigilh/redis:7-alpine")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

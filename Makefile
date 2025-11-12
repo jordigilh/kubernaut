@@ -112,7 +112,7 @@ test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 
 .PHONY: test-integration-contextapi
 test-integration-contextapi: ## Run Context API integration tests (Redis via Podman + PostgreSQL, ~45s)
 	@echo "🔧 Starting Redis for Context API..."
-	@podman run -d --name contextapi-redis-test -p 6379:6379 registry.redhat.io/rhel9/redis-7:latest > /dev/null 2>&1 || \
+	@podman run -d --name contextapi-redis-test -p 6379:6379 quay.io/jordigilh/redis:7-alpine > /dev/null 2>&1 || \
 		(echo "⚠️  Redis container already exists or failed to start" && \
 		 podman start contextapi-redis-test > /dev/null 2>&1) || true
 	@echo "⏳ Waiting for Redis to be ready..."
@@ -133,7 +133,7 @@ test-integration-contextapi: ## Run Context API integration tests (Redis via Pod
 .PHONY: test-integration-ai
 test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s)
 	@echo "🔧 Starting Redis cache..."
-	@podman run -d --name ai-redis -p 6379:6379 registry.redhat.io/rhel9/redis-7:latest > /dev/null 2>&1 || \
+	@podman run -d --name ai-redis -p 6379:6379 quay.io/jordigilh/redis:7-alpine > /dev/null 2>&1 || \
 		(echo "⚠️  Redis container already exists or failed to start" && \
 		 podman start ai-redis > /dev/null 2>&1) || true
 	@echo "⏳ Waiting for Redis to be ready..."
