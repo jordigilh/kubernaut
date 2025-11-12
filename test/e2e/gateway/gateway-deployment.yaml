@@ -1,0 +1,227 @@
+---
+# Gateway Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      listen_addr: ":8080"
+      read_timeout: 30s
+      write_timeout: 30s
+      idle_timeout: 120s
+
+    middleware:
+      rate_limit:
+        requests_per_minute: 100
+        burst: 10
+
+    infrastructure:
+      redis:
+        # Use Redis master service (simple master-replica, no Sentinel)
+        addr: "redis-master.kubernaut-system.svc.cluster.local:6379"
+        db: 0
+        password: ""
+        dial_timeout: 5s
+        read_timeout: 3s
+        write_timeout: 3s
+        pool_size: 10
+        min_idle_conns: 5
+
+    processing:
+      deduplication:
+        ttl: 5s  # Fast TTL for E2E tests (production: 5m)
+
+      storm:
+        rate_threshold: 3          # Low threshold for E2E tests (production: 10)
+        pattern_threshold: 3       # Low threshold for E2E tests (production: 5)
+        aggregation_window: 5s     # Fast window for E2E tests (production: 1m)
+
+      environment:
+        cache_ttl: 5s              # Fast cache for E2E tests (production: 30s)
+        configmap_namespace: "kubernaut-system"
+        configmap_name: "kubernaut-environment-overrides"
+
+      priority:
+        policy_path: "/etc/gateway-policy/priority-policy.rego"
+
+---
+# Gateway Service Rego Policy ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-rego-policy
+  namespace: kubernaut-system
+data:
+  priority-policy.rego: |
+    package priority
+
+    # Default priority assignment based on severity and environment
+    default priority := "P2"
+
+    # P0: Critical alerts in production
+    priority := "P0" if {
+        input.severity == "critical"
+        input.environment == "production"
+    }
+
+    # P1: Critical alerts in staging or warning in production
+    priority := "P1" if {
+        input.severity == "critical"
+        input.environment == "staging"
+    }
+
+    priority := "P1" if {
+        input.severity == "warning"
+        input.environment == "production"
+    }
+
+---
+# Gateway Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+    component: webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        component: webhook
+    spec:
+      serviceAccountName: gateway
+      containers:
+        - name: gateway
+          image: localhost/kubernaut-gateway:e2e-test
+          imagePullPolicy: Never  # Use local image loaded into Kind
+          args:
+            - "--config=/etc/gateway/config.yaml"
+            - "--redis=redis-master.kubernaut-system.svc.cluster.local:6379"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: KUBECONFIG
+              value: ""  # Use in-cluster config
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gateway
+              readOnly: true
+            - name: rego-policy
+              mountPath: /etc/gateway-policy
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          configMap:
+            name: gateway-config
+        - name: rego-policy
+          configMap:
+            name: gateway-rego-policy
+
+---
+# Gateway Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-service
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080  # Expose on host for E2E testing
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090  # Expose metrics on host
+
+---
+# Gateway ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+  namespace: kubernaut-system
+
+---
+# Gateway ClusterRole (for CRD creation and namespace access)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gateway-role
+rules:
+  # RemediationRequest CRD access
+  - apiGroups: ["remediation.kubernaut.io"]
+    resources: ["remediationrequests"]
+    verbs: ["create", "get", "list", "watch", "update", "patch"]
+
+  # Namespace access (for environment classification)
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+
+  # ConfigMap access (for environment overrides)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Gateway ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gateway-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gateway-role
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: kubernaut-system
+
