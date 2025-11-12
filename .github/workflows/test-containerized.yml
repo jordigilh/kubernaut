@@ -21,20 +21,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Install Podman and podman-compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          # Install podman-compose via pip
+          pip3 install podman-compose
+          podman --version
+          podman-compose --version
       
       - name: Build test runner image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/test-runner.Dockerfile
-          tags: kubernaut-test-runner:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          load: true
+        run: |
+          podman build -f docker/test-runner.Dockerfile -t kubernaut-test-runner:latest .
       
       - name: Run ${{ matrix.test-tier }} tests
+        env:
+          PODMAN_SOCKET: /run/podman/podman.sock
         run: |
           make test-container-${{ matrix.test-tier }}
       
@@ -123,4 +125,3 @@ jobs:
             echo "  Build: ${{ needs.build.result }}"
             exit 1
           fi
-
