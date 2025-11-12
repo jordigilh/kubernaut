@@ -62,42 +62,52 @@ test-integration-notification: ## Run Notification Service integration tests (Ki
 
 .PHONY: test-integration-datastorage
 test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~30s)
-	@echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."
-	@podman run -d --name datastorage-postgres -p 5432:5432 \
-		-e POSTGRES_PASSWORD=postgres \
-		-e POSTGRES_SHARED_BUFFERS=1GB \
-		pgvector/pgvector:pg16 > /dev/null 2>&1 || \
-		(echo "⚠️  PostgreSQL container already exists or failed to start" && \
-		 podman start datastorage-postgres > /dev/null 2>&1) || true
-	@echo "⏳ Waiting for PostgreSQL to be ready..."
-	@sleep 5
-	@podman exec datastorage-postgres pg_isready -U postgres > /dev/null 2>&1 || \
-		(echo "❌ PostgreSQL not ready" && exit 1)
-	@echo "✅ PostgreSQL 16 ready"
-	@echo "🔍 Verifying PostgreSQL and pgvector versions..."
-	@podman exec datastorage-postgres psql -U postgres -c "SELECT version();" | grep "PostgreSQL 16" || \
-		(echo "❌ PostgreSQL version is not 16.x" && exit 1)
-	@echo "🔧 Creating pgvector extension..."
-	@podman exec datastorage-postgres psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || \
-		(echo "❌ Failed to create pgvector extension" && exit 1)
-	@podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0|0\.[7-9]\.0|0\.[8-9]\.0" || \
-		(echo "❌ pgvector version is not 0.5.1+" && exit 1)
-	@echo "✅ Version validation passed (PostgreSQL 16 + pgvector 0.5.1+)"
-	@echo "🔍 Testing HNSW index creation (dry-run)..."
-	@podman exec datastorage-postgres psql -U postgres -d postgres -c "\
-		CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \
-		CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);" \
-		> /dev/null 2>&1 || \
-		(echo "❌ HNSW index creation test failed - PostgreSQL/pgvector may not support HNSW" && exit 1)
-	@echo "✅ HNSW index support verified"
+	@if [ -z "$$POSTGRES_HOST" ]; then \
+		echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."; \
+		podman run -d --name datastorage-postgres -p 5432:5432 \
+			-e POSTGRES_PASSWORD=postgres \
+			-e POSTGRES_SHARED_BUFFERS=1GB \
+			pgvector/pgvector:pg16 > /dev/null 2>&1 || \
+			(echo "⚠️  PostgreSQL container already exists or failed to start" && \
+			 podman start datastorage-postgres > /dev/null 2>&1) || true; \
+		echo "⏳ Waiting for PostgreSQL to be ready..."; \
+		sleep 5; \
+		podman exec datastorage-postgres pg_isready -U postgres > /dev/null 2>&1 || \
+			(echo "❌ PostgreSQL not ready" && exit 1); \
+		echo "✅ PostgreSQL 16 ready"; \
+	else \
+		echo "🐳 Using external PostgreSQL at $$POSTGRES_HOST:$$POSTGRES_PORT (Docker Compose)"; \
+	fi
+	@if [ -z "$$POSTGRES_HOST" ]; then \
+		echo "🔍 Verifying PostgreSQL and pgvector versions..."; \
+		podman exec datastorage-postgres psql -U postgres -c "SELECT version();" | grep "PostgreSQL 16" || \
+			(echo "❌ PostgreSQL version is not 16.x" && exit 1); \
+		echo "🔧 Creating pgvector extension..."; \
+		podman exec datastorage-postgres psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || \
+			(echo "❌ Failed to create pgvector extension" && exit 1); \
+		podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0|0\.[7-9]\.0|0\.[8-9]\.0" || \
+			(echo "❌ pgvector version is not 0.5.1+" && exit 1); \
+		echo "✅ Version validation passed (PostgreSQL 16 + pgvector 0.5.1+)"; \
+		echo "🔍 Testing HNSW index creation (dry-run)..."; \
+		podman exec datastorage-postgres psql -U postgres -d postgres -c "\
+			CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \
+			CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);" \
+			> /dev/null 2>&1 || \
+			(echo "❌ HNSW index creation test failed - PostgreSQL/pgvector may not support HNSW" && exit 1); \
+		echo "✅ HNSW index support verified"; \
+	fi
 	@echo "🧪 Running Data Storage integration tests..."
-	@TEST_RESULT=0; \
-	go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
-	echo "🧹 Cleaning up PostgreSQL container..."; \
-	podman stop datastorage-postgres > /dev/null 2>&1 || true; \
-	podman rm datastorage-postgres > /dev/null 2>&1 || true; \
-	echo "✅ Cleanup complete"; \
-	exit $$TEST_RESULT
+	@if [ -z "$$POSTGRES_HOST" ]; then \
+		TEST_RESULT=0; \
+		go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
+		echo "🧹 Cleaning up PostgreSQL container..."; \
+		podman stop datastorage-postgres > /dev/null 2>&1 || true; \
+		podman rm datastorage-postgres > /dev/null 2>&1 || true; \
+		echo "✅ Cleanup complete"; \
+		exit $$TEST_RESULT; \
+	else \
+		go test ./test/integration/datastorage/... -v -timeout 5m; \
+	fi
 
 .PHONY: test-integration-contextapi
 test-integration-contextapi: ## Run Context API integration tests (Redis via Podman + PostgreSQL, ~45s)
