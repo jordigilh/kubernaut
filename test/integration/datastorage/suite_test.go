@@ -370,10 +370,19 @@ func createConfigFiles() {
 	configDir, err = os.MkdirTemp("", "datastorage-config-*")
 	Expect(err).ToNot(HaveOccurred())
 
+	// Determine database and redis hosts based on platform
+	// Linux (GitHub Actions): Use --network=host, so localhost works
+	// macOS (local dev): Use host.docker.internal (works in Podman VM)
+	dbHost := "localhost"
+	redisHost := "localhost"
+	if runtime.GOOS == "darwin" {
+		// macOS: Podman runs in VM, use host.docker.internal
+		dbHost = "host.docker.internal"
+		redisHost = "host.docker.internal"
+	}
+
 	// Create config.yaml (ADR-030)
-	// Use host.containers.internal for container-to-host communication
-	// This works in both rootless and rootful Podman
-	configYAML := `
+	configYAML := fmt.Sprintf(`
 service:
   name: data-storage
   metricsPort: 9090
@@ -385,7 +394,7 @@ server:
   read_timeout: 30s
   write_timeout: 30s
 database:
-  host: host.containers.internal
+  host: %s
   port: 5433
   name: action_history
   user: slm_user
@@ -398,7 +407,7 @@ database:
   usernameKey: "username"
   passwordKey: "password"
 redis:
-  addr: host.containers.internal:6379
+  addr: %s:6379
   db: 0
   dlq_stream_name: dlq-stream
   dlq_max_len: 1000
@@ -408,7 +417,7 @@ redis:
 logging:
   level: debug
   format: json
-`
+`, dbHost, redisHost)
 
 	configPath := filepath.Join(configDir, "config.yaml")
 	err = os.WriteFile(configPath, []byte(configYAML), 0644)
@@ -467,12 +476,11 @@ func startDataStorageService() {
 	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", configDir)
 
 	// Start service container with ADR-030 config
-	// Use --add-host to enable host.containers.internal for container-to-host communication
-	// This works in both rootless and rootful Podman
+	// Use --network=host so container can access localhost:5433 and localhost:6379
+	// This works in both rootless and rootful Podman, and on all platforms (Linux, macOS)
 	startCmd := exec.Command("podman", "run", "-d",
 		"--name", serviceContainer,
-		"-p", "8080:8080",
-		"--add-host", "host.containers.internal:host-gateway",
+		"--network", "host",
 		"-v", configMount,
 		"-v", secretsMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
