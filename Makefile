@@ -881,14 +881,9 @@ test-all-services: ## Run ALL tests for ALL services (sequential - use CI for pa
 
 ##@ Containerized Testing
 
-# Detect Podman socket path (varies by platform)
-PODMAN_SOCKET ?= $(shell podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}' 2>/dev/null || echo "/run/podman/podman.sock")
-export PODMAN_SOCKET
-
 .PHONY: test-container-build
 test-container-build: ## Build test runner container
 	@echo "🐳 Building test runner container..."
-	@echo "📍 Using Podman socket: $(PODMAN_SOCKET)"
 	podman build -f docker/test-runner.Dockerfile -t kubernaut-test-runner:latest .
 
 .PHONY: test-container-unit
