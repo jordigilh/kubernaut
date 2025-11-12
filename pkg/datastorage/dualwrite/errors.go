@@ -110,4 +110,3 @@ func IsValidationError(err error) bool {
 func IsContextCanceled(err error) bool {
 	return errors.Is(err, ErrContextCanceled) || errors.Is(err, errors.New("context canceled"))
 }
-

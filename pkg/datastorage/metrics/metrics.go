@@ -377,7 +377,7 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 				Subsystem: subsystem,
 				Name:      "audit_lag_seconds",
 				Help:      "Time lag between event occurrence and audit write in seconds",
-				Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60},
+				Buckets:   []float64{.1, .5, 1, 2, 5, 10, 30, 60},
 			},
 			[]string{"service"},
 		)
