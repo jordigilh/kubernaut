@@ -22,6 +22,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      datastorage:
+        condition: service_healthy
 
   # PostgreSQL for integration tests
   postgres:
@@ -48,6 +50,29 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Data Storage Service for integration tests
+  datastorage:
+    build:
+      context: .
+      dockerfile: docker/data-storage.Dockerfile
+    environment:
+      - CONFIG_PATH=/etc/datastorage/config.yaml
+    volumes:
+      - ./test/integration/datastorage/config:/etc/datastorage:ro
+    networks:
+      - test-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
 volumes:
   go-mod-cache:

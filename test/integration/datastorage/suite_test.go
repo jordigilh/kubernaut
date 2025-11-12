@@ -73,6 +73,12 @@ var _ = BeforeSuite(func() {
 
 	GinkgoWriter.Println("🔧 Setting up Podman infrastructure (ADR-016: stateless service)")
 
+	// 0. Create shared network for local execution (skip for Docker Compose)
+	if os.Getenv("POSTGRES_HOST") == "" {
+		GinkgoWriter.Println("🌐 Creating shared Podman network...")
+		createNetwork()
+	}
+
 	// 1. Start PostgreSQL with pgvector
 	GinkgoWriter.Println("📦 Starting PostgreSQL container...")
 	startPostgreSQL()
@@ -98,12 +104,16 @@ var _ = BeforeSuite(func() {
 	repo = repository.NewNotificationAuditRepository(db, logger)
 	dlqClient = dlq.NewClient(redisClient, logger)
 
-	// 7. Create ADR-030 config files (only for local execution)
-	if os.Getenv("POSTGRES_HOST") == "" {
+	// 7. Setup Data Storage Service
+	if os.Getenv("DATASTORAGE_URL") != "" {
+		// Docker Compose environment - use external service
+		datastorageURL = os.Getenv("DATASTORAGE_URL")
+		GinkgoWriter.Printf("🐳 Using external Data Storage Service at %s\n", datastorageURL)
+	} else {
+		// Local execution - build and start our own container
 		GinkgoWriter.Println("📝 Creating ADR-030 config and secret files...")
 		createConfigFiles()
 
-		// 8. Build and start Data Storage Service container (HTTP API)
 		GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
 		buildDataStorageService()
 
@@ -112,8 +122,6 @@ var _ = BeforeSuite(func() {
 
 		GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
 		waitForServiceReady()
-	} else {
-		GinkgoWriter.Println("🐳 Skipping service container (using Docker Compose environment)")
 	}
 
 	GinkgoWriter.Println("✅ Infrastructure ready!")
@@ -158,6 +166,11 @@ var _ = AfterSuite(func() {
 	exec.Command("podman", "stop", redisContainer).Run()
 	exec.Command("podman", "rm", redisContainer).Run()
 
+	// Remove network (only for local execution)
+	if os.Getenv("POSTGRES_HOST") == "" {
+		exec.Command("podman", "network", "rm", "datastorage-test").Run()
+	}
+
 	// Remove config directory
 	if configDir != "" {
 		os.RemoveAll(configDir)
@@ -165,6 +178,24 @@ var _ = AfterSuite(func() {
 
 	GinkgoWriter.Println("✅ Cleanup complete")
 })
+
+// createNetwork creates a shared Podman network for container-to-container communication
+// This allows the Data Storage Service container to connect to PostgreSQL and Redis by container name
+// Works on both Linux and macOS (Podman Machine)
+func createNetwork() {
+	// Remove existing network if it exists
+	exec.Command("podman", "network", "rm", "datastorage-test").Run()
+
+	// Create new network
+	cmd := exec.Command("podman", "network", "create", "datastorage-test")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		GinkgoWriter.Printf("❌ Failed to create network: %s\n", output)
+		Fail(fmt.Sprintf("Network creation failed: %v", err))
+	}
+
+	GinkgoWriter.Println("✅ Podman network created")
+}
 
 // startPostgreSQL starts PostgreSQL container with pgvector
 // When POSTGRES_HOST is set (e.g., in Docker Compose), skip container creation
@@ -202,8 +233,10 @@ func startPostgreSQL() {
 	exec.Command("podman", "rm", postgresContainer).Run()
 
 	// Start PostgreSQL with pgvector
+	// Use --network=datastorage-test for container-to-container communication
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", postgresContainer,
+		"--network", "datastorage-test",
 		"-p", "5433:5432",
 		"-e", "POSTGRES_DB=action_history",
 		"-e", "POSTGRES_USER=slm_user",
@@ -263,8 +296,10 @@ func startRedis() {
 	exec.Command("podman", "rm", redisContainer).Run()
 
 	// Start Redis
+	// Use --network=datastorage-test for container-to-container communication
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", redisContainer,
+		"--network", "datastorage-test",
 		"-p", "6379:6379",
 		"redis:7-alpine")
 
@@ -453,19 +488,19 @@ func createConfigFiles() {
 
 	// Determine database and redis hosts based on environment
 	// Docker Compose: Use service names (postgres, redis)
-	// Direct execution: Use localhost with mapped ports
+	// Direct execution: Use container names on shared network (datastorage-postgres-test, datastorage-redis-test)
 	dbHost := os.Getenv("POSTGRES_HOST")
 	if dbHost == "" {
-		dbHost = "localhost"
+		dbHost = postgresContainer // Use container name for container-to-container communication
 	}
 	dbPort := os.Getenv("POSTGRES_PORT")
 	if dbPort == "" {
-		dbPort = "5433"
+		dbPort = "5432" // Use internal port (not mapped port)
 	}
 
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
-		redisHost = "localhost"
+		redisHost = redisContainer // Use container name for container-to-container communication
 	}
 	redisPort := os.Getenv("REDIS_PORT")
 	if redisPort == "" {
@@ -567,11 +602,12 @@ func startDataStorageService() {
 	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", configDir)
 
 	// Start service container with ADR-030 config
-	// Use --network=host so container can access localhost:5433 and localhost:6379
-	// This works in both rootless and rootful Podman, and on all platforms (Linux, macOS)
+	// Use --network=datastorage-test for container-to-container communication
+	// Port mapping allows host to access service on localhost:8080
 	startCmd := exec.Command("podman", "run", "-d",
 		"--name", serviceContainer,
-		"--network", "host",
+		"--network", "datastorage-test",
+		"-p", "8080:8080",
 		"-v", configMount,
 		"-v", secretsMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
