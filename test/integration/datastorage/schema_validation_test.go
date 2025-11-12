@@ -277,3 +277,234 @@ var _ = Describe("BR-STORAGE-003: Notification Audit Table Schema", Ordered, fun
 		})
 	})
 })
+
+var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered, func() {
+	// CRITICAL: This test prevents schema mismatches between test code and migrations
+	// Issue #17: ADR-033 tests used 'status' instead of 'execution_status' for 6 days
+	// without detection because tests were never run in CI until containerized workflow
+
+	Context("Table Existence", func() {
+		It("should have resource_action_traces table", func() {
+			var exists bool
+			query := `
+				SELECT EXISTS (
+					SELECT FROM pg_class c
+					JOIN pg_namespace n ON n.oid = c.relnamespace
+					WHERE n.nspname = 'public'
+					AND c.relname = 'resource_action_traces'
+					AND c.relkind IN ('r', 'p')  -- regular or partitioned table
+				)
+			`
+			err := db.QueryRow(query).Scan(&exists)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(exists).To(BeTrue(), "resource_action_traces table should exist")
+		})
+	})
+
+	Context("Critical Columns for Test Code", func() {
+		// These are the columns commonly used in test INSERT statements
+		// Validates that test code matches actual schema
+
+		It("should have execution_status column (NOT 'status')", func() {
+			query := `
+				SELECT column_name, data_type
+				FROM information_schema.columns
+				WHERE table_schema = 'public'
+				AND table_name = 'resource_action_traces'
+				AND column_name = 'execution_status'
+			`
+			var colName, dataType string
+			err := db.QueryRow(query).Scan(&colName, &dataType)
+			Expect(err).ToNot(HaveOccurred(), "execution_status column must exist")
+			Expect(colName).To(Equal("execution_status"))
+			Expect(dataType).To(Equal("character varying"))
+		})
+
+		It("should NOT have a column named 'status'", func() {
+			query := `
+				SELECT COUNT(*)
+				FROM information_schema.columns
+				WHERE table_schema = 'public'
+				AND table_name = 'resource_action_traces'
+				AND column_name = 'status'
+			`
+			var count int
+			err := db.QueryRow(query).Scan(&count)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(count).To(Equal(0), "column 'status' should NOT exist (use 'execution_status' instead)")
+		})
+
+		It("should have all columns used in ADR-033 test inserts", func() {
+			// These are the columns used in repository_adr033_integration_test.go
+			requiredColumns := []string{
+				"action_id",
+				"action_type",
+				"action_timestamp",
+				"execution_status", // CRITICAL: Not 'status'
+				"resource_type",
+				"resource_name",
+				"resource_namespace",
+				"model_used",
+				"model_confidence",
+				"incident_type",
+				"playbook_id",
+				"playbook_version",
+				"ai_selected_playbook",
+				"ai_chained_playbooks",
+			}
+
+			for _, colName := range requiredColumns {
+				query := `
+					SELECT column_name
+					FROM information_schema.columns
+					WHERE table_schema = 'public'
+					AND table_name = 'resource_action_traces'
+					AND column_name = $1
+				`
+				var foundCol string
+				err := db.QueryRow(query, colName).Scan(&foundCol)
+				Expect(err).ToNot(HaveOccurred(),
+					fmt.Sprintf("Column '%s' must exist for test INSERT statements", colName))
+				Expect(foundCol).To(Equal(colName))
+			}
+		})
+	})
+
+	Context("Table Columns - Complete Schema", func() {
+		It("should have all required columns with correct types", func() {
+			query := `
+				SELECT column_name, data_type, is_nullable
+				FROM information_schema.columns
+				WHERE table_schema = 'public'
+				AND table_name = 'resource_action_traces'
+				ORDER BY ordinal_position
+			`
+			rows, err := db.Query(query)
+			Expect(err).ToNot(HaveOccurred())
+			defer rows.Close()
+
+			columns := make(map[string]ColumnMetadata)
+			for rows.Next() {
+				var colName, dataType, isNullable string
+				err := rows.Scan(&colName, &dataType, &isNullable)
+				Expect(err).ToNot(HaveOccurred())
+
+				columns[colName] = ColumnMetadata{
+					DataType:   dataType,
+					IsNullable: isNullable,
+				}
+			}
+
+			// Verify critical columns exist with correct types
+			expectedColumns := map[string]struct {
+				dataType   string
+				isNullable string
+			}{
+				"id":                      {"bigint", "NO"},
+				"action_history_id":       {"bigint", "NO"},
+				"action_id":               {"character varying", "NO"},
+				"action_type":             {"character varying", "NO"},
+				"action_timestamp":        {"timestamp with time zone", "NO"},
+				"execution_status":        {"character varying", "YES"}, // CRITICAL: execution_status, not status
+				"model_used":              {"character varying", "NO"},
+				"model_confidence":        {"numeric", "NO"},
+				"incident_type":           {"character varying", "YES"},
+				"playbook_id":             {"character varying", "YES"},
+				"playbook_version":        {"character varying", "YES"},
+				"ai_selected_playbook":    {"boolean", "YES"},
+				"ai_chained_playbooks":    {"boolean", "YES"},
+				"resource_type":           {"character varying", "YES"},
+				"resource_name":           {"character varying", "YES"},
+				"resource_namespace":      {"character varying", "YES"},
+				"effectiveness_score":     {"numeric", "YES"},
+				"effectiveness_assessment": {"character varying", "YES"},
+			}
+
+			for colName, expected := range expectedColumns {
+				col, exists := columns[colName]
+				Expect(exists).To(BeTrue(), fmt.Sprintf("Column %s should exist", colName))
+
+				Expect(col.DataType).To(Equal(expected.dataType),
+					fmt.Sprintf("Column %s should have type %s", colName, expected.dataType))
+
+				Expect(col.IsNullable).To(Equal(expected.isNullable),
+					fmt.Sprintf("Column %s nullable should be %s", colName, expected.isNullable))
+			}
+		})
+	})
+
+	Context("Table Indexes", func() {
+		It("should have index on execution_status", func() {
+			query := `
+				SELECT indexname
+				FROM pg_indexes
+				WHERE schemaname = 'public'
+				AND tablename = 'resource_action_traces'
+				AND indexname = 'idx_rat_execution_status'
+			`
+			var indexName string
+			err := db.QueryRow(query).Scan(&indexName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(indexName).To(Equal("idx_rat_execution_status"))
+		})
+
+		It("should have index on incident_type (ADR-033)", func() {
+			query := `
+				SELECT indexname
+				FROM pg_indexes
+				WHERE schemaname = 'public'
+				AND tablename = 'resource_action_traces'
+				AND indexname = 'idx_rat_incident_type'
+			`
+			var indexName string
+			err := db.QueryRow(query).Scan(&indexName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(indexName).To(Equal("idx_rat_incident_type"))
+		})
+
+		It("should have index on playbook_id (ADR-033)", func() {
+			query := `
+				SELECT indexname
+				FROM pg_indexes
+				WHERE schemaname = 'public'
+				AND tablename = 'resource_action_traces'
+				AND indexname = 'idx_rat_playbook_id'
+			`
+			var indexName string
+			err := db.QueryRow(query).Scan(&indexName)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(indexName).To(Equal("idx_rat_playbook_id"))
+		})
+	})
+
+	Context("Partitioning", func() {
+		It("should be a partitioned table", func() {
+			query := `
+				SELECT relkind
+				FROM pg_class c
+				JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = 'public'
+				AND c.relname = 'resource_action_traces'
+			`
+			var relkind string
+			err := db.QueryRow(query).Scan(&relkind)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(relkind).To(Equal("p"), "resource_action_traces should be a partitioned table")
+		})
+
+		It("should have at least one partition", func() {
+			query := `
+				SELECT COUNT(*)
+				FROM pg_inherits i
+				JOIN pg_class parent ON i.inhparent = parent.oid
+				JOIN pg_namespace n ON n.oid = parent.relnamespace
+				WHERE n.nspname = 'public'
+				AND parent.relname = 'resource_action_traces'
+			`
+			var count int
+			err := db.QueryRow(query).Scan(&count)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(count).To(BeNumerically(">", 0), "resource_action_traces should have at least one partition")
+		})
+	})
+})
