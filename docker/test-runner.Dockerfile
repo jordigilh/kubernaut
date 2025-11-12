@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine
+FROM golang:1.23-alpine
 
 # Install test dependencies
 RUN apk add --no-cache \
@@ -19,7 +19,7 @@ RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/s
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/
 
-# Install ginkgo CLI
+# Install ginkgo CLI (compatible with Go 1.23+)
 RUN go install github.com/onsi/ginkgo/v2/ginkgo@latest
 
 WORKDIR /workspace
