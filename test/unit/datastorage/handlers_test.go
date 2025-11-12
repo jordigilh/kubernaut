@@ -73,13 +73,13 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.ListIncidents(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Code).To(Equal(http.StatusOK))
 
-		var response PagedResponse
-		err := json.Unmarshal(rec.Body.Bytes(), &response)
-		Expect(err).ToNot(HaveOccurred())
+			var response PagedResponse
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(response.Data).To(HaveLen(0))
+			Expect(response.Data).To(HaveLen(0))
 		})
 
 		// BEHAVIOR: Handler returns empty array when no incidents match filter
@@ -135,13 +135,13 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 				handler.ListIncidents(rec, req)
 
-			Expect(rec.Code).To(Equal(expectedStatus))
-			if expectedStatus != http.StatusOK {
-				var problem validation.RFC7807Problem
-				err := json.Unmarshal(rec.Body.Bytes(), &problem)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(problem.Type).To(ContainSubstring(expectedErrorType))
-			}
+				Expect(rec.Code).To(Equal(expectedStatus))
+				if expectedStatus != http.StatusOK {
+					var problem validation.RFC7807Problem
+					err := json.Unmarshal(rec.Body.Bytes(), &problem)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(problem.Type).To(ContainSubstring(expectedErrorType))
+				}
 			},
 			Entry("negative limit", "limit=-1", http.StatusBadRequest, "invalid-limit"),
 			Entry("zero limit", "limit=0", http.StatusBadRequest, "invalid-limit"),
@@ -202,14 +202,14 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.GetIncident(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusNotFound))
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
 
-		var problemDetail validation.RFC7807Problem
-		err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
-		Expect(err).ToNot(HaveOccurred())
+			var problemDetail validation.RFC7807Problem
+			err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(problemDetail.Type).To(ContainSubstring("not-found"))
-		Expect(problemDetail.Status).To(Equal(404))
+			Expect(problemDetail.Type).To(ContainSubstring("not-found"))
+			Expect(problemDetail.Status).To(Equal(404))
 		})
 
 		It("should return RFC 7807 error for invalid ID format", func() {
@@ -217,13 +217,13 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 
 			handler.GetIncident(rec, req)
 
-		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 
-		var problemDetail validation.RFC7807Problem
-		err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
-		Expect(err).ToNot(HaveOccurred())
+			var problemDetail validation.RFC7807Problem
+			err := json.Unmarshal(rec.Body.Bytes(), &problemDetail)
+			Expect(err).ToNot(HaveOccurred())
 
-		Expect(problemDetail.Type).To(ContainSubstring("invalid-id"))
+			Expect(problemDetail.Type).To(ContainSubstring("invalid-id"))
 		})
 	})
 
@@ -242,8 +242,8 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 				Expect(rec.Code).To(BeNumerically("<", 500))
 			},
 			Entry("SQL injection in namespace", "namespace", "'; DROP TABLE resource_action_traces--"),
-	Entry("SQL injection in severity", "severity", "' OR '1'='1"),
-	Entry("SQL injection in cluster", "cluster", "' UNION SELECT * FROM users--"),
-)
-})
+			Entry("SQL injection in severity", "severity", "' OR '1'='1"),
+			Entry("SQL injection in cluster", "cluster", "' UNION SELECT * FROM users--"),
+		)
+	})
 })

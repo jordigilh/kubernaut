@@ -131,9 +131,9 @@ var _ = Describe("BR-TOOLSET-025: Service Discoverer", func() {
 					},
 				}
 
-			// Create discoverer and register detectors
-			discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
-			discoverer.RegisterDetector(prometheusDetector)
+				// Create discoverer and register detectors
+				discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
+				discoverer.RegisterDetector(prometheusDetector)
 				discoverer.RegisterDetector(grafanaDetector)
 
 				// Discover services
@@ -167,10 +167,10 @@ var _ = Describe("BR-TOOLSET-025: Service Discoverer", func() {
 					detectFunc: func(ctx context.Context, svc *corev1.Service) (*toolset.DiscoveredService, error) {
 						return nil, errors.New("detector error")
 					},
-			}
+				}
 
-			discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
-			discoverer.RegisterDetector(errorDetector)
+				discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
+				discoverer.RegisterDetector(errorDetector)
 
 				// Discover should handle error gracefully
 				_, err = discoverer.DiscoverServices(ctx)
@@ -199,10 +199,10 @@ var _ = Describe("BR-TOOLSET-025: Service Discoverer", func() {
 					detectFunc: func(ctx context.Context, svc *corev1.Service) (*toolset.DiscoveredService, error) {
 						return nil, nil // Never matches
 					},
-			}
+				}
 
-			discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
-			discoverer.RegisterDetector(neverMatchDetector)
+				discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
+				discoverer.RegisterDetector(neverMatchDetector)
 
 				discovered, err := discoverer.DiscoverServices(ctx)
 
@@ -255,10 +255,10 @@ var _ = Describe("BR-TOOLSET-025: Service Discoverer", func() {
 						}
 						return errors.New("unhealthy")
 					},
-			}
+				}
 
-			discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
-			discoverer.RegisterDetector(detector)
+				discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
+				discoverer.RegisterDetector(detector)
 
 				discovered, err := discoverer.DiscoverServices(ctx)
 
@@ -268,10 +268,10 @@ var _ = Describe("BR-TOOLSET-025: Service Discoverer", func() {
 			})
 		})
 
-	Context("with empty cluster", func() {
-		It("should return empty list", func() {
-			discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
-			discoverer.RegisterDetector(&mockDetector{serviceType: "test"})
+		Context("with empty cluster", func() {
+			It("should return empty list", func() {
+				discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
+				discoverer.RegisterDetector(&mockDetector{serviceType: "test"})
 
 				discovered, err := discoverer.DiscoverServices(ctx)
 
@@ -281,9 +281,9 @@ var _ = Describe("BR-TOOLSET-025: Service Discoverer", func() {
 		})
 	})
 
-Describe("RegisterDetector", func() {
-	It("should allow registering multiple detectors", func() {
-		discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
+	Describe("RegisterDetector", func() {
+		It("should allow registering multiple detectors", func() {
+			discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
 
 			detector1 := &mockDetector{serviceType: "test1"}
 			detector2 := &mockDetector{serviceType: "test2"}
@@ -296,10 +296,10 @@ Describe("RegisterDetector", func() {
 		})
 	})
 
-Describe("BR-TOOLSET-026: Start/Stop Discovery Loop", func() {
-	It("should start and stop gracefully", func() {
-		discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
-		discoverer.RegisterDetector(&mockDetector{serviceType: "test"})
+	Describe("BR-TOOLSET-026: Start/Stop Discovery Loop", func() {
+		It("should start and stop gracefully", func() {
+			discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
+			discoverer.RegisterDetector(&mockDetector{serviceType: "test"})
 
 			// Start in background
 			go func() {
@@ -314,9 +314,9 @@ Describe("BR-TOOLSET-026: Start/Stop Discovery Loop", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-	It("should respect context cancellation", func() {
-		discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
-		discoverer.RegisterDetector(&mockDetector{serviceType: "test"})
+		It("should respect context cancellation", func() {
+			discoverer = discovery.NewServiceDiscoverer(fakeClient, 10*time.Second)
+			discoverer.RegisterDetector(&mockDetector{serviceType: "test"})
 
 			done := make(chan error)
 			go func() {

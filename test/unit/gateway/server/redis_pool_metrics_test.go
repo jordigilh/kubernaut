@@ -279,4 +279,3 @@ var _ = Describe("Redis Pool Metrics Collection", func() {
 		})
 	})
 })
-

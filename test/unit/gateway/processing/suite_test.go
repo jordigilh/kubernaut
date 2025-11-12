@@ -27,5 +27,3 @@ func TestProcessing(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Gateway Processing Suite")
 }
-
-
