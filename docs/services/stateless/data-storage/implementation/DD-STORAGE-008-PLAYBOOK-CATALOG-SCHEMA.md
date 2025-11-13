@@ -743,279 +743,261 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 - **ADR-034**: Unified Audit Table Design (similar lifecycle management pattern)
 - **DD-STORAGE-006**: V1.0 No-Cache Decision (no playbook embedding caching in V1.0)
 - **DD-STORAGE-007**: Redis Requirement Reassessment (Redis mandatory for DLQ)
-- **DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE**: Critical gaps in version validation and traceability
+- **DD-011**: PostgreSQL Version Requirements (semver validation pattern)
 
 ---
 
-## 📋 **Implementation Checklist**
+## 📋 **Implementation Roadmap**
 
-### **Phase 1: Schema Creation** (Day 1, 4 hours)
+### **🎯 V1.0 MVP Scope** (Foundation - SQL-Only Management)
+
+**Goal**: Establish playbook catalog foundation with SQL-only management (no REST API for writes, no CRD controller)
+
+**Duration**: 3 days (20 hours)
+
+**V1.0 Deliverables**:
+- ✅ `playbook_catalog` table with full schema (including version validation fields for future use)
+- ✅ Go models and repository (READ-ONLY operations)
+- ✅ Semantic search endpoint: `GET /api/v1/playbooks/search`
+- ✅ Version listing endpoint: `GET /api/v1/playbooks/{id}/versions`
+- ✅ Embedding generation pipeline (NO CACHING per DD-STORAGE-006)
+- ✅ Integration tests for search and version listing
+
+**V1.0 Limitations** (Deferred to V1.1):
+- ❌ **NO** playbook creation/update REST API (SQL-only management)
+- ❌ **NO** version validation enforcement (manual SQL management)
+- ❌ **NO** lifecycle management API (disable/enable via SQL only)
+- ❌ **NO** embedding caching (per DD-STORAGE-006)
+- ❌ **NO** version diff API
+
+---
+
+#### **V1.0 Phase 1: Schema & Models** (Day 1, 6 hours)
+
+**Scope**: Database schema and Go models (read-only operations)
+
 - [ ] Create migration: `migrations/013_playbook_catalog.sql`
+  - [ ] Full schema with all fields (including version validation metadata for V1.1)
+  - [ ] Indexes for search, labels, embeddings (HNSW)
+  - [ ] Triggers for updated_at
+  - [ ] Comments documenting V1.0 vs V1.1 fields
 - [ ] Create Go model: `pkg/datastorage/models/playbook.go`
+  - [ ] Playbook struct with all fields
+  - [ ] PlaybookStatus enum (active/disabled/deprecated/archived)
+  - [ ] PlaybookSearchParams struct
+  - [ ] PlaybookSearchResult struct
 - [ ] Create repository: `pkg/datastorage/repository/playbook_repository.go`
+  - [ ] `GetLatestVersion()` - Read latest version
+  - [ ] `GetVersion()` - Read specific version
+  - [ ] `ListVersions()` - List all versions
+  - [ ] `SearchPlaybooks()` - Semantic search with label filtering
+  - [ ] **NOTE**: NO create/update methods in V1.0 (SQL-only management)
 
-### **Phase 2: REST API** (Day 2, 8 hours)
-- [ ] **CRITICAL**: Implement version validation in `POST /api/v1/playbooks` (see DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE)
-  - [ ] Validate semantic version format (semver)
-  - [ ] Validate version increment (must be > current latest)
-  - [ ] Prevent overwriting existing versions (immutability)
+**Deliverable**: Schema and read-only repository
+
+---
+
+#### **V1.0 Phase 2: Semantic Search API** (Day 2, 8 hours)
+
+**Scope**: Read-only REST API for semantic search and version listing
+
 - [ ] Implement `GET /api/v1/playbooks/search` (semantic search)
+  - [ ] Query parameter: `query` (incident description)
+  - [ ] Query parameters: `label.*` (label filtering per DD-CONTEXT-005)
+  - [ ] Query parameter: `min_confidence` (similarity threshold, default: 0.7)
+  - [ ] Query parameter: `max_results` (limit, default: 10)
+  - [ ] Response: DD-CONTEXT-005 format (playbook_id, version, description, confidence)
+  - [ ] Filter: status='active' AND is_latest_version=true (default)
+- [ ] Implement `GET /api/v1/playbooks/{id}/versions` (list all versions)
+  - [ ] Query parameter: `include_disabled` (default: false)
+  - [ ] Response: Version list with metadata (status, success_rate, created_at)
+- [ ] **NOTE**: NO create/update/disable/enable endpoints in V1.0
+
+**Deliverable**: Read-only REST API for search and version listing
+
+---
+
+#### **V1.0 Phase 3: Embedding Generation** (Day 3, 6 hours)
+
+**Scope**: Real-time embedding generation (NO CACHING per DD-STORAGE-006)
+
+- [ ] Python embedding service (sentence-transformers)
+  - [ ] HTTP server with `/embed` endpoint
+  - [ ] Model: sentence-transformers/all-MiniLM-L6-v2 (384 dimensions)
+  - [ ] Input: Playbook description + name (concatenated)
+  - [ ] Output: 384-dimensional vector
+- [ ] Go HTTP client: `pkg/datastorage/embedding/client.go`
+  - [ ] `GenerateEmbedding(text string) ([]float32, error)`
+  - [ ] **NO CACHING** (per DD-STORAGE-006)
+  - [ ] Timeout: 5 seconds per request
+- [ ] Playbook embedding pipeline: `pkg/datastorage/embedding/playbook_pipeline.go`
+  - [ ] Generate embeddings on-the-fly during search
+  - [ ] **NO CACHING** (per DD-STORAGE-006)
+  - [ ] Acceptable latency: 2.5s for 50 playbooks (per DD-STORAGE-006)
+- [ ] Integration tests
+  - [ ] Test semantic search with real embeddings
+  - [ ] Test label filtering
+  - [ ] Test version listing
+
+**Deliverable**: Real-time embedding generation (no caching)
+
+---
+
+### **🚀 V1.1 Enhancements** (REST API + CRD Controller + Caching)
+
+**Goal**: Add playbook management REST API with version validation and embedding caching
+
+**Duration**: 4 days (28 hours)
+
+**V1.1 Deliverables**:
+- ✅ Playbook creation/update REST API with version validation
+- ✅ Lifecycle management API (disable/enable)
+- ✅ Version diff API
+- ✅ CRD controller for playbook management
+- ✅ Embedding caching with CRD-triggered invalidation
+- ✅ Comprehensive integration tests
+
+---
+
+#### **V1.1 Phase 1: Version Validation** (Day 1, 8 hours)
+
+**Scope**: Semantic version validation for playbook creation/update
+
+- [ ] Create `pkg/datastorage/playbook/version_validator.go`
+  - [ ] `ValidateVersionFormat()` using `golang.org/x/mod/semver`
+  - [ ] `CompareVersions()` for version comparison (-1/0/1)
+  - [ ] `IsValidIncrement()` to enforce increment requirement
+  - [ ] Custom errors: `ErrVersionAlreadyExists`, `ErrVersionNotIncremented`
+- [ ] Update `PlaybookRepository` with validation
+  - [ ] `CreatePlaybook()` with version validation
+  - [ ] `VersionExists()` check
+  - [ ] Transaction for atomic latest version update
+- [ ] Unit tests for version validator (TDD)
+  - [ ] Test valid semver formats (v1.0.0, v1.2.3, v2.0.0-alpha)
+  - [ ] Test invalid formats (1.0, vv1.0.0, abc)
+  - [ ] Test version increment validation
+  - [ ] Test immutability enforcement
+
+**Deliverable**: Version validation library with comprehensive tests
+
+---
+
+#### **V1.1 Phase 2: Playbook Management REST API** (Day 2, 10 hours)
+
+**Scope**: Create/update/disable/enable playbooks with version validation
+
+- [ ] Implement `POST /api/v1/playbooks` (create/update playbook)
+  - [ ] **CRITICAL**: Validate semantic version format (semver)
+  - [ ] **CRITICAL**: Validate version increment (must be > current latest)
+  - [ ] **CRITICAL**: Prevent overwriting existing versions (immutability)
+  - [ ] Return clear error messages:
+    - [ ] 400: Invalid version format
+    - [ ] 400: Version not incremented
+    - [ ] 409: Version already exists (immutable)
+  - [ ] Invalidate embedding cache on create/update
 - [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/disable`
+  - [ ] Capture disabled_by, disabled_reason, disabled_at
+  - [ ] Invalidate embedding cache on disable
 - [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/enable`
-- [ ] Implement `GET /api/v1/playbooks/{id}/versions`
+  - [ ] Clear disabled metadata
+  - [ ] Invalidate embedding cache on enable
 - [ ] Implement `GET /api/v1/playbooks/{id}/versions/{version}` (get specific version)
 - [ ] Implement `GET /api/v1/playbooks/{id}/versions/{v1}/diff/{v2}` (compare versions)
 
-### **Phase 3: Embedding Generation** (Day 3, 8 hours)
-- [ ] Python embedding service (sentence-transformers)
-- [ ] Go HTTP client: `pkg/datastorage/embedding/client.go`
-- [ ] Playbook embedding pipeline: `pkg/datastorage/embedding/playbook_pipeline.go`
+**Deliverable**: Full playbook management REST API with version validation
 
-### **Phase 4: Integration Tests** (Day 4, 8 hours)
-- [ ] Test playbook CRUD operations
-- [ ] Test semantic search with label filtering
+---
+
+#### **V1.1 Phase 3: Embedding Caching** (Day 3, 6 hours)
+
+**Scope**: Redis-backed embedding cache with CRD-triggered invalidation
+
+- [ ] Implement embedding cache in `pkg/datastorage/embedding/cache.go`
+  - [ ] Redis key: `embedding:playbook:{id}:{version}`
+  - [ ] TTL: 24 hours (configurable)
+  - [ ] Cache hit/miss metrics
+- [ ] Update embedding pipeline to use cache
+  - [ ] Check cache before generating embedding
+  - [ ] Store embedding in cache after generation
+  - [ ] Latency improvement: 2.5s → ~50ms (50× faster)
+- [ ] Implement cache invalidation
+  - [ ] Invalidate on playbook create/update
+  - [ ] Invalidate on playbook disable/enable
+  - [ ] CRD controller webhook for automatic invalidation
+
+**Deliverable**: Embedding caching with CRD-triggered invalidation
+
+---
+
+#### **V1.1 Phase 4: Integration Tests** (Day 4, 4 hours)
+
+**Scope**: Comprehensive integration tests for V1.1 features
+
+- [ ] Test playbook CRUD operations with version validation
+  - [ ] Test version format validation (invalid semver rejected)
+  - [ ] Test version increment validation (v0.9 after v1.0 rejected)
+  - [ ] Test immutability (duplicate version rejected with 409)
 - [ ] Test lifecycle management (disable/enable)
-- [ ] Test version management
+  - [ ] Test disable captures metadata (who/when/why)
+  - [ ] Test re-enable clears metadata
+- [ ] Test version history API
+  - [ ] Test get specific version
+  - [ ] Test diff between versions
+- [ ] Test embedding cache
+  - [ ] Test cache hit/miss
+  - [ ] Test cache invalidation on create/update/disable/enable
+
+**Deliverable**: Comprehensive integration tests for V1.1
 
 ---
 
-**Document Version**: 1.0
+## 📊 **V1.0 vs V1.1 Feature Matrix**
+
+| Feature | V1.0 MVP | V1.1 Enhancements |
+|---------|----------|-------------------|
+| **Playbook Catalog Table** | ✅ Full schema | ✅ Same schema |
+| **Semantic Search API** | ✅ `GET /search` | ✅ Same |
+| **Version Listing API** | ✅ `GET /versions` | ✅ Same |
+| **Embedding Generation** | ✅ Real-time (no cache) | ✅ Cached (24h TTL) |
+| **Playbook Management** | ❌ SQL-only | ✅ REST API (`POST /playbooks`) |
+| **Version Validation** | ❌ Manual SQL | ✅ Automated (semver) |
+| **Lifecycle Management** | ❌ SQL-only | ✅ REST API (`PATCH /disable`, `/enable`) |
+| **Version Diff API** | ❌ Not available | ✅ `GET /diff/{v1}/{v2}` |
+| **CRD Controller** | ❌ Not available | ✅ Playbook CRD |
+| **Cache Invalidation** | ❌ N/A (no cache) | ✅ CRD-triggered |
+
+---
+
+## 🎯 **V1.0 MVP Success Criteria**
+
+**Must Have** (Blocking):
+1. ✅ `playbook_catalog` table exists with full schema
+2. ✅ `GET /api/v1/playbooks/search` returns semantically similar playbooks
+3. ✅ `GET /api/v1/playbooks/{id}/versions` lists all versions
+4. ✅ Embedding generation works (real-time, no cache)
+5. ✅ Integration tests pass for search and version listing
+6. ✅ Latency acceptable: 2.5s for 50 playbooks (per DD-STORAGE-006)
+
+**Nice to Have** (Non-Blocking):
+- ⚠️ Playbook management via SQL (manual process, documented)
+- ⚠️ Version validation via manual review (no automation)
+
+---
+
+## 🚀 **V1.1 Enhancement Success Criteria**
+
+**Must Have** (Blocking):
+1. ✅ `POST /api/v1/playbooks` validates version format and increment
+2. ✅ Version immutability enforced (duplicate version rejected with 409)
+3. ✅ `PATCH /disable` and `/enable` work with audit trail
+4. ✅ Embedding cache reduces latency from 2.5s to ~50ms (50× improvement)
+5. ✅ CRD controller triggers cache invalidation on playbook changes
+6. ✅ Integration tests pass for all V1.1 features
+
+---
+
+**Document Version**: 1.2 (updated with V1.0/V1.1 scope separation)
 **Last Updated**: November 13, 2025
-**Status**: ✅ **RECOMMENDED** (95% confidence)
-**Next Review**: After V1.0 MVP implementation
-
-
-      "deprecation_notice": "Replaced by v1.2 with improved memory analysis",
-      "created_at": "2025-08-15T10:00:00Z"
-    },
-    {
-      "version": "v1.0",
-      "status": "archived",
-      "is_latest_version": false,
-      "actual_success_rate": 0.78,
-      "total_executions": 100,
-      "created_at": "2025-06-01T10:00:00Z"
-    }
-  ],
-  "total_versions": 3
-}
-```
-
----
-
-## 📊 **Lifecycle Management Workflows**
-
-### **Workflow 1: Create New Version**
-
-```sql
--- Step 1: Create new version
-INSERT INTO playbook_catalog (
-    playbook_id, version, name, description, content, labels, 
-    status, is_latest_version, previous_version
-) VALUES (
-    'pod-oom-recovery', 'v1.2', 'Pod OOM Recovery', 
-    'Increases memory limits and restarts pod', '<content>', 
-    '{"kubernaut.io/environment": "production"}',
-    'active', true, 'v1.1'
-);
-
--- Step 2: Mark previous version as not latest
-UPDATE playbook_catalog
-SET is_latest_version = false
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.1';
-```
-
----
-
-### **Workflow 2: Disable Playbook (Temporary)**
-
-```sql
-UPDATE playbook_catalog
-SET 
-    status = 'disabled',
-    disabled_at = NOW(),
-    disabled_by = 'operator@company.com',
-    disabled_reason = 'High failure rate in production'
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
-```
-
----
-
-### **Workflow 3: Re-enable Playbook**
-
-```sql
-UPDATE playbook_catalog
-SET 
-    status = 'active',
-    disabled_at = NULL,
-    disabled_by = NULL,
-    disabled_reason = NULL
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
-```
-
----
-
-### **Workflow 4: Deprecate Playbook (Permanent)**
-
-```sql
--- Step 1: Mark old version as deprecated
-UPDATE playbook_catalog
-SET 
-    status = 'deprecated',
-    deprecation_notice = 'Replaced by v1.2 with improved memory analysis',
-    is_latest_version = false
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.1';
-
--- Step 2: Create new version (see Workflow 1)
-```
-
----
-
-### **Workflow 5: Archive Playbook (Permanent Retirement)**
-
-```sql
-UPDATE playbook_catalog
-SET 
-    status = 'archived',
-    is_latest_version = false
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.0';
-```
-
----
-
-## 🎯 **Query Patterns for AI Selection**
-
-### **Pattern 1: Active Playbooks Only (Default)**
-
-```sql
-SELECT * FROM playbook_catalog
-WHERE status = 'active' AND is_latest_version = true;
-```
-
----
-
-### **Pattern 2: Semantic Search with Label Filtering (DD-CONTEXT-005)**
-
-```sql
-SELECT 
-    playbook_id,
-    version,
-    description,
-    1 - (embedding <=> $query_embedding) AS confidence
-FROM playbook_catalog
-WHERE status = 'active'
-  AND is_latest_version = true
-  AND labels->>'kubernaut.io/environment' = 'production'
-  AND labels->>'kubernaut.io/priority' = 'P0'
-  AND labels->>'kubernaut.io/risk-tolerance' = 'low'
-  AND 1 - (embedding <=> $query_embedding) >= 0.7
-ORDER BY embedding <=> $query_embedding
-LIMIT 10;
-```
-
----
-
-### **Pattern 3: Success Rate Filtering**
-
-```sql
-SELECT * FROM playbook_catalog
-WHERE status = 'active'
-  AND is_latest_version = true
-  AND total_executions >= 10  -- Statistical significance
-  AND actual_success_rate >= 0.80
-ORDER BY actual_success_rate DESC, total_executions DESC;
-```
-
----
-
-## ✅ **Benefits**
-
-### **User Requirement: Disable Playbooks**
-- ✅ **Temporary disable**: Set status='disabled' (can re-enable)
-- ✅ **Permanent retirement**: Set status='deprecated' or 'archived'
-- ✅ **Audit trail**: Capture who/when/why disabled
-- ✅ **Historical data preserved**: Never delete playbook records
-
-### **Version Management**
-- ✅ **Multiple versions coexist**: Composite primary key (playbook_id, version)
-- ✅ **Latest version tracking**: `is_latest_version` flag
-- ✅ **Version history**: `previous_version` link
-- ✅ **Historical analysis**: All versions queryable
-
-### **DD-CONTEXT-005 Compliance**
-- ✅ **Label-based filtering**: JSONB labels with GIN index
-- ✅ **Semantic search**: pgvector embedding with HNSW index
-- ✅ **Minimal response**: 4 fields (playbook_id, version, description, confidence)
-
-### **ADR-033 Compliance**
-- ✅ **Success rate tracking**: actual_success_rate calculated from executions
-- ✅ **Statistical significance**: total_executions for confidence
-- ✅ **AI selection**: Query by success rate and execution count
-
----
-
-## 📊 **Confidence Assessment**
-
-**Overall Confidence**: **95%**
-
-**Breakdown**:
-- **Schema design**: 98% (industry standard composite key + lifecycle management)
-- **Lifecycle management**: 95% (meets user requirement for disable + historical data)
-- **DD-CONTEXT-005 compliance**: 100% (authoritative requirement)
-- **ADR-033 compliance**: 90% (success metrics tracking)
-- **Version management**: 98% (standard pattern)
-
-**Why 95% (not 100%)**:
-- 5% uncertainty: Potential need for additional metadata fields not yet discovered
-  - **Mitigation**: JSONB labels allow adding new metadata without schema changes
-
----
-
-## 🔗 **Related Decisions**
-
-- **ADR-033**: Remediation Playbook Catalog (defines playbook structure)
-- **DD-CONTEXT-005**: Minimal LLM Response Schema (defines query/response requirements)
-- **ADR-034**: Unified Audit Table Design (similar lifecycle management pattern)
-- **DD-STORAGE-006**: V1.0 No-Cache Decision (no playbook embedding caching in V1.0)
-- **DD-STORAGE-007**: Redis Requirement Reassessment (Redis mandatory for DLQ)
-- **DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE**: Critical gaps in version validation and traceability
-
----
-
-## 📋 **Implementation Checklist**
-
-### **Phase 1: Schema Creation** (Day 1, 4 hours)
-- [ ] Create migration: `migrations/013_playbook_catalog.sql`
-- [ ] Create Go model: `pkg/datastorage/models/playbook.go`
-- [ ] Create repository: `pkg/datastorage/repository/playbook_repository.go`
-
-### **Phase 2: REST API** (Day 2, 8 hours)
-- [ ] **CRITICAL**: Implement version validation in `POST /api/v1/playbooks` (see DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE)
-  - [ ] Validate semantic version format (semver)
-  - [ ] Validate version increment (must be > current latest)
-  - [ ] Prevent overwriting existing versions (immutability)
-- [ ] Implement `GET /api/v1/playbooks/search` (semantic search)
-- [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/disable`
-- [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/enable`
-- [ ] Implement `GET /api/v1/playbooks/{id}/versions`
-- [ ] Implement `GET /api/v1/playbooks/{id}/versions/{version}` (get specific version)
-- [ ] Implement `GET /api/v1/playbooks/{id}/versions/{v1}/diff/{v2}` (compare versions)
-
-### **Phase 3: Embedding Generation** (Day 3, 8 hours)
-- [ ] Python embedding service (sentence-transformers)
-- [ ] Go HTTP client: `pkg/datastorage/embedding/client.go`
-- [ ] Playbook embedding pipeline: `pkg/datastorage/embedding/playbook_pipeline.go`
-
-### **Phase 4: Integration Tests** (Day 4, 8 hours)
-- [ ] Test playbook CRUD operations
-- [ ] Test semantic search with label filtering
-- [ ] Test lifecycle management (disable/enable)
-- [ ] Test version management
-
----
-
-**Document Version**: 1.0
-**Last Updated**: November 13, 2025
-**Status**: ✅ **RECOMMENDED** (95% confidence)
+**Status**: ✅ **APPROVED** (98% confidence with clear V1.0/V1.1 separation)
 **Next Review**: After V1.0 MVP implementation
 
