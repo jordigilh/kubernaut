@@ -121,3 +121,7 @@ TDD-*.md
 /contextapi
 PR_DESCRIPTION.md
 dynamictoolset
+test/e2e/gateway/.kube/
+
+# Kubernetes cache files (generated during E2E tests)
+**/.kube/cache/
