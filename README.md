@@ -28,7 +28,7 @@ Kubernaut automates the entire incident response lifecycle for Kubernetes:
 
 ## 🏗️ Architecture
 
-Kubernaut follows a microservices architecture with 11 services (4 CRD controllers + 7 stateless services):
+Kubernaut follows a microservices architecture with 10 services (4 CRD controllers + 6 stateless services):
 
 ![Kubernaut Layered Architecture](docs/architecture/diagrams/kubernaut-layered-architecture.svg)
 
@@ -55,13 +55,12 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 ## 📊 Implementation Status
 
-**Current Phase**: Phase 2 Complete - 6 of 11 services production-ready (55%)
+**Current Phase**: Phase 2 Complete - 5 of 10 services production-ready (50%)
 
 | Service | Status | Purpose | BR Coverage |
 |---------|--------|---------|-------------|
 | **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (100%) |
 | **Data Storage Service** | ✅ **Phase 1 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (100%) |
-| **Context API** | ✅ **v1.0 PRODUCTION-READY** | Historical intelligence REST API | 17 BRs (12 active + 5 deprecated, 100%) |
 | **Dynamic Toolset Service** | ✅ **v1.0 PRODUCTION-READY** | Service discovery & toolset generation | 8 BRs (100%, E2E complete) |
 | **Notification Service** | ✅ **COMPLETE** | Multi-channel delivery | 12 BRs (100%) |
 | **HolmesGPT API** | ✅ **v3.0.1 PRODUCTION-READY** | AI investigation wrapper | 47 BRs (RFC 7807 + Graceful Shutdown, 100%) |
@@ -73,14 +72,14 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 **Timeline**: 13-week development plan (currently in Week 2-3)
 
-**Recent Updates** (November 10, 2025):
+**Recent Updates** (November 13, 2025):
 - ✅ **Dynamic Toolset v1.0 Complete**: 245/245 tests (194 unit + 38 integration + 13 E2E), deployment manifests, operations runbook
 - ✅ **E2E Test Optimization**: Parallel execution enabled, 2m37s runtime (~40% improvement)
 - ✅ **Production Deployment Ready**: In-cluster deployment manifests with RBAC, NetworkPolicy, ServiceMonitor
 - ✅ **RFC 7807 & Graceful Shutdown**: Implemented for Dynamic Toolset & HolmesGPT API (186 tests, 100% pass rate)
-- ✅ **BR Documentation Complete**: 160 BRs documented across 6 services (100% coverage)
+- ✅ **BR Documentation Complete**: 121 BRs documented across 5 services (100% coverage)
 - ✅ Gateway Service v1.0: 240/240 tests passing, 20 BRs, production-ready
-- ✅ Context API v1.0: 100% P0 2x coverage, 17 BRs (12 active + 5 deprecated per ADR-032)
+- ✅ Data Storage Service Phase 1: Unified audit table, PostgreSQL access layer (ADR-032)
 
 ---
 

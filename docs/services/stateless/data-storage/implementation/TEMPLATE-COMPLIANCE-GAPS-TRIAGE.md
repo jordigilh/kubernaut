@@ -173,10 +173,10 @@ package audit_test        // ✅ CORRECT for unit tests
 
 **Required Formula** (from template):
 ```
-Confidence = (Implementation_Accuracy × 0.3) + 
-             (Test_Coverage × 0.25) + 
-             (BR_Coverage × 0.25) + 
-             (Production_Readiness × 0.2) - 
+Confidence = (Implementation_Accuracy × 0.3) +
+             (Test_Coverage × 0.25) +
+             (BR_Coverage × 0.25) +
+             (Production_Readiness × 0.2) -
              (Risk_Factor × 0.1)
 ```
 
