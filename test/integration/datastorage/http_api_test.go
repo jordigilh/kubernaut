@@ -169,11 +169,14 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 
 	Context("DLQ fallback (DD-009)", func() {
 		It("should write to DLQ when PostgreSQL is unavailable", func() {
-			// Determine PostgreSQL container name based on environment
-			postgresContainer := "datastorage-postgres-test" // Local execution
+			// Skip this test in containerized environments (Docker Compose)
+			// Reason: Cannot stop sibling containers from inside a container without Docker-in-Docker
 			if os.Getenv("POSTGRES_HOST") != "" {
-				postgresContainer = "postgres" // Docker Compose
+				Skip("DLQ fallback test requires container orchestration - skipped in containerized environment (run locally with 'make test-integration-datastorage')")
 			}
+
+			// Determine PostgreSQL container name for local execution
+			postgresContainer := "datastorage-postgres-test"
 
 			// Stop PostgreSQL container to simulate database failure
 			GinkgoWriter.Printf("⚠️  Stopping PostgreSQL container '%s' to test DLQ fallback...\n", postgresContainer)
@@ -211,7 +214,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			// Wait for PostgreSQL to be fully ready
 			GinkgoWriter.Println("⏳ Waiting for PostgreSQL to be ready...")
 			Eventually(func() error {
-				checkCmd := exec.Command("podman", "exec", postgresContainer,
+				checkCmd := exec.Command("podman", "exec", "datastorage-postgres-test",
 					"pg_isready", "-U", "slm_user", "-d", "action_history")
 				return checkCmd.Run()
 			}, "30s", "1s").Should(Succeed(), "PostgreSQL should be ready after restart")
