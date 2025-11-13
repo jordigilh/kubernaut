@@ -5,7 +5,7 @@
 **Decision Maker**: Kubernaut Data Storage Team
 **Authority**: ADR-034 (Unified Audit), DD-STORAGE-008 (Playbook Schema), DD-STORAGE-009 (Audit Migration)
 **Affects**: Data Storage Service V1.0 MVP
-**Version**: 1.0
+**Version**: 1.3
 
 ---
 
@@ -13,6 +13,7 @@
 
 | Version | Date | Author | Changes | Status |
 |---------|------|--------|---------|--------|
+| v1.3 | 2025-11-13 | Test Package Fix | Corrected test package naming from `package datastorage_test` and `package audit_test` to `package datastorage` and `package audit` per TEST_PACKAGE_NAMING_STANDARD.md (white-box testing) | ✅ Approved |
 | v1.2 | 2025-11-13 | Compliance Update | Full template compliance (Option A) - Added Integration Test Env, Error Handling Philosophy, Days 7-12, Prerequisites, EOD templates, Template Compliance Tracking | ✅ Approved |
 | v1.1 | 2025-11-13 | Timeline Extension | Extended timeline from 6 to 11-12 days | ✅ Approved |
 | v1.0 | 2025-11-13 | Initial | V1.0 MVP implementation plan | ✅ Approved |
@@ -681,7 +682,7 @@ Create ADR-034 compliant unified audit table and shared library for all services
 **File**: `test/integration/datastorage/audit_events_schema_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
     . "github.com/onsi/ginkgo/v2"
@@ -938,13 +939,12 @@ psql "$DATABASE_URL" -c "SELECT create_audit_events_partition();"
 **File**: `test/unit/audit/audit_event_test.go`
 
 ```go
-package audit_test
+package audit
 
 import (
     "testing"
     "time"
 
-    "github.com/jordigilh/kubernaut/pkg/audit"
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
 )
@@ -1319,7 +1319,7 @@ Migrate Data Storage Service from `notification_audit` to unified `audit_events`
 **File**: `test/integration/datastorage/audit_event_repository_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
     "context"
@@ -1682,7 +1682,7 @@ Create playbook catalog table, models, and read-only repository.
 **File**: `test/integration/datastorage/playbook_catalog_schema_test.go`
 
 ```go
-package datastorage_test
+package datastorage
 
 import (
     . "github.com/onsi/ginkgo/v2"
