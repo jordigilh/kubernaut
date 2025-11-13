@@ -55,6 +55,7 @@
 | ADR-037 | Business Requirement (BR) Template Standard | ✅ Approved | 2025-11-05 | [ADR-037-business-requirement-template-standard.md](decisions/ADR-037-business-requirement-template-standard.md) |
 | ADR-038 | Asynchronous Buffered Audit Ingestion | ✅ Approved | 2025-11-08 | [ADR-038-async-buffered-audit-ingestion.md](decisions/ADR-038-async-buffered-audit-ingestion.md) |
 | ADR-039 | Complex Decision Documentation Pattern | ✅ Approved | 2025-11-06 | [ADR-039-complex-decision-documentation-pattern.md](decisions/ADR-039-complex-decision-documentation-pattern.md) |
+| ADR-040 | RemediationApprovalRequest CRD Architecture | ✅ Approved | 2025-11-13 | [ADR-040-remediation-approval-request-architecture.md](decisions/ADR-040-remediation-approval-request-architecture.md) |
 | DD-ARCH-001 | Data Access Pattern - Final Decision (Alternative 2 + REST) | ✅ Approved | 2025-11-02 | [DD-ARCH-001-FINAL-DECISION.md](decisions/DD-ARCH-001-FINAL-DECISION.md) |
 | DD-ARCH-001-A | Data Access Pattern Assessment (3 Alternatives) | 📊 Analysis | 2025-11-01 | [DD-ARCH-001-DATA-ACCESS-PATTERN-ASSESSMENT.md](analysis/DD-ARCH-001-DATA-ACCESS-PATTERN-ASSESSMENT.md) |
 | DD-ARCH-001-B | Interface Options Analysis (REST vs gRPC vs GraphQL) | 📊 Analysis | 2025-11-02 | [DD-ARCH-001-INTERFACE-OPTIONS-ANALYSIS.md](analysis/DD-ARCH-001-INTERFACE-OPTIONS-ANALYSIS.md) |
