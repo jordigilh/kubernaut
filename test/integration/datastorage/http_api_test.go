@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"time"
 
@@ -168,9 +169,15 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 
 	Context("DLQ fallback (DD-009)", func() {
 		It("should write to DLQ when PostgreSQL is unavailable", func() {
+			// Determine PostgreSQL container name based on environment
+			postgresContainer := "datastorage-postgres-test" // Local execution
+			if os.Getenv("POSTGRES_HOST") != "" {
+				postgresContainer = "postgres" // Docker Compose
+			}
+
 			// Stop PostgreSQL container to simulate database failure
-			GinkgoWriter.Println("⚠️  Stopping PostgreSQL to test DLQ fallback...")
-			stopCmd := exec.Command("podman", "stop", "datastorage-postgres-test")
+			GinkgoWriter.Printf("⚠️  Stopping PostgreSQL container '%s' to test DLQ fallback...\n", postgresContainer)
+			stopCmd := exec.Command("podman", "stop", postgresContainer)
 			stopOutput, err := stopCmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("Warning: Failed to stop PostgreSQL: %v\n%s\n", err, stopOutput)
@@ -194,8 +201,8 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			Expect(depth).To(BeNumerically(">", 0), "DLQ should contain at least one message")
 
 			// Restart PostgreSQL for subsequent tests
-			GinkgoWriter.Println("✅ Restarting PostgreSQL...")
-			startCmd := exec.Command("podman", "start", "datastorage-postgres-test")
+			GinkgoWriter.Printf("✅ Restarting PostgreSQL container '%s'...\n", postgresContainer)
+			startCmd := exec.Command("podman", "start", postgresContainer)
 			startOutput, err := startCmd.CombinedOutput()
 			if err != nil {
 				GinkgoWriter.Printf("Warning: Failed to restart PostgreSQL: %v\n%s\n", err, startOutput)
@@ -204,7 +211,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			// Wait for PostgreSQL to be fully ready
 			GinkgoWriter.Println("⏳ Waiting for PostgreSQL to be ready...")
 			Eventually(func() error {
-				checkCmd := exec.Command("podman", "exec", "datastorage-postgres-test",
+				checkCmd := exec.Command("podman", "exec", postgresContainer,
 					"pg_isready", "-U", "slm_user", "-d", "action_history")
 				return checkCmd.Run()
 			}, "30s", "1s").Should(Succeed(), "PostgreSQL should be ready after restart")
