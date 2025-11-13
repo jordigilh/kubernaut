@@ -1,14 +1,15 @@
 # Kubernaut Service Dependency Map
 
-**Version**: 1.1
-**Last Updated**: October 31, 2025
+**Version**: 1.2
+**Last Updated**: November 13, 2025
 **Status**: ✅ Authoritative Reference
-**Scope**: All 11 Kubernaut V1 Services
+**Scope**: 10 Kubernaut V1 Services
 
 ## 📋 Version History
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 1.2 | Nov 13, 2025 | **Context API Deprecation**: Added deprecation notice. Context API deprecated in favor of Data Storage Service (DD-CONTEXT-006). Updated service count from 11 to 10. All Context API functionality now provided by Data Storage Service. | AI Assistant |
 | 1.1 | Oct 31, 2025 | Updated service dependency diagram: Kubernetes Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
 | 1.0 | Oct 6, 2025 | Initial version | - |
 
@@ -736,23 +737,23 @@ graph TD
 |---------|-----------|-------------|-------------|
 | **Gateway** | Redis, Remediation Orchestrator | External sources | P0 (Critical) |
 | **Remediation Orchestrator** | K8s API | Gateway, All child controllers | P0 (Critical) |
-| **Remediation Processor** | Context API, Data Storage | Remediation Orchestrator | P1 (High) |
-| **AI Analysis** | HolmesGPT, Context API, Data Storage | Remediation Orchestrator | P1 (High) |
-| **Workflow Execution** | Context API, Data Storage | Remediation Orchestrator | P1 (High) |
+| **Remediation Processor** | Data Storage | Remediation Orchestrator | P1 (High) |
+| **AI Analysis** | HolmesGPT, Data Storage | Remediation Orchestrator | P1 (High) |
+| **Workflow Execution** | Data Storage | Remediation Orchestrator | P1 (High) |
 | **Kubernetes Executor** | K8s API, Data Storage | Workflow Execution | P1 (High) |
 | **Notification** | External channels | All controllers | P2 (Medium) |
 | **HolmesGPT API** | External LLM | AI Analysis | P2 (Medium) |
-| **Context API** | PostgreSQL, Vector DB | RP, AI, WE | P2 (Medium) |
-| **Data Storage** | PostgreSQL, Vector DB | All controllers, Context API | P2 (Medium) |
+| **Data Storage** | PostgreSQL, Vector DB | All controllers | P2 (Medium) |
+| **Dynamic Toolset** | HolmesGPT API | HolmesGPT API | P2 (Medium) |
 
 ---
 
 ### Total Dependency Count
-- **Services**: 11 (5 CRD controllers + 6 HTTP services)
+- **Services**: 10 (4 CRD controllers + 6 HTTP services)
 - **Databases**: 3 (Redis, PostgreSQL, Vector DB)
 - **External Systems**: 8+ (Prometheus, K8s, Slack, etc.)
 - **CRDs**: 5 (RemediationRequest + 4 child CRDs)
-- **HTTP Endpoints**: 15+ documented
+- **HTTP Endpoints**: 12+ documented
 
 ---
 
@@ -766,6 +767,11 @@ graph TD
 - [Kubernetes TokenReviewer Authentication](./KUBERNETES_TOKENREVIEWER_AUTH.md)
 
 ---
+
+**Document Status**: ✅ Complete
+**Last Updated**: October 6, 2025
+**Maintainer**: Kubernaut Architecture Team
+**Version**: 1.0
 
 **Document Status**: ✅ Complete
 **Last Updated**: October 6, 2025
