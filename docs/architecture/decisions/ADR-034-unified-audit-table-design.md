@@ -329,10 +329,53 @@ CREATE TABLE audit_events (
 
 ### Phase 3: Other Services (Future)
 
-- Context API: Query execution audits
-- AI Analysis: LLM call audits
-- Workflow: Step execution audits
-- Execution: Action execution audits
+**Service Audit Requirements** (7 services):
+
+1. **Signal Processing Service** (6 hours)
+   - `signalprocessing.enrichment.started`
+   - `signalprocessing.enrichment.completed`
+   - `signalprocessing.categorization.completed`
+   - `signalprocessing.error.occurred`
+
+2. **AI Analysis Service** (6 hours)
+   - `aianalysis.investigation.started`
+   - `aianalysis.investigation.completed`
+   - `aianalysis.recommendation.generated`
+   - `aianalysis.approval.required`
+   - `aianalysis.error.occurred`
+
+3. **RemediationApprovalRequest Controller** (4 hours) - **NEW**
+   - `remediationapprovalrequest.requested` (actor: remediationorchestrator)
+   - `remediationapprovalrequest.approved` (actor: operator or remediationapprovalrequest-controller)
+   - `remediationapprovalrequest.rejected` (actor: operator or remediationapprovalrequest-controller)
+   - `remediationapprovalrequest.expired` (actor: remediationapprovalrequest-controller)
+   - **Actor Pattern**:
+     - `actor_type: "service"`, `actor_id: "remediationorchestrator"` → Creation event
+     - `actor_type: "user"`, `actor_id: "operator@example.com"` → Manual approval/rejection
+     - `actor_type: "service"`, `actor_id: "remediationapprovalrequest-controller"` → Timeout expiration
+
+4. **Remediation Orchestrator Service** (6 hours)
+   - `remediationorchestrator.request.created`
+   - `remediationorchestrator.phase.transitioned`
+   - `remediationorchestrator.approval.requested` (creates RemediationApprovalRequest)
+   - `remediationorchestrator.child.created`
+   - `remediationorchestrator.error.occurred`
+
+5. **Remediation Execution Service** (6 hours)
+   - `remediationexecution.pipeline.started`
+   - `remediationexecution.pipeline.completed`
+   - `remediationexecution.task.executed`
+   - `remediationexecution.error.occurred`
+
+6. **Effectiveness Monitor Service** (4 hours)
+   - `effectivenessmonitor.evaluation.started`
+   - `effectivenessmonitor.evaluation.completed`
+   - `effectivenessmonitor.playbook.updated`
+
+7. **Notification Service** (4 hours)
+   - `notification.sent`
+   - `notification.failed`
+   - `notification.escalated`
 
 **Estimated per service**: 4-6 hours
 
@@ -422,6 +465,7 @@ CREATE TABLE audit_events (
 
 - **ADR-032**: [Data Access Layer Isolation](./ADR-032-data-access-layer-isolation.md) - Mandates Data Storage Service for all DB access
 - **ADR-038**: [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) - Defines how services write audit traces (async buffered pattern)
+- **ADR-040**: [RemediationApprovalRequest CRD Architecture](./ADR-040-remediation-approval-request-architecture.md) - Defines approval workflow audit events and actor patterns
 - **DD-AUDIT-001**: [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) - Defines who writes audit traces (distributed pattern)
 - **DD-AUDIT-002**: [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) - Implementation details for `pkg/audit/` shared library
 - **DD-AUDIT-003**: [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) - Defines which 8 of 11 services must generate audit traces
