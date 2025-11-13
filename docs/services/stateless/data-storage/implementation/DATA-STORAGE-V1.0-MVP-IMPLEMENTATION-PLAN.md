@@ -76,6 +76,66 @@
 
 ---
 
+## 🔍 **Integration Test Environment Decision**
+
+**Decision**: 🟢 **PODMAN** (PostgreSQL + Redis)
+
+**Rationale**:
+- Data Storage Service is stateless HTTP API
+- No Kubernetes operations (no CRD writes/reads)
+- Requires PostgreSQL 16+ (pgvector extension) for audit and playbook storage
+- Requires Redis 7+ for Dead Letter Queue (DLQ) audit integrity
+- Uses testcontainers-go for database integration tests
+
+**Prerequisites**:
+- ✅ Docker/Podman available
+- ✅ testcontainers-go configured
+- ✅ PostgreSQL 16+ with pgvector extension
+- ✅ Redis 7+ for DLQ testing
+
+**Test Infrastructure**:
+```go
+// Integration test setup using testcontainers-go
+func setupTestContainers(ctx context.Context) (*testcontainers.Container, *testcontainers.Container, error) {
+    // PostgreSQL with pgvector
+    postgresContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+        ContainerRequest: testcontainers.ContainerRequest{
+            Image:        "pgvector/pgvector:pg16",
+            ExposedPorts: []string{"5432/tcp"},
+            Env: map[string]string{
+                "POSTGRES_DB":       "kubernaut_test",
+                "POSTGRES_USER":     "test",
+                "POSTGRES_PASSWORD": "test",
+            },
+            WaitStrategy: wait.ForLog("database system is ready to accept connections"),
+        },
+        Started: true,
+    })
+    if err != nil {
+        return nil, nil, err
+    }
+
+    // Redis for DLQ
+    redisContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+        ContainerRequest: testcontainers.ContainerRequest{
+            Image:        "redis:7-alpine",
+            ExposedPorts: []string{"6379/tcp"},
+            WaitStrategy: wait.ForLog("Ready to accept connections"),
+        },
+        Started: true,
+    })
+    if err != nil {
+        return nil, nil, err
+    }
+
+    return postgresContainer, redisContainer, nil
+}
+```
+
+**Confidence**: 100% (standard pattern for stateless HTTP APIs with database dependencies)
+
+---
+
 ## 📅 **IMPLEMENTATION TIMELINE**
 
 ### **Overview**
