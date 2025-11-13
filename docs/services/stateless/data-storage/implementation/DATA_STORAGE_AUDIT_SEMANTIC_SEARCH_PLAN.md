@@ -1,34 +1,51 @@
-# Data Storage Service - Audit Persistence & Semantic Search Implementation Plan
+# Data Storage Service - Playbook Catalog Semantic Search Implementation Plan
 
-**Version**: v1.0
+**Version**: v1.1
 **Date**: November 13, 2025
 **Branch**: `feature/datastorage-audit-semantic-search`
-**Status**: 📋 **PLANNING PHASE**
+**Status**: 📋 **PLANNING PHASE - SCOPE CORRECTED**
 **Estimated Effort**: 3-4 days (24-32 hours)
+
+---
+
+## 📝 **Changelog**
+
+### **v1.1** (November 13, 2025)
+- **CRITICAL SCOPE CORRECTION**: Semantic search is for **playbook catalog**, not audit records
+  - ❌ **REMOVED**: Audit record embedding generation (deferred to V2.0 RAR)
+  - ✅ **ADDED**: Playbook catalog embedding generation (V1.0 requirement per DD-CONTEXT-005)
+  - **Rationale**: DD-CONTEXT-005 "Filter Before LLM" pattern requires playbook semantic search
+  - **Impact**: Cache strategy changed from audit embeddings to playbook embeddings
+- **CORRECTED**: BR-STORAGE-012 scope (playbook catalog, not audit text)
+- **CORRECTED**: BR-STORAGE-009 cache strategy (playbook embeddings, 24h TTL)
+
+### **v1.0** (November 13, 2025)
+- Initial implementation plan (INCORRECT SCOPE - audit embeddings)
 
 ---
 
 ## 📋 **Executive Summary**
 
-This plan addresses the two remaining features for Data Storage Service V1.0:
+This plan addresses the remaining feature for Data Storage Service V1.0:
 
-1. **Real Embedding Generation** (BR-STORAGE-012) - Replace mock embeddings with sentence-transformers model
-2. **Semantic Search Integration** (BR-STORAGE-013) - Integrate pgvector for vector similarity search
+**Playbook Catalog Semantic Search** (BR-STORAGE-012, BR-STORAGE-013) - Enable Context API to find playbooks semantically similar to incident descriptions
+
+**⚠️ CRITICAL CORRECTION**: Previous plan incorrectly focused on audit record embeddings. V1.0 semantic search is for **playbook catalog** (DD-CONTEXT-005 requirement).
 
 **Current State**:
 - ✅ Notification audit persistence fully implemented
 - ✅ Dual-write coordinator architecture complete
 - ✅ pgvector schema and indexes ready
-- ⏸️ Embedding generation using mock data (TODO on line 227, 333)
-- ⏸️ Semantic search not integrated with real Vector DB
-- ⏸️ Aggregation methods have TODO comments (line 30)
+- ❌ **INCORRECT**: Embedding generation for audit records (not needed in V1.0)
+- ⏸️ **MISSING**: Playbook catalog storage and embedding generation
+- ⏸️ **MISSING**: Playbook semantic search endpoint
 
 **Target State**:
-- ✅ Real embedding generation using sentence-transformers/all-MiniLM-L6-v2
-- ✅ Semantic search fully integrated with pgvector
-- ✅ Dual-write coordinator using real Vector DB client
-- ✅ Integration tests for embedding pipeline and semantic search
-- ✅ Aggregation methods using real PostgreSQL queries (already implemented, just remove TODO)
+- ✅ Playbook catalog storage in PostgreSQL
+- ✅ Real embedding generation for playbooks using sentence-transformers/all-MiniLM-L6-v2
+- ✅ Playbook embedding caching (24h TTL, invalidate on update)
+- ✅ Semantic search endpoint for Context API (DD-CONTEXT-005 integration)
+- ✅ Integration tests for playbook semantic search
 
 ---
 
@@ -36,12 +53,15 @@ This plan addresses the two remaining features for Data Storage Service V1.0:
 
 ### **Primary Requirements**
 
-#### **BR-STORAGE-012: Embedding Generation**
+#### **BR-STORAGE-012: Playbook Catalog Embedding Generation** (v1.1 - CORRECTED)
 - **Priority**: P0
-- **Description**: Generate 384-dimensional embeddings from audit text for semantic search
+- **Description**: Generate 384-dimensional embeddings from playbook catalog content for semantic search
 - **Model**: sentence-transformers/all-MiniLM-L6-v2
-- **Current Status**: Mock implementation (generateMockEmbedding)
-- **Target**: Real embedding generation with caching
+- **Current Status**: Not implemented (previous plan had incorrect scope)
+- **Target**: Real playbook embedding generation with caching
+- **Scope Change**:
+  - ❌ **OLD (v1.0)**: Generate embeddings from audit text (INCORRECT)
+  - ✅ **NEW (v1.1)**: Generate embeddings from playbook catalog (CORRECT)
 
 #### **BR-STORAGE-013: Query Performance Metrics**
 - **Priority**: P1
@@ -97,28 +117,37 @@ This plan addresses the two remaining features for Data Storage Service V1.0:
    - ⚠️ TODO comment on line 30 is misleading (REFACTOR phase already done)
    - ✅ All tests passing
 
-### **What Needs Implementation** ⏸️
+### **What Needs Implementation** ⏸️ (v1.1 - CORRECTED SCOPE)
 
-1. **Real Embedding Generation**
-   - Location: `pkg/datastorage/embedding/pipeline.go`
-   - Replace: `mockEmbeddingAPI` with real sentence-transformers client
-   - Integration: HTTP API to Python embedding service OR Go binding
+1. **Playbook Catalog Storage** (NEW - v1.1)
+   - Location: `pkg/datastorage/models/playbook.go` (new file)
+   - Schema: `playbook_catalog` table with pgvector column
+   - Fields: playbook_id, version, name, description, content, labels, embedding vector(384)
+   - Migration: Create table and HNSW index
 
-2. **Vector DB Client**
-   - Location: `pkg/datastorage/dualwrite/coordinator.go`
-   - Replace: `mockVectorDB` with pgvector client
-   - Integration: Use PostgreSQL connection with vector operations
+2. **Playbook Embedding Generation** (CORRECTED - v1.1)
+   - Location: `pkg/datastorage/embedding/playbook_pipeline.go` (new file)
+   - Replace: Audit embedding logic (REMOVED)
+   - Integration: HTTP API to Python embedding service for playbook content
+   - Cache: Redis with 24h TTL, key: `embedding:playbook:{id}:{version}`
 
-3. **Semantic Search Integration**
-   - Location: `pkg/datastorage/query/service.go`
-   - Replace: Mock embedding generation (lines 227-229)
-   - Integration: Call real embedding pipeline + pgvector query
+3. **Playbook Semantic Search Endpoint** (NEW - v1.1)
+   - Location: `pkg/datastorage/server/playbook_handlers.go` (new file)
+   - Endpoint: `GET /api/v1/playbooks/search?query={text}&label.environment={env}`
+   - Integration: DD-CONTEXT-005 "Filter Before LLM" pattern
+   - Response: Minimal schema (playbook_id, version, description, confidence)
 
-4. **Integration Tests**
+4. **Playbook Cache Invalidation** (NEW - v1.1)
+   - Location: `pkg/datastorage/embedding/playbook_cache.go` (new file)
+   - Strategy: Invalidate on playbook update (DELETE pattern: `embedding:playbook:{id}:*`)
+   - Webhook: Listen for playbook update events
+
+5. **Integration Tests** (UPDATED - v1.1)
    - Location: `test/integration/datastorage/`
-   - Add: Embedding pipeline integration tests
-   - Add: Semantic search end-to-end tests
-   - Add: Dual-write with real Vector DB tests
+   - Add: Playbook embedding generation tests
+   - Add: Playbook semantic search tests
+   - Add: Cache hit/miss validation for playbook queries
+   - Remove: Audit embedding tests (deferred to V2.0)
 
 ---
 
@@ -314,7 +343,7 @@ func (s *QueryService) SemanticSearch(ctx context.Context, params SemanticSearch
     // 2. Perform vector similarity search with label filtering
     // DD-CONTEXT-005: All filtering happens at query time, not in LLM
     query := `
-        SELECT 
+        SELECT
             action_id,
             1 - (embedding <=> $1) AS similarity,
             -- Fetch audit data for response
@@ -333,13 +362,13 @@ func (s *QueryService) SemanticSearch(ctx context.Context, params SemanticSearch
     labelFilters := []string{}
     args := []interface{}{pgvector.NewVector(queryEmbedding), params.MinConfidence}
     argIndex := 3
-    
+
     for key, value := range params.Labels {
         labelFilters = append(labelFilters, fmt.Sprintf("labels->>'%s' = $%d", key, argIndex))
         args = append(args, value)
         argIndex++
     }
-    
+
     if len(labelFilters) > 0 {
         query += " AND " + strings.Join(labelFilters, " AND ")
     }
@@ -372,7 +401,7 @@ func (s *QueryService) SemanticSearch(ctx context.Context, params SemanticSearch
             labelsJSON     []byte
         )
 
-        err := rows.Scan(&actionID, &similarity, &notificationID, &messageSummary, 
+        err := rows.Scan(&actionID, &similarity, &notificationID, &messageSummary,
                         &status, &sentAt, &labelsJSON)
         if err != nil {
             s.logger.Warn("Failed to scan search result", zap.Error(err))
