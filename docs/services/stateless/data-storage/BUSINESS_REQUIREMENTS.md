@@ -465,7 +465,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Technical Details**:
   - Parameterized queries prevent SQL injection with Unicode
   - UTF-8 encoding preserved through PostgreSQL
-  - Test cases: 
+  - Test cases:
     - Arabic (مساحة-الإنتاج)
     - Chinese (生产环境)
     - Thai (สภาพแวดล้อม-การผลิต)

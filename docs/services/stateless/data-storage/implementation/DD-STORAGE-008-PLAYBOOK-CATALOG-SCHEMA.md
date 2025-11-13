@@ -1,10 +1,11 @@
 # DD-STORAGE-008: Playbook Catalog Schema for Data Storage Service
 
 **Date**: November 13, 2025
-**Status**: ✅ **RECOMMENDED**
+**Status**: ✅ **APPROVED** (with mitigations for critical validation gaps)
 **Decision Maker**: Kubernaut Data Storage Team
 **Authority**: ADR-033 (Playbook Catalog), DD-CONTEXT-005 (Minimal LLM Response Schema)
 **Affects**: Data Storage Service V1.0 MVP, Context API integration
+**Version**: 1.1 (updated with version validation requirements and approved mitigations)
 
 ---
 
@@ -27,9 +28,16 @@
 
 ## ✅ **Decision**
 
-**APPROVED**: Implement `playbook_catalog` table with composite primary key (playbook_id, version) and lifecycle status management.
+**APPROVED**: Implement `playbook_catalog` table with composite primary key (playbook_id, version), lifecycle status management, and **semantic version validation**.
 
-**Confidence**: 95%
+**Confidence**: 98% (increased from 95% after triage and mitigation approval)
+
+**Critical Mitigations Approved**:
+1. ✅ **Semantic version validation** using `golang.org/x/mod/semver` (see "Version Validation & Traceability" section)
+2. ✅ **Version increment enforcement** (new version must be > current latest)
+3. ✅ **Immutability enforcement** with explicit validation and clear error messages
+4. ✅ **Version history API** for traceability (get specific version, diff versions)
+5. ✅ **Change metadata** (version_notes, change_summary, approved_by)
 
 ---
 
@@ -41,7 +49,7 @@
 CREATE TABLE playbook_catalog (
     -- Identity (Composite Primary Key)
     playbook_id VARCHAR(255) NOT NULL,
-    version VARCHAR(50) NOT NULL,
+    version VARCHAR(50) NOT NULL,           -- MUST be semantic version (e.g., v1.0.0, v1.2.3)
     
     -- Metadata
     name VARCHAR(255) NOT NULL,
@@ -59,16 +67,22 @@ CREATE TABLE playbook_catalog (
     -- Semantic Search
     embedding vector(384),                   -- sentence-transformers/all-MiniLM-L6-v2
     
-    -- Lifecycle Management (NEW - User Requirement)
+    -- Lifecycle Management (User Requirement: disable + keep history)
     status VARCHAR(20) NOT NULL DEFAULT 'active',  -- 'active', 'disabled', 'deprecated', 'archived'
     disabled_at TIMESTAMP WITH TIME ZONE,
     disabled_by VARCHAR(255),
     disabled_reason TEXT,
     
-    -- Version Management
+    -- Version Management (User Requirement: traceability + immutability)
     is_latest_version BOOLEAN NOT NULL DEFAULT false,
     previous_version VARCHAR(50),            -- Link to previous version
     deprecation_notice TEXT,                 -- Reason for deprecation
+    
+    -- Version Change Metadata (TRIAGE MITIGATION: approved)
+    version_notes TEXT,                      -- Release notes / changelog
+    change_summary TEXT,                     -- Auto-generated summary of changes
+    approved_by VARCHAR(255),                -- Who approved this version
+    approved_at TIMESTAMP WITH TIME ZONE,    -- When was this version approved
     
     -- Success Metrics (from ADR-033)
     expected_success_rate DECIMAL(4,3),      -- Expected success rate (0.000-1.000)
@@ -84,7 +98,7 @@ CREATE TABLE playbook_catalog (
     updated_by VARCHAR(255),
     
     -- Constraints
-    PRIMARY KEY (playbook_id, version),
+    PRIMARY KEY (playbook_id, version),      -- IMMUTABILITY: Cannot overwrite existing version
     CHECK (status IN ('active', 'disabled', 'deprecated', 'archived')),
     CHECK (expected_success_rate IS NULL OR (expected_success_rate >= 0 AND expected_success_rate <= 1)),
     CHECK (actual_success_rate IS NULL OR (actual_success_rate >= 0 AND actual_success_rate <= 1)),
@@ -142,6 +156,8 @@ SELECT * FROM playbook_catalog WHERE playbook_id = 'pod-oom-recovery' AND versio
 ```
 
 **Confidence**: 98% (industry standard pattern)
+
+**Triage Mitigation**: Composite PK prevents overwrites at database level, but application-level validation provides clear error messages (see DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE Fix 2).
 
 ---
 
@@ -727,6 +743,7 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 - **ADR-034**: Unified Audit Table Design (similar lifecycle management pattern)
 - **DD-STORAGE-006**: V1.0 No-Cache Decision (no playbook embedding caching in V1.0)
 - **DD-STORAGE-007**: Redis Requirement Reassessment (Redis mandatory for DLQ)
+- **DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE**: Critical gaps in version validation and traceability
 
 ---
 
@@ -738,11 +755,251 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 - [ ] Create repository: `pkg/datastorage/repository/playbook_repository.go`
 
 ### **Phase 2: REST API** (Day 2, 8 hours)
-- [ ] Implement `POST /api/v1/playbooks` (create/update)
+- [ ] **CRITICAL**: Implement version validation in `POST /api/v1/playbooks` (see DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE)
+  - [ ] Validate semantic version format (semver)
+  - [ ] Validate version increment (must be > current latest)
+  - [ ] Prevent overwriting existing versions (immutability)
 - [ ] Implement `GET /api/v1/playbooks/search` (semantic search)
 - [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/disable`
 - [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/enable`
 - [ ] Implement `GET /api/v1/playbooks/{id}/versions`
+- [ ] Implement `GET /api/v1/playbooks/{id}/versions/{version}` (get specific version)
+- [ ] Implement `GET /api/v1/playbooks/{id}/versions/{v1}/diff/{v2}` (compare versions)
+
+### **Phase 3: Embedding Generation** (Day 3, 8 hours)
+- [ ] Python embedding service (sentence-transformers)
+- [ ] Go HTTP client: `pkg/datastorage/embedding/client.go`
+- [ ] Playbook embedding pipeline: `pkg/datastorage/embedding/playbook_pipeline.go`
+
+### **Phase 4: Integration Tests** (Day 4, 8 hours)
+- [ ] Test playbook CRUD operations
+- [ ] Test semantic search with label filtering
+- [ ] Test lifecycle management (disable/enable)
+- [ ] Test version management
+
+---
+
+**Document Version**: 1.0
+**Last Updated**: November 13, 2025
+**Status**: ✅ **RECOMMENDED** (95% confidence)
+**Next Review**: After V1.0 MVP implementation
+
+
+      "deprecation_notice": "Replaced by v1.2 with improved memory analysis",
+      "created_at": "2025-08-15T10:00:00Z"
+    },
+    {
+      "version": "v1.0",
+      "status": "archived",
+      "is_latest_version": false,
+      "actual_success_rate": 0.78,
+      "total_executions": 100,
+      "created_at": "2025-06-01T10:00:00Z"
+    }
+  ],
+  "total_versions": 3
+}
+```
+
+---
+
+## 📊 **Lifecycle Management Workflows**
+
+### **Workflow 1: Create New Version**
+
+```sql
+-- Step 1: Create new version
+INSERT INTO playbook_catalog (
+    playbook_id, version, name, description, content, labels, 
+    status, is_latest_version, previous_version
+) VALUES (
+    'pod-oom-recovery', 'v1.2', 'Pod OOM Recovery', 
+    'Increases memory limits and restarts pod', '<content>', 
+    '{"kubernaut.io/environment": "production"}',
+    'active', true, 'v1.1'
+);
+
+-- Step 2: Mark previous version as not latest
+UPDATE playbook_catalog
+SET is_latest_version = false
+WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.1';
+```
+
+---
+
+### **Workflow 2: Disable Playbook (Temporary)**
+
+```sql
+UPDATE playbook_catalog
+SET 
+    status = 'disabled',
+    disabled_at = NOW(),
+    disabled_by = 'operator@company.com',
+    disabled_reason = 'High failure rate in production'
+WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
+```
+
+---
+
+### **Workflow 3: Re-enable Playbook**
+
+```sql
+UPDATE playbook_catalog
+SET 
+    status = 'active',
+    disabled_at = NULL,
+    disabled_by = NULL,
+    disabled_reason = NULL
+WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
+```
+
+---
+
+### **Workflow 4: Deprecate Playbook (Permanent)**
+
+```sql
+-- Step 1: Mark old version as deprecated
+UPDATE playbook_catalog
+SET 
+    status = 'deprecated',
+    deprecation_notice = 'Replaced by v1.2 with improved memory analysis',
+    is_latest_version = false
+WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.1';
+
+-- Step 2: Create new version (see Workflow 1)
+```
+
+---
+
+### **Workflow 5: Archive Playbook (Permanent Retirement)**
+
+```sql
+UPDATE playbook_catalog
+SET 
+    status = 'archived',
+    is_latest_version = false
+WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.0';
+```
+
+---
+
+## 🎯 **Query Patterns for AI Selection**
+
+### **Pattern 1: Active Playbooks Only (Default)**
+
+```sql
+SELECT * FROM playbook_catalog
+WHERE status = 'active' AND is_latest_version = true;
+```
+
+---
+
+### **Pattern 2: Semantic Search with Label Filtering (DD-CONTEXT-005)**
+
+```sql
+SELECT 
+    playbook_id,
+    version,
+    description,
+    1 - (embedding <=> $query_embedding) AS confidence
+FROM playbook_catalog
+WHERE status = 'active'
+  AND is_latest_version = true
+  AND labels->>'kubernaut.io/environment' = 'production'
+  AND labels->>'kubernaut.io/priority' = 'P0'
+  AND labels->>'kubernaut.io/risk-tolerance' = 'low'
+  AND 1 - (embedding <=> $query_embedding) >= 0.7
+ORDER BY embedding <=> $query_embedding
+LIMIT 10;
+```
+
+---
+
+### **Pattern 3: Success Rate Filtering**
+
+```sql
+SELECT * FROM playbook_catalog
+WHERE status = 'active'
+  AND is_latest_version = true
+  AND total_executions >= 10  -- Statistical significance
+  AND actual_success_rate >= 0.80
+ORDER BY actual_success_rate DESC, total_executions DESC;
+```
+
+---
+
+## ✅ **Benefits**
+
+### **User Requirement: Disable Playbooks**
+- ✅ **Temporary disable**: Set status='disabled' (can re-enable)
+- ✅ **Permanent retirement**: Set status='deprecated' or 'archived'
+- ✅ **Audit trail**: Capture who/when/why disabled
+- ✅ **Historical data preserved**: Never delete playbook records
+
+### **Version Management**
+- ✅ **Multiple versions coexist**: Composite primary key (playbook_id, version)
+- ✅ **Latest version tracking**: `is_latest_version` flag
+- ✅ **Version history**: `previous_version` link
+- ✅ **Historical analysis**: All versions queryable
+
+### **DD-CONTEXT-005 Compliance**
+- ✅ **Label-based filtering**: JSONB labels with GIN index
+- ✅ **Semantic search**: pgvector embedding with HNSW index
+- ✅ **Minimal response**: 4 fields (playbook_id, version, description, confidence)
+
+### **ADR-033 Compliance**
+- ✅ **Success rate tracking**: actual_success_rate calculated from executions
+- ✅ **Statistical significance**: total_executions for confidence
+- ✅ **AI selection**: Query by success rate and execution count
+
+---
+
+## 📊 **Confidence Assessment**
+
+**Overall Confidence**: **95%**
+
+**Breakdown**:
+- **Schema design**: 98% (industry standard composite key + lifecycle management)
+- **Lifecycle management**: 95% (meets user requirement for disable + historical data)
+- **DD-CONTEXT-005 compliance**: 100% (authoritative requirement)
+- **ADR-033 compliance**: 90% (success metrics tracking)
+- **Version management**: 98% (standard pattern)
+
+**Why 95% (not 100%)**:
+- 5% uncertainty: Potential need for additional metadata fields not yet discovered
+  - **Mitigation**: JSONB labels allow adding new metadata without schema changes
+
+---
+
+## 🔗 **Related Decisions**
+
+- **ADR-033**: Remediation Playbook Catalog (defines playbook structure)
+- **DD-CONTEXT-005**: Minimal LLM Response Schema (defines query/response requirements)
+- **ADR-034**: Unified Audit Table Design (similar lifecycle management pattern)
+- **DD-STORAGE-006**: V1.0 No-Cache Decision (no playbook embedding caching in V1.0)
+- **DD-STORAGE-007**: Redis Requirement Reassessment (Redis mandatory for DLQ)
+- **DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE**: Critical gaps in version validation and traceability
+
+---
+
+## 📋 **Implementation Checklist**
+
+### **Phase 1: Schema Creation** (Day 1, 4 hours)
+- [ ] Create migration: `migrations/013_playbook_catalog.sql`
+- [ ] Create Go model: `pkg/datastorage/models/playbook.go`
+- [ ] Create repository: `pkg/datastorage/repository/playbook_repository.go`
+
+### **Phase 2: REST API** (Day 2, 8 hours)
+- [ ] **CRITICAL**: Implement version validation in `POST /api/v1/playbooks` (see DD-STORAGE-008-VERSION-TRACEABILITY-TRIAGE)
+  - [ ] Validate semantic version format (semver)
+  - [ ] Validate version increment (must be > current latest)
+  - [ ] Prevent overwriting existing versions (immutability)
+- [ ] Implement `GET /api/v1/playbooks/search` (semantic search)
+- [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/disable`
+- [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/enable`
+- [ ] Implement `GET /api/v1/playbooks/{id}/versions`
+- [ ] Implement `GET /api/v1/playbooks/{id}/versions/{version}` (get specific version)
+- [ ] Implement `GET /api/v1/playbooks/{id}/versions/{v1}/diff/{v2}` (compare versions)
 
 ### **Phase 3: Embedding Generation** (Day 3, 8 hours)
 - [ ] Python embedding service (sentence-transformers)
