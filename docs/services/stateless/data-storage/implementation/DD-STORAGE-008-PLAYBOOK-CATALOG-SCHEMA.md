@@ -50,53 +50,53 @@ CREATE TABLE playbook_catalog (
     -- Identity (Composite Primary Key)
     playbook_id VARCHAR(255) NOT NULL,
     version VARCHAR(50) NOT NULL,           -- MUST be semantic version (e.g., v1.0.0, v1.2.3)
-    
+
     -- Metadata
     name VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     owner VARCHAR(255),                      -- Team or user responsible
     maintainer VARCHAR(255),                 -- Contact email
-    
+
     -- Content
     content TEXT NOT NULL,                   -- Full playbook YAML/JSON (Tekton Task)
     content_hash VARCHAR(64) NOT NULL,       -- SHA-256 hash for integrity
-    
+
     -- Labels (JSONB for flexible filtering)
     labels JSONB NOT NULL,                   -- DD-CONTEXT-005 label matching
-    
+
     -- Semantic Search
     embedding vector(384),                   -- sentence-transformers/all-MiniLM-L6-v2
-    
+
     -- Lifecycle Management (User Requirement: disable + keep history)
     status VARCHAR(20) NOT NULL DEFAULT 'active',  -- 'active', 'disabled', 'deprecated', 'archived'
     disabled_at TIMESTAMP WITH TIME ZONE,
     disabled_by VARCHAR(255),
     disabled_reason TEXT,
-    
+
     -- Version Management (User Requirement: traceability + immutability)
     is_latest_version BOOLEAN NOT NULL DEFAULT false,
     previous_version VARCHAR(50),            -- Link to previous version
     deprecation_notice TEXT,                 -- Reason for deprecation
-    
+
     -- Version Change Metadata (TRIAGE MITIGATION: approved)
     version_notes TEXT,                      -- Release notes / changelog
     change_summary TEXT,                     -- Auto-generated summary of changes
     approved_by VARCHAR(255),                -- Who approved this version
     approved_at TIMESTAMP WITH TIME ZONE,    -- When was this version approved
-    
+
     -- Success Metrics (from ADR-033)
     expected_success_rate DECIMAL(4,3),      -- Expected success rate (0.000-1.000)
     expected_duration_seconds INTEGER,       -- Expected execution time
     actual_success_rate DECIMAL(4,3),        -- Calculated from execution history
     total_executions INTEGER DEFAULT 0,      -- Number of times executed
     successful_executions INTEGER DEFAULT 0, -- Number of successful executions
-    
+
     -- Audit Trail
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     created_by VARCHAR(255),
     updated_by VARCHAR(255),
-    
+
     -- Constraints
     PRIMARY KEY (playbook_id, version),      -- IMMUTABILITY: Cannot overwrite existing version
     CHECK (status IN ('active', 'disabled', 'deprecated', 'archived')),
@@ -223,13 +223,13 @@ SELECT * FROM playbook_catalog;
 **Query Pattern**:
 ```sql
 -- Filter by environment
-SELECT * FROM playbook_catalog 
-WHERE status = 'active' 
+SELECT * FROM playbook_catalog
+WHERE status = 'active'
   AND labels->>'kubernaut.io/environment' = 'production';
 
 -- Filter by multiple labels
-SELECT * FROM playbook_catalog 
-WHERE status = 'active' 
+SELECT * FROM playbook_catalog
+WHERE status = 'active'
   AND labels->>'kubernaut.io/environment' = 'production'
   AND labels->>'kubernaut.io/priority' = 'P0'
   AND labels->>'kubernaut.io/risk-tolerance' = 'low';
@@ -259,7 +259,7 @@ WHERE status = 'active'
 **Query Pattern**:
 ```sql
 -- Semantic search (cosine similarity)
-SELECT 
+SELECT
     playbook_id,
     version,
     description,
@@ -291,7 +291,7 @@ LIMIT 10;
 ```sql
 -- Update success rate after execution
 UPDATE playbook_catalog
-SET 
+SET
     total_executions = total_executions + 1,
     successful_executions = successful_executions + CASE WHEN $success THEN 1 ELSE 0 END,
     actual_success_rate = (successful_executions + CASE WHEN $success THEN 1 ELSE 0 END)::DECIMAL / (total_executions + 1)
@@ -329,41 +329,41 @@ type Playbook struct {
     // Identity
     PlaybookID string `json:"playbook_id" db:"playbook_id"`
     Version    string `json:"version" db:"version"`
-    
+
     // Metadata
     Name        string  `json:"name" db:"name"`
     Description string  `json:"description" db:"description"`
     Owner       *string `json:"owner,omitempty" db:"owner"`
     Maintainer  *string `json:"maintainer,omitempty" db:"maintainer"`
-    
+
     // Content
     Content     string `json:"content" db:"content"`
     ContentHash string `json:"content_hash" db:"content_hash"`
-    
+
     // Labels (JSONB)
     Labels map[string]string `json:"labels" db:"labels"`
-    
+
     // Semantic Search
     Embedding []float32 `json:"embedding,omitempty" db:"embedding"`
-    
+
     // Lifecycle Management
     Status         PlaybookStatus `json:"status" db:"status"`
     DisabledAt     *time.Time     `json:"disabled_at,omitempty" db:"disabled_at"`
     DisabledBy     *string        `json:"disabled_by,omitempty" db:"disabled_by"`
     DisabledReason *string        `json:"disabled_reason,omitempty" db:"disabled_reason"`
-    
+
     // Version Management
     IsLatestVersion   bool    `json:"is_latest_version" db:"is_latest_version"`
     PreviousVersion   *string `json:"previous_version,omitempty" db:"previous_version"`
     DeprecationNotice *string `json:"deprecation_notice,omitempty" db:"deprecation_notice"`
-    
+
     // Success Metrics
     ExpectedSuccessRate   *float64 `json:"expected_success_rate,omitempty" db:"expected_success_rate"`
     ExpectedDurationSecs  *int     `json:"expected_duration_seconds,omitempty" db:"expected_duration_seconds"`
     ActualSuccessRate     *float64 `json:"actual_success_rate,omitempty" db:"actual_success_rate"`
     TotalExecutions       int      `json:"total_executions" db:"total_executions"`
     SuccessfulExecutions  int      `json:"successful_executions" db:"successful_executions"`
-    
+
     // Audit Trail
     CreatedAt time.Time  `json:"created_at" db:"created_at"`
     UpdatedAt time.Time  `json:"updated_at" db:"updated_at"`
@@ -575,11 +575,11 @@ GET /api/v1/playbooks/pod-oom-recovery/versions?include_disabled=true
 ```sql
 -- Step 1: Create new version
 INSERT INTO playbook_catalog (
-    playbook_id, version, name, description, content, labels, 
+    playbook_id, version, name, description, content, labels,
     status, is_latest_version, previous_version
 ) VALUES (
-    'pod-oom-recovery', 'v1.2', 'Pod OOM Recovery', 
-    'Increases memory limits and restarts pod', '<content>', 
+    'pod-oom-recovery', 'v1.2', 'Pod OOM Recovery',
+    'Increases memory limits and restarts pod', '<content>',
     '{"kubernaut.io/environment": "production"}',
     'active', true, 'v1.1'
 );
@@ -596,7 +596,7 @@ WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.1';
 
 ```sql
 UPDATE playbook_catalog
-SET 
+SET
     status = 'disabled',
     disabled_at = NOW(),
     disabled_by = 'operator@company.com',
@@ -610,7 +610,7 @@ WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
 
 ```sql
 UPDATE playbook_catalog
-SET 
+SET
     status = 'active',
     disabled_at = NULL,
     disabled_by = NULL,
@@ -625,7 +625,7 @@ WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
 ```sql
 -- Step 1: Mark old version as deprecated
 UPDATE playbook_catalog
-SET 
+SET
     status = 'deprecated',
     deprecation_notice = 'Replaced by v1.2 with improved memory analysis',
     is_latest_version = false
@@ -640,7 +640,7 @@ WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.1';
 
 ```sql
 UPDATE playbook_catalog
-SET 
+SET
     status = 'archived',
     is_latest_version = false
 WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.0';
@@ -662,7 +662,7 @@ WHERE status = 'active' AND is_latest_version = true;
 ### **Pattern 2: Semantic Search with Label Filtering (DD-CONTEXT-005)**
 
 ```sql
-SELECT 
+SELECT
     playbook_id,
     version,
     description,

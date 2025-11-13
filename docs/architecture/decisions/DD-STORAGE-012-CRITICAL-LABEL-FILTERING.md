@@ -61,7 +61,7 @@ WHERE status = 'active'
   AND labels->>'kubernaut.io/environment' = 'production'
   AND labels->>'kubernaut.io/priority' = 'P0'
   AND labels->>'kubernaut.io/incident-type' = 'pod-oom-killer'
-  
+
   -- Semantic search (custom labels encoded in embedding)
   AND 1 - (embedding <=> $query_embedding) >= 0.7
 ORDER BY embedding <=> $query_embedding
@@ -88,11 +88,11 @@ WHERE status = 'active'
   AND labels->>'kubernaut.io/environment' = 'production'
   AND labels->>'kubernaut.io/priority' = 'P0'
   AND labels->>'kubernaut.io/incident-type' = 'pod-oom-killer'
-  
+
   -- Promoted critical labels (hard-filtered)
   AND labels->>'kubernaut.io/cost-tier' = 'budget'
   AND labels->>'kubernaut.io/memory-scaling' = 'disabled'
-  
+
   -- Semantic search
   AND 1 - (embedding <=> $query_embedding) >= 0.7
 ORDER BY embedding <=> $query_embedding
@@ -129,7 +129,7 @@ def generate_playbook_embedding_weighted(playbook):
         playbook.name,
         playbook.description,
     ]
-    
+
     # Repeat critical labels 10× to increase influence
     critical_labels = ['cost-tier', 'memory-scaling', 'data-residency']
     for key, value in playbook.labels.items():
@@ -140,7 +140,7 @@ def generate_playbook_embedding_weighted(playbook):
         elif not key.startswith('kubernaut.io/'):
             # Normal weight for non-critical custom labels
             text_parts.append(f"{key}: {value}")
-    
+
     text = '\n'.join(text_parts)
     embedding = model.encode(text)
     return embedding
@@ -236,17 +236,17 @@ BEGIN
     FROM playbook_catalog p
     WHERE p.status = 'active'
       AND p.is_latest_version = true
-      
+
       -- Hard filter on mandatory labels
       AND p.labels @> mandatory_labels
-      
+
       -- Hard filter on critical custom labels (if present)
       AND (
-          critical_labels IS NULL 
+          critical_labels IS NULL
           OR jsonb_object_keys(critical_labels) = '{}'
           OR p.labels @> critical_labels
       )
-      
+
       -- Semantic search threshold
       AND (1 - (p.embedding <=> query_embedding)) >= min_confidence
     ORDER BY p.embedding <=> query_embedding
@@ -335,13 +335,13 @@ status:
   environmentClassification:
     environment: "production"
     businessPriority: "P0"
-    
+
     # Critical custom labels (hard-filtered)
     criticalLabels:
       mycompany.com/cost-tier: "budget"
       mycompany.com/memory-scaling: "disabled"
       mycompany.com/data-residency: "eu"
-    
+
     # Optional custom labels (semantic influence only)
     optionalLabels:
       mycompany.com/team: "platform-engineering"
@@ -352,16 +352,16 @@ status:
 ```go
 type PlaybookSearchParams struct {
     QueryEmbedding  []float32
-    
+
     // Mandatory labels (always hard-filtered)
     MandatoryLabels map[string]string
-    
+
     // Critical custom labels (hard-filtered if present)
     CriticalLabels  map[string]string
-    
+
     // Optional custom labels (encoded in embedding, not filtered)
     OptionalLabels  map[string]string
-    
+
     MinConfidence   float64
     MaxResults      int
 }
@@ -369,11 +369,11 @@ type PlaybookSearchParams struct {
 func (r *playbookRepository) SearchPlaybooks(ctx context.Context, params *PlaybookSearchParams) ([]*Playbook, error) {
     mandatoryJSON, _ := json.Marshal(params.MandatoryLabels)
     criticalJSON, _ := json.Marshal(params.CriticalLabels)
-    
+
     rows, err := r.db.QueryContext(ctx, `
         SELECT * FROM search_playbooks_with_critical_labels($1, $2, $3, $4, $5)
     `, pgvector.NewVector(params.QueryEmbedding), mandatoryJSON, criticalJSON, params.MinConfidence, params.MaxResults)
-    
+
     // ... parse results
 }
 ```
@@ -413,12 +413,12 @@ label_hierarchy:
     - kubernaut.io/environment
     - kubernaut.io/priority
     - kubernaut.io/incident-type
-  
+
   tier2_critical:  # SHOULD match (fallback to tier1 if no match)
     - mycompany.com/cost-tier
     - mycompany.com/memory-scaling
     - mycompany.com/data-residency
-  
+
   tier3_optional:  # NICE to match (semantic influence only)
     - mycompany.com/team
     - mycompany.com/region
@@ -432,7 +432,7 @@ func searchPlaybooksWithFallback(ctx context.Context, params *SearchParams) ([]*
     if len(playbooks) > 0 {
         return playbooks, nil
     }
-    
+
     // Fallback: tier1 only (less restrictive)
     log.Warn("No playbooks found with tier2 labels, falling back to tier1 only",
         "tier2_labels", tier2Labels)
@@ -440,7 +440,7 @@ func searchPlaybooksWithFallback(ctx context.Context, params *SearchParams) ([]*
     if len(playbooks) > 0 {
         return playbooks, nil
     }
-    
+
     // No playbooks found
     return nil, fmt.Errorf("no playbooks found matching tier1 labels")
 }
