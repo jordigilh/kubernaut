@@ -254,4 +254,3 @@ func (s *AggregationService) GetSuccessRateMultiDimensional(
 
 	return result, nil
 }
-

@@ -1,6 +1,9 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 
+# Force Go to use modules directly, not vendor directory
+export GOFLAGS := -mod=mod
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -43,223 +46,73 @@ help: ## Display this help.
 
 ##@ Gateway Integration Tests
 
-GATEWAY_CLUSTER ?= kubernaut-gateway-test
-
-.PHONY: test-gateway-setup
-test-gateway-setup: ## Setup Kind cluster for Gateway integration tests
-	@./scripts/test-gateway-setup.sh
-
-.PHONY: test-gateway-teardown
-test-gateway-teardown: ## Teardown Gateway test cluster
-	@kind delete cluster --name $(GATEWAY_CLUSTER) 2>/dev/null || true
-	@rm -f /tmp/test-gateway-token.txt
-
 .PHONY: test-gateway
-test-gateway: ## Run Gateway integration tests (setup cluster if needed)
-	@if ! kind get clusters 2>/dev/null | grep -q "^$(GATEWAY_CLUSTER)$$"; then \
-		$(MAKE) test-gateway-setup; \
-	fi
-	@export TEST_TOKEN=$$(cat /tmp/test-gateway-token.txt) && \
-	kubectl config use-context kind-$(GATEWAY_CLUSTER) && \
-	cd test/integration/gateway && ginkgo -v
+test-gateway: ## Run Gateway integration tests (Kind bootstrapped via Go)
+	@echo "🧪 Running Gateway integration tests..."
+	@cd test/integration/gateway && ginkgo -v
 
 ##@ Notification Service Integration Tests
-# Per ADR-017: NotificationRequest CRD-based notification service
-# Requires Kind cluster with NotificationRequest CRD and controller deployed
-
-NOTIFICATION_CLUSTER ?= kubernaut-integration
-NOTIFICATION_NAMESPACE ?= kubernaut-notifications
-NOTIFICATION_IMAGE ?= kubernaut-notification:latest
-NOTIFICATION_CRD ?= config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
-
-.PHONY: test-notification-setup
-test-notification-setup: ## Setup Kind cluster and deploy Notification controller
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🚀 Notification Service Integration Test Setup"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "📋 Setup Steps:"
-	@echo "  1. Ensure Kind cluster exists"
-	@echo "  2. Generate CRD manifests"
-	@echo "  3. Install NotificationRequest CRD"
-	@echo "  4. Build controller image"
-	@echo "  5. Load image into Kind"
-	@echo "  6. Deploy controller"
-	@echo "  7. Verify deployment"
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "1️⃣  Ensuring Kind cluster exists: $(NOTIFICATION_CLUSTER)"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@KIND_CLUSTER_NAME=$(NOTIFICATION_CLUSTER) ./scripts/ensure-kind-cluster.sh
-	@kubectl config use-context kind-$(NOTIFICATION_CLUSTER)
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "2️⃣  Generating CRD manifests"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@$(MAKE) manifests
-	@echo "✅ CRD manifests generated"
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "3️⃣  Installing NotificationRequest CRD"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@if [ ! -f "$(NOTIFICATION_CRD)" ]; then \
-		echo "❌ Error: CRD file not found: $(NOTIFICATION_CRD)"; \
-		exit 1; \
-	fi
-	@kubectl apply -f $(NOTIFICATION_CRD)
-	@echo "⏳ Waiting for CRD to be established..."
-	@kubectl wait --for condition=established --timeout=60s crd/notificationrequests.notification.kubernaut.ai
-	@echo "✅ NotificationRequest CRD installed and established"
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "4️⃣  Building and loading controller image"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@KIND_CLUSTER_NAME=$(NOTIFICATION_CLUSTER) ./scripts/build-notification-controller.sh --kind
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "5️⃣  Deploying Notification controller"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@kubectl apply -k deploy/notification/
-	@echo "⏳ Waiting for controller deployment to be ready..."
-	@kubectl wait --for=condition=available --timeout=120s \
-		deployment/notification-controller -n $(NOTIFICATION_NAMESPACE) || \
-		(echo "⚠️  Deployment not ready, checking status..." && \
-		 kubectl get pods -n $(NOTIFICATION_NAMESPACE) && \
-		 kubectl describe deployment/notification-controller -n $(NOTIFICATION_NAMESPACE) && \
-		 exit 1)
-	@echo "✅ Notification controller deployed successfully"
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "6️⃣  Verifying deployment"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "Namespace: $(NOTIFICATION_NAMESPACE)"
-	@kubectl get pods -n $(NOTIFICATION_NAMESPACE)
-	@echo ""
-	@echo "Controller logs (last 10 lines):"
-	@kubectl logs -n $(NOTIFICATION_NAMESPACE) deployment/notification-controller --tail=10 || true
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "✅ NOTIFICATION SERVICE SETUP COMPLETE"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "📊 Deployment Status:"
-	@echo "  • Kind Cluster: $(NOTIFICATION_CLUSTER)"
-	@echo "  • Namespace: $(NOTIFICATION_NAMESPACE)"
-	@echo "  • CRD: NotificationRequest.notification.kubernaut.ai"
-	@echo "  • Controller: notification-controller"
-	@echo ""
-	@echo "🧪 Ready to run integration tests:"
-	@echo "  make test-integration-notification"
-	@echo ""
-
-.PHONY: test-notification-teardown
-test-notification-teardown: ## Teardown Notification controller (keeps Kind cluster)
-	@echo "🧹 Cleaning up Notification controller deployment..."
-	@kubectl delete -k deploy/notification/ --ignore-not-found=true
-	@kubectl delete crd notificationrequests.notification.kubernaut.ai --ignore-not-found=true
-	@echo "✅ Notification controller cleanup complete"
-	@echo "💡 Tip: To delete Kind cluster, run: kind delete cluster --name $(NOTIFICATION_CLUSTER)"
-
-.PHONY: test-notification-teardown-full
-test-notification-teardown-full: ## Complete teardown including Kind cluster
-	@echo "🧹 Full cleanup: Notification controller + Kind cluster..."
-	@$(MAKE) test-notification-teardown
-	@kind delete cluster --name $(NOTIFICATION_CLUSTER) 2>/dev/null || true
-	@echo "✅ Full cleanup complete"
 
 .PHONY: test-integration-notification
-test-integration-notification: ## Run Notification Service integration tests (Kind cluster, ~3-5min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Notification Service Integration Tests"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "📋 Test Scenarios:"
-	@echo "  1. Basic CRD lifecycle (create → reconcile → complete)"
-	@echo "  2. Delivery failure recovery (retry with exponential backoff)"
-	@echo "  3. Graceful degradation (partial delivery success)"
-	@echo ""
-	@echo "⏱️  Timeouts:"
-	@echo "  • Build timeout: 10 minutes"
-	@echo "  • Test timeout: 15 minutes"
-	@echo "  • Total timeout: 25 minutes"
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "🔍 Checking deployment status..."
-	@if ! kubectl get crd notificationrequests.notification.kubernaut.ai &> /dev/null; then \
-		echo "⚠️  NotificationRequest CRD not found - running setup..."; \
-		timeout 10m $(MAKE) test-notification-setup || \
-			(echo "❌ Setup timed out after 10 minutes" && exit 1); \
-	else \
-		echo "✅ CRD already installed"; \
-		if ! kubectl get deployment notification-controller -n $(NOTIFICATION_NAMESPACE) &> /dev/null; then \
-			echo "⚠️  Controller not deployed - running setup..."; \
-			timeout 10m $(MAKE) test-notification-setup || \
-				(echo "❌ Setup timed out after 10 minutes" && exit 1); \
-		else \
-			echo "✅ Controller already deployed"; \
-		fi; \
-	fi
-	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "🧪 Running integration tests (timeout: 15m)..."
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@timeout 15m go test ./test/integration/notification/... -v -ginkgo.v -timeout=15m || \
-		(echo "❌ Tests timed out after 15 minutes" && exit 1)
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "✅ NOTIFICATION SERVICE INTEGRATION TESTS COMPLETE"
-	@echo "════════════════════════════════════════════════════════════════════════"
+test-integration-notification: ## Run Notification Service integration tests (Kind bootstrapped via Go)
+	@echo "🧪 Running Notification Service integration tests..."
+	@go test ./test/integration/notification/... -v -ginkgo.v -timeout=15m
 
 ##@ Service-Specific Integration Tests
-# Per ADR-016: Service-Specific Integration Test Infrastructure
-# Use Podman for database-only services, Kind for Kubernetes-dependent services
 
 .PHONY: test-integration-datastorage
 test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~30s)
-	@echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."
-	@podman run -d --name datastorage-postgres -p 5432:5432 \
-		-e POSTGRES_PASSWORD=postgres \
-		-e POSTGRES_SHARED_BUFFERS=1GB \
-		pgvector/pgvector:pg16 > /dev/null 2>&1 || \
-		(echo "⚠️  PostgreSQL container already exists or failed to start" && \
-		 podman start datastorage-postgres > /dev/null 2>&1) || true
-	@echo "⏳ Waiting for PostgreSQL to be ready..."
-	@sleep 5
-	@podman exec datastorage-postgres pg_isready -U postgres > /dev/null 2>&1 || \
-		(echo "❌ PostgreSQL not ready" && exit 1)
-	@echo "✅ PostgreSQL 16 ready"
-	@echo "🔍 Verifying PostgreSQL and pgvector versions..."
-	@podman exec datastorage-postgres psql -U postgres -c "SELECT version();" | grep "PostgreSQL 16" || \
-		(echo "❌ PostgreSQL version is not 16.x" && exit 1)
-	@echo "🔧 Creating pgvector extension..."
-	@podman exec datastorage-postgres psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || \
-		(echo "❌ Failed to create pgvector extension" && exit 1)
-	@podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0|0\.[7-9]\.0|0\.[8-9]\.0" || \
-		(echo "❌ pgvector version is not 0.5.1+" && exit 1)
-	@echo "✅ Version validation passed (PostgreSQL 16 + pgvector 0.5.1+)"
-	@echo "🔍 Testing HNSW index creation (dry-run)..."
-	@podman exec datastorage-postgres psql -U postgres -d postgres -c "\
-		CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \
-		CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);" \
-		> /dev/null 2>&1 || \
-		(echo "❌ HNSW index creation test failed - PostgreSQL/pgvector may not support HNSW" && exit 1)
-	@echo "✅ HNSW index support verified"
+	@if [ -z "$$POSTGRES_HOST" ]; then \
+		echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."; \
+		podman run -d --name datastorage-postgres -p 5432:5432 \
+			-e POSTGRES_PASSWORD=postgres \
+			-e POSTGRES_SHARED_BUFFERS=1GB \
+			quay.io/jordigilh/pgvector:pg16 > /dev/null 2>&1 || \
+			(echo "⚠️  PostgreSQL container already exists or failed to start" && \
+			 podman start datastorage-postgres > /dev/null 2>&1) || true; \
+		echo "⏳ Waiting for PostgreSQL to be ready..."; \
+		sleep 5; \
+		podman exec datastorage-postgres pg_isready -U postgres > /dev/null 2>&1 || \
+			(echo "❌ PostgreSQL not ready" && exit 1); \
+		echo "✅ PostgreSQL 16 ready"; \
+	else \
+		echo "🐳 Using external PostgreSQL at $$POSTGRES_HOST:$$POSTGRES_PORT (Docker Compose)"; \
+	fi
+	@if [ -z "$$POSTGRES_HOST" ]; then \
+		echo "🔍 Verifying PostgreSQL and pgvector versions..."; \
+		podman exec datastorage-postgres psql -U postgres -c "SELECT version();" | grep "PostgreSQL 16" || \
+			(echo "❌ PostgreSQL version is not 16.x" && exit 1); \
+		echo "🔧 Creating pgvector extension..."; \
+		podman exec datastorage-postgres psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;" > /dev/null 2>&1 || \
+			(echo "❌ Failed to create pgvector extension" && exit 1); \
+		podman exec datastorage-postgres psql -U postgres -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';" | grep -E "0\.[5-9]\.[1-9]|0\.[6-9]\.0|0\.[7-9]\.0|0\.[8-9]\.0" || \
+			(echo "❌ pgvector version is not 0.5.1+" && exit 1); \
+		echo "✅ Version validation passed (PostgreSQL 16 + pgvector 0.5.1+)"; \
+		echo "🔍 Testing HNSW index creation (dry-run)..."; \
+		podman exec datastorage-postgres psql -U postgres -d postgres -c "\
+			CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \
+			CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);" \
+			> /dev/null 2>&1 || \
+			(echo "❌ HNSW index creation test failed - PostgreSQL/pgvector may not support HNSW" && exit 1); \
+		echo "✅ HNSW index support verified"; \
+	fi
 	@echo "🧪 Running Data Storage integration tests..."
-	@TEST_RESULT=0; \
-	go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
-	echo "🧹 Cleaning up PostgreSQL container..."; \
-	podman stop datastorage-postgres > /dev/null 2>&1 || true; \
-	podman rm datastorage-postgres > /dev/null 2>&1 || true; \
-	echo "✅ Cleanup complete"; \
-	exit $$TEST_RESULT
+	@if [ -z "$$POSTGRES_HOST" ]; then \
+		TEST_RESULT=0; \
+		go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
+		echo "🧹 Cleaning up PostgreSQL container..."; \
+		podman stop datastorage-postgres > /dev/null 2>&1 || true; \
+		podman rm datastorage-postgres > /dev/null 2>&1 || true; \
+		echo "✅ Cleanup complete"; \
+		exit $$TEST_RESULT; \
+	else \
+		go test ./test/integration/datastorage/... -v -timeout 5m; \
+	fi
 
 .PHONY: test-integration-contextapi
-test-integration-contextapi: ## Run Context API integration tests (Redis via Podman + PostgreSQL, ADR-016, ~45s)
-	@echo "🔧 Starting Redis for Context API (ADR-016: Podman for stateless services)..."
-	@podman run -d --name contextapi-redis-test -p 6379:6379 redis:7-alpine > /dev/null 2>&1 || \
+test-integration-contextapi: ## Run Context API integration tests (Redis via Podman + PostgreSQL, ~45s)
+	@echo "🔧 Starting Redis for Context API..."
+	@podman run -d --name contextapi-redis-test -p 6379:6379 quay.io/jordigilh/redis:7-alpine > /dev/null 2>&1 || \
 		(echo "⚠️  Redis container already exists or failed to start" && \
 		 podman start contextapi-redis-test > /dev/null 2>&1) || true
 	@echo "⏳ Waiting for Redis to be ready..."
@@ -280,7 +133,7 @@ test-integration-contextapi: ## Run Context API integration tests (Redis via Pod
 .PHONY: test-integration-ai
 test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s)
 	@echo "🔧 Starting Redis cache..."
-	@podman run -d --name ai-redis -p 6379:6379 redis:7-alpine > /dev/null 2>&1 || \
+	@podman run -d --name ai-redis -p 6379:6379 quay.io/jordigilh/redis:7-alpine > /dev/null 2>&1 || \
 		(echo "⚠️  Redis container already exists or failed to start" && \
 		 podman start ai-redis > /dev/null 2>&1) || true
 	@echo "⏳ Waiting for Redis to be ready..."
@@ -296,29 +149,25 @@ test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s
 	exit $$TEST_RESULT
 
 .PHONY: test-integration-toolset
-test-integration-toolset: ## Run Dynamic Toolset integration tests (Kind cluster, ~3-5min)
-	@echo "🔧 Ensuring Kind cluster is running..."
-	@./scripts/ensure-kind-cluster.sh
+test-integration-toolset: ## Run Dynamic Toolset integration tests (Kind bootstrapped via Go)
 	@echo "🧪 Running Dynamic Toolset integration tests..."
 	@go test ./test/integration/toolset/... -v -timeout 10m
 
 .PHONY: test-integration-gateway-service
-test-integration-gateway-service: ## Run Gateway Service integration tests (Kind cluster, uses existing test-gateway target)
-	@echo "🔧 Running Gateway Service integration tests..."
-	@$(MAKE) test-gateway
+test-integration-gateway-service: test-gateway ## Run Gateway Service integration tests (alias for test-gateway)
 
 .PHONY: test-integration-service-all
 test-integration-service-all: ## Run ALL service-specific integration tests (sequential)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🚀 Running ALL Service-Specific Integration Tests (per ADR-016)"
+	@echo "🚀 Running ALL Service-Specific Integration Tests"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo ""
 	@echo "📊 Test Plan:"
 	@echo "  1. Data Storage (Podman: PostgreSQL + pgvector) - ~30s"
 	@echo "  2. AI Service (Podman: Redis) - ~15s"
-	@echo "  3. Dynamic Toolset (Kind: Kubernetes) - ~3-5min"
-	@echo "  4. Gateway Service (Kind: Kubernetes) - ~3-5min"
-	@echo "  5. Notification Service (Kind: Kubernetes + CRD) - ~3-5min"
+	@echo "  3. Dynamic Toolset (Kind bootstrapped via Go) - ~3-5min"
+	@echo "  4. Gateway Service (Kind bootstrapped via Go) - ~3-5min"
+	@echo "  5. Notification Service (Kind bootstrapped via Go) - ~3-5min"
 	@echo ""
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo ""
@@ -366,10 +215,7 @@ scaffold-controller: ## Interactive scaffolding for new CRD controller using pro
 	@echo "🛠️  CRD Controller Scaffolding"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo ""
-	@echo "📋 Design Decision: DD-006 - Controller Scaffolding Strategy"
-	@echo "   See: docs/architecture/decisions/DD-006-controller-scaffolding-strategy.md"
-	@echo ""
-	@echo "📚 Using Production Templates (DD-005 Compliant)"
+	@echo "📚 Using Production Templates"
 	@echo "   Location: docs/templates/crd-controller-gap-remediation/"
 	@echo "   Guide: docs/templates/crd-controller-gap-remediation/GAP_REMEDIATION_GUIDE.md"
 	@echo ""
@@ -377,12 +223,10 @@ scaffold-controller: ## Interactive scaffolding for new CRD controller using pro
 	@echo "   • cmd-main-template.go.template - Main entry point"
 	@echo "   • config-template.go.template - Configuration package"
 	@echo "   • config-test-template.go.template - Config tests"
-	@echo "   • metrics-template.go.template - Prometheus metrics (DD-005)"
+	@echo "   • metrics-template.go.template - Prometheus metrics"
 	@echo "   • dockerfile-template - UBI9 multi-arch Dockerfile"
 	@echo "   • makefile-targets-template - Build targets"
 	@echo "   • configmap-template.yaml - K8s ConfigMap"
-	@echo ""
-	@echo "⏱️  Time Savings: 40-60% faster than starting from scratch"
 	@echo ""
 	@read -p "Controller name (lowercase, no hyphens, e.g., remediationprocessor): " CONTROLLER_NAME; \
 	if [ -z "$$CONTROLLER_NAME" ]; then \
@@ -426,43 +270,14 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 
-.PHONY: fmt
-fmt: ## Run go fmt against code.
-	go fmt ./api/... ./cmd/... ./internal/... ./pkg/...
-
 .PHONY: vet
 vet: ## Run go vet against code.
 	go vet ./api/... ./cmd/... ./internal/... ./pkg/...
 
-.PHONY: test
-test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
-
-# Legacy test-integration-remediation removed - test/integration/remediation/ deleted
-# Legacy test-integration removed - replaced by service-specific targets (test-integration-datastorage, etc.)
-
-# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
-# The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# CertManager is installed by default; skip with:
-# - CERT_MANAGER_INSTALL_SKIP=true
-KIND_CLUSTER ?= kubernaut-temp-test-e2e
-
-.PHONY: setup-test-e2e
-setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
-	@command -v $(KIND) >/dev/null 2>&1 || { \
-		echo "Kind is not installed. Please install Kind manually."; \
-		exit 1; \
-	}
-	$(KIND) create cluster --name $(KIND_CLUSTER)
-
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
-	$(MAKE) cleanup-test-e2e
-
-.PHONY: cleanup-test-e2e
-cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
-	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+test-e2e: manifests generate fmt vet ## Run e2e tests (Kind bootstrapped via Go)
+	@echo "🧪 Running e2e tests..."
+	@go test ./test/e2e/... -v -ginkgo.v
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -478,14 +293,6 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 ##@ Build
 
-# Legacy build/run targets removed - cmd/main.go deleted
-# Use service-specific targets: build-gateway-service, build-context-api, etc.
-
-# If you wish to build the manager image targeting other platforms you can use the --platform flag.
-# (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
-# More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# ADR-027: Multi-Architecture Build Strategy (amd64 + arm64)
-# All Kubernaut services built for linux/amd64 and linux/arm64 by default
 PLATFORMS ?= linux/amd64,linux/arm64
 
 .PHONY: docker-build
@@ -507,19 +314,6 @@ docker-push: ## Push multi-architecture docker image to registry
 	$(CONTAINER_TOOL) manifest push ${IMG} docker://$(IMG) || $(CONTAINER_TOOL) push ${IMG}
 	@echo "✅ Image pushed: ${IMG}"
 
-# Legacy docker-buildx target (deprecated, use docker-build instead)
-PLATFORMS_LEGACY ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
-.PHONY: docker-buildx
-docker-buildx: ## [DEPRECATED] Use docker-build instead - Build and push docker image for cross-platform support
-	@echo "⚠️  WARNING: docker-buildx is deprecated. Use 'make docker-build' instead."
-	@echo "   The new docker-build target builds multi-arch by default (amd64 + arm64)"
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name kubernaut-temp-builder
-	$(CONTAINER_TOOL) buildx use kubernaut-temp-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS_LEGACY) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm kubernaut-temp-builder
-	rm Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
@@ -618,14 +412,7 @@ mv $(1) $(1)-$(3) ;\
 ln -sf $(1)-$(3) $(1)
 endef
 
-##@ Microservices Build - Current Architecture (5 Go Services + 1 Python Service)
-# Active Services:
-# - Gateway (Go)
-# - Context API (Go) 
-# - Data Storage (Go)
-# - Dynamic Toolset (Go)
-# - Notification (Go)
-# - HolmesGPT API (Python)
+##@ Microservices Build
 
 .PHONY: build-all-services
 build-all-services: build-gateway-service build-context-api build-datastorage build-dynamictoolset build-notification ## Build all Go services
@@ -634,14 +421,9 @@ build-all-services: build-gateway-service build-context-api build-datastorage bu
 build-microservices: build-all-services ## Build all microservices (alias for build-all-services)
 
 .PHONY: build-gateway-service
-build-gateway-service: ## Build gateway service (webhook functionality)
+build-gateway-service: ## Build gateway service
 	@echo "🔨 Building gateway service..."
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/gateway ./cmd/gateway
-
-# Legacy service build targets removed - services don't exist
-# Removed: build-alert-service, build-workflow-service, build-executor-service,
-#          build-storage-service, build-intelligence-service, build-monitor-service,
-#          build-ai-analysis
 
 .PHONY: build-datastorage
 build-datastorage: ## Build data storage service
@@ -705,27 +487,10 @@ test-ci: ## Run tests suitable for CI environment with mocked LLM
 	make test-integration-kind-ci
 	@echo "✅ CI tests completed successfully"
 
-.PHONY: lint
-lint: ## Run linters (Go only)
-	@echo "Running Go linter..."
-	golangci-lint run
-
-.PHONY: lint-go
-lint-go: ## Run Go linter only
-	@echo "Running Go linter..."
-	golangci-lint run
-
-
 .PHONY: fmt
-fmt: ## Format code (Go only)
+fmt: ## Format code
 	@echo "Formatting Go code..."
 	go fmt ./api/... ./cmd/... ./internal/... ./pkg/...
-
-.PHONY: fmt-go
-fmt-go: ## Format Go code only
-	@echo "Formatting Go code..."
-	go fmt ./api/... ./cmd/... ./internal/... ./pkg/...
-
 
 .PHONY: clean
 clean: ## Clean build artifacts (Go only)
@@ -741,18 +506,12 @@ clean-all: ## Clean all build artifacts including test binaries (Go only)
 	rm -f coverage.out coverage.html
 	find test/ -name "*.test" -type f -delete 2>/dev/null || true
 
-##@ Container
-.PHONY: docker-build
-docker-build: ## Build monolithic container image
-	docker build -t $(IMAGE_NAME):$(VERSION) .
-	docker tag $(IMAGE_NAME):$(VERSION) $(IMAGE_NAME):latest
-
 ##@ Microservices Container Build
 .PHONY: docker-build-microservices
 docker-build-microservices: docker-build-gateway-service docker-build-context-api ## Build all microservice container images
 
 .PHONY: docker-build-gateway-service
-docker-build-gateway-service: ## Build gateway service container image (multi-arch UBI9, ADR-027/ADR-028)
+docker-build-gateway-service: ## Build gateway service container image (multi-arch UBI9)
 	@echo "🔨 Building multi-arch Gateway image (amd64 + arm64) - UBI9 per ADR-027"
 	podman build --platform linux/amd64,linux/arm64 \
 		-f docker/gateway-ubi9.Dockerfile \
@@ -761,7 +520,7 @@ docker-build-gateway-service: ## Build gateway service container image (multi-ar
 
 .PHONY: docker-build-gateway-ubi9
 docker-build-gateway-ubi9: docker-build-gateway-service ## Build gateway service UBI9 image (alias for docker-build-gateway-service)
-	@echo "🔗 Gateway service uses UBI9 by default (ADR-027)"
+	@echo "🔗 Gateway service uses UBI9 by default"
 
 .PHONY: docker-build-gateway-single
 docker-build-gateway-single: ## Build single-arch debug image (current platform only)
@@ -769,9 +528,6 @@ docker-build-gateway-single: ## Build single-arch debug image (current platform 
 	podman build -t $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m) \
 		-f docker/gateway-ubi9.Dockerfile .
 	@echo "✅ Debug image: $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m)"
-
-# Legacy docker build targets removed - services don't exist
-# Removed: docker-build-ai-analysis, docker-push-ai-service
 
 .PHONY: docker-push-microservices
 docker-push-microservices: docker-push-gateway-service docker-push-context-api ## Push all microservice container images
@@ -781,13 +537,6 @@ docker-push-gateway-service: docker-build-gateway-service ## Push Gateway servic
 	@echo "📤 Pushing multi-arch Gateway image..."
 	podman manifest push $(REGISTRY)/kubernaut-gateway:$(VERSION) docker://$(REGISTRY)/kubernaut-gateway:$(VERSION)
 	@echo "✅ Image pushed: $(REGISTRY)/kubernaut-gateway:$(VERSION)"
-
-# Legacy docker-push-ai-service removed - cmd/ai-analysis doesn't exist
-
-.PHONY: docker-push
-docker-push: ## Push container image
-	docker push $(IMAGE_NAME):$(VERSION)
-	docker push $(IMAGE_NAME):latest
 
 .PHONY: docker-run
 docker-run: ## Run container locally
@@ -881,7 +630,7 @@ test-context-api-integration: ## Run Context API integration tests
 	go test ./test/integration/contextapi/... -v
 
 .PHONY: docker-build-context-api
-docker-build-context-api: ## Build multi-architecture Context API image (ADR-027: podman + amd64/arm64)
+docker-build-context-api: ## Build multi-architecture Context API image (podman + amd64/arm64)
 	@echo "🔨 Building multi-architecture image: $(CONTEXT_API_IMG)"
 	podman build --platform linux/amd64,linux/arm64 \
 		-t $(CONTEXT_API_IMG) \
@@ -978,71 +727,227 @@ validate-context-api-build: ## Validate Context API build pipeline
 	@podman stop context-api-validate || true
 	@echo "✅ Context API build pipeline validated"
 
-##@ Context API E2E Tests (Podman + Kind)
-# Following DD-008: Integration Test Infrastructure (Podman + Kind)
-# Day 11: End-to-End Testing with real Kubernetes cluster
-
-CONTEXT_API_E2E_CLUSTER ?= kubernaut-contextapi-e2e
-CONTEXT_API_E2E_NAMESPACE ?= contextapi-e2e
-
-.PHONY: test-contextapi-e2e-setup
-test-contextapi-e2e-setup: ## Setup Kind cluster (Podman) for Context API E2E tests (~2min)
-	@KIND_CLUSTER_NAME=$(CONTEXT_API_E2E_CLUSTER) \
-	CONTEXT_API_NAMESPACE=$(CONTEXT_API_E2E_NAMESPACE) \
-	./scripts/test-contextapi-e2e-setup.sh
-
-.PHONY: test-contextapi-e2e-teardown
-test-contextapi-e2e-teardown: ## Teardown Context API E2E infrastructure (keep Kind cluster)
-	@KIND_CLUSTER_NAME=$(CONTEXT_API_E2E_CLUSTER) \
-	CONTEXT_API_NAMESPACE=$(CONTEXT_API_E2E_NAMESPACE) \
-	./scripts/test-contextapi-e2e-teardown.sh
-
-.PHONY: test-contextapi-e2e-teardown-full
-test-contextapi-e2e-teardown-full: ## Complete teardown including Kind cluster
-	@KIND_CLUSTER_NAME=$(CONTEXT_API_E2E_CLUSTER) \
-	CONTEXT_API_NAMESPACE=$(CONTEXT_API_E2E_NAMESPACE) \
-	./scripts/test-contextapi-e2e-teardown.sh --full
+##@ Context API E2E Tests
 
 .PHONY: test-e2e-contextapi
-test-e2e-contextapi: ## Run Context API E2E tests (setup cluster if needed, ~8-10min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Context API E2E Tests (Podman + Kind)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo ""
-	@echo "📋 Test Scenarios:"
-	@echo "  1. Query Lifecycle (cache miss → DB → cache hit)"
-	@echo "  2. Graceful Shutdown (zero downtime deployments)"
-	@echo "  3. Cache Degradation (Redis failure → LRU fallback)"
-	@echo "  4. Multi-Tier Validation (L1/L2/L3 fallback chain)"
-	@echo ""
-	@if ! kind get clusters 2>/dev/null | grep -q "^$(CONTEXT_API_E2E_CLUSTER)$$"; then \
-		echo "🔧 Kind cluster not found, setting up..."; \
-		$(MAKE) test-contextapi-e2e-setup; \
-	fi
-	@export KUBECONFIG=$$HOME/.kube/kind-config && \
-	export KIND_CLUSTER_NAME=$(CONTEXT_API_E2E_CLUSTER) && \
-	export CONTEXT_API_NAMESPACE=$(CONTEXT_API_E2E_NAMESPACE) && \
-	kubectl config use-context kind-$(CONTEXT_API_E2E_CLUSTER) && \
-	cd test/e2e/contextapi && ginkgo -v
-	@echo ""
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "✅ CONTEXT API E2E TESTS COMPLETE"
-	@echo "════════════════════════════════════════════════════════════════════════"
+test-e2e-contextapi: ## Run Context API E2E tests (Kind bootstrapped via Go)
+	@echo "🧪 Running Context API E2E tests..."
+	@cd test/e2e/contextapi && ginkgo -v
 
-.PHONY: test-contextapi-e2e-status
-test-contextapi-e2e-status: ## Show Context API E2E infrastructure status
-	@echo "📊 Context API E2E Infrastructure Status"
-	@echo ""
-	@if kind get clusters 2>/dev/null | grep -q "^$(CONTEXT_API_E2E_CLUSTER)$$"; then \
-		echo "✅ Kind cluster: $(CONTEXT_API_E2E_CLUSTER) (running)"; \
-		kubectl config use-context kind-$(CONTEXT_API_E2E_CLUSTER) 2>/dev/null; \
-		echo ""; \
-		echo "📦 Pods in namespace $(CONTEXT_API_E2E_NAMESPACE):"; \
-		kubectl get pods -n $(CONTEXT_API_E2E_NAMESPACE) 2>/dev/null || echo "  Namespace not found"; \
-		echo ""; \
-		echo "🌐 Services:"; \
-		kubectl get svc -n $(CONTEXT_API_E2E_NAMESPACE) 2>/dev/null || echo "  Namespace not found"; \
+##@ Per-Service Test Suites (All Tiers)
+
+.PHONY: test-gateway-all
+test-gateway-all: ## Run ALL Gateway tests (unit + integration + e2e)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Gateway Service - Complete Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	echo ""; \
+	echo "1️⃣  Unit Tests..."; \
+	go test ./test/unit/gateway/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests..."; \
+	$(MAKE) test-gateway || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  E2E Tests..."; \
+	go test ./test/e2e/gateway/... -v -ginkgo.v -timeout=15m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ Gateway: ALL tests passed (3/3 tiers)"; \
 	else \
-		echo "❌ Kind cluster: $(CONTEXT_API_E2E_CLUSTER) (not running)"; \
-		echo "   Run 'make test-contextapi-e2e-setup' to create it"; \
+		echo "❌ Gateway: $$FAILED tier(s) failed"; \
+		exit 1; \
 	fi
+
+.PHONY: test-contextapi-all
+test-contextapi-all: ## Run ALL Context API tests (unit + integration + e2e)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Context API - Complete Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	echo ""; \
+	echo "1️⃣  Unit Tests..."; \
+	go test ./test/unit/contextapi/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests..."; \
+	$(MAKE) test-integration-contextapi || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  E2E Tests..."; \
+	$(MAKE) test-e2e-contextapi || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ Context API: ALL tests passed (3/3 tiers)"; \
+	else \
+		echo "❌ Context API: $$FAILED tier(s) failed"; \
+		exit 1; \
+	fi
+
+.PHONY: test-datastorage-all
+test-datastorage-all: ## Run ALL Data Storage tests (unit + integration + performance)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Data Storage - Complete Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	echo ""; \
+	echo "1️⃣  Unit Tests..."; \
+	go test ./test/unit/datastorage/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests..."; \
+	$(MAKE) test-integration-datastorage || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  Performance Tests..."; \
+	go test ./test/performance/datastorage/... -v -bench=. -timeout=10m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ Data Storage: ALL tests passed (3/3 tiers)"; \
+	else \
+		echo "❌ Data Storage: $$FAILED tier(s) failed"; \
+		exit 1; \
+	fi
+
+.PHONY: test-toolset-all
+test-toolset-all: ## Run ALL Dynamic Toolset tests (unit + integration + e2e)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Dynamic Toolset - Complete Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	echo ""; \
+	echo "1️⃣  Unit Tests..."; \
+	go test ./test/unit/toolset/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests..."; \
+	$(MAKE) test-integration-toolset || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "3️⃣  E2E Tests..."; \
+	go test ./test/e2e/toolset/... -v -ginkgo.v -timeout=15m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ Dynamic Toolset: ALL tests passed (3/3 tiers)"; \
+	else \
+		echo "❌ Dynamic Toolset: $$FAILED tier(s) failed"; \
+		exit 1; \
+	fi
+
+.PHONY: test-notification-all
+test-notification-all: ## Run ALL Notification tests (unit + integration)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Notification Service - Complete Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	echo ""; \
+	echo "1️⃣  Unit Tests..."; \
+	go test ./test/unit/notification/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "2️⃣  Integration Tests..."; \
+	$(MAKE) test-integration-notification || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ Notification: ALL tests passed (2/2 tiers)"; \
+	else \
+		echo "❌ Notification: $$FAILED tier(s) failed"; \
+		exit 1; \
+	fi
+
+.PHONY: test-holmesgpt-all
+test-holmesgpt-all: ## Run ALL HolmesGPT API tests (Python)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 HolmesGPT API - Complete Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "Running Python test suite..."
+	@cd holmesgpt-api && pytest -v --cov=. --cov-report=term-missing
+	@echo ""
+	@echo "✅ HolmesGPT API: ALL tests passed"
+
+.PHONY: test-all-services
+test-all-services: ## Run ALL tests for ALL services (sequential - use CI for parallel)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🚀 Complete Test Suite - All Services"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@echo "⚠️  Note: Running sequentially. Use GitHub Actions for parallel execution."
+	@echo ""
+	@FAILED=0; \
+	$(MAKE) test-gateway-all || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	$(MAKE) test-contextapi-all || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	$(MAKE) test-datastorage-all || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	$(MAKE) test-toolset-all || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	$(MAKE) test-notification-all || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	$(MAKE) test-holmesgpt-all || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "════════════════════════════════════════════════════════════════════════"; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "✅ ALL SERVICES: Complete test suite passed (6/6 services)"; \
+	else \
+		echo "❌ FAILED: $$FAILED service(s) failed tests"; \
+		exit 1; \
+	fi; \
+	echo "════════════════════════════════════════════════════════════════════════"
+
+##@ Containerized Testing
+
+.PHONY: test-container-build
+test-container-build: ## Build test runner container
+	@echo "🐳 Building test runner container..."
+	podman build -f docker/test-runner.Dockerfile -t kubernaut-test-runner:latest .
+
+.PHONY: test-container-unit
+test-container-unit: ## Run unit tests in container (no external dependencies)
+	@echo "🐳 Running unit tests in container (standalone, no external services)..."
+	podman run --rm \
+		-v $(PWD):/workspace:Z \
+		-w /workspace \
+		kubernaut-test-runner:latest \
+		make test
+
+.PHONY: test-container-integration
+test-container-integration: ## Run integration tests in container
+	@echo "🐳 Running integration tests in container..."
+	podman-compose -f podman-compose.test.yml run --rm \
+		-e POSTGRES_HOST=postgres \
+		-e POSTGRES_PORT=5432 \
+		-e REDIS_HOST=redis \
+		-e REDIS_PORT=6379 \
+		-e DATASTORAGE_URL=http://datastorage:8080 \
+		test-runner sh -c "make test-integration-datastorage && make test-integration-notification"
+
+.PHONY: test-container-e2e
+test-container-e2e: ## Run E2E tests in container
+	@echo "🐳 Running E2E tests in container..."
+	podman-compose -f podman-compose.test.yml run --rm \
+		-e KIND_EXPERIMENTAL_PROVIDER=podman \
+		-e POSTGRES_HOST=postgres \
+		-e POSTGRES_PORT=5432 \
+		-e REDIS_HOST=redis \
+		-e REDIS_PORT=6379 \
+		test-runner sh -c "cd test/e2e/gateway && go test -v -ginkgo.v -timeout=15m"
+
+.PHONY: test-container-all
+test-container-all: ## Run ALL tests in container
+	@echo "🐳 Running ALL tests in container..."
+	podman-compose -f podman-compose.test.yml run --rm \
+		-e POSTGRES_HOST=postgres \
+		-e POSTGRES_PORT=5432 \
+		-e REDIS_HOST=redis \
+		-e REDIS_PORT=6379 \
+		test-runner make test-all-services
+
+.PHONY: test-container-shell
+test-container-shell: ## Open shell in test container for debugging
+	@echo "🐳 Opening shell in test container..."
+	podman-compose -f podman-compose.test.yml run --rm \
+		-e POSTGRES_HOST=postgres \
+		-e POSTGRES_PORT=5432 \
+		-e REDIS_HOST=redis \
+		-e REDIS_PORT=6379 \
+		test-runner /bin/bash
+
+.PHONY: test-container-down
+test-container-down: ## Stop and remove all test containers
+	@echo "🐳 Stopping test containers..."
+	podman-compose -f podman-compose.test.yml down -v

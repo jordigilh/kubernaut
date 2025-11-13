@@ -421,21 +421,21 @@ var _ = Describe("AggregationService", func() {
 
 type MockDataStorageClient struct {
 	// Incident Type
-	incidentTypeResponse      *dsmodels.IncidentTypeSuccessRateResponse
-	incidentTypeError         error
-	incidentTypeCallCount     int
-	incidentTypeLastIncident  string
-	incidentTypeLastTimeRange string
+	incidentTypeResponse       *dsmodels.IncidentTypeSuccessRateResponse
+	incidentTypeError          error
+	incidentTypeCallCount      int
+	incidentTypeLastIncident   string
+	incidentTypeLastTimeRange  string
 	incidentTypeLastMinSamples int
 
 	// Playbook
-	playbookResponse           *dsmodels.PlaybookSuccessRateResponse
-	playbookError              error
-	playbookCallCount          int
-	playbookLastID             string
-	playbookLastVersion        string
-	playbookLastTimeRange      string
-	playbookLastMinSamples     int
+	playbookResponse       *dsmodels.PlaybookSuccessRateResponse
+	playbookError          error
+	playbookCallCount      int
+	playbookLastID         string
+	playbookLastVersion    string
+	playbookLastTimeRange  string
+	playbookLastMinSamples int
 
 	// Multi-Dimensional
 	multiDimensionalResponse  *dsmodels.MultiDimensionalSuccessRateResponse

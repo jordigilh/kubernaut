@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/redis/go-redis/v9"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
@@ -204,4 +204,3 @@ var _ = Describe("DLQClient", func() {
 func Errorf(format string, args ...interface{}) error {
 	return fmt.Errorf(format, args...)
 }
-

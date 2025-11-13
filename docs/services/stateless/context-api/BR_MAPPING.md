@@ -262,7 +262,7 @@ return nil, 0, rfc7807Err
 - Core Query & Data Access: 6 umbrella BRs
 - Aggregation API: 3 umbrella BRs
 
-**Note**: AI/LLM Integration BRs (BR-CONTEXT-016, 021, 022, 023, 025, 039, 040) and Context Optimization BRs (BR-CONTEXT-OPT-001 to 004) have been migrated to **AI/ML Service** as **BR-AI-*** per ADR-034. See `CONTEXT_API_AI_BR_RENAMING_MAP.md` for details. (includes performance and edge cases)
+**Note**: AI/LLM Integration BRs (BR-CONTEXT-016, 021, 022, 023, 025, 039, 040) and Context Optimization BRs (BR-CONTEXT-OPT-001 to 004) have been migrated to **AI/ML Service** as **BR-AI-*** per ADR-037. See `CONTEXT_API_AI_BR_RENAMING_MAP.md` for details. (includes performance and edge cases)
 
 ### Total Sub-BRs: 55+
 - Core Query & Data Access: 30+ sub-BRs

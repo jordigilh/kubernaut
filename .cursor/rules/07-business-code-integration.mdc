@@ -1,6 +1,6 @@
 ---
-alwaysApply: true
 description: "Business code integration patterns and validation requirements for kubernaut"
+alwaysApply: false
 ---
 # Business Code Integration Standards
 

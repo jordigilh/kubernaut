@@ -121,4 +121,3 @@ func writeRFC7807Error(w http.ResponseWriter, r *http.Request, statusCode int, d
 		http.Error(w, detail, statusCode)
 	}
 }
-

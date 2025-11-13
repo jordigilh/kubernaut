@@ -45,7 +45,8 @@ import (
 
 var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking", Ordered, func() {
 	var (
-		client *http.Client
+		client          *http.Client
+		adr033HistoryID int64 // Auto-generated history ID for test data
 	)
 
 	BeforeAll(func() {
@@ -55,25 +56,26 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 		GinkgoWriter.Println("📊 ADR-033 Integration Tests: HTTP API + PostgreSQL")
 
 		// Create parent records required for foreign key constraints
-		// Step 1: Insert resource_references record
+		// Step 1: Insert resource_references record (let PostgreSQL auto-generate id)
+		var adr033ResourceID int64
 		resourceSQL := `
-			INSERT INTO resource_references (id, resource_uid, api_version, kind, name, namespace, created_at)
-			VALUES (999, 'test-uid-adr033-001', 'apps/v1', 'Deployment', 'test-deployment-adr033', 'test-namespace', NOW())
-			ON CONFLICT (id) DO NOTHING
+			INSERT INTO resource_references (resource_uid, api_version, kind, name, namespace, created_at)
+			VALUES ('test-uid-adr033-001', 'apps/v1', 'Deployment', 'test-deployment-adr033', 'test-namespace', NOW())
+			RETURNING id
 		`
-		_, err := db.Exec(resourceSQL)
+		err := db.QueryRow(resourceSQL).Scan(&adr033ResourceID)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Step 2: Insert action_histories record
+		// Step 2: Insert action_histories record (let PostgreSQL auto-generate id)
 		actionHistorySQL := `
-			INSERT INTO action_histories (id, resource_id, created_at)
-			VALUES (999, 999, NOW())
-			ON CONFLICT (id) DO NOTHING
+			INSERT INTO action_histories (resource_id, created_at)
+			VALUES ($1, NOW())
+			RETURNING id
 		`
-		_, err = db.Exec(actionHistorySQL)
+		err = db.QueryRow(actionHistorySQL, adr033ResourceID).Scan(&adr033HistoryID)
 		Expect(err).ToNot(HaveOccurred())
 
-		GinkgoWriter.Println("  ✅ Parent records created (resource_references id=999, action_histories id=999)")
+		GinkgoWriter.Printf("  ✅ Parent records created (resource_references id=%d, action_histories id=%d)\n", adr033ResourceID, adr033HistoryID)
 	})
 
 	BeforeEach(func() {
@@ -100,10 +102,10 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 8 successes, 2 failures = 80% success rate
 				for i := 0; i < 8; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "pod-oom-recovery", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "pod-oom-recovery", "v1.0", true, false, false)
 				}
 				for i := 0; i < 2; i++ {
-					insertADR033ActionTrace(incidentType, "failed", "pod-oom-recovery", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "pod-oom-recovery", "v1.0", true, false, false)
 				}
 
 				// Execute HTTP request
@@ -177,7 +179,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: Only 3 samples (below min_samples=5)
 				for i := 0; i < 3; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -188,7 +190,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 				var result models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(json.NewDecoder(resp.Body).Decode(&result)).ToNot(HaveOccurred())
 
 				// CORRECTNESS: Confidence should be 'insufficient_data' (< 5 samples)
 				Expect(result.TotalExecutions).To(Equal(3))
@@ -203,7 +205,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 10 samples (5-19 range = low confidence)
 				for i := 0; i < 10; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -212,7 +214,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				defer resp.Body.Close()
 
 				var result models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(json.NewDecoder(resp.Body).Decode(&result)).ToNot(HaveOccurred())
 
 				// CORRECTNESS: Confidence should be 'low' (10 samples in 5-19 range)
 				Expect(result.TotalExecutions).To(Equal(10))
@@ -225,7 +227,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 50 samples (20-99 range = medium confidence)
 				for i := 0; i < 50; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -234,7 +236,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				defer resp.Body.Close()
 
 				var result models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(json.NewDecoder(resp.Body).Decode(&result)).ToNot(HaveOccurred())
 
 				// CORRECTNESS: Confidence should be 'medium' (50 samples in 20-99 range)
 				Expect(result.TotalExecutions).To(Equal(50))
@@ -247,7 +249,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 150 samples (100+ = high confidence)
 				for i := 0; i < 150; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -256,7 +258,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				defer resp.Body.Close()
 
 				var result models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				Expect(json.NewDecoder(resp.Body).Decode(&result)).ToNot(HaveOccurred())
 
 				// CORRECTNESS: Confidence should be 'high' (150 samples >= 100)
 				Expect(result.TotalExecutions).To(Equal(150))
@@ -272,7 +274,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Setup: Insert data at different times
 				// Recent data (within 7 days)
 				for i := 0; i < 5; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
 				}
 
 				// Old data (8 days ago) - should be excluded
@@ -286,15 +288,15 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 						playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
 						ai_selected_playbook
 					) VALUES (
-						999,
+						$1,
 						gen_random_uuid()::text, 'increase_memory', NOW() - INTERVAL '8 days', 'completed',
 						'TestSignal', 'warning',
 						'gpt-4', 0.95,
-						$1, 'TestAlert', 'warning',
+						$2, 'TestAlert', 'warning',
 						'test-playbook', 'v1.0', 1, gen_random_uuid()::text,
 						true
 					)
-				`, incidentType)
+				`, adr033HistoryID, incidentType)
 				Expect(err).ToNot(HaveOccurred())
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
@@ -339,7 +341,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: All successes
 				for i := 0; i < 10; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "test-playbook", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -362,7 +364,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: All failures
 				for i := 0; i < 10; i++ {
-					insertADR033ActionTrace(incidentType, "failed", "test-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "test-playbook", "v1.0", true, false, false)
 				}
 
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
@@ -421,10 +423,10 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 7 successes, 3 failures = 70% success rate
 				for i := 0; i < 7; i++ {
-					insertADR033ActionTrace("pod-crash", "completed", playbookID, playbookVersion, true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "pod-crash", "completed", playbookID, playbookVersion, true, false, false)
 				}
 				for i := 0; i < 3; i++ {
-					insertADR033ActionTrace("pod-crash", "failed", playbookID, playbookVersion, true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "pod-crash", "failed", playbookID, playbookVersion, true, false, false)
 				}
 
 				// Execute HTTP request
@@ -478,11 +480,11 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Setup: Different versions with different success rates
 				// v1.0: 5 successes
 				for i := 0; i < 5; i++ {
-					insertADR033ActionTrace("test-incident", "completed", playbookID, "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "test-incident", "completed", playbookID, "v1.0", true, false, false)
 				}
 				// v2.0: 3 successes
 				for i := 0; i < 3; i++ {
-					insertADR033ActionTrace("test-incident", "completed", playbookID, "v2.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "test-incident", "completed", playbookID, "v2.0", true, false, false)
 				}
 
 				// Query for v1.0 only
@@ -527,14 +529,14 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Setup: ADR-033 Hybrid Model distribution
 				// 90% catalog selections
 				for i := 0; i < 90; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
 				}
 				// 9% chained playbooks
 				for i := 0; i < 9; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "chained-playbook", "v1.0", false, true, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "chained-playbook", "v1.0", false, true, false)
 				}
 				// 1% manual escalation
-				insertADR033ActionTrace(incidentType, "failed", "manual-escalation", "v1.0", false, false, true)
+				insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "manual-escalation", "v1.0", false, false, true)
 
 				// ACT: Query incident-type success rate
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
@@ -577,7 +579,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 
 				// Setup: 100% catalog selections
 				for i := 0; i < 50; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
 				}
 
 				// ACT: Query incident-type success rate
@@ -605,18 +607,18 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Setup: Mixed modes with some failures
 				// 10 catalog selections (8 success, 2 failure)
 				for i := 0; i < 8; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "catalog-playbook", "v1.0", true, false, false)
 				}
 				for i := 0; i < 2; i++ {
-					insertADR033ActionTrace(incidentType, "failed", "catalog-playbook", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "catalog-playbook", "v1.0", true, false, false)
 				}
 				// 5 chained playbooks (all success)
 				for i := 0; i < 5; i++ {
-					insertADR033ActionTrace(incidentType, "completed", "chained-playbook", "v1.0", false, true, false)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "completed", "chained-playbook", "v1.0", false, true, false)
 				}
 				// 2 manual escalations (both failure)
 				for i := 0; i < 2; i++ {
-					insertADR033ActionTrace(incidentType, "failed", "manual-escalation", "v1.0", false, false, true)
+					insertADR033ActionTrace(adr033HistoryID, incidentType, "failed", "manual-escalation", "v1.0", false, false, true)
 				}
 
 				// ACT: Query incident-type success rate
@@ -671,6 +673,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Insert 10 completed actions for specific combination
 				for i := 0; i < 10; i++ {
 					insertADR033ActionTrace(
+						adr033HistoryID,
 						"integration-test-pod-oom",
 						"completed",
 						"pod-oom-recovery",
@@ -681,6 +684,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// Insert 2 failed actions for same combination
 				for i := 0; i < 2; i++ {
 					insertADR033ActionTrace(
+						adr033HistoryID,
 						"integration-test-pod-oom",
 						"failed",
 						"pod-oom-recovery",
@@ -689,7 +693,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 					)
 				}
 				// Insert noise data with different combination (should be filtered out)
-				insertADR033ActionTrace("integration-test-other", "completed", "other-playbook", "v2.0", true, false, false)
+				insertADR033ActionTrace(adr033HistoryID, "integration-test-other", "completed", "other-playbook", "v2.0", true, false, false)
 
 				// ACT: Query multi-dimensional endpoint with all 3 dimensions
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&playbook_id=pod-oom-recovery&playbook_version=v1.2&action_type=increase_memory&time_range=1h", datastorageURL))
@@ -739,14 +743,14 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 							playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
 							ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
 						) VALUES (
-							999, gen_random_uuid()::text, 'increase_memory', NOW(), 'completed',
+							$1, gen_random_uuid()::text, 'increase_memory', NOW(), 'completed',
 							'TestSignal', 'warning', 'gpt-4', 0.95,
 							'integration-test-pod-oom', 'TestAlert', 'warning',
 							'pod-oom-recovery', 'v1.2', 1, gen_random_uuid()::text,
 							true, false, false
 						)
 					`
-					_, err := db.Exec(query)
+					_, err := db.Exec(query, adr033HistoryID)
 					Expect(err).ToNot(HaveOccurred())
 				}
 				// Pod OOM recovery playbook - restart_pod action
@@ -759,14 +763,14 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 							playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
 							ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
 						) VALUES (
-							999, gen_random_uuid()::text, 'restart_pod', NOW(), 'completed',
+							$1, gen_random_uuid()::text, 'restart_pod', NOW(), 'completed',
 							'TestSignal', 'warning', 'gpt-4', 0.95,
 							'integration-test-pod-oom', 'TestAlert', 'warning',
 							'pod-oom-recovery', 'v1.2', 2, gen_random_uuid()::text,
 							true, false, false
 						)
 					`
-					_, err := db.Exec(query)
+					_, err := db.Exec(query, adr033HistoryID)
 					Expect(err).ToNot(HaveOccurred())
 				}
 
@@ -799,11 +803,11 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// ARRANGE: Insert data for single incident_type with MULTIPLE playbooks
 				// Playbook A
 				for i := 0; i < 6; i++ {
-					insertADR033ActionTrace("integration-test-disk-full", "completed", "disk-cleanup", "v1.0", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "integration-test-disk-full", "completed", "disk-cleanup", "v1.0", true, false, false)
 				}
 				// Playbook B
 				for i := 0; i < 4; i++ {
-					insertADR033ActionTrace("integration-test-disk-full", "completed", "expand-volume", "v2.1", true, false, false)
+					insertADR033ActionTrace(adr033HistoryID, "integration-test-disk-full", "completed", "expand-volume", "v2.1", true, false, false)
 				}
 
 				// ACT: Query with only incident_type
@@ -885,7 +889,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 		Context("defaults", func() {
 			It("should default to 7d time_range when not specified", func() {
 				// ARRANGE: Insert test data
-				insertADR033ActionTrace("integration-test-defaults", "completed", "test-playbook", "v1.0", true, false, false)
+				insertADR033ActionTrace(adr033HistoryID, "integration-test-defaults", "completed", "test-playbook", "v1.0", true, false, false)
 
 				// ACT: Query without time_range
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-defaults", datastorageURL))
@@ -909,6 +913,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 // insertADR033ActionTrace inserts a test action trace with ADR-033 fields
 // Uses the actual schema columns from 001_initial_schema.sql + 011_rename_alert_to_signal.sql + 012_adr033_multidimensional_tracking.sql
 func insertADR033ActionTrace(
+	actionHistoryID int64,
 	incidentType string,
 	executionStatus string,
 	playbookID string,
@@ -925,19 +930,19 @@ func insertADR033ActionTrace(
 			model_used, model_confidence,
 			incident_type, alert_name, incident_severity,
 			playbook_id, playbook_version, playbook_step_number, playbook_execution_id,
-			ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
-		) VALUES (
-			999,
-			gen_random_uuid()::text, 'increase_memory', NOW(), $1,
+		ai_selected_playbook, ai_chained_playbooks, ai_manual_escalation
+	) VALUES (
+		$1,
+		gen_random_uuid()::text, 'increase_memory', NOW(), $2,
 			'TestSignal', 'warning',
 			'gpt-4', 0.95,
-			$2, 'TestAlert', 'warning',
-			$3, $4, 1, gen_random_uuid()::text,
-			$5, $6, $7
+			$3, 'TestAlert', 'warning',
+			$4, $5, 1, gen_random_uuid()::text,
+			$6, $7, $8
 		)
 	`
 	_, err := db.Exec(query,
-		executionStatus, incidentType,
+		actionHistoryID, executionStatus, incidentType,
 		playbookID, playbookVersion,
 		aiSelectedPlaybook, aiChainedPlaybooks, aiManualEscalation,
 	)
@@ -945,6 +950,7 @@ func insertADR033ActionTrace(
 }
 
 // cleanupADR033TestData removes all test data from resource_action_traces
+// Note: Does NOT delete parent records (resource_references, action_histories) created in BeforeAll
 func cleanupADR033TestData() {
 	_, err := db.Exec("DELETE FROM resource_action_traces WHERE incident_type LIKE 'integration-test-%'")
 	Expect(err).ToNot(HaveOccurred())
