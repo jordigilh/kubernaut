@@ -977,7 +977,7 @@ func main() {
 
 ```go
 // test/unit/[service]/metrics_test.go
-package [service]_test
+package [service]
 
 import (
 	"context"
@@ -988,7 +988,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/jordigilh/kubernaut/pkg/[service]"
 	"github.com/jordigilh/kubernaut/pkg/[service]/metrics"
 )
 
@@ -1446,7 +1445,7 @@ Describe("Integration Test [N]: [Scenario]", func() {
 **BR Coverage**: BR-XXX-001 (Complete workflow), BR-XXX-002 (Status tracking)
 
 ```go
-package [service]_test
+package [service]
 
 import (
 	"context"
@@ -1560,7 +1559,7 @@ var _ = Describe("Integration Test 1: Complete Workflow (Pending → Complete)",
 **BR Coverage**: BR-XXX-003 (Error recovery), BR-XXX-004 (Exponential backoff)
 
 ```go
-package [service]_test
+package [service]
 
 import (
 	"context"
@@ -1720,7 +1719,7 @@ var _ = Describe("Integration Test 2: Failure Recovery with Automatic Retry", fu
 **BR Coverage**: BR-XXX-005 (Graceful degradation), BR-XXX-006 (Partial success)
 
 ```go
-package [service]_test
+package [service]
 
 import (
 	"context"
