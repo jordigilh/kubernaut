@@ -33,6 +33,10 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 		// Integration tests with real database may need more time than unit tests
 		client = &http.Client{Timeout: 30 * time.Second}
 
+		// Clean up any leftover test data from previous test suites
+		GinkgoWriter.Println("🧹 Cleaning up any existing test data...")
+		cleanupAggregationTestData()
+
 		// Insert test data for aggregation tests
 		GinkgoWriter.Println("📊 Inserting test data for aggregation tests...")
 		insertAggregationTestData()
@@ -194,12 +198,10 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 
 				// ✅ CORRECTNESS TEST: Verify against real database (GAP-05)
 				// Note: resource_action_traces uses cluster_name column (schema compatibility)
-				// Filter by signal_name to only count test data from this suite
 				rows, err := db.Query(`
 					SELECT cluster_name as namespace, COUNT(*) as count
 					FROM resource_action_traces
 					WHERE cluster_name LIKE '%-agg'
-					AND signal_name LIKE 'agg-inc-%'
 					GROUP BY cluster_name
 					ORDER BY count DESC
 				`)
