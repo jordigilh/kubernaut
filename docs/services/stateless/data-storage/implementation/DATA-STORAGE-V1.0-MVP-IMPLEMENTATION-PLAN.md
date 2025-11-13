@@ -42,7 +42,7 @@
 - ❌ Embedding caching (per DD-STORAGE-006)
 - ❌ CRD controller for playbooks
 
-**Timeline**: 6 days (40 hours)
+**Timeline**: 11-12 days (88-96 hours)
 **Confidence**: 95%
 
 ---
@@ -480,10 +480,16 @@ func (s *Server) CreatePlaybook(ctx context.Context, playbook *Playbook) error {
 | **Day 2** | Migration | 8h | Audit Migration + Data Storage Updates | Unified repository, handlers, DLQ |
 | **Day 3** | Playbook Foundation | 8h | Playbook Schema + Models + Repository | `playbook_catalog` table, read-only repo |
 | **Day 4** | Semantic Search | 8h | Embedding Service + Search API | Real-time embeddings, search endpoint |
-| **Day 5** | Integration Tests | 8h | Unified Audit + Playbook Tests | Comprehensive test coverage |
-| **Day 6** | Documentation | 8h | API Docs + Migration Guide + Runbook | Production-ready documentation |
+| **Day 5** | Integration Tests (Audit) | 8h | Unified Audit Tests | Audit test coverage |
+| **Day 6** | Integration Tests (Playbook) | 8h | Playbook + Semantic Search Tests | Playbook test coverage |
+| **Day 7** | Error Handling + Observability | 8h | Error classification, retry logic, metrics | Production error handling |
+| **Day 8** | Performance Testing | 8h | Load testing, benchmarking | Performance validation |
+| **Day 9** | E2E Tests | 8h | End-to-end scenarios | E2E test coverage |
+| **Day 10** | Documentation | 8h | API docs, migration guide, runbooks | Complete documentation |
+| **Day 11** | Production Readiness | 8h | Deployment manifests, monitoring, alerts | Production deployment artifacts |
+| **Day 12** | Handoff + Final Review | 8h | Handoff summary, confidence assessment | Production-ready handoff |
 
-**Total Duration**: 6 days (40 hours)
+**Total Duration**: 11-12 days (88-96 hours)
 
 ---
 
@@ -1972,7 +1978,363 @@ Production-ready documentation and deployment artifacts.
 2. Verify all BRs have test coverage
 3. Confidence assessment
 
-**Deliverable**: Day 6 complete, V1.0 MVP ready for deployment
+**Deliverable**: Day 6 complete, integration tests validated
+
+---
+
+## 📊 **Day 7: Error Handling + Observability** (8 hours)
+
+### **Objective**
+
+Implement production-grade error handling, retry logic, and observability.
+
+---
+
+### **Phase 7.1: Error Classification Implementation (2 hours)**
+
+**Tasks**:
+1. Implement `isTransientError()` and `isPermanentError()` helpers
+2. Add PostgreSQL error code classification (23505, 40P01, etc.)
+3. Unit tests for error classification (15 table-driven tests)
+
+**Deliverable**: Error classification logic
+
+---
+
+### **Phase 7.2: Retry Logic with Exponential Backoff (2 hours)**
+
+**Tasks**:
+1. Implement retry wrapper with exponential backoff (1s, 2s, 4s)
+2. Add retry logic to audit write operations
+3. Integration tests for retry scenarios (deadlock, connection timeout)
+
+**Deliverable**: Retry logic implemented
+
+---
+
+### **Phase 7.3: Prometheus Metrics (2 hours)**
+
+**Tasks**:
+1. Add `datastorage_audit_writes_total` counter (by outcome)
+2. Add `datastorage_playbook_search_duration_seconds` histogram
+3. Add `datastorage_db_connections_in_use` gauge
+4. Add `datastorage_dlq_depth` gauge
+
+**Deliverable**: Prometheus metrics
+
+---
+
+### **Phase 7.4: Structured Logging (2 hours)**
+
+**Tasks**:
+1. Add structured logging for all error paths
+2. Add correlation_id to all log entries
+3. Add log sampling for high-volume operations
+
+**Deliverable**: Production-ready logging
+
+---
+
+## 📊 **Day 8: Performance Testing** (8 hours)
+
+### **Objective**
+
+Validate performance targets and identify bottlenecks.
+
+---
+
+### **Phase 8.1: Load Testing Setup (2 hours)**
+
+**Tasks**:
+1. Create load test script using `k6` or `wrk`
+2. Define test scenarios:
+   - 100 concurrent audit writes
+   - 50 concurrent playbook searches
+   - Mixed workload (70% read, 30% write)
+
+**Deliverable**: Load test infrastructure
+
+---
+
+### **Phase 8.2: Audit Write Performance (2 hours)**
+
+**Tasks**:
+1. Benchmark audit write throughput (target: 1000 writes/sec)
+2. Test DLQ fallback performance
+3. Test partition write performance
+
+**Deliverable**: Audit write performance validated
+
+---
+
+### **Phase 8.3: Semantic Search Performance (2 hours)**
+
+**Tasks**:
+1. Benchmark playbook search latency (target: <2.5s for 50 playbooks)
+2. Test embedding generation performance
+3. Profile CPU and memory usage
+
+**Deliverable**: Search performance validated
+
+---
+
+### **Phase 8.4: Performance Report (2 hours)**
+
+**Tasks**:
+1. Create `implementation/PERFORMANCE_REPORT.md`
+2. Document latency percentiles (p50, p95, p99)
+3. Document throughput and resource usage
+4. Identify optimization opportunities for V1.1
+
+**Deliverable**: Performance report
+
+---
+
+## 📊 **Day 9: E2E Tests** (8 hours)
+
+### **Objective**
+
+End-to-end validation of critical user journeys.
+
+---
+
+### **Phase 9.1: Audit E2E Test (2 hours)**
+
+**Test Scenario**: Complete audit flow from service write to query
+1. Service writes audit event via REST API
+2. Event persists to `audit_events` table
+3. Query API returns event with correlation tracking
+4. Verify partition routing works correctly
+
+**Deliverable**: Audit E2E test
+
+---
+
+### **Phase 9.2: DLQ E2E Test (2 hours)**
+
+**Test Scenario**: Database outage with DLQ fallback
+1. Stop PostgreSQL container
+2. Service writes audit event → DLQ fallback
+3. Restart PostgreSQL
+4. DLQ worker drains events to database
+5. Query API returns event
+
+**Deliverable**: DLQ E2E test
+
+---
+
+### **Phase 9.3: Playbook Search E2E Test (2 hours)**
+
+**Test Scenario**: Complete playbook discovery flow
+1. Insert playbooks via SQL (v1.0.0, v1.1.0, v1.2.0)
+2. Embedding service generates embeddings
+3. Search API returns semantically similar playbooks
+4. Verify version ordering and metadata
+
+**Deliverable**: Playbook search E2E test
+
+---
+
+### **Phase 9.4: E2E Test Report (2 hours)**
+
+**Tasks**:
+1. Run all E2E tests in CI/CD pipeline
+2. Document test results and coverage
+3. Create `implementation/E2E_TEST_REPORT.md`
+
+**Deliverable**: E2E test report
+
+---
+
+## 📊 **Day 10: Documentation** (8 hours)
+
+### **Objective**
+
+Comprehensive documentation for production deployment and operations.
+
+---
+
+### **Phase 10.1: API Documentation (2 hours)**
+
+**Tasks**:
+1. Complete OpenAPI 3.0 spec for all endpoints
+2. Add request/response examples
+3. Document error codes and retry behavior
+4. Create Postman collection
+
+**Deliverable**: API documentation
+
+---
+
+### **Phase 10.2: Migration Guide (2 hours)**
+
+**Tasks**:
+1. Create `MIGRATION_GUIDE_V1.0.md`
+2. Document migration from `notification_audit` to `audit_events`
+3. Document playbook catalog SQL management
+4. Include rollback procedures
+
+**Deliverable**: Migration guide
+
+---
+
+### **Phase 10.3: Operations Runbook (2 hours)**
+
+**Tasks**:
+1. Create `RUNBOOK_V1.0.md`
+2. Document operational procedures:
+   - Partition maintenance (monthly)
+   - DLQ monitoring and draining
+   - Database connection pool tuning
+   - Troubleshooting common issues
+3. Include Prometheus alert rules
+
+**Deliverable**: Operations runbook
+
+---
+
+### **Phase 10.4: Architecture Documentation (2 hours)**
+
+**Tasks**:
+1. Update `README.md` with V1.0 architecture
+2. Document component interactions
+3. Add sequence diagrams for audit write and playbook search
+4. Document V1.0 limitations and V1.1 roadmap
+
+**Deliverable**: Architecture documentation
+
+---
+
+## 📊 **Day 11: Production Readiness** (8 hours)
+
+### **Objective**
+
+Production deployment artifacts and monitoring setup.
+
+---
+
+### **Phase 11.1: Deployment Manifests (2 hours)**
+
+**Tasks**:
+1. Create Kubernetes Deployment manifest
+2. Create Service manifest (HTTP 8080, metrics 9090)
+3. Create ConfigMap for configuration
+4. Create Secret for database credentials
+5. Add resource limits (CPU: 500m, Memory: 512Mi)
+
+**Deliverable**: Deployment manifests
+
+---
+
+### **Phase 11.2: Health Checks (2 hours)**
+
+**Tasks**:
+1. Implement `/healthz` liveness probe
+2. Implement `/readyz` readiness probe (check DB + Redis)
+3. Configure probe thresholds:
+   - Liveness: `periodSeconds: 10, failureThreshold: 3`
+   - Readiness: `periodSeconds: 5, failureThreshold: 3`
+
+**Deliverable**: Health checks
+
+---
+
+### **Phase 11.3: Monitoring Setup (2 hours)**
+
+**Tasks**:
+1. Create Grafana dashboard for Data Storage Service
+2. Add panels for:
+   - Audit write rate and latency
+   - Playbook search latency
+   - DLQ depth
+   - Database connection pool usage
+   - Error rate by type
+3. Create Prometheus alert rules:
+   - DLQ depth > 1000 (warning)
+   - Error rate > 5% (critical)
+   - Search latency p95 > 5s (warning)
+
+**Deliverable**: Monitoring setup
+
+---
+
+### **Phase 11.4: Production Readiness Assessment (2 hours)**
+
+**Tasks**:
+1. Complete production readiness checklist (see template)
+2. Score functional, operational, security, performance, deployment
+3. Document critical gaps and mitigation plans
+4. Create `implementation/PRODUCTION_READINESS_REPORT.md`
+
+**Deliverable**: Production readiness report
+
+---
+
+## 📊 **Day 12: Handoff + Final Review** (8 hours)
+
+### **Objective**
+
+Final validation and comprehensive handoff documentation.
+
+---
+
+### **Phase 12.1: Final Validation (2 hours)**
+
+**Tasks**:
+1. Run full test suite (unit + integration + E2E)
+2. Verify all BRs have test coverage
+3. Run load tests and validate performance targets
+4. Review all documentation for completeness
+
+**Deliverable**: Final validation complete
+
+---
+
+### **Phase 12.2: Handoff Summary (3 hours)**
+
+**Tasks**:
+1. Create `implementation/00-HANDOFF-SUMMARY.md` (see template)
+2. Document:
+   - Executive summary (what was built, status, readiness score)
+   - Implementation overview (scope accomplished, deferred)
+   - Architecture summary (component diagram, data flow)
+   - Business requirements coverage (all BRs mapped)
+   - Testing summary (unit/integration/E2E counts)
+   - Known limitations (V1.0 constraints)
+   - Production deployment checklist
+   - Operational handoff (runbooks, monitoring, troubleshooting)
+   - V1.1 roadmap (write APIs, caching, CRD controller)
+
+**Deliverable**: Handoff summary
+
+---
+
+### **Phase 12.3: Confidence Assessment (2 hours)**
+
+**Tasks**:
+1. Create `implementation/CONFIDENCE_ASSESSMENT.md`
+2. Document:
+   - Implementation accuracy (target 90%+)
+   - Test coverage (unit 70%+, integration 50%+, E2E <10%)
+   - Business requirement coverage (100%)
+   - Production readiness score (target 95%+)
+   - Risks and mitigations
+3. Final confidence rating with detailed justification
+
+**Deliverable**: Confidence assessment
+
+---
+
+### **Phase 12.4: Team Handoff Meeting (1 hour)**
+
+**Tasks**:
+1. Present handoff summary to team
+2. Walk through architecture and key decisions
+3. Demo critical features (audit write, playbook search, DLQ)
+4. Review operational procedures
+5. Answer questions and address concerns
+
+**Deliverable**: V1.0 MVP ready for production deployment
 
 ---
 
