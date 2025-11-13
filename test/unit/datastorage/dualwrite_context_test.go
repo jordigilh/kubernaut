@@ -183,7 +183,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 			Status:               "success",
 			StartTime:            time.Now(),
 			RemediationRequestID: "req-ctx-123",
-			SignalFingerprint:     "alert-ctx",
+			SignalFingerprint:    "alert-ctx",
 			Severity:             "high",
 			Environment:          "production",
 			ClusterName:          "prod-cluster",
@@ -348,7 +348,7 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 						Status:               testAudit.Status,
 						StartTime:            time.Now(),
 						RemediationRequestID: testAudit.RemediationRequestID + string(rune(index)),
-						SignalFingerprint:     testAudit.SignalFingerprint,
+						SignalFingerprint:    testAudit.SignalFingerprint,
 						Severity:             testAudit.Severity,
 						Environment:          testAudit.Environment,
 						ClusterName:          testAudit.ClusterName,
@@ -405,17 +405,16 @@ var _ = Describe("BR-STORAGE-016: Context Propagation", func() {
 			ctx := context.WithValue(context.Background(), requestIDKey, "req-12345")
 			embedding := make([]float32, 384)
 
-		// ACT: Write with context containing request ID
-		_, err := coordinator.Write(ctx, testAudit, embedding)
+			// ACT: Write with context containing request ID
+			_, err := coordinator.Write(ctx, testAudit, embedding)
 
-		// CORRECTNESS: Write succeeds
-		Expect(err).ToNot(HaveOccurred(), "Write should succeed")
+			// CORRECTNESS: Write succeeds
+			Expect(err).ToNot(HaveOccurred(), "Write should succeed")
 
-		// CORRECTNESS: Context was passed through with original values preserved
-		value := mockDB.beginTxContext.Value(requestIDKey)
-		Expect(value).To(Equal("req-12345"),
-			"Context values should be preserved through call chain (not replaced with background context)")
+			// CORRECTNESS: Context was passed through with original values preserved
+			value := mockDB.beginTxContext.Value(requestIDKey)
+			Expect(value).To(Equal("req-12345"),
+				"Context values should be preserved through call chain (not replaced with background context)")
 		})
 	})
 })
-

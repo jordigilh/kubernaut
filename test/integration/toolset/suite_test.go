@@ -11,4 +11,3 @@ func TestToolsetIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Dynamic Toolset Integration Test Suite")
 }
-

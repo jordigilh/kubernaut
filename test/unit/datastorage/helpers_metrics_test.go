@@ -17,7 +17,6 @@ limitations under the License.
 package datastorage
 
 import (
-
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

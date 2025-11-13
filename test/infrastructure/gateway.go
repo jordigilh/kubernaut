@@ -533,7 +533,7 @@ func StartRedisContainer(containerName string, port int, writer io.Writer) error
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", containerName,
 		"-p", fmt.Sprintf("%d:6379", port),
-		"redis:7-alpine")
+		"quay.io/jordigilh/redis:7-alpine")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -571,4 +571,3 @@ func StopRedisContainer(containerName string, writer io.Writer) error {
 	fmt.Fprintf(writer, "✅ Redis container '%s' stopped and removed\n", containerName)
 	return nil
 }
-

@@ -182,7 +182,7 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", cfg.DBName),
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", cfg.DBUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", cfg.DBPassword),
-		"pgvector/pgvector:pg16")
+		"quay.io/jordigilh/pgvector:pg16")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -212,7 +212,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"-p", fmt.Sprintf("%s:6379", cfg.RedisPort),
-		"redis:7-alpine")
+		"quay.io/jordigilh/redis:7-alpine")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -291,9 +291,9 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	for _, migration := range migrations {
 		// Try multiple paths to find migrations (supports running from different directories)
 		migrationPaths := []string{
-			filepath.Join("migrations", migration),                    // From workspace root
-			filepath.Join("..", "..", "..", "migrations", migration),  // From test/integration/contextapi/
-			filepath.Join("..", "..", "migrations", migration),        // From test/integration/
+			filepath.Join("migrations", migration),                   // From workspace root
+			filepath.Join("..", "..", "..", "migrations", migration), // From test/integration/contextapi/
+			filepath.Join("..", "..", "migrations", migration),       // From test/integration/
 		}
 
 		var content []byte
@@ -580,4 +580,3 @@ func getContainerIP(containerName string) string {
 	}
 	return ip
 }
-

@@ -28,7 +28,7 @@
 
 ## 🔄 **AI/ML BR Migration Notice**
 
-**[ADR-034: Business Requirement Template Standard](../../architecture/decisions/ADR-034-business-requirement-template-standard.md)** mandates correct BR categorization.
+**[ADR-037: Business Requirement Template Standard](../../architecture/decisions/ADR-037-business-requirement-template-standard.md)** mandates correct BR categorization.
 
 **11 BRs Migrated to AI/ML Service** (November 8, 2025):
 - **BR-CONTEXT-016 → BR-AI-016**: Investigation Complexity Assessment

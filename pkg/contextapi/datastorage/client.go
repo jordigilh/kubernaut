@@ -47,8 +47,8 @@ import (
 
 // Retry configuration constants
 const (
-	maxRetries        = 3
-	initialRetryDelay = 100 * time.Millisecond
+	maxRetries         = 3
+	initialRetryDelay  = 100 * time.Millisecond
 	retryBackoffFactor = 2
 )
 
@@ -358,4 +358,3 @@ func (c *Client) parseErrorResponse(statusCode int, body []byte, url string) err
 		zap.String("body", string(body)))
 	return fmt.Errorf("Data Storage API error (HTTP %d): %s", statusCode, string(body))
 }
-

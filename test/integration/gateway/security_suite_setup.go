@@ -18,7 +18,6 @@ package gateway
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -229,22 +228,3 @@ func GetSecurityTokens() *SecurityTestTokens {
 }
 
 // Helper function to get K8s clientset (used by tests)
-func getK8sClientset() *kubernetes.Clientset {
-	// Use isolated kubeconfig for Kind cluster to avoid impacting other tests
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "kind-config")
-	}
-
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to build kubeconfig from %s: %v", kubeconfigPath, err))
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to create Kubernetes clientset: %v", err))
-	}
-
-	return clientset
-}

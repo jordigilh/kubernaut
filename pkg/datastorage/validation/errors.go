@@ -219,4 +219,3 @@ func NewConflictProblem(resource, field, value string) *RFC7807Problem {
 		},
 	}
 }
-

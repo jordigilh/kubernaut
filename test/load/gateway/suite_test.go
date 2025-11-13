@@ -27,4 +27,3 @@ func TestGatewayLoadTests(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Gateway Load Test Suite")
 }
-

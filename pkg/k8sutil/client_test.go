@@ -79,4 +79,3 @@ func TestNewClientset(t *testing.T) {
 		t.Errorf("failed to get server version: %v", err)
 	}
 }
-
