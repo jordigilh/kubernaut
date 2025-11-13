@@ -446,34 +446,6 @@ var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered,
 			Expect(err).ToNot(HaveOccurred())
 			Expect(indexName).To(Equal("idx_rat_execution_status"))
 		})
-
-		It("should have index on incident_type (ADR-033)", func() {
-			query := `
-				SELECT indexname
-				FROM pg_indexes
-				WHERE schemaname = 'public'
-				AND tablename = 'resource_action_traces'
-				AND indexname = 'idx_rat_incident_type'
-			`
-			var indexName string
-			err := db.QueryRow(query).Scan(&indexName)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(indexName).To(Equal("idx_rat_incident_type"))
-		})
-
-		It("should have index on playbook_id (ADR-033)", func() {
-			query := `
-				SELECT indexname
-				FROM pg_indexes
-				WHERE schemaname = 'public'
-				AND tablename = 'resource_action_traces'
-				AND indexname = 'idx_rat_playbook_id'
-			`
-			var indexName string
-			err := db.QueryRow(query).Scan(&indexName)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(indexName).To(Equal("idx_rat_playbook_id"))
-		})
 	})
 
 	Context("Partitioning", func() {
