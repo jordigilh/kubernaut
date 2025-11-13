@@ -254,36 +254,162 @@ func (c *Coordinator) Write(ctx context.Context, audit *models.NotificationAudit
 
 **Goal**: Implement end-to-end semantic search with real embeddings and pgvector
 
+**⚠️ CRITICAL ALIGNMENT**: This implementation must align with **DD-CONTEXT-005: Minimal LLM Response Schema**
+
+#### **Architecture Alignment**
+
+**DD-CONTEXT-005 Pattern**: Filter Before LLM
+- **Semantic Search**: Find similar incidents by embedding similarity
+- **Label Matching**: Filter by environment, priority, risk_tolerance, business_category
+- **Response**: Minimal schema (playbook_id, version, description, confidence)
+
+**Data Storage Role**: Provide semantic search capability for Context API
+- Data Storage stores embeddings for notification/action audits
+- Context API queries Data Storage for similar incidents
+- Context API uses semantic similarity + label matching to build confidence score
+
 #### **Implementation**
 
 **Update Query Service**:
 ```go
 // pkg/datastorage/query/service.go
-func (s *QueryService) SemanticSearch(ctx context.Context, queryText string, limit int) ([]*models.NotificationAudit, error) {
+
+// SemanticSearchParams defines query parameters for semantic search
+// Aligns with DD-CONTEXT-005: Filter Before LLM pattern
+type SemanticSearchParams struct {
+    QueryText      string            // Text to search for (generates embedding)
+    Labels         map[string]string // Label filters (environment, priority, etc.)
+    MinConfidence  float64           // Minimum similarity threshold (0.0-1.0)
+    MaxResults     int               // Limit number of results
+}
+
+// SemanticSearchResult represents a search result with confidence score
+// Confidence = semantic similarity (cosine distance from pgvector)
+type SemanticSearchResult struct {
+    ActionID    string                 // Unique action identifier
+    Audit       *models.NotificationAudit // Full audit record
+    Confidence  float64                // Semantic similarity score (0.0-1.0)
+    Labels      map[string]string      // Labels for filtering
+}
+
+func (s *QueryService) SemanticSearch(ctx context.Context, params SemanticSearchParams) ([]*SemanticSearchResult, error) {
+    // Validate parameters
+    if params.QueryText == "" {
+        return nil, fmt.Errorf("query text cannot be empty")
+    }
+    if params.MaxResults <= 0 {
+        params.MaxResults = 10 // Default
+    }
+    if params.MinConfidence < 0 || params.MinConfidence > 1 {
+        params.MinConfidence = 0.7 // Default threshold
+    }
+
     // 1. Generate embedding for query text
-    queryEmbedding, err := s.embeddingPipeline.Generate(ctx, queryText)
+    queryEmbedding, err := s.embeddingPipeline.Generate(ctx, params.QueryText)
     if err != nil {
+        s.metrics.EmbeddingErrors.Inc()
         return nil, fmt.Errorf("failed to generate embedding: %w", err)
     }
 
-    // 2. Perform vector similarity search
-    actionIDs, err := s.vectorDB.SimilaritySearch(ctx, queryEmbedding, limit)
+    // 2. Perform vector similarity search with label filtering
+    // DD-CONTEXT-005: All filtering happens at query time, not in LLM
+    query := `
+        SELECT 
+            action_id,
+            1 - (embedding <=> $1) AS similarity,
+            -- Fetch audit data for response
+            notification_id,
+            message_summary,
+            status,
+            sent_at,
+            -- Fetch labels for filtering
+            labels
+        FROM resource_action_traces
+        WHERE embedding IS NOT NULL
+          AND 1 - (embedding <=> $1) >= $2  -- Min confidence threshold
+    `
+
+    // Add label filters (DD-CONTEXT-005: Filter Before LLM)
+    labelFilters := []string{}
+    args := []interface{}{pgvector.NewVector(queryEmbedding), params.MinConfidence}
+    argIndex := 3
+    
+    for key, value := range params.Labels {
+        labelFilters = append(labelFilters, fmt.Sprintf("labels->>'%s' = $%d", key, argIndex))
+        args = append(args, value)
+        argIndex++
+    }
+    
+    if len(labelFilters) > 0 {
+        query += " AND " + strings.Join(labelFilters, " AND ")
+    }
+
+    // Order by similarity (highest first) and limit results
+    query += fmt.Sprintf(`
+        ORDER BY embedding <=> $1
+        LIMIT $%d
+    `, argIndex)
+    args = append(args, params.MaxResults)
+
+    // 3. Execute query
+    rows, err := s.db.QueryContext(ctx, query, args...)
     if err != nil {
+        s.metrics.QueryErrors.Inc()
         return nil, fmt.Errorf("failed to perform similarity search: %w", err)
     }
+    defer rows.Close()
 
-    // 3. Fetch full audit records
-    audits := make([]*models.NotificationAudit, 0, len(actionIDs))
-    for _, id := range actionIDs {
-        audit, err := s.repository.GetByActionID(ctx, id)
+    // 4. Parse results
+    results := make([]*SemanticSearchResult, 0, params.MaxResults)
+    for rows.Next() {
+        var (
+            actionID       string
+            similarity     float64
+            notificationID string
+            messageSummary string
+            status         string
+            sentAt         time.Time
+            labelsJSON     []byte
+        )
+
+        err := rows.Scan(&actionID, &similarity, &notificationID, &messageSummary, 
+                        &status, &sentAt, &labelsJSON)
         if err != nil {
-            s.logger.Warn("Failed to fetch audit", zap.String("action_id", id), zap.Error(err))
+            s.logger.Warn("Failed to scan search result", zap.Error(err))
             continue
         }
-        audits = append(audits, audit)
+
+        // Parse labels
+        labels := make(map[string]string)
+        if len(labelsJSON) > 0 {
+            json.Unmarshal(labelsJSON, &labels)
+        }
+
+        // Build result
+        result := &SemanticSearchResult{
+            ActionID: actionID,
+            Audit: &models.NotificationAudit{
+                NotificationID: notificationID,
+                MessageSummary: messageSummary,
+                Status:         status,
+                SentAt:         sentAt,
+            },
+            Confidence: similarity,
+            Labels:     labels,
+        }
+        results = append(results, result)
     }
 
-    return audits, nil
+    // Track metrics
+    s.metrics.SemanticSearchTotal.Inc()
+    s.metrics.SemanticSearchResults.Observe(float64(len(results)))
+
+    s.logger.Info("Semantic search completed",
+        zap.Int("results", len(results)),
+        zap.Float64("min_confidence", params.MinConfidence),
+        zap.Int("label_filters", len(params.Labels)))
+
+    return results, nil
 }
 ```
 
@@ -291,6 +417,72 @@ func (s *QueryService) SemanticSearch(ctx context.Context, queryText string, lim
 - Delete `generateMockEmbedding()` function (line 333)
 - Remove TODO comments (lines 227, 333)
 - Update tests to use real embedding pipeline
+
+**Add HTTP API Endpoint** (for Context API integration):
+```go
+// pkg/datastorage/server/handlers.go
+
+// HandleSemanticSearch handles semantic search queries from Context API
+// DD-CONTEXT-005: Provides semantic similarity for playbook filtering
+func (s *Server) HandleSemanticSearch(w http.ResponseWriter, r *http.Request) {
+    // Parse query parameters
+    queryText := r.URL.Query().Get("query")
+    if queryText == "" {
+        http.Error(w, "query parameter required", http.StatusBadRequest)
+        return
+    }
+
+    // Parse label filters (DD-CONTEXT-005: Filter Before LLM)
+    labels := make(map[string]string)
+    for key, values := range r.URL.Query() {
+        if strings.HasPrefix(key, "label.") {
+            labelKey := strings.TrimPrefix(key, "label.")
+            if len(values) > 0 {
+                labels[labelKey] = values[0]
+            }
+        }
+    }
+
+    // Parse optional parameters
+    minConfidence := 0.7
+    if conf := r.URL.Query().Get("min_confidence"); conf != "" {
+        if parsed, err := strconv.ParseFloat(conf, 64); err == nil {
+            minConfidence = parsed
+        }
+    }
+
+    maxResults := 10
+    if max := r.URL.Query().Get("max_results"); max != "" {
+        if parsed, err := strconv.Atoi(max); err == nil {
+            maxResults = parsed
+        }
+    }
+
+    // Execute semantic search
+    params := query.SemanticSearchParams{
+        QueryText:     queryText,
+        Labels:        labels,
+        MinConfidence: minConfidence,
+        MaxResults:    maxResults,
+    }
+
+    results, err := s.queryService.SemanticSearch(r.Context(), params)
+    if err != nil {
+        s.logger.Error("Semantic search failed", zap.Error(err))
+        http.Error(w, "search failed", http.StatusInternalServerError)
+        return
+    }
+
+    // Return results (Context API will use these to build playbook response)
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]interface{}{
+        "results":       results,
+        "total_results": len(results),
+        "query":         queryText,
+        "filters":       labels,
+    })
+}
+```
 
 ---
 
@@ -317,7 +509,7 @@ var _ = Describe("Embedding Pipeline Integration", func() {
         // First call - cache miss
         _, err := embeddingPipeline.Generate(ctx, text)
         Expect(err).ToNot(HaveOccurred())
-        
+
         // Second call - cache hit
         start := time.Now()
         _, err = embeddingPipeline.Generate(ctx, text)
@@ -407,6 +599,141 @@ var _ = Describe("Dual-Write with Vector DB", func() {
     })
 })
 ```
+
+---
+
+## 🎯 **Alignment with DD-CONTEXT-005**
+
+### **Critical Architectural Alignment**
+
+This implementation **MUST** align with **DD-CONTEXT-005: Minimal LLM Response Schema** and the "Filter Before LLM" pattern.
+
+#### **Data Storage's Role in the Pattern**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Gateway/Signal Processing                                    │
+│ - Categorizes signal (environment, priority, risk)          │
+│ - Extracts incident description                             │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       v
+┌─────────────────────────────────────────────────────────────┐
+│ Context API (HolmesGPT API consumer)                        │
+│ - Receives categorized signal                               │
+│ - Queries Data Storage for similar incidents                │
+│ - Applies label filters (environment, priority, risk)       │
+│ - Builds playbook response with confidence scores           │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ HTTP Query
+                       v
+┌─────────────────────────────────────────────────────────────┐
+│ Data Storage Service (THIS IMPLEMENTATION)                  │
+│ - Generates embedding for incident description              │
+│ - Performs semantic search (pgvector)                       │
+│ - Filters by labels (environment, priority, etc.)           │
+│ - Returns results sorted by confidence (similarity)         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### **Key Principles from DD-CONTEXT-005**
+
+1. **Filter Before LLM** ✅
+   - Data Storage performs **deterministic filtering** (label matching)
+   - LLM only receives **pre-filtered** results
+   - No filtering decisions delegated to LLM
+
+2. **Confidence = Semantic Similarity** ✅
+   - Data Storage calculates confidence as **cosine similarity** (1 - distance)
+   - Context API uses this confidence directly in playbook response
+   - LLM picks highest confidence playbook
+
+3. **Label-Based Filtering** ✅
+   - Data Storage supports label filters: `label.environment=production`
+   - Filters applied at query time (SQL WHERE clause)
+   - Only matching records returned
+
+4. **Minimal Response** ✅
+   - Data Storage returns: action_id, audit data, confidence, labels
+   - Context API transforms to: playbook_id, version, description, confidence
+   - LLM receives only 4 fields (DD-CONTEXT-005 schema)
+
+#### **Example Query Flow**
+
+**1. Signal Processing categorizes incident**:
+```json
+{
+  "incident_description": "Pod crash loop due to OOM",
+  "environment": "production",
+  "priority": "P0",
+  "risk_tolerance": "low",
+  "business_category": "payment-service"
+}
+```
+
+**2. Context API queries Data Storage**:
+```http
+GET /api/v1/semantic-search?query=Pod+crash+loop+due+to+OOM
+    &label.environment=production
+    &label.priority=P0
+    &label.risk_tolerance=low
+    &label.business_category=payment-service
+    &min_confidence=0.7
+    &max_results=10
+```
+
+**3. Data Storage returns filtered results**:
+```json
+{
+  "results": [
+    {
+      "action_id": "action-123",
+      "audit": { "notification_id": "...", "message_summary": "..." },
+      "confidence": 0.92,
+      "labels": {
+        "environment": "production",
+        "priority": "P0",
+        "risk_tolerance": "low"
+      }
+    }
+  ],
+  "total_results": 1
+}
+```
+
+**4. Context API transforms to playbook response**:
+```json
+{
+  "playbooks": [
+    {
+      "playbook_id": "pod-oom-recovery",
+      "version": "v1.2",
+      "description": "Increases memory limits and restarts pod",
+      "confidence": 0.92
+    }
+  ],
+  "total_results": 1
+}
+```
+
+**5. LLM receives minimal schema** (DD-CONTEXT-005):
+- Only 4 fields per playbook
+- All filtering already done
+- Task: Pick highest confidence
+
+#### **Why This Alignment Matters**
+
+**Without Alignment** ❌:
+- Data Storage returns unfiltered results
+- Context API must filter in-memory (inefficient)
+- Risk of exposing wrong playbooks to LLM
+- Confidence calculation inconsistent
+
+**With Alignment** ✅:
+- Data Storage filters at query time (SQL WHERE clause)
+- Context API receives only matching results
+- Confidence is semantic similarity (deterministic)
+- LLM task is simple (pick highest confidence)
 
 ---
 
@@ -539,7 +866,7 @@ embedding:
   timeout: "5s"
   cache_ttl: "168h"
   model: "sentence-transformers/all-MiniLM-L6-v2"
-  
+
 vectordb:
   enabled: true
   type: "pgvector"
