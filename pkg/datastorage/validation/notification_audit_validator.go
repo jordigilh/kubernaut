@@ -190,4 +190,3 @@ func (v *NotificationAuditValidator) validateEscalationLevel(level int, valErr *
 		valErr.AddFieldError("escalation_level", fmt.Sprintf("escalation_level must be at most 100 (got %d)", level))
 	}
 }
-

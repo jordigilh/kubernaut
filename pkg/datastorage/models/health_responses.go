@@ -30,7 +30,7 @@ package models
 // ReadinessResponse represents the response from GET /health/ready
 // DD-007: Kubernetes readiness probe coordination during graceful shutdown
 type ReadinessResponse struct {
-	Status string `json:"status"` // "ready", "not_ready"
+	Status string `json:"status"`           // "ready", "not_ready"
 	Reason string `json:"reason,omitempty"` // "shutting_down", "database_unreachable"
 	Error  string `json:"error,omitempty"`  // Error message if database unreachable
 }
@@ -38,9 +38,9 @@ type ReadinessResponse struct {
 // HealthResponse represents the response from GET /health
 // Basic health check endpoint
 type HealthResponse struct {
-	Status   string `json:"status"`   // "healthy", "unhealthy"
+	Status   string `json:"status"`             // "healthy", "unhealthy"
 	Database string `json:"database,omitempty"` // "connected", "disconnected"
-	Error    string `json:"error,omitempty"`     // Error message if unhealthy
+	Error    string `json:"error,omitempty"`    // Error message if unhealthy
 }
 
 // LivenessResponse represents the response from GET /health/live
@@ -48,4 +48,3 @@ type HealthResponse struct {
 type LivenessResponse struct {
 	Status string `json:"status"` // "alive"
 }
-

@@ -279,4 +279,3 @@ var _ = Describe("BR-003, BR-005, BR-077: Redis State Persistence - Integration 
 		})
 	})
 })
-

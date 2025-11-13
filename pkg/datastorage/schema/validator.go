@@ -260,6 +260,7 @@ func (v *VersionValidator) testHNSWIndexCreation(ctx context.Context) error {
 	v.logger.Debug("HNSW index creation test passed")
 	return nil
 }
+
 // parsePostgreSQLSize parses PostgreSQL size strings into bytes
 // Examples: "128MB" → 134217728, "1GB" → 1073741824, "8192kB" → 8388608
 // DD-011: Refactored to method for consistency with other validator methods

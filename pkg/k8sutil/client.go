@@ -98,4 +98,3 @@ func NewClientset() (kubernetes.Interface, error) {
 
 	return clientset, nil
 }
-

@@ -31,9 +31,9 @@ import (
 // v2.0: Uses v2.0 components (CachedExecutor, CacheManager, Router)
 // DD-007: Kubernetes-aware graceful shutdown with 4-step pattern
 type Server struct {
-	router             *query.Router              // v2.0: Query router
-	cachedExecutor     *query.CachedExecutor      // v2.0: Cache-first executor
-	aggregationService *query.AggregationService  // Day 11: ADR-033 Aggregation layer
+	router             *query.Router             // v2.0: Query router
+	cachedExecutor     *query.CachedExecutor     // v2.0: Cache-first executor
+	aggregationService *query.AggregationService // Day 11: ADR-033 Aggregation layer
 	// ADR-032: NO direct database client - all data access via Data Storage Service
 	cacheManager cache.CacheManager // v2.0: Multi-tier cache
 	metrics      *metrics.Metrics
@@ -645,37 +645,6 @@ func (s *Server) handleIncidentTrend(w http.ResponseWriter, r *http.Request) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Semantic Search Handler
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func (s *Server) handleSemanticSearch(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
-	var req struct {
-		Query     string  `json:"query"`
-		Limit     int     `json:"limit"`
-		Threshold float64 `json:"threshold"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.respondError(w, r, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	if req.Query == "" {
-		s.respondError(w, r, http.StatusBadRequest, "query parameter required")
-		return
-	}
-
-	// TODO: Implement semantic search in Day 8 with vector DB integration
-	// For now, return placeholder response
-	duration := time.Since(start).Seconds()
-	s.metrics.RecordQuerySuccess("semantic_search", duration)
-
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"query":   req.Query,
-		"results": []interface{}{},
-		"message": "Semantic search will be implemented in Day 8 (integration testing)",
-	})
-}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Middleware

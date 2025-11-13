@@ -421,7 +421,7 @@ CREATE TABLE audit_events (
 ## Related Decisions
 
 - **ADR-032**: [Data Access Layer Isolation](./ADR-032-data-access-layer-isolation.md) - Mandates Data Storage Service for all DB access
-- **ADR-035**: [Asynchronous Buffered Audit Ingestion](./ADR-035-async-buffered-audit-ingestion.md) - Defines how services write audit traces (async buffered pattern)
+- **ADR-038**: [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) - Defines how services write audit traces (async buffered pattern)
 - **DD-AUDIT-001**: [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) - Defines who writes audit traces (distributed pattern)
 - **DD-AUDIT-002**: [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) - Implementation details for `pkg/audit/` shared library
 - **DD-AUDIT-003**: [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) - Defines which 8 of 11 services must generate audit traces

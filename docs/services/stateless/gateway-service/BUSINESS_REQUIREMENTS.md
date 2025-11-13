@@ -1,9 +1,10 @@
 # Gateway Service - Business Requirements
 
-**Version**: v1.0
-**Last Updated**: November 7, 2025
+**Version**: v1.1
+**Last Updated**: November 11, 2025
 **Service Type**: Stateless HTTP API Service
 **Total BRs**: 74 identified BRs (BR-GATEWAY-001 through BR-GATEWAY-180)
+**Changelog**: 5 BRs deprecated and moved to Signal Processing Service (BR-GATEWAY-007, 014, 015, 016, 017) - see DD-CATEGORIZATION-001
 
 ---
 
@@ -64,12 +65,14 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/middleware/timestamp_validation.go`
 **Tests**: `test/unit/gateway/middleware/timestamp_validation_test.go`
 
-### **BR-GATEWAY-007: Signal Priority Classification**
-**Description**: Gateway must classify signals into P0/P1/P2/P3 priorities based on severity
+### **BR-GATEWAY-007: Signal Priority Classification** ⚠️ **DEPRECATED - Moved to Signal Processing**
+**Description**: ~~Gateway must classify signals into P0/P1/P2/P3 priorities based on severity~~ **DEPRECATED**: Priority classification moved to Signal Processing Service (see DD-CATEGORIZATION-001). Gateway now sets `priority: "pending"` placeholder value.
 **Priority**: P0 (Critical)
-**Test Coverage**: ✅ Unit + Integration
-**Implementation**: `pkg/gateway/processing/priority_classification.go`
-**Tests**: `test/unit/gateway/priority_classification_test.go`, `test/integration/gateway/priority_classification_test.go`
+**Test Coverage**: ✅ Unit + Integration (will be migrated to Signal Processing)
+**Implementation**: `pkg/gateway/processing/priority_classification.go` (to be removed)
+**Tests**: `test/unit/gateway/priority_classification_test.go`, `test/integration/gateway/priority_classification_test.go` (to be migrated)
+**Migration Target**: Signal Processing Service (BR-SP-070 to BR-SP-072)
+**Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
 
 ### **BR-GATEWAY-008: Storm Detection**
 **Description**: Gateway must detect alert storms (>10 alerts/minute) and aggregate them
@@ -113,33 +116,41 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/processing/deduplication.go`
 **Tests**: `test/unit/gateway/deduplication_test.go`
 
-### **BR-GATEWAY-014: Signal Enrichment**
-**Description**: Gateway must enrich signals with environment classification (prod/staging/dev)
+### **BR-GATEWAY-014: Signal Enrichment** ⚠️ **DEPRECATED - Moved to Signal Processing**
+**Description**: ~~Gateway must enrich signals with environment classification (prod/staging/dev)~~ **DEPRECATED**: Environment classification moved to Signal Processing Service (see DD-CATEGORIZATION-001). Gateway now sets `environment: "pending"` placeholder value.
 **Priority**: P1 (High)
-**Test Coverage**: ❌ Missing
-**Implementation**: `pkg/gateway/processing/environment_classification.go`
-**Tests**: None
+**Test Coverage**: ❌ Missing (will be implemented in Signal Processing)
+**Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
+**Tests**: None (to be implemented in Signal Processing)
+**Migration Target**: Signal Processing Service (BR-SP-051 to BR-SP-053)
+**Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
 
-### **BR-GATEWAY-015: Environment Classification - Explicit Labels**
-**Description**: Gateway must classify environment from explicit `environment` label
+### **BR-GATEWAY-015: Environment Classification - Explicit Labels** ⚠️ **DEPRECATED - Moved to Signal Processing**
+**Description**: ~~Gateway must classify environment from explicit `environment` label~~ **DEPRECATED**: Environment classification moved to Signal Processing Service (see DD-CATEGORIZATION-001).
 **Priority**: P1 (High)
-**Test Coverage**: ✅ Unit + Integration
-**Implementation**: `pkg/gateway/processing/environment_classification.go`
-**Tests**: `test/unit/gateway/processing/environment_classification_test.go`, `test/integration/gateway/environment_classification_test.go`
+**Test Coverage**: ✅ Unit + Integration (will be migrated to Signal Processing)
+**Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
+**Tests**: `test/unit/gateway/processing/environment_classification_test.go`, `test/integration/gateway/environment_classification_test.go` (to be migrated)
+**Migration Target**: Signal Processing Service (BR-SP-051)
+**Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
 
-### **BR-GATEWAY-016: Environment Classification - Namespace Pattern**
-**Description**: Gateway must classify environment from namespace patterns (prod-*, staging-*, dev-*)
+### **BR-GATEWAY-016: Environment Classification - Namespace Pattern** ⚠️ **DEPRECATED - Moved to Signal Processing**
+**Description**: ~~Gateway must classify environment from namespace patterns (prod-*, staging-*, dev-*)~~ **DEPRECATED**: Environment classification moved to Signal Processing Service (see DD-CATEGORIZATION-001).
 **Priority**: P1 (High)
-**Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/processing/environment_classification.go`
-**Tests**: `test/unit/gateway/processing/environment_classification_test.go`
+**Test Coverage**: ✅ Unit (will be migrated to Signal Processing)
+**Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
+**Tests**: `test/unit/gateway/processing/environment_classification_test.go` (to be migrated)
+**Migration Target**: Signal Processing Service (BR-SP-052)
+**Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
 
-### **BR-GATEWAY-017: Environment Classification - Fallback**
-**Description**: Gateway must use fallback environment (unknown) when classification fails
+### **BR-GATEWAY-017: Environment Classification - Fallback** ⚠️ **DEPRECATED - Moved to Signal Processing**
+**Description**: ~~Gateway must use fallback environment (unknown) when classification fails~~ **DEPRECATED**: Environment classification moved to Signal Processing Service (see DD-CATEGORIZATION-001).
 **Priority**: P2 (Medium)
-**Test Coverage**: ✅ Unit
-**Implementation**: `pkg/gateway/processing/environment_classification.go`
-**Tests**: `test/unit/gateway/processing/environment_classification_test.go`
+**Test Coverage**: ✅ Unit (will be migrated to Signal Processing)
+**Implementation**: `pkg/gateway/processing/environment_classification.go` (to be removed)
+**Tests**: `test/unit/gateway/processing/environment_classification_test.go` (to be migrated)
+**Migration Target**: Signal Processing Service (BR-SP-053)
+**Decision Reference**: [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
 
 ### **BR-GATEWAY-018: CRD Metadata Generation**
 **Description**: Gateway must generate RemediationRequest CRD metadata (labels, annotations)

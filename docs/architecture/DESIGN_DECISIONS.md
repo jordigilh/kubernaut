@@ -18,15 +18,43 @@
 | DD-006 | Controller Scaffolding Strategy (Custom Templates) | ✅ Approved | 2025-10-31 | [DD-006-controller-scaffolding-strategy.md](decisions/DD-006-controller-scaffolding-strategy.md) |
 | DD-007 | Kubernetes-Aware Graceful Shutdown Pattern | ✅ Approved | 2025-10-31 | [DD-007-kubernetes-aware-graceful-shutdown.md](decisions/DD-007-kubernetes-aware-graceful-shutdown.md) |
 | DD-008 | Integration Test Infrastructure (Podman + Kind) | ✅ Approved | 2025-11-01 | [DD-008-integration-test-infrastructure.md](decisions/DD-008-integration-test-infrastructure.md) |
+| DD-009 | Audit Write Error Recovery - Dead Letter Queue Pattern | ✅ Approved | TBD | [DD-009-audit-write-error-recovery.md](decisions/DD-009-audit-write-error-recovery.md) |
 | DD-010 | PostgreSQL Driver Migration (lib/pq to pgx) | ✅ Approved | 2025-11-03 | [DD-010-postgresql-driver-migration.md](decisions/DD-010-postgresql-driver-migration.md) |
 | DD-011 | PostgreSQL 16+ and pgvector 0.5.1+ Version Requirements | ✅ Approved | 2025-10-13 | [DD-011-postgresql-version-requirements.md](decisions/DD-011-postgresql-version-requirements.md) |
 | DD-012 | Goose Database Migration Management | ✅ Approved | 2025-11-05 | [DD-012-goose-database-migration-management.md](decisions/DD-012-goose-database-migration-management.md) |
 | DD-013 | Kubernetes Client Initialization Standard | ✅ Approved | 2025-11-08 | [DD-013-kubernetes-client-initialization-standard.md](decisions/DD-013-kubernetes-client-initialization-standard.md) |
-|| ADR-033 | Remediation Playbook Catalog & Multi-Dimensional Success Tracking | ✅ Approved | 2025-11-04 | [ADR-033-remediation-playbook-catalog.md](decisions/ADR-033-remediation-playbook-catalog.md) |
+| ADR-001 | CRD-Based Microservices Architecture | ✅ Approved | TBD | [ADR-001-crd-microservices-architecture.md](decisions/ADR-001-crd-microservices-architecture.md) |
+| ADR-002 | Native Kubernetes Jobs for Remediation Execution | ✅ Approved | TBD | [ADR-002-native-kubernetes-jobs.md](decisions/ADR-002-native-kubernetes-jobs.md) |
+| ADR-003 | Kind Cluster as Primary Integration Environment | ✅ Approved | TBD | [ADR-003-KIND-INTEGRATION-ENVIRONMENT.md](decisions/ADR-003-KIND-INTEGRATION-ENVIRONMENT.md) |
+| ADR-004 | Fake Kubernetes Client for Unit Testing | ✅ Approved | TBD | [ADR-004-fake-kubernetes-client.md](decisions/ADR-004-fake-kubernetes-client.md) |
+| ADR-005 | >50% Integration Test Coverage for Microservices | ✅ Approved | TBD | [ADR-005-integration-test-coverage.md](decisions/ADR-005-integration-test-coverage.md) |
+| ADR-014 | Notification Service Uses External Service Authentication | ✅ Approved | TBD | [ADR-014-notification-service-external-auth.md](decisions/ADR-014-notification-service-external-auth.md) |
+| ADR-015 | Migrate from "Alert" to "Signal" Naming Convention | ✅ Approved | TBD | [ADR-015-alert-to-signal-naming-migration.md](decisions/ADR-015-alert-to-signal-naming-migration.md) |
+| ADR-016 | Validation Responsibility Chain and Data Authority Model | ✅ Approved | TBD | [ADR-016-validation-responsibility-chain.md](decisions/ADR-016-validation-responsibility-chain.md) |
+| ADR-017 | NotificationRequest CRD Creator Responsibility | ✅ Approved | TBD | [ADR-017-notification-crd-creator.md](decisions/ADR-017-notification-crd-creator.md) |
+| ADR-018 | Approval Notification Integration in V1.0 | ✅ Approved | TBD | [ADR-018-approval-notification-v1-integration.md](decisions/ADR-018-approval-notification-v1-integration.md) |
+| ADR-019 | HolmesGPT Circuit Breaker & Retry Strategy | ✅ Approved | TBD | [ADR-019-holmesgpt-circuit-breaker-retry-strategy.md](decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
+| ADR-020 | Workflow Parallel Execution Limits & Complexity Approval | ✅ Approved | TBD | [ADR-020-workflow-parallel-execution-limits.md](decisions/ADR-020-workflow-parallel-execution-limits.md) |
+| ADR-021 | Workflow Dependency Cycle Detection & Validation | ✅ Approved | TBD | [ADR-021-workflow-dependency-cycle-detection.md](decisions/ADR-021-workflow-dependency-cycle-detection.md) |
+| ADR-022 | V1 Native Jobs with V2 Tekton Migration Path | ✅ Approved | TBD | [ADR-022-v1-native-jobs-v2-tekton-migration.md](decisions/ADR-022-v1-native-jobs-v2-tekton-migration.md) |
+| ADR-023 | Tekton Pipelines from V1 (Eliminate Custom Orchestration) | ✅ Approved | TBD | [ADR-023-tekton-from-v1.md](decisions/ADR-023-tekton-from-v1.md) |
+| ADR-024 | Eliminate ActionExecution CRD Layer | ✅ Approved | TBD | [ADR-024-eliminate-actionexecution-layer.md](decisions/ADR-024-eliminate-actionexecution-layer.md) |
+| ADR-025 | KubernetesExecutor Service Elimination | ✅ Approved | TBD | [ADR-025-kubernetesexecutor-service-elimination.md](decisions/ADR-025-kubernetesexecutor-service-elimination.md) |
+| ADR-026 | Forced Recommendation and Manual Override (V2 Feature) | ✅ Approved | TBD | [ADR-026-forced-recommendation-manual-override.md](decisions/ADR-026-forced-recommendation-manual-override.md) |
+| ADR-027 | Multi-Architecture Container Build Strategy with Red Hat UBI Base Images | ✅ Approved | TBD | [ADR-027-multi-architecture-build-strategy.md](decisions/ADR-027-multi-architecture-build-strategy.md) |
+| ADR-028 | Container Image Registry and Base Image Policy | ✅ Approved | TBD | [ADR-028-container-registry-policy.md](decisions/ADR-028-container-registry-policy.md) |
+| ADR-030 | Service Configuration Management via YAML Files | ✅ Approved | TBD | [ADR-030-service-configuration-management.md](decisions/ADR-030-service-configuration-management.md) |
+| ADR-031 | OpenAPI Specification Standard for REST APIs | ✅ Approved | TBD | [ADR-031-openapi-specification-standard.md](decisions/ADR-031-openapi-specification-standard.md) |
+| ADR-032 | Data Access Layer Isolation | ✅ Approved | TBD | [ADR-032-data-access-layer-isolation.md](decisions/ADR-032-data-access-layer-isolation.md) |
+| ADR-033 | Remediation Playbook Catalog & Multi-Dimensional Success Tracking | ✅ Approved | 2025-11-04 | [ADR-033-remediation-playbook-catalog.md](decisions/ADR-033-remediation-playbook-catalog.md) |
 | ADR-033-A | Cross-Service Business Requirements (6 Services, 20 BRs) | ✅ Approved | 2025-11-05 | [ADR-033-CROSS-SERVICE-BRS.md](decisions/ADR-033-CROSS-SERVICE-BRS.md) |
 | ADR-033-B | BR Category Migration Plan (BR-WORKFLOW → BR-REMEDIATION) | 📋 Planned | 2025-11-05 | [ADR-033-BR-CATEGORY-MIGRATION-PLAN.md](decisions/ADR-033-BR-CATEGORY-MIGRATION-PLAN.md) |
-| ADR-034 | Business Requirement (BR) Template Standard | ✅ Approved | 2025-11-05 | [ADR-034-business-requirement-template-standard.md](decisions/ADR-034-business-requirement-template-standard.md) |
+| ADR-034 | Unified Audit Table Design with Event Sourcing Pattern | ✅ Approved | 2025-11-08 | [ADR-034-unified-audit-table-design.md](decisions/ADR-034-unified-audit-table-design.md) |
 | ADR-035 | Remediation Execution Engine (Tekton Pipelines) | ✅ Approved | 2025-11-05 | [ADR-035-remediation-execution-engine.md](decisions/ADR-035-remediation-execution-engine.md) |
+| ADR-036 | Authentication Authorization Strategy | ✅ Approved | 2025-11-09 | [ADR-036-authentication-authorization-strategy.md](decisions/ADR-036-authentication-authorization-strategy.md) |
+| ADR-037 | Business Requirement (BR) Template Standard | ✅ Approved | 2025-11-05 | [ADR-037-business-requirement-template-standard.md](decisions/ADR-037-business-requirement-template-standard.md) |
+| ADR-038 | Asynchronous Buffered Audit Ingestion | ✅ Approved | 2025-11-08 | [ADR-038-async-buffered-audit-ingestion.md](decisions/ADR-038-async-buffered-audit-ingestion.md) |
+| ADR-039 | Complex Decision Documentation Pattern | ✅ Approved | 2025-11-06 | [ADR-039-complex-decision-documentation-pattern.md](decisions/ADR-039-complex-decision-documentation-pattern.md) |
 | DD-ARCH-001 | Data Access Pattern - Final Decision (Alternative 2 + REST) | ✅ Approved | 2025-11-02 | [DD-ARCH-001-FINAL-DECISION.md](decisions/DD-ARCH-001-FINAL-DECISION.md) |
 | DD-ARCH-001-A | Data Access Pattern Assessment (3 Alternatives) | 📊 Analysis | 2025-11-01 | [DD-ARCH-001-DATA-ACCESS-PATTERN-ASSESSMENT.md](analysis/DD-ARCH-001-DATA-ACCESS-PATTERN-ASSESSMENT.md) |
 | DD-ARCH-001-B | Interface Options Analysis (REST vs gRPC vs GraphQL) | 📊 Analysis | 2025-11-02 | [DD-ARCH-001-INTERFACE-OPTIONS-ANALYSIS.md](analysis/DD-ARCH-001-INTERFACE-OPTIONS-ANALYSIS.md) |
@@ -36,6 +64,9 @@
 | DD-CONTEXT-002 | Cache Size Limit Configuration (Alternative C) | ✅ Approved | 2025-10-20 | [DD-CONTEXT-002-cache-size-limit-configuration.md](decisions/DD-CONTEXT-002-cache-size-limit-configuration.md) |
 | DD-CONTEXT-003 | Context Enrichment Placement (LLM-Driven Tool Call) | ✅ Approved | 2025-10-22 | [DD-CONTEXT-003-Context-Enrichment-Placement.md](decisions/DD-CONTEXT-003-Context-Enrichment-Placement.md) |
 | DD-CONTEXT-004 | BR-AI-002 Ownership | ✅ Approved | 2025-10-22 | [DD-CONTEXT-004-BR-AI-002-Ownership.md](decisions/DD-CONTEXT-004-BR-AI-002-Ownership.md) |
+| DD-CONTEXT-005 | Minimal LLM Response Schema (Filter Before LLM Pattern) | ✅ Approved | 2025-11-11 | [DD-CONTEXT-005-minimal-llm-response-schema.md](decisions/DD-CONTEXT-005-minimal-llm-response-schema.md) |
+| DD-CONTEXT-006 | Signal Processor Recovery Data Source (Embed, Don't Query) | ✅ Approved | 2025-11-11 | [DD-CONTEXT-006-signal-processor-recovery-data-source.md](decisions/DD-CONTEXT-006-signal-processor-recovery-data-source.md) |
+| DD-CATEGORIZATION-001 | Gateway vs Signal Processing Categorization Split Assessment | ✅ Approved | 2025-11-11 | [DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md](decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
 | DD-EFFECTIVENESS-002 | Restart Recovery Idempotency | ✅ Approved | [Date] | [DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md](decisions/DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) |
 | DD-GATEWAY-004 | Redis Memory Optimization | ✅ Approved | 2025-10-24 | [DD-GATEWAY-004-redis-memory-optimization.md](decisions/DD-GATEWAY-004-redis-memory-optimization.md) |
 | DD-GATEWAY-005 | Redis Cleanup on CRD Deletion | ✅ Approved | 2025-10-27 | [DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md](decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md) |
@@ -73,8 +104,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: November 2, 2025
-**Maintained By**: Kubernaut Architecture Team
-
-**Last Updated**: November 2, 2025
+**Last Updated**: November 11, 2025
 **Maintained By**: Kubernaut Architecture Team

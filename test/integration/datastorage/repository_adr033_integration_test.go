@@ -45,18 +45,52 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		testCtx = context.Background()
 		actionTraceRepo = repository.NewActionTraceRepository(db, logger)
 
-		// Clean up test data from resource_action_traces
-		_, err := db.ExecContext(testCtx, "DELETE FROM resource_action_traces WHERE incident_type LIKE 'test-%'")
+		// Clean up test data (cascade delete will handle resource_action_traces)
+		_, err := db.ExecContext(testCtx, "DELETE FROM action_histories WHERE resource_id IN (SELECT id FROM resource_references WHERE name LIKE 'test-pod-%')")
+		Expect(err).ToNot(HaveOccurred())
+		_, err = db.ExecContext(testCtx, "DELETE FROM resource_references WHERE name LIKE 'test-pod-%'")
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	AfterEach(func() {
-		// Clean up after each test
-		_, err := db.ExecContext(testCtx, "DELETE FROM resource_action_traces WHERE incident_type LIKE 'test-%'")
+		// Clean up after each test (cascade delete will handle resource_action_traces)
+		_, err := db.ExecContext(testCtx, "DELETE FROM action_histories WHERE resource_id IN (SELECT id FROM resource_references WHERE name LIKE 'test-pod-%')")
+		Expect(err).ToNot(HaveOccurred())
+		_, err = db.ExecContext(testCtx, "DELETE FROM resource_references WHERE name LIKE 'test-pod-%'")
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	// Helper function to insert test action trace
+	// Ensure parent records exist for foreign key constraints
+	// Note: Each test creates its own parent records to avoid conflicts
+	ensureParentRecords := func() int64 {
+		// Create resource_reference with unique UUID
+		var resourceID int64
+		err := db.QueryRowContext(testCtx, `
+			INSERT INTO resource_references (
+				resource_uid, api_version, kind, name, namespace
+			) VALUES (
+				gen_random_uuid()::text, 'v1', 'Pod', 'test-pod-' || gen_random_uuid()::text, 'default'
+			)
+			RETURNING id
+		`).Scan(&resourceID)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create action_history
+		var historyID int64
+		err = db.QueryRowContext(testCtx, `
+			INSERT INTO action_histories (
+				resource_id, total_actions, last_action_at
+			) VALUES (
+				$1, 0, NOW()
+			)
+			RETURNING id
+		`, resourceID).Scan(&historyID)
+		Expect(err).ToNot(HaveOccurred())
+
+		return historyID
+	}
+
 	insertActionTrace := func(
 		incidentType string,
 		status string,
@@ -65,23 +99,25 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		aiSelectedPlaybook bool,
 		aiChainedPlaybooks bool,
 	) {
+		historyID := ensureParentRecords()
+
 		query := `
 			INSERT INTO resource_action_traces (
-				action_id, action_type, action_timestamp, status,
-				resource_type, resource_name, resource_namespace,
+				action_history_id, action_id, action_type, action_timestamp, execution_status,
+				signal_name, signal_severity,
 				model_used, model_confidence,
 				incident_type, playbook_id, playbook_version,
 				ai_selected_playbook, ai_chained_playbooks
 			) VALUES (
-				gen_random_uuid()::text, 'increase_memory', NOW(), $1,
-				'pod', 'test-pod', 'default',
+				$1, gen_random_uuid()::text, 'increase_memory', NOW(), $2,
+				'test-signal', 'critical',
 				'gpt-4', 0.95,
-				$2, $3, $4,
-				$5, $6
+				$3, $4, $5,
+				$6, $7
 			)
 		`
 		_, err := db.ExecContext(testCtx, query,
-			status, incidentType, playbookID, playbookVersion,
+			historyID, status, incidentType, playbookID, playbookVersion,
 			aiSelectedPlaybook, aiChainedPlaybooks,
 		)
 		Expect(err).ToNot(HaveOccurred())

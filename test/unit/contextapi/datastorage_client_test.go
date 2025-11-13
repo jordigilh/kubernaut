@@ -410,4 +410,3 @@ var _ = Describe("DataStorageClient", func() {
 		})
 	})
 })
-

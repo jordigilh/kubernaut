@@ -147,5 +147,3 @@ var _ = Describe("Log Sanitization (VULN-GATEWAY-004)", func() {
 		})
 	})
 })
-
-

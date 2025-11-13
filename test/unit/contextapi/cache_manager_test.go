@@ -26,7 +26,6 @@ var _ = Describe("Cache Manager", func() {
 
 	Context("BR-CACHE-001: Cache Manager Configuration Validation", func() {
 		type configTestCase struct {
-			description     string
 			redisAddr       string
 			lruSize         int
 			ttl             time.Duration

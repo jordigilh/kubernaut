@@ -488,26 +488,6 @@ func (r *NotificationRequestReconciler) handleNotFound(ctx context.Context, name
 	return ctrl.Result{}, nil
 }
 
-// markChannelFailed handles Category C: Invalid Slack Webhook (permanent failure)
-// When: 401/403 auth errors, invalid webhook URL
-// Action: Mark as failed immediately, create event
-// Recovery: Manual (fix webhook configuration)
-func (r *NotificationRequestReconciler) markChannelFailed(ctx context.Context, nr *notificationv1alpha1.NotificationRequest, channel string, err error) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
-	log.Error(err, "Permanent failure for channel", "channel", channel)
-
-	// Update status to Failed
-	nr.Status.Phase = notificationv1alpha1.NotificationPhaseFailed
-	nr.Status.Reason = "PermanentFailure"
-	nr.Status.Message = fmt.Sprintf("Channel %s failed permanently: %v", channel, err)
-
-	// Create Kubernetes event for visibility
-	// Note: EventRecorder needs to be added to NotificationRequestReconciler struct
-	// r.EventRecorder.Event(nr, "Warning", "DeliveryFailed", nr.Status.Message)
-
-	return ctrl.Result{}, r.updateStatusWithRetry(ctx, nr, 3)
-}
-
 // updateStatusWithRetry updates the notification status with retry logic for conflicts
 // Category D: Status Update Conflicts
 // When: Multiple reconcile attempts updating status simultaneously

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"time"
 
@@ -1369,12 +1370,28 @@ func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	}
 
 	// Connection string for shared PostgreSQL infrastructure
-	// The suite_test.go sets up PostgreSQL at localhost:5433 with password=test_password
-	dbConnStr := "host=localhost port=5433 user=slm_user password=test_password dbname=action_history sslmode=disable"
+	// Use environment variables for Docker Compose compatibility
+	pgHost := os.Getenv("POSTGRES_HOST")
+	if pgHost == "" {
+		pgHost = "localhost"
+	}
+	pgPort := os.Getenv("POSTGRES_PORT")
+	if pgPort == "" {
+		pgPort = "5433"
+	}
+	dbConnStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", pgHost, pgPort)
 
 	// Redis connection details for shared infrastructure
-	// The suite_test.go sets up Redis at localhost:6379 (no password)
-	redisAddr := "localhost:6379"
+	// Use environment variables for Docker Compose compatibility
+	redisHost := os.Getenv("REDIS_HOST")
+	if redisHost == "" {
+		redisHost = "localhost"
+	}
+	redisPort := os.Getenv("REDIS_PORT")
+	if redisPort == "" {
+		redisPort = "6379"
+	}
+	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 	redisPassword := "" // No password in test environment
 
 	// Create server instance (this will create its own DB connection pool)

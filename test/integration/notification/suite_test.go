@@ -19,7 +19,6 @@ package notification
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -327,50 +326,4 @@ func createSlackWebhookSecret() {
 	Expect(err).ToNot(HaveOccurred(), "Failed to create Slack webhook secret")
 
 	GinkgoWriter.Printf("✅ Slack webhook secret created with URL: %s\n", slackWebhookURL)
-}
-
-// resetSlackRequests clears the mock server request history
-func resetSlackRequests() {
-	slackRequests = make([]SlackWebhookRequest, 0)
-	GinkgoWriter.Println("🔄 Mock Slack request history cleared")
-}
-
-// getSlackRequestCount returns the number of Slack webhook calls
-func getSlackRequestCount() int {
-	return len(slackRequests)
-}
-
-// getLastSlackRequest returns the most recent Slack webhook request
-func getLastSlackRequest() *SlackWebhookRequest {
-	if len(slackRequests) == 0 {
-		return nil
-	}
-	return &slackRequests[len(slackRequests)-1]
-}
-
-// waitForNotificationPhase waits for notification to reach expected phase
-func waitForNotificationPhase(ctx context.Context, name, namespace string, expectedPhase notificationv1alpha1.NotificationPhase, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		notif := &notificationv1alpha1.NotificationRequest{}
-		err := k8sClient.Get(ctx, client.ObjectKey{
-			Name:      name,
-			Namespace: namespace,
-		}, notif)
-
-		if err != nil {
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		if notif.Status.Phase == expectedPhase {
-			return nil
-		}
-
-		GinkgoWriter.Printf("   Waiting for phase %s... (current: %s)\n", expectedPhase, notif.Status.Phase)
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	return fmt.Errorf("timeout waiting for notification %s/%s to reach phase %s", namespace, name, expectedPhase)
 }

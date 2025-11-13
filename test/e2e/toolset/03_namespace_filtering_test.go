@@ -172,42 +172,42 @@ var _ = Describe("Namespace Filtering", func() {
 			err := infrastructure.DeployMockService(testCtx, testNamespace, "mock-prometheus", annotations, kubeconfigPath, GinkgoWriter)
 			Expect(err).ToNot(HaveOccurred())
 
-		// Wait for ConfigMap to include Prometheus (not just exist)
-		Eventually(func() string {
+			// Wait for ConfigMap to include Prometheus (not just exist)
+			Eventually(func() string {
+				configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
+				if err != nil {
+					return ""
+				}
+				data, ok := configMap["data"].(map[string]interface{})
+				if !ok {
+					return ""
+				}
+				toolsetsJSON, ok := data["toolset.json"].(string)
+				if !ok {
+					return ""
+				}
+				return toolsetsJSON
+			}, 30*time.Second, 2*time.Second).Should(ContainSubstring("prometheus"))
+
+			// Verify ConfigMap exists in test namespace
 			configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
-			if err != nil {
-				return ""
-			}
+			Expect(err).ToNot(HaveOccurred())
+
+			// Validate ConfigMap is namespace-scoped
+			metadata, ok := configMap["metadata"].(map[string]interface{})
+			Expect(ok).To(BeTrue())
+
+			namespace, ok := metadata["namespace"].(string)
+			Expect(ok).To(BeTrue())
+			Expect(namespace).To(Equal(testNamespace))
+
+			// Validate ConfigMap data
 			data, ok := configMap["data"].(map[string]interface{})
-			if !ok {
-				return ""
-			}
+			Expect(ok).To(BeTrue())
+
 			toolsetsJSON, ok := data["toolset.json"].(string)
-			if !ok {
-				return ""
-			}
-			return toolsetsJSON
-		}, 30*time.Second, 2*time.Second).Should(ContainSubstring("prometheus"))
-
-		// Verify ConfigMap exists in test namespace
-		configMap, err := infrastructure.GetConfigMap(testNamespace, "kubernaut-toolset-config", kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred())
-
-		// Validate ConfigMap is namespace-scoped
-		metadata, ok := configMap["metadata"].(map[string]interface{})
-		Expect(ok).To(BeTrue())
-
-		namespace, ok := metadata["namespace"].(string)
-		Expect(ok).To(BeTrue())
-		Expect(namespace).To(Equal(testNamespace))
-
-		// Validate ConfigMap data
-		data, ok := configMap["data"].(map[string]interface{})
-		Expect(ok).To(BeTrue())
-
-		toolsetsJSON, ok := data["toolset.json"].(string)
-		Expect(ok).To(BeTrue())
-		Expect(toolsetsJSON).To(ContainSubstring("prometheus"))
+			Expect(ok).To(BeTrue())
+			Expect(toolsetsJSON).To(ContainSubstring("prometheus"))
 
 			// Note: Testing that ConfigMaps in OTHER namespaces are NOT affected
 			// requires creating multiple test namespaces, which is beyond the scope

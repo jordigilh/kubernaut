@@ -235,4 +235,3 @@ var _ = Describe("NotificationAudit Repository Integration", func() {
 		})
 	})
 })
-

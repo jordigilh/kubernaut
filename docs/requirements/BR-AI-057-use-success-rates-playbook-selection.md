@@ -6,6 +6,14 @@
 **Target Version**: V1
 **Status**: ✅ Approved
 **Date**: November 5, 2025
+**Last Updated**: November 11, 2025
+
+**⚠️ IMPORTANT CLARIFICATION (2025-11-11)**: "AI Service" in this BR refers to **HolmesGPT API service** (on behalf of the LLM), NOT AIAnalysis Controller. The LLM queries Context API via tool calls, following the LLM-driven tool call pattern defined in DD-CONTEXT-003 and DD-CONTEXT-005.
+
+**Related Architectural Decisions**:
+- [DD-CONTEXT-003: Context Enrichment Placement (LLM-Driven Tool Call Pattern)](../architecture/decisions/DD-CONTEXT-003-Context-Enrichment-Placement.md)
+- [DD-CONTEXT-005: Minimal LLM Response Schema (Filter Before LLM)](../architecture/decisions/DD-CONTEXT-005-minimal-llm-response-schema.md)
+- [DD-CONTEXT-006: Signal Processor Recovery Data Source](../architecture/decisions/DD-CONTEXT-006-signal-processor-recovery-data-source.md)
 
 ---
 
@@ -13,7 +21,7 @@
 
 ### **Problem Statement**
 
-ADR-033 introduces **data-driven playbook selection** as the primary AI capability (90% of Hybrid Model). The AI/LLM Service must query historical success rates from the Context API and use this data to select the most effective playbook for each incident type.
+ADR-033 introduces **data-driven playbook selection** as the primary AI capability (90% of Hybrid Model). The **HolmesGPT API service** (on behalf of the LLM) must query historical playbook data from the Context API and use this data to select the most effective playbook for each incident type.
 
 **Current Limitations**:
 - ❌ AI lacks access to historical remediation effectiveness data
@@ -32,14 +40,21 @@ ADR-033 introduces **data-driven playbook selection** as the primary AI capabili
 
 ## 🎯 **Business Objective**
 
-**Enable AI Service to query incident-type and playbook success rates from Context API and use this data to select the most effective playbook for each remediation request.**
+**Enable HolmesGPT API (on behalf of the LLM) to query playbook data from Context API via tool calls and use this data to select the most effective playbook for each remediation request.**
+
+**Architectural Pattern**: LLM-driven tool call pattern (DD-CONTEXT-003)
+- AIAnalysis Controller sends investigation request to HolmesGPT API
+- HolmesGPT API exposes Context API as a tool to the LLM
+- LLM decides when to query Context API for playbooks
+- LLM receives minimal 4-field response (DD-CONTEXT-005)
+- LLM selects playbook based on `confidence` score (semantic + label matching)
 
 ### **Success Criteria**
-1. ✅ AI queries Context API for incident-type success rates
-2. ✅ AI queries Playbook Catalog for available playbooks matching incident type
-3. ✅ AI selects playbook with highest success rate for that incident type
-4. ✅ AI includes success rate in confidence score calculation
-5. ✅ AI logs playbook selection rationale (data-driven decision)
+1. ✅ LLM queries Context API for playbooks via HolmesGPT API tool call
+2. ✅ Context API returns playbooks matching incident description (semantic search)
+3. ✅ LLM selects playbook with highest `confidence` score
+4. ✅ LLM includes confidence score in recommendation
+5. ✅ LLM logs playbook selection rationale (data-driven decision)
 6. ✅ 90%+ of AI remediation decisions use data-driven playbook selection (ADR-033 target)
 7. ✅ Measurable improvement in remediation success rate (10%+ increase)
 
@@ -49,255 +64,357 @@ ADR-033 introduces **data-driven playbook selection** as the primary AI capabili
 
 ### **Use Case 1: Data-Driven Playbook Selection for Known Incident**
 
-**Scenario**: AI receives `pod-oom-killer` alert and selects playbook based on historical success rates.
+**Scenario**: LLM receives `pod-oom-killer` alert and selects playbook based on Context API data.
 
 **Current Flow** (Without BR-AI-057):
 ```
-1. AI receives pod-oom-killer alert
-2. AI queries Playbook Catalog: GET /playbooks?incident_type=pod-oom-killer
-3. Response: [pod-oom-recovery v1.2, pod-oom-recovery v1.1, pod-oom-vertical-scaling v1.0]
-4. ❌ AI has no success rate data
-5. ❌ AI selects based on heuristics (e.g., latest version) or random
-6. ❌ May select ineffective playbook (e.g., v1.1 with 40% success rate)
-7. Low remediation success rate
+1. AIAnalysis Controller sends investigation request to HolmesGPT API
+2. HolmesGPT API sends prompt to LLM with incident context
+3. ❌ LLM has no playbook data
+4. ❌ LLM selects based on general knowledge (may be incorrect)
+5. Low remediation success rate
 ```
 
-**Desired Flow with BR-AI-057**:
+**Desired Flow with BR-AI-057** (LLM-Driven Tool Call Pattern):
 ```
-1. AI receives pod-oom-killer alert
-2. AI queries Playbook Catalog: GET /playbooks?incident_type=pod-oom-killer
-3. Response: [pod-oom-recovery v1.2, pod-oom-recovery v1.1, pod-oom-vertical-scaling v1.0]
-4. AI queries Context API for success rates:
-   - GET /incidents/aggregate/success-rate/by-playbook?playbook_id=pod-oom-recovery&playbook_version=v1.2
-     → Response: success_rate=0.89, total_executions=90
-   - GET /incidents/aggregate/success-rate/by-playbook?playbook_id=pod-oom-recovery&playbook_version=v1.1
-     → Response: success_rate=0.40, total_executions=10
-   - GET /incidents/aggregate/success-rate/by-playbook?playbook_id=pod-oom-vertical-scaling&playbook_version=v1.0
-     → Response: success_rate=0.75, total_executions=20
-5. ✅ AI selects pod-oom-recovery v1.2 (highest success rate: 89%)
-6. ✅ AI confidence score includes success rate: confidence=0.92 (0.89 success rate + 0.03 execution volume bonus)
-7. ✅ AI logs decision: "Selected pod-oom-recovery v1.2 (89% success rate, 90 executions)"
-8. ✅ Higher remediation success rate (data-driven selection)
+1. AIAnalysis Controller sends investigation request to HolmesGPT API
+2. HolmesGPT API sends prompt to LLM with incident context:
+   - Incident: pod-oom-killer
+   - Description: "High memory usage causing pod restarts"
+   - Environment: production
+   - Priority: P0
+3. ✅ LLM decides to query for playbooks (tool call)
+4. ✅ LLM calls tool: get_playbooks(description="High memory usage causing pod restarts",
+                                    labels=["kubernaut.io/incident-type:pod-oom-killer",
+                                            "kubernaut.io/environment:production",
+                                            "kubernaut.io/priority:P0"])
+5. ✅ HolmesGPT API queries Context API:
+   GET /api/v1/context/playbooks?description=High+memory+usage+causing+pod+restarts
+                                 &labels=kubernaut.io/incident-type:pod-oom-killer
+                                 &labels=kubernaut.io/environment:production
+                                 &labels=kubernaut.io/priority:P0
+6. ✅ Context API returns (minimal 4-field schema per DD-CONTEXT-005):
+   {
+     "playbooks": [
+       {
+         "playbook_id": "pod-oom-recovery",
+         "version": "v1.2",
+         "description": "Increases memory limits and restarts pod",
+         "confidence": 0.92  // semantic (0.88) + label match (1.0) + historical (0.95)
+       },
+       {
+         "playbook_id": "pod-force-delete-recovery",
+         "version": "v1.0",
+         "description": "Force deletes pod and recreates with higher limits",
+         "confidence": 0.78  // semantic (0.85) + label match (0.95) + historical (0.50)
+       }
+     ]
+   }
+7. ✅ LLM receives playbook list and reasons about selection
+8. ✅ LLM selects pod-oom-recovery v1.2 (highest confidence: 0.92)
+9. ✅ LLM logs decision: "Selected pod-oom-recovery v1.2 (confidence: 0.92, best semantic match)"
+10. ✅ Higher remediation success rate (data-driven selection)
 ```
 
----
-
-### **Use Case 2: Insufficient Historical Data - Graceful Degradation**
-
-**Scenario**: AI receives `rare-database-failure` alert with no historical success rate data.
-
-**Current Flow**:
-```
-1. AI receives rare-database-failure alert
-2. AI queries Context API for success rates
-3. ❌ No historical data available (0 executions)
-4. ❌ AI has no fallback strategy
-5. ❌ AI fails or selects randomly
-```
-
-**Desired Flow with BR-AI-057**:
-```
-1. AI receives rare-database-failure alert
-2. AI queries Playbook Catalog: 1 playbook found (database-recovery v1.0)
-3. AI queries Context API: success_rate=0.0, total_executions=0 (no data)
-4. ✅ AI detects insufficient data (min_samples_met=false)
-5. ✅ AI gracefully degrades to fallback selection strategy:
-   - Option A: Use playbook tagged as "default" for this incident type
-   - Option B: Recommend manual investigation (ADR-033 <1% manual path)
-   - Option C: Use playbook with most similar incident type success data
-6. ✅ AI logs decision: "Selected database-recovery v1.0 (no historical data, using default)"
-7. ✅ AI confidence score reflects uncertainty: confidence=0.50 (low confidence)
-8. ✅ Operator receives recommendation with low confidence warning
-```
+**Key Differences from Old Approach**:
+- ✅ LLM decides when to query (not pre-enriched)
+- ✅ Minimal response schema (4 fields only)
+- ✅ `confidence` score (NOT `success_rate` - avoids feedback loop per DD-CONTEXT-005)
+- ✅ Filtering via query parameters (environment, priority) before LLM
 
 ---
 
-### **Use Case 3: Continuous Learning - Success Rate Decay**
+### **Use Case 2: New Playbook - Graceful Degradation**
 
-**Scenario**: `pod-oom-recovery v1.2` had 89% success rate last week, but dropped to 60% this week due to infrastructure changes.
+**Scenario**: LLM queries for playbooks for a new incident type with limited historical data.
 
-**Current Flow**:
+**Desired Flow with BR-AI-057** (LLM-Driven Tool Call Pattern):
 ```
-1. AI selects playbook based on last week's data
-2. ❌ AI unaware of recent effectiveness drop
-3. ❌ Continues selecting ineffective playbook
-4. ❌ Poor remediation outcomes
+1. AIAnalysis Controller sends investigation request to HolmesGPT API
+2. LLM calls tool: get_playbooks(description="rare database failure",
+                                 labels=["kubernaut.io/incident-type:database-failure"])
+3. ✅ Context API returns playbooks (including new ones):
+   {
+     "playbooks": [
+       {
+         "playbook_id": "database-recovery",
+         "version": "v1.0",
+         "description": "Restarts database and validates connections",
+         "confidence": 0.65  // semantic (0.80) + label match (1.0) + historical (0.0 - new playbook)
+       }
+     ]
+   }
+4. ✅ LLM receives playbook with lower confidence (new playbook, no historical data)
+5. ✅ LLM reasons about the playbook based on description and current situation
+6. ✅ LLM selects database-recovery v1.0 with caveat
+7. ✅ LLM logs decision: "Selected database-recovery v1.0 (confidence: 0.65, new playbook with no execution history)"
+8. ✅ Operator receives recommendation with confidence score
 ```
 
-**Desired Flow with BR-AI-057**:
+**Key Point**: Context API ALWAYS includes new playbooks (per DD-CONTEXT-005). The `confidence` score reflects lack of historical data, but the LLM can still reason about the playbook based on its description.
+
+---
+
+### **Use Case 3: Multiple Playbook Comparison**
+
+**Scenario**: LLM queries for multiple playbooks and compares them to select the best one.
+
+**Desired Flow with BR-AI-057** (LLM-Driven Tool Call Pattern):
 ```
-1. AI queries Context API with time_range=7d (last 7 days)
-2. Response: success_rate=0.60, total_executions=50 (recent data)
-3. ✅ AI detects significant drop from historical 89%
-4. ✅ AI queries Playbook Catalog for alternative playbooks
-5. ✅ AI finds pod-oom-vertical-scaling v1.0: success_rate=0.75 (7d)
-6. ✅ AI selects alternative playbook (higher recent success rate)
-7. ✅ AI logs decision: "Selected pod-oom-vertical-scaling v1.0 (75% recent success vs pod-oom-recovery 60%)"
-8. ✅ Adaptable to changing infrastructure conditions
+1. AIAnalysis Controller sends investigation request to HolmesGPT API
+2. LLM calls tool: get_playbooks(description="pod memory pressure",
+                                 labels=["kubernaut.io/incident-type:pod-oom-killer",
+                                         "kubernaut.io/environment:production"])
+3. ✅ Context API returns multiple playbooks:
+   {
+     "playbooks": [
+       {
+         "playbook_id": "pod-oom-recovery",
+         "version": "v1.2",
+         "description": "Increases memory limits and restarts pod",
+         "confidence": 0.92
+       },
+       {
+         "playbook_id": "pod-oom-vertical-scaling",
+         "version": "v1.0",
+         "description": "Scales pod vertically with higher memory allocation",
+         "confidence": 0.88
+       },
+       {
+         "playbook_id": "pod-force-delete-recovery",
+         "version": "v1.0",
+         "description": "Force deletes pod and recreates",
+         "confidence": 0.75
+       }
+     ]
+   }
+4. ✅ LLM receives multiple options and reasons about them
+5. ✅ LLM considers confidence scores AND incident context
+6. ✅ LLM selects pod-oom-recovery v1.2 (highest confidence + best match for description)
+7. ✅ LLM logs decision: "Selected pod-oom-recovery v1.2 (confidence: 0.92, best match for memory pressure incident)"
+8. ✅ Data-driven selection with LLM reasoning
 ```
+
+**Key Point**: LLM can query once and receive multiple playbooks, then reason about which is best for the current situation. This is more efficient than multiple queries and allows LLM to use its reasoning capabilities.
 
 ---
 
 ## 🔧 **Functional Requirements**
 
-### **FR-AI-057-01: Query Context API for Success Rates**
+### **FR-AI-057-01: HolmesGPT API Tool for Context API Playbook Query**
 
-**Requirement**: AI Service SHALL query Context API to retrieve playbook success rates for incident types.
+**Requirement**: HolmesGPT API SHALL expose Context API as a tool to the LLM for playbook queries.
 
-**Implementation Example**:
-```go
-package ai
+**Implementation Example** (HolmesGPT API - Python):
+```python
+# holmesgpt-api/src/tools/context_playbook_tool.py
 
-// PlaybookSelectionService selects playbooks based on success rates
-type PlaybookSelectionService struct {
-    contextAPIClient  ContextAPIClient
-    playbookCatalog   PlaybookCatalogClient
-    logger            *zap.Logger
-}
+from holmesgpt import Tool, ToolParameter
 
-// SelectPlaybook queries success rates and returns best playbook
-func (s *PlaybookSelectionService) SelectPlaybook(ctx context.Context, incidentType string) (*PlaybookRecommendation, error) {
-    // Step 1: Query available playbooks for incident type
-    playbooks, err := s.playbookCatalog.ListPlaybooks(ctx, incidentType, "active")
-    if err != nil {
-        return nil, fmt.Errorf("failed to query playbook catalog: %w", err)
-    }
+class ContextPlaybookTool(Tool):
+    """Tool for LLM to query Context API for remediation playbooks."""
 
-    if len(playbooks) == 0 {
-        return nil, fmt.Errorf("no playbooks found for incident_type=%s", incidentType)
-    }
+    def __init__(self, context_api_client):
+        super().__init__(
+            name="get_playbooks",
+            description=(
+                "Query Context API for remediation playbooks matching the incident. "
+                "Use this when you need to find playbooks to remediate an incident. "
+                "Provide incident description and relevant labels (environment, priority, etc.)."
+            ),
+            parameters=[
+                ToolParameter(
+                    name="description",
+                    type="string",
+                    description="Incident description for semantic search",
+                    required=True
+                ),
+                ToolParameter(
+                    name="labels",
+                    type="array",
+                    description="Label filters (e.g., kubernaut.io/environment:production)",
+                    required=False
+                ),
+                ToolParameter(
+                    name="min_confidence",
+                    type="float",
+                    description="Minimum confidence score (0.0-1.0)",
+                    required=False,
+                    default=0.7
+                ),
+                ToolParameter(
+                    name="max_results",
+                    type="integer",
+                    description="Maximum playbooks to return",
+                    required=False,
+                    default=10
+                )
+            ]
+        )
+        self.context_api_client = context_api_client
 
-    // Step 2: Query success rates for each playbook
-    var bestPlaybook *PlaybookRecommendation
-    bestSuccessRate := 0.0
+    def execute(self, description: str, labels: list = None,
+                min_confidence: float = 0.7, max_results: int = 10):
+        """Execute tool call to query Context API for playbooks."""
 
-    for _, playbook := range playbooks {
-        successRate, err := s.contextAPIClient.GetPlaybookSuccessRate(ctx, playbook.PlaybookID, playbook.Version, "7d")
-        if err != nil {
-            s.logger.Warn("failed to get success rate",
-                zap.String("playbook_id", playbook.PlaybookID),
-                zap.String("version", playbook.Version),
-                zap.Error(err))
-            continue // Skip playbook if success rate unavailable
+        # Build query parameters
+        params = {
+            "description": description,
+            "min_confidence": min_confidence,
+            "max_results": max_results
         }
 
-        // Step 3: Select playbook with highest success rate
-        if successRate.SuccessRate > bestSuccessRate {
-            bestSuccessRate = successRate.SuccessRate
-            bestPlaybook = &PlaybookRecommendation{
-                PlaybookID:       playbook.PlaybookID,
-                Version:          playbook.Version,
-                SuccessRate:      successRate.SuccessRate,
-                TotalExecutions:  successRate.TotalExecutions,
-                Confidence:       s.calculateConfidence(successRate),
-                SelectionReason:  fmt.Sprintf("Highest success rate: %.1f%% (%d executions)", successRate.SuccessRate*100, successRate.TotalExecutions),
+        # Add label filters
+        if labels:
+            params["labels"] = labels
+
+        # Query Context API
+        response = self.context_api_client.get(
+            "/api/v1/context/playbooks",
+            params=params,
+            timeout=2.0
+        )
+
+        if response.status_code != 200:
+            return {
+                "error": f"Context API error: {response.status_code}",
+                "playbooks": []
             }
-        }
-    }
 
-    if bestPlaybook == nil {
-        return nil, fmt.Errorf("no playbook with success rate data found")
-    }
+        # Return minimal 4-field schema (per DD-CONTEXT-005)
+        return response.json()  # {"playbooks": [{"playbook_id", "version", "description", "confidence"}]}
 
-    return bestPlaybook, nil
-}
+# Register tool with HolmesGPT SDK
+holmes_client.register_tool(ContextPlaybookTool(context_api_client))
 ```
 
 **Acceptance Criteria**:
-- ✅ Queries Context API for all candidate playbooks
-- ✅ Handles API errors gracefully (skips playbook if success rate unavailable)
-- ✅ Selects playbook with highest success rate
-- ✅ Logs selection rationale (success rate, execution count)
-- ✅ Returns error if no playbooks have success rate data
+- ✅ Tool exposed to LLM via HolmesGPT SDK
+- ✅ LLM can call tool with incident description and labels
+- ✅ Tool queries Context API with proper parameters
+- ✅ Tool returns minimal 4-field schema (per DD-CONTEXT-005)
+- ✅ Tool handles Context API errors gracefully
+- ✅ Tool logs all queries for observability
 
 ---
 
-### **FR-AI-057-02: Confidence Score Calculation**
+### **FR-AI-057-02: LLM Playbook Selection Based on Confidence**
 
-**Requirement**: AI Service SHALL calculate confidence score incorporating success rate and sample size.
+**Requirement**: LLM SHALL select playbooks based on `confidence` score returned by Context API.
 
-**Confidence Calculation**:
-```go
-// calculateConfidence computes confidence score from success rate and sample size
-func (s *PlaybookSelectionService) calculateConfidence(successRate *SuccessRateResponse) float64 {
-    baseConfidence := successRate.SuccessRate // 0.0-1.0
+**Note**: Confidence calculation happens in **Context API**, not in HolmesGPT API or AIAnalysis Controller. Context API calculates confidence as:
+- **Semantic Similarity** (0.0-1.0): How well playbook description matches incident description
+- **Label Match** (0.0-1.0): How many required labels match
+- **Historical Performance** (0.0-1.0): Success rate from Effectiveness Monitor (NOT exposed to LLM per DD-CONTEXT-005)
 
-    // Adjust for sample size (more executions = higher confidence)
-    sampleSizeBonus := 0.0
-    if successRate.TotalExecutions >= 100 {
-        sampleSizeBonus = 0.05 // +5% for large sample
-    } else if successRate.TotalExecutions >= 50 {
-        sampleSizeBonus = 0.03 // +3% for medium sample
-    } else if successRate.TotalExecutions >= 20 {
-        sampleSizeBonus = 0.01 // +1% for small sample
+**Confidence Formula** (in Context API):
+```
+confidence = (semantic_similarity * 0.4) + (label_match * 0.4) + (historical_performance * 0.2)
+```
+
+**LLM Selection Logic**:
+```python
+# In HolmesGPT API - LLM reasoning
+def select_playbook(playbooks: list) -> dict:
+    """LLM selects playbook from Context API results."""
+
+    # LLM receives playbooks sorted by confidence (highest first)
+    # LLM reasons about:
+    # 1. Confidence score (primary factor)
+    # 2. Playbook description match to incident
+    # 3. Current incident context
+
+    # Example LLM reasoning:
+    # "I received 3 playbooks. The highest confidence (0.92) is 'pod-oom-recovery v1.2'
+    #  which matches the incident description 'High memory usage causing pod restarts'.
+    #  I will select this playbook."
+
+    selected = playbooks[0]  # Highest confidence
+
+    return {
+        "playbook_id": selected["playbook_id"],
+        "version": selected["version"],
+        "confidence": selected["confidence"],
+        "reasoning": f"Selected {selected['playbook_id']} (confidence: {selected['confidence']:.2f})"
     }
-    // Total executions < 20: no bonus (low confidence)
-
-    // Confidence = success_rate + sample_size_bonus (capped at 1.0)
-    confidence := math.Min(1.0, baseConfidence + sampleSizeBonus)
-
-    // If insufficient samples (< 5), cap confidence at 0.60
-    if successRate.TotalExecutions < 5 {
-        confidence = math.Min(confidence, 0.60)
-    }
-
-    return confidence
-}
 ```
 
 **Acceptance Criteria**:
-- ✅ Confidence incorporates success rate (primary factor)
-- ✅ Confidence adjusted for sample size (bonus for >50 executions)
-- ✅ Confidence capped at 1.0
-- ✅ Confidence capped at 0.60 for insufficient samples (<5 executions)
-- ✅ Confidence score returned in playbook recommendation
+- ✅ LLM receives playbooks with `confidence` score
+- ✅ LLM selects playbook with highest confidence (typically)
+- ✅ LLM can override confidence if incident context suggests different playbook
+- ✅ LLM logs selection reasoning
+- ✅ Confidence score NOT based on `success_rate` directly (avoids feedback loop per DD-CONTEXT-005)
 
 ---
 
-### **FR-AI-057-03: Fallback Strategy for Insufficient Data**
+### **FR-AI-057-03: Graceful Degradation for No Playbooks**
 
-**Requirement**: AI Service SHALL implement fallback strategy when success rate data is unavailable or insufficient.
+**Requirement**: HolmesGPT API tool SHALL handle cases where Context API returns no playbooks.
 
-**Fallback Priority**:
-1. **No playbooks found**: Return error, recommend manual investigation
-2. **Playbooks found, no success data**: Use default playbook (tagged as "default")
-3. **Multiple playbooks, equal success rates**: Select latest version
-4. **Insufficient samples (<5)**: Recommend with low confidence (0.50)
+**Fallback Strategy**:
+1. **No playbooks found**: Context API returns empty list
+2. **LLM receives empty list**: LLM reasons about lack of playbooks
+3. **LLM recommendation**: Recommend manual investigation or suggest creating new playbook
 
-**Implementation**:
-```go
-// SelectPlaybookWithFallback includes fallback strategies
-func (s *PlaybookSelectionService) SelectPlaybookWithFallback(ctx context.Context, incidentType string) (*PlaybookRecommendation, error) {
-    recommendation, err := s.SelectPlaybook(ctx, incidentType)
-    if err == nil {
-        return recommendation, nil // Success
-    }
+**Implementation** (HolmesGPT API - Python):
+```python
+def execute(self, description: str, labels: list = None,
+            min_confidence: float = 0.7, max_results: int = 10):
+    """Execute tool call to query Context API for playbooks."""
 
-    // Fallback 1: Check if any playbooks are tagged as "default"
-    playbooks, _ := s.playbookCatalog.ListPlaybooks(ctx, incidentType, "active")
-    for _, playbook := range playbooks {
-        if contains(playbook.Tags, "default") {
-            return &PlaybookRecommendation{
-                PlaybookID:      playbook.PlaybookID,
-                Version:         playbook.Version,
-                SuccessRate:     0.0,  // Unknown
-                Confidence:      0.50, // Low confidence
-                SelectionReason: "Default playbook (no historical data)",
-            }, nil
+    # Query Context API
+    response = self.context_api_client.get(
+        "/api/v1/context/playbooks",
+        params=params,
+        timeout=2.0
+    )
+
+    if response.status_code != 200:
+        # Context API error - return error to LLM
+        return {
+            "error": f"Context API unavailable: {response.status_code}",
+            "playbooks": [],
+            "message": "Context API is unavailable. Consider manual investigation."
         }
-    }
 
-    // Fallback 2: No default playbook, recommend manual investigation
-    return nil, fmt.Errorf("no data-driven playbook selection possible, recommend manual investigation")
+    result = response.json()
+
+    if len(result.get("playbooks", [])) == 0:
+        # No playbooks found - return empty list to LLM
+        return {
+            "playbooks": [],
+            "total_results": 0,
+            "message": "No playbooks found matching criteria. Consider manual investigation or creating new playbook."
+        }
+
+    # Return playbooks to LLM
+    return result
+```
+
+**LLM Reasoning with No Playbooks**:
+```
+LLM receives: {"playbooks": [], "message": "No playbooks found..."}
+
+LLM reasoning:
+"I queried Context API for playbooks matching 'rare database failure' but found no results.
+This incident type may be new or uncommon. I recommend manual investigation by the operator
+to determine the root cause and create a new playbook for future incidents."
+
+LLM response:
+{
+  "recommendation": "manual_investigation",
+  "reasoning": "No playbooks found for this incident type",
+  "suggested_actions": ["investigate logs", "check database status", "create new playbook"]
 }
 ```
 
 **Acceptance Criteria**:
-- ✅ Returns error if no playbooks exist for incident type
-- ✅ Falls back to "default" tagged playbook if no success data
-- ✅ Recommends manual investigation if no fallback possible
-- ✅ Logs fallback strategy used
-- ✅ Sets confidence=0.50 for fallback selections
+- ✅ Tool returns empty list if no playbooks found
+- ✅ Tool provides helpful message to LLM
+- ✅ LLM can reason about lack of playbooks
+- ✅ LLM recommends manual investigation or playbook creation
+- ✅ Logs all "no playbooks" cases for observability
 
 ---
 
@@ -424,7 +541,7 @@ func (s *PlaybookSelectionService) SelectPlaybookWithFallback(ctx context.Contex
 ### **Related Documents**
 - [ADR-033: Remediation Playbook Catalog](../architecture/decisions/ADR-033-remediation-playbook-catalog.md)
 - [ADR-033: Cross-Service BRs](../architecture/decisions/ADR-033-CROSS-SERVICE-BRS.md)
-- [ADR-034: BR Template Standard](../architecture/decisions/ADR-034-business-requirement-template-standard.md)
+- [ADR-037: BR Template Standard](../architecture/decisions/ADR-037-business-requirement-template-standard.md)
 
 ---
 

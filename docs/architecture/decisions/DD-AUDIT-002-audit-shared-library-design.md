@@ -17,7 +17,7 @@ This design decision establishes a **shared library** (`pkg/audit/`) for asynchr
 **Scope**: All Kubernaut services (Gateway, Context API, AI Analysis, Workflow, Execution, Data Storage).
 
 **Related Decisions**:
-- **ADR-035**: [Asynchronous Buffered Audit Ingestion](./ADR-035-async-buffered-audit-ingestion.md) - Architectural mandate
+- **ADR-035**: [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) - Architectural mandate
 - **ADR-034**: [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) - Database schema
 - **DD-AUDIT-001**: [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) - Who writes audit traces
 
@@ -44,7 +44,7 @@ This design decision establishes a **shared library** (`pkg/audit/`) for asynchr
 
 ### **Challenge**
 
-All services need to implement asynchronous buffered audit writes (as mandated by [ADR-035](./ADR-035-async-buffered-audit-ingestion.md)). Without a shared library:
+All services need to implement asynchronous buffered audit writes (as mandated by [ADR-035](./ADR-038-async-buffered-audit-ingestion.md)). Without a shared library:
 
 1. ❌ **Code Duplication**: Each service implements the same buffering, batching, and retry logic (500 lines × 6 services = 3000 lines)
 2. ❌ **Inconsistent Behavior**: Each service may have different buffer sizes, batch sizes, retry policies
@@ -1574,7 +1574,7 @@ groups:
 
 ## 🔗 **Related Decisions**
 
-- **ADR-035**: [Asynchronous Buffered Audit Ingestion](./ADR-035-async-buffered-audit-ingestion.md) - Architectural mandate
+- **ADR-035**: [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) - Architectural mandate
 - **ADR-034**: [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) - Database schema
 - **ADR-032**: [Data Access Layer Isolation](./ADR-032-data-access-layer-isolation.md) - Data Storage Service mandate
 - **DD-AUDIT-001**: [Audit Responsibility Pattern](./DD-AUDIT-001-audit-responsibility-pattern.md) - Who writes audit traces

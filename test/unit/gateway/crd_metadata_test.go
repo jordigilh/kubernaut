@@ -499,4 +499,3 @@ func (f *FakeControllerRuntimeClient) IsObjectNamespaced(obj runtime.Object) (bo
 }
 
 // No wrapper needed - k8s.NewClient() directly accepts controller-runtime client
-

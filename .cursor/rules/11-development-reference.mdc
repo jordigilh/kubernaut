@@ -1,8 +1,7 @@
 ---
-alwaysApply: true
 description: "Quick reference and common development tasks for kubernaut"
+alwaysApply: false
 ---
-
 # Kubernaut Development Reference
 
 ## Quick Start Commands

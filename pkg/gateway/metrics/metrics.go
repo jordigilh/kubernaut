@@ -51,10 +51,10 @@ type Metrics struct {
 	CRDCreationErrors *prometheus.CounterVec
 
 	// K8s API Retry Metrics (BR-GATEWAY-114: Retry observability)
-	RetryAttemptsTotal   *prometheus.CounterVec   // Total retry attempts by error type
-	RetryDuration        *prometheus.HistogramVec // Retry duration by error type
-	RetryExhaustedTotal  *prometheus.CounterVec   // Retries exhausted by error type
-	RetrySuccessTotal    *prometheus.CounterVec   // Successful retries by error type and attempt number
+	RetryAttemptsTotal  *prometheus.CounterVec   // Total retry attempts by error type
+	RetryDuration       *prometheus.HistogramVec // Retry duration by error type
+	RetryExhaustedTotal *prometheus.CounterVec   // Retries exhausted by error type
+	RetrySuccessTotal   *prometheus.CounterVec   // Successful retries by error type and attempt number
 
 	// Internal: Registry for custom metrics exposure
 	registry prometheus.Gatherer // Used by /metrics endpoint to expose custom registry metrics

@@ -96,5 +96,3 @@ var _ = Describe("Redis Connection Debug", func() {
 		GinkgoWriter.Printf("✅ Redis address confirmed: %s\n", opts.Addr)
 	})
 })
-
-

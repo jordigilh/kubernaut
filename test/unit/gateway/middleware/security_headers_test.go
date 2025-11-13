@@ -157,4 +157,3 @@ var _ = Describe("Security Headers", func() {
 		})
 	})
 })
-

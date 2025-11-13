@@ -81,4 +81,3 @@ func (n *NotificationAudit) Validate() error {
 func (n *NotificationAudit) TableName() string {
 	return "notification_audit"
 }
-

@@ -29,4 +29,3 @@ func TestNotificationUnit(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Notification Unit Test Suite")
 }
-

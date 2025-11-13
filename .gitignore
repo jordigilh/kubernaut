@@ -72,7 +72,7 @@ dynamic-toolset-server
 main
 remediationprocessor
 gateway-arm64
-gateway
+/gateway
 /cmd/*/main
 /cmd/*/*
 !/cmd/*/*.go
@@ -121,3 +121,7 @@ TDD-*.md
 /contextapi
 PR_DESCRIPTION.md
 dynamictoolset
+test/e2e/gateway/.kube/
+
+# Kubernetes cache files (generated during E2E tests)
+**/.kube/cache/

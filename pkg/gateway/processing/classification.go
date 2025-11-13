@@ -141,10 +141,10 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
 	// 1. Check cache first (fast path)
 	if env := c.getFromCache(namespace); env != "" {
 		c.logger.Debug("Environment classification from cache",
-		zap.Any("namespace", namespace),
-		zap.Any("environment", env),
-		zap.String("source", "cache"),
-	)
+			zap.Any("namespace", namespace),
+			zap.Any("environment", env),
+			zap.String("source", "cache"),
+		)
 		return env
 	}
 
@@ -156,18 +156,18 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
 			// Organizations define their own environment taxonomy
 			c.setCache(namespace, env)
 			c.logger.Debug("Environment classification from namespace label",
-		zap.Any("namespace", namespace),
-		zap.Any("environment", env),
-		zap.String("source", "namespace_label"),
-	)
+				zap.Any("namespace", namespace),
+				zap.Any("environment", env),
+				zap.String("source", "namespace_label"),
+			)
 			return env
 		}
 	} else {
 		// Log error but continue to fallback (namespace might not exist yet)
 		c.logger.Debug("Failed to get namespace for environment classification",
-		zap.Any("namespace", namespace),
-		zap.Error(err),
-	)
+			zap.Any("namespace", namespace),
+			zap.Error(err),
+		)
 	}
 
 	// 3. Check ConfigMap override (fallback)
@@ -180,18 +180,18 @@ func (c *EnvironmentClassifier) Classify(ctx context.Context, namespace string) 
 			// Accept any non-empty environment string for dynamic configuration
 			c.setCache(namespace, env)
 			c.logger.Debug("Environment classification from ConfigMap override",
-		zap.Any("namespace", namespace),
-		zap.Any("environment", env),
-		zap.String("source", "configmap_override"),
-	)
+				zap.Any("namespace", namespace),
+				zap.Any("environment", env),
+				zap.String("source", "configmap_override"),
+			)
 			return env
 		}
 	} else {
 		// Log error but continue to default fallback
 		c.logger.Debug("Failed to get ConfigMap for environment classification",
-		zap.Any("namespace", namespace),
-		zap.Error(err),
-	)
+			zap.Any("namespace", namespace),
+			zap.Error(err),
+		)
 	}
 
 	// 4. Default fallback (last resort)

@@ -81,21 +81,21 @@ var _ = Describe("DLQ Client Integration", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(messages).To(HaveLen(1))
 
-			// Verify message structure
-			messageJSON := messages[0].Values["message"].(string)
-			var auditMsg dlq.AuditMessage
-			err = json.Unmarshal([]byte(messageJSON), &auditMsg)
-			Expect(err).ToNot(HaveOccurred())
+				// Verify message structure
+				messageJSON := messages[0].Values["message"].(string)
+				var auditMsg dlq.AuditMessage
+				err = json.Unmarshal([]byte(messageJSON), &auditMsg)
+				Expect(err).ToNot(HaveOccurred())
 
-			// ✅ CORRECTNESS TEST: Message fields (validated by structured type)
-			Expect(auditMsg.Type).To(Equal("notification_audit"))
-			Expect(auditMsg.RetryCount).To(Equal(0))
-			Expect(auditMsg.LastError).To(Equal(testError.Error()))
-			Expect(auditMsg.Timestamp).ToNot(BeZero())
+				// ✅ CORRECTNESS TEST: Message fields (validated by structured type)
+				Expect(auditMsg.Type).To(Equal("notification_audit"))
+				Expect(auditMsg.RetryCount).To(Equal(0))
+				Expect(auditMsg.LastError).To(Equal(testError.Error()))
+				Expect(auditMsg.Timestamp).ToNot(BeZero())
 
-			// ✅ CORRECTNESS TEST: Payload contains audit data
-			payloadJSON, err := json.Marshal(auditMsg.Payload)
-			Expect(err).ToNot(HaveOccurred())
+				// ✅ CORRECTNESS TEST: Payload contains audit data
+				payloadJSON, err := json.Marshal(auditMsg.Payload)
+				Expect(err).ToNot(HaveOccurred())
 
 				var payloadAudit models.NotificationAudit
 				err = json.Unmarshal(payloadJSON, &payloadAudit)
@@ -178,5 +178,3 @@ var _ = Describe("DLQ Client Integration", func() {
 		})
 	})
 })
-
-

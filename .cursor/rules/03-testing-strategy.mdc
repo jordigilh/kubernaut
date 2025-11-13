@@ -716,6 +716,7 @@ Describe("BR-WORKFLOW-005: Workflow Safety Validation", func() {
 - **Over-Extended Unit Tests**: Excessive mocking (>50 lines) - move complex scenarios to integration tests
 - **Wrong Test Level**: Testing infrastructure behavior in unit tests - use integration tests for real service interactions
 - **Redundant Coverage**: Testing same business logic at multiple levels without added value
+- **Hardcoded Container Names**: Never hardcode container names in tests - use environment variables or infrastructure variables because these values are dynamic across local and CI environments (e.g., `datastorage-postgres-test` locally vs `postgres` in Docker Compose)
 
 ## Infrastructure Requirements
 - **Kind Cluster**: For local development and CI testing

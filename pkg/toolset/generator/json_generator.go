@@ -134,6 +134,3 @@ func (g *jsonToolsetGenerator) generateDescription(svc *toolset.DiscoveredServic
 	return fmt.Sprintf("%s service in %s namespace (type: %s)",
 		svc.Name, svc.Namespace, svc.Type)
 }
-
-
-

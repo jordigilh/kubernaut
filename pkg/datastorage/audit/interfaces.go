@@ -67,4 +67,3 @@ type Repository interface {
 	Writer
 	Reader
 }
-

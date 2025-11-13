@@ -126,4 +126,3 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	}
 	return nil
 }
-

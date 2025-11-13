@@ -261,22 +261,22 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 	// BUSINESS OUTCOME: Graceful degradation prevents Gateway outage from Redis failures
 	// Redis down → Log error, continue processing → CRDs still created
 	Describe("Error Handling", func() {
-	It("handles Redis connection failure gracefully", func() {
-		// BR-GATEWAY-003: Request rejection when Redis unavailable (DD-GATEWAY-003)
-		// BUSINESS SCENARIO: Redis cluster unavailable during alert spike
-		// Expected: Return error (Gateway returns HTTP 503 to client)
+		It("handles Redis connection failure gracefully", func() {
+			// BR-GATEWAY-003: Request rejection when Redis unavailable (DD-GATEWAY-003)
+			// BUSINESS SCENARIO: Redis cluster unavailable during alert spike
+			// Expected: Return error (Gateway returns HTTP 503 to client)
 
-		// Close Redis connection to simulate failure
-		if redisClient != nil {
-			_ = redisClient.Close()
-		}
+			// Close Redis connection to simulate failure
+			if redisClient != nil {
+				_ = redisClient.Close()
+			}
 
-		isDup, metadata, err := dedupService.Check(ctx, testSignal)
+			isDup, metadata, err := dedupService.Check(ctx, testSignal)
 
-		// BUSINESS OUTCOME: Redis failure returns error (Gateway returns HTTP 503)
-		Expect(err).To(HaveOccurred(),
-			"Redis unavailable should return error (HTTP 503)")
-		Expect(isDup).To(BeFalse(),
+			// BUSINESS OUTCOME: Redis failure returns error (Gateway returns HTTP 503)
+			Expect(err).To(HaveOccurred(),
+				"Redis unavailable should return error (HTTP 503)")
+			Expect(isDup).To(BeFalse(),
 				"Graceful degradation: treat as new alert")
 			Expect(metadata).To(BeNil(),
 				"Graceful degradation: no metadata when Redis unavailable")
