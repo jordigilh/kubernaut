@@ -395,54 +395,56 @@ var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func()
 // insertAggregationTestData inserts test data for aggregation tests
 func insertAggregationTestData() {
 	// Insert required parent records (resource_references -> action_histories)
-	// Step 1: Insert resource_references record
+	// Step 1: Insert resource_references record (let PostgreSQL auto-generate id)
+	var resourceID int64
 	resourceSQL := `
-		INSERT INTO resource_references (id, resource_uid, api_version, kind, name, namespace, created_at)
-		VALUES (1, 'test-uid-agg-001', 'apps/v1', 'Deployment', 'test-deployment', 'test-namespace', NOW())
-		ON CONFLICT (id) DO NOTHING
+		INSERT INTO resource_references (resource_uid, api_version, kind, name, namespace, created_at)
+		VALUES ('test-uid-agg-001', 'apps/v1', 'Deployment', 'test-deployment', 'test-namespace', NOW())
+		RETURNING id
 	`
-	_, err := db.Exec(resourceSQL)
+	err := db.QueryRow(resourceSQL).Scan(&resourceID)
 	if err != nil {
 		GinkgoWriter.Printf("❌ Failed to insert resource_references: %v\n", err)
 		Fail(fmt.Sprintf("Failed to insert resource_references: %v", err))
 	}
 
-	// Step 2: Insert action_histories record
+	// Step 2: Insert action_histories record (let PostgreSQL auto-generate id)
+	var historyID int64
 	actionHistorySQL := `
-		INSERT INTO action_histories (id, resource_id, created_at)
-		VALUES (1, 1, NOW())
-		ON CONFLICT (id) DO NOTHING
+		INSERT INTO action_histories (resource_id, created_at)
+		VALUES ($1, NOW())
+		RETURNING id
 	`
-	_, err = db.Exec(actionHistorySQL)
+	err = db.QueryRow(actionHistorySQL, resourceID).Scan(&historyID)
 	if err != nil {
-		GinkgoWriter.Printf("❌ Failed to insert action_history: %v\n", err)
-		Fail(fmt.Sprintf("Failed to insert action_history: %v", err))
+		GinkgoWriter.Printf("❌ Failed to insert action_histories: %v\n", err)
+		Fail(fmt.Sprintf("Failed to insert action_histories: %v", err))
 	}
 
-	// Insert incidents for success rate testing
+	// Insert incidents for success rate testing (using the generated historyID)
 	// workflow-agg-1: 3 completed, 1 failed (75% success rate)
-	insertIncident("agg-inc-1", "workflow-agg-1", "prod-agg", "critical", "completed")
-	insertIncident("agg-inc-2", "workflow-agg-1", "prod-agg", "high", "completed")
-	insertIncident("agg-inc-3", "workflow-agg-1", "prod-agg", "medium", "completed")
-	insertIncident("agg-inc-4", "workflow-agg-1", "prod-agg", "low", "failed")
+	insertIncident(historyID, "agg-inc-1", "workflow-agg-1", "prod-agg", "critical", "completed")
+	insertIncident(historyID, "agg-inc-2", "workflow-agg-1", "prod-agg", "high", "completed")
+	insertIncident(historyID, "agg-inc-3", "workflow-agg-1", "prod-agg", "medium", "completed")
+	insertIncident(historyID, "agg-inc-4", "workflow-agg-1", "prod-agg", "low", "failed")
 
 	// workflow-agg-2: 2 completed, 0 failed (100% success rate)
-	insertIncident("agg-inc-5", "workflow-agg-2", "staging-agg", "high", "completed")
-	insertIncident("agg-inc-6", "workflow-agg-2", "staging-agg", "medium", "completed")
+	insertIncident(historyID, "agg-inc-5", "workflow-agg-2", "staging-agg", "high", "completed")
+	insertIncident(historyID, "agg-inc-6", "workflow-agg-2", "staging-agg", "medium", "completed")
 
 	// workflow-agg-3: 0 completed, 2 failed (0% success rate)
-	insertIncident("agg-inc-7", "workflow-agg-3", "dev-agg", "medium", "failed")
-	insertIncident("agg-inc-8", "workflow-agg-3", "dev-agg", "low", "failed")
+	insertIncident(historyID, "agg-inc-7", "workflow-agg-3", "dev-agg", "medium", "failed")
+	insertIncident(historyID, "agg-inc-8", "workflow-agg-3", "dev-agg", "low", "failed")
 
 	// Additional incidents for namespace and severity aggregation
-	insertIncident("agg-inc-9", "workflow-agg-4", "prod-agg", "critical", "completed")
-	insertIncident("agg-inc-10", "workflow-agg-4", "staging-agg", "high", "completed")
+	insertIncident(historyID, "agg-inc-9", "workflow-agg-4", "prod-agg", "critical", "completed")
+	insertIncident(historyID, "agg-inc-10", "workflow-agg-4", "staging-agg", "high", "completed")
 
 	GinkgoWriter.Println("  ✅ Aggregation test data inserted (10 incidents)")
 }
 
 // insertIncident is a helper to insert test incidents
-func insertIncident(alertName, workflowID, namespace, severity, status string) {
+func insertIncident(historyID int64, alertName, workflowID, namespace, severity, status string) {
 	// Note: 'namespace' parameter maps to cluster_name for schema compatibility
 	// The 001_initial_schema has no namespace column, using cluster_name instead
 	sql := `
@@ -450,9 +452,9 @@ func insertIncident(alertName, workflowID, namespace, severity, status string) {
 			action_id, signal_name, signal_severity, action_type, action_timestamp,
 			cluster_name, model_used, model_confidence,
 			execution_status, action_history_id
-		) VALUES ($1, $2, $3, 'scale', $4, $5, 'test-model', 0.9, $6, 1)
+		) VALUES ($1, $2, $3, 'scale', $4, $5, 'test-model', 0.9, $6, $7)
 	`
-	_, err := db.Exec(sql, workflowID, alertName, severity, time.Now(), namespace, status)
+	_, err := db.Exec(sql, workflowID, alertName, severity, time.Now(), namespace, status, historyID)
 	if err != nil {
 		GinkgoWriter.Printf("❌ Failed to insert incident %s: %v\n", alertName, err)
 		Fail(fmt.Sprintf("Failed to insert test incident: %v", err))

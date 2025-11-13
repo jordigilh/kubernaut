@@ -98,7 +98,7 @@ logging:
 			Expect(err).ToNot(HaveOccurred(), "Service should be running after loading config and secrets")
 
 			// Cleanup: kill the process
-			cmd.Process.Kill()
+			Expect(cmd.Process.Kill()).ToNot(HaveOccurred())
 			cmd.Wait()
 		})
 

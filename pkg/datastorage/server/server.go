@@ -840,7 +840,7 @@ func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
 	aggregations := []map[string]interface{}{}
 
 	for rows.Next() {
-		var namespace string
+		var namespace sql.NullString
 		var count int
 
 		if err := rows.Scan(&namespace, &count); err != nil {
@@ -850,8 +850,14 @@ func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
 			return nil, fmt.Errorf("result scan error: %w", err)
 		}
 
+		// Handle NULL namespaces (convert to empty string or skip)
+		namespaceValue := ""
+		if namespace.Valid {
+			namespaceValue = namespace.String
+		}
+
 		aggregations = append(aggregations, map[string]interface{}{
-			"namespace": namespace,
+			"namespace": namespaceValue,
 			"count":     count,
 		})
 	}

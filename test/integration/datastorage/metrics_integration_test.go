@@ -102,7 +102,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				Channel:         "email",
 				MessageSummary:  "Test notification message",
 				Status:          "sent",
-				SentAt:          time.Now().UTC(),
+				SentAt:          time.Now().Add(-1 * time.Minute), // 1 minute in the past to avoid clock skew issues
 				DeliveryStatus:  "200 OK",
 				EscalationLevel: 0,
 			}
