@@ -65,10 +65,10 @@ test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 
 	@if [ -z "$$POSTGRES_HOST" ]; then \
 		echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."; \
 		podman run -d --name datastorage-postgres -p 5432:5432 \
-			-e POSTGRES_PASSWORD=postgres \
-			-e POSTGRES_SHARED_BUFFERS=1GB \
+		-e POSTGRES_PASSWORD=postgres \
+		-e POSTGRES_SHARED_BUFFERS=1GB \
 			quay.io/jordigilh/pgvector:pg16 > /dev/null 2>&1 || \
-			(echo "⚠️  PostgreSQL container already exists or failed to start" && \
+		(echo "⚠️  PostgreSQL container already exists or failed to start" && \
 			 podman start datastorage-postgres > /dev/null 2>&1) || true; \
 		echo "⏳ Waiting for PostgreSQL to be ready..."; \
 		sleep 5; \
@@ -90,45 +90,24 @@ test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 
 		echo "✅ Version validation passed (PostgreSQL 16 + pgvector 0.5.1+)"; \
 		echo "🔍 Testing HNSW index creation (dry-run)..."; \
 		podman exec datastorage-postgres psql -U postgres -d postgres -c "\
-			CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \
-			CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);" \
-			> /dev/null 2>&1 || \
+		CREATE TEMP TABLE hnsw_validation_test (id SERIAL PRIMARY KEY, embedding vector(384)); \
+		CREATE INDEX hnsw_validation_test_idx ON hnsw_validation_test USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);" \
+		> /dev/null 2>&1 || \
 			(echo "❌ HNSW index creation test failed - PostgreSQL/pgvector may not support HNSW" && exit 1); \
 		echo "✅ HNSW index support verified"; \
 	fi
 	@echo "🧪 Running Data Storage integration tests..."
 	@if [ -z "$$POSTGRES_HOST" ]; then \
 		TEST_RESULT=0; \
-		go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
-		echo "🧹 Cleaning up PostgreSQL container..."; \
-		podman stop datastorage-postgres > /dev/null 2>&1 || true; \
-		podman rm datastorage-postgres > /dev/null 2>&1 || true; \
-		echo "✅ Cleanup complete"; \
+	go test ./test/integration/datastorage/... -v -timeout 5m || TEST_RESULT=$$?; \
+	echo "🧹 Cleaning up PostgreSQL container..."; \
+	podman stop datastorage-postgres > /dev/null 2>&1 || true; \
+	podman rm datastorage-postgres > /dev/null 2>&1 || true; \
+	echo "✅ Cleanup complete"; \
 		exit $$TEST_RESULT; \
 	else \
 		go test ./test/integration/datastorage/... -v -timeout 5m; \
 	fi
-
-.PHONY: test-integration-contextapi
-test-integration-contextapi: ## Run Context API integration tests (Redis via Podman + PostgreSQL, ~45s)
-	@echo "🔧 Starting Redis for Context API..."
-	@podman run -d --name contextapi-redis-test -p 6379:6379 quay.io/jordigilh/redis:7-alpine > /dev/null 2>&1 || \
-		(echo "⚠️  Redis container already exists or failed to start" && \
-		 podman start contextapi-redis-test > /dev/null 2>&1) || true
-	@echo "⏳ Waiting for Redis to be ready..."
-	@sleep 2
-	@podman exec contextapi-redis-test redis-cli ping > /dev/null 2>&1 || \
-		(echo "❌ Redis not ready" && exit 1)
-	@echo "✅ Redis ready"
-	@echo "📝 NOTE: PostgreSQL required - run 'make bootstrap-dev' if not running"
-	@echo "🧪 Running Context API integration tests..."
-	@TEST_RESULT=0; \
-	go test ./test/integration/contextapi/... -v -timeout 5m || TEST_RESULT=$$?; \
-	echo "🧹 Cleaning up Redis container..."; \
-	podman stop contextapi-redis-test > /dev/null 2>&1 || true; \
-	podman rm contextapi-redis-test > /dev/null 2>&1 || true; \
-	echo "✅ Cleanup complete"; \
-	exit $$TEST_RESULT
 
 .PHONY: test-integration-ai
 test-integration-ai: ## Run AI Service integration tests (Redis via Podman, ~15s)
@@ -415,7 +394,7 @@ endef
 ##@ Microservices Build
 
 .PHONY: build-all-services
-build-all-services: build-gateway-service build-context-api build-datastorage build-dynamictoolset build-notification ## Build all Go services
+build-all-services: build-gateway-service build-datastorage build-dynamictoolset build-notification ## Build all Go services
 
 .PHONY: build-microservices
 build-microservices: build-all-services ## Build all microservices (alias for build-all-services)
@@ -508,7 +487,7 @@ clean-all: ## Clean all build artifacts including test binaries (Go only)
 
 ##@ Microservices Container Build
 .PHONY: docker-build-microservices
-docker-build-microservices: docker-build-gateway-service docker-build-context-api ## Build all microservice container images
+docker-build-microservices: docker-build-gateway-service ## Build all microservice container images
 
 .PHONY: docker-build-gateway-service
 docker-build-gateway-service: ## Build gateway service container image (multi-arch UBI9)
@@ -530,7 +509,7 @@ docker-build-gateway-single: ## Build single-arch debug image (current platform 
 	@echo "✅ Debug image: $(REGISTRY)/kubernaut-gateway:$(VERSION)-$(shell uname -m)"
 
 .PHONY: docker-push-microservices
-docker-push-microservices: docker-push-gateway-service docker-push-context-api ## Push all microservice container images
+docker-push-microservices: docker-push-gateway-service ## Push all microservice container images
 
 .PHONY: docker-push-gateway-service
 docker-push-gateway-service: docker-build-gateway-service ## Push Gateway service multi-arch image
@@ -603,137 +582,6 @@ run-holmesgpt-api: ## Run HolmesGPT API service locally (dev mode)
 .PHONY: k8s-namespace
 k8s-namespace: ## Create namespace
 
-##@ Context API Service
-
-# Context API Image Configuration
-CONTEXT_API_IMG ?= quay.io/jordigilh/context-api:v0.1.0
-
-.PHONY: build-context-api
-build-context-api: ## Build Context API binary locally
-	@echo "🔨 Building Context API binary..."
-	go build -o bin/context-api cmd/contextapi/main.go
-	@echo "✅ Binary: bin/context-api"
-
-.PHONY: run-context-api
-run-context-api: build-context-api ## Run Context API locally with config file
-	@echo "🚀 Starting Context API..."
-	./bin/context-api --config config/context-api.yaml
-
-.PHONY: test-context-api
-test-context-api: ## Run Context API unit tests
-	@echo "🧪 Running Context API tests..."
-	go test ./pkg/contextapi/... -v -cover
-
-.PHONY: test-context-api-integration
-test-context-api-integration: ## Run Context API integration tests
-	@echo "🧪 Running Context API integration tests..."
-	go test ./test/integration/contextapi/... -v
-
-.PHONY: docker-build-context-api
-docker-build-context-api: ## Build multi-architecture Context API image (podman + amd64/arm64)
-	@echo "🔨 Building multi-architecture image: $(CONTEXT_API_IMG)"
-	podman build --platform linux/amd64,linux/arm64 \
-		-t $(CONTEXT_API_IMG) \
-		-f docker/context-api.Dockerfile .
-	@echo "✅ Multi-arch image built: $(CONTEXT_API_IMG)"
-
-.PHONY: docker-push-context-api
-docker-push-context-api: docker-build-context-api ## Push Context API multi-arch image to registry
-	@echo "📤 Pushing multi-arch image: $(CONTEXT_API_IMG)"
-	podman manifest push $(CONTEXT_API_IMG) docker://$(CONTEXT_API_IMG)
-	@echo "✅ Image pushed: $(CONTEXT_API_IMG)"
-
-.PHONY: docker-build-context-api-single
-docker-build-context-api-single: ## Build single-arch debug image (current platform only)
-	@echo "🔨 Building single-arch debug image: $(CONTEXT_API_IMG)-$(shell uname -m)"
-	podman build -t $(CONTEXT_API_IMG)-$(shell uname -m) \
-		-f docker/context-api.Dockerfile .
-	@echo "✅ Single-arch debug image built: $(CONTEXT_API_IMG)-$(shell uname -m)"
-
-.PHONY: docker-run-context-api
-docker-run-context-api: docker-build-context-api ## Run Context API in container with environment variables
-	@echo "🚀 Starting Context API container..."
-	podman run -d --rm \
-		--name context-api \
-		-p 8091:8091 \
-		-p 9090:9090 \
-		-e DB_HOST=localhost \
-		-e DB_PORT=5432 \
-		-e DB_NAME=postgres \
-		-e DB_USER=postgres \
-		-e DB_PASSWORD=postgres \
-		-e REDIS_ADDR=localhost:6379 \
-		-e REDIS_DB=0 \
-		-e LOG_LEVEL=info \
-		$(CONTEXT_API_IMG)
-	@echo "✅ Context API running: http://localhost:8091"
-	@echo "📊 Metrics endpoint: http://localhost:9090/metrics"
-	@echo "🛑 Stop with: make docker-stop-context-api"
-
-.PHONY: docker-run-context-api-with-config
-docker-run-context-api-with-config: docker-build-context-api ## Run Context API with mounted config file (local dev)
-	@echo "🚀 Starting Context API container with config file..."
-	podman run -d --rm \
-		--name context-api \
-		-p 8091:8091 \
-		-p 9090:9090 \
-		-v $(PWD)/config/context-api.yaml:/etc/context-api/config.yaml:ro \
-		$(CONTEXT_API_IMG) \
-		--config /etc/context-api/config.yaml
-	@echo "✅ Context API running: http://localhost:8091"
-	@echo "📊 Metrics endpoint: http://localhost:9090/metrics"
-	@echo "🛑 Stop with: make docker-stop-context-api"
-
-.PHONY: docker-stop-context-api
-docker-stop-context-api: ## Stop Context API container
-	@echo "🛑 Stopping Context API container..."
-	podman stop context-api || true
-	@echo "✅ Context API stopped"
-
-.PHONY: docker-logs-context-api
-docker-logs-context-api: ## Show Context API container logs
-	podman logs -f context-api
-
-.PHONY: deploy-context-api
-deploy-context-api: ## Deploy Context API to Kubernetes cluster
-	@echo "🚀 Deploying Context API to Kubernetes..."
-	kubectl apply -f deploy/context-api/
-	@echo "✅ Context API deployed"
-	@echo "⏳ Waiting for rollout..."
-	kubectl rollout status deployment/context-api -n kubernaut-system
-
-.PHONY: undeploy-context-api
-undeploy-context-api: ## Remove Context API from Kubernetes cluster
-	@echo "🗑️  Removing Context API from Kubernetes..."
-	kubectl delete -f deploy/context-api/ || true
-	@echo "✅ Context API removed"
-
-.PHONY: validate-context-api-build
-validate-context-api-build: ## Validate Context API build pipeline
-	@echo "✅ Validating Context API build pipeline..."
-	@echo "1️⃣  Building binary..."
-	@$(MAKE) build-context-api
-	@echo "2️⃣  Running unit tests..."
-	@$(MAKE) test-context-api
-	@echo "3️⃣  Building Docker image..."
-	@$(MAKE) docker-build-context-api-single
-	@echo "4️⃣  Testing container startup..."
-	@podman run --rm -d --name context-api-validate -p 8091:8091 -p 9090:9090 \
-		-e DB_HOST=localhost -e DB_PORT=5432 -e DB_NAME=test -e DB_USER=test -e DB_PASSWORD=test \
-		-e REDIS_ADDR=localhost:6379 -e REDIS_DB=0 \
-		$(CONTEXT_API_IMG)-$(shell uname -m) || true
-	@sleep 3
-	@curl -f http://localhost:8091/health && echo "✅ Health check passed" || echo "❌ Health check failed"
-	@podman stop context-api-validate || true
-	@echo "✅ Context API build pipeline validated"
-
-##@ Context API E2E Tests
-
-.PHONY: test-e2e-contextapi
-test-e2e-contextapi: ## Run Context API E2E tests (Kind bootstrapped via Go)
-	@echo "🧪 Running Context API E2E tests..."
-	@cd test/e2e/contextapi && ginkgo -v
-
 ##@ Per-Service Test Suites (All Tiers)
 
 .PHONY: test-gateway-all
@@ -756,29 +604,6 @@ test-gateway-all: ## Run ALL Gateway tests (unit + integration + e2e)
 		echo "✅ Gateway: ALL tests passed (3/3 tiers)"; \
 	else \
 		echo "❌ Gateway: $$FAILED tier(s) failed"; \
-		exit 1; \
-	fi
-
-.PHONY: test-contextapi-all
-test-contextapi-all: ## Run ALL Context API tests (unit + integration + e2e)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Context API - Complete Test Suite"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	echo ""; \
-	echo "1️⃣  Unit Tests..."; \
-	go test ./test/unit/contextapi/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "2️⃣  Integration Tests..."; \
-	$(MAKE) test-integration-contextapi || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	echo "3️⃣  E2E Tests..."; \
-	$(MAKE) test-e2e-contextapi || FAILED=$$((FAILED + 1)); \
-	echo ""; \
-	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ Context API: ALL tests passed (3/3 tiers)"; \
-	else \
-		echo "❌ Context API: $$FAILED tier(s) failed"; \
 		exit 1; \
 	fi
 
@@ -870,8 +695,6 @@ test-all-services: ## Run ALL tests for ALL services (sequential - use CI for pa
 	@FAILED=0; \
 	$(MAKE) test-gateway-all || FAILED=$$((FAILED + 1)); \
 	echo ""; \
-	$(MAKE) test-contextapi-all || FAILED=$$((FAILED + 1)); \
-	echo ""; \
 	$(MAKE) test-datastorage-all || FAILED=$$((FAILED + 1)); \
 	echo ""; \
 	$(MAKE) test-toolset-all || FAILED=$$((FAILED + 1)); \
@@ -882,7 +705,7 @@ test-all-services: ## Run ALL tests for ALL services (sequential - use CI for pa
 	echo ""; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
 	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ ALL SERVICES: Complete test suite passed (6/6 services)"; \
+		echo "✅ ALL SERVICES: Complete test suite passed (5/5 services)"; \
 	else \
 		echo "❌ FAILED: $$FAILED service(s) failed tests"; \
 		exit 1; \
