@@ -43,7 +43,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 			Channel:         "email",
 			MessageSummary:  "Test notification message",
 			Status:          "sent",
-			SentAt:          time.Now(),
+			SentAt:          time.Now().Add(-1 * time.Minute), // 1 minute in the past to avoid clock skew issues
 			DeliveryStatus:  "200 OK",
 			ErrorMessage:    "",
 			EscalationLevel: 0,
