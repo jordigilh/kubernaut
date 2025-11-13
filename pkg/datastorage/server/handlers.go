@@ -1,0 +1,131 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package server
+
+import (
+	"fmt"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"go.uber.org/zap"
+)
+
+// Health check handlers
+
+// handleHealth handles GET /health - overall health check
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	// Check database connectivity
+	if err := s.db.Ping(); err != nil {
+		s.logger.Error("Health check failed - database unreachable",
+			zap.Error(err))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprintf(w, `{"status":"unhealthy","database":"unreachable","error":"%s"}`, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprint(w, `{"status":"healthy","database":"connected"}`)
+}
+
+// handleReadiness handles GET /health/ready - readiness probe for Kubernetes
+// DD-007: Returns 503 during shutdown to remove pod from endpoints
+func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
+	// DD-007: Check shutdown flag first
+	if s.isShuttingDown.Load() {
+		s.logger.Debug("Readiness probe returning 503 - shutdown in progress")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprint(w, `{"status":"not_ready","reason":"shutting_down"}`)
+		return
+	}
+
+	// Check database connectivity
+	if err := s.db.Ping(); err != nil {
+		s.logger.Warn("Readiness probe failed - database unreachable",
+			zap.Error(err))
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = fmt.Fprintf(w, `{"status":"not_ready","reason":"database_unreachable","error":"%s"}`, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprint(w, `{"status":"ready"}`)
+}
+
+// handleLiveness handles GET /health/live - liveness probe for Kubernetes
+func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
+	// Liveness is always true unless the process is completely stuck
+	// Don't check database here - that's the readiness probe's job
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprint(w, `{"status":"alive"}`)
+}
+
+// Middleware
+
+// panicRecoveryMiddleware catches panics and logs detailed information
+func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				requestID := middleware.GetReqID(r.Context())
+
+				// Log the panic with full details
+				s.logger.Error("🚨 PANIC RECOVERED",
+					zap.String("request_id", requestID),
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+					zap.String("remote_addr", r.RemoteAddr),
+					zap.Any("panic", err),
+					zap.Stack("stack_trace"),
+				)
+
+				// Let chi's Recoverer handle the response
+				panic(err)
+			}
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// loggingMiddleware logs HTTP requests with structured logging
+func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Get request ID from middleware.RequestID
+		requestID := middleware.GetReqID(r.Context())
+
+		// Create a response writer wrapper to capture status code
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+		// Call next handler
+		next.ServeHTTP(ww, r)
+
+		// Log request with timing
+		duration := time.Since(start)
+		s.logger.Info("HTTP request",
+			zap.String("request_id", requestID),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.String("remote_addr", r.RemoteAddr),
+			zap.Int("status", ww.Status()),
+			zap.Int("bytes", ww.BytesWritten()),
+			zap.Duration("duration", duration),
+		)
+	})
+}
