@@ -1,14 +1,19 @@
 # Kubernaut - Approved Microservices Architecture
 
-**Document Version**: 2.4
-**Date**: October 31, 2025
-**Status**: **V1 IMPLEMENTATION** - Current Architecture Specification (Updated: Tekton Pipelines Migration)
-**Architecture Type**: V1 Microservices (11 Services) with V2 Roadmap (15 Services)
+> **⚠️ DEPRECATION NOTICE** (2025-11-13): Context API service has been deprecated.
+> All Context API functionality has been consolidated into Data Storage Service (DD-CONTEXT-006).
+> This document retains Context API references for historical context. See DD-CONTEXT-006 for deprecation details.
+
+**Document Version**: 2.5
+**Date**: November 13, 2025
+**Status**: **V1 IMPLEMENTATION** - Current Architecture Specification
+**Architecture Type**: V1 Microservices (10 Services) with V2 Roadmap (14 Services)
 
 ## 📋 Version History
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.5 | Nov 13, 2025 | **Context API Deprecation**: Updated service count from 11 to 10. Context API deprecated in favor of Data Storage Service (DD-CONTEXT-006). Document retains historical Context API references. | AI Assistant |
 | 2.4 | Oct 31, 2025 | Updated 2 sequence diagrams: K8s Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
 | 2.3 | Oct 2025 | RemediationOrchestrator Specification & Approval Notification Integration | - |
 
@@ -16,7 +21,7 @@
 
 ## 🎯 **EXECUTIVE SUMMARY**
 
-This document defines the **V1 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1 architecture implements **11 core microservices** (4 CRD controllers + 7 stateless services), each adhering to the **Single Responsibility Principle**, with a **V2 roadmap** for 4 additional advanced services. This provides rapid deployment capability while maintaining complete business requirements coverage.
+This document defines the **V1 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1 architecture implements **10 core microservices** (4 CRD controllers + 6 stateless services), each adhering to the **Single Responsibility Principle**, with a **V2 roadmap** for 4 additional advanced services. This provides rapid deployment capability while maintaining complete business requirements coverage.
 
 **V2.1 Update**: Effectiveness Monitor Service moved from V2 to V1 with graceful degradation strategy to enable progressive capability improvement as remediation data accumulates.
 
@@ -32,9 +37,9 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 
 ---
 
-## 🏗️ **V1 MICROSERVICES OVERVIEW (11 Services)**
+## 🏗️ **V1 MICROSERVICES OVERVIEW (10 Services)**
 
-### **V1 Service Portfolio - Current Implementation (11 Services)**
+### **V1 Service Portfolio - Current Implementation (10 Services)**
 | Service | Responsibility | Business Requirements | External Connections |
 |---------|---------------|----------------------|---------------------|
 | **🔗 Gateway** | HTTP Gateway & Security | BR-WH-001 to BR-WH-015 | Multi-Signal Sources |
@@ -42,8 +47,7 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 | **🤖 AI Analysis** | AI Analysis & Decision Making (HolmesGPT-Only) | BR-AI-001 to BR-AI-050 | HolmesGPT-API |
 | **🎯 Workflow Execution** | Workflow Orchestration with Tekton Pipelines | BR-WF-001 to BR-WF-165 | Tekton Pipelines, Kubernetes Clusters |
 | **🎛️ Remediation Orchestrator** | End-to-End Remediation Lifecycle Management | BR-ORCH-001 to BR-ORCH-050 | None (internal only) |
-| **📊 Data Storage** | Data Persistence & Local Vector DB | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | PostgreSQL, Local Vector |
-| **🌐 Context API** | Context Orchestration (HolmesGPT-Optimized) | BR-CTX-001 to BR-CTX-180 | None (internal only) |
+| **📊 Data Storage** | Data Persistence & Semantic Search | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | PostgreSQL, Vector DB |
 | **🔍 HolmesGPT API** | AI Investigation Wrapper | BR-HAPI-001 to BR-HAPI-185 | HolmesGPT Python SDK |
 | **🧩 Dynamic Toolset** | HolmesGPT Toolset Configuration | BR-TOOLSET-001 to BR-TOOLSET-020 | HolmesGPT API |
 | **📈 Effectiveness Monitor** | Performance Assessment & Oscillation Detection | BR-INS-001 to BR-INS-010 | None (internal only) |
@@ -51,7 +55,7 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 
 **Service Breakdown**:
 - **CRD Controllers** (4): Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator
-- **Stateless Services** (7): Gateway, Data Storage, Context API, HolmesGPT API, Dynamic Toolset, Effectiveness Monitor, Notifications
+- **Stateless Services** (6): Gateway, Data Storage, HolmesGPT API, Dynamic Toolset, Effectiveness Monitor, Notifications
 
 **Important Notes**:
 - **Oscillation detection** (preventing remediation loops) is a capability of the Effectiveness Monitor service (queries PostgreSQL action_history table), not a separate service.
