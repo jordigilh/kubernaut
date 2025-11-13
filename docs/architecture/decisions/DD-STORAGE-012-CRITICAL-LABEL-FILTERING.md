@@ -3,7 +3,7 @@
 **Date**: November 13, 2025
 **Status**: 🚧 **DEFERRED TO V1.1** (awaiting V1.0 feedback)
 **Decision Maker**: Kubernaut Data Storage Team
-**Authority**: PoC results from `scripts/poc-label-embedding-test.py`
+**Authority**: PoC results from `DD-STORAGE-012-poc/poc-label-embedding-test.py`
 **Affects**: Data Storage Service V1.1, Playbook Catalog semantic search
 **Version**: 1.0
 
