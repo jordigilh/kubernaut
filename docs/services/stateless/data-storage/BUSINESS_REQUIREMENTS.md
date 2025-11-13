@@ -1,9 +1,29 @@
 # Data Storage Service - Business Requirements
 
-**Version**: v1.0
-**Date**: November 8, 2025
+**Version**: v1.1
+**Date**: November 13, 2025
 **Status**: Production-Ready (per ADR-032)
 **Service Type**: Stateless HTTP REST API + Database Layer
+
+---
+
+## 📝 **Changelog**
+
+### **v1.1** (November 13, 2025)
+- **CORRECTED**: BR-STORAGE-012 - Semantic search is for **playbook catalog**, not audit records
+  - Changed from: "Generate embeddings from audit text"
+  - Changed to: "Generate embeddings from playbook catalog"
+  - Rationale: DD-CONTEXT-005 requires playbook semantic search for incident remediation
+  - Impact: V1.0 semantic search is for playbook selection; audit embeddings deferred to V2.0 RAR
+- **DEFERRED**: BR-STORAGE-009 - Playbook embedding caching deferred to V1.1
+  - **V1.0**: No caching (playbooks managed via SQL, no cache invalidation control)
+  - **V1.1**: Caching enabled (CRD controller provides cache invalidation via REST API)
+  - Rationale: DD-STORAGE-006 analysis shows no-cache is acceptable for V1.0 (92% confidence)
+  - Performance: 2.5s latency acceptable for AI workflow; < 3% CPU utilization
+
+### **v1.0** (November 8, 2025)
+- Initial production-ready business requirements
+- 30 BRs with 100% test coverage
 
 ---
 
@@ -127,15 +147,27 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 #### **BR-STORAGE-009: Cache Hit/Miss Tracking**
 - **Priority**: P1
-- **Status**: ✅ Active
-- **Description**: Track Redis cache hit and miss rates for embedding cache performance monitoring
-- **Business Value**: Enable cache optimization and identify cache inefficiencies
+- **Status**: ⏸️ **DEFERRED TO V1.1** (v1.1 - Corrected Scope)
+- **Description**: Track Redis cache hit and miss rates for playbook embedding cache performance monitoring
+- **Business Value**: Enable cache optimization and identify cache inefficiencies for playbook queries
+- **Scope Change (v1.1)**:
+  - ❌ **OLD**: Cache audit embeddings (INCORRECT - low hit rate, no business value)
+  - ✅ **NEW**: Cache playbook embeddings (CORRECT - high hit rate, playbooks queried repeatedly)
+- **Cache Strategy**:
+  - **V1.0**: ⏸️ **NO CACHING** (deferred to V1.1 per DD-STORAGE-006)
+  - **V1.1**: Materialized view or Redis with CRD-triggered invalidation
+  - **Rationale**: V1.0 SQL-only playbook management cannot trigger cache invalidation; no-cache avoids stale data risk (92% confidence)
+- **Performance (V1.0 No-Cache)**:
+  - Latency: 2.5s per query (50 playbooks × 50ms/playbook)
+  - CPU Usage: < 3% (acceptable for 1,000 queries/day)
+  - Acceptable for AI workflow (total AI decision time: 5-10s)
 - **Test Coverage**:
-  - Unit: `test/unit/datastorage/metrics_test.go:124` (cache hit)
-  - Unit: `test/unit/datastorage/metrics_test.go:132` (cache miss)
-  - Unit: `test/unit/datastorage/metrics_test.go:346` (benchmark overhead)
-- **Implementation**: `pkg/datastorage/metrics/metrics.go`
-- **Related BRs**: BR-STORAGE-012 (embedding generation)
+  - Unit: `test/unit/datastorage/metrics_test.go:124` (cache hit) - V1.1
+  - Unit: `test/unit/datastorage/metrics_test.go:132` (cache miss) - V1.1
+  - Unit: `test/unit/datastorage/metrics_test.go:346` (benchmark overhead) - V1.1
+- **Implementation**: `pkg/datastorage/metrics/metrics.go` (V1.1)
+- **Related BRs**: BR-STORAGE-012 (playbook embedding generation)
+- **Design Decisions**: DD-STORAGE-006 (V1.0 No-Cache Decision)
 
 #### **BR-STORAGE-010: Input Validation**
 - **Priority**: P0
@@ -197,16 +229,21 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Category 5: Embedding & Vector Operations (BR-STORAGE-012, BR-STORAGE-013)**
 
-#### **BR-STORAGE-012: Embedding Generation**
+#### **BR-STORAGE-012: Playbook Catalog Embedding Generation**
 - **Priority**: P0
-- **Status**: ✅ Active
-- **Description**: Generate 384-dimensional embeddings from audit text for semantic search (using sentence-transformers/all-MiniLM-L6-v2 model)
-- **Business Value**: Enable semantic search and similarity-based audit retrieval
+- **Status**: ✅ Active (v1.1 - Corrected Scope)
+- **Description**: Generate 384-dimensional embeddings from playbook catalog content for semantic search (using sentence-transformers/all-MiniLM-L6-v2 model)
+- **Business Value**: Enable semantic playbook discovery for incident remediation (DD-CONTEXT-005 "Filter Before LLM" pattern)
+- **Scope Change (v1.1)**:
+  - ❌ **OLD**: Generate embeddings from audit text (INCORRECT - deferred to V2.0 RAR)
+  - ✅ **NEW**: Generate embeddings from playbook catalog (CORRECT - V1.0 requirement)
+- **Use Case**: Context API queries Data Storage to find playbooks semantically similar to incident description
 - **Test Coverage**:
   - Unit: `test/unit/datastorage/embedding_test.go:69` (embedding generation)
   - Unit: `test/unit/datastorage/query_test.go:236` (semantic search moved to integration)
 - **Implementation**: `pkg/datastorage/embedding/pipeline.go`
 - **Related BRs**: BR-STORAGE-009 (cache tracking), BR-STORAGE-014 (dual-write)
+- **ADR References**: DD-CONTEXT-005 (Minimal LLM Response Schema)
 
 #### **BR-STORAGE-013: Query Performance Metrics**
 - **Priority**: P1
