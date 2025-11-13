@@ -136,6 +136,340 @@ func setupTestContainers(ctx context.Context) (*testcontainers.Container, *testc
 
 ---
 
+## 🔧 **Error Handling Philosophy**
+
+**Date**: November 13, 2025
+**Status**: Production-Ready
+**BR Coverage**: BR-STORAGE-002 (Audit Persistence), BR-STORAGE-012 (Playbook Semantic Search)
+
+---
+
+### **🎯 Core Principles**
+
+#### **1. Classify Before Acting**
+Every error must be classified as **transient** (retryable) or **permanent** (not retryable) before deciding on action.
+
+#### **2. Fail Gracefully with DLQ**
+Database write failures trigger Dead Letter Queue (DLQ) fallback for audit integrity (ADR-032, DD-STORAGE-007).
+
+#### **3. Protect the System**
+Connection pooling and circuit breakers prevent cascading failures. Database unavailability should not crash the service.
+
+#### **4. Transparent Failures**
+All failures are logged with structured context and recorded in Prometheus metrics.
+
+---
+
+### **📊 Error Classification**
+
+#### **Transient Errors (Retryable)**
+These errors are temporary and likely to succeed on retry:
+
+| Error Type | Database Code | Retry Strategy | Example |
+|-----------|---------------|----------------|---------|
+| **Connection Timeout** | - | Retry with backoff | PostgreSQL connection pool exhausted |
+| **Deadlock** | 40P01 | Retry immediately | Concurrent audit writes |
+| **Serialization Failure** | 40001 | Retry with backoff | Concurrent playbook updates |
+| **Lock Timeout** | 55P03 | Retry with backoff | Long-running transaction |
+| **Connection Refused** | - | Retry with backoff | PostgreSQL temporarily unavailable |
+| **Too Many Connections** | 53300 | Retry with backoff | Connection pool limit reached |
+
+**Action**: Retry up to 3 times with exponential backoff (1s, 2s, 4s)
+
+---
+
+#### **Permanent Errors (Not Retryable)**
+These errors indicate a data or schema problem that won't resolve with retries:
+
+| Error Type | Database Code | Action | Example |
+|-----------|---------------|--------|---------|
+| **Unique Violation** | 23505 | Return 409 Conflict | Duplicate playbook version |
+| **Foreign Key Violation** | 23503 | Return 400 Bad Request | Invalid reference |
+| **Check Constraint Violation** | 23514 | Return 400 Bad Request | Invalid data format |
+| **Not Null Violation** | 23502 | Return 400 Bad Request | Missing required field |
+| **Invalid Text Representation** | 22P02 | Return 400 Bad Request | Invalid UUID format |
+| **Syntax Error** | 42601 | Return 500 Internal Error | SQL query bug (developer error) |
+
+**Action**: Return HTTP error immediately, log for debugging, no retry
+
+---
+
+#### **Ambiguous Errors (Retry with DLQ Fallback)**
+These errors may be transient or permanent, requiring careful handling:
+
+| Error Type | Database Code | Action | Example |
+|-----------|---------------|--------|---------|
+| **Query Canceled** | 57014 | Retry once, then DLQ | Context timeout |
+| **Admin Shutdown** | 57P01 | Retry with backoff | PostgreSQL maintenance |
+| **Crash Shutdown** | 57P02 | Retry with backoff | PostgreSQL crash recovery |
+| **Cannot Connect** | 08006 | Retry with backoff, then DLQ | Network partition |
+
+**Action**: Retry up to 3 times, then enqueue to DLQ for audit writes (ADR-032)
+
+---
+
+### **🔄 Retry Policy**
+
+#### **Exponential Backoff**
+```
+Attempt 0: 1 second
+Attempt 1: 2 seconds (1 * 2^1)
+Attempt 2: 4 seconds (1 * 2^2)
+```
+
+**Configuration**:
+- **Max Attempts**: 3 (fast failure for HTTP APIs)
+- **Base Backoff**: 1 second
+- **Max Backoff**: 4 seconds
+- **Multiplier**: 2.0
+
+**Rationale**: Fast failure for HTTP APIs (5s total retry time) prevents request timeouts while allowing transient errors to resolve.
+
+---
+
+### **🔌 Dead Letter Queue (DLQ) for Audit Integrity**
+
+#### **Purpose**
+Ensure audit events are never lost, even during database outages (ADR-032, DD-STORAGE-007).
+
+#### **Trigger Conditions**
+DLQ is used when:
+1. **Database unavailable** after 3 retry attempts
+2. **Connection pool exhausted** after 3 retry attempts
+3. **Query timeout** after 3 retry attempts
+
+#### **DLQ Implementation**
+```go
+func (s *Server) CreateAuditEvent(ctx context.Context, event *AuditEvent) error {
+    // Attempt direct database write with retry
+    err := s.repo.CreateAuditEvent(ctx, event)
+    if err != nil {
+        if isTransientError(err) {
+            // Retry logic (3 attempts with backoff)
+            for attempt := 1; attempt <= 3; attempt++ {
+                time.Sleep(time.Duration(1<<attempt) * time.Second)
+                err = s.repo.CreateAuditEvent(ctx, event)
+                if err == nil {
+                    return nil
+                }
+            }
+        }
+
+        // After retries failed or permanent error, use DLQ for audit integrity
+        if isPermanentError(err) {
+            return fmt.Errorf("permanent database error: %w", err)
+        }
+
+        // Transient error after retries → DLQ fallback
+        if dlqErr := s.dlq.EnqueueAuditEvent(ctx, event); dlqErr != nil {
+            // CRITICAL: Both database and DLQ failed
+            logger.Error("CRITICAL: Audit event lost - database and DLQ failed",
+                "event_type", event.EventType,
+                "db_error", err,
+                "dlq_error", dlqErr)
+            return fmt.Errorf("audit write failed (db and DLQ): %w", err)
+        }
+
+        logger.Warn("Audit event enqueued to DLQ after database failure",
+            "event_type", event.EventType,
+            "attempts", 3,
+            "error", err)
+        return nil // Success via DLQ
+    }
+
+    return nil // Success via direct write
+}
+```
+
+#### **DLQ Worker (Background Processing)**
+```go
+func (s *Server) processDLQ(ctx context.Context) {
+    ticker := time.NewTicker(30 * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        case <-ticker.C:
+            // Drain DLQ and write to database
+            events, err := s.dlq.DequeueAuditEvents(ctx, 100)
+            if err != nil {
+                logger.Error("Failed to dequeue audit events", "error", err)
+                continue
+            }
+
+            for _, event := range events {
+                if err := s.repo.CreateAuditEvent(ctx, event); err != nil {
+                    // Re-enqueue if still failing
+                    s.dlq.EnqueueAuditEvent(ctx, event)
+                    logger.Warn("Re-enqueued audit event to DLQ", "event_type", event.EventType)
+                } else {
+                    logger.Info("Successfully processed DLQ audit event", "event_type", event.EventType)
+                }
+            }
+        }
+    }
+}
+```
+
+**Confidence**: 100% (ADR-032 mandates DLQ for audit integrity)
+
+---
+
+### **📝 Error Response Patterns**
+
+#### **Pattern 1: Successful Write**
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "success",
+  "message": "Audit event created successfully"
+}
+```
+
+---
+
+#### **Pattern 2: DLQ Fallback (Graceful Degradation)**
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "queued",
+  "message": "Audit event enqueued to DLQ (database temporarily unavailable)",
+  "retry_after": "30s"
+}
+```
+
+---
+
+#### **Pattern 3: Permanent Failure**
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "UNIQUE_VIOLATION",
+    "message": "Playbook version v1.2.0 already exists",
+    "details": "Cannot create duplicate playbook version"
+  }
+}
+```
+
+---
+
+### **🛠️ Operational Guidelines**
+
+#### **For Operators**
+
+**Detecting Issues**:
+```bash
+# Check DLQ depth (Redis)
+redis-cli XLEN audit_dlq
+
+# Find audit events in DLQ
+redis-cli XRANGE audit_dlq - + COUNT 10
+
+# Monitor database connection pool
+curl http://localhost:9090/metrics | grep datastorage_db_connections
+```
+
+**Troubleshooting Database Failures**:
+1. Check PostgreSQL availability: `kubectl get pods -n kubernaut-data-storage`
+2. Review connection pool metrics: `datastorage_db_connections_in_use`
+3. Common fixes:
+   - **Connection pool exhausted**: Increase `max_connections` in PostgreSQL
+   - **Deadlock**: Review concurrent audit writes
+   - **Timeout**: Increase `statement_timeout` in PostgreSQL
+
+**Recovering from DLQ Backlog**:
+- DLQ worker auto-drains every 30s
+- Manual drain: Restart Data Storage Service (triggers immediate DLQ processing)
+
+---
+
+#### **For Developers**
+
+**Adding New Endpoints**:
+1. Use `isTransientError()` and `isPermanentError()` helpers
+2. Apply retry logic for transient errors
+3. Use DLQ fallback for audit writes only (not playbook queries)
+4. Return appropriate HTTP status codes (400, 409, 500, 503)
+
+**Example**:
+```go
+func (s *Server) CreatePlaybook(ctx context.Context, playbook *Playbook) error {
+    err := s.repo.CreatePlaybook(ctx, playbook)
+    if err != nil {
+        if isPermanentError(err) {
+            // Return immediately for permanent errors
+            return &HTTPError{
+                StatusCode: 400,
+                Message:    fmt.Sprintf("invalid playbook: %v", err),
+            }
+        }
+
+        // Retry for transient errors
+        for attempt := 1; attempt <= 3; attempt++ {
+            time.Sleep(time.Duration(1<<attempt) * time.Second)
+            err = s.repo.CreatePlaybook(ctx, playbook)
+            if err == nil {
+                return nil
+            }
+        }
+
+        return &HTTPError{
+            StatusCode: 503,
+            Message:    "database temporarily unavailable",
+        }
+    }
+
+    return nil
+}
+```
+
+---
+
+### **🧪 Testing Strategy**
+
+#### **Unit Tests**
+- **Error classification**: 15 table-driven tests (transient vs. permanent)
+- **Retry policy logic**: Max attempts, backoff calculation
+- **DLQ fallback**: Verify audit events enqueued after database failure
+
+#### **Integration Tests**
+- **Database failure recovery**: PostgreSQL down → DLQ → PostgreSQL up → DLQ drained
+- **Deadlock retry**: Concurrent audit writes → deadlock → retry succeeds
+- **Connection pool exhaustion**: Max connections reached → retry with backoff
+
+#### **E2E Tests**
+- **Real PostgreSQL outage**: Verify audit events persist in DLQ and drain after recovery
+- **Invalid data**: Verify immediate 400 error (no retries)
+
+---
+
+### **📊 Success Metrics**
+
+- **Retry Success Rate**: >90% of transient errors succeed on retry
+- **DLQ Drain Rate**: >99% of DLQ events written to database within 5 minutes
+- **Audit Loss Rate**: 0% (DLQ prevents audit loss)
+- **Error Classification Accuracy**: 100% (permanent vs. transient)
+
+---
+
+### **🔗 Related Documentation**
+
+- [ADR-032: Dead Letter Queue for Audit Integrity](../../../architecture/decisions/ADR-032-dlq-audit-integrity.md)
+- [DD-STORAGE-007: Redis Requirement Reassessment](./DD-STORAGE-007-V1-REDIS-REQUIREMENT-REASSESSMENT.md)
+- [BR-STORAGE-002: Audit Persistence](../BUSINESS_REQUIREMENTS.md#br-storage-002)
+- [DLQ Client Implementation](../../../../pkg/datastorage/dlq/client.go)
+
+---
+
+**Version**: 1.0
+**Last Updated**: November 13, 2025
+**Status**: Production-Ready ✅
+
+---
+
 ## 📅 **IMPLEMENTATION TIMELINE**
 
 ### **Overview**
