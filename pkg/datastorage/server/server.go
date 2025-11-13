@@ -818,11 +818,13 @@ func (d *DBAdapter) AggregateByNamespace() (map[string]interface{}, error) {
 	// REFACTOR: Real PostgreSQL GROUP BY query with descending order
 	// ✅ Behavior + Correctness: Returns exact counts per namespace
 	// Note: resource_action_traces uses cluster_name column (schema compatibility)
+	// Filter out empty/null namespaces for cleaner aggregation results
 	sqlQuery := `
 		SELECT
 			cluster_name as namespace,
 			COUNT(*) as count
 		FROM resource_action_traces
+		WHERE cluster_name IS NOT NULL AND cluster_name != ''
 		GROUP BY cluster_name
 		ORDER BY count DESC
 	`
@@ -880,11 +882,13 @@ func (d *DBAdapter) AggregateBySeverity() (map[string]interface{}, error) {
 
 	// REFACTOR: Real PostgreSQL GROUP BY with CASE-based severity ordering
 	// ✅ Behavior + Correctness: Returns exact counts per severity level
+	// Filter out empty/null severities for cleaner aggregation results
 	sqlQuery := `
 		SELECT
 			signal_severity as severity,
 			COUNT(*) as count
 		FROM resource_action_traces
+		WHERE signal_severity IS NOT NULL AND signal_severity != ''
 		GROUP BY signal_severity
 		ORDER BY
 			CASE signal_severity
