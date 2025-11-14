@@ -40,27 +40,127 @@
 
 ## 📝 **Naming Convention**
 
-**Filename Format**: `IMPLEMENTATION_PLAN_V<semantic_version>.md`
+**Filename Format**: `[CONTEXT_PREFIX_]IMPLEMENTATION_PLAN[_FEATURE_SUFFIX]_V<semantic_version>.md`
 
-**Examples**:
-- ✅ `IMPLEMENTATION_PLAN_V1.0.md` - Initial implementation
-- ✅ `IMPLEMENTATION_PLAN_V1.3.md` - Patch updates (bug fixes, clarifications)
-- ✅ `IMPLEMENTATION_PLAN_V2.0.md` - Major version (significant scope changes)
-- ✅ `IMPLEMENTATION_PLAN_V2.1_RFC7807.md` - Minor version with feature suffix
-- ❌ `DATA-STORAGE-V1.0-MVP-IMPLEMENTATION-PLAN.md` - Non-standard naming
+**🚨 CRITICAL**: Version (`_V<semantic_version>`) MUST be the **last suffix** for consistency.
+
+### **Standard Patterns**
+
+**1. Full Service Implementation** (no prefix needed):
+- ✅ `IMPLEMENTATION_PLAN_V1.0.md` - Complete service implementation
+- ✅ `IMPLEMENTATION_PLAN_V2.0.md` - Major version rewrite
+
+**2. Feature-Specific Implementation** (use descriptive prefix):
+- ✅ `AUDIT_TRACE_SEMANTIC_SEARCH_IMPLEMENTATION_PLAN_V1.3.md` - Specific features
+- ✅ `RFC7807_IMPLEMENTATION_PLAN_V2.1.md` - RFC 7807 compliance
+- ✅ `GRACEFUL_SHUTDOWN_IMPLEMENTATION_PLAN_V1.0.md` - Graceful shutdown feature
+
+**3. Extension/Enhancement** (use feature suffix, version LAST):
+- ✅ `IMPLEMENTATION_PLAN_RFC7807_V2.1.md` - Adding RFC 7807 to existing plan
+- ✅ `IMPLEMENTATION_PLAN_PARALLEL_LIMITS_EXTENSION_V1.2.md` - Extending with new feature
+
+**4. E2E or Specialized Tests**:
+- ✅ `E2E_TEST_IMPLEMENTATION_PLAN_V1.1.md` - E2E test implementation
+
+### **Anti-Patterns** (Don't Use)
+- ❌ `DATA-STORAGE-V1.0-MVP-IMPLEMENTATION-PLAN.md` - Service name in filename (redundant)
+- ❌ `IMPLEMENTATION_PLAN_V2.1_RFC7807.md` - Version not last (should be `IMPLEMENTATION_PLAN_RFC7807_V2.1.md`)
 - ❌ `IMPLEMENTATION_PLAN.md` - Missing version
+- ❌ `IMPLEMENTATION_PLAN_V1.md` - Incomplete version (use V1.0)
+- ❌ `MY_FEATURE_PLAN.md` - Non-standard format
 
-**Semantic Versioning**:
+### **Semantic Versioning**
 - **Major (X.0.0)**: Significant scope changes, architectural shifts
 - **Minor (1.X.0)**: Feature additions, timeline extensions
 - **Patch (1.0.X)**: Bug fixes, clarifications, template compliance updates
 
-**Archived Plans**: Move superseded versions to `implementation/archive/` directory
+### **Context Prefix Guidelines**
 
-**Rationale**: Consistent naming enables:
+**When to Use Prefix**:
+- ✅ Implementing specific features (not full service)
+- ✅ Multiple implementation plans for same service
+- ✅ Feature-specific extensions or enhancements
+- ✅ Need to distinguish from main implementation plan
+- ✅ **Splitting large plans into manageable standalone documents**
+
+**When to Split Plans** (Important Pattern):
+When an implementation plan grows too large (>3,000 lines), split it into:
+1. **Main Plan**: Core service implementation (`IMPLEMENTATION_PLAN_V1.0.md`)
+2. **Feature Extensions**: Standalone plans with context prefixes
+
+**🚨 CRITICAL: Cross-Referencing Requirement**:
+- **Main plan MUST reference all feature plans** in "Related Documents" section
+- **Feature plans MUST reference main plan** in their metadata
+- **Use explicit links** to ensure traceability
+- **Update cross-references** when plans are added/removed
+
+**Benefits of Splitting**:
+- ✅ Easier to navigate and maintain
+- ✅ Clear separation of concerns
+- ✅ Independent versioning for features
+- ✅ Parallel development possible
+- ✅ Reduces cognitive load
+
+**Prefix Format**:
+- Use `UPPERCASE_WITH_UNDERSCORES`
+- Be descriptive but concise (2-4 words max)
+- Focus on WHAT is being implemented, not service name
+
+**Examples**:
+
+**Pattern 1: Feature-Specific Plans** (Splitting large plans)
+```
+Service: Data Storage
+├── IMPLEMENTATION_PLAN_V1.0.md                               ← Main service (foundation)
+├── AUDIT_TRACE_SEMANTIC_SEARCH_IMPLEMENTATION_PLAN_V1.3.md  ← Standalone feature
+├── PLAYBOOK_CRUD_API_IMPLEMENTATION_PLAN_V1.1.md            ← Standalone feature
+└── CACHE_OPTIMIZATION_IMPLEMENTATION_PLAN_V1.0.md           ← Standalone feature
+
+Main plan (IMPLEMENTATION_PLAN_V1.0.md) MUST include:
+  ## Related Documents
+  - [Audit Trace & Semantic Search](./AUDIT_TRACE_SEMANTIC_SEARCH_IMPLEMENTATION_PLAN_V1.3.md)
+  - [Playbook CRUD API](./PLAYBOOK_CRUD_API_IMPLEMENTATION_PLAN_V1.1.md)
+  - [Cache Optimization](./CACHE_OPTIMIZATION_IMPLEMENTATION_PLAN_V1.0.md)
+
+Feature plan (AUDIT_TRACE_SEMANTIC_SEARCH_IMPLEMENTATION_PLAN_V1.3.md) MUST include:
+  **Parent Plan**: [Data Storage V1.0](./IMPLEMENTATION_PLAN_V1.0.md)
+  **Scope**: Audit trail persistence and playbook semantic search (subset of V1.0)
+```
+
+**Pattern 2: Extension Plans** (Adding to existing)
+```
+Service: HolmesGPT API
+├── IMPLEMENTATION_PLAN_V3.0.md                               ← Full service
+└── IMPLEMENTATION_PLAN_RFC7807_GRACEFUL_SHUTDOWN_V3.1.md    ← Extension (adds features)
+
+Extension plan (IMPLEMENTATION_PLAN_RFC7807_GRACEFUL_SHUTDOWN_V3.1.md) MUST include:
+  **Extends**: [HolmesGPT API V3.0](./IMPLEMENTATION_PLAN_V3.0.md)
+  **Scope**: Adds RFC 7807 error handling and graceful shutdown to existing service
+```
+
+**Pattern 3: Incremental Development** (Gateway Service example)
+```
+Service: Gateway
+├── IMPLEMENTATION_PLAN_V2.24.md                              ← Superseded
+├── IMPLEMENTATION_PLAN_V2.25.md                              ← Superseded
+├── IMPLEMENTATION_PLAN_V2.26.md                              ← Superseded
+└── IMPLEMENTATION_PLAN_V2.27.md                              ← Current (references previous)
+
+Each plan includes:
+  **Supersedes**: [Gateway V2.26](./IMPLEMENTATION_PLAN_V2.26.md)
+  **Changelog**: Lists what changed from previous version
+```
+
+### **Archived Plans**
+Move superseded versions to `implementation/archive/` directory
+
+### **Rationale**
+Consistent naming enables:
 - Easy version identification across all services
+- Clear context about what's being implemented
 - Automated tooling and scripts
 - Clear historical tracking
+- Distinguishing between full service and feature implementations
 - Standard file organization
 
 ---
