@@ -1,0 +1,34 @@
+{
+	"incident_id": "e2e-rca-test-001",
+	"failed_action": {
+		"type": "scale_deployment",
+		"target": "my-app",
+		"namespace": "production"
+	},
+	"failure_context": {
+		"error": "OOMKill",
+		"error_message": "Pod was OOMKilled after scaling to 3 replicas. Memory usage exceeded 512Mi limit."
+	},
+	"context": {
+		"cluster": "prod-cluster",
+		"namespace": "production",
+		"priority": "P1",
+		"target": {
+			"type": "deployment",
+			"name": "my-app",
+			"current_replicas": 2,
+			"desired_replicas": 3
+		},
+		"environment": "production",
+		"business_category": "cost-management"
+	},
+	"constraints": {
+		"max_attempts": 3,
+		"timeout": "5m",
+		"allowed_actions": [
+			"adjust_resources",
+			"scale_down",
+			"restart_pods"
+		]
+	}
+}

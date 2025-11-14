@@ -173,7 +173,7 @@ CREATE TABLE playbook_catalog (
     version           TEXT NOT NULL,
     title             TEXT NOT NULL,
     description       TEXT,
-    
+
     -- Mandatory structured labels (V1.0) - 1:1 matching with wildcard support
     signal_type       TEXT NOT NULL,              -- pod-oomkilled, pod-crashloop, etc.
     severity          severity_enum NOT NULL,     -- critical, high, medium, low
@@ -182,18 +182,18 @@ CREATE TABLE playbook_catalog (
     priority          priority_enum NOT NULL,     -- P0, P1, P2, P3, '*'
     risk_tolerance    risk_tolerance_enum NOT NULL,  -- low, medium, high
     business_category TEXT NOT NULL,              -- payment-service, analytics, infrastructure, '*'
-    
+
     -- Validation constraints
     CHECK (signal_type ~ '^[a-z0-9-]+$'),
     CHECK (component ~ '^[a-z0-9-]+$'),
     CHECK (business_category ~ '^[a-z0-9-]+$' OR business_category = '*'),
-    
+
     -- Optional custom labels (V1.1)
     custom_labels     JSONB,
-    
+
     embedding         vector(384),
     status            TEXT NOT NULL DEFAULT 'active',
-    
+
     PRIMARY KEY (playbook_id, version)
 );
 
@@ -702,20 +702,20 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
       input.priority == "P0"
       input.environment == "production"
   }
-  
+
   risk_tolerance = "medium" {
       input.priority == "P1"
       input.environment == "production"
   }
-  
+
   risk_tolerance = "high" {
       input.priority in ["P2", "P3"]
   }
-  
+
   risk_tolerance = "high" {
       input.environment in ["staging", "development", "test"]
   }
-  
+
   risk_tolerance = "medium" {  # Fallback
       true
   }
@@ -735,11 +735,11 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 - **Rego Policy Logic**:
   ```rego
   business_category = data.namespace_categories[input.namespace]
-  
+
   business_category = "infrastructure" {
       input.resource.kind in ["Node", "PersistentVolume", "PersistentVolumeClaim"]
   }
-  
+
   business_category = "general" {  # Fallback
       true
   }
