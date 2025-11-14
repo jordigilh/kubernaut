@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, status
 
 from src.models.recovery_models import RecoveryRequest, RecoveryResponse, RecoveryStrategy
-from src.clients.context_api_client import ContextAPIClient
+from src.clients.mcp_client import MCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +84,9 @@ class MinimalDAL:
 router = APIRouter()
 
 
-def _get_holmes_config() -> Config:
+def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
     """
-    Initialize HolmesGPT SDK Config from environment variables
+    Initialize HolmesGPT SDK Config from environment variables and app config
 
     Required environment variables:
     - LLM_MODEL: Full litellm-compatible model identifier (e.g., "provider/model-name")
@@ -110,15 +110,27 @@ def _get_holmes_config() -> Config:
             detail="LLM_MODEL environment variable is required"
         )
 
-    # Create minimal config for SDK
+    # Get toolset configuration from app config
+    # Default: Enable Kubernetes and Prometheus toolsets for RCA
+    toolsets_config = {
+        "kubernetes": {"enabled": True},
+        "prometheus": {"enabled": True}
+    }
+
+    if app_config and "toolsets" in app_config:
+        # Override with app config if provided
+        toolsets_config = app_config.get("toolsets", toolsets_config)
+
+    # Create config for SDK with toolsets
     config_data = {
         "model": model_name,  # Pass through as-is
         "api_base": os.getenv("LLM_ENDPOINT"),
+        "toolsets": toolsets_config,  # Pass toolsets to SDK
     }
 
     try:
         config = Config(**config_data)
-        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, api_base={config.api_base}")
+        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={config.toolsets}")
         return config
     except Exception as e:
         logger.error(f"Failed to initialize HolmesGPT config: {e}")
@@ -181,48 +193,62 @@ def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
 - Allowed Actions: {', '.join(allowed_actions) if allowed_actions else 'Any'}
 """
 
-    # BR-HAPI-070: Add historical context from Context API
-    historical_context = request_data.get("historical_context", {})
-    if historical_context and historical_context.get("available", True):
-        prompt += """
-## Historical Context (from past 30 days)
+    # BR-PLAYBOOK-001: Add playbook recommendations from MCP Catalog
+    playbook_recommendations = request_data.get("playbook_recommendations", [])
+    if playbook_recommendations:
+        prompt += f"""
+## Recommended Playbooks ({len(playbook_recommendations)} found)
+
+The following playbooks have been identified as potentially relevant for this failure:
 
 """
-        # Add success rates
-        success_rates = historical_context.get("success_rates", {})
-        if success_rates:
-            prompt += "### Past Remediation Success Rates:\n"
-            for workflow, rate_data in success_rates.items():
-                success_rate = rate_data.get("success_rate", 0)
-                total_attempts = rate_data.get("total_attempts", 0)
-                prompt += f"- {workflow}: {success_rate:.1f}% success ({total_attempts} attempts)\n"
-            prompt += "\n"
+        for idx, playbook in enumerate(playbook_recommendations, 1):
+            prompt += f"""### Playbook {idx}: {playbook.get('name', 'Unknown')}
+- **ID**: {playbook.get('id', 'N/A')}
+- **Description**: {playbook.get('description', 'No description')}
+- **Signal Type**: {playbook.get('signal_type', 'N/A')}
+- **Severity**: {playbook.get('severity', 'N/A')}
+- **Component**: {playbook.get('component', 'N/A')}
+- **Risk Level**: {playbook.get('risk_level', 'N/A')}
+- **Business Category**: {playbook.get('business_category', 'N/A')}
 
-        # Add similar incidents
-        similar_incidents = historical_context.get("similar_incidents", [])
-        if similar_incidents:
-            prompt += f"### Similar Past Incidents ({len(similar_incidents)} found):\n"
-            for idx, incident in enumerate(similar_incidents[:5], 1):  # Top 5 similar incidents
-                similarity = incident.get("similarity_score", 0)
-                remediation = incident.get("remediation_action", "unknown")
-                outcome = incident.get("outcome", "unknown")
-                prompt += f"{idx}. {remediation} → {outcome} (similarity: {similarity:.2f})\n"
-            prompt += "\n"
+"""
+            # Add steps if available
+            steps = playbook.get('steps', [])
+            if steps:
+                prompt += "**Steps**:\n"
+                for step_idx, step in enumerate(steps, 1):
+                    prompt += f"{step_idx}. {step}\n"
+                prompt += "\n"
 
-        # Add environment patterns
-        env_patterns = historical_context.get("environment_patterns", {})
-        if env_patterns:
-            prompt += "### Environment-Specific Patterns:\n"
-            for pattern_name, pattern_data in env_patterns.items():
-                prompt += f"- {pattern_name}: {pattern_data}\n"
-            prompt += "\n"
+        prompt += "**IMPORTANT**: Consider these playbooks when formulating your recovery strategies.\n\n"
 
     # Add analysis request with structured output format
     prompt += """
 ## Required Analysis
 
-Provide recovery strategies for this failed remediation action.
-**IMPORTANT**: Use the historical context above to inform your recommendations. Prioritize strategies with proven success rates.
+**MANDATORY INVESTIGATION STEPS**:
+1. **Use Kubernetes tools** to investigate the cluster state:
+   - Check pod status, events, and logs for the target resource
+   - Review deployment/statefulset/daemonset configuration
+   - Examine resource limits and requests
+   - Check for recent configuration changes
+
+2. **Use Prometheus tools** to analyze metrics:
+   - Query memory usage trends for the affected pods
+   - Check CPU utilization patterns
+   - Review historical resource consumption
+   - Identify any metric anomalies leading to the failure
+
+3. **Perform Root Cause Analysis (RCA)**:
+   - Correlate Kubernetes events with Prometheus metrics
+   - Identify the specific trigger for the failure
+   - Determine if this is a resource constraint, configuration issue, or application bug
+
+4. **Formulate Recovery Strategies**:
+   - Use the recommended playbooks above to inform your recommendations
+   - Prioritize strategies from relevant playbooks
+   - Base recommendations on actual cluster data, not assumptions
 
 **OUTPUT FORMAT**: Respond with a JSON object containing your analysis:
 
@@ -415,74 +441,88 @@ def _extract_warnings_from_analysis(analysis_text: str) -> List[str]:
     return warnings
 
 
-async def _get_historical_context(request_data: Dict[str, Any]) -> Dict[str, Any]:
+async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client: MCPClient) -> List[Dict[str, Any]]:
     """
-    Get historical context from Context API
+    Get playbook recommendations from MCP Playbook Catalog
 
-    BR-HAPI-070: Historical Context Integration
+    BR-PLAYBOOK-001: Playbook Catalog Integration
 
     Args:
         request_data: Recovery request data containing:
-            - context.namespace: Kubernetes namespace
-            - context.target.type: Resource type (deployment, statefulset, etc.)
-            - context.target.name: Resource name
+            - failed_action.type: Type of failed action
+            - failure_context.error: Error type
+            - context.priority: Priority level
+            - context.cluster: Cluster name
 
     Returns:
-        Historical context dict with:
-            - similar_incidents: List of similar past incidents
-            - success_rates: Success rates for different recovery strategies
-            - environment_patterns: Environment-specific patterns
-            - available: True if context was retrieved, False if degraded
+        List of recommended playbooks from MCP catalog
     """
     try:
-        # Extract target information from request
+        # Extract failure information
+        failed_action = request_data.get("failed_action", {})
+        failure_context = request_data.get("failure_context", {})
         context = request_data.get("context", {})
-        target = context.get("target", {})
 
-        namespace = context.get("namespace", "unknown")
-        target_type = target.get("type", "unknown")
-        target_name = target.get("name", "unknown")
+        # Map failure to signal type
+        signal_type = failure_context.get("error", "unknown")
 
-        # Skip Context API call if target info is missing
-        if namespace == "unknown" or target_type == "unknown" or target_name == "unknown":
-            logger.warning({
-                "event": "context_api_skipped_missing_target",
-                "namespace": namespace,
-                "target_type": target_type,
-                "target_name": target_name
-            })
-            return {"available": False}
+        # Determine severity from priority
+        priority = context.get("priority", "medium")
+        
+        # Check if priority is already in P-format (P0, P1, P2, P3)
+        if isinstance(priority, str) and priority.upper().startswith("P") and priority[1:].isdigit():
+            severity = priority.upper()
+        else:
+            # Map text priority to severity
+            severity_map = {
+                "critical": "P0",
+                "high": "P1",
+                "medium": "P2",
+                "low": "P3"
+            }
+            severity = severity_map.get(priority.lower() if isinstance(priority, str) else priority, "P2")
 
-        # Create Context API client
-        context_client = ContextAPIClient()
+        # Determine component from failed action
+        component = failed_action.get("target", "pod")
 
-        # Call Context API for historical context
-        historical_context = await context_client.get_historical_context(
-            namespace=namespace,
-            target_type=target_type,
-            target_name=target_name,
-            signal_type="kubernetes-event",  # Recovery scenarios are typically K8s events
-            time_range="30d"  # Last 30 days of historical data
+        # Search for playbooks
+        playbooks = await mcp_client.search_playbooks(
+            signal_type=signal_type,
+            severity=severity,
+            component=component,
+            environment="*",
+            priority="*",
+            risk_tolerance="medium",
+            business_category="*",
+            limit=5
         )
 
-        return historical_context
+        logger.info({
+            "event": "playbook_recommendations_retrieved",
+            "playbooks_found": len(playbooks),
+            "signal_type": signal_type,
+            "severity": severity,
+            "component": component
+        })
+
+        return playbooks
 
     except Exception as e:
         logger.error({
-            "event": "context_api_integration_error",
+            "event": "mcp_playbook_integration_error",
             "error": str(e)
         })
-        # Graceful degradation - return empty context
-        return {"available": False}
+        # Graceful degradation - return empty list
+        return []
 
 
-async def analyze_recovery(request_data: Dict[str, Any]) -> Dict[str, Any]:
+async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Dict[str, Any]] = None, app_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Core recovery analysis logic
 
-    Business Requirements: BR-HAPI-001 to 050, BR-HAPI-070 (Context API Integration)
+    Business Requirements: BR-HAPI-001 to 050, BR-PLAYBOOK-001 (MCP Playbook Integration)
 
-    Uses HolmesGPT SDK for AI-powered recovery analysis with historical context
+    Uses HolmesGPT SDK for AI-powered recovery analysis with playbook recommendations
     Falls back to stub implementation in DEV_MODE
     """
     incident_id = request_data.get("incident_id")
@@ -496,25 +536,27 @@ async def analyze_recovery(request_data: Dict[str, Any]) -> Dict[str, Any]:
     })
 
     # Check if we should use SDK or stub
-    config = _get_holmes_config()
+    config = _get_holmes_config(app_config)
 
     if config is None:
         # DEV_MODE: Use stub implementation
         logger.info("Using stub implementation (DEV_MODE=true)")
         return _stub_recovery_analysis(request_data)
 
-    # Production mode: Use HolmesGPT SDK with enhanced error handling and historical context
+    # Production mode: Use HolmesGPT SDK with enhanced error handling and playbook recommendations
     try:
-        # BR-HAPI-070: Get historical context from Context API
-        historical_context = await _get_historical_context(request_data)
+        # BR-PLAYBOOK-001: Get playbook recommendations from MCP Catalog
+        playbook_recommendations = []
+        if mcp_config:
+            mcp_client = MCPClient(mcp_config)
+            playbook_recommendations = await _get_playbook_recommendations(request_data, mcp_client)
 
-        # Add historical context to request_data for prompt generation
-        if historical_context and historical_context.get("available", True):
-            request_data["historical_context"] = historical_context
+        # Add playbook recommendations to request_data for prompt generation
+        if playbook_recommendations:
+            request_data["playbook_recommendations"] = playbook_recommendations
             logger.info({
-                "event": "historical_context_retrieved",
-                "similar_incidents": len(historical_context.get("similar_incidents", [])),
-                "success_rates_available": bool(historical_context.get("success_rates"))
+                "event": "playbook_recommendations_retrieved",
+                "playbooks_found": len(playbook_recommendations)
             })
 
         # Create investigation prompt (now includes historical context if available)
@@ -546,6 +588,16 @@ async def analyze_recovery(request_data: Dict[str, Any]) -> Dict[str, Any]:
 
         # Create minimal DAL (no database needed for stateless analysis)
         dal = MinimalDAL(cluster_name=request_data.get("context", {}).get("cluster"))
+
+        # Debug: Log investigation details before SDK call
+        logger.debug({
+            "event": "calling_holmesgpt_sdk",
+            "incident_id": incident_id,
+            "prompt_length": len(investigation_prompt),
+            "playbook_count": len(request_data.get("playbook_recommendations", [])),
+            "toolsets_enabled": config.toolsets if config else None,
+            "prompt_preview": investigation_prompt[:300] + "..." if len(investigation_prompt) > 300 else investigation_prompt
+        })
 
         # Call HolmesGPT SDK
         logger.info("Calling HolmesGPT SDK for recovery analysis")
@@ -707,12 +759,21 @@ async def recovery_analyze_endpoint(request: RecoveryRequest):
     Analyze failed action and provide recovery strategies
 
     Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
+    Business Requirement: BR-PLAYBOOK-001 (MCP Playbook Integration)
 
     Called by: RemediationProcessor Controller (on remediation failure)
     """
     try:
         request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
-        result = await analyze_recovery(request_data)
+
+        # Get MCP config and app config from router config
+        mcp_config = None
+        app_config = None
+        if hasattr(router, 'config'):
+            mcp_config = router.config.get("mcp_servers", {})
+            app_config = router.config
+
+        result = await analyze_recovery(request_data, mcp_config=mcp_config, app_config=app_config)
         return result
     except Exception as e:
         logger.error({
