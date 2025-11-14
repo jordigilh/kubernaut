@@ -466,21 +466,10 @@ async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client
         # Map failure to signal type
         signal_type = failure_context.get("error", "unknown")
 
-        # Determine severity from priority
-        priority = context.get("priority", "medium")
-        
-        # Check if priority is already in P-format (P0, P1, P2, P3)
-        if isinstance(priority, str) and priority.upper().startswith("P") and priority[1:].isdigit():
-            severity = priority.upper()
-        else:
-            # Map text priority to severity
-            severity_map = {
-                "critical": "P0",
-                "high": "P1",
-                "medium": "P2",
-                "low": "P3"
-            }
-            severity = severity_map.get(priority.lower() if isinstance(priority, str) else priority, "P2")
+        # Get priority/severity from context (should already be in P-format: P0, P1, P2, P3)
+        # Default to P2 (medium) if not provided
+        priority = context.get("priority", "P2")
+        severity = priority.upper() if isinstance(priority, str) else "P2"
 
         # Determine component from failed action
         component = failed_action.get("target", "pod")
