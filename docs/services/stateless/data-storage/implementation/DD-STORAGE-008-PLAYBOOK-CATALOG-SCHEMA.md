@@ -4,7 +4,7 @@
 **Status**: ✅ **APPROVED** (with mitigations for critical validation gaps)
 **Decision Maker**: Kubernaut Data Storage Team
 **Authority**: ADR-033 (Playbook Catalog), DD-CONTEXT-005 (Minimal LLM Response Schema)
-**Affects**: Data Storage Service V1.0 MVP, Context API integration
+**Affects**: Data Storage Service V1.0 MVP, HolmesGPT API integration
 **Version**: 1.1 (updated with version validation requirements and approved mitigations)
 
 ---

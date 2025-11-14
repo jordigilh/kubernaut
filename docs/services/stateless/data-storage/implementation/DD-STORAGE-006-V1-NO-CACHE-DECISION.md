@@ -54,7 +54,7 @@ V1.0 playbooks are managed via direct SQL (no REST API, no CRD controller). This
 ### Architecture
 
 ```
-Incident arrives → Context API
+Incident arrives → HolmesGPT API
     ↓
 Data Storage Service: GET /api/v1/playbooks/search?query=pod+crash
     ↓
@@ -134,7 +134,7 @@ Return top 10 playbooks sorted by confidence
 ### Architecture
 
 ```
-Incident arrives → Context API
+Incident arrives → HolmesGPT API
     ↓
 Data Storage Service: GET /api/v1/playbooks/search?query=pod+crash
     ↓

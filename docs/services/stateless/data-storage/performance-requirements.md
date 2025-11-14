@@ -110,7 +110,7 @@ Storage: 315M writes × 2KB avg = 630 GB/year (PostgreSQL + indexes)
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
-| **max_connections** | 100 | 20 (Data Storage) + 50 (Context API) + 30 (other services) |
+| **max_connections** | 100 | 20 (Data Storage) + 50 (HolmesGPT API) + 30 (other services) |
 | **shared_buffers** | 2 GB | 25% of 8GB RAM (PostgreSQL best practice) |
 | **effective_cache_size** | 6 GB | 75% of 8GB RAM (OS uses remaining 2GB) |
 | **work_mem** | 16 MB | Complex queries (RAR generation) need memory for sorts |
@@ -372,7 +372,7 @@ kubernaut_datastorage_db_connections_idle{}
 
 **V1.1 Scaling Options**:
 1. **Vertical Scaling**: Upgrade PostgreSQL (8GB → 16GB RAM, 4 → 8 vCPUs) - **Simplest, try first**
-2. **Read Replicas**: Add PostgreSQL read replica for Context API queries - **Reduces write contention**
+2. **Read Replicas**: Add PostgreSQL read replica for HolmesGPT API queries - **Reduces write contention**
 3. **Horizontal Data Storage**: Deploy 2-3 Data Storage instances behind load balancer - **Increases write capacity**
 4. **Database Sharding**: Partition audit tables by date (monthly shards) - **Complex, last resort**
 

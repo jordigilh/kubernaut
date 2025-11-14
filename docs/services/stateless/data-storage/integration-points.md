@@ -75,9 +75,9 @@ Data Storage Service acts as the **REST API Gateway for Database Access** in Pha
 
 ## Downstream Services (Readers - Phase 1)
 
-### **1. Context API Service (Planned Integration)**
+### **1. HolmesGPT API Service (Active Integration)**
 
-**Purpose**: Query historical incident data for AI context enrichment
+**Purpose**: Query playbook catalog for semantic search during incident investigation
 
 **Integration Pattern**: HTTP GET
 **Endpoint**: `GET /api/v1/incidents?alert_name=HighMemoryUsage&limit=10`
@@ -85,7 +85,7 @@ Data Storage Service acts as the **REST API Gateway for Database Access** in Pha
 #### **Read Flow**
 
 ```go
-// In Context API Service (planned)
+// In HolmesGPT API Service (active)
 import (
     "encoding/json"
     "fmt"

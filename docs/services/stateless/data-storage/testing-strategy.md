@@ -28,7 +28,7 @@ Data Storage Service requires **Podman containers** for integration tests becaus
 
 **Test Setup Helper**: `testcontainers-go` (Podman/Docker testcontainers)
 
-**Container Sharing**: Same containers used by Context API Service (efficiency)
+**Container Sharing**: Shared PostgreSQL/Redis containers for integration tests (efficiency)
 
 **Reference**: [Stateless Services Integration Test Strategy](../INTEGRATION_TEST_STRATEGY.md#3-data-storage-service--podman)
 
