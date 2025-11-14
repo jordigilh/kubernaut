@@ -619,12 +619,12 @@ previous := getSuccessRate("incident_type=pod-oom-killer&time_range=14d") // App
 trend := current.SuccessRate - previous.SuccessRate
 ```
 
-**Context API** (Aggregation Proxy):
+**HolmesGPT API** (Direct Consumer):
 ```go
-// Context API exposes this endpoint to other services
-func (s *Server) HandleGetMultiDimensionalSuccessRate(w http.ResponseWriter, r *http.Request) {
-    // Forward to Data Storage with authentication
-    resp, err := s.dataStorageClient.GetMultiDimensionalSuccessRate(r.Context(), r.URL.Query())
+// HolmesGPT API calls Data Storage directly
+func (s *HolmesGPTService) GetPlaybookSuccessRate(ctx context.Context, playbookID string) (*SuccessRate, error) {
+    // Direct call to Data Storage with authentication
+    resp, err := s.dataStorageClient.GetMultiDimensionalSuccessRate(ctx, playbookID)
     // Return response
 }
 ```

@@ -237,7 +237,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Scope Change (v1.1)**:
   - ❌ **OLD**: Generate embeddings from audit text (INCORRECT - deferred to V2.0 RAR)
   - ✅ **NEW**: Generate embeddings from playbook catalog (CORRECT - V1.0 requirement)
-- **Use Case**: Context API queries Data Storage to find playbooks semantically similar to incident description
+- **Use Case**: HolmesGPT API queries Data Storage to find playbooks semantically similar to incident description
 - **Test Coverage**:
   - Unit: `test/unit/datastorage/embedding_test.go:69` (embedding generation)
   - Unit: `test/unit/datastorage/query_test.go:236` (semantic search moved to integration)
