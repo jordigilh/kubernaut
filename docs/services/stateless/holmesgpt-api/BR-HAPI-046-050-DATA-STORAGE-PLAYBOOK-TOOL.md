@@ -1,15 +1,15 @@
-# BR-HAPI-046 to BR-HAPI-050: Context API Tool Integration
+# BR-HAPI-046 to BR-HAPI-050: Data Storage Playbook Tool Integration
 
-**Version**: 1.0
-**Date**: October 22, 2025
-**Related**: DD-CONTEXT-001 (LLM-Driven Context Tool Call Pattern)
+**Version**: 1.1
+**Date**: November 13, 2025 (Updated from Context API to Data Storage Service)
+**Related**: DD-CONTEXT-005 (Minimal LLM Response Schema), DD-STORAGE-008 (Playbook Catalog Schema)
 **Implementation Plan**: IMPLEMENTATION_PLAN_V3.0.md v3.1
 
 ---
 
 ## Overview
 
-These 5 business requirements define the Context API tool integration for HolmesGPT API Service. This integration implements DD-CONTEXT-001 (Approach B: LLM-Driven Tool Call Pattern), allowing the LLM to request historical context on-demand rather than forcing context in every investigation.
+These 5 business requirements define the Data Storage playbook search tool integration for HolmesGPT API Service. This integration implements DD-CONTEXT-005 ("Filter Before LLM" pattern), allowing the LLM to request relevant remediation playbooks via semantic search on-demand rather than forcing all playbooks in every investigation.
 
 **Benefits**:
 - **Cost Savings**: 36% token cost reduction ($910/year)
@@ -21,43 +21,41 @@ These 5 business requirements define the Context API tool integration for Holmes
 
 ---
 
-## BR-HAPI-046: Define `get_context` Tool
+## BR-HAPI-046: Define `get_playbooks` Tool
 
-**Category**: Context API Tool Integration
+**Category**: Data Storage Playbook Tool Integration
 **Priority**: High
 **Status**: ⏸️ PENDING (v3.1)
 
 ### Requirement
 
-System must define a `get_context` tool that allows the LLM to retrieve historical context for similar incidents on-demand.
+System must define a `get_playbooks` tool that allows the LLM to search for relevant remediation playbooks via semantic search on-demand.
 
 ### Tool Definition
 
 ```python
 {
-    "name": "get_context",
-    "description": "Retrieve historical context for similar incidents. Use when investigation requires understanding of past similar alerts, success rates, or patterns. Recommended for complex cascading failures or recurring issues.",
+    "name": "get_playbooks",
+    "description": "Search for relevant remediation playbooks via semantic search. Use when investigation requires finding applicable playbooks for the current incident. Recommended for complex failures or when multiple remediation options exist.",
     "parameters": {
         "type": "object",
         "properties": {
-            "alert_fingerprint": {
+            "query": {
                 "type": "string",
-                "description": "Fingerprint of the current alert (required)"
+                "description": "Natural language query describing the incident (required)"
             },
             "similarity_threshold": {
                 "type": "number",
-                "description": "Minimum similarity score (0.0-1.0), default 0.70",
+                "description": "Minimum cosine similarity score (0.0-1.0), default 0.70",
                 "default": 0.70
             },
-            "context_types": {
-                "type": "array",
-                "items": {
-                    "enum": ["historical_remediations", "cluster_patterns", "success_rates"]
-                },
-                "description": "Types of context to retrieve (optional)"
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of playbooks to return (default 5, max 10)",
+                "default": 5
             }
         },
-        "required": ["alert_fingerprint"]
+        "required": ["query"]
     }
 }
 ```
@@ -103,27 +101,27 @@ def register_context_tool(sdk_client):
 
 ---
 
-## BR-HAPI-047: Implement Context API Client
+## BR-HAPI-047: Implement Data Storage Service Client
 
-**Category**: Context API Tool Integration
+**Category**: Data Storage Service Tool Integration
 **Priority**: High
 **Status**: ⏸️ PENDING (v3.1)
 
 ### Requirement
 
-System must implement a robust HTTP client for Context API with retry logic, circuit breaker, and caching.
+System must implement a robust HTTP client for Data Storage Service with retry logic, circuit breaker, and caching.
 
 ### Client Requirements
 
-- HTTP client for Context API REST endpoint (`/api/v1/context/enrich`)
+- HTTP client for Data Storage Service REST endpoint (`/api/v1/context/enrich`)
 - Retry logic with exponential backoff (max 3 retries)
 - Circuit breaker (opens after 50% failure rate in 5-minute window)
 - Caching of context results within investigation session (1h TTL)
-- Timeout: 2s per request (Context API p95 latency is <500ms)
+- Timeout: 2s per request (Data Storage Service p95 latency is <500ms)
 
 ### Acceptance Criteria
 
-- [ ] Client successfully calls Context API endpoint
+- [ ] Client successfully calls Data Storage Service endpoint
 - [ ] Retry logic implements exponential backoff
 - [ ] Circuit breaker opens after 50% failure rate
 - [ ] Cache hit returns cached result without API call
@@ -132,38 +130,38 @@ System must implement a robust HTTP client for Context API with retry logic, cir
 
 ### Unit Test Coverage (5 tests)
 
-- ✅ `holmesgpt-api/tests/unit/clients/test_context_api_client.py::test_successful_request`
-  - Verify successful Context API call returns expected data
+- ✅ `holmesgpt-api/tests/unit/clients/test_data_storage_client.py::test_successful_request`
+  - Verify successful Data Storage Service call returns expected data
 
-- ✅ `holmesgpt-api/tests/unit/clients/test_context_api_client.py::test_retry_on_timeout`
+- ✅ `holmesgpt-api/tests/unit/clients/test_data_storage_client.py::test_retry_on_timeout`
   - Verify retry logic with exponential backoff on timeout
   - Verify max 3 retries
 
-- ✅ `holmesgpt-api/tests/unit/clients/test_context_api_client.py::test_circuit_breaker_opens`
+- ✅ `holmesgpt-api/tests/unit/clients/test_data_storage_client.py::test_circuit_breaker_opens`
   - Verify circuit breaker opens after 50% failure rate
   - Verify circuit breaker prevents requests when open
 
-- ✅ `holmesgpt-api/tests/unit/clients/test_context_api_client.py::test_cache_hit`
+- ✅ `holmesgpt-api/tests/unit/clients/test_data_storage_client.py::test_cache_hit`
   - Verify cache hit returns cached result
   - Verify no API call is made on cache hit
 
-- ✅ `holmesgpt-api/tests/unit/clients/test_context_api_client.py::test_cache_miss`
+- ✅ `holmesgpt-api/tests/unit/clients/test_data_storage_client.py::test_cache_miss`
   - Verify cache miss fetches from API
   - Verify result is cached with 1h TTL
 
 ### Integration Test Coverage (2 tests)
 
-- ✅ `holmesgpt-api/tests/integration/test_context_api_integration.py::test_real_context_api_call`
-  - Verify real Context API call with deployed service
+- ✅ `holmesgpt-api/tests/integration/test_data_storage_integration.py::test_real_data_storage_call`
+  - Verify real Data Storage Service call with deployed service
   - Verify response format matches DD-HOLMESGPT-009
 
-- ✅ `holmesgpt-api/tests/integration/test_context_api_integration.py::test_context_api_unavailable`
-  - Verify graceful handling when Context API is unavailable
+- ✅ `holmesgpt-api/tests/integration/test_data_storage_integration.py::test_data_storage_unavailable`
+  - Verify graceful handling when Data Storage Service is unavailable
   - Verify circuit breaker opens after failures
 
 ### Implementation
 
-**File**: `holmesgpt-api/src/clients/context_api_client.py`
+**File**: `holmesgpt-api/src/clients/data_storage_client.py`
 
 ```python
 import requests
@@ -196,7 +194,7 @@ class CircuitBreaker:
             failure_rate = len(self.failures) / (len(self.failures) + 1)
             self.is_open = failure_rate > self.failure_threshold
 
-class ContextAPIClient:
+class DataStorageClient:
     def __init__(self, base_url: str, timeout: int = 2, max_retries: int = 3):
         self.base_url = base_url
         self.timeout = timeout
@@ -210,7 +208,7 @@ class ContextAPIClient:
         similarity_threshold: float = 0.70,
         context_types: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Get context from Context API with retry logic and circuit breaker"""
+        """Get context from Data Storage Service with retry logic and circuit breaker"""
 
         # Check circuit breaker
         if self.circuit_breaker.is_open:
@@ -260,19 +258,19 @@ class ContextAPIClient:
 
 ## BR-HAPI-048: Tool Call Handler
 
-**Category**: Context API Tool Integration
+**Category**: Data Storage Service Tool Integration
 **Priority**: High
 **Status**: ⏸️ PENDING (v3.1)
 
 ### Requirement
 
-System must implement a tool call handler that parses LLM tool call requests, invokes Context API, and formats responses for LLM consumption.
+System must implement a tool call handler that parses LLM tool call requests, invokes Data Storage Service, and formats responses for LLM consumption.
 
 ### Handler Requirements
 
 - Parse LLM tool call requests (JSON format)
 - Validate tool parameters (alert_fingerprint required)
-- Invoke Context API client with parameters
+- Invoke Data Storage Service client with parameters
 - Format context response for LLM consumption (ultra-compact JSON per DD-HOLMESGPT-009)
 - Handle tool call failures gracefully (degraded mode)
 - Rate limiting: Max 10 tool calls per investigation
@@ -281,7 +279,7 @@ System must implement a tool call handler that parses LLM tool call requests, in
 
 - [ ] Handler parses LLM tool call requests correctly
 - [ ] Handler validates required parameters
-- [ ] Handler invokes Context API client
+- [ ] Handler invokes Data Storage Service client
 - [ ] Handler formats response per DD-HOLMESGPT-009
 - [ ] Handler handles failures gracefully (returns error, allows LLM to continue)
 - [ ] Handler enforces rate limiting (max 10 calls per investigation)
@@ -301,7 +299,7 @@ System must implement a tool call handler that parses LLM tool call requests, in
   - Verify response includes context data
 
 - ✅ `holmesgpt-api/tests/unit/tools/test_context_tool_handler.py::test_handle_failure_gracefully`
-  - Verify handler returns error on Context API failure
+  - Verify handler returns error on Data Storage Service failure
   - Verify error allows LLM to continue (degraded mode)
 
 - ✅ `holmesgpt-api/tests/unit/tools/test_context_tool_handler.py::test_rate_limiting`
@@ -314,8 +312,8 @@ System must implement a tool call handler that parses LLM tool call requests, in
   - Verify complete tool call flow (parse → invoke → format)
   - Verify response is correctly formatted
 
-- ✅ `holmesgpt-api/tests/integration/test_context_tool_handler.py::test_tool_call_with_real_context_api`
-  - Verify tool call with real Context API service
+- ✅ `holmesgpt-api/tests/integration/test_context_tool_handler.py::test_tool_call_with_real_data_storage`
+  - Verify tool call with real Data Storage Service service
   - Verify LLM receives formatted context
 
 ### Implementation
@@ -326,15 +324,15 @@ System must implement a tool call handler that parses LLM tool call requests, in
 from prometheus_client import Counter, Histogram, Gauge
 
 # Metrics
-context_tool_calls = Counter('holmesgpt_context_tool_call_total', 'Total context tool calls', ['status'])
-context_tool_latency = Histogram('holmesgpt_context_tool_call_duration_seconds', 'Context tool call latency')
-context_tool_call_rate = Gauge('holmesgpt_context_tool_call_rate', 'Context tool call rate')
+context_tool_calls = Counter('holmesgpt_playbook_tool_call_total', 'Total context tool calls', ['status'])
+context_tool_latency = Histogram('holmesgpt_playbook_tool_call_duration_seconds', 'Context tool call latency')
+context_tool_call_rate = Gauge('holmesgpt_playbook_tool_call_rate', 'Context tool call rate')
 
 class ContextTool:
-    def __init__(self, context_api_url: str, cache_ttl: int = 3600):
-        self.context_api_url = context_api_url
+    def __init__(self, data_storage_url: str, cache_ttl: int = 3600):
+        self.data_storage_url = data_storage_url
         self.cache_ttl = cache_ttl
-        self.client = ContextAPIClient(context_api_url)
+        self.client = DataStorageClient(data_storage_url)
         self.call_count = {}  # Track calls per investigation
 
     def handle_tool_call(self, investigation_id: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
@@ -350,7 +348,7 @@ class ContextTool:
                 if not alert_fingerprint:
                     raise ValueError("alert_fingerprint is required")
 
-                # Invoke Context API
+                # Invoke Data Storage Service
                 context = self.client.get_context(
                     alert_fingerprint=alert_fingerprint,
                     similarity_threshold=parameters.get("similarity_threshold", 0.70),
@@ -386,21 +384,21 @@ class ContextTool:
 
 ## BR-HAPI-049: Tool Call Observability
 
-**Category**: Context API Tool Integration
+**Category**: Data Storage Service Tool Integration
 **Priority**: Medium
 **Status**: ⏸️ PENDING (v3.1)
 
 ### Requirement
 
-System must expose comprehensive observability for Context API tool calls including metrics, logging, and tracing.
+System must expose comprehensive observability for Data Storage Service tool calls including metrics, logging, and tracing.
 
 ### Observability Requirements
 
 **Metrics**:
-- `holmesgpt_context_tool_call_rate` (gauge) - % of investigations using context tool
-- `holmesgpt_context_tool_call_duration_seconds` (histogram) - Tool call latency
-- `holmesgpt_context_tool_call_errors_total` (counter) - Tool call failures
-- `holmesgpt_context_tool_call_cache_hit_rate` (gauge) - Cache effectiveness
+- `holmesgpt_playbook_tool_call_rate` (gauge) - % of investigations using context tool
+- `holmesgpt_playbook_tool_call_duration_seconds` (histogram) - Tool call latency
+- `holmesgpt_playbook_tool_call_errors_total` (counter) - Tool call failures
+- `holmesgpt_playbook_tool_call_cache_hit_rate` (gauge) - Cache effectiveness
 
 **Logging**: Structured JSON logging for tool call requests, responses, and failures
 
@@ -448,10 +446,10 @@ import json
 from prometheus_client import Counter, Histogram, Gauge
 
 # Metrics
-context_tool_calls = Counter('holmesgpt_context_tool_call_total', 'Total context tool calls', ['status'])
-context_tool_latency = Histogram('holmesgpt_context_tool_call_duration_seconds', 'Context tool call latency')
-context_tool_call_rate = Gauge('holmesgpt_context_tool_call_rate', 'Context tool call rate')
-context_tool_cache_hit_rate = Gauge('holmesgpt_context_tool_call_cache_hit_rate', 'Cache hit rate')
+context_tool_calls = Counter('holmesgpt_playbook_tool_call_total', 'Total context tool calls', ['status'])
+context_tool_latency = Histogram('holmesgpt_playbook_tool_call_duration_seconds', 'Context tool call latency')
+context_tool_call_rate = Gauge('holmesgpt_playbook_tool_call_rate', 'Context tool call rate')
+context_tool_cache_hit_rate = Gauge('holmesgpt_playbook_tool_call_cache_hit_rate', 'Cache hit rate')
 
 # Structured logging
 logger = logging.getLogger(__name__)
@@ -472,25 +470,25 @@ def log_tool_call(investigation_id: str, parameters: Dict[str, Any], result: Dic
 
 ## BR-HAPI-050: Tool Call Testing
 
-**Category**: Context API Tool Integration
+**Category**: Data Storage Service Tool Integration
 **Priority**: High
 **Status**: ⏸️ PENDING (v3.1)
 
 ### Requirement
 
-System must have comprehensive test coverage for Context API tool integration including unit, integration, and E2E tests.
+System must have comprehensive test coverage for Data Storage Service tool integration including unit, integration, and E2E tests.
 
 ### Test Requirements
 
 - **Unit Tests**: Tool definition, parameter validation, handler logic (15 tests)
-- **Integration Tests**: Real Context API tool calls, failure scenarios (10 tests)
+- **Integration Tests**: Real Data Storage Service tool calls, failure scenarios (10 tests)
 - **E2E Tests**: LLM-driven tool call scenarios (3 tests)
 
 ### E2E Test Scenarios
 
 1. **Simple Investigation (No Context Needed)**: LLM investigates simple pod restart, does not request context
 2. **Complex Investigation (Context Requested)**: LLM investigates cascading failure, requests context via tool call
-3. **Context API Failure (Degraded Mode)**: Context API unavailable, LLM continues without context
+3. **Data Storage Service Failure (Degraded Mode)**: Data Storage Service unavailable, LLM continues without context
 
 ### Acceptance Criteria
 
@@ -510,13 +508,13 @@ System must have comprehensive test coverage for Context API tool integration in
 - ✅ `holmesgpt-api/tests/e2e/test_context_tool_e2e.py::test_complex_investigation_with_context`
   - Verify LLM investigates cascading failure
   - Verify LLM requests context via tool call
-  - Verify Context API returns historical data
+  - Verify Data Storage Service returns historical data
   - Verify LLM uses context to improve recommendation
 
-- ✅ `holmesgpt-api/tests/e2e/test_context_tool_e2e.py::test_context_api_failure_degraded_mode`
+- ✅ `holmesgpt-api/tests/e2e/test_context_tool_e2e.py::test_data_storage_failure_degraded_mode`
   - Verify LLM investigates complex issue
   - Verify LLM requests context via tool call
-  - Verify Context API is unavailable (timeout)
+  - Verify Data Storage Service is unavailable (timeout)
   - Verify LLM continues without context (degraded mode)
   - Verify investigation completes with lower confidence
 
@@ -524,10 +522,10 @@ System must have comprehensive test coverage for Context API tool integration in
 
 **Files**:
 - `holmesgpt-api/tests/unit/tools/test_context_tool.py` (3 tests)
-- `holmesgpt-api/tests/unit/clients/test_context_api_client.py` (5 tests)
+- `holmesgpt-api/tests/unit/clients/test_data_storage_client.py` (5 tests)
 - `holmesgpt-api/tests/unit/tools/test_context_tool_handler.py` (5 tests)
 - `holmesgpt-api/tests/unit/tools/test_context_tool_metrics.py` (2 tests)
-- `holmesgpt-api/tests/integration/test_context_api_integration.py` (2 tests)
+- `holmesgpt-api/tests/integration/test_data_storage_integration.py` (2 tests)
 - `holmesgpt-api/tests/integration/test_context_tool_handler.py` (2 tests)
 - `holmesgpt-api/tests/integration/test_context_tool_observability.py` (2 tests)
 - `holmesgpt-api/tests/e2e/test_context_tool_e2e.py` (3 tests)
@@ -541,7 +539,7 @@ System must have comprehensive test coverage for Context API tool integration in
 | Test Level | Tests | Purpose |
 |---|---|---|
 | **Unit Tests** | 15 | Tool definition, client, handler, metrics |
-| **Integration Tests** | 10 | Real Context API calls, failure scenarios |
+| **Integration Tests** | 10 | Real Data Storage Service calls, failure scenarios |
 | **E2E Tests** | 3 | LLM-driven tool call scenarios |
 | **Total** | 28 | Comprehensive coverage |
 
@@ -554,7 +552,7 @@ System must have comprehensive test coverage for Context API tool integration in
 - Write 15 unit tests (must fail initially)
 
 **Day 2: GREEN Phase** (8 hours):
-- Implement Context API tool and client (minimal)
+- Implement Data Storage Service tool and client (minimal)
 - Write 10 integration tests (must pass)
 
 **Day 3: REFACTOR Phase** (8 hours):
