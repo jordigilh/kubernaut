@@ -1,5 +1,6 @@
 # [Service Name] - Implementation Plan Template
 
+**Filename Convention**: `IMPLEMENTATION_PLAN_V<semantic_version>.md` (e.g., `IMPLEMENTATION_PLAN_V1.3.md`)
 **Version**: v2.0 - COMPREHENSIVE PRODUCTION-READY STANDARD
 **Last Updated**: 2025-10-12
 **Timeline**: [X] days (11-12 days typical)
@@ -34,6 +35,33 @@
 - Gateway: 95% test coverage, 100% BR coverage, 98% confidence
 - Notification: 97.2% BR coverage, 95% test coverage, 98% confidence
 **Quality Standard**: V3.0 - Production-ready with comprehensive examples
+
+---
+
+## 📝 **Naming Convention**
+
+**Filename Format**: `IMPLEMENTATION_PLAN_V<semantic_version>.md`
+
+**Examples**:
+- ✅ `IMPLEMENTATION_PLAN_V1.0.md` - Initial implementation
+- ✅ `IMPLEMENTATION_PLAN_V1.3.md` - Patch updates (bug fixes, clarifications)
+- ✅ `IMPLEMENTATION_PLAN_V2.0.md` - Major version (significant scope changes)
+- ✅ `IMPLEMENTATION_PLAN_V2.1_RFC7807.md` - Minor version with feature suffix
+- ❌ `DATA-STORAGE-V1.0-MVP-IMPLEMENTATION-PLAN.md` - Non-standard naming
+- ❌ `IMPLEMENTATION_PLAN.md` - Missing version
+
+**Semantic Versioning**:
+- **Major (X.0.0)**: Significant scope changes, architectural shifts
+- **Minor (1.X.0)**: Feature additions, timeline extensions
+- **Patch (1.0.X)**: Bug fixes, clarifications, template compliance updates
+
+**Archived Plans**: Move superseded versions to `implementation/archive/` directory
+
+**Rationale**: Consistent naming enables:
+- Easy version identification across all services
+- Automated tooling and scripts
+- Clear historical tracking
+- Standard file organization
 
 ---
 
