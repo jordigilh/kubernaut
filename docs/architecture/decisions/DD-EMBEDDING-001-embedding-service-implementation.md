@@ -1,11 +1,11 @@
-# DD-EMBEDDING-001: Embedding Service Implementation Strategy
+# DD-EMBEDDING-001: Embedding Service as MCP Playbook Catalog Server
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (Option A - Python Microservice)
+**Status**: ✅ **APPROVED** (Python Microservice + MCP Server)
 **Decision Maker**: Kubernaut Architecture Team
-**Authority**: BR-STORAGE-012 (Playbook Semantic Search), DD-STORAGE-008 (Playbook Schema)
-**Affects**: Data Storage Service V1.0, Playbook Semantic Search
-**Version**: 1.0
+**Authority**: BR-STORAGE-012 (Playbook Semantic Search), DD-PLAYBOOK-002 (LLM-First Workflow)
+**Affects**: Data Storage Service V1.0, HolmesGPT API, Playbook Semantic Search
+**Version**: 2.0 (MCP Integration)
 
 ---
 
@@ -21,29 +21,35 @@
 
 ### **Problem Statement**
 
-The Data Storage Service requires vector embedding generation for playbook semantic search (BR-STORAGE-012). We need to convert playbook text content into 384-dimensional vectors using the sentence-transformers model for similarity-based retrieval.
+The Kubernaut LLM-first architecture (DD-PLAYBOOK-002) requires an **MCP (Model Context Protocol) server** that:
+1. Exposes playbook catalog as MCP tools to the LLM
+2. Receives structured JSON from LLM investigation
+3. Constructs optimal semantic search queries
+4. Calls Data Storage REST API
+5. Returns ranked playbooks to LLM
 
 **Key Requirements**:
-1. Generate 384-dimensional embeddings from playbook text
-2. Support sentence-transformers model (`all-MiniLM-L6-v2`)
-3. Integrate with Data Storage Service REST API
-4. Meet < 2.5s total latency budget for semantic search
-5. Support future model upgrades and experimentation
+1. **MCP Server**: Expose playbook catalog tools (`search_playbook_catalog`, `get_playbook_details`)
+2. **Embedding Generation**: Convert text to 384-dimensional vectors (sentence-transformers)
+3. **Query Construction**: Build semantic search queries from LLM's structured JSON
+4. **REST API Integration**: Call Data Storage Service for playbook retrieval
+5. **Low Latency**: Meet < 2.5s total latency budget for investigation workflow
 
 ### **Current State**
 
 - ✅ **Interface defined**: `pkg/datastorage/embedding/interfaces.go` (`EmbeddingAPIClient`)
 - ✅ **Model selected**: sentence-transformers `all-MiniLM-L6-v2` (384 dimensions)
 - ✅ **Use case validated**: DD-STORAGE-012 PoC shows effective playbook matching
+- ✅ **LLM workflow defined**: DD-PLAYBOOK-002 specifies MCP tool requirements
 - ❌ **NO implementation**: Only interface exists, no concrete service
 
 ### **Decision Scope**
 
-Choose the implementation strategy for the embedding service that best fits Kubernaut's:
-- Microservices architecture
-- Development velocity requirements
-- Operational simplicity goals
-- Future ML experimentation needs
+Choose the implementation strategy for the embedding service that:
+- Acts as MCP server for LLM integration
+- Generates embeddings for semantic search
+- Bridges LLM (HolmesGPT API) and Data Storage Service
+- Fits Kubernaut's microservices architecture
 
 ---
 
