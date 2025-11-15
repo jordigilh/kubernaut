@@ -88,6 +88,19 @@ signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   - Completed              # Container completed successfully
   #
   # RULE: Signal Processing MUST pass through domain-specific values unchanged
+  # RULE: NO normalization, NO kebab-case conversion, NO transformationAPI - kubectl describe pod → State.Reason field
+  # SOURCE: Prometheus - kube_pod_container_status_terminated_reason{reason="..."}
+  #
+  # Examples (exact K8s event reason strings):
+  - OOMKilled              # Container killed due to out-of-memory
+  - CrashLoopBackOff       # Container repeatedly crashing
+  - ImagePullBackOff       # Failed to pull container image
+  - ErrImagePull           # Image pull error
+  - NodeNotReady           # Node is not ready
+  - Evicted                # Pod evicted due to resource pressure
+  - Error                  # Generic container error
+  - Completed              # Container completed successfully
+  #
   # RULE: NO normalization, NO kebab-case conversion, NO transformation
 
 component:  # Kubernetes resource types
@@ -790,7 +803,6 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 - ✅ **Added Signal Processing BRs**: BR-SIGNAL-PROCESSING-001, 002, 003 with Rego policy logic
 - ✅ **Added Data Storage BRs**: BR-STORAGE-013, 014, 015 for validation and filtering
 
-### **v1.0** (2025-11-14)
 - Initial 7-field mandatory label schema
 - 1:1 signal-to-playbook matching
 - Structured columns for mandatory labels

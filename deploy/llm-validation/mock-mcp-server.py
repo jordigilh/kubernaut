@@ -5,7 +5,7 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Mock Playbook Database
+# Mock Playbook Database - Single Remediation Per Playbook
 MOCK_PLAYBOOKS = {
     "oomkill-general": {
         "playbook_id": "oomkill-general",
@@ -32,204 +32,251 @@ MOCK_PLAYBOOKS = {
         "impact": "High",
         "confidence_score": 0.9
     },
-    "oomkill-cost-optimized": {
-        "playbook_id": "oomkill-cost-optimized",
+    
+    # SINGLE REMEDIATION PLAYBOOK 1: Scale Down
+    "oomkill-scale-down": {
+        "playbook_id": "oomkill-scale-down",
         "version": "1.0.0",
-        "title": "Cost-Optimized OOMKill Remediation for Cost-Management Namespace",
-        "description": "Specific steps to resolve OOMKill events for applications in the 'cost-management' namespace, prioritizing cost efficiency.",
+        "title": "OOMKill Remediation - Scale Down Replicas",
+        "description": "Reduces replica count for deployments experiencing OOMKilled due to node memory pressure. Use when: (1) Node memory utilization >90%, (2) Multiple pods OOMKilled on same node, (3) Application can tolerate reduced capacity.",
+        "container_image": "quay.io/kubernaut/playbook-oomkill-scale-down:v1.0.0",
         "labels": {
             "signal_type": "OOMKilled",
             "severity": "high",
-            "component": "*",
-            "environment": "*",
+            "category": "resource-management",
+            "tags": ["oomkill", "scaling", "cost-optimization"],
             "priority": "P1",
             "risk_tolerance": "low",
             "business_category": "cost-management"
         },
-        "remediation_steps": [
-            "Immediately check pod logs for OOMKilled events in 'cost-management' namespace.",
-            "Verify if the application is essential or can be scaled down/off-peak.",
-            "Prioritize application-level memory optimization over increasing resource limits.",
-            "If limits must be increased, ensure strict approval process due to cost implications.",
-            "Investigate potential memory leaks within the application code."
+        "parameters": [
+            {
+                "name": "TARGET_RESOURCE_KIND",
+                "description": "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)",
+                "type": "string",
+                "required": True,
+                "enum": ["Deployment", "StatefulSet", "DaemonSet"]
+            },
+            {
+                "name": "TARGET_RESOURCE_NAME",
+                "description": "Name of the Kubernetes resource experiencing OOMKilled",
+                "type": "string",
+                "required": True,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            {
+                "name": "TARGET_NAMESPACE",
+                "description": "Kubernetes namespace of the affected resource",
+                "type": "string",
+                "required": True,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            {
+                "name": "SCALE_TARGET_REPLICAS",
+                "description": "Target replica count to scale down to",
+                "type": "integer",
+                "required": True,
+                "minimum": 0,
+                "maximum": 100
+            }
         ],
-        "estimated_time_minutes": 60,
+        "estimated_time_minutes": 5,
         "impact": "Medium",
-        "confidence_score": 0.95
+        "confidence_score": 0.85
     },
-    "crashloop-configmap": {
-        "playbook_id": "crashloop-configmap",
+    
+    # SINGLE REMEDIATION PLAYBOOK 2: Increase Memory
+    "oomkill-increase-memory": {
+        "playbook_id": "oomkill-increase-memory",
         "version": "1.0.0",
-        "title": "CrashLoopBackOff due to Missing ConfigMap",
-        "description": "Steps to resolve CrashLoopBackOff caused by a missing Kubernetes ConfigMap.",
+        "title": "OOMKill Remediation - Increase Memory Limits",
+        "description": "Increases memory limits for pods experiencing OOMKilled. Use when: (1) Single pod repeatedly OOMKilled, (2) Memory usage consistently at limit, (3) Application legitimately needs more memory.",
+        "container_image": "quay.io/kubernaut/playbook-oomkill-increase-memory:v1.0.0",
         "labels": {
-            "signal_type": "CrashLoopBackOff",
+            "signal_type": "OOMKilled",
             "severity": "high",
-            "component": "*",
-            "environment": "*",
+            "category": "resource-management",
+            "tags": ["oomkill", "memory", "capacity"],
             "priority": "P1",
-            "risk_tolerance": "medium",
-            "business_category": "*"
+            "risk_tolerance": "low",
+            "business_category": "cost-management"
         },
-        "remediation_steps": [
-            "Check pod events for 'FailedMount' or 'ConfigMap not found' messages.",
-            "Verify if the referenced ConfigMap exists in the namespace (`kubectl get configmap <name> -n <namespace>`).",
-            "If missing, create the ConfigMap with correct data.",
-            "If exists, check for typos in deployment/pod spec referencing the ConfigMap.",
-            "Ensure correct permissions for the service account to access ConfigMaps."
+        "parameters": [
+            {
+                "name": "TARGET_RESOURCE_KIND",
+                "description": "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)",
+                "type": "string",
+                "required": True,
+                "enum": ["Deployment", "StatefulSet", "DaemonSet"]
+            },
+            {
+                "name": "TARGET_RESOURCE_NAME",
+                "description": "Name of the Kubernetes resource experiencing OOMKilled",
+                "type": "string",
+                "required": True,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            {
+                "name": "TARGET_NAMESPACE",
+                "description": "Kubernetes namespace of the affected resource",
+                "type": "string",
+                "required": True,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            {
+                "name": "MEMORY_LIMIT_NEW",
+                "description": "New memory limit to apply (e.g., 256Mi, 1Gi, 2Gi)",
+                "type": "string",
+                "required": True,
+                "pattern": "^[0-9]+(Mi|Gi)$",
+                "examples": ["256Mi", "1Gi", "2Gi"]
+            }
         ],
-        "estimated_time_minutes": 20,
-        "impact": "High",
-        "confidence_score": 0.88
+        "estimated_time_minutes": 10,
+        "impact": "Medium",
+        "confidence_score": 0.80
     },
-    "imagepullbackoff": {
-        "playbook_id": "imagepullbackoff",
+    
+    # SINGLE REMEDIATION PLAYBOOK 3: Optimize Application
+    "oomkill-optimize-application": {
+        "playbook_id": "oomkill-optimize-application",
         "version": "1.0.0",
-        "title": "ImagePullBackOff Remediation",
-        "description": "Steps to resolve ImagePullBackOff status in Kubernetes pods.",
+        "title": "OOMKill Remediation - Optimize Application Configuration",
+        "description": "Optimizes application configuration to reduce memory footprint. Use when: (1) Application has tunable memory settings, (2) Memory leak suspected, (3) Inefficient configuration detected.",
+        "container_image": "quay.io/kubernaut/playbook-oomkill-optimize-app:v1.0.0",
         "labels": {
-            "signal_type": "ImagePullBackOff",
+            "signal_type": "OOMKilled",
+            "severity": "high",
+            "category": "resource-management",
+            "tags": ["oomkill", "optimization", "configuration"],
+            "priority": "P1",
+            "risk_tolerance": "low",
+            "business_category": "cost-management"
+        },
+        "parameters": [
+            {
+                "name": "TARGET_RESOURCE_KIND",
+                "description": "Kubernetes resource kind (Deployment, StatefulSet, DaemonSet)",
+                "type": "string",
+                "required": True,
+                "enum": ["Deployment", "StatefulSet", "DaemonSet"]
+            },
+            {
+                "name": "TARGET_RESOURCE_NAME",
+                "description": "Name of the Kubernetes resource experiencing OOMKilled",
+                "type": "string",
+                "required": True,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            {
+                "name": "TARGET_NAMESPACE",
+                "description": "Kubernetes namespace of the affected resource",
+                "type": "string",
+                "required": True,
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            }
+        ],
+        "estimated_time_minutes": 15,
+        "impact": "Low",
+        "confidence_score": 0.75
+    },
+    
+    "pod-restart-general": {
+        "playbook_id": "pod-restart-general",
+        "version": "1.0.0",
+        "title": "General Pod Restart",
+        "description": "Restarts pods to recover from transient failures.",
+        "labels": {
+            "signal_type": "PodCrashLooping",
             "severity": "medium",
             "component": "*",
             "environment": "*",
-            "priority": "P2",
+            "priority": "*",
             "risk_tolerance": "medium",
             "business_category": "*"
         },
         "remediation_steps": [
-            "Check pod events for 'Failed to pull image' or 'ErrImagePull' messages.",
-            "Verify the image name and tag in the pod/deployment spec are correct.",
-            "Check if the image exists in the specified registry.",
-            "Ensure image pull secrets are correctly configured and accessible by the service account.",
-            "Check network connectivity to the image registry."
+            "Identify the failing pod.",
+            "Check pod logs for error messages.",
+            "Delete the pod to trigger a restart.",
+            "Monitor pod status after restart."
         ],
-        "estimated_time_minutes": 15,
-        "impact": "Medium",
-        "confidence_score": 0.85
+        "estimated_time_minutes": 10,
+        "impact": "Low",
+        "confidence_score": 0.8
     }
 }
 
-@app.route('/mcp/tools/search_playbook_catalog', methods=['POST'])
-def search_playbook_catalog():
-    data = request.json
-
-    logger.info("=" * 80)
-    logger.info("EVENT 1: LLM -> MCP Tool Call")
-    logger.info("=" * 80)
-    logger.info(f"Request Data: {data}")
-
-    # Extract ALL 7 mandatory search criteria per DD-PLAYBOOK-001
-    signal_type = data.get('signal_type', '*')
-    severity = data.get('severity', '*')
-    component = data.get('component', '*')
-    environment = data.get('environment', '*')
-    priority = data.get('priority', '*')
-    risk_tolerance = data.get('risk_tolerance', '*')
-    business_category = data.get('business_category', '*')
-    query = data.get('query', '')
-
-    matched_playbooks = []
-
-    for playbook_id, playbook in MOCK_PLAYBOOKS.items():
-        labels = playbook['labels']
-        match_score = 0
-
-        # Exact match required: signal_type, severity, component, risk_tolerance (DD-PLAYBOOK-001 Line 38)
-
-        # Match signal_type (exact match required)
-        if signal_type != '*':
-            if labels['signal_type'] == signal_type:
-                match_score += 10  # Exact match
-            elif labels['signal_type'] == '*':
-                match_score += 5   # Wildcard match
-            else:
-                continue  # No match, skip this playbook
-
-        # Match severity (exact match required)
-        if severity != '*':
-            if labels['severity'] == severity:
-                match_score += 10  # Exact match
-            elif labels['severity'] == '*':
-                match_score += 5   # Wildcard match
-            else:
-                continue  # No match, skip this playbook
-
-        # Match component (exact match required)
-        if component != '*':
-            if labels['component'] == component:
-                match_score += 10  # Exact match
-            elif labels['component'] == '*':
-                match_score += 5   # Wildcard match
-            else:
-                continue  # No match, skip this playbook
-
-        # Match risk_tolerance (exact match required)
-        if risk_tolerance != '*':
-            if labels['risk_tolerance'] == risk_tolerance:
-                match_score += 10  # Exact match
-            elif labels['risk_tolerance'] == '*':
-                match_score += 5   # Wildcard match
-            else:
-                continue  # No match, skip this playbook
-
-        # Wildcard support: environment, priority, business_category (DD-PLAYBOOK-001 Line 39)
-
-        # Match environment (wildcard support)
-        if environment != '*':
-            if labels['environment'] == environment:
-                match_score += 10  # Exact match
-            elif labels['environment'] == '*':
-                match_score += 5   # Wildcard match
-            else:
-                continue  # No match, skip this playbook
-
-        # Match priority (wildcard support)
-        if priority != '*':
-            if labels['priority'] == priority:
-                match_score += 10  # Exact match
-            elif labels['priority'] == '*':
-                match_score += 5   # Wildcard match
-            else:
-                continue  # No match, skip this playbook
-
-        # Match business_category (wildcard support, highest priority)
-        if business_category != '*':
-            if labels['business_category'] == business_category:
-                match_score += 20  # Exact match - highest priority
-            elif labels['business_category'] == '*':
-                match_score += 3   # Wildcard match - lower priority
-            else:
-                continue  # No match, skip this playbook
-
-        # Simple text matching for query (optional - boosts score if matches)
-        if query:
-            query_lower = query.lower()
-            if query_lower in playbook['title'].lower() or query_lower in playbook['description'].lower():
-                match_score += 5
-
-        matched_playbooks.append({
-            'playbook': playbook,
-            'score': match_score
-        })
-
-    # Sort by score (highest first)
-    matched_playbooks.sort(key=lambda x: x['score'], reverse=True)
-
-    # Extract just the playbooks
-    result_playbooks = [item['playbook'] for item in matched_playbooks]
-
-    logger.info(f"Response: {len(result_playbooks)} playbooks returned")
-    logger.info("=" * 80)
-
-    return jsonify({
-        'playbooks': result_playbooks,
-        'total_results': len(result_playbooks)
-    })
-
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'ok'})
+    return jsonify({"status": "healthy"}), 200
+
+@app.route('/api/v1/playbooks/search', methods=['POST'])
+def search_playbooks():
+    """
+    Mock MCP Server - Playbook Catalog Search
+    Simulates semantic search for playbook recommendations
+    """
+    try:
+        data = request.get_json()
+        logger.info(f"Received playbook search request: {data}")
+        
+        # Extract search criteria
+        signal_type = data.get('signal_type', '')
+        namespace = data.get('namespace', '')
+        severity = data.get('severity', '')
+        
+        # Simple matching logic (in real implementation, this would be semantic search)
+        matching_playbooks = []
+        
+        for playbook_id, playbook in MOCK_PLAYBOOKS.items():
+            labels = playbook.get('labels', {})
+            
+            # Match signal type
+            if signal_type and labels.get('signal_type') != '*':
+                if labels.get('signal_type') != signal_type:
+                    continue
+            
+            # Match business category (namespace-based)
+            if 'cost-management' in namespace and labels.get('business_category') != '*':
+                if labels.get('business_category') != 'cost-management':
+                    continue
+            
+            matching_playbooks.append(playbook)
+        
+        logger.info(f"Found {len(matching_playbooks)} matching playbooks")
+        
+        return jsonify({
+            "playbooks": matching_playbooks,
+            "total_count": len(matching_playbooks)
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error processing playbook search: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8081, debug=True)
+    app.run(host='0.0.0.0', port=8095, debug=True)
 
+# NOTE: The above playbooks use separate container images.
+# Operators can optionally use a SHARED container image with hidden parameters:
+#
+# Example: All three oomkill-* playbooks could use the same image:
+#   "quay.io/kubernaut/playbook-oomkill-multi:v1.0.0"
+#
+# With hidden parameter:
+#   "REMEDIATION_TYPE": "scale_down" | "increase_memory" | "optimize_application"
+#
+# This hidden parameter is:
+# - Set during playbook registration (NOT by LLM)
+# - Injected by Workflow Engine into Tekton PipelineRun
+# - Used by container to route to correct remediation logic
+# - NOT visible to LLM (maintains single remediation playbook pattern)
+#
+# Benefits:
+# - Reduced image duplication
+# - Shared validation and common logic
+# - Operator flexibility
+# - Simple LLM interface (no conditional logic)
+#
+# See DD-PLAYBOOK-003 "Advanced Pattern: Hidden Parameters" for details.

@@ -234,6 +234,33 @@ The following playbooks have been identified as potentially relevant for this fa
                 for step_idx, step in enumerate(steps, 1):
                     prompt += f"{step_idx}. {step}\n"
                 prompt += "\n"
+            # Add parameters if available (DD-PLAYBOOK-003)
+            parameters = playbook.get('parameters', [])
+            if parameters:
+                prompt += "**Required Parameters** (must be populated in your response):\n"
+                for param in parameters:
+                    param_name = param.get('name', 'Unknown')
+                    param_desc = param.get('description', 'No description')
+                    param_required = param.get('required', False)
+                    param_type = param.get('type', 'string')
+                    required_marker = "**REQUIRED**" if param_required else "optional"
+                    prompt += f"- `{param_name}` ({param_type}, {required_marker}): {param_desc}\n"
+                    
+                    # Add enum values if available
+                    if 'enum' in param:
+                        prompt += f"  - Allowed values: {param['enum']}\n"
+                    
+                    # Add dependency info if available
+                    if 'depends_on' in param:
+                        prompt += f"  - Depends on: {param['depends_on']}\n"
+                prompt += "\n"
+
+            steps = playbook.get('steps', [])
+            if steps:
+                prompt += "**Steps**:\n"
+                for step_idx, step in enumerate(steps, 1):
+                    prompt += f"{step_idx}. {step}\n"
+                prompt += "\n"
 
         prompt += "**IMPORTANT**: Consider these playbooks when formulating your recovery strategies.\n\n"
 
@@ -273,9 +300,14 @@ The following playbooks have been identified as potentially relevant for this fa
   "strategies": [
     {
       "action_type": "specific_action_name",
+      "playbook_id": "playbook-id-if-using-playbook",
       "confidence": 0.85,
       "rationale": "Detailed explanation of why this strategy will work",
       "estimated_risk": "low|medium|high",
+      "parameters": {
+        "PARAM_NAME_1": "value1",
+        "PARAM_NAME_2": "value2"
+      },
       "prerequisites": ["prerequisite1", "prerequisite2"],
       "steps": ["step1", "step2"],
       "expected_outcome": "What success looks like",
@@ -290,6 +322,13 @@ The following playbooks have been identified as potentially relevant for this fa
   }
 }
 ```
+
+**PARAMETER REQUIREMENTS**:
+- If recommending a playbook that has parameters, you MUST populate the "parameters" object
+- Use the exact parameter names from the playbook schema
+- Populate values based on your RCA investigation (resource names, namespaces, actions, etc.)
+- Required parameters must always be included
+- Optional parameters should be included if relevant to your strategy
 
 **ANALYSIS GUIDANCE**:
 - Prioritize strategies by confidence and risk
@@ -775,7 +814,16 @@ async def recovery_analyze_endpoint(request: RecoveryRequest):
         mcp_config = None
         app_config = None
         if hasattr(router, 'config'):
-            mcp_config = router.config.get("mcp_servers", {})
+            # Extract the specific MCP server config (playbook_catalog_mcp)
+            # MCPClient expects config with base_url/timeout, not the entire mcp_servers dict
+            mcp_servers = router.config.get("mcp_servers", {})
+            if mcp_servers and "playbook_catalog_mcp" in mcp_servers:
+                playbook_mcp = mcp_servers["playbook_catalog_mcp"]
+                # Convert 'url' to 'base_url' for MCPClient compatibility
+                mcp_config = {
+                    "base_url": playbook_mcp.get("url"),
+                    "timeout": playbook_mcp.get("timeout", 30)
+                }
             app_config = router.config
 
         result = await analyze_recovery(request_data, mcp_config=mcp_config, app_config=app_config)
