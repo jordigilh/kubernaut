@@ -2,6 +2,17 @@
 
 **Document Version**: 3.0
 **Date**: January 2025
+
+## Changelog
+
+### Version 3.1 (2025-11-15)
+
+**Service Naming Corrections**: Updated "Workflow Engine" → "Remediation Execution Engine" per ADR-035.
+
+**Changes**:
+- Updated service catalog entries
+- Aligned all service descriptions with authoritative naming
+- Maintained consistency across documentation
 **Status**: V1 Implementation Focus (10 Services)
 **Parent**: [Architecture Overview](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)
 
