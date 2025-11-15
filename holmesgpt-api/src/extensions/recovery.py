@@ -237,7 +237,7 @@ The following playbooks have been identified as potentially relevant for this fa
             # Add parameters if available (DD-PLAYBOOK-003)
             parameters = playbook.get('parameters', [])
             if parameters:
-                prompt += "**Required Parameters** (must be populated in your response):\n"
+                prompt += "**Parameters** (populate these if recommending this playbook):\n"
                 for param in parameters:
                     param_name = param.get('name', 'Unknown')
                     param_desc = param.get('description', 'No description')
@@ -253,13 +253,23 @@ The following playbooks have been identified as potentially relevant for this fa
                     # Add dependency info if available
                     if 'depends_on' in param:
                         prompt += f"  - Depends on: {param['depends_on']}\n"
-                prompt += "\n"
-
-            steps = playbook.get('steps', [])
-            if steps:
-                prompt += "**Steps**:\n"
-                for step_idx, step in enumerate(steps, 1):
-                    prompt += f"{step_idx}. {step}\n"
+                    
+                    # Add min/max constraints if available
+                    if 'minimum' in param or 'maximum' in param:
+                        constraints = []
+                        if 'minimum' in param:
+                            constraints.append(f"min: {param['minimum']}")
+                        if 'maximum' in param:
+                            constraints.append(f"max: {param['maximum']}")
+                        prompt += f"  - Constraints: {', '.join(constraints)}\n"
+                    
+                    # Add pattern if available
+                    if 'pattern' in param:
+                        prompt += f"  - Pattern: {param['pattern']}\n"
+                    
+                    # Add default if available
+                    if 'default' in param:
+                        prompt += f"  - Default: {param['default']}\n"
                 prompt += "\n"
 
         prompt += "**IMPORTANT**: Consider these playbooks when formulating your recovery strategies.\n\n"
@@ -324,11 +334,13 @@ The following playbooks have been identified as potentially relevant for this fa
 ```
 
 **PARAMETER REQUIREMENTS**:
-- If recommending a playbook that has parameters, you MUST populate the "parameters" object
-- Use the exact parameter names from the playbook schema
-- Populate values based on your RCA investigation (resource names, namespaces, actions, etc.)
-- Required parameters must always be included
-- Optional parameters should be included if relevant to your strategy
+- Each playbook listed above shows its specific parameters with names, types, and descriptions
+- If recommending a playbook that has parameters, you MUST populate the "parameters" object in your strategy
+- Use the EXACT parameter names shown in the playbook's parameter list above (e.g., TARGET_RESOURCE_NAME, SCALE_TARGET_REPLICAS)
+- Populate values based on your RCA investigation (actual resource names, namespaces, replica counts, memory limits, etc.)
+- Required parameters (marked **REQUIRED**) must ALWAYS be included
+- Optional parameters should be included if relevant to your remediation strategy
+- Respect parameter constraints: enum values, min/max limits, and patterns shown above
 
 **ANALYSIS GUIDANCE**:
 - Prioritize strategies by confidence and risk
