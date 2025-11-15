@@ -128,10 +128,18 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
             if toolset_config.get("enabled") is not None:
                 toolsets_config[toolset_name] = {"enabled": toolset_config["enabled"]}
 
+    # Get MCP servers configuration from app_config
+    # MCP servers are registered as toolsets by the SDK's ToolsetManager
+    mcp_servers_config = None
+    if app_config and "mcp_servers" in app_config:
+        mcp_servers_config = app_config["mcp_servers"]
+        logger.info(f"Registering MCP servers: {list(mcp_servers_config.keys())}")
+
     config_data = {
         "model": model_name,  # Pass through as-is
         "api_base": os.getenv("LLM_ENDPOINT"),
         "toolsets": toolsets_config,  # Enable kubernetes toolsets for RCA
+        "mcp_servers": mcp_servers_config,  # Register MCP servers (e.g., playbook catalog)
     }
 
     try:
