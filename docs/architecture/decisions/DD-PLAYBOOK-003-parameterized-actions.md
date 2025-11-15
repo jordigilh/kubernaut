@@ -1,7 +1,7 @@
 # DD-PLAYBOOK-003: Parameterized Remediation Actions
 
 **Status**: Approved  
-**Version**: 2.1  
+**Version**: 2.2  
 **Created**: 2025-11-15  
 **Updated**: 2025-11-15  
 **Target Release**: v1.1  
@@ -10,6 +10,15 @@
 ---
 
 ## Changelog
+
+### Version 2.2 (2025-11-15)
+**Changes**:
+- ✅ Resolved Q1: Parameter naming convention → UPPER_SNAKE_CASE (Tekton-style)
+- ✅ Resolved Q3: Parameter validation → Pre + post-execution validation
+- ✅ Resolved Q4: Rollback parameters → Include in LLM response
+- ✅ Deferred Q2: Complex parameter types → No current use case identified
+
+**Rationale**: User decisions finalized open questions, enabling implementation to proceed with clear specifications.
 
 ### Version 2.1 (2025-11-15)
 **Changes**:
@@ -230,44 +239,50 @@ The LLM selects a specific remediation playbook and populates its required param
 
 ---
 
-## Open Questions (Updated)
+## Open Questions (Resolved)
 
-### Q1: Parameter Naming Convention?
-**A)** Tekton-style (UPPER_SNAKE_CASE) - **Recommended (98%)**
-**B)** JSON-style (camelCase)
-**C)** Kubernetes-style (kebab-case)
+### Q1: Parameter Naming Convention? ✅ RESOLVED
+**Decision**: A) Tekton-style (UPPER_SNAKE_CASE)
 
-**Recommendation**: UPPER_SNAKE_CASE
+**Rationale**:
 - Standard for environment variables
 - Tekton convention
 - Shell-script friendly
+- Approved by user on 2025-11-15
 
-### Q2: Complex Parameter Types?
-**A)** Flatten to strings (JSON-encode complex objects) - **Recommended (95%)**
-**B)** Support nested objects (requires serialization)
+### Q2: Complex Parameter Types? ✅ DEFERRED
+**Decision**: Deferred - No current use case
 
-**Recommendation**: Flatten
-- Environment variables are strings
+**Rationale**:
+- Environment variables are inherently strings
+- No identified use case for complex nested objects exposed to LLM
+- Operators can handle complex data internally within playbook containers
+- If needed in future, can be addressed with JSON-encoded strings
+- Approved by user on 2025-11-15
 
-- Simpler for operators to parse
+**Note**: Hidden parameters (not exposed to LLM) can use any internal format the playbook container requires.
 
-### Q3: Parameter Validation?
-**A)** Pre-execution validation only
-**B)** Pre + post-execution validation - **Recommended (92%)**
+### Q3: Parameter Validation? ✅ RESOLVED
+**Decision**: B) Pre + post-execution validation
 
-**Recommendation**: Both
-- Pre: Validate against schema before Tekton execution
-- Post: Validate container exit code and outputs
+**Rationale**:
+- Pre-execution: Validate against schema before Tekton execution (prevents invalid PipelineRuns)
+- Post-execution: Validate container exit code and outputs (ensures remediation success)
+- Comprehensive validation improves reliability and observability
+- Approved by user on 2025-11-15
 
-### Q4: Rollback Parameters?
-**A)** Include in LLM response - **Recommended (90%)**
-**B)** Separate rollback playbook
+### Q4: Rollback Parameters? ✅ RESOLVED
+**Decision**: A) Include in LLM response
 
-**Recommendation**: Include in response
-- LLM knows original state
-- Enables quick rollback
-- Same parameter schema
+**Rationale**:
+- LLM has context of original state during analysis
+- Enables quick rollback if remediation fails
+- Useful for informing operators of rollback steps
+- Supports automatic retry with recovery
+- Same parameter schema as forward action
+- Approved by user on 2025-11-15
 
+**Implementation Note**: Rollback parameters will be included in the LLM's JSON response as an optional field within each strategy.
 ---
 
 ## Implementation Roadmap (Revised)
@@ -421,37 +436,38 @@ This is **superior** to building a custom execution engine because:
 Based on the authoritative [Kubernaut Architecture Overview](../../KUBERNAUT_ARCHITECTURE_OVERVIEW.md):
 
 ```
+```
 ┌─────────────────┐
-│ Signal Source   │  (Prometheus, K8s Events)
+│ Signal Source   │  Prometheus, K8s Events
 │ (Alert/Event)   │
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ Gateway Service │  (8080) Multi-signal webhook reception
+│ Gateway Service │  Multi-signal webhook reception
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│   Processor     │  (8081) Signal lifecycle + environment classification
+│   Processor     │  Signal lifecycle + environment classification
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│  AI Analysis    │  (8082) HolmesGPT-Only integration
+│  AI Analysis    │  HolmesGPT-Only integration
 │     Engine      │
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│  HolmesGPT-API  │  (8090) Investigation & RCA
+│  HolmesGPT-API  │  Investigation & RCA
 │                 │  • Calls MCP playbook catalog search
 │                 │  • Returns recommendations with parameters
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ Workflow Engine │  (8083) Orchestration & coordination
+│ Workflow Engine │  Orchestration & coordination
 │                 │  • Parses LLM recommendations
 │                 │  • Validates playbook parameters
 │                 │  • Creates Tekton PipelineRuns
