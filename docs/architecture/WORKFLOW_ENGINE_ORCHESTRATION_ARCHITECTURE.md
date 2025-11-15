@@ -1,5 +1,4 @@
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
-# Workflow Engine & Orchestration Architecture
+# Remediation Execution Engine & Orchestration Architecture
 
 ## Overview
 
@@ -682,4 +681,4 @@ Workflow Failure Detected
 
 ---
 
-*This document describes the Workflow Engine & Orchestration architecture for Kubernaut, enabling sophisticated workflow management, intelligent orchestration, and adaptive execution for autonomous system operations. The architecture supports continuous optimization and learning for improved operational efficiency.*
+*This document describes the Remediation Execution Engine & Orchestration architecture for Kubernaut, enabling sophisticated workflow management, intelligent orchestration, and adaptive execution for autonomous system operations. The architecture supports continuous optimization and learning for improved operational efficiency.*

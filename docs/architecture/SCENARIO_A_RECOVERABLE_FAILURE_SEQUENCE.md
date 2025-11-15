@@ -5,7 +5,6 @@
 **Purpose**: Detailed sequence diagram for Scenario A (Recoverable Failure - Most Common 92.3% of cases)
 **Scope**: End-to-end flow from alert ingestion through failure recovery to successful completion
 **Status**: ⚠️ **SUPERSEDED BY PROPOSED_FAILURE_RECOVERY_SEQUENCE.md**
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 
 ## 📋 Version History
 
@@ -491,7 +490,7 @@ validating → validated → executing → rollback_ready → completed
 - [Step Failure Recovery Architecture](STEP_FAILURE_RECOVERY_ARCHITECTURE.md)
 - [Resilient Workflow AI Sequence Diagram](RESILIENT_WORKFLOW_AI_SEQUENCE_DIAGRAM.md)
 - [CRD Data Flow Comprehensive Summary](../analysis/CRD_DATA_FLOW_COMPREHENSIVE_SUMMARY.md)
-- [Workflow Engine Requirements](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)
+- [Remediation Execution Engine Requirements](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)
 
 ---
 

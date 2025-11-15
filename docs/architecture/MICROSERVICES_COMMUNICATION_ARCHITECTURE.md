@@ -3,7 +3,6 @@
 **Document Version**: 2.0
 **Date**: September 28, 2025
 **Status**: **APPROVED** - Aligned with Official Architecture Specification
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Module**: 10-Service Microservices Communication Layer
 
 ---
@@ -175,7 +174,7 @@ Response:
 }
 ```
 
-**Workflow Engine Integration**:
+**Remediation Execution Engine Integration**:
 ```http
 POST /api/v1/execute-action
 Content-Type: application/json

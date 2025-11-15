@@ -1,10 +1,9 @@
-# Resilient Workflow Engine AI Integration Sequence Diagram (V1)
+# Resilient Remediation Execution Engine AI Integration Sequence Diagram (V1)
 
 **Document Version**: 1.1 (SUPERSEDED)
 **Date**: October 31, 2025
 **Purpose**: V1 sequence diagram showing HolmesGPT-only AI-powered failure handling and recovery interactions
 **Status**: ⚠️ **SUPERSEDED - HISTORICAL REFERENCE ONLY**
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 
 ## 📋 Version History
 
@@ -25,7 +24,7 @@
 
 The approved recovery flow differs significantly from this document:
 
-1. **Recovery Coordination**: Remediation Orchestrator coordinates recovery (not Workflow Engine internal handling)
+1. **Recovery Coordination**: Remediation Orchestrator coordinates recovery (not Remediation Execution Engine internal handling)
 2. **New AIAnalysis CRD**: Recovery creates new AIAnalysis CRD with historical context
 3. **Context API Integration**: AIAnalysis queries Context API for previous failures
 4. **Recovery Loop Prevention**: Max 3 attempts, pattern detection, escalation to manual review
@@ -47,7 +46,7 @@ The content below represents the original V1 design approach before the approved
 
 ## 🎯 **OVERVIEW (Historical)**
 
-This sequence diagram illustrates how the Resilient Workflow Engine integrates with **HolmesGPT-API only** (V1 design) to handle edge cases, failures, and intelligent recovery scenarios. Multi-tier AI analysis (LLM fallback, multi-provider) is deferred to V2.
+This sequence diagram illustrates how the Resilient Remediation Execution Engine integrates with **HolmesGPT-API only** (V1 design) to handle edge cases, failures, and intelligent recovery scenarios. Multi-tier AI analysis (LLM fallback, multi-provider) is deferred to V2.
 
 ---
 
@@ -56,7 +55,7 @@ This sequence diagram illustrates how the Resilient Workflow Engine integrates w
 ```mermaid
 sequenceDiagram
     participant User as 📱 User/Alert
-    participant RWE as 🎯 Resilient Workflow Engine
+    participant RWE as 🎯 Resilient Remediation Execution Engine
     participant PFH as 🧠 Production Failure Handler
     participant HGP as 🔍 HolmesGPT-API
     participant WH as 📊 Workflow Health Checker
@@ -449,7 +448,7 @@ graph LR
 
 ## 🎯 **SUMMARY (V1)**
 
-This V1 sequence diagram demonstrates the **HolmesGPT-focused AI integration** in the Resilient Workflow Engine:
+This V1 sequence diagram demonstrates the **HolmesGPT-focused AI integration** in the Resilient Remediation Execution Engine:
 
 ### **V1 Key Features** ✅
 1. **🔍 HolmesGPT-API Primary**: Single AI service for sophisticated failure analysis
@@ -558,4 +557,4 @@ graph TD
     class J,K,L v2Feature
 ```
 
-The upgraded sequence diagram now provides **comprehensive visual representation** of the V1 Resilient Workflow Engine's AI-powered failure handling and recovery mechanisms with enhanced detail, metrics, and future evolution path.
+The upgraded sequence diagram now provides **comprehensive visual representation** of the V1 Resilient Remediation Execution Engine's AI-powered failure handling and recovery mechanisms with enhanced detail, metrics, and future evolution path.
