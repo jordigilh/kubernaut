@@ -1477,7 +1477,6 @@ status:
 - **Kubernetes Executor Service**: `docs/services/crd-controllers/04-kubernetesexecutor/`
 - **Remediation Orchestrator**: `docs/services/crd-controllers/05-remediationorchestrator/`
 - **Validation Chain**: `docs/architecture/decisions/ADR-016-validation-responsibility-chain.md`
-- **Step Validation BRs**: `docs/analysis/STEP_EXECUTION_VALIDATION_BR_CONFIRMATION.md`
 
 ---
 

@@ -722,7 +722,6 @@ export SKIP_SLOW_TESTS=true  # Skip slow tests
 
 ### Project Documentation
 - [NEXT_SESSION_GUIDE.md](../NEXT_SESSION_GUIDE.md) - Main development guide
-- [ENV_FILES_TRIAGE_ANALYSIS.md](./ENV_FILES_TRIAGE_ANALYSIS.md) - Environment file analysis
 - [Architecture Overview](../architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md) - System architecture
 
 ### Configuration Files
