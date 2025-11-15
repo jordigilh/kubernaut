@@ -1,12 +1,21 @@
 # Kubernaut Documentation
 
-**Version**: 2.1
-**Date**: November 15, 2025
+**Version**: 2.2
+**Date**: November 16, 2025
 **Status**: Updated - Service Naming Corrections
 
 ## Changelog
 
 ### Version 2.1 (2025-11-15)
+
+### Version 2.2 (2025-11-16)
+
+**Broken Reference Cleanup**: Removed references to ephemeral documents deleted in commit a461417e.
+
+**Changes**:
+- Removed references to 8 deleted analysis documents
+- Cleaned up analysis section links
+- All references now point to active documentation only
 
 **Service Naming Corrections**: Corrected "Workflow Engine" → "Remediation Execution Engine" per ADR-035.
 
@@ -32,7 +41,6 @@ Technical documentation for the Kubernaut intelligent Kubernetes remediation sys
   - **Read this FIRST** to understand which documents to trust
 
 **Quality Assurance**:
-- **[V1 Documentation Triage Report](analysis/V1_DOCUMENTATION_TRIAGE_REPORT.md)**
   - 239 files analyzed, 201 cross-references validated
   - Overall quality score: 95% (EXCELLENT)
   - Zero critical issues found, 3 minor cosmetic issues
@@ -170,15 +178,6 @@ Comprehensive business requirements for Phase 2 development.
 Comprehensive analysis documents and research findings.
 
 - **Source Code Analysis**:
-  - **[Source Code Business Logic Analysis](analysis/SOURCE_CODE_BUSINESS_LOGIC.md)** - Business logic mapping and coverage
-  - **[Unmapped Code V1/V2 Analysis](analysis/UNMAPPED_CODE_V1_V2.md)** - Feature classification and integration readiness
-  - **[Unmapped Code Test Coverage](analysis/UNMAPPED_CODE_TEST_COVERAGE.md)** - Test coverage analysis for unmapped features
-- **Requirements Analysis**:
-  - **[Unmapped Code Business Requirements](analysis/UNMAPPED_CODE_BUSINESS_REQUIREMENTS.md)** - New BRs derived from existing code
-  - **[Unmapped Code BR Validation](analysis/UNMAPPED_CODE_BR_VALIDATION.md)** - BR validation and mapping analysis
-- **Integration Analysis**:
-  - **[V1 Integration Readiness](analysis/V1_INTEGRATION_READINESS.md)** - V1 integration assessment and recommendations
-  - **[Architecture Document Updates](analysis/ARCHITECTURE_DOCUMENT_UPDATE.md)** - Architecture evolution analysis
 
 ### 🔬 **Specialized Topics**
 Advanced technical topics and deep-dive analysis.

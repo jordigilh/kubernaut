@@ -43,7 +43,6 @@
     - AIAnalysis CRD extended with ApprovalContext fields (BR-AI-059, BR-AI-060)
     - NotificationRequest CRD used for multi-channel delivery
     - Status field `approvalNotificationSent` prevents duplicate notifications
-  - **Documentation**: [Integration Summary](../../../architecture/APPROVAL_NOTIFICATION_INTEGRATION_SUMMARY.md)
   - **Timeline**: No additional days (BR-ORCH-001 already planned in base)
   - **Confidence**: 90% (V1.0)
 

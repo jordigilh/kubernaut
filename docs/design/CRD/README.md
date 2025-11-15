@@ -134,8 +134,6 @@ docs/services/crd-controllers/
 - [ADR-005: Owner Reference Architecture](../../architecture/decisions/005-owner-reference-architecture.md)
 
 ### **Implementation Guides**
-- [Phase 1 Implementation Guide](../../analysis/PHASE_1_IMPLEMENTATION_GUIDE.md) - CRD schema updates
-- [CRD Schema Update Action Plan](../../analysis/CRD_SCHEMA_UPDATE_ACTION_PLAN.md) - Self-containment pattern
 
 ### **System Architecture**
 - [Approved Microservices Architecture](../../architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md)

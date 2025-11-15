@@ -42,12 +42,10 @@
   - Options: Full Integration (85%), Temporary Hook (75%), Defer (40%)
 
 - [x] **Approval Notification Integration Analysis**: Current state, notification methods, status sync
-  - Location: `docs/analysis/APPROVAL_NOTIFICATION_INTEGRATION.md`
 
 ### **1.4 Architecture Summary** ✅
 
 - [x] **Integration Summary Document**: Comprehensive implementation guide
-  - Location: `docs/architecture/APPROVAL_NOTIFICATION_INTEGRATION_SUMMARY.md`
   - Content: Decisions, BRs, implementation changes, timeline, V2 roadmap
 
 - [x] **Implementation Checklist**: This document
@@ -350,7 +348,6 @@ If implementation issues arise:
 - [ADR-018](../docs/architecture/decisions/ADR-018-approval-notification-v1-integration.md)
 - [Business Requirements](../docs/requirements/APPROVAL_NOTIFICATION_BUSINESS_REQUIREMENTS.md)
 - [Multi-Step Workflow Examples](../docs/analysis/MULTI_STEP_WORKFLOW_EXAMPLES.md)
-- [Integration Summary](../docs/architecture/APPROVAL_NOTIFICATION_INTEGRATION_SUMMARY.md)
 
 ### **Code**
 - [AIAnalysis CRD Types](../api/aianalysis/v1alpha1/aianalysis_types.go)

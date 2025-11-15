@@ -182,11 +182,6 @@ make manifests
 
 ## 📚 **Reference Documents**
 
-- `docs/analysis/CRD_IMPLEMENTATION_DECISION.md` - Why we chose Option A
-- `docs/analysis/OPTION_A_CONFLICT_ASSESSMENT.md` - Detailed conflict analysis
-- `docs/analysis/PHASE_1_PREREQUISITE_CRD_SETUP.md` - Original prerequisite plan
-- `docs/analysis/PHASE_1_IMPLEMENTATION_GUIDE.md` - Phase 1 implementation steps
-- `docs/analysis/PHASE_1_IMPLEMENTATION_STATUS.md` - Phase 1 progress tracker
 
 ---
 
