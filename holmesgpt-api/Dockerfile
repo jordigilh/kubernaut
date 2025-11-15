@@ -32,11 +32,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Runtime stage - Red Hat UBI9 Python 3.12
 FROM registry.access.redhat.com/ubi9/python-312:latest
 
-# Install runtime dependencies
+# Install runtime dependencies including kubectl for HolmesGPT SDK
 USER root
 RUN dnf update -y && \
 	dnf install -y ca-certificates tzdata && \
-	dnf clean all
+	dnf clean all && \
+	# Install kubectl for HolmesGPT SDK kubernetes toolsets
+	curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+	chmod +x kubectl && \
+	mv kubectl /usr/local/bin/kubectl
 
 # Set working directory (UBI9 Python already has UID 1001 user)
 WORKDIR /opt/app-root/src
@@ -79,10 +83,10 @@ LABEL name="kubernaut-holmesgpt-api" \
 	version="1.0.0" \
 	release="1" \
 	summary="HolmesGPT API - AI-Powered Recovery Analysis Service" \
-	description="A Python microservice component of Kubernaut that provides AI-powered recovery analysis for Kubernetes remediation using HolmesGPT SDK and LLM integration." \
+	description="A Python microservice component of Kubernaut that provides AI-powered recovery analysis for Kubernaut using HolmesGPT SDK and LLM integration." \
 	maintainer="jgil@redhat.com" \
-	component="ai-analysis" \
+	component="holmesgpt-api" \
 	part-of="kubernaut" \
-	io.k8s.description="HolmesGPT API Service for AI-powered Kubernetes remediation analysis" \
+	io.k8s.description="HolmesGPT API Service for Kubernaut" \
 	io.k8s.display-name="Kubernaut HolmesGPT API" \
 	io.openshift.tags="kubernaut,holmesgpt,ai,llm,recovery,python,microservice"
