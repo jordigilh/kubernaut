@@ -547,7 +547,6 @@ kubernaut/
 └── docs/
     └── development/
         ├── ENVIRONMENT_SETUP_GUIDE.md  ← Setup docs ✅
-        └── ENV_FILES_TRIAGE_ANALYSIS.md ← Analysis ✅
 ```
 
 ### Developer Commands

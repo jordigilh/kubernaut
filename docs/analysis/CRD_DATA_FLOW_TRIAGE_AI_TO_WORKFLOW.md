@@ -611,7 +611,6 @@ AIAnalysis.status provides **all critical data** needed by WorkflowExecution. No
 - [docs/services/crd-controllers/03-workflowexecution/crd-schema.md](mdc:docs/services/crd-controllers/03-workflowexecution/crd-schema.md)
 - [docs/services/crd-controllers/03-workflowexecution/integration-points.md](mdc:docs/services/crd-controllers/03-workflowexecution/integration-points.md)
 - [docs/services/crd-controllers/05-remediationorchestrator/integration-points.md](mdc:docs/services/crd-controllers/05-remediationorchestrator/integration-points.md)
-- [docs/analysis/CRD_DATA_FLOW_TRIAGE_REMEDIATION_TO_AI.md](mdc:docs/analysis/CRD_DATA_FLOW_TRIAGE_REMEDIATION_TO_AI.md) (Processor → AIAnalysis)
 
 ---
 
