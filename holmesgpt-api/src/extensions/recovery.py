@@ -111,12 +111,13 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
         )
 
     # Create config for SDK with enabled toolsets
-    # For built-in toolsets (kubernetes, prometheus), we only need to pass {"enabled": True}
-    # The ToolsetManager will load the full toolset definitions from built-in toolsets
-    # and apply our enabled flag to override the default (which is disabled)
+    # Built-in toolsets use namespace format: "kubernetes/core", "kubernetes/live-metrics", etc.
+    # For RCA, we need:
+    # - kubernetes/core: kubectl access for cluster resources
+    # - kubernetes/live-metrics: real-time metrics from cluster
     toolsets_config = {
-        "kubernetes": {"enabled": True},
-        "prometheus": {"enabled": True}
+        "kubernetes/core": {"enabled": True},
+        "kubernetes/live-metrics": {"enabled": True},
     }
 
     # Allow app_config to override toolset configuration
@@ -128,7 +129,7 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
     config_data = {
         "model": model_name,  # Pass through as-is
         "api_base": os.getenv("LLM_ENDPOINT"),
-        "toolsets": toolsets_config,  # Enable kubernetes and prometheus toolsets
+        "toolsets": toolsets_config,  # Enable kubernetes toolsets for RCA
     }
 
     try:
