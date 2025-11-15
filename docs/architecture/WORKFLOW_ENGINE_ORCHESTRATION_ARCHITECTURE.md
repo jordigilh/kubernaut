@@ -1,3 +1,4 @@
+**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 # Workflow Engine & Orchestration Architecture
 
 ## Overview

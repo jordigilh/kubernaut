@@ -3,6 +3,7 @@
 **Document Version**: 3.1
 **Date**: October 31, 2025
 **Status**: V1 Implementation Focus (11 Services)
+**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Previous**: [Requirements-Based Architecture Diagram Original](REQUIREMENTS_BASED_ARCHITECTURE_DIAGRAM_ORIGINAL.md)
 
 ## 📋 Version History

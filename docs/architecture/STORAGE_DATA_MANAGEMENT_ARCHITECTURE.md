@@ -1,3 +1,4 @@
+**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 # Storage & Data Management Architecture
 
 ## Overview
