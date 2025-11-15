@@ -498,8 +498,17 @@ kubectl apply -f pipelinerun-v1.1.yaml
 
 ## Changelog
 
-### Version 1.0 (2025-11-15)
-- Initial decision document
-- 100% confidence based on official Tekton documentation
-- Approved for v1.0 implementation
+### Version 1.1 (2025-11-15)
 
+**Service Naming Corrections**: Updated "Workflow Engine" → "Remediation Execution Engine" per ADR-035.
+
+**Changes**:
+- Updated all architecture diagrams and workflow descriptions
+- Aligned terminology with authoritative ADR-035
+- No functional changes to OCI bundle implementation
+
+### Version 1.0 (2025-11-15)
+
+**Initial Release**: Approved design decision for Tekton Pipeline OCI Bundles.
+
+---

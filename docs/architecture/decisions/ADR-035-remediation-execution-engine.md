@@ -343,3 +343,21 @@ This schema allows:
 - **Success Tracking**: Store execution results in Data Storage Service (ADR-033)
 - **Extensibility**: Add `ansiblePlaybook` field in Phase 2 for hybrid workflows
 
+
+---
+
+## Changelog
+
+### Version 1.1 (2025-11-15)
+
+**Documentation Update**: Confirmed as authoritative source for service naming conventions.
+
+**Changes**:
+- Added reference to NAMING_CONVENTION_REMEDIATION_EXECUTION.md
+- Confirmed "Remediation Execution Engine" as the architectural name
+- Confirmed "RemediationExecution" as the technical/CRD name
+- No changes to original ADR decision or rationale
+
+### Version 1.0 (2025-11-05)
+
+**Initial Release**: Accepted ADR for using Tekton Pipelines as the remediation execution engine.
