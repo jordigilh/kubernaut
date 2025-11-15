@@ -1,7 +1,25 @@
 # Kubernaut - Approved 10-Service Communication Architecture
 
+**Version**: 1.1
+**Date**: November 15, 2025
+**Status**: Updated - Service Naming Corrections
+
+## Changelog
+
+### Version 1.1 (2025-11-15)
+
+**Service Naming Corrections**: Corrected "Workflow Engine" → "Remediation Execution Engine" per ADR-035.
+
+**Changes**:
+- Updated all references to use correct service naming
+- Aligned terminology with authoritative ADR-035
+- Maintained consistency with NAMING_CONVENTION_REMEDIATION_EXECUTION.md
+
+---
+
+
 **Document Version**: 2.0
-**Date**: September 28, 2025
+**Date**: 2025-11-15
 **Status**: **APPROVED** - Aligned with Official Architecture Specification
 **Module**: 10-Service Microservices Communication Layer
 
@@ -510,7 +528,7 @@ Changes:
 #### 7.2.1 API Versioning
 
 ```yaml
-Versioning Strategy:
+**Version**: 2.1
   - Semantic versioning for service APIs
   - Backward compatibility for 2 major versions
   - Deprecation notices with 6-month timeline

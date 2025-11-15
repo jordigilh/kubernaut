@@ -1,5 +1,23 @@
 # Scenario A: Recoverable Failure - Detailed Sequence Diagram
 
+**Version**: 1.1
+**Date**: November 15, 2025
+**Status**: Updated - Service Naming Corrections
+
+## Changelog
+
+### Version 1.1 (2025-11-15)
+
+**Service Naming Corrections**: Corrected "Workflow Engine" → "Remediation Execution Engine" per ADR-035.
+
+**Changes**:
+- Updated all references to use correct service naming
+- Aligned terminology with authoritative ADR-035
+- Maintained consistency with NAMING_CONVENTION_REMEDIATION_EXECUTION.md
+
+---
+
+
 **Document Version**: 1.1 (SUPERSEDED)
 **Date**: October 31, 2025
 **Purpose**: Detailed sequence diagram for Scenario A (Recoverable Failure - Most Common 92.3% of cases)
@@ -11,6 +29,7 @@
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
 | 1.1 | Oct 31, 2025 | Updated diagram: K8s Executor → Tekton Pipelines (per ADR-023, ADR-025) | SUPERSEDED |
+| 1.2 | Nov 15, 2025 | Service naming correction: "Workflow Engine" → "Remediation Execution Engine" (per ADR-035) | Current |
 | 1.0 | Oct 8, 2025 | Initial version | SUPERSEDED |
 
 ---
