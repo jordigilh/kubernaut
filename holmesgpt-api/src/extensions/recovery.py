@@ -237,7 +237,10 @@ The following playbooks have been identified as potentially relevant for this fa
             # Add parameters if available (DD-PLAYBOOK-003)
             parameters = playbook.get('parameters', [])
             if parameters:
-                prompt += "**Parameters** (populate these if recommending this playbook):\n"
+                playbook_id = playbook.get('id', 'N/A')
+                playbook_name = playbook.get('name', 'Unknown')
+                prompt += f"**Parameters for {playbook_name} ({playbook_id})**:\n"
+                prompt += "(Populate these if recommending this playbook in your strategy)\n\n"
                 for param in parameters:
                     param_name = param.get('name', 'Unknown')
                     param_desc = param.get('description', 'No description')
@@ -245,15 +248,15 @@ The following playbooks have been identified as potentially relevant for this fa
                     param_type = param.get('type', 'string')
                     required_marker = "**REQUIRED**" if param_required else "optional"
                     prompt += f"- `{param_name}` ({param_type}, {required_marker}): {param_desc}\n"
-                    
+
                     # Add enum values if available
                     if 'enum' in param:
                         prompt += f"  - Allowed values: {param['enum']}\n"
-                    
+
                     # Add dependency info if available
                     if 'depends_on' in param:
                         prompt += f"  - Depends on: {param['depends_on']}\n"
-                    
+
                     # Add min/max constraints if available
                     if 'minimum' in param or 'maximum' in param:
                         constraints = []
@@ -262,11 +265,11 @@ The following playbooks have been identified as potentially relevant for this fa
                         if 'maximum' in param:
                             constraints.append(f"max: {param['maximum']}")
                         prompt += f"  - Constraints: {', '.join(constraints)}\n"
-                    
+
                     # Add pattern if available
                     if 'pattern' in param:
                         prompt += f"  - Pattern: {param['pattern']}\n"
-                    
+
                     # Add default if available
                     if 'default' in param:
                         prompt += f"  - Default: {param['default']}\n"
