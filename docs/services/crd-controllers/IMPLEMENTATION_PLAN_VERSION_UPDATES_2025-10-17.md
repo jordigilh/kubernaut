@@ -116,7 +116,6 @@ All affected implementation plans have been updated to reflect:
 
 **Related Documentation**:
 - [ADR-018 Approval Notifications](../../architecture/decisions/ADR-018-approval-notification-v1-integration.md)
-- [Approval Notification Integration Summary](../../architecture/APPROVAL_NOTIFICATION_INTEGRATION_SUMMARY.md)
 
 ---
 
