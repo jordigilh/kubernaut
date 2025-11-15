@@ -1,7 +1,7 @@
 # Kubernaut CRD Architecture
 
-**Version**: 1.0.0
-**Date**: October 20, 2025
+**Version**: 1.1.0
+**Date**: November 15, 2025
 **Status**: ✅ Authoritative Reference
 **Supersedes**: [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) (DEPRECATED)
 
@@ -1873,6 +1873,19 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 
 ## Changelog
 
+
+### Version 1.1.0 (2025-11-15)
+
+**Service Naming Corrections**: Corrected service naming throughout document per ADR-035.
+
+**Changes**:
+- Replaced "RemediationProcessing" → "SignalProcessing" (CRD controller #2)
+- Replaced "WorkflowExecution" → "RemediationExecution" (CRD controller #4)
+- Updated all CRD specifications, code examples, and diagrams
+- Aligned terminology with authoritative ADR-035
+- Created NAMING_CONVENTION_REMEDIATION_EXECUTION.md reference document
+
+**Impact**: Documentation consistency, no code changes required.
 ### Version 1.0.0 (2025-10-20)
 
 **Initial Release**: Authoritative CRD architecture document based on service specifications, implementation plans, and ADRs.

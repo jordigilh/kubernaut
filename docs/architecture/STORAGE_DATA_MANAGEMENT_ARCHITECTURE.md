@@ -1,5 +1,40 @@
 # Storage & Data Management Architecture
 
+**Version**: 1.1
+**Date**: November 15, 2025
+**Status**: Updated - Service Naming Corrections
+
+## Changelog
+
+### Version 1.1 (2025-11-15)
+
+**Service Naming Corrections**: Corrected "Workflow Engine" → "Remediation Execution Engine" per ADR-035.
+
+**Changes**:
+- Updated all references to use correct service naming
+- Aligned terminology with authoritative ADR-035
+- Maintained consistency with NAMING_CONVENTION_REMEDIATION_EXECUTION.md
+
+---
+
+
+**Version**: 1.1  
+**Date**: 2025-11-15  
+**Status**: Updated  
+
+## Changelog
+
+### Version 1.1 (2025-11-15)
+- **Service Naming Correction**: Replaced all instances of "Workflow Engine" with "Remediation Execution Engine" per ADR-035
+- **Terminology Alignment**: Updated to match authoritative naming convention (RemediationExecution CRD, Remediation Execution Engine architectural concept)
+- **Documentation Consistency**: Aligned with NAMING_CONVENTION_REMEDIATION_EXECUTION.md reference document
+
+### Version 1.0 (Original)
+- Initial document creation
+
+---
+
+
 ## Overview
 
 This document describes the comprehensive storage and data management architecture for the Kubernaut system, enabling efficient data persistence, intelligent caching, vector similarity operations, and scalable data processing for autonomous operations.

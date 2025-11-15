@@ -1,5 +1,23 @@
 # Step Failure Recovery Architecture
 
+**Version**: 1.1
+**Date**: November 15, 2025
+**Status**: Updated - Service Naming Corrections
+
+## Changelog
+
+### Version 1.1 (2025-11-15)
+
+**Service Naming Corrections**: Corrected "Workflow Engine" → "Remediation Execution Engine" per ADR-035.
+
+**Changes**:
+- Updated all references to use correct service naming
+- Aligned terminology with authoritative ADR-035
+- Maintained consistency with NAMING_CONVENTION_REMEDIATION_EXECUTION.md
+
+---
+
+
 **Document Version**: 1.1
 **Date**: October 8, 2025 (Updated)
 **Purpose**: Comprehensive design principles and architecture for handling workflow step execution failures and completing remediation
