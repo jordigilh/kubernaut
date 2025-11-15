@@ -3,7 +3,6 @@
 **Document Version**: 2.0
 **Date**: January 2025
 **Status**: V1/V2 Development Strategy and Timeline
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Parent**: [Architecture Overview](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)
 
 ---
@@ -40,7 +39,7 @@ This roadmap defines the phased implementation approach for Kubernaut, focusing 
 | **Alert Gateway** | ✅ Full Implementation | HTTP webhooks, tracking initiation | <50ms forwarding, 99.9% uptime |
 | **Remediation Processor** | ✅ Full Implementation | Lifecycle management, enrichment, environment classification | <5s processing, tracking ID creation, >99% production accuracy |
 | **AI Analysis Engine** | 🔄 HolmesGPT-Only | Investigation via HolmesGPT-API | <10s analysis, 85% accuracy |
-| **Workflow Engine** | ✅ Full Implementation | Orchestration, resilience | >90% success rate, <10% failures |
+| **Remediation Execution Engine** | ✅ Full Implementation | Orchestration, resilience | >90% success rate, <10% failures |
 | **Action Executor** | ✅ Full Implementation | 25+ Kubernetes actions | >95% execution success |
 | **HolmesGPT-API** | ✅ Full Implementation | Investigation service | Investigation-only, no execution |
 | **Context Orchestrator** | 🔄 HolmesGPT-Optimized | Single-tier context management | <500ms retrieval, 85% relevance |
@@ -54,7 +53,7 @@ flowchart TB
     subgraph V1 ["Version 1 - HolmesGPT Integration"]
         GATEWAY[Alert Gateway] --> PROCESSOR[Remediation Processor<br/>+ Environment Classification]
         PROCESSOR --> AI[AI Analysis Engine]
-        AI --> WORKFLOW[Workflow Engine]
+        AI --> WORKFLOW[Remediation Execution Engine]
         WORKFLOW --> EXECUTOR[Action Executor]
 
         AI <--> HOLMES[HolmesGPT-API]
@@ -114,7 +113,7 @@ Days 13-14: Context Orchestrator
 
 #### **Week 3: Workflow & Execution**
 ```yaml
-Days 15-17: Workflow Engine
+Days 15-17: Remediation Execution Engine
   - Orchestration logic
   - Resilience mechanisms
   - Learning framework

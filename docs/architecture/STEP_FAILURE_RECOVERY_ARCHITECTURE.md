@@ -4,7 +4,6 @@
 **Date**: October 8, 2025 (Updated)
 **Purpose**: Comprehensive design principles and architecture for handling workflow step execution failures and completing remediation
 **Status**: ✅ **APPROVED & ALIGNED WITH SEQUENCE DIAGRAM**
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Confidence**: 95% (High confidence - validated against BR-WF-RECOVERY-* requirements and DD-001)
 
 ---
@@ -799,7 +798,7 @@ kubernaut_failure_analysis_duration_seconds{component="holmesgpt"} 3.2
 
 - [Resilient Workflow AI Sequence Diagram](RESILIENT_WORKFLOW_AI_SEQUENCE_DIAGRAM.md)
 - [Resilience Patterns and Failure Handling](RESILIENCE_PATTERNS.md)
-- [Workflow Engine Requirements](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)
+- [Remediation Execution Engine Requirements](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)
 - [CRD Data Flow Analysis](../analysis/CRD_DATA_FLOW_COMPREHENSIVE_SUMMARY.md)
 - [WorkflowExecution Controller Implementation](../services/crd-controllers/03-workflowexecution/controller-implementation.md)
 - [KubernetesExecutor Controller Implementation](../services/crd-controllers/04-kubernetesexecutor/controller-implementation.md)

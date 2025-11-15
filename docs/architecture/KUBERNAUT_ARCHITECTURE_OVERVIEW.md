@@ -3,7 +3,6 @@
 **Document Version**: 3.1
 **Date**: October 31, 2025
 **Status**: V1 Implementation Focus (11 Services)
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Previous**: [Requirements-Based Architecture Diagram Original](REQUIREMENTS_BASED_ARCHITECTURE_DIAGRAM_ORIGINAL.md)
 
 ## 📋 Version History
@@ -64,7 +63,7 @@ flowchart LR
 #### **🎯 Core Processing (3 services)**
 - **Gateway Service** (8080): Multi-signal webhook reception (alerts, events, alarms)
 - **Remediation Processor** (8081): Signal lifecycle management, enrichment & environment classification
-- **Workflow Engine** (8083): Orchestration & coordination
+- **Remediation Execution Engine** (8083): Orchestration & coordination
 
 #### **🔍 Investigation Services (3 services)**
 - **AI Analysis Engine** (8082): **HolmesGPT-Only** integration (NO direct LLM providers)
@@ -105,7 +104,7 @@ flowchart TB
     end
 
     subgraph COORDINATION ["🎯 Coordination Layer"]
-        WORKFLOW[Workflow Engine<br/>• Parses recommendations<br/>• Validates actions<br/>• Coordinates execution]
+        WORKFLOW[Remediation Execution Engine<br/>• Parses recommendations<br/>• Validates actions<br/>• Coordinates execution]
     end
 
     INVESTIGATION --> COORDINATION

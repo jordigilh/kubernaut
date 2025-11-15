@@ -3,7 +3,6 @@
 **Document Version**: 4.0
 **Date**: January 2025
 **Status**: V1 Implementation Focus (10 Services)
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 
 ---
 
@@ -74,7 +73,7 @@ These documents detail how Kubernaut's services communicate and integrate to cre
    - **Purpose**: Workflow engine design and orchestration patterns
    - **Audience**: Developers, workflow designers
    - **Key Content**: Workflow execution, state management, error handling
-   - **Connects To**: Service Catalog (Workflow Engine) → Detailed implementation
+   - **Connects To**: Service Catalog (Remediation Execution Engine) → Detailed implementation
    - **Read Time**: 18 minutes
 
 8. **[RESILIENT_WORKFLOW_AI_SEQUENCE_DIAGRAM.md](RESILIENT_WORKFLOW_AI_SEQUENCE_DIAGRAM.md)**

@@ -1,7 +1,6 @@
 # DD-PLAYBOOK-011: Tekton Pipeline OCI Bundles for Playbook Execution
 
 **Status**: ✅ Approved  
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Version**: 1.0  
 **Date**: 2025-11-15  
 **Confidence**: 100%  
@@ -10,7 +9,7 @@
 
 ## Context
 
-Kubernaut v1.0 requires a mechanism to execute operator-defined remediation playbooks with parameters provided by the LLM. The current approach involves maintaining a generic "playbook-executor" Pipeline in the Workflow Engine that runs container images.
+Kubernaut v1.0 requires a mechanism to execute operator-defined remediation playbooks with parameters provided by the LLM. The current approach involves maintaining a generic "playbook-executor" Pipeline in the Remediation Execution Engine that runs container images.
 
 An alternative approach is to store playbooks as **Tekton Pipeline OCI Bundles** that can be executed directly by Tekton with parameters.
 
@@ -24,25 +23,25 @@ Playbooks will be packaged as OCI bundles containing:
 1. Tekton Pipeline definition (thin wrapper around container image)
 2. Parameter schema (JSON Schema)
 
-The Workflow Engine will create PipelineRuns that reference OCI bundles directly, and Tekton will pull and execute the Pipeline with provided parameters.
+The Remediation Execution Engine will create PipelineRuns that reference OCI bundles directly, and Tekton will pull and execute the Pipeline with provided parameters.
 
 ---
 
 ## Rationale
 
-### 1. Simpler Workflow Engine (HIGH CONFIDENCE - 100%)
+### 1. Simpler Remediation Execution Engine (HIGH CONFIDENCE - 100%)
 
 **Current Approach** (Generic Pipeline):
-- Workflow Engine must maintain generic "playbook-executor" Pipeline
+- Remediation Execution Engine must maintain generic "playbook-executor" Pipeline
 - Complex parameter marshaling to environment variables
 - Generic Pipeline must handle all playbook types
 
 **OCI Bundle Approach**:
 - No generic Pipeline needed (in bundle)
-- Workflow Engine just creates PipelineRun with bundle reference
+- Remediation Execution Engine just creates PipelineRun with bundle reference
 - Tekton handles Pipeline lifecycle
 
-**Result**: Less code to write and maintain in Workflow Engine.
+**Result**: Less code to write and maintain in Remediation Execution Engine.
 
 ### 2. Atomic Versioning (HIGH CONFIDENCE - 100%)
 
@@ -61,13 +60,13 @@ The Workflow Engine will create PipelineRuns that reference OCI bundles directly
 ### 3. Future Flexibility (HIGH CONFIDENCE - 100%)
 
 **Current Approach**:
-- Adding validation/verification steps requires Workflow Engine changes
+- Adding validation/verification steps requires Remediation Execution Engine changes
 - Generic Pipeline limits operator customization
 - Hard to evolve without breaking changes
 
 **OCI Bundle Approach**:
 - Operators can add validation/verification tasks to Pipeline
-- No Workflow Engine changes needed
+- No Remediation Execution Engine changes needed
 - Easy evolution from single-task to multi-task Pipelines
 
 **Result**: Future-proof architecture.
@@ -175,7 +174,7 @@ spec:
 
 **Note**: Container image remains unchanged - same Dockerfile, same scripts.
 
-### Workflow Engine Implementation
+### Remediation Execution Engine Implementation
 
 ```go
 func (w *WorkflowEngine) createPipelineRunFromBundle(
@@ -325,7 +324,7 @@ kubectl create secret docker-registry regcred \
 
 ## Benefits
 
-1. **Simpler Workflow Engine** (HIGH VALUE)
+1. **Simpler Remediation Execution Engine** (HIGH VALUE)
    - No generic Pipeline management
    - Tekton handles Pipeline lifecycle
    - Less code to maintain
@@ -343,7 +342,7 @@ kubectl create secret docker-registry regcred \
 4. **Future Flexibility** (HIGH VALUE)
    - Easy to add validation/verification tasks
    - Operators control Pipeline complexity
-   - No Workflow Engine changes needed
+   - No Remediation Execution Engine changes needed
 
 5. **Industry Standard** (MEDIUM VALUE)
    - OCI bundles are standard in Kubernetes ecosystem
@@ -381,12 +380,12 @@ kubectl create secret docker-registry regcred \
 
 ### Alternative 1: Generic Pipeline Approach (Rejected)
 
-**Approach**: Workflow Engine maintains generic "playbook-executor" Pipeline that runs container images.
+**Approach**: Remediation Execution Engine maintains generic "playbook-executor" Pipeline that runs container images.
 
 **Rejection Reasons**:
-- More complex Workflow Engine (must manage generic Pipeline)
+- More complex Remediation Execution Engine (must manage generic Pipeline)
 - No atomic versioning (Pipeline + container separate)
-- Less flexible (hard to evolve without Workflow Engine changes)
+- Less flexible (hard to evolve without Remediation Execution Engine changes)
 - More code to maintain
 
 ### Alternative 2: Hybrid Approach (Deferred to v1.1)
@@ -402,7 +401,7 @@ kubectl create secret docker-registry regcred \
 
 ## Success Metrics
 
-1. **Workflow Engine Complexity**: <50 lines of code for PipelineRun creation
+1. **Remediation Execution Engine Complexity**: <50 lines of code for PipelineRun creation
 2. **Operator Onboarding**: <10 minutes to create first playbook bundle
 3. **Version Management**: 0% version mismatch incidents
 4. **Execution Success**: >95% of PipelineRuns execute successfully
@@ -417,10 +416,10 @@ kubectl create secret docker-registry regcred \
 - Document OCI bundle creation process
 - Create pipeline.yaml template
 
-### Phase 2: Workflow Engine Implementation (2 days)
+### Phase 2: Remediation Execution Engine Implementation (2 days)
 - Implement `createPipelineRunFromBundle` function
 - Update playbook registration schema (add `tekton_bundle` field)
-- Add Tekton client to Workflow Engine
+- Add Tekton client to Remediation Execution Engine
 
 ### Phase 3: Operator Tooling (2 days)
 - Create automation script for bundle creation

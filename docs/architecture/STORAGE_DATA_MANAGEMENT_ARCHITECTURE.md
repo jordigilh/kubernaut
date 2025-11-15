@@ -1,4 +1,3 @@
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 # Storage & Data Management Architecture
 
 ## Overview
@@ -33,7 +32,7 @@ This document describes the comprehensive storage and data management architectu
 │                                                                 │
 │ Application Layer                                               │
 │ ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│ │ Context API     │  │ Workflow Engine │  │ Intelligence    │ │
+│ │ Context API     │  │ Remediation Execution Engine │  │ Intelligence    │ │
 │ │ Data Access     │  │ State Storage   │  │ Analytics       │ │
 │ └─────────────────┘  └─────────────────┘  └─────────────────┘ │
 │          │                     │                     │         │
@@ -680,7 +679,7 @@ func (cpo *CachePerformanceOptimizer) MonitorPerformance() *CacheMetrics {
 │                                                                 │
 │ Application Services                                            │
 │ ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│ │ Workflow Engine │  │ AI Intelligence │  │ Context API     │ │
+│ │ Remediation Execution Engine │  │ AI Intelligence │  │ Context API     │ │
 │ │                 │  │                 │  │                 │ │
 │ └─────────────────┘  └─────────────────┘  └─────────────────┘ │
 │          │                     │                     │         │
@@ -859,7 +858,7 @@ func (sm *StorageManager) CollectMetrics() *StorageMetrics {
 
 - [AI Context Orchestration Architecture](AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)
 - [Intelligence & Pattern Discovery Architecture](INTELLIGENCE_PATTERN_DISCOVERY_ARCHITECTURE.md)
-- [Workflow Engine & Orchestration Architecture](WORKFLOW_ENGINE_ORCHESTRATION_ARCHITECTURE.md)
+- [Remediation Execution Engine & Orchestration Architecture](WORKFLOW_ENGINE_ORCHESTRATION_ARCHITECTURE.md)
 - [Production Monitoring](PRODUCTION_MONITORING.md)
 - [Resilience Patterns](RESILIENCE_PATTERNS.md)
 
