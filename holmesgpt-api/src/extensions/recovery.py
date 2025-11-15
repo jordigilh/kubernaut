@@ -111,12 +111,14 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
         )
 
     # Create config for SDK with enabled toolsets
-    # Built-in toolsets use namespace format: "kubernetes/core", "kubernetes/live-metrics", etc.
+    # Built-in toolsets use namespace format: "kubernetes/core", "kubernetes/logs", etc.
     # For RCA, we need:
-    # - kubernetes/core: kubectl access for cluster resources
+    # - kubernetes/core: kubectl access for cluster resources (describe, get, events)
+    # - kubernetes/logs: pod logs access (current and previous logs)
     # - kubernetes/live-metrics: real-time metrics from cluster
     toolsets_config = {
         "kubernetes/core": {"enabled": True},
+        "kubernetes/logs": {"enabled": True},
         "kubernetes/live-metrics": {"enabled": True},
     }
 
