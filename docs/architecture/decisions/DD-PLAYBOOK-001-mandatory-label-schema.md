@@ -68,13 +68,27 @@ risk_tolerance:
   - medium   # Balanced remediation (e.g., 25% resource increase, rolling restart)
   - high     # Aggressive remediation (e.g., 50% resource increase, immediate restart)
 
-signal_type:  # Examples (not exhaustive)
-  - pod-oomkilled
-  - pod-crashloop
-  - deployment-failed
-  - node-notready
-  - pvc-pending
-  - service-unavailable
+signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
+  # CRITICAL PRINCIPLE: Use exact event reason strings from Kubernetes/Prometheus
+  # WHY: LLM uses signal_type to query the same source system during investigation
+  #      Example: signal_type="OOMKilled" → LLM runs: kubectl get events | grep "OOMKilled"
+  #      If we transform "OOMKilled" → "pod-oomkilled", LLM queries will fail
+  #
+  # SOURCE: Kubernetes API - kubectl describe pod → State.Reason field
+  # SOURCE: Prometheus - kube_pod_container_status_terminated_reason{reason="..."}
+  #
+  # Examples (use exact K8s event reason strings):
+  - OOMKilled              # Container killed due to out-of-memory
+  - CrashLoopBackOff       # Container repeatedly crashing
+  - ImagePullBackOff       # Failed to pull container image
+  - ErrImagePull           # Image pull error
+  - NodeNotReady           # Node is not ready
+  - Evicted                # Pod evicted due to resource pressure
+  - Error                  # Generic container error
+  - Completed              # Container completed successfully
+  #
+  # RULE: Signal Processing MUST pass through domain-specific values unchanged
+  # RULE: NO normalization, NO kebab-case conversion, NO transformation
 
 component:  # Kubernetes resource types
   - pod

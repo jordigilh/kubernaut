@@ -463,26 +463,24 @@ async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client
         failure_context = request_data.get("failure_context", {})
         context = request_data.get("context", {})
 
-        # Map failure to signal type
+        # Extract ALL 7 mandatory labels per DD-PLAYBOOK-001
         signal_type = failure_context.get("error", "unknown")
-
-        # Get priority/severity from context (should already be in P-format: P0, P1, P2, P3)
-        # Default to P2 (medium) if not provided
+        severity = context.get("severity", "medium")
+        component = context.get("component", "pod")
+        environment = context.get("environment", "production")
         priority = context.get("priority", "P2")
-        severity = priority.upper() if isinstance(priority, str) else "P2"
+        risk_tolerance = context.get("risk_tolerance", "medium")
+        business_category = context.get("business_category", "*")
 
-        # Determine component from failed action
-        component = failed_action.get("target", "pod")
-
-        # Search for playbooks
+        # Search for playbooks using all 7 fields
         playbooks = await mcp_client.search_playbooks(
             signal_type=signal_type,
             severity=severity,
             component=component,
-            environment="*",
-            priority="*",
-            risk_tolerance="medium",
-            business_category="*",
+            environment=environment,
+            priority=priority,
+            risk_tolerance=risk_tolerance,
+            business_category=business_category,
             limit=5
         )
 
@@ -491,7 +489,11 @@ async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client
             "playbooks_found": len(playbooks),
             "signal_type": signal_type,
             "severity": severity,
-            "component": component
+            "component": component,
+            "environment": environment,
+            "priority": priority,
+            "risk_tolerance": risk_tolerance,
+            "business_category": business_category
         })
 
         return playbooks
