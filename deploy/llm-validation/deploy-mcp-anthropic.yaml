@@ -108,11 +108,8 @@ data:
 
     mcp_servers:
       playbook_catalog_mcp:
+        description: "Playbook catalog MCP server for remediation recommendations"
         url: "http://mock-mcp-server.kubernaut-system.svc.cluster.local:8081"
-        tools:
-          - name: "search_playbook_catalog"
-            endpoint: "/mcp/tools/search_playbook_catalog"
-            description: "Search for remediation playbooks based on incident characteristics"
 ---
 # HolmesGPT API ServiceAccount
 apiVersion: v1

@@ -2,9 +2,9 @@
 External service clients for HolmesGPT API
 """
 
-from src.clients.context_api_client import ContextAPIClient
+from src.clients.mcp_client import MCPClient
 
-__all__ = ["ContextAPIClient"]
+__all__ = ["MCPClient"]
 
 
 
