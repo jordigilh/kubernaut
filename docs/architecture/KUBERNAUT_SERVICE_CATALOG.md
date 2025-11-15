@@ -3,6 +3,7 @@
 **Document Version**: 3.0
 **Date**: January 2025
 **Status**: V1 Implementation Focus (10 Services)
+**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Parent**: [Architecture Overview](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)
 
 ---

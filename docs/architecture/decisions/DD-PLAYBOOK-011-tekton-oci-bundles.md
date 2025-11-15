@@ -1,6 +1,7 @@
 # DD-PLAYBOOK-011: Tekton Pipeline OCI Bundles for Playbook Execution
 
 **Status**: ✅ Approved  
+**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Version**: 1.0  
 **Date**: 2025-11-15  
 **Confidence**: 100%  

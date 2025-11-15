@@ -4,6 +4,7 @@
 **Date**: October 8, 2025 (Updated)
 **Purpose**: Comprehensive design principles and architecture for handling workflow step execution failures and completing remediation
 **Status**: ✅ **APPROVED & ALIGNED WITH SEQUENCE DIAGRAM**
+**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Confidence**: 95% (High confidence - validated against BR-WF-RECOVERY-* requirements and DD-001)
 
 ---

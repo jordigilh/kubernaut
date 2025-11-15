@@ -1,6 +1,7 @@
 # ADR-035: Remediation Execution Engine - Tekton Pipelines
 
 **Status**: Accepted
+**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Date**: 2025-11-05
 **Deciders**: Architecture Team
 **Related**: ADR-033 (Remediation Playbook Catalog)

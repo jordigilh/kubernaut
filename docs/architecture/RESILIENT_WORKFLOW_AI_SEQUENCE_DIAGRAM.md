@@ -4,6 +4,7 @@
 **Date**: October 31, 2025
 **Purpose**: V1 sequence diagram showing HolmesGPT-only AI-powered failure handling and recovery interactions
 **Status**: ⚠️ **SUPERSEDED - HISTORICAL REFERENCE ONLY**
+**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 
 ## 📋 Version History
 
