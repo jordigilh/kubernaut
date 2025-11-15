@@ -1,0 +1,26 @@
+FROM registry.access.redhat.com/ubi9/python-312:latest
+
+WORKDIR /app
+
+USER root
+
+# Install Flask
+RUN pip install --no-cache-dir flask
+
+# Copy mock server
+COPY mock-mcp-server.py /app/
+
+# Set ownership
+RUN chown -R 1001:0 /app && \
+    chmod -R g=u /app
+
+USER 1001
+
+# Expose port
+EXPOSE 8081
+
+# Run the mock server
+CMD ["python", "mock-mcp-server.py"]
+
+
+
