@@ -110,22 +110,15 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
             detail="LLM_MODEL environment variable is required"
         )
 
-    # Get toolset configuration from app config
-    # Default: Enable Kubernetes and Prometheus toolsets for RCA
-    toolsets_config = {
-        "kubernetes": {"enabled": True},
-        "prometheus": {"enabled": True}
-    }
-
-    if app_config and "toolsets" in app_config:
-        # Override with app config if provided
-        toolsets_config = app_config.get("toolsets", toolsets_config)
-
-    # Create config for SDK with toolsets
+    # Create config for SDK
+    # NOTE: We do NOT pass toolsets config here because:
+    # 1. The SDK's Toolset model requires full definitions (name, description, tools list)
+    # 2. Simply passing {"enabled": True} causes validation errors
+    # 3. The SDK will auto-discover and enable built-in toolsets (kubernetes, prometheus)
+    #    based on available credentials and cluster access
     config_data = {
         "model": model_name,  # Pass through as-is
         "api_base": os.getenv("LLM_ENDPOINT"),
-        "toolsets": toolsets_config,  # Pass toolsets to SDK
     }
 
     try:
