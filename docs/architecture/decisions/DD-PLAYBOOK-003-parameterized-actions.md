@@ -467,9 +467,9 @@ Based on the authoritative [Kubernaut Architecture Overview](../../KUBERNAUT_ARC
          │
          ▼
 ┌─────────────────┐
-│ Workflow Engine │  Orchestration & coordination
-│                 │  • Parses LLM recommendations
-│                 │  • Validates playbook parameters
+│ Remediation     │  Orchestration & coordination
+│ Execution Engine│  • Parses LLM recommendations
+│ (CRD Controller)│  • Validates playbook parameters
 │                 │  • Creates Tekton PipelineRuns
 └────────┬────────┘
          │
@@ -490,9 +490,9 @@ Based on the authoritative [Kubernaut Architecture Overview](../../KUBERNAUT_ARC
 
 **Key Architectural Principles:**
 - **Investigation vs Execution Separation**: HolmesGPT investigates (NO execution), Tekton executes
-- **Workflow Engine Coordination**: Parses recommendations, validates actions, coordinates execution
+- **Remediation Execution Engine Coordination**: Parses recommendations, validates actions, coordinates execution
 - **Tekton PipelineRuns**: Kubernetes-native execution of playbook containers
-- **Parameter Flow**: LLM → Workflow Engine → Tekton PipelineRun → Container Environment
+- **Parameter Flow**: LLM → Remediation Execution Engine → Tekton PipelineRun → Container Environment
 
 
 ### Playbook Design Pattern: Single Remediation Per Playbook
@@ -692,7 +692,7 @@ Based on the authoritative [Kubernaut Architecture Overview](../../KUBERNAUT_ARC
 
 ### 3. Tekton PipelineRun Generation
 
-The Workflow Engine generates a Tekton PipelineRun based on the LLM's recommendation:
+The Remediation Execution Engine generates a Tekton PipelineRun based on the LLM's recommendation:
 
 ```yaml
 apiVersion: tekton.dev/v1beta1
@@ -975,7 +975,7 @@ echo "Final replicas: ${FINAL_REPLICAS}"
 ### Success Metrics
 
 **Business Value**:
-- 40% reduction in validation complexity (Workflow Engine + HolmesGPT-API)
+- 40% reduction in validation complexity (Remediation Execution Engine + HolmesGPT-API)
 - 25% reduction in LLM prompt tokens (simpler parameter schemas)
 - 60% improvement in audit trail granularity (Data Storage Service)
 - 30% reduction in container testing burden
@@ -1001,7 +1001,7 @@ Operators may want to implement a single container image that handles multiple r
 
 **Concept**: Playbooks can have two types of parameters:
 1. **Exposed Parameters**: Visible to LLM, must be populated in LLM response
-2. **Hidden Parameters**: Set during registration, NOT exposed to LLM, injected by Workflow Engine
+2. **Hidden Parameters**: Set during registration, NOT exposed to LLM, injected by Remediation Execution Engine
 
 ### Example: Shared Container with Hidden Remediation Type
 
@@ -1226,9 +1226,9 @@ ENTRYPOINT ["ansible-playbook", "/playbooks/oomkill-remediation.yml"]
 
 ---
 
-### Workflow Engine Behavior
+### Remediation Execution Engine Behavior
 
-When creating a Tekton PipelineRun, the Workflow Engine:
+When creating a Tekton PipelineRun, the Remediation Execution Engine:
 
 1. **Reads LLM-provided parameters** from the strategy response
 2. **Reads hidden parameters** from the playbook registration
