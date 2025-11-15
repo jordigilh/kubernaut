@@ -3,7 +3,6 @@
 **Document Version**: 3.0
 **Date**: January 2025
 **Status**: V1 Implementation Focus (10 Services)
-**⚠️ NEEDS REVIEW**: Document uses "Workflow Engine" - should be "Remediation Execution Engine" per ADR-035
 **Parent**: [Architecture Overview](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)
 
 ---
@@ -122,7 +121,7 @@ stateDiagram-v2
 
 ---
 
-### **3. Resilient Workflow Engine Service**
+### **3. Resilient Remediation Execution Engine Service**
 
 #### **Single Responsibility**
 Workflow orchestration, coordination, and feedback-driven learning
@@ -212,7 +211,7 @@ V1 Integration:
 
 #### **Integration Points**
 - **Receives From**: Remediation Processor (enriched alerts + environment context), Context Orchestrator
-- **Sends To**: Workflow Engine (recommendations), Data Storage (results)
+- **Sends To**: Remediation Execution Engine (recommendations), Data Storage (results)
 - **Dependencies**: HolmesGPT-API (primary), Context Orchestrator (context)
 
 #### **Analysis Pipeline**
@@ -366,7 +365,7 @@ Integration:
 ```
 
 #### **Integration Points**
-- **Receives From**: Workflow Engine (validated actions)
+- **Receives From**: Remediation Execution Engine (validated actions)
 - **Sends To**: Kubernetes Clusters, Data Storage (results), Monitoring Service
 - **Dependencies**: Kubernetes API (required), RBAC (required)
 
@@ -526,7 +525,7 @@ Alert Correlation:
 ```
 
 #### **Integration Points**
-- **Receives From**: RemediationOrchestrator (creates NotificationRequest CRDs), Workflow Engine (action results)
+- **Receives From**: RemediationOrchestrator (creates NotificationRequest CRDs), Remediation Execution Engine (action results)
 - **Sends To**: External notification systems (Slack, Teams, Email), Data Storage (audit trail)
 - **Dependencies**: NotificationRequest CRD (required), External notification APIs (required), Data Storage (optional, for long-term audit)
 - **Architecture Change**: Migrated from stateless HTTP API to CRD controller for data loss prevention and complete audit trail
@@ -542,7 +541,7 @@ Alert Correlation:
 | **Remediation Processor** | Data Storage | Context Orchestrator | None |
 | **Environment Classifier** | Kubernetes API, Data Storage | None | None |
 | **AI Analysis Engine** | HolmesGPT-API | Context Orchestrator | None |
-| **Workflow Engine** | Action Executor | HolmesGPT-API | None |
+| **Remediation Execution Engine** | Action Executor | HolmesGPT-API | None |
 | **Action Executor** | Kubernetes API | RBAC Service | Kubernetes Clusters |
 | **HolmesGPT-API** | AI Providers | Kubernetes API | OpenAI, Anthropic, Ollama |
 | **Context Orchestrator** | Data Storage | Kubernetes API | None |
@@ -556,7 +555,7 @@ Alert Correlation:
 | **Alert Gateway** | <50ms | 10,000/min | 99.9% |
 | **Remediation Processor** | <5s | 1,000/min | 99.5% |
 | **AI Analysis Engine** | <10s | 100/min | 99.0% |
-| **Workflow Engine** | <30s | 500/min | 99.5% |
+| **Remediation Execution Engine** | <30s | 500/min | 99.5% |
 | **Action Executor** | <60s | 200/min | 99.0% |
 | **HolmesGPT-API** | <15s | 50/min | 95.0% |
 | **Context Orchestrator** | <500ms | 2,000/min | 99.0% |

@@ -748,7 +748,7 @@ curl -X DELETE http://playbook-registry:8080/api/v1/playbooks/pod-oom-recovery
 
 ## Related Decisions
 
-- **Builds On**: ADR-027 (Workflow Engine Architecture)
+- **Builds On**: ADR-027 (Remediation Execution Engine Architecture)
 - **Extends**: BR-STORAGE-031 (Success Rate Aggregation)
 - **Relates To**: ADR-032 (Data Access Layer Isolation)
 
