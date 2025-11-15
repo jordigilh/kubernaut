@@ -6,13 +6,15 @@
 		"namespace": "production"
 	},
 	"failure_context": {
-		"error": "OOMKill",
+		"error": "OOMKilled",
 		"error_message": "Pod was OOMKilled after scaling to 3 replicas. Memory usage exceeded 512Mi limit."
 	},
 	"context": {
 		"cluster": "prod-cluster",
 		"namespace": "production",
+		"severity": "high",
 		"priority": "P1",
+		"component": "deployment",
 		"target": {
 			"type": "deployment",
 			"name": "my-app",
@@ -20,6 +22,7 @@
 			"desired_replicas": 3
 		},
 		"environment": "production",
+		"risk_tolerance": "low",
 		"business_category": "cost-management"
 	},
 	"constraints": {
