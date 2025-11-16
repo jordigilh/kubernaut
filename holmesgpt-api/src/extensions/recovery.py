@@ -23,24 +23,25 @@ from holmes.config import Config
 from holmes.core.models import InvestigateRequest, InvestigationResult
 from holmes.core.investigation import investigate_issues
 
-# Stateless DAL for HolmesGPT SDK integration (no Robusta Platform)
+# Minimal DAL for HolmesGPT SDK integration (no Robusta Platform)
 class MinimalDAL:
     """
-    Stateless DAL for HolmesGPT SDK integration
+    Minimal DAL for HolmesGPT SDK integration (no Robusta Platform)
 
     Architecture Decision (DD-HOLMESGPT-014):
-    Kubernaut uses a stateless architecture that does NOT integrate with Robusta Platform.
+    Kubernaut does NOT integrate with Robusta Platform.
 
     Kubernaut Provides Equivalent Features Via:
+    - Workflow catalog → PostgreSQL with Data Storage Service (not Robusta Platform)
     - Historical data → Context API (not Supabase)
-    - Custom investigation logic → Rego policies in WorkflowExecution Controller
+    - Custom investigation logic → Rego policies in RemediationExecution Controller
     - LLM credentials → Kubernetes Secrets (not database)
-    - Remediation state → CRDs (RemediationRequest, WorkflowExecution)
+    - Remediation state → CRDs (RemediationRequest, AIAnalysis, RemediationExecution)
 
     Result: No Robusta Platform database integration needed.
 
     This MinimalDAL satisfies HolmesGPT SDK's DAL interface requirements
-    without connecting to any database.
+    without connecting to any Robusta Platform database.
 
     Note: We still install supabase/postgrest dependencies (~50MB) because
     the SDK requires them, but this class ensures they're never used at runtime.
@@ -51,7 +52,7 @@ class MinimalDAL:
         self.cluster = cluster_name
         self.cluster_name = cluster_name  # Backwards compatibility
         self.enabled = False  # Disable Robusta platform features
-        logger.info(f"Using MinimalDAL (stateless mode) for cluster={cluster_name}")
+        logger.info(f"Using MinimalDAL (no Robusta Platform) for cluster={cluster_name}")
 
     def get_issue_data(self, issue_id):
         """
@@ -65,7 +66,7 @@ class MinimalDAL:
         """
         Custom investigation runbooks (NOT USED)
 
-        Kubernaut: Rego policies in WorkflowExecution Controller provide custom logic
+        Kubernaut: Rego policies in RemediationExecution Controller provide custom logic
 
         Returns None to signal no custom runbooks (SDK will use defaults)
         """
@@ -75,7 +76,7 @@ class MinimalDAL:
         """
         Account-level investigation guidelines (NOT USED)
 
-        Kubernaut: WorkflowExecution Controller manages investigation flow
+        Kubernaut: RemediationExecution Controller manages investigation flow
 
         Returns None to signal no global instructions (SDK will use defaults)
         """
@@ -139,7 +140,7 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
         "model": model_name,  # Pass through as-is
         "api_base": os.getenv("LLM_ENDPOINT"),
         "toolsets": toolsets_config,  # Enable kubernetes toolsets for RCA
-        "mcp_servers": mcp_servers_config,  # Register MCP servers (e.g., playbook catalog)
+        "mcp_servers": mcp_servers_config,  # Register MCP servers (e.g., workflow catalog)
     }
 
     try:
@@ -156,205 +157,369 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
 
 def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
     """
-    Create investigation prompt for recovery analysis
-
-    Maps recovery request to HolmesGPT investigation prompt format
+    Create investigation prompt with complete ADR-041 v3.3 hybrid format.
+    
+    Reference: ADR-041 v3.3 - LLM Prompt and Response Contract
     """
+    # Extract fields
+    signal_type = request_data.get("signal_type", "Unknown")
+    severity = request_data.get("severity", "unknown")
+    namespace = request_data.get("resource_namespace", "unknown")
+    resource_kind = request_data.get("resource_kind", "unknown")
+    resource_name = request_data.get("resource_name", "unknown")
+    environment = request_data.get("environment", "unknown")
+    priority = request_data.get("priority", "P2")
+    risk_tolerance = request_data.get("risk_tolerance", "medium")
+    business_category = request_data.get("business_category", "standard")
+    
     failed_action = request_data.get("failed_action", {})
     failure_context = request_data.get("failure_context", {})
-    investigation_result = request_data.get("investigation_result", {})
-    context = request_data.get("context", {})
-    constraints = request_data.get("constraints", {})
+    error_message = failure_context.get("error_message", "Unknown error")
+    description = failure_context.get("description", "")
+    
+    # Timing information
+    firing_time = request_data.get('firing_time', 'Unknown')
+    received_time = request_data.get('received_time', 'Unknown')
+    
+    # Deduplication and storm
+    is_duplicate = request_data.get('is_duplicate', False)
+    occurrence_count = request_data.get('occurrence_count', 0)
+    first_seen = request_data.get('first_seen', 'Unknown')
+    last_seen = request_data.get('last_seen', 'Unknown')
+    is_storm = request_data.get('is_storm', False)
+    storm_alert_count = request_data.get('storm_alert_count', 0)
+    storm_type = request_data.get('storm_type', 'Unknown')
+    storm_window = request_data.get('storm_window', '5m')
+    affected_resources = request_data.get('affected_resources', [])
+    
+    # Cluster context
+    cluster_name = request_data.get('cluster_name', 'unknown')
+    signal_source = request_data.get('signal_source', 'unknown')
+    signal_labels = request_data.get('signal_labels', {})
+    
+    # Generate contextual descriptions
+    priority_descriptions = {
+        "P0": f"P0 (highest priority) - This is a {business_category} service requiring immediate attention",
+        "P1": "P1 (high priority) - This service requires prompt attention",
+        "P2": "P2 (medium priority) - This service requires timely resolution",
+        "P3": "P3 (low priority) - This service can be addressed during normal operations"
+    }
+    
+    risk_guidance = {
+        "low": "low (conservative remediation required - avoid aggressive restarts or scaling)",
+        "medium": "medium (balanced approach - standard remediation actions permitted)",
+        "high": "high (aggressive remediation permitted - prioritize recovery speed)"
+    }
+    
+    priority_desc = priority_descriptions.get(priority, f"{priority} - Standard priority")
+    risk_desc = risk_guidance.get(risk_tolerance, f"{risk_tolerance} risk tolerance")
+    
+    # Build incident summary with natural language
+    incident_summary = f"A **{severity} {signal_type} event** from **{signal_source}** has occurred in the **{namespace}/{resource_kind}/{resource_name}**."
+    
+    # Add deduplication fact if duplicate
+    if is_duplicate and occurrence_count > 0:
+        incident_summary += f" **Alert fired {occurrence_count} times**."
+    
+    # Add storm fact if storm detected
+    if is_storm:
+        resource_count = len(affected_resources) if affected_resources else "multiple"
+        incident_summary += f" **Storm detected**: {storm_type} type, {storm_alert_count} alerts, {resource_count} resources."
+    
+    incident_summary += f"\n{error_message}"
+    
+    # Build complete ADR-041 v3.1 hybrid prompt
+    prompt = f"""# Incident Analysis Request
 
-    # Build comprehensive prompt
-    prompt = f"""# Recovery Analysis Request
+## Incident Summary
 
-## Failed Action
-- Type: {failed_action.get('type')}
-- Target: {failed_action.get('target')}
-- Namespace: {failed_action.get('namespace', 'N/A')}
+{incident_summary}
 
-## Failure Context
-- Error: {failure_context.get('error')}
-- Error Message: {failure_context.get('error_message')}
+**Business Impact Assessment**:
+- **Priority**: {priority_desc}
+- **Environment**: {environment}
+- **Risk Tolerance**: {risk_desc}
+
+**Technical Details**:
+- Signal Type: {signal_type}
+- Severity: {severity}
+- Resource: {namespace}/{resource_kind}/{resource_name}
+- Error: {error_message}
+- Failed Action: {failed_action.get('type', 'N/A')} (target: {failed_action.get('target', 'N/A')})
+
+## Error Details (FOR RCA INVESTIGATION)
+- Error Message: {error_message}
+- Description: {description if description else 'N/A'}
+- Firing Time: {firing_time}
+- Received Time: {received_time}
 """
-
-    # Add investigation results if available
-    if investigation_result:
+    
+    # Add Deduplication Context if applicable
+    if is_duplicate and occurrence_count > 0:
         prompt += f"""
-## Investigation Results
-- Root Cause: {investigation_result.get('root_cause', 'Unknown')}
-- Symptoms: {', '.join(investigation_result.get('symptoms', []))}
-"""
+## Deduplication Context (FOR RCA INVESTIGATION)
+- Is Duplicate: {is_duplicate}
+- First Seen: {first_seen}
+- Last Seen: {last_seen}
+- Occurrence Count: {occurrence_count}
 
-    # Add context
-    if context:
+**What Deduplication Means**:
+Deduplication tracks duplicate alerts from the monitoring system (Prometheus/Kubernetes). When the same 
+condition persists, Prometheus fires the same alert every evaluation interval (30-60 seconds). The Gateway 
+deduplicates these within a 5-minute window to avoid creating multiple RemediationRequest CRDs for the 
+same ongoing issue.
+
+**RCA Implications**:
+- `occurrence_count > 1` means the condition has been **continuously present** since `first_seen`
+- This indicates a **persistent, ongoing issue** - not that remediation was attempted and failed
+- Focus on understanding why the condition persists, not why remediation failed
+- Higher occurrence counts suggest the condition is stable/consistent, not intermittent
+"""
+    
+    # Add Storm Detection if applicable
+    if is_storm:
         prompt += f"""
-## Context
-- Cluster: {context.get('cluster')}
-- Namespace: {context.get('namespace')}
-- Priority: {context.get('priority')}
-- Recovery Attempts: {context.get('recovery_attempts', 0)}
+## Storm Detection (FOR RCA INVESTIGATION)
+- Is Storm: {is_storm}
+- Storm Type: {storm_type}
+- Storm Window: {storm_window}
+- Storm Alert Count: {storm_alert_count}
+- Affected Resources: {len(affected_resources) if affected_resources else 'Unknown'}
 """
+        if affected_resources and len(affected_resources) <= 10:
+            prompt += "\n**Affected Resources List**:\n"
+            for resource in affected_resources:
+                prompt += f"- {resource}\n"
+        elif affected_resources:
+            prompt += f"\n**Affected Resources** (showing first 10 of {len(affected_resources)}):\n"
+            for resource in affected_resources[:10]:
+                prompt += f"- {resource}\n"
+    
+    # Add Cluster Context
+    prompt += f"""
+## Cluster Context (FOR RCA INVESTIGATION)
+- Cluster: {cluster_name}
+- Signal Source: {signal_source}
+- Signal Labels: {signal_labels if signal_labels else 'N/A'}
 
-    # Add constraints
-    if constraints:
-        allowed_actions = constraints.get('allowed_actions', [])
-        prompt += f"""
-## Constraints
-- Max Attempts: {constraints.get('max_attempts', 'N/A')}
-- Timeout: {constraints.get('timeout', 'N/A')}
-- Allowed Actions: {', '.join(allowed_actions) if allowed_actions else 'Any'}
-"""
+## Business Context (FOR WORKFLOW SEARCH - NOT FOR RCA)
+These fields are used by MCP workflow search tools to match workflows.
+You do NOT need to consider these in your RCA analysis.
 
-    # BR-PLAYBOOK-001: Add playbook recommendations from MCP Catalog
-    playbook_recommendations = request_data.get("playbook_recommendations", [])
-    if playbook_recommendations:
-        prompt += f"""
-## Recommended Playbooks ({len(playbook_recommendations)} found)
+- Environment: {environment}
+- Priority: {priority}
+- Business Category: {business_category}
+- Risk Tolerance: {risk_tolerance}
 
-The following playbooks have been identified as potentially relevant for this failure:
+**Note**: When you call MCP workflow search tools (e.g., `search_workflow_catalog`), you must
+pass these business context fields as parameters.
 
-"""
-        for idx, playbook in enumerate(playbook_recommendations, 1):
-            prompt += f"""### Playbook {idx}: {playbook.get('name', 'Unknown')}
-- **ID**: {playbook.get('id', 'N/A')}
-- **Description**: {playbook.get('description', 'No description')}
-- **Signal Type**: {playbook.get('signal_type', 'N/A')}
-- **Severity**: {playbook.get('severity', 'N/A')}
-- **Component**: {playbook.get('component', 'N/A')}
-- **Risk Level**: {playbook.get('risk_level', 'N/A')}
-- **Business Category**: {playbook.get('business_category', 'N/A')}
-
-"""
-            # Add steps if available
-            steps = playbook.get('steps', [])
-            if steps:
-                prompt += "**Steps**:\n"
-                for step_idx, step in enumerate(steps, 1):
-                    prompt += f"{step_idx}. {step}\n"
-                prompt += "\n"
-            # Add parameters if available (DD-PLAYBOOK-003)
-            parameters = playbook.get('parameters', [])
-            if parameters:
-                playbook_id = playbook.get('id', 'N/A')
-                playbook_name = playbook.get('name', 'Unknown')
-                prompt += f"**Parameters for {playbook_name} ({playbook_id})**:\n"
-                prompt += "(Populate these if recommending this playbook in your strategy)\n\n"
-                for param in parameters:
-                    param_name = param.get('name', 'Unknown')
-                    param_desc = param.get('description', 'No description')
-                    param_required = param.get('required', False)
-                    param_type = param.get('type', 'string')
-                    required_marker = "**REQUIRED**" if param_required else "optional"
-                    prompt += f"- `{param_name}` ({param_type}, {required_marker}): {param_desc}\n"
-
-                    # Add enum values if available
-                    if 'enum' in param:
-                        prompt += f"  - Allowed values: {param['enum']}\n"
-
-                    # Add dependency info if available
-                    if 'depends_on' in param:
-                        prompt += f"  - Depends on: {param['depends_on']}\n"
-
-                    # Add min/max constraints if available
-                    if 'minimum' in param or 'maximum' in param:
-                        constraints = []
-                        if 'minimum' in param:
-                            constraints.append(f"min: {param['minimum']}")
-                        if 'maximum' in param:
-                            constraints.append(f"max: {param['maximum']}")
-                        prompt += f"  - Constraints: {', '.join(constraints)}\n"
-
-                    # Add pattern if available
-                    if 'pattern' in param:
-                        prompt += f"  - Pattern: {param['pattern']}\n"
-
-                    # Add default if available
-                    if 'default' in param:
-                        prompt += f"  - Default: {param['default']}\n"
-                prompt += "\n"
-
-        prompt += "**IMPORTANT**: Consider these playbooks when formulating your recovery strategies.\n\n"
-
-    # Add analysis request with structured output format
-    prompt += """
 ## Required Analysis
 
-**MANDATORY INVESTIGATION STEPS**:
-1. **Use Kubernetes tools** to investigate the cluster state:
-   - Check pod status, events, and logs for the target resource
-   - Review deployment/statefulset/daemonset configuration
-   - Examine resource limits and requests
-   - Check for recent configuration changes
+**INVESTIGATION APPROACH**:
+Perform independent Root Cause Analysis (RCA) using available tools based on the signal type and incident context.
 
-2. **Use Prometheus tools** to analyze metrics:
-   - Query memory usage trends for the affected pods
-   - Check CPU utilization patterns
-   - Review historical resource consumption
-   - Identify any metric anomalies leading to the failure
+**Available Tools**:
+- Kubernetes investigation tools (kubectl, API queries)
+- Prometheus/metrics tools (if applicable to signal source)
+- Log analysis tools
+- Other tools as appropriate for the signal source
 
-3. **Perform Root Cause Analysis (RCA)**:
-   - Correlate Kubernetes events with Prometheus metrics
-   - Identify the specific trigger for the failure
-   - Determine if this is a resource constraint, configuration issue, or application bug
+**Analysis Steps** (adapt based on signal source and incident):
+1. Investigate the signal using appropriate tools for the signal source
+2. Gather relevant context and evidence
+3. Perform Root Cause Analysis based on your investigation
+4. Formulate remediation strategies based on your RCA findings
 
-4. **Formulate Recovery Strategies**:
-   - Use the recommended playbooks above to inform your recommendations
-   - Prioritize strategies from relevant playbooks
-   - Base recommendations on actual cluster data, not assumptions
+**Guidance**:
+- Use tools appropriate for the signal source (e.g., Kubernetes for pod failures, Prometheus for metric alerts)
+- Base your analysis on actual investigation findings, not assumptions
+- Consider cluster state and resource availability
+- Focus on technical remediation based on RCA findings
 
-**OUTPUT FORMAT**: Respond with a JSON object containing your analysis:
 
+## Your Investigation Workflow
+
+**CRITICAL**: Follow this sequence in order. Do NOT search for workflows before investigating.
+
+### Phase 1: Investigate the Incident
+Use available tools to investigate the incident:
+- Check pod status, events, and logs (kubectl)
+- Review resource usage and limits
+- Examine node conditions
+- Analyze metrics from signal source (if prometheus-adapter)
+
+**Goal**: Understand what actually happened and why.
+
+**Input Signal Provided**: {signal_type} (starting point for investigation)
+
+### Phase 2: Determine Root Cause (RCA)
+Based on your investigation findings, identify the root cause.
+Is the input signal the root cause, or just a symptom?
+
+### Phase 3: Identify Signal Type That Describes the Effect
+Based on your RCA, determine the signal_type that best describes the effect:
+
+**If investigation confirms input signal is the root cause**:
+- Input: OOMKilled → Investigation confirms memory limit exceeded → Use "OOMKilled"
+
+**If investigation reveals different root cause**:
+- Input: OOMKilled → Investigation shows node memory pressure → Use "NodePressure" or "Evicted"
+
+**Important**: The signal_type for workflow search comes from YOUR investigation findings, not the input signal.
+
+### Phase 4: Search for Workflow
+Call MCP `search_workflow_catalog` with:
+- **Query**: `"<YOUR_RCA_SIGNAL_TYPE> <YOUR_RCA_SEVERITY>"`
+- **Label Filters**: Business context values
+
+### Phase 5: Return Summary + JSON Payload
+Provide natural language summary + structured JSON with workflow and parameters.
+
+**If MCP search succeeds**:
 ```json
-{
-  "analysis_summary": "Brief summary of the failure and recommended approach",
-  "root_cause_assessment": "Your assessment of the root cause",
-  "strategies": [
-    {
-      "action_type": "specific_action_name",
-      "playbook_id": "playbook-id-if-using-playbook",
-      "confidence": 0.85,
-      "rationale": "Detailed explanation of why this strategy will work",
-      "estimated_risk": "low|medium|high",
-      "parameters": {
-        "PARAM_NAME_1": "value1",
-        "PARAM_NAME_2": "value2"
-      },
-      "prerequisites": ["prerequisite1", "prerequisite2"],
-      "steps": ["step1", "step2"],
-      "expected_outcome": "What success looks like",
-      "rollback_plan": "How to revert if this fails"
-    }
-  ],
-  "warnings": ["warning1", "warning2"],
-  "context_used": {
-    "cluster_state": "assessment of cluster health",
-    "resource_availability": "assessment of resources",
-    "blast_radius": "potential impact scope"
-  }
-}
+{{
+  "root_cause_analysis": {{
+    "summary": "Brief summary of root cause from investigation",
+    "severity": "critical|high|medium|low",
+    "contributing_factors": ["factor1", "factor2"]
+  }},
+  "selected_workflow": {{
+    "workflow_id": "workflow-id-from-mcp-search",
+    "version": "1.0.0",
+    "confidence": 0.95,
+    "rationale": "Why your RCA findings led to this workflow selection",
+    "parameters": {{
+      "PARAM_NAME": "value-from-investigation"
+    }}
+  }}
+}}
 ```
 
-**PARAMETER REQUIREMENTS**:
-- Each playbook listed above shows its specific parameters with names, types, and descriptions
-- If recommending a playbook that has parameters, you MUST populate the "parameters" object in your strategy
-- Use the EXACT parameter names shown in the playbook's parameter list above (e.g., TARGET_RESOURCE_NAME, SCALE_TARGET_REPLICAS)
-- Populate values based on your RCA investigation (actual resource names, namespaces, replica counts, memory limits, etc.)
-- Required parameters (marked **REQUIRED**) must ALWAYS be included
-- Optional parameters should be included if relevant to your remediation strategy
-- Respect parameter constraints: enum values, min/max limits, and patterns shown above
+**If MCP search fails or returns no workflows**:
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "Root cause from investigation",
+    "severity": "critical|high|medium|low",
+    "contributing_factors": ["factor1", "factor2"]
+  }},
+  "selected_workflow": null,
+  "rationale": "MCP search failed: [error details]. RCA completed but workflow selection unavailable."
+}}
+```
 
-**ANALYSIS GUIDANCE**:
-- Prioritize strategies by confidence and risk
-- Consider root cause, not just symptoms
-- Assess cluster resource availability
-- Factor in previous recovery attempts (avoid repeated failures)
-- Evaluate business impact and priority
-- Provide actionable, specific steps
-- Include rollback plans for safety
+## RCA Severity Assessment
+
+After your investigation, assess the severity of the root cause using these levels.
+
+**IMPORTANT**: Your RCA severity may differ from the input signal severity. Use your analysis to determine the actual severity based on business impact.
+
+### Severity Levels:
+
+**critical** - Immediate remediation required
+- Production service completely unavailable
+- Data loss or corruption occurring
+- Security breach actively exploited
+- SLA violation in progress
+- Revenue-impacting outage
+- Affects >50% of users
+
+**high** - Urgent remediation needed
+- Significant service degradation (>50% performance loss)
+- High error rate (>10% of requests failing)
+- Production issue escalating toward critical
+- Affects 10-50% of users
+- SLA at risk
+
+**medium** - Remediation recommended
+- Minor service degradation (<50% performance loss)
+- Moderate error rate (1-10% of requests failing)
+- Non-production critical issues
+- Affects <10% of users
+- Staging/development critical issues
+
+**low** - Remediation optional
+- Informational issues
+- Optimization opportunities
+- Development environment issues
+- No user impact
+- Capacity planning alerts
+
+## MCP Workflow Search Guidance
+
+When searching for remediation workflows, use this taxonomy:
+
+**Query Format**: `<signal_type> <severity> [optional_keywords]`
+- Example: `"OOMKilled critical"` or `"CrashLoopBackOff high"`
+- Use canonical Kubernetes event reasons for signal_type (from your RCA assessment)
+- Use your RCA severity assessment (may differ from input signal)
+
+**Canonical Signal Types** (examples - use any canonical Kubernetes event reason):
+- `OOMKilled`: Container exceeded memory limit and was killed
+- `CrashLoopBackOff`: Container repeatedly crashing
+- `ImagePullBackOff`: Cannot pull container image
+- `Evicted`: Pod evicted due to resource pressure
+- `NodeNotReady`: Node is not ready
+- `PodPending`: Pod stuck in pending state
+- `FailedScheduling`: Scheduler cannot place pod
+- `BackoffLimitExceeded`: Job exceeded retry limit
+- `DeadlineExceeded`: Job exceeded active deadline
+- `FailedMount`: Volume mount failed
+
+**Note**: These are common examples. Use any canonical Kubernetes event reason that matches your RCA findings.
+For complete list, see: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#Event
+
+**Label Parameters** (for MCP workflow search):
+1. **signal_type** (Technical - from your RCA assessment)
+2. **severity** (Technical - from your RCA assessment)
+3. **environment** (Business - pass-through: `{environment}`)
+4. **priority** (Business - pass-through: `{priority}`)
+5. **risk_tolerance** (Business - pass-through: `{risk_tolerance}`)
+6. **business_category** (Business - pass-through: `{business_category}`)
+
+**Search Optimization**:
+- Exact label matching increases confidence score
+- Workflow descriptions should start with `"<signal_type> <severity>:"`
+- Use all 6 label parameters for filtering
+
+## Expected Response Format
+
+Provide your analysis in two parts:
+
+### Part 1: Natural Language Analysis
+
+Explain your investigation findings, root cause analysis, and reasoning for workflow selection.
+
+### Part 2: Structured JSON
+
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "Brief summary of root cause",
+    "severity": "critical|high|medium|low",
+    "contributing_factors": ["factor1", "factor2"]
+  }},
+  "selected_workflow": {{
+    "workflow_id": "workflow-id-from-mcp-search-results",
+    "version": "1.0.0",
+    "confidence": 0.95,
+    "rationale": "Why your search parameters led to this workflow selection (based on RCA findings)",
+    "parameters": {{
+      "PARAM_NAME": "value",
+      "ANOTHER_PARAM": "value"
+    }}
+  }}
+}}
+```
+
+**IMPORTANT**:
+- Select ONE workflow per incident
+- Populate ALL required parameters from the workflow schema
+- Use your RCA findings to determine parameter values
+- Pass-through business context fields (environment, priority, risk_tolerance, business_category) to MCP search
 """
-
+    
     return prompt
 
 
@@ -509,11 +674,11 @@ def _extract_warnings_from_analysis(analysis_text: str) -> List[str]:
     return warnings
 
 
-async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client: MCPClient) -> List[Dict[str, Any]]:
+async def _get_workflow_recommendations(request_data: Dict[str, Any], mcp_client: MCPClient) -> List[Dict[str, Any]]:
     """
-    Get playbook recommendations from MCP Playbook Catalog
+    Get workflow recommendations from MCP Workflow Catalog
 
-    BR-PLAYBOOK-001: Playbook Catalog Integration
+    BR-WORKFLOW-001: Workflow Catalog Integration
 
     Args:
         request_data: Recovery request data containing:
@@ -523,7 +688,7 @@ async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client
             - context.cluster: Cluster name
 
     Returns:
-        List of recommended playbooks from MCP catalog
+        List of recommended workflows from MCP catalog
     """
     try:
         # Extract failure information
@@ -531,7 +696,7 @@ async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client
         failure_context = request_data.get("failure_context", {})
         context = request_data.get("context", {})
 
-        # Extract ALL 7 mandatory labels per DD-PLAYBOOK-001
+        # Extract ALL 7 mandatory labels per DD-WORKFLOW-001
         signal_type = failure_context.get("error", "unknown")
         severity = context.get("severity", "medium")
         component = context.get("component", "pod")
@@ -540,8 +705,8 @@ async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client
         risk_tolerance = context.get("risk_tolerance", "medium")
         business_category = context.get("business_category", "*")
 
-        # Search for playbooks using all 7 fields
-        playbooks = await mcp_client.search_playbooks(
+        # Search for workflows using all 7 fields
+        workflows = await mcp_client.search_workflows(
             signal_type=signal_type,
             severity=severity,
             component=component,
@@ -553,8 +718,8 @@ async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client
         )
 
         logger.info({
-            "event": "playbook_recommendations_retrieved",
-            "playbooks_found": len(playbooks),
+            "event": "workflow_recommendations_retrieved",
+            "workflows_found": len(workflows),
             "signal_type": signal_type,
             "severity": severity,
             "component": component,
@@ -564,11 +729,11 @@ async def _get_playbook_recommendations(request_data: Dict[str, Any], mcp_client
             "business_category": business_category
         })
 
-        return playbooks
+        return workflows
 
     except Exception as e:
         logger.error({
-            "event": "mcp_playbook_integration_error",
+            "event": "mcp_workflow_integration_error",
             "error": str(e)
         })
         # Graceful degradation - return empty list
@@ -579,9 +744,9 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
     """
     Core recovery analysis logic
 
-    Business Requirements: BR-HAPI-001 to 050, BR-PLAYBOOK-001 (MCP Playbook Integration)
+    Business Requirements: BR-HAPI-001 to 050, BR-WORKFLOW-001 (MCP Workflow Integration)
 
-    Uses HolmesGPT SDK for AI-powered recovery analysis with playbook recommendations
+    Uses HolmesGPT SDK for AI-powered recovery analysis with workflow recommendations
     Falls back to stub implementation in DEV_MODE
     """
     incident_id = request_data.get("incident_id")
@@ -602,20 +767,20 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
         logger.info("Using stub implementation (DEV_MODE=true)")
         return _stub_recovery_analysis(request_data)
 
-    # Production mode: Use HolmesGPT SDK with enhanced error handling and playbook recommendations
+    # Production mode: Use HolmesGPT SDK with enhanced error handling and workflow recommendations
     try:
-        # BR-PLAYBOOK-001: Get playbook recommendations from MCP Catalog
-        playbook_recommendations = []
+        # BR-WORKFLOW-001: Get workflow recommendations from MCP Catalog
+        workflow_recommendations = []
         if mcp_config:
             mcp_client = MCPClient(mcp_config)
-            playbook_recommendations = await _get_playbook_recommendations(request_data, mcp_client)
+            workflow_recommendations = await _get_workflow_recommendations(request_data, mcp_client)
 
-        # Add playbook recommendations to request_data for prompt generation
-        if playbook_recommendations:
-            request_data["playbook_recommendations"] = playbook_recommendations
+        # Add workflow recommendations to request_data for prompt generation
+        if workflow_recommendations:
+            request_data["workflow_recommendations"] = workflow_recommendations
             logger.info({
-                "event": "playbook_recommendations_retrieved",
-                "playbooks_found": len(playbook_recommendations)
+                "event": "workflow_recommendations_retrieved",
+                "workflows_found": len(workflow_recommendations)
             })
 
         # Create investigation prompt (now includes historical context if available)
@@ -645,7 +810,7 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
             source_instance_id="holmesgpt-api"
         )
 
-        # Create minimal DAL (no database needed for stateless analysis)
+        # Create minimal DAL (no Robusta Platform database needed)
         dal = MinimalDAL(cluster_name=request_data.get("context", {}).get("cluster"))
 
         # Debug: Log investigation details before SDK call
@@ -653,7 +818,7 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
             "event": "calling_holmesgpt_sdk",
             "incident_id": incident_id,
             "prompt_length": len(investigation_prompt),
-            "playbook_count": len(request_data.get("playbook_recommendations", [])),
+            "workflow_count": len(request_data.get("workflow_recommendations", [])),
             "toolsets_enabled": config.toolsets if config else None,
             "prompt_preview": investigation_prompt[:300] + "..." if len(investigation_prompt) > 300 else investigation_prompt
         })
@@ -818,9 +983,9 @@ async def recovery_analyze_endpoint(request: RecoveryRequest):
     Analyze failed action and provide recovery strategies
 
     Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
-    Business Requirement: BR-PLAYBOOK-001 (MCP Playbook Integration)
+    Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
 
-    Called by: RemediationProcessor Controller (on remediation failure)
+    Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
     """
     try:
         request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
@@ -829,15 +994,15 @@ async def recovery_analyze_endpoint(request: RecoveryRequest):
         mcp_config = None
         app_config = None
         if hasattr(router, 'config'):
-            # Extract the specific MCP server config (playbook_catalog_mcp)
+            # Extract the specific MCP server config (workflow_catalog_mcp)
             # MCPClient expects config with base_url/timeout, not the entire mcp_servers dict
             mcp_servers = router.config.get("mcp_servers", {})
-            if mcp_servers and "playbook_catalog_mcp" in mcp_servers:
-                playbook_mcp = mcp_servers["playbook_catalog_mcp"]
+            if mcp_servers and "workflow_catalog_mcp" in mcp_servers:
+                workflow_mcp = mcp_servers["workflow_catalog_mcp"]
                 # Convert 'url' to 'base_url' for MCPClient compatibility
                 mcp_config = {
-                    "base_url": playbook_mcp.get("url"),
-                    "timeout": playbook_mcp.get("timeout", 30)
+                    "base_url": workflow_mcp.get("url"),
+                    "timeout": workflow_mcp.get("timeout", 30)
                 }
             app_config = router.config
 
