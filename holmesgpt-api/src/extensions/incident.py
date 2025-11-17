@@ -33,27 +33,39 @@ class MinimalDAL:
     Kubernaut does NOT integrate with Robusta Platform.
     This MinimalDAL satisfies HolmesGPT SDK's DAL interface requirements
     without connecting to any Robusta Platform database.
+    
+    All methods return None/empty to indicate no Robusta Platform data available.
     """
     def __init__(self, cluster_name: str = "unknown"):
         self.cluster_name = cluster_name
     
     def get_issues(self, *args, **kwargs):
+        """Return empty list - no historical issues from Robusta Platform"""
         return []
     
     def get_issue(self, *args, **kwargs):
+        """Return None - no issue data from Robusta Platform"""
         return None
     
     def get_issue_data(self, *args, **kwargs):
+        """Return None - no issue data from Robusta Platform"""
         return None
     
     def get_resource_instructions(self, *args, **kwargs):
-        """
-        Return resource-specific instructions for investigation.
-        
-        Kubernaut does not use Robusta Platform's resource instruction system.
-        Returns None to indicate no custom instructions available.
-        """
+        """Return None - no resource-specific instructions from Robusta Platform"""
         return None
+    
+    def get_global_instructions_for_account(self, *args, **kwargs):
+        """Return None - no global account instructions from Robusta Platform"""
+        return None
+    
+    def get_account_id(self, *args, **kwargs):
+        """Return None - no Robusta Platform account"""
+        return None
+    
+    def get_cluster_name(self, *args, **kwargs):
+        """Return cluster name from initialization"""
+        return self.cluster_name
 
 
 def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
