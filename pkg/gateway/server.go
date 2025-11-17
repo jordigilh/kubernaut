@@ -433,7 +433,6 @@ func (s *Server) performanceLoggingMiddleware(next http.Handler) http.Handler {
 		}
 	})
 }
-}
 
 // Handler returns the HTTP handler for the Gateway server.
 // This is useful for testing with httptest.NewServer.
