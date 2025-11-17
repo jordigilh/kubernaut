@@ -72,7 +72,6 @@ func RequestIDMiddleware(logger *zap.Logger) func(http.Handler) http.Handler {
 				zap.String("method", r.Method),
 			)
 
-			// Store request ID and logger in context
 		// Store request ID and logger in context
 		ctx := context.WithValue(r.Context(), RequestIDKey, requestID)
 		ctx = context.WithValue(ctx, LoggerKey, requestLogger)

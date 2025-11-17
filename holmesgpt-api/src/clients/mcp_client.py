@@ -17,17 +17,17 @@ logger = logging.getLogger(__name__)
 class MCPClient:
     """
     Client for MCP Workflow Catalog service
-    
+
     Implements DD-WORKFLOW-002 v1.0 specification for search_workflow_catalog tool.
-    
+
     The LLM constructs a natural language query describing the problem and desired
     remediation, along with optional business context filters.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize MCP client
-        
+
         Args:
             config: MCP configuration containing:
                 - base_url: MCP server base URL (e.g., "http://mock-mcp-server:8081")
@@ -35,13 +35,13 @@ class MCPClient:
         """
         self.base_url = config.get("base_url", "http://mock-mcp-server:8081")
         self.timeout = config.get("timeout", 30)
-        
+
         logger.info({
             "event": "mcp_client_initialized",
             "base_url": self.base_url,
             "timeout": self.timeout
         })
-    
+
     async def search_workflows(
         self,
         query: str,
@@ -50,9 +50,9 @@ class MCPClient:
     ) -> List[Dict[str, Any]]:
         """
         Search for workflows using natural language query
-        
+
         Implements DD-WORKFLOW-002 v1.0 search_workflow_catalog tool specification.
-        
+
         Args:
             query: Natural language description of problem, root cause, and desired remediation
                    Example: "OOMKilled pod needs memory limit increase due to insufficient allocation"
@@ -63,7 +63,7 @@ class MCPClient:
                 - environment: str - Filter by environment ('production', 'staging', 'development')
                 - exclude_keywords: List[str] - Keywords to exclude from results
             top_k: Maximum number of workflows to return (1-50, default: 10)
-            
+
         Returns:
             List of workflow metadata dictionaries with fields:
             - workflow_id: str - Unique workflow identifier
@@ -74,7 +74,7 @@ class MCPClient:
             - similarity_score: float - Semantic match score (0.0-1.0)
             - estimated_duration: str - Expected execution time
             - success_rate: float - Historical success rate (0.0-1.0)
-            
+
         Reference: DD-WORKFLOW-002 v1.0, lines 60-132
         """
         try:
@@ -83,15 +83,15 @@ class MCPClient:
                 "query": query,
                 "top_k": top_k
             }
-            
+
             if filters:
                 search_request["filters"] = filters
-            
+
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             # MCP TOOL CALL AUDIT LOGGING (Placeholder for future audit traces)
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             # TODO: Convert these logs to structured audit traces in future iteration
-            
+
             logger.info({
                 "event": "mcp_tool_call_request",
                 "tool_name": "search_workflow_catalog",
@@ -99,7 +99,7 @@ class MCPClient:
                 "endpoint": f"{self.base_url}/mcp/tools/search_workflow_catalog",
                 "audit_trace_placeholder": "TODO: Convert to structured audit trace"
             })
-            
+
             # Call MCP server
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
@@ -107,17 +107,17 @@ class MCPClient:
                     json=search_request
                 )
                 response.raise_for_status()
-                
+
                 # DD-WORKFLOW-002 returns array of workflows directly
                 workflows = response.json()
-                
+
                 if not isinstance(workflows, list):
                     logger.error({
                         "event": "mcp_response_format_error",
                         "error": "Expected array of workflows, got non-array response"
                     })
                     return []
-                
+
                 logger.info({
                     "event": "mcp_tool_call_response",
                     "tool_name": "search_workflow_catalog",
@@ -130,9 +130,9 @@ class MCPClient:
                     "audit_trace_placeholder": "TODO: Convert to structured audit trace with full response"
                 })
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                
+
                 return workflows
-                
+
         except httpx.HTTPStatusError as e:
             logger.error({
                 "event": "mcp_search_http_error",
@@ -142,7 +142,7 @@ class MCPClient:
             })
             # Graceful degradation - return empty list
             return []
-            
+
         except httpx.RequestError as e:
             logger.error({
                 "event": "mcp_search_request_error",
@@ -151,7 +151,7 @@ class MCPClient:
             })
             # Graceful degradation - return empty list
             return []
-            
+
         except Exception as e:
             logger.error({
                 "event": "mcp_search_unexpected_error",

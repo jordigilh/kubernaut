@@ -158,7 +158,7 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
 def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
     """
     Create investigation prompt with complete ADR-041 v3.3 hybrid format.
-    
+
     Reference: ADR-041 v3.3 - LLM Prompt and Response Contract
     """
     # Extract fields
@@ -171,16 +171,16 @@ def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
     priority = request_data.get("priority", "P2")
     risk_tolerance = request_data.get("risk_tolerance", "medium")
     business_category = request_data.get("business_category", "standard")
-    
+
     failed_action = request_data.get("failed_action", {})
     failure_context = request_data.get("failure_context", {})
     error_message = failure_context.get("error_message", "Unknown error")
     description = failure_context.get("description", "")
-    
+
     # Timing information
     firing_time = request_data.get('firing_time', 'Unknown')
     received_time = request_data.get('received_time', 'Unknown')
-    
+
     # Deduplication and storm
     is_duplicate = request_data.get('is_duplicate', False)
     occurrence_count = request_data.get('occurrence_count', 0)
@@ -191,12 +191,12 @@ def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
     storm_type = request_data.get('storm_type', 'Unknown')
     storm_window = request_data.get('storm_window', '5m')
     affected_resources = request_data.get('affected_resources', [])
-    
+
     # Cluster context
     cluster_name = request_data.get('cluster_name', 'unknown')
     signal_source = request_data.get('signal_source', 'unknown')
     signal_labels = request_data.get('signal_labels', {})
-    
+
     # Generate contextual descriptions
     priority_descriptions = {
         "P0": f"P0 (highest priority) - This is a {business_category} service requiring immediate attention",
@@ -204,30 +204,30 @@ def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
         "P2": "P2 (medium priority) - This service requires timely resolution",
         "P3": "P3 (low priority) - This service can be addressed during normal operations"
     }
-    
+
     risk_guidance = {
         "low": "low (conservative remediation required - avoid aggressive restarts or scaling)",
         "medium": "medium (balanced approach - standard remediation actions permitted)",
         "high": "high (aggressive remediation permitted - prioritize recovery speed)"
     }
-    
+
     priority_desc = priority_descriptions.get(priority, f"{priority} - Standard priority")
     risk_desc = risk_guidance.get(risk_tolerance, f"{risk_tolerance} risk tolerance")
-    
+
     # Build incident summary with natural language
     incident_summary = f"A **{severity} {signal_type} event** from **{signal_source}** has occurred in the **{namespace}/{resource_kind}/{resource_name}**."
-    
+
     # Add deduplication fact if duplicate
     if is_duplicate and occurrence_count > 0:
         incident_summary += f" **Alert fired {occurrence_count} times**."
-    
+
     # Add storm fact if storm detected
     if is_storm:
         resource_count = len(affected_resources) if affected_resources else "multiple"
         incident_summary += f" **Storm detected**: {storm_type} type, {storm_alert_count} alerts, {resource_count} resources."
-    
+
     incident_summary += f"\n{error_message}"
-    
+
     # Build complete ADR-041 v3.1 hybrid prompt
     prompt = f"""# Incident Analysis Request
 
@@ -253,7 +253,7 @@ def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
 - Firing Time: {firing_time}
 - Received Time: {received_time}
 """
-    
+
     # Add Deduplication Context if applicable
     if is_duplicate and occurrence_count > 0:
         prompt += f"""
@@ -264,9 +264,9 @@ def _create_investigation_prompt(request_data: Dict[str, Any]) -> str:
 - Occurrence Count: {occurrence_count}
 
 **What Deduplication Means**:
-Deduplication tracks duplicate alerts from the monitoring system (Prometheus/Kubernetes). When the same 
-condition persists, Prometheus fires the same alert every evaluation interval (30-60 seconds). The Gateway 
-deduplicates these within a 5-minute window to avoid creating multiple RemediationRequest CRDs for the 
+Deduplication tracks duplicate alerts from the monitoring system (Prometheus/Kubernetes). When the same
+condition persists, Prometheus fires the same alert every evaluation interval (30-60 seconds). The Gateway
+deduplicates these within a 5-minute window to avoid creating multiple RemediationRequest CRDs for the
 same ongoing issue.
 
 **RCA Implications**:
@@ -275,7 +275,7 @@ same ongoing issue.
 - Focus on understanding why the condition persists, not why remediation failed
 - Higher occurrence counts suggest the condition is stable/consistent, not intermittent
 """
-    
+
     # Add Storm Detection if applicable
     if is_storm:
         prompt += f"""
@@ -294,7 +294,7 @@ same ongoing issue.
             prompt += f"\n**Affected Resources** (showing first 10 of {len(affected_resources)}):\n"
             for resource in affected_resources[:10]:
                 prompt += f"- {resource}\n"
-    
+
     # Add Cluster Context
     prompt += f"""
 ## Cluster Context (FOR RCA INVESTIGATION)
@@ -519,7 +519,7 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 - Use your RCA findings to determine parameter values
 - Pass-through business context fields (environment, priority, risk_tolerance, business_category) to MCP search
 """
-    
+
     return prompt
 
 
@@ -828,7 +828,7 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # TODO: Convert these logs to structured audit traces in future iteration
         # These logs capture LLM toolset interactions for monitoring and debugging
-        
+
         # Log LLM request (prompt sent to model)
         logger.info({
             "event": "llm_request",
