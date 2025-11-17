@@ -13,8 +13,8 @@ import re
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, status
 
-from src.models.recovery_models import RecoveryRequest, RecoveryResponse, RecoveryStrategy
 from src.clients.mcp_client import MCPClient
+from src.models.recovery_models import RecoveryRequest, RecoveryResponse, RecoveryStrategy
 
 logger = logging.getLogger(__name__)
 
@@ -823,6 +823,24 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
             "prompt_preview": investigation_prompt[:300] + "..." if len(investigation_prompt) > 300 else investigation_prompt
         })
 
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # LLM INTERACTION AUDIT LOGGING (Placeholder for future audit traces)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # TODO: Convert these logs to structured audit traces in future iteration
+        # These logs capture LLM toolset interactions for monitoring and debugging
+        
+        # Log LLM request (prompt sent to model)
+        logger.info({
+            "event": "llm_request",
+            "incident_id": incident_id,
+            "model": config.model if config else "unknown",
+            "prompt_length": len(investigation_prompt),
+            "prompt_preview": investigation_prompt[:500] + "..." if len(investigation_prompt) > 500 else investigation_prompt,
+            "toolsets_enabled": config.toolsets if config else [],
+            "mcp_servers": list(config.mcp_servers.keys()) if config and hasattr(config, 'mcp_servers') and config.mcp_servers else [],
+            "audit_trace_placeholder": "TODO: Convert to structured audit trace"
+        })
+
         # Call HolmesGPT SDK
         logger.info("Calling HolmesGPT SDK for recovery analysis")
         investigation_result = investigate_issues(
@@ -831,7 +849,32 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
             config=config
         )
 
-        # Log the raw LLM response
+        # Log LLM response and tool interactions
+        logger.info({
+            "event": "llm_response",
+            "incident_id": incident_id,
+            "has_analysis": bool(investigation_result and investigation_result.analysis),
+            "analysis_length": len(investigation_result.analysis) if investigation_result and investigation_result.analysis else 0,
+            "analysis_preview": investigation_result.analysis[:500] + "..." if investigation_result and investigation_result.analysis and len(investigation_result.analysis) > 500 else (investigation_result.analysis if investigation_result and investigation_result.analysis else ""),
+            "has_tool_calls": hasattr(investigation_result, 'tool_calls') and bool(investigation_result.tool_calls) if investigation_result else False,
+            "tool_call_count": len(investigation_result.tool_calls) if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls else 0,
+            "audit_trace_placeholder": "TODO: Convert to structured audit trace"
+        })
+
+        # Log tool call details if available (SDK-dependent)
+        if investigation_result and hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls:
+            for idx, tool_call in enumerate(investigation_result.tool_calls):
+                logger.info({
+                    "event": "llm_tool_call",
+                    "incident_id": incident_id,
+                    "tool_call_index": idx,
+                    "tool_name": getattr(tool_call, 'name', 'unknown'),
+                    "tool_arguments": getattr(tool_call, 'arguments', {}),
+                    "tool_result": getattr(tool_call, 'result', None),
+                    "audit_trace_placeholder": "TODO: Convert to structured audit trace with full request/response"
+                })
+
+        # Log the raw LLM response (for debugging)
         print("\n" + "="*80)
         print("🤖 RAW LLM RESPONSE (from HolmesGPT SDK)")
         print("="*80)
@@ -843,9 +886,12 @@ async def analyze_recovery(request_data: Dict[str, Any], mcp_config: Optional[Di
             # Check if tool_calls attribute exists
             if hasattr(investigation_result, 'tool_calls') and investigation_result.tool_calls:
                 print(f"\nTool Calls: {len(investigation_result.tool_calls)}")
+                for idx, tool_call in enumerate(investigation_result.tool_calls):
+                    print(f"  Tool {idx+1}: {getattr(tool_call, 'name', 'unknown')}")
         else:
             print("No result returned from SDK")
         print("="*80 + "\n")
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         # Validate investigation result
         if not investigation_result or not investigation_result.analysis:
@@ -1018,3 +1064,5 @@ async def recovery_analyze_endpoint(request: RecoveryRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Recovery analysis failed: {str(e)}"
         )
+
+
