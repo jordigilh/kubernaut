@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubernaut-gateway
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: kubernaut
+    kubernetes.io/metadata.name: kubernaut-gateway
+
