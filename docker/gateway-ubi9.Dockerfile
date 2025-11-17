@@ -7,6 +7,11 @@ FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH
 
+# Build version arguments
+ARG VERSION=dev
+ARG GIT_COMMIT=dev
+ARG BUILD_DATE=dev
+
 # Switch to root for package installation
 USER root
 
@@ -34,7 +39,7 @@ COPY --chown=1001:0 . .
 # CGO_ENABLED=0 for static linking (no C dependencies)
 # GOOS and GOARCH from build args for multi-architecture support
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
-	-ldflags='-w -s -extldflags "-static"' \
+	-ldflags='-w -s -extldflags "-static" -X main.version=${VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}' \
 	-a -installsuffix cgo \
 	-o gateway \
 	./cmd/gateway
