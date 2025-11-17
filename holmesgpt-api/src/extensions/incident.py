@@ -1,0 +1,566 @@
+"""
+Incident Analysis Endpoint
+
+Business Requirements: BR-HAPI-002 (Incident Analysis)
+
+Provides AI-powered Root Cause Analysis (RCA) and workflow selection for initial incidents.
+Separate from recovery.py which handles failed remediation retry scenarios.
+"""
+
+import logging
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException, status
+from datetime import datetime
+
+from src.models.incident_models import IncidentRequest, IncidentResponse
+from src.clients.mcp_client import MCPClient
+
+# HolmesGPT SDK imports
+from holmes.config import Config
+from holmes.core.models import InvestigateRequest, InvestigationResult
+from holmes.core.investigation import investigate_issues
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# Minimal DAL for HolmesGPT SDK integration (no Robusta Platform)
+class MinimalDAL:
+    """
+    Minimal DAL for HolmesGPT SDK integration (no Robusta Platform)
+    
+    Kubernaut does NOT integrate with Robusta Platform.
+    This MinimalDAL satisfies HolmesGPT SDK's DAL interface requirements
+    without connecting to any Robusta Platform database.
+    """
+    def __init__(self, cluster_name: str = "unknown"):
+        self.cluster_name = cluster_name
+    
+    def get_issues(self, *args, **kwargs):
+        return []
+    
+    def get_issue(self, *args, **kwargs):
+        return None
+
+
+def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
+    """
+    Create investigation prompt for initial incident analysis (ADR-041 v3.3).
+    
+    Used by: /incident/analyze endpoint
+    Input: IncidentRequest model data
+    Reference: ADR-041 v3.3 - LLM Prompt and Response Contract
+    """
+    # Extract fields from IncidentRequest
+    signal_type = request_data.get("signal_type", "Unknown")
+    severity = request_data.get("severity", "unknown")
+    namespace = request_data.get("resource_namespace", "unknown")
+    resource_kind = request_data.get("resource_kind", "unknown")
+    resource_name = request_data.get("resource_name", "unknown")
+    environment = request_data.get("environment", "unknown")
+    priority = request_data.get("priority", "P2")
+    risk_tolerance = request_data.get("risk_tolerance", "medium")
+    business_category = request_data.get("business_category", "standard")
+    
+    # Error details (top-level in IncidentRequest, not nested)
+    error_message = request_data.get("error_message", "Unknown error")
+    description = request_data.get("description", "")
+    
+    # Timing information
+    firing_time = request_data.get('firing_time', 'Unknown')
+    received_time = request_data.get('received_time', 'Unknown')
+    
+    # Deduplication and storm
+    is_duplicate = request_data.get('is_duplicate', False)
+    occurrence_count = request_data.get('occurrence_count', 0)
+    first_seen = request_data.get('first_seen', 'Unknown')
+    last_seen = request_data.get('last_seen', 'Unknown')
+    is_storm = request_data.get('is_storm', False)
+    storm_signal_count = request_data.get('storm_signal_count', 0)
+    storm_type = request_data.get('storm_type', 'Unknown')
+    storm_window_minutes = request_data.get('storm_window_minutes', 5)
+    affected_resources = request_data.get('affected_resources', [])
+    
+    # Cluster context
+    cluster_name = request_data.get('cluster_name', 'unknown')
+    signal_source = request_data.get('signal_source', 'unknown')
+    signal_labels = request_data.get('signal_labels', {})
+    
+    # Generate contextual descriptions
+    priority_descriptions = {
+        "P0": f"P0 (highest priority) - This is a {business_category} service requiring immediate attention",
+        "P1": "P1 (high priority) - This service requires prompt attention",
+        "P2": "P2 (medium priority) - This service requires timely resolution",
+        "P3": "P3 (low priority) - This service can be addressed during normal operations"
+    }
+    
+    risk_guidance = {
+        "low": "low (conservative remediation required - avoid aggressive restarts or scaling)",
+        "medium": "medium (balanced approach - standard remediation actions permitted)",
+        "high": "high (aggressive remediation permitted - prioritize recovery speed)"
+    }
+    
+    priority_desc = priority_descriptions.get(priority, f"{priority} - Standard priority")
+    risk_desc = risk_guidance.get(risk_tolerance, f"{risk_tolerance} risk tolerance")
+    
+    # Build incident summary with natural language
+    incident_summary = f"A **{severity} {signal_type} event** from **{signal_source}** has occurred in the **{namespace}/{resource_kind}/{resource_name}**."
+    
+    # Add deduplication fact if duplicate
+    if is_duplicate and occurrence_count > 0:
+        incident_summary += f" **This signal has been received {occurrence_count} times within a {request_data.get('deduplication_window_minutes', 5)}-minute window**."
+    
+    # Add storm fact if storm detected
+    if is_storm:
+        resource_count = len(affected_resources) if affected_resources else "multiple"
+        incident_summary += f" **Alert storm detected**: {storm_signal_count} similar signals within {storm_window_minutes} minutes affecting {resource_count} resources."
+    
+    incident_summary += f"\n{error_message}"
+    
+    # Build complete ADR-041 v3.3 hybrid prompt
+    prompt = f"""# Incident Analysis Request
+
+## Incident Summary
+
+{incident_summary}
+
+**Business Impact Assessment**:
+- **Priority**: {priority_desc}
+- **Environment**: {environment}
+- **Risk Tolerance**: {risk_desc}
+
+**Technical Details**:
+- Signal Type: {signal_type}
+- Severity: {severity}
+- Resource: {namespace}/{resource_kind}/{resource_name}
+- Error: {error_message}
+- Signal Source: {signal_source}
+- Cluster: {cluster_name}
+
+## Error Details (FOR RCA INVESTIGATION)
+- Error Message: {error_message}
+- Description: {description if description else 'N/A'}
+- Firing Time: {firing_time}
+- Received Time: {received_time}
+"""
+    
+    # Add Deduplication Context if applicable
+    if is_duplicate and occurrence_count > 0:
+        dedup_window = request_data.get('deduplication_window_minutes', 5)
+        prompt += f"""
+## Signal Deduplication Context
+
+**Observable Fact**: This signal has been received {occurrence_count} times within a {dedup_window}-minute window.
+
+**Deduplication Details**:
+- First Seen: {first_seen}
+- Last Seen: {last_seen}
+- Deduplication Window: {dedup_window} minutes
+- Occurrence Count: {occurrence_count}
+
+**Note**: This indicates the same signal fingerprint was detected multiple times, suggesting a persistent or recurring issue.
+"""
+    
+    # Add Storm Detection Context if applicable
+    if is_storm:
+        prompt += f"""
+## Alert Storm Detection
+
+**Observable Fact**: Alert storm detected with {storm_signal_count} similar signals within {storm_window_minutes} minutes.
+
+**Storm Details**:
+- Storm Type: {storm_type}
+- Signal Count: {storm_signal_count}
+- Time Window: {storm_window_minutes} minutes
+- Affected Resources: {len(affected_resources) if affected_resources else 'Unknown'}
+"""
+        if affected_resources:
+            prompt += f"- Resource List: {', '.join(affected_resources[:5])}"
+            if len(affected_resources) > 5:
+                prompt += f" (and {len(affected_resources) - 5} more)"
+            prompt += "\n"
+    
+    # Add Business Context section
+    prompt += f"""
+## Business Context (FOR MCP WORKFLOW SEARCH)
+
+**IMPORTANT**: These fields are for MCP workflow search label filtering, NOT for your RCA investigation.
+
+- Environment: {environment}
+
+- Priority: {priority}
+
+- Business Category: {business_category}
+
+- Risk Tolerance: {risk_tolerance}
+
+**Note**: When you call MCP workflow search tools (e.g., `search_workflow_catalog`), you must
+pass these business context fields as parameters.
+
+## Your Investigation Workflow
+
+**CRITICAL**: Follow this sequence in order. Do NOT search for workflows before investigating.
+
+### Phase 1: Investigate the Incident
+Use available tools to investigate the incident:
+- Check pod status, events, and logs (kubectl)
+- Review resource usage and limits
+- Examine node conditions
+- Analyze metrics from signal source (if prometheus)
+
+**Goal**: Understand what actually happened and why.
+
+**Input Signal Provided**: {signal_type} (starting point for investigation)
+
+### Phase 2: Determine Root Cause (RCA)
+Based on your investigation findings, identify the root cause.
+Is the input signal the root cause, or just a symptom?
+
+### Phase 3: Identify Signal Type That Describes the Effect
+Based on your RCA, determine the signal_type that best describes the effect:
+
+**If investigation confirms input signal is the root cause**:
+- Input: OOMKilled → Investigation confirms memory limit exceeded → Use "OOMKilled"
+
+**If investigation reveals different root cause**:
+- Input: OOMKilled → Investigation shows node memory pressure → Use "NodePressure" or "Evicted"
+
+**Important**: The signal_type for workflow search comes from YOUR investigation findings, not the input signal.
+
+### Phase 4: Search for Workflow
+Call MCP `search_workflow_catalog` with:
+- **Query**: `"<YOUR_RCA_SIGNAL_TYPE> <YOUR_RCA_SEVERITY>"`
+- **Label Filters**: Business context values
+
+### Phase 5: Return Summary + JSON Payload
+Provide natural language summary + structured JSON with workflow and parameters.
+
+**If MCP search succeeds**:
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "Brief summary of root cause from investigation",
+    "severity": "critical|high|medium|low",
+    "contributing_factors": ["factor1", "factor2"]
+  }},
+  "selected_workflow": {{
+    "workflow_id": "workflow-id-from-mcp-search",
+    "version": "1.0.0",
+    "confidence": 0.95,
+    "rationale": "Why your RCA findings led to this workflow selection",
+    "parameters": {{
+      "PARAM_NAME": "value-from-investigation"
+    }}
+  }}
+}}
+```
+
+**If MCP search fails or returns no workflows**:
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "Root cause from investigation",
+    "severity": "critical|high|medium|low",
+    "contributing_factors": ["factor1", "factor2"]
+  }},
+  "selected_workflow": null,
+  "rationale": "MCP search failed: [error details]. RCA completed but workflow selection unavailable."
+}}
+```
+
+## RCA Severity Assessment
+
+After your investigation, assess the severity of the root cause using these levels.
+
+**IMPORTANT**: Your RCA severity may differ from the input signal severity. Use your analysis to determine the actual severity based on business impact.
+
+### Severity Levels:
+
+**critical** - Immediate remediation required
+- Production service completely unavailable
+- Data loss or corruption occurring
+- Security breach actively exploited
+- SLA violation in progress
+- Revenue-impacting outage
+- Affects >50% of users
+
+**high** - Urgent remediation needed
+- Significant service degradation (>50% performance loss)
+- High error rate (>10% of requests failing)
+- Production issue escalating toward critical
+- Affects 10-50% of users
+- SLA at risk
+
+**medium** - Remediation recommended
+- Minor service degradation (<50% performance loss)
+- Moderate error rate (1-10% of requests failing)
+- Non-production critical issues
+- Affects <10% of users
+- Staging/development critical issues
+
+**low** - Remediation optional
+- Informational issues
+- Optimization opportunities
+- Development environment issues
+- No user impact
+- Capacity planning alerts
+
+## MCP Workflow Search Guidance
+
+When searching for remediation workflows, use this taxonomy:
+
+**Query Format**: `<signal_type> <severity> [optional_keywords]`
+- Example: `"OOMKilled critical"` or `"CrashLoopBackOff high"`
+- Use canonical Kubernetes event reasons for signal_type (from your RCA assessment)
+- Use your RCA severity assessment (may differ from input signal)
+
+**Canonical Signal Types** (examples - use any canonical Kubernetes event reason):
+- `OOMKilled`: Container exceeded memory limit and was killed
+- `CrashLoopBackOff`: Container repeatedly crashing
+- `ImagePullBackOff`: Cannot pull container image
+- `Evicted`: Pod evicted due to resource pressure
+- `NodeNotReady`: Node is not ready
+- `PodPending`: Pod stuck in pending state
+- `FailedScheduling`: Scheduler cannot place pod
+- `BackoffLimitExceeded`: Job exceeded retry limit
+- `DeadlineExceeded`: Job exceeded active deadline
+- `FailedMount`: Volume mount failed
+
+**Note**: These are common examples. Use any canonical Kubernetes event reason that matches your RCA findings.
+For complete list, see: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/#Event
+
+**Label Parameters** (for MCP workflow search):
+1. **signal_type** (Technical - from your RCA assessment)
+2. **severity** (Technical - from your RCA assessment)
+3. **environment** (Business - pass-through: `{environment}`)
+4. **priority** (Business - pass-through: `{priority}`)
+5. **risk_tolerance** (Business - pass-through: `{risk_tolerance}`)
+6. **business_category** (Business - pass-through: `{business_category}`)
+
+**Search Optimization**:
+- Exact label matching increases confidence score
+- Workflow descriptions should start with `"<signal_type> <severity>:"`
+- Use all 6 label parameters for filtering
+
+## Expected Response Format
+
+Provide your analysis in two parts:
+
+### Part 1: Natural Language Analysis
+
+Explain your investigation findings, root cause analysis, and reasoning for workflow selection.
+
+### Part 2: Structured JSON
+
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "Brief summary of root cause",
+    "severity": "critical|high|medium|low",
+    "contributing_factors": ["factor1", "factor2"]
+  }},
+  "selected_workflow": {{
+    "workflow_id": "workflow-id-from-mcp-search-results",
+    "version": "1.0.0",
+    "confidence": 0.95,
+    "rationale": "Why your search parameters led to this workflow selection (based on RCA findings)",
+    "parameters": {{
+      "PARAM_NAME": "value",
+      "ANOTHER_PARAM": "value"
+    }}
+  }}
+}}
+```
+
+**IMPORTANT**:
+- Select ONE workflow per incident
+- Populate ALL required parameters from the workflow schema
+- Use your RCA findings to determine parameter values
+- Pass-through business context fields (environment, priority, risk_tolerance, business_category) to MCP search
+"""
+    
+    return prompt
+
+
+async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Dict[str, Any]] = None, app_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Core incident analysis logic
+    
+    Business Requirements: BR-HAPI-002 (Incident analysis)
+    """
+    incident_id = request_data.get("incident_id", "unknown")
+    
+    logger.info({
+        "event": "incident_analysis_started",
+        "incident_id": incident_id,
+        "signal_type": request_data.get("signal_type")
+    })
+    
+    # Check for dev mode stub
+    dev_mode = app_config.get("dev_mode", False) if app_config else False
+    if dev_mode:
+        logger.info({"event": "dev_mode_stub_response", "incident_id": incident_id})
+        return _stub_incident_analysis(request_data)
+    
+    # Production mode: Use HolmesGPT SDK
+    try:
+        # Create investigation prompt
+        investigation_prompt = _create_incident_investigation_prompt(request_data)
+        
+        # Log the prompt
+        print("\n" + "="*80)
+        print("🔍 INCIDENT ANALYSIS PROMPT TO LLM")
+        print("="*80)
+        print(investigation_prompt)
+        print("="*80 + "\n")
+        
+        # Create investigation request
+        investigation_request = InvestigateRequest(
+            source="kubernaut",
+            title=f"Incident analysis for {request_data.get('signal_type')}",
+            description=investigation_prompt,
+            subject={
+                "type": "incident",
+                "incident_id": incident_id,
+                "signal_type": request_data.get("signal_type")
+            },
+            context={
+                "incident_id": incident_id,
+                "issue_type": "incident"
+            },
+            source_instance_id="holmesgpt-api"
+        )
+        
+        # Create minimal DAL
+        dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))
+        
+        # Create HolmesGPT config
+        config = Config(
+            model=app_config.get("llm", {}).get("model", "claude-3-5-sonnet-20241022") if app_config else "claude-3-5-sonnet-20241022",
+            api_key=app_config.get("llm", {}).get("api_key") if app_config else None,
+            toolsets=app_config.get("toolsets", {}) if app_config else {},
+            mcp_servers=app_config.get("mcp_servers", {}) if app_config else {}
+        )
+        
+        # Call HolmesGPT SDK
+        logger.info("Calling HolmesGPT SDK for incident analysis")
+        investigation_result = investigate_issues(
+            investigate_request=investigation_request,
+            dal=dal,
+            config=config
+        )
+        
+        # Parse investigation result
+        result = _parse_investigation_result(investigation_result, request_data)
+        
+        logger.info({
+            "event": "incident_analysis_completed",
+            "incident_id": incident_id,
+            "has_workflow": result.get("selected_workflow") is not None
+        })
+        
+        return result
+        
+    except Exception as e:
+        logger.error({
+            "event": "incident_analysis_failed",
+            "incident_id": incident_id,
+            "error": str(e)
+        }, exc_info=True)
+        raise
+
+
+def _parse_investigation_result(investigation: InvestigationResult, request_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse HolmesGPT investigation result into IncidentResponse format"""
+    incident_id = request_data.get("incident_id", "unknown")
+    
+    # Extract analysis text
+    analysis = investigation.analysis if investigation and investigation.analysis else "No analysis available"
+    
+    # Try to parse JSON from analysis
+    import json
+    import re
+    
+    json_match = re.search(r'```json\s*(\{.*?\})\s*```', analysis, re.DOTALL)
+    if json_match:
+        try:
+            json_data = json.loads(json_match.group(1))
+            rca = json_data.get("root_cause_analysis", {})
+            selected_workflow = json_data.get("selected_workflow")
+            confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
+        except json.JSONDecodeError:
+            rca = {"summary": "Failed to parse RCA", "severity": "unknown", "contributing_factors": []}
+            selected_workflow = None
+            confidence = 0.0
+    else:
+        rca = {"summary": "No structured RCA found", "severity": "unknown", "contributing_factors": []}
+        selected_workflow = None
+        confidence = 0.0
+    
+    return {
+        "incident_id": incident_id,
+        "analysis": analysis,
+        "root_cause_analysis": rca,
+        "selected_workflow": selected_workflow,
+        "confidence": confidence,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+
+def _stub_incident_analysis(request_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Stub response for dev mode"""
+    incident_id = request_data.get("incident_id", "unknown")
+    
+    return {
+        "incident_id": incident_id,
+        "analysis": "DEV MODE: Stub incident analysis response",
+        "root_cause_analysis": {
+            "summary": "Stub RCA",
+            "severity": "medium",
+            "contributing_factors": ["Dev mode enabled"]
+        },
+        "selected_workflow": None,
+        "confidence": 0.0,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
+
+
+@router.post("/incident/analyze", status_code=status.HTTP_200_OK)
+async def incident_analyze_endpoint(request: IncidentRequest):
+    """
+    Analyze initial incident and provide RCA + workflow selection
+    
+    Business Requirement: BR-HAPI-002 (Incident analysis endpoint)
+    Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
+    
+    Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
+    """
+    try:
+        request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
+        
+        # Get MCP config and app config from router config
+        mcp_config = None
+        app_config = None
+        if hasattr(router, 'config'):
+            mcp_servers = router.config.get("mcp_servers", {})
+            if mcp_servers and "workflow_catalog_mcp" in mcp_servers:
+                workflow_mcp = mcp_servers["workflow_catalog_mcp"]
+                mcp_config = {
+                    "base_url": workflow_mcp.get("url"),
+                    "timeout": workflow_mcp.get("timeout", 30)
+                }
+            app_config = router.config
+        
+        result = await analyze_incident(request_data, mcp_config=mcp_config, app_config=app_config)
+        return result
+    except Exception as e:
+        logger.error({
+            "event": "incident_analysis_failed",
+            "incident_id": request.incident_id,
+            "error": str(e)
+        })
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Incident analysis failed: {str(e)}"
+        )

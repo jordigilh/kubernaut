@@ -29,7 +29,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import extensions
-from src.extensions import recovery, postexec, health
+from src.extensions import recovery, incident, postexec, health
 from src.middleware.auth import AuthenticationMiddleware
 from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
 from src.middleware.rfc7807 import add_rfc7807_exception_handlers
@@ -220,6 +220,7 @@ logger.info("RFC 7807 exception handlers enabled (BR-HAPI-200)")
 
 # Register extension routers
 app.include_router(recovery.router, prefix="/api/v1", tags=["Recovery Analysis"])
+app.include_router(incident.router, prefix="/api/v1", tags=["Incident Analysis"])
 app.include_router(postexec.router, prefix="/api/v1", tags=["Post-Execution Analysis"])
 app.include_router(health.router, tags=["Health"])
 
