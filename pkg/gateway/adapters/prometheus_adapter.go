@@ -152,7 +152,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		Annotations:  annotations,
 		FiringTime:   alert.StartsAt,
 		ReceivedTime: time.Now(),
-		SourceType:   a.GetSourceType(),
+		SourceType:   "prometheus-alert",
 		Source:       a.GetSourceService(), // BR-GATEWAY-027: Use monitoring system name, not adapter name
 		RawPayload:   rawData,
 	}, nil
