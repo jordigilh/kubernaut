@@ -85,12 +85,14 @@ async def health_check():
         "status": "healthy",
         "service": "holmesgpt-api",
         "endpoints": [
+            "/api/v1/incident/analyze",
             "/api/v1/recovery/analyze",
             "/api/v1/postexec/analyze",
             "/health",
             "/ready"
         ],
         "features": {
+            "incident_analysis": True,
             "recovery_analysis": True,
             "postexec_analysis": True,
             "authentication": True

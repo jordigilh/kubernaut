@@ -42,6 +42,18 @@ class MinimalDAL:
     
     def get_issue(self, *args, **kwargs):
         return None
+    
+    def get_issue_data(self, *args, **kwargs):
+        return None
+    
+    def get_resource_instructions(self, *args, **kwargs):
+        """
+        Return resource-specific instructions for investigation.
+        
+        Kubernaut does not use Robusta Platform's resource instruction system.
+        Returns None to indicate no custom instructions available.
+        """
+        return None
 
 
 def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
