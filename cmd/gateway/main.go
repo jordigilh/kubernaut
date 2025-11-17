@@ -34,7 +34,12 @@ import (
 )
 
 var (
+	// version is the semantic version, set at build time
 	version = "v0.1.0"
+	// gitCommit is the git commit hash, set at build time via -ldflags
+	gitCommit = "unknown"
+	// buildDate is the build timestamp, set at build time via -ldflags
+	buildDate = "unknown"
 )
 
 func main() {
@@ -47,7 +52,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("Gateway Service %s\n", version)
+		fmt.Printf("Gateway Service %s-%s (built: %s)\n", version, gitCommit, buildDate)
 		os.Exit(0)
 	}
 
@@ -63,6 +68,8 @@ func main() {
 
 	logger.Info("Starting Gateway Service",
 		zap.String("version", version),
+		zap.String("git_commit", gitCommit),
+		zap.String("build_date", buildDate),
 		zap.String("config_path", *configPath),
 		zap.String("listen_addr", *listenAddr),
 		zap.String("redis_addr", *redisAddr))
