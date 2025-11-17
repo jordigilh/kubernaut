@@ -254,7 +254,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			signal, err := adapter.Parse(ctx, payload)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Source).To(Equal("prometheus-adapter"), "BR-006: Must identify signal source")
+			Expect(signal.Source).To(Equal("prometheus"), "BR-GATEWAY-027: Must identify signal source")
 		})
 
 		It("should normalize resource identification across sources", func() {

@@ -32,7 +32,7 @@ MOCK_PLAYBOOKS = {
         "impact": "High",
         "confidence_score": 0.9
     },
-    
+
     # SINGLE REMEDIATION PLAYBOOK 1: Scale Down
     "oomkill-scale-down": {
         "playbook_id": "oomkill-scale-down",
@@ -84,7 +84,7 @@ MOCK_PLAYBOOKS = {
         "impact": "Medium",
         "confidence_score": 0.85
     },
-    
+
     # SINGLE REMEDIATION PLAYBOOK 2: Increase Memory
     "oomkill-increase-memory": {
         "playbook_id": "oomkill-increase-memory",
@@ -136,7 +136,7 @@ MOCK_PLAYBOOKS = {
         "impact": "Medium",
         "confidence_score": 0.80
     },
-    
+
     # SINGLE REMEDIATION PLAYBOOK 3: Optimize Application
     "oomkill-optimize-application": {
         "playbook_id": "oomkill-optimize-application",
@@ -180,7 +180,7 @@ MOCK_PLAYBOOKS = {
         "impact": "Low",
         "confidence_score": 0.75
     },
-    
+
     "pod-restart-general": {
         "playbook_id": "pod-restart-general",
         "version": "1.0.0",
@@ -220,37 +220,37 @@ def search_playbooks():
     try:
         data = request.get_json()
         logger.info(f"Received playbook search request: {data}")
-        
+
         # Extract search criteria
         signal_type = data.get('signal_type', '')
         namespace = data.get('namespace', '')
         severity = data.get('severity', '')
-        
+
         # Simple matching logic (in real implementation, this would be semantic search)
         matching_playbooks = []
-        
+
         for playbook_id, playbook in MOCK_PLAYBOOKS.items():
             labels = playbook.get('labels', {})
-            
+
             # Match signal type
             if signal_type and labels.get('signal_type') != '*':
                 if labels.get('signal_type') != signal_type:
                     continue
-            
+
             # Match business category (namespace-based)
             if 'cost-management' in namespace and labels.get('business_category') != '*':
                 if labels.get('business_category') != 'cost-management':
                     continue
-            
+
             matching_playbooks.append(playbook)
-        
+
         logger.info(f"Found {len(matching_playbooks)} matching playbooks")
-        
+
         return jsonify({
             "playbooks": matching_playbooks,
             "total_count": len(matching_playbooks)
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Error processing playbook search: {str(e)}")
         return jsonify({"error": str(e)}), 500
