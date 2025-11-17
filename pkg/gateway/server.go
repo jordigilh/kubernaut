@@ -420,12 +420,19 @@ func (s *Server) performanceLoggingMiddleware(next http.Handler) http.Handler {
 			fmt.Sprintf("%d", ww.Status()), // status
 		).Observe(duration.Seconds())
 
-		// Log request completion with duration
+		// Log request completion with duration (debug level for health/readiness checks to reduce noise)
 		logger := middleware.GetLogger(r.Context())
-		logger.Info("Request completed",
-			zap.Float64("duration_ms", float64(duration.Milliseconds())),
-		)
+		if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/ready" {
+			logger.Debug("Request completed",
+				zap.Float64("duration_ms", float64(duration.Milliseconds())),
+			)
+		} else {
+			logger.Info("Request completed",
+				zap.Float64("duration_ms", float64(duration.Milliseconds())),
+			)
+		}
 	})
+}
 }
 
 // Handler returns the HTTP handler for the Gateway server.
