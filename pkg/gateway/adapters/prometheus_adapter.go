@@ -58,6 +58,25 @@ func (a *PrometheusAdapter) GetRoute() string {
 	return "/api/v1/signals/prometheus"
 }
 
+// GetSourceService returns the monitoring system name (BR-GATEWAY-027)
+//
+// Returns "prometheus" (the monitoring system) instead of "prometheus-adapter" (the adapter name).
+// The LLM uses this to select appropriate investigation tools:
+// - signal_source="prometheus" → LLM uses Prometheus queries for investigation
+//
+// This is the SOURCE MONITORING SYSTEM, not the adapter implementation name.
+func (a *PrometheusAdapter) GetSourceService() string {
+	return "prometheus"
+}
+
+// GetSourceType returns the signal type identifier
+//
+// Returns "prometheus-alert" to distinguish Prometheus alerts from other signal types.
+// Used for metrics, logging, and signal classification.
+func (a *PrometheusAdapter) GetSourceType() string {
+	return "prometheus-alert"
+}
+
 // Parse converts AlertManager webhook payload to NormalizedSignal
 //
 // AlertManager webhook format:
@@ -133,8 +152,8 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		Annotations:  annotations,
 		FiringTime:   alert.StartsAt,
 		ReceivedTime: time.Now(),
-		SourceType:   "prometheus-alert",
-		Source:       "prometheus", // BR-GATEWAY-027: Use monitoring system name, not adapter name
+		SourceType:   a.GetSourceType(),
+		Source:       a.GetSourceService(), // BR-GATEWAY-027: Use monitoring system name, not adapter name
 		RawPayload:   rawData,
 	}, nil
 }

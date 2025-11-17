@@ -26,8 +26,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	contextapierrors "github.com/jordigilh/kubernaut/pkg/contextapi/errors"
 )
 
 // Config holds the configuration for the Data Storage HTTP client
