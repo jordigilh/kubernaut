@@ -341,7 +341,30 @@ test/unit/gateway/
 
 ## 🔍 Current Blockers
 
-**None** - Code is implemented and ready for comprehensive testing
+### Pending Design Decisions (Not Yet Implemented)
+
+**⏸️ DD-GATEWAY-008: Storm Aggregation First-Alert Handling**
+- **Status**: Approved (2025-11-17), Not Implemented
+- **Decision**: Alternative 2 - Buffered First-Alert Aggregation
+- **Impact**: Current implementation creates individual CRDs for first N alerts before storm threshold
+- **Required**: Buffer all alerts during storm window, create single aggregated CRD after window closes
+- **Reference**: [DD-GATEWAY-008](../../../architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md)
+- **Priority**: HIGH - Impacts cost savings and remediation consistency
+- **Estimated Effort**: 2-3 days implementation + 1 day testing
+
+**⏸️ DD-GATEWAY-009: State-Based Deduplication**
+- **Status**: Approved for v1.0 (2025-11-17), Not Implemented
+- **Decision**: Alternative 2 - State-Based Deduplication (Direct K8s API)
+- **Impact**: Current implementation uses time-based TTL (5 minutes), causes CRD name collisions
+- **Required**: Query CRD state (Pending/Processing/Completed) to determine if duplicate
+- **Reference**: [DD-GATEWAY-009](../../../architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md)
+- **Priority**: MEDIUM - Improves deduplication accuracy, prevents collisions
+- **Estimated Effort**: 1-2 days implementation + 1 day testing
+- **v1.1 Optimization**: Alternative 4 - Informer-Based (deferred for scale)
+
+**Implementation Order**:
+1. DD-GATEWAY-009 (State-Based Deduplication) - Simpler, foundational
+2. DD-GATEWAY-008 (Storm Buffering) - Depends on correct deduplication
 
 ---
 

@@ -115,7 +115,7 @@ async def readiness_check():
     # Import shutdown flag from main module
     # BR-HAPI-201: Return 503 during graceful shutdown
     import src.main as main_module
-    
+
     # Check if service is shutting down (DD-007 readiness coordination)
     if hasattr(main_module, 'is_shutting_down') and main_module.is_shutting_down:
         logger.info({
@@ -129,7 +129,7 @@ async def readiness_check():
                 "reason": "Service is gracefully shutting down"
             }
         )
-    
+
     # Check dependencies
     dependencies = _check_dependencies()
 

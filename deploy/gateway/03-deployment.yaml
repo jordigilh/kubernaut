@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/part-of: kubernaut
     app.kubernetes.io/version: "0.1.0"
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: kubernaut
@@ -29,13 +29,11 @@ spec:
       serviceAccountName: gateway
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1001
-        fsGroup: 1001
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: quay.io/jordigilh/kubernaut-gateway:v0.1.0
+          image: quay.io/jordigilh/kubernaut-gateway:latest
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -86,7 +84,6 @@ spec:
                 - ALL
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 1001
           volumeMounts:
             - name: tmp
               mountPath: /tmp

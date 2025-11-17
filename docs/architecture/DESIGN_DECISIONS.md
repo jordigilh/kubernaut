@@ -73,6 +73,8 @@
 | DD-GATEWAY-005 | Redis Cleanup on CRD Deletion | ✅ Approved | 2025-10-27 | [DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md](decisions/DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md) |
 | DD-GATEWAY-006 | Authentication Strategy | ✅ Approved | 2025-10-27 | [DD-GATEWAY-006-authentication-strategy.md](decisions/DD-GATEWAY-006-authentication-strategy.md) |
 | DD-GATEWAY-007 | Fallback Namespace Strategy | ✅ Approved | 2025-10-31 | [DD-GATEWAY-007-fallback-namespace-strategy.md](decisions/DD-GATEWAY-007-fallback-namespace-strategy.md) |
+| DD-GATEWAY-008 | Storm Aggregation First-Alert Handling (Alternative 2: Buffered Aggregation) | ✅ Approved | 2025-11-17 | [DD-GATEWAY-008-storm-aggregation-first-alert-handling.md](decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) |
+| DD-GATEWAY-009 | State-Based Deduplication Strategy (Alternative 3: Hybrid Redis Cache + CRD State) | ⏸️ Parked | 2025-11-17 | [DD-GATEWAY-009-state-based-deduplication.md](decisions/DD-GATEWAY-009-state-based-deduplication.md) |
 | DD-HOLMESGPT-005 | Test Strategy Validation | ✅ Validated | [Date] | [DD-HOLMESGPT-005-Test-Strategy-Validation.md](decisions/DD-HOLMESGPT-005-Test-Strategy-Validation.md) |
 | DD-HOLMESGPT-006 | Implementation Plan Quality Gate | ✅ Approved | [Date] | [DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md](decisions/DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md) |
 | DD-HOLMESGPT-007 | Service Boundaries Clarification | ✅ Approved | [Date] | [DD-HOLMESGPT-007-Service-Boundaries-Clarification.md](decisions/DD-HOLMESGPT-007-Service-Boundaries-Clarification.md) |

@@ -7,7 +7,7 @@ USER root
 # Install Flask
 RUN pip install --no-cache-dir flask
 
-# Copy mock server
+# Copy mock server with SSE support
 COPY deploy/llm-validation/mock-mcp-server-sse.py /app/mock-mcp-server.py
 
 # Set ownership

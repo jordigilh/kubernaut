@@ -610,10 +610,12 @@ var _ = Describe("BR-GATEWAY-016: Storm Aggregation (Integration)", func() {
 				responses = append(responses, <-results)
 			}
 
-			// Wait for CRD creation and updates to complete (async K8s API calls + retry backoff)
-			// The Gateway responds with 201/202 before the K8s API call completes
-			// With concurrent updates and retry backoff (500ms, 1s, 2s, 4s), allow 10 seconds
-			time.Sleep(10 * time.Second)
+		// Wait for CRD creation and storm aggregation window to complete
+		// The Gateway responds with 201/202 before the K8s API call completes
+		// Storm aggregation window is 5 seconds, then aggregated CRD is created
+		// With concurrent updates and retry backoff (500ms, 1s, 2s, 4s), allow 20 seconds total
+		// to ensure the aggregated CRD is created after the window expires
+		time.Sleep(20 * time.Second)
 
 			// VALIDATION 1: First alert creates storm CRD (201 Created)
 			// Subsequent alerts are aggregated (202 Accepted)
