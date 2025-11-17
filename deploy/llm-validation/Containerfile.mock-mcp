@@ -8,7 +8,7 @@ USER root
 RUN pip install --no-cache-dir flask
 
 # Copy mock server
-COPY deploy/llm-validation/mock-mcp-server.py /app/
+COPY deploy/llm-validation/mock-mcp-server-sse.py /app/mock-mcp-server.py
 
 # Set ownership
 RUN chown -R 1001:0 /app && \
