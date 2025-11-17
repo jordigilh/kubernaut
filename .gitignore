@@ -128,3 +128,7 @@ test/e2e/gateway/.kube/
 
 # Kubernetes cache files (generated during E2E tests)
 **/.kube/cache/
+
+# Development scripts with potential secrets
+holmesgpt-api/start-with-anthropic.sh
+holmesgpt-api/start-llm-test.sh
