@@ -210,6 +210,23 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/middleware/log_sanitization.go`
 **Tests**: `test/unit/gateway/middleware/log_sanitization_test.go`
 
+### **BR-GATEWAY-027: Signal Source Service Identification**
+**Description**: Gateway adapters must provide monitoring system name (not adapter name) for LLM tool selection
+**Priority**: P1 (High)
+**Test Coverage**: ✅ Unit
+**Implementation**: `pkg/gateway/adapters/adapter.go`, `pkg/gateway/adapters/prometheus_adapter.go`, `pkg/gateway/adapters/kubernetes_event_adapter.go`
+**Tests**: `test/unit/gateway/adapters/prometheus_adapter_test.go`, `test/unit/gateway/k8s_event_adapter_test.go`
+
+**Business Context**: The LLM uses the `signal_source` field to determine which investigation tools to use:
+- `signal_source="prometheus"` → LLM uses Prometheus queries for investigation
+- `signal_source="kubernetes-events"` → LLM uses kubectl for investigation
+
+**Technical Details**:
+- `GetSourceService()` returns monitoring system name (e.g., "prometheus", "kubernetes-events")
+- `GetSourceType()` returns signal type identifier (e.g., "prometheus-alert", "kubernetes-event")
+- Adapter names (e.g., "prometheus-adapter") are internal implementation details, not useful for LLM
+- Both methods are part of the `SignalAdapter` interface
+
 ---
 
 ## 🔐 **Security & Authentication** (BR-GATEWAY-036 to BR-GATEWAY-054)

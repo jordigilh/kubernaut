@@ -278,4 +278,60 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// BR-006: Normalized format enables cross-source deduplication
 		})
 	})
+
+	Context("BR-GATEWAY-027: Adapter Source Identification Methods", func() {
+		It("GetSourceService() should return monitoring system name", func() {
+			// BR-GATEWAY-027: Return monitoring system name for LLM tool selection
+			// BUSINESS LOGIC: LLM uses signal_source to determine investigation tools
+			// - "prometheus" → LLM uses Prometheus queries
+			// - NOT "prometheus-adapter" (internal implementation detail)
+
+			adapter := adapters.NewPrometheusAdapter()
+			
+			sourceName := adapter.GetSourceService()
+			
+			Expect(sourceName).To(Equal("prometheus"),
+				"BR-GATEWAY-027: Must return monitoring system name, not adapter name")
+			Expect(sourceName).NotTo(Equal("prometheus-adapter"),
+				"BR-GATEWAY-027: Adapter name is internal detail, not useful for LLM")
+		})
+
+		It("GetSourceType() should return signal type identifier", func() {
+			// BUSINESS LOGIC: Signal type distinguishes alert sources for metrics/logging
+			// Used for: metrics labels, logging, signal classification
+
+			adapter := adapters.NewPrometheusAdapter()
+			
+			sourceType := adapter.GetSourceType()
+			
+			Expect(sourceType).To(Equal("prometheus-alert"),
+				"Must return signal type for classification")
+		})
+
+		It("Parse() should use GetSourceService() for signal.Source field", func() {
+			// BR-GATEWAY-027: Ensure Parse() uses method instead of hardcoded value
+			// BUSINESS LOGIC: Consistency between method and Parse() output
+
+			adapter := adapters.NewPrometheusAdapter()
+			payload := []byte(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "TestAlert",
+						"namespace": "test"
+					}
+				}]
+			}`)
+
+			signal, err := adapter.Parse(ctx, payload)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Signal.Source must match GetSourceService()
+			Expect(signal.Source).To(Equal(adapter.GetSourceService()),
+				"BR-GATEWAY-027: Parse() must use GetSourceService() method")
+			
+			// Signal.SourceType must match GetSourceType()
+			Expect(signal.SourceType).To(Equal(adapter.GetSourceType()),
+				"Parse() must use GetSourceType() method")
+		})
+	})
 })
