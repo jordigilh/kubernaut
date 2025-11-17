@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gateway
+  namespace: kubernaut-gateway
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: kubernaut
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernaut
+      app.kubernetes.io/component: gateway
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+

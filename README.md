@@ -141,6 +141,70 @@ make test-e2e                  # End-to-end tests (<10% coverage)
 make test-gateway-teardown
 ```
 
+## 🚢 **Deployment**
+
+Kubernaut services use **Kustomize overlays** for cross-platform deployment (OpenShift + vanilla Kubernetes).
+
+### **Available Services**
+
+| Service | Status | Deployment Path |
+|---|---|---|
+| **Gateway + Redis** | ✅ Production-Ready | `deploy/gateway/` |
+| **HolmesGPT API** | ⏸️ Coming Soon | `deploy/holmesgpt-api/` |
+| **PostgreSQL** | ⏸️ Coming Soon | `deploy/postgres/` |
+
+### **Quick Deploy - Gateway Service**
+
+#### **OpenShift**
+
+```bash
+# Deploy Gateway + Redis to OpenShift
+oc apply -k deploy/gateway/overlays/openshift/
+
+# Verify
+oc get pods -n kubernaut-system -l app.kubernetes.io/component=gateway
+```
+
+#### **Vanilla Kubernetes**
+
+```bash
+# Deploy Gateway + Redis to Kubernetes
+kubectl apply -k deploy/gateway/overlays/kubernetes/
+
+# Verify
+kubectl get pods -n kubernaut-system -l app.kubernetes.io/component=gateway
+```
+
+### **Kustomize Structure**
+
+Each service follows this structure:
+
+```
+deploy/[service]/
+├── base/                          # Platform-agnostic manifests
+│   ├── kustomization.yaml
+│   └── *.yaml                     # K8s resources
+├── overlays/
+│   ├── openshift/                 # OpenShift-specific (SCC fixes)
+│   │   ├── kustomization.yaml
+│   │   └── patches/
+│   └── kubernetes/                # Vanilla K8s (uses base)
+│       └── kustomization.yaml
+└── README.md                      # Service-specific deployment guide
+```
+
+**Key Differences**:
+- **OpenShift**: Removes hardcoded `runAsUser`/`fsGroup` for SCC compatibility
+- **Kubernetes**: Uses base manifests with explicit security contexts
+
+### **Deployment Guides**
+
+- **[Gateway Service](deploy/gateway/README.md)**: Signal ingestion + deduplication + storm detection
+- **HolmesGPT API**: Coming soon
+- **PostgreSQL**: Coming soon
+
+---
+
 ---
 
 ## 📚 Documentation
