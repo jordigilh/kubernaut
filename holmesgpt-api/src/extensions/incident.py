@@ -38,6 +38,7 @@ class MinimalDAL:
     """
     def __init__(self, cluster_name: str = "unknown"):
         self.cluster_name = cluster_name
+        self.enabled = True  # Always enabled for Kubernaut (no Robusta Platform toggle)
     
     def get_issues(self, *args, **kwargs):
         """Return empty list - no historical issues from Robusta Platform"""
