@@ -104,6 +104,25 @@ func (a *KubernetesEventAdapter) GetRoute() string {
 	return "/api/v1/signals/kubernetes-event"
 }
 
+// GetSourceService returns the monitoring system name (BR-GATEWAY-027)
+//
+// Returns "kubernetes-events" (the monitoring system) instead of "k8s-event-adapter" (the adapter name).
+// The LLM uses this to select appropriate investigation tools:
+// - signal_source="kubernetes-events" → LLM uses kubectl for investigation
+//
+// This is the SOURCE MONITORING SYSTEM, not the adapter implementation name.
+func (a *KubernetesEventAdapter) GetSourceService() string {
+	return "kubernetes-events"
+}
+
+// GetSourceType returns the signal type identifier
+//
+// Returns "kubernetes-event" to distinguish Kubernetes events from other signal types.
+// Used for metrics, logging, and signal classification.
+func (a *KubernetesEventAdapter) GetSourceType() string {
+	return "kubernetes-event"
+}
+
 // Parse converts Kubernetes Event JSON to NormalizedSignal
 //
 // Parsing flow:
@@ -171,8 +190,8 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		Annotations:  a.extractAnnotations(event),
 		FiringTime:   event.FirstTimestamp,
 		ReceivedTime: time.Now(),
-		SourceType:   "kubernetes-event",
-		Source:       a.name,
+		SourceType:   a.GetSourceType(),
+		Source:       a.GetSourceService(),
 		RawPayload:   rawData, // Preserve for audit trail
 	}
 

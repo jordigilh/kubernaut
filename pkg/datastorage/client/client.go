@@ -212,7 +212,7 @@ func (c *DataStorageClient) parseError(resp *http.Response) error {
 	if err := json.Unmarshal(body, &rfc7807Err); err == nil && rfc7807Err.Title != "" {
 		// Return structured RFC 7807 error (Context API errors package)
 		// This preserves all error fields for consumers, not just the message
-		return &contextapierrors.RFC7807Error{
+		return &RFC7807Error{
 			Type:     rfc7807Err.Type,
 			Title:    rfc7807Err.Title,
 			Detail:   stringValue(rfc7807Err.Detail),

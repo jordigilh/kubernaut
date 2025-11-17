@@ -347,4 +347,61 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 			// Different resources → Different fingerprints → 2 CRDs → AI remediates both
 		})
 	})
+
+	Context("BR-GATEWAY-027: Adapter Source Identification Methods", func() {
+		It("GetSourceService() should return monitoring system name", func() {
+			// BR-GATEWAY-027: Return monitoring system name for LLM tool selection
+			// BUSINESS LOGIC: LLM uses signal_source to determine investigation tools
+			// - "kubernetes-events" → LLM uses kubectl for investigation
+			// - NOT "k8s-event-adapter" (internal implementation detail)
+
+			adapter := adapters.NewKubernetesEventAdapter()
+			
+			sourceName := adapter.GetSourceService()
+			
+			Expect(sourceName).To(Equal("kubernetes-events"),
+				"BR-GATEWAY-027: Must return monitoring system name, not adapter name")
+			Expect(sourceName).NotTo(Equal("k8s-event-adapter"),
+				"BR-GATEWAY-027: Adapter name is internal detail, not useful for LLM")
+		})
+
+		It("GetSourceType() should return signal type identifier", func() {
+			// BUSINESS LOGIC: Signal type distinguishes alert sources for metrics/logging
+			// Used for: metrics labels, logging, signal classification
+
+			adapter := adapters.NewKubernetesEventAdapter()
+			
+			sourceType := adapter.GetSourceType()
+			
+			Expect(sourceType).To(Equal("kubernetes-event"),
+				"Must return signal type for classification")
+		})
+
+		It("Parse() should use GetSourceService() for signal.Source field", func() {
+			// BR-GATEWAY-027: Ensure Parse() uses method instead of hardcoded value
+			// BUSINESS LOGIC: Consistency between method and Parse() output
+
+			adapter := adapters.NewKubernetesEventAdapter()
+			k8sEvent := []byte(`{
+				"type": "Warning",
+				"reason": "OOMKilled",
+				"involvedObject": {
+					"kind": "Pod",
+					"namespace": "test",
+					"name": "test-pod"
+				}
+			}`)
+
+			signal, err := adapter.Parse(ctx, k8sEvent)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Signal.Source must match GetSourceService()
+			Expect(signal.Source).To(Equal(adapter.GetSourceService()),
+				"BR-GATEWAY-027: Parse() must use GetSourceService() method")
+			
+			// Signal.SourceType must match GetSourceType()
+			Expect(signal.SourceType).To(Equal(adapter.GetSourceType()),
+				"Parse() must use GetSourceType() method")
+		})
+	})
 })

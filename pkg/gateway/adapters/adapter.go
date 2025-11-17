@@ -78,6 +78,44 @@ type SignalAdapter interface {
 	// - API documentation generation
 	// - Troubleshooting (supported content types, required headers)
 	GetMetadata() AdapterMetadata
+
+	// GetSourceService returns the monitoring system name (BR-GATEWAY-027)
+	//
+	// This method returns the SOURCE MONITORING SYSTEM name, not the adapter name.
+	// The LLM uses this to select appropriate investigation tools.
+	//
+	// Examples:
+	// - PrometheusAdapter returns "prometheus" (not "prometheus-adapter")
+	// - KubernetesEventAdapter returns "kubernetes-events" (not "k8s-event-adapter")
+	//
+	// Why this matters (BR-GATEWAY-027):
+	// - LLM receives signal_source field to determine which tools to use
+	// - signal_source="prometheus" → LLM uses Prometheus queries for investigation
+	// - signal_source="kubernetes-events" → LLM uses kubectl for investigation
+	// - Adapter name is internal implementation detail, not useful for LLM
+	//
+	// Returns:
+	// - string: Monitoring system name (e.g., "prometheus", "kubernetes-events")
+	GetSourceService() string
+
+	// GetSourceType returns the signal type identifier
+	//
+	// This method returns the signal type classification for metrics, logging, and signal categorization.
+	// Unlike GetSourceService() which identifies the monitoring system, GetSourceType() identifies
+	// the specific type of signal within that system.
+	//
+	// Examples:
+	// - PrometheusAdapter returns "prometheus-alert" (alert from Prometheus)
+	// - KubernetesEventAdapter returns "kubernetes-event" (event from K8s API)
+	//
+	// Used for:
+	// - Metrics labels (signal_type="prometheus-alert")
+	// - Logging categorization
+	// - Signal classification and routing
+	//
+	// Returns:
+	// - string: Signal type identifier (e.g., "prometheus-alert", "kubernetes-event")
+	GetSourceType() string
 }
 
 // RoutableAdapter extends SignalAdapter with HTTP route registration
