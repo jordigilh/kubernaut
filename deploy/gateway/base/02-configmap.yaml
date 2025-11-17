@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: kubernaut
+data:
+  config.yaml: |
+    # Gateway Service Configuration
+    # Organized by Single Responsibility Principle
+    # See: pkg/gateway/server.go - type ServerConfig struct
+
+    # HTTP Server configuration
+    server:
+      listen_addr: ":8080"
+      read_timeout: 30s
+      write_timeout: 30s
+      idle_timeout: 120s
+
+    # Middleware configuration
+    middleware:
+      rate_limit:
+        requests_per_minute: 100
+        burst: 10
+
+    # Infrastructure dependencies
+    infrastructure:
+      redis:
+        addr: redis-gateway.kubernaut-system.svc.cluster.local:6379
+        db: 0
+        dial_timeout: 5s
+        read_timeout: 3s
+        write_timeout: 3s
+        pool_size: 10
+        min_idle_conns: 2
+
+    # Business logic configuration
+    processing:
+      deduplication:
+        ttl: 5m
+
+      storm:
+        rate_threshold: 10
+        pattern_threshold: 5
+        aggregation_window: 1m
+
+      environment:
+        cache_ttl: 30s
+        configmap_namespace: kubernaut-system
+        configmap_name: kubernaut-environment-overrides
+
+  priority.rego: |
+    # Priority Assignment Policy for Gateway Service
+    #
+    # This Rego policy determines alert priority based on:
+    # - Severity (critical, warning, info)
+    # - Environment (production, staging, development)
+    # - Optional: Custom labels (team, service, etc.)
+    #
+    # Priority levels:
+    # - P0: Critical production issues (immediate response)
+    # - P1: High priority issues (response within 1 hour)
+    # - P2: Normal priority issues (best effort)
+    # - P3: Low priority issues (background processing)
+
+    package kubernaut.gateway.priority
+
+    import rego.v1
+
+    # Default priority if no rules match
+    default priority := "P2"
+
+    # P0: Critical production issues
+    priority := "P0" if {
+        input.severity == "critical"
+        input.environment == "production"
+    }
+
+    # P0: Critical issues for high-value teams (custom rule example)
+    priority := "P0" if {
+        input.severity == "critical"
+        input.labels["team"] == "platform-engineering"
+    }
+
+    # P1: Critical staging issues (pre-production testing)
+    priority := "P1" if {
+        input.severity == "critical"
+        input.environment == "staging"
+    }
+
+    # P1: Warning production issues (may escalate)
+    priority := "P1" if {
+        input.severity == "warning"
+        input.environment == "production"
+    }
+
+    # P2: Critical development issues
+    priority := "P2" if {
+        input.severity == "critical"
+        input.environment == "development"
+    }
+
+    # P2: Warning staging issues
+    priority := "P2" if {
+        input.severity == "warning"
+        input.environment == "staging"
+    }
+
+    # P2: Warning development issues
+    priority := "P2" if {
+        input.severity == "warning"
+        input.environment == "development"
+    }
+
+    # P3: Info alerts (any environment)
+    priority := "P3" if {
+        input.severity == "info"
+    }
+
+    # P3: Unknown severity (safety default)
+    priority := "P3" if {
+        not input.severity
+    }
+
