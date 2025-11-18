@@ -1,0 +1,9 @@
+# Local development and testing utilities
+debug_tool_visibility.py
+start-local-ollama.sh
+test-mcp-integration.sh
+test-ollama.sh
+
+# Local documentation (kept in main docs/)
+docs/LLM-PROVIDER-CONFIGURATION.md
+
