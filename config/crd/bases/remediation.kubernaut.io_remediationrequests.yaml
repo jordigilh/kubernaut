@@ -150,9 +150,13 @@ spec:
                 description: |-
                   Core Signal Identification
                   Unique fingerprint for deduplication (SHA256 of alert/event key fields)
+                  This field is immutable and used for querying all occurrences of the same problem
                 maxLength: 64
                 pattern: ^[a-f0-9]{64}$
                 type: string
+                x-kubernetes-validations:
+                - message: signalFingerprint is immutable
+                  rule: self == oldSelf
               signalLabels:
                 additionalProperties:
                   type: string

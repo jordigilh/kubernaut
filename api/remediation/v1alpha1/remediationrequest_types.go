@@ -33,8 +33,10 @@ type RemediationRequestSpec struct {
 
 	// Core Signal Identification
 	// Unique fingerprint for deduplication (SHA256 of alert/event key fields)
+	// This field is immutable and used for querying all occurrences of the same problem
 	// +kubebuilder:validation:MaxLength=64
 	// +kubebuilder:validation:Pattern="^[a-f0-9]{64}$"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="signalFingerprint is immutable"
 	SignalFingerprint string `json:"signalFingerprint"`
 
 	// Human-readable signal name (e.g., "HighMemoryUsage", "CrashLoopBackOff")
