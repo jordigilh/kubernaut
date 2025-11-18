@@ -1,4 +1,20 @@
 """
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+"""
 Main entry point for HolmesGPT API Service
 Minimal internal service wrapper around HolmesGPT SDK
 
@@ -21,11 +37,9 @@ from typing import Dict, Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Configure structured logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='{"timestamp":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","message":"%(message)s"}'
-)
+# Import centralized logging configuration
+from src.config import setup_logging
+
 logger = logging.getLogger(__name__)
 
 # Import extensions
@@ -48,27 +62,27 @@ is_shutting_down = False
 def handle_shutdown_signal(signum, frame):
     """
     Handle SIGTERM/SIGINT for graceful shutdown
-    
+
     Business Requirement: BR-HAPI-201
     Design Decision: DD-007 - Kubernetes-Aware Graceful Shutdown
-    
+
     TDD GREEN Phase: Minimal implementation
     Sets shutdown flag to signal readiness probe to return 503.
     uvicorn handles the actual graceful shutdown automatically.
     """
     global is_shutting_down
-    
+
     signal_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
-    
+
     logger.info({
         "event": "shutdown_signal_received",
         "signal": signal_name,
         "dd": "DD-007-step1-signal-received"
     })
-    
+
     # Set shutdown flag - readiness probe will now return 503
     is_shutting_down = True
-    
+
     logger.info({
         "event": "shutdown_flag_set",
         "readiness_probe": "will_return_503",
@@ -184,6 +198,11 @@ def load_config() -> Dict[str, Any]:
 
 # Load configuration
 config = load_config()
+
+# Setup logging based on configuration
+# This must be called after config is loaded but before any logging occurs
+setup_logging(config)
+logger.info(f"holmesgpt-api starting with log level: {config.get('log_level', 'INFO')}")
 
 # Create FastAPI application
 app = FastAPI(

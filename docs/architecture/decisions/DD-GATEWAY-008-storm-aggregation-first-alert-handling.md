@@ -384,6 +384,7 @@ Storm scenarios are **high-volume, systemic issues** where complete context is c
 - **Builds On**: [BR-GATEWAY-016](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-016-storm-aggregation) - Storm aggregation requirement
 - **Builds On**: [BR-GATEWAY-008](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-008-storm-detection) - Storm detection requirement
 - **Related**: [DD-GATEWAY-004](DD-GATEWAY-004-redis-memory-optimization.md) - Redis memory optimization
+- **Related**: [DD-015](DD-015-timestamp-based-crd-naming.md) - Timestamp-based CRD naming for unique occurrences
 
 ---
 
@@ -481,6 +482,7 @@ Storm scenarios are **high-volume, systemic issues** where complete context is c
 - **Builds On**: [BR-GATEWAY-016](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-016-storm-aggregation) - Storm aggregation requirement
 - **Builds On**: [BR-GATEWAY-008](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md#br-gateway-008-storm-detection) - Storm detection requirement
 - **Related**: [DD-GATEWAY-004](DD-GATEWAY-004-redis-memory-optimization.md) - Redis memory optimization
+- **Related**: [DD-015](DD-015-timestamp-based-crd-naming.md) - Timestamp-based CRD naming for unique occurrences
 
 ---
 
