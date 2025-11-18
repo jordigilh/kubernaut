@@ -1,4 +1,20 @@
 """
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+"""
 Recovery Analysis Endpoint
 
 Business Requirements: BR-HAPI-001 to 050 (Recovery Analysis)
@@ -15,6 +31,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from src.clients.mcp_client import MCPClient
 from src.models.recovery_models import RecoveryRequest, RecoveryResponse, RecoveryStrategy
+from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 
 logger = logging.getLogger(__name__)
 
@@ -103,31 +120,23 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
     if dev_mode:
         return None  # Signal to use stub implementation
 
-    # Get model name - expect full litellm format from environment
-    model_name = os.getenv("LLM_MODEL")
-    if not model_name:
+    # Get formatted model name for litellm (supports Ollama, OpenAI, Claude, Vertex AI)
+    from src.extensions.llm_config import (
+        get_model_config_for_sdk,
+        prepare_toolsets_config_for_sdk,
+        register_workflow_catalog_toolset
+    )
+
+    try:
+        model_name, provider = get_model_config_for_sdk(app_config)
+    except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="LLM_MODEL environment variable is required"
+            detail=str(e)
         )
 
-    # Create config for SDK with enabled toolsets
-    # Built-in toolsets use namespace format: "kubernetes/core", "kubernetes/logs", etc.
-    # For RCA, we need:
-    # - kubernetes/core: kubectl access for cluster resources (describe, get, events)
-    # - kubernetes/logs: pod logs access (current and previous logs)
-    # - kubernetes/live-metrics: real-time metrics from cluster
-    toolsets_config = {
-        "kubernetes/core": {"enabled": True},
-        "kubernetes/logs": {"enabled": True},
-        "kubernetes/live-metrics": {"enabled": True},
-    }
-
-    # Allow app_config to override toolset configuration
-    if app_config and "toolsets" in app_config:
-        for toolset_name, toolset_config in app_config["toolsets"].items():
-            if toolset_config.get("enabled") is not None:
-                toolsets_config[toolset_name] = {"enabled": toolset_config["enabled"]}
+    # Prepare toolsets configuration (BR-HAPI-002: Enable toolsets by default, BR-HAPI-250: Workflow catalog)
+    toolsets_config = prepare_toolsets_config_for_sdk(app_config)
 
     # Get MCP servers configuration from app_config
     # MCP servers are registered as toolsets by the SDK's ToolsetManager
@@ -136,16 +145,21 @@ def _get_holmes_config(app_config: Dict[str, Any] = None) -> Config:
         mcp_servers_config = app_config["mcp_servers"]
         logger.info(f"Registering MCP servers: {list(mcp_servers_config.keys())}")
 
+    # Create HolmesGPT SDK Config
     config_data = {
-        "model": model_name,  # Pass through as-is
+        "model": model_name,
         "api_base": os.getenv("LLM_ENDPOINT"),
-        "toolsets": toolsets_config,  # Enable kubernetes toolsets for RCA
-        "mcp_servers": mcp_servers_config,  # Register MCP servers (e.g., workflow catalog)
+        "toolsets": toolsets_config,
+        "mcp_servers": mcp_servers_config,
     }
 
     try:
         config = Config(**config_data)
-        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={config.toolsets}")
+
+        # BR-HAPI-250: Register workflow catalog toolset programmatically
+        config = register_workflow_catalog_toolset(config, app_config)
+
+        logger.info(f"Initialized HolmesGPT SDK config: model={model_name}, toolsets={list(config.toolset_manager.toolsets.keys())}")
         return config
     except Exception as e:
         logger.error(f"Failed to initialize HolmesGPT config: {e}")
@@ -368,10 +382,12 @@ Based on your RCA, determine the signal_type that best describes the effect:
 
 **Important**: The signal_type for workflow search comes from YOUR investigation findings, not the input signal.
 
-### Phase 4: Search for Workflow
-Call MCP `search_workflow_catalog` with:
+### Phase 4: Search for Workflow (MANDATORY)
+**YOU MUST** call MCP `search_workflow_catalog` tool with:
 - **Query**: `"<YOUR_RCA_SIGNAL_TYPE> <YOUR_RCA_SEVERITY>"`
 - **Label Filters**: Business context values
+
+**This step is REQUIRED** - you cannot skip workflow search. If the tool is available, you must invoke it.
 
 ### Phase 5: Return Summary + JSON Payload
 Provide natural language summary + structured JSON with workflow and parameters.

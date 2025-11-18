@@ -15,6 +15,15 @@ limitations under the License.
 """
 
 """
-Integration tests for HolmesGPT API Service
+Custom Toolsets for HolmesGPT SDK
+
+Business Requirements: BR-HAPI-250 (Workflow Catalog Search)
 """
+
+from .workflow_catalog import WorkflowCatalogToolset, SearchWorkflowCatalogTool
+
+__all__ = [
+    "WorkflowCatalogToolset",
+    "SearchWorkflowCatalogTool",
+]
 

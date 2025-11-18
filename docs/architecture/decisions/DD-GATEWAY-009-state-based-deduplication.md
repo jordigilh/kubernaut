@@ -7,6 +7,8 @@
 **Next Action**: Implement after DD-GATEWAY-008 (storm buffering) and LLM validation
 **Decision**: Pending user approval after performance validation
 
+**⚠️ IMPORTANT**: This DD addresses CRD collision handling. For CRD naming strategy, see **[DD-015: Timestamp-Based CRD Naming](DD-015-timestamp-based-crd-naming.md)** which provides a simpler solution to the collision problem by making CRD names unique per occurrence.
+
 ## Context & Problem
 
 ### Current Behavior (Time-Based Deduplication)

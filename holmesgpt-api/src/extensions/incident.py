@@ -1,4 +1,20 @@
 """
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
+
+"""
 Incident Analysis Endpoint
 
 Business Requirements: BR-HAPI-002 (Incident Analysis)
@@ -8,12 +24,14 @@ Separate from recovery.py which handles failed remediation retry scenarios.
 """
 
 import logging
+import os
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status
 from datetime import datetime
 
 from src.models.incident_models import IncidentRequest, IncidentResponse
 from src.clients.mcp_client import MCPClient
+from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 
 # HolmesGPT SDK imports
 from holmes.config import Config
@@ -29,41 +47,41 @@ router = APIRouter()
 class MinimalDAL:
     """
     Minimal DAL for HolmesGPT SDK integration (no Robusta Platform)
-    
+
     Kubernaut does NOT integrate with Robusta Platform.
     This MinimalDAL satisfies HolmesGPT SDK's DAL interface requirements
     without connecting to any Robusta Platform database.
-    
+
     All methods return None/empty to indicate no Robusta Platform data available.
     """
     def __init__(self, cluster_name: str = "unknown"):
         self.cluster_name = cluster_name
         self.enabled = True  # Always enabled for Kubernaut (no Robusta Platform toggle)
-    
+
     def get_issues(self, *args, **kwargs):
         """Return empty list - no historical issues from Robusta Platform"""
         return []
-    
+
     def get_issue(self, *args, **kwargs):
         """Return None - no issue data from Robusta Platform"""
         return None
-    
+
     def get_issue_data(self, *args, **kwargs):
         """Return None - no issue data from Robusta Platform"""
         return None
-    
+
     def get_resource_instructions(self, *args, **kwargs):
         """Return None - no resource-specific instructions from Robusta Platform"""
         return None
-    
+
     def get_global_instructions_for_account(self, *args, **kwargs):
         """Return None - no global account instructions from Robusta Platform"""
         return None
-    
+
     def get_account_id(self, *args, **kwargs):
         """Return None - no Robusta Platform account"""
         return None
-    
+
     def get_cluster_name(self, *args, **kwargs):
         """Return cluster name from initialization"""
         return self.cluster_name
@@ -72,7 +90,7 @@ class MinimalDAL:
 def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
     """
     Create investigation prompt for initial incident analysis (ADR-041 v3.3).
-    
+
     Used by: /incident/analyze endpoint
     Input: IncidentRequest model data
     Reference: ADR-041 v3.3 - LLM Prompt and Response Contract
@@ -87,15 +105,15 @@ def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
     priority = request_data.get("priority", "P2")
     risk_tolerance = request_data.get("risk_tolerance", "medium")
     business_category = request_data.get("business_category", "standard")
-    
+
     # Error details (top-level in IncidentRequest, not nested)
     error_message = request_data.get("error_message", "Unknown error")
     description = request_data.get("description", "")
-    
+
     # Timing information
     firing_time = request_data.get('firing_time', 'Unknown')
     received_time = request_data.get('received_time', 'Unknown')
-    
+
     # Deduplication and storm
     is_duplicate = request_data.get('is_duplicate', False)
     occurrence_count = request_data.get('occurrence_count', 0)
@@ -106,12 +124,12 @@ def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
     storm_type = request_data.get('storm_type', 'Unknown')
     storm_window_minutes = request_data.get('storm_window_minutes', 5)
     affected_resources = request_data.get('affected_resources', [])
-    
+
     # Cluster context
     cluster_name = request_data.get('cluster_name', 'unknown')
     signal_source = request_data.get('signal_source', 'unknown')
     signal_labels = request_data.get('signal_labels', {})
-    
+
     # Generate contextual descriptions
     priority_descriptions = {
         "P0": f"P0 (highest priority) - This is a {business_category} service requiring immediate attention",
@@ -119,30 +137,30 @@ def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
         "P2": "P2 (medium priority) - This service requires timely resolution",
         "P3": "P3 (low priority) - This service can be addressed during normal operations"
     }
-    
+
     risk_guidance = {
         "low": "low (conservative remediation required - avoid aggressive restarts or scaling)",
         "medium": "medium (balanced approach - standard remediation actions permitted)",
         "high": "high (aggressive remediation permitted - prioritize recovery speed)"
     }
-    
+
     priority_desc = priority_descriptions.get(priority, f"{priority} - Standard priority")
     risk_desc = risk_guidance.get(risk_tolerance, f"{risk_tolerance} risk tolerance")
-    
+
     # Build incident summary with natural language
     incident_summary = f"A **{severity} {signal_type} event** from **{signal_source}** has occurred in the **{namespace}/{resource_kind}/{resource_name}**."
-    
+
     # Add deduplication fact if duplicate
     if is_duplicate and occurrence_count > 0:
         incident_summary += f" **This signal has been received {occurrence_count} times within a {request_data.get('deduplication_window_minutes', 5)}-minute window**."
-    
+
     # Add storm fact if storm detected
     if is_storm:
         resource_count = len(affected_resources) if affected_resources else "multiple"
         incident_summary += f" **Alert storm detected**: {storm_signal_count} similar signals within {storm_window_minutes} minutes affecting {resource_count} resources."
-    
+
     incident_summary += f"\n{error_message}"
-    
+
     # Build complete ADR-041 v3.3 hybrid prompt
     prompt = f"""# Incident Analysis Request
 
@@ -169,7 +187,7 @@ def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
 - Firing Time: {firing_time}
 - Received Time: {received_time}
 """
-    
+
     # Add Deduplication Context if applicable
     if is_duplicate and occurrence_count > 0:
         dedup_window = request_data.get('deduplication_window_minutes', 5)
@@ -186,7 +204,7 @@ def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
 
 **Note**: This indicates the same signal fingerprint was detected multiple times, suggesting a persistent or recurring issue.
 """
-    
+
     # Add Storm Detection Context if applicable
     if is_storm:
         prompt += f"""
@@ -205,7 +223,7 @@ def _create_incident_investigation_prompt(request_data: Dict[str, Any]) -> str:
             if len(affected_resources) > 5:
                 prompt += f" (and {len(affected_resources) - 5} more)"
             prompt += "\n"
-    
+
     # Add Business Context section
     prompt += f"""
 ## Business Context (FOR MCP WORKFLOW SEARCH)
@@ -253,10 +271,12 @@ Based on your RCA, determine the signal_type that best describes the effect:
 
 **Important**: The signal_type for workflow search comes from YOUR investigation findings, not the input signal.
 
-### Phase 4: Search for Workflow
-Call MCP `search_workflow_catalog` with:
+### Phase 4: Search for Workflow (MANDATORY)
+**YOU MUST** call MCP `search_workflow_catalog` tool with:
 - **Query**: `"<YOUR_RCA_SIGNAL_TYPE> <YOUR_RCA_SEVERITY>"`
 - **Label Filters**: Business context values
+
+**This step is REQUIRED** - you cannot skip workflow search. If the tool is available, you must invoke it.
 
 ### Phase 5: Return Summary + JSON Payload
 Provide natural language summary + structured JSON with workflow and parameters.
@@ -404,42 +424,42 @@ Explain your investigation findings, root cause analysis, and reasoning for work
 - Use your RCA findings to determine parameter values
 - Pass-through business context fields (environment, priority, risk_tolerance, business_category) to MCP search
 """
-    
+
     return prompt
 
 
 async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Dict[str, Any]] = None, app_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Core incident analysis logic
-    
+
     Business Requirements: BR-HAPI-002 (Incident analysis)
     """
     incident_id = request_data.get("incident_id", "unknown")
-    
+
     logger.info({
         "event": "incident_analysis_started",
         "incident_id": incident_id,
         "signal_type": request_data.get("signal_type")
     })
-    
+
     # Check for dev mode stub
     dev_mode = app_config.get("dev_mode", False) if app_config else False
     if dev_mode:
         logger.info({"event": "dev_mode_stub_response", "incident_id": incident_id})
         return _stub_incident_analysis(request_data)
-    
+
     # Production mode: Use HolmesGPT SDK
     try:
         # Create investigation prompt
         investigation_prompt = _create_incident_investigation_prompt(request_data)
-        
+
         # Log the prompt
         print("\n" + "="*80)
         print("🔍 INCIDENT ANALYSIS PROMPT TO LLM")
         print("="*80)
         print(investigation_prompt)
         print("="*80 + "\n")
-        
+
         # Create investigation request
         investigation_request = InvestigateRequest(
             source="kubernaut",
@@ -456,18 +476,40 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
             },
             source_instance_id="holmesgpt-api"
         )
-        
+
         # Create minimal DAL
         dal = MinimalDAL(cluster_name=request_data.get("cluster_name"))
-        
-        # Create HolmesGPT config
-        config = Config(
-            model=app_config.get("llm", {}).get("model", "claude-3-5-sonnet-20241022") if app_config else "claude-3-5-sonnet-20241022",
-            api_key=app_config.get("llm", {}).get("api_key") if app_config else None,
-            toolsets=app_config.get("toolsets", {}) if app_config else {},
-            mcp_servers=app_config.get("mcp_servers", {}) if app_config else {}
+
+        # Create HolmesGPT config with workflow catalog toolset (BR-HAPI-250)
+        # Get formatted model name for litellm (supports Ollama, OpenAI, Claude, Vertex AI)
+        from src.extensions.llm_config import (
+            get_model_config_for_sdk,
+            prepare_toolsets_config_for_sdk,
+            register_workflow_catalog_toolset
         )
-        
+
+        try:
+            model_name, provider = get_model_config_for_sdk(app_config)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(e)
+            )
+
+        # Prepare toolsets configuration (BR-HAPI-002: Enable toolsets by default, BR-HAPI-250: Workflow catalog)
+        toolsets_config = prepare_toolsets_config_for_sdk(app_config)
+
+        # Create HolmesGPT SDK Config
+        config = Config(
+            model=model_name,
+            api_base=os.getenv("LLM_ENDPOINT"),
+            toolsets=toolsets_config,
+            mcp_servers=app_config.get("mcp_servers", {}) if app_config else {},
+        )
+
+        # BR-HAPI-250: Register workflow catalog toolset programmatically
+        config = register_workflow_catalog_toolset(config, app_config)
+
         # Call HolmesGPT SDK
         logger.info("Calling HolmesGPT SDK for incident analysis")
         investigation_result = investigate_issues(
@@ -475,18 +517,18 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
             dal=dal,
             config=config
         )
-        
+
         # Parse investigation result
         result = _parse_investigation_result(investigation_result, request_data)
-        
+
         logger.info({
             "event": "incident_analysis_completed",
             "incident_id": incident_id,
             "has_workflow": result.get("selected_workflow") is not None
         })
-        
+
         return result
-        
+
     except Exception as e:
         logger.error({
             "event": "incident_analysis_failed",
@@ -499,14 +541,14 @@ async def analyze_incident(request_data: Dict[str, Any], mcp_config: Optional[Di
 def _parse_investigation_result(investigation: InvestigationResult, request_data: Dict[str, Any]) -> Dict[str, Any]:
     """Parse HolmesGPT investigation result into IncidentResponse format"""
     incident_id = request_data.get("incident_id", "unknown")
-    
+
     # Extract analysis text
     analysis = investigation.analysis if investigation and investigation.analysis else "No analysis available"
-    
+
     # Try to parse JSON from analysis
     import json
     import re
-    
+
     json_match = re.search(r'```json\s*(\{.*?\})\s*```', analysis, re.DOTALL)
     if json_match:
         try:
@@ -522,7 +564,7 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
         rca = {"summary": "No structured RCA found", "severity": "unknown", "contributing_factors": []}
         selected_workflow = None
         confidence = 0.0
-    
+
     return {
         "incident_id": incident_id,
         "analysis": analysis,
@@ -536,7 +578,7 @@ def _parse_investigation_result(investigation: InvestigationResult, request_data
 def _stub_incident_analysis(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """Stub response for dev mode"""
     incident_id = request_data.get("incident_id", "unknown")
-    
+
     return {
         "incident_id": incident_id,
         "analysis": "DEV MODE: Stub incident analysis response",
@@ -555,15 +597,15 @@ def _stub_incident_analysis(request_data: Dict[str, Any]) -> Dict[str, Any]:
 async def incident_analyze_endpoint(request: IncidentRequest):
     """
     Analyze initial incident and provide RCA + workflow selection
-    
+
     Business Requirement: BR-HAPI-002 (Incident analysis endpoint)
     Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
-    
+
     Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
     """
     try:
         request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
-        
+
         # Get MCP config and app config from router config
         mcp_config = None
         app_config = None
@@ -576,7 +618,7 @@ async def incident_analyze_endpoint(request: IncidentRequest):
                     "timeout": workflow_mcp.get("timeout", 30)
                 }
             app_config = router.config
-        
+
         result = await analyze_incident(request_data, mcp_config=mcp_config, app_config=app_config)
         return result
     except Exception as e:
