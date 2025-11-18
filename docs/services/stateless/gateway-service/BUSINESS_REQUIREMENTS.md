@@ -229,6 +229,56 @@ This document provides a comprehensive list of all business requirements for the
 
 ---
 
+### **BR-GATEWAY-028: Unique CRD Names for Signal Occurrences**
+**Description**: Each signal occurrence MUST create a unique RemediationRequest CRD, even if the same problem reoccurs
+**Priority**: P0 (Critical)
+**Test Coverage**: ⏳ Planned (Unit + Integration)
+**Implementation**: `pkg/gateway/processing/crd_creator.go`
+**Tests**: `test/unit/gateway/processing/crd_creator_test.go` (planned)
+**Related DD**: [DD-015: Timestamp-Based CRD Naming](../../../architecture/decisions/DD-015-timestamp-based-crd-naming.md)
+
+**Business Context**:
+- **Remediation Retry**: If first remediation fails/completes, subsequent occurrences need new remediation attempts
+- **Audit Trail**: Each occurrence must be independently tracked for compliance
+- **Historical Analysis**: ML models need complete occurrence history, not just latest
+
+**Acceptance Criteria**:
+- ✅ Same signal occurring twice creates 2 unique CRDs
+- ✅ CRD names never collide, even for identical signals
+- ✅ Fingerprint remains stable across all occurrences
+- ✅ Can query all occurrences via field selector on `spec.signalFingerprint`
+
+**Technical Details**:
+- CRD name format: `rr-<fingerprint-prefix-12-chars>-<unix-timestamp>`
+- Example: `rr-bd773c9f25ac-1731868032`
+- Fingerprint stored in `spec.signalFingerprint` for querying
+
+---
+
+### **BR-GATEWAY-029: Immutable Signal Fingerprint**
+**Description**: The `spec.signalFingerprint` field MUST be immutable after CRD creation
+**Priority**: P0 (Critical)
+**Test Coverage**: ⏳ Planned (Unit + E2E)
+**Implementation**: `api/remediation/v1alpha1/remediationrequest_types.go`
+**Tests**: `test/unit/api/remediation/immutability_test.go` (planned), `test/e2e/crd_immutability_test.go` (planned)
+**Related DD**: [DD-015: Timestamp-Based CRD Naming](../../../architecture/decisions/DD-015-timestamp-based-crd-naming.md)
+
+**Business Context**:
+- **Data Integrity**: Fingerprint is used for deduplication and tracking - must not change
+- **Query Stability**: Field selector queries depend on stable fingerprint values
+- **Audit Compliance**: Immutability ensures fingerprint cannot be tampered with
+
+**Acceptance Criteria**:
+- ✅ CRD creation with fingerprint succeeds
+- ✅ CRD update attempting to change fingerprint fails with validation error
+- ✅ Validation error message: "signalFingerprint is immutable"
+
+**Technical Details**:
+- Uses Kubernetes CEL validation: `+kubebuilder:validation:XValidation:rule="self == oldSelf",message="signalFingerprint is immutable"`
+- Field selector query: `kubectl get remediationrequest --field-selector spec.signalFingerprint=<full-64-char-fingerprint>`
+
+---
+
 ## 🔐 **Security & Authentication** (BR-GATEWAY-036 to BR-GATEWAY-054)
 
 ### **BR-GATEWAY-036: Kubernetes TokenReviewer Authentication**

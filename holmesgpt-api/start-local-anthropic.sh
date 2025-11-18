@@ -11,7 +11,7 @@
 # Usage:
 #   ./start-local-anthropic.sh
 #   OR
-#   ./start-local-anthropic.sh sk-ant-api03-...
+#   ./start-local-anthropic.sh YOUR_API_KEY_HERE
 
 set -e
 
@@ -28,16 +28,16 @@ else
     echo "❌ ERROR: ANTHROPIC_API_KEY not set"
     echo ""
     echo "Usage:"
-    echo "  1. Set environment variable: export ANTHROPIC_API_KEY='sk-ant-...'"
-    echo "  2. Or pass as argument: ./start-local-anthropic.sh 'sk-ant-...'"
+    echo "  1. Set environment variable: export ANTHROPIC_API_KEY='your-api-key-here'"
+    echo "  2. Or pass as argument: ./start-local-anthropic.sh 'your-api-key-here'"
     echo ""
     echo "Get your API key from: https://console.anthropic.com/"
     exit 1
 fi
 
-# Anthropic Direct Configuration (like Cursor uses)
+# Anthropic Direct Configuration (matches cluster config)
 # Note: litellm uses "anthropic/" prefix for direct Anthropic API
-export LLM_MODEL="anthropic/claude-3-5-sonnet-20241022"
+export LLM_MODEL="anthropic/claude-haiku-4-5-20251001"  # Matches cluster deployment
 
 # HolmesGPT API Configuration
 export CONFIG_FILE="config-local.yaml"
@@ -52,8 +52,8 @@ unset GOOGLE_APPLICATION_CREDENTIALS
 
 echo ""
 echo "Configuration:"
-echo "  Provider: Anthropic Direct API (like Cursor)"
-echo "  Model: claude-3-5-sonnet-20241022"
+echo "  Provider: Anthropic Direct API"
+echo "  Model: claude-haiku-4-5-20251001 (matches cluster)"
 echo "  API Key: ${ANTHROPIC_API_KEY:0:15}...${ANTHROPIC_API_KEY: -4}"
 echo "  Config File: $CONFIG_FILE"
 echo "  Kubernetes: $KUBECONFIG"
