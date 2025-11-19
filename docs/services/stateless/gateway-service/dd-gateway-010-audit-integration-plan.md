@@ -427,10 +427,10 @@ package gateway  // White-box testing - same package
 
 import (
     "context"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    
+
     "github.com/jordigilh/kubernaut/pkg/gateway/types"
     "github.com/jordigilh/kubernaut/test/mocks"
 )
@@ -526,11 +526,11 @@ import (
     "context"
     "os"
     "time"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
     "github.com/redis/go-redis/v9"
-    
+
     "github.com/jordigilh/kubernaut/pkg/gateway/types"
     "github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -633,7 +633,8 @@ make test-integration-gateway
 **E2E Test Example**:
 
 ```go
-package gateway_test
+// test/e2e/gateway/06_audit_integration_test.go
+package gateway  // White-box testing - same package (ALL test types)
 
 import (
     "bytes"
@@ -642,14 +643,13 @@ import (
     "net/http"
     "os"
     "time"
-
+    
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-
+    
     "github.com/jordigilh/kubernaut/test/e2e/infrastructure"
 )
 
-// test/e2e/gateway/06_audit_integration_test.go
 var _ = Describe("Gateway Audit Integration E2E", func() {
     var (
         ctx            context.Context
@@ -836,15 +836,15 @@ make test-e2e-gateway
 
 **AUTHORITY**: [TEST_PACKAGE_NAMING_STANDARD.md](../../../testing/TEST_PACKAGE_NAMING_STANDARD.md)
 
-**CRITICAL**: Kubernaut uses **white-box testing** (same package name). Follow these conventions exactly:
+**CRITICAL**: Kubernaut uses **white-box testing** (same package name) for **ALL tests**. Follow these conventions exactly:
 
 | Test Type | Package Name | Location | Rationale |
 |-----------|--------------|----------|-----------|
 | **Unit Tests** | `package gateway` | `test/unit/gateway/` | White-box testing (access to internal state, unexported functions) |
 | **Integration Tests** | `package gateway` | `test/integration/gateway/` | White-box testing (access to internal state for setup/validation) |
-| **E2E Tests** | `package gateway_test` | `test/e2e/gateway/` | Black-box testing (tests public API only, external perspective) |
+| **E2E Tests** | `package gateway` | `test/e2e/gateway/` | White-box testing (consistent with project standard) |
 
-**Key Principle**: Use **same package name** as code under test (NO `_test` suffix) for unit and integration tests.
+**Key Principle**: Use **same package name** as code under test (NO `_test` suffix) for **ALL test types**.
 
 **Examples from Codebase**:
 
@@ -867,36 +867,31 @@ import (
     . "github.com/onsi/gomega"
 )
 
-// ✅ CORRECT: E2E test (test/e2e/gateway/01_storm_window_ttl_test.go)
-package gateway_test  // External package - black-box testing (ONLY exception)
+// ✅ CORRECT: E2E test (test/e2e/gateway/06_audit_integration_test.go)
+package gateway  // Same package - white-box testing (consistent with standard)
 
 import (
     "context"
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    
-    "github.com/jordigilh/kubernaut/pkg/gateway"  // Must import when using _test suffix
 )
 ```
 
 **Common Mistakes**:
 
 ```go
-// ❌ WRONG: Using _test suffix for unit tests
-package gateway_test  // DO NOT USE for unit/integration tests
+// ❌ WRONG: Using _test suffix for ANY test type
+package gateway_test  // DO NOT USE - violates TEST_PACKAGE_NAMING_STANDARD.md
 
-// ❌ WRONG: Using _test suffix for integration tests
-package gateway_test  // DO NOT USE for unit/integration tests
-
-// ✅ CORRECT: Only E2E tests use _test suffix
-package gateway_test  // OK for E2E tests only
+// ✅ CORRECT: Same package for ALL test types
+package gateway  // Use this for unit, integration, AND E2E tests
 ```
 
 **Why This Matters**:
-- ✅ **White-box (unit/integration)**: Access to internal state, unexported functions, comprehensive validation
-- ✅ **Black-box (E2E)**: Tests public API only, external user perspective
-- ✅ **Project consistency**: All services follow same pattern
-- ❌ **Wrong package name**: Tests won't compile, can't access internal state, or violates project standards
+- ✅ **White-box testing**: Access to internal state, unexported functions, comprehensive validation
+- ✅ **Project consistency**: ALL tests use same package (no exceptions)
+- ✅ **Simpler imports**: No need to import the package being tested
+- ❌ **Wrong package name**: Violates TEST_PACKAGE_NAMING_STANDARD.md, causes inconsistency
 
 **Reference**: See [TEST_PACKAGE_NAMING_STANDARD.md](../../../testing/TEST_PACKAGE_NAMING_STANDARD.md) for complete rationale and examples.
 
