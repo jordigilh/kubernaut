@@ -294,4 +294,15 @@ type StormMetadata struct {
 	// Example: ["prod-api:Pod:payment-api-789", "prod-api:Pod:payment-api-456"]
 	// Max: 100 resources (to prevent excessive CRD size)
 	AffectedResources []string
+
+	// ===== DD-GATEWAY-008: Sliding Window Tracking =====
+	// AbsoluteStartTime tracks when the aggregation window first opened
+	// Used for max window duration enforcement (5-minute safety limit)
+	// Business Requirement: BR-GATEWAY-008
+	AbsoluteStartTime time.Time
+
+	// LastActivity tracks when the last alert was added to the window
+	// Used for sliding window behavior (inactivity timeout)
+	// Business Requirement: BR-GATEWAY-008
+	LastActivity time.Time
 }
