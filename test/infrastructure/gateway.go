@@ -112,7 +112,7 @@ func DeployTestServices(ctx context.Context, namespace, kubeconfigPath string, w
 
 	// 3. Deploy Redis Master-Replica
 	fmt.Fprintf(writer, "🚀 Deploying Redis Master-Replica...\n")
-	if err := deployRedisInNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
@@ -319,36 +319,7 @@ func createNamespaceOnly(namespace, kubeconfigPath string, writer io.Writer) err
 }
 
 // deployRedisInNamespace deploys Redis Master-Replica in the specified namespace
-func deployRedisInNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-
-	// Read template
-	templatePath := filepath.Join(workspaceRoot, "test", "e2e", "gateway", "redis-simple-ha.yaml")
-	templateContent, err := os.ReadFile(templatePath)
-	if err != nil {
-		return fmt.Errorf("failed to read Redis template: %w", err)
-	}
-
-	// Replace namespace placeholder
-	manifestContent := strings.ReplaceAll(string(templateContent), "namespace: kubernaut-system", fmt.Sprintf("namespace: %s", namespace))
-
-	// Apply manifest
-	applyCmd := exec.Command("kubectl", "apply", "-f", "-")
-	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
-	applyCmd.Stdin = strings.NewReader(manifestContent)
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
-
-	if err := applyCmd.Run(); err != nil {
-		return fmt.Errorf("failed to deploy Redis: %w", err)
-	}
-
-	fmt.Fprintln(writer, "   Redis Master-Replica deployed (2 pods)")
-	return nil
-}
+// deployRedisInNamespace is defined in datastorage.go (shared implementation)
 
 // deployAlertManagerInNamespace deploys Prometheus AlertManager in the specified namespace
 func deployAlertManagerInNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
