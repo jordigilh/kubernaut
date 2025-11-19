@@ -115,6 +115,19 @@ type Metrics struct {
 	Consecutive503Responses     *prometheus.GaugeVec
 	StormProtectionActive       prometheus.Gauge
 	CRDsCreated                 *prometheus.CounterVec
+
+	// DD-GATEWAY-008: Storm Buffering & Aggregation Metrics (6 essential metrics)
+	// Business value and operational visibility for buffered first-alert aggregation
+
+	// Business Value Metrics (BR-GATEWAY-016, BR-GATEWAY-008)
+	StormCostSavingsPercent prometheus.Gauge         // Cost savings from aggregation (0-100%)
+	StormAggregationRatio   prometheus.Gauge         // Alerts aggregated / total alerts (0.0-1.0)
+	StormWindowDuration     *prometheus.HistogramVec // Actual window durations (seconds)
+
+	// Operational Metrics (BR-GATEWAY-011)
+	NamespaceBufferUtilization *prometheus.GaugeVec   // Buffer utilization per namespace (0.0-1.0)
+	NamespaceBufferBlocking    *prometheus.CounterVec // Namespace capacity blocking events
+	StormBufferOverflow        *prometheus.CounterVec // Buffer overflow events
 }
 
 // NewMetrics creates a new Metrics instance with the default global Prometheus registry
@@ -475,6 +488,49 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Help: "Total CRDs created by type",
 			},
 			[]string{"type"},
+		),
+
+		// DD-GATEWAY-008: Storm Buffering & Aggregation Metrics (6 essential)
+		StormCostSavingsPercent: factory.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "gateway_storm_cost_savings_percent",
+				Help: "Cost savings percentage from storm aggregation (0-100) - BR-GATEWAY-016",
+			},
+		),
+		StormAggregationRatio: factory.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "gateway_storm_aggregation_ratio",
+				Help: "Ratio of alerts aggregated to total alerts received (0.0-1.0, higher=better) - BR-GATEWAY-008",
+			},
+		),
+		StormWindowDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "gateway_storm_window_duration_seconds",
+				Help:    "Histogram of actual storm window durations in seconds - BR-GATEWAY-008",
+				Buckets: []float64{10, 30, 60, 120, 180, 300}, // 10s, 30s, 1m, 2m, 3m, 5m
+			},
+			[]string{"namespace", "alert_name"},
+		),
+		NamespaceBufferUtilization: factory.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "gateway_namespace_buffer_utilization",
+				Help: "Buffer utilization per namespace (0.0-1.0) - BR-GATEWAY-011",
+			},
+			[]string{"namespace"},
+		),
+		NamespaceBufferBlocking: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "gateway_namespace_buffer_blocking_total",
+				Help: "Total namespace buffer capacity blocking events - BR-GATEWAY-011",
+			},
+			[]string{"namespace"},
+		),
+		StormBufferOverflow: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "gateway_storm_buffer_overflow_total",
+				Help: "Total storm buffer overflow events (capacity reached) - BR-GATEWAY-011",
+			},
+			[]string{"namespace"},
 		),
 	}
 }
