@@ -102,7 +102,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// DD-STORAGE-010: Offset-based pagination
 
 			// ARRANGE: Insert test events for correlation_id "rr-2025-001"
-			correlationID := "rr-2025-001"
+			correlationID := generateTestID() // Unique per test for isolation
 			eventTypes := []string{
 				"gateway.signal.received",
 				"aianalysis.analysis.started",
@@ -189,7 +189,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// BR-STORAGE-022: Query filtering by event_type
 
 			// ARRANGE: Insert events with different event_types
-			correlationID := "rr-2025-002"
+			correlationID := generateTestID() // Unique per test for isolation
 			eventTypes := map[string]int{
 				"gateway.signal.received":       3,
 				"aianalysis.analysis.completed": 2,
@@ -264,7 +264,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// BR-STORAGE-022: Query filtering by service
 
 			// ARRANGE: Insert events from different services
-			correlationID := "rr-2025-003"
+			correlationID := generateTestID() // Unique per test for isolation
 			services := map[string]int{
 				"gateway":    2,
 				"aianalysis": 3,
@@ -278,9 +278,9 @@ var _ = Describe("Audit Events Query API", func() {
 				}
 			}
 
-			// ACT: Query by service
+			// ACT: Query by service and correlation_id for test isolation
 			targetService := "aianalysis"
-			resp, err := http.Get(fmt.Sprintf("%s?service=%s", baseURL, targetService))
+			resp, err := http.Get(fmt.Sprintf("%s?service=%s&correlation_id=%s", baseURL, targetService, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -294,7 +294,7 @@ var _ = Describe("Audit Events Query API", func() {
 
 			data, ok := response["data"].([]interface{})
 			Expect(ok).To(BeTrue())
-			Expect(data).To(HaveLen(3), "should return only 3 aianalysis events")
+			Expect(data).To(HaveLen(3), "should return only 3 aianalysis events for this correlation_id")
 
 			for _, item := range data {
 				event := item.(map[string]interface{})
@@ -312,7 +312,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// (In real implementation, would manipulate event_timestamp)
 			// For now, all events are recent (<24h)
 
-			correlationID := "rr-2025-004"
+			correlationID := generateTestID() // Unique per test for isolation
 			for i := 0; i < 5; i++ {
 				err := createTestAuditEvent(baseURL, "gateway", "signal.received", correlationID)
 				Expect(err).ToNot(HaveOccurred())
@@ -349,7 +349,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// DD-STORAGE-010: Time parsing (absolute: RFC3339)
 
 			// ARRANGE: Insert events
-			correlationID := "rr-2025-005"
+			correlationID := generateTestID() // Unique per test for isolation
 			for i := 0; i < 3; i++ {
 				err := createTestAuditEvent(baseURL, "gateway", "signal.received", correlationID)
 				Expect(err).ToNot(HaveOccurred())
@@ -383,7 +383,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// BR-STORAGE-022: Multiple filter support
 
 			// ARRANGE: Insert events with different outcomes
-			correlationID := "rr-2025-006"
+			correlationID := generateTestID() // Unique per test for isolation
 			outcomes := []string{"success", "failure", "success", "failure"}
 			for _, outcome := range outcomes {
 				eventData, err := audit.NewGatewayEvent("signal.received").
@@ -443,7 +443,7 @@ var _ = Describe("Audit Events Query API", func() {
 			// DD-STORAGE-010: Offset-based pagination
 
 			// ARRANGE: Insert 150 events
-			correlationID := "rr-2025-007"
+			correlationID := generateTestID() // Unique per test for isolation
 			for i := 0; i < 150; i++ {
 				err := createTestAuditEvent(baseURL, "gateway", "signal.received", correlationID)
 				Expect(err).ToNot(HaveOccurred())
