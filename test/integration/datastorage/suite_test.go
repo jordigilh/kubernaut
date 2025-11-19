@@ -63,6 +63,13 @@ var (
 	configDir         string // ADR-030: Directory for config and secret files
 )
 
+// generateTestID creates a unique test identifier for data isolation
+// Format: test-{process}-{timestamp}
+// This enables parallel test execution by ensuring each test has unique data
+func generateTestID() string {
+	return fmt.Sprintf("test-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
+}
+
 // cleanupContainers removes any existing test containers and networks
 func cleanupContainers() {
 	// Stop and remove containers (ignore errors if they don't exist)

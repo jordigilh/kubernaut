@@ -39,7 +39,12 @@ import (
 // ========================================
 
 var _ = Describe("Audit Events Write API Integration Tests", func() {
+	var testCorrelationID string
+
 	BeforeEach(func() {
+		// Generate unique correlation ID for test isolation
+		testCorrelationID = generateTestID()
+
 		// Clean up test data before each test
 		_, err := db.Exec("TRUNCATE TABLE audit_events CASCADE")
 		if err != nil {
@@ -73,7 +78,7 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 					"service":            "gateway",
 					"event_type":         "gateway.signal.received",
 					"event_timestamp":    time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":     "rr-2025-001",
+					"correlation_id":     testCorrelationID,
 					"resource_type":      "pod",
 					"resource_id":        "api-server-xyz-123",
 					"resource_namespace": "production",
@@ -141,7 +146,7 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 					"service":          "aianalysis",
 					"event_type":       "aianalysis.analysis.completed",
 					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   "rr-2025-001",
+					"correlation_id":   testCorrelationID,
 					"outcome":          "success",
 					"operation":        "analysis",
 					"event_data":       eventData,
@@ -180,7 +185,7 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 					"service":          "workflow",
 					"event_type":       "workflow.workflow.completed",
 					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   "rr-2025-001",
+					"correlation_id":   testCorrelationID,
 					"outcome":          "success",
 					"operation":        "workflow_execution",
 					"event_data":       eventData,
@@ -206,7 +211,7 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 					"service":          "gateway",
 					// Missing "event_type" field
 					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   "rr-2025-001",
+					"correlation_id":   testCorrelationID,
 					"outcome":          "success",
 					"operation":        "test",
 					"event_data":       map[string]interface{}{},
@@ -263,7 +268,7 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 					"service":          "gateway",
 					"event_type":       "gateway.signal.received",
 					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   "rr-2025-001",
+					"correlation_id":   testCorrelationID,
 					"outcome":          "success",
 					"operation":        "test",
 					"event_data":       map[string]interface{}{},
@@ -295,7 +300,7 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 			It("should create all events and link them via correlation_id", func() {
 				// TDD GREEN: Handler creates events with correlation linking
 
-				correlationID := "rr-2025-002"
+				correlationID := generateTestID() // Unique per test for isolation
 
 				By("Writing Gateway signal received event")
 				gatewayEventData, err := audit.NewGatewayEvent("signal.received").
