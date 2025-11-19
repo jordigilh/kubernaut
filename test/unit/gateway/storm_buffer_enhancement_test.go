@@ -134,6 +134,39 @@ var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 			})
 		})
 	})
+
+	// TDD Cycle 3: ExtendWindow - Sliding Window Behavior
+	Describe("ExtendWindow - Sliding Window (BR-GATEWAY-008)", func() {
+		Context("when alert arrives during active window", func() {
+			It("should reset the window expiration time", func() {
+				windowID := "test-window-123"
+
+				// Create a window in Redis with short TTL first
+				windowKey := fmt.Sprintf("alert:storm:aggregate:PodCrashLooping")
+				err := redisClient.Set(ctx, windowKey, windowID, 10*time.Second).Err()
+				Expect(err).ToNot(HaveOccurred())
+
+				// Get initial TTL (should be ~10s)
+				initialTTL, err := redisClient.TTL(ctx, windowKey).Result()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(initialTTL).To(BeNumerically("<=", 10*time.Second))
+
+				// BEHAVIOR: Extend the window (should reset to 60s)
+				newExpiration, err := aggregator.ExtendWindow(ctx, windowID, time.Now())
+
+				// CORRECTNESS: Should succeed
+				Expect(err).ToNot(HaveOccurred())
+				Expect(newExpiration).ToNot(BeZero())
+
+				// Verify TTL was reset to full window duration (60s > 10s)
+				newTTL, err := redisClient.TTL(ctx, windowKey).Result()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(newTTL).To(BeNumerically(">", 50*time.Second), "TTL should be reset to ~60s")
+
+				// BUSINESS OUTCOME: Window stays open for ongoing storm (BR-GATEWAY-008)
+			})
+		})
+	})
 })
 })
 
