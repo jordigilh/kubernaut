@@ -192,7 +192,7 @@ var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 		Context("when namespace has buffered alerts", func() {
 			It("should return correct utilization percentage", func() {
 				namespace := "prod-api"
-				
+
 				// Buffer 5 alerts in this namespace
 				for i := 1; i <= 5; i++ {
 					signal := &types.NormalizedSignal{
@@ -216,6 +216,24 @@ var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 				Expect(utilization).To(BeNumerically("~", 0.005, 0.001))
 
 				// BUSINESS OUTCOME: Accurate capacity reporting (BR-GATEWAY-011)
+			})
+		})
+	})
+
+	// TDD Cycle 6: ShouldSample - Overflow Protection
+	Describe("ShouldSample - Overflow Protection (BR-GATEWAY-011)", func() {
+		Context("when utilization exceeds sampling threshold", func() {
+			It("should return true indicating sampling required", func() {
+				currentUtilization := 0.96 // 96% utilization
+				samplingThreshold := 0.95  // 95% threshold
+
+				// BEHAVIOR: Should sampling be enabled?
+				shouldSample := aggregator.ShouldSample(currentUtilization, samplingThreshold)
+
+				// CORRECTNESS: Should sample (96% > 95%)
+				Expect(shouldSample).To(BeTrue(), "Should sample above threshold")
+
+				// BUSINESS OUTCOME: Overflow protection activated (BR-GATEWAY-011)
 			})
 		})
 	})
