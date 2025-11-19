@@ -519,23 +519,22 @@ var _ = Describe("Gateway Audit Integration", func() {
 **Integration Test Example**:
 
 ```go
-package gateway_test
+// test/integration/gateway/audit_integration_test.go
+package gateway  // White-box testing - same package
 
 import (
     "context"
     "os"
     "time"
-
+    
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
     "github.com/redis/go-redis/v9"
-
-    "github.com/jordigilh/kubernaut/pkg/gateway"
+    
     "github.com/jordigilh/kubernaut/pkg/gateway/types"
     "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-// test/integration/gateway/audit_integration_test.go
 var _ = Describe("Gateway Audit Integration Tests", func() {
     var (
         ctx             context.Context
