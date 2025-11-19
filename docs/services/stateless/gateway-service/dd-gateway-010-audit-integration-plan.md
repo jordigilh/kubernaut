@@ -1,6 +1,6 @@
 # DD-GATEWAY-010: Audit Trace Integration - Implementation Plan
 
-**Version**: 1.1
+**Version**: 1.3  
 **Status**: 📋 DRAFT
 **Design Decision**: [audit-integration-analysis.md](./audit-integration-analysis.md)
 **Service**: Gateway Service
@@ -13,7 +13,9 @@
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **v1.1** | 2025-11-19 | Clarified timestamp accuracy vs. query latency (eventual consistency) | ✅ **CURRENT** |
+| **v1.3** | 2025-11-19 | Corrected package naming - ALL tests use `package gateway` (no `_test` suffix) | ✅ **CURRENT** |
+| **v1.2** | 2025-11-19 | Fixed package naming, added Package Naming Conventions section | Superseded |
+| **v1.1** | 2025-11-19 | Clarified timestamp accuracy vs. query latency (eventual consistency) | Superseded |
 | **v1.0** | 2025-11-19 | Initial implementation plan created | Superseded |
 
 ---
@@ -643,10 +645,10 @@ import (
     "net/http"
     "os"
     "time"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    
+
     "github.com/jordigilh/kubernaut/test/e2e/infrastructure"
 )
 

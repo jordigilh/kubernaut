@@ -365,7 +365,7 @@ func PortForwardService(namespace, serviceName string, localPort, remotePort int
 		fmt.Sprintf("svc/%s", serviceName),
 		fmt.Sprintf("%d:%d", localPort, remotePort),
 		"-n", namespace)
-	
+
 	err := cmd.Start()
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to start port-forward: %w", err)
