@@ -31,7 +31,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func() {
+// Parallel Execution: ✅ ENABLED
+// - Single It block with unique namespace (rate-limit-{timestamp})
+// - Uses shared Gateway instance
+// - Cleanup in AfterAll
+var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
