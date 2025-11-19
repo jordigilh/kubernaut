@@ -27,6 +27,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
@@ -49,6 +51,7 @@ import (
 // - Target deduplication rate: 40-60% (typical production)
 type DeduplicationService struct {
 	redisClient *redis.Client
+	k8sClient   *k8s.Client // DD-GATEWAY-009: K8s client for state-based deduplication
 	ttl         time.Duration
 	logger      *zap.Logger
 	connected   atomic.Bool      // Track Redis connection state (for lazy connection)
@@ -64,7 +67,7 @@ type DeduplicationService struct {
 // The 5-minute window balances:
 // - Too short: Duplicate alerts create multiple CRDs (wasted resources)
 // - Too long: Stale alerts prevent new remediation attempts (delayed resolution)
-func NewDeduplicationService(redisClient *redis.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+func NewDeduplicationService(redisClient *redis.Client, k8sClient *k8s.Client, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
 		// Use custom registry to avoid "duplicate metrics collector registration" in tests
@@ -73,6 +76,7 @@ func NewDeduplicationService(redisClient *redis.Client, logger *zap.Logger, metr
 	}
 	return &DeduplicationService{
 		redisClient: redisClient,
+		k8sClient:   k8sClient,
 		ttl:         5 * time.Minute,
 		logger:      logger,
 		metrics:     metricsInstance,
@@ -86,7 +90,7 @@ func NewDeduplicationService(redisClient *redis.Client, logger *zap.Logger, metr
 //
 // Production usage: Use NewDeduplicationService() with default 5-minute TTL
 // Test usage: Use NewDeduplicationServiceWithTTL(client, 5*time.Second, logger) for fast tests
-func NewDeduplicationServiceWithTTL(redisClient *redis.Client, ttl time.Duration, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
+func NewDeduplicationServiceWithTTL(redisClient *redis.Client, k8sClient *k8s.Client, ttl time.Duration, logger *zap.Logger, metricsInstance *metrics.Metrics) *DeduplicationService {
 	// If metrics is nil (e.g., unit tests), create a test-isolated metrics instance
 	if metricsInstance == nil {
 		// Use custom registry to avoid "duplicate metrics collector registration" in tests
@@ -95,6 +99,7 @@ func NewDeduplicationServiceWithTTL(redisClient *redis.Client, ttl time.Duration
 	}
 	return &DeduplicationService{
 		redisClient: redisClient,
+		k8sClient:   k8sClient,
 		ttl:         ttl,
 		logger:      logger,
 		metrics:     metricsInstance,
@@ -142,55 +147,200 @@ func (d *DeduplicationService) ensureConnection(ctx context.Context) error {
 	return nil
 }
 
-// Check verifies if an alert is a duplicate
+// Check verifies if an alert is a duplicate using state-based deduplication
 //
-// This method:
-// 1. Queries Redis for existing fingerprint (EXISTS command)
-// 2. If found (duplicate):
-//   - Increments occurrence count (HINCRBY)
-//   - Updates lastSeen timestamp (HSET)
-//   - Returns metadata for HTTP 202 response
+// DD-GATEWAY-009: State-Based Deduplication
+// This method checks CRD state in Kubernetes to determine if alert is duplicate:
+// 1. Generate CRD name from fingerprint
+// 2. Query Kubernetes for existing CRD
+// 3. If CRD exists:
+//   - Phase = "Pending" or "Processing" → Duplicate (update occurrenceCount)
+//   - Phase = "Completed", "Failed", "Cancelled" → New incident (create new CRD)
 //
-// 3. If not found (new alert):
-//   - Returns false (caller creates RemediationRequest CRD)
+// 4. If CRD doesn't exist → New incident (create CRD)
 //
 // Graceful Degradation:
-// - If Redis is unavailable: Treats alert as new (no deduplication)
-// - Logs error for monitoring/alerting
-// - Returns (false, nil, nil) to allow processing to continue
-//
-// Trade-off: Temporary duplicate CRDs vs. blocking critical alerts
-// Decision: Accept duplicates over blocking production alerts
+// - If K8s API unavailable: Fall back to Redis time-based check
+// - If Redis also unavailable: Return error (HTTP 503)
 //
 // Returns:
-// - bool: true if duplicate, false if new alert or Redis unavailable
-// - *DeduplicationMetadata: Metadata for duplicate alerts (nil if new or Redis unavailable)
-// - error: Validation errors only (Redis errors trigger graceful degradation)
+// - bool: true if duplicate, false if new alert
+// - *DeduplicationMetadata: Metadata for duplicate alerts (nil if new)
+// - error: Validation errors or infrastructure failures
 func (s *DeduplicationService) Check(ctx context.Context, signal *types.NormalizedSignal) (bool, *DeduplicationMetadata, error) {
 	startTime := time.Now()
 	defer func() {
-		// Record Redis operation duration for monitoring
+		// Record operation duration for monitoring
 		s.metrics.RedisOperationDuration.WithLabelValues("deduplication_check").Observe(time.Since(startTime).Seconds())
 	}()
 
 	// BR-GATEWAY-006: Fingerprint validation
-	// Reject invalid fingerprints at boundary
 	if signal.Fingerprint == "" {
 		return false, nil, fmt.Errorf("invalid fingerprint: empty fingerprint not allowed")
 	}
 
-	// BR-GATEWAY-008: MUST prevent duplicate CRDs
-	// BR-GATEWAY-013: Request rejection when Redis unavailable (per DD-GATEWAY-003)
-	// Check Redis connection before attempting operations
-	if err := s.ensureConnection(ctx); err != nil {
-		// Redis unavailable - return error to trigger HTTP 503
-		// Gateway will reject request, Prometheus will retry
-		// This prevents duplicate CRDs and maintains data integrity
-		s.logger.Warn("Redis unavailable, cannot guarantee deduplication",
+	// DD-GATEWAY-009: If K8s client is nil (e.g., unit tests), fall back to Redis-based check
+	if s.k8sClient == nil {
+		s.logger.Debug("K8s client is nil, falling back to Redis-based deduplication",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("namespace", signal.Namespace))
+		return s.checkRedisDeduplication(ctx, signal)
+	}
+
+	// DD-GATEWAY-009: v1.0 uses direct K8s API queries (no Redis caching)
+	// v1.1 will add informer pattern to reduce API load
+	s.logger.Debug("Using K8s API for state-based deduplication",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("namespace", signal.Namespace))
+
+	// DD-GATEWAY-009 + DD-015: Find CRDs by fingerprint using label selector
+	// With DD-015, CRD names include timestamps, so we can't predict exact names.
+	// Query by fingerprint label to find all matching CRDs, then filter for in-progress ones.
+	crdList, err := s.k8sClient.ListRemediationRequestsByFingerprint(ctx, signal.Fingerprint)
+	if err != nil {
+		// K8s API error → graceful degradation (fall back to Redis)
+		s.logger.Warn("K8s API unavailable for deduplication, falling back to Redis check",
 			zap.Error(err),
 			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("operation", "deduplication_check"),
-		)
+			zap.String("namespace", signal.Namespace))
+
+		// Fall back to existing Redis-based check
+		return s.checkRedisDeduplication(ctx, signal)
+	}
+
+	// DD-GATEWAY-009 + DD-015: WHITELIST FINAL STATES for safety
+	// PHILOSOPHY: Only allow new CRDs when we KNOW the state is final.
+	//             Unknown states are conservatively treated as "in-progress" to prevent duplicate CRDs.
+	//
+	// WHITELIST (allow new CRD):
+	// - Completed: Remediation succeeded, allow retry if issue recurs
+	// - Failed: Remediation failed, allow retry
+	// - Cancelled: User cancelled, allow retry
+	//
+	// ALL OTHER STATES (treat as duplicate, increment occurrenceCount):
+	// - Pending: Known in-progress state
+	// - Processing: Known in-progress state
+	// - Unknown/Future states: Conservatively assume in-progress (safer than creating duplicates)
+	//
+	// RATIONALE: Future CRD states might include:
+	// - "Validating", "Analyzing", "WaitingForApproval", "Paused", etc.
+	// - Better to block a legitimate alert (duplicate) than create duplicate CRDs
+
+	var inProgressCRD *remediationv1alpha1.RemediationRequest
+	var finalStateCount, pendingCount, processingCount, unknownCount int
+
+	for i := range crdList.Items {
+		crd := &crdList.Items[i]
+
+		// Skip if different namespace (fingerprints should be namespace-scoped)
+		if crd.Namespace != signal.Namespace {
+			continue
+		}
+
+		// Check if CRD is in a FINAL state (whitelist approach)
+		switch crd.Status.OverallPhase {
+		case "Completed", "Failed", "Cancelled":
+			// WHITELIST: These are known final states → allow new CRD
+			finalStateCount++
+			// Don't set inProgressCRD, continue to next CRD
+
+		default:
+			// ALL OTHER STATES (Pending, Processing, Unknown, Future) → treat as in-progress
+			if inProgressCRD == nil {
+				inProgressCRD = crd
+
+				// Log known vs unknown states for debugging
+				switch crd.Status.OverallPhase {
+				case "Pending":
+					pendingCount++
+				case "Processing":
+					processingCount++
+				default:
+					unknownCount++
+					s.logger.Warn("Unknown CRD state treated as in-progress (conservative)",
+						zap.String("fingerprint", signal.Fingerprint),
+						zap.String("crd_name", crd.Name),
+						zap.String("unknown_phase", crd.Status.OverallPhase),
+						zap.String("namespace", crd.Namespace))
+				}
+			}
+		}
+	}
+
+	// No in-progress CRD found (all are in final states) → not a duplicate
+	if inProgressCRD == nil {
+		s.metrics.DeduplicationCacheMissesTotal.Inc()
+
+		s.logger.Debug("All CRDs in final states, treating as new incident",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("namespace", signal.Namespace),
+			zap.Int("total_crds", len(crdList.Items)),
+			zap.Int("final_state_count", finalStateCount))
+
+		return false, nil, nil
+	}
+
+	// In-progress CRD found → this is a duplicate
+	s.metrics.DeduplicationCacheHitsTotal.Inc()
+
+	metadata := &DeduplicationMetadata{
+		Fingerprint:           signal.Fingerprint,
+		Count:                 inProgressCRD.Spec.Deduplication.OccurrenceCount + 1,
+		RemediationRequestRef: fmt.Sprintf("%s/%s", inProgressCRD.Namespace, inProgressCRD.Name),
+		FirstSeen:             inProgressCRD.Spec.Deduplication.FirstSeen.Format(time.RFC3339),
+		LastSeen:              time.Now().Format(time.RFC3339),
+	}
+
+	s.logger.Debug("Duplicate detected (in-progress CRD found)",
+		zap.String("fingerprint", signal.Fingerprint),
+		zap.String("crd_name", inProgressCRD.Name),
+		zap.String("phase", inProgressCRD.Status.OverallPhase),
+		zap.Int("occurrence_count", metadata.Count),
+		zap.Int("total_crds_for_fingerprint", len(crdList.Items)),
+		zap.Int("final_state_crds", finalStateCount))
+
+	return true, metadata, nil
+}
+
+// GetCRDNameFromFingerprint generates CRD name prefix from fingerprint
+//
+// DD-GATEWAY-009 + DD-015: CRD naming strategy
+// With DD-015, CRD names include timestamps: rr-<fingerprint-12>-<timestamp>
+// This method returns the fingerprint prefix only (first 12 chars)
+//
+// Example: fingerprint "abc123...xyz789" → CRD name prefix "rr-abc123..."
+//
+// NOTE: With DD-015, this cannot generate the exact CRD name (missing timestamp).
+// This is used as a fallback when Redis doesn't have the CRD reference.
+// Deduplication relies on Redis storing the full CRD name (with timestamp).
+//
+// This method is public so server.go can use it for fallback CRD name generation
+func (s *DeduplicationService) GetCRDNameFromFingerprint(fingerprint string) string {
+	// Use first 12 chars of fingerprint for CRD name prefix
+	// (matches DD-015 naming logic in crd_creator.go)
+	fingerprintPrefix := fingerprint
+	if len(fingerprintPrefix) > 12 {
+		fingerprintPrefix = fingerprintPrefix[:12]
+	}
+	return fmt.Sprintf("rr-%s", fingerprintPrefix)
+}
+
+// checkRedisDeduplication performs time-based deduplication using Redis
+//
+// DD-GATEWAY-009: Graceful degradation fallback
+// This method provides the original Redis-based deduplication logic
+// as a fallback when K8s API is unavailable.
+//
+// Returns:
+// - bool: true if duplicate (Redis key exists), false if new
+// - *DeduplicationMetadata: Metadata for duplicate alerts
+// - error: Redis errors or validation errors
+func (s *DeduplicationService) checkRedisDeduplication(ctx context.Context, signal *types.NormalizedSignal) (bool, *DeduplicationMetadata, error) {
+	// Check Redis connection
+	if err := s.ensureConnection(ctx); err != nil {
+		s.logger.Warn("Redis unavailable, cannot guarantee deduplication",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint))
 
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
 		return false, nil, fmt.Errorf("redis unavailable: %w", err)
@@ -201,18 +351,14 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 	// Check if key exists in Redis
 	exists, err := s.redisClient.Exists(ctx, key).Result()
 	if err != nil {
-		// Redis operation failed (e.g., connection lost after ensureConnection)
-		// Graceful degradation: treat as new alert
-		s.logger.Warn("Redis operation failed, skipping deduplication (alert treated as new)",
+		// Redis operation failed
+		s.logger.Warn("Redis operation failed, skipping deduplication",
 			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("operation", "deduplication_check"),
-		)
+			zap.String("fingerprint", signal.Fingerprint))
 
-		// Mark as disconnected so next call will retry connection
 		s.connected.Store(false)
 		s.metrics.DeduplicationCacheMissesTotal.Inc()
-		return false, nil, nil // Treat as new alert, allow processing to continue
+		return false, nil, nil // Treat as new alert
 	}
 
 	if exists == 0 {
@@ -230,14 +376,13 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		return false, nil, fmt.Errorf("failed to increment count: %w", err)
 	}
 
-	// Update lastSeen timestamp (use RFC3339Nano for sub-second precision)
+	// Update lastSeen timestamp
 	now := time.Now().Format(time.RFC3339Nano)
 	if err := s.redisClient.HSet(ctx, key, "lastSeen", now).Err(); err != nil {
 		return false, nil, fmt.Errorf("failed to update lastSeen: %w", err)
 	}
 
-	// BR-GATEWAY-003: Refresh TTL on duplicate detection
-	// This ensures the deduplication window extends as long as alerts keep firing
+	// Refresh TTL on duplicate detection
 	if err := s.redisClient.Expire(ctx, key, s.ttl).Err(); err != nil {
 		return false, nil, fmt.Errorf("failed to refresh TTL: %w", err)
 	}
@@ -250,9 +395,6 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		FirstSeen:             s.redisClient.HGet(ctx, key, "firstSeen").Val(),
 		LastSeen:              now,
 	}
-
-	// Update deduplication rate gauge
-	s.updateDeduplicationRate()
 
 	return true, metadata, nil
 }

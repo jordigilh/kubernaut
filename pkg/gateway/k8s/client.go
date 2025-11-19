@@ -106,8 +106,15 @@ func (c *Client) UpdateRemediationRequest(ctx context.Context, rr *remediationv1
 func (c *Client) ListRemediationRequestsByFingerprint(ctx context.Context, fingerprint string) (*remediationv1alpha1.RemediationRequestList, error) {
 	var list remediationv1alpha1.RemediationRequestList
 
+	// Kubernetes label values must be ≤63 characters
+	// SHA256 fingerprints are 64 chars, so truncate to 63
+	fingerprintLabel := fingerprint
+	if len(fingerprintLabel) > 63 {
+		fingerprintLabel = fingerprintLabel[:63]
+	}
+
 	err := c.client.List(ctx, &list, client.MatchingLabels{
-		"kubernaut.io/signal-fingerprint": fingerprint,
+		"kubernaut.io/signal-fingerprint": fingerprintLabel,
 	})
 
 	return &list, err

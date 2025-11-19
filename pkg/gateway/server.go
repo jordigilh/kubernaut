@@ -94,6 +94,7 @@ type Server struct {
 	// Core processing components
 	adapterRegistry *adapters.AdapterRegistry
 	deduplicator    *processing.DeduplicationService
+	crdUpdater      *processing.CRDUpdater // DD-GATEWAY-009: CRD updater for state-based deduplication
 	stormDetector   *processing.StormDetector
 	stormAggregator *processing.StormAggregator
 	classifier      *processing.EnvironmentClassifier
@@ -245,13 +246,17 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 		metricsInstance = metrics.NewMetrics()
 	}
 
+	// DD-GATEWAY-009: Initialize deduplicator with K8s client for state-based deduplication
 	var deduplicator *processing.DeduplicationService
 	if cfg.Processing.Deduplication.TTL > 0 {
-		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, cfg.Processing.Deduplication.TTL, logger, metricsInstance)
+		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, k8sClient, cfg.Processing.Deduplication.TTL, logger, metricsInstance)
 		logger.Info("Using custom deduplication TTL", zap.Duration("ttl", cfg.Processing.Deduplication.TTL))
 	} else {
-		deduplicator = processing.NewDeduplicationService(redisClient, logger, metricsInstance)
+		deduplicator = processing.NewDeduplicationService(redisClient, k8sClient, logger, metricsInstance)
 	}
+
+	// DD-GATEWAY-009: Initialize CRD updater for duplicate alert handling
+	crdUpdater := processing.NewCRDUpdater(k8sClient, logger)
 
 	stormDetector := processing.NewStormDetector(redisClient, cfg.Processing.Storm.RateThreshold, cfg.Processing.Storm.PatternThreshold, metricsInstance)
 	if cfg.Processing.Storm.RateThreshold > 0 || cfg.Processing.Storm.PatternThreshold > 0 {
@@ -303,6 +308,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 	server := &Server{
 		adapterRegistry: adapterRegistry,
 		deduplicator:    deduplicator,
+		crdUpdater:      crdUpdater, // DD-GATEWAY-009: CRD updater for state-based deduplication
 		stormDetector:   stormDetector,
 		stormAggregator: stormAggregator,
 		classifier:      classifier,
@@ -1013,6 +1019,26 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, environment, prio
 func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.NormalizedSignal, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
 	logger := middleware.GetLogger(ctx)
 
+	// DD-GATEWAY-009: Update CRD occurrence count for duplicate alerts
+	// Parse CRD namespace/name from RemediationRequestRef (format: "namespace/name")
+	namespace, name := s.parseCRDReference(metadata.RemediationRequestRef)
+	if namespace == "" || name == "" {
+		// Fallback: generate CRD name from fingerprint (same as deduplication service)
+		namespace = signal.Namespace
+		name = s.deduplicator.GetCRDNameFromFingerprint(signal.Fingerprint)
+	}
+
+	// Update CRD occurrence count in Kubernetes
+	if err := s.crdUpdater.IncrementOccurrenceCount(ctx, namespace, name); err != nil {
+		// Log error but don't fail the request
+		// The duplicate response is still valid even if CRD update fails
+		logger.Warn("Failed to increment CRD occurrence count (duplicate alert still processed)",
+			zap.Error(err),
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("namespace", namespace),
+			zap.String("name", name))
+	}
+
 	// Fast path: duplicate signal, no CRD creation needed
 	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
 
@@ -1023,6 +1049,27 @@ func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.Norma
 	)
 
 	return NewDuplicateResponse(signal.Fingerprint, metadata)
+}
+
+// parseCRDReference parses a CRD reference string into namespace and name
+//
+// DD-GATEWAY-009: Helper for parsing RemediationRequestRef
+// Format: "namespace/name" (e.g., "production/rr-abc123")
+//
+// Returns:
+// - namespace: The namespace part (empty if invalid format)
+// - name: The name part (empty if invalid format)
+func (s *Server) parseCRDReference(ref string) (namespace, name string) {
+	if ref == "" {
+		return "", ""
+	}
+
+	parts := strings.Split(ref, "/")
+	if len(parts) != 2 {
+		return "", ""
+	}
+
+	return parts[0], parts[1]
 }
 
 // processStormAggregation handles storm detection and aggregation logic
@@ -1127,15 +1174,9 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
 
-	// 7. Store deduplication metadata
-	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
-	if err := s.deduplicator.Store(ctx, signal, remediationRequestRef); err != nil {
-		// Non-critical error: CRD already created, log warning
-		logger.Warn("Failed to store deduplication metadata",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("crdName", rr.Name),
-			zap.Error(err))
-	}
+	// DD-GATEWAY-009: v1.0 uses K8s API for deduplication (no Redis caching)
+	// v1.1 will add informer pattern to reduce API load
+	// No Redis storage needed - deduplication queries K8s CRD state directly
 
 	// Record processing duration
 	duration := time.Since(start)
@@ -1246,15 +1287,9 @@ func (s *Server) createAggregatedCRDAfterWindow(
 		return
 	}
 
-	// Store deduplication metadata for all aggregated resources
-	remediationRequestRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
-	if err := s.deduplicator.Store(ctx, &aggregatedSignal, remediationRequestRef); err != nil {
-		// Non-critical error: CRD already created, log warning
-		s.logger.Warn("Failed to store deduplication metadata for aggregated CRD",
-			zap.String("windowID", windowID),
-			zap.String("crdName", rr.Name),
-			zap.Error(err))
-	}
+	// DD-GATEWAY-009: v1.0 uses K8s API for deduplication (no Redis caching)
+	// v1.1 will add informer pattern to reduce API load
+	// No Redis storage needed - deduplication queries K8s CRD state directly
 
 	s.logger.Info("Aggregated RemediationRequest CRD created successfully",
 		zap.String("windowID", windowID),
