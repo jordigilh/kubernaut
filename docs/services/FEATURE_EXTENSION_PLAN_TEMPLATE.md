@@ -629,16 +629,32 @@ These are created as you code (not at the end):
 
 ## 📊 **Test Examples**
 
+### **📦 Package Naming Conventions - MANDATORY**
+
+**AUTHORITY**: [TEST_PACKAGE_NAMING_STANDARD.md](../../testing/TEST_PACKAGE_NAMING_STANDARD.md)
+
+**CRITICAL**: ALL tests use same package name as code under test (white-box testing).
+
+| Test Type | Package Name | NO Exceptions |
+|-----------|--------------|---------------|
+| **Unit Tests** | `package [service]` | ✅ |
+| **Integration Tests** | `package [service]` | ✅ |
+| **E2E Tests** | `package [service]` | ✅ |
+
+**Key Rule**: **NEVER** use `_test` suffix for ANY test type.
+
+---
+
 ### **Unit Test Example**
 
 ```go
-package [service]_test
+package [service]  // White-box testing - same package as code under test
 
 import (
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
     "[import/path/to/types]"
-    "[import/path/to/feature]"
+    // No need to import [service] package - we're already in it
 )
 
 var _ = Describe("[Feature] Unit Tests", func() {
@@ -677,12 +693,13 @@ var _ = Describe("[Feature] Unit Tests", func() {
 ### **Integration Test Example**
 
 ```go
-package [service]_test
+package [service]  // White-box testing - same package as code under test
 
 import (
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
     "[import/path/to/infrastructure]"
+    // No need to import [service] package - we're already in it
 )
 
 var _ = Describe("[Feature] Integration Tests", func() {
