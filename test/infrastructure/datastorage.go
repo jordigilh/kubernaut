@@ -75,6 +75,87 @@ func DeleteCluster(clusterName string, writer io.Writer) error {
 	return nil
 }
 
+// DeployDataStorageTestServices deploys PostgreSQL, Redis, and Data Storage Service to a namespace
+// This is used by E2E tests to create isolated test environments
+func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// 1. Create test namespace
+	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// 2. Deploy PostgreSQL with pgvector
+	fmt.Fprintf(writer, "🚀 Deploying PostgreSQL with pgvector...\n")
+	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
+	}
+
+	// 3. Deploy Redis for DLQ
+	fmt.Fprintf(writer, "🚀 Deploying Redis for DLQ...\n")
+	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Redis: %w", err)
+	}
+
+	// 4. Apply database migrations
+	fmt.Fprintf(writer, "📋 Applying database migrations...\n")
+	if err := applyMigrationsInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+
+	// 5. Deploy Data Storage Service
+	fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
+	}
+
+	// 6. Wait for all services ready
+	fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
+	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("services not ready: %w", err)
+	}
+
+	fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s\n", namespace)
+	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	return nil
+}
+
+// CleanupDataStorageTestNamespace deletes a test namespace and all resources
+func CleanupDataStorageTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintf(writer, "🧹 Cleaning up namespace %s...\n", namespace)
+	
+	cmd := exec.Command("kubectl", "delete", "namespace", namespace, 
+		"--kubeconfig", kubeconfigPath,
+		"--wait=true",
+		"--timeout=60s")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(writer, "⚠️  Failed to delete namespace: %s\n", output)
+		return fmt.Errorf("failed to delete namespace: %w", err)
+	}
+	
+	fmt.Fprintf(writer, "✅ Namespace %s deleted\n", namespace)
+	return nil
+}
+
+func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
+	cmd := exec.Command("kubectl", "create", "namespace", namespace, "--kubeconfig", kubeconfigPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if strings.Contains(string(output), "AlreadyExists") {
+			fmt.Fprintf(writer, "   Namespace %s already exists\n", namespace)
+			return nil
+		}
+		fmt.Fprintf(writer, "❌ Failed to create namespace: %s\n", output)
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+	fmt.Fprintf(writer, "   ✅ Namespace %s created\n", namespace)
+	return nil
+}
+
 func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
 	// Check if cluster already exists
 	checkCmd := exec.Command("kind", "get", "clusters")
