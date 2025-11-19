@@ -150,10 +150,10 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 
 				logger.Info("Threshold alert sent", zap.Int("status_code", resp.StatusCode))
 
-				// BEHAVIOR: Wait for aggregation window to close (inactivity timeout + buffer)
-				inactivityTimeout := 60 * time.Second // Default from config
-				logger.Info("⏳ Waiting for aggregation window to close...", zap.Duration("timeout", inactivity Timeout+10*time.Second))
-				time.Sleep(inactivityTimeout + 10*time.Second)
+			// BEHAVIOR: Wait for aggregation window to close (inactivity timeout + buffer)
+			inactivityTimeout := 60 * time.Second // Default from config
+			logger.Info("⏳ Waiting for aggregation window to close...", zap.Duration("timeout", inactivityTimeout+10*time.Second))
+			time.Sleep(inactivityTimeout + 10*time.Second)
 
 				// CORRECTNESS: Exactly one aggregated CRD should be created
 				logger.Info("Verifying single aggregated CRD created...")
