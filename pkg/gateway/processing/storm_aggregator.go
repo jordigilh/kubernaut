@@ -19,6 +19,7 @@ package processing
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -579,6 +580,26 @@ func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.No
 	if isOver {
 		// Namespace is over capacity: reject alert
 		return currentSize, false, fmt.Errorf("namespace %s over capacity (%d/%d alerts)", signal.Namespace, currentSize, limit)
+	}
+
+	// DD-GATEWAY-008 Day 5: Check if sampling should be enabled (BR-GATEWAY-011)
+	shouldSample, _, err := a.ShouldEnableSampling(ctx, signal.Namespace)
+	if err != nil {
+		// Non-fatal: log warning but continue (don't block on sampling check)
+		// TODO: Add logging when logger is available (include utilization in log)
+	}
+
+	if shouldSample {
+		// Sampling enabled: randomly accept/reject based on sampling rate
+		// Generate random number [0.0, 1.0)
+		randomValue := rand.Float64()
+
+		if randomValue > a.samplingRate {
+			// Reject alert (sampled out)
+			// Return current size but no error (not a failure, just sampled)
+			return currentSize, false, nil
+		}
+		// Accept alert (passed sampling)
 	}
 
 	// Redis key for buffering: alert:buffer:<namespace>:<alertname>
