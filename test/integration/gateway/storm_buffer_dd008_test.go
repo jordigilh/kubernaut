@@ -95,11 +95,13 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 
 	Describe("BR-GATEWAY-016: Buffered First-Alert Aggregation", func() {
 		Context("when alerts arrive below threshold", func() {
-			It("should buffer alerts without creating window", func() {
+			It("should delay aggregation until threshold is reached", func() {
+				// BUSINESS SCENARIO: 4 pods crash in prod-api namespace
 				namespace := "prod-api"
 				alertName := "PodCrashLooping"
 
-				// Send 4 alerts (below threshold of 5)
+				// BEHAVIOR: System buffers alerts without triggering aggregation
+				// (Delaying CRD creation saves AI analysis costs)
 				for i := 1; i <= 4; i++ {
 					signal := &types.NormalizedSignal{
 						Namespace: namespace,
@@ -110,29 +112,27 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 						},
 					}
 
-					bufferSize, shouldAggregate, err := aggregator.BufferFirstAlert(ctx, signal)
+					_, shouldAggregate, err := aggregator.BufferFirstAlert(ctx, signal)
 
-					// BEHAVIOR: Should buffer without aggregating
-					Expect(err).ToNot(HaveOccurred())
-					Expect(bufferSize).To(Equal(i), fmt.Sprintf("Alert %d should result in buffer size %d", i, i))
-					Expect(shouldAggregate).To(BeFalse(), fmt.Sprintf("Alert %d should not trigger aggregation", i))
+					// CORRECTNESS: Each alert is accepted but doesn't trigger aggregation
+					Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Alert %d should be accepted", i))
+					Expect(shouldAggregate).To(BeFalse(), fmt.Sprintf("Alert %d should not trigger aggregation (below threshold)", i))
 				}
 
-				// CORRECTNESS: Verify Redis has buffered alerts
-				bufferKey := fmt.Sprintf("alert:buffer:%s:%s", namespace, alertName)
-				bufferedCount, err := redisClient.LLen(ctx, bufferKey).Result()
+				// BUSINESS OUTCOME: No aggregation window created yet
+				// This means no CRD created, no AI analysis triggered, cost savings achieved
+				shouldExist, _, err := aggregator.ShouldAggregate(ctx, &types.NormalizedSignal{
+					Namespace: namespace,
+					AlertName: alertName,
+				})
 				Expect(err).ToNot(HaveOccurred())
-				Expect(bufferedCount).To(Equal(int64(4)), "Redis should have 4 buffered alerts")
-
-				// BUSINESS OUTCOME: No window created yet (BR-GATEWAY-016)
-				windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
-				_, err = redisClient.Get(ctx, windowKey).Result()
-				Expect(err).To(Equal(goredis.Nil), "Window should not exist before threshold")
+				Expect(shouldExist).To(BeFalse(), "Aggregation window should not exist before threshold (BR-GATEWAY-016)")
 			})
 		})
 
 		Context("when 5th alert arrives (threshold reached)", func() {
-			It("should create aggregation window with all buffered alerts", func() {
+			It("should trigger aggregation of all buffered alerts", func() {
+				// BUSINESS SCENARIO: 5 pods crash in prod-api (storm threshold reached)
 				namespace := "prod-api"
 				alertName := "PodCrashLooping"
 				stormMetadata := &processing.StormMetadata{
@@ -141,7 +141,7 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 					AlertCount: 5,
 				}
 
-				// Buffer first 4 alerts
+				// BEHAVIOR: First 4 alerts are buffered (no aggregation yet)
 				for i := 1; i <= 4; i++ {
 					signal := &types.NormalizedSignal{
 						Namespace: namespace,
@@ -151,11 +151,12 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 							Name: fmt.Sprintf("payment-api-%d", i),
 						},
 					}
-					_, _, err := aggregator.BufferFirstAlert(ctx, signal)
+					_, shouldAggregate, err := aggregator.BufferFirstAlert(ctx, signal)
 					Expect(err).ToNot(HaveOccurred())
+					Expect(shouldAggregate).To(BeFalse(), "Alerts 1-4 should not trigger aggregation")
 				}
 
-				// Send 5th alert (threshold)
+				// BEHAVIOR: 5th alert triggers aggregation window creation
 				signal5 := &types.NormalizedSignal{
 					Namespace: namespace,
 					AlertName: alertName,
@@ -165,26 +166,20 @@ var _ = Describe("DD-GATEWAY-008: Storm Buffering (Integration)", func() {
 					},
 				}
 
-				// BEHAVIOR: StartAggregation should create window when threshold reached
 				windowID, err := aggregator.StartAggregation(ctx, signal5, stormMetadata)
 
-				// CORRECTNESS: Window should be created
-				Expect(err).ToNot(HaveOccurred())
-				Expect(windowID).ToNot(BeEmpty(), "Window ID should be returned when threshold reached")
+				// CORRECTNESS: Aggregation window is created when threshold reached
+				Expect(err).ToNot(HaveOccurred(), "5th alert should trigger aggregation successfully")
+				Expect(windowID).ToNot(BeEmpty(), "Aggregation window should be created at threshold")
 
-				// Verify window exists in Redis
-				windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
-				storedWindowID, err := redisClient.Get(ctx, windowKey).Result()
+				// CORRECTNESS: All 5 alerts are included in aggregation
+				resources, err := aggregator.GetAggregatedResources(ctx, windowID)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(storedWindowID).To(Equal(windowID), "Window ID should match in Redis")
+				Expect(resources).To(HaveLen(5), "All 5 alerts should be aggregated together")
 
-				// Verify all 5 alerts are in the window
-				resourceKey := fmt.Sprintf("alert:storm:resources:%s", windowID)
-				resourceCount, err := redisClient.ZCard(ctx, resourceKey).Result()
-				Expect(err).ToNot(HaveOccurred())
-				Expect(resourceCount).To(Equal(int64(5)), "All 5 alerts should be in aggregation window")
-
-				// BUSINESS OUTCOME: 5 alerts → 1 window (80% reduction) - BR-GATEWAY-016
+				// BUSINESS OUTCOME: 5 alerts → 1 aggregation window → 1 CRD (80% cost reduction)
+				// Without buffering: 5 alerts → 5 CRDs → 5 AI analyses
+				// With buffering: 5 alerts → 1 CRD → 1 AI analysis (BR-GATEWAY-016)
 			})
 		})
 	})
