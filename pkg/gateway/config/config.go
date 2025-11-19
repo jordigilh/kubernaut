@@ -109,6 +109,7 @@ type DeduplicationSettings struct {
 
 // StormSettings contains storm detection configuration.
 type StormSettings struct {
+	// ===== EXISTING FIELDS (keep as-is) =====
 	// Rate threshold for rate-based storm detection
 	// For testing: set to 2-3 for early storm detection in tests
 	// For production: use default (0) for 10 alerts/minute
@@ -123,6 +124,23 @@ type StormSettings struct {
 	// For testing: set to 5*time.Second for fast integration tests
 	// For production: use default (0) for 1-minute windows
 	AggregationWindow time.Duration `yaml:"aggregation_window"` // Default: 1m
+
+	// ===== NEW FIELDS for DD-GATEWAY-008 =====
+	// Buffered first-alert configuration
+	BufferThreshold int `yaml:"buffer_threshold"` // Alerts before creating window (default: 5)
+
+	// Sliding window configuration
+	InactivityTimeout time.Duration `yaml:"inactivity_timeout"` // Sliding window timeout (default: 60s)
+	MaxWindowDuration time.Duration `yaml:"max_window_duration"` // Max window duration (default: 5m)
+
+	// Multi-tenant isolation configuration
+	DefaultMaxSize     int            `yaml:"default_max_size"`      // Default namespace buffer size (default: 1000)
+	GlobalMaxSize      int            `yaml:"global_max_size"`       // Global buffer limit (default: 5000)
+	PerNamespaceLimits map[string]int `yaml:"per_namespace_limits"`  // Per-namespace overrides
+
+	// Overflow handling configuration
+	SamplingThreshold float64 `yaml:"sampling_threshold"` // Utilization to trigger sampling (default: 0.95)
+	SamplingRate      float64 `yaml:"sampling_rate"`      // Sample rate when threshold reached (default: 0.5)
 }
 
 // EnvironmentSettings contains environment classification configuration.
