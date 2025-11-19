@@ -1,8 +1,8 @@
 # Kubernaut
 
-**Version**: 1.1  
-**Date**: 2025-11-15  
-**Status**: Updated  
+**Version**: 1.1
+**Date**: 2025-11-15
+**Status**: Updated
 
 ## Changelog
 
@@ -207,24 +207,32 @@ deploy/[service]/
 
 ---
 
+## 👨‍💻 **For Developers**
+
+**New to Kubernaut development?** Start here:
+
+### 📘 **[Developer Guide](docs/DEVELOPER_GUIDE.md)** ⭐ **START HERE**
+
+Complete onboarding guide for contributors:
+- **Adding a new service** → 12-day implementation plan with APDC-TDD methodology
+- **Extending existing services** → Feature implementation patterns
+- **Development environment setup** → Prerequisites, tools, IDE configuration
+- **Testing strategy** → Defense-in-depth pyramid (Unit 70%+ / Integration >50% / E2E <10%)
+- **Deployment** → Kustomize overlays for OpenShift + Kubernetes
+
+### **Quick Links for Developers**
+
+| I want to... | Go to... |
+|--------------|----------|
+| **Implement a new service** | [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](docs/services/SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md) |
+| **Document a service** | [SERVICE_DOCUMENTATION_GUIDE.md](docs/services/SERVICE_DOCUMENTATION_GUIDE.md) |
+| **Understand architecture** | [Kubernaut CRD Architecture](docs/architecture/KUBERNAUT_CRD_ARCHITECTURE.md) |
+| **Learn testing strategy** | [03-testing-strategy.mdc](.cursor/rules/03-testing-strategy.mdc) |
+| **Follow Go standards** | [02-go-coding-standards.mdc](.cursor/rules/02-go-coding-standards.mdc) |
+
+---
+
 ## 📚 Documentation
-
-### For New Developers
-
-Start with these essential documents:
-
-1. **[Kubernaut CRD Architecture](docs/architecture/KUBERNAUT_CRD_ARCHITECTURE.md)** ⭐ **PRIMARY REFERENCE**
-   - Complete architecture overview
-   - System diagrams and service specifications
-   - Code examples and operational guide
-
-2. **[V1 Source of Truth Hierarchy](docs/V1_SOURCE_OF_TRUTH_HIERARCHY.md)**
-   - Authoritative documentation for V1 implementation
-   - 3-tier hierarchy: Architecture → Services → Design
-
-3. **[Service Development Order Strategy](docs/planning/SERVICE_DEVELOPMENT_ORDER_STRATEGY.md)**
-   - Implementation timeline & dependencies
-   - Phase-by-phase development guide
 
 ### Architecture Documentation
 
@@ -251,7 +259,7 @@ Start with these essential documents:
 Kubernaut follows a **defense-in-depth testing pyramid**:
 
 - **Unit Tests**: **70%+ coverage** - Extensive business logic with external mocks only
-- **Integration Tests**: **20% coverage** - Cross-service coordination, CRD-based flows
+- **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows, microservices architecture
 - **E2E Tests**: **<10% coverage** - Critical end-to-end user journeys
 
 **Current Test Status**: 1,060+ unit tests passing (100% pass rate)
