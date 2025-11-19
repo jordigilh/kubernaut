@@ -221,27 +221,48 @@ func (a *StormAggregator) ShouldAggregate(ctx context.Context, signal *types.Nor
 	return true, windowID, nil
 }
 
-// StartAggregation creates a new aggregation window for the alert
+// StartAggregation creates a new aggregation window for the alert (DD-GATEWAY-008 enhanced)
 //
 // Call this when:
 // - Storm detected
 // - No existing aggregation window for this alertname
 //
-// Creates:
-// - Aggregation window entry in Redis (1-minute TTL)
-// - First resource entry in sorted set
+// DD-GATEWAY-008 Behavior:
+// - BEFORE threshold: Buffer alert in Redis (no window creation)
+// - AT threshold: Create aggregation window + move buffered alerts to window
+//
+// Creates (when threshold reached):
+// - Aggregation window entry in Redis (sliding window with inactivity timeout)
+// - Resource entries in sorted set (from buffer + current alert)
 // - Metadata entry for CRD creation
 //
 // Returns:
-// - string: window ID (timestamp-based unique identifier)
+// - string: window ID (empty if buffering, timestamp-based if window created)
 // - error: Redis errors
 //
 // Example window ID: "PodCrashed-1696800000"
+//
+// Business Requirements:
+// - BR-GATEWAY-016: Buffer first N alerts before creating window
+// - BR-GATEWAY-008: Sliding window with inactivity timeout
 func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.NormalizedSignal, stormMetadata *StormMetadata) (string, error) {
+	// DD-GATEWAY-008: Buffer first N alerts before creating window
+	_, shouldAggregate, err := a.BufferFirstAlert(ctx, signal)
+	if err != nil {
+		return "", fmt.Errorf("failed to buffer alert: %w", err)
+	}
+
+	// If threshold not reached, just buffer (no window creation)
+	if !shouldAggregate {
+		// Return empty windowID to indicate buffering (not aggregating yet)
+		return "", nil
+	}
+
+	// Threshold reached: Create aggregation window
 	windowID := fmt.Sprintf("%s-%d", signal.AlertName, time.Now().Unix())
 	windowKey := fmt.Sprintf("alert:storm:aggregate:%s", signal.AlertName)
 
-	// Store window ID with TTL (1 minute)
+	// Store window ID with TTL (sliding window: inactivity timeout)
 	if err := a.redisClient.Set(ctx, windowKey, windowID, a.windowDuration).Err(); err != nil {
 		return "", fmt.Errorf("failed to start aggregation window: %w", err)
 	}
@@ -251,10 +272,30 @@ func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.No
 		return "", fmt.Errorf("failed to store signal metadata: %w", err)
 	}
 
-	// Add first resource
-	if err := a.AddResource(ctx, windowID, signal); err != nil {
-		return "", fmt.Errorf("failed to add first resource: %w", err)
+	// Move all buffered alerts to aggregation window
+	bufferKey := fmt.Sprintf("alert:buffer:%s:%s", signal.Namespace, signal.AlertName)
+	bufferedAlerts, err := a.redisClient.LRange(ctx, bufferKey, 0, -1).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve buffered alerts: %w", err)
 	}
+
+	// Add all buffered resources to window
+	for _, resourceID := range bufferedAlerts {
+		key := fmt.Sprintf("alert:storm:resources:%s", windowID)
+		if err := a.redisClient.ZAdd(ctx, key, &redis.Z{
+			Score:  float64(time.Now().Unix()),
+			Member: resourceID,
+		}).Err(); err != nil {
+			return "", fmt.Errorf("failed to add buffered resource to window: %w", err)
+		}
+	}
+
+	// Clear buffer (alerts now in window)
+	a.redisClient.Del(ctx, bufferKey)
+
+	// Set TTL on resources (2x window duration for retrieval after close)
+	resourceKey := fmt.Sprintf("alert:storm:resources:%s", windowID)
+	a.redisClient.Expire(ctx, resourceKey, 2*a.windowDuration)
 
 	return windowID, nil
 }
