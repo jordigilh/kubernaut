@@ -2,6 +2,7 @@ package datastorage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,14 +36,16 @@ import (
 //
 // ========================================
 
-var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Success Tracking", Serial, func() {
+var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Success Tracking", func() {
 	var (
 		actionTraceRepo *repository.ActionTraceRepository
 		testCtx         context.Context
+		testID          string
 	)
 
 	BeforeEach(func() {
 		testCtx = context.Background()
+		testID = generateTestID() // Unique ID for parallel execution isolation
 		actionTraceRepo = repository.NewActionTraceRepository(db, logger)
 
 		// Clean up test data (cascade delete will handle resource_action_traces)
@@ -126,7 +129,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 	Describe("GetSuccessRateByIncidentType - Integration", func() {
 		Context("when incident type has sufficient data", func() {
 			It("should calculate success rate correctly with exact counts (TC-ADR033-01)", func() {
-				incidentType := "test-pod-oom-killer"
+				incidentType := fmt.Sprintf("test-pod-oom-killer-%s", testID)
 
 				// BEHAVIOR: Repository calculates incident-type success rate from real database
 
@@ -175,7 +178,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 			})
 
 			It("should handle multiple playbooks for same incident type (TC-ADR033-02)", func() {
-				incidentType := "test-node-pressure"
+				incidentType := fmt.Sprintf("test-node-pressure-%s", testID)
 
 				// Setup: 2 different playbooks for same incident
 				// Playbook 1: 60% success (6/10)
@@ -229,7 +232,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 
 		Context("when incident type has insufficient data", func() {
 			It("should return zero values with insufficient_data confidence (TC-ADR033-03)", func() {
-				incidentType := "test-nonexistent-incident"
+				incidentType := fmt.Sprintf("test-nonexistent-incident-%s", testID)
 
 				// Execute without any test data
 				result, err := actionTraceRepo.GetSuccessRateByIncidentType(testCtx, incidentType, 7*24*time.Hour, 5)
@@ -254,14 +257,14 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 
 		Context("when testing AI execution mode tracking", func() {
 			It("should track AI execution mode distribution correctly (TC-ADR033-04)", func() {
-				incidentType := "test-ai-execution-tracking"
+				incidentType := fmt.Sprintf("test-ai-execution-tracking-%s", testID)
 
 				// Setup: 10 catalog-selected, 5 chained, 2 manual escalation
 				for i := 0; i < 10; i++ {
-					insertActionTrace(incidentType, "completed", "playbook-1", "v1.0", true, false)
+					insertActionTrace(incidentType, "completed", fmt.Sprintf("playbook-1-%s", testID), "v1.0", true, false)
 				}
 				for i := 0; i < 5; i++ {
-					insertActionTrace(incidentType, "completed", "playbook-2", "v1.0", true, true)
+					insertActionTrace(incidentType, "completed", fmt.Sprintf("playbook-2-%s", testID), "v1.0", true, true)
 				}
 				// Manual escalation: no AI selection or chaining
 				for i := 0; i < 2; i++ {
@@ -326,15 +329,15 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				// Setup: Same playbook used for 3 different incident types
 				// Incident 1: 5 executions
 				for i := 0; i < 5; i++ {
-					insertActionTrace("test-incident-a", "completed", playbookID, playbookVersion, true, false)
+					insertActionTrace(fmt.Sprintf("test-incident-a-%s", testID), "completed", playbookID, playbookVersion, true, false)
 				}
 				// Incident 2: 3 executions
 				for i := 0; i < 3; i++ {
-					insertActionTrace("test-incident-b", "completed", playbookID, playbookVersion, true, false)
+					insertActionTrace(fmt.Sprintf("test-incident-b-%s", testID), "completed", playbookID, playbookVersion, true, false)
 				}
 				// Incident 3: 2 executions
 				for i := 0; i < 2; i++ {
-					insertActionTrace("test-incident-c", "completed", playbookID, playbookVersion, true, false)
+					insertActionTrace(fmt.Sprintf("test-incident-c-%s", testID), "completed", playbookID, playbookVersion, true, false)
 				}
 
 				// Execute
@@ -349,15 +352,15 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.BreakdownByIncidentType).To(HaveLen(3))
 
 				// Verify incident type breakdowns
-				incident1 := findIncidentBreakdown(result.BreakdownByIncidentType, "test-incident-a")
+				incident1 := findIncidentBreakdown(result.BreakdownByIncidentType, fmt.Sprintf("test-incident-a-%s", testID))
 				Expect(incident1).ToNot(BeNil())
 				Expect(incident1.Executions).To(Equal(5))
 
-				incident2 := findIncidentBreakdown(result.BreakdownByIncidentType, "test-incident-b")
+				incident2 := findIncidentBreakdown(result.BreakdownByIncidentType, fmt.Sprintf("test-incident-b-%s", testID))
 				Expect(incident2).ToNot(BeNil())
 				Expect(incident2.Executions).To(Equal(3))
 
-				incident3 := findIncidentBreakdown(result.BreakdownByIncidentType, "test-incident-c")
+				incident3 := findIncidentBreakdown(result.BreakdownByIncidentType, fmt.Sprintf("test-incident-c-%s", testID))
 				Expect(incident3).ToNot(BeNil())
 				Expect(incident3.Executions).To(Equal(2))
 			})
