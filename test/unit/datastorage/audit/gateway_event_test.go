@@ -1,7 +1,7 @@
 // Copyright 2025 Jordi Gil.
 // SPDX-License-Identifier: Apache-2.0
 
-package audit_test
+package audit
 
 import (
 	. "github.com/onsi/ginkgo/v2"

@@ -49,14 +49,14 @@ func createNamespace(namespace string) error {
 // deleteNamespace deletes a Kubernetes namespace and waits for cleanup
 func deleteNamespace(namespace string) error {
 	GinkgoWriter.Printf("🧹 Deleting namespace: %s\n", namespace)
-	
+
 	cmd := exec.Command("kubectl", "delete", "namespace", namespace, "--wait=true", "--timeout=60s")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		GinkgoWriter.Printf("⚠️  Failed to delete namespace %s: %v, output: %s\n", namespace, err, output)
 		return fmt.Errorf("failed to delete namespace %s: %w", namespace, err)
 	}
-	
+
 	GinkgoWriter.Printf("✅ Deleted namespace: %s\n", namespace)
 	return nil
 }
@@ -64,7 +64,7 @@ func deleteNamespace(namespace string) error {
 // waitForPodReady waits for a pod to be ready in the specified namespace
 func waitForPodReady(namespace, labelSelector string, timeout time.Duration) error {
 	GinkgoWriter.Printf("⏳ Waiting for pod with label %s in namespace %s to be ready...\n", labelSelector, namespace)
-	
+
 	Eventually(func() bool {
 		cmd := exec.Command("kubectl", "get", "pods",
 			"-n", namespace,
@@ -76,9 +76,9 @@ func waitForPodReady(namespace, labelSelector string, timeout time.Duration) err
 		}
 		phase := string(output)
 		return phase == "Running"
-	}, timeout, 2*time.Second).Should(BeTrue(), 
+	}, timeout, 2*time.Second).Should(BeTrue(),
 		fmt.Sprintf("Pod with label %s should be ready in namespace %s", labelSelector, namespace))
-	
+
 	GinkgoWriter.Printf("✅ Pod ready: %s in namespace %s\n", labelSelector, namespace)
 	return nil
 }
@@ -88,7 +88,7 @@ func applyManifest(namespace, manifestPath string) error {
 	cmd := exec.Command("kubectl", "apply", "-n", namespace, "-f", manifestPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to apply manifest %s to namespace %s: %w, output: %s", 
+		return fmt.Errorf("failed to apply manifest %s to namespace %s: %w, output: %s",
 			manifestPath, namespace, err, output)
 	}
 	GinkgoWriter.Printf("✅ Applied manifest: %s to namespace %s\n", manifestPath, namespace)
@@ -107,24 +107,24 @@ func getServiceURL(namespace, serviceName string, port int) string {
 // Returns a context cancel function to stop port-forwarding
 func portForwardService(ctx context.Context, namespace, serviceName string, localPort, remotePort int) (context.CancelFunc, error) {
 	portForwardCtx, cancel := context.WithCancel(ctx)
-	
+
 	cmd := exec.CommandContext(portForwardCtx, "kubectl", "port-forward",
 		"-n", namespace,
 		fmt.Sprintf("service/%s", serviceName),
 		fmt.Sprintf("%d:%d", localPort, remotePort))
-	
+
 	// Start port-forward in background
 	err := cmd.Start()
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to start port-forward for %s/%s: %w", namespace, serviceName, err)
 	}
-	
+
 	// Wait a bit for port-forward to establish
 	time.Sleep(2 * time.Second)
-	
+
 	GinkgoWriter.Printf("✅ Port-forward started: %s/%s %d:%d\n", namespace, serviceName, localPort, remotePort)
-	
+
 	// Return cancel function to stop port-forwarding
 	return cancel, nil
 }
@@ -133,14 +133,14 @@ func portForwardService(ctx context.Context, namespace, serviceName string, loca
 func execInPod(namespace, podName string, command []string) (string, error) {
 	args := []string{"exec", "-n", namespace, podName, "--"}
 	args = append(args, command...)
-	
+
 	cmd := exec.Command("kubectl", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return string(output), fmt.Errorf("failed to exec in pod %s/%s: %w, output: %s", 
+		return string(output), fmt.Errorf("failed to exec in pod %s/%s: %w, output: %s",
 			namespace, podName, err, output)
 	}
-	
+
 	return string(output), nil
 }
 
@@ -152,15 +152,15 @@ func getPodName(namespace, labelSelector string) (string, error) {
 		"-o", "jsonpath={.items[0].metadata.name}")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to get pod name for label %s in namespace %s: %w", 
+		return "", fmt.Errorf("failed to get pod name for label %s in namespace %s: %w",
 			labelSelector, namespace, err)
 	}
-	
+
 	podName := string(output)
 	if podName == "" {
 		return "", fmt.Errorf("no pod found with label %s in namespace %s", labelSelector, namespace)
 	}
-	
+
 	return podName, nil
 }
 
@@ -172,19 +172,19 @@ func scalePod(namespace, deploymentName string, replicas int) error {
 		fmt.Sprintf("--replicas=%d", replicas))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to scale deployment %s/%s to %d replicas: %w, output: %s", 
+		return fmt.Errorf("failed to scale deployment %s/%s to %d replicas: %w, output: %s",
 			namespace, deploymentName, replicas, err, output)
 	}
-	
+
 	GinkgoWriter.Printf("✅ Scaled deployment %s/%s to %d replicas\n", namespace, deploymentName, replicas)
 	return nil
 }
 
 // waitForPodCount waits for the specified number of pods to be running
 func waitForPodCount(namespace, labelSelector string, expectedCount int, timeout time.Duration) error {
-	GinkgoWriter.Printf("⏳ Waiting for %d pods with label %s in namespace %s...\n", 
+	GinkgoWriter.Printf("⏳ Waiting for %d pods with label %s in namespace %s...\n",
 		expectedCount, labelSelector, namespace)
-	
+
 	Eventually(func() int {
 		cmd := exec.Command("kubectl", "get", "pods",
 			"-n", namespace,
@@ -194,13 +194,13 @@ func waitForPodCount(namespace, labelSelector string, expectedCount int, timeout
 		if err != nil {
 			return 0
 		}
-		
+
 		// Count "Running" phases
 		phases := string(output)
 		if phases == "" {
 			return 0
 		}
-		
+
 		// Simple count of "Running" occurrences
 		count := 0
 		for i := 0; i < len(phases); i++ {
@@ -209,10 +209,10 @@ func waitForPodCount(namespace, labelSelector string, expectedCount int, timeout
 			}
 		}
 		return count
-	}, timeout, 2*time.Second).Should(Equal(expectedCount), 
-		fmt.Sprintf("Should have %d running pods with label %s in namespace %s", 
+	}, timeout, 2*time.Second).Should(Equal(expectedCount),
+		fmt.Sprintf("Should have %d running pods with label %s in namespace %s",
 			expectedCount, labelSelector, namespace))
-	
+
 	GinkgoWriter.Printf("✅ %d pods ready: %s in namespace %s\n", expectedCount, labelSelector, namespace)
 	return nil
 }
