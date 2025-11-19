@@ -43,10 +43,11 @@ import (
 // 4. Creating CRD in Kubernetes via API
 // 5. Recording metrics (success/failure)
 //
-// CRD naming:
-// - Format: rr-<first-16-chars-of-fingerprint>
-// - Example: rr-a1b2c3d4e5f6789
-// - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
+// CRD naming (DD-015):
+// - Format: rr-<first-12-chars-of-fingerprint>-<unix-timestamp>
+// - Example: rr-a1b2c3d4e5f6-1731868032
+// - Reason: Ensures unique CRD per occurrence, prevents name collisions
+// - See: docs/architecture/decisions/DD-015-timestamp-based-crd-naming.md
 type CRDCreator struct {
 	k8sClient         *k8s.Client
 	logger            *zap.Logger
@@ -289,13 +290,16 @@ func (c *CRDCreator) CreateRemediationRequest(
 	priority string,
 	environment string,
 ) (*remediationv1alpha1.RemediationRequest, error) {
-	// Generate CRD name from fingerprint (first 16 chars, or full fingerprint if shorter)
-	// Example: rr-a1b2c3d4e5f6789
+	// Generate CRD name from fingerprint + timestamp (DD-015)
+	// Example: rr-a1b2c3d4e5f6-1731868032
 	fingerprintPrefix := signal.Fingerprint
-	if len(fingerprintPrefix) > 16 {
-		fingerprintPrefix = fingerprintPrefix[:16]
+	// DD-015: Timestamp-based CRD naming to prevent collisions
+	// Format: rr-<fingerprint-prefix-12>-<unix-timestamp>
+	if len(fingerprintPrefix) > 12 {
+		fingerprintPrefix = fingerprintPrefix[:12]
 	}
-	crdName := fmt.Sprintf("rr-%s", fingerprintPrefix)
+	timestamp := time.Now().Unix()
+	crdName := fmt.Sprintf("rr-%s-%d", fingerprintPrefix, timestamp)
 
 	// Build RemediationRequest CRD
 	rr := &remediationv1alpha1.RemediationRequest{

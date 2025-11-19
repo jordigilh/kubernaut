@@ -1,0 +1,129 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package gateway
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"time"
+
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+)
+
+// GatewayResponse represents the Gateway API response
+type GatewayResponse struct {
+	Status                      string `json:"status"`
+	Message                     string `json:"message"`
+	Fingerprint                 string `json:"fingerprint"`
+	Duplicate                   bool   `json:"duplicate"`
+	RemediationRequestName      string `json:"remediationRequestName,omitempty"`
+	RemediationRequestNamespace string `json:"remediationRequestNamespace,omitempty"`
+}
+
+// PrometheusAlertPayload represents a Prometheus AlertManager webhook payload
+type PrometheusAlertPayload struct {
+	AlertName   string            `json:"alertName"`
+	Namespace   string            `json:"namespace"`
+	Severity    string            `json:"severity"`
+	PodName     string            `json:"podName"`
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
+}
+
+// WebhookResponse represents an HTTP response
+type WebhookResponse struct {
+	StatusCode int
+	Body       []byte
+	Headers    http.Header
+}
+
+// createPrometheusWebhookPayload creates a realistic Prometheus webhook payload
+func createPrometheusWebhookPayload(payload PrometheusAlertPayload) []byte {
+	alert := map[string]interface{}{
+		"receiver": "kubernaut",
+		"status":   "firing",
+		"alerts": []map[string]interface{}{
+			{
+				"status":      "firing",
+				"labels":      payload.Labels,
+				"annotations": payload.Annotations,
+				"startsAt":    time.Now().Format(time.RFC3339),
+				"endsAt":      "0001-01-01T00:00:00Z",
+			},
+		},
+		"groupLabels": map[string]string{
+			"alertname": payload.AlertName,
+		},
+		"commonLabels":      payload.Labels,
+		"commonAnnotations": payload.Annotations,
+	}
+
+	body, _ := json.Marshal(alert)
+	return body
+}
+
+// sendWebhookRequest sends an HTTP POST request to Gateway webhook endpoint
+func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse {
+	resp, err := http.Post(
+		gatewayURL+path,
+		"application/json",
+		bytes.NewReader(body),
+	)
+	Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	Expect(err).ToNot(HaveOccurred(), "Should read response body")
+
+	return &WebhookResponse{
+		StatusCode: resp.StatusCode,
+		Body:       bodyBytes,
+		Headers:    resp.Header,
+	}
+}
+
+// getKubernetesClient creates a Kubernetes client for CRD verification
+func getKubernetesClient() client.Client {
+	// Load kubeconfig from standard Kind location
+	homeDir, err := os.UserHomeDir()
+	Expect(err).ToNot(HaveOccurred(), "Failed to get home directory")
+	kubeconfigPath := fmt.Sprintf("%s/.kube/kind-config", homeDir)
+
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	Expect(err).ToNot(HaveOccurred(), "Failed to load kubeconfig")
+
+	// Create scheme with RemediationRequest CRD
+	scheme := k8sruntime.NewScheme()
+	_ = remediationv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	// Create K8s client
+	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
+	Expect(err).ToNot(HaveOccurred(), "Failed to create K8s client")
+
+	return k8sClient
+}

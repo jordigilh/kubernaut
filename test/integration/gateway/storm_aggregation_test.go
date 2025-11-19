@@ -50,7 +50,7 @@ import (
 //
 // Defense-in-Depth Strategy (per 03-testing-strategy.mdc):
 // - Unit tests (70%): Business logic in isolation (storm detection, pattern matching)
-// - Integration tests (20%): Infrastructure interaction (THIS FILE - Redis + Lua)
+// - Integration tests (>50%): Infrastructure interaction (THIS FILE - Redis + Lua)
 // - E2E tests (10%): Complete workflow (webhook → aggregated CRD)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
