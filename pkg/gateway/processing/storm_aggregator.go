@@ -702,6 +702,35 @@ func (a *StormAggregator) ShouldSample(currentUtilization, samplingThreshold flo
 	return currentUtilization > samplingThreshold
 }
 
+// ShouldEnableSampling checks if sampling should be enabled for a namespace
+//
+// Business Requirement: BR-GATEWAY-011 - Overflow protection through sampling
+//
+// Combines GetNamespaceUtilization() and ShouldSample() for convenience.
+//
+// Parameters:
+// - ctx: Context for Redis operations
+// - namespace: The namespace to check
+//
+// Returns:
+// - bool: true if sampling should be enabled
+// - float64: current utilization (0.0-1.0)
+// - error: Redis errors
+//
+// Example:
+// - prod-api with 1900/2000 alerts, threshold 0.95 → (false, 0.95, nil)
+// - prod-api with 1950/2000 alerts, threshold 0.95 → (true, 0.975, nil)
+func (a *StormAggregator) ShouldEnableSampling(ctx context.Context, namespace string) (bool, float64, error) {
+	utilization, err := a.GetNamespaceUtilization(ctx, namespace)
+	if err != nil {
+		return false, 0.0, fmt.Errorf("failed to get utilization: %w", err)
+	}
+
+	shouldSample := a.ShouldSample(utilization, a.samplingThreshold)
+
+	return shouldSample, utilization, nil
+}
+
 // GetNamespaceLimit returns the buffer size limit for a given namespace
 //
 // Business Requirement: BR-GATEWAY-011 - Multi-tenant isolation
