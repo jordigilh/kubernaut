@@ -18,6 +18,7 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -97,10 +98,42 @@ var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 				Expect(bufferSize).To(Equal(1), "First alert should result in buffer count of 1")
 				Expect(shouldAggregate).To(BeFalse(), "Should NOT trigger aggregation below threshold")
 
-				// BUSINESS OUTCOME: No CRD created yet (cost savings)
-				// This validates BR-GATEWAY-016: Buffer alerts before aggregation
+			// BUSINESS OUTCOME: No CRD created yet (cost savings)
+			// This validates BR-GATEWAY-016: Buffer alerts before aggregation
+		})
+
+		Context("when threshold alert arrives", func() {
+			It("should return buffer count of 5 and trigger aggregation", func() {
+				signal := &types.NormalizedSignal{
+					Namespace: "prod-api",
+					AlertName: "PodCrashLooping",
+					Resource: types.ResourceIdentifier{
+						Kind: "Pod",
+						Name: "payment-api-1",
+					},
+				}
+
+				// Buffer 5 alerts (threshold)
+				for i := 1; i <= 5; i++ {
+					signal.Resource.Name = fmt.Sprintf("payment-api-%d", i)
+					bufferSize, shouldAggregate, err := aggregator.BufferFirstAlert(ctx, signal)
+					Expect(err).ToNot(HaveOccurred())
+
+					if i < 5 {
+						// First 4 alerts: should NOT trigger aggregation
+						Expect(shouldAggregate).To(BeFalse(), fmt.Sprintf("Alert %d should not trigger aggregation", i))
+						Expect(bufferSize).To(Equal(i), fmt.Sprintf("Buffer size should be %d", i))
+					} else {
+						// 5th alert: SHOULD trigger aggregation
+						Expect(shouldAggregate).To(BeTrue(), "5th alert should trigger aggregation")
+						Expect(bufferSize).To(Equal(5), "Buffer size should be 5 at threshold")
+					}
+				}
+
+				// BUSINESS OUTCOME: Aggregation triggered at threshold (BR-GATEWAY-016)
 			})
 		})
 	})
+})
 })
 
