@@ -61,49 +61,8 @@ var (
 	anyTestFailed bool
 )
 
-// generateUniqueNamespace creates a unique namespace for each parallel test process
-// Format: datastorage-e2e-p{process}-{timestamp}
-// This enables parallel test execution with complete isolation
-func generateUniqueNamespace() string {
-	return fmt.Sprintf("datastorage-e2e-p%d-%d", GinkgoParallelProcess(), time.Now().Unix())
-}
-
-// createNamespace creates a Kubernetes namespace
-func createNamespace(namespace string) error {
-	cmd := exec.Command("kubectl", "create", "namespace", namespace)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to create namespace %s: %w, output: %s", namespace, err, output)
-	}
-	logger.Info("Created namespace", zap.String("namespace", namespace))
-	return nil
-}
-
-// deleteNamespace deletes a Kubernetes namespace and all resources within it
-func deleteNamespace(namespace string) error {
-	cmd := exec.Command("kubectl", "delete", "namespace", namespace, "--wait=false")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to delete namespace %s: %w, output: %s", namespace, err, output)
-	}
-	logger.Info("Deleted namespace", zap.String("namespace", namespace))
-	return nil
-}
-
-// waitForNamespaceDeletion waits for a namespace to be fully deleted
-func waitForNamespaceDeletion(namespace string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		cmd := exec.Command("kubectl", "get", "namespace", namespace)
-		err := cmd.Run()
-		if err != nil {
-			// Namespace not found = successfully deleted
-			return nil
-		}
-		time.Sleep(2 * time.Second)
-	}
-	return fmt.Errorf("namespace %s still exists after %v", namespace, timeout)
-}
+// Note: Helper functions (generateUniqueNamespace, createNamespace, deleteNamespace, etc.)
+// are defined in helpers.go to avoid duplication
 
 var _ = BeforeSuite(func() {
 	// Initialize context

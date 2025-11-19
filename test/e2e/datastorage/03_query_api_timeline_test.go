@@ -132,7 +132,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 		if testCancel != nil {
 			testCancel()
 		}
-		
+
 		err := infrastructure.CleanupDataStorageTestNamespace(testNamespace, kubeconfigPath, GinkgoWriter)
 		if err != nil {
 			testLogger.Warn("Failed to cleanup namespace", zap.Error(err))
