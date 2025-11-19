@@ -30,6 +30,13 @@ import (
 
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // CreateDataStorageCluster creates a Kind cluster for Data Storage E2E tests
@@ -142,17 +149,451 @@ func CleanupDataStorageTestNamespace(namespace, kubeconfigPath string, writer io
 }
 
 func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
-	cmd := exec.Command("kubectl", "create", "namespace", namespace, "--kubeconfig", kubeconfigPath)
-	output, err := cmd.CombinedOutput()
+	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
-		if strings.Contains(string(output), "AlreadyExists") {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+			Labels: map[string]string{
+				"test": "datastorage-e2e",
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().Namespaces().Create(context.Background(), ns, metav1.CreateOptions{})
+	if err != nil {
+		if strings.Contains(err.Error(), "AlreadyExists") {
 			fmt.Fprintf(writer, "   Namespace %s already exists\n", namespace)
 			return nil
 		}
-		fmt.Fprintf(writer, "❌ Failed to create namespace: %s\n", output)
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
+	
 	fmt.Fprintf(writer, "   ✅ Namespace %s created\n", namespace)
+	return nil
+}
+
+func getKubernetesClient(kubeconfigPath string) (*kubernetes.Clientset, error) {
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build config: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	return clientset, nil
+}
+
+func deployPostgreSQLInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// 1. Create ConfigMap for init script
+	initConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "postgresql-init",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"init.sql": `-- Enable pgvector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Grant permissions to slm_user
+GRANT ALL PRIVILEGES ON DATABASE action_history TO slm_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
+		},
+	}
+
+	_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, initConfigMap, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create PostgreSQL init ConfigMap: %w", err)
+	}
+
+	// 2. Create Secret for credentials
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "postgresql-secret",
+			Namespace: namespace,
+		},
+		StringData: map[string]string{
+			"POSTGRES_USER":     "slm_user",
+			"POSTGRES_PASSWORD": "test_password",
+			"POSTGRES_DB":       "action_history",
+		},
+	}
+
+	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
+	}
+
+	// 3. Create Service
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "postgresql",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "postgresql",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "postgresql",
+					Port:       5432,
+					TargetPort: intstr.FromInt(5432),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{
+				"app": "postgresql",
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create PostgreSQL service: %w", err)
+	}
+
+	// 4. Create Deployment
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "postgresql",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "postgresql",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "postgresql",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "postgresql",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "postgresql",
+							Image: "quay.io/jordigilh/pgvector:pg16",
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "postgresql",
+									ContainerPort: 5432,
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "POSTGRES_USER",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "postgresql-secret",
+											},
+											Key: "POSTGRES_USER",
+										},
+									},
+								},
+								{
+									Name: "POSTGRES_PASSWORD",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "postgresql-secret",
+											},
+											Key: "POSTGRES_PASSWORD",
+										},
+									},
+								},
+								{
+									Name: "POSTGRES_DB",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "postgresql-secret",
+											},
+											Key: "POSTGRES_DB",
+										},
+									},
+								},
+								{
+									Name:  "PGDATA",
+									Value: "/var/lib/postgresql/data/pgdata",
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "postgresql-data",
+									MountPath: "/var/lib/postgresql/data",
+								},
+								{
+									Name:      "postgresql-init",
+									MountPath: "/docker-entrypoint-initdb.d",
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+									corev1.ResourceCPU:    resource.MustParse("250m"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+								},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"pg_isready", "-U", "slm_user"},
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"pg_isready", "-U", "slm_user"},
+									},
+								},
+								InitialDelaySeconds: 30,
+								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "postgresql-data",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+						{
+							Name: "postgresql-init",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "postgresql-init",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create PostgreSQL deployment: %w", err)
+	}
+
+	fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (ConfigMap + Secret + Service + Deployment)\n")
+	return nil
+}
+
+func deployRedisInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// 1. Create Service
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "redis",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "redis",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "redis",
+					Port:       6379,
+					TargetPort: intstr.FromInt(6379),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{
+				"app": "redis",
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Redis service: %w", err)
+	}
+
+	// 2. Create Deployment
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "redis",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "redis",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "redis",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "redis",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "redis",
+							Image: "quay.io/jordigilh/redis:7-alpine",
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "redis",
+									ContainerPort: 6379,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+									corev1.ResourceCPU:    resource.MustParse("200m"),
+								},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"redis-cli", "ping"},
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"redis-cli", "ping"},
+									},
+								},
+								InitialDelaySeconds: 30,
+								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Redis deployment: %w", err)
+	}
+
+	fmt.Fprintf(writer, "   ✅ Redis deployed (Service + Deployment)\n")
+	return nil
+}
+
+func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// TODO: Implement migration application via Job or direct connection
+	// For now, we'll skip migrations in E2E tests and apply them in the test setup
+	fmt.Fprintf(writer, "   ⚠️  Migrations will be applied via test setup (not implemented yet)\n")
+	return nil
+}
+
+func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// TODO: Implement Data Storage Service deployment
+	// This will create ConfigMap, Secret, Service, and Deployment for the service
+	fmt.Fprintf(writer, "   ⚠️  Data Storage Service deployment not implemented yet\n")
+	return nil
+}
+
+func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// Wait for PostgreSQL pod to be ready
+	fmt.Fprintf(writer, "   ⏳ Waiting for PostgreSQL pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=postgresql",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 60*time.Second, 2*time.Second).Should(BeTrue(), "PostgreSQL pod should be ready")
+	fmt.Fprintf(writer, "   ✅ PostgreSQL pod ready\n")
+
+	// Wait for Redis pod to be ready
+	fmt.Fprintf(writer, "   ⏳ Waiting for Redis pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=redis",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 60*time.Second, 2*time.Second).Should(BeTrue(), "Redis pod should be ready")
+	fmt.Fprintf(writer, "   ✅ Redis pod ready\n")
+
 	return nil
 }
 
