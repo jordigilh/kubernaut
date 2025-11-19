@@ -167,6 +167,25 @@ var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 			})
 		})
 	})
+
+	// TDD Cycle 4: IsWindowExpired - Max Duration Safety
+	Describe("IsWindowExpired - Max Duration Safety (BR-GATEWAY-008)", func() {
+		Context("when window duration exceeds max limit", func() {
+			It("should return true indicating window must be closed", func() {
+				windowStartTime := time.Now().Add(-6 * time.Minute)
+				currentTime := time.Now()
+				maxDuration := 5 * time.Minute
+
+				// BEHAVIOR: Check if window exceeded max duration
+				expired := aggregator.IsWindowExpired(windowStartTime, currentTime, maxDuration)
+
+				// CORRECTNESS: Should be expired (6 min > 5 min max)
+				Expect(expired).To(BeTrue(), "Window exceeding max duration should be expired")
+
+				// BUSINESS OUTCOME: Prevents unbounded windows (BR-GATEWAY-008 safety)
+			})
+		})
+	})
 })
 })
 
