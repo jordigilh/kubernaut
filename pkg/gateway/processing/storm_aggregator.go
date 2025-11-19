@@ -472,10 +472,10 @@ func (a *StormAggregator) GetNamespaceUtilization(ctx context.Context, namespace
 	// Count all buffered alerts for this namespace
 	// Buffer keys pattern: alert:buffer:<namespace>:*
 	pattern := fmt.Sprintf("alert:buffer:%s:*", namespace)
-	
+
 	var totalBuffered int64
 	iter := a.redisClient.Scan(ctx, 0, pattern, 100).Iterator()
-	
+
 	for iter.Next(ctx) {
 		key := iter.Val()
 		count, err := a.redisClient.LLen(ctx, key).Result()
@@ -484,14 +484,24 @@ func (a *StormAggregator) GetNamespaceUtilization(ctx context.Context, namespace
 		}
 		totalBuffered += count
 	}
-	
+
 	if err := iter.Err(); err != nil {
 		return 0.0, fmt.Errorf("failed to scan namespace buffers: %w", err)
 	}
-	
+
 	// Default max size per namespace: 1000
 	maxSize := 1000.0
 	utilization := float64(totalBuffered) / maxSize
 	
 	return utilization, nil
+}
+
+// ShouldSample determines if sampling should be enabled (pure function)
+//
+// Business Requirement: BR-GATEWAY-011 - Overflow protection through sampling
+//
+// Returns:
+// - bool: true if sampling should be enabled, false otherwise
+func (a *StormAggregator) ShouldSample(currentUtilization, samplingThreshold float64) bool {
+	return currentUtilization > samplingThreshold
 }
