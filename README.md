@@ -1,22 +1,5 @@
 # Kubernaut
 
-**Version**: 1.1
-**Date**: 2025-11-15
-**Status**: Updated
-
-## Changelog
-
-### Version 1.1 (2025-11-15)
-- **Service Naming Correction**: Replaced all instances of "Workflow Engine" with "Remediation Execution Engine" per ADR-035
-- **Terminology Alignment**: Updated to match authoritative naming convention (RemediationExecution CRD, Remediation Execution Engine architectural concept)
-- **Documentation Consistency**: Aligned with NAMING_CONVENTION_REMEDIATION_EXECUTION.md reference document
-
-### Version 1.0 (Original)
-- Initial document creation
-
----
-
-
 **AI-Powered Kubernetes Operations Platform**
 
 Kubernaut is an open-source Kubernetes AIOps platform that combines AI-driven investigation with automated remediation. It analyzes Kubernetes incidents, orchestrates multi-step remediation workflows, and executes validated actions—targeting mean time to resolution reduction from 60 minutes to under 5 minutes while maintaining operational safety.
@@ -338,3 +321,19 @@ Apache License 2.0
 **Kubernaut** - Building the next evolution of Kubernetes operations through intelligent, CRD-based microservices that learn and adapt.
 
 **Current Status**: Phase 2 Complete - 6 of 11 services production-ready (55%) | **Target**: Week 13 for V1 completion
+
+---
+
+## 📋 Changelog
+
+**Version**: 1.1
+**Date**: 2025-11-15
+**Status**: Updated
+
+### Version 1.1 (2025-11-15)
+- **Service Naming Correction**: Replaced all instances of "Workflow Engine" with "Remediation Execution Engine" per ADR-035
+- **Terminology Alignment**: Updated to match authoritative naming convention (RemediationExecution CRD, Remediation Execution Engine architectural concept)
+- **Documentation Consistency**: Aligned with NAMING_CONVENTION_REMEDIATION_EXECUTION.md reference document
+
+### Version 1.0 (Original)
+- Initial document creation
