@@ -293,6 +293,7 @@ func startPostgreSQL() {
 
 	// Start PostgreSQL with pgvector
 	// Use --network=datastorage-test for container-to-container communication
+	// Increase max_connections for parallel test execution (default is 100)
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", postgresContainer,
 		"--network", "datastorage-test",
@@ -300,7 +301,8 @@ func startPostgreSQL() {
 		"-e", "POSTGRES_DB=action_history",
 		"-e", "POSTGRES_USER=slm_user",
 		"-e", "POSTGRES_PASSWORD=test_password",
-		"quay.io/jordigilh/pgvector:pg16")
+		"quay.io/jordigilh/pgvector:pg16",
+		"-c", "max_connections=200")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -401,11 +403,16 @@ func mustConnectPostgreSQL() *sql.DB {
 	tempDB, err := sql.Open("pgx", connStr)
 	Expect(err).ToNot(HaveOccurred())
 
+	// Configure connection pool for parallel execution
+	tempDB.SetMaxOpenConns(50)
+	tempDB.SetMaxIdleConns(10)
+	tempDB.SetConnMaxLifetime(5 * time.Minute)
+
 	// Verify connection
 	err = tempDB.Ping()
 	Expect(err).ToNot(HaveOccurred())
 
-	GinkgoWriter.Println("✅ PostgreSQL connection established")
+	GinkgoWriter.Println("✅ PostgreSQL connection established (pool: max_open=50)")
 	return tempDB
 }
 
@@ -425,11 +432,17 @@ func connectPostgreSQL() {
 	db, err = sql.Open("pgx", connStr) // DD-010: Using pgx driver
 	Expect(err).ToNot(HaveOccurred())
 
+	// Configure connection pool for parallel execution
+	// Default is 2 max open connections, which is insufficient for parallel tests
+	db.SetMaxOpenConns(50)                 // Allow up to 50 concurrent connections (4 procs * 10 tests)
+	db.SetMaxIdleConns(10)                 // Keep 10 idle connections ready
+	db.SetConnMaxLifetime(5 * time.Minute) // Recycle connections every 5 minutes
+
 	// Verify connection
 	err = db.Ping()
 	Expect(err).ToNot(HaveOccurred())
 
-	GinkgoWriter.Println("✅ PostgreSQL connection established")
+	GinkgoWriter.Printf("✅ PostgreSQL connection established (pool: max_open=50, max_idle=10)\n")
 }
 
 // connectRedis establishes Redis connection

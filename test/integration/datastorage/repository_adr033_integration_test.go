@@ -35,7 +35,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Success Tracking", func() {
+var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Success Tracking", Serial, func() {
 	var (
 		actionTraceRepo *repository.ActionTraceRepository
 		testCtx         context.Context
