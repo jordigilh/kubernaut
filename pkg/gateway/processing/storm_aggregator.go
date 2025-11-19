@@ -570,6 +570,17 @@ func (a *StormAggregator) AggregateOrCreate(ctx context.Context, signal *types.N
 // - bool: shouldAggregate (true if threshold reached)
 // - error: Redis errors
 func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.NormalizedSignal) (int, bool, error) {
+	// DD-GATEWAY-008 Day 4: Check capacity BEFORE buffering (BR-GATEWAY-011)
+	isOver, currentSize, limit, err := a.IsOverCapacity(ctx, signal.Namespace)
+	if err != nil {
+		return 0, false, fmt.Errorf("failed to check capacity: %w", err)
+	}
+
+	if isOver {
+		// Namespace is over capacity: reject alert
+		return currentSize, false, fmt.Errorf("namespace %s over capacity (%d/%d alerts)", signal.Namespace, currentSize, limit)
+	}
+
 	// Redis key for buffering: alert:buffer:<namespace>:<alertname>
 	bufferKey := fmt.Sprintf("alert:buffer:%s:%s", signal.Namespace, signal.AlertName)
 
@@ -588,8 +599,8 @@ func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.No
 		return 0, false, fmt.Errorf("failed to get buffer size: %w", err)
 	}
 
-	// Default threshold: 5 alerts
-	threshold := 5
+	// Use configured threshold from struct (default: 5)
+	threshold := a.bufferThreshold
 	shouldAggregate := int(bufferSize) >= threshold
 
 	return int(bufferSize), shouldAggregate, nil
