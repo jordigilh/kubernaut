@@ -186,6 +186,39 @@ var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 			})
 		})
 	})
+
+	// TDD Cycle 5: GetNamespaceUtilization - Multi-Tenant Isolation
+	Describe("GetNamespaceUtilization - Multi-Tenant (BR-GATEWAY-011)", func() {
+		Context("when namespace has buffered alerts", func() {
+			It("should return correct utilization percentage", func() {
+				namespace := "prod-api"
+				
+				// Buffer 5 alerts in this namespace
+				for i := 1; i <= 5; i++ {
+					signal := &types.NormalizedSignal{
+						Namespace: namespace,
+						AlertName: "PodCrashLooping",
+						Resource: types.ResourceIdentifier{
+							Kind: "Pod",
+							Name: fmt.Sprintf("payment-api-%d", i),
+						},
+					}
+					_, _, err := aggregator.BufferFirstAlert(ctx, signal)
+					Expect(err).ToNot(HaveOccurred())
+				}
+
+				// BEHAVIOR: Get namespace utilization
+				utilization, err := aggregator.GetNamespaceUtilization(ctx, namespace)
+
+				// CORRECTNESS: Should calculate utilization correctly
+				// 5 alerts / 1000 default max = 0.005 (0.5%)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(utilization).To(BeNumerically("~", 0.005, 0.001))
+
+				// BUSINESS OUTCOME: Accurate capacity reporting (BR-GATEWAY-011)
+			})
+		})
+	})
 })
 })
 
