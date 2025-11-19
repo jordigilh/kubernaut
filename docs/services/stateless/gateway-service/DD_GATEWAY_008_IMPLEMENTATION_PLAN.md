@@ -1,10 +1,10 @@
 # DD-GATEWAY-008: Storm Buffering Implementation Plan
 
-**Version**: 3.1
+**Version**: 3.2
 **Status**: 📋 PRODUCTION-READY PLAN (Template Compliant)
 **Design Decision**: [DD-GATEWAY-008](../../../architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md)
 **Approved Decision**: Alternative 2 - Buffered First-Alert Aggregation with v1.0 Enhancements
-**Confidence**: 98% (Evidence-Based with Clarified Behavior)
+**Confidence**: 98% (Evidence-Based with Clarified Behavior + TDD Methodology)
 **Estimated Effort**: 12 days (APDC full cycle: 7 days implementation + 3 days testing + 2 days documentation/production readiness)
 
 ---
@@ -13,7 +13,8 @@
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **v3.1** | Nov 18, 2025 | **BEHAVIOR CLARIFICATION**: Added "Current vs. Proposed Behavior" section (~108 lines) with concrete timeline examples comparing v0.9 (current) vs. v1.0 (proposed) storm aggregation. Clarified buffering logic: current creates window on alert #1, proposed buffers alerts #1-4 and creates window on alert #5 (threshold). Added "Key Differences" table (8 aspects), threshold-not-reached scenario, cost savings comparison, and rationale. Confidence increased from 95% to 98%. | ✅ **CURRENT** |
+| **v3.2** | Nov 19, 2025 | **TDD METHODOLOGY CLARIFICATION**: Clarified strict TDD discipline (one test at a time, not batched). Added "TDD Do's and Don'ts" section with behavior validation emphasis (test WHAT, not HOW). Explicitly documented anti-patterns to avoid: batch test writing, implementation detail testing, null-testing. References `.cursor/rules/08-testing-anti-patterns.mdc` for automated detection. Updated Day 1 plan to reflect proper TDD cycles. | ✅ **CURRENT** |
+| **v3.1** | Nov 18, 2025 | **BEHAVIOR CLARIFICATION**: Added "Current vs. Proposed Behavior" section (~108 lines) with concrete timeline examples comparing v0.9 (current) vs. v1.0 (proposed) storm aggregation. Clarified buffering logic: current creates window on alert #1, proposed buffers alerts #1-4 and creates window on alert #5 (threshold). Added "Key Differences" table (8 aspects), threshold-not-reached scenario, cost savings comparison, and rationale. Confidence increased from 95% to 98%. | ✅ SUPERSEDED |
 | **v3.0** | Nov 18, 2025 | **TEMPLATE COMPLIANCE UPDATE**: Added day-by-day timeline (Days 1-12), complete test examples (6 files, ~2900 LOC), EOD templates (3 documents), BR coverage matrix, production readiness report (109-point system), error handling philosophy (280 lines), confidence assessment methodology, handoff summary (450 lines), CHECK phase, file organization plan, performance benchmarking, troubleshooting guide. Updated effort estimate to 12 days (full APDC cycle). Compliance improved from 65% to 95%. | ✅ SUPERSEDED |
 | **v2.0** | Nov 18, 2025 | Added comprehensive metrics updates (19 new + 1 updated). Industry best practices (sliding window, max duration, configurable threshold, overflow handling, multi-tenant isolation). Updated effort estimate to 4-5 days. | ✅ SUPERSEDED |
 | **v1.0** | Nov 18, 2025 | Initial implementation plan created. APDC methodology structure. Comprehensive test strategy with unit, integration, and E2E coverage. | ✅ SUPERSEDED |
@@ -992,6 +993,84 @@ T=110s: No more alerts for 60s → Window closes, create aggregated CRD with all
    - 🆕 **ADD**: `DefaultMaxSize`, `PerNamespaceLimits`, `GlobalMaxSize`
    - 🆕 **ADD**: `SamplingThreshold`, `SamplingRate`
    - **Estimated Changes**: +50-60 LOC to existing config struct
+
+---
+
+## 🧪 TDD Do's and Don'ts - MANDATORY
+
+### Critical TDD Principles
+
+**ONE TEST AT A TIME** (Strict TDD Discipline):
+1. Write 1 test
+2. Add method signature (no implementation)
+3. Run test (verify it fails)
+4. Move to next test
+5. Repeat
+
+**NEVER**:
+- ❌ Write all tests in a batch, then add all signatures
+- ❌ Write multiple tests before running them
+- ❌ Skip the RED phase verification
+
+### Behavior Validation (Not Implementation Testing)
+
+**TEST WHAT THE SYSTEM DOES** (Business Outcomes):
+- ✅ "should return buffer count of 1 after first alert"
+- ✅ "should prevent creating CRD when buffer threshold not reached"
+- ✅ "should trigger aggregation when threshold reached"
+
+**DO NOT TEST HOW IT DOES IT** (Implementation Details):
+- ❌ "should create Redis key with TTL of 60 seconds"
+- ❌ "should set window.isActive to true"
+- ❌ "should update internal buffer state"
+
+### Anti-Patterns to Avoid
+
+**Reference**: `.cursor/rules/08-testing-anti-patterns.mdc`
+
+**FORBIDDEN PATTERNS**:
+1. **NULL-TESTING**: Weak assertions like `ToNot(BeNil())`, `ToNot(BeEmpty())`, `> 0`
+   - ❌ BAD: `Expect(result).ToNot(BeNil())`
+   - ✅ GOOD: `Expect(result.BufferCount).To(Equal(5))`
+
+2. **IMPLEMENTATION TESTING**: Testing internal state instead of behavior
+   - ❌ BAD: `Expect(aggregator.internalBuffer).To(HaveLen(5))`
+   - ✅ GOOD: `Expect(bufferSize).To(Equal(5))`
+
+3. **STATIC DATA TESTING**: Testing hardcoded values without business context
+   - ❌ BAD: `Expect(result).To(Equal("success"))`
+   - ✅ GOOD: `Expect(result.Status).To(Equal("aggregated"), "Should aggregate when threshold reached")`
+
+4. **LIBRARY TESTING**: Testing framework behavior instead of business logic
+   - ❌ BAD: Testing if Redis client works
+   - ✅ GOOD: Testing if storm buffer behavior is correct (using mocked Redis)
+
+### Business Requirement Mapping
+
+**MANDATORY**: Every test must map to a business requirement:
+
+```go
+Context("when first alert arrives below threshold (BR-GATEWAY-016)", func() {
+    It("should buffer alert without triggering aggregation", func() {
+        // Test validates BR-GATEWAY-016: Buffer first N alerts before aggregation
+    })
+})
+```
+
+### Automated Detection
+
+Run before committing:
+```bash
+# Detect NULL-TESTING anti-pattern
+find test/ -name "*_test.go" -exec grep -H -n "ToNot(BeEmpty())\|ToNot(BeNil())" {} \;
+
+# Detect implementation testing (accessing internal state)
+find test/ -name "*_test.go" -exec grep -H -n "\.internal\|\.buffer\|\.state" {} \;
+```
+
+**Enforcement**: Pre-commit hooks will reject tests with anti-patterns.
+
+---
 
 ### Data Flow
 
