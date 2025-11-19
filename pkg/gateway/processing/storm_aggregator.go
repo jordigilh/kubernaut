@@ -449,3 +449,14 @@ func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, cur
 	newExpiration := currentTime.Add(a.windowDuration)
 	return newExpiration, nil
 }
+
+// IsWindowExpired checks if window exceeded max duration (pure function)
+//
+// Business Requirement: BR-GATEWAY-008 - Maximum window duration safety limit
+//
+// Returns:
+// - bool: true if window has exceeded max duration, false otherwise
+func (a *StormAggregator) IsWindowExpired(windowStartTime, currentTime time.Time, maxDuration time.Duration) bool {
+	elapsed := currentTime.Sub(windowStartTime)
+	return elapsed > maxDuration
+}
