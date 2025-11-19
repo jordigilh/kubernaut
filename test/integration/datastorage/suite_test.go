@@ -484,10 +484,10 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 		"008_context_api_compatibility.sql",
 		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
-		"012_adr033_multidimensional_tracking.sql",  // ADR-033: Multi-dimensional success tracking
-		"013_create_audit_events_table.sql",         // ADR-034: Unified audit events table
-		"999_add_nov_2025_partition.sql",            // Legacy partition for resource_action_traces
-		"1000_create_audit_events_partitions.sql",   // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
+		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
+		"013_create_audit_events_table.sql",        // ADR-034: Unified audit events table
+		"999_add_nov_2025_partition.sql",           // Legacy partition for resource_action_traces
+		"1000_create_audit_events_partitions.sql",  // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 
 	for _, migration := range migrations {
@@ -554,10 +554,10 @@ func applyMigrationsWithPropagation() {
 		"008_context_api_compatibility.sql",
 		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
-		"012_adr033_multidimensional_tracking.sql",  // ADR-033: Multi-dimensional success tracking
-		"013_create_audit_events_table.sql",         // ADR-034: Unified audit events table
-		"999_add_nov_2025_partition.sql",            // Legacy partition for resource_action_traces
-		"1000_create_audit_events_partitions.sql",   // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
+		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
+		"013_create_audit_events_table.sql",        // ADR-034: Unified audit events table
+		"999_add_nov_2025_partition.sql",           // Legacy partition for resource_action_traces
+		"1000_create_audit_events_partitions.sql",  // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 
 	for _, migration := range migrations {

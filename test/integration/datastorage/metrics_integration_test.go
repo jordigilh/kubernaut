@@ -46,12 +46,9 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 	// Use shared datastorageURL and db from suite_test.go
 
 	BeforeEach(func() {
-		// Clean up test data before each test
-		// Note: Metrics are cumulative, but we clean up events to avoid pollution
-		_, err := db.Exec("TRUNCATE TABLE audit_events CASCADE")
-		if err != nil {
-			GinkgoWriter.Printf("Note: audit_events table doesn't exist yet: %v\n", err)
-		}
+		// Note: No TRUNCATE needed for parallel execution
+		// Tests use unique correlation_ids (timestamp-based) for isolation
+		// Metrics are cumulative by nature
 	})
 
 	Context("Metrics Endpoint", func() {

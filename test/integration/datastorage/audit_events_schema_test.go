@@ -20,7 +20,7 @@ import (
 // BR-STORAGE-032: Unified audit trail for compliance and cross-service correlation
 // This file tests Phase 1: Core Schema (audit_events table infrastructure)
 
-var _ = Describe("Audit Events Schema Integration Tests", func() {
+var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 	BeforeEach(func() {
 		// Clean up test data before each test
 		// Note: Schema is created by BeforeSuite migration application

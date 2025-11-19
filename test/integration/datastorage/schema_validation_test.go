@@ -23,7 +23,7 @@ type ColumnMetadata struct {
 // Moved from test/unit/datastorage/ because schema validation requires
 // real database connectivity (integration test by definition).
 
-var _ = Describe("BR-STORAGE-003: Notification Audit Table Schema", Ordered, func() {
+var _ = Describe("BR-STORAGE-003: Notification Audit Table Schema", Serial, Ordered, func() {
 	// Use shared 'db' from suite_test.go (PostgreSQL Podman container)
 
 	Context("Table Existence", func() {
@@ -278,7 +278,7 @@ var _ = Describe("BR-STORAGE-003: Notification Audit Table Schema", Ordered, fun
 	})
 })
 
-var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Ordered, func() {
+var _ = Describe("BR-STORAGE-003: Resource Action Traces Table Schema", Serial, Ordered, func() {
 	// CRITICAL: This test prevents schema mismatches between test code and migrations
 	// Issue #17: ADR-033 tests used 'status' instead of 'execution_status' for 6 days
 	// without detection because tests were never run in CI until containerized workflow
