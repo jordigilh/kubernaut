@@ -60,6 +60,9 @@ type Server struct {
 	dlqClient  *dlq.Client
 	validator  *validation.NotificationAuditValidator
 
+	// BR-STORAGE-033: Unified audit events API (ADR-034)
+	auditEventsRepo *repository.AuditEventsRepository
+
 	// BR-STORAGE-019: Prometheus metrics (GAP-10)
 	metrics *dsmetrics.Metrics
 }
@@ -145,6 +148,12 @@ func NewServer(
 	logger.Debug("ADR-033 action trace repository created",
 		zap.Bool("action_trace_repo_nil", actionTraceRepo == nil))
 
+	// Create BR-STORAGE-033: Unified audit events repository (ADR-034)
+	logger.Debug("Creating ADR-034 unified audit events repository...")
+	auditEventsRepo := repository.NewAuditEventsRepository(db, logger)
+	logger.Debug("ADR-034 audit events repository created",
+		zap.Bool("audit_events_repo_nil", auditEventsRepo == nil))
+
 	// Create Prometheus metrics (BR-STORAGE-019, GAP-10)
 	metrics := dsmetrics.NewMetrics("datastorage", "")
 
@@ -169,10 +178,11 @@ func NewServer(
 			ReadTimeout:  cfg.ReadTimeout,
 			WriteTimeout: cfg.WriteTimeout,
 		},
-		repository: repo,
-		dlqClient:  dlqClient,
-		validator:  validator,
-		metrics:    metrics,
+		repository:      repo,
+		dlqClient:       dlqClient,
+		validator:       validator,
+		auditEventsRepo: auditEventsRepo,
+		metrics:         metrics,
 	}, nil
 }
 
@@ -234,6 +244,12 @@ func (s *Server) Handler() http.Handler {
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
 		s.logger.Debug("Registering POST /api/v1/audit/notifications handler")
 		r.Post("/audit/notifications", s.handleCreateNotificationAudit)
+
+		// BR-STORAGE-033: Unified audit events API (ADR-034)
+		// DD-STORAGE-010: Query API with offset-based pagination
+		s.logger.Debug("Registering /api/v1/audit/events handlers (ADR-034, DD-STORAGE-010)")
+		r.Post("/audit/events", s.handleCreateAuditEvent)
+		r.Get("/audit/events", s.handleQueryAuditEvents)
 	})
 
 	s.logger.Debug("API v1 routes configured successfully")

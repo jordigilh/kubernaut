@@ -1,13 +1,24 @@
 # Data Storage Service - Business Requirements
 
-**Version**: v1.1
-**Date**: November 13, 2025
+**Version**: v1.2
+**Date**: November 19, 2025
 **Status**: Production-Ready (per ADR-032)
 **Service Type**: Stateless HTTP REST API + Database Layer
 
 ---
 
 ## 📝 **Changelog**
+
+### **v1.2** (November 19, 2025)
+- **ADDED**: BR-STORAGE-035 - Cursor-based pagination for audit event queries (V1.1 planned)
+  - Rationale: Handles real-time data with high write volumes more reliably than offset-based
+  - Reference: DD-STORAGE-010 (Query API Pagination Strategy)
+- **ADDED**: BR-STORAGE-036 - Parent event lookup index for performance optimization (V1.1 planned)
+  - Rationale: Optimize child event lookups and event chain traversal for RCA
+  - Reference: FK_CONSTRAINT_IMPLEMENTATION_SUMMARY.md
+- **ADDED**: BR-STORAGE-037 - Historical parent-child backfill for data integrity (V1.1 planned)
+  - Rationale: Enable historical event chain queries for compliance and analytics
+  - Reference: FK_CONSTRAINT_IMPLEMENTATION_SUMMARY.md
 
 ### **v1.1** (November 13, 2025)
 - **CORRECTED**: BR-STORAGE-012 - Semantic search is for **playbook catalog**, not audit records
@@ -29,8 +40,9 @@
 
 ## 📊 **Summary Statistics**
 
-- **Total BRs**: 30 Data Storage BRs
-- **Active BRs**: 30 (100%)
+- **Total BRs**: 33 Data Storage BRs (30 Active V1.0 + 3 Planned V1.1)
+- **Active BRs (V1.0)**: 30 (91%)
+- **Planned BRs (V1.1)**: 3 (9%)
 - **Deprecated BRs**: 0 (0%)
 - **V2 Deferred BRs**: 0 (0%)
 
@@ -521,6 +533,79 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 **Rationale**: Integration tests validate real database operations, HTTP API endpoints, and graceful shutdown behavior.
 
+---
+
+## 🚀 **V1.1 Enhancement Business Requirements**
+
+### **Category: Query API Enhancements (V1.1)**
+
+#### **BR-STORAGE-035: Cursor-Based Pagination**
+- **Priority**: P1
+- **Status**: 📋 Planned (V1.1)
+- **Description**: Support cursor-based pagination for audit event queries to handle real-time data with high write volumes. Cursor format: `base64(event_timestamp + event_id)` for uniqueness.
+- **Business Value**:
+  - **Consistency**: No missed/duplicate records during pagination
+  - **Performance**: Efficient for large result sets (uses index on `event_timestamp`)
+  - **Real-time**: Handles concurrent writes gracefully
+- **Acceptance Criteria**:
+  - `GET /api/v1/audit/events?cursor={cursor}&limit={limit}` endpoint
+  - Backward compatibility with offset-based pagination maintained
+  - Response includes `next_cursor` for subsequent requests
+  - Cursor decoding validates timestamp and event_id format
+- **Test Coverage**: TBD (V1.1 implementation)
+- **Implementation**: TBD (V1.1)
+- **Related BRs**: BR-STORAGE-006 (pagination support), BR-STORAGE-023 (pagination validation)
+- **Reference**: DD-STORAGE-010 (Query API Pagination Strategy)
+
+---
+
+### **Category: Performance Optimization (V1.1)**
+
+#### **BR-STORAGE-036: Parent Event Lookup Index**
+- **Priority**: P1
+- **Status**: 📋 Planned (V1.1)
+- **Description**: Create database index on `(parent_event_id, parent_event_date)` to optimize child event lookups and event chain traversal.
+- **Business Value**:
+  - **Performance**: Faster queries for "find all children of parent X"
+  - **Observability**: Efficient event chain traversal for debugging
+  - **AI Analysis**: Faster causality analysis for RCA
+- **Acceptance Criteria**:
+  - Index created: `idx_audit_events_parent_lookup ON audit_events (parent_event_id, parent_event_date) WHERE parent_event_id IS NOT NULL`
+  - Query performance for child lookups < 50ms (vs. current full table scan)
+  - Index size monitored via Prometheus metrics
+- **Test Coverage**: TBD (V1.1 implementation - performance benchmarks)
+- **Implementation**: TBD (V1.1 - migration script)
+- **Related BRs**: BR-STORAGE-032 (unified audit table), BR-STORAGE-007 (query performance tracking)
+- **Reference**: FK_CONSTRAINT_IMPLEMENTATION_SUMMARY.md
+
+---
+
+### **Category: Data Integrity (V1.1)**
+
+#### **BR-STORAGE-037: Historical Parent-Child Backfill**
+- **Priority**: P2
+- **Status**: 📋 Planned (V1.1)
+- **Description**: Backfill `parent_event_date` for existing audit events to enable historical event chain queries. Run during maintenance window.
+- **Business Value**:
+  - **Completeness**: Enable historical event chain queries
+  - **Compliance**: Full audit trail for all events
+  - **Analytics**: Complete causality data for trend analysis
+- **Acceptance Criteria**:
+  - Migration script backfills `parent_event_date` from parent event's `event_date`
+  - Progress logging for long-running backfill (e.g., every 10,000 rows)
+  - FK constraint validation after backfill completes
+  - Rollback plan documented for failed backfill
+- **Test Coverage**: TBD (V1.1 implementation - integration test with sample data)
+- **Implementation**: TBD (V1.1 - migration script + validation)
+- **Related BRs**: BR-STORAGE-032 (unified audit table)
+- **Reference**: FK_CONSTRAINT_IMPLEMENTATION_SUMMARY.md
+- **Considerations**:
+  - Run during maintenance window (may be slow for large datasets)
+  - Monitor database load during backfill
+  - Consider batching for very large datasets (>1M events)
+
+---
+
 ### **Defense-in-Depth Coverage**
 
 **BRs with 2x Coverage** (Unit + Integration): 2 BRs
@@ -535,9 +620,11 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 | Priority | Count | Percentage | Description |
 |----------|-------|------------|-------------|
-| **P0** | 21 | 70% | Core functionality, security, production readiness |
-| **P1** | 9 | 30% | Observability, aggregation, performance |
-| **P2** | 0 | 0% | None |
+| **P0** | 21 | 64% | Core functionality, security, production readiness |
+| **P1** | 11 | 33% | Observability, aggregation, performance (includes 2 V1.1 planned) |
+| **P2** | 1 | 3% | Data integrity enhancements (V1.1 planned) |
+
+**Note**: V1.1 BRs (BR-STORAGE-035, 036, 037) are planned enhancements and not yet implemented.
 
 ---
 

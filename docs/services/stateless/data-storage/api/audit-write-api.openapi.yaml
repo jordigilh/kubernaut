@@ -1,0 +1,659 @@
+openapi: 3.0.3
+info:
+  title: Data Storage Service - Audit Write API
+  description: |
+    Generic audit event write API for unified audit table (ADR-034).
+
+    This API provides a single generic endpoint for all services to write audit events.
+    Event data is pre-validated by type-safe builders at the client side.
+
+    **Security**: Network-level security via Kubernetes Network Policies (per ADR-036)
+    - Traffic restricted to authorized service namespaces only
+    - No application-level authentication required (internal cluster services)
+    - Rate limiting per service IP address
+
+    **Version History**:
+    - v1.0 (2025-11-18): Initial release with generic endpoint (no auth required per ADR-036)
+
+    **Business Requirements**:
+    - BR-STORAGE-033: Event data helpers and write API
+    - BR-STORAGE-032: Unified audit trail
+
+    **Related ADRs**:
+    - ADR-034: Unified Audit Table Design
+    - ADR-036: Authentication and Authorization Strategy (removes auth requirement)
+  version: 1.0.0
+  contact:
+    name: Kubernaut Platform Team
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://data-storage.kubernaut-system:8080
+    description: Kubernetes cluster internal service
+
+tags:
+  - name: Audit
+    description: Audit event write operations
+
+paths:
+  /api/v1/audit/events:
+    post:
+      summary: Create audit event
+      description: |
+        Write a single audit event to the unified audit_events table.
+
+        **Architecture**:
+        - Generic endpoint for all services (Gateway, AI Analysis, Workflow, etc.)
+        - Event data pre-validated by type-safe builders (pkg/datastorage/audit)
+        - Audit table columns passed via HTTP headers
+        - Event data (JSONB) passed in request body
+
+        **Security**: Network-level via Kubernetes Network Policies (per ADR-036)
+        - Traffic restricted to authorized service namespaces only
+        - No application-level authentication (internal cluster services)
+
+        **Rate Limiting**: 500 writes/sec per service IP
+
+        **Usage Pattern**:
+        ```go
+        // 1. Build event_data using type-safe builder
+        eventData, _ := audit.NewGatewayEvent("signal.received").
+            WithSignalType("prometheus").
+            Build()
+
+        // 2. POST to generic endpoint
+        POST /api/v1/audit/events
+        Headers: X-Event-Type, X-Service, X-Correlation-ID, ...
+        Body: eventData (JSONB)
+        ```
+      operationId: createAuditEvent
+      tags:
+        - Audit
+      security: []  # No authentication required in V1.0 (per ADR-036)
+      parameters:
+        - name: X-Event-Type
+          in: header
+          required: true
+          description: |
+            Specific event type identifier (maps to audit_events.event_type).
+
+            **Format**: `service.category.action`
+
+            **Examples**:
+            - Gateway: `gateway.signal.received`, `gateway.signal.deduplicated`
+            - AI Analysis: `aianalysis.analysis.completed`, `aianalysis.analysis.failed`
+            - Workflow: `workflow.workflow.started`, `workflow.workflow.completed`
+          schema:
+            type: string
+            pattern: '^[a-z]+\.[a-z_]+\.[a-z_]+$'
+            example: gateway.signal.received
+
+        - name: X-Service
+          in: header
+          required: true
+          description: |
+            Originating service name (maps to audit_events.service).
+
+            **Valid values**: `gateway`, `aianalysis`, `workflow`
+          schema:
+            type: string
+            enum:
+              - gateway
+              - aianalysis
+              - workflow
+            example: gateway
+
+        - name: X-Correlation-ID
+          in: header
+          required: true
+          description: |
+            Unique correlation ID for tracking related events across services (maps to audit_events.correlation_id).
+
+            **Format**: RemediationRequest name (e.g., `rr-2025-001`)
+          schema:
+            type: string
+            pattern: '^rr-[0-9]{4}-[0-9]+$'
+            example: rr-2025-001
+
+        - name: X-Resource-Type
+          in: header
+          required: false
+          description: |
+            Kubernetes resource type (maps to audit_events.resource_type).
+
+            **Examples**: `pod`, `node`, `deployment`, `service`
+          schema:
+            type: string
+            example: pod
+
+        - name: X-Resource-ID
+          in: header
+          required: false
+          description: |
+            Kubernetes resource identifier (maps to audit_events.resource_id).
+
+            **Format**: Resource name
+          schema:
+            type: string
+            example: api-server-xyz-123
+
+        - name: X-Outcome
+          in: header
+          required: true
+          description: |
+            Event outcome (maps to audit_events.outcome).
+
+            **Valid values**: `success`, `failure`, `pending`, `skipped`
+          schema:
+            type: string
+            enum:
+              - success
+              - failure
+              - pending
+              - skipped
+            example: success
+
+        - name: X-Severity
+          in: header
+          required: false
+          description: |
+            Event severity level (maps to audit_events.severity).
+
+            **Valid values**: `critical`, `warning`, `info`
+          schema:
+            type: string
+            enum:
+              - critical
+              - warning
+              - info
+            example: critical
+
+      requestBody:
+        required: true
+        description: |
+          Pre-validated event_data JSONB from type-safe builders.
+
+          **Structure**: All event data must follow the common envelope:
+          ```json
+          {
+            "version": "1.0",
+            "service": "gateway|aianalysis|workflow",
+            "event_type": "service.category.action",
+            "timestamp": "2025-11-18T10:00:00Z",
+            "data": {
+              "service_name": { /* service-specific fields */ }
+            }
+          }
+          ```
+
+          See schemas below for service-specific structures.
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/GatewayEventData'
+                - $ref: '#/components/schemas/AIAnalysisEventData'
+                - $ref: '#/components/schemas/WorkflowEventData'
+            examples:
+              gatewayEvent:
+                summary: Gateway signal received event
+                value:
+                  version: "1.0"
+                  service: gateway
+                  event_type: gateway.signal.received
+                  timestamp: "2025-11-18T10:00:00Z"
+                  data:
+                    gateway:
+                      signal_type: prometheus
+                      alert_name: PodOOMKilled
+                      fingerprint: sha256:abc123
+                      namespace: production
+                      resource_type: pod
+                      resource_name: api-server-xyz-123
+                      severity: critical
+                      priority: P0
+                      environment: production
+                      deduplication_status: new
+                      storm_detected: false
+
+              aiAnalysisEvent:
+                summary: AI Analysis completed event
+                value:
+                  version: "1.0"
+                  service: aianalysis
+                  event_type: aianalysis.analysis.completed
+                  timestamp: "2025-11-18T10:00:00Z"
+                  data:
+                    ai_analysis:
+                      analysis_id: analysis-2025-001
+                      llm_provider: anthropic
+                      llm_model: claude-haiku-4-5
+                      prompt_tokens: 2500
+                      completion_tokens: 750
+                      total_tokens: 3250
+                      duration_ms: 4200
+                      rca_signal_type: OOMKilled
+                      rca_severity: critical
+                      confidence: 0.95
+                      workflow_id: workflow-increase-memory
+
+              workflowEvent:
+                summary: Workflow completed event
+                value:
+                  version: "1.0"
+                  service: workflow
+                  event_type: workflow.workflow.completed
+                  timestamp: "2025-11-18T10:00:00Z"
+                  data:
+                    workflow:
+                      workflow_id: workflow-increase-memory
+                      execution_id: exec-2025-001
+                      phase: completed
+                      current_step: 5
+                      total_steps: 5
+                      duration_ms: 45000
+                      outcome: success
+                      approval_required: true
+                      approval_decision: approved
+
+      responses:
+        '201':
+          description: Audit event created successfully
+          headers:
+            X-RateLimit-Remaining:
+              description: Remaining requests in current window
+              schema:
+                type: integer
+                example: 499
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventResponse'
+
+        '400':
+          description: Bad request - Invalid event data or missing required fields
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              examples:
+                missingHeader:
+                  summary: Missing required header
+                  value:
+                    type: https://kubernaut.io/problems/validation-error
+                    title: Validation Error
+                    status: 400
+                    detail: Missing required header X-Event-Type
+                    instance: /api/v1/audit/events
+
+                invalidEnvelope:
+                  summary: Invalid event data envelope
+                  value:
+                    type: https://kubernaut.io/problems/validation-error
+                    title: Validation Error
+                    status: 400
+                    detail: "Missing required field: version"
+                    instance: /api/v1/audit/events
+
+        '429':
+          description: Too many requests - Rate limit exceeded
+          headers:
+            X-RateLimit-Remaining:
+              description: Remaining requests (0)
+              schema:
+                type: integer
+                example: 0
+            Retry-After:
+              description: Seconds until rate limit resets
+              schema:
+                type: integer
+                example: 60
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+              example:
+                type: https://kubernaut.io/problems/rate-limit-exceeded
+                title: Rate Limit Exceeded
+                status: 429
+                detail: Rate limit of 500 writes/sec exceeded
+                instance: /api/v1/audit/events
+
+        '500':
+          description: Internal server error - Database write failed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /health:
+    get:
+      summary: Health check
+      description: Service health endpoint (no authentication required)
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+components:
+  schemas:
+    BaseEventEnvelope:
+      type: object
+      required:
+        - version
+        - service
+        - event_type
+        - timestamp
+        - data
+      properties:
+        version:
+          type: string
+          description: Schema version (semver)
+          example: "1.0"
+        service:
+          type: string
+          description: Originating service name
+          enum:
+            - gateway
+            - aianalysis
+            - workflow
+          example: gateway
+        event_type:
+          type: string
+          description: Specific event identifier
+          pattern: '^[a-z]+\.[a-z_]+\.[a-z_]+$'
+          example: gateway.signal.received
+        timestamp:
+          type: string
+          format: date-time
+          description: Event creation timestamp (RFC3339)
+          example: "2025-11-18T10:00:00Z"
+        data:
+          type: object
+          description: Service-specific event data
+
+    GatewayEventData:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                gateway:
+                  $ref: '#/components/schemas/GatewayData'
+
+    GatewayData:
+      type: object
+      required:
+        - signal_type
+      properties:
+        signal_type:
+          type: string
+          enum:
+            - prometheus
+            - kubernetes
+          example: prometheus
+        alert_name:
+          type: string
+          example: HighMemoryUsage
+        event_reason:
+          type: string
+          example: OOMKilled
+        fingerprint:
+          type: string
+          example: sha256:abc123
+        namespace:
+          type: string
+          example: production
+        resource_type:
+          type: string
+          example: pod
+        resource_name:
+          type: string
+          example: api-server-xyz-123
+        severity:
+          type: string
+          enum:
+            - critical
+            - warning
+            - info
+          example: critical
+        priority:
+          type: string
+          enum:
+            - P0
+            - P1
+            - P2
+            - P3
+          example: P0
+        environment:
+          type: string
+          enum:
+            - production
+            - staging
+            - development
+          example: production
+        deduplication_status:
+          type: string
+          enum:
+            - new
+            - duplicate
+            - storm
+          example: new
+        storm_detected:
+          type: boolean
+          example: false
+        storm_id:
+          type: string
+          example: storm-2025-11-18-001
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            app: api-server
+            tier: backend
+        source_payload:
+          type: string
+          description: Base64 encoded original payload
+          example: eyJhbGVy...
+
+    AIAnalysisEventData:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                ai_analysis:
+                  $ref: '#/components/schemas/AIAnalysisData'
+
+    AIAnalysisData:
+      type: object
+      required:
+        - analysis_id
+        - prompt_tokens
+        - completion_tokens
+        - total_tokens
+      properties:
+        analysis_id:
+          type: string
+          example: analysis-2025-001
+        llm_provider:
+          type: string
+          enum:
+            - anthropic
+            - openai
+            - google
+          example: anthropic
+        llm_model:
+          type: string
+          example: claude-haiku-4-5-20251001
+        prompt_tokens:
+          type: integer
+          example: 2500
+        completion_tokens:
+          type: integer
+          example: 750
+        total_tokens:
+          type: integer
+          example: 3250
+        duration_ms:
+          type: integer
+          example: 4200
+        rca_signal_type:
+          type: string
+          example: OOMKilled
+        rca_severity:
+          type: string
+          example: critical
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.95
+        workflow_id:
+          type: string
+          example: workflow-increase-memory
+        tools_invoked:
+          type: array
+          items:
+            type: string
+          example:
+            - kubernetes/describe_pod
+            - workflow/search_catalog
+        error_code:
+          type: string
+          example: LLM_TIMEOUT
+
+    WorkflowEventData:
+      allOf:
+        - $ref: '#/components/schemas/BaseEventEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                workflow:
+                  $ref: '#/components/schemas/WorkflowData'
+
+    WorkflowData:
+      type: object
+      required:
+        - workflow_id
+        - approval_required
+      properties:
+        workflow_id:
+          type: string
+          example: workflow-increase-memory
+        execution_id:
+          type: string
+          example: exec-2025-001
+        phase:
+          type: string
+          enum:
+            - pending
+            - executing
+            - completed
+            - failed
+            - cancelled
+          example: completed
+        current_step:
+          type: integer
+          example: 5
+        total_steps:
+          type: integer
+          example: 5
+        step_name:
+          type: string
+          example: verify_health
+        duration_ms:
+          type: integer
+          example: 45000
+        outcome:
+          type: string
+          enum:
+            - success
+            - failed
+            - cancelled
+          example: success
+        approval_required:
+          type: boolean
+          example: true
+        approval_decision:
+          type: string
+          enum:
+            - approved
+            - rejected
+          example: approved
+        approver:
+          type: string
+          example: sre-team@example.com
+        error_message:
+          type: string
+          example: Failed to apply resource
+
+    AuditEventResponse:
+      type: object
+      required:
+        - event_id
+        - created_at
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: Generated audit event UUID
+          example: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+        created_at:
+          type: string
+          format: date-time
+          description: Database insertion timestamp
+          example: "2025-11-18T10:00:01Z"
+        message:
+          type: string
+          example: Audit event created successfully
+
+    ProblemDetails:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference identifying the problem type
+          example: https://kubernaut.io/problems/validation-error
+        title:
+          type: string
+          description: Short human-readable summary
+          example: Validation Error
+        status:
+          type: integer
+          description: HTTP status code
+          example: 400
+        detail:
+          type: string
+          description: Detailed explanation
+          example: Missing required field version
+        instance:
+          type: string
+          description: URI reference identifying the specific occurrence
+          example: /api/v1/audit/events
+
