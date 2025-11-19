@@ -375,3 +375,37 @@ func (a *StormAggregator) AggregateOrCreate(ctx context.Context, signal *types.N
 	// No active storm window - signal new CRD should be created
 	return false, "", nil
 }
+
+// BufferFirstAlert buffers alert and returns whether aggregation should start (DD-GATEWAY-008)
+//
+// Business Requirement: BR-GATEWAY-016 - Buffer first N alerts before creating aggregation window
+//
+// Returns:
+// - int: current buffer size
+// - bool: shouldAggregate (true if threshold reached)
+// - error: Redis errors
+func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.NormalizedSignal) (int, bool, error) {
+	// Redis key for buffering: alert:buffer:<namespace>:<alertname>
+	bufferKey := fmt.Sprintf("alert:buffer:%s:%s", signal.Namespace, signal.AlertName)
+
+	// Add signal to buffer (Redis list)
+	resourceID := signal.Resource.String()
+	if err := a.redisClient.RPush(ctx, bufferKey, resourceID).Err(); err != nil {
+		return 0, false, fmt.Errorf("failed to buffer alert: %w", err)
+	}
+
+	// Set TTL on buffer (2x window duration)
+	a.redisClient.Expire(ctx, bufferKey, 2*a.windowDuration)
+
+	// Get current buffer size
+	bufferSize, err := a.redisClient.LLen(ctx, bufferKey).Result()
+	if err != nil {
+		return 0, false, fmt.Errorf("failed to get buffer size: %w", err)
+	}
+
+	// Default threshold: 5 alerts
+	threshold := 5
+	shouldAggregate := int(bufferSize) >= threshold
+
+	return int(bufferSize), shouldAggregate, nil
+}
