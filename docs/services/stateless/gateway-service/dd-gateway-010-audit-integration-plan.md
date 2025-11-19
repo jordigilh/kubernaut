@@ -1,10 +1,10 @@
 # DD-GATEWAY-010: Audit Trace Integration - Implementation Plan
 
-**Version**: 1.1  
-**Status**: 📋 DRAFT  
-**Design Decision**: [audit-integration-analysis.md](./audit-integration-analysis.md)  
-**Service**: Gateway Service  
-**Confidence**: 95% (Evidence-Based - ADR-038 pattern, existing audit library)  
+**Version**: 1.1
+**Status**: 📋 DRAFT
+**Design Decision**: [audit-integration-analysis.md](./audit-integration-analysis.md)
+**Service**: Gateway Service
+**Confidence**: 95% (Evidence-Based - ADR-038 pattern, existing audit library)
 **Estimated Effort**: 6 days (APDC cycle: 3 days implementation + 2 days testing + 1 day documentation)
 
 ---
@@ -124,8 +124,8 @@ Day 4 (Unit + Integration Tests) → Day 5 (E2E Tests) → Day 6 (Production)
 
 ### **Day 0: ANALYSIS + PLAN (Pre-Work) ✅**
 
-**Phase**: ANALYSIS + PLAN  
-**Duration**: 8 hours  
+**Phase**: ANALYSIS + PLAN
+**Duration**: 8 hours
 **Status**: ✅ COMPLETE (this document represents Day 0 completion)
 
 **Deliverables**:
@@ -140,8 +140,8 @@ Day 4 (Unit + Integration Tests) → Day 5 (E2E Tests) → Day 6 (Production)
 
 ### **Day 1: Foundation + Test Framework (DO-RED Phase)**
 
-**Phase**: DO-RED  
-**Duration**: 8 hours  
+**Phase**: DO-RED
+**Duration**: 8 hours
 **TDD Focus**: Write failing tests first, enhance existing code
 
 **⚠️ CRITICAL**: We are **ENHANCING existing code**, not creating from scratch!
@@ -190,7 +190,7 @@ Day 4 (Unit + Integration Tests) → Day 5 (E2E Tests) → Day 6 (Production)
 
    type Config struct {
        // ... existing fields ...
-       
+
        // Data Storage Service URL for audit writes (ADR-038)
        DataStorageServiceURL string `yaml:"data_storage_service_url" env:"DATA_STORAGE_SERVICE_URL"`
    }
@@ -231,8 +231,8 @@ go test ./test/unit/gateway/audit_integration_test.go -v 2>&1 | grep "FAIL"
 
 ### **Day 2: Core Audit Calls (DO-GREEN Phase)**
 
-**Phase**: DO-GREEN  
-**Duration**: 8 hours  
+**Phase**: DO-GREEN
+**Duration**: 8 hours
 **TDD Focus**: Minimal implementation to pass tests
 
 **Morning (4 hours): Audit Points 3-5**
@@ -298,8 +298,8 @@ go test ./test/unit/gateway/audit_integration_test.go -v
 
 ### **Day 3: Integration + Refactor (DO-REFACTOR Phase)**
 
-**Phase**: DO-REFACTOR  
-**Duration**: 8 hours  
+**Phase**: DO-REFACTOR
+**Duration**: 8 hours
 **TDD Focus**: Complete integration + enhancement
 
 **Morning (4 hours): Graceful Shutdown + Error Handling**
@@ -310,7 +310,7 @@ go test ./test/unit/gateway/audit_integration_test.go -v
 
    import (
        "context"
-       
+
        "go.uber.org/zap"
    )
 
@@ -401,8 +401,8 @@ golangci-lint run ./pkg/gateway/...
 
 ### **Day 4: Unit + Integration Tests (CHECK Phase)**
 
-**Phase**: CHECK  
-**Duration**: 8 hours  
+**Phase**: CHECK
+**Duration**: 8 hours
 **Focus**: Comprehensive unit and integration test coverage
 
 **Morning (4 hours): Unit Tests**
@@ -422,7 +422,8 @@ golangci-lint run ./pkg/gateway/...
 **Unit Test Examples**:
 
 ```go
-package gateway_test
+// test/unit/gateway/audit_integration_test.go
+package gateway  // White-box testing - same package
 
 import (
     "context"
@@ -430,12 +431,10 @@ import (
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
     
-    "github.com/jordigilh/kubernaut/pkg/gateway"
     "github.com/jordigilh/kubernaut/pkg/gateway/types"
     "github.com/jordigilh/kubernaut/test/mocks"
 )
 
-// test/unit/gateway/audit_integration_test.go
 var _ = Describe("Gateway Audit Integration", func() {
     var (
         ctx        context.Context
@@ -526,11 +525,11 @@ import (
     "context"
     "os"
     "time"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
     "github.com/redis/go-redis/v9"
-    
+
     "github.com/jordigilh/kubernaut/pkg/gateway"
     "github.com/jordigilh/kubernaut/pkg/gateway/types"
     "github.com/jordigilh/kubernaut/test/infrastructure"
@@ -615,8 +614,8 @@ make test-integration-gateway
 
 ### **Day 5: E2E Tests + BR Validation (CHECK Phase)**
 
-**Phase**: CHECK  
-**Duration**: 8 hours  
+**Phase**: CHECK
+**Duration**: 8 hours
 **Focus**: End-to-end feature validation
 
 **Morning (4 hours): E2E Test Implementation**
@@ -644,10 +643,10 @@ import (
     "net/http"
     "os"
     "time"
-    
+
     . "github.com/onsi/ginkgo/v2"
     . "github.com/onsi/gomega"
-    
+
     "github.com/jordigilh/kubernaut/test/e2e/infrastructure"
 )
 
@@ -772,8 +771,8 @@ make test-e2e-gateway
 
 ### **Day 6: Documentation + Production Readiness (PRODUCTION Phase)**
 
-**Phase**: PRODUCTION  
-**Duration**: 8 hours  
+**Phase**: PRODUCTION
+**Duration**: 8 hours
 **Focus**: Finalize documentation and knowledge transfer
 
 **Morning (4 hours): Service Documentation**
@@ -832,6 +831,78 @@ make test-e2e-gateway
 
 ---
 
+## 📦 **Package Naming Conventions - MANDATORY**
+
+### **Kubernaut Test Package Standards**
+
+**AUTHORITY**: [TEST_PACKAGE_NAMING_STANDARD.md](../../../testing/TEST_PACKAGE_NAMING_STANDARD.md)
+
+**CRITICAL**: Kubernaut uses **white-box testing** (same package name). Follow these conventions exactly:
+
+| Test Type | Package Name | Location | Rationale |
+|-----------|--------------|----------|-----------|
+| **Unit Tests** | `package gateway` | `test/unit/gateway/` | White-box testing (access to internal state, unexported functions) |
+| **Integration Tests** | `package gateway` | `test/integration/gateway/` | White-box testing (access to internal state for setup/validation) |
+| **E2E Tests** | `package gateway_test` | `test/e2e/gateway/` | Black-box testing (tests public API only, external perspective) |
+
+**Key Principle**: Use **same package name** as code under test (NO `_test` suffix) for unit and integration tests.
+
+**Examples from Codebase**:
+
+```go
+// ✅ CORRECT: Unit test (test/unit/gateway/storm_buffer_enhancement_test.go)
+package gateway  // Same package - white-box testing
+
+import (
+    "context"
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+)
+
+// ✅ CORRECT: Integration test (test/integration/gateway/deduplication_state_test.go)
+package gateway  // Same package - white-box testing
+
+import (
+    "context"
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+)
+
+// ✅ CORRECT: E2E test (test/e2e/gateway/01_storm_window_ttl_test.go)
+package gateway_test  // External package - black-box testing (ONLY exception)
+
+import (
+    "context"
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    
+    "github.com/jordigilh/kubernaut/pkg/gateway"  // Must import when using _test suffix
+)
+```
+
+**Common Mistakes**:
+
+```go
+// ❌ WRONG: Using _test suffix for unit tests
+package gateway_test  // DO NOT USE for unit/integration tests
+
+// ❌ WRONG: Using _test suffix for integration tests
+package gateway_test  // DO NOT USE for unit/integration tests
+
+// ✅ CORRECT: Only E2E tests use _test suffix
+package gateway_test  // OK for E2E tests only
+```
+
+**Why This Matters**:
+- ✅ **White-box (unit/integration)**: Access to internal state, unexported functions, comprehensive validation
+- ✅ **Black-box (E2E)**: Tests public API only, external user perspective
+- ✅ **Project consistency**: All services follow same pattern
+- ❌ **Wrong package name**: Tests won't compile, can't access internal state, or violates project standards
+
+**Reference**: See [TEST_PACKAGE_NAMING_STANDARD.md](../../../testing/TEST_PACKAGE_NAMING_STANDARD.md) for complete rationale and examples.
+
+---
+
 ## 🧪 **TDD Do's and Don'ts - MANDATORY**
 
 ### **✅ DO: Strict TDD Discipline**
@@ -871,7 +942,7 @@ make test-e2e-gateway
    It("should create audit trail for signal ingestion (BR-GATEWAY-017)", func() {
        _, err := server.ProcessSignal(ctx, signal)
        Expect(err).ToNot(HaveOccurred())
-       
+
        events := mockAudit.GetStoredEvents()
        Expect(events).To(HaveLen(1))
        Expect(events[0].EventType).To(Equal("gateway.signal.received"))
@@ -1126,7 +1197,7 @@ var _ = Describe("Gateway Audit Integration Tests", func() {
     Context("when Data Storage Service is unavailable (ADR-038 graceful degradation)", func() {
         It("should continue processing signals without blocking", func() {
             // BUSINESS SCENARIO: Data Storage down, Gateway must remain operational
-            
+
             // Stop Data Storage Service
             infrastructure.StopDataStorageService()
 
@@ -1373,9 +1444,9 @@ curl -X POST http://gateway:8080/api/v1/signals/prometheus \
 
 ---
 
-**Document Status**: 📋 **DRAFT**  
-**Last Updated**: 2025-11-19  
-**Version**: 1.0  
+**Document Status**: 📋 **DRAFT**
+**Last Updated**: 2025-11-19
+**Version**: 1.0
 **Maintained By**: Gateway Development Team
 
 ---
