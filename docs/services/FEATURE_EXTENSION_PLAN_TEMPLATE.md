@@ -706,7 +706,7 @@ var _ = Describe("[Feature] Integration Tests", func() {
     Context("when [integration scenario]", func() {
         It("should [integration behavior]", func() {
             // BUSINESS SCENARIO: [Real-world integration scenario]
-            
+
             // BEHAVIOR: [How do components interact?]
             response, err := testServer.Process([input])
 
@@ -751,7 +751,7 @@ var _ = Describe("[Feature] E2E Tests", func() {
     Context("when [end-to-end scenario]", func() {
         It("should [complete workflow behavior]", func() {
             // BUSINESS SCENARIO: [Complete user journey]
-            
+
             // BEHAVIOR: [Full system workflow]
             result, err := testServer.ExecuteWorkflow([input])
 
