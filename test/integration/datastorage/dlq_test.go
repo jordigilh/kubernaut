@@ -36,7 +36,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("DLQ Client Integration", func() {
+var _ = Describe("DLQ Client Integration", Serial, func() {
 	var audit *models.NotificationAudit
 	var testError error
 
