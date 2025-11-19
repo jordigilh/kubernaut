@@ -409,3 +409,43 @@ func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.No
 
 	return int(bufferSize), shouldAggregate, nil
 }
+
+// ExtendWindow extends window expiration time (sliding window behavior)
+//
+// Business Requirement: BR-GATEWAY-008 - Sliding window with inactivity timeout
+//
+// Returns:
+// - time.Time: new expiration time
+// - error: Redis errors
+func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, currentTime time.Time) (time.Time, error) {
+	// Find the window key by searching for keys with this windowID value
+	// In practice, we need to know the alert name, but for now we'll use a pattern match
+	// This is minimal implementation - will be improved in REFACTOR phase if needed
+
+	// For the test, we know the key pattern
+	iter := a.redisClient.Scan(ctx, 0, "alert:storm:aggregate:*", 100).Iterator()
+	var windowKey string
+
+	for iter.Next(ctx) {
+		key := iter.Val()
+		val, err := a.redisClient.Get(ctx, key).Result()
+		if err == nil && val == windowID {
+			windowKey = key
+			break
+		}
+	}
+
+	if windowKey == "" {
+		return time.Time{}, fmt.Errorf("window not found")
+	}
+
+	// Reset TTL to window duration (sliding window behavior)
+	err := a.redisClient.Expire(ctx, windowKey, a.windowDuration).Err()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to extend window: %w", err)
+	}
+
+	// Calculate new expiration time
+	newExpiration := currentTime.Add(a.windowDuration)
+	return newExpiration, nil
+}
