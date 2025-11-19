@@ -43,9 +43,28 @@ data:
         ttl: 5m
 
       storm:
+        # Storm Detection (existing)
         rate_threshold: 10
         pattern_threshold: 5
-        aggregation_window: 1m
+        aggregation_window: 1m  # DEPRECATED: Use inactivity_timeout for DD-GATEWAY-008
+
+        # DD-GATEWAY-008: Buffered First-Alert Aggregation (BR-GATEWAY-016)
+        buffer_threshold: 5       # Alerts to buffer before creating window (default: 5)
+
+        # DD-GATEWAY-008: Sliding Window with Inactivity Timeout (BR-GATEWAY-008)
+        inactivity_timeout: 60s   # Sliding window timeout (resets on each alert)
+        max_window_duration: 5m   # Maximum window duration (safety limit)
+
+        # DD-GATEWAY-008: Multi-Tenant Isolation (BR-GATEWAY-011)
+        default_max_size: 1000    # Default namespace buffer size
+        global_max_size: 5000     # Global buffer limit across all namespaces
+        # per_namespace_limits:   # Optional per-namespace overrides
+        #   prod-api: 2000        # Example: prod-api gets 2000 buffer size
+        #   dev-test: 500         # Example: dev-test gets 500 buffer size
+
+        # DD-GATEWAY-008: Overflow Handling (BR-GATEWAY-011)
+        sampling_threshold: 0.95  # Utilization to trigger sampling (95%)
+        sampling_rate: 0.5        # Sample rate when threshold reached (50%)
 
       environment:
         cache_ttl: 30s

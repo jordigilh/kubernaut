@@ -1,6 +1,12 @@
 # Gateway Service Deployment
 
-The Gateway Service provides signal ingestion from Prometheus AlertManager and Kubernetes Events, with deduplication, storm detection, and RemediationRequest CRD creation.
+The Gateway Service provides signal ingestion from Prometheus AlertManager and Kubernetes Events, with state-based deduplication (DD-GATEWAY-009), buffered storm aggregation (DD-GATEWAY-008), and RemediationRequest CRD creation.
+
+**Features**:
+- **State-Based Deduplication** (DD-GATEWAY-009): Query CRD state to prevent duplicate incidents
+- **Buffered Storm Aggregation** (DD-GATEWAY-008): Buffer first N alerts before creating aggregation window (90%+ cost savings)
+- **Sliding Window** (BR-GATEWAY-008): Inactivity timeout with max duration safety limit
+- **Multi-Tenant Isolation** (BR-GATEWAY-011): Per-namespace buffer limits and overflow protection
 
 ## 📋 **Prerequisites**
 
@@ -63,8 +69,15 @@ deploy/gateway/
 Gateway configuration is managed via ConfigMap (`gateway-config`):
 
 - **Redis**: `redis-gateway.kubernaut-system.svc.cluster.local:6379`
-- **Deduplication TTL**: 5 minutes
+- **Deduplication TTL**: 5 minutes (fallback for DD-GATEWAY-009)
 - **Storm Detection**: Rate threshold 10, Pattern threshold 5
+- **Storm Buffering** (DD-GATEWAY-008):
+  - Buffer threshold: 5 alerts
+  - Inactivity timeout: 60s (sliding window)
+  - Max window duration: 5m (safety limit)
+  - Default namespace buffer: 1000 alerts
+  - Global buffer limit: 5000 alerts
+  - Sampling threshold: 95% utilization
 - **Priority Policy**: `/config.app/gateway/policies/priority.rego`
 
 ### **Customization**
@@ -126,13 +139,22 @@ kubectl describe pod -n kubernaut-system [gateway-pod-name]
 
 ### **Prometheus Metrics**
 
-Gateway exposes 17+ metrics at `:9090/metrics`:
+Gateway exposes 23+ metrics at `:9090/metrics`:
 
+**Core Metrics**:
 - `gateway_signals_received_total` - Total signals received
 - `gateway_signals_deduplicated_total` - Deduplicated signals
 - `gateway_storm_detected_total` - Storm detections
 - `gateway_crds_created_total` - RemediationRequests created
 - `gateway_redis_operations_total` - Redis operations
+
+**DD-GATEWAY-008 Storm Buffering Metrics** (BR-GATEWAY-016, BR-GATEWAY-008, BR-GATEWAY-011):
+- `gateway_storm_cost_savings_percent` - Cost savings from aggregation (0-100%)
+- `gateway_storm_aggregation_ratio` - Ratio of alerts aggregated (0.0-1.0, higher=better)
+- `gateway_storm_window_duration_seconds` - Histogram of window durations
+- `gateway_namespace_buffer_utilization` - Buffer utilization per namespace (0.0-1.0)
+- `gateway_namespace_buffer_blocking_total` - Namespace capacity blocking events
+- `gateway_storm_buffer_overflow_total` - Buffer overflow events
 
 ### **Health Checks**
 
