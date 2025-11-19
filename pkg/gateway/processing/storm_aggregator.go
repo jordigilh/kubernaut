@@ -56,14 +56,15 @@ import (
 // - alert:storm:resources:<window-id> (sorted set of affected resources)
 // - alert:storm:metadata:<window-id> (first signal metadata for CRD creation)
 type StormAggregator struct {
-	redisClient       *redis.Client
-	windowDuration    time.Duration // Default: 1 minute (inactivity timeout)
-	bufferThreshold   int           // Alerts before creating window (default: 5)
-	maxWindowDuration time.Duration // Max window duration (default: 5 minutes)
-	defaultMaxSize    int           // Default namespace buffer size (default: 1000)
-	globalMaxSize     int           // Global buffer limit (default: 5000)
-	samplingThreshold float64       // Utilization to trigger sampling (default: 0.95)
-	samplingRate      float64       // Sample rate when threshold reached (default: 0.5)
+	redisClient        *redis.Client
+	windowDuration     time.Duration  // Default: 1 minute (inactivity timeout)
+	bufferThreshold    int            // Alerts before creating window (default: 5)
+	maxWindowDuration  time.Duration  // Max window duration (default: 5 minutes)
+	defaultMaxSize     int            // Default namespace buffer size (default: 1000)
+	globalMaxSize      int            // Global buffer limit (default: 5000)
+	perNamespaceLimits map[string]int // Per-namespace buffer size overrides (BR-GATEWAY-011)
+	samplingThreshold  float64        // Utilization to trigger sampling (default: 0.95)
+	samplingRate       float64        // Sample rate when threshold reached (default: 0.5)
 }
 
 // NewStormAggregator creates a new storm aggregator with default window duration
@@ -121,6 +122,7 @@ func NewStormAggregatorWithWindow(redisClient *redis.Client, windowDuration time
 // - maxWindowDuration: Maximum window duration (0 = use default 5m)
 // - defaultMaxSize: Default namespace buffer size (0 = use default 1000)
 // - globalMaxSize: Global buffer limit (0 = use default 5000)
+// - perNamespaceLimits: Per-namespace buffer size overrides (nil = no overrides)
 // - samplingThreshold: Utilization to trigger sampling (0 = use default 0.95)
 // - samplingRate: Sample rate when threshold reached (0 = use default 0.5)
 //
@@ -138,12 +140,13 @@ func NewStormAggregatorWithWindow(redisClient *redis.Client, windowDuration time
 //	    cfg.Processing.Storm.MaxWindowDuration,
 //	    cfg.Processing.Storm.DefaultMaxSize,
 //	    cfg.Processing.Storm.GlobalMaxSize,
+//	    cfg.Processing.Storm.PerNamespaceLimits,
 //	    cfg.Processing.Storm.SamplingThreshold,
 //	    cfg.Processing.Storm.SamplingRate,
 //	)
 //
-//	// Testing (fast window)
-//	aggregator := NewStormAggregatorWithConfig(redisClient, 3, 5*time.Second, 30*time.Second, 100, 500, 0.95, 0.5)
+//	// Testing (fast window, no namespace overrides)
+//	aggregator := NewStormAggregatorWithConfig(redisClient, 3, 5*time.Second, 30*time.Second, 100, 500, nil, 0.95, 0.5)
 func NewStormAggregatorWithConfig(
 	redisClient *redis.Client,
 	bufferThreshold int,
@@ -151,6 +154,7 @@ func NewStormAggregatorWithConfig(
 	maxWindowDuration time.Duration,
 	defaultMaxSize int,
 	globalMaxSize int,
+	perNamespaceLimits map[string]int,
 	samplingThreshold float64,
 	samplingRate float64,
 ) *StormAggregator {
@@ -176,16 +180,20 @@ func NewStormAggregatorWithConfig(
 	if samplingRate == 0 {
 		samplingRate = 0.5
 	}
+	if perNamespaceLimits == nil {
+		perNamespaceLimits = make(map[string]int)
+	}
 
 	return &StormAggregator{
-		redisClient:       redisClient,
-		windowDuration:    inactivityTimeout,
-		bufferThreshold:   bufferThreshold,
-		maxWindowDuration: maxWindowDuration,
-		defaultMaxSize:    defaultMaxSize,
-		globalMaxSize:     globalMaxSize,
-		samplingThreshold: samplingThreshold,
-		samplingRate:      samplingRate,
+		redisClient:        redisClient,
+		windowDuration:     inactivityTimeout,
+		bufferThreshold:    bufferThreshold,
+		maxWindowDuration:  maxWindowDuration,
+		defaultMaxSize:     defaultMaxSize,
+		globalMaxSize:      globalMaxSize,
+		perNamespaceLimits: perNamespaceLimits,
+		samplingThreshold:  samplingThreshold,
+		samplingRate:       samplingRate,
 	}
 }
 
@@ -681,4 +689,28 @@ func (a *StormAggregator) GetNamespaceUtilization(ctx context.Context, namespace
 // - bool: true if sampling should be enabled, false otherwise
 func (a *StormAggregator) ShouldSample(currentUtilization, samplingThreshold float64) bool {
 	return currentUtilization > samplingThreshold
+}
+
+// GetNamespaceLimit returns the buffer size limit for a given namespace
+//
+// Business Requirement: BR-GATEWAY-011 - Multi-tenant isolation
+//
+// Returns the namespace-specific limit if configured, otherwise returns the default limit.
+//
+// Parameters:
+// - namespace: The namespace to get the limit for
+//
+// Returns:
+// - int: Buffer size limit for the namespace
+//
+// Example:
+// - prod-api with override of 2000 → returns 2000
+// - dev-test with no override → returns defaultMaxSize (1000)
+func (a *StormAggregator) GetNamespaceLimit(namespace string) int {
+	// Check if namespace has a specific limit override
+	if limit, exists := a.perNamespaceLimits[namespace]; exists {
+		return limit
+	}
+	// Return default limit
+	return a.defaultMaxSize
 }
