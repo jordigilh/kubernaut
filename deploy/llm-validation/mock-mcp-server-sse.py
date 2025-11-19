@@ -46,19 +46,19 @@ def health():
 def sse_endpoint():
     """
     SSE endpoint for HolmesGPT SDK MCP integration
-    
+
     The SDK expects:
     1. POST to /sse to initialize connection
     2. Server responds with SSE stream
     3. Client sends tool call requests via SSE
     4. Server responds with tool results via SSE
-    
+
     For this mock, we'll return a simple SSE response with available tools.
     """
     def generate_sse_events():
         # Send initial connection message
         yield f"data: {json.dumps({'type': 'connection', 'status': 'connected', 'server': 'mock-mcp-workflow-catalog'})}\n\n"
-        
+
         # Send available tools list
         tools = [{
             "name": "search_workflow_catalog",
@@ -88,20 +88,20 @@ def sse_endpoint():
                 "required": ["query"]
             }
         }]
-        
+
         yield f"data: {json.dumps({'type': 'tools/list', 'tools': tools})}\n\n"
-        
+
         # Keep connection alive
         time.sleep(0.1)
         yield f"data: {json.dumps({'type': 'ping'})}\n\n"
-    
+
     return Response(generate_sse_events(), mimetype='text/event-stream')
 
 @app.route('/mcp/tools/search_workflow_catalog', methods=['POST'])
 def search_workflow_catalog():
     """
     MCP Tool: Search Workflow Catalog (DD-WORKFLOW-002 compliant)
-    
+
     Input (per DD-WORKFLOW-002):
     {
         "query": "OOMKilled critical",  # Natural language query
@@ -113,7 +113,7 @@ def search_workflow_catalog():
         },
         "top_k": 3
     }
-    
+
     Output (per DD-WORKFLOW-002):
     {
         "workflows": [
@@ -135,39 +135,39 @@ def search_workflow_catalog():
         logger.info(f"   Query: {data.get('query', 'N/A')}")
         logger.info(f"   Filters: {data.get('filters', {})}")
         logger.info(f"   Top K: {data.get('top_k', 3)}")
-        
+
         # Extract search parameters
         query = data.get('query', '')
         filters = data.get('filters', {})
         top_k = data.get('top_k', 3)
-        
+
         # Simple matching logic (in real implementation, this would be semantic search)
         matching_workflows = []
-        
+
         for workflow_id, workflow in MOCK_WORKFLOWS.items():
             # Match signal types if provided in filters
             if filters.get('signal_types'):
                 if not any(st in workflow['signal_types'] for st in filters['signal_types']):
                     continue
-            
+
             # Match query keywords (simple keyword matching for mock)
             if query.lower():
                 query_lower = query.lower()
                 if 'oomkill' in query_lower or 'memory' in query_lower:
                     matching_workflows.append(workflow)
-        
+
         # Sort by similarity_score and limit to top_k
         matching_workflows.sort(key=lambda w: w['similarity_score'], reverse=True)
         matching_workflows = matching_workflows[:top_k]
-        
+
         logger.info(f"📤 MCP Tool Response - Found {len(matching_workflows)} workflows")
         for wf in matching_workflows:
             logger.info(f"   - {wf['workflow_id']} (similarity: {wf['similarity_score']})")
-        
+
         return jsonify({
             "workflows": matching_workflows
         }), 200
-    
+
     except Exception as e:
         logger.error(f"❌ Error in search_workflow_catalog: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -192,39 +192,39 @@ if __name__ == '__main__':
         logger.info(f"   Query: {data.get('query', 'N/A')}")
         logger.info(f"   Filters: {data.get('filters', {})}")
         logger.info(f"   Top K: {data.get('top_k', 3)}")
-        
+
         # Extract search parameters
         query = data.get('query', '')
         filters = data.get('filters', {})
         top_k = data.get('top_k', 3)
-        
+
         # Simple matching logic (in real implementation, this would be semantic search)
         matching_workflows = []
-        
+
         for workflow_id, workflow in MOCK_WORKFLOWS.items():
             # Match signal types if provided in filters
             if filters.get('signal_types'):
                 if not any(st in workflow['signal_types'] for st in filters['signal_types']):
                     continue
-            
+
             # Match query keywords (simple keyword matching for mock)
             if query.lower():
                 query_lower = query.lower()
                 if 'oomkill' in query_lower or 'memory' in query_lower:
                     matching_workflows.append(workflow)
-        
+
         # Sort by similarity_score and limit to top_k
         matching_workflows.sort(key=lambda w: w['similarity_score'], reverse=True)
         matching_workflows = matching_workflows[:top_k]
-        
+
         logger.info(f"📤 MCP Tool Response - Found {len(matching_workflows)} workflows")
         for wf in matching_workflows:
             logger.info(f"   - {wf['workflow_id']} (similarity: {wf['similarity_score']})")
-        
+
         return jsonify({
             "workflows": matching_workflows
         }), 200
-    
+
     except Exception as e:
         logger.error(f"❌ Error in search_workflow_catalog: {str(e)}")
         return jsonify({"error": str(e)}), 500

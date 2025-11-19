@@ -170,7 +170,7 @@ kubectl apply -f holmesgpt-api/deploy/kubernetes/
 ```bash
 cd holmesgpt-api
 pytest tests/unit/        # Unit tests (70% coverage)
-pytest tests/integration/ # Integration tests (20% coverage)
+pytest tests/integration/ # Integration tests (>50% coverage - microservices coordination)
 pytest tests/e2e/         # E2E tests (10% coverage)
 ```
 

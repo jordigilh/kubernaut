@@ -63,6 +63,22 @@ var (
 	configDir         string // ADR-030: Directory for config and secret files
 )
 
+// cleanupContainers removes any existing test containers and networks
+func cleanupContainers() {
+	// Stop and remove containers (ignore errors if they don't exist)
+	exec.Command("podman", "stop", serviceContainer).Run()
+	exec.Command("podman", "rm", "-f", serviceContainer).Run()
+	exec.Command("podman", "stop", postgresContainer).Run()
+	exec.Command("podman", "rm", "-f", postgresContainer).Run()
+	exec.Command("podman", "stop", redisContainer).Run()
+	exec.Command("podman", "rm", "-f", redisContainer).Run()
+
+	// Remove network (ignore error if it doesn't exist)
+	exec.Command("podman", "network", "rm", "datastorage-test").Run()
+
+	GinkgoWriter.Println("✅ Cleanup complete")
+}
+
 var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.Background())
 
@@ -73,7 +89,13 @@ var _ = BeforeSuite(func() {
 
 	GinkgoWriter.Println("🔧 Setting up Podman infrastructure (ADR-016: stateless service)")
 
-	// 0. Create shared network for local execution (skip for Docker Compose)
+	// 0. Force cleanup of any existing containers/networks from previous runs
+	if os.Getenv("POSTGRES_HOST") == "" {
+		GinkgoWriter.Println("🧹 Cleaning up any existing test infrastructure...")
+		cleanupContainers()
+	}
+
+	// 1. Create shared network for local execution (skip for Docker Compose)
 	if os.Getenv("POSTGRES_HOST") == "" {
 		GinkgoWriter.Println("🌐 Creating shared Podman network...")
 		createNetwork()
@@ -399,8 +421,10 @@ func applyMigrationsWithPropagation() {
 		"008_context_api_compatibility.sql",
 		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
-		"012_adr033_multidimensional_tracking.sql", // ADR-033: Multi-dimensional success tracking
-		"999_add_nov_2025_partition.sql",
+		"012_adr033_multidimensional_tracking.sql",  // ADR-033: Multi-dimensional success tracking
+		"013_create_audit_events_table.sql",         // ADR-034: Unified audit events table
+		"999_add_nov_2025_partition.sql",            // Legacy partition for resource_action_traces
+		"1000_create_audit_events_partitions.sql",   // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
 	}
 
 	for _, migration := range migrations {

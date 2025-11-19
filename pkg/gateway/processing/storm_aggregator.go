@@ -640,10 +640,10 @@ func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, cur
 	// Strategy: Try common key patterns first (O(1)), fall back to SCAN only if needed
 	// This optimizes for the common case (production windowIDs) while maintaining
 	// backward compatibility with test windowIDs
-	
+
 	// Production windowID format: "AlertName-UnixTimestamp"
 	// Example: "PodCrashLooping-1696800000" → key: "alert:storm:aggregate:PodCrashLooping"
-	
+
 	// Extract potential alert name (everything before last hyphen)
 	alertName := windowID
 	if lastHyphen := len(windowID) - 1; lastHyphen > 0 {
@@ -658,7 +658,7 @@ func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, cur
 	// Try direct key lookup first (O(1) - fast path for production)
 	windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
 	storedWindowID, err := a.redisClient.Get(ctx, windowKey).Result()
-	
+
 	if err == nil && storedWindowID == windowID {
 		// Fast path: Found matching window
 		if err := a.redisClient.Expire(ctx, windowKey, a.windowDuration).Err(); err != nil {
