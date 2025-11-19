@@ -86,75 +86,105 @@ func cleanupContainers() {
 	GinkgoWriter.Println("✅ Cleanup complete")
 }
 
-var _ = BeforeSuite(func() {
-	ctx, cancel = context.WithCancel(context.Background())
+// SynchronizedBeforeSuite runs infrastructure setup once (process 1) and shares connection info with all processes
+// This enables parallel test execution while sharing the same PostgreSQL/Redis/Service infrastructure
+var _ = SynchronizedBeforeSuite(
+	// Process 1: Setup shared infrastructure
+	func() []byte {
+		GinkgoWriter.Printf("🔧 [Process %d] Setting up shared Podman infrastructure (ADR-016)\n", GinkgoParallelProcess())
 
-	// Setup logger
-	var err error
-	logger, err = zap.NewDevelopment()
-	Expect(err).ToNot(HaveOccurred())
+		// 0. Force cleanup of any existing containers/networks from previous runs
+		if os.Getenv("POSTGRES_HOST") == "" {
+			GinkgoWriter.Println("🧹 Cleaning up any existing test infrastructure...")
+			cleanupContainers()
+		}
 
-	GinkgoWriter.Println("🔧 Setting up Podman infrastructure (ADR-016: stateless service)")
+		// 1. Create shared network for local execution (skip for Docker Compose)
+		if os.Getenv("POSTGRES_HOST") == "" {
+			GinkgoWriter.Println("🌐 Creating shared Podman network...")
+			createNetwork()
+		}
 
-	// 0. Force cleanup of any existing containers/networks from previous runs
-	if os.Getenv("POSTGRES_HOST") == "" {
-		GinkgoWriter.Println("🧹 Cleaning up any existing test infrastructure...")
-		cleanupContainers()
-	}
+		// 2. Start PostgreSQL with pgvector
+		GinkgoWriter.Println("📦 Starting PostgreSQL container...")
+		startPostgreSQL()
 
-	// 1. Create shared network for local execution (skip for Docker Compose)
-	if os.Getenv("POSTGRES_HOST") == "" {
-		GinkgoWriter.Println("🌐 Creating shared Podman network...")
-		createNetwork()
-	}
+		// 3. Start Redis for DLQ
+		GinkgoWriter.Println("📦 Starting Redis container...")
+		startRedis()
 
-	// 1. Start PostgreSQL with pgvector
-	GinkgoWriter.Println("📦 Starting PostgreSQL container...")
-	startPostgreSQL()
+		// 4. Connect to PostgreSQL to apply migrations
+		GinkgoWriter.Println("🔌 Connecting to PostgreSQL...")
+		tempDB := mustConnectPostgreSQL()
 
-	// 2. Start Redis for DLQ
-	GinkgoWriter.Println("📦 Starting Redis container...")
-	startRedis()
+		// 5. Apply schema with propagation handling
+		GinkgoWriter.Println("📋 Applying schema migrations...")
+		applyMigrationsWithPropagationTo(tempDB)
+		tempDB.Close()
 
-	// 3. Connect to PostgreSQL
-	GinkgoWriter.Println("🔌 Connecting to PostgreSQL...")
-	connectPostgreSQL()
+		// 6. Setup Data Storage Service
+		var serviceURL string
+		if os.Getenv("DATASTORAGE_URL") != "" {
+			// Docker Compose environment - use external service
+			serviceURL = os.Getenv("DATASTORAGE_URL")
+			GinkgoWriter.Printf("🐳 Using external Data Storage Service at %s\n", serviceURL)
+		} else {
+			// Local execution - build and start our own container
+			GinkgoWriter.Println("📝 Creating ADR-030 config and secret files...")
+			createConfigFiles()
 
-	// 4. Apply schema with propagation handling
-	GinkgoWriter.Println("📋 Applying schema migrations...")
-	applyMigrationsWithPropagation()
+			GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
+			buildDataStorageService()
 
-	// 5. Connect to Redis
-	GinkgoWriter.Println("🔌 Connecting to Redis...")
-	connectRedis()
+			GinkgoWriter.Println("🚀 Starting Data Storage Service container...")
+			startDataStorageService()
 
-	// 6. Create repository and DLQ client instances
-	GinkgoWriter.Println("🏗️  Creating repository and DLQ client...")
-	repo = repository.NewNotificationAuditRepository(db, logger)
-	dlqClient = dlq.NewClient(redisClient, logger)
+			GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
+			waitForServiceReady()
 
-	// 7. Setup Data Storage Service
-	if os.Getenv("DATASTORAGE_URL") != "" {
-		// Docker Compose environment - use external service
-		datastorageURL = os.Getenv("DATASTORAGE_URL")
-		GinkgoWriter.Printf("🐳 Using external Data Storage Service at %s\n", datastorageURL)
-	} else {
-		// Local execution - build and start our own container
-		GinkgoWriter.Println("📝 Creating ADR-030 config and secret files...")
-		createConfigFiles()
+			// Determine service URL based on environment
+			port := "8080"
+			if p := os.Getenv("DATASTORAGE_PORT"); p != "" {
+				port = p
+			}
+			serviceURL = fmt.Sprintf("http://localhost:%s", port)
+		}
 
-		GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
-		buildDataStorageService()
+		GinkgoWriter.Println("✅ Infrastructure ready!")
 
-		GinkgoWriter.Println("🚀 Starting Data Storage Service container...")
-		startDataStorageService()
+		// Return connection info to all processes
+		return []byte(serviceURL)
+	},
+	// All processes: Connect to shared infrastructure
+	func(data []byte) {
+		GinkgoWriter.Printf("🔌 [Process %d] Connecting to shared infrastructure\n", GinkgoParallelProcess())
 
-		GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
-		waitForServiceReady()
-	}
+		ctx, cancel = context.WithCancel(context.Background())
 
-	GinkgoWriter.Println("✅ Infrastructure ready!")
-})
+		// Setup logger
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
+
+		// Parse service URL from process 1
+		datastorageURL = string(data)
+
+		// Connect to PostgreSQL
+		GinkgoWriter.Printf("🔌 [Process %d] Connecting to PostgreSQL...\n", GinkgoParallelProcess())
+		connectPostgreSQL()
+
+		// Connect to Redis
+		GinkgoWriter.Printf("🔌 [Process %d] Connecting to Redis...\n", GinkgoParallelProcess())
+		connectRedis()
+
+		// Create repository and DLQ client instances
+		GinkgoWriter.Printf("🏗️  [Process %d] Creating repository and DLQ client...\n", GinkgoParallelProcess())
+		repo = repository.NewNotificationAuditRepository(db, logger)
+		dlqClient = dlq.NewClient(redisClient, logger)
+
+		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests!\n", GinkgoParallelProcess())
+	},
+)
 
 var _ = AfterSuite(func() {
 	GinkgoWriter.Println("🧹 Cleaning up Podman containers...")
@@ -355,6 +385,30 @@ func startRedis() {
 }
 
 // connectPostgreSQL establishes PostgreSQL connection
+// mustConnectPostgreSQL creates a new database connection (for process 1 setup)
+// Returns the connection so it can be closed after migrations
+func mustConnectPostgreSQL() *sql.DB {
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5433"
+	}
+
+	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
+	tempDB, err := sql.Open("pgx", connStr)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Verify connection
+	err = tempDB.Ping()
+	Expect(err).ToNot(HaveOccurred())
+
+	GinkgoWriter.Println("✅ PostgreSQL connection established")
+	return tempDB
+}
+
 func connectPostgreSQL() {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("POSTGRES_HOST")
@@ -399,6 +453,78 @@ func connectRedis() {
 	Expect(err).ToNot(HaveOccurred())
 
 	GinkgoWriter.Println("✅ Redis connection established")
+}
+
+// applyMigrationsWithPropagationTo applies migrations to a specific database connection
+// Used by SynchronizedBeforeSuite process 1 to setup schema once
+func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
+	ctx := context.Background()
+
+	// 1. Drop and recreate schema for clean state
+	GinkgoWriter.Println("  🗑️  Dropping existing schema...")
+	_, err := targetDB.ExecContext(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+	Expect(err).ToNot(HaveOccurred())
+
+	// 2. Enable pgvector extension BEFORE migrations
+	GinkgoWriter.Println("  🔌 Enabling pgvector extension...")
+	_, err = targetDB.ExecContext(ctx, "CREATE EXTENSION IF NOT EXISTS vector;")
+	Expect(err).ToNot(HaveOccurred())
+
+	// 3. Apply ALL migrations in order (mirrors production)
+	GinkgoWriter.Println("  📜 Applying all migrations in order...")
+	migrations := []string{
+		"001_initial_schema.sql",
+		"002_fix_partitioning.sql",
+		"003_stored_procedures.sql",
+		"004_add_effectiveness_assessment_due.sql",
+		"005_vector_schema.sql",
+		"006_effectiveness_assessment.sql",
+		"009_update_vector_dimensions.sql",
+		"007_add_context_column.sql",
+		"008_context_api_compatibility.sql",
+		"010_audit_write_api_phase1.sql",
+		"011_rename_alert_to_signal.sql",
+		"012_adr033_multidimensional_tracking.sql",  // ADR-033: Multi-dimensional success tracking
+		"013_create_audit_events_table.sql",         // ADR-034: Unified audit events table
+		"999_add_nov_2025_partition.sql",            // Legacy partition for resource_action_traces
+		"1000_create_audit_events_partitions.sql",   // ADR-034: audit_events partitions (Nov 2025 - Feb 2026)
+	}
+
+	for _, migration := range migrations {
+		GinkgoWriter.Printf("  📜 Applying %s...\n", migration)
+		migrationPath := "../../../migrations/" + migration
+		content, err := os.ReadFile(migrationPath)
+		if err != nil {
+			GinkgoWriter.Printf("  ❌ Migration file not found: %v\n", err)
+			Fail(fmt.Sprintf("Migration file %s not found: %v", migration, err))
+		}
+
+		// Remove CONCURRENTLY keyword for test environment
+		// CONCURRENTLY cannot run inside a transaction block
+		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
+
+		// Extract only the UP migration (ignore DOWN section)
+		// Goose migrations have "-- +goose Up" and "-- +goose Down" markers
+		if strings.Contains(migrationSQL, "-- +goose Down") {
+			// Split at the DOWN marker and only use the UP part
+			parts := strings.Split(migrationSQL, "-- +goose Down")
+			migrationSQL = parts[0]
+		}
+
+		_, err = targetDB.ExecContext(ctx, migrationSQL)
+		if err != nil {
+			GinkgoWriter.Printf("  ❌ Migration %s failed: %v\n", migration, err)
+			Fail(fmt.Sprintf("Migration %s failed: %v", migration, err))
+		}
+	}
+
+	GinkgoWriter.Println("  ✅ All migrations applied successfully")
+
+	// 4. Wait for schema propagation (Context API lesson)
+	// PostgreSQL needs time to propagate schema changes to new connections
+	GinkgoWriter.Println("  ⏳ Waiting for schema propagation...")
+	time.Sleep(500 * time.Millisecond)
+	GinkgoWriter.Println("  ✅ Schema propagation complete")
 }
 
 // applyMigrationsWithPropagation handles PostgreSQL schema propagation timing
