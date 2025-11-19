@@ -178,6 +178,465 @@ All 5 CRD services (1-5) are **complete** and follow the same structure. Copy an
 
 ---
 
+## 🏛️ **Critical Architectural Patterns**
+
+**These 8 patterns are MANDATORY for all CRD controllers** (from `MULTI_CRD_RECONCILIATION_ARCHITECTURE.md`)
+
+### 1. Owner References & Cascade Deletion
+
+**Pattern**: All child CRDs must be owned by their parent (e.g., `RemediationRequest` owns all service CRDs)
+
+```go
+import "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+// Set owner reference for automatic cascade deletion
+if err := controllerutil.SetControllerReference(&parentCRD, &childCRD, r.Scheme); err != nil {
+    return ctrl.Result{}, fmt.Errorf("failed to set owner reference: %w", err)
+}
+```
+
+**Purpose**: Automatic cleanup when parent is deleted (24h retention policy)
+
+**Documentation**: Include in `finalizers-lifecycle.md`
+
+---
+
+### 2. Finalizers for Cleanup Coordination
+
+**Pattern**: Use finalizers to ensure cleanup happens before CRD deletion
+
+```go
+const FinalizerName = "service.kubernaut.io/crd-cleanup"
+
+func (r *Reconciler) reconcileDelete(ctx context.Context, crd *v1.ServiceCRD) (ctrl.Result, error) {
+    if !controllerutil.ContainsFinalizer(crd, FinalizerName) {
+        return ctrl.Result{}, nil
+    }
+
+    // Perform cleanup (persist audit, cleanup external resources)
+    if err := r.cleanup(ctx, crd); err != nil {
+        return ctrl.Result{}, err
+    }
+
+    // Remove finalizer to allow deletion
+    controllerutil.RemoveFinalizer(crd, FinalizerName)
+    return ctrl.Result{}, r.Update(ctx, crd)
+}
+```
+
+**Purpose**: Persist audit trail to database before CRD deletion
+
+**Documentation**: Include in `finalizers-lifecycle.md`
+
+---
+
+### 3. Watch-Based Status Coordination
+
+**Pattern**: Parent CRDs watch child CRD status changes for coordination
+
+```go
+// In main.go setup
+if err := c.Watch(
+    &source.Kind{Type: &v1.ChildCRD{}},
+    handler.EnqueueRequestsFromMapFunc(r.findParentForChild),
+    predicate.ResourceVersionChangedPredicate{},
+); err != nil {
+    return err
+}
+
+func (r *Reconciler) findParentForChild(obj client.Object) []reconcile.Request {
+    childCRD := obj.(*v1.ChildCRD)
+    return []reconcile.Request{
+        {NamespacedName: types.NamespacedName{
+            Name:      childCRD.Spec.ParentRef.Name,
+            Namespace: childCRD.Namespace,
+        }},
+    }
+}
+```
+
+**Purpose**: Real-time parent-child coordination without polling
+
+**Documentation**: Include in `controller-implementation.md`
+
+---
+
+### 4. Phase Timeout Detection & Escalation
+
+**Pattern**: Detect stuck phases and escalate after timeout
+
+```go
+func (r *Reconciler) checkPhaseTimeout(crd *v1.ServiceCRD) bool {
+    if crd.Status.PhaseStartTime.IsZero() {
+        return false
+    }
+
+    elapsed := time.Since(crd.Status.PhaseStartTime.Time)
+    timeout := r.getPhaseTimeout(crd.Status.Phase)
+
+    return elapsed > timeout
+}
+
+func (r *Reconciler) handleTimeout(ctx context.Context, crd *v1.ServiceCRD) error {
+    crd.Status.Phase = "Failed"
+    crd.Status.Message = fmt.Sprintf("Phase %s exceeded timeout", crd.Status.Phase)
+
+    // Emit event for visibility
+    r.Recorder.Event(crd, "Warning", "PhaseTimeout", crd.Status.Message)
+
+    return r.Status().Update(ctx, crd)
+}
+```
+
+**Purpose**: Prevent stuck workflows, ensure timely escalation
+
+**Documentation**: Include in `controller-implementation.md`
+
+---
+
+### 5. Event Emission for Visibility
+
+**Pattern**: Emit Kubernetes events for all significant state changes
+
+```go
+import "k8s.io/client-go/tools/record"
+
+// In reconciler struct
+type Reconciler struct {
+    client.Client
+    Scheme   *runtime.Scheme
+    Recorder record.EventRecorder  // Add this
+}
+
+// Emit events for visibility
+r.Recorder.Event(crd, "Normal", "PhaseTransition",
+    fmt.Sprintf("Transitioned from %s to %s", oldPhase, newPhase))
+
+r.Recorder.Event(crd, "Warning", "ProcessingError",
+    fmt.Sprintf("Failed to process: %v", err))
+
+r.Recorder.Event(crd, "Normal", "Completed",
+    "Processing completed successfully")
+```
+
+**Purpose**: Debugging, audit trail, user visibility
+
+**Documentation**: Include in `observability-logging.md`
+
+---
+
+### 6. Optimized Requeue Strategy
+
+**Pattern**: Use exponential backoff for transient errors, immediate requeue for phase transitions
+
+```go
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    // ... get CRD ...
+
+    switch crd.Status.Phase {
+    case "Processing":
+        if err := r.process(ctx, crd); err != nil {
+            if isTransientError(err) {
+                // Exponential backoff for transient errors
+                backoff := time.Duration(math.Pow(2, float64(crd.Status.RetryCount))) * time.Second
+                return ctrl.Result{RequeueAfter: backoff}, nil
+            }
+            return ctrl.Result{}, err  // Permanent error
+        }
+
+        // Phase transition: immediate requeue
+        crd.Status.Phase = "Completed"
+        return ctrl.Result{Requeue: true}, r.Status().Update(ctx, crd)
+    }
+}
+```
+
+**Purpose**: Efficient resource usage, fast phase transitions
+
+**Documentation**: Include in `controller-implementation.md`
+
+---
+
+### 7. Cross-CRD Reference Validation
+
+**Pattern**: Validate parent CRD references exist before processing
+
+```go
+func (r *Reconciler) validateParentReference(ctx context.Context, crd *v1.ServiceCRD) error {
+    parentRef := crd.Spec.ParentRef
+    if parentRef == nil {
+        return fmt.Errorf("missing parent reference")
+    }
+
+    parent := &v1.ParentCRD{}
+    key := types.NamespacedName{
+        Name:      parentRef.Name,
+        Namespace: crd.Namespace,
+    }
+
+    if err := r.Get(ctx, key, parent); err != nil {
+        if apierrors.IsNotFound(err) {
+            return fmt.Errorf("parent CRD not found: %s", parentRef.Name)
+        }
+        return err
+    }
+
+    // Validate parent is in valid state
+    if parent.Status.Phase == "Failed" {
+        return fmt.Errorf("parent CRD is in failed state")
+    }
+
+    return nil
+}
+```
+
+**Purpose**: Data integrity, prevent orphaned CRDs
+
+**Documentation**: Include in `controller-implementation.md`
+
+---
+
+### 8. Controller-Specific Metrics
+
+**Pattern**: Every controller must expose standard metrics
+
+```go
+import (
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+    ReconciliationTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+        Name: "kubernaut_service_reconciliation_total",
+        Help: "Total reconciliations by result",
+    }, []string{"result"})  // success, error, requeue
+
+    ReconciliationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+        Name:    "kubernaut_service_reconciliation_duration_seconds",
+        Help:    "Reconciliation duration by phase",
+        Buckets: []float64{0.1, 0.5, 1.0, 2.5, 5.0, 10.0},
+    }, []string{"phase"})
+
+    PhaseTransitionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+        Name: "kubernaut_service_phase_transitions_total",
+        Help: "Phase transitions by from/to phase",
+    }, []string{"from_phase", "to_phase"})
+)
+```
+
+**Purpose**: Observability, SLO tracking, debugging
+
+**Documentation**: Include in `metrics-slos.md`
+
+---
+
+## ⚠️ **CRITICAL: BEHAVIOR & CORRECTNESS TESTING PROTOCOL** ⚠️
+
+**🚨 READ THIS BEFORE WRITING ANY TEST CODE 🚨**
+
+This protocol applies to **ALL services** (CRD controllers, Gateway, Data Storage, etc.)
+
+### The Problem: Implementation-Focused Testing Anti-Pattern
+
+**Common Mistake**: Writing tests that validate HOW the system works instead of WHAT it does.
+
+**Example of BAD Test (Implementation-Focused)**:
+```go
+// ❌ BAD: Tests internal state and implementation details
+It("should buffer alerts in Redis", func() {
+    signal := &types.NormalizedSignal{...}
+    aggregator.BufferFirstAlert(ctx, signal)
+
+    // Testing Redis keys directly (implementation detail)
+    bufferKey := "alert:buffer:prod-api:PodCrashLooping"
+    bufferSize, _ := redisClient.LLen(ctx, bufferKey).Result()
+    Expect(bufferSize).To(Equal(1))  // Checking exact buffer size
+
+    // Testing internal TTL values (implementation detail)
+    ttl, _ := redisClient.TTL(ctx, bufferKey).Result()
+    Expect(ttl).To(BeNumerically("~", 60*time.Second, 5*time.Second))
+})
+```
+
+**Why This is Bad**:
+- ❌ Tightly coupled to Redis implementation
+- ❌ Test breaks if we switch from Redis to PostgreSQL
+- ❌ Tests HOW (Redis keys, TTL) instead of WHAT (business behavior)
+- ❌ No clear business value being validated
+
+**Example of GOOD Test (Behavior-Focused)**:
+```go
+// ✅ GOOD: Tests business behavior and correctness
+It("should delay aggregation when storm threshold not reached", func() {
+    // BUSINESS SCENARIO: Single pod crashes in prod-api
+    signal := &types.NormalizedSignal{
+        Namespace: "prod-api",
+        AlertName: "PodCrashLooping",
+        Resource: types.ResourceIdentifier{
+            Kind: "Pod",
+            Name: "payment-api-1",
+        },
+    }
+
+    // BEHAVIOR: System accepts alert but delays aggregation
+    _, shouldAggregate, err := aggregator.BufferFirstAlert(ctx, signal)
+
+    // CORRECTNESS: Alert accepted, aggregation not triggered
+    Expect(err).ToNot(HaveOccurred(), "System should accept first alert")
+    Expect(shouldAggregate).To(BeFalse(), "System should delay aggregation below threshold")
+
+    // BUSINESS OUTCOME: No CRD created yet (cost savings from delayed AI analysis)
+    // This validates BR-GATEWAY-016: Buffer alerts before aggregation
+})
+```
+
+**Why This is Good**:
+- ✅ Tests WHAT the system does (delays aggregation)
+- ✅ Tests through public API (BufferFirstAlert)
+- ✅ Survives implementation changes (Redis → PostgreSQL)
+- ✅ Clear business scenario and outcome
+- ✅ Links to business requirement (BR-XXX)
+
+---
+
+### MANDATORY Test Structure Template
+
+**Every test MUST follow this structure**:
+
+```go
+Context("when [BUSINESS SCENARIO]", func() {
+    It("should [BUSINESS BEHAVIOR]", func() {
+        // BUSINESS SCENARIO: [Describe real-world situation]
+        // Example: "5 pods crash in rapid succession (storm detected)"
+
+        // Setup: [Prepare test data]
+        signal := &types.NormalizedSignal{...}
+
+        // BEHAVIOR: [What does the system do?]
+        // Example: "System buffers alerts until threshold is reached"
+        result, err := systemUnderTest.DoSomething(ctx, signal)
+
+        // CORRECTNESS: [Are the results correct?]
+        // ❌ AVOID: Expect(result).ToNot(BeNil())
+        // ❌ AVOID: Expect(internalState.buffer).To(HaveLen(5))
+        // ❌ AVOID: Expect(redisClient.Get(ctx, "key")).To(Equal("value"))
+        // ✅ GOOD: Expect(shouldAggregate).To(BeTrue())
+        Expect(err).ToNot(HaveOccurred(), "System should [behavior]")
+        Expect(result.ShouldAggregate).To(BeTrue(), "Aggregation should trigger at threshold")
+
+        // BUSINESS OUTCOME: [What business value was validated?]
+        // Example: "Cost savings: 5 alerts → 1 AI analysis (BR-GATEWAY-016)"
+    })
+})
+```
+
+---
+
+### FORBIDDEN Testing Anti-Patterns
+
+**Reference**: `.cursor/rules/08-testing-anti-patterns.mdc`
+
+#### 1. NULL-TESTING (Weak Assertions)
+```go
+// ❌ BAD: Weak assertions that don't validate business logic
+Expect(result).ToNot(BeNil())
+Expect(list).ToNot(BeEmpty())
+Expect(count).To(BeNumerically(">", 0))
+
+// ✅ GOOD: Specific business assertions
+Expect(result.Status).To(Equal("aggregated"))
+Expect(result.AlertCount).To(Equal(5))
+Expect(result.CostSavings).To(BeNumerically(">", 0.8))
+```
+
+#### 2. IMPLEMENTATION TESTING (Internal State)
+```go
+// ❌ BAD: Testing internal state and storage keys
+Expect(aggregator.internalBuffer).To(HaveLen(5))
+Expect(redisClient.Get(ctx, "alert:buffer:*")).To(Exist())
+Expect(aggregator.windowStartTime).To(Equal(expectedTime))
+
+// ✅ GOOD: Testing public API behavior
+Expect(shouldAggregate).To(BeTrue())
+Expect(windowID).ToNot(BeEmpty())
+Expect(aggregatedCount).To(Equal(5))
+```
+
+#### 3. STATIC DATA TESTING (No Business Context)
+```go
+// ❌ BAD: Testing hardcoded values without context
+Expect(result).To(Equal("success"))
+Expect(status).To(Equal(200))
+
+// ✅ GOOD: Testing business outcomes with context
+Expect(result.Status).To(Equal("aggregated"), "Should aggregate when threshold reached")
+Expect(response.StatusCode).To(Equal(202), "Should return Accepted for buffered alerts")
+```
+
+#### 4. LIBRARY TESTING (Framework Behavior)
+```go
+// ❌ BAD: Testing if Redis/K8s client works
+It("should store data in Redis", func() {
+    redisClient.Set(ctx, "key", "value", 0)
+    val, _ := redisClient.Get(ctx, "key").Result()
+    Expect(val).To(Equal("value"))
+})
+
+// ✅ GOOD: Testing business logic that uses Redis
+It("should buffer alerts for storm aggregation", func() {
+    _, shouldAggregate, err := aggregator.BufferFirstAlert(ctx, signal)
+    Expect(err).ToNot(HaveOccurred())
+    Expect(shouldAggregate).To(BeFalse(), "Should delay aggregation below threshold")
+})
+```
+
+---
+
+### Self-Review Checklist (MANDATORY After Writing Tests)
+
+**Before committing tests, answer these questions**:
+
+1. ❓ **Did I test WHAT the system does, or HOW it does it?**
+   - ❌ If I tested Redis keys, buffer internals, TTL values → **REFACTOR**
+   - ✅ If I tested business behavior and outcomes → **GOOD**
+
+2. ❓ **Can I change the implementation (e.g., Redis → PostgreSQL) without breaking tests?**
+   - ❌ If tests would break → **TOO COUPLED, REFACTOR**
+   - ✅ If tests would still pass → **GOOD**
+
+3. ❓ **Does each test have a clear business scenario?**
+   - ❌ If test name is "should buffer alerts" → **TOO VAGUE**
+   - ✅ If test name is "should delay aggregation when storm threshold not reached" → **GOOD**
+
+4. ❓ **Are assertions specific and meaningful?**
+   - ❌ If using `ToNot(BeNil())`, `ToNot(BeEmpty())`, `> 0` → **NULL-TESTING**
+   - ✅ If using specific business values → **GOOD**
+
+5. ❓ **Does each test link to a business requirement?**
+   - ❌ If no BR-XXX reference → **MISSING BUSINESS CONTEXT**
+   - ✅ If test validates BR-XXX-YYY → **GOOD**
+
+---
+
+### Automated Detection Commands
+
+**Run before committing**:
+```bash
+# Detect NULL-TESTING anti-pattern
+find test/ -name "*_test.go" -exec grep -H -n "ToNot(BeEmpty())\|ToNot(BeNil())\|BeNumerically(\">.*0)" {} \;
+
+# Detect implementation testing (accessing internal state)
+find test/ -name "*_test.go" -exec grep -H -n "\.internal\|\.buffer\|\.state\|redisClient\.\(Get\|Set\|LLen\|TTL\)" {} \;
+
+# Detect missing BR references
+find test/ -name "*_test.go" -exec grep -L "BR-" {} \;
+```
+
+**See Also**: `.cursor/rules/10-testing-behavior-correctness.mdc` (workspace rule for AI enforcement)
+
+---
+
 ## 🚀 **Step-by-Step Process**
 
 ### **Step 1: Choose Reference Service** (5 minutes)
@@ -309,6 +768,228 @@ Update these documents to reference new service:
 
 ---
 
+## 📊 **Metrics Implementation Guidance**
+
+### Standard Metrics for All Services
+
+**Every service must implement these core metrics** using `promauto` for automatic registration:
+
+```go
+package service
+
+import (
+    "github.com/prometheus/client_golang/prometheus"
+    "github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+    // Counter: Total entities processed
+    EntitiesProcessedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+        Name: "kubernaut_service_entities_processed_total",
+        Help: "Total number of entities processed by service",
+    }, []string{"status", "namespace"})  // status: success, error
+
+    // Histogram: Processing duration by phase
+    ProcessingDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+        Name:    "kubernaut_service_processing_duration_seconds",
+        Help:    "Duration of processing operations by phase",
+        Buckets: []float64{0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0},
+    }, []string{"phase"})
+
+    // Gauge: Current active processing
+    ActiveProcessingGauge = promauto.NewGauge(prometheus.GaugeOpts{
+        Name: "kubernaut_service_active_processing",
+        Help: "Number of entities currently being processed",
+    })
+
+    // Counter: Errors by type and phase
+    ErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+        Name: "kubernaut_service_errors_total",
+        Help: "Total errors encountered during processing",
+    }, []string{"error_type", "phase"})
+)
+```
+
+### Prometheus Naming Conventions
+
+- **Prefix**: `kubernaut_<service>_`
+- **Suffix**: `_total` (counters), `_seconds` (histograms/summaries)
+- **Labels**: Use lowercase with underscores (e.g., `error_type`, `from_phase`)
+
+### Grafana Dashboard Queries
+
+**Standard queries for all services**:
+
+```promql
+# Processing rate (entities/sec)
+rate(kubernaut_service_entities_processed_total[5m])
+
+# Processing duration by phase (p95)
+histogram_quantile(0.95, rate(kubernaut_service_processing_duration_seconds_bucket[5m]))
+
+# Error rate by phase
+rate(kubernaut_service_errors_total[5m]) / rate(kubernaut_service_entities_processed_total[5m])
+
+# Active processing queue depth
+kubernaut_service_active_processing
+
+# Success rate (percentage)
+sum(rate(kubernaut_service_entities_processed_total{status="success"}[5m])) /
+sum(rate(kubernaut_service_entities_processed_total[5m])) * 100
+```
+
+**Documentation**: Include in `metrics-slos.md`
+
+---
+
+## 💾 **Database Integration & Dual Audit System**
+
+### Dual Audit Architecture
+
+**All services must implement dual audit** (from `MULTI_CRD_RECONCILIATION_ARCHITECTURE.md`):
+
+1. **CRDs**: Real-time execution state + 24-hour review window
+2. **Database**: Long-term compliance + post-mortem analysis
+
+### Audit Data Persistence Pattern
+
+```go
+type ServiceReconciler struct {
+    client.Client
+    Scheme         *runtime.Scheme
+    BusinessLogic  BusinessComponent
+    AuditStorage   storage.AuditStorageClient  // Database client
+}
+
+func (r *ServiceReconciler) reconcileCompleted(ctx context.Context, crd *v1.ServiceCRD) (ctrl.Result, error) {
+    // Persist audit trail to database BEFORE CRD cleanup
+    auditRecord := &storage.ServiceAudit{
+        RemediationID:    crd.Spec.RemediationRef.Name,
+        EntityID:         crd.Spec.EntityID,
+        ProcessingPhases: r.buildPhaseAudit(crd),
+        CompletedAt:      time.Now(),
+        Status:           "completed",
+        Metadata:         crd.Spec.Metadata,
+    }
+
+    if err := r.AuditStorage.StoreServiceAudit(ctx, auditRecord); err != nil {
+        r.Log.Error(err, "Failed to store audit")
+        AuditStorageErrorsTotal.WithLabelValues("store_failed").Inc()
+        // Don't fail reconciliation - audit is best-effort
+    } else {
+        AuditStorageSuccessTotal.Inc()
+    }
+
+    return ctrl.Result{}, nil
+}
+```
+
+### Audit Schema Template
+
+```go
+type ServiceAudit struct {
+    ID               string          `json:"id" db:"id"`
+    RemediationID    string          `json:"remediation_id" db:"remediation_id"`
+    EntityID         string          `json:"entity_id" db:"entity_id"`
+    ProcessingPhases []ProcessingPhase `json:"processing_phases"`
+
+    // Service-specific results
+    Phase1Results    interface{} `json:"phase1_results"`
+    Phase2Results    interface{} `json:"phase2_results"`
+
+    // Metadata
+    CompletedAt time.Time `json:"completed_at" db:"completed_at"`
+    Status      string    `json:"status" db:"status"`
+    ErrorMessage string   `json:"error_message,omitempty"`
+}
+```
+
+### Audit Metrics
+
+```go
+var (
+    AuditStorageSuccessTotal = promauto.NewCounter(prometheus.CounterOpts{
+        Name: "kubernaut_service_audit_storage_success_total",
+        Help: "Total successful audit storage operations",
+    })
+
+    AuditStorageErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+        Name: "kubernaut_service_audit_storage_errors_total",
+        Help: "Total audit storage errors by type",
+    }, []string{"error_type"})
+
+    AuditStorageDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+        Name:    "kubernaut_service_audit_storage_duration_seconds",
+        Help:    "Duration of audit storage operations",
+        Buckets: []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1.0},
+    })
+)
+```
+
+**Database Service**: Data Storage Service (Port 8085)
+
+**Documentation**: Include in `data-handling-architecture.md`
+
+---
+
+## ⚠️ **Common Pitfalls to Avoid**
+
+### CRD Controller Pitfalls
+
+1. **Missing Owner References**
+   - ❌ **Problem**: Child CRDs not owned by parent → orphaned CRDs after parent deletion
+   - ✅ **Solution**: Always use `controllerutil.SetControllerReference()` when creating child CRDs
+   - **Impact**: CRDs accumulate, namespace pollution, cleanup failures
+
+2. **Finalizer Cleanup Failures**
+   - ❌ **Problem**: Removing finalizer before audit persistence → data loss
+   - ✅ **Solution**: Persist audit to database BEFORE removing finalizer
+   - **Impact**: Compliance violations, lost audit trail
+
+3. **Event Emission Gaps**
+   - ❌ **Problem**: No events for significant state changes → debugging difficulties
+   - ✅ **Solution**: Emit events for: phase transitions, errors, completions
+   - **Impact**: Poor observability, difficult troubleshooting
+
+4. **Phase Timeout Detection Missing**
+   - ❌ **Problem**: No timeout detection → stuck workflows
+   - ✅ **Solution**: Implement timeout checks with escalation logic
+   - **Impact**: Workflows hang indefinitely, resource waste
+
+5. **Inefficient Requeue Strategy**
+   - ❌ **Problem**: Immediate requeue on all errors → API server overload
+   - ✅ **Solution**: Use exponential backoff for transient errors
+   - **Impact**: Performance degradation, rate limiting
+
+6. **Cross-CRD Reference Validation Missing**
+   - ❌ **Problem**: No parent reference validation → orphaned child CRDs
+   - ✅ **Solution**: Validate parent exists and is in valid state
+   - **Impact**: Data integrity issues, orphaned resources
+
+7. **Incomplete Metrics**
+   - ❌ **Problem**: Missing standard metrics → no observability
+   - ✅ **Solution**: Implement all 8 standard metrics (see Pattern #8)
+   - **Impact**: Cannot track SLOs, difficult debugging
+
+8. **Watch-Based Coordination Missing**
+   - ❌ **Problem**: Polling for child status → inefficient, delayed
+   - ✅ **Solution**: Use Kubernetes watches for real-time coordination
+   - **Impact**: Slow response times, resource waste
+
+### Testing Pitfalls
+
+9. **NULL-TESTING Anti-Pattern**
+   - ❌ **Problem**: Weak assertions (`ToNot(BeNil())`, `> 0`)
+   - ✅ **Solution**: Use specific business assertions (see Testing Protocol above)
+   - **Impact**: Tests pass but don't validate business logic
+
+10. **Implementation Testing**
+    - ❌ **Problem**: Testing internal state instead of behavior
+    - ✅ **Solution**: Test through public API, validate business outcomes
+    - **Impact**: Brittle tests, breaks on refactoring
+
+---
+
 ## 📊 **Service Status Tracking**
 
 | # | Service Name | CRD Name | Directory | Status | Documents |
@@ -325,29 +1006,86 @@ Update these documents to reference new service:
 
 ---
 
-## 🎯 **Quality Standards**
+## 🎯 **Quality Standards & Detailed Checklist**
 
-All service documentation must meet these standards:
+All service documentation must meet these standards. Use this comprehensive 40-point checklist before finalizing documentation:
 
-### **Completeness**:
+### **Content Completeness** (14 items)
+
+- [ ] Service name, port, CRD name documented
+- [ ] Business requirements (BR-XXX-YYY) listed and mapped
+- [ ] CRD Design document linked (if exists)
+- [ ] All 7 required documents present (overview, security, observability, metrics, testing, finalizers, controller)
+- [ ] Optional documents included where applicable
+- [ ] All 8 architectural patterns documented (owner refs, finalizers, watches, timeouts, events, requeue, validation, metrics)
+- [ ] CRD schema specification complete (no `map[string]interface{}`)
+- [ ] Controller implementation with all phases documented
+- [ ] Prometheus metrics (8+ metrics minimum)
+- [ ] Testing strategy (Unit/Integration/E2E) with coverage targets
+- [ ] Database integration documented (dual audit system)
+- [ ] Dependencies listed (external services, database, existing code)
+- [ ] RBAC configuration provided
+- [ ] Implementation checklist complete
+
+### **Architecture Compliance** (12 items)
+
+- [ ] References `MULTI_CRD_RECONCILIATION_ARCHITECTURE.md`
+- [ ] References `.cursor/rules/03-testing-strategy.mdc`
+- [ ] References CRD design document (if exists)
+- [ ] Owner references pattern included
+- [ ] Finalizers pattern included
+- [ ] Watch-based coordination explained
+- [ ] Timeout detection included
+- [ ] Event emission included
+- [ ] Optimized requeue strategy included
+- [ ] Cross-CRD validation included
+- [ ] Controller metrics included
+- [ ] Dual audit system included
+
+### **Code Examples** (8 items)
+
+- [ ] All code examples use correct package names
+- [ ] No fictional file paths referenced
+- [ ] All code examples have complete imports
+- [ ] Existing code verified before referencing
+- [ ] Test examples use Ginkgo/Gomega (or pytest for Python)
+- [ ] Test examples map to business requirements (BR-XXX)
+- [ ] Test examples follow behavior/correctness protocol
+- [ ] Metrics examples use `promauto`
+
+### **Documentation Quality** (8 items)
+
+- [ ] Clear section headers with consistent formatting
+- [ ] Code blocks properly formatted with language tags
+- [ ] Tables properly aligned
+- [ ] Visual diagrams included (Mermaid)
+- [ ] No misleading claims or outdated information
+- [ ] Effort estimates realistic and justified
+- [ ] Cross-document links work correctly
+- [ ] Follows behavior/correctness testing protocol
+
+### **High-Level Standards**
+
+**Completeness**:
 - ✅ All required documents present
 - ✅ All code examples executable (complete imports)
 - ✅ All diagrams clear and accurate
 - ✅ All cross-references valid
 
-### **Accuracy**:
+**Accuracy**:
 - ✅ No fictional code references
 - ✅ All type definitions complete (no `map[string]interface{}`)
 - ✅ All metrics follow Prometheus conventions
 - ✅ All RBAC follows least-privilege
 
-### **Consistency**:
+**Consistency**:
 - ✅ Directory structure matches template
 - ✅ Naming conventions consistent
 - ✅ Testing strategy aligns with rule
 - ✅ Security patterns consistent
+- ✅ All 8 architectural patterns implemented
 
-### **Maintainability**:
+**Maintainability**:
 - ✅ Focused documents (not monolithic)
 - ✅ Clear separation of concerns
 - ✅ Easy to navigate
@@ -498,9 +1236,18 @@ Each service testing strategy includes:
 ---
 
 **Document Status**: ✅ **CURRENT**
-**Last Updated**: 2025-10-07 (Enhanced Testing Strategy Added)
-**Version**: 2.1
+**Last Updated**: 2025-11-19 (Comprehensive Update: Added 5 critical sections from archived template)
+**Version**: 3.0
 **Maintained By**: Development Team
 
-**Previous Version**: `archive/SERVICE_TEMPLATE_CREATION_PROCESS.md` (archived)
+**Previous Version**: 2.1 (Enhanced Testing Strategy)
+**Archived Template**: `archive/SERVICE_TEMPLATE_CREATION_PROCESS.md` (deprecated, can be safely deleted)
+
+**Changes in v3.0**:
+- Added "Critical Architectural Patterns" (8 mandatory patterns)
+- Added "Metrics Implementation Guidance" (Prometheus + Grafana)
+- Added "Database Integration & Dual Audit System"
+- Added "Common Pitfalls to Avoid" (10 pitfalls)
+- Expanded "Quality Standards" with detailed 40-point checklist
+- Added "Behavior & Correctness Testing Protocol" (comprehensive)
 
