@@ -1,6 +1,7 @@
 package datastorage
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,18 +36,22 @@ import (
 //
 // ========================================
 
-var _ = Describe("NotificationAudit Repository Integration", Serial, func() {
+var _ = Describe("NotificationAudit Repository Integration", func() {
 	var audit *models.NotificationAudit
+	var testID string
 
 	BeforeEach(func() {
-		// Clean up test data
-		_, err := db.ExecContext(ctx, "DELETE FROM notification_audit")
+		// Generate unique test ID for parallel execution isolation
+		testID = generateTestID()
+
+		// Clean up only this test's data (targeted DELETE for parallel safety)
+		_, err := db.ExecContext(ctx, "DELETE FROM notification_audit WHERE remediation_id LIKE $1", fmt.Sprintf("%%-%s", testID))
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create test audit
+		// Create test audit with unique IDs
 		audit = &models.NotificationAudit{
-			RemediationID:   "test-remediation-1",
-			NotificationID:  "test-notification-1",
+			RemediationID:   fmt.Sprintf("rr-%s", testID),
+			NotificationID:  fmt.Sprintf("notif-%s", testID),
 			Recipient:       "test@example.com",
 			Channel:         "email",
 			MessageSummary:  "Test notification message",
@@ -76,7 +81,7 @@ var _ = Describe("NotificationAudit Repository Integration", Serial, func() {
 				var dbEscalationLevel int
 
 				row := db.QueryRowContext(ctx, `
-					SELECT remediation_id, notification_id, recipient, channel, message_summary, 
+					SELECT remediation_id, notification_id, recipient, channel, message_summary,
 					       status, sent_at, delivery_status, escalation_level
 					FROM notification_audit
 					WHERE id = $1
