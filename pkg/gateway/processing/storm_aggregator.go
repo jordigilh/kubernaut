@@ -460,3 +460,38 @@ func (a *StormAggregator) IsWindowExpired(windowStartTime, currentTime time.Time
 	elapsed := currentTime.Sub(windowStartTime)
 	return elapsed > maxDuration
 }
+
+// GetNamespaceUtilization returns buffer utilization percentage (0.0-1.0)
+//
+// Business Requirement: BR-GATEWAY-011 - Multi-tenant isolation and capacity management
+//
+// Returns:
+// - float64: utilization percentage (0.0 = empty, 1.0 = full)
+// - error: Redis errors
+func (a *StormAggregator) GetNamespaceUtilization(ctx context.Context, namespace string) (float64, error) {
+	// Count all buffered alerts for this namespace
+	// Buffer keys pattern: alert:buffer:<namespace>:*
+	pattern := fmt.Sprintf("alert:buffer:%s:*", namespace)
+	
+	var totalBuffered int64
+	iter := a.redisClient.Scan(ctx, 0, pattern, 100).Iterator()
+	
+	for iter.Next(ctx) {
+		key := iter.Val()
+		count, err := a.redisClient.LLen(ctx, key).Result()
+		if err != nil {
+			continue // Skip errors, count what we can
+		}
+		totalBuffered += count
+	}
+	
+	if err := iter.Err(); err != nil {
+		return 0.0, fmt.Errorf("failed to scan namespace buffers: %w", err)
+	}
+	
+	// Default max size per namespace: 1000
+	maxSize := 1000.0
+	utilization := float64(totalBuffered) / maxSize
+	
+	return utilization, nil
+}
