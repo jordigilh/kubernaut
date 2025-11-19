@@ -300,10 +300,15 @@ func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.No
 	return windowID, nil
 }
 
-// AddResource adds a resource to an existing aggregation window
+// AddResource adds a resource to an existing aggregation window (DD-GATEWAY-008 enhanced)
 //
 // Call this for subsequent alerts during a storm (after the aggregation
 // window has been created by StartAggregation).
+//
+// DD-GATEWAY-008 Enhancements:
+// - Extends window timer on each alert (sliding window behavior)
+// - Checks max window duration safety limit
+// - Forces window closure if max duration exceeded
 //
 // Resources are stored in a Redis sorted set with timestamp as score.
 // This allows:
@@ -313,9 +318,26 @@ func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.No
 //
 // Resource identifier format: "namespace:Kind:name"
 // Example: "prod-api:Pod:payment-api-789"
+//
+// Business Requirements:
+// - BR-GATEWAY-008: Sliding window with inactivity timeout
+// - BR-GATEWAY-008: Maximum window duration safety limit
 func (a *StormAggregator) AddResource(ctx context.Context, windowID string, signal *types.NormalizedSignal) error {
 	key := fmt.Sprintf("alert:storm:resources:%s", windowID)
 	resourceID := signal.Resource.String()
+
+	// DD-GATEWAY-008: Check if window has exceeded max duration
+	// Extract window start time from windowID (format: "AlertName-UnixTimestamp")
+	// Example: "PodCrashLooping-1696800000" → start time = 1696800000
+	var startUnix int64
+	if _, err := fmt.Sscanf(windowID, "%*[^-]-%d", &startUnix); err == nil {
+		windowStartTime := time.Unix(startUnix, 0)
+		currentTime := time.Now()
+		if a.IsWindowExpired(windowStartTime, currentTime, a.maxWindowDuration) {
+			// Max duration exceeded: reject new alert, force window closure
+			return fmt.Errorf("window exceeded max duration (%v), rejecting new alert", a.maxWindowDuration)
+		}
+	}
 
 	// Add to sorted set (score = timestamp)
 	if err := a.redisClient.ZAdd(ctx, key, &redis.Z{
@@ -325,7 +347,17 @@ func (a *StormAggregator) AddResource(ctx context.Context, windowID string, sign
 		return fmt.Errorf("failed to add resource to aggregation: %w", err)
 	}
 
-	// Set TTL (2x window duration to allow retrieval after window closes)
+	// DD-GATEWAY-008: Extend window timer (sliding window behavior)
+	// Reset TTL to full window duration on EVERY alert
+	currentTime := time.Now()
+	_, err := a.ExtendWindow(ctx, windowID, currentTime)
+	if err != nil {
+		// Non-fatal: log warning but don't fail the operation
+		// Window will still expire based on original TTL
+		// TODO: Add logging when logger is available
+	}
+
+	// Set TTL on resources (2x window duration to allow retrieval after window closes)
 	a.redisClient.Expire(ctx, key, 2*a.windowDuration)
 
 	return nil
