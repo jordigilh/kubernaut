@@ -493,29 +493,6 @@ func (s *DeduplicationService) Store(ctx context.Context, signal *types.Normaliz
 	return nil
 }
 
-// updateDeduplicationRate calculates and updates the deduplication rate gauge
-//
-// This method calculates:
-//
-//	deduplication_rate = (cache_hits / (cache_hits + cache_misses)) * 100
-//
-// The rate is exposed as a Prometheus gauge for real-time monitoring.
-//
-// Target: 40-60% deduplication rate (typical production)
-// - <40%: Low alert repetition (may indicate dynamic workload)
-// - 40-60%: Normal (healthy deduplication)
-// - >60%: High alert repetition (may indicate persistent issues)
-func (s *DeduplicationService) updateDeduplicationRate() {
-	// Note: Counter.Get() is not available in prometheus client_golang
-	// This method would need to use PromQL queries or maintain separate counters
-	// For now, this is a placeholder for the metrics recording logic
-	//
-	// In production, deduplication rate would be calculated via Prometheus query:
-	// rate(gateway_deduplication_cache_hits_total[5m]) /
-	//   (rate(gateway_deduplication_cache_hits_total[5m]) +
-	//    rate(gateway_deduplication_cache_misses_total[5m])) * 100
-}
-
 // DeduplicationMetadata contains metadata for duplicate alerts
 //
 // This struct is returned by Check() when a duplicate is detected.
