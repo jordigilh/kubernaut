@@ -685,8 +685,8 @@ func (a *StormAggregator) GetNamespaceUtilization(ctx context.Context, namespace
 		return 0.0, fmt.Errorf("failed to scan namespace buffers: %w", err)
 	}
 
-	// Default max size per namespace: 1000
-	maxSize := 1000.0
+	// Get namespace-specific limit (Day 4: multi-tenant isolation)
+	maxSize := float64(a.GetNamespaceLimit(namespace))
 	utilization := float64(totalBuffered) / maxSize
 
 	return utilization, nil
