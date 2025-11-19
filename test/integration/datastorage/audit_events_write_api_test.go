@@ -43,8 +43,15 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 
 	BeforeEach(func() {
 		// Generate unique correlation ID for test isolation
-		// Note: No TRUNCATE needed - tests are isolated via correlation_id
 		testCorrelationID = generateTestID()
+
+		// Clean up test data before each test
+		// Use DELETE instead of TRUNCATE to avoid table-level locks in parallel execution
+		_, err := db.Exec("DELETE FROM audit_events WHERE correlation_id = $1", testCorrelationID)
+		if err != nil {
+			// Table might not exist yet (migration 013 not applied) - this is expected for TDD RED
+			GinkgoWriter.Printf("Note: audit_events table doesn't exist yet (expected for TDD RED phase): %v\n", err)
+		}
 	})
 
 	Context("BR-STORAGE-033: Generic Audit Write API", func() {
