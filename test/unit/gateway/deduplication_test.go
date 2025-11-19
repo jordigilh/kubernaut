@@ -76,8 +76,8 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 		testFingerprint = testSignal.Fingerprint
 
 		// Create deduplication service
-		// Note: metrics parameter is nil for unit tests (metrics tested separately)
-		dedupService = processing.NewDeduplicationService(redisClient, logger, nil)
+		// Note: k8sClient=nil (unit tests don't need K8s), metrics=nil (tested separately)
+		dedupService = processing.NewDeduplicationService(redisClient, nil, logger, nil)
 	})
 
 	AfterEach(func() {
@@ -654,6 +654,127 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Service", func() {
 				Expect(isDup).To(BeTrue())
 				Expect(meta.RemediationRequestRef).To(Equal("rr-special-1"))
 			})
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// DD-GATEWAY-009: State-Based Deduplication - Graceful Degradation
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Context("DD-GATEWAY-009: K8s API Unavailability (Graceful Degradation)", func() {
+		// DD-GATEWAY-009: v1.0 uses K8s API only (no Redis storage)
+		// v1.1 will add informer pattern + Redis caching
+		// Skipping Redis fallback test - to be updated in v1.1
+		PIt("should fall back to Redis time-based deduplication when K8s client is nil", func() {
+			// DD-GATEWAY-009: Graceful degradation
+			//
+			// BUSINESS SCENARIO:
+			// - K8s API is temporarily unavailable (nil client)
+			// - Expected: Fall back to existing Redis time-based deduplication
+			// - System continues to operate (no downtime)
+			//
+			// v1.0 NOTE: Test pending - v1.0 removed Redis Store() per DD guidance
+			// v1.1 will re-implement with informer pattern
+
+			// Create dedicated Redis client and service for this test (with custom TTL)
+			testRedisServer, err := miniredis.Run()
+			Expect(err).NotTo(HaveOccurred())
+			defer testRedisServer.Close()
+
+			testRedisClient := goredis.NewClient(&goredis.Options{
+				Addr: testRedisServer.Addr(),
+			})
+			defer testRedisClient.Close()
+
+			// Create deduplication service with nil K8s client → triggers graceful degradation
+			dedupService := processing.NewDeduplicationServiceWithTTL(
+				testRedisClient,
+				nil,          // K8s client is nil → graceful degradation
+				5*time.Second, // Custom TTL for test
+				logger,
+				nil, // metrics not needed for this test
+			)
+
+			signal1 := &types.NormalizedSignal{
+				AlertName: "PodCrashLoop",
+				Namespace: "default",
+				Resource: types.ResourceIdentifier{
+					Kind: "Pod",
+					Name: "payment-api",
+				},
+				Severity:    "critical",
+				Fingerprint: "abc123def456789012345678901234567890abcdef1234567890abcdef123456",
+			}
+
+			By("1. First signal with nil K8s client → not a duplicate (Redis check)")
+			isDup1, meta1, err1 := dedupService.Check(ctx, signal1)
+			Expect(err1).ToNot(HaveOccurred())
+			Expect(isDup1).To(BeFalse(), "First signal should not be duplicate (no Redis entry)")
+			Expect(meta1).To(BeNil())
+
+			By("2. Store signal in Redis (simulate CRD creation)")
+			err = dedupService.Store(ctx, signal1, "default/rr-abc123")
+			Expect(err).ToNot(HaveOccurred())
+
+			By("3. Second signal with nil K8s client → duplicate (Redis TTL active)")
+			isDup2, meta2, err2 := dedupService.Check(ctx, signal1)
+			Expect(err2).ToNot(HaveOccurred())
+			Expect(isDup2).To(BeTrue(), "Within TTL window, should be duplicate via Redis fallback")
+			Expect(meta2).ToNot(BeNil())
+			Expect(meta2.Count).To(Equal(2))
+			Expect(meta2.RemediationRequestRef).To(Equal("default/rr-abc123"))
+
+			By("4. Wait for TTL to expire")
+			time.Sleep(6 * time.Second)
+
+			By("5. Third signal after TTL → not a duplicate (Redis expired, no K8s fallback)")
+			isDup3, meta3, err3 := dedupService.Check(ctx, signal1)
+			Expect(err3).ToNot(HaveOccurred())
+			Expect(isDup3).To(BeFalse(), "After TTL expiry, should not be duplicate")
+			Expect(meta3).To(BeNil())
+		})
+
+		It("should handle Redis unavailability gracefully (double degradation)", func() {
+			// DD-GATEWAY-009: Double failure scenario
+			//
+			// BUSINESS SCENARIO:
+			// - K8s API unavailable (nil client)
+			// - Redis also unavailable (connection error)
+			// - Expected: Return error, allow upstream to decide (create CRD or reject)
+
+			// Create Redis server and immediately close it to simulate unavailability
+			testRedisServer, err := miniredis.Run()
+			Expect(err).NotTo(HaveOccurred())
+			testRedisAddr := testRedisServer.Addr()
+			testRedisServer.Close() // Close immediately to simulate unavailability
+
+			testRedisClient := goredis.NewClient(&goredis.Options{
+				Addr: testRedisAddr,
+			})
+			defer testRedisClient.Close()
+
+			// Create deduplication service with nil K8s client and unavailable Redis
+			dedupService := processing.NewDeduplicationService(testRedisClient, nil, logger, nil)
+
+			signal := &types.NormalizedSignal{
+				AlertName: "PodCrashLoop",
+				Namespace: "default",
+				Resource: types.ResourceIdentifier{
+					Kind: "Pod",
+					Name: "payment-api",
+				},
+				Severity:    "critical",
+				Fingerprint: "def456abc789012345678901234567890abcdef1234567890abcdef123456789",
+			}
+
+			By("Check() with both K8s and Redis unavailable")
+			isDup, meta, err := dedupService.Check(ctx, signal)
+
+			// BUSINESS OUTCOME: Error returned (system cannot determine duplication state)
+			// Gateway will create CRD as fail-safe (better to process than drop)
+			Expect(err).To(HaveOccurred(), "Should error when both K8s and Redis unavailable")
+			Expect(isDup).To(BeFalse(), "Default to false (fail-safe: process the signal)")
+			Expect(meta).To(BeNil())
 		})
 	})
 })

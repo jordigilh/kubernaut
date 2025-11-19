@@ -61,7 +61,8 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Edge Cases", func() {
 		registry := prometheus.NewRegistry()
 		metricsInstance := metrics.NewMetricsWithRegistry(registry)
 
-		dedupService = processing.NewDeduplicationService(redisClient, logger, metricsInstance)
+		// k8sClient=nil (unit tests don't need K8s client)
+		dedupService = processing.NewDeduplicationService(redisClient, nil, logger, metricsInstance)
 	})
 
 	AfterEach(func() {
@@ -131,6 +132,7 @@ var _ = Describe("BR-GATEWAY-003: Deduplication Edge Cases", func() {
 			metricsInstance := metrics.NewMetricsWithRegistry(registry)
 			dedupServiceShortTTL := processing.NewDeduplicationServiceWithTTL(
 				redisClient,
+				nil,           // k8sClient=nil (unit tests don't need K8s)
 				1*time.Second, // 1 second TTL
 				logger,
 				metricsInstance,

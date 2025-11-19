@@ -79,8 +79,9 @@ var _ = BeforeSuite(func() {
 	_ = infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
 
 	suiteLogger.Info("Starting Redis container...")
-	err = infrastructure.StartRedisContainer("redis-integration", 6379, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests")
+	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 6379, GinkgoWriter) // Port collision check enabled
+	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests (port 6379 must be available)")
+	suiteLogger.Info(fmt.Sprintf("✅ Redis running on port: %d", redisPort))
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Infrastructure Setup Complete")

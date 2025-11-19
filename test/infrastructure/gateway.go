@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -504,7 +505,36 @@ func RunCommand(command, kubeconfigPath string) (string, error) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // StartRedisContainer starts a Redis container for integration tests
-func StartRedisContainer(containerName string, port int, writer io.Writer) error {
+//
+// Parameters:
+// - containerName: Name for the Podman container
+// - port: Host port to bind (0 = allocate random available port)
+// - writer: Output writer for logging
+//
+// Returns:
+// - int: The actual port allocated (useful when port=0)
+// - error: Any errors during container creation
+//
+// Port Collision Prevention:
+// - If port=0, finds random available port in range 50000-60000
+// - If port>0, validates port is available before binding
+// - Prevents parallel test suite collisions
+func StartRedisContainer(containerName string, port int, writer io.Writer) (int, error) {
+	// port = 0 means "allocate random available port"
+	if port == 0 {
+		randomPort, err := findAvailablePort()
+		if err != nil {
+			return 0, fmt.Errorf("failed to find available port: %w", err)
+		}
+		port = randomPort
+		fmt.Fprintf(writer, "📍 Allocated random port: %d\n", port)
+	} else {
+		// Check if requested port is available
+		if !isPortAvailable(port) {
+			return 0, fmt.Errorf("port %d is already in use (collision detected)", port)
+		}
+	}
+
 	fmt.Fprintf(writer, "Starting Redis container '%s' on port %d...\n", containerName, port)
 
 	// Check if container already exists
@@ -515,21 +545,21 @@ func StartRedisContainer(containerName string, port int, writer io.Writer) error
 		statusCmd := exec.Command("podman", "ps", "--filter", fmt.Sprintf("name=%s", containerName), "--format", "{{.Names}}")
 		statusOutput, _ := statusCmd.CombinedOutput()
 		if strings.TrimSpace(string(statusOutput)) == containerName {
-			fmt.Fprintf(writer, "✅ Redis container '%s' already running\n", containerName)
-			return nil
+			fmt.Fprintf(writer, "✅ Redis container '%s' already running on port %d\n", containerName, port)
+			return port, nil
 		}
 
 		// Container exists but not running, start it
 		fmt.Fprintf(writer, "Starting existing Redis container '%s'...\n", containerName)
 		startCmd := exec.Command("podman", "start", containerName)
 		if err := startCmd.Run(); err != nil {
-			return fmt.Errorf("failed to start existing Redis container: %w", err)
+			return 0, fmt.Errorf("failed to start existing Redis container: %w", err)
 		}
-		fmt.Fprintf(writer, "✅ Redis container '%s' started\n", containerName)
-		return nil
+		fmt.Fprintf(writer, "✅ Redis container '%s' started on port %d\n", containerName, port)
+		return port, nil
 	}
 
-	// Create new container
+	// Create new container with verified available port
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", containerName,
 		"-p", fmt.Sprintf("%d:6379", port),
@@ -537,11 +567,52 @@ func StartRedisContainer(containerName string, port int, writer io.Writer) error
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to start Redis container: %w, output: %s", err, string(output))
+		return 0, fmt.Errorf("failed to start Redis container: %w, output: %s", err, string(output))
 	}
 
-	fmt.Fprintf(writer, "✅ Redis container '%s' created and started\n", containerName)
-	return nil
+	fmt.Fprintf(writer, "✅ Redis container '%s' created and started on port %d\n", containerName, port)
+	return port, nil
+}
+
+// isPortAvailable checks if a TCP port is available for binding
+//
+// This prevents port collisions when running multiple test suites in parallel
+func isPortAvailable(port int) bool {
+	// Try to listen on the port
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		// Port is not available
+		return false
+	}
+	// Port is available, close the listener
+	listener.Close()
+	return true
+}
+
+// findAvailablePort finds a random available TCP port
+//
+// Allocates a random port in the range 50000-60000 to avoid:
+// - System ports (0-1023)
+// - Registered ports (1024-49151)
+// - Common development ports (3000, 8080, 6379, etc.)
+//
+// Returns the available port or error if no port found after 10 attempts
+func findAvailablePort() (int, error) {
+	const minPort = 50000
+	const maxPort = 60000
+	const maxAttempts = 10
+
+	for i := 0; i < maxAttempts; i++ {
+		// Generate random port in range
+		port := minPort + (i * ((maxPort - minPort) / maxAttempts))
+
+		// Check if port is available
+		if isPortAvailable(port) {
+			return port, nil
+		}
+	}
+
+	return 0, fmt.Errorf("could not find available port after %d attempts", maxAttempts)
 }
 
 // StopRedisContainer stops and removes a Redis container

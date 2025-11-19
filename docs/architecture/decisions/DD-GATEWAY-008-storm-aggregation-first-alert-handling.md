@@ -1,11 +1,16 @@
 # DD-GATEWAY-008: Storm Aggregation First-Alert Handling Strategy
 
 ## Status
-**✅ APPROVED** (2025-11-17) - Alternative 2: Buffered First-Alert Aggregation
-**Last Reviewed**: 2025-11-17
-**Confidence**: 90% (comprehensive mitigations, latency non-issue given MTTR context)
-**Next Action**: Implement after completing LLM validation with Scenario 1
-**Decision**: User approved Alternative 2 with deduplication integration
+**✅ APPROVED** (2025-11-18) - Alternative 2: Buffered First-Alert Aggregation
+**Last Reviewed**: 2025-11-18
+**Confidence**: 95% (industry-aligned, comprehensive implementation details)
+**Next Action**: Ready for v1.0 implementation
+**Decision**: User approved Alternative 2 with v1.0 enhancements:
+- ✅ Sliding window with inactivity timeout (industry best practice)
+- ✅ Maximum window duration (5 minutes)
+- ✅ Configurable threshold (default=5)
+- ✅ Buffer overflow handling (sampling + force close)
+- ✅ Multi-tenant isolation (per-namespace buffers)
 
 ## Context & Problem
 
@@ -322,7 +327,7 @@ Storm scenarios are **high-volume, systemic issues** where complete context is c
 - `pkg/gateway/processing/storm_aggregator.go` - Enhanced StartAggregationWithBuffer()
 
 **Data Flow**:
-1. Alert arrives → Add to buffer (Redis key: `alert:buffer:<alertname>`, TTL: 60s)
+1. Alert arrives → Add to buffer (Redis key: `alert:buffer:<namespace>:<alertname>`, TTL: 60s)
 2. Check buffer count → If < threshold, return 202 Accepted
 3. If threshold reached → Retrieve all buffered alerts
 4. Start aggregation window with ALL buffered alerts
@@ -332,6 +337,195 @@ Storm scenarios are **high-volume, systemic issues** where complete context is c
 - If buffer fails → Fall back to immediate individual CRD creation
 - If buffer expires before threshold → Create individual CRDs for buffered alerts
 - If aggregation fails → Create individual CRDs for all buffered alerts
+
+---
+
+## v1.0 Implementation Details
+
+### Window Behavior Strategy
+
+**Decision**: **Sliding Window with Inactivity Timeout** (Industry Best Practice)
+
+**How It Works**:
+```
+T=0s:   Alert 1 arrives → Window starts, will close at T=60s
+T=10s:  Alert 2 arrives → Window timer RESETS, will now close at T=70s (10s + 60s)
+T=30s:  Alert 3 arrives → Window timer RESETS, will now close at T=90s (30s + 60s)
+T=50s:  Alert 4 arrives → Window timer RESETS, will now close at T=110s (50s + 60s)
+T=110s: No more alerts for 60s → Window closes, create aggregated CRD with all 4 alerts
+```
+
+**Key Principle**: Each new alert **resets the 60-second countdown**. Window closes only after 60 seconds of **inactivity** (no new alerts).
+
+**Industry Alignment**: Matches Apache Storm, Spark, Logstash session windows
+
+---
+
+### Window Duration Limits
+
+**Inactivity Timeout**: 60 seconds (resets on each alert)
+**Maximum Window Duration**: 5 minutes (absolute limit)
+
+**Rationale**: Prevents unbounded windows in case of continuous alert stream
+
+**Behavior**:
+- Window starts at T=0s
+- Each alert resets inactivity timer to 60s
+- Window FORCE CLOSES at T=300s (5 minutes) even if alerts still arriving
+- New window starts for subsequent alerts
+
+**Safety Limits**:
+- **Inactivity timeout**: 60 seconds (configurable)
+- **Maximum window duration**: 5 minutes (prevents unbounded windows)
+- **Maximum alerts per window**: 1000 (prevents memory exhaustion)
+
+**Industry Alignment**: Matches Logstash `timeout` (absolute max) + `inactivity_timeout` (reset) pattern
+
+---
+
+### Storm Detection Threshold
+
+**Default**: 5 alerts (configurable)
+**Range**: 2-20 alerts
+**BR-GATEWAY-008 Alignment**: >10 alerts/minute defines "storm"
+
+**Configuration**:
+```yaml
+gateway:
+  storm:
+    threshold: 5  # Number of alerts to trigger buffering (configurable)
+    inactivity_timeout: 60s  # Window reset timeout
+    max_window_duration: 5m  # Absolute maximum window duration
+```
+
+**Threshold Analysis**:
+- **Threshold=2**: Very aggressive, buffers almost everything (max aggregation, adds 60s latency)
+- **Threshold=5**: Balanced (recommended default)
+- **Threshold=10**: Conservative, matches BR-GATEWAY-008 definition (low latency, less aggregation)
+
+**Recommendation**:
+- **Production**: threshold=5 (balanced)
+- **High-volume environments**: threshold=10 (conservative)
+- **Cost-optimization priority**: threshold=2 (aggressive)
+
+---
+
+### Buffer Overflow Handling
+
+**Max Buffer Size**: 1000 alerts per window (per namespace)
+
+**Behavior**:
+- **< 90% capacity (< 900 alerts)**: Normal operation
+- **90% capacity (900 alerts)**: Log warning, continue buffering
+- **95% capacity (950 alerts)**: Enable sampling (accept 50% of alerts)
+- **100% capacity (1000 alerts)**: Force close window, create CRD immediately
+
+**Backpressure Strategy**:
+```go
+// When buffer reaches capacity
+if bufferSize >= 1000 {
+    // Force close window immediately
+    return forceCloseWindow(ctx, bufferID)
+}
+
+// When buffer near capacity
+if bufferSize >= 950 {
+    // Enable sampling (50% acceptance rate)
+    if rand.Float64() > 0.5 {
+        return http.StatusAccepted, "Alert sampled due to high buffer load"
+    }
+}
+```
+
+**Metrics**:
+- `gateway_storm_buffer_overflow_total{namespace}`: Counter of buffer overflows
+- `gateway_storm_buffer_sampling_enabled{namespace}`: Gauge (0/1) indicating sampling active
+- `gateway_storm_buffer_force_closed_total{namespace}`: Counter of forced window closures
+
+---
+
+### Late-Arriving Events
+
+**Scenario**: Alert arrives after window has closed
+
+**Example**:
+```
+T=0s:   Alert 1 → Window starts
+T=10s:  Alert 2 → Window extends to T=70s
+T=70s:  Window closes → Create CRD
+T=75s:  Alert 3 arrives (5s late) → What happens?
+```
+
+**Decision**: **Treat as new incident** (start new window)
+
+**Rationale**:
+- Simplest implementation
+- Correct for most cases (late alert likely indicates new incident)
+- Avoids complexity of grace periods and window reopening
+
+**Alternative Considered**: Reopen window for short grace period (5-10s)
+- **Rejected**: Adds complexity, edge cases, and potential for unbounded windows
+
+---
+
+### Multi-Tenant Isolation (v1.0)
+
+**Feature**: Per-namespace buffer limits
+
+**Redis Key Structure**:
+```redis
+# Before (global buffer):
+alert:storm:buffer:HighMemoryUsage = [all namespaces mixed]
+
+# After (per-namespace buffer):
+alert:storm:buffer:prod-api:HighMemoryUsage = [prod-api only]
+alert:storm:buffer:dev-test:HighMemoryUsage = [dev-test only]
+```
+
+**Configuration**:
+```yaml
+gateway:
+  storm:
+    default_max_size: 1000  # Default per-namespace limit
+    per_namespace_limits:   # Optional namespace-specific limits
+      prod-api: 500         # Critical namespace: lower limit
+      dev-test: 100         # Dev namespace: minimal limit
+    global_max_size: 5000   # Absolute max across all namespaces
+```
+
+**Behavior**:
+- Each namespace has independent buffer (isolation)
+- Namespace A buffer full doesn't block namespace B
+- Per-namespace metrics for observability
+- Configurable per-namespace limits
+
+**Benefits**:
+- ✅ **Isolation**: Namespace A storm doesn't block namespace B alerts
+- ✅ **Fairness**: Each namespace gets dedicated buffer capacity
+- ✅ **Observability**: Per-namespace metrics for troubleshooting
+- ✅ **Flexibility**: Different limits for different namespaces (prod vs dev)
+
+**Metrics**:
+```go
+gateway_storm_buffer_size{namespace="prod-api"}
+gateway_storm_buffer_size{namespace="dev-test"}
+gateway_storm_buffer_overflow_total{namespace="prod-api"}
+gateway_storm_buffer_overflow_total{namespace="dev-test"}
+```
+
+**Implementation Effort**: 8-10 hours (1-1.5 days)
+- Redis key structure changes: 30 min
+- Buffer limit enforcement: 2-3 hours
+- Metrics & observability: 1 hour
+- Unit tests: 2 hours
+- Integration tests: 2 hours
+- Documentation: 1 hour
+
+**v1.1 Enhancements** (deferred):
+- Dynamic limit adjustment based on usage patterns
+- Priority queues (critical namespaces first)
+- Fair queuing (round-robin across namespaces)
+- Advanced quota management (alerts per namespace per hour)
 
 ---
 
