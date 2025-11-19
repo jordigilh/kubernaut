@@ -32,6 +32,124 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// CreateDataStorageCluster creates a Kind cluster for Data Storage E2E tests
+// This includes:
+// - Kind cluster (2 nodes: control-plane + worker)
+// - Data Storage Service Docker image (build + load)
+func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "Data Storage E2E Cluster Setup (ONCE)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// 1. Create Kind cluster
+	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	if err := createKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// 2. Build Data Storage Docker image
+	fmt.Fprintln(writer, "🔨 Building Data Storage Docker image...")
+	if err := buildDataStorageImage(writer); err != nil {
+		return fmt.Errorf("failed to build Data Storage image: %w", err)
+	}
+
+	// 3. Load Data Storage image into Kind
+	fmt.Fprintln(writer, "📦 Loading Data Storage image into Kind cluster...")
+	if err := loadDataStorageImage(clusterName, writer); err != nil {
+		return fmt.Errorf("failed to load Data Storage image: %w", err)
+	}
+
+	fmt.Fprintln(writer, "✅ Cluster ready - tests can now deploy services per-namespace")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// DeleteCluster deletes a Kind cluster
+func DeleteCluster(clusterName string, writer io.Writer) error {
+	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(writer, "❌ Failed to delete cluster: %s\n", output)
+		return fmt.Errorf("failed to delete cluster: %w", err)
+	}
+	return nil
+}
+
+func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+	// Check if cluster already exists
+	checkCmd := exec.Command("kind", "get", "clusters")
+	checkOutput, _ := checkCmd.CombinedOutput()
+	if strings.Contains(string(checkOutput), clusterName) {
+		fmt.Fprintln(writer, "  ⚠️  Cluster already exists, deleting...")
+		DeleteCluster(clusterName, writer)
+	}
+
+	// Create Kind cluster with 2 nodes
+	kindConfig := `kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+`
+	configPath := filepath.Join(os.TempDir(), "kind-config.yaml")
+	err := os.WriteFile(configPath, []byte(kindConfig), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write Kind config: %w", err)
+	}
+	defer os.Remove(configPath)
+
+	cmd := exec.Command("kind", "create", "cluster",
+		"--name", clusterName,
+		"--config", configPath,
+		"--kubeconfig", kubeconfigPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(writer, "❌ Kind create output:\n%s\n", output)
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	fmt.Fprintln(writer, "  ✅ Kind cluster created")
+	return nil
+}
+
+func buildDataStorageImage(writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	// Build Data Storage image for amd64 (Kind uses amd64)
+	buildCmd := exec.Command("docker", "build",
+		"--platform", "linux/amd64",
+		"-t", "data-storage:e2e",
+		"-f", "docker/data-storage.Dockerfile",
+		".")
+	buildCmd.Dir = workspaceRoot
+
+	output, err := buildCmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(writer, "❌ Build output:\n%s\n", output)
+		return fmt.Errorf("failed to build Data Storage image: %w", err)
+	}
+
+	fmt.Fprintln(writer, "  ✅ Data Storage image built")
+	return nil
+}
+
+func loadDataStorageImage(clusterName string, writer io.Writer) error {
+	cmd := exec.Command("kind", "load", "docker-image",
+		"data-storage:e2e",
+		"--name", clusterName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(writer, "❌ Load output:\n%s\n", output)
+		return fmt.Errorf("failed to load Data Storage image: %w", err)
+	}
+
+	fmt.Fprintln(writer, "  ✅ Data Storage image loaded into Kind")
+	return nil
+}
+
 // DataStorageInfrastructure manages the Data Storage Service test infrastructure
 // This includes PostgreSQL, Redis, and the Data Storage Service itself
 type DataStorageInfrastructure struct {
