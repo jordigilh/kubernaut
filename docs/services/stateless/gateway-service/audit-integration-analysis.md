@@ -1,7 +1,7 @@
 # Gateway Service - Audit Integration Analysis
 
-**Date**: November 19, 2025  
-**Status**: 📋 ANALYSIS COMPLETE - READY FOR IMPLEMENTATION  
+**Date**: November 19, 2025
+**Status**: 📋 ANALYSIS COMPLETE - READY FOR IMPLEMENTATION
 **Version**: 1.0
 
 ---
@@ -13,8 +13,8 @@ This document analyzes where and how to integrate audit trace calls in the Gatew
 **Key Findings**:
 - **7 audit integration points** identified in Gateway signal processing pipeline
 - **Type-safe event builders** already exist (`pkg/datastorage/audit/gateway_event.go`)
-- **HTTP client** needs to be created for Gateway → Data Storage communication
-- **Async audit writes** recommended to avoid blocking signal processing (p95 latency target: <5ms overhead)
+- **Shared audit library** (`pkg/audit/`) provides fire-and-forget buffered writes (ADR-038)
+- **Async buffered writes** mandatory per ADR-038 (zero latency impact on signal processing)
 
 ---
 
@@ -32,10 +32,19 @@ This document analyzes where and how to integrate audit trace calls in the Gatew
 
 ---
 
-## 📡 **Data Storage Audit API - Quick Reference**
+## 📡 **Audit Integration Architecture**
 
-### **Endpoint**: `POST /api/v1/audit/events`
+### **Pattern**: Fire-and-Forget with Buffering (ADR-038)
 
+**Authority**: [ADR-038: Asynchronous Buffered Audit Trace Ingestion](../../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md)
+
+**Key Principle**: Audit writes are **non-blocking** and **never impact business operations**
+
+**Implementation**: Shared library at `pkg/audit/` provides buffered audit store
+
+### **Data Storage Audit API**
+
+**Endpoint**: `POST /api/v1/audit/events`
 **URL**: `http://data-storage.kubernaut-system:8080/api/v1/audit/events`
 
 **Request Format**:
@@ -234,7 +243,7 @@ eventData, err := audit.NewGatewayEvent("gateway.signal.deduplicated").
 
 **Event Type**: `gateway.deduplication.state_checked`
 
-**Outcome**: 
+**Outcome**:
 - `success` if K8s API query succeeds
 - `failure` if K8s API unavailable (graceful degradation to Redis)
 
@@ -244,7 +253,7 @@ eventData, err := audit.NewGatewayEvent("gateway.signal.deduplicated").
 func (d *Deduplicator) Check(ctx context.Context, signal *types.NormalizedSignal) (bool, *DeduplicationMetadata, error) {
 	// DD-GATEWAY-009: Query K8s CRD state
 	existingCRDs, err := d.k8sClient.List(ctx, &remediationv1.RemediationRequestList{}, ...)
-	
+
 	// 🔴 AUDIT POINT 3: State-based deduplication check
 	// INSERT AUDIT CALL HERE
 	// Event: gateway.deduplication.state_checked
@@ -434,7 +443,7 @@ eventData, err := audit.NewGatewayEvent("gateway.storm.window_extended").
 
 ### **AUDIT POINT 7: CRD Created** ✅
 
-**Location**: 
+**Location**:
 - `pkg/gateway/server.go:createRemediationRequestCRD()` (line ~1190-1210) - Individual CRD
 - `pkg/gateway/server.go:createAggregatedCRDAfterWindow()` (line ~1304-1330) - Aggregated CRD
 
@@ -534,7 +543,7 @@ eventData, err := audit.NewGatewayEvent("gateway.crd.created").
 
 ## 🏗️ **Implementation Architecture**
 
-### **Component Diagram**
+### **Component Diagram** (ADR-038 Pattern)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -554,18 +563,20 @@ eventData, err := audit.NewGatewayEvent("gateway.crd.created").
 │  │  │    └─ [AUDIT 7] CRD created                            │  │  │
 │  │  └────────────────────────────────────────────────────────┘  │  │
 │  │                           │                                    │  │
-│  │                           │ Async audit writes                 │  │
+│  │                           │ Fire-and-forget (returns immediately)│
 │  │                           ▼                                    │  │
 │  │  ┌────────────────────────────────────────────────────────┐  │  │
-│  │  │  audit.Client (NEW)                                     │  │  │
-│  │  │    ├─ WriteAuditEvent(ctx, event) error               │  │  │
-│  │  │    ├─ HTTP client (5s timeout)                         │  │  │
-│  │  │    ├─ Async goroutine (non-blocking)                   │  │  │
-│  │  │    └─ Error logging (no retry)                         │  │  │
+│  │  │  pkg/audit.BufferedStore (Shared Library - ADR-038)    │  │  │
+│  │  │    ├─ StoreAudit(ctx, event) - non-blocking           │  │  │
+│  │  │    ├─ In-memory buffer (10,000 events)                 │  │  │
+│  │  │    ├─ Background worker (separate goroutine)           │  │  │
+│  │  │    ├─ Batching (1000 events per batch)                 │  │  │
+│  │  │    ├─ Retry logic (3 attempts, exponential backoff)    │  │  │
+│  │  │    └─ Graceful degradation (drops on buffer full)      │  │  │
 │  │  └────────────────────────────────────────────────────────┘  │  │
 │  └──────────────────────────────────────────────────────────────┘  │
 │                           │                                         │
-│                           │ HTTP POST /api/v1/audit/events         │
+│                           │ HTTP POST /api/v1/audit/events (batched)│
 │                           ▼                                         │
 └─────────────────────────────────────────────────────────────────────┘
 
@@ -580,34 +591,45 @@ eventData, err := audit.NewGatewayEvent("gateway.crd.created").
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+**Key Characteristics** (per ADR-038):
+- ✅ **Fire-and-Forget**: `StoreAudit()` returns immediately (zero latency impact)
+- ✅ **Buffered**: In-memory channel (10,000 events capacity)
+- ✅ **Batched**: Background worker batches events (1000 per batch)
+- ✅ **Resilient**: Retry logic with exponential backoff (3 attempts)
+- ✅ **Graceful Degradation**: Drops events on buffer full (logs warning)
+- ✅ **No External Dependencies**: No Kafka/RabbitMQ required
+
 ---
 
-## 📦 **New Components to Create**
+## 📦 **Integration with Shared Audit Library**
 
-### **1. Audit Client** (NEW)
+### **1. Use Existing Shared Library** (ADR-038)
 
-**File**: `pkg/gateway/audit/client.go`
+**Library**: `pkg/audit/` (already exists per ADR-038)
 
-**Purpose**: HTTP client for posting audit events to Data Storage Service
+**Authority**: [ADR-038: Asynchronous Buffered Audit Trace Ingestion](../../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md)
 
-**Interface**:
+**Interface** (from shared library):
 ```go
 package audit
 
 import (
 	"context"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
 
-// Client writes Gateway audit events to Data Storage Service.
-type Client interface {
-	// WriteAuditEvent writes a single audit event asynchronously.
-	// Returns immediately (non-blocking).
-	// Errors are logged but not returned.
-	WriteAuditEvent(ctx context.Context, event *AuditEvent) error
+// BufferedStore provides fire-and-forget audit storage with buffering.
+// Implements ADR-038 pattern.
+type BufferedStore interface {
+	// StoreAudit writes an audit event (returns immediately, non-blocking).
+	// Event is added to in-memory buffer and written asynchronously.
+	// Errors are logged but not returned to caller.
+	StoreAudit(ctx context.Context, event *AuditEvent) error
+
+	// Close flushes remaining events and shuts down gracefully.
+	Close() error
 }
 
-// AuditEvent represents a Gateway audit event.
+// AuditEvent represents a service audit event.
 type AuditEvent struct {
 	EventType      string                 // e.g., "gateway.signal.received"
 	CorrelationID  string                 // RemediationRequest name or fingerprint
@@ -621,104 +643,60 @@ type AuditEvent struct {
 }
 ```
 
-**Implementation**:
+**No Custom Client Needed**: Gateway will use the shared `pkg/audit.BufferedStore` directly
+
+**Shared Library Usage** (ADR-038):
 ```go
-package audit
-
+// Gateway service initialization (pkg/gateway/server.go)
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"time"
-
-	"go.uber.org/zap"
+	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 
-// ClientImpl implements the Client interface.
-type ClientImpl struct {
-	storageServiceURL string
-	httpClient        *http.Client
-	logger            *zap.Logger
+// Create Data Storage client
+dsClient := datastorage.NewClient(cfg.DataStorageServiceURL, logger)
+
+// Create buffered audit store (shared library)
+auditStore := audit.NewBufferedStore(
+	dsClient,
+	audit.Config{
+		BufferSize:    10000,          // 10,000 events capacity
+		BatchSize:     1000,           // Batch 1000 events per write
+		FlushInterval: 1 * time.Second, // Flush every 1 second
+		MaxRetries:    3,              // Retry 3 times on failure
+	},
+	logger,
+)
+
+// Use in Gateway server
+server := &Server{
+	// ... existing fields ...
+	auditStore: auditStore,
 }
 
-// NewClient creates a new audit client.
-func NewClient(storageServiceURL string, logger *zap.Logger) *ClientImpl {
-	return &ClientImpl{
-		storageServiceURL: storageServiceURL,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
-		},
-		logger: logger,
-	}
-}
+// Fire-and-forget audit write (returns immediately)
+auditStore.StoreAudit(ctx, &audit.AuditEvent{
+	EventType:     "gateway.signal.received",
+	CorrelationID: signal.Fingerprint,
+	ResourceType:  signal.ResourceType,
+	ResourceID:    signal.ResourceName,
+	ResourceNS:    signal.Namespace,
+	Outcome:       "success",
+	Operation:     "signal_received",
+	Severity:      signal.Severity,
+	EventData:     eventData,
+}) // Returns immediately, no error returned
 
-// WriteAuditEvent writes an audit event asynchronously.
-// This method returns immediately and does not block signal processing.
-func (c *ClientImpl) WriteAuditEvent(ctx context.Context, event *AuditEvent) error {
-	// Async write to avoid blocking signal processing
-	go func() {
-		if err := c.writeAuditEventSync(context.Background(), event); err != nil {
-			c.logger.Warn("Failed to write audit event (non-blocking)",
-				zap.Error(err),
-				zap.String("event_type", event.EventType),
-				zap.String("correlation_id", event.CorrelationID))
-		}
-	}()
-
-	return nil
-}
-
-// writeAuditEventSync performs the actual HTTP POST (synchronous).
-func (c *ClientImpl) writeAuditEventSync(ctx context.Context, event *AuditEvent) error {
-	// Build request payload
-	payload := map[string]interface{}{
-		"version":            "1.0",
-		"service":            "gateway",
-		"event_type":         event.EventType,
-		"event_timestamp":    time.Now().UTC().Format(time.RFC3339Nano),
-		"correlation_id":     event.CorrelationID,
-		"resource_type":      event.ResourceType,
-		"resource_id":        event.ResourceID,
-		"resource_namespace": event.ResourceNS,
-		"outcome":            event.Outcome,
-		"operation":          event.Operation,
-		"severity":           event.Severity,
-		"event_data":         event.EventData,
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal audit event: %w", err)
-	}
-
-	// POST to Data Storage Service
-	url := fmt.Sprintf("%s/api/v1/audit/events", c.storageServiceURL)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	c.logger.Debug("Audit event written successfully",
-		zap.String("event_type", event.EventType),
-		zap.String("correlation_id", event.CorrelationID))
-
-	return nil
-}
+// Graceful shutdown (flushes remaining events)
+defer auditStore.Close()
 ```
+
+**Key Benefits** (ADR-038):
+- ✅ **Zero Latency**: `StoreAudit()` returns in <1ms (fire-and-forget)
+- ✅ **Batching**: 50-100x throughput improvement (1000 events per batch)
+- ✅ **Resilient**: Automatic retries with exponential backoff
+- ✅ **Graceful Degradation**: Drops events on buffer full (logs warning)
+- ✅ **Shared Implementation**: Same pattern across all services
 
 ---
 
@@ -727,16 +705,21 @@ func (c *ClientImpl) writeAuditEventSync(ctx context.Context, event *AuditEvent)
 **File**: `pkg/gateway/server.go`
 
 **Changes**:
-1. Add `auditClient` field to `Server` struct
-2. Initialize `auditClient` in `NewServer()`
+1. Add `auditStore` field to `Server` struct (use shared library)
+2. Initialize `auditStore` in `NewServer()` with ADR-038 configuration
 3. Add audit calls at 7 integration points
+4. Add graceful shutdown to flush remaining events
 
 **Server Struct Update**:
 ```go
 // pkg/gateway/server.go
+import (
+	"github.com/jordigilh/kubernaut/pkg/audit"
+)
+
 type Server struct {
 	// ... existing fields ...
-	auditClient      audit.Client  // NEW: Audit client for Data Storage Service
+	auditStore       audit.BufferedStore  // NEW: Shared audit library (ADR-038)
 }
 ```
 
@@ -746,16 +729,43 @@ type Server struct {
 func NewServer(cfg *Config, ...) (*Server, error) {
 	// ... existing initialization ...
 
-	// Initialize audit client
-	auditClient := audit.NewClient(
-		cfg.DataStorageServiceURL,  // e.g., "http://data-storage.kubernaut-system:8080"
+	// Initialize Data Storage client
+	dsClient := datastorage.NewClient(cfg.DataStorageServiceURL, logger)
+
+	// Initialize buffered audit store (ADR-038)
+	auditStore := audit.NewBufferedStore(
+		dsClient,
+		audit.Config{
+			BufferSize:    10000,          // 10,000 events capacity
+			BatchSize:     1000,           // Batch 1000 events per write
+			FlushInterval: 1 * time.Second, // Flush every 1 second
+			MaxRetries:    3,              // Retry 3 times on failure
+		},
 		logger,
 	)
 
 	return &Server{
 		// ... existing fields ...
-		auditClient: auditClient,
+		auditStore: auditStore,
 	}, nil
+}
+```
+
+**Graceful Shutdown Update**:
+```go
+// pkg/gateway/server.go:Shutdown()
+func (s *Server) Shutdown(ctx context.Context) error {
+	// ... existing shutdown logic ...
+
+	// Flush remaining audit events (ADR-038)
+	if s.auditStore != nil {
+		if err := s.auditStore.Close(); err != nil {
+			s.logger.Warn("Failed to flush audit events during shutdown",
+				zap.Error(err))
+		}
+	}
+
+	return nil
 }
 ```
 
@@ -801,8 +811,8 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	// Record ingestion metric
 	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity, "unknown").Inc()
 
-	// 🟢 AUDIT POINT 1: Signal received
-	if s.auditClient != nil {
+	// 🟢 AUDIT POINT 1: Signal received (ADR-038 fire-and-forget)
+	if s.auditStore != nil {
 		eventData, err := audit.NewGatewayEvent("gateway.signal.received").
 			WithSignalType(signal.SourceType).
 			WithAlertName(signal.AlertName).
@@ -813,7 +823,10 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 			Build()
 
 		if err == nil {
-			s.auditClient.WriteAuditEvent(ctx, &audit.AuditEvent{
+			// Fire-and-forget: Returns immediately (<0.1ms)
+			// Event is buffered and written asynchronously
+			// No error returned (errors logged by background worker)
+			s.auditStore.StoreAudit(ctx, &audit.AuditEvent{
 				EventType:     "gateway.signal.received",
 				CorrelationID: signal.Fingerprint,  // Will be updated to CRD name later
 				ResourceType:  signal.ResourceType,
@@ -823,7 +836,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 				Operation:     "signal_received",
 				Severity:      signal.Severity,
 				EventData:     eventData,
-			})
+			}) // Returns immediately, no error handling needed
 		}
 	}
 
@@ -833,70 +846,117 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 }
 ```
 
+**Key Characteristics** (ADR-038):
+- ✅ `StoreAudit()` returns immediately (<0.1ms overhead)
+- ✅ No error handling needed (errors logged by background worker)
+- ✅ Zero impact on signal processing latency
+- ✅ Event is buffered and written asynchronously in batches
+
 ---
 
-## 🎯 **Performance Considerations**
+## 🎯 **Performance Considerations** (ADR-038)
 
-### **Async Audit Writes**
+### **Fire-and-Forget with Buffering**
 
-**Design Decision**: All audit writes are **asynchronous** (non-blocking)
+**Design Decision** (ADR-038): All audit writes use **fire-and-forget with in-memory buffering**
+
+**Authority**: [ADR-038: Asynchronous Buffered Audit Trace Ingestion](../../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md)
 
 **Rationale**:
 - Signal processing p95 latency target: **<100ms**
-- Audit write latency: **~50ms** (HTTP POST + database write)
-- **Blocking audit writes would add 50ms to every signal** → Unacceptable
-- **Async writes add <1ms overhead** (goroutine spawn) → Acceptable
+- Synchronous audit write latency: **10-50ms** (HTTP POST + database write)
+- **Blocking audit writes would add 10-50ms to every signal** → Unacceptable (2x slower)
+- **Fire-and-forget adds <0.1ms overhead** (buffer write) → Acceptable (zero impact)
+
+**Industry Standard** (ADR-038):
+- 9/10 platforms use async buffered writes (AWS CloudTrail, Google Cloud Audit Logs, Kubernetes Audit Logs, Datadog, Elastic APM, New Relic, Splunk, Jaeger, OpenTelemetry)
+- **Industry Consensus**: Audit traces are **non-blocking** in production systems
 
 **Trade-offs**:
-- ✅ **Pro**: No impact on signal processing latency
-- ✅ **Pro**: Gateway remains responsive even if Data Storage is slow
-- ❌ **Con**: Audit writes may be lost if Gateway crashes before write completes
-- ❌ **Con**: No error feedback to caller (errors are logged only)
-
-**Mitigation**:
-- Data Storage Service has **Dead Letter Queue (DLQ)** for database failures (DD-009)
-- Gateway audit client logs errors for observability
-- Prometheus metrics track audit write failures
+- ✅ **Pro**: **Zero latency impact** on signal processing
+- ✅ **Pro**: **50-100x throughput** improvement due to batching (1000 events/batch)
+- ✅ **Pro**: **Resilient** - automatic retries with exponential backoff (3 attempts)
+- ✅ **Pro**: **Graceful degradation** - Gateway remains responsive even if Data Storage is down
+- ⚠️ **Con**: **Eventual consistency** - audit events appear in database with up to 1 second delay
+- ⚠️ **Con**: **Potential data loss** - buffer full or service crash before flush
+  - **Mitigation**: Buffer size 10,000 events (handles 10 seconds at 1000 events/sec)
+  - **Mitigation**: Graceful shutdown flushes remaining events
+  - **Mitigation**: Monitoring alerts on high drop rate (>1%)
 
 ---
 
-### **Latency Budget**
+### **Latency Budget** (ADR-038 Analysis)
+
+| Pattern | Business Operation | Audit Write | Total Latency | Impact |
+|---------|-------------------|-------------|---------------|--------|
+| **Synchronous** | 50ms | 10-50ms | **60-100ms** | ❌ 2x slower |
+| **External Queue** | 50ms | 5-20ms | **55-70ms** | ⚠️ 1.4x slower |
+| **Fire-and-Forget (ADR-038)** | 50ms | 0ms (non-blocking) | **50ms** | ✅ Zero impact |
+
+**Gateway Specific**:
 
 | Component | Latency (p95) | Notes |
 |-----------|---------------|-------|
 | **Signal Processing** | 80ms | Existing (dedup, storm, CRD creation) |
-| **Audit Write (Sync)** | 50ms | HTTP POST + database write |
-| **Audit Write (Async)** | <1ms | Goroutine spawn overhead |
-| **Total (with async audit)** | **81ms** | ✅ Within 100ms target |
-| **Total (with sync audit)** | **130ms** | ❌ Exceeds 100ms target |
+| **Audit Write (Sync)** | 10-50ms | HTTP POST + database write |
+| **Audit Write (Fire-and-Forget)** | <0.1ms | Buffer write overhead |
+| **Total (with ADR-038)** | **80ms** | ✅ Within 100ms target (zero impact) |
+| **Total (with sync audit)** | **90-130ms** | ❌ Exceeds 100ms target |
 
-**Conclusion**: Async audit writes are **mandatory** to meet latency requirements.
+**Conclusion**: Fire-and-forget audit writes (ADR-038) are **mandatory** to meet latency requirements.
 
 ---
 
-## 🚨 **Error Handling Strategy**
+### **Throughput Analysis** (ADR-038)
 
-### **Audit Write Failures**
+| Pattern | Single Write | Batched Write (1000 events) | Throughput |
+|---------|-------------|----------------------------|------------|
+| **Synchronous** | 10ms | N/A | 100 events/sec |
+| **External Queue** | 5ms | N/A | 200 events/sec |
+| **Fire-and-Forget (ADR-038)** | 0ms (buffered) | 100ms (batched) | **10,000 events/sec** |
 
-**Principle**: Audit writes are **best-effort** and **never block signal processing**
+**Key Insight**: Fire-and-forget with batching provides **50-100x throughput improvement**.
 
-**Error Scenarios**:
+---
 
-| Error | Handling | Impact |
-|-------|----------|--------|
-| **Data Storage unavailable** | Log warning, continue processing | Audit event lost |
-| **HTTP timeout (>5s)** | Log warning, continue processing | Audit event lost |
-| **Invalid event data** | Log error, continue processing | Audit event lost |
-| **Rate limit exceeded (429)** | Log warning, continue processing | Audit event lost |
+## 🚨 **Error Handling Strategy** (ADR-038)
 
-**Monitoring**:
-- Gateway logs audit write failures at `WARN` level
-- Prometheus metric: `gateway_audit_write_failures_total{event_type, reason}`
-- Data Storage Service tracks `datastorage_audit_traces_total{service="gateway", status="success|failure"}`
+### **Graceful Degradation**
 
-**Alerting**:
-- Alert if `gateway_audit_write_failures_total` > 5% of `gateway_signals_received_total`
-- Alert if Data Storage Service is unavailable for >5 minutes
+**Principle** (ADR-038): Audit writes are **best-effort** and **never block or fail business operations**
+
+**Authority**: [ADR-038: Asynchronous Buffered Audit Trace Ingestion](../../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md)
+
+**Error Scenarios** (ADR-038 Pattern):
+
+| Error | Handling | Business Impact | Audit Impact |
+|-------|----------|-----------------|--------------|
+| **Data Storage unavailable** | Background worker retries 3x (exponential backoff), then drops batch | ✅ Zero (business continues) | ⚠️ Batch lost (logged) |
+| **Database slow** | Background worker retries, business logic unaffected | ✅ Zero (business continues) | ⚠️ Delayed (eventual consistency) |
+| **Buffer full** | Drop new audit event, log warning | ✅ Zero (business continues) | ⚠️ Event lost (logged) |
+| **Invalid event data** | Log error, drop event | ✅ Zero (business continues) | ⚠️ Event lost (logged) |
+| **Rate limit exceeded (429)** | Retry with backoff (3 attempts) | ✅ Zero (business continues) | ⚠️ Delayed or lost |
+
+**Key Insight** (ADR-038): Business operations **NEVER fail** due to audit issues.
+
+**Retry Logic** (ADR-038):
+- **Max Retries**: 3 attempts
+- **Backoff**: Exponential (1s, 2s, 4s)
+- **After Max Retries**: Drop batch, log error, emit metric
+
+**Monitoring** (ADR-038 Metrics):
+- `audit_events_buffered_total` - Total events buffered
+- `audit_events_dropped_total` - Total events dropped (buffer full)
+- `audit_events_written_total` - Total events written to database
+- `audit_batches_failed_total` - Total batches failed after max retries
+- `audit_buffer_size` - Current buffer size
+- `audit_write_duration_seconds` - Write latency histogram
+
+**Alerting** (ADR-038 Thresholds):
+- ⚠️ High drop rate (>1% of buffered events)
+- ⚠️ High failure rate (>5% of batches)
+- ⚠️ High buffer utilization (>80% full)
+- 🚨 Data Storage Service unavailable for >5 minutes
 
 ---
 
@@ -1046,10 +1106,12 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 - [Data Storage Service API v1](../../../api/openapi/data-storage-v1.yaml)
 
 ### **Design Decisions**
+- [ADR-038: Asynchronous Buffered Audit Trace Ingestion](../../../architecture/decisions/ADR-038-async-buffered-audit-ingestion.md) - **PRIMARY AUTHORITY** for audit pattern
 - [DD-GATEWAY-008: Storm Buffering](DD-GATEWAY-008-storm-aggregation-first-alert-handling.md)
 - [DD-GATEWAY-009: State-Based Deduplication](DD-GATEWAY-009-state-based-deduplication.md)
-- [ADR-034: Unified Audit Table Design](../../architecture/decisions/ADR-034-unified-audit-table.md)
-- [ADR-036: Authentication and Authorization Strategy](../../architecture/decisions/ADR-036-auth-strategy.md)
+- [ADR-034: Unified Audit Table Design](../../../architecture/decisions/ADR-034-unified-audit-table.md)
+- [ADR-036: Authentication and Authorization Strategy](../../../architecture/decisions/ADR-036-auth-strategy.md)
+- [DD-AUDIT-002: Audit Shared Library Design](../../../architecture/decisions/DD-AUDIT-002-audit-shared-library-design.md)
 
 ### **Implementation Plans**
 - [DD-GATEWAY-008 Implementation Plan](DD_GATEWAY_008_IMPLEMENTATION_PLAN.md)
@@ -1071,7 +1133,7 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 
 ---
 
-**Document Status**: ✅ READY FOR REVIEW  
-**Confidence**: 95% (comprehensive analysis with existing audit infrastructure)  
+**Document Status**: ✅ READY FOR REVIEW
+**Confidence**: 95% (comprehensive analysis with existing audit infrastructure)
 **Estimated Effort**: 9 days (1 developer, full-time)
 
