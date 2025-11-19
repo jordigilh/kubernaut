@@ -1074,9 +1074,10 @@ func (s *Server) parseCRDReference(ref string) (namespace, name string) {
 
 // processStormAggregation handles storm detection and aggregation logic
 // TDD REFACTOR: Extracted from ProcessSignal for clarity
-// Business Outcome: Consistent storm aggregation (BR-013)
+// DD-GATEWAY-008: Enhanced with buffered first-alert aggregation
+// Business Outcome: Consistent storm aggregation (BR-GATEWAY-016, BR-GATEWAY-008)
 // Returns: (shouldContinue bool, response *ProcessingResponse)
-//   - shouldContinue=false means storm was aggregated, return response immediately
+//   - shouldContinue=false means storm was aggregated/buffered, return response immediately
 //   - shouldContinue=true means fall through to individual CRD creation
 func (s *Server) processStormAggregation(ctx context.Context, signal *types.NormalizedSignal, stormMetadata *processing.StormMetadata) (bool, *ProcessingResponse) {
 	logger := middleware.GetLogger(ctx)
@@ -1089,7 +1090,7 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 		zap.String("stormWindow", stormMetadata.Window),
 		zap.Int("alertCount", stormMetadata.AlertCount))
 
-	// BR-GATEWAY-016: Storm aggregation
+	// DD-GATEWAY-008: Check if aggregation window exists
 	shouldAggregate, windowID, err := s.stormAggregator.ShouldAggregate(ctx, signal)
 	if err != nil {
 		logger.Warn("Storm aggregation check failed, falling back to individual CRD creation",
@@ -1099,7 +1100,7 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 	}
 
 	if shouldAggregate {
-		// Add to existing aggregation window
+		// DD-GATEWAY-008: Add to existing aggregation window (sliding window behavior)
 		if err := s.stormAggregator.AddResource(ctx, windowID, signal); err != nil {
 			logger.Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation",
 				zap.String("fingerprint", signal.Fingerprint),
@@ -1119,7 +1120,11 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 		return false, NewStormAggregationResponse(signal.Fingerprint, windowID, stormMetadata.StormType, resourceCount, false)
 	}
 
-	// Start new aggregation window
+	// DD-GATEWAY-008: No window exists, call StartAggregation
+	// StartAggregation will:
+	// - Buffer first N alerts (default: 5)
+	// - Return empty windowID if buffering (threshold not reached)
+	// - Return windowID if threshold reached (window created)
 	windowID, err = s.stormAggregator.StartAggregation(ctx, signal, stormMetadata)
 	if err != nil {
 		logger.Warn("Failed to start storm aggregation, falling back to individual CRD creation",
@@ -1128,13 +1133,29 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 		return true, nil // Continue to individual CRD creation
 	}
 
-	// Schedule aggregated CRD creation after window expires
+	// DD-GATEWAY-008: Check if window was created or alert was buffered
+	if windowID == "" {
+		// Alert buffered, threshold not reached yet
+		logger.Info("Alert buffered for storm aggregation",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("alertName", signal.AlertName),
+			zap.String("namespace", signal.Namespace))
+
+		// Return HTTP 202 Accepted (buffered, waiting for more alerts)
+		return false, &ProcessingResponse{
+			Status:      StatusAccepted,
+			Message:     "Alert buffered for storm aggregation (threshold not reached)",
+			Fingerprint: signal.Fingerprint,
+		}
+	}
+
+	// Window created (threshold reached), schedule CRD creation after window expires
 	go s.createAggregatedCRDAfterWindow(context.Background(), windowID, signal, stormMetadata)
 
 	logger.Info("Storm aggregation window started",
 		zap.String("fingerprint", signal.Fingerprint),
 		zap.String("windowID", windowID),
-		zap.String("windowTTL", "1 minute"))
+		zap.String("windowTTL", "60 seconds (sliding window)"))
 
 	return false, NewStormAggregationResponse(signal.Fingerprint, windowID, stormMetadata.StormType, 0, true)
 }
