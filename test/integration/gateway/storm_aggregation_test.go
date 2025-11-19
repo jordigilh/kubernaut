@@ -35,7 +35,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	. "github.com/jordigilh/kubernaut/test/integration/gateway"
+	// No need to import test/integration/gateway - we're already in package gateway
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
