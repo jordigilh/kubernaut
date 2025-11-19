@@ -133,8 +133,8 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 // CleanupDataStorageTestNamespace deletes a test namespace and all resources
 func CleanupDataStorageTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
 	fmt.Fprintf(writer, "🧹 Cleaning up namespace %s...\n", namespace)
-	
-	cmd := exec.Command("kubectl", "delete", "namespace", namespace, 
+
+	cmd := exec.Command("kubectl", "delete", "namespace", namespace,
 		"--kubeconfig", kubeconfigPath,
 		"--wait=true",
 		"--timeout=60s")
@@ -143,7 +143,7 @@ func CleanupDataStorageTestNamespace(namespace, kubeconfigPath string, writer io
 		fmt.Fprintf(writer, "⚠️  Failed to delete namespace: %s\n", output)
 		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
-	
+
 	fmt.Fprintf(writer, "✅ Namespace %s deleted\n", namespace)
 	return nil
 }
@@ -171,7 +171,7 @@ func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) err
 		}
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
-	
+
 	fmt.Fprintf(writer, "   ✅ Namespace %s created\n", namespace)
 	return nil
 }
@@ -531,16 +531,356 @@ func deployRedisInNamespace(ctx context.Context, namespace, kubeconfigPath strin
 }
 
 func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	// TODO: Implement migration application via Job or direct connection
-	// For now, we'll skip migrations in E2E tests and apply them in the test setup
-	fmt.Fprintf(writer, "   ⚠️  Migrations will be applied via test setup (not implemented yet)\n")
+	// Apply migrations by connecting directly to PostgreSQL
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// Wait for PostgreSQL pod to be ready and get pod name
+	var podName string
+	Eventually(func() error {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=postgresql",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list pods: %w", err)
+		}
+		if len(pods.Items) == 0 {
+			return fmt.Errorf("no PostgreSQL pods found")
+		}
+
+		// Check if pod is ready
+		pod := pods.Items[0]
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+				podName = pod.Name
+				return nil
+			}
+		}
+		return fmt.Errorf("PostgreSQL pod not ready yet")
+	}, 60*time.Second, 2*time.Second).Should(Succeed(), "PostgreSQL pod should be ready for migrations")
+
+	// Get PostgreSQL service cluster IP
+	service, err := clientset.CoreV1().Services(namespace).Get(ctx, "postgresql", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get PostgreSQL service: %w", err)
+	}
+
+	postgresHost := fmt.Sprintf("postgresql.%s.svc.cluster.local", namespace)
+	connStr := fmt.Sprintf("host=%s port=5432 user=slm_user password=test_password dbname=action_history sslmode=disable", postgresHost)
+
+	// For E2E tests, we'll use kubectl exec to run migrations inside the pod
+	// This avoids needing to set up port-forwarding
+	fmt.Fprintf(writer, "   📋 Applying migrations via kubectl exec in pod %s...\n", podName)
+
+	// Read migration files from workspace
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	migrations := []string{
+		"001_initial_schema.sql",
+		"002_fix_partitioning.sql",
+		"003_stored_procedures.sql",
+		"004_add_effectiveness_assessment_due.sql",
+		"005_vector_schema.sql",
+		"006_effectiveness_assessment.sql",
+		"009_update_vector_dimensions.sql",
+		"007_add_context_column.sql",
+		"008_context_api_compatibility.sql",
+		"010_audit_write_api_phase1.sql",
+		"011_rename_alert_to_signal.sql",
+		"012_adr033_multidimensional_tracking.sql",
+		"013_audit_events_unified_table.sql",
+		"999_add_nov_2025_partition.sql",
+	}
+
+	for _, migration := range migrations {
+		migrationPath := filepath.Join(workspaceRoot, "migrations", migration)
+		content, err := os.ReadFile(migrationPath)
+		if err != nil {
+			fmt.Fprintf(writer, "   ⚠️  Skipping migration %s (not found)\n", migration)
+			continue
+		}
+
+		// Remove CONCURRENTLY keyword for test environment
+		migrationSQL := strings.ReplaceAll(string(content), "CONCURRENTLY ", "")
+
+		// Extract only the UP migration (ignore DOWN section)
+		if strings.Contains(migrationSQL, "-- +goose Down") {
+			parts := strings.Split(migrationSQL, "-- +goose Down")
+			migrationSQL = parts[0]
+		}
+
+		// Apply migration via psql in the pod
+		cmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--",
+			"psql", "-U", "slm_user", "-d", "action_history", "-c", migrationSQL)
+		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Check if error is due to already existing objects (idempotent)
+			if strings.Contains(string(output), "already exists") {
+				fmt.Fprintf(writer, "   ✅ Migration %s already applied\n", migration)
+				continue
+			}
+			fmt.Fprintf(writer, "   ❌ Migration %s failed: %s\n", migration, output)
+			return fmt.Errorf("migration %s failed: %w", migration, err)
+		}
+		fmt.Fprintf(writer, "   ✅ Applied %s\n", migration)
+	}
+
+	// Grant permissions
+	grantSQL := `
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
+		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
+		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
+	`
+	cmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--",
+		"psql", "-U", "slm_user", "-d", "action_history", "-c", grantSQL)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	cmd.Run()
+
+	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n")
+	_ = service // Use service to avoid unused variable warning
+	_ = connStr // Use connStr to avoid unused variable warning
 	return nil
 }
 
 func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	// TODO: Implement Data Storage Service deployment
-	// This will create ConfigMap, Secret, Service, and Deployment for the service
-	fmt.Fprintf(writer, "   ⚠️  Data Storage Service deployment not implemented yet\n")
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// 1. Create ConfigMap for service configuration
+	configYAML := fmt.Sprintf(`service:
+  name: data-storage
+  metricsPort: 9090
+  logLevel: debug
+  shutdownTimeout: 30s
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: 30s
+  write_timeout: 30s
+database:
+  host: postgresql.%s.svc.cluster.local
+  port: 5432
+  name: action_history
+  user: slm_user
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 10m
+  secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+  usernameKey: "username"
+  passwordKey: "password"
+redis:
+  addr: redis.%s.svc.cluster.local:6379
+  db: 0
+  dlq_stream_name: dlq-stream
+  dlq_max_len: 1000
+  dlq_consumer_group: dlq-group
+  secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+  passwordKey: "password"
+logging:
+  level: debug
+  format: json`, namespace, namespace)
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage-config",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"config.yaml": configYAML,
+		},
+	}
+
+	_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, configMap, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Data Storage ConfigMap: %w", err)
+	}
+
+	// 2. Create Secret for database and Redis credentials
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage-secret",
+			Namespace: namespace,
+		},
+		StringData: map[string]string{
+			"db-secrets.yaml": `username: slm_user
+password: test_password`,
+			"redis-secrets.yaml": `password: ""`,
+		},
+	}
+
+	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Data Storage Secret: %w", err)
+	}
+
+	// 3. Create Service
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "datastorage",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+					Protocol:   corev1.ProtocolTCP,
+				},
+				{
+					Name:       "metrics",
+					Port:       9090,
+					TargetPort: intstr.FromInt(9090),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{
+				"app": "datastorage",
+			},
+		},
+	}
+
+	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Data Storage Service: %w", err)
+	}
+
+	// 4. Create Deployment
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "datastorage",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "datastorage",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "datastorage",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "datastorage",
+							Image: "data-storage:e2e",
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "http",
+									ContainerPort: 8080,
+								},
+								{
+									Name:          "metrics",
+									ContainerPort: 9090,
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  "CONFIG_PATH",
+									Value: "/etc/datastorage/config.yaml",
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "config",
+									MountPath: "/etc/datastorage",
+									ReadOnly:  true,
+								},
+								{
+									Name:      "secrets",
+									MountPath: "/etc/datastorage/secrets",
+									ReadOnly:  true,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+									corev1.ResourceCPU:    resource.MustParse("250m"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+								},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health",
+										Port: intstr.FromInt(8080),
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health",
+										Port: intstr.FromInt(8080),
+									},
+								},
+								InitialDelaySeconds: 30,
+								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "config",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "datastorage-config",
+									},
+								},
+							},
+						},
+						{
+							Name: "secrets",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: "datastorage-secret",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create Data Storage Deployment: %w", err)
+	}
+
+	fmt.Fprintf(writer, "   ✅ Data Storage Service deployed (ConfigMap + Secret + Service + Deployment)\n")
 	return nil
 }
 
@@ -593,6 +933,28 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 		return false
 	}, 60*time.Second, 2*time.Second).Should(BeTrue(), "Redis pod should be ready")
 	fmt.Fprintf(writer, "   ✅ Redis pod ready\n")
+
+	// Wait for Data Storage Service pod to be ready
+	fmt.Fprintf(writer, "   ⏳ Waiting for Data Storage Service pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=datastorage",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 60*time.Second, 2*time.Second).Should(BeTrue(), "Data Storage Service pod should be ready")
+	fmt.Fprintf(writer, "   ✅ Data Storage Service pod ready\n")
 
 	return nil
 }

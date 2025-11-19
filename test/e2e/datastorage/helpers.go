@@ -216,4 +216,3 @@ func waitForPodCount(namespace, labelSelector string, expectedCount int, timeout
 	GinkgoWriter.Printf("✅ %d pods ready: %s in namespace %s\n", expectedCount, labelSelector, namespace)
 	return nil
 }
-
