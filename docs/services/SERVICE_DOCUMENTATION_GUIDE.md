@@ -1,8 +1,8 @@
-# Service Documentation Guide (V2)
+# Service Documentation Guide (V3.1)
 
 **Status**: ✅ **CURRENT**
-**Date**: 2025-01-15
-**Version**: 2.0 (Subdirectory-based multi-document architecture)
+**Date**: 2025-11-19
+**Version**: 3.1 (Parent guide with Implementation Plan Template integration)
 
 **Replaces**: `archive/SERVICE_TEMPLATE_CREATION_PROCESS.md` (monolithic single-file approach)
 
@@ -10,9 +10,21 @@
 
 ## 🎯 **Quick Start**
 
-Creating documentation for a new service? **Use existing services as templates!**
+### **Creating a New Service?**
 
-All 5 CRD services (1-5) are **complete** and follow the same structure. Copy and adapt from the most similar service.
+**Step 1: Implementation** - Follow the day-by-day implementation process:
+- 📘 [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](./SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
+- 11-12 days, APDC-TDD methodology, integration-first testing
+- Includes complete code examples, EOD templates, production readiness
+
+**Step 2: Documentation** - Use this guide to structure your documentation:
+- Copy from existing similar service (Services 1-5 are complete)
+- Follow the standard document structure below
+- Validate against quality checklist
+
+**Quick Reference**:
+- **For implementation**: Use [Implementation Plan Template](./SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
+- **For documentation**: Use existing services as templates (see Reference Services below)
 
 ---
 
@@ -116,59 +128,95 @@ All 5 CRD services (1-5) are **complete** and follow the same structure. Copy an
 
 ## 📋 **Standard Document Structure**
 
+**📘 Implementation Note**: These documents are created during implementation following the [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](./SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md). See "Implementation Process" section below.
+
+---
+
 ### **Required Documents** (All Services):
 
 1. **`overview.md`** - Main document
+   - **Version tracking** (version, last updated, status, changelog)
+   - **Table of Contents** with deep anchor links
    - Service purpose and business requirements
    - CRD schema (TypeMeta, ObjectMeta, Spec, Status)
    - Architecture diagram (Mermaid)
    - Integration points
    - Phase/state machine diagram
+   - **Phase-based implementation status** (if phased rollout)
 
-2. **`security-configuration.md`**
+2. **`BUSINESS_REQUIREMENTS.md`** - BR catalog ⭐ **NEW**
+   - Master list of ALL business requirements
+   - BR numbering, description, priority
+   - Implementation status and test coverage
+   - Deprecated/moved BR tracking
+   - Links to implementation files and tests
+
+3. **`BR_MAPPING.md`** - Test-BR traceability ⭐ **NEW** (Required for services with >10 BRs)
+   - Maps umbrella BRs → sub-BRs → test files
+   - Resolves BR numbering inconsistencies
+   - Shows test coverage by BR
+   - Essential for auditing and compliance
+
+4. **`implementation-checklist.md`** - APDC-TDD phased checklist
+   - **APDC phase breakdown** (Analysis → Plan → Do → Check)
+   - **Time estimates per phase** (realistic hours/days)
+   - **Critical path identification**
+   - Phase-specific validation commands
+   - Definition of Done criteria
+   - **Template**: [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](./SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)
+
+5. **`security-configuration.md`**
    - ServiceAccount definition
    - ClusterRole with least-privilege RBAC
    - NetworkPolicy for ingress/egress
    - Secret management (Projected Volume pattern)
    - Security context (non-root, read-only filesystem)
 
-3. **`observability-logging.md`**
+6. **`observability-logging.md`**
    - Structured logging patterns
    - Correlation ID propagation
    - OpenTelemetry/Jaeger integration
    - Secret sanitization in logs
    - Debugging guidelines
 
-4. **`metrics-slos.md`**
+7. **`metrics-slos.md`**
    - Service Level Indicators (SLIs)
    - Service Level Objectives (SLOs)
    - Prometheus metrics (Counter, Histogram, Gauge)
    - Grafana dashboard JSON
    - Alert rules (PromQL)
 
-5. **`testing-strategy.md`**
+8. **`testing-strategy.md`**
    - Defense-in-depth testing approach
    - Unit tests (70%+ coverage, fake K8s client)
    - Integration tests (>50% coverage, real K8s API)
    - E2E tests (<10% coverage, complete workflows)
+   - **Integration-first testing order** (Day 8: integration tests BEFORE unit tests)
+   - **Table-driven testing patterns** (DescribeTable for 25-40% code reduction)
    - Code examples with **complete imports**
+   - **Reference**: [Integration-First Testing Strategy](./SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md#day-8-integration-first-testing)
 
-6. **`finalizers-lifecycle.md`**
+9. **`finalizers-lifecycle.md`** (CRD controllers only)
    - Finalizer naming convention
    - Cleanup logic
    - CRD lifecycle (create, update, delete)
    - Owner reference management
    - Cascade deletion patterns
 
-7. **`controller-implementation.md`**
-   - Reconciliation loop logic
-   - Phase transitions
-   - Requeue strategies
-   - Error handling patterns
-   - Status update best practices
+10. **`controller-implementation.md`** (CRD controllers only)
+    - Reconciliation loop logic
+    - Phase transitions
+    - Requeue strategies
+    - Error handling patterns
+    - Status update best practices
 
 ### **Optional Documents** (Service-Specific):
 
+- **`COMMON_PITFALLS.md`** ⭐ **NEW** - Create when 5+ pitfalls identified
+  - Documented common mistakes with business impact
+  - Code examples (BAD vs. GOOD)
+  - Automated detection commands
+  - Prevention strategies
 - `data-handling-architecture.md` - Database integration, audit patterns
 - `integration-points.md` - External service dependencies
 - `reconciliation-phases.md` - Detailed phase/state machine
@@ -768,6 +816,110 @@ Update these documents to reference new service:
 
 ---
 
+## 🔨 **Implementation Process**
+
+**BEFORE creating documentation, implement the service following the structured plan:**
+
+### **Use the Implementation Plan Template**
+
+📘 **[SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](./SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)**
+
+**What it provides**:
+- ✅ **12-day implementation timeline** with daily breakdown
+- ✅ **APDC-TDD methodology** (Analysis → Plan → Do → Check)
+- ✅ **Integration-first testing strategy** (5 critical tests on Day 8)
+- ✅ **Table-driven testing patterns** (38% code reduction)
+- ✅ **60+ complete code examples** (zero TODO placeholders)
+- ✅ **Error handling philosophy template** (280 lines)
+- ✅ **BR coverage matrix methodology** (97%+ target)
+- ✅ **Production readiness checklist** (109-point assessment)
+- ✅ **3 complete EOD templates** (Days 1, 4, 7)
+- ✅ **Confidence assessment methodology** (evidence-based calculation)
+
+**Timeline Overview**:
+| Phase | Days | Focus | Deliverables |
+|-------|------|-------|--------------|
+| **Foundation** | 1 | Types, interfaces, K8s client | Package structure, interfaces |
+| **Core Logic** | 2-6 | Business logic components | All components implemented |
+| **Integration** | 7 | Server, API, metrics | Complete service |
+| **Testing** | 8-10 | Integration + Unit tests | 70%+ coverage |
+| **Finalization** | 11-12 | E2E, docs, production readiness | Ready for deployment |
+
+**Key Methodologies**:
+
+#### **APDC-TDD Phases**
+1. **Analysis** (5-15 min): Comprehensive context understanding
+2. **Plan** (10-20 min): Detailed implementation strategy
+3. **Do** (Variable): RED → GREEN → REFACTOR with integration
+4. **Check** (5-10 min): Comprehensive validation
+
+#### **Integration-First Testing** ⭐
+- **Day 8 Morning**: 5 critical integration tests (validates architecture)
+- **Day 8-9 Afternoon**: Unit tests (fills in details)
+- **Day 10**: E2E tests (validates complete workflows)
+
+**Why integration-first?**
+- Catches architectural issues 2 days earlier
+- Validates component interactions before details
+- Provides confidence for unit test implementation
+
+#### **Table-Driven Testing** ⭐
+- Use `DescribeTable` (Ginkgo) for multiple similar scenarios
+- 25-40% less test code
+- Easier to add new test cases (just add Entry)
+- Better test organization and readability
+
+**Example**:
+```go
+DescribeTable("should handle various scenarios",
+    func(input InputType, expected OutputType) {
+        result, err := component.Method(input)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(result).To(Equal(expected))
+    },
+    Entry("scenario 1", input1, output1),
+    Entry("scenario 2", input2, output2),
+    Entry("scenario 3", input3, output3),
+)
+```
+
+### **Documentation During Implementation**
+
+**Create these documents as you implement** (not after):
+
+**Day 1 EOD**: `implementation/phase0/01-day1-complete.md`
+- Foundation setup, architecture decisions, confidence assessment
+
+**Day 4 EOD**: `implementation/phase0/02-day4-midpoint.md`
+- Midpoint review, components complete, blockers, velocity
+
+**Day 6 EOD**: `implementation/design/ERROR_HANDLING_PHILOSOPHY.md`
+- Error classification, retry strategy, circuit breakers
+
+**Day 7 EOD**: `implementation/phase0/03-day7-complete.md`
+- Integration ready, metrics implemented, test infrastructure ready
+
+**Day 9 EOD**: `implementation/testing/BR_COVERAGE_MATRIX.md`
+- BR-to-test mapping, coverage calculation, gap analysis
+
+**Day 11**: All standard documentation (see "Standard Document Structure" above)
+
+**Day 12**: `implementation/00-HANDOFF-SUMMARY.md`
+- Executive summary, architecture, key decisions, lessons learned
+
+### **After Implementation: Finalize Documentation**
+
+Once implementation is complete (Day 12), use this guide to:
+1. ✅ Validate all required documents are present
+2. ✅ Ensure documentation follows standard structure
+3. ✅ Add visual diagrams (Mermaid)
+4. ✅ Complete quality checklist
+5. ✅ Update cross-references
+
+**See "Step-by-Step Process" above for detailed documentation guidance.**
+
+---
+
 ## 📊 **Metrics Implementation Guidance**
 
 ### Standard Metrics for All Services
@@ -1095,7 +1247,8 @@ All service documentation must meet these standards. Use this comprehensive 40-p
 
 ## 🔗 **Key Reference Documents**
 
-**Templates & Guides**:
+**Implementation & Templates**:
+- 📘 **[SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](./SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md)** - ⭐ **Day-by-day implementation guide** (11-12 days, APDC-TDD, integration-first testing)
 - [`CRD Service Specification Template`](../development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md) - Template structure reference
 - `.cursor/rules/03-testing-strategy.mdc` - Testing framework rules
 - `.cursor/rules/00-core-development-methodology.mdc` - TDD methodology
@@ -1147,6 +1300,15 @@ All service documentation must meet these standards. Use this comprehensive 40-p
 
 ## 📅 **Estimated Effort**
 
+### **Implementation Effort** (See [Implementation Plan Template](./SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md))
+- **Total**: 11-12 days (88-96 hours)
+- **Day 1**: Foundation (8h)
+- **Days 2-6**: Core implementation (40h)
+- **Day 7**: Integration (8h)
+- **Days 8-10**: Testing (24h)
+- **Days 11-12**: Documentation + Production readiness (16h)
+
+### **Documentation Effort** (This Guide)
 | Activity | Time (per service) |
 |----------|-------------------|
 | Choose reference service | 5 min |
@@ -1162,6 +1324,8 @@ All service documentation must meet these standards. Use this comprehensive 40-p
 | Validate documentation | 20 min |
 | Update cross-references | 10 min |
 | **TOTAL** | **12-18 hours** |
+
+**Note**: Documentation is created **during** implementation (Days 1-12), not as a separate phase.
 
 **Confidence**: 90% (Based on services 1-5 completion)
 
@@ -1236,12 +1400,21 @@ Each service testing strategy includes:
 ---
 
 **Document Status**: ✅ **CURRENT**
-**Last Updated**: 2025-11-19 (Comprehensive Update: Added 5 critical sections from archived template)
-**Version**: 3.0
+**Last Updated**: 2025-11-19 (Hierarchical Update: Established parent-child relationship with Implementation Plan Template)
+**Version**: 3.1
 **Maintained By**: Development Team
 
-**Previous Version**: 2.1 (Enhanced Testing Strategy)
-**Archived Template**: `archive/SERVICE_TEMPLATE_CREATION_PROCESS.md` (deprecated, can be safely deleted)
+**Previous Version**: 3.0 (Comprehensive Update)
+**Archived Template**: `archive/SERVICE_TEMPLATE_CREATION_PROCESS.md` (deprecated, deleted)
+
+**Changes in v3.1**:
+- ⭐ **Added "Implementation Process" section** with Implementation Plan Template references
+- ⭐ **Updated Quick Start** with implementation-first workflow (Step 1: Implementation → Step 2: Documentation)
+- Added implementation timeline and APDC-TDD methodology overview
+- Enhanced cross-references to SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md throughout
+- Updated estimated effort to distinguish implementation (11-12 days) vs. documentation (12-18 hours) time
+- Clarified that documentation is created **during** implementation, not as separate phase
+- Added integration-first testing and table-driven testing references
 
 **Changes in v3.0**:
 - Added "Critical Architectural Patterns" (8 mandatory patterns)
