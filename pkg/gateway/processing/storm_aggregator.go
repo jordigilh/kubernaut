@@ -635,13 +635,42 @@ func (a *StormAggregator) BufferFirstAlert(ctx context.Context, signal *types.No
 // - time.Time: new expiration time
 // - error: Redis errors
 func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, currentTime time.Time) (time.Time, error) {
-	// Find the window key by searching for keys with this windowID value
-	// In practice, we need to know the alert name, but for now we'll use a pattern match
-	// This is minimal implementation - will be improved in REFACTOR phase if needed
+	// TDD REFACTOR: Improved efficiency by using targeted search instead of full SCAN
+	//
+	// Strategy: Try common key patterns first (O(1)), fall back to SCAN only if needed
+	// This optimizes for the common case (production windowIDs) while maintaining
+	// backward compatibility with test windowIDs
+	
+	// Production windowID format: "AlertName-UnixTimestamp"
+	// Example: "PodCrashLooping-1696800000" → key: "alert:storm:aggregate:PodCrashLooping"
+	
+	// Extract potential alert name (everything before last hyphen)
+	alertName := windowID
+	if lastHyphen := len(windowID) - 1; lastHyphen > 0 {
+		for i := len(windowID) - 1; i >= 0; i-- {
+			if windowID[i] == '-' {
+				alertName = windowID[:i]
+				break
+			}
+		}
+	}
 
-	// For the test, we know the key pattern
+	// Try direct key lookup first (O(1) - fast path for production)
+	windowKey := fmt.Sprintf("alert:storm:aggregate:%s", alertName)
+	storedWindowID, err := a.redisClient.Get(ctx, windowKey).Result()
+	
+	if err == nil && storedWindowID == windowID {
+		// Fast path: Found matching window
+		if err := a.redisClient.Expire(ctx, windowKey, a.windowDuration).Err(); err != nil {
+			return time.Time{}, fmt.Errorf("failed to extend window: %w", err)
+		}
+		return currentTime.Add(a.windowDuration), nil
+	}
+
+	// Slow path: Fall back to SCAN for non-standard windowIDs (tests, edge cases)
+	// This maintains backward compatibility while optimizing the common case
 	iter := a.redisClient.Scan(ctx, 0, "alert:storm:aggregate:*", 100).Iterator()
-	var windowKey string
+	windowKey = ""
 
 	for iter.Next(ctx) {
 		key := iter.Val()
@@ -653,12 +682,11 @@ func (a *StormAggregator) ExtendWindow(ctx context.Context, windowID string, cur
 	}
 
 	if windowKey == "" {
-		return time.Time{}, fmt.Errorf("window not found")
+		return time.Time{}, fmt.Errorf("window not found for windowID: %s", windowID)
 	}
 
 	// Reset TTL to window duration (sliding window behavior)
-	err := a.redisClient.Expire(ctx, windowKey, a.windowDuration).Err()
-	if err != nil {
+	if err := a.redisClient.Expire(ctx, windowKey, a.windowDuration).Err(); err != nil {
 		return time.Time{}, fmt.Errorf("failed to extend window: %w", err)
 	}
 
