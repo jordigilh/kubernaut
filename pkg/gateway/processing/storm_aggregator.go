@@ -28,10 +28,11 @@ import (
 // StormAggregator aggregates alerts during storm windows
 //
 // Business Requirement: BR-GATEWAY-016 - Storm aggregation
+// Design Decision: DD-GATEWAY-008 - Buffered first-alert aggregation with sliding window
 //
 // When a storm is detected (BR-GATEWAY-015), instead of creating individual
 // RemediationRequest CRDs for each alert, StormAggregator collects alerts
-// for a fixed window (1 minute) and creates a single aggregated CRD.
+// for a configurable window and creates a single aggregated CRD.
 //
 // Benefits:
 // - Reduces CRD count by 10-50x during storms
@@ -43,18 +44,26 @@ import (
 // - Without aggregation: 50 pod crashes → 50 CRDs → 50 remediation workflows
 // - With aggregation: 50 pod crashes → 1 CRD → 1 coordinated remediation
 //
-// Algorithm:
-// 1. First alert in storm: Create aggregation window in Redis (1-minute TTL)
-// 2. Subsequent alerts: Add resource to window (no CRD creation yet)
-// 3. After 1 minute: Create single RemediationRequest CRD with all resources
+// Algorithm (DD-GATEWAY-008):
+// 1. First N alerts: Buffer in Redis (no window creation yet)
+// 2. Nth alert (threshold): Create aggregation window with sliding timer
+// 3. Subsequent alerts: Add to window + reset timer (sliding window)
+// 4. After inactivity timeout OR max duration: Create single CRD
 //
 // Redis keys:
+// - alert:buffer:<namespace>:<alertname> (list of buffered signals before threshold)
 // - alert:storm:aggregate:<alertname> (stores aggregation window ID)
 // - alert:storm:resources:<window-id> (sorted set of affected resources)
 // - alert:storm:metadata:<window-id> (first signal metadata for CRD creation)
 type StormAggregator struct {
-	redisClient    *redis.Client
-	windowDuration time.Duration // Default: 1 minute
+	redisClient       *redis.Client
+	windowDuration    time.Duration // Default: 1 minute (inactivity timeout)
+	bufferThreshold   int           // Alerts before creating window (default: 5)
+	maxWindowDuration time.Duration // Max window duration (default: 5 minutes)
+	defaultMaxSize    int           // Default namespace buffer size (default: 1000)
+	globalMaxSize     int           // Global buffer limit (default: 5000)
+	samplingThreshold float64       // Utilization to trigger sampling (default: 0.95)
+	samplingRate      float64       // Sample rate when threshold reached (default: 0.5)
 }
 
 // NewStormAggregator creates a new storm aggregator with default window duration
@@ -62,6 +71,8 @@ type StormAggregator struct {
 // Default window: 1 minute
 // Rationale: Balances early detection (don't wait too long) with aggregation
 // efficiency (collect enough alerts to make aggregation worthwhile)
+//
+// DEPRECATED: Use NewStormAggregatorWithConfig for DD-GATEWAY-008 features
 func NewStormAggregator(redisClient *redis.Client) *StormAggregator {
 	return NewStormAggregatorWithWindow(redisClient, 0) // Use default
 }
@@ -83,13 +94,98 @@ func NewStormAggregator(redisClient *redis.Client) *StormAggregator {
 //
 //	// Testing (5-second window)
 //	aggregator := NewStormAggregatorWithWindow(redisClient, 5*time.Second)
+//
+// DEPRECATED: Use NewStormAggregatorWithConfig for DD-GATEWAY-008 features
 func NewStormAggregatorWithWindow(redisClient *redis.Client, windowDuration time.Duration) *StormAggregator {
 	if windowDuration == 0 {
 		windowDuration = 1 * time.Minute // Production default
 	}
 	return &StormAggregator{
-		redisClient:    redisClient,
-		windowDuration: windowDuration,
+		redisClient:       redisClient,
+		windowDuration:    windowDuration,
+		bufferThreshold:   5,    // Default: 5 alerts before window creation
+		maxWindowDuration: 5 * time.Minute,
+		defaultMaxSize:    1000,
+		globalMaxSize:     5000,
+		samplingThreshold: 0.95,
+		samplingRate:      0.5,
+	}
+}
+
+// NewStormAggregatorWithConfig creates a storm aggregator with full DD-GATEWAY-008 configuration
+//
+// Parameters:
+// - redisClient: Redis client for aggregation tracking
+// - bufferThreshold: Number of alerts to buffer before creating window (0 = use default 5)
+// - inactivityTimeout: Sliding window timeout (0 = use default 60s)
+// - maxWindowDuration: Maximum window duration (0 = use default 5m)
+// - defaultMaxSize: Default namespace buffer size (0 = use default 1000)
+// - globalMaxSize: Global buffer limit (0 = use default 5000)
+// - samplingThreshold: Utilization to trigger sampling (0 = use default 0.95)
+// - samplingRate: Sample rate when threshold reached (0 = use default 0.5)
+//
+// Use cases:
+// - Production: Load from config/gateway.yaml
+// - Testing: Override specific values for test scenarios
+//
+// Example:
+//
+//	// Production (from config)
+//	aggregator := NewStormAggregatorWithConfig(
+//	    redisClient,
+//	    cfg.Processing.Storm.BufferThreshold,
+//	    cfg.Processing.Storm.InactivityTimeout,
+//	    cfg.Processing.Storm.MaxWindowDuration,
+//	    cfg.Processing.Storm.DefaultMaxSize,
+//	    cfg.Processing.Storm.GlobalMaxSize,
+//	    cfg.Processing.Storm.SamplingThreshold,
+//	    cfg.Processing.Storm.SamplingRate,
+//	)
+//
+//	// Testing (fast window)
+//	aggregator := NewStormAggregatorWithConfig(redisClient, 3, 5*time.Second, 30*time.Second, 100, 500, 0.95, 0.5)
+func NewStormAggregatorWithConfig(
+	redisClient *redis.Client,
+	bufferThreshold int,
+	inactivityTimeout time.Duration,
+	maxWindowDuration time.Duration,
+	defaultMaxSize int,
+	globalMaxSize int,
+	samplingThreshold float64,
+	samplingRate float64,
+) *StormAggregator {
+	// Apply defaults for zero values
+	if bufferThreshold == 0 {
+		bufferThreshold = 5
+	}
+	if inactivityTimeout == 0 {
+		inactivityTimeout = 60 * time.Second
+	}
+	if maxWindowDuration == 0 {
+		maxWindowDuration = 5 * time.Minute
+	}
+	if defaultMaxSize == 0 {
+		defaultMaxSize = 1000
+	}
+	if globalMaxSize == 0 {
+		globalMaxSize = 5000
+	}
+	if samplingThreshold == 0 {
+		samplingThreshold = 0.95
+	}
+	if samplingRate == 0 {
+		samplingRate = 0.5
+	}
+
+	return &StormAggregator{
+		redisClient:       redisClient,
+		windowDuration:    inactivityTimeout,
+		bufferThreshold:   bufferThreshold,
+		maxWindowDuration: maxWindowDuration,
+		defaultMaxSize:    defaultMaxSize,
+		globalMaxSize:     globalMaxSize,
+		samplingThreshold: samplingThreshold,
+		samplingRate:      samplingRate,
 	}
 }
 
@@ -492,7 +588,7 @@ func (a *StormAggregator) GetNamespaceUtilization(ctx context.Context, namespace
 	// Default max size per namespace: 1000
 	maxSize := 1000.0
 	utilization := float64(totalBuffered) / maxSize
-	
+
 	return utilization, nil
 }
 
