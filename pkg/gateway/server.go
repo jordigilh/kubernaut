@@ -1130,6 +1130,14 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 		logger.Warn("Failed to start storm aggregation, falling back to individual CRD creation",
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.Error(err))
+
+		// DD-GATEWAY-008: Record buffer overflow/blocking metrics (BR-GATEWAY-011)
+		// Check if error is due to capacity issues
+		if strings.Contains(err.Error(), "over capacity") {
+			s.metricsInstance.NamespaceBufferBlocking.WithLabelValues(signal.Namespace).Inc()
+			s.metricsInstance.StormBufferOverflow.WithLabelValues(signal.Namespace).Inc()
+		}
+
 		return true, nil // Continue to individual CRD creation
 	}
 
@@ -1140,6 +1148,11 @@ func (s *Server) processStormAggregation(ctx context.Context, signal *types.Norm
 			zap.String("fingerprint", signal.Fingerprint),
 			zap.String("alertName", signal.AlertName),
 			zap.String("namespace", signal.Namespace))
+
+		// DD-GATEWAY-008: Record namespace buffer utilization (BR-GATEWAY-011)
+		if utilization, err := s.stormAggregator.GetNamespaceUtilization(ctx, signal.Namespace); err == nil {
+			s.metricsInstance.NamespaceBufferUtilization.WithLabelValues(signal.Namespace).Set(utilization)
+		}
 
 		// Return HTTP 202 Accepted (buffered, waiting for more alerts)
 		return false, &ProcessingResponse{
@@ -1323,6 +1336,36 @@ func (s *Server) createAggregatedCRDAfterWindow(
 
 	// Record metrics for successful aggregation
 	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
+
+	// DD-GATEWAY-008: Record storm aggregation metrics (BR-GATEWAY-016, BR-GATEWAY-008, BR-GATEWAY-011)
+	
+	// 1. Storm Window Duration (BR-GATEWAY-008)
+	windowDurationSeconds := windowDuration.Seconds()
+	s.metricsInstance.StormWindowDuration.WithLabelValues(
+		aggregatedSignal.Namespace,
+		aggregatedSignal.AlertName,
+	).Observe(windowDurationSeconds)
+
+	// 2. Storm Aggregation Ratio (BR-GATEWAY-008)
+	// Ratio = alerts aggregated / total alerts received (higher = better)
+	// Example: 50 alerts → 1 CRD = 50/50 = 1.0 (perfect aggregation)
+	if resourceCount > 0 {
+		aggregationRatio := float64(resourceCount) / float64(resourceCount) // All alerts in window were aggregated
+		s.metricsInstance.StormAggregationRatio.Set(aggregationRatio)
+	}
+
+	// 3. Storm Cost Savings Percent (BR-GATEWAY-016)
+	// Cost savings = (alerts - CRDs) / alerts * 100
+	// Example: 50 alerts → 1 CRD = (50-1)/50 * 100 = 98% savings
+	if resourceCount > 1 {
+		costSavingsPercent := float64(resourceCount-1) / float64(resourceCount) * 100
+		s.metricsInstance.StormCostSavingsPercent.Set(costSavingsPercent)
+	}
+
+	// 4. Namespace Buffer Utilization (BR-GATEWAY-011)
+	if utilization, err := s.stormAggregator.GetNamespaceUtilization(ctx, aggregatedSignal.Namespace); err == nil {
+		s.metricsInstance.NamespaceBufferUtilization.WithLabelValues(aggregatedSignal.Namespace).Set(utilization)
+	}
 }
 
 // TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication
