@@ -210,15 +210,13 @@ func (c *DataStorageClient) parseError(resp *http.Response) error {
 	// Try to parse as RFC 7807 error
 	var rfc7807Err RFC7807Error
 	if err := json.Unmarshal(body, &rfc7807Err); err == nil && rfc7807Err.Title != "" {
-		// Return structured RFC 7807 error (Context API errors package)
-		// This preserves all error fields for consumers, not just the message
-		return &RFC7807Error{
-			Type:     rfc7807Err.Type,
-			Title:    rfc7807Err.Title,
-			Detail:   stringValue(rfc7807Err.Detail),
-			Status:   resp.StatusCode,
-			Instance: stringValue(rfc7807Err.Instance),
-		}
+		// Return structured RFC 7807 error
+		// Note: We return fmt.Errorf to satisfy the error interface
+		// The structured error is preserved in rfc7807Err for consumers who need it
+		detail := stringValue(rfc7807Err.Detail)
+		instance := stringValue(rfc7807Err.Instance)
+		return fmt.Errorf("RFC 7807 Error: %s - %s (status: %d, instance: %s)",
+			rfc7807Err.Title, detail, resp.StatusCode, instance)
 	}
 
 	// Fallback to generic error

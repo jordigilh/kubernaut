@@ -365,9 +365,10 @@
 - Concurrent safety
 - Data structure validation
 
-### Integration Tests (<20% coverage target)
+### Integration Tests (>50% coverage target)
 **Total Specs**: 36
-**Coverage**: Component interactions with real Kubernetes
+**Coverage**: Component interactions with real Kubernetes (microservices coordination)
+**Rationale**: Service discovery and ConfigMap synchronization require real K8s API testing
 
 **Key Files**:
 - `service_discovery_test.go` (11 specs)
@@ -451,7 +452,7 @@
 
 **Rationale**:
 1. ✅ All BRs have dedicated unit tests (70%+ of tests)
-2. ✅ All BRs have integration test validation (20% of tests)
+2. ✅ All BRs have integration test validation (>50% of tests for microservices coordination)
 3. ✅ Test pass rate is 100% (no failing tests)
 4. ✅ Tests validate business outcomes, not implementation details
 5. ✅ Edge cases and error handling comprehensively covered

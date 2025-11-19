@@ -4439,9 +4439,10 @@ Following Kubernaut's defense-in-depth approach (`.cursor/rules/03-testing-strat
 - **MOCK**: Redis (miniredis), Kubernetes API (fake K8s client), Rego engine
 - **REAL**: All business logic (adapters, processing pipeline, handlers)
 
-**Integration Tests (<20%)**:
+**Integration Tests (>50%)**:
 - **MOCK**: NONE - Use real Redis in Kind cluster
 - **REAL**: Redis, Kubernetes API (Kind cluster), CRD creation, RBAC
+- **RATIONALE**: Microservices architecture with CRD-based coordination requires high integration coverage
 
 **E2E Tests (<10%)**:
 - **MOCK**: NONE

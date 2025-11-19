@@ -353,7 +353,7 @@ Enable playbook lifecycle management via REST API with caching for improved perf
 
 ### **Risk 1: Cache Invalidation Complexity**
 **Risk**: Cache invalidation logic could become complex with multiple invalidation triggers
-**Mitigation**: 
+**Mitigation**:
 - Simple key-based invalidation (`embedding:playbook:{id}:{version}`)
 - Clear REST endpoints for external services to trigger invalidation
 - Comprehensive integration tests for all invalidation scenarios
@@ -388,6 +388,77 @@ Enable playbook lifecycle management via REST API with caching for improved perf
 ---
 
 ## 🎯 **Post-V1.1 Roadmap (V1.2+)**
+
+### **V1.1 Enhancements (Deferred from V1.0)**
+
+#### **Query API: Cursor-Based Pagination** (BR-STORAGE-TBD)
+**Context**: V1.0 uses offset-based pagination for audit event queries. For real-time data with high write volumes, cursor-based pagination provides more reliable results.
+
+**Benefits**:
+- **Consistency**: No missed/duplicate records during pagination
+- **Performance**: Efficient for large result sets (uses index on `event_timestamp`)
+- **Real-time**: Handles concurrent writes gracefully
+
+**Implementation**:
+- Add `cursor` parameter to `GET /api/v1/audit/events` endpoint
+- Cursor format: `base64(event_timestamp + event_id)` for uniqueness
+- Maintain backward compatibility with `offset`/`limit` parameters
+
+**Effort**: 2 days (8 hours implementation + 8 hours testing)
+
+**Reference**: DD-STORAGE-010 (Query API Pagination Strategy)
+
+---
+
+#### **Audit Events: Parent Event Date Index** (Performance Optimization)
+**Context**: V1.0 implements FK constraint on `(parent_event_id, parent_event_date)` but no index for child event lookups.
+
+**Benefits**:
+- **Performance**: Faster queries for "find all children of parent X"
+- **Observability**: Efficient event chain traversal for debugging
+- **AI Analysis**: Faster causality analysis for RCA
+
+**Implementation**:
+```sql
+CREATE INDEX idx_audit_events_parent_lookup
+ON audit_events (parent_event_id, parent_event_date)
+WHERE parent_event_id IS NOT NULL;
+```
+
+**Effort**: 1 day (4 hours implementation + 4 hours performance testing)
+
+**Reference**: FK_CONSTRAINT_IMPLEMENTATION_SUMMARY.md
+
+---
+
+#### **Audit Events: Historical Parent-Child Backfill** (Data Integrity)
+**Context**: V1.0 added `parent_event_date` column, but existing events have NULL values.
+
+**Benefits**:
+- **Completeness**: Enable historical event chain queries
+- **Compliance**: Full audit trail for all events
+- **Analytics**: Complete causality data for trend analysis
+
+**Implementation**:
+```sql
+-- Backfill parent_event_date from parent event's event_date
+UPDATE audit_events child
+SET parent_event_date = parent.event_date
+FROM audit_events parent
+WHERE child.parent_event_id = parent.event_id
+  AND child.parent_event_date IS NULL;
+```
+
+**Effort**: 1 day (4 hours migration script + 4 hours validation)
+
+**Considerations**:
+- Run during maintenance window (may be slow for large datasets)
+- Add progress logging for long-running backfill
+- Validate FK constraint after backfill
+
+**Reference**: FK_CONSTRAINT_IMPLEMENTATION_SUMMARY.md
+
+---
 
 ### **V1.2: Advanced Caching**
 - LRU cache eviction policy

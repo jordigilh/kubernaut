@@ -168,11 +168,12 @@ ServiceDiscoverer → Callback → reconcileConfigMap() → {
 - **Edge Cases**: Malformed annotations, health timeouts, empty results
 - **Validation**: Test business behavior (e.g., "only healthy services included"), not implementation
 
-#### **Integration Tests** (<20% Coverage)
-- **Focus**: Component interactions requiring infrastructure
+#### **Integration Tests** (>50% Coverage)
+- **Focus**: Component interactions requiring infrastructure (microservices coordination)
 - **Coverage**: Discovery → ConfigMap flow, ConfigMap updates, conflict resolution
 - **Edge Cases**: Concurrent updates, large service counts (1000+), discovery failures
 - **Validation**: Test end-to-end business flow with real Kubernetes client (fake or envtest)
+- **Rationale**: Service discovery patterns and ConfigMap synchronization require real K8s API testing
 
 #### **E2E Tests** (<10% Coverage)
 - **Focus**: Critical user journeys in production-like environment

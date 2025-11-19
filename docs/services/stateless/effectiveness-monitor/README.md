@@ -343,8 +343,9 @@ rules:
 
 ### **Test Pyramid**
 - **Unit Tests** (70%): Business logic, assessment algorithms, pattern recognition
-- **Integration Tests** (20%): Data Storage integration, Infrastructure Monitoring queries
+- **Integration Tests** (>50%): Data Storage integration, Infrastructure Monitoring queries, microservices coordination
 - **E2E Tests** (10%): Complete assessment flow from action execution to result
+- **Rationale**: Effectiveness monitoring requires extensive integration with Data Storage and Infrastructure Monitoring services
 
 ### **Key Test Scenarios**
 1. ✅ Effectiveness assessment with sufficient data (Week 13+)

@@ -150,11 +150,21 @@ func (p *RFC7807Problem) Error() string {
 
 // NewValidationErrorProblem creates an RFC 7807 problem for validation errors.
 func NewValidationErrorProblem(resource string, fieldErrors map[string]string) *RFC7807Problem {
+	// Build detail message that includes field names for better error messages
+	detail := fmt.Sprintf("Validation failed for %s", resource)
+	if len(fieldErrors) > 0 {
+		// Include first field error in detail for easier debugging
+		for field, msg := range fieldErrors {
+			detail = fmt.Sprintf("Validation failed for %s: %s - %s", resource, field, msg)
+			break // Only include first error in detail
+		}
+	}
+
 	return &RFC7807Problem{
 		Type:     "https://kubernaut.io/errors/validation-error",
 		Title:    "Validation Error",
 		Status:   http.StatusBadRequest,
-		Detail:   fmt.Sprintf("Validation failed for %s", resource),
+		Detail:   detail,
 		Instance: fmt.Sprintf("/audit/%s", resource),
 		Extensions: map[string]interface{}{
 			"resource":     resource,

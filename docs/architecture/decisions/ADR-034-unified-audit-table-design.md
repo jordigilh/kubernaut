@@ -61,6 +61,7 @@ CREATE TABLE audit_events (
     -- Context Information (Where/Why)
     correlation_id VARCHAR(255) NOT NULL,    -- remediation_id (groups related events)
     parent_event_id UUID,                    -- Links to parent event
+    parent_event_date DATE,                  -- Parent event date (required for FK constraint on partitioned table)
     trace_id VARCHAR(255),                   -- OpenTelemetry trace ID
     span_id VARCHAR(255),                    -- OpenTelemetry span ID
 
@@ -90,7 +91,15 @@ CREATE TABLE audit_events (
     INDEX idx_actor (actor_type, actor_id, event_timestamp DESC),
     INDEX idx_outcome (event_outcome, event_timestamp DESC),
     INDEX idx_event_data_gin (event_data) USING GIN,
-    INDEX idx_parent_event (parent_event_id) WHERE parent_event_id IS NOT NULL
+    INDEX idx_parent_event (parent_event_id) WHERE parent_event_id IS NOT NULL,
+
+    -- Foreign Key Constraint (Event Sourcing Immutability)
+    -- Enforces parent-child relationships with ON DELETE RESTRICT
+    -- Requires both parent_event_id and parent_event_date (partition key requirement)
+    CONSTRAINT fk_audit_events_parent
+        FOREIGN KEY (parent_event_id, parent_event_date)
+        REFERENCES audit_events(event_id, event_date)
+        ON DELETE RESTRICT
 ) PARTITION BY RANGE (event_date);
 ```
 
