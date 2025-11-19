@@ -35,7 +35,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("NotificationAudit Repository Integration", func() {
+var _ = Describe("NotificationAudit Repository Integration", Serial, func() {
 	var audit *models.NotificationAudit
 
 	BeforeEach(func() {

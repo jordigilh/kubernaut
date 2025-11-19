@@ -25,7 +25,7 @@ import (
 // - Defense-in-depth: Integration tests validate real SQL queries
 // - Test edge cases: empty data, single record, large datasets
 
-var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Ordered, func() {
+var _ = Describe("Aggregation API Integration - BR-STORAGE-030", Serial, Ordered, func() {
 	var client *http.Client
 
 	BeforeAll(func() {

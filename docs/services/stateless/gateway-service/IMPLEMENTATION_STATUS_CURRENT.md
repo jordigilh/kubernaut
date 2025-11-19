@@ -346,7 +346,7 @@ test/unit/gateway/
 **✅ DD-GATEWAY-008: Storm Aggregation First-Alert Handling**
 - **Status**: ✅ **IMPLEMENTED** (2025-11-19)
 - **Decision**: Alternative 2 - Buffered First-Alert Aggregation
-- **Implementation**: 
+- **Implementation**:
   - 8 methods: `BufferFirstAlert`, `ExtendWindow`, `IsWindowExpired`, `GetNamespaceUtilization`, `ShouldSample`, `IsOverCapacity`, `GetNamespaceLimit`, `ShouldEnableSampling`
   - 6 config fields: `BufferThreshold`, `InactivityTimeout`, `MaxWindowDuration`, `DefaultMaxSize`, `GlobalMaxSize`, `PerNamespaceLimits`, `SamplingThreshold`, `SamplingRate`
   - 6 metrics: Cost savings, aggregation ratio, window duration, namespace utilization, buffer blocking, buffer overflow

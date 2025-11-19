@@ -1338,7 +1338,7 @@ func (s *Server) createAggregatedCRDAfterWindow(
 	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
 
 	// DD-GATEWAY-008: Record storm aggregation metrics (BR-GATEWAY-016, BR-GATEWAY-008, BR-GATEWAY-011)
-	
+
 	// 1. Storm Window Duration (BR-GATEWAY-008)
 	windowDurationSeconds := windowDuration.Seconds()
 	s.metricsInstance.StormWindowDuration.WithLabelValues(

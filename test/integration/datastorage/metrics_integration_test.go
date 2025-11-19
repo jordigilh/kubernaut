@@ -46,9 +46,8 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 	// Use shared datastorageURL and db from suite_test.go
 
 	BeforeEach(func() {
-		// Note: No TRUNCATE needed for parallel execution
-		// Tests use unique correlation_ids (timestamp-based) for isolation
-		// Metrics are cumulative by nature
+		// Note: Metrics tests use unique timestamp-based correlation_ids
+		// No cleanup needed - tests are isolated by correlation_id
 	})
 
 	Context("Metrics Endpoint", func() {
