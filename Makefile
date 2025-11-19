@@ -607,24 +607,60 @@ test-gateway-all: ## Run ALL Gateway tests (unit + integration + e2e)
 		exit 1; \
 	fi
 
-.PHONY: test-datastorage-all
-test-datastorage-all: ## Run ALL Data Storage tests (unit + integration + performance)
+.PHONY: test-e2e-datastorage
+test-e2e-datastorage: ## Run Data Storage E2E tests (Kind cluster, ~5-8 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Data Storage - Complete Test Suite"
+	@echo "🧪 Data Storage Service - E2E Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Test Scenarios:"
+	@echo "   1. Happy Path - Complete remediation audit trail"
+	@echo "   2. DLQ Fallback - Service outage recovery"
+	@echo "   3. Query API - Multi-filter timeline retrieval"
+	@echo ""
+	@echo "🏗️  Infrastructure: Kind cluster + PostgreSQL + Redis + Data Storage"
+	@echo "⏱️  Duration: ~5-8 minutes (serial), ~3-5 minutes (parallel)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@cd test/e2e/datastorage && ginkgo -v --label-filter="e2e"
+
+.PHONY: test-e2e-datastorage-parallel
+test-e2e-datastorage-parallel: ## Run Data Storage E2E tests in parallel (3 processes, ~3-5 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Data Storage Service - E2E Test Suite (PARALLEL)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Test Scenarios (Parallel Execution):"
+	@echo "   Process 1: Happy Path"
+	@echo "   Process 2: DLQ Fallback"
+	@echo "   Process 3: Query API"
+	@echo ""
+	@echo "🏗️  Infrastructure: 3x (Kind cluster + PostgreSQL + Redis + Data Storage)"
+	@echo "⏱️  Duration: ~3-5 minutes (64% faster than serial)"
+	@echo "🔒 Isolation: Complete namespace isolation per process"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo ""
+	@cd test/e2e/datastorage && ginkgo -v --label-filter="e2e" --procs=3
+
+.PHONY: test-datastorage-all
+test-datastorage-all: ## Run ALL Data Storage tests (unit + integration + e2e)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Data Storage - Complete Test Suite (4 Tiers)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@FAILED=0; \
 	echo ""; \
 	echo "1️⃣  Unit Tests..."; \
 	go test ./test/unit/datastorage/... -v -timeout=5m || FAILED=$$((FAILED + 1)); \
 	echo ""; \
-	echo "2️⃣  Integration Tests..."; \
+	echo "2️⃣  Integration Tests (Podman: PostgreSQL + Redis)..."; \
 	$(MAKE) test-integration-datastorage || FAILED=$$((FAILED + 1)); \
 	echo ""; \
-	echo "3️⃣  Performance Tests..."; \
+	echo "3️⃣  E2E Tests (Kind cluster)..."; \
+	$(MAKE) test-e2e-datastorage || FAILED=$$((FAILED + 1)); \
+	echo ""; \
+	echo "4️⃣  Performance Tests..."; \
 	go test ./test/performance/datastorage/... -v -bench=. -timeout=10m || FAILED=$$((FAILED + 1)); \
 	echo ""; \
 	if [ $$FAILED -eq 0 ]; then \
-		echo "✅ Data Storage: ALL tests passed (3/3 tiers)"; \
+		echo "✅ Data Storage: ALL tests passed (4/4 tiers)"; \
 	else \
 		echo "❌ Data Storage: $$FAILED tier(s) failed"; \
 		exit 1; \
