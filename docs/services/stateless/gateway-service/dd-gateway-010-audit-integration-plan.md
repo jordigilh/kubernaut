@@ -1,6 +1,6 @@
 # DD-GATEWAY-010: Audit Trace Integration - Implementation Plan
 
-**Version**: 1.3  
+**Version**: 1.3
 **Status**: 📋 DRAFT
 **Design Decision**: [audit-integration-analysis.md](./audit-integration-analysis.md)
 **Service**: Gateway Service
