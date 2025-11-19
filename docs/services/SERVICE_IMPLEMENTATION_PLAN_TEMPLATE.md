@@ -1566,6 +1566,43 @@ Describe("Integration Test [N]: [Scenario]", func() {
 
 ---
 
+### **📦 Package Naming Conventions - MANDATORY**
+
+**AUTHORITY**: [TEST_PACKAGE_NAMING_STANDARD.md](../../testing/TEST_PACKAGE_NAMING_STANDARD.md)
+
+**CRITICAL**: ALL tests use same package name as code under test (white-box testing).
+
+| Test Type | Package Name | NO Exceptions |
+|-----------|--------------|---------------|
+| **Unit Tests** | `package [service]` | ✅ |
+| **Integration Tests** | `package [service]` | ✅ |
+| **E2E Tests** | `package [service]` | ✅ |
+
+**Key Rules**:
+- ✅ **ALWAYS** use `package [service]` (same package as code under test)
+- ❌ **NEVER** use `package [service]_test` (violates standard)
+- ✅ **White-box testing**: Access to internal state and unexported functions
+- ✅ **Simpler imports**: No need to import the package being tested
+
+**Example**:
+```go
+// ✅ CORRECT: All test types use same package
+package myservice  // Unit, Integration, AND E2E tests
+
+import (
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    // No need to import myservice package - we're already in it
+)
+```
+
+```go
+// ❌ WRONG: Never use _test suffix
+package myservice_test  // DO NOT USE - violates TEST_PACKAGE_NAMING_STANDARD.md
+```
+
+---
+
 #### **Integration Test Example 1: Complete Workflow (CRD Controller)**
 
 **File**: `test/integration/[service]/workflow_test.go`

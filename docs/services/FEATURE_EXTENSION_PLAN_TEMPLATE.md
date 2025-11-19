@@ -740,7 +740,7 @@ var _ = Describe("[Feature] Integration Tests", func() {
 ### **E2E Test Example**
 
 ```go
-package [service]_test
+package [service]  // White-box testing - same package as code under test
 
 import (
     . "github.com/onsi/ginkgo/v2"
