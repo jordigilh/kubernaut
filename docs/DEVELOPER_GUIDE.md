@@ -183,23 +183,66 @@ After implementation (Day 11-12), use:
 
 ### **Feature Extension Process**
 
-**Currently**: Use existing feature implementation plans as reference:
-- **[DD-GATEWAY-008 Implementation Plan](services/stateless/gateway-service/DD_GATEWAY_008_IMPLEMENTATION_PLAN.md)** - Storm buffering (12 days)
-- **[DD-GATEWAY-009 Implementation Plan](services/stateless/gateway-service/DD_GATEWAY_009_IMPLEMENTATION_PLAN.md)** - State-based deduplication (5 days)
+📘 **[FEATURE_EXTENSION_PLAN_TEMPLATE.md](services/FEATURE_EXTENSION_PLAN_TEMPLATE.md)** ⭐ **USE THIS TEMPLATE**
 
-**Structure**:
-1. **Feature Overview** (Design Decision reference, business requirements)
-2. **Timeline Estimation** (3-12 days based on complexity)
-3. **Day-by-Day Breakdown** (adapted from SERVICE_IMPLEMENTATION_PLAN_TEMPLATE)
-4. **Integration Points** (how feature integrates with existing code)
-5. **Testing Strategy** (new feature tests + regression tests)
-6. **Production Readiness** (impact assessment, rollback plan)
+**What it provides**:
+- ✅ **Flexible timeline** (3-12 days based on complexity)
+- ✅ **APDC-TDD methodology** (Analysis → Plan → Do → Check)
+- ✅ **Day-by-day breakdown** with customizable phases
+- ✅ **Complete test examples** (Unit, Integration, E2E)
+- ✅ **Documentation timeline** (what gets created when)
+- ✅ **TDD Do's and Don'ts** (strict discipline)
+- ✅ **BR Coverage Matrix**
+- ✅ **Rollback Plan**
+
+**Timeline Guide**:
+| Feature Complexity | Duration | When to Use |
+|--------------------|----------|-------------|
+| **Simple** | 3-5 days | 1-2 files, minimal integration |
+| **Medium** | 5-8 days | 3-5 files, moderate integration |
+| **Complex** | 8-12 days | 5+ files, significant integration |
+
+**Reference Examples**:
+- **[DD-GATEWAY-008](services/stateless/gateway-service/DD_GATEWAY_008_IMPLEMENTATION_PLAN.md)** - Storm buffering (12-day complex feature)
+- **[DD-GATEWAY-009](services/stateless/gateway-service/DD_GATEWAY_009_IMPLEMENTATION_PLAN.md)** - State-based deduplication (5-day medium feature)
 
 **Key Differences from New Service**:
 - ✅ Shorter timeline (no foundation setup)
 - ✅ Focus on enhancing existing code (not creating new)
 - ✅ Regression testing emphasis
 - ✅ Integration impact assessment
+
+### **Documentation During Feature Extension**
+
+**📊 What Gets Created When**:
+
+```
+Day 1-[N] (Implementation):
+    ├── Code Documentation (inline GoDoc, BR references)
+    ├── Daily EOD Reports (progress checkpoints)
+    └── Configuration Comments (YAML inline docs)
+
+Days [N+1]-[N+M] (Testing):
+    ├── Test Documentation (test descriptions, BR mapping)
+    ├── Test Helper Documentation
+    └── Edge Case Documentation
+
+Day [N+M+1] (Documentation Day):
+    ├── Finalize Service Docs (update existing files)
+    │   ├── overview.md (add feature, update version)
+    │   ├── BUSINESS_REQUIREMENTS.md (add BRs, links)
+    │   ├── testing-strategy.md (add test examples)
+    │   └── metrics-slos.md (add new metrics)
+    │
+    └── Create Operational Docs (new files if needed)
+        ├── Runbook (if feature affects operations)
+        └── Migration Guide (if breaking changes)
+
+Day [N+M+P] (Production Readiness):
+    └── Handoff Summary (executive summary, lessons learned)
+```
+
+**Key Point**: Most documentation is created **DURING** implementation (inline), not at the end. The documentation day is for **finalizing** and **consolidating**.
 
 ---
 
