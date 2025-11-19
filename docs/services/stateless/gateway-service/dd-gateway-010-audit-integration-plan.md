@@ -1,6 +1,6 @@
 # DD-GATEWAY-010: Audit Trace Integration - Implementation Plan
 
-**Version**: 1.0  
+**Version**: 1.1  
 **Status**: 📋 DRAFT  
 **Design Decision**: [audit-integration-analysis.md](./audit-integration-analysis.md)  
 **Service**: Gateway Service  
@@ -13,7 +13,8 @@
 
 | Version | Date | Changes | Status |
 |---------|------|---------|--------|
-| **v1.0** | 2025-11-19 | Initial implementation plan created | ✅ **CURRENT** |
+| **v1.1** | 2025-11-19 | Clarified timestamp accuracy vs. query latency (eventual consistency) | ✅ **CURRENT** |
+| **v1.0** | 2025-11-19 | Initial implementation plan created | Superseded |
 
 ---
 
@@ -38,6 +39,40 @@
 - **Audit Throughput**: 10,000 events/sec (batched writes)
 - **Data Loss Rate**: <1% (buffer overflow monitoring)
 - **Test Coverage**: Unit (70%+), Integration (>50%), E2E (<10%)
+
+### **⏰ Timestamp Accuracy Clarification**
+
+**IMPORTANT**: "Eventual consistency" refers to **query latency**, not timestamp accuracy.
+
+**Two Different Timestamps**:
+
+1. **Event Timestamp** (`event_timestamp`) - ✅ **Always accurate**
+   - Captured **immediately** when business event occurs (signal received, CRD created, etc.)
+   - Stored in audit event payload: `timestamp: "2025-11-19T10:00:00.123456Z"`
+   - Used for business queries and compliance reporting
+   - **Zero delay** - reflects actual time of business event
+
+2. **Database Write Timestamp** (`created_at`) - May be delayed
+   - Captured when audit event is written to PostgreSQL
+   - Can be delayed by up to 1 second due to buffering/batching (ADR-038)
+   - Used for database housekeeping, not business logic
+
+**What "Eventual Consistency" Means**:
+- ❌ NOT: "Event timestamps are inaccurate by 1 second"
+- ✅ YES: "Audit events become queryable in database with up to 1 second delay"
+
+**Example**:
+```
+10:00:00.000 - Signal received → event_timestamp: 10:00:00.000 (captured immediately) ✅
+10:00:00.001 - Audit event buffered (fire-and-forget)
+10:00:01.000 - Batch written to PostgreSQL → created_at: 10:00:01.000 (DB write time)
+
+Query: SELECT * FROM audit_events WHERE event_timestamp >= '10:00:00.000'
+Result: event_timestamp = 10:00:00.000 ✅ (accurate)
+        created_at = 10:00:01.000 (1s delay, but event_timestamp is correct)
+```
+
+**Compliance Impact**: ✅ Event timestamps are accurate and tamper-proof (meets SOC 2, ISO 27001, GDPR requirements)
 
 ---
 
@@ -151,6 +186,8 @@ Day 4 (Unit + Integration Tests) → Day 5 (E2E Tests) → Day 6 (Production)
 
 5. **Update configuration** `pkg/gateway/config/config.go` (1 hour)
    ```go
+   package config
+
    type Config struct {
        // ... existing fields ...
        
@@ -269,6 +306,14 @@ go test ./test/unit/gateway/audit_integration_test.go -v
 
 1. **Enhance graceful shutdown** in `pkg/gateway/server.go:Shutdown()` (1 hour)
    ```go
+   package gateway
+
+   import (
+       "context"
+       
+       "go.uber.org/zap"
+   )
+
    func (s *Server) Shutdown(ctx context.Context) error {
        // ... existing shutdown logic ...
 
@@ -303,6 +348,12 @@ go test ./test/unit/gateway/audit_integration_test.go -v
 
 5. **Add audit metrics** to `pkg/gateway/metrics/metrics.go` (1 hour)
    ```go
+   package metrics
+
+   import (
+       "github.com/prometheus/client_golang/prometheus"
+   )
+
    // Audit metrics (ADR-038)
    AuditEventsBuffered  prometheus.Counter
    AuditEventsDropped   prometheus.Counter
@@ -371,6 +422,19 @@ golangci-lint run ./pkg/gateway/...
 **Unit Test Examples**:
 
 ```go
+package gateway_test
+
+import (
+    "context"
+    
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    
+    "github.com/jordigilh/kubernaut/pkg/gateway"
+    "github.com/jordigilh/kubernaut/pkg/gateway/types"
+    "github.com/jordigilh/kubernaut/test/mocks"
+)
+
 // test/unit/gateway/audit_integration_test.go
 var _ = Describe("Gateway Audit Integration", func() {
     var (
@@ -456,6 +520,22 @@ var _ = Describe("Gateway Audit Integration", func() {
 **Integration Test Example**:
 
 ```go
+package gateway_test
+
+import (
+    "context"
+    "os"
+    "time"
+    
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    "github.com/redis/go-redis/v9"
+    
+    "github.com/jordigilh/kubernaut/pkg/gateway"
+    "github.com/jordigilh/kubernaut/pkg/gateway/types"
+    "github.com/jordigilh/kubernaut/test/infrastructure"
+)
+
 // test/integration/gateway/audit_integration_test.go
 var _ = Describe("Gateway Audit Integration Tests", func() {
     var (
@@ -468,8 +548,8 @@ var _ = Describe("Gateway Audit Integration Tests", func() {
     BeforeEach(func() {
         ctx = context.Background()
         datastorageURL = os.Getenv("DATASTORAGE_URL")
-        redisClient = setupTestRedis()
-        gatewayServer = setupTestGateway(datastorageURL, redisClient)
+        redisClient = infrastructure.SetupTestRedis()
+        gatewayServer = infrastructure.SetupTestGateway(datastorageURL, redisClient)
     })
 
     AfterEach(func() {
@@ -494,7 +574,8 @@ var _ = Describe("Gateway Audit Integration Tests", func() {
             Expect(err).ToNot(HaveOccurred())
             Expect(response.Status).To(Equal("created"))
 
-            // Wait for async audit write to complete (ADR-038 eventual consistency)
+            // Wait for async audit write to complete (ADR-038 batching)
+            // Note: Event timestamps remain accurate; this delay is only for DB write
             time.Sleep(2 * time.Second)
 
             // CORRECTNESS: Verify audit event in Data Storage
@@ -554,6 +635,22 @@ make test-integration-gateway
 **E2E Test Example**:
 
 ```go
+package gateway_test
+
+import (
+    "bytes"
+    "context"
+    "encoding/json"
+    "net/http"
+    "os"
+    "time"
+    
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    
+    "github.com/jordigilh/kubernaut/test/e2e/infrastructure"
+)
+
 // test/e2e/gateway/06_audit_integration_test.go
 var _ = Describe("Gateway Audit Integration E2E", func() {
     var (
@@ -587,7 +684,8 @@ var _ = Describe("Gateway Audit Integration E2E", func() {
             json.NewDecoder(resp.Body).Decode(&response)
             crdName := response["crd_name"].(string)
 
-            // Wait for async audit writes (ADR-038 eventual consistency)
+            // Wait for async audit writes (ADR-038 batching)
+            // Note: Event timestamps remain accurate; this delay is only for DB write
             time.Sleep(3 * time.Second)
 
             // CORRECTNESS: Verify complete audit trail
@@ -740,6 +838,12 @@ make test-e2e-gateway
 
 1. **Write ONE test at a time** (not batched)
    ```go
+   package gateway_test
+
+   import (
+       . "github.com/onsi/ginkgo/v2"
+   )
+
    // ✅ CORRECT: TDD Cycle 1
    It("should emit audit event when signal received", func() {
        // Test for AUDIT POINT 1
@@ -756,6 +860,13 @@ make test-e2e-gateway
 
 2. **Test WHAT the system does** (behavior), not HOW (implementation)
    ```go
+   package gateway_test
+
+   import (
+       . "github.com/onsi/ginkgo/v2"
+       . "github.com/onsi/gomega"
+   )
+
    // ✅ CORRECT: Behavior-focused
    It("should create audit trail for signal ingestion (BR-GATEWAY-017)", func() {
        _, err := server.ProcessSignal(ctx, signal)
@@ -769,6 +880,12 @@ make test-e2e-gateway
 
 3. **Use specific assertions** (not weak checks)
    ```go
+   package gateway_test
+
+   import (
+       . "github.com/onsi/gomega"
+   )
+
    // ✅ CORRECT: Specific business assertions
    Expect(auditEvent.EventType).To(Equal("gateway.signal.received"))
    Expect(auditEvent.CorrelationID).To(Equal("sha256:abc123"))
@@ -779,6 +896,12 @@ make test-e2e-gateway
 
 1. **DON'T batch test writing**
    ```go
+   package gateway_test
+
+   import (
+       . "github.com/onsi/ginkgo/v2"
+   )
+
    // ❌ WRONG: Writing 7 tests before any implementation
    It("test audit point 1", func() { ... })
    It("test audit point 2", func() { ... })
@@ -788,6 +911,12 @@ make test-e2e-gateway
 
 2. **DON'T test implementation details**
    ```go
+   package gateway_test
+
+   import (
+       . "github.com/onsi/gomega"
+   )
+
    // ❌ WRONG: Testing internal audit store state
    Expect(server.auditStore.buffer).To(HaveLen(1))
    Expect(server.auditStore.batchSize).To(Equal(1000))
@@ -795,6 +924,12 @@ make test-e2e-gateway
 
 3. **DON'T use weak assertions (NULL-TESTING)**
    ```go
+   package gateway_test
+
+   import (
+       . "github.com/onsi/gomega"
+   )
+
    // ❌ WRONG: Weak assertions
    Expect(auditEvent).ToNot(BeNil())
    Expect(events).ToNot(BeEmpty())
@@ -1068,7 +1203,8 @@ var _ = Describe("Gateway Audit E2E - Storm Aggregation", func() {
                 Expect(resp.StatusCode).To(BeOneOf(http.StatusCreated, http.StatusAccepted))
             }
 
-            // Wait for async audit writes (ADR-038 eventual consistency)
+            // Wait for async audit writes (ADR-038 batching)
+            // Note: Event timestamps remain accurate; this delay is only for DB write
             time.Sleep(3 * time.Second)
 
             // CORRECTNESS: Verify storm detection audit
