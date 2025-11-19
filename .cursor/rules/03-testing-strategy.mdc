@@ -1,6 +1,6 @@
 ---
 globs: "*_test.go,test/**/*"
-description: "Testing strategy and patterns for kubernaut's pyramid approach with defense-in-depth"
+description: "Testing strategy and patterns for kubernaut's defense-in-depth approach"
 ---
 
 # Testing Strategy for Kubernaut
@@ -12,8 +12,8 @@ See [00-ai-assistant-methodology-enforcement.mdc](mdc:.cursor/rules/00-ai-assist
 
 **For '/fix-build' commands**: All testing must follow the enhanced validation approach with comprehensive TDD compliance.
 
-## Pyramid Testing Approach
-Kubernaut implements a **pyramid testing strategy** with **90% overall confidence** through extensive unit test coverage and strong integration testing for microservices coordination:
+## Defense-in-Depth Testing Approach
+Kubernaut implements a **defense-in-depth testing strategy** with **90% overall confidence** through extensive unit test coverage and strong integration testing for microservices coordination:
 
 ### Unit Tests (70%+ - AT LEAST 70% of ALL BRs) - **MAXIMUM COVERAGE FOUNDATION LAYER**
 **Location**: [test/unit/](mdc:test/unit/)
@@ -112,11 +112,11 @@ Describe("BR-INTEGRATION-001: Workflow Engine Integration", func() {
 - Multi-step remediation scenarios (rollback, scaling, migration)
 - Failure recovery and degraded mode scenarios
 
-## Defense in Depth Testing Strategy - EXPANDED UNIT COVERAGE WITH PYRAMID APPROACH
+## Defense-in-Depth Testing Strategy - EXPANDED UNIT COVERAGE
 
 ### **🛡️ Core Principle: MAXIMUM Unit Coverage with Strategic Multi-Layer Defense**
 
-Kubernaut implements **defense in depth** testing with **EXPANDED unit test foundation** where business functionality is validated comprehensively at the unit level AND strategically at integration/e2e levels for critical scenarios. The expanded pyramid approach ensures **MAXIMUM coverage at the unit level** (70%+ minimum, extending to ALL unit-testable BRs) while maintaining defense layers for scenarios requiring real system integration.
+Kubernaut implements **defense-in-depth** testing with **EXPANDED unit test foundation** where business functionality is validated comprehensively at the unit level AND strategically at integration/e2e levels for critical scenarios. This approach ensures **MAXIMUM coverage at the unit level** (70%+ minimum, extending to ALL unit-testable BRs) while maintaining defense layers for scenarios requiring real system integration.
 
 **EXPANSION MANDATE**: Unit tests should cover **EVERY business requirement that can be tested with external mocks**, not just the 70% minimum. This creates a comprehensive foundation layer with strategic overlapping coverage at higher levels.
 
@@ -184,7 +184,7 @@ Each test must use unique identifiers to avoid collisions:
 It("should process alerts correctly", func() {
     testNamespace := fmt.Sprintf("e2e-test-%d", time.Now().UnixNano())
     alertName := fmt.Sprintf("TestAlert-%d", time.Now().UnixNano())
-    
+
     // Test uses isolated resources
     // Cleanup in defer
     defer cleanupResources(testNamespace)
@@ -201,17 +201,17 @@ var _ = Describe("Gateway E2E Tests", func() {
         gatewayURL string  // Shared Gateway instance
         httpClient *http.Client
     )
-    
+
     BeforeEach(func() {
         gatewayURL = "http://localhost:30080"  // Shared
         httpClient = &http.Client{Timeout: 10 * time.Second}
     })
-    
+
     It("test 1", func() {
         namespace := fmt.Sprintf("test1-%d", time.Now().UnixNano())
         // Uses shared Gateway, isolated namespace
     })
-    
+
     It("test 2", func() {
         namespace := fmt.Sprintf("test2-%d", time.Now().UnixNano())
         // Uses shared Gateway, isolated namespace
@@ -226,13 +226,13 @@ Always cleanup test resources in `defer` to ensure cleanup even on failure:
 // ✅ CORRECT: Cleanup in defer
 It("should create and cleanup resources", func() {
     testNamespace := fmt.Sprintf("test-%d", time.Now().UnixNano())
-    
+
     defer func() {
         // Cleanup always runs, even if test fails
         cleanupCRDs(testNamespace)
         cleanupRedisKeys(testNamespace)
     }()
-    
+
     // Test logic here
 })
 ```
@@ -988,4 +988,4 @@ Expect(fakeClient.Update(ctx, deployment)).To(Succeed())
 - **Unit Tests**: 85-90% confidence for comprehensive business logic
 - **Integration Tests**: 80-85% confidence for component interactions
 - **E2E Tests**: 90-95% confidence for complete workflows
-- **Overall System**: 90% confidence through pyramid coverage with defense-in-depth
+- **Overall System**: 90% confidence through defense-in-depth coverage
