@@ -759,6 +759,114 @@ Day 4 (Multi-Tenant) → Day 5 (Overflow) → Day 6 (Integration) → Day 7 (Met
 6. ❌ **Overflow handling** - No sampling or force-close
 7. ❌ **Comprehensive metrics** - Only basic metrics
 
+### Current vs. Proposed Behavior (Concrete Example)
+
+**Scenario**: 15 alerts arrive in 60 seconds for the same alert type
+
+#### Current Behavior (v0.9)
+```
+T=0s:   Alert #1 arrives
+        → Storm detected
+        → StartAggregation() creates window immediately
+        → Alert #1 added to window (1 resource)
+        → Window TTL: 60 seconds (fixed)
+
+T=5s:   Alert #2 arrives
+        → AddResource() adds to existing window (2 resources)
+
+T=10s:  Alert #3 arrives
+        → AddResource() adds to existing window (3 resources)
+
+...     Alerts #4-15 arrive
+        → All added to window (15 resources total)
+
+T=60s:  Window expires (fixed TTL)
+        → Goroutine creates 1 aggregated CRD with 15 resources
+        → AI analysis: 1 request for 15 resources
+
+Result: 1 CRD created (good), but window created immediately on first alert
+```
+
+#### Proposed Behavior (v1.0 - DD-GATEWAY-008)
+```
+T=0s:   Alert #1 arrives
+        → Storm detected
+        → Buffer alert #1 in Redis list (NO window yet, NO CRD)
+        → Buffer TTL: 2 minutes (2x window duration)
+
+T=5s:   Alert #2 arrives
+        → Buffer alert #2 (NO window yet, NO CRD)
+        → Buffer count: 2
+
+T=10s:  Alert #3 arrives
+        → Buffer alert #3 (NO window yet, NO CRD)
+        → Buffer count: 3
+
+T=15s:  Alert #4 arrives
+        → Buffer alert #4 (NO window yet, NO CRD)
+        → Buffer count: 4
+
+T=20s:  Alert #5 arrives
+        → Threshold reached! (default: 5 alerts)
+        → Create window, move all 5 buffered alerts to window
+        → Window TTL: 60 seconds (inactivity timeout)
+
+T=25s:  Alert #6 arrives
+        → AddResource() adds to window (6 resources)
+        → Window TTL reset to T=25s + 60s = T=85s (sliding window!)
+
+T=30s:  Alert #7 arrives
+        → AddResource() adds to window (7 resources)
+        → Window TTL reset to T=30s + 60s = T=90s (sliding window!)
+
+...     Alerts #8-15 arrive
+        → Each alert resets the window TTL (sliding behavior)
+        → Final window TTL: T=60s + 60s = T=120s
+
+T=120s: No new alerts for 60 seconds (inactivity timeout)
+        → Window expires
+        → Goroutine creates 1 aggregated CRD with 15 resources
+        → AI analysis: 1 request for 15 resources
+
+Result: 1 CRD created, window only created after threshold, sliding window extends for ongoing storms
+```
+
+#### Key Differences
+
+| Aspect | Current (v0.9) | Proposed (v1.0) |
+|--------|----------------|-----------------|
+| **First Alert** | Creates window immediately | Buffers (no window, no CRD) |
+| **Threshold** | N/A (window on first alert) | Configurable (default: 5 alerts) |
+| **Window Creation** | Alert #1 | Alert #5 (when threshold reached) |
+| **Window TTL** | Fixed 60s (set once) | Sliding 60s (resets on each alert) |
+| **Max Duration** | No limit | 5-minute safety limit |
+| **Pre-Threshold Behavior** | Window exists from start | Alerts buffered, no window |
+| **Buffer Expiration** | N/A | 2 minutes (if threshold never reached) |
+
+#### What Happens If Threshold Never Reached?
+
+**Scenario**: Only 3 alerts arrive (below threshold of 5)
+
+**Current (v0.9)**:
+- Alert #1: Creates window, adds resource
+- Alerts #2-3: Add to window
+- After 60s: Create aggregated CRD with 3 resources
+
+**Proposed (v1.0)**:
+- Alerts #1-3: Buffered in Redis (no window, no CRD)
+- After 2 minutes: Buffer expires
+- Fallback: Create 3 individual CRDs (one per alert)
+- Rationale: Only 3 alerts doesn't justify aggregation overhead
+
+**Cost Savings Comparison**:
+- Current: 1 CRD → 1 AI analysis (good)
+- Proposed: 3 CRDs → 3 AI analyses (acceptable, storm threshold not met)
+
+**Why This Is Better**:
+- Avoids creating aggregated CRDs for small "storms" (2-4 alerts)
+- True storms (≥5 alerts) benefit from full aggregation
+- Configurable threshold allows tuning based on environment
+
 ### Implementation Strategy
 
 **ENHANCE, Don't Replace**:
