@@ -103,7 +103,7 @@ func NewStormAggregatorWithWindow(redisClient *redis.Client, windowDuration time
 	return &StormAggregator{
 		redisClient:       redisClient,
 		windowDuration:    windowDuration,
-		bufferThreshold:   5,    // Default: 5 alerts before window creation
+		bufferThreshold:   5, // Default: 5 alerts before window creation
 		maxWindowDuration: 5 * time.Minute,
 		defaultMaxSize:    1000,
 		globalMaxSize:     5000,
@@ -259,13 +259,18 @@ func (a *StormAggregator) StartAggregation(ctx context.Context, signal *types.No
 	}
 
 	// Threshold reached: Create aggregation window
-	windowID := fmt.Sprintf("%s-%d", signal.AlertName, time.Now().Unix())
+	currentTime := time.Now()
+	windowID := fmt.Sprintf("%s-%d", signal.AlertName, currentTime.Unix())
 	windowKey := fmt.Sprintf("alert:storm:aggregate:%s", signal.AlertName)
 
 	// Store window ID with TTL (sliding window: inactivity timeout)
 	if err := a.redisClient.Set(ctx, windowKey, windowID, a.windowDuration).Err(); err != nil {
 		return "", fmt.Errorf("failed to start aggregation window: %w", err)
 	}
+
+	// DD-GATEWAY-008: Populate sliding window tracking fields
+	stormMetadata.AbsoluteStartTime = currentTime
+	stormMetadata.LastActivity = currentTime
 
 	// Store first signal metadata for later CRD creation
 	if err := a.storeSignalMetadata(ctx, windowID, signal, stormMetadata); err != nil {
@@ -474,6 +479,9 @@ func (a *StormAggregator) storeSignalMetadata(ctx context.Context, windowID stri
 		// Timestamp fields (required for CRD creation)
 		"firing_time":   signal.FiringTime.Format(time.RFC3339Nano),
 		"received_time": signal.ReceivedTime.Format(time.RFC3339Nano),
+		// DD-GATEWAY-008: Sliding window tracking (BR-GATEWAY-008)
+		"absolute_start_time": stormMetadata.AbsoluteStartTime.Format(time.RFC3339Nano),
+		"last_activity":       stormMetadata.LastActivity.Format(time.RFC3339Nano),
 	}
 
 	// Store resource information
