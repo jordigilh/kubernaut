@@ -45,7 +45,11 @@ import (
 //
 // Coverage: 10-15% E2E (1 critical end-to-end scenario)
 
-var _ = Describe("E2E: State-Based Deduplication Lifecycle", Ordered, Label("e2e", "deduplication", "state-based", "p1"), func() {
+// Parallel Execution: ✅ ENABLED
+// - Single It block with unique namespace (dedup-state-{timestamp})
+// - Uses shared Gateway instance
+// - Cleanup in AfterAll
+var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "deduplication", "state-based", "p1"), func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
