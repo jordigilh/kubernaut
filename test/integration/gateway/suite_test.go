@@ -112,7 +112,22 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 // SynchronizedAfterSuite runs cleanup in two phases for parallel execution
 var _ = SynchronizedAfterSuite(func() {
-	// This runs on ALL processes - cleanup per-process resources
+	// This runs on ALL processes - ONLY cleanup per-process K8s client
+	// DO NOT delete namespaces here - causes race condition with other processes
+	if suiteK8sClient != nil {
+		suiteK8sClient.Cleanup(suiteCtx)
+	}
+}, func() {
+	// This runs ONCE on process 1 only - cleanup ALL resources AFTER all processes finish
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Teardown")
+	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Wait for all processes to finish their cleanup
+	suiteLogger.Info("Waiting for all parallel processes to finish cleanup...")
+	time.Sleep(2 * time.Second)
+
+	// Collect ALL test namespaces from ALL processes
 	testNamespacesMutex.Lock()
 	namespaceCount := len(testNamespaces)
 	namespaceList := make([]string, 0, namespaceCount)
@@ -121,45 +136,34 @@ var _ = SynchronizedAfterSuite(func() {
 	}
 	testNamespacesMutex.Unlock()
 
-	if namespaceCount == 0 {
-		fmt.Println("\n✅ No test namespaces to clean up")
-		return
-	}
+	if namespaceCount > 0 {
+		fmt.Printf("\n🧹 Cleaning up %d test namespaces from ALL processes...\n", namespaceCount)
 
-	fmt.Printf("\n🧹 Cleaning up %d test namespaces...\n", namespaceCount)
+		// Wait for storm aggregation windows to complete
+		testAggregationWindow := 1 * time.Second
+		bufferTime := 3 * time.Second
+		totalWait := testAggregationWindow + bufferTime
 
-	// Wait for storm aggregation windows to complete
-	testAggregationWindow := 1 * time.Second
-	bufferTime := 3 * time.Second
-	totalWait := testAggregationWindow + bufferTime
+		fmt.Printf("⏳ Waiting %v for storm aggregation windows to complete...\n", totalWait)
+		time.Sleep(totalWait)
 
-	fmt.Printf("⏳ Waiting %v for storm aggregation windows to complete...\n", totalWait)
-	time.Sleep(totalWait)
-
-	// Delete all namespaces
-	deletedCount := 0
-	for _, nsName := range namespaceList {
-		ns := &corev1.Namespace{}
-		ns.Name = nsName
-		err := suiteK8sClient.Client.Delete(suiteCtx, ns)
-		if err != nil && !strings.Contains(err.Error(), "not found") {
-			fmt.Printf("⚠️  Warning: Failed to delete namespace %s: %v\n", nsName, err)
-		} else {
-			deletedCount++
+		// Delete all namespaces from ALL processes
+		deletedCount := 0
+		for _, nsName := range namespaceList {
+			ns := &corev1.Namespace{}
+			ns.Name = nsName
+			err := suiteK8sClient.Client.Delete(suiteCtx, ns)
+			if err != nil && !strings.Contains(err.Error(), "not found") {
+				fmt.Printf("⚠️  Warning: Failed to delete namespace %s: %v\n", nsName, err)
+			} else {
+				deletedCount++
+			}
 		}
-	}
 
-	fmt.Printf("✅ Deleted %d/%d test namespaces\n", deletedCount, len(namespaceList))
-
-	// Cleanup K8s client
-	if suiteK8sClient != nil {
-		suiteK8sClient.Cleanup(suiteCtx)
+		fmt.Printf("✅ Deleted %d/%d test namespaces\n", deletedCount, len(namespaceList))
+	} else {
+		fmt.Println("\n✅ No test namespaces to clean up")
 	}
-}, func() {
-	// This runs ONCE on process 1 only - cleanup shared infrastructure
-	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Teardown")
-	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Stop Redis container
 	suiteLogger.Info("Stopping Redis container...")

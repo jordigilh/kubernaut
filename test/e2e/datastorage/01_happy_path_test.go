@@ -248,12 +248,14 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		// Step 4: Orchestrator - Remediation Completed
 		testLogger.Info("🎯 Step 4: Orchestrator completes...")
 		orchestratorEvent := map[string]interface{}{
-			"service":        "orchestrator",
-			"event_type":     "orchestrator.remediation.completed",
-			"correlation_id": correlationID,
-			"outcome":        "success",
-			"operation":      "orchestration",
-			"event_data":     map[string]interface{}{},
+			"version":         "1.0",
+			"service":         "orchestrator",
+			"event_type":      "orchestrator.remediation.completed",
+			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"correlation_id":  correlationID,
+			"outcome":         "success",
+			"operation":       "orchestration",
+			"event_data":      map[string]interface{}{},
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, orchestratorEvent)
@@ -264,12 +266,14 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		// Step 5: EffectivenessMonitor - Assessment Completed
 		testLogger.Info("📊 Step 5: EffectivenessMonitor assesses...")
 		monitorEvent := map[string]interface{}{
-			"service":        "monitor",
-			"event_type":     "monitor.assessment.completed",
-			"correlation_id": correlationID,
-			"outcome":        "success",
-			"operation":      "effectiveness_assessment",
-			"event_data":     map[string]interface{}{},
+			"version":         "1.0",
+			"service":         "monitor",
+			"event_type":      "monitor.assessment.completed",
+			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"correlation_id":  correlationID,
+			"outcome":         "success",
+			"operation":       "effectiveness_assessment",
+			"event_data":      map[string]interface{}{},
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, monitorEvent)

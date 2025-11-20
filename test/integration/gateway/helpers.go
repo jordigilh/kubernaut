@@ -18,6 +18,7 @@ import (
 	"time"
 
 	goredis "github.com/go-redis/redis/v8"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -1261,8 +1262,10 @@ func createTestK8sClient(ctx context.Context) (*K8sTestClient, string) {
 	k8sClient := SetupK8sTestClient(ctx)
 
 	// TDD FIX: Create unique namespace per test to prevent CRD conflicts
-	// Format: test-prod-<timestamp>-<random>
-	uniqueNamespace := fmt.Sprintf("test-prod-%d-%d", time.Now().Unix(), rand.Intn(10000))
+	// Format: test-prod-p<process>-<timestamp>-<random>
+	// Process ID ensures isolation in parallel execution (4 processes)
+	processID := GinkgoParallelProcess()
+	uniqueNamespace := fmt.Sprintf("test-prod-p%d-%d-%d", processID, time.Now().Unix(), rand.Intn(10000))
 	EnsureTestNamespace(ctx, k8sClient, uniqueNamespace)
 
 	return k8sClient, uniqueNamespace

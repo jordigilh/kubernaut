@@ -47,7 +47,7 @@ var _ = Describe("BR-003, BR-005, BR-077: Redis State Persistence - Integration 
 
 		// Generate unique namespace for test isolation
 		testCounter++
-		testNamespace = fmt.Sprintf("test-redis-%d-%d-%d",
+		testNamespace = fmt.Sprintf("test-redis-p%d-%d-%d-%d", GinkgoParallelProcess(),
 			time.Now().UnixNano(),
 			GinkgoRandomSeed(),
 			testCounter)

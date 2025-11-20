@@ -84,7 +84,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// Create unique production namespace for this test (prevents collisions)
 		// Use counter to ensure uniqueness even when tests run in same second
 		testCounter++
-		testNamespace = fmt.Sprintf("test-prod-%d-%d-%d", time.Now().UnixNano(), GinkgoRandomSeed(), testCounter)
+		testNamespace = fmt.Sprintf("test-prod-p%d-%d-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano(), GinkgoRandomSeed(), testCounter)
 		EnsureTestNamespace(ctx, k8sClient, testNamespace)
 
 		// Register namespace for suite-level cleanup
