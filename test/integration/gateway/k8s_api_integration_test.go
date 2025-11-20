@@ -50,7 +50,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		testCounter++
 		baseTimestamp := time.Now().UnixNano()
 		baseSeed := GinkgoRandomSeed()
-		testNamespaceProd = fmt.Sprintf("test-k8s-prod-%d-%d-%d", baseTimestamp, baseSeed, testCounter)
+		testNamespaceProd = fmt.Sprintf("test-k8s-prod-p%d-%d-%d-%d", GinkgoParallelProcess(), baseTimestamp, baseSeed, testCounter)
 		testNamespaceStage = fmt.Sprintf("test-k8s-stage-%d-%d-%d", baseTimestamp, baseSeed, testCounter)
 		testNamespaceDev = fmt.Sprintf("test-k8s-dev-%d-%d-%d", baseTimestamp, baseSeed, testCounter)
 
