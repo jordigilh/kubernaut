@@ -14,7 +14,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -35,11 +34,12 @@ import (
 
 var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 	var (
-		ctx         context.Context
-		cancel      context.CancelFunc
-		testServer  *httptest.Server
-		redisClient *RedisTestClient
-		k8sClient   *K8sTestClient
+		ctx           context.Context
+		cancel        context.CancelFunc
+		testServer    *httptest.Server
+		redisClient   *RedisTestClient
+		k8sClient     *K8sTestClient
+		testNamespace string // Unique namespace per test for parallel execution
 	)
 
 	BeforeEach(func() {
@@ -55,23 +55,10 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 		}
 
-		// Create production namespace
-		ns := &corev1.Namespace{}
-		ns.Name = "production"
-		_ = k8sClient.Client.Delete(ctx, ns)
-
-		Eventually(func() error {
-			checkNs := &corev1.Namespace{}
-			return k8sClient.Client.Get(ctx, client.ObjectKey{Name: "production"}, checkNs)
-		}, "10s", "100ms").Should(HaveOccurred())
-
-		ns = &corev1.Namespace{}
-		ns.Name = "production"
-		ns.Labels = map[string]string{
-			"environment": "production",
-		}
-		err := k8sClient.Client.Create(ctx, ns)
-		Expect(err).ToNot(HaveOccurred())
+		// Create unique production namespace for parallel execution
+		// Use timestamp + process ID to avoid collisions
+		testNamespace = fmt.Sprintf("production-%d-p%d", time.Now().UnixNano(), GinkgoParallelProcess())
+		EnsureTestNamespace(ctx, k8sClient, testNamespace)
 
 		// Start Gateway server
 		gatewayServer, err := StartTestGateway(ctx, redisClient, k8sClient)
@@ -85,11 +72,13 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			testServer.Close()
 		}
 
-		// Cleanup namespace
-		if k8sClient != nil {
-			ns := &corev1.Namespace{}
-			ns.Name = "production"
-			_ = k8sClient.Client.Delete(ctx, ns)
+		// Cleanup namespace (use defer to ensure cleanup even on test failure)
+		if k8sClient != nil && testNamespace != "" {
+			defer func() {
+				ns := &corev1.Namespace{}
+				ns.Name = testNamespace
+				_ = k8sClient.Client.Delete(ctx, ns)
+			}()
 		}
 
 		// Cleanup Redis
@@ -132,19 +121,19 @@ var _ = Describe("Priority 1: Error Propagation - Integration Tests", func() {
 			testServer = httptest.NewServer(gatewayServer.Handler())
 
 			// Send valid alert that will trigger Redis operation
-			alertJSON := `{
+			alertJSON := fmt.Sprintf(`{
 			"alerts": [{
 				"status": "firing",
 				"labels": {
 					"alertname": "RedisConnectionTest",
 					"severity": "critical",
-					"namespace": "production"
+					"namespace": "%s"
 				},
 				"annotations": {
 					"summary": "Test alert for Redis connection error"
 				}
 			}]
-		}`
+		}`, testNamespace)
 
 			// Send request
 			resp, err := http.Post(
