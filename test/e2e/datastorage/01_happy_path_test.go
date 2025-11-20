@@ -61,7 +61,7 @@ import (
 // - Complete infrastructure isolation
 // - No data pollution between tests
 
-var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", Label("e2e", "happy-path", "p0"), func() {
+var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", Label("e2e", "happy-path", "p0"), Ordered, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc

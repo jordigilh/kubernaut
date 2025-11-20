@@ -61,7 +61,7 @@ import (
 // - Complete infrastructure isolation
 // - No impact from other tests
 
-var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Recovery", Label("e2e", "dlq", "p0"), func() {
+var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Recovery", Label("e2e", "dlq", "p0"), Ordered, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
