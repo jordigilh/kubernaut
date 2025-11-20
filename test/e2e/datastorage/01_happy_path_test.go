@@ -311,7 +311,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		// Verification: Chronological order (sort events first since API doesn't guarantee order)
 		testLogger.Info("🔍 Verifying chronological order...")
-		
+
 		// Sort events by timestamp
 		sort.Slice(data, func(i, j int) bool {
 			eventI := data[i].(map[string]interface{})
@@ -320,7 +320,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 			timestampJ, _ := time.Parse(time.RFC3339, eventJ["event_timestamp"].(string))
 			return timestampI.Before(timestampJ)
 		})
-		
+
 		var previousTimestamp time.Time
 		for i, item := range data {
 			event := item.(map[string]interface{})

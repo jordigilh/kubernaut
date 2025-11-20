@@ -559,15 +559,26 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 				zap.Error(err))
 
 			// BR-GATEWAY-008, BR-GATEWAY-009: Return 503 when Redis unavailable (per DD-GATEWAY-003)
-			// Check if error is due to Redis unavailability
-			// TDD REFACTOR: Use typed helper for consistent error handling
-			if strings.Contains(err.Error(), "redis unavailable") || strings.Contains(err.Error(), "deduplication check failed") {
-				// Set Retry-After header (30 seconds - allows time for Redis HA failover)
-				s.writeServiceUnavailableError(w, r, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30) // BR-109: Added request
+			// BR-002: Return 500 when Kubernetes API unavailable
+			// Check error type and return appropriate HTTP status
+			errMsg := err.Error()
+
+			// Redis unavailability → HTTP 503 Service Unavailable
+			if strings.Contains(errMsg, "redis unavailable") || strings.Contains(errMsg, "deduplication check failed") {
+				s.writeServiceUnavailableError(w, r, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30)
 				return
 			}
 
-			s.writeInternalError(w, r, "Internal server error") // TDD REFACTOR: Use typed helper, BR-109: Added request
+			// Kubernetes API errors → HTTP 500 Internal Server Error with details
+			if strings.Contains(errMsg, "kubernetes") || strings.Contains(errMsg, "k8s") ||
+				strings.Contains(errMsg, "failed to create RemediationRequest CRD") ||
+				strings.Contains(errMsg, "namespaces") {
+				s.writeInternalError(w, r, fmt.Sprintf("Kubernetes API error: %v", err))
+				return
+			}
+
+			// Generic error → HTTP 500
+			s.writeInternalError(w, r, "Internal server error")
 			return
 		}
 
