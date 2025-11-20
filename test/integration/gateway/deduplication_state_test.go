@@ -66,7 +66,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 	)
 
 	// Shared namespace across ALL tests (package-level, initialized once)
-	sharedNamespace := fmt.Sprintf("test-dedup-%s", uuid.New().String()[:8])
+	sharedNamespace := fmt.Sprintf("test-dedup-p%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 
 	BeforeEach(func() {
 		// Per-spec setup for parallel execution
