@@ -48,7 +48,7 @@ RUN ls -lh /datastorage
 # =============================================================================
 # STAGE 2: RUNTIME - Minimal runtime image
 # =============================================================================
-FROM registry.access.redhat.com/ubi9/ubi-micro:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # Build arguments (for labels)
 ARG GOARCH
