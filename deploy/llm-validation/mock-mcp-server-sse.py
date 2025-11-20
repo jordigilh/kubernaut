@@ -234,3 +234,4 @@ if __name__ == '__main__':
     logger.info("   SSE Endpoint: http://0.0.0.0:8081/sse")
     logger.info("   Tool Endpoint: http://0.0.0.0:8081/mcp/tools/search_workflow_catalog")
     app.run(host='0.0.0.0', port=8081, debug=True)
+

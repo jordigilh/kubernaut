@@ -73,7 +73,7 @@ var _ = BeforeSuite(func() {
 	logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 	logger.Info("  • RemediationRequest CRD (cluster-wide)")
 	logger.Info("  • Gateway Docker image (build + load)")
-	logger.Info("  • Kubeconfig: ~/.kube/kind-config")
+	logger.Info("  • Kubeconfig: ~/.kube/gateway-kubeconfig")
 	logger.Info("")
 	logger.Info("Note: Each test will deploy its own services in a unique namespace")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -82,7 +82,7 @@ var _ = BeforeSuite(func() {
 	clusterName = "gateway-e2e"
 	homeDir, err := os.UserHomeDir()
 	Expect(err).ToNot(HaveOccurred())
-	kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config", homeDir)
+	kubeconfigPath = fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
 
 	// Create Kind cluster (ONCE for all tests)
 	err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
