@@ -40,7 +40,7 @@ RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} \
 	go build \
 	-ldflags="-w -s -X main.Version=${VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
 	-o /data-storage \
-	./cmd/data-storage
+	./cmd/datastorage
 
 # Verify binary was built
 RUN ls -lh /data-storage && file /data-storage
