@@ -593,7 +593,7 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 		"010_audit_write_api_phase1.sql",
 		"011_rename_alert_to_signal.sql",
 		"012_adr033_multidimensional_tracking.sql",
-		"013_audit_events_unified_table.sql",
+		"013_create_audit_events_table.sql",
 		"999_add_nov_2025_partition.sql",
 	}
 
