@@ -175,12 +175,14 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Recovery", Label("e2
 		Expect(err).ToNot(HaveOccurred())
 
 		baselineEvent := map[string]interface{}{
-			"service":        "gateway",
-			"event_type":     "gateway.signal.received",
-			"correlation_id": correlationID,
-			"outcome":        "success",
-			"operation":      "baseline_write",
-			"event_data":     baselineEventData,
+			"version":         "1.0",
+			"service":         "gateway",
+			"event_type":      "gateway.signal.received",
+			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"correlation_id":  correlationID,
+			"outcome":         "success",
+			"operation":       "baseline_write",
+			"event_data":      baselineEventData,
 		}
 
 		resp := postAuditEvent(httpClient, serviceURL, baselineEvent)
@@ -216,12 +218,14 @@ var _ = Describe("Scenario 2: DLQ Fallback - Service Outage Recovery", Label("e2
 		Expect(err).ToNot(HaveOccurred())
 
 		outageEvent := map[string]interface{}{
-			"service":        "gateway",
-			"event_type":     "gateway.signal.received",
-			"correlation_id": correlationID,
-			"outcome":        "success",
-			"operation":      "outage_write",
-			"event_data":     outageEventData,
+			"version":         "1.0",
+			"service":         "gateway",
+			"event_type":      "gateway.signal.received",
+			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"correlation_id":  correlationID,
+			"outcome":         "success",
+			"operation":       "outage_write",
+			"event_data":      outageEventData,
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, outageEvent)

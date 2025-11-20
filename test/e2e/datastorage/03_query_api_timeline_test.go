@@ -156,12 +156,14 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 			Expect(err).ToNot(HaveOccurred())
 
 			event := map[string]interface{}{
-				"service":        "gateway",
-				"event_type":     "gateway.signal.received",
-				"correlation_id": correlationID,
-				"outcome":        "success",
-				"operation":      fmt.Sprintf("gateway_op_%d", i),
-				"event_data":     eventData,
+				"version":         "1.0",
+				"service":         "gateway",
+				"event_type":      "gateway.signal.received",
+				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+				"correlation_id":  correlationID,
+				"outcome":         "success",
+				"operation":       fmt.Sprintf("gateway_op_%d", i),
+				"event_data":      eventData,
 			}
 			resp := postAuditEvent(httpClient, serviceURL, event)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -178,12 +180,14 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 			Expect(err).ToNot(HaveOccurred())
 
 			event := map[string]interface{}{
-				"service":        "aianalysis",
-				"event_type":     "aianalysis.analysis.completed",
-				"correlation_id": correlationID,
-				"outcome":        "success",
-				"operation":      fmt.Sprintf("ai_op_%d", i),
-				"event_data":     eventData,
+				"version":         "1.0",
+				"service":         "aianalysis",
+				"event_type":      "aianalysis.analysis.completed",
+				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+				"correlation_id":  correlationID,
+				"outcome":         "success",
+				"operation":       fmt.Sprintf("ai_op_%d", i),
+				"event_data":      eventData,
 			}
 			resp := postAuditEvent(httpClient, serviceURL, event)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -200,12 +204,14 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 			Expect(err).ToNot(HaveOccurred())
 
 			event := map[string]interface{}{
-				"service":        "workflow",
-				"event_type":     "workflow.workflow.completed",
-				"correlation_id": correlationID,
-				"outcome":        "success",
-				"operation":      fmt.Sprintf("workflow_op_%d", i),
-				"event_data":     eventData,
+				"version":         "1.0",
+				"service":         "workflow",
+				"event_type":      "workflow.workflow.completed",
+				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+				"correlation_id":  correlationID,
+				"outcome":         "success",
+				"operation":       fmt.Sprintf("workflow_op_%d", i),
+				"event_data":      eventData,
 			}
 			resp := postAuditEvent(httpClient, serviceURL, event)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
