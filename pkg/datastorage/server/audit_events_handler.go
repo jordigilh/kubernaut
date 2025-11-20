@@ -254,13 +254,68 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			zap.String("correlation_id", correlationID),
 			zap.Float64("duration_seconds", duration))
 
-		// Return 500 Internal Server Error with RFC 7807
-		writeRFC7807Error(w, &validation.RFC7807Problem{
-			Type:     "https://kubernaut.io/problems/database-error",
-			Title:    "Database Error",
-			Status:   http.StatusInternalServerError,
-			Detail:   "Failed to write audit event to database",
-			Instance: r.URL.Path,
+		// DD-009: DLQ fallback on database errors
+		s.logger.Info("Attempting DLQ fallback for audit event",
+			zap.String("event_type", eventType),
+			zap.String("correlation_id", correlationID),
+			zap.String("db_error", err.Error()))
+
+		// Create a FRESH context for DLQ write (not tied to original request timeout)
+		// DD-009: DLQ fallback must succeed even if DB operation timed out
+		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer dlqCancel()
+
+		// Convert auditEvent to map for DLQ
+		eventMap := map[string]interface{}{
+			"version":            payload["version"],
+			"service":            service,
+			"event_type":         eventType,
+			"event_timestamp":    eventTimestampStr,
+			"correlation_id":     correlationID,
+			"resource_type":      resourceType,
+			"resource_id":        resourceID,
+			"resource_namespace": resourceNamespace,
+			"cluster_id":         clusterID,
+			"operation":          operation,
+			"outcome":            outcome,
+			"severity":           severity,
+			"event_data":         eventData,
+		}
+
+		// Attempt to enqueue to DLQ
+		if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, eventMap, err); dlqErr != nil {
+			s.logger.Error("DLQ fallback also failed - data loss risk",
+				zap.Error(dlqErr),
+				zap.String("event_type", eventType),
+				zap.String("correlation_id", correlationID),
+				zap.String("original_error", err.Error()))
+
+			// Both database and DLQ failed - return 500
+			writeRFC7807Error(w, &validation.RFC7807Problem{
+				Type:     "https://kubernaut.io/problems/database-error",
+				Title:    "Database Error",
+				Status:   http.StatusInternalServerError,
+				Detail:   "Failed to write audit event to database and DLQ",
+				Instance: r.URL.Path,
+			})
+			return
+		}
+
+		s.logger.Info("DLQ fallback succeeded",
+			zap.String("event_type", eventType),
+			zap.String("correlation_id", correlationID))
+
+		// Record DLQ fallback metric
+		if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
+			s.metrics.AuditTracesTotal.WithLabelValues(service, "dlq_fallback").Inc()
+		}
+
+		// DLQ success - return 202 Accepted (async processing)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "accepted",
+			"message": "audit event queued for async processing",
 		})
 		return
 	}

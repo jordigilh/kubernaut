@@ -102,6 +102,62 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	return nil
 }
 
+// EnqueueAuditEvent adds a generic audit event to the DLQ.
+// This is called when the primary write to audit_events table fails.
+// DD-009: Dead Letter Queue pattern for unified audit events API
+func (c *Client) EnqueueAuditEvent(ctx context.Context, event map[string]interface{}, originalError error) error {
+	// Serialize event payload
+	payloadJSON, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal audit event payload: %w", err)
+	}
+
+	// Create DLQ message
+	auditMsg := AuditMessage{
+		Type:       "audit_event",
+		Payload:    payloadJSON,
+		Timestamp:  time.Now(),
+		RetryCount: 0,
+		LastError:  originalError.Error(),
+	}
+
+	// Serialize message
+	messageJSON, err := json.Marshal(auditMsg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal DLQ message: %w", err)
+	}
+
+	// Add to Redis Stream
+	streamKey := "audit:dlq:events"
+	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
+		Stream: streamKey,
+		MaxLen: 10000, // Cap at 10,000 messages (FIFO eviction)
+		ID:     "*",   // Auto-generate timestamp-based ID
+		Values: map[string]interface{}{
+			"message": string(messageJSON),
+		},
+	}).Result()
+
+	if err != nil {
+		return fmt.Errorf("failed to add to DLQ: %w", err)
+	}
+
+	// Extract identifiers for logging
+	eventType, _ := event["event_type"].(string)
+	correlationID, _ := event["correlation_id"].(string)
+	service, _ := event["service"].(string)
+
+	c.logger.Info("Audit event added to DLQ",
+		zap.String("type", "audit_event"),
+		zap.String("service", service),
+		zap.String("event_type", eventType),
+		zap.String("correlation_id", correlationID),
+		zap.String("error", originalError.Error()),
+	)
+
+	return nil
+}
+
 // GetDLQDepth returns the number of messages in the DLQ for a given audit type.
 func (c *Client) GetDLQDepth(ctx context.Context, auditType string) (int64, error) {
 	streamKey := fmt.Sprintf("audit:dlq:%s", auditType)
