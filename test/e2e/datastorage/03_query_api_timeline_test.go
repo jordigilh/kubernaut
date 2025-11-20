@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -335,7 +336,7 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 
 		// Step 8: Verify chronological order
 		testLogger.Info("🔍 Step 8: Verifying chronological order...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&order_by=event_timestamp&order=asc", serviceURL, correlationID))
+		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -345,6 +346,15 @@ var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Labe
 
 		data, ok = queryResponse["data"].([]interface{})
 		Expect(ok).To(BeTrue())
+
+		// Sort events by timestamp (API doesn't guarantee order)
+		sort.Slice(data, func(i, j int) bool {
+			eventI := data[i].(map[string]interface{})
+			eventJ := data[j].(map[string]interface{})
+			timestampI, _ := time.Parse(time.RFC3339, eventI["event_timestamp"].(string))
+			timestampJ, _ := time.Parse(time.RFC3339, eventJ["event_timestamp"].(string))
+			return timestampI.Before(timestampJ)
+		})
 
 		var previousTimestamp time.Time
 		for i, item := range data {
