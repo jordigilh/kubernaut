@@ -41,23 +41,23 @@ var (
 	kubeconfigPath string          // Kubeconfig path
 )
 
-var _ = BeforeSuite(func() {
-	// Initialize suite context
-	suiteCtx = context.Background()
-
-	// Initialize logger
+// SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
+// This ensures Kind cluster and Redis are created only once, not by each parallel process
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// This runs ONCE on process 1 only - creates shared infrastructure
 	var err error
 	suiteLogger, err = zap.NewDevelopment()
 	Expect(err).ToNot(HaveOccurred())
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Setup")
+	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Setup (Parallel)")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Creating Kind cluster + Redis for integration tests...")
 	suiteLogger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 	suiteLogger.Info("  • RemediationRequest CRD (cluster-wide)")
 	suiteLogger.Info("  • Redis container (localhost:6379)")
 	suiteLogger.Info("  • Kubeconfig: ~/.kube/gateway-kubeconfig")
+	suiteLogger.Info("  • Parallel Execution: 4 concurrent processors")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Set cluster configuration
@@ -70,24 +70,39 @@ var _ = BeforeSuite(func() {
 	err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Set KUBECONFIG environment variable
-	err = os.Setenv("KUBECONFIG", kubeconfigPath)
-	Expect(err).ToNot(HaveOccurred())
-
 	// Start Redis container for integration tests (with cleanup first)
 	suiteLogger.Info("Cleaning up existing Redis container...")
 	_ = infrastructure.StopRedisContainer("redis-integration", GinkgoWriter)
 
 	suiteLogger.Info("Starting Redis container...")
-	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 6379, GinkgoWriter) // Port collision check enabled
+	redisPort, err := infrastructure.StartRedisContainer("redis-integration", 6379, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Redis container must start for integration tests (port 6379 must be available)")
 	suiteLogger.Info(fmt.Sprintf("✅ Redis running on port: %d", redisPort))
 
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	suiteLogger.Info("Infrastructure Setup Complete")
+	suiteLogger.Info("Infrastructure Setup Complete - Ready for Parallel Tests")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Initialize shared K8s client for tests
+	// Return kubeconfig path to all parallel processes
+	return []byte(kubeconfigPath)
+}, func(data []byte) {
+	// This runs on ALL processes (including process 1) - initializes per-process state
+	suiteCtx = context.Background()
+
+	// Initialize logger for this process
+	var err error
+	suiteLogger, err = zap.NewDevelopment()
+	Expect(err).ToNot(HaveOccurred())
+
+	// Get kubeconfig path from process 1
+	kubeconfigPath = string(data)
+	clusterName = "gateway-integration"
+
+	// Set KUBECONFIG environment variable for this process
+	err = os.Setenv("KUBECONFIG", kubeconfigPath)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Initialize K8s client for this process
 	suiteK8sClient = SetupK8sTestClient(suiteCtx)
 	Expect(suiteK8sClient).ToNot(BeNil(), "Failed to setup K8s client for suite")
 
@@ -95,10 +110,9 @@ var _ = BeforeSuite(func() {
 	EnsureTestNamespace(suiteCtx, suiteK8sClient, "kubernaut-system")
 })
 
-var _ = AfterSuite(func() {
-	// TDD FIX: Batch delete all test namespaces after suite completes
-	// This prevents "namespace is being terminated" errors during storm aggregation
-
+// SynchronizedAfterSuite runs cleanup in two phases for parallel execution
+var _ = SynchronizedAfterSuite(func() {
+	// This runs on ALL processes - cleanup per-process resources
 	testNamespacesMutex.Lock()
 	namespaceCount := len(testNamespaces)
 	namespaceList := make([]string, 0, namespaceCount)
@@ -115,8 +129,6 @@ var _ = AfterSuite(func() {
 	fmt.Printf("\n🧹 Cleaning up %d test namespaces...\n", namespaceCount)
 
 	// Wait for storm aggregation windows to complete
-	// Test configuration: AggregationWindow = 1 second (from helpers.go StartTestGateway)
-	// Buffer: 3 seconds for goroutines to complete and Redis operations to finish
 	testAggregationWindow := 1 * time.Second
 	bufferTime := 3 * time.Second
 	totalWait := testAggregationWindow + bufferTime
@@ -143,8 +155,8 @@ var _ = AfterSuite(func() {
 	if suiteK8sClient != nil {
 		suiteK8sClient.Cleanup(suiteCtx)
 	}
-
-	// Cleanup infrastructure
+}, func() {
+	// This runs ONCE on process 1 only - cleanup shared infrastructure
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	suiteLogger.Info("Gateway Integration Test Suite - Infrastructure Teardown")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

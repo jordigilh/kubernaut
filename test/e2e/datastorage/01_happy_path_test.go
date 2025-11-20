@@ -22,6 +22,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -337,6 +338,15 @@ func postAuditEvent(client *http.Client, baseURL string, event map[string]interf
 
 	resp, err := client.Do(req)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Log response body if not 2xx status
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes))
+		// Create new reader for the response body so tests can still read it
+		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	}
 
 	return resp
 }
