@@ -43,7 +43,7 @@ RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} \
 	./cmd/datastorage
 
 # Verify binary was built
-RUN ls -lh /data-storage && file /data-storage
+RUN ls -lh /data-storage
 
 # =============================================================================
 # STAGE 2: RUNTIME - Minimal runtime image
