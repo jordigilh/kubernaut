@@ -61,7 +61,7 @@ import (
 // - Complete infrastructure isolation
 // - No query interference between tests
 
-var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Label("e2e", "query-api", "p0"), func() {
+var _ = Describe("Scenario 3: Query API Timeline - Multi-Filter Retrieval", Label("e2e", "query-api", "p0"), Ordered, func() {
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
