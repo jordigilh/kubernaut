@@ -787,7 +787,7 @@ password: test_password`,
 					Containers: []corev1.Container{
 						{
 							Name:  "datastorage",
-							Image: "data-storage:e2e",
+							Image: "localhost/kubernaut-datastorage:e2e-test",
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "http",
@@ -1002,35 +1002,46 @@ func buildDataStorageImage(writer io.Writer) error {
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
-	// Build Data Storage image for amd64 (Kind uses amd64)
-	buildCmd := exec.Command("docker", "build",
-		"--platform", "linux/amd64",
-		"-t", "data-storage:e2e",
-		"-f", "docker/data-storage.Dockerfile",
+	// Build Data Storage image using Podman (following Gateway pattern)
+	buildCmd := exec.Command("podman", "build",
+		"-t", "localhost/kubernaut-datastorage:e2e-test",
+		"-f", "docker/datastorage-ubi9.Dockerfile",
 		".")
 	buildCmd.Dir = workspaceRoot
+	buildCmd.Stdout = writer
+	buildCmd.Stderr = writer
 
-	output, err := buildCmd.CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(writer, "❌ Build output:\n%s\n", output)
-		return fmt.Errorf("failed to build Data Storage image: %w", err)
+	if err := buildCmd.Run(); err != nil {
+		return fmt.Errorf("podman build failed: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  ✅ Data Storage image built")
+	fmt.Fprintln(writer, "   Data Storage image built: localhost/kubernaut-datastorage:e2e-test")
 	return nil
 }
 
 func loadDataStorageImage(clusterName string, writer io.Writer) error {
-	cmd := exec.Command("kind", "load", "docker-image",
-		"data-storage:e2e",
-		"--name", clusterName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(writer, "❌ Load output:\n%s\n", output)
-		return fmt.Errorf("failed to load Data Storage image: %w", err)
+	// Save image to tar (following Gateway pattern)
+	saveCmd := exec.Command("podman", "save", "localhost/kubernaut-datastorage:e2e-test", "-o", "/tmp/datastorage-e2e.tar")
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save image: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  ✅ Data Storage image loaded into Kind")
+	// Load image into Kind cluster
+	loadCmd := exec.Command("kind", "load", "image-archive", "/tmp/datastorage-e2e.tar", "--name", clusterName)
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+
+	if err := loadCmd.Run(); err != nil {
+		return fmt.Errorf("failed to load image into Kind: %w", err)
+	}
+
+	// Clean up tar file
+	_ = os.Remove("/tmp/datastorage-e2e.tar")
+
+	fmt.Fprintln(writer, "   Data Storage image loaded into Kind cluster")
 	return nil
 }
 
