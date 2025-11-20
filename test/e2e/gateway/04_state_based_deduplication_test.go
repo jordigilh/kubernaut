@@ -218,13 +218,13 @@ var _ = Describe("E2E: State-Based Deduplication Lifecycle", Label("e2e", "dedup
 				return crd.Spec.Deduplication.OccurrenceCount
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(2), "Occurrence count should be incremented to 2")
 
-			// Verify LastSeen was updated
-			Expect(crd.Spec.Deduplication.LastSeen).ToNot(BeNil(), "LastSeen should be updated")
-			// LastSeen should be >= FirstSeen (allow same millisecond for fast systems)
-			Expect(crd.Spec.Deduplication.LastSeen.Time.Before(crd.Spec.Deduplication.FirstSeen.Time)).To(BeFalse(),
-				"LastSeen should be >= FirstSeen")
+		// Verify LastSeen was updated
+		Expect(crd.Spec.Deduplication.LastSeen).ToNot(BeNil(), "LastSeen should be updated")
+		// LastSeen should be >= FirstSeen (allow same millisecond for fast systems)
+		Expect(crd.Spec.Deduplication.LastSeen.Time.Before(crd.Spec.Deduplication.FirstSeen.Time)).To(BeFalse(),
+			"LastSeen should be >= FirstSeen")
 
-			logger.Info(fmt.Sprintf("✅ Occurrence count incremented: 1 → 2, lastSeen updated"))
+		logger.Info("✅ Occurrence count incremented: 1 → 2, lastSeen updated")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// PHASE 5: Simulate Remediation in Progress (Processing State)

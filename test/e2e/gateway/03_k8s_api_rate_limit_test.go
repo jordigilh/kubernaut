@@ -227,14 +227,15 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", func() {
 		// Wait a moment for any pending CRD creations to complete
 		time.Sleep(5 * time.Second)
 
-		// Use kubectl to count CRDs
-		cmd := fmt.Sprintf("kubectl get remediationrequests -n %s --no-headers 2>/dev/null | wc -l", testNamespace)
-		output, err := infrastructure.RunCommand(cmd, kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred())
+	// Use kubectl to count CRDs
+	cmd := fmt.Sprintf("kubectl get remediationrequests -n %s --no-headers 2>/dev/null | wc -l", testNamespace)
+	output, err := infrastructure.RunCommand(cmd, kubeconfigPath)
+	Expect(err).ToNot(HaveOccurred())
 
-		var crdCount int
-		fmt.Sscanf(output, "%d", &crdCount)
-		testLogger.Info(fmt.Sprintf("  Found %d CRDs", crdCount))
+	var crdCount int
+	_, err = fmt.Sscanf(output, "%d", &crdCount)
+	Expect(err).ToNot(HaveOccurred(), "Failed to parse CRD count")
+	testLogger.Info(fmt.Sprintf("  Found %d CRDs", crdCount))
 
 		// We expect at least some CRDs to be created (exact count depends on storm detection)
 		// With 50 alerts and pattern_threshold=3, we expect storm aggregation to kick in
