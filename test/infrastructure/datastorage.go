@@ -615,9 +615,8 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 		}
 
 		// Apply migration via psql in the pod
-		cmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--",
+		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-n", namespace, podName, "--",
 			"psql", "-U", "slm_user", "-d", "action_history", "-c", migrationSQL)
-		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 
 		output, err := cmd.CombinedOutput()
 		if err != nil {
