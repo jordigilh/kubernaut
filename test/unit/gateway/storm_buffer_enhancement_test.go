@@ -19,7 +19,6 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
@@ -32,11 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
-func TestStormBufferEnhancement(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "StormBuffer Enhancement Unit Test Suite")
-}
-
+// StormAggregator Enhancement tests - part of main Gateway unit test suite
 var _ = Describe("StormAggregator Enhancement - Strict TDD", func() {
 	var (
 		aggregator   *processing.StormAggregator
