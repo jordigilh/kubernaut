@@ -39,11 +39,11 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} \
 	go build \
 	-ldflags="-w -s -X main.Version=${VERSION} -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-	-o /data-storage \
+	-o /datastorage \
 	./cmd/datastorage
 
 # Verify binary was built
-RUN ls -lh /data-storage
+RUN ls -lh /datastorage
 
 # =============================================================================
 # STAGE 2: RUNTIME - Minimal runtime image
@@ -67,7 +67,7 @@ LABEL name="kubernaut-data-storage" \
 	maintainer="Kubernaut Team"
 
 # Copy binary from builder
-COPY --from=builder /data-storage /data-storage
+COPY --from=builder /datastorage /datastorage
 
 # Create non-root user
 # UID 1001 is standard for UBI images
@@ -83,10 +83,10 @@ EXPOSE 8080 9090
 
 # Health check (optional but recommended)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-	CMD ["/data-storage", "healthcheck"] || exit 1
+	CMD ["/datastorage", "healthcheck"] || exit 1
 
 # Set entrypoint
-ENTRYPOINT ["/data-storage"]
+ENTRYPOINT ["/datastorage"]
 
 # Default command (can be overridden)
 CMD ["-config", "/etc/datastorage/config.yaml"]
