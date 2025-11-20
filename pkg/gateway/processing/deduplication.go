@@ -179,18 +179,8 @@ func (s *DeduplicationService) Check(ctx context.Context, signal *types.Normaliz
 		return false, nil, fmt.Errorf("invalid fingerprint: empty fingerprint not allowed")
 	}
 
-	// BR-003: Check Redis connectivity before processing
-	// Redis is required for deduplication state persistence across Gateway restarts
-	// Return error if Redis is unavailable (will be converted to HTTP 503)
-	if err := s.ensureConnection(ctx); err != nil {
-		s.logger.Warn("Redis unavailable for deduplication",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint))
-		s.metrics.DeduplicationCacheMissesTotal.Inc()
-		return false, nil, fmt.Errorf("redis unavailable: %w", err)
-	}
-
 	// DD-GATEWAY-009: If K8s client is nil (e.g., unit tests), fall back to Redis-based check
+	// Redis-only mode requires Redis connectivity
 	if s.k8sClient == nil {
 		s.logger.Debug("K8s client is nil, falling back to Redis-based deduplication",
 			zap.String("fingerprint", signal.Fingerprint),
