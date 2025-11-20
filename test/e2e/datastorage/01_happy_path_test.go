@@ -183,12 +183,14 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		Expect(err).ToNot(HaveOccurred())
 
 		gatewayEvent := map[string]interface{}{
-			"service":        "gateway",
-			"event_type":     "gateway.signal.received",
-			"correlation_id": correlationID,
-			"outcome":        "success",
-			"operation":      "signal_processing",
-			"event_data":     gatewayEventData,
+			"version":         "1.0",
+			"service":         "gateway",
+			"event_type":      "gateway.signal.received",
+			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"correlation_id":  correlationID,
+			"outcome":         "success",
+			"operation":       "signal_processing",
+			"event_data":      gatewayEventData,
 		}
 
 		resp := postAuditEvent(httpClient, serviceURL, gatewayEvent)
@@ -204,12 +206,14 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		Expect(err).ToNot(HaveOccurred())
 
 		aiEvent := map[string]interface{}{
-			"service":        "aianalysis",
-			"event_type":     "aianalysis.analysis.completed",
-			"correlation_id": correlationID,
-			"outcome":        "success",
-			"operation":      "rca_generation",
-			"event_data":     aiEventData,
+			"version":         "1.0",
+			"service":         "aianalysis",
+			"event_type":      "aianalysis.analysis.completed",
+			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"correlation_id":  correlationID,
+			"outcome":         "success",
+			"operation":       "rca_generation",
+			"event_data":      aiEventData,
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, aiEvent)
@@ -225,12 +229,14 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		Expect(err).ToNot(HaveOccurred())
 
 		workflowEvent := map[string]interface{}{
-			"service":        "workflow",
-			"event_type":     "workflow.workflow.completed",
-			"correlation_id": correlationID,
-			"outcome":        "success",
-			"operation":      "remediation_execution",
-			"event_data":     workflowEventData,
+			"version":         "1.0",
+			"service":         "workflow",
+			"event_type":      "workflow.workflow.completed",
+			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
+			"correlation_id":  correlationID,
+			"outcome":         "success",
+			"operation":       "remediation_execution",
+			"event_data":      workflowEventData,
 		}
 
 		resp = postAuditEvent(httpClient, serviceURL, workflowEvent)
@@ -334,4 +340,3 @@ func postAuditEvent(client *http.Client, baseURL string, event map[string]interf
 
 	return resp
 }
-
