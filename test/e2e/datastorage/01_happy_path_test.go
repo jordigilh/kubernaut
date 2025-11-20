@@ -294,7 +294,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		// Verification: Query via REST API
 		testLogger.Info("🔍 Querying audit trail via REST API...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
+		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&order_by=event_timestamp&order=asc", serviceURL, correlationID))
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Query API should return 200 OK")
