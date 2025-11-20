@@ -82,7 +82,7 @@ var _ = BeforeSuite(func() {
 	logger.Info("  • PostgreSQL with pgvector (audit events storage)")
 	logger.Info("  • Redis (DLQ fallback)")
 	logger.Info("  • Data Storage Docker image (build + load)")
-	logger.Info("  • Kubeconfig: ~/.kube/kind-config")
+	logger.Info("  • Kubeconfig: ~/.kube/kind-config-datastorage")
 	logger.Info("")
 	logger.Info("Note: Each test will deploy services in a unique namespace")
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -91,7 +91,8 @@ var _ = BeforeSuite(func() {
 	clusterName = "datastorage-e2e"
 	homeDir, err := os.UserHomeDir()
 	Expect(err).ToNot(HaveOccurred())
-	kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config", homeDir)
+	// Use unique kubeconfig path to avoid conflicts with Gateway E2E tests
+	kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config-datastorage", homeDir)
 
 	// Create Kind cluster (ONCE for all tests)
 	err = infrastructure.CreateDataStorageCluster(clusterName, kubeconfigPath, GinkgoWriter)
