@@ -58,14 +58,12 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 	// Shared test infrastructure (reused across all tests)
 	var (
 		gatewayURL string
-		httpClient *http.Client
 		k8sClient  client.Client
 	)
 
 	BeforeEach(func() {
 		// Shared Gateway instance (already deployed in suite setup)
 		gatewayURL = "http://localhost:30080"
-		httpClient = &http.Client{Timeout: 10 * time.Second}
 		k8sClient = getKubernetesClient()
 	})
 
@@ -197,12 +195,11 @@ var _ = Describe("E2E: Storm Buffering Lifecycle", Label("e2e", "storm-buffering
 				//
 				// BUSINESS OUTCOME: Captures complete storm lifecycle (no premature window closure)
 
-				// PARALLEL EXECUTION: Unique namespace + alert name per test
-				testNamespace := fmt.Sprintf("e2e-sliding-window-%d", time.Now().UnixNano())
-				alertName := fmt.Sprintf("NodeMemoryPressure-%d", time.Now().UnixNano())
-				bufferThreshold := 5
-				inactivityTimeout := 60 * time.Second
-				pauseBetweenAlerts := 30 * time.Second // < inactivity timeout
+			// PARALLEL EXECUTION: Unique namespace + alert name per test
+			testNamespace := fmt.Sprintf("e2e-sliding-window-%d", time.Now().UnixNano())
+			alertName := fmt.Sprintf("NodeMemoryPressure-%d", time.Now().UnixNano())
+			inactivityTimeout := 60 * time.Second
+			pauseBetweenAlerts := 30 * time.Second // < inactivity timeout
 
 				logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 				logger.Info("Test: Sliding Window with Inactivity Timeout",
