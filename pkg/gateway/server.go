@@ -1208,9 +1208,18 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
 
-	// DD-GATEWAY-009: v1.0 uses K8s API for deduplication (no Redis caching)
-	// v1.1 will add informer pattern to reduce API load
-	// No Redis storage needed - deduplication queries K8s CRD state directly
+	// 7. Store deduplication metadata in Redis (BR-003, BR-005, BR-077)
+	// This enables duplicate detection across Gateway restarts and provides
+	// persistent state for deduplication even when CRDs are deleted
+	crdRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
+	if err := s.deduplicator.Store(ctx, signal, crdRef); err != nil {
+		// Graceful degradation: log error but don't fail the request
+		// The CRD is already created, so the alert is being processed
+		logger.Warn("Failed to store deduplication metadata in Redis",
+			zap.String("fingerprint", signal.Fingerprint),
+			zap.String("crd_ref", crdRef),
+			zap.Error(err))
+	}
 
 	// Record processing duration
 	duration := time.Since(start)
@@ -1321,9 +1330,16 @@ func (s *Server) createAggregatedCRDAfterWindow(
 		return
 	}
 
-	// DD-GATEWAY-009: v1.0 uses K8s API for deduplication (no Redis caching)
-	// v1.1 will add informer pattern to reduce API load
-	// No Redis storage needed - deduplication queries K8s CRD state directly
+	// Store deduplication metadata in Redis for storm aggregation (BR-GATEWAY-016)
+	// This enables storm detection across Gateway restarts
+	crdRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
+	if err := s.deduplicator.Store(ctx, &aggregatedSignal, crdRef); err != nil {
+		// Graceful degradation: log error but don't fail
+		s.logger.Warn("Failed to store storm aggregation metadata in Redis",
+			zap.String("windowID", windowID),
+			zap.String("crd_ref", crdRef),
+			zap.Error(err))
+	}
 
 	s.logger.Info("Aggregated RemediationRequest CRD created successfully",
 		zap.String("windowID", windowID),

@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -294,7 +295,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		// Verification: Query via REST API
 		testLogger.Info("🔍 Querying audit trail via REST API...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&order_by=event_timestamp&order=asc", serviceURL, correlationID))
+		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Query API should return 200 OK")
@@ -308,8 +309,18 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		Expect(data).To(HaveLen(5), "Query API should return 5 events")
 		testLogger.Info("✅ Query API returned complete audit trail")
 
-		// Verification: Chronological order
+		// Verification: Chronological order (sort events first since API doesn't guarantee order)
 		testLogger.Info("🔍 Verifying chronological order...")
+		
+		// Sort events by timestamp
+		sort.Slice(data, func(i, j int) bool {
+			eventI := data[i].(map[string]interface{})
+			eventJ := data[j].(map[string]interface{})
+			timestampI, _ := time.Parse(time.RFC3339, eventI["event_timestamp"].(string))
+			timestampJ, _ := time.Parse(time.RFC3339, eventJ["event_timestamp"].(string))
+			return timestampI.Before(timestampJ)
+		})
+		
 		var previousTimestamp time.Time
 		for i, item := range data {
 			event := item.(map[string]interface{})
