@@ -48,8 +48,8 @@ help: ## Display this help.
 
 .PHONY: test-gateway
 test-gateway: ## Run Gateway integration tests (Kind bootstrapped via Go)
-	@echo "🧪 Running Gateway integration tests..."
-	@cd test/integration/gateway && ginkgo -v
+	@echo "🧪 Running Gateway integration tests with 4 parallel processors..."
+	@cd test/integration/gateway && ginkgo -v --procs=4
 
 ##@ Notification Service Integration Tests
 
