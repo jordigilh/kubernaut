@@ -84,7 +84,7 @@ echo "🎯 Expected pass rate: >90%"
 echo ""
 
 # Export KUBECONFIG for Kind cluster (isolated from OCP)
-export KUBECONFIG="${HOME}/.kube/kind-config"
+export KUBECONFIG="${HOME}/.kube/gateway-kubeconfig"
 
 # Run tests with timeout and fixed seed for reproducibility
 # Note: Run from script directory (test/integration/gateway), so use "." as the test path

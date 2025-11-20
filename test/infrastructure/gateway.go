@@ -39,7 +39,7 @@ import (
 //
 // Steps:
 // 1. Create Kind cluster with production-like configuration
-// 2. Export kubeconfig to ~/.kube/kind-config
+// 2. Export kubeconfig to ~/.kube/gateway-kubeconfig
 // 3. Install RemediationRequest CRD (cluster-wide resource)
 // 4. Build and load Gateway Docker image
 //

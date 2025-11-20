@@ -18,7 +18,7 @@ set -euo pipefail
 
 CLUSTER_NAME="kubernaut-test"
 NAMESPACE="kubernaut-system"
-KIND_KUBECONFIG="${HOME}/.kube/kind-config"
+KIND_KUBECONFIG="${HOME}/.kube/gateway-kubeconfig"
 
 # Get script directory and change to project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

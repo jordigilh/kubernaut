@@ -69,7 +69,7 @@ func SetupSecurityTokens() *SecurityTestTokens {
 	// Use isolated kubeconfig for Kind cluster to avoid impacting other tests
 	kubeconfigPath := os.Getenv("KUBECONFIG")
 	if kubeconfigPath == "" {
-		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "kind-config")
+		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "gateway-kubeconfig")
 	}
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)

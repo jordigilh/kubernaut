@@ -111,7 +111,7 @@ func getKubernetesClient() client.Client {
 	// Load kubeconfig from standard Kind location
 	homeDir, err := os.UserHomeDir()
 	Expect(err).ToNot(HaveOccurred(), "Failed to get home directory")
-	kubeconfigPath := fmt.Sprintf("%s/.kube/kind-config", homeDir)
+	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred(), "Failed to load kubeconfig")

@@ -57,14 +57,14 @@ var _ = BeforeSuite(func() {
 	suiteLogger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 	suiteLogger.Info("  • RemediationRequest CRD (cluster-wide)")
 	suiteLogger.Info("  • Redis container (localhost:6379)")
-	suiteLogger.Info("  • Kubeconfig: ~/.kube/kind-config")
+	suiteLogger.Info("  • Kubeconfig: ~/.kube/gateway-kubeconfig")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Set cluster configuration
 	clusterName = "gateway-integration"
 	homeDir, err := os.UserHomeDir()
 	Expect(err).ToNot(HaveOccurred())
-	kubeconfigPath = fmt.Sprintf("%s/.kube/kind-config", homeDir)
+	kubeconfigPath = fmt.Sprintf("%s/.kube/gateway-kubeconfig", homeDir)
 
 	// Create Kind cluster (same as E2E tests)
 	err = infrastructure.CreateGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)

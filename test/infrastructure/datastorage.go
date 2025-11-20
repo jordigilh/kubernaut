@@ -995,7 +995,9 @@ nodes:
 	// Export kubeconfig to specified path
 	// Note: kind create --kubeconfig doesn't always work reliably, so we export explicitly
 	kubeconfigCmd := exec.Command("kind", "get", "kubeconfig", "--name", clusterName)
-	kubeconfigOutput, err := kubeconfigCmd.CombinedOutput()
+	// Use Output() instead of CombinedOutput() to avoid capturing stderr
+	// (stderr contains "enabling experimental podman provider" which breaks YAML parsing)
+	kubeconfigOutput, err := kubeconfigCmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get kubeconfig: %w", err)
 	}
