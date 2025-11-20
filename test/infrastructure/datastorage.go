@@ -983,8 +983,7 @@ nodes:
 
 	cmd := exec.Command("kind", "create", "cluster",
 		"--name", clusterName,
-		"--config", configPath,
-		"--kubeconfig", kubeconfigPath)
+		"--config", configPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Fprintf(writer, "❌ Kind create output:\n%s\n", output)
@@ -992,6 +991,27 @@ nodes:
 	}
 
 	fmt.Fprintln(writer, "  ✅ Kind cluster created")
+
+	// Export kubeconfig to specified path
+	// Note: kind create --kubeconfig doesn't always work reliably, so we export explicitly
+	kubeconfigCmd := exec.Command("kind", "get", "kubeconfig", "--name", clusterName)
+	kubeconfigOutput, err := kubeconfigCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get kubeconfig: %w", err)
+	}
+
+	// Ensure directory exists
+	kubeconfigDir := filepath.Dir(kubeconfigPath)
+	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
+	}
+
+	// Write kubeconfig to file
+	if err := os.WriteFile(kubeconfigPath, kubeconfigOutput, 0600); err != nil {
+		return fmt.Errorf("failed to write kubeconfig: %w", err)
+	}
+
+	fmt.Fprintf(writer, "  ✅ Kubeconfig written to %s\n", kubeconfigPath)
 	return nil
 }
 
