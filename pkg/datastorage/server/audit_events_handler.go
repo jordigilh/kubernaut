@@ -26,10 +26,34 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
+
+// ========================================
+// RESPONSE TYPES (Structured Data)
+// ========================================
+
+// AuditEventCreatedResponse represents the response when an audit event is successfully created
+type AuditEventCreatedResponse struct {
+	EventID        string `json:"event_id"`
+	EventTimestamp string `json:"event_timestamp"`
+	Message        string `json:"message"`
+}
+
+// AuditEventAcceptedResponse represents the response when an audit event is queued for async processing (DLQ)
+type AuditEventAcceptedResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+// AuditEventsQueryResponse represents the response for audit events query API
+type AuditEventsQueryResponse struct {
+	Data       []*repository.AuditEvent       `json:"data"`
+	Pagination *repository.PaginationMetadata `json:"pagination"`
+}
 
 // ========================================
 // AUDIT EVENTS WRITE HANDLER (TDD GREEN Phase)
@@ -93,7 +117,15 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 2. Validate required fields in JSON body
-	requiredFields := []string{"version", "service", "event_type", "event_timestamp", "correlation_id", "outcome", "operation", "event_data"}
+	// ADR-034: Accept both old and new field names for backward compatibility
+	requiredFields := []string{"version", "event_type", "event_timestamp", "correlation_id", "event_data"}
+	requiredFieldsWithAliases := map[string][]string{
+		"event_category": {"event_category", "service"}, // ADR-034 + legacy
+		"event_action":   {"event_action", "operation"}, // ADR-034 + legacy
+		"event_outcome":  {"event_outcome", "outcome"},  // ADR-034 + legacy
+	}
+
+	// Check simple required fields
 	for _, field := range requiredFields {
 		if _, ok := payload[field]; !ok {
 			s.logger.Warn("Missing required field in request body",
@@ -112,12 +144,55 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// 3. Extract and validate fields from JSON body
+	// Check fields with aliases (ADR-034 + backward compatibility)
+	for canonical, aliases := range requiredFieldsWithAliases {
+		found := false
+		for _, alias := range aliases {
+			if _, ok := payload[alias]; ok {
+				found = true
+				break
+			}
+		}
+		if !found {
+			s.logger.Warn("Missing required field in request body",
+				zap.String("field", canonical),
+				zap.Strings("accepted_aliases", aliases))
+
+			// Record validation failure metric (BR-STORAGE-019)
+			if s.metrics != nil && s.metrics.ValidationFailures != nil {
+				s.metrics.ValidationFailures.WithLabelValues(canonical, "missing_required_field").Inc()
+			}
+
+			writeRFC7807Error(w, validation.NewValidationErrorProblem(
+				"audit_event",
+				map[string]string{canonical: fmt.Sprintf("required field missing (accepted: %v)", aliases)},
+			))
+			return
+		}
+	}
+
+	// 3. Extract and validate fields from JSON body (ADR-034 + backward compatibility)
 	eventType, _ := payload["event_type"].(string)
-	service, _ := payload["service"].(string)
+
+	// event_category (ADR-034) or service (legacy)
+	eventCategory, ok := payload["event_category"].(string)
+	if !ok {
+		eventCategory, _ = payload["service"].(string)
+	}
+
+	// event_action (ADR-034) or operation (legacy)
+	eventAction, ok := payload["event_action"].(string)
+	if !ok {
+		eventAction, _ = payload["operation"].(string)
+	}
+
+	// event_outcome (ADR-034) or outcome (legacy)
+	eventOutcome, ok := payload["event_outcome"].(string)
+	if !ok {
+		eventOutcome, _ = payload["outcome"].(string)
+	}
+
 	correlationID, _ := payload["correlation_id"].(string)
-	outcome, _ := payload["outcome"].(string)
-	operation, _ := payload["operation"].(string)
 	eventTimestampStr, _ := payload["event_timestamp"].(string)
 
 	// Parse event_timestamp
@@ -143,9 +218,32 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Extract optional fields
-	resourceType, _ := payload["resource_type"].(string)
-	resourceID, _ := payload["resource_id"].(string)
+	// Extract actor fields (ADR-034 REQUIRED fields)
+	actorType, ok := payload["actor_type"].(string)
+	if !ok || actorType == "" {
+		// Default: derive from event_category
+		actorType = "service" // Default to "service" for backward compatibility
+	}
+
+	actorID, ok := payload["actor_id"].(string)
+	if !ok || actorID == "" {
+		// Default: derive from event_category
+		actorID = eventCategory + "-service" // e.g., "gateway-service"
+	}
+
+	// Extract resource fields (ADR-034 REQUIRED fields)
+	resourceType, ok := payload["resource_type"].(string)
+	if !ok || resourceType == "" {
+		// Default: use event_category as resource_type for backward compatibility
+		resourceType = eventCategory
+	}
+
+	resourceID, ok := payload["resource_id"].(string)
+	if !ok || resourceID == "" {
+		// Default: use correlation_id as resource_id for backward compatibility
+		resourceID = correlationID
+	}
+
 	resourceNamespace, _ := payload["resource_namespace"].(string)
 	clusterID, _ := payload["cluster_id"].(string)
 	severity, _ := payload["severity"].(string)
@@ -213,23 +311,25 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 
 	s.logger.Debug("Request body parsed and validated successfully",
 		zap.String("event_type", eventType),
-		zap.String("service", service),
+		zap.String("event_category", eventCategory),
 		zap.String("correlation_id", correlationID))
 
-	// 4. Build AuditEvent domain model
+	// 4. Build AuditEvent domain model (ADR-034 schema)
 	auditEvent := &repository.AuditEvent{
 		EventTimestamp:    eventTimestamp,
 		EventType:         eventType,
-		Service:           service,
+		EventCategory:     eventCategory, // ADR-034
+		EventAction:       eventAction,   // ADR-034
+		EventOutcome:      eventOutcome,  // ADR-034
 		CorrelationID:     correlationID,
 		ParentEventID:     parentEventID,   // Optional: for event causality chains
 		ParentEventDate:   parentEventDate, // Auto-derived from parent_event_id
-		ResourceType:      resourceType,
-		ResourceID:        resourceID,
+		ActorType:         actorType,       // ADR-034 REQUIRED
+		ActorID:           actorID,         // ADR-034 REQUIRED
+		ResourceType:      resourceType,    // ADR-034 REQUIRED
+		ResourceID:        resourceID,      // ADR-034 REQUIRED
 		ResourceNamespace: resourceNamespace,
 		ClusterID:         clusterID,
-		Operation:         operation,
-		Outcome:           outcome,
 		Severity:          severity,
 		EventData:         eventData,
 	}
@@ -254,6 +354,10 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			zap.String("correlation_id", correlationID),
 			zap.Float64("duration_seconds", duration))
 
+		// BR-STORAGE-012: Audit Point 2 - Write failure (before DLQ fallback)
+		// Note: No event_id yet since DB write failed
+		s.auditWriteFailure(ctx, "", eventType, correlationID, err)
+
 		// DD-009: DLQ fallback on database errors
 		s.logger.Info("Attempting DLQ fallback for audit event",
 			zap.String("event_type", eventType),
@@ -265,25 +369,38 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer dlqCancel()
 
-		// Convert auditEvent to map for DLQ
-		eventMap := map[string]interface{}{
-			"version":            payload["version"],
-			"service":            service,
-			"event_type":         eventType,
-			"event_timestamp":    eventTimestampStr,
-			"correlation_id":     correlationID,
-			"resource_type":      resourceType,
-			"resource_id":        resourceID,
-			"resource_namespace": resourceNamespace,
-			"cluster_id":         clusterID,
-			"operation":          operation,
-			"outcome":            outcome,
-			"severity":           severity,
-			"event_data":         eventData,
+		// Convert repository.AuditEvent to audit.AuditEvent for DLQ
+		// Serialize event_data to JSON
+		eventDataJSON, marshalErr := json.Marshal(eventData)
+		if marshalErr != nil {
+			s.logger.Error("Failed to marshal event_data for DLQ",
+				zap.Error(marshalErr),
+				zap.String("event_type", eventType))
+			eventDataJSON = []byte("{}")
 		}
 
-		// Attempt to enqueue to DLQ
-		if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, eventMap, err); dlqErr != nil {
+		dlqAuditEvent := &audit.AuditEvent{
+			EventID:        uuid.New(),
+			EventVersion:   "1.0",
+			EventTimestamp: eventTimestamp,
+			EventType:      eventType,
+			EventCategory:  eventCategory, // ADR-034
+			EventAction:    eventAction,   // ADR-034
+			EventOutcome:   eventOutcome,  // ADR-034
+			ActorType:      "service",
+			ActorID:        eventCategory, // Use event_category as actor_id
+			ResourceType:   resourceType,
+			ResourceID:     resourceID,
+			CorrelationID:  correlationID,
+			ParentEventID:  parentEventID,
+			Namespace:      &resourceNamespace,
+			ClusterName:    &clusterID,
+			EventData:      eventDataJSON,
+			Severity:       &severity,
+		}
+
+		// Attempt to enqueue to DLQ (use original database error, not marshalErr)
+		if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, dlqAuditEvent, err); dlqErr != nil {
 			s.logger.Error("DLQ fallback also failed - data loss risk",
 				zap.Error(dlqErr),
 				zap.String("event_type", eventType),
@@ -305,48 +422,60 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 			zap.String("event_type", eventType),
 			zap.String("correlation_id", correlationID))
 
+		// BR-STORAGE-012: Audit Point 3 - DLQ fallback success
+		s.auditDLQFallback(ctx, dlqAuditEvent.EventID.String(), eventType, correlationID, eventCategory)
+
 		// Record DLQ fallback metric
 		if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
-			s.metrics.AuditTracesTotal.WithLabelValues(service, "dlq_fallback").Inc()
+			s.metrics.AuditTracesTotal.WithLabelValues(eventCategory, "dlq_fallback").Inc()
 		}
 
 		// DLQ success - return 202 Accepted (async processing)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "accepted",
-			"message": "audit event queued for async processing",
-		})
+		response := AuditEventAcceptedResponse{
+			Status:  "accepted",
+			Message: "audit event queued for async processing",
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			s.logger.Error("failed to encode DLQ response", zap.Error(err))
+		}
 		return
 	}
 
 	// 6. Record metrics (BR-STORAGE-019: Logging and metrics)
+	// BR-STORAGE-012: Audit Point 1 - Write success
+	s.auditWriteSuccess(ctx, created.EventID.String(), eventType, correlationID, eventCategory)
+
 	// Record successful audit write
 	if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
-		s.metrics.AuditTracesTotal.WithLabelValues(service, "success").Inc()
+		s.metrics.AuditTracesTotal.WithLabelValues(eventCategory, "success").Inc()
 	}
 
 	// Record audit lag (time between event occurrence and write)
 	if s.metrics != nil && s.metrics.AuditLagSeconds != nil {
 		lag := time.Since(eventTimestamp).Seconds()
-		s.metrics.AuditLagSeconds.WithLabelValues(service).Observe(lag)
+		s.metrics.AuditLagSeconds.WithLabelValues(eventCategory).Observe(lag)
 	}
 
 	// 7. Success - return 201 Created with event_id and created_at
 	s.logger.Info("Audit event created successfully",
 		zap.String("event_id", created.EventID.String()),
 		zap.String("event_type", created.EventType),
-		zap.String("service", created.Service),
+		zap.String("event_category", created.EventCategory),
 		zap.String("correlation_id", created.CorrelationID),
 		zap.Float64("duration_seconds", duration))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"event_id":   created.EventID.String(),
-		"created_at": created.CreatedAt.Format(time.RFC3339),
-		"message":    "Audit event created successfully",
-	})
+	response := AuditEventCreatedResponse{
+		EventID:        created.EventID.String(),
+		EventTimestamp: created.EventTimestamp.Format(time.RFC3339), // ADR-034
+		Message:        "Audit event created successfully",
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error("failed to encode success response", zap.Error(err))
+	}
 }
 
 // ========================================
@@ -454,10 +583,13 @@ func (s *Server) handleQueryAuditEvents(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"data":       events,
-		"pagination": pagination,
-	})
+	response := AuditEventsQueryResponse{
+		Data:       events,
+		Pagination: pagination,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error("failed to encode query response", zap.Error(err))
+	}
 }
 
 // parseQueryFilters extracts and validates query parameters from HTTP request
@@ -550,14 +682,180 @@ func (s *Server) buildQueryFromFilters(filters *queryFilters) *query.AuditEvents
 }
 
 // queryFilters holds parsed query parameters
+// Note: 'service' and 'outcome' kept for API backward compatibility,
+// but map to ADR-034 event_category and event_outcome in database
 type queryFilters struct {
 	correlationID string
 	eventType     string
-	service       string
-	outcome       string
+	service       string // Maps to event_category (ADR-034)
+	outcome       string // Maps to event_outcome (ADR-034)
 	severity      string
 	since         *time.Time
 	until         *time.Time
 	limit         int
 	offset        int
+}
+
+// ========================================
+// SELF-AUDITING HELPER FUNCTIONS (DD-STORAGE-012)
+// 📋 Design Decision: DD-STORAGE-012 | BR-STORAGE-012, BR-STORAGE-013, BR-STORAGE-014
+// Authority: DD-STORAGE-012-AUDIT-INTEGRATION-PLAN.md
+// ========================================
+//
+// These functions implement the three audit points for Data Storage Service:
+// 1. datastorage.audit.written - Successful writes
+// 2. datastorage.audit.failed - Write failures (before DLQ)
+// 3. datastorage.dlq.fallback - DLQ fallback success
+//
+// BR-STORAGE-012: Data Storage Service must generate audit traces for its own operations
+// BR-STORAGE-013: Audit traces must not create circular dependencies (uses InternalAuditClient)
+// BR-STORAGE-014: Audit writes must not block business operations (async buffered)
+//
+// ========================================
+
+// auditWriteSuccess audits successful audit event writes
+// BR-STORAGE-012: Audit Point 1 - datastorage.audit.written
+func (s *Server) auditWriteSuccess(ctx context.Context, eventID, eventType, correlationID, actorID string) {
+	if s.auditStore == nil {
+		return // Audit store not initialized (shouldn't happen)
+	}
+
+	// Create audit event
+	auditEvent := audit.NewAuditEvent()
+	auditEvent.EventType = "datastorage.audit.written"
+	auditEvent.EventCategory = "storage"
+	auditEvent.EventAction = "written"
+	auditEvent.EventOutcome = "success"
+	auditEvent.ActorType = "service"
+	auditEvent.ActorID = "datastorage"
+	auditEvent.ResourceType = "AuditEvent"
+	auditEvent.ResourceID = eventID
+	auditEvent.CorrelationID = correlationID
+
+	// Create event_data (common envelope format)
+	eventData := audit.NewEventData(
+		"datastorage",
+		"audit_written",
+		"success",
+		map[string]interface{}{
+			"event_type": eventType,
+			"actor_id":   actorID,
+		},
+	)
+	eventDataJSON, _ := eventData.ToJSON()
+	auditEvent.EventData = eventDataJSON
+
+	// Non-blocking audit (async buffered)
+	if err := s.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		s.logger.Warn("Failed to audit write success",
+			zap.Error(err),
+			zap.String("event_id", eventID),
+			zap.String("correlation_id", correlationID))
+
+		// Record audit failure metric for visibility (Concern 3)
+		if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
+			s.metrics.AuditTracesTotal.WithLabelValues("datastorage", "self_audit_failure").Inc()
+		}
+	}
+}
+
+// auditWriteFailure audits audit event write failures (before DLQ fallback)
+// BR-STORAGE-012: Audit Point 2 - datastorage.audit.failed
+func (s *Server) auditWriteFailure(ctx context.Context, eventID, eventType, correlationID string, writeErr error) {
+	if s.auditStore == nil {
+		return // Audit store not initialized (shouldn't happen)
+	}
+
+	// Use placeholder if eventID is empty (DB write failed before ID generation)
+	if eventID == "" {
+		eventID = "unknown"
+	}
+
+	// Create audit event
+	auditEvent := audit.NewAuditEvent()
+	auditEvent.EventType = "datastorage.audit.failed"
+	auditEvent.EventCategory = "storage"
+	auditEvent.EventAction = "write_failed"
+	auditEvent.EventOutcome = "failure"
+	auditEvent.ActorType = "service"
+	auditEvent.ActorID = "datastorage"
+	auditEvent.ResourceType = "AuditEvent"
+	auditEvent.ResourceID = eventID
+	auditEvent.CorrelationID = correlationID
+
+	// Add error details
+	errorMsg := writeErr.Error()
+	auditEvent.ErrorMessage = &errorMsg
+
+	// Create event_data (common envelope format)
+	eventData := audit.NewEventData(
+		"datastorage",
+		"audit_write_failed",
+		"failure",
+		map[string]interface{}{
+			"event_type": eventType,
+			"error":      errorMsg,
+		},
+	)
+	eventDataJSON, _ := eventData.ToJSON()
+	auditEvent.EventData = eventDataJSON
+
+	// Non-blocking audit (async buffered)
+	if err := s.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		s.logger.Warn("Failed to audit write failure",
+			zap.Error(err),
+			zap.String("event_id", eventID),
+			zap.String("correlation_id", correlationID))
+
+		// Record audit failure metric for visibility (Concern 3)
+		if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
+			s.metrics.AuditTracesTotal.WithLabelValues("datastorage", "self_audit_failure").Inc()
+		}
+	}
+}
+
+// auditDLQFallback audits successful DLQ fallback after write failure
+// BR-STORAGE-012: Audit Point 3 - datastorage.dlq.fallback
+func (s *Server) auditDLQFallback(ctx context.Context, eventID, eventType, correlationID, actorID string) {
+	if s.auditStore == nil {
+		return // Audit store not initialized (shouldn't happen)
+	}
+
+	// Create audit event
+	auditEvent := audit.NewAuditEvent()
+	auditEvent.EventType = "datastorage.dlq.fallback"
+	auditEvent.EventCategory = "storage"
+	auditEvent.EventAction = "dlq_fallback"
+	auditEvent.EventOutcome = "success"
+	auditEvent.ActorType = "service"
+	auditEvent.ActorID = actorID // Use provided actor_id (event_category from original event)
+	auditEvent.ResourceType = "AuditEvent"
+	auditEvent.ResourceID = eventID
+	auditEvent.CorrelationID = correlationID
+
+	// Create event_data (common envelope format)
+	eventData := audit.NewEventData(
+		"datastorage",
+		"dlq_fallback",
+		"success",
+		map[string]interface{}{
+			"event_type": eventType,
+			"reason":     "postgresql_unavailable",
+		},
+	)
+	eventDataJSON, _ := eventData.ToJSON()
+	auditEvent.EventData = eventDataJSON
+
+	// Non-blocking audit (async buffered)
+	if err := s.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		s.logger.Warn("Failed to audit DLQ fallback",
+			zap.Error(err),
+			zap.String("event_id", eventID),
+			zap.String("correlation_id", correlationID))
+
+		// Record audit failure metric for visibility (Concern 3)
+		if s.metrics != nil && s.metrics.AuditTracesTotal != nil {
+			s.metrics.AuditTracesTotal.WithLabelValues("datastorage", "self_audit_failure").Inc()
+		}
+	}
 }

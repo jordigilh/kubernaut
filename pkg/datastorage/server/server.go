@@ -31,6 +31,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
@@ -62,6 +63,10 @@ type Server struct {
 
 	// BR-STORAGE-033: Unified audit events API (ADR-034)
 	auditEventsRepo *repository.AuditEventsRepository
+
+	// BR-STORAGE-012: Self-auditing (DD-STORAGE-012)
+	// Uses InternalAuditClient to avoid circular dependency
+	auditStore audit.AuditStore
 
 	// BR-STORAGE-019: Prometheus metrics (GAP-10)
 	metrics *dsmetrics.Metrics
@@ -134,7 +139,10 @@ func NewServer(
 	// Create audit write dependencies (BR-STORAGE-001 to BR-STORAGE-020)
 	logger.Debug("Creating audit write dependencies...")
 	repo := repository.NewNotificationAuditRepository(db, logger)
-	dlqClient := dlq.NewClient(redisClient, logger)
+	dlqClient, err := dlq.NewClient(redisClient, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DLQ client: %w", err)
+	}
 	validator := validation.NewNotificationAuditValidator()
 
 	logger.Debug("Audit write dependencies created",
@@ -153,6 +161,30 @@ func NewServer(
 	auditEventsRepo := repository.NewAuditEventsRepository(db, logger)
 	logger.Debug("ADR-034 audit events repository created",
 		zap.Bool("audit_events_repo_nil", auditEventsRepo == nil))
+
+	// Create BR-STORAGE-012: Self-auditing audit store (DD-STORAGE-012)
+	// Uses InternalAuditClient to avoid circular dependency (cannot call own REST API)
+	logger.Debug("Creating self-auditing audit store (DD-STORAGE-012)...")
+	internalClient := audit.NewInternalAuditClient(db)
+
+	// Create audit store with zap logger (DD-005: All services use zap)
+	auditStore, err := audit.NewBufferedStore(
+		internalClient,
+		audit.DefaultConfig(),
+		"datastorage", // service name
+		logger,        // Use server's zap logger
+	)
+	if err != nil {
+		_ = db.Close() // Clean up DB connection
+		return nil, fmt.Errorf("failed to create audit store: %w", err)
+	}
+
+	logger.Info("Self-auditing audit store initialized (DD-STORAGE-012)",
+		zap.Int("buffer_size", audit.DefaultConfig().BufferSize),
+		zap.Int("batch_size", audit.DefaultConfig().BatchSize),
+		zap.Duration("flush_interval", audit.DefaultConfig().FlushInterval),
+		zap.Int("max_retries", audit.DefaultConfig().MaxRetries),
+	)
 
 	// Create Prometheus metrics (BR-STORAGE-019, GAP-10)
 	metrics := dsmetrics.NewMetrics("datastorage", "")
@@ -182,6 +214,7 @@ func NewServer(
 		dlqClient:       dlqClient,
 		validator:       validator,
 		auditEventsRepo: auditEventsRepo,
+		auditStore:      auditStore,
 		metrics:         metrics,
 	}, nil
 }
@@ -238,7 +271,7 @@ func (s *Server) Handler() http.Handler {
 
 		// BR-STORAGE-031-01, BR-STORAGE-031-02, BR-STORAGE-031-05: ADR-033 Multi-dimensional Success Tracking (READ API)
 		r.Get("/success-rate/incident-type", s.handler.HandleGetSuccessRateByIncidentType)
-		r.Get("/success-rate/playbook", s.handler.HandleGetSuccessRateByPlaybook)
+		r.Get("/success-rate/workflow", s.handler.HandleGetSuccessRateByWorkflow)
 		r.Get("/success-rate/multi-dimensional", s.handler.HandleGetSuccessRateMultiDimensional)
 
 		// BR-STORAGE-001 to BR-STORAGE-020: Audit write endpoints (WRITE API)
@@ -349,11 +382,28 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context) error {
 	return nil
 }
 
-// shutdownStep4CloseResources closes external resources (database)
-// DD-007 STEP 4: Clean up database connections
+// shutdownStep4CloseResources closes external resources (database, audit store)
+// DD-007 STEP 4: Clean up database connections and flush audit events
 func (s *Server) shutdownStep4CloseResources() error {
-	s.logger.Info("Closing external resources (PostgreSQL)",
+	s.logger.Info("Closing external resources (PostgreSQL, audit store)",
 		zap.String("dd", "DD-007-step-4"))
+
+	// BR-STORAGE-014: Flush remaining audit events before closing database
+	// This ensures no audit traces are lost during graceful shutdown
+	if s.auditStore != nil {
+		s.logger.Info("Flushing remaining audit events (DD-STORAGE-012)",
+			zap.String("dd", "DD-007-step-4-audit-flush"))
+		if err := s.auditStore.Close(); err != nil {
+			s.logger.Error("Failed to flush audit events",
+				zap.Error(err),
+				zap.String("dd", "DD-007-step-4-audit-error"))
+			// Continue with shutdown even if audit flush fails
+			// (audit failures should not block graceful shutdown)
+		} else {
+			s.logger.Info("Audit events flushed successfully",
+				zap.String("dd", "DD-007-step-4-audit-complete"))
+		}
+	}
 
 	// Close PostgreSQL connection
 	if err := s.db.Close(); err != nil {

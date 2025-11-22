@@ -172,12 +172,14 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		s.logger.Info("Audit record queued to DLQ for async processing",
 			zap.String("notification_id", audit.NotificationID))
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "accepted",
-			"message": "audit record queued for processing",
-		})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"status":  "accepted",
+		"message": "audit record queued for processing",
+	}); err != nil {
+		s.logger.Error("failed to encode DLQ response", zap.Error(err))
+	}
 		return
 	}
 
@@ -203,7 +205,9 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(created)
+	if err := json.NewEncoder(w).Encode(created); err != nil {
+		s.logger.Error("failed to encode success response", zap.Error(err))
+	}
 }
 
 // writeRFC7807Error writes an RFC 7807 Problem Details error response
@@ -211,5 +215,8 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 func writeRFC7807Error(w http.ResponseWriter, problem *validation.RFC7807Problem) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(problem.Status)
-	json.NewEncoder(w).Encode(problem)
+	if err := json.NewEncoder(w).Encode(problem); err != nil {
+		// Can't log here since we don't have access to logger, but status code is already set
+		_ = err
+	}
 }
