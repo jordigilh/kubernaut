@@ -31,8 +31,8 @@ import (
 type AuditEventsQueryBuilder struct {
 	correlationID *string
 	eventType     *string
-	service       *string
-	outcome       *string
+	eventCategory *string // ADR-034: renamed from 'service'
+	eventOutcome  *string // ADR-034: renamed from 'outcome'
 	severity      *string
 	since         *time.Time
 	until         *time.Time
@@ -85,18 +85,20 @@ func (b *AuditEventsQueryBuilder) WithEventType(eventType string) *AuditEventsQu
 	return b
 }
 
-// WithService sets service filter
-func (b *AuditEventsQueryBuilder) WithService(service string) *AuditEventsQueryBuilder {
-	if service != "" {
-		b.service = &service
+// WithService sets event_category filter (ADR-034: renamed from 'service')
+// Kept method name for backward compatibility with existing code
+func (b *AuditEventsQueryBuilder) WithService(eventCategory string) *AuditEventsQueryBuilder {
+	if eventCategory != "" {
+		b.eventCategory = &eventCategory
 	}
 	return b
 }
 
-// WithOutcome sets outcome filter
-func (b *AuditEventsQueryBuilder) WithOutcome(outcome string) *AuditEventsQueryBuilder {
-	if outcome != "" {
-		b.outcome = &outcome
+// WithOutcome sets event_outcome filter (ADR-034: renamed from 'outcome')
+// Kept method name for backward compatibility with existing code
+func (b *AuditEventsQueryBuilder) WithOutcome(eventOutcome string) *AuditEventsQueryBuilder {
+	if eventOutcome != "" {
+		b.eventOutcome = &eventOutcome
 	}
 	return b
 }
@@ -165,8 +167,8 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 	b.logger.Debug("Building audit_events SQL query",
 		zap.Any("correlation_id", b.correlationID),
 		zap.Any("event_type", b.eventType),
-		zap.Any("service", b.service),
-		zap.Any("outcome", b.outcome),
+		zap.Any("event_category", b.eventCategory),
+		zap.Any("event_outcome", b.eventOutcome),
 		zap.Any("severity", b.severity),
 		zap.Any("since", b.since),
 		zap.Any("until", b.until),
@@ -174,8 +176,8 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 		zap.Int("offset", b.offset),
 	)
 
-	// Base query
-	sql := "SELECT event_id, event_type, service, correlation_id, event_timestamp, outcome, severity, " +
+	// Base query (ADR-034 column names)
+	sql := "SELECT event_id, event_type, event_category, correlation_id, event_timestamp, event_outcome, severity, " +
 		"resource_type, resource_id, actor_type, actor_id, parent_event_id, event_data, event_date " +
 		"FROM audit_events WHERE 1=1"
 
@@ -194,14 +196,14 @@ func (b *AuditEventsQueryBuilder) Build() (string, []interface{}, error) {
 		args = append(args, *b.eventType)
 		argIndex++
 	}
-	if b.service != nil {
-		sql += fmt.Sprintf(" AND service = $%d", argIndex)
-		args = append(args, *b.service)
+	if b.eventCategory != nil {
+		sql += fmt.Sprintf(" AND event_category = $%d", argIndex)
+		args = append(args, *b.eventCategory)
 		argIndex++
 	}
-	if b.outcome != nil {
-		sql += fmt.Sprintf(" AND outcome = $%d", argIndex)
-		args = append(args, *b.outcome)
+	if b.eventOutcome != nil {
+		sql += fmt.Sprintf(" AND event_outcome = $%d", argIndex)
+		args = append(args, *b.eventOutcome)
 		argIndex++
 	}
 	if b.severity != nil {
@@ -261,14 +263,14 @@ func (b *AuditEventsQueryBuilder) BuildCount() (string, []interface{}, error) {
 		args = append(args, *b.eventType)
 		argIndex++
 	}
-	if b.service != nil {
-		sql += fmt.Sprintf(" AND service = $%d", argIndex)
-		args = append(args, *b.service)
+	if b.eventCategory != nil {
+		sql += fmt.Sprintf(" AND event_category = $%d", argIndex)
+		args = append(args, *b.eventCategory)
 		argIndex++
 	}
-	if b.outcome != nil {
-		sql += fmt.Sprintf(" AND outcome = $%d", argIndex)
-		args = append(args, *b.outcome)
+	if b.eventOutcome != nil {
+		sql += fmt.Sprintf(" AND event_outcome = $%d", argIndex)
+		args = append(args, *b.eventOutcome)
 		argIndex++
 	}
 	if b.severity != nil {

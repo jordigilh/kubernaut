@@ -107,16 +107,20 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			eventPayload := map[string]interface{}{
-				"version":          "1.0",
-				"service":          "gateway",
-				"event_type":       "gateway.signal.received",
-				"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-				"correlation_id":   fmt.Sprintf("metrics-test-%d", time.Now().UnixNano()),
-				"outcome":          "success",
-				"operation":        "metrics_test",
-				"event_data":       eventData,
-			}
+		eventPayload := map[string]interface{}{
+			"version":          "1.0",
+			"service":          "gateway",
+			"event_type":       "gateway.signal.received",
+			"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
+			"correlation_id":   fmt.Sprintf("metrics-test-%d", time.Now().UnixNano()),
+			"outcome":          "success",
+			"operation":        "metrics_test",
+			"actor_type":       "service",          // ADR-034 required
+			"actor_id":         "gateway-service",  // ADR-034 required
+			"resource_type":    "signal",           // ADR-034 required
+			"resource_id":      "metrics-test-001", // ADR-034 required
+			"event_data":       eventData,
+		}
 
 			payload, _ := json.Marshal(eventPayload)
 			resp, err := http.Post(

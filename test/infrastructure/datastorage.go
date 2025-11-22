@@ -637,9 +637,8 @@ func applyMigrationsInNamespace(ctx context.Context, namespace, kubeconfigPath s
 		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
 		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;
 	`
-	cmd := exec.Command("kubectl", "exec", "-n", namespace, podName, "--",
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "exec", "-n", namespace, podName, "--",
 		"psql", "-U", "slm_user", "-d", "action_history", "-c", grantSQL)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 	cmd.Run()
 
 	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n")

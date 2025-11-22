@@ -16,12 +16,12 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
-// Defines values for IncidentSignalSeverity.
+// Defines values for IncidentAlertSeverity.
 const (
-	IncidentSignalSeverityCritical IncidentSignalSeverity = "critical"
-	IncidentSignalSeverityHigh     IncidentSignalSeverity = "high"
-	IncidentSignalSeverityLow      IncidentSignalSeverity = "low"
-	IncidentSignalSeverityMedium   IncidentSignalSeverity = "medium"
+	IncidentAlertSeverityCritical IncidentAlertSeverity = "critical"
+	IncidentAlertSeverityHigh     IncidentAlertSeverity = "high"
+	IncidentAlertSeverityLow      IncidentAlertSeverity = "low"
+	IncidentAlertSeverityMedium   IncidentAlertSeverity = "medium"
 )
 
 // Defines values for IncidentExecutionStatus.
@@ -33,13 +33,49 @@ const (
 	Pending    IncidentExecutionStatus = "pending"
 )
 
+// Defines values for IncidentTypeSuccessRateResponseConfidence.
+const (
+	IncidentTypeSuccessRateResponseConfidenceHigh             IncidentTypeSuccessRateResponseConfidence = "high"
+	IncidentTypeSuccessRateResponseConfidenceInsufficientData IncidentTypeSuccessRateResponseConfidence = "insufficient_data"
+	IncidentTypeSuccessRateResponseConfidenceLow              IncidentTypeSuccessRateResponseConfidence = "low"
+	IncidentTypeSuccessRateResponseConfidenceMedium           IncidentTypeSuccessRateResponseConfidence = "medium"
+)
+
+// Defines values for MultiDimensionalSuccessRateResponseConfidence.
+const (
+	MultiDimensionalSuccessRateResponseConfidenceHigh             MultiDimensionalSuccessRateResponseConfidence = "high"
+	MultiDimensionalSuccessRateResponseConfidenceInsufficientData MultiDimensionalSuccessRateResponseConfidence = "insufficient_data"
+	MultiDimensionalSuccessRateResponseConfidenceLow              MultiDimensionalSuccessRateResponseConfidence = "low"
+	MultiDimensionalSuccessRateResponseConfidenceMedium           MultiDimensionalSuccessRateResponseConfidence = "medium"
+)
+
+// Defines values for WorkflowSuccessRateResponseConfidence.
+const (
+	WorkflowSuccessRateResponseConfidenceHigh             WorkflowSuccessRateResponseConfidence = "high"
+	WorkflowSuccessRateResponseConfidenceInsufficientData WorkflowSuccessRateResponseConfidence = "insufficient_data"
+	WorkflowSuccessRateResponseConfidenceLow              WorkflowSuccessRateResponseConfidence = "low"
+	WorkflowSuccessRateResponseConfidenceMedium           WorkflowSuccessRateResponseConfidence = "medium"
+)
+
 // Defines values for ListIncidentsParamsSeverity.
 const (
-	ListIncidentsParamsSeverityCritical ListIncidentsParamsSeverity = "critical"
-	ListIncidentsParamsSeverityHigh     ListIncidentsParamsSeverity = "high"
-	ListIncidentsParamsSeverityLow      ListIncidentsParamsSeverity = "low"
-	ListIncidentsParamsSeverityMedium   ListIncidentsParamsSeverity = "medium"
+	Critical ListIncidentsParamsSeverity = "critical"
+	High     ListIncidentsParamsSeverity = "high"
+	Low      ListIncidentsParamsSeverity = "low"
+	Medium   ListIncidentsParamsSeverity = "medium"
 )
+
+// AIExecutionModeStats defines model for AIExecutionModeStats.
+type AIExecutionModeStats struct {
+	// CatalogSelected Number of times AI selected a single workflow from the catalog (90-95% expected per ADR-033 Hybrid Model)
+	CatalogSelected int `json:"catalog_selected"`
+
+	// Chained Number of times AI chained multiple workflows together (4-9% expected per ADR-033 Hybrid Model)
+	Chained int `json:"chained"`
+
+	// ManualEscalation Number of times AI escalated to human operator (<1% expected per ADR-033 Hybrid Model)
+	ManualEscalation int `json:"manual_escalation"`
+}
 
 // Incident defines model for Incident.
 type Incident struct {
@@ -50,13 +86,13 @@ type Incident struct {
 	ActionType string `json:"action_type"`
 
 	// AlertFingerprint Unique alert fingerprint from Prometheus
-	SignalFingerprint *string `json:"signal_fingerprint,omitempty"`
+	AlertFingerprint *string `json:"alert_fingerprint,omitempty"`
 
-	// SignalName Name of the signal (Prometheus alert, Kubernetes event, etc.)
-	SignalName string `json:"signal_name"`
+	// AlertName Name of the Prometheus alert or Kubernetes event
+	AlertName string `json:"alert_name"`
 
-	// SignalSeverity Severity level of the signal
-	SignalSeverity IncidentSignalSeverity `json:"signal_severity"`
+	// AlertSeverity Severity level of the alert
+	AlertSeverity IncidentAlertSeverity `json:"alert_severity"`
 
 	// ClusterName Kubernetes cluster identifier
 	ClusterName *string `json:"cluster_name,omitempty"`
@@ -101,8 +137,8 @@ type Incident struct {
 	TargetResource *string `json:"target_resource,omitempty"`
 }
 
-// IncidentSignalSeverity Severity level of the signal
-type IncidentSignalSeverity string
+// IncidentAlertSeverity Severity level of the alert
+type IncidentAlertSeverity string
 
 // IncidentExecutionStatus Current status of the remediation action
 type IncidentExecutionStatus string
@@ -113,6 +149,89 @@ type IncidentListResponse struct {
 	Data       []Incident `json:"data"`
 	Pagination Pagination `json:"pagination"`
 }
+
+// IncidentTypeBreakdownItem defines model for IncidentTypeBreakdownItem.
+type IncidentTypeBreakdownItem struct {
+	// Executions Number of times this workflow was used for this incident type
+	Executions int `json:"executions"`
+
+	// IncidentType Incident type identifier
+	IncidentType string `json:"incident_type"`
+
+	// SuccessRate Success rate for this specific incident type
+	SuccessRate float64 `json:"success_rate"`
+}
+
+// IncidentTypeSuccessRateResponse defines model for IncidentTypeSuccessRateResponse.
+type IncidentTypeSuccessRateResponse struct {
+	AiExecutionMode *AIExecutionModeStats `json:"ai_execution_mode,omitempty"`
+
+	// Confidence Confidence level based on sample size:
+	// - high: >=100 samples
+	// - medium: 20-99 samples
+	// - low: 5-19 samples
+	// - insufficient_data: <5 samples (or below min_samples threshold)
+	Confidence IncidentTypeSuccessRateResponseConfidence `json:"confidence"`
+
+	// FailedExecutions Number of failed remediation attempts
+	FailedExecutions int `json:"failed_executions"`
+
+	// IncidentType The incident type being analyzed (e.g., "pod-oom-killer")
+	IncidentType string `json:"incident_type"`
+
+	// MinSamplesMet Whether the minimum sample size threshold was met
+	MinSamplesMet bool `json:"min_samples_met"`
+
+	// SuccessRate Success rate percentage (0-100%)
+	SuccessRate float64 `json:"success_rate"`
+
+	// SuccessfulExecutions Number of successful remediation attempts
+	SuccessfulExecutions int `json:"successful_executions"`
+
+	// TimeRange Time window for this analysis (e.g., "7d")
+	TimeRange string `json:"time_range"`
+
+	// TotalExecutions Total number of remediation attempts for this incident type
+	TotalExecutions int `json:"total_executions"`
+
+	// WorkflowBreakdown Breakdown by workflow showing which workflows were tried for this incident type
+	WorkflowBreakdown *[]WorkflowBreakdownItem `json:"workflow_breakdown,omitempty"`
+}
+
+// IncidentTypeSuccessRateResponseConfidence Confidence level based on sample size:
+// - high: >=100 samples
+// - medium: 20-99 samples
+// - low: 5-19 samples
+// - insufficient_data: <5 samples (or below min_samples threshold)
+type IncidentTypeSuccessRateResponseConfidence string
+
+// MultiDimensionalSuccessRateResponse defines model for MultiDimensionalSuccessRateResponse.
+type MultiDimensionalSuccessRateResponse struct {
+	// Confidence Statistical confidence level based on sample size
+	Confidence MultiDimensionalSuccessRateResponseConfidence `json:"confidence"`
+	Dimensions QueryDimensions                               `json:"dimensions"`
+
+	// FailedExecutions Number of failed executions
+	FailedExecutions int `json:"failed_executions"`
+
+	// MinSamplesMet Whether minimum sample size threshold was met
+	MinSamplesMet bool `json:"min_samples_met"`
+
+	// SuccessRate Success rate percentage (successful / total * 100)
+	SuccessRate float64 `json:"success_rate"`
+
+	// SuccessfulExecutions Number of successful executions
+	SuccessfulExecutions int `json:"successful_executions"`
+
+	// TimeRange Time window for this analysis
+	TimeRange string `json:"time_range"`
+
+	// TotalExecutions Total number of action executions matching the dimension filters
+	TotalExecutions int `json:"total_executions"`
+}
+
+// MultiDimensionalSuccessRateResponseConfidence Statistical confidence level based on sample size
+type MultiDimensionalSuccessRateResponseConfidence string
 
 // Pagination defines model for Pagination.
 type Pagination struct {
@@ -127,6 +246,21 @@ type Pagination struct {
 
 	// Total Total number of incidents matching the filter criteria
 	Total int64 `json:"total"`
+}
+
+// QueryDimensions defines model for QueryDimensions.
+type QueryDimensions struct {
+	// ActionType Action type filter (empty if not specified)
+	ActionType *string `json:"action_type,omitempty"`
+
+	// IncidentType Incident type filter (empty if not specified)
+	IncidentType *string `json:"incident_type,omitempty"`
+
+	// WorkflowId Workflow ID filter (empty if not specified)
+	WorkflowId *string `json:"workflow_id,omitempty"`
+
+	// WorkflowVersion Workflow version filter (empty if not specified)
+	WorkflowVersion *string `json:"workflow_version,omitempty"`
 }
 
 // RFC7807Error defines model for RFC7807Error.
@@ -147,10 +281,63 @@ type RFC7807Error struct {
 	Type string `json:"type"`
 }
 
+// WorkflowBreakdownItem defines model for WorkflowBreakdownItem.
+type WorkflowBreakdownItem struct {
+	// Executions Number of times this workflow was used
+	Executions int `json:"executions"`
+
+	// SuccessRate Success rate for this specific workflow
+	SuccessRate float64 `json:"success_rate"`
+
+	// WorkflowId Workflow identifier
+	WorkflowId string `json:"workflow_id"`
+
+	// WorkflowVersion Workflow version
+	WorkflowVersion string `json:"workflow_version"`
+}
+
+// WorkflowSuccessRateResponse defines model for WorkflowSuccessRateResponse.
+type WorkflowSuccessRateResponse struct {
+	AiExecutionMode *AIExecutionModeStats `json:"ai_execution_mode,omitempty"`
+
+	// Confidence Confidence level based on sample size
+	Confidence WorkflowSuccessRateResponseConfidence `json:"confidence"`
+
+	// FailedExecutions Number of failed workflow executions
+	FailedExecutions int `json:"failed_executions"`
+
+	// IncidentTypeBreakdown Breakdown by incident type showing which problems this workflow solves
+	IncidentTypeBreakdown *[]IncidentTypeBreakdownItem `json:"incident_type_breakdown,omitempty"`
+
+	// MinSamplesMet Whether the minimum sample size threshold was met
+	MinSamplesMet bool `json:"min_samples_met"`
+
+	// SuccessRate Success rate percentage (0-100%)
+	SuccessRate float64 `json:"success_rate"`
+
+	// SuccessfulExecutions Number of successful workflow executions
+	SuccessfulExecutions int `json:"successful_executions"`
+
+	// TimeRange Time window for this analysis (e.g., "7d")
+	TimeRange string `json:"time_range"`
+
+	// TotalExecutions Total number of times this workflow was executed
+	TotalExecutions int `json:"total_executions"`
+
+	// WorkflowId The workflow identifier being analyzed (e.g., "pod-oom-recovery")
+	WorkflowId string `json:"workflow_id"`
+
+	// WorkflowVersion Specific workflow version (null if aggregated across all versions)
+	WorkflowVersion *string `json:"workflow_version"`
+}
+
+// WorkflowSuccessRateResponseConfidence Confidence level based on sample size
+type WorkflowSuccessRateResponseConfidence string
+
 // ListIncidentsParams defines parameters for ListIncidents.
 type ListIncidentsParams struct {
-	// SignalName Filter by signal name pattern (exact match)
-	SignalName *string `form:"signal_name,omitempty" json:"signal_name,omitempty"`
+	// AlertName Filter by alert name pattern (exact match)
+	AlertName *string `form:"alert_name,omitempty" json:"alert_name,omitempty"`
 
 	// Severity Filter by alert severity
 	Severity *ListIncidentsParamsSeverity `form:"severity,omitempty" json:"severity,omitempty"`
@@ -170,6 +357,53 @@ type ListIncidentsParams struct {
 
 // ListIncidentsParamsSeverity defines parameters for ListIncidents.
 type ListIncidentsParamsSeverity string
+
+// GetSuccessRateByIncidentTypeParams defines parameters for GetSuccessRateByIncidentType.
+type GetSuccessRateByIncidentTypeParams struct {
+	// IncidentType The incident type to query (e.g., "pod-oom-killer", "disk-pressure", "network-timeout").
+	// This is the PRIMARY dimension for success tracking per ADR-033.
+	IncidentType string `form:"incident_type" json:"incident_type"`
+
+	// TimeRange Time window for analysis. Valid formats: "1h", "24h", "7d", "30d".
+	// Default: "7d" (last 7 days).
+	TimeRange *string `form:"time_range,omitempty" json:"time_range,omitempty"`
+
+	// MinSamples Minimum sample size for confidence calculation.
+	// - high confidence: >=100 samples
+	// - medium confidence: 20-99 samples
+	// - low confidence: 5-19 samples
+	// - insufficient_data: <5 samples (or below this threshold)
+	MinSamples *int `form:"min_samples,omitempty" json:"min_samples,omitempty"`
+}
+
+// GetSuccessRateMultiDimensionalParams defines parameters for GetSuccessRateMultiDimensional.
+type GetSuccessRateMultiDimensionalParams struct {
+	IncidentType    *string `form:"incident_type,omitempty" json:"incident_type,omitempty"`
+	WorkflowId      *string `form:"workflow_id,omitempty" json:"workflow_id,omitempty"`
+	WorkflowVersion *string `form:"workflow_version,omitempty" json:"workflow_version,omitempty"`
+	ActionType      *string `form:"action_type,omitempty" json:"action_type,omitempty"`
+	TimeRange       *string `form:"time_range,omitempty" json:"time_range,omitempty"`
+	MinSamples      *int    `form:"min_samples,omitempty" json:"min_samples,omitempty"`
+}
+
+// GetSuccessRateByWorkflowParams defines parameters for GetSuccessRateByWorkflow.
+type GetSuccessRateByWorkflowParams struct {
+	// WorkflowId The workflow identifier to query (e.g., "pod-oom-recovery", "disk-cleanup").
+	// This is the SECONDARY dimension for success tracking per ADR-033.
+	WorkflowId string `form:"workflow_id" json:"workflow_id"`
+
+	// WorkflowVersion Optional: Filter by specific workflow version (e.g., "v1.2", "v2.0").
+	// Omit to aggregate across all versions.
+	WorkflowVersion *string `form:"workflow_version,omitempty" json:"workflow_version,omitempty"`
+
+	// TimeRange Time window for analysis. Valid formats: "1h", "24h", "7d", "30d".
+	// Default: "7d" (last 7 days).
+	TimeRange *string `form:"time_range,omitempty" json:"time_range,omitempty"`
+
+	// MinSamples Minimum sample size for confidence calculation.
+	// Same thresholds as incident-type endpoint.
+	MinSamples *int `form:"min_samples,omitempty" json:"min_samples,omitempty"`
+}
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -250,6 +484,15 @@ type ClientInterface interface {
 	// GetIncidentByID request
 	GetIncidentByID(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetSuccessRateByIncidentType request
+	GetSuccessRateByIncidentType(ctx context.Context, params *GetSuccessRateByIncidentTypeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSuccessRateMultiDimensional request
+	GetSuccessRateMultiDimensional(ctx context.Context, params *GetSuccessRateMultiDimensionalParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetSuccessRateByWorkflow request
+	GetSuccessRateByWorkflow(ctx context.Context, params *GetSuccessRateByWorkflowParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// HealthCheck request
 	HealthCheck(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -274,6 +517,42 @@ func (c *Client) ListIncidents(ctx context.Context, params *ListIncidentsParams,
 
 func (c *Client) GetIncidentByID(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetIncidentByIDRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSuccessRateByIncidentType(ctx context.Context, params *GetSuccessRateByIncidentTypeParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSuccessRateByIncidentTypeRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSuccessRateMultiDimensional(ctx context.Context, params *GetSuccessRateMultiDimensionalParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSuccessRateMultiDimensionalRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetSuccessRateByWorkflow(ctx context.Context, params *GetSuccessRateByWorkflowParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetSuccessRateByWorkflowRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -342,9 +621,9 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 	if params != nil {
 		queryValues := queryURL.Query()
 
-		if params.SignalName != nil {
+		if params.AlertName != nil {
 
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "signal_name", runtime.ParamLocationQuery, *params.SignalName); err != nil {
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "alert_name", runtime.ParamLocationQuery, *params.AlertName); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -473,6 +752,305 @@ func NewGetIncidentByIDRequest(server string, id int64) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSuccessRateByIncidentTypeRequest generates requests for GetSuccessRateByIncidentType
+func NewGetSuccessRateByIncidentTypeRequest(server string, params *GetSuccessRateByIncidentTypeParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/success-rate/incident-type")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "incident_type", runtime.ParamLocationQuery, params.IncidentType); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.TimeRange != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "time_range", runtime.ParamLocationQuery, *params.TimeRange); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.MinSamples != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "min_samples", runtime.ParamLocationQuery, *params.MinSamples); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSuccessRateMultiDimensionalRequest generates requests for GetSuccessRateMultiDimensional
+func NewGetSuccessRateMultiDimensionalRequest(server string, params *GetSuccessRateMultiDimensionalParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/success-rate/multi-dimensional")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.IncidentType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "incident_type", runtime.ParamLocationQuery, *params.IncidentType); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.WorkflowId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "workflow_id", runtime.ParamLocationQuery, *params.WorkflowId); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.WorkflowVersion != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "workflow_version", runtime.ParamLocationQuery, *params.WorkflowVersion); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.ActionType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "action_type", runtime.ParamLocationQuery, *params.ActionType); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.TimeRange != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "time_range", runtime.ParamLocationQuery, *params.TimeRange); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.MinSamples != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "min_samples", runtime.ParamLocationQuery, *params.MinSamples); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetSuccessRateByWorkflowRequest generates requests for GetSuccessRateByWorkflow
+func NewGetSuccessRateByWorkflowRequest(server string, params *GetSuccessRateByWorkflowParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/success-rate/workflow")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "workflow_id", runtime.ParamLocationQuery, params.WorkflowId); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.WorkflowVersion != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "workflow_version", runtime.ParamLocationQuery, *params.WorkflowVersion); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.TimeRange != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "time_range", runtime.ParamLocationQuery, *params.TimeRange); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.MinSamples != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "min_samples", runtime.ParamLocationQuery, *params.MinSamples); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -613,6 +1191,15 @@ type ClientWithResponsesInterface interface {
 	// GetIncidentByIDWithResponse request
 	GetIncidentByIDWithResponse(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*GetIncidentByIDResponse, error)
 
+	// GetSuccessRateByIncidentTypeWithResponse request
+	GetSuccessRateByIncidentTypeWithResponse(ctx context.Context, params *GetSuccessRateByIncidentTypeParams, reqEditors ...RequestEditorFn) (*GetSuccessRateByIncidentTypeResponse, error)
+
+	// GetSuccessRateMultiDimensionalWithResponse request
+	GetSuccessRateMultiDimensionalWithResponse(ctx context.Context, params *GetSuccessRateMultiDimensionalParams, reqEditors ...RequestEditorFn) (*GetSuccessRateMultiDimensionalResponse, error)
+
+	// GetSuccessRateByWorkflowWithResponse request
+	GetSuccessRateByWorkflowWithResponse(ctx context.Context, params *GetSuccessRateByWorkflowParams, reqEditors ...RequestEditorFn) (*GetSuccessRateByWorkflowResponse, error)
+
 	// HealthCheckWithResponse request
 	HealthCheckWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthCheckResponse, error)
 
@@ -665,6 +1252,78 @@ func (r GetIncidentByIDResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetIncidentByIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSuccessRateByIncidentTypeResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *IncidentTypeSuccessRateResponse
+	ApplicationproblemJSON400 *RFC7807Error
+	ApplicationproblemJSON500 *RFC7807Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSuccessRateByIncidentTypeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSuccessRateByIncidentTypeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSuccessRateMultiDimensionalResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *MultiDimensionalSuccessRateResponse
+	ApplicationproblemJSON400 *RFC7807Error
+	ApplicationproblemJSON500 *RFC7807Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSuccessRateMultiDimensionalResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSuccessRateMultiDimensionalResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetSuccessRateByWorkflowResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *WorkflowSuccessRateResponse
+	ApplicationproblemJSON400 *RFC7807Error
+	ApplicationproblemJSON500 *RFC7807Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetSuccessRateByWorkflowResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetSuccessRateByWorkflowResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -750,6 +1409,33 @@ func (c *ClientWithResponses) GetIncidentByIDWithResponse(ctx context.Context, i
 		return nil, err
 	}
 	return ParseGetIncidentByIDResponse(rsp)
+}
+
+// GetSuccessRateByIncidentTypeWithResponse request returning *GetSuccessRateByIncidentTypeResponse
+func (c *ClientWithResponses) GetSuccessRateByIncidentTypeWithResponse(ctx context.Context, params *GetSuccessRateByIncidentTypeParams, reqEditors ...RequestEditorFn) (*GetSuccessRateByIncidentTypeResponse, error) {
+	rsp, err := c.GetSuccessRateByIncidentType(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSuccessRateByIncidentTypeResponse(rsp)
+}
+
+// GetSuccessRateMultiDimensionalWithResponse request returning *GetSuccessRateMultiDimensionalResponse
+func (c *ClientWithResponses) GetSuccessRateMultiDimensionalWithResponse(ctx context.Context, params *GetSuccessRateMultiDimensionalParams, reqEditors ...RequestEditorFn) (*GetSuccessRateMultiDimensionalResponse, error) {
+	rsp, err := c.GetSuccessRateMultiDimensional(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSuccessRateMultiDimensionalResponse(rsp)
+}
+
+// GetSuccessRateByWorkflowWithResponse request returning *GetSuccessRateByWorkflowResponse
+func (c *ClientWithResponses) GetSuccessRateByWorkflowWithResponse(ctx context.Context, params *GetSuccessRateByWorkflowParams, reqEditors ...RequestEditorFn) (*GetSuccessRateByWorkflowResponse, error) {
+	rsp, err := c.GetSuccessRateByWorkflow(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetSuccessRateByWorkflowResponse(rsp)
 }
 
 // HealthCheckWithResponse request returning *HealthCheckResponse
@@ -846,6 +1532,126 @@ func ParseGetIncidentByIDResponse(rsp *http.Response) (*GetIncidentByIDResponse,
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest RFC7807Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSuccessRateByIncidentTypeResponse parses an HTTP response from a GetSuccessRateByIncidentTypeWithResponse call
+func ParseGetSuccessRateByIncidentTypeResponse(rsp *http.Response) (*GetSuccessRateByIncidentTypeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSuccessRateByIncidentTypeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IncidentTypeSuccessRateResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest RFC7807Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSuccessRateMultiDimensionalResponse parses an HTTP response from a GetSuccessRateMultiDimensionalWithResponse call
+func ParseGetSuccessRateMultiDimensionalResponse(rsp *http.Response) (*GetSuccessRateMultiDimensionalResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSuccessRateMultiDimensionalResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MultiDimensionalSuccessRateResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest RFC7807Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetSuccessRateByWorkflowResponse parses an HTTP response from a GetSuccessRateByWorkflowWithResponse call
+func ParseGetSuccessRateByWorkflowResponse(rsp *http.Response) (*GetSuccessRateByWorkflowResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetSuccessRateByWorkflowResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowSuccessRateResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest RFC7807Error

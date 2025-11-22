@@ -65,12 +65,16 @@ type AuditEvent struct {
 	EventType      string    `json:"event_type"` // e.g., gateway.signal.received
 
 	// ========================================
-	// SERVICE CONTEXT (6 columns) - Updated to include parent_event_date
+	// EVENT CLASSIFICATION (ADR-034)
 	// ========================================
-	Service         string     `json:"service"`           // e.g., gateway, aianalysis, workflow
-	ServiceVersion  string     `json:"service_version"`   // Service version (e.g., '1.0.0')
+	EventCategory string `json:"event_category"` // 'signal', 'remediation', 'workflow'
+	EventAction   string `json:"event_action"`   // 'received', 'processed', 'executed'
+	EventOutcome  string `json:"event_outcome"`  // 'success', 'failure', 'pending'
+
+	// ========================================
+	// CONTEXT INFORMATION (ADR-034)
+	// ========================================
 	CorrelationID   string     `json:"correlation_id"`    // e.g., rr-2025-001
-	CausationID     string     `json:"causation_id"`      // Causation ID for event sourcing
 	ParentEventID   *uuid.UUID `json:"parent_event_id"`   // For event causality chains
 	ParentEventDate *time.Time `json:"parent_event_date"` // Parent event date (required for FK constraint)
 
@@ -83,33 +87,29 @@ type AuditEvent struct {
 	ClusterID         string `json:"cluster_id"`         // Cluster identifier
 
 	// ========================================
-	// OPERATIONAL CONTEXT (6 columns)
+	// AUDIT METADATA (ADR-034)
 	// ========================================
-	Operation    string `json:"operation"`     // Specific action performed
-	Outcome      string `json:"outcome"`       // success, failure, pending, skipped
+	Severity     string `json:"severity"`      // 'info', 'warning', 'error', 'critical'
 	DurationMs   int    `json:"duration_ms"`   // Operation duration in milliseconds
-	RetryCount   int    `json:"retry_count"`   // Number of retry attempts
 	ErrorCode    string `json:"error_code"`    // Specific error code
 	ErrorMessage string `json:"error_message"` // Detailed error message
 
 	// ========================================
-	// ACTOR & METADATA (5 columns)
+	// ACTOR INFORMATION (ADR-034)
 	// ========================================
-	ActorID     string   `json:"actor_id"`     // User, service account, or system
-	ActorType   string   `json:"actor_type"`   // e.g., user, service_account, system
-	Severity    string   `json:"severity"`     // critical, warning, info
-	Tags        []string `json:"tags"`         // Array of tags for categorization
-	IsSensitive bool     `json:"is_sensitive"` // Flag for sensitive data (GDPR, PII)
+	ActorID   string `json:"actor_id"`   // User, service account, or system
+	ActorType string `json:"actor_type"` // e.g., user, service_account, system
 
 	// ========================================
-	// FLEXIBLE EVENT DATA (1 column)
+	// COMPLIANCE (ADR-034)
+	// ========================================
+	RetentionDays int  `json:"retention_days"` // Default: 2555 (7 years)
+	IsSensitive   bool `json:"is_sensitive"`   // Flag for sensitive data (GDPR, PII)
+
+	// ========================================
+	// FLEXIBLE EVENT DATA (ADR-034)
 	// ========================================
 	EventData map[string]interface{} `json:"event_data"` // Service-specific data
-
-	// ========================================
-	// AUDIT METADATA (1 column)
-	// ========================================
-	CreatedAt time.Time `json:"created_at"`
 }
 
 // AuditEventsRepository handles PostgreSQL operations for audit_events table
@@ -161,20 +161,26 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 
 	query := `
 		INSERT INTO audit_events (
-			event_id, event_timestamp, event_date, event_type, service, service_version, correlation_id,
-			causation_id, parent_event_id, parent_event_date, resource_type, resource_id, resource_namespace, cluster_id,
-			operation, outcome, duration_ms, retry_count, error_code, error_message,
-			actor_id, actor_type, severity, tags, is_sensitive, event_data
+			event_id, event_timestamp, event_date, event_type,
+			event_category, event_action, event_outcome,
+			correlation_id, parent_event_id, parent_event_date,
+			resource_type, resource_id, namespace, cluster_name,
+			actor_id, actor_type,
+			severity, duration_ms, error_code, error_message,
+			retention_days, is_sensitive, event_data
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9, $10, $11, $12, $13, $14,
-			$15, $16, $17, $18, $19, $20,
-			$21, $22, $23, $24, $25, $26
+			$1, $2, $3, $4,
+			$5, $6, $7,
+			$8, $9, $10,
+			$11, $12, $13, $14,
+			$15, $16,
+			$17, $18, $19, $20,
+			$21, $22, $23
 		)
-		RETURNING created_at
+		RETURNING event_timestamp
 	`
 
-	// Handle optional fields with sql.Null* types (27-column schema)
+	// Handle optional fields with sql.Null* types (ADR-034 schema)
 	var parentEventID sql.NullString
 	var parentEventDate sql.NullTime
 	if event.ParentEventID != nil {
@@ -185,34 +191,17 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		}
 	}
 
-	var serviceVersion, causationID sql.NullString
-	var actorID, actorType, resourceType, resourceID, resourceNamespace, clusterID sql.NullString
-	var errorCode, errorMessage, severity sql.NullString
-	var durationMs, retryCount sql.NullInt32
+	// ADR-034: actor_id, actor_type, resource_type, resource_id are NOT NULL (required fields)
+	// These are passed as regular strings, not sql.NullString
 
-	if event.ServiceVersion != "" {
-		serviceVersion = sql.NullString{String: event.ServiceVersion, Valid: true}
-	}
-	if event.CausationID != "" {
-		causationID = sql.NullString{String: event.CausationID, Valid: true}
-	}
-	if event.ActorID != "" {
-		actorID = sql.NullString{String: event.ActorID, Valid: true}
-	}
-	if event.ActorType != "" {
-		actorType = sql.NullString{String: event.ActorType, Valid: true}
-	}
-	if event.ResourceType != "" {
-		resourceType = sql.NullString{String: event.ResourceType, Valid: true}
-	}
-	if event.ResourceID != "" {
-		resourceID = sql.NullString{String: event.ResourceID, Valid: true}
-	}
+	var namespace, clusterName sql.NullString
+	var errorCode, errorMessage, severity sql.NullString
+	var durationMs sql.NullInt32
 	if event.ResourceNamespace != "" {
-		resourceNamespace = sql.NullString{String: event.ResourceNamespace, Valid: true}
+		namespace = sql.NullString{String: event.ResourceNamespace, Valid: true}
 	}
 	if event.ClusterID != "" {
-		clusterID = sql.NullString{String: event.ClusterID, Valid: true}
+		clusterName = sql.NullString{String: event.ClusterID, Valid: true}
 	}
 	if event.ErrorCode != "" {
 		errorCode = sql.NullString{String: event.ErrorCode, Valid: true}
@@ -226,65 +215,52 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	if event.DurationMs != 0 {
 		durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
 	}
-	if event.RetryCount != 0 {
-		retryCount = sql.NullInt32{Int32: int32(event.RetryCount), Valid: true}
+
+	// Set default retention days if not specified (ADR-034: 7 years = 2555 days)
+	retentionDays := event.RetentionDays
+	if retentionDays == 0 {
+		retentionDays = 2555
 	}
 
-	// Handle Operation field (required but may be empty in minimal implementation)
-	operation := event.Operation
-	if operation == "" {
-		operation = "unknown" // Default value for TDD GREEN phase
-	}
-
-	// Handle Tags array - pgx stdlib adapter supports Go slices directly for PostgreSQL arrays
-	// Pass empty slice if nil to ensure consistent database behavior
-	tags := event.Tags
-	if tags == nil {
-		tags = []string{}
-	}
-
-	// Execute query (27 columns)
-	var createdAt time.Time
+	// Execute query (ADR-034 schema - 23 parameters)
+	var returnedTimestamp time.Time
 	err = r.db.QueryRowContext(ctx, query,
 		event.EventID,
 		event.EventTimestamp,
 		eventDate,
 		event.EventType,
-		event.Service,
-		serviceVersion,
+		event.EventCategory, // ADR-034
+		event.EventAction,   // ADR-034
+		event.EventOutcome,  // ADR-034
 		event.CorrelationID,
-		causationID,
 		parentEventID,
-		parentEventDate, // Added for FK constraint
-		resourceType,
-		resourceID,
-		resourceNamespace,
-		clusterID,
-		operation,
-		event.Outcome,
+		parentEventDate,
+		event.ResourceType, // ADR-034 NOT NULL - pass directly
+		event.ResourceID,   // ADR-034 NOT NULL - pass directly
+		namespace,          // ADR-034: namespace column (not resource_namespace)
+		clusterName,        // Renamed from clusterID
+		event.ActorID,      // ADR-034 NOT NULL - pass directly
+		event.ActorType,    // ADR-034 NOT NULL - pass directly
+		severity,
 		durationMs,
-		retryCount,
 		errorCode,
 		errorMessage,
-		actorID,
-		actorType,
-		severity,
-		tags,
+		retentionDays,
 		event.IsSensitive,
 		eventDataJSON,
-	).Scan(&createdAt)
+	).Scan(&returnedTimestamp)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert audit event: %w", err)
 	}
 
-	// Populate returned fields
-	event.CreatedAt = createdAt
+	// Populate returned timestamp
+	event.EventTimestamp = returnedTimestamp
 
 	r.logger.Debug("Audit event created",
 		zap.String("event_id", event.EventID.String()),
 		zap.String("event_type", event.EventType),
-		zap.String("service", event.Service),
+		zap.String("event_category", event.EventCategory),
 		zap.String("correlation_id", event.CorrelationID),
 	)
 
@@ -318,7 +294,7 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to query audit events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	// Parse results
 	events := make([]*AuditEvent, 0)
@@ -332,10 +308,10 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		err := rows.Scan(
 			&event.EventID,
 			&event.EventType,
-			&event.Service,
+			&event.EventCategory, // ADR-034
 			&event.CorrelationID,
 			&event.EventTimestamp,
-			&event.Outcome,
+			&event.EventOutcome, // ADR-034
 			&severity,
 			&resourceType,
 			&resourceID,

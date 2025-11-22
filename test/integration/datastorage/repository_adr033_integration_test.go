@@ -165,11 +165,11 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.Confidence).To(Equal("low")) // 10 < 20 = low
 
 				// CORRECTNESS: Playbook breakdown data
-				Expect(result.BreakdownByPlaybook).To(HaveLen(1))
-				Expect(result.BreakdownByPlaybook[0].PlaybookID).To(Equal("pod-oom-recovery"))
-				Expect(result.BreakdownByPlaybook[0].PlaybookVersion).To(Equal("v1.0"))
-				Expect(result.BreakdownByPlaybook[0].Executions).To(Equal(10))
-				Expect(result.BreakdownByPlaybook[0].SuccessRate).To(BeNumerically("~", 0.8, 0.01))
+				Expect(result.BreakdownByWorkflow).To(HaveLen(1))
+				Expect(result.BreakdownByWorkflow[0].PlaybookID).To(Equal("pod-oom-recovery"))
+				Expect(result.BreakdownByWorkflow[0].PlaybookVersion).To(Equal("v1.0"))
+				Expect(result.BreakdownByWorkflow[0].Executions).To(Equal(10))
+				Expect(result.BreakdownByWorkflow[0].SuccessRate).To(BeNumerically("~", 0.8, 0.01))
 
 				// CORRECTNESS: AI execution mode stats
 				Expect(result.AIExecutionMode).ToNot(BeNil())
@@ -214,16 +214,16 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.Confidence).To(Equal("medium"))
 
 				// CORRECTNESS: Playbook breakdown shows both playbooks
-				Expect(result.BreakdownByPlaybook).To(HaveLen(2))
+				Expect(result.BreakdownByWorkflow).To(HaveLen(2))
 
 				// Verify playbook 1 breakdown
-				playbook1 := findPlaybookBreakdown(result.BreakdownByPlaybook, "node-pressure-evict", "v1.0")
+				playbook1 := findPlaybookBreakdown(result.BreakdownByWorkflow, "node-pressure-evict", "v1.0")
 				Expect(playbook1).ToNot(BeNil())
 				Expect(playbook1.Executions).To(Equal(10))
 				Expect(playbook1.SuccessRate).To(BeNumerically("~", 0.6, 0.01)) // 6/10
 
 				// Verify playbook 2 breakdown
-				playbook2 := findPlaybookBreakdown(result.BreakdownByPlaybook, "node-pressure-scale", "v2.0")
+				playbook2 := findPlaybookBreakdown(result.BreakdownByWorkflow, "node-pressure-scale", "v2.0")
 				Expect(playbook2).ToNot(BeNil())
 				Expect(playbook2.Executions).To(Equal(10))
 				Expect(playbook2.SuccessRate).To(BeNumerically("~", 0.9, 0.01)) // 9/10
@@ -251,7 +251,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				// CORRECTNESS: Insufficient data indicators
 				Expect(result.Confidence).To(Equal("insufficient_data"))
 				Expect(result.MinSamplesMet).To(BeFalse())
-				Expect(result.BreakdownByPlaybook).To(BeEmpty())
+				Expect(result.BreakdownByWorkflow).To(BeEmpty())
 			})
 		})
 
@@ -286,7 +286,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		})
 	})
 
-	Describe("GetSuccessRateByPlaybook - Integration", func() {
+	Describe("GetSuccessRateByWorkflow - Integration", func() {
 		Context("when playbook has sufficient data", func() {
 			It("should calculate playbook success rate correctly (TC-ADR033-05)", func() {
 				playbookID := "test-memory-increase"
@@ -301,7 +301,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				}
 
 				// Execute
-				result, err := actionTraceRepo.GetSuccessRateByPlaybook(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
+				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
 
 				// BEHAVIOR: Repository returns playbook success rate response
 				Expect(err).ToNot(HaveOccurred())
@@ -341,7 +341,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				}
 
 				// Execute
-				result, err := actionTraceRepo.GetSuccessRateByPlaybook(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
+				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
 
 				// BEHAVIOR: Aggregates across all incident types
 				Expect(err).ToNot(HaveOccurred())
@@ -372,7 +372,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				playbookVersion := "v999.0"
 
 				// Execute without any test data
-				result, err := actionTraceRepo.GetSuccessRateByPlaybook(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
+				result, err := actionTraceRepo.GetSuccessRateByWorkflow(testCtx, playbookID, playbookVersion, 7*24*time.Hour, 5)
 
 				// BEHAVIOR: Returns response even with no data
 				Expect(err).ToNot(HaveOccurred())
@@ -424,7 +424,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 })
 
 // Helper function to find playbook breakdown by ID and version
-func findPlaybookBreakdown(breakdown []models.PlaybookBreakdownItem, id, version string) *models.PlaybookBreakdownItem {
+func findPlaybookBreakdown(breakdown []models.WorkflowBreakdownItem, id, version string) *models.WorkflowBreakdownItem {
 	for i := range breakdown {
 		if breakdown[i].PlaybookID == id && breakdown[i].PlaybookVersion == version {
 			return &breakdown[i]

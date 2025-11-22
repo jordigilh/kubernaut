@@ -103,12 +103,12 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 				}
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
-				By("Verifying response body contains event_id and created_at")
+				By("Verifying response body contains event_id and event_timestamp (ADR-034)")
 				var response map[string]interface{}
 				err = json.NewDecoder(resp.Body).Decode(&response)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response).To(HaveKey("event_id"))
-				Expect(response).To(HaveKey("created_at"))
+				Expect(response).To(HaveKey("event_timestamp")) // ADR-034: event_timestamp replaces created_at
 				Expect(response).To(HaveKey("message"))
 				Expect(response["message"]).To(Equal("Audit event created successfully"))
 
@@ -143,14 +143,14 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 
 				By("Sending POST request with JSON body")
 				eventPayload := map[string]interface{}{
-					"version":          "1.0",
-					"service":          "aianalysis",
-					"event_type":       "aianalysis.analysis.completed",
-					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   testCorrelationID,
-					"outcome":          "success",
-					"operation":        "analysis",
-					"event_data":       eventData,
+					"version":         "1.0",
+					"service":         "aianalysis",
+					"event_type":      "aianalysis.analysis.completed",
+					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+					"correlation_id":  testCorrelationID,
+					"outcome":         "success",
+					"operation":       "analysis",
+					"event_data":      eventData,
 				}
 				body, _ := json.Marshal(eventPayload)
 				req, _ := http.NewRequest("POST", datastorageURL+"/api/v1/audit/events", bytes.NewBuffer(body))
@@ -182,14 +182,14 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 
 				By("Sending POST request with JSON body")
 				eventPayload := map[string]interface{}{
-					"version":          "1.0",
-					"service":          "workflow",
-					"event_type":       "workflow.workflow.completed",
-					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   testCorrelationID,
-					"outcome":          "success",
-					"operation":        "workflow_execution",
-					"event_data":       eventData,
+					"version":         "1.0",
+					"service":         "workflow",
+					"event_type":      "workflow.workflow.completed",
+					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+					"correlation_id":  testCorrelationID,
+					"outcome":         "success",
+					"operation":       "workflow_execution",
+					"event_data":      eventData,
 				}
 				body, _ := json.Marshal(eventPayload)
 				req, _ := http.NewRequest("POST", datastorageURL+"/api/v1/audit/events", bytes.NewBuffer(body))
@@ -208,14 +208,14 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 				// TDD GREEN: Validation now checks JSON body fields
 
 				eventPayload := map[string]interface{}{
-					"version":          "1.0",
-					"service":          "gateway",
+					"version": "1.0",
+					"service": "gateway",
 					// Missing "event_type" field
-					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   testCorrelationID,
-					"outcome":          "success",
-					"operation":        "test",
-					"event_data":       map[string]interface{}{},
+					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+					"correlation_id":  testCorrelationID,
+					"outcome":         "success",
+					"operation":       "test",
+					"event_data":      map[string]interface{}{},
 				}
 
 				body, _ := json.Marshal(eventPayload)
@@ -266,13 +266,13 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 
 				eventPayload := map[string]interface{}{
 					// Missing "version" field
-					"service":          "gateway",
-					"event_type":       "gateway.signal.received",
-					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   testCorrelationID,
-					"outcome":          "success",
-					"operation":        "test",
-					"event_data":       map[string]interface{}{},
+					"service":         "gateway",
+					"event_type":      "gateway.signal.received",
+					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+					"correlation_id":  testCorrelationID,
+					"outcome":         "success",
+					"operation":       "test",
+					"event_data":      map[string]interface{}{},
 				}
 
 				body, _ := json.Marshal(eventPayload)
@@ -310,14 +310,14 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				gatewayPayload := map[string]interface{}{
-					"version":          "1.0",
-					"service":          "gateway",
-					"event_type":       "gateway.signal.received",
-					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   correlationID,
-					"outcome":          "success",
-					"operation":        "signal_received",
-					"event_data":       gatewayEventData,
+					"version":         "1.0",
+					"service":         "gateway",
+					"event_type":      "gateway.signal.received",
+					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+					"correlation_id":  correlationID,
+					"outcome":         "success",
+					"operation":       "signal_received",
+					"event_data":      gatewayEventData,
 				}
 				body1, _ := json.Marshal(gatewayPayload)
 				req1, _ := http.NewRequest("POST", datastorageURL+"/api/v1/audit/events", bytes.NewBuffer(body1))
@@ -335,14 +335,14 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				aiPayload := map[string]interface{}{
-					"version":          "1.0",
-					"service":          "aianalysis",
-					"event_type":       "aianalysis.analysis.completed",
-					"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":   correlationID,
-					"outcome":          "success",
-					"operation":        "analysis",
-					"event_data":       aiEventData,
+					"version":         "1.0",
+					"service":         "aianalysis",
+					"event_type":      "aianalysis.analysis.completed",
+					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+					"correlation_id":  correlationID,
+					"outcome":         "success",
+					"operation":       "analysis",
+					"event_data":      aiEventData,
 				}
 				body2, _ := json.Marshal(aiPayload)
 				req2, _ := http.NewRequest("POST", datastorageURL+"/api/v1/audit/events", bytes.NewBuffer(body2))
@@ -360,6 +360,76 @@ var _ = Describe("Audit Events Write API Integration Tests", func() {
 				Expect(count).To(Equal(2))
 			})
 		})
+
+		When("event references non-existent parent_event_id", func() {
+			It("should reject with 400 Bad Request (FK constraint violation)", func() {
+				// BR-STORAGE-032: Audit events can reference parent events for causality chains
+				// BEHAVIOR: PostgreSQL FK constraint prevents orphaned parent references
+				// CORRECTNESS: RFC 7807 error response with clear FK violation message
+
+				By("Generating non-existent parent_event_id")
+				nonExistentParentID := "00000000-0000-0000-0000-000000000001" // UUID that doesn't exist in database
+				parentEventDate := time.Now().UTC().Format("2006-01-02")      // Today's date for partition
+
+				By("Attempting to create event with invalid parent_event_id")
+				eventData, err := audit.NewGatewayEvent("gateway.signal.received").
+					WithSignalType("prometheus").
+					WithAlertName("ChildEvent").
+					Build()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventPayload := map[string]interface{}{
+					"version":            "1.0",
+					"service":            "gateway",
+					"event_type":         "gateway.signal.received",
+					"event_timestamp":    time.Now().UTC().Format(time.RFC3339Nano),
+					"correlation_id":     testCorrelationID,
+					"parent_event_id":    nonExistentParentID,
+					"parent_event_date":  parentEventDate,
+					"resource_type":      "pod",
+					"resource_id":        "child-pod-123",
+					"resource_namespace": "production",
+					"outcome":            "success",
+					"operation":          "signal_received",
+					"severity":           "info",
+					"event_data":         eventData,
+				}
+				body, _ := json.Marshal(eventPayload)
+				req, _ := http.NewRequest("POST", datastorageURL+"/api/v1/audit/events", bytes.NewBuffer(body))
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := http.DefaultClient.Do(req)
+				Expect(err).ToNot(HaveOccurred())
+				defer resp.Body.Close()
+
+				By("Verifying 400 Bad Request response")
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Should reject FK constraint violation")
+
+				By("Verifying RFC 7807 Problem Details error format")
+				bodyBytes, err := io.ReadAll(resp.Body)
+				Expect(err).ToNot(HaveOccurred())
+
+				var errorResponse map[string]interface{}
+				err = json.Unmarshal(bodyBytes, &errorResponse)
+				Expect(err).ToNot(HaveOccurred())
+
+				// RFC 7807 requires these fields
+				Expect(errorResponse).To(HaveKey("type"))
+				Expect(errorResponse).To(HaveKey("title"))
+				Expect(errorResponse).To(HaveKey("status"))
+				Expect(errorResponse).To(HaveKey("detail"))
+
+				// Verify error indicates FK constraint violation
+				detail, ok := errorResponse["detail"].(string)
+				Expect(ok).To(BeTrue(), "detail should be a string")
+				Expect(detail).To(ContainSubstring("parent"), "Error should mention parent event")
+
+				By("Verifying no event was created in database")
+				var count int
+				err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", testCorrelationID).Scan(&count)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(count).To(Equal(0), "No event should be created when FK constraint fails")
+			})
+		})
 	})
 })
-

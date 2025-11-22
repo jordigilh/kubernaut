@@ -21,13 +21,14 @@
   - Reference: FK_CONSTRAINT_IMPLEMENTATION_SUMMARY.md
 
 ### **v1.1** (November 13, 2025)
-- **CORRECTED**: BR-STORAGE-012 - Semantic search is for **playbook catalog**, not audit records
+- **CORRECTED**: BR-STORAGE-012 - Semantic search is for **workflow catalog**, not audit records
   - Changed from: "Generate embeddings from audit text"
-  - Changed to: "Generate embeddings from playbook catalog"
-  - Rationale: DD-CONTEXT-005 requires playbook semantic search for incident remediation
-  - Impact: V1.0 semantic search is for playbook selection; audit embeddings deferred to V2.0 RAR
-- **DEFERRED**: BR-STORAGE-009 - Playbook embedding caching deferred to V1.1
-  - **V1.0**: No caching (playbooks managed via SQL, no cache invalidation control)
+  - Changed to: "Generate embeddings from workflow catalog"
+  - Rationale: DD-CONTEXT-005 requires workflow semantic search for incident remediation
+  - Impact: V1.0 semantic search is for workflow selection; audit embeddings deferred to V2.0 RAR
+  - **Terminology**: Per DD-NAMING-001, using "Remediation Workflow" (not "Remediation Playbook")
+- **DEFERRED**: BR-STORAGE-009 - Workflow embedding caching deferred to V1.1
+  - **V1.0**: No caching (workflows managed via SQL, no cache invalidation control)
   - **V1.1**: Caching enabled (CRD controller provides cache invalidation via REST API)
   - Rationale: DD-STORAGE-006 analysis shows no-cache is acceptable for V1.0 (92% confidence)
   - Performance: 2.5s latency acceptable for AI workflow; < 3% CPU utilization
@@ -239,17 +240,58 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ---
 
+### **Category 4.5: Self-Auditing (BR-STORAGE-180, BR-STORAGE-181, BR-STORAGE-182)**
+
+#### **BR-STORAGE-180: Self-Auditing Requirement**
+- **Priority**: P0
+- **Status**: ✅ Active
+- **Description**: Data Storage Service must generate audit traces for its own operations (meta-audit)
+- **Business Value**: Enable compliance tracking and troubleshooting of audit write operations
+- **Test Coverage**:
+  - Unit: `pkg/audit/internal_client_test.go` (8 test scenarios)
+  - Integration: `test/integration/datastorage/audit_self_auditing_test.go` (6 test scenarios)
+- **Implementation**: `pkg/audit/internal_client.go`, `pkg/datastorage/server/audit_events_handler.go`
+- **Design Decision**: [DD-STORAGE-012](./DD-STORAGE-012-AUDIT-INTEGRATION-PLAN.md)
+- **Related BRs**: BR-STORAGE-181 (circular dependency), BR-STORAGE-182 (non-blocking)
+
+#### **BR-STORAGE-181: Circular Dependency Prevention**
+- **Priority**: P0
+- **Status**: ✅ Active
+- **Description**: Audit traces must not create circular dependencies (Data Storage cannot call its own REST API)
+- **Business Value**: Prevent infinite recursion and system instability
+- **Test Coverage**:
+  - Unit: `pkg/audit/internal_client_test.go:82` (validates direct PostgreSQL writes)
+  - Integration: `test/integration/datastorage/audit_self_auditing_test.go:233` (validates no recursion)
+- **Implementation**: `pkg/audit/internal_client.go` (InternalAuditClient pattern)
+- **Design Decision**: [DD-STORAGE-012](./DD-STORAGE-012-AUDIT-INTEGRATION-PLAN.md)
+- **Related BRs**: BR-STORAGE-180 (self-auditing)
+
+#### **BR-STORAGE-182: Non-Blocking Audit Writes**
+- **Priority**: P0
+- **Status**: ✅ Active
+- **Description**: Audit writes must not block business operations (async buffered writes)
+- **Business Value**: Maintain low latency for audit event writes (<5ms overhead)
+- **Test Coverage**:
+  - Unit: `pkg/audit/internal_client_test.go:138` (validates async writes)
+  - Integration: `test/integration/datastorage/audit_self_auditing_test.go:139` (validates non-blocking)
+- **Implementation**: `pkg/audit/store.go` (BufferedAuditStore), `pkg/datastorage/server/server.go`
+- **Design Decision**: [DD-STORAGE-012](./DD-STORAGE-012-AUDIT-INTEGRATION-PLAN.md)
+- **Related BRs**: BR-STORAGE-180 (self-auditing)
+
+---
+
 ### **Category 5: Embedding & Vector Operations (BR-STORAGE-012, BR-STORAGE-013)**
 
-#### **BR-STORAGE-012: Playbook Catalog Embedding Generation**
+#### **BR-STORAGE-012: Workflow Catalog Embedding Generation**
 - **Priority**: P0
 - **Status**: ✅ Active (v1.1 - Corrected Scope)
-- **Description**: Generate 384-dimensional embeddings from playbook catalog content for semantic search (using sentence-transformers/all-MiniLM-L6-v2 model)
-- **Business Value**: Enable semantic playbook discovery for incident remediation (DD-CONTEXT-005 "Filter Before LLM" pattern)
+- **Description**: Generate 384-dimensional embeddings from workflow catalog content for semantic search (using sentence-transformers/all-MiniLM-L6-v2 model)
+- **Business Value**: Enable semantic workflow discovery for incident remediation (DD-CONTEXT-005 "Filter Before LLM" pattern)
+- **Terminology**: Per DD-NAMING-001, using "Remediation Workflow" (not "Remediation Playbook")
 - **Scope Change (v1.1)**:
   - ❌ **OLD**: Generate embeddings from audit text (INCORRECT - deferred to V2.0 RAR)
-  - ✅ **NEW**: Generate embeddings from playbook catalog (CORRECT - V1.0 requirement)
-- **Use Case**: HolmesGPT API queries Data Storage to find playbooks semantically similar to incident description
+  - ✅ **NEW**: Generate embeddings from workflow catalog (CORRECT - V1.0 requirement)
+- **Use Case**: HolmesGPT API queries Data Storage to find workflows semantically similar to incident description
 - **Test Coverage**:
   - Unit: `test/unit/datastorage/embedding_test.go:69` (embedding generation)
   - Unit: `test/unit/datastorage/query_test.go:236` (semantic search moved to integration)

@@ -102,7 +102,7 @@ type TrendAggregationResponse struct {
 
 // IncidentTypeSuccessRateResponse represents success rate aggregation by incident type
 // BR-STORAGE-031-01: Incident-Type Success Rate API
-// This is the PRIMARY dimension for AI learning - tracks which playbooks work for specific problems
+// This is the PRIMARY dimension for AI learning - tracks which workflows work for specific problems
 type IncidentTypeSuccessRateResponse struct {
 	// IncidentType is the problem being solved (e.g., "pod-oom-killer", "high-cpu-usage")
 	IncidentType string `json:"incident_type"`
@@ -129,25 +129,25 @@ type IncidentTypeSuccessRateResponse struct {
 	// MinSamplesMet indicates if minimum sample size threshold was reached
 	MinSamplesMet bool `json:"min_samples_met"`
 
-	// BreakdownByPlaybook shows which playbooks were used for this incident type
+	// BreakdownByPlaybook shows which workflows were used for this incident type
 	// Sorted by execution count (descending) to highlight most popular playbooks
-	BreakdownByPlaybook []PlaybookBreakdownItem `json:"breakdown_by_playbook,omitempty"`
+	BreakdownByWorkflow []WorkflowBreakdownItem `json:"breakdown_by_workflow,omitempty"`
 
 	// AIExecutionMode shows distribution of AI execution modes (catalog/chained/manual)
 	// NULL if no AI mode data available (backward compatibility with pre-ADR-033 data)
 	AIExecutionMode *AIExecutionModeStats `json:"ai_execution_mode,omitempty"`
 }
 
-// PlaybookBreakdownItem represents playbook-specific statistics within an incident type
-// Used in IncidentTypeSuccessRateResponse to show which playbooks were tried
-type PlaybookBreakdownItem struct {
-	// PlaybookID is the remediation playbook identifier (e.g., "pod-oom-recovery")
+// WorkflowBreakdownItem represents workflow-specific statistics within an incident type
+// Used in IncidentTypeSuccessRateResponse to show which workflows were tried
+type WorkflowBreakdownItem struct {
+	// PlaybookID is the remediation workflow identifier (e.g., "pod-oom-recovery")
 	PlaybookID string `json:"playbook_id"`
 
 	// PlaybookVersion is the semantic version (e.g., "v1.2", "v2.0")
 	PlaybookVersion string `json:"playbook_version"`
 
-	// Executions is the number of times this playbook was used
+	// Executions is the number of times this workflow was used
 	Executions int `json:"executions"`
 
 	// SuccessRate is the percentage of successful executions for this specific playbook
@@ -160,21 +160,21 @@ type PlaybookBreakdownItem struct {
 // - 4-9% playbook chaining (multiple playbooks composed)
 // - <1% manual escalation (human intervention required)
 type AIExecutionModeStats struct {
-	// CatalogSelected is the count of single-playbook catalog selections
+	// CatalogSelected is the count of single-workflow catalog selections
 	CatalogSelected int `json:"catalog_selected"`
 
-	// Chained is the count of multi-playbook compositions
+	// Chained is the count of multi-workflow compositions
 	Chained int `json:"chained"`
 
 	// ManualEscalation is the count of escalations to human operators
 	ManualEscalation int `json:"manual_escalation"`
 }
 
-// PlaybookSuccessRateResponse represents success rate aggregation by playbook
+// WorkflowSuccessRateResponse represents success rate aggregation by playbook
 // BR-STORAGE-031-02: Playbook Success Rate API
-// This is the SECONDARY dimension - tracks which playbooks are most effective overall
-type PlaybookSuccessRateResponse struct {
-	// PlaybookID is the remediation playbook identifier (e.g., "disk-cleanup", "network-retry")
+// This is the SECONDARY dimension - tracks which workflows are most effective overall
+type WorkflowSuccessRateResponse struct {
+	// PlaybookID is the remediation workflow identifier (e.g., "disk-cleanup", "network-retry")
 	PlaybookID string `json:"playbook_id"`
 
 	// PlaybookVersion is the semantic version (e.g., "v1.0", "v2.0")
@@ -183,7 +183,7 @@ type PlaybookSuccessRateResponse struct {
 	// TimeRange is the analysis period (e.g., "7d", "30d", "90d")
 	TimeRange string `json:"time_range"`
 
-	// TotalExecutions is the total number of times this playbook was executed
+	// TotalExecutions is the total number of times this workflow was executed
 	TotalExecutions int `json:"total_executions"`
 
 	// SuccessfulExecutions is the number of successful executions
@@ -202,11 +202,11 @@ type PlaybookSuccessRateResponse struct {
 	// MinSamplesMet indicates if minimum sample size threshold was reached
 	MinSamplesMet bool `json:"min_samples_met"`
 
-	// BreakdownByIncidentType shows which incident types this playbook was used for
+	// BreakdownByIncidentType shows which incident types this workflow was used for
 	// Sorted by execution count (descending) to highlight primary use cases
 	BreakdownByIncidentType []IncidentTypeBreakdownItem `json:"breakdown_by_incident_type,omitempty"`
 
-	// AIExecutionMode shows distribution of AI execution modes for this playbook
+	// AIExecutionMode shows distribution of AI execution modes for this workflow
 	// NULL if no AI mode data available (backward compatibility)
 	AIExecutionMode *AIExecutionModeStats `json:"ai_execution_mode,omitempty"`
 
@@ -215,12 +215,12 @@ type PlaybookSuccessRateResponse struct {
 }
 
 // IncidentTypeBreakdownItem represents incident-type-specific statistics for a playbook
-// Used in PlaybookSuccessRateResponse to show which problems the playbook solves
+// Used in WorkflowSuccessRateResponse to show which problems the playbook solves
 type IncidentTypeBreakdownItem struct {
 	// IncidentType is the problem category (e.g., "pod-oom-killer", "disk-pressure")
 	IncidentType string `json:"incident_type"`
 
-	// Executions is the number of times this playbook was used for this incident type
+	// Executions is the number of times this workflow was used for this incident type
 	Executions int `json:"executions"`
 
 	// SuccessRate is the percentage of successful executions for this specific incident type
@@ -272,7 +272,7 @@ type MultiDimensionalSuccessRateResponse struct {
 	BreakdownByIncidentType []IncidentTypeBreakdownItem `json:"breakdown_by_incident_type,omitempty"`
 
 	// BreakdownByPlaybook groups by playbook (if incident_type/action specified)
-	BreakdownByPlaybook []PlaybookBreakdownItem `json:"breakdown_by_playbook,omitempty"`
+	BreakdownByWorkflow []WorkflowBreakdownItem `json:"breakdown_by_workflow,omitempty"`
 
 	// BreakdownByAction groups by action type (if incident_type/playbook specified)
 	BreakdownByAction []ActionBreakdownItem `json:"breakdown_by_action,omitempty"`
@@ -355,7 +355,7 @@ type ActionBreakdownItem struct {
 // DeprecatedWorkflowSuccessRateResponse represents the deprecated workflow-based success rate
 // BR-STORAGE-031-06: Deprecated Endpoint Warning
 // This response type is maintained for backward compatibility but will be removed in V2.0
-// DEPRECATED: Use IncidentTypeSuccessRateResponse or PlaybookSuccessRateResponse instead
+// DEPRECATED: Use IncidentTypeSuccessRateResponse or WorkflowSuccessRateResponse instead
 type DeprecatedWorkflowSuccessRateResponse struct {
 	// WorkflowID is the deprecated workflow identifier (mapped to playbook_execution_id)
 	// DEPRECATED: Use playbook_id + playbook_execution_id instead

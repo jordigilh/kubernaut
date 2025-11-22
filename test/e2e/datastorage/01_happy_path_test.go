@@ -98,7 +98,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		serviceURL = fmt.Sprintf("http://localhost:%d", localPort)
 
 		// Start port-forward in background
-		portForwardCancel, err := portForwardService(testCtx, testNamespace, "datastorage", localPort, 8080)
+		portForwardCancel, err := portForwardService(testCtx, testNamespace, "datastorage", kubeconfigPath, localPort, 8080)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Store cancel function for cleanup
@@ -118,7 +118,11 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 				testLogger.Debug("Health check failed, retrying...", zap.Error(err))
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					testLogger.Error("failed to close response body", zap.Error(err))
+				}
+			}()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("health check returned status %d", resp.StatusCode)
 			}
@@ -130,7 +134,7 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		testLogger.Info("🔌 Connecting to PostgreSQL for verification...")
 		// Port-forward to PostgreSQL
 		pgLocalPort := 5432 + GinkgoParallelProcess()
-		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", pgLocalPort, 5432)
+		pgPortForwardCancel, err := portForwardService(testCtx, testNamespace, "postgresql", kubeconfigPath, pgLocalPort, 5432)
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() {
 			if pgPortForwardCancel != nil {
@@ -158,7 +162,9 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 	AfterAll(func() {
 		testLogger.Info("🧹 Cleaning up test namespace...")
 		if db != nil {
-			db.Close()
+			if err := db.Close(); err != nil {
+			testLogger.Warn("failed to close database connection", zap.Error(err))
+		}
 		}
 		if testCancel != nil {
 			testCancel()
@@ -197,7 +203,9 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		resp := postAuditEvent(httpClient, serviceURL, gatewayEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway audit event should be created")
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			testLogger.Error("failed to close response body", zap.Error(err))
+		}
 		testLogger.Info("✅ Gateway audit event created")
 
 		// Step 2: AIAnalysis - Analysis Completed
@@ -220,7 +228,9 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		resp = postAuditEvent(httpClient, serviceURL, aiEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "AIAnalysis audit event should be created")
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			testLogger.Error("failed to close response body", zap.Error(err))
+		}
 		testLogger.Info("✅ AIAnalysis audit event created")
 
 		// Step 3: Workflow - Workflow Completed
@@ -243,7 +253,9 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		resp = postAuditEvent(httpClient, serviceURL, workflowEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Workflow audit event should be created")
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			testLogger.Error("failed to close response body", zap.Error(err))
+		}
 		testLogger.Info("✅ Workflow audit event created")
 
 		// Step 4: Orchestrator - Remediation Completed
@@ -261,7 +273,9 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		resp = postAuditEvent(httpClient, serviceURL, orchestratorEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Orchestrator audit event should be created")
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			testLogger.Error("failed to close response body", zap.Error(err))
+		}
 		testLogger.Info("✅ Orchestrator audit event created")
 
 		// Step 5: EffectivenessMonitor - Assessment Completed
@@ -279,7 +293,9 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 
 		resp = postAuditEvent(httpClient, serviceURL, monitorEvent)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Monitor audit event should be created")
-		resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			testLogger.Error("failed to close response body", zap.Error(err))
+		}
 		testLogger.Info("✅ Monitor audit event created")
 
 		// Verification: Query database directly
@@ -297,7 +313,12 @@ var _ = Describe("Scenario 1: Happy Path - Complete Remediation Audit Trail", La
 		testLogger.Info("🔍 Querying audit trail via REST API...")
 		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
+				_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
+			}
+		}()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Query API should return 200 OK")
 
 		var queryResponse map[string]interface{}
@@ -356,9 +377,15 @@ func postAuditEvent(client *http.Client, baseURL string, event map[string]interf
 
 	// Log response body if not 2xx status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes))
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	if err := resp.Body.Close(); err != nil {
+		// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
+		_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
+	}
+	if _, err := fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes)); err != nil {
+		// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
+		_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to write to GinkgoWriter: %v\n", err)
+	}
 		// Create new reader for the response body so tests can still read it
 		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 	}

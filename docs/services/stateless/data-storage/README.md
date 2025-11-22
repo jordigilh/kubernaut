@@ -27,12 +27,26 @@
 The Data Storage Service provides:
 - **Persistent audit trail** for remediation workflows
 - **Multi-dimensional success tracking** (ADR-033) for AI learning
-- **Success rate analytics** by incident type and playbook
+- **Success rate analytics** by incident type and workflow
 - **AI execution mode tracking** (catalog/chained/manual)
 - **Dual-write coordination** (PostgreSQL + Vector DB)
 - **Semantic search** via vector embeddings
 - **Query API** for historical data retrieval
+- **Self-auditing** (DD-STORAGE-012) for internal audit write monitoring
 - **Comprehensive observability** with Prometheus metrics
+
+### **Self-Auditing (DD-STORAGE-012)**
+
+Data Storage Service audits its own operations using the **InternalAuditClient** pattern to avoid circular dependencies:
+
+**Three Audit Points**:
+1. ✅ `datastorage.audit.written` - Successful audit event writes
+2. ✅ `datastorage.audit.failed` - Write failures (before DLQ fallback)
+3. ✅ `datastorage.dlq.fallback` - DLQ fallback success
+
+**Key Design**: Uses direct PostgreSQL writes (bypasses REST API) to prevent infinite recursion.
+
+**Documentation**: [DD-STORAGE-012-HANDOFF.md](./DD-STORAGE-012-HANDOFF.md)
 
 ---
 

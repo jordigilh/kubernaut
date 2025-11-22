@@ -14,19 +14,19 @@ package audit
 //
 // Business Requirement: BR-STORAGE-033-007
 type AIAnalysisEventData struct {
-	AnalysisID       string   `json:"analysis_id"`                  // Unique analysis identifier
-	LLMProvider      string   `json:"llm_provider,omitempty"`       // "anthropic", "openai", etc.
-	LLMModel         string   `json:"llm_model,omitempty"`          // "claude-haiku-4-5", etc.
-	PromptTokens     int      `json:"prompt_tokens"`                // Input tokens
-	CompletionTokens int      `json:"completion_tokens"`            // Output tokens
-	TotalTokens      int      `json:"total_tokens"`                 // Total tokens
-	DurationMs       int64    `json:"duration_ms,omitempty"`        // Analysis duration
-	RCASignalType    string   `json:"rca_signal_type,omitempty"`    // Root cause signal type
-	RCASeverity      string   `json:"rca_severity,omitempty"`       // Root cause severity
-	Confidence       float64  `json:"confidence,omitempty"`         // Analysis confidence score
-	WorkflowID       string   `json:"workflow_id,omitempty"`        // Selected workflow
-	ToolsInvoked     []string `json:"tools_invoked,omitempty"`      // MCP tools used
-	ErrorCode        string   `json:"error_code,omitempty"`         // Error code if failed
+	AnalysisID       string   `json:"analysis_id"`               // Unique analysis identifier
+	LLMProvider      string   `json:"llm_provider,omitempty"`    // "anthropic", "openai", etc.
+	LLMModel         string   `json:"llm_model,omitempty"`       // "claude-haiku-4-5", etc.
+	PromptTokens     int      `json:"prompt_tokens"`             // Input tokens
+	CompletionTokens int      `json:"completion_tokens"`         // Output tokens
+	TotalTokens      int      `json:"total_tokens"`              // Total tokens
+	DurationMs       int64    `json:"duration_ms,omitempty"`     // Analysis duration
+	RCASignalType    string   `json:"rca_signal_type,omitempty"` // Root cause signal type
+	RCASeverity      string   `json:"rca_severity,omitempty"`    // Root cause severity
+	Confidence       float64  `json:"confidence,omitempty"`      // Analysis confidence score
+	WorkflowID       string   `json:"workflow_id,omitempty"`     // Selected workflow
+	ToolsInvoked     []string `json:"tools_invoked,omitempty"`   // MCP tools used
+	ErrorCode        string   `json:"error_code,omitempty"`      // Error code if failed
 }
 
 // AIAnalysisEventBuilder builds AI Analysis-specific event data.
@@ -206,7 +206,6 @@ func (b *AIAnalysisEventBuilder) WithErrorCode(errorCode string) *AIAnalysisEven
 //	}
 func (b *AIAnalysisEventBuilder) Build() (map[string]interface{}, error) {
 	// Add AI Analysis-specific data to base event
-	b.BaseEventBuilder.WithCustomField("ai_analysis", b.aiData)
+	b.WithCustomField("ai_analysis", b.aiData)
 	return b.BaseEventBuilder.Build()
 }
-

@@ -1,0 +1,269 @@
+name: Defense-in-Depth Test Suite
+
+# Defense-in-Depth Testing Strategy (NOT Pyramid or Trophy)
+# - Unit Tests: 70%+ of BRs (business logic)
+# - Integration Tests: >50% of BRs (cross-component)
+# - E2E Tests: 10-15% of BRs (critical journeys)
+# - Total Coverage: 130-165% (overlapping validation)
+#
+# Authority: docs/testing/APPROVED_CI_CD_STRATEGY.md
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  # ========================================
+  # TIER 1: UNIT TESTS (< 2 minutes)
+  # Coverage: 70%+ of BRs
+  # ========================================
+  unit:
+    name: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run unit tests
+        run: make test
+
+      - name: Verify 70%+ coverage
+        run: |
+          if [ -f coverage.out ]; then
+            COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+            echo "Unit test coverage: ${COVERAGE}%"
+            if [ $(echo "$COVERAGE < 70" | bc) -eq 1 ]; then
+              echo "❌ Unit test coverage below 70% threshold"
+              exit 1
+            fi
+          fi
+
+  # ========================================
+  # TIER 2: INTEGRATION TESTS (~10 min)
+  # Coverage: >50% of BRs
+  # Per-service lanes with smart path detection
+  # ========================================
+
+  # Fast Lane: HolmesGPT API (< 2 min)
+  integration-holmesgpt:
+    name: integration (holmesgpt-api)
+    needs: unit
+    # Smart path detection: Only run if HolmesGPT code changed
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'holmesgpt-api/') ||
+      contains(github.event.pull_request.changed_files, 'test/integration/holmesgpt/')
+    uses: ./.github/workflows/integration-test-template.yml
+    with:
+      service: holmesgpt
+      timeout: 5
+      infrastructure: none
+
+  # Medium Lane: Data Storage (2-5 min)
+  integration-datastorage:
+    name: integration (data-storage)
+    needs: unit
+    # Smart path detection: Only run if Data Storage code changed
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'test/integration/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'migrations/') ||
+      contains(github.event.pull_request.changed_files, 'docker/data-storage.Dockerfile')
+    uses: ./.github/workflows/integration-test-template.yml
+    with:
+      service: datastorage
+      timeout: 10
+      infrastructure: podman
+
+  # Slow Lane: Gateway Service (5-15 min)
+  integration-gateway:
+    name: integration (gateway-service)
+    needs: unit
+    # Smart path detection: Only run if Gateway code changed
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/gateway/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/gateway/') ||
+      contains(github.event.pull_request.changed_files, 'test/integration/gateway/')
+    uses: ./.github/workflows/integration-test-template.yml
+    with:
+      service: gateway
+      timeout: 20
+      infrastructure: kind
+
+  # Slow Lane: Notification Service (5-15 min)
+  integration-notification:
+    name: integration (notification)
+    needs: unit
+    # Smart path detection: Only run if Notification code changed
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/notification/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/notification/') ||
+      contains(github.event.pull_request.changed_files, 'test/integration/notification/')
+    uses: ./.github/workflows/integration-test-template.yml
+    with:
+      service: notification
+      timeout: 20
+      infrastructure: kind
+
+  # Slow Lane: Dynamic Toolset (5-15 min)
+  integration-toolset:
+    name: integration (dynamic-toolset)
+    needs: unit
+    # Smart path detection: Only run if Toolset code changed
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/toolset/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/toolset/') ||
+      contains(github.event.pull_request.changed_files, 'test/integration/toolset/')
+    uses: ./.github/workflows/integration-test-template.yml
+    with:
+      service: toolset
+      timeout: 15
+      infrastructure: kind
+
+  # ========================================
+  # TIER 3: E2E TESTS (~30 min)
+  # Coverage: 10-15% of BRs
+  # Per-service lanes with smart path detection
+  # Skip for draft PRs (better developer experience)
+  # ========================================
+
+  e2e-datastorage:
+    name: e2e (data-storage)
+    needs: [integration-datastorage]
+    # Smart path detection: Only run if Data Storage code changed
+    # Skip if integration tests were skipped
+    if: |
+      needs.integration-datastorage.result == 'success' &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'test/e2e/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'migrations/'))
+    uses: ./.github/workflows/e2e-test-template.yml
+    with:
+      service: datastorage
+      timeout: 30
+      skip_on_draft: true
+
+  e2e-gateway:
+    name: e2e (gateway-service)
+    needs: [integration-gateway]
+    # Smart path detection: Only run if Gateway code changed
+    # Skip if integration tests were skipped
+    if: |
+      needs.integration-gateway.result == 'success' &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/gateway/') ||
+       contains(github.event.pull_request.changed_files, 'cmd/gateway/') ||
+       contains(github.event.pull_request.changed_files, 'test/e2e/gateway/'))
+    uses: ./.github/workflows/e2e-test-template.yml
+    with:
+      service: gateway
+      timeout: 30
+      skip_on_draft: true
+
+  e2e-toolset:
+    name: e2e (dynamic-toolset)
+    needs: [integration-toolset]
+    # Smart path detection: Only run if Toolset code changed
+    # Skip if integration tests were skipped
+    if: |
+      needs.integration-toolset.result == 'success' &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/toolset/') ||
+       contains(github.event.pull_request.changed_files, 'cmd/toolset/') ||
+       contains(github.event.pull_request.changed_files, 'test/e2e/toolset/'))
+    uses: ./.github/workflows/e2e-test-template.yml
+    with:
+      service: toolset
+      timeout: 30
+      skip_on_draft: true
+
+  # ========================================
+  # SUMMARY JOB (Defense-in-Depth)
+  # ========================================
+  defense-in-depth-summary:
+    name: defense-in-depth-summary
+    runs-on: ubuntu-latest
+    needs: [unit, integration-holmesgpt, integration-datastorage, integration-gateway, integration-notification, integration-toolset, e2e-datastorage, e2e-gateway, e2e-toolset]
+    if: always()
+    steps:
+      - name: Defense-in-Depth Test Summary
+        run: |
+          echo "═══════════════════════════════════════════════════════════"
+          echo "Defense-in-Depth Test Suite Summary"
+          echo "═══════════════════════════════════════════════════════════"
+          echo ""
+          echo "Tier 1 - Unit Tests (70%+ BRs):"
+          echo "  Status: ${{ needs.unit.result }}"
+          echo ""
+          echo "Tier 2 - Integration Tests (>50% BRs):"
+          echo "  HolmesGPT API:     ${{ needs.integration-holmesgpt.result }}"
+          echo "  Data Storage:      ${{ needs.integration-datastorage.result }}"
+          echo "  Gateway Service:   ${{ needs.integration-gateway.result }}"
+          echo "  Notification:      ${{ needs.integration-notification.result }}"
+          echo "  Dynamic Toolset:   ${{ needs.integration-toolset.result }}"
+          echo ""
+          echo "Tier 3 - E2E Tests (10-15% BRs):"
+          echo "  Data Storage:      ${{ needs.e2e-datastorage.result }}"
+          echo "  Gateway Service:   ${{ needs.e2e-gateway.result }}"
+          echo "  Dynamic Toolset:   ${{ needs.e2e-toolset.result }}"
+          echo ""
+          echo "Smart Path Detection: ✅ Only affected services tested"
+          echo "Draft PR Skip: ✅ E2E skipped for draft PRs"
+          echo "Retry Logic: ✅ E2E tests retry once on failure"
+          echo ""
+          echo "Total Coverage: 130-165% (overlapping defense-in-depth)"
+          echo "═══════════════════════════════════════════════════════════"
+
+          # Check if any required jobs failed
+          FAILED=0
+
+          # Unit tests are always required
+          if [ "${{ needs.unit.result }}" != "success" ]; then
+            echo "❌ Unit tests failed"
+            FAILED=1
+          fi
+
+          # Integration tests: Check only if they ran
+          for service in holmesgpt datastorage gateway notification toolset; do
+            result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"integration-${service}\".result")
+            if [ "$result" == "failure" ]; then
+              echo "❌ Integration tests failed for ${service}"
+              FAILED=1
+            fi
+          done
+
+          # E2E tests: Check only if they ran
+          for service in datastorage gateway toolset; do
+            result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"e2e-${service}\".result")
+            if [ "$result" == "failure" ]; then
+              echo "❌ E2E tests failed for ${service}"
+              FAILED=1
+            fi
+          done
+
+          if [ $FAILED -eq 0 ]; then
+            echo ""
+            echo "✅ All defense-in-depth tests passed!"
+            exit 0
+          else
+            echo ""
+            echo "❌ Some tests failed - check logs above"
+            exit 1
+          fi
+

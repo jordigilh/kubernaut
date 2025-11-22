@@ -9,6 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -47,11 +48,17 @@ type AuditMessage struct {
 }
 
 // NewClient creates a new DLQ client.
-func NewClient(redisClient *redis.Client, logger *zap.Logger) *Client {
+func NewClient(redisClient *redis.Client, logger *zap.Logger) (*Client, error) {
+	if redisClient == nil {
+		return nil, fmt.Errorf("redis client cannot be nil")
+	}
+	if logger == nil {
+		return nil, fmt.Errorf("logger cannot be nil")
+	}
 	return &Client{
 		redisClient: redisClient,
 		logger:      logger,
-	}
+	}, nil
 }
 
 // EnqueueNotificationAudit adds a NotificationAudit record to the DLQ.
@@ -79,7 +86,7 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	}
 
 	// Add to Redis Stream
-	streamKey := "audit:dlq:notification"
+	streamKey := "audit:dlq:notifications"
 	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey,
 		MaxLen: 10000, // Cap at 10,000 messages (FIFO eviction)
@@ -90,7 +97,7 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	}).Result()
 
 	if err != nil {
-		return fmt.Errorf("failed to add to DLQ: %w", err)
+		return fmt.Errorf("failed to enqueue to DLQ: %w", err)
 	}
 
 	c.logger.Info("Audit record added to DLQ",
@@ -102,12 +109,11 @@ func (c *Client) EnqueueNotificationAudit(ctx context.Context, audit *models.Not
 	return nil
 }
 
-// EnqueueAuditEvent adds a generic audit event to the DLQ.
-// This is called when the primary write to audit_events table fails.
-// DD-009: Dead Letter Queue pattern for unified audit events API
-func (c *Client) EnqueueAuditEvent(ctx context.Context, event map[string]interface{}, originalError error) error {
-	// Serialize event payload
-	payloadJSON, err := json.Marshal(event)
+// EnqueueAuditEvent adds a generic AuditEvent record to the DLQ.
+// This is called when the primary write to PostgreSQL fails for unified audit events.
+func (c *Client) EnqueueAuditEvent(ctx context.Context, audit *audit.AuditEvent, originalError error) error {
+	// Serialize audit payload
+	payloadJSON, err := json.Marshal(audit)
 	if err != nil {
 		return fmt.Errorf("failed to marshal audit event payload: %w", err)
 	}
@@ -128,7 +134,7 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, event map[string]interfa
 	}
 
 	// Add to Redis Stream
-	streamKey := "audit:dlq:events"
+	streamKey := "audit:dlq:events" // Unique stream key for generic audit events
 	_, err = c.redisClient.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey,
 		MaxLen: 10000, // Cap at 10,000 messages (FIFO eviction)
@@ -139,19 +145,13 @@ func (c *Client) EnqueueAuditEvent(ctx context.Context, event map[string]interfa
 	}).Result()
 
 	if err != nil {
-		return fmt.Errorf("failed to add to DLQ: %w", err)
+		return fmt.Errorf("failed to add audit event to DLQ: %w", err)
 	}
-
-	// Extract identifiers for logging
-	eventType, _ := event["event_type"].(string)
-	correlationID, _ := event["correlation_id"].(string)
-	service, _ := event["service"].(string)
 
 	c.logger.Info("Audit event added to DLQ",
 		zap.String("type", "audit_event"),
-		zap.String("service", service),
-		zap.String("event_type", eventType),
-		zap.String("correlation_id", correlationID),
+		zap.String("event_id", audit.EventID.String()),
+		zap.String("correlation_id", audit.CorrelationID),
 		zap.String("error", originalError.Error()),
 	)
 
@@ -178,7 +178,7 @@ func (c *Client) GetDLQDepth(ctx context.Context, auditType string) (int64, erro
 // HealthCheck verifies Redis connectivity.
 func (c *Client) HealthCheck(ctx context.Context) error {
 	if err := c.redisClient.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("DLQ health check failed: %w", err)
+		return fmt.Errorf("redis ping failed: %w", err)
 	}
 	return nil
 }

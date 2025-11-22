@@ -14,21 +14,21 @@ package audit
 //
 // Business Requirement: BR-STORAGE-033-004
 type GatewayEventData struct {
-	SignalType          string            `json:"signal_type"`                  // "prometheus" or "kubernetes"
-	AlertName           string            `json:"alert_name,omitempty"`         // Prometheus alert name
-	EventReason         string            `json:"event_reason,omitempty"`       // K8s event reason (OOMKilled, etc.)
-	Fingerprint         string            `json:"fingerprint,omitempty"`        // Signal fingerprint
-	Namespace           string            `json:"namespace,omitempty"`          // K8s namespace
-	ResourceType        string            `json:"resource_type,omitempty"`      // "pod", "node", etc.
-	ResourceName        string            `json:"resource_name,omitempty"`      // Resource identifier
-	Severity            string            `json:"severity,omitempty"`           // "critical", "warning", "info"
-	Priority            string            `json:"priority,omitempty"`           // "P0", "P1", "P2", "P3"
-	Environment         string            `json:"environment,omitempty"`        // "production", "staging", "dev"
+	SignalType          string            `json:"signal_type"`                    // "prometheus" or "kubernetes"
+	AlertName           string            `json:"alert_name,omitempty"`           // Prometheus alert name
+	EventReason         string            `json:"event_reason,omitempty"`         // K8s event reason (OOMKilled, etc.)
+	Fingerprint         string            `json:"fingerprint,omitempty"`          // Signal fingerprint
+	Namespace           string            `json:"namespace,omitempty"`            // K8s namespace
+	ResourceType        string            `json:"resource_type,omitempty"`        // "pod", "node", etc.
+	ResourceName        string            `json:"resource_name,omitempty"`        // Resource identifier
+	Severity            string            `json:"severity,omitempty"`             // "critical", "warning", "info"
+	Priority            string            `json:"priority,omitempty"`             // "P0", "P1", "P2", "P3"
+	Environment         string            `json:"environment,omitempty"`          // "production", "staging", "dev"
 	DeduplicationStatus string            `json:"deduplication_status,omitempty"` // "new", "duplicate", "storm"
-	StormDetected       bool              `json:"storm_detected"`               // Storm flag
-	StormID             string            `json:"storm_id,omitempty"`           // Storm identifier
-	Labels              map[string]string `json:"labels,omitempty"`             // Additional labels
-	SourcePayload       string            `json:"source_payload,omitempty"`     // Base64 original payload
+	StormDetected       bool              `json:"storm_detected"`                 // Storm flag
+	StormID             string            `json:"storm_id,omitempty"`             // Storm identifier
+	Labels              map[string]string `json:"labels,omitempty"`               // Additional labels
+	SourcePayload       string            `json:"source_payload,omitempty"`       // Base64 original payload
 }
 
 // GatewayEventBuilder builds Gateway-specific event data.
@@ -260,7 +260,6 @@ func (b *GatewayEventBuilder) WithSourcePayload(payload string) *GatewayEventBui
 //	}
 func (b *GatewayEventBuilder) Build() (map[string]interface{}, error) {
 	// Add Gateway-specific data to base event
-	b.BaseEventBuilder.WithCustomField("gateway", b.gatewayData)
+	b.WithCustomField("gateway", b.gatewayData)
 	return b.BaseEventBuilder.Build()
 }
-

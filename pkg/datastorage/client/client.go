@@ -92,13 +92,13 @@ type IncidentsResult struct {
 }
 
 // ListIncidents retrieves a list of incidents from the Data Storage Service
-// filters can include: signal_name, severity, action_type, limit, offset
+// filters can include: alert_name, severity, action_type, namespace, limit, offset
 func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[string]string) (*IncidentsResult, error) {
 	// Build query parameters from filters
 	params := &ListIncidentsParams{}
 
-	if signalName, ok := filters["signal_name"]; ok {
-		params.SignalName = &signalName
+	if alertName, ok := filters["alert_name"]; ok {
+		params.AlertName = &alertName
 	}
 	if severity, ok := filters["severity"]; ok {
 		sev := ListIncidentsParamsSeverity(severity)
@@ -106,6 +106,9 @@ func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[strin
 	}
 	if actionType, ok := filters["action_type"]; ok {
 		params.ActionType = &actionType
+	}
+	if namespace, ok := filters["namespace"]; ok {
+		params.Namespace = &namespace
 	}
 	if limitStr, ok := filters["limit"]; ok {
 		if limitInt, err := strconv.Atoi(limitStr); err == nil {
@@ -134,7 +137,12 @@ func (c *DataStorageClient) ListIncidents(ctx context.Context, filters map[strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to list incidents: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the request since we already have the data
+			fmt.Printf("failed to close response body: %v\n", err)
+		}
+	}()
 
 	// Check for errors
 	if resp.StatusCode >= 400 {
@@ -176,7 +184,12 @@ func (c *DataStorageClient) GetIncidentByID(ctx context.Context, id int) (*Incid
 	if err != nil {
 		return nil, fmt.Errorf("failed to get incident: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Log error but don't fail the request since we already have the data
+			fmt.Printf("failed to close response body: %v\n", err)
+		}
+	}()
 
 	// Check for errors
 	if resp.StatusCode == 404 {

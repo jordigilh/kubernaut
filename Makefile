@@ -60,8 +60,16 @@ test-integration-notification: ## Run Notification Service integration tests (Ki
 
 ##@ Service-Specific Integration Tests
 
+.PHONY: test-integration-holmesgpt
+test-integration-holmesgpt: ## Run HolmesGPT API integration tests (Python/pytest, ~1 min)
+	@echo "🧪 Running HolmesGPT API integration tests..."
+	@cd holmesgpt-api && \
+		pip install -q -r requirements.txt && \
+		pip install -q -r requirements-dev.txt && \
+		MOCK_LLM=true pytest tests/integration/ -v --tb=short
+
 .PHONY: test-integration-datastorage
-test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~30s)
+test-integration-datastorage: ## Run Data Storage integration tests (PostgreSQL 16 via Podman, ~4 min)
 	@if [ -z "$$POSTGRES_HOST" ]; then \
 		echo "🔧 Starting PostgreSQL 16 with pgvector 0.5.1+ extension..."; \
 		podman run -d --name datastorage-postgres -p 5432:5432 \
@@ -622,6 +630,35 @@ test-e2e-datastorage: ## Run Data Storage E2E tests (Kind cluster, ~5-8 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo ""
 	@cd test/e2e/datastorage && ginkgo -v --label-filter="e2e"
+
+.PHONY: test-e2e-gateway
+test-e2e-gateway: ## Run Gateway Service E2E tests (Kind cluster, ~10-15 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Gateway Service - E2E Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Test Scenarios:"
+	@echo "   1. Storm Window TTL - Time-based deduplication"
+	@echo "   2. K8s API Rate Limiting - Backpressure handling"
+	@echo "   3. State-based Deduplication - Hash-based filtering"
+	@echo "   4. Storm Buffering - Burst handling"
+	@echo ""
+	@echo "🏗️  Infrastructure: Kind cluster + Redis + Gateway Service"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@cd test/e2e/gateway && ginkgo -v --timeout=15m
+
+.PHONY: test-e2e-toolset
+test-e2e-toolset: ## Run Dynamic Toolset E2E tests (Kind cluster, ~10-15 min)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Dynamic Toolset Service - E2E Test Suite"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Test Scenarios:"
+	@echo "   1. Discovery Lifecycle - Toolset registration and updates"
+	@echo "   2. ConfigMap Updates - Dynamic configuration changes"
+	@echo "   3. Namespace Filtering - Multi-tenant isolation"
+	@echo ""
+	@echo "🏗️  Infrastructure: Kind cluster + Dynamic Toolset Service"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@cd test/e2e/toolset && ginkgo -v --timeout=15m
 
 .PHONY: test-e2e-datastorage-parallel
 test-e2e-datastorage-parallel: ## Run Data Storage E2E tests in parallel (3 processes, ~3-5 min)

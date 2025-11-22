@@ -247,7 +247,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 	// BEHAVIOR: Parse query params, call repository, return JSON
 	// CORRECTNESS: Exact HTTP status codes and response structure
 	// ========================================
-	Describe("GET /api/v1/success-rate/playbook", func() {
+	Describe("GET /api/v1/success-rate/workflow", func() {
 		Context("with valid query parameters", func() {
 			It("should return 200 OK with playbook success rate data", func() {
 				// Mock expectation for this test
@@ -259,19 +259,19 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// ARRANGE: Create HTTP request with valid params
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/playbook?playbook_id=restart-pod-v1&time_range=7d&min_samples=5",
+					"/api/v1/success-rate/workflow?playbook_id=restart-pod-v1&time_range=7d&min_samples=5",
 					nil,
 				)
 
 				// ACT: Call handler
-				handler.HandleGetSuccessRateByPlaybook(rec, req)
+				handler.HandleGetSuccessRateByWorkflow(rec, req)
 
 				// ASSERT: HTTP 200 OK
 				Expect(rec.Code).To(Equal(http.StatusOK),
 					"Handler should return 200 OK for valid request")
 
 				// ASSERT: Response is valid JSON
-				var response models.PlaybookSuccessRateResponse
+				var response models.WorkflowSuccessRateResponse
 				err := json.NewDecoder(rec.Body).Decode(&response)
 				Expect(err).ToNot(HaveOccurred(),
 					"Response should be valid JSON")
@@ -303,18 +303,18 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// ARRANGE: Request with playbook_version
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/playbook?playbook_id=restart-pod-v1&playbook_version=1.2.3&time_range=7d",
+					"/api/v1/success-rate/workflow?playbook_id=restart-pod-v1&playbook_version=1.2.3&time_range=7d",
 					nil,
 				)
 
 				// ACT: Call handler
-				handler.HandleGetSuccessRateByPlaybook(rec, req)
+				handler.HandleGetSuccessRateByWorkflow(rec, req)
 
 				// ASSERT: HTTP 200 OK
 				Expect(rec.Code).To(Equal(http.StatusOK))
 
 				// CORRECTNESS: Version included in response
-				var response models.PlaybookSuccessRateResponse
+				var response models.WorkflowSuccessRateResponse
 				err := json.NewDecoder(rec.Body).Decode(&response)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response.PlaybookVersion).To(Equal("1.2.3"),
@@ -327,12 +327,12 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// ARRANGE: Request without playbook_id param
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/playbook?time_range=7d",
+					"/api/v1/success-rate/workflow?time_range=7d",
 					nil,
 				)
 
 				// ACT: Call handler
-				handler.HandleGetSuccessRateByPlaybook(rec, req)
+				handler.HandleGetSuccessRateByWorkflow(rec, req)
 
 				// ASSERT: HTTP 400 Bad Request
 				Expect(rec.Code).To(Equal(http.StatusBadRequest),
@@ -348,12 +348,12 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// ARRANGE: Request with invalid time_range
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/playbook?playbook_id=restart-pod-v1&time_range=invalid",
+					"/api/v1/success-rate/workflow?playbook_id=restart-pod-v1&time_range=invalid",
 					nil,
 				)
 
 				// ACT: Call handler
-				handler.HandleGetSuccessRateByPlaybook(rec, req)
+				handler.HandleGetSuccessRateByWorkflow(rec, req)
 
 				// ASSERT: HTTP 400 Bad Request
 				Expect(rec.Code).To(Equal(http.StatusBadRequest),
@@ -598,16 +598,16 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/playbook?playbook_id=pod-oom-recovery_v2.0&playbook_version=v1.2&time_range=7d",
+					"/api/v1/success-rate/workflow?playbook_id=pod-oom-recovery_v2.0&playbook_version=v1.2&time_range=7d",
 					nil,
 				)
 
-				handler.HandleGetSuccessRateByPlaybook(rec, req)
+				handler.HandleGetSuccessRateByWorkflow(rec, req)
 
 				Expect(rec.Code).To(Equal(http.StatusOK),
 					"Special characters in playbook_id should be accepted")
 
-				var response models.PlaybookSuccessRateResponse
+				var response models.WorkflowSuccessRateResponse
 				json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.PlaybookID).To(Equal("pod-oom-recovery_v2.0"),
 					"Playbook ID with special characters should be preserved")
@@ -627,11 +627,11 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					rec = httptest.NewRecorder() // Reset recorder for each test
 					req = httptest.NewRequest(
 						http.MethodGet,
-						"/api/v1/success-rate/playbook?playbook_id=test-playbook&playbook_version="+version+"&time_range=7d",
+						"/api/v1/success-rate/workflow?playbook_id=test-playbook&playbook_version="+version+"&time_range=7d",
 						nil,
 					)
 
-					handler.HandleGetSuccessRateByPlaybook(rec, req)
+					handler.HandleGetSuccessRateByWorkflow(rec, req)
 
 					Expect(rec.Code).To(Equal(http.StatusOK),
 						"Semantic version format %s should be accepted", version)
@@ -648,16 +648,16 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				// BEHAVIOR: URL-encoded + in version (e.g., v1.0.0+build) should be decoded
 				req = httptest.NewRequest(
 					http.MethodGet,
-					"/api/v1/success-rate/playbook?playbook_id=test-playbook&playbook_version=v1.0.0%2Bbuild123&time_range=7d",
+					"/api/v1/success-rate/workflow?playbook_id=test-playbook&playbook_version=v1.0.0%2Bbuild123&time_range=7d",
 					nil,
 				)
 
-				handler.HandleGetSuccessRateByPlaybook(rec, req)
+				handler.HandleGetSuccessRateByWorkflow(rec, req)
 
 				Expect(rec.Code).To(Equal(http.StatusOK),
 					"URL-encoded + in version should be decoded")
 
-				var response models.PlaybookSuccessRateResponse
+				var response models.WorkflowSuccessRateResponse
 				json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.PlaybookVersion).To(Equal("v1.0.0+build123"),
 					"Playbook version with + should be URL-decoded")

@@ -7,18 +7,21 @@ This directory contains OpenAPI 3.0+ specifications for the Data Storage Service
 ## Current Version
 
 **v2** (`v2.yaml`): ADR-033 Multi-Dimensional Success Tracking
+- **Note**: "v2" refers to the OpenAPI spec version (2.0.0), NOT the API URL path
+- **API Path**: All endpoints use `/api/v1/` (we only support v1 API)
+- **Terminology**: Per DD-NAMING-001, using "Remediation Workflow" (not "Remediation Playbook")
 - Status: ✅ Production-ready (Day 15 complete)
 - Endpoints:
   - `GET /api/v1/success-rate/incident-type` - **NEW**: Incident-type success rate (BR-STORAGE-031-01)
-  - `GET /api/v1/success-rate/playbook` - **NEW**: Playbook success rate (BR-STORAGE-031-02)
+  - `GET /api/v1/success-rate/workflow` - **NEW**: Workflow success rate (BR-STORAGE-031-02)
   - `GET /api/v1/incidents` - List incidents with filters
   - `GET /api/v1/incidents/{id}` - Get incident by ID
   - `GET /health`, `/health/ready`, `/health/live` - Health checks
 - Features:
-  - Multi-dimensional success tracking (incident-type, playbook, AI mode)
+  - Multi-dimensional success tracking (incident-type, workflow, AI mode)
   - Confidence-based recommendations (high/medium/low/insufficient_data)
   - AI execution mode distribution (catalog/chained/manual)
-  - Playbook and incident-type breakdown analytics
+  - Workflow and incident-type breakdown analytics
 
 ---
 
@@ -48,18 +51,24 @@ This directory contains OpenAPI 3.0+ specifications for the Data Storage Service
 
 ## Versioning Strategy
 
+### ⚠️ Important: API vs Spec Versioning
+- **API URL Path**: `/api/v1/` (we only support v1 API)
+- **OpenAPI Spec Version**: `v2.yaml` refers to spec version 2.0.0 (with ADR-033 features)
+- **Clarification**: The file name `v2.yaml` does NOT mean we have a `/api/v2/` endpoint
+
 ### URL Versioning
 - API versions are specified in the URL path: `/api/v{major}/resource`
-- **v1**: `/api/v1/incidents` (current)
-- **v2**: `/api/v2/incidents` (future, breaking changes)
+- **v1**: `/api/v1/incidents` (current and only supported version)
+- **v2**: `/api/v2/incidents` (future, breaking changes - not yet implemented)
 
 ### File Versioning
-- Each major API version has a separate OpenAPI file
-- **Pattern**: `v{major}.yaml`
-- **Reason**: Major versions have different schemas, endpoints, and behavior
+- OpenAPI spec files track feature evolution, not API URL versions
+- **Pattern**: `v{major}.yaml` (spec version, not API version)
+- **Current**: `v2.yaml` = spec version 2.0.0 with ADR-033 features, still serving `/api/v1/` endpoints
+- **Reason**: Allows tracking spec evolution while maintaining stable API URLs
 
 ### Semantic Versioning
-- **Major** (breaking changes): New OpenAPI file (e.g., `v1.yaml` → `v2.yaml`)
+- **Major** (breaking changes): New API URL path (e.g., `/api/v1/` → `/api/v2/`)
 - **Minor** (additive changes): Update existing OpenAPI file (e.g., new endpoint in v1)
 - **Patch** (bug fixes): Update existing OpenAPI file (e.g., clarify description)
 
@@ -86,15 +95,15 @@ oapi-codegen \
 - ✅ `Incident` struct
 - ✅ `IncidentListResponse` struct
 - ✅ `IncidentTypeSuccessRateResponse` struct (NEW in v2)
-- ✅ `PlaybookSuccessRateResponse` struct (NEW in v2)
+- ✅ `WorkflowSuccessRateResponse` struct (NEW in v2)
 - ✅ `AIExecutionModeStats` struct (NEW in v2)
-- ✅ `PlaybookBreakdownItem` struct (NEW in v2)
+- ✅ `WorkflowBreakdownItem` struct (NEW in v2)
 - ✅ `IncidentTypeBreakdownItem` struct (NEW in v2)
 - ✅ `Pagination` struct
 - ✅ `RFC7807Error` struct
 - ✅ `Client` interface with all methods:
   - `ListIncidents()`, `GetIncidentByID()` (v1)
-  - `GetSuccessRateByIncidentType()`, `GetSuccessRateByPlaybook()` (v2)
+  - `GetSuccessRateByIncidentType()`, `GetSuccessRateByWorkflow()` (v2)
 - ✅ HTTP client implementation with request/response handling
 
 ### Generate Client (v1 - Legacy)

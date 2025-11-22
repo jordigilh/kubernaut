@@ -11,7 +11,7 @@ info:
 
     **Version 2.0.0 (ADR-033)**: Multi-dimensional success tracking
     - Incident-type success rate aggregation
-    - Playbook success rate aggregation
+    - Workflow success rate aggregation
     - AI execution mode distribution tracking
     - Confidence-based recommendations
 
@@ -56,11 +56,11 @@ paths:
         - Success rate percentage (0-100%)
         - Confidence levels (high/medium/low/insufficient_data)
         - AI execution mode distribution (catalog/chained/manual)
-        - Playbook breakdown showing which playbooks were tried
+        - Workflow breakdown showing which workflows were tried
         - Time range filtering for recent vs historical data
 
         **Use Cases**:
-        - AI playbook selection optimization
+        - AI workflow selection optimization
         - Incident-specific remediation effectiveness
         - Historical trend analysis
         - Confidence-based decision making
@@ -130,13 +130,13 @@ paths:
                       catalog_selected: 135
                       chained: 12
                       manual_escalation: 3
-                    playbook_breakdown:
-                      - playbook_id: "pod-oom-recovery"
-                        playbook_version: "v1.2"
+                    workflow_breakdown:
+                      - workflow_id: "pod-oom-recovery"
+                        workflow_version: "v1.2"
                         executions: 120
                         success_rate: 92.5
-                      - playbook_id: "memory-limit-increase"
-                        playbook_version: "v2.0"
+                      - workflow_id: "memory-limit-increase"
+                        workflow_version: "v2.0"
                         executions: 30
                         success_rate: 80.0
 
@@ -155,7 +155,7 @@ paths:
                       catalog_selected: 2
                       chained: 0
                       manual_escalation: 1
-                    playbook_breakdown: []
+                    workflow_breakdown: []
 
         '400':
           description: Bad request - Missing or invalid parameters
@@ -198,51 +198,51 @@ paths:
                     detail: "Failed to retrieve success rate data"
                     instance: "/api/v1/success-rate/incident-type?incident_type=pod-oom-killer"
 
-  /api/v1/success-rate/playbook:
+  /api/v1/success-rate/workflow:
     get:
-      summary: Get success rate by playbook
+      summary: Get success rate by workflow
       description: |
-        **ADR-033 SECONDARY DIMENSION**: Calculate remediation success rate by playbook.
+        **ADR-033 SECONDARY DIMENSION**: Calculate remediation success rate by workflow.
 
-        This endpoint provides success rate analytics for specific playbooks (e.g., "pod-oom-recovery", "disk-cleanup"),
-        enabling AI to learn which playbooks are most effective overall and for which incident types.
+        This endpoint provides success rate analytics for specific workflows (e.g., "pod-oom-recovery", "disk-cleanup"),
+        enabling AI to learn which workflows are most effective overall and for which incident types.
 
         **Key Features**:
         - Success rate percentage (0-100%)
         - Confidence levels (high/medium/low/insufficient_data)
         - AI execution mode distribution (catalog/chained/manual)
-        - Incident-type breakdown showing which problems this playbook solves
+        - Incident-type breakdown showing which problems this workflow solves
         - Version filtering for A/B testing and rollout validation
 
         **Use Cases**:
-        - Playbook effectiveness validation
+        - Workflow effectiveness validation
         - Version comparison (v1.0 vs v2.0)
         - Incident-type suitability analysis
-        - Playbook catalog optimization
+        - Workflow catalog optimization
 
-        **BR-STORAGE-031-02**: Playbook Success Rate API
-      operationId: getSuccessRateByPlaybook
+        **BR-STORAGE-031-02**: Workflow Success Rate API
+      operationId: getSuccessRateByWorkflow
       tags:
         - Success Rate Analytics
       parameters:
-        - name: playbook_id
+        - name: workflow_id
           in: query
           required: true
           schema:
             type: string
           description: |
-            The playbook identifier to query (e.g., "pod-oom-recovery", "disk-cleanup").
+            The workflow identifier to query (e.g., "pod-oom-recovery", "disk-cleanup").
             This is the SECONDARY dimension for success tracking per ADR-033.
           example: "pod-oom-recovery"
 
-        - name: playbook_version
+        - name: workflow_version
           in: query
           required: false
           schema:
             type: string
             pattern: '^v[0-9]+\.[0-9]+(\.[0-9]+)?$'
           description: |
-            Optional: Filter by specific playbook version (e.g., "v1.2", "v2.0").
+            Optional: Filter by specific workflow version (e.g., "v1.2", "v2.0").
             Omit to aggregate across all versions.
           example: "v1.2"
 
@@ -272,17 +272,17 @@ paths:
 
       responses:
         '200':
-          description: Successful response with playbook success rate data
+          description: Successful response with workflow success rate data
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlaybookSuccessRateResponse'
+                $ref: '#/components/schemas/WorkflowSuccessRateResponse'
               examples:
                 all_versions:
                   summary: Aggregated across all versions
                   value:
-                    playbook_id: "pod-oom-recovery"
-                    playbook_version: null
+                    workflow_id: "pod-oom-recovery"
+                    workflow_version: null
                     time_range: "7d"
                     total_executions: 200
                     successful_executions: 185
@@ -305,8 +305,8 @@ paths:
                 specific_version:
                   summary: Filtered by version v2.0
                   value:
-                    playbook_id: "pod-oom-recovery"
-                    playbook_version: "v2.0"
+                    workflow_id: "pod-oom-recovery"
+                    workflow_version: "v2.0"
                     time_range: "7d"
                     total_executions: 80
                     successful_executions: 76
@@ -333,14 +333,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Error'
               examples:
-                missing_playbook_id:
-                  summary: Missing required playbook_id parameter
+                missing_workflow_id:
+                  summary: Missing required workflow_id parameter
                   value:
                     type: "https://api.kubernaut.io/problems/validation-error"
                     title: "Validation Error"
                     status: 400
-                    detail: "playbook_id query parameter is required"
-                    instance: "/api/v1/success-rate/playbook"
+                    detail: "workflow_id query parameter is required"
+                    instance: "/api/v1/success-rate/workflow"
 
         '500':
           description: Internal server error
@@ -366,13 +366,13 @@ paths:
           schema:
             type: string
           example: "pod-oom-killer"
-        - name: playbook_id
+        - name: workflow_id
           in: query
           required: false
           schema:
             type: string
           example: "pod-oom-recovery"
-        - name: playbook_version
+        - name: workflow_version
           in: query
           required: false
           schema:
@@ -407,12 +407,12 @@ paths:
                 $ref: '#/components/schemas/MultiDimensionalSuccessRateResponse'
               examples:
                 all_three_dimensions:
-                  summary: Success rate for specific incident + playbook + action
+                  summary: Success rate for specific incident + workflow + action
                   value:
                     dimensions:
                       incident_type: "pod-oom-killer"
-                      playbook_id: "pod-oom-recovery"
-                      playbook_version: "v1.2"
+                      workflow_id: "pod-oom-recovery"
+                      workflow_version: "v1.2"
                       action_type: "increase_memory"
                     time_range: "7d"
                     total_executions: 50
@@ -427,8 +427,8 @@ paths:
                   value:
                     dimensions:
                       incident_type: "pod-oom-killer"
-                      playbook_id: ""
-                      playbook_version: ""
+                      workflow_id: ""
+                      workflow_version: ""
                       action_type: ""
                     time_range: "30d"
                     total_executions: 150
@@ -443,8 +443,8 @@ paths:
                   value:
                     dimensions:
                       incident_type: "rare-error"
-                      playbook_id: "experimental-fix"
-                      playbook_version: "v0.1"
+                      workflow_id: "experimental-fix"
+                      workflow_version: "v0.1"
                       action_type: ""
                     time_range: "7d"
                     total_executions: 2
@@ -467,17 +467,17 @@ paths:
                     type: "https://api.kubernaut.io/problems/validation-error"
                     title: "Invalid Query Parameter"
                     status: 400
-                    detail: "at least one dimension filter (incident_type, playbook_id, or action_type) must be specified"
+                    detail: "at least one dimension filter (incident_type, workflow_id, or action_type) must be specified"
                     instance: "/api/v1/success-rate/multi-dimensional?time_range=7d"
 
-                playbook_version_without_id:
-                  summary: playbook_version requires playbook_id
+                workflow_version_without_id:
+                  summary: workflow_version requires workflow_id
                   value:
                     type: "https://api.kubernaut.io/problems/validation-error"
                     title: "Invalid Query Parameter"
                     status: 400
-                    detail: "playbook_version requires playbook_id to be specified"
-                    instance: "/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&playbook_version=v1.2"
+                    detail: "workflow_version requires workflow_id to be specified"
+                    instance: "/api/v1/success-rate/multi-dimensional?incident_type=pod-oom-killer&workflow_version=v1.2"
 
                 invalid_time_range:
                   summary: Invalid time_range format
@@ -782,16 +782,16 @@ components:
           $ref: '#/components/schemas/AIExecutionModeStats'
           description: Distribution of AI execution modes (ADR-033 Hybrid Model)
 
-        playbook_breakdown:
+        workflow_breakdown:
           type: array
           items:
-            $ref: '#/components/schemas/PlaybookBreakdownItem'
-          description: Breakdown by playbook showing which playbooks were tried for this incident type
+            $ref: '#/components/schemas/WorkflowBreakdownItem'
+          description: Breakdown by workflow showing which workflows were tried for this incident type
 
-    PlaybookSuccessRateResponse:
+    WorkflowSuccessRateResponse:
       type: object
       required:
-        - playbook_id
+        - workflow_id
         - time_range
         - total_executions
         - successful_executions
@@ -800,15 +800,15 @@ components:
         - confidence
         - min_samples_met
       properties:
-        playbook_id:
+        workflow_id:
           type: string
-          description: The playbook identifier being analyzed (e.g., "pod-oom-recovery")
+          description: The workflow identifier being analyzed (e.g., "pod-oom-recovery")
           example: "pod-oom-recovery"
 
-        playbook_version:
+        workflow_version:
           type: string
           nullable: true
-          description: Specific playbook version (null if aggregated across all versions)
+          description: Specific workflow version (null if aggregated across all versions)
           example: "v1.2"
 
         time_range:
@@ -819,19 +819,19 @@ components:
         total_executions:
           type: integer
           minimum: 0
-          description: Total number of times this playbook was executed
+          description: Total number of times this workflow was executed
           example: 200
 
         successful_executions:
           type: integer
           minimum: 0
-          description: Number of successful playbook executions
+          description: Number of successful workflow executions
           example: 185
 
         failed_executions:
           type: integer
           minimum: 0
-          description: Number of failed playbook executions
+          description: Number of failed workflow executions
           example: 15
 
         success_rate:
@@ -855,13 +855,13 @@ components:
 
         ai_execution_mode:
           $ref: '#/components/schemas/AIExecutionModeStats'
-          description: Distribution of AI execution modes for this playbook
+          description: Distribution of AI execution modes for this workflow
 
         incident_type_breakdown:
           type: array
           items:
             $ref: '#/components/schemas/IncidentTypeBreakdownItem'
-          description: Breakdown by incident type showing which problems this playbook solves
+          description: Breakdown by incident type showing which problems this workflow solves
 
     AIExecutionModeStats:
       type: object
@@ -874,14 +874,14 @@ components:
           type: integer
           minimum: 0
           description: |
-            Number of times AI selected a single playbook from the catalog (90-95% expected per ADR-033 Hybrid Model)
+            Number of times AI selected a single workflow from the catalog (90-95% expected per ADR-033 Hybrid Model)
           example: 135
 
         chained:
           type: integer
           minimum: 0
           description: |
-            Number of times AI chained multiple playbooks together (4-9% expected per ADR-033 Hybrid Model)
+            Number of times AI chained multiple workflows together (4-9% expected per ADR-033 Hybrid Model)
           example: 12
 
         manual_escalation:
@@ -891,28 +891,28 @@ components:
             Number of times AI escalated to human operator (<1% expected per ADR-033 Hybrid Model)
           example: 3
 
-    PlaybookBreakdownItem:
+    WorkflowBreakdownItem:
       type: object
       required:
-        - playbook_id
-        - playbook_version
+        - workflow_id
+        - workflow_version
         - executions
         - success_rate
       properties:
-        playbook_id:
+        workflow_id:
           type: string
-          description: Playbook identifier
+          description: Workflow identifier
           example: "pod-oom-recovery"
 
-        playbook_version:
+        workflow_version:
           type: string
-          description: Playbook version
+          description: Workflow version
           example: "v1.2"
 
         executions:
           type: integer
           minimum: 0
-          description: Number of times this playbook was used
+          description: Number of times this workflow was used
           example: 120
 
         success_rate:
@@ -920,7 +920,7 @@ components:
           format: double
           minimum: 0.0
           maximum: 100.0
-          description: Success rate for this specific playbook
+          description: Success rate for this specific workflow
           example: 92.5
 
     MultiDimensionalSuccessRateResponse:
@@ -988,14 +988,14 @@ components:
           description: Incident type filter (empty if not specified)
           example: "pod-oom-killer"
 
-        playbook_id:
+        workflow_id:
           type: string
-          description: Playbook ID filter (empty if not specified)
+          description: Workflow ID filter (empty if not specified)
           example: "pod-oom-recovery"
 
-        playbook_version:
+        workflow_version:
           type: string
-          description: Playbook version filter (empty if not specified)
+          description: Workflow version filter (empty if not specified)
           example: "v1.2"
 
         action_type:
@@ -1018,7 +1018,7 @@ components:
         executions:
           type: integer
           minimum: 0
-          description: Number of times this playbook was used for this incident type
+          description: Number of times this workflow was used for this incident type
           example: 150
 
         success_rate:

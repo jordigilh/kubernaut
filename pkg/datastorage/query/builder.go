@@ -341,7 +341,7 @@ func (b *Builder) BuildCount() (string, []interface{}, error) {
 	if b.actionType != "" {
 		sql += fmt.Sprintf(" AND action_type = $%d", argIndex)
 		args = append(args, b.actionType)
-		argIndex++
+		// argIndex++ // Not used after this point
 	}
 
 	// Convert PostgreSQL placeholders ($1, $2) to standard placeholders (?)

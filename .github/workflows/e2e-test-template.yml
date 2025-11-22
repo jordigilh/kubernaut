@@ -1,0 +1,110 @@
+name: E2E Test Template
+
+# Reusable workflow for service E2E tests
+# Usage: Call from main workflow with service name and configuration
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: 'Service name (e.g., datastorage, gateway, toolset)'
+        required: true
+        type: string
+      timeout:
+        description: 'Timeout in minutes'
+        required: true
+        type: number
+      skip_on_draft:
+        description: 'Skip E2E tests for draft PRs'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      result:
+        description: 'Test result (success/failure/skipped)'
+        value: ${{ jobs.e2e.outputs.result }}
+
+jobs:
+  e2e:
+    name: e2e (${{ inputs.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout }}
+    # Skip E2E for draft PRs if enabled
+    if: |
+      !inputs.skip_on_draft ||
+      github.event.pull_request.draft == false ||
+      github.event_name != 'pull_request'
+    outputs:
+      result: ${{ steps.test.outcome }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ========================================
+      # Infrastructure Setup
+      # ========================================
+      - name: Install Kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind --version
+
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman --version
+
+      # ========================================
+      # Run E2E Tests (with retry)
+      # ========================================
+      - name: Run ${{ inputs.service }} E2E tests
+        id: test
+        uses: nick-fields/retry-action@v2
+        with:
+          timeout_minutes: ${{ inputs.timeout }}
+          max_attempts: 2
+          retry_on: error
+          command: make test-e2e-${{ inputs.service }}
+
+      # ========================================
+      # Cleanup
+      # ========================================
+      - name: Cleanup Kind clusters
+        if: always()
+        run: |
+          kind delete cluster --name ${{ inputs.service }}-e2e 2>/dev/null || true
+          # Clean up any other Kind clusters from this test
+          kind get clusters | grep "${{ inputs.service }}" | xargs -r -I {} kind delete cluster --name {}
+
+      - name: Cleanup Podman resources
+        if: always()
+        run: |
+          podman ps -a --filter "name=${{ inputs.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
+          podman network ls --filter "name=${{ inputs.service }}" --format "{{.Name}}" | xargs -r podman network rm
+
+      # ========================================
+      # Upload Artifacts
+      # ========================================
+      - name: Upload E2E test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service }}-e2e-results
+          path: |
+            test-results/
+            e2e-logs/
+          retention-days: 7
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service }}-e2e-diagnostics
+          path: |
+            /tmp/kind-logs-*
+            /tmp/${{ inputs.service }}-*
+          retention-days: 3
+

@@ -33,7 +33,7 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 
 	Context("BR-STORAGE-032: Unified Audit Table Schema", func() {
 		When("migration 013 has been applied by BeforeSuite", func() {
-			It("should create audit_events table with all 26 structured columns", func() {
+			It("should create audit_events table with all 29 structured columns (ADR-034)", func() {
 				// TDD RED: This test will FAIL because migration 013 doesn't exist yet
 				// BeforeSuite applies all migrations, including 013 when it exists
 
@@ -52,46 +52,71 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 
 				By("Verifying all 26 structured columns exist with correct types")
 				columns := map[string]string{
-					// Primary identifiers
-					"event_id":        "uuid",
-					"event_timestamp": "timestamp with time zone",
-					"event_date":      "date", // Generated column
-					"event_type":      "character varying",
+				// ========================================
+				// EVENT IDENTITY (4 columns - ADR-034)
+				// ========================================
+				"event_id":        "uuid",
+				"event_version":   "character varying",
+				"event_timestamp": "timestamp with time zone",
+				"event_date":      "date",
 
-					// Service context
-					"service":         "character varying",
-					"service_version": "character varying",
-					"correlation_id":  "character varying",
-					"causation_id":    "character varying",
-					"parent_event_id": "uuid",
+				// ========================================
+				// EVENT CLASSIFICATION (4 columns - ADR-034)
+				// ========================================
+				"event_type":     "character varying",
+				"event_category": "character varying",
+				"event_action":   "character varying",
+				"event_outcome":  "character varying",
 
-					// Resource tracking
-					"resource_type":      "character varying",
-					"resource_id":        "character varying",
-					"resource_namespace": "character varying",
-					"cluster_id":         "character varying",
+				// ========================================
+				// ACTOR INFORMATION (3 columns - ADR-034)
+				// ========================================
+				"actor_type": "character varying",
+				"actor_id":   "character varying",
+				"actor_ip":   "inet",
 
-					// Operational context
-					"operation":     "character varying",
-					"outcome":       "character varying",
-					"duration_ms":   "integer",
-					"retry_count":   "integer",
-					"error_code":    "character varying",
-					"error_message": "text",
+				// ========================================
+				// RESOURCE INFORMATION (3 columns - ADR-034)
+				// ========================================
+				"resource_type": "character varying",
+				"resource_id":   "character varying",
+				"resource_name": "character varying",
 
-					// Actor & metadata
-					"actor_id":     "character varying",
-					"actor_type":   "character varying",
-					"severity":     "character varying",
-					"tags":         "ARRAY",
-					"is_sensitive": "boolean",
+				// ========================================
+				// CONTEXT INFORMATION (5 columns - ADR-034)
+				// ========================================
+				"correlation_id":    "character varying",
+				"parent_event_id":   "uuid",
+				"parent_event_date": "date",
+				"trace_id":          "character varying",
+				"span_id":           "character varying",
 
-					// Flexible event data
-					"event_data": "jsonb",
+				// ========================================
+				// KUBERNETES CONTEXT (2 columns - ADR-034)
+				// ========================================
+				"namespace":    "character varying",
+				"cluster_name": "character varying",
 
-					// Audit metadata
-					"created_at": "timestamp with time zone",
-				}
+				// ========================================
+				// EVENT PAYLOAD (2 columns - ADR-034)
+				// ========================================
+				"event_data":     "jsonb",
+				"event_metadata": "jsonb",
+
+				// ========================================
+				// AUDIT METADATA (4 columns - ADR-034)
+				// ========================================
+				"severity":      "character varying",
+				"duration_ms":   "integer",
+				"error_code":    "character varying",
+				"error_message": "text",
+
+			// ========================================
+			// COMPLIANCE (2 columns - ADR-034)
+			// ========================================
+			"retention_days": "integer",
+			"is_sensitive":   "boolean",
+		}
 
 				for columnName, expectedType := range columns {
 					var dataType string
@@ -186,7 +211,7 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 					"idx_audit_events_event_type":      "event_type",
 					"idx_audit_events_resource":        "resource_type, resource_id",
 					"idx_audit_events_actor":           "actor_id",
-					"idx_audit_events_outcome":         "outcome",
+					"idx_audit_events_outcome":         "event_outcome", // ADR-034
 					"idx_audit_events_event_date":      "event_date", // For partition pruning
 					"idx_audit_events_event_data_gin":  "event_data", // GIN index
 				}
@@ -229,14 +254,14 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 				year, month, day := eventTimestamp.Date()
 				eventDate := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 
-				_, err = db.Exec(`
+				_, 				err = db.Exec(`
 					INSERT INTO audit_events (
-						event_id, event_timestamp, event_date, event_type, service, correlation_id,
-						resource_type, resource_id, operation, outcome, event_data
+						event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+						resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
 					) VALUES (
 						$1, $2, $3, 'gateway.signal.received', 'gateway', 'rr-2025-001',
-						'remediationrequest', 'test-rr-001', 'receive_signal', 'success',
-						'{"version": "1.0", "service": "gateway", "operation": "receive_signal", "status": "success"}'::jsonb
+						'remediationrequest', 'test-rr-001', 'receive_signal', 'success', 'service', 'gateway-service',
+						'{"version": "1.0", "service": "gateway", "operation": "receive_signal", "status": "success"}'::jsonb -- event_data payload (not schema columns)
 					)
 				`, eventID, eventTimestamp, eventDate)
 
@@ -262,15 +287,15 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 				var err error
 
 				By("Inserting test data")
-				_, err = db.Exec(`
-					INSERT INTO audit_events (
-						event_timestamp, event_date, event_type, service, correlation_id,
-						resource_type, operation, outcome, event_data
-					) VALUES (
-						NOW(), (NOW() AT TIME ZONE 'UTC')::DATE, 'test.event', 'test-service', 'test-correlation-001',
-						'test-resource', 'test-operation', 'success', '{}'::jsonb
-					)
-				`)
+				_, 							err = db.Exec(`
+			INSERT INTO audit_events (
+				event_timestamp, event_date, event_type, event_category, correlation_id,
+				resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+			) VALUES (
+				NOW(), (NOW() AT TIME ZONE 'UTC')::DATE, 'test.event', 'test-service', 'test-correlation-001',
+				'test-resource', 'test-resource-001', 'test-operation', 'success', 'service', 'test-service', '{}'::jsonb
+			)
+			`)
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Running EXPLAIN ANALYZE for correlation_id query")
@@ -289,10 +314,11 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 					explainOutput += line + "\n"
 				}
 
-				By("Verifying index is used")
-				// In partitioned tables, indexes are named with partition suffix (e.g., audit_events_2025_11_correlation_id_idx)
-				Expect(explainOutput).To(ContainSubstring("correlation_id_idx"),
-					"Query should use correlation_id index")
+			By("Verifying index is used")
+			// In partitioned tables, indexes are named with partition suffix and full column names
+			// e.g., audit_events_2025_11_correlation_id_event_timestamp_idx
+			Expect(explainOutput).To(ContainSubstring("correlation_id"),
+				"Query should use correlation_id index")
 			})
 
 			It("should support JSONB queries with GIN index", func() {
@@ -300,16 +326,16 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 				var err error
 
 				By("Inserting event with JSONB data")
-				_, err = db.Exec(`
-					INSERT INTO audit_events (
-						event_timestamp, event_date, event_type, service, correlation_id,
-						resource_type, operation, outcome, event_data
-					) VALUES (
-						NOW(), (NOW() AT TIME ZONE 'UTC')::DATE, 'ai.analysis.completed', 'aianalysis', 'test-jsonb-001',
-						'investigation', 'analyze', 'success',
-						'{"analysis": {"confidence": 0.95, "reasoning": "High confidence"}}'::jsonb
-					)
-				`)
+				_, 							err = db.Exec(`
+			INSERT INTO audit_events (
+event_timestamp, event_date, event_type, event_category, correlation_id,
+			resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+			) VALUES (
+				NOW(), (NOW() AT TIME ZONE 'UTC')::DATE, 'ai.analysis.completed', 'aianalysis', 'test-jsonb-001',
+				'investigation', 'inv-001', 'analyze', 'success', 'service', 'aianalysis-service',
+				'{"analysis": {"confidence": 0.95, "reasoning": "High confidence"}}'::jsonb
+			)
+		`)
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Querying using JSONB path")
@@ -349,28 +375,28 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 
 				By("Inserting parent event")
 				parentID := "b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
-				_, err = db.Exec(`
-					INSERT INTO audit_events (
-						event_id, event_timestamp, event_date, event_type, service, correlation_id,
-						resource_type, operation, outcome, event_data
-					) VALUES (
-						$1, NOW(), (NOW() AT TIME ZONE 'UTC')::DATE, 'gateway.signal.received', 'gateway', 'test-fk-001',
-						'alert', 'receive', 'success', '{}'::jsonb
-					)
-				`, parentID)
+			_, err = db.Exec(`
+				INSERT INTO audit_events (
+					event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+				resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+				) VALUES (
+					$1, NOW(), (NOW() AT TIME ZONE 'UTC')::DATE, 'gateway.signal.received', 'gateway', 'test-fk-001',
+					'alert', 'alert-001', 'receive', 'success', 'service', 'gateway-service', '{}'::jsonb
+				)
+			`, parentID)
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Inserting child event referencing parent")
 				childID := "c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a33"
-				_, err = db.Exec(`
-				INSERT INTO audit_events (
-					event_id, event_timestamp, event_date, event_type, service, correlation_id,
-					parent_event_id, parent_event_date, resource_type, operation, outcome, event_data
-				) VALUES (
-					$1, NOW(), (NOW() AT TIME ZONE 'UTC')::DATE, 'ai.investigation.started', 'aianalysis', 'test-fk-001',
-					$2, (NOW() AT TIME ZONE 'UTC')::DATE, 'investigation', 'start', 'success', '{}'::jsonb
-				)
-			`, childID, parentID)
+		_, err = db.Exec(`
+		INSERT INTO audit_events (
+event_id, event_timestamp, event_date, event_type, event_category, correlation_id,
+		parent_event_id, parent_event_date, resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+		) VALUES (
+			$1, NOW(), (NOW() AT TIME ZONE 'UTC')::DATE, 'ai.investigation.started', 'aianalysis', 'test-fk-001',
+			$2, (NOW() AT TIME ZONE 'UTC')::DATE, 'investigation', 'inv-001', 'start', 'success', 'service', 'aianalysis-service', '{}'::jsonb
+		)
+	`, childID, parentID)
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Verifying child event references parent correctly")
@@ -470,13 +496,13 @@ var _ = Describe("Audit Events Schema Integration Tests", Serial, func() {
 				testDate := testTimestamp.Truncate(24 * time.Hour)
 
 				// Workaround: Explicitly set event_date since trigger doesn't work on partitioned tables
-				_, err = db.Exec(`
-					INSERT INTO audit_events (
-						event_id, event_timestamp, event_date, event_type, service, correlation_id, operation, outcome, event_data
-					) VALUES (
-						$1, $2, $3, 'test.trigger.check', 'test-service', 'test-correlation-id', 'test', 'success', '{}'::jsonb
-					)
-				`, testEventID, testTimestamp, testDate)
+			_, err = db.Exec(`
+				INSERT INTO audit_events (
+					event_id, event_timestamp, event_date, event_type, event_category, correlation_id, resource_type, resource_id, event_action, event_outcome, actor_type, actor_id, event_data
+				) VALUES (
+					$1, $2, $3, 'test.trigger.check', 'test-service', 'test-correlation-id', 'test-resource', 'test-001', 'test', 'success', 'service', 'test-service', '{}'::jsonb
+				)
+			`, testEventID, testTimestamp, testDate)
 				Expect(err).ToNot(HaveOccurred())
 
 				By("Verifying event_date was set correctly")

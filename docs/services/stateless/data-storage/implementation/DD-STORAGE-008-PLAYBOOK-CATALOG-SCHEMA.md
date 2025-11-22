@@ -1,34 +1,65 @@
-# DD-STORAGE-008: Playbook Catalog Schema for Data Storage Service
+# DD-STORAGE-008: Workflow Catalog Schema for Data Storage Service
 
 **Date**: November 13, 2025
 **Status**: ✅ **APPROVED** (with mitigations for critical validation gaps)
 **Decision Maker**: Kubernaut Data Storage Team
-**Authority**: ADR-033 (Playbook Catalog), DD-CONTEXT-005 (Minimal LLM Response Schema)
+**Authority**: DD-NAMING-001 (Remediation Workflow Terminology), ADR-033 (Workflow Catalog), DD-CONTEXT-005 (Minimal LLM Response Schema)
 **Affects**: Data Storage Service V1.0 MVP, HolmesGPT API integration
-**Version**: 1.1 (updated with version validation requirements and approved mitigations)
+**Version**: 2.0 (updated with workflow terminology per DD-NAMING-001)
+**Supersedes**: Version 1.x (workflow terminology)
+
+---
+
+## 📋 **Changelog**
+
+### Version 2.0 (2025-11-20)
+- **BREAKING CHANGE**: Renamed "playbook" to "workflow" per DD-NAMING-001 (Authoritative)
+- Updated table name: `playbook_catalog` → `remediation_workflow_catalog`
+- Updated all field names: `workflow_id` → `workflow_id`, etc.
+- Updated API endpoints: `/api/v1/workflows` → `/api/v1/workflows`
+- Updated Go models: `Playbook` → `RemediationWorkflow`
+- **Rationale**: "Workflow" is implementation-agnostic (Tekton, Ansible, Lambda, etc.) and aligns with observability industry standards (Datadog, New Relic, Dynatrace)
+- **Authority**: DD-NAMING-001 (Remediation Workflow Terminology) - Approved 2025-11-16
+
+### Version 1.1 (2025-11-13)
+- Added version validation requirements and approved mitigations
+- Added semantic version validation using `golang.org/x/mod/semver`
+- Added version increment enforcement
+- Added immutability enforcement with explicit validation
+- Added version history API for traceability
+- Added change metadata (version_notes, change_summary, approved_by)
+
+### Version 1.0 (2025-11-13)
+- Initial document creation
+- Defined workflow catalog schema with composite primary key
+- Defined lifecycle status management (active/disabled/deprecated/archived)
+- Defined labels as JSONB for flexible filtering
+- Defined embedding for semantic search
+- Defined success metrics tracking
 
 ---
 
 ## 🎯 **Context**
 
-**Problem**: Data Storage Service needs a schema for storing playbook catalog metadata to support:
+**Problem**: Data Storage Service needs a schema for storing workflow catalog metadata to support:
 1. **Semantic search** (DD-CONTEXT-005 "Filter Before LLM" pattern)
 2. **Label-based filtering** (environment, priority, risk_tolerance, business_category)
-3. **Version management** (multiple versions of same playbook)
-4. **Lifecycle management** (enable/disable playbooks without losing historical data)
+3. **Version management** (multiple versions of same workflow)
+4. **Lifecycle management** (enable/disable workflows without losing historical data)
 5. **Historical tracking** (maintain all versions for audit and rollback)
 
-**User Requirement**: "We should have a way to disable playbooks and keep historical versions"
+**User Requirement**: "We should have a way to disable workflows and keep historical versions"
 
 **Authoritative Sources**:
-- **ADR-033**: Remediation Playbook Catalog (defines playbook structure)
+- **DD-NAMING-001**: Remediation Workflow Terminology (defines "workflow" as authoritative term)
+- **ADR-033**: Remediation Workflow Catalog (defines workflow structure)
 - **DD-CONTEXT-005**: Minimal LLM Response Schema (defines query/response requirements)
 
 ---
 
 ## ✅ **Decision**
 
-**APPROVED**: Implement `playbook_catalog` table with composite primary key (playbook_id, version), lifecycle status management, and **semantic version validation**.
+**APPROVED**: Implement `remediation_workflow_catalog` table with composite primary key (workflow_id, version), lifecycle status management, and **semantic version validation**.
 
 **Confidence**: 98% (increased from 95% after triage and mitigation approval)
 
@@ -43,12 +74,12 @@
 
 ## 📊 **Schema Design**
 
-### **Table: playbook_catalog**
+### **Table: remediation_workflow_catalog**
 
 ```sql
-CREATE TABLE playbook_catalog (
+CREATE TABLE remediation_workflow_catalog (
     -- Identity (Composite Primary Key)
-    playbook_id VARCHAR(255) NOT NULL,
+    workflow_id VARCHAR(255) NOT NULL,
     version VARCHAR(50) NOT NULL,           -- MUST be semantic version (e.g., v1.0.0, v1.2.3)
 
     -- Metadata
@@ -58,7 +89,7 @@ CREATE TABLE playbook_catalog (
     maintainer VARCHAR(255),                 -- Contact email
 
     -- Content
-    content TEXT NOT NULL,                   -- Full playbook YAML/JSON (Tekton Task)
+    content TEXT NOT NULL,                   -- Full workflow YAML/JSON (Tekton Pipeline, Ansible Playbook, etc.)
     content_hash VARCHAR(64) NOT NULL,       -- SHA-256 hash for integrity
 
     -- Labels (JSONB for flexible filtering)
@@ -98,7 +129,7 @@ CREATE TABLE playbook_catalog (
     updated_by VARCHAR(255),
 
     -- Constraints
-    PRIMARY KEY (playbook_id, version),      -- IMMUTABILITY: Cannot overwrite existing version
+    PRIMARY KEY (workflow_id, version),      -- IMMUTABILITY: Cannot overwrite existing version
     CHECK (status IN ('active', 'disabled', 'deprecated', 'archived')),
     CHECK (expected_success_rate IS NULL OR (expected_success_rate >= 0 AND expected_success_rate <= 1)),
     CHECK (actual_success_rate IS NULL OR (actual_success_rate >= 0 AND actual_success_rate <= 1)),
@@ -107,15 +138,15 @@ CREATE TABLE playbook_catalog (
 );
 
 -- Indexes for Query Performance
-CREATE INDEX idx_playbook_catalog_status ON playbook_catalog(status);
-CREATE INDEX idx_playbook_catalog_latest ON playbook_catalog(playbook_id, is_latest_version) WHERE is_latest_version = true;
-CREATE INDEX idx_playbook_catalog_labels ON playbook_catalog USING GIN (labels);
-CREATE INDEX idx_playbook_catalog_embedding ON playbook_catalog USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
-CREATE INDEX idx_playbook_catalog_created_at ON playbook_catalog(created_at DESC);
-CREATE INDEX idx_playbook_catalog_success_rate ON playbook_catalog(actual_success_rate DESC) WHERE status = 'active';
+CREATE INDEX idx_workflow_catalog_status ON remediation_workflow_catalog(status);
+CREATE INDEX idx_workflow_catalog_latest ON remediation_workflow_catalog(workflow_id, is_latest_version) WHERE is_latest_version = true;
+CREATE INDEX idx_workflow_catalog_labels ON remediation_workflow_catalog USING GIN (labels);
+CREATE INDEX idx_workflow_catalog_embedding ON remediation_workflow_catalog USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+CREATE INDEX idx_workflow_catalog_created_at ON remediation_workflow_catalog(created_at DESC);
+CREATE INDEX idx_workflow_catalog_success_rate ON remediation_workflow_catalog(actual_success_rate DESC) WHERE status = 'active';
 
 -- Trigger for updated_at
-CREATE OR REPLACE FUNCTION update_playbook_catalog_updated_at()
+CREATE OR REPLACE FUNCTION update_workflow_catalog_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = NOW();
@@ -123,19 +154,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER playbook_catalog_updated_at
-    BEFORE UPDATE ON playbook_catalog
+CREATE TRIGGER workflow_catalog_updated_at
+    BEFORE UPDATE ON remediation_workflow_catalog
     FOR EACH ROW
-    EXECUTE FUNCTION update_playbook_catalog_updated_at();
+    EXECUTE FUNCTION update_workflow_catalog_updated_at();
 ```
 
 ---
 
 ## 🔑 **Key Design Decisions**
 
-### **Decision 1: Composite Primary Key (playbook_id, version)**
+### **Decision 1: Composite Primary Key (workflow_id, version)**
 
-**Rationale**: Supports multiple versions of same playbook while maintaining historical data.
+**Rationale**: Supports multiple versions of same workflow while maintaining historical data.
 
 **Benefits**:
 - ✅ Multiple versions coexist (e.g., `pod-oom-recovery` v1.0, v1.1, v1.2)
@@ -146,13 +177,13 @@ CREATE TRIGGER playbook_catalog_updated_at
 **Example**:
 ```sql
 -- All versions of pod-oom-recovery
-SELECT * FROM playbook_catalog WHERE playbook_id = 'pod-oom-recovery';
+SELECT * FROM playbook_catalog WHERE workflow_id = 'pod-oom-recovery';
 
 -- Latest version only
-SELECT * FROM playbook_catalog WHERE playbook_id = 'pod-oom-recovery' AND is_latest_version = true;
+SELECT * FROM playbook_catalog WHERE workflow_id = 'pod-oom-recovery' AND is_latest_version = true;
 
 -- Specific version
-SELECT * FROM playbook_catalog WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
+SELECT * FROM playbook_catalog WHERE workflow_id = 'pod-oom-recovery' AND version = 'v1.2';
 ```
 
 **Confidence**: 98% (industry standard pattern)
@@ -163,13 +194,13 @@ SELECT * FROM playbook_catalog WHERE playbook_id = 'pod-oom-recovery' AND versio
 
 ### **Decision 2: Lifecycle Status Management**
 
-**Rationale**: Support disabling playbooks without losing historical data (user requirement).
+**Rationale**: Support disabling workflows without losing historical data (user requirement).
 
 **Status Values**:
-- `active`: Playbook is available for AI selection and execution
-- `disabled`: Playbook is temporarily disabled (can be re-enabled)
-- `deprecated`: Playbook is marked for removal (use newer version)
-- `archived`: Playbook is permanently retired (historical reference only)
+- `active`: RemediationWorkflow is available for AI selection and execution
+- `disabled`: RemediationWorkflow is temporarily disabled (can be re-enabled)
+- `deprecated`: RemediationWorkflow is marked for removal (use newer version)
+- `archived`: RemediationWorkflow is permanently retired (historical reference only)
 
 **Status Transitions**:
 ```
@@ -185,10 +216,10 @@ active → archived (immediate retirement)
 
 **Query Behavior**:
 ```sql
--- Active playbooks only (default for AI selection)
+-- Active workflows only (default for AI selection)
 SELECT * FROM playbook_catalog WHERE status = 'active' AND is_latest_version = true;
 
--- Include disabled playbooks (for admin UI)
+-- Include disabled workflows (for admin UI)
 SELECT * FROM playbook_catalog WHERE status IN ('active', 'disabled');
 
 -- Historical analysis (include all statuses)
@@ -196,7 +227,7 @@ SELECT * FROM playbook_catalog;
 ```
 
 **Benefits**:
-- ✅ Disable playbooks without data loss
+- ✅ Disable workflows without data loss
 - ✅ Audit trail of who/when/why disabled
 - ✅ Re-enable if needed (e.g., false alarm)
 - ✅ Historical data preserved for analysis
@@ -248,11 +279,11 @@ WHERE status = 'active'
 
 ### **Decision 4: Embedding for Semantic Search**
 
-**Rationale**: Support semantic search for incident description → playbook matching.
+**Rationale**: Support semantic search for incident description → workflow matching.
 
 **Embedding Strategy**:
 - **Model**: sentence-transformers/all-MiniLM-L6-v2 (384 dimensions)
-- **Source**: Playbook `description` + `name` (concatenated)
+- **Source**: RemediationWorkflow `description` + `name` (concatenated)
 - **Generation**: Python embedding service (external)
 - **Storage**: pgvector column with HNSW index
 
@@ -260,7 +291,7 @@ WHERE status = 'active'
 ```sql
 -- Semantic search (cosine similarity)
 SELECT
-    playbook_id,
+    workflow_id,
     version,
     description,
     1 - (embedding <=> $1) AS similarity
@@ -295,12 +326,12 @@ SET
     total_executions = total_executions + 1,
     successful_executions = successful_executions + CASE WHEN $success THEN 1 ELSE 0 END,
     actual_success_rate = (successful_executions + CASE WHEN $success THEN 1 ELSE 0 END)::DECIMAL / (total_executions + 1)
-WHERE playbook_id = $playbook_id AND version = $version;
+WHERE workflow_id = $workflow_id AND version = $version;
 ```
 
 **AI Selection Query**:
 ```sql
--- Prefer playbooks with high success rate and statistical significance
+-- Prefer workflows with high success rate and statistical significance
 SELECT * FROM playbook_catalog
 WHERE status = 'active'
   AND is_latest_version = true
@@ -324,10 +355,10 @@ import (
     "encoding/json"
 )
 
-// Playbook represents a remediation playbook in the catalog
-type Playbook struct {
+// RemediationWorkflow represents a remediation workflow in the catalog
+type RemediationWorkflow struct {
     // Identity
-    PlaybookID string `json:"playbook_id" db:"playbook_id"`
+    WorkflowID string `json:"workflow_id" db:"workflow_id"`
     Version    string `json:"version" db:"version"`
 
     // Metadata
@@ -381,9 +412,9 @@ const (
     PlaybookStatusArchived   PlaybookStatus = "archived"
 )
 
-// PlaybookFilters for querying playbooks
+// PlaybookFilters for querying workflows
 type PlaybookFilters struct {
-    PlaybookID      *string            // Filter by playbook ID
+    WorkflowID      *string            // Filter by workflow ID
     Status          []PlaybookStatus   // Filter by status (default: active only)
     LatestOnly      bool               // Only return latest versions
     Labels          map[string]string  // Label matching (DD-CONTEXT-005)
@@ -397,12 +428,12 @@ type PlaybookSearchParams struct {
     Labels          map[string]string  // Label filters (DD-CONTEXT-005)
     MinConfidence   float64            // Minimum similarity threshold (0.0-1.0)
     MaxResults      int                // Limit number of results
-    IncludeDisabled bool               // Include disabled playbooks (default: false)
+    IncludeDisabled bool               // Include disabled workflows (default: false)
 }
 
 // PlaybookSearchResult represents a semantic search result
 type PlaybookSearchResult struct {
-    Playbook   *Playbook `json:"playbook"`
+    RemediationWorkflow   *RemediationWorkflow `json:"playbook"`
     Confidence float64   `json:"confidence"` // Semantic similarity score (0.0-1.0)
 }
 ```
@@ -411,12 +442,12 @@ type PlaybookSearchResult struct {
 
 ## 🔧 **REST API Endpoints**
 
-### **POST /api/v1/playbooks** - Create/Update Playbook
+### **POST /api/v1/workflows** - Create/Update Playbook
 
 **Request**:
 ```json
 {
-  "playbook_id": "pod-oom-recovery",
+  "workflow_id": "pod-oom-recovery",
   "version": "v1.2",
   "name": "Pod OOM Recovery",
   "description": "Increases memory limits and restarts pod on OOM",
@@ -437,7 +468,7 @@ type PlaybookSearchResult struct {
 **Response**:
 ```json
 {
-  "playbook_id": "pod-oom-recovery",
+  "workflow_id": "pod-oom-recovery",
   "version": "v1.2",
   "status": "active",
   "is_latest_version": true,
@@ -447,25 +478,25 @@ type PlaybookSearchResult struct {
 
 ---
 
-### **GET /api/v1/playbooks/search** - Semantic Search
+### **GET /api/v1/workflows/search** - Semantic Search
 
 **Request**:
 ```
-GET /api/v1/playbooks/search?query=pod+keeps+crashing&label.environment=production&label.priority=P0&min_confidence=0.7&max_results=10
+GET /api/v1/workflows/search?query=pod+keeps+crashing&label.environment=production&label.priority=P0&min_confidence=0.7&max_results=10
 ```
 
 **Response** (DD-CONTEXT-005 format):
 ```json
 {
-  "playbooks": [
+  "workflows": [
     {
-      "playbook_id": "pod-oom-recovery",
+      "workflow_id": "pod-oom-recovery",
       "version": "v1.2",
       "description": "Increases memory limits and restarts pod on OOM",
       "confidence": 0.92
     },
     {
-      "playbook_id": "pod-crash-loop-recovery",
+      "workflow_id": "pod-crash-loop-recovery",
       "version": "v2.0",
       "description": "Diagnoses and fixes pod crash loops",
       "confidence": 0.85
@@ -477,7 +508,7 @@ GET /api/v1/playbooks/search?query=pod+keeps+crashing&label.environment=producti
 
 ---
 
-### **PATCH /api/v1/playbooks/{playbook_id}/{version}/disable** - Disable Playbook
+### **PATCH /api/v1/workflows/{workflow_id}/{version}/disable** - Disable Playbook
 
 **Request**:
 ```json
@@ -490,7 +521,7 @@ GET /api/v1/playbooks/search?query=pod+keeps+crashing&label.environment=producti
 **Response**:
 ```json
 {
-  "playbook_id": "pod-oom-recovery",
+  "workflow_id": "pod-oom-recovery",
   "version": "v1.2",
   "status": "disabled",
   "disabled_at": "2025-11-13T15:30:00Z",
@@ -501,7 +532,7 @@ GET /api/v1/playbooks/search?query=pod+keeps+crashing&label.environment=producti
 
 ---
 
-### **PATCH /api/v1/playbooks/{playbook_id}/{version}/enable** - Re-enable Playbook
+### **PATCH /api/v1/workflows/{workflow_id}/{version}/enable** - Re-enable Playbook
 
 **Request**:
 ```json
@@ -513,7 +544,7 @@ GET /api/v1/playbooks/search?query=pod+keeps+crashing&label.environment=producti
 **Response**:
 ```json
 {
-  "playbook_id": "pod-oom-recovery",
+  "workflow_id": "pod-oom-recovery",
   "version": "v1.2",
   "status": "active",
   "disabled_at": null,
@@ -524,17 +555,17 @@ GET /api/v1/playbooks/search?query=pod+keeps+crashing&label.environment=producti
 
 ---
 
-### **GET /api/v1/playbooks/{playbook_id}/versions** - List All Versions
+### **GET /api/v1/workflows/{workflow_id}/versions** - List All Versions
 
 **Request**:
 ```
-GET /api/v1/playbooks/pod-oom-recovery/versions?include_disabled=true
+GET /api/v1/workflows/pod-oom-recovery/versions?include_disabled=true
 ```
 
 **Response**:
 ```json
 {
-  "playbook_id": "pod-oom-recovery",
+  "workflow_id": "pod-oom-recovery",
   "versions": [
     {
       "version": "v1.2",
@@ -575,7 +606,7 @@ GET /api/v1/playbooks/pod-oom-recovery/versions?include_disabled=true
 ```sql
 -- Step 1: Create new version
 INSERT INTO playbook_catalog (
-    playbook_id, version, name, description, content, labels,
+    workflow_id, version, name, description, content, labels,
     status, is_latest_version, previous_version
 ) VALUES (
     'pod-oom-recovery', 'v1.2', 'Pod OOM Recovery',
@@ -587,12 +618,12 @@ INSERT INTO playbook_catalog (
 -- Step 2: Mark previous version as not latest
 UPDATE playbook_catalog
 SET is_latest_version = false
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.1';
+WHERE workflow_id = 'pod-oom-recovery' AND version = 'v1.1';
 ```
 
 ---
 
-### **Workflow 2: Disable Playbook (Temporary)**
+### **Workflow 2: Disable RemediationWorkflow (Temporary)**
 
 ```sql
 UPDATE playbook_catalog
@@ -601,7 +632,7 @@ SET
     disabled_at = NOW(),
     disabled_by = 'operator@company.com',
     disabled_reason = 'High failure rate in production'
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
+WHERE workflow_id = 'pod-oom-recovery' AND version = 'v1.2';
 ```
 
 ---
@@ -615,12 +646,12 @@ SET
     disabled_at = NULL,
     disabled_by = NULL,
     disabled_reason = NULL
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.2';
+WHERE workflow_id = 'pod-oom-recovery' AND version = 'v1.2';
 ```
 
 ---
 
-### **Workflow 4: Deprecate Playbook (Permanent)**
+### **Workflow 4: Deprecate RemediationWorkflow (Permanent)**
 
 ```sql
 -- Step 1: Mark old version as deprecated
@@ -629,28 +660,28 @@ SET
     status = 'deprecated',
     deprecation_notice = 'Replaced by v1.2 with improved memory analysis',
     is_latest_version = false
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.1';
+WHERE workflow_id = 'pod-oom-recovery' AND version = 'v1.1';
 
 -- Step 2: Create new version (see Workflow 1)
 ```
 
 ---
 
-### **Workflow 5: Archive Playbook (Permanent Retirement)**
+### **Workflow 5: Archive RemediationWorkflow (Permanent Retirement)**
 
 ```sql
 UPDATE playbook_catalog
 SET
     status = 'archived',
     is_latest_version = false
-WHERE playbook_id = 'pod-oom-recovery' AND version = 'v1.0';
+WHERE workflow_id = 'pod-oom-recovery' AND version = 'v1.0';
 ```
 
 ---
 
 ## 🎯 **Query Patterns for AI Selection**
 
-### **Pattern 1: Active Playbooks Only (Default)**
+### **Pattern 1: Active Workflows Only (Default)**
 
 ```sql
 SELECT * FROM playbook_catalog
@@ -663,7 +694,7 @@ WHERE status = 'active' AND is_latest_version = true;
 
 ```sql
 SELECT
-    playbook_id,
+    workflow_id,
     version,
     description,
     1 - (embedding <=> $query_embedding) AS confidence
@@ -695,14 +726,14 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 ## ✅ **Benefits**
 
-### **User Requirement: Disable Playbooks**
+### **User Requirement: Disable Workflows**
 - ✅ **Temporary disable**: Set status='disabled' (can re-enable)
 - ✅ **Permanent retirement**: Set status='deprecated' or 'archived'
 - ✅ **Audit trail**: Capture who/when/why disabled
-- ✅ **Historical data preserved**: Never delete playbook records
+- ✅ **Historical data preserved**: Never delete workflow records
 
 ### **Version Management**
-- ✅ **Multiple versions coexist**: Composite primary key (playbook_id, version)
+- ✅ **Multiple versions coexist**: Composite primary key (workflow_id, version)
 - ✅ **Latest version tracking**: `is_latest_version` flag
 - ✅ **Version history**: `previous_version` link
 - ✅ **Historical analysis**: All versions queryable
@@ -710,7 +741,7 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 ### **DD-CONTEXT-005 Compliance**
 - ✅ **Label-based filtering**: JSONB labels with GIN index
 - ✅ **Semantic search**: pgvector embedding with HNSW index
-- ✅ **Minimal response**: 4 fields (playbook_id, version, description, confidence)
+- ✅ **Minimal response**: 4 fields (workflow_id, version, description, confidence)
 
 ### **ADR-033 Compliance**
 - ✅ **Success rate tracking**: actual_success_rate calculated from executions
@@ -738,10 +769,10 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 ## 🔗 **Related Decisions**
 
-- **ADR-033**: Remediation Playbook Catalog (defines playbook structure)
+- **ADR-033**: Remediation RemediationWorkflow Catalog (defines workflow structure)
 - **DD-CONTEXT-005**: Minimal LLM Response Schema (defines query/response requirements)
 - **ADR-034**: Unified Audit Table Design (similar lifecycle management pattern)
-- **DD-STORAGE-006**: V1.0 No-Cache Decision (no playbook embedding caching in V1.0)
+- **DD-STORAGE-006**: V1.0 No-Cache Decision (no workflow embedding caching in V1.0)
 - **DD-STORAGE-007**: Redis Requirement Reassessment (Redis mandatory for DLQ)
 - **DD-011**: PostgreSQL Version Requirements (semver validation pattern)
 
@@ -751,20 +782,20 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 ### **🎯 V1.0 MVP Scope** (Foundation - SQL-Only Management)
 
-**Goal**: Establish playbook catalog foundation with SQL-only management (no REST API for writes, no CRD controller)
+**Goal**: Establish workflow catalog foundation with SQL-only management (no REST API for writes, no CRD controller)
 
 **Duration**: 3 days (20 hours)
 
 **V1.0 Deliverables**:
 - ✅ `playbook_catalog` table with full schema (including version validation fields for future use)
 - ✅ Go models and repository (READ-ONLY operations)
-- ✅ Semantic search endpoint: `GET /api/v1/playbooks/search`
-- ✅ Version listing endpoint: `GET /api/v1/playbooks/{id}/versions`
+- ✅ Semantic search endpoint: `GET /api/v1/workflows/search`
+- ✅ Version listing endpoint: `GET /api/v1/workflows/{id}/versions`
 - ✅ Embedding generation pipeline (NO CACHING per DD-STORAGE-006)
 - ✅ Integration tests for search and version listing
 
 **V1.0 Limitations** (Deferred to V1.1):
-- ❌ **NO** playbook creation/update REST API (SQL-only management)
+- ❌ **NO** workflow creation/update REST API (SQL-only management)
 - ❌ **NO** version validation enforcement (manual SQL management)
 - ❌ **NO** lifecycle management API (disable/enable via SQL only)
 - ❌ **NO** embedding caching (per DD-STORAGE-006)
@@ -782,7 +813,7 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
   - [ ] Triggers for updated_at
   - [ ] Comments documenting V1.0 vs V1.1 fields
 - [ ] Create Go model: `pkg/datastorage/models/playbook.go`
-  - [ ] Playbook struct with all fields
+  - [ ] RemediationWorkflow struct with all fields
   - [ ] PlaybookStatus enum (active/disabled/deprecated/archived)
   - [ ] PlaybookSearchParams struct
   - [ ] PlaybookSearchResult struct
@@ -790,7 +821,7 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
   - [ ] `GetLatestVersion()` - Read latest version
   - [ ] `GetVersion()` - Read specific version
   - [ ] `ListVersions()` - List all versions
-  - [ ] `SearchPlaybooks()` - Semantic search with label filtering
+  - [ ] `SearchWorkflows()` - Semantic search with label filtering
   - [ ] **NOTE**: NO create/update methods in V1.0 (SQL-only management)
 
 **Deliverable**: Schema and read-only repository
@@ -801,14 +832,14 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 **Scope**: Read-only REST API for semantic search and version listing
 
-- [ ] Implement `GET /api/v1/playbooks/search` (semantic search)
+- [ ] Implement `GET /api/v1/workflows/search` (semantic search)
   - [ ] Query parameter: `query` (incident description)
   - [ ] Query parameters: `label.*` (label filtering per DD-CONTEXT-005)
   - [ ] Query parameter: `min_confidence` (similarity threshold, default: 0.7)
   - [ ] Query parameter: `max_results` (limit, default: 10)
-  - [ ] Response: DD-CONTEXT-005 format (playbook_id, version, description, confidence)
+  - [ ] Response: DD-CONTEXT-005 format (workflow_id, version, description, confidence)
   - [ ] Filter: status='active' AND is_latest_version=true (default)
-- [ ] Implement `GET /api/v1/playbooks/{id}/versions` (list all versions)
+- [ ] Implement `GET /api/v1/workflows/{id}/versions` (list all versions)
   - [ ] Query parameter: `include_disabled` (default: false)
   - [ ] Response: Version list with metadata (status, success_rate, created_at)
 - [ ] **NOTE**: NO create/update/disable/enable endpoints in V1.0
@@ -824,16 +855,16 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 - [ ] Python embedding service (sentence-transformers)
   - [ ] HTTP server with `/embed` endpoint
   - [ ] Model: sentence-transformers/all-MiniLM-L6-v2 (384 dimensions)
-  - [ ] Input: Playbook description + name (concatenated)
+  - [ ] Input: RemediationWorkflow description + name (concatenated)
   - [ ] Output: 384-dimensional vector
 - [ ] Go HTTP client: `pkg/datastorage/embedding/client.go`
   - [ ] `GenerateEmbedding(text string) ([]float32, error)`
   - [ ] **NO CACHING** (per DD-STORAGE-006)
   - [ ] Timeout: 5 seconds per request
-- [ ] Playbook embedding pipeline: `pkg/datastorage/embedding/playbook_pipeline.go`
+- [ ] RemediationWorkflow embedding pipeline: `pkg/datastorage/embedding/playbook_pipeline.go`
   - [ ] Generate embeddings on-the-fly during search
   - [ ] **NO CACHING** (per DD-STORAGE-006)
-  - [ ] Acceptable latency: 2.5s for 50 playbooks (per DD-STORAGE-006)
+  - [ ] Acceptable latency: 2.5s for 50 workflows (per DD-STORAGE-006)
 - [ ] Integration tests
   - [ ] Test semantic search with real embeddings
   - [ ] Test label filtering
@@ -845,15 +876,15 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 ### **🚀 V1.1 Enhancements** (REST API + CRD Controller + Caching)
 
-**Goal**: Add playbook management REST API with version validation and embedding caching
+**Goal**: Add workflow management REST API with version validation and embedding caching
 
 **Duration**: 4 days (28 hours)
 
 **V1.1 Deliverables**:
-- ✅ Playbook creation/update REST API with version validation
+- ✅ RemediationWorkflow creation/update REST API with version validation
 - ✅ Lifecycle management API (disable/enable)
 - ✅ Version diff API
-- ✅ CRD controller for playbook management
+- ✅ CRD controller for workflow management
 - ✅ Embedding caching with CRD-triggered invalidation
 - ✅ Comprehensive integration tests
 
@@ -861,7 +892,7 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 #### **V1.1 Phase 1: Version Validation** (Day 1, 8 hours)
 
-**Scope**: Semantic version validation for playbook creation/update
+**Scope**: Semantic version validation for workflow creation/update
 
 - [ ] Create `pkg/datastorage/playbook/version_validator.go`
   - [ ] `ValidateVersionFormat()` using `golang.org/x/mod/semver`
@@ -882,11 +913,11 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 ---
 
-#### **V1.1 Phase 2: Playbook Management REST API** (Day 2, 10 hours)
+#### **V1.1 Phase 2: RemediationWorkflow Management REST API** (Day 2, 10 hours)
 
-**Scope**: Create/update/disable/enable playbooks with version validation
+**Scope**: Create/update/disable/enable workflows with version validation
 
-- [ ] Implement `POST /api/v1/playbooks` (create/update playbook)
+- [ ] Implement `POST /api/v1/workflows` (create/update playbook)
   - [ ] **CRITICAL**: Validate semantic version format (semver)
   - [ ] **CRITICAL**: Validate version increment (must be > current latest)
   - [ ] **CRITICAL**: Prevent overwriting existing versions (immutability)
@@ -895,16 +926,16 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
     - [ ] 400: Version not incremented
     - [ ] 409: Version already exists (immutable)
   - [ ] Invalidate embedding cache on create/update
-- [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/disable`
+- [ ] Implement `PATCH /api/v1/workflows/{id}/{version}/disable`
   - [ ] Capture disabled_by, disabled_reason, disabled_at
   - [ ] Invalidate embedding cache on disable
-- [ ] Implement `PATCH /api/v1/playbooks/{id}/{version}/enable`
+- [ ] Implement `PATCH /api/v1/workflows/{id}/{version}/enable`
   - [ ] Clear disabled metadata
   - [ ] Invalidate embedding cache on enable
-- [ ] Implement `GET /api/v1/playbooks/{id}/versions/{version}` (get specific version)
-- [ ] Implement `GET /api/v1/playbooks/{id}/versions/{v1}/diff/{v2}` (compare versions)
+- [ ] Implement `GET /api/v1/workflows/{id}/versions/{version}` (get specific version)
+- [ ] Implement `GET /api/v1/workflows/{id}/versions/{v1}/diff/{v2}` (compare versions)
 
-**Deliverable**: Full playbook management REST API with version validation
+**Deliverable**: Full workflow management REST API with version validation
 
 ---
 
@@ -921,8 +952,8 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
   - [ ] Store embedding in cache after generation
   - [ ] Latency improvement: 2.5s → ~50ms (50× faster)
 - [ ] Implement cache invalidation
-  - [ ] Invalidate on playbook create/update
-  - [ ] Invalidate on playbook disable/enable
+  - [ ] Invalidate on workflow create/update
+  - [ ] Invalidate on workflow disable/enable
   - [ ] CRD controller webhook for automatic invalidation
 
 **Deliverable**: Embedding caching with CRD-triggered invalidation
@@ -933,7 +964,7 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 **Scope**: Comprehensive integration tests for V1.1 features
 
-- [ ] Test playbook CRUD operations with version validation
+- [ ] Test workflow CRUD operations with version validation
   - [ ] Test version format validation (invalid semver rejected)
   - [ ] Test version increment validation (v0.9 after v1.0 rejected)
   - [ ] Test immutability (duplicate version rejected with 409)
@@ -955,15 +986,15 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 | Feature | V1.0 MVP | V1.1 Enhancements |
 |---------|----------|-------------------|
-| **Playbook Catalog Table** | ✅ Full schema | ✅ Same schema |
+| **RemediationWorkflow Catalog Table** | ✅ Full schema | ✅ Same schema |
 | **Semantic Search API** | ✅ `GET /search` | ✅ Same |
 | **Version Listing API** | ✅ `GET /versions` | ✅ Same |
 | **Embedding Generation** | ✅ Real-time (no cache) | ✅ Cached (24h TTL) |
-| **Playbook Management** | ❌ SQL-only | ✅ REST API (`POST /playbooks`) |
+| **RemediationWorkflow Management** | ❌ SQL-only | ✅ REST API (`POST /workflows`) |
 | **Version Validation** | ❌ Manual SQL | ✅ Automated (semver) |
 | **Lifecycle Management** | ❌ SQL-only | ✅ REST API (`PATCH /disable`, `/enable`) |
 | **Version Diff API** | ❌ Not available | ✅ `GET /diff/{v1}/{v2}` |
-| **CRD Controller** | ❌ Not available | ✅ Playbook CRD |
+| **CRD Controller** | ❌ Not available | ✅ RemediationWorkflow CRD |
 | **Cache Invalidation** | ❌ N/A (no cache) | ✅ CRD-triggered |
 
 ---
@@ -972,14 +1003,14 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 
 **Must Have** (Blocking):
 1. ✅ `playbook_catalog` table exists with full schema
-2. ✅ `GET /api/v1/playbooks/search` returns semantically similar playbooks
-3. ✅ `GET /api/v1/playbooks/{id}/versions` lists all versions
+2. ✅ `GET /api/v1/workflows/search` returns semantically similar workflows
+3. ✅ `GET /api/v1/workflows/{id}/versions` lists all versions
 4. ✅ Embedding generation works (real-time, no cache)
 5. ✅ Integration tests pass for search and version listing
-6. ✅ Latency acceptable: 2.5s for 50 playbooks (per DD-STORAGE-006)
+6. ✅ Latency acceptable: 2.5s for 50 workflows (per DD-STORAGE-006)
 
 **Nice to Have** (Non-Blocking):
-- ⚠️ Playbook management via SQL (manual process, documented)
+- ⚠️ RemediationWorkflow management via SQL (manual process, documented)
 - ⚠️ Version validation via manual review (no automation)
 
 ---
@@ -987,11 +1018,11 @@ ORDER BY actual_success_rate DESC, total_executions DESC;
 ## 🚀 **V1.1 Enhancement Success Criteria**
 
 **Must Have** (Blocking):
-1. ✅ `POST /api/v1/playbooks` validates version format and increment
+1. ✅ `POST /api/v1/workflows` validates version format and increment
 2. ✅ Version immutability enforced (duplicate version rejected with 409)
 3. ✅ `PATCH /disable` and `/enable` work with audit trail
 4. ✅ Embedding cache reduces latency from 2.5s to ~50ms (50× improvement)
-5. ✅ CRD controller triggers cache invalidation on playbook changes
+5. ✅ CRD controller triggers cache invalidation on workflow changes
 6. ✅ Integration tests pass for all V1.1 features
 
 ---

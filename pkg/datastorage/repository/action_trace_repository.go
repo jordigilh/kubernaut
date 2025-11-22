@@ -104,7 +104,7 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 			SuccessRate:          0.0,
 			Confidence:           confidenceInsufficientData,
 			MinSamplesMet:        false,
-			BreakdownByPlaybook:  []models.PlaybookBreakdownItem{},
+			BreakdownByWorkflow:  []models.WorkflowBreakdownItem{},
 		}, nil
 	}
 
@@ -136,15 +136,15 @@ func (r *ActionTraceRepository) GetSuccessRateByIncidentType(
 
 	// Query playbook breakdown (only if we have data)
 	if totalExecutions > 0 {
-		playbookBreakdown, err := r.getPlaybookBreakdownForIncidentType(ctx, incidentType, sinceTime)
+		workflowBreakdown, err := r.getPlaybookBreakdownForIncidentType(ctx, incidentType, sinceTime)
 		if err != nil {
 			r.logger.Warn("failed to get playbook breakdown",
 				zap.String("incident_type", incidentType),
 				zap.Error(err))
 			// Don't fail the entire request for breakdown query failure
-			playbookBreakdown = []models.PlaybookBreakdownItem{}
+			workflowBreakdown = []models.WorkflowBreakdownItem{}
 		}
-		response.BreakdownByPlaybook = playbookBreakdown
+		response.BreakdownByWorkflow = workflowBreakdown
 
 		// Query AI execution mode stats
 		aiStats, err := r.getAIExecutionModeForIncidentType(ctx, incidentType, sinceTime)
@@ -172,7 +172,7 @@ func (r *ActionTraceRepository) getPlaybookBreakdownForIncidentType(
 	ctx context.Context,
 	incidentType string,
 	sinceTime time.Time,
-) ([]models.PlaybookBreakdownItem, error) {
+) ([]models.WorkflowBreakdownItem, error) {
 	query := `
 		SELECT
 			playbook_id,
@@ -192,11 +192,11 @@ func (r *ActionTraceRepository) getPlaybookBreakdownForIncidentType(
 	if err != nil {
 		return nil, fmt.Errorf("failed to query playbook breakdown: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
-	var breakdown []models.PlaybookBreakdownItem
+	var breakdown []models.WorkflowBreakdownItem
 	for rows.Next() {
-		var item models.PlaybookBreakdownItem
+		var item models.WorkflowBreakdownItem
 		if err := rows.Scan(&item.PlaybookID, &item.PlaybookVersion, &item.Executions, &item.SuccessRate); err != nil {
 			return nil, fmt.Errorf("failed to scan playbook breakdown row: %w", err)
 		}
@@ -244,16 +244,16 @@ func (r *ActionTraceRepository) getAIExecutionModeForIncidentType(
 // BR-STORAGE-031-02: Playbook Success Rate
 // ========================================
 
-// GetSuccessRateByPlaybook calculates success rate for a specific playbook
+// GetSuccessRateByWorkflow calculates success rate for a specific playbook
 // This is the SECONDARY dimension - tracks which playbooks are most effective overall
-func (r *ActionTraceRepository) GetSuccessRateByPlaybook(
+func (r *ActionTraceRepository) GetSuccessRateByWorkflow(
 	ctx context.Context,
 	playbookID string,
 	playbookVersion string,
 	duration time.Duration,
 	minSamples int,
-) (*models.PlaybookSuccessRateResponse, error) {
-	r.logger.Debug("GetSuccessRateByPlaybook called",
+) (*models.WorkflowSuccessRateResponse, error) {
+	r.logger.Debug("GetSuccessRateByWorkflow called",
 		zap.String("playbook_id", playbookID),
 		zap.String("playbook_version", playbookVersion),
 		zap.Duration("duration", duration),
@@ -294,7 +294,7 @@ func (r *ActionTraceRepository) GetSuccessRateByPlaybook(
 
 	if err == sql.ErrNoRows {
 		// No data found
-		return &models.PlaybookSuccessRateResponse{
+		return &models.WorkflowSuccessRateResponse{
 			PlaybookID:              playbookID,
 			PlaybookVersion:         playbookVersion,
 			TimeRange:               formatDuration(duration),
@@ -324,7 +324,7 @@ func (r *ActionTraceRepository) GetSuccessRateByPlaybook(
 	minSamplesMet := totalExecutions >= minSamples
 
 	// Build response
-	response := &models.PlaybookSuccessRateResponse{
+	response := &models.WorkflowSuccessRateResponse{
 		PlaybookID:           playbookID,
 		PlaybookVersion:      playbookVersion,
 		TimeRange:            formatDuration(duration),
@@ -394,7 +394,7 @@ func (r *ActionTraceRepository) getIncidentTypeBreakdownForPlaybook(
 	if err != nil {
 		return nil, fmt.Errorf("failed to query incident type breakdown: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var breakdown []models.IncidentTypeBreakdownItem
 	for rows.Next() {
@@ -597,7 +597,7 @@ func (r *ActionTraceRepository) GetSuccessRateMultiDimensional(
 	// Build SQL query
 	var whereClause string
 	if len(whereClauses) > 0 {
-		whereClause = "WHERE " + fmt.Sprintf("%s", whereClauses[0])
+		whereClause = "WHERE " + whereClauses[0]
 		for i := 1; i < len(whereClauses); i++ {
 			whereClause += " AND " + whereClauses[i]
 		}

@@ -466,8 +466,10 @@ Same error response format as incident-type endpoint.
 
 1. **Playbook Validation**: Verify new playbook versions are effective
 2. **Version Comparison**: A/B test v1.2 vs v2.0
-3. **Incident-Type Suitability**: Identify which problems a playbook solves best
-4. **Playbook Catalog Optimization**: Remove low-performing playbooks
+3. **Incident-Type Suitability**: Identify which problems a workflow solves best
+4. **Workflow Catalog Optimization**: Remove low-performing workflows
+
+**Terminology**: Per DD-NAMING-001, using "Remediation Workflow" (not "Remediation Playbook")
 
 ---
 
